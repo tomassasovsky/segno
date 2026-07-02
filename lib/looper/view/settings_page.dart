@@ -5,11 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/cubit/high_contrast_cubit.dart';
 import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
-import 'package:loopy/looper/cubit/track_indicators_cubit.dart';
+import 'package:loopy/looper/cubit/tracks_cubit.dart';
+import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
+import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
@@ -17,21 +18,21 @@ import 'package:loopy/visualizer/visualizer.dart';
 /// A settings section, shown one at a time and selected from the left rail.
 enum _Section { view, audio, tracks }
 
-/// Settings for the Big Picture performance view, reachable from the view via
-/// right-click or the `S` key, and from the system menu bar on macOS.
+/// The app settings page, reachable from the Tracks view via right-click or
+/// the `S` key, and from the system menu bar on macOS.
 ///
 /// Laid out like the audio onboarding panel: a dark centered surface with a
 /// left rail that selects a section, and a scrollable right pane of the
 /// selected section's controls. `Esc` closes the page.
-class BigPictureSettingsPage extends StatefulWidget {
-  /// Creates a [BigPictureSettingsPage].
-  const BigPictureSettingsPage({super.key});
+class SettingsPage extends StatefulWidget {
+  /// Creates a [SettingsPage].
+  const SettingsPage({super.key});
 
   @override
-  State<BigPictureSettingsPage> createState() => _BigPictureSettingsPageState();
+  State<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
+class _SettingsPageState extends State<SettingsPage> {
   _Section _section = _Section.view;
 
   void _select(_Section section) => setState(() => _section = section);
@@ -88,7 +89,7 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
                 top: 10,
                 right: 10,
                 child: IconButton(
-                  key: const Key('bpSettings_close_button'),
+                  key: const Key('settings_close_button'),
                   tooltip: context.l10n.close,
                   visualDensity: VisualDensity.compact,
                   icon: Icon(
@@ -116,16 +117,19 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
     final l10n = context.l10n;
     final waveformEnabled = context.watch<WaveformWindowCubit>().state;
     final highContrast = context.watch<HighContrastCubit>().state;
-    final showIndicators = context.watch<TrackIndicatorsCubit>().state;
-    final defaultMode = context.watch<BigPictureCubit>().state.defaultMode;
+    final tracks = context.watch<TracksCubit>().state;
+    final showIndicators = tracks.showIndicators;
+    // The default mode is a looper-wide behavior default, owned by PedalCubit
+    // (the shared LooperMode's home), not a view preference.
+    final defaultMode = context.watch<PedalCubit>().state.defaultMode;
     final refreshHz = context.watch<RefreshRateCubit>().state;
     return [
-      Text(l10n.bpSettingsViewIntro, style: setupBody),
+      Text(l10n.settingsViewIntro, style: setupBody),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.viewGroupLabel),
       const SizedBox(height: 12),
       SetupToggleRow(
-        toggleKey: const Key('bpSettings_waveformWindow_switch'),
+        toggleKey: const Key('settings_waveformWindow_switch'),
         title: l10n.waveformWindowTitle,
         subtitle: l10n.waveformWindowSubtitle,
         value: waveformEnabled,
@@ -134,7 +138,7 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
       ),
       const SizedBox(height: 12),
       SetupToggleRow(
-        toggleKey: const Key('bpSettings_highContrast_switch'),
+        toggleKey: const Key('settings_highContrast_switch'),
         title: l10n.highContrastTitle,
         subtitle: l10n.highContrastSubtitle,
         value: highContrast,
@@ -143,36 +147,36 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
       ),
       const SizedBox(height: 12),
       SetupToggleRow(
-        toggleKey: const Key('bpSettings_trackIndicators_switch'),
+        toggleKey: const Key('settings_trackIndicators_switch'),
         title: l10n.trackIndicatorsTitle,
         subtitle: l10n.trackIndicatorsSubtitle,
         value: showIndicators,
         onChanged: (on) => unawaited(
-          context.read<TrackIndicatorsCubit>().setEnabled(value: on),
+          context.read<TracksCubit>().setShowIndicators(value: on),
         ),
       ),
       const SizedBox(height: 28),
-      SetupGroupLabel(l10n.performanceGroupLabel),
+      SetupGroupLabel(l10n.looperGroupLabel),
       const SizedBox(height: 12),
-      Text(l10n.bpDefaultModeIntro, style: setupBody),
+      Text(l10n.defaultModeIntro, style: setupBody),
       const SizedBox(height: 12),
-      SetupOptionRow<PerformanceMode>(
+      SetupOptionRow<LooperMode>(
         selected: defaultMode,
         onSelected: (m) => unawaited(
-          context.read<BigPictureCubit>().setDefaultPerformanceMode(m),
+          context.read<PedalCubit>().setDefaultMode(m),
         ),
         options: [
           SetupOption(
-            value: PerformanceMode.record,
+            value: LooperMode.record,
             label: l10n.recordModeLabel,
             sub: l10n.recordModeSub,
-            optionKey: const Key('bpSettings_defaultMode_record'),
+            optionKey: const Key('settings_defaultMode_record'),
           ),
           SetupOption(
-            value: PerformanceMode.play,
+            value: LooperMode.play,
             label: l10n.playModeLabel,
             sub: l10n.playModeSub,
-            optionKey: const Key('bpSettings_defaultMode_play'),
+            optionKey: const Key('settings_defaultMode_play'),
           ),
         ],
       ),
@@ -193,7 +197,7 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
                 120 => l10n.refreshRateSmoothest,
                 _ => l10n.defaultLabel,
               },
-              optionKey: Key('bpSettings_refreshRate_$hz'),
+              optionKey: Key('settings_refreshRate_$hz'),
             ),
         ],
       ),
@@ -206,25 +210,25 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
 
   List<Widget> _tracksSection(BuildContext context) {
     final l10n = context.l10n;
-    final big = context.watch<BigPictureCubit>();
+    final tracks = context.watch<TracksCubit>();
     return [
       Text(l10n.tracksIntro, style: setupBody),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.tracksGroupLabel),
       const SizedBox(height: 12),
-      for (var i = 0; i < big.state.names.length; i++) ...[
+      for (var i = 0; i < tracks.state.names.length; i++) ...[
         SetupTrackNameRow(
-          rowKey: Key('bpSettings_trackName_$i'),
+          rowKey: Key('settings_trackName_$i'),
           channel: i,
-          name: l10n.displayTrackName(big.state.names[i], i),
+          name: l10n.displayTrackName(tracks.state.names[i], i),
           onTap: () => showRenameTrackDialog(
             context: context,
-            cubit: context.read<BigPictureCubit>(),
+            cubit: context.read<TracksCubit>(),
             channel: i,
-            current: big.state.names[i],
+            current: tracks.state.names[i],
           ),
         ),
-        if (i < big.state.names.length - 1) const SizedBox(height: 8),
+        if (i < tracks.state.names.length - 1) const SizedBox(height: 8),
       ],
     ];
   }
@@ -264,7 +268,7 @@ class _SettingsRail extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 28),
-          Text(l10n.bigPictureTitle, style: setupTitle),
+          Text(l10n.settingsTitle, style: setupTitle),
           const SizedBox(height: 20),
           for (final section in _Section.values)
             _SectionTab(
@@ -305,7 +309,7 @@ class _SectionTab extends StatelessWidget {
           color: selected ? context.surface.cardHigh : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
           child: InkWell(
-            key: Key('bpSettings_tab_${section.name}'),
+            key: Key('settings_tab_${section.name}'),
             borderRadius: BorderRadius.circular(10),
             onTap: onTap,
             child: Padding(

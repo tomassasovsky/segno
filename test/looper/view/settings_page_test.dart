@@ -11,6 +11,7 @@ import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -23,15 +24,11 @@ class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
 class _MockMidiSetupCubit extends MockCubit<MidiSetupState>
     implements MidiSetupCubit {}
 
-class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
-
 void main() {
   late SettingsRepository settings;
-  late BigPictureCubit bigPicture;
+  late TracksCubit tracks;
   late WaveformWindowCubit waveformWindow;
   late HighContrastCubit highContrast;
-  late TrackIndicatorsCubit trackIndicators;
-  late BankCubit bank;
   late AudioSetupCubit audioSetup;
   late MidiSetupCubit midiSetup;
   late PedalCubit pedal;
@@ -43,11 +40,9 @@ void main() {
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
-    bigPicture = BigPictureCubit(settings: settings);
+    tracks = TracksCubit(settings: settings);
     waveformWindow = WaveformWindowCubit(settings: settings);
     highContrast = HighContrastCubit(settings: settings);
-    trackIndicators = TrackIndicatorsCubit(settings: settings);
-    bank = BankCubit();
     audioSetup = _MockAudioSetupCubit();
     when(() => audioSetup.state).thenReturn(const AudioSetupState());
     midiSetup = _MockMidiSetupCubit();
@@ -56,13 +51,6 @@ void main() {
       midiSetup,
       const Stream<MidiSetupState>.empty(),
       initialState: const MidiSetupState(),
-    );
-    pedal = _MockPedalCubit();
-    when(() => pedal.state).thenReturn(const PedalState());
-    whenListen(
-      pedal,
-      const Stream<PedalState>.empty(),
-      initialState: const PedalState(),
     );
     repository = _MockLooperRepository();
     when(() => repository.state).thenReturn(
@@ -74,6 +62,15 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
+    // A real PedalCubit over a no-op transport: it owns the shared LooperMode
+    // whose persisted default the View section edits.
+    pedal = PedalCubit(
+      pedal: PedalRepository(const NoopPedalTransport()),
+      looper: repository,
+      settings: settings,
+      pollInterval: Duration.zero,
+    );
+    addTearDown(pedal.close);
     refreshRate = RefreshRateCubit(repository: repository, settings: settings);
     quantize = QuantizeCubit(repository: repository, settings: settings);
     monitor = MonitorCubit(repository: repository, settings: settings);
@@ -100,7 +97,7 @@ void main() {
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
     MaterialApp(
-      theme: AppTheme.bigPicture,
+      theme: AppTheme.neon,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: MultiRepositoryProvider(
@@ -110,11 +107,9 @@ void main() {
         ],
         child: MultiBlocProvider(
           providers: [
-            BlocProvider<BigPictureCubit>.value(value: bigPicture),
+            BlocProvider<TracksCubit>.value(value: tracks),
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
             BlocProvider<HighContrastCubit>.value(value: highContrast),
-            BlocProvider<TrackIndicatorsCubit>.value(value: trackIndicators),
-            BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<MidiSetupCubit>.value(value: midiSetup),
             BlocProvider<PedalCubit>.value(value: pedal),
@@ -123,7 +118,7 @@ void main() {
             BlocProvider<MonitorCubit>.value(value: monitor),
             BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
           ],
-          child: const BigPictureSettingsPage(),
+          child: const SettingsPage(),
         ),
       ),
     ),
@@ -135,7 +130,7 @@ void main() {
     await pump(tester);
 
     await tester.tap(
-      find.byKey(const Key('bpSettings_waveformWindow_switch')),
+      find.byKey(const Key('settings_waveformWindow_switch')),
     );
     await tester.pumpAndSettle();
 
@@ -150,7 +145,7 @@ void main() {
 
     expect(highContrast.state, isFalse);
     await tester.tap(
-      find.byKey(const Key('bpSettings_highContrast_switch')),
+      find.byKey(const Key('settings_highContrast_switch')),
     );
     await tester.pumpAndSettle();
 
@@ -163,15 +158,15 @@ void main() {
   ) async {
     await pump(tester);
 
-    final toggle = find.byKey(const Key('bpSettings_trackIndicators_switch'));
+    final toggle = find.byKey(const Key('settings_trackIndicators_switch'));
     expect(toggle, findsOneWidget);
     // Default on (the cubit seeds true).
-    expect(trackIndicators.state, isTrue);
+    expect(tracks.state.showIndicators, isTrue);
 
     await tester.tap(toggle);
     await tester.pumpAndSettle();
 
-    expect(trackIndicators.state, isFalse);
+    expect(tracks.state.showIndicators, isFalse);
     expect(await settings.loadShowTrackIndicators(), isFalse);
   });
 
@@ -180,11 +175,11 @@ void main() {
   ) async {
     await pump(tester);
 
-    await tester.tap(find.byKey(const Key('bpSettings_tab_tracks')));
+    await tester.tap(find.byKey(const Key('settings_tab_tracks')));
     await tester.pumpAndSettle();
     expect(find.text('TRACK 1'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('bpSettings_trackName_0')));
+    await tester.tap(find.byKey(const Key('settings_trackName_0')));
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -198,22 +193,22 @@ void main() {
     expect(await settings.loadTrackName(0), 'DRUMS');
   });
 
-  testWidgets('choosing a default performance mode persists it', (
+  testWidgets('choosing a default mode persists it', (
     tester,
   ) async {
     await pump(tester);
-    expect(bigPicture.state.defaultMode, PerformanceMode.record);
+    expect(pedal.state.defaultMode, LooperMode.record);
 
-    final play = find.byKey(const Key('bpSettings_defaultMode_play'));
+    final play = find.byKey(const Key('settings_defaultMode_play'));
     await tester.ensureVisible(play);
     await tester.tap(play);
     await tester.pumpAndSettle();
 
-    expect(bigPicture.state.defaultMode, PerformanceMode.play);
-    expect(bigPicture.state.mode, PerformanceMode.play);
+    expect(pedal.state.defaultMode, LooperMode.play);
+    expect(pedal.state.mode, LooperMode.play);
     expect(
-      await settings.loadDefaultPerformanceMode(),
-      PerformanceMode.play.token,
+      await settings.loadDefaultLooperMode(),
+      LooperMode.play.token,
     );
   });
 
@@ -223,7 +218,7 @@ void main() {
     await pump(tester);
     expect(refreshRate.state, 60);
 
-    final fast = find.byKey(const Key('bpSettings_refreshRate_120'));
+    final fast = find.byKey(const Key('settings_refreshRate_120'));
     await tester.ensureVisible(fast);
     await tester.tap(fast);
     await tester.pumpAndSettle();
@@ -243,7 +238,7 @@ void main() {
     expect(quantize.state, isFalse);
 
     // Quantize lives in the Audio > Recording group.
-    await tester.tap(find.byKey(const Key('bpSettings_tab_audio')));
+    await tester.tap(find.byKey(const Key('settings_tab_audio')));
     await tester.pumpAndSettle();
     final toggle = find.byKey(const Key('audioSettings_quantize_switch'));
     await tester.ensureVisible(toggle);
@@ -261,21 +256,21 @@ void main() {
     await pump(tester);
     // Defaults to the View section (the waveform-window toggle lives there).
     expect(
-      find.byKey(const Key('bpSettings_waveformWindow_switch')),
+      find.byKey(const Key('settings_waveformWindow_switch')),
       findsOneWidget,
     );
-    expect(find.byKey(const Key('bpSettings_trackName_0')), findsNothing);
+    expect(find.byKey(const Key('settings_trackName_0')), findsNothing);
 
-    await tester.tap(find.byKey(const Key('bpSettings_tab_tracks')));
+    await tester.tap(find.byKey(const Key('settings_tab_tracks')));
     await tester.pumpAndSettle();
     // The Tracks section renders the per-track rename rows.
-    expect(find.byKey(const Key('bpSettings_trackName_0')), findsOneWidget);
+    expect(find.byKey(const Key('settings_trackName_0')), findsOneWidget);
     expect(
-      find.byKey(const Key('bpSettings_waveformWindow_switch')),
+      find.byKey(const Key('settings_waveformWindow_switch')),
       findsNothing,
     );
 
-    await tester.tap(find.byKey(const Key('bpSettings_tab_audio')));
+    await tester.tap(find.byKey(const Key('settings_tab_audio')));
     await tester.pumpAndSettle();
     // The Audio section renders the inline device controls (not a nav tile).
     expect(
@@ -286,11 +281,11 @@ void main() {
       find.byKey(const Key('audioSettings_measure_button')),
       findsOneWidget,
     );
-    expect(find.byKey(const Key('bpSettings_trackName_0')), findsNothing);
+    expect(find.byKey(const Key('settings_trackName_0')), findsNothing);
 
     // There is no longer a Routing tab — the whole-system signal flow moved to
     // the Signal surface.
-    expect(find.byKey(const Key('bpSettings_tab_routing')), findsNothing);
+    expect(find.byKey(const Key('settings_tab_routing')), findsNothing);
   });
 
   testWidgets('Escape pops the settings page', (tester) async {
@@ -303,11 +298,9 @@ void main() {
         ],
         child: MultiBlocProvider(
           providers: [
-            BlocProvider<BigPictureCubit>.value(value: bigPicture),
+            BlocProvider<TracksCubit>.value(value: tracks),
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
             BlocProvider<HighContrastCubit>.value(value: highContrast),
-            BlocProvider<TrackIndicatorsCubit>.value(value: trackIndicators),
-            BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<MidiSetupCubit>.value(value: midiSetup),
             BlocProvider<PedalCubit>.value(value: pedal),
@@ -317,7 +310,7 @@ void main() {
             BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
           ],
           child: MaterialApp(
-            theme: AppTheme.bigPicture,
+            theme: AppTheme.neon,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             home: Builder(
@@ -326,7 +319,7 @@ void main() {
                   child: ElevatedButton(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => const BigPictureSettingsPage(),
+                        builder: (_) => const SettingsPage(),
                       ),
                     ),
                     child: const Text('open'),
@@ -341,10 +334,10 @@ void main() {
 
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    expect(find.byType(BigPictureSettingsPage), findsOneWidget);
+    expect(find.byType(SettingsPage), findsOneWidget);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.byType(BigPictureSettingsPage), findsNothing);
+    expect(find.byType(SettingsPage), findsNothing);
   });
 }

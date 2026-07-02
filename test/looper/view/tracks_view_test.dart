@@ -9,9 +9,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/session/session.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:settings_repository/settings_repository.dart';
 
@@ -27,9 +29,8 @@ class _MockSessionCubit extends MockCubit<SessionState>
 
 void main() {
   late LooperBloc bloc;
-  late BigPictureCubit bigPicture;
-  late BankCubit bank;
-  late TrackIndicatorsCubit trackIndicators;
+  late TracksCubit tracks;
+  late PedalCubit pedal;
   late LooperRepository repository;
   late SettingsRepository settings;
   late SessionCubit session;
@@ -37,11 +38,21 @@ void main() {
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
-    bigPicture = BigPictureCubit(settings: settings);
-    bank = BankCubit();
-    trackIndicators = TrackIndicatorsCubit(settings: settings);
+    tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
+    when(
+      () => repository.looperState,
+    ).thenAnswer((_) => const Stream<LooperState>.empty());
+    // A real PedalCubit over a no-op transport: it owns the system LooperMode
+    // the view reads, and the M key / mode chip toggle it.
+    pedal = PedalCubit(
+      pedal: PedalRepository(const NoopPedalTransport()),
+      looper: repository,
+      settings: settings,
+      pollInterval: Duration.zero,
+    );
+    addTearDown(pedal.close);
     session = _MockSessionCubit();
     when(() => session.state).thenReturn(const SessionState());
     when(() => session.saveSession()).thenAnswer((_) async {});
@@ -57,7 +68,7 @@ void main() {
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
     MaterialApp(
-      theme: AppTheme.bigPicture,
+      theme: AppTheme.neon,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: RepositoryProvider<LooperRepository>.value(
@@ -65,12 +76,11 @@ void main() {
         child: MultiBlocProvider(
           providers: [
             BlocProvider<LooperBloc>.value(value: bloc),
-            BlocProvider<BigPictureCubit>.value(value: bigPicture),
-            BlocProvider<BankCubit>.value(value: bank),
-            BlocProvider<TrackIndicatorsCubit>.value(value: trackIndicators),
+            BlocProvider<TracksCubit>.value(value: tracks),
+            BlocProvider<PedalCubit>.value(value: pedal),
             BlocProvider<SessionCubit>.value(value: session),
           ],
-          child: const BigPictureView(),
+          child: const TracksView(),
         ),
       ),
     ),
@@ -80,8 +90,8 @@ void main() {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
 
-    expect(find.byKey(const Key('bigpicture_tile_0')), findsOneWidget);
-    expect(find.byKey(const Key('bigpicture_tile_1')), findsOneWidget);
+    expect(find.byKey(const Key('tracks_tile_0')), findsOneWidget);
+    expect(find.byKey(const Key('tracks_tile_1')), findsOneWidget);
   });
 
   testWidgets('exposes a visible entry to the Signal surface', (tester) async {
@@ -90,7 +100,7 @@ void main() {
 
     // The chrome carries one global affordance opening the Signal surface
     // (the per-track routing dialog is gone — wiring lives on Signal now).
-    expect(find.byKey(const Key('bigpicture_openSignal')), findsOneWidget);
+    expect(find.byKey(const Key('tracks_openSignal')), findsOneWidget);
   });
 
   testWidgets('exposes a visible Settings button', (tester) async {
@@ -100,7 +110,7 @@ void main() {
     // Settings was previously reachable only by the `S` key or right-click;
     // the top-bar button makes it operable by pointer/touch.
     final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-    expect(find.byKey(const Key('bigpicture_openSettings')), findsOneWidget);
+    expect(find.byKey(const Key('tracks_openSettings')), findsOneWidget);
     expect(find.byTooltip(l10n.settingsTooltip), findsOneWidget);
   });
 
@@ -110,30 +120,30 @@ void main() {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
 
-    await tester.tap(find.byKey(const Key('bigpicture_tile_1')));
+    await tester.tap(find.byKey(const Key('tracks_tile_1')));
     verify(() => bloc.add(const LooperRecordPressed(1))).called(1);
   });
 
   testWidgets('tapping a tile mutes/unmutes that channel in play mode', (
     tester,
   ) async {
-    bigPicture.toggleMode(); // record -> play
+    pedal.toggleMode(); // record -> play
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
 
-    await tester.tap(find.byKey(const Key('bigpicture_tile_1')));
+    await tester.tap(find.byKey(const Key('tracks_tile_1')));
     // Mirrors the play-mode number-key behavior; does not arm recording.
     verify(() => bloc.add(const LooperMuteToggled(1))).called(1);
     verifyNever(() => bloc.add(const LooperRecordPressed(1)));
     // The tap also selects the tapped channel.
-    expect(bigPicture.state.selectedChannel, 1);
+    expect(tracks.state.selectedChannel, 1);
   });
 
   testWidgets('long-pressing a tile stops that channel', (tester) async {
     seed(const LooperState(tracks: [Track()]));
     await pump(tester);
 
-    await tester.longPress(find.byKey(const Key('bigpicture_tile_0')));
+    await tester.longPress(find.byKey(const Key('tracks_tile_0')));
     verify(() => bloc.add(const LooperStopPressed(0))).called(1);
   });
 
@@ -142,27 +152,27 @@ void main() {
     await pump(tester);
 
     // Bank A shows channels 0-3 only.
-    expect(find.byKey(const Key('bigpicture_tile_0')), findsOneWidget);
-    expect(find.byKey(const Key('bigpicture_tile_3')), findsOneWidget);
-    expect(find.byKey(const Key('bigpicture_tile_4')), findsNothing);
+    expect(find.byKey(const Key('tracks_tile_0')), findsOneWidget);
+    expect(find.byKey(const Key('tracks_tile_3')), findsOneWidget);
+    expect(find.byKey(const Key('tracks_tile_4')), findsNothing);
 
     // Switch to bank B -> channels 4-7.
-    await tester.tap(find.byKey(const Key('bigpicture_bank_1')));
+    await tester.tap(find.byKey(const Key('tracks_bank_1')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('bigpicture_tile_4')), findsOneWidget);
-    expect(find.byKey(const Key('bigpicture_tile_7')), findsOneWidget);
-    expect(find.byKey(const Key('bigpicture_tile_0')), findsNothing);
+    expect(find.byKey(const Key('tracks_tile_4')), findsOneWidget);
+    expect(find.byKey(const Key('tracks_tile_7')), findsOneWidget);
+    expect(find.byKey(const Key('tracks_tile_0')), findsNothing);
   });
 
   group('keyboard', () {
-    testWidgets('M toggles the performance mode', (tester) async {
+    testWidgets('M toggles the tracks mode', (tester) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
-      expect(bigPicture.state.mode, PerformanceMode.record);
+      expect(pedal.state.mode, LooperMode.record);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
       await tester.pump();
-      expect(bigPicture.state.mode, PerformanceMode.play);
+      expect(pedal.state.mode, LooperMode.play);
     });
 
     testWidgets('a number key selects that track', (tester) async {
@@ -171,7 +181,7 @@ void main() {
 
       await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
       await tester.pump();
-      expect(bigPicture.state.selectedChannel, 1);
+      expect(tracks.state.selectedChannel, 1);
     });
 
     testWidgets('record mode: R records the selected track', (tester) async {
@@ -191,7 +201,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.keyM); // -> play mode
       await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
       await tester.pump();
-      expect(bigPicture.state.selectedChannel, 0);
+      expect(tracks.state.selectedChannel, 0);
       verify(() => bloc.add(const LooperMuteToggled(0))).called(1);
     });
 
@@ -228,7 +238,7 @@ void main() {
     await pump(tester);
     expect(find.text('TRACK 1'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('bigpicture_name_0')));
+    await tester.tap(find.byKey(const Key('tracks_name_0')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400)); // open dialog
 
@@ -245,14 +255,14 @@ void main() {
   });
 
   group('play-mode visuals', () {
-    final looper = AppTheme.bigPicture.extension<LooperTheme>()!;
+    final looper = AppTheme.neon.extension<LooperTheme>()!;
 
     // The meter Container inside a track tile (the _PeakBar's fill).
     Container barOf(WidgetTester tester, int channel) =>
         tester
                 .widget<FractionallySizedBox>(
                   find.descendant(
-                    of: find.byKey(Key('bigpicture_tile_$channel')),
+                    of: find.byKey(Key('tracks_tile_$channel')),
                     matching: find.byType(FractionallySizedBox),
                   ),
                 )
@@ -263,7 +273,7 @@ void main() {
     double fillOf(WidgetTester tester, int channel) => tester
         .widget<FractionallySizedBox>(
           find.descendant(
-            of: find.byKey(Key('bigpicture_tile_$channel')),
+            of: find.byKey(Key('tracks_tile_$channel')),
             matching: find.byType(FractionallySizedBox),
           ),
         )
@@ -306,7 +316,7 @@ void main() {
 
       final box = tester.widget<FractionallySizedBox>(
         find.descendant(
-          of: find.byKey(const Key('bigpicture_tile_0')),
+          of: find.byKey(const Key('tracks_tile_0')),
           matching: find.byType(FractionallySizedBox),
         ),
       );
@@ -325,21 +335,27 @@ void main() {
       await pump(tester);
       expect(
         barOf(tester, 0).color,
-        looper.meterColor(LooperMeterState.recording, playMode: false),
+        looper.meterColor(
+          LooperMeterState.recording,
+          mode: LooperMode.record,
+        ),
       );
       expect(
         barOf(tester, 1).color,
-        looper.meterColor(LooperMeterState.playing, playMode: false),
+        looper.meterColor(
+          LooperMeterState.playing,
+          mode: LooperMode.record,
+        ),
       );
     });
 
     testWidgets('play mode uses the play-mode meter table', (tester) async {
-      bigPicture.toggleMode(); // record -> play
+      pedal.toggleMode(); // record -> play
       seed(const LooperState(tracks: [Track(state: TrackState.playing)]));
       await pump(tester);
       expect(
         barOf(tester, 0).color,
-        looper.meterColor(LooperMeterState.playing, playMode: true),
+        looper.meterColor(LooperMeterState.playing, mode: LooperMode.play),
       );
     });
 
@@ -352,12 +368,12 @@ void main() {
       await pump(tester);
       expect(
         barOf(tester, 0).color,
-        looper.meterColor(LooperMeterState.muted, playMode: false),
+        looper.meterColor(LooperMeterState.muted, mode: LooperMode.record),
       );
     });
 
     testWidgets('the tile border is white only when selected', (tester) async {
-      bigPicture.select(0);
+      tracks.select(0);
       seed(
         const LooperState(
           tracks: [
@@ -372,7 +388,7 @@ void main() {
         final tile = tester.widget<Container>(
           find
               .ancestor(
-                of: find.byKey(Key('bigpicture_tile_$channel')),
+                of: find.byKey(Key('tracks_tile_$channel')),
                 matching: find.byType(Container),
               )
               .first,
@@ -400,7 +416,7 @@ void main() {
       final tile = tester.widget<Container>(
         find
             .ancestor(
-              of: find.byKey(const Key('bigpicture_tile_0')),
+              of: find.byKey(const Key('tracks_tile_0')),
               matching: find.byType(Container),
             )
             .first,
@@ -411,12 +427,12 @@ void main() {
   });
 
   group('track indicators', () {
-    final looper = AppTheme.bigPicture.extension<LooperTheme>()!;
+    final looper = AppTheme.neon.extension<LooperTheme>()!;
 
     Color indicatorColorOf(WidgetTester tester, int channel) {
       final box = tester.widget<DecoratedBox>(
         find.descendant(
-          of: find.byKey(Key('bigpicture_indicator_$channel')),
+          of: find.byKey(Key('tracks_indicator_$channel')),
           matching: find.byType(DecoratedBox),
         ),
       );
@@ -429,18 +445,18 @@ void main() {
       seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
       await pump(tester);
 
-      expect(find.byKey(const Key('bigpicture_indicator_0')), findsOneWidget);
-      expect(find.byKey(const Key('bigpicture_indicator_1')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_indicator_0')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_indicator_1')), findsOneWidget);
     });
 
     testWidgets('is absent from the tree when the pref is off', (tester) async {
-      await trackIndicators.setEnabled(value: false);
+      await tracks.setShowIndicators(value: false);
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
 
-      expect(find.byKey(const Key('bigpicture_indicator_0')), findsNothing);
+      expect(find.byKey(const Key('tracks_indicator_0')), findsNothing);
       // The tile itself still renders — only the strip is gone.
-      expect(find.byKey(const Key('bigpicture_tile_0')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_tile_0')), findsOneWidget);
     });
 
     testWidgets('colour reflects the track status', (tester) async {
@@ -470,13 +486,12 @@ void main() {
     });
 
     testWidgets('play mode arms the selected empty tile green', (tester) async {
-      bigPicture
-        ..toggleMode() // record -> play
-        ..select(0);
+      pedal.toggleMode(); // record -> play
+      tracks.select(0);
       seed(const LooperState(tracks: [Track()])); // empty + selected
       await pump(tester);
 
-      // Proves playMode flows from BigPictureCubit.state.mode into
+      // Proves playMode flows from the shared PedalCubit mode into
       // TrackIndicator.of: an empty selected track arms play (green) in play
       // mode, not record (red).
       expect(
@@ -520,7 +535,7 @@ void main() {
     testWidgets('only the selected tile arms (empty + selected)', (
       tester,
     ) async {
-      bigPicture.select(1);
+      tracks.select(1);
       seed(
         const LooperState(
           tracks: [Track(), Track(channel: 1), Track(channel: 2)],
@@ -544,26 +559,27 @@ void main() {
       );
     });
 
-    testWidgets('selecting an off-bank channel arms no visible tile', (
+    testWidgets('selecting an off-bank channel reveals its bank', (
       tester,
     ) async {
-      bigPicture.select(5); // channel in bank B, not visible in bank A
+      tracks.select(5); // channel in bank B -> selection reveals bank B
       seed(
         LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
       );
       await pump(tester);
 
-      // Bank A (0-3) is showing; none of them is the selected channel.
-      for (var channel = 0; channel < 4; channel++) {
-        expect(
-          indicatorColorOf(tester, channel),
-          looper.indicatorColor(TrackIndicator.idle),
-        );
-      }
+      // Bank B is now showing, so the selected channel is visible and armed —
+      // a selection can never hide behind the other bank.
+      expect(find.byKey(const Key('tracks_tile_5')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_tile_0')), findsNothing);
+      expect(
+        indicatorColorOf(tester, 5),
+        looper.indicatorColor(TrackIndicator.record),
+      );
     });
 
     testWidgets('a bank switch reassigns the armed tile', (tester) async {
-      bigPicture.select(0);
+      tracks.select(0);
       seed(
         LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
       );
@@ -576,14 +592,14 @@ void main() {
       );
 
       // Switch to bank B and select channel 4.
-      await tester.tap(find.byKey(const Key('bigpicture_bank_1')));
+      await tester.tap(find.byKey(const Key('tracks_bank_1')));
       await tester.pumpAndSettle();
-      bigPicture.select(4);
+      tracks.select(4);
       await tester.pumpAndSettle();
 
       // The previously-armed tile is no longer in the tree; the newly-selected
       // visible tile arms.
-      expect(find.byKey(const Key('bigpicture_indicator_0')), findsNothing);
+      expect(find.byKey(const Key('tracks_indicator_0')), findsNothing);
       expect(
         indicatorColorOf(tester, 4),
         looper.indicatorColor(TrackIndicator.record),
@@ -595,15 +611,15 @@ void main() {
     ) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
-      expect(find.byKey(const Key('bigpicture_indicator_0')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_indicator_0')), findsOneWidget);
 
-      await trackIndicators.setEnabled(value: false);
+      await tracks.setShowIndicators(value: false);
       await tester.pump();
-      expect(find.byKey(const Key('bigpicture_indicator_0')), findsNothing);
+      expect(find.byKey(const Key('tracks_indicator_0')), findsNothing);
 
-      await trackIndicators.setEnabled(value: true);
+      await tracks.setShowIndicators(value: true);
       await tester.pump();
-      expect(find.byKey(const Key('bigpicture_indicator_0')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_indicator_0')), findsOneWidget);
     });
 
     testWidgets('carries no semantics of its own (ExcludeSemantics)', (
@@ -617,7 +633,7 @@ void main() {
       // attached to its key — the tile's label remains the only state source.
       expect(
         find.descendant(
-          of: find.byKey(const Key('bigpicture_indicator_0')),
+          of: find.byKey(const Key('tracks_indicator_0')),
           matching: find.byType(ExcludeSemantics),
         ),
         findsOneWidget,
@@ -632,7 +648,7 @@ void main() {
       await pump(tester);
 
       expect(
-        find.byKey(const Key('bigpicture_audioNotRunning')),
+        find.byKey(const Key('tracks_audioNotRunning')),
         findsOneWidget,
       );
     });
@@ -646,7 +662,7 @@ void main() {
       );
       await pump(tester);
 
-      expect(find.byKey(const Key('bigpicture_audioNotRunning')), findsNothing);
+      expect(find.byKey(const Key('tracks_audioNotRunning')), findsNothing);
     });
   });
 
@@ -659,7 +675,7 @@ void main() {
       await pump(tester);
 
       final node = tester.getSemantics(
-        find.byKey(const Key('bigpicture_tile_0')),
+        find.byKey(const Key('tracks_tile_0')),
       );
       // Colour-only meter state (1.4.1) is named in the accessible label, and
       // the tile carries a button role (4.1.2).
@@ -679,7 +695,7 @@ void main() {
       // TalkBack can activate it (the actual record path is covered by the
       // pointer-tap test above).
       expect(
-        tester.getSemantics(find.byKey(const Key('bigpicture_tile_0'))),
+        tester.getSemantics(find.byKey(const Key('tracks_tile_0'))),
         isSemantics(isButton: true, hasTapAction: true),
       );
       handle.dispose();
@@ -693,11 +709,11 @@ void main() {
       await pump(tester);
 
       expect(
-        tester.getSemantics(find.byKey(const Key('bigpicture_bank_0'))),
+        tester.getSemantics(find.byKey(const Key('tracks_bank_0'))),
         isSemantics(isButton: true, isSelected: true),
       );
       expect(
-        tester.getSemantics(find.byKey(const Key('bigpicture_bank_1'))),
+        tester.getSemantics(find.byKey(const Key('tracks_bank_1'))),
         isSemantics(isButton: true, isSelected: false),
       );
       handle.dispose();
@@ -711,14 +727,14 @@ void main() {
       await pump(tester);
 
       final node = tester.getSemantics(
-        find.byKey(const Key('bigpicture_mode_indicator')),
+        find.byKey(const Key('tracks_mode_indicator')),
       );
       expect(node, isSemantics(isButton: true));
       expect(node.label, isNotEmpty);
       handle.dispose();
     });
 
-    testWidgets('Tab is not swallowed by the performance key handler', (
+    testWidgets('Tab is not swallowed by the tracks key handler', (
       tester,
     ) async {
       seed(const LooperState(tracks: [Track()]));
@@ -736,7 +752,7 @@ void main() {
 
   group('session menu', () {
     Future<void> openMenu(WidgetTester tester) async {
-      await tester.tap(find.byKey(const Key('bigpicture_session_menu')));
+      await tester.tap(find.byKey(const Key('tracks_session_menu')));
       await tester.pumpAndSettle();
     }
 
@@ -750,7 +766,7 @@ void main() {
       // keyboard-operable + screen-reader announced); operability is covered by
       // the activation tests below.
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.byKey(const Key('bigpicture_session_menu')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_session_menu')), findsOneWidget);
       expect(find.byTooltip(l10n.a11ySessionMenu), findsOneWidget);
     });
 
@@ -758,7 +774,7 @@ void main() {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
       await openMenu(tester);
-      await tester.tap(find.byKey(const Key('bigpicture_session_save')));
+      await tester.tap(find.byKey(const Key('tracks_session_save')));
       await tester.pumpAndSettle();
       verify(() => session.saveSession()).called(1);
     });
@@ -767,7 +783,7 @@ void main() {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
       await openMenu(tester);
-      await tester.tap(find.byKey(const Key('bigpicture_session_load')));
+      await tester.tap(find.byKey(const Key('tracks_session_load')));
       await tester.pumpAndSettle();
       verify(() => session.loadSession()).called(1);
     });
@@ -778,13 +794,13 @@ void main() {
 
       await openMenu(tester);
       await tester.tap(
-        find.byKey(const Key('bigpicture_session_exportMixdown')),
+        find.byKey(const Key('tracks_session_exportMixdown')),
       );
       await tester.pumpAndSettle();
       verify(() => session.exportMixdown()).called(1);
 
       await openMenu(tester);
-      await tester.tap(find.byKey(const Key('bigpicture_session_exportStems')));
+      await tester.tap(find.byKey(const Key('tracks_session_exportStems')));
       await tester.pumpAndSettle();
       verify(() => session.exportStems()).called(1);
     });
@@ -858,12 +874,12 @@ void main() {
       seed(connected());
       await pump(tester);
 
-      expect(find.byKey(const Key('bigpicture_playStopAll')), findsOneWidget);
-      expect(find.byKey(const Key('bigpicture_clearAll')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_playStopAll')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_clearAll')), findsOneWidget);
       // With nothing playing, the toggle shows the play icon.
       final icon = tester.widget<Icon>(
         find.descendant(
-          of: find.byKey(const Key('bigpicture_playStopAll')),
+          of: find.byKey(const Key('tracks_playStopAll')),
           matching: find.byType(Icon),
         ),
       );
@@ -874,7 +890,7 @@ void main() {
       seed(connected());
       await pump(tester);
 
-      await tester.tap(find.byKey(const Key('bigpicture_playStopAll')));
+      await tester.tap(find.byKey(const Key('tracks_playStopAll')));
       verify(() => bloc.add(const LooperPlayAllPressed())).called(1);
     });
 
@@ -891,13 +907,13 @@ void main() {
       // Icon flips to stop while a track is active.
       final icon = tester.widget<Icon>(
         find.descendant(
-          of: find.byKey(const Key('bigpicture_playStopAll')),
+          of: find.byKey(const Key('tracks_playStopAll')),
           matching: find.byType(Icon),
         ),
       );
       expect(icon.icon, Icons.stop);
 
-      await tester.tap(find.byKey(const Key('bigpicture_playStopAll')));
+      await tester.tap(find.byKey(const Key('tracks_playStopAll')));
       verify(() => bloc.add(const LooperStopAllPressed())).called(1);
     });
 
@@ -908,7 +924,7 @@ void main() {
 
         final icon = tester.widget<Icon>(
           find.descendant(
-            of: find.byKey(const Key('bigpicture_playStopAll')),
+            of: find.byKey(const Key('tracks_playStopAll')),
             matching: find.byType(Icon),
           ),
         );
@@ -937,7 +953,7 @@ void main() {
 
       seed(connected());
       await pump(tester);
-      await tester.tap(find.byKey(const Key('bigpicture_clearAll')));
+      await tester.tap(find.byKey(const Key('tracks_clearAll')));
       await tester.pump();
 
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
@@ -949,7 +965,7 @@ void main() {
       seed(connected());
       await pump(tester);
 
-      await tester.tap(find.byKey(const Key('bigpicture_clearAll')));
+      await tester.tap(find.byKey(const Key('tracks_clearAll')));
       verify(() => bloc.add(const LooperClearAllPressed())).called(1);
     });
 
@@ -965,13 +981,13 @@ void main() {
 
       expect(
         tester
-            .widget<IconButton>(find.byKey(const Key('bigpicture_playStopAll')))
+            .widget<IconButton>(find.byKey(const Key('tracks_playStopAll')))
             .onPressed,
         isNull,
       );
       expect(
         tester
-            .widget<IconButton>(find.byKey(const Key('bigpicture_clearAll')))
+            .widget<IconButton>(find.byKey(const Key('tracks_clearAll')))
             .onPressed,
         isNull,
       );
@@ -988,13 +1004,13 @@ void main() {
 
       expect(
         tester
-            .widget<IconButton>(find.byKey(const Key('bigpicture_playStopAll')))
+            .widget<IconButton>(find.byKey(const Key('tracks_playStopAll')))
             .onPressed,
         isNull,
       );
       expect(
         tester
-            .widget<IconButton>(find.byKey(const Key('bigpicture_clearAll')))
+            .widget<IconButton>(find.byKey(const Key('tracks_clearAll')))
             .onPressed,
         isNull,
       );
@@ -1022,7 +1038,7 @@ void main() {
         expect(
           tester
               .widget<IconButton>(
-                find.byKey(const Key('bigpicture_playStopAll')),
+                find.byKey(const Key('tracks_playStopAll')),
               )
               .onPressed,
           isNull,
@@ -1030,7 +1046,7 @@ void main() {
         // ...but Clear All stays available (there is still content to clear).
         expect(
           tester
-              .widget<IconButton>(find.byKey(const Key('bigpicture_clearAll')))
+              .widget<IconButton>(find.byKey(const Key('tracks_clearAll')))
               .onPressed,
           isNotNull,
         );
@@ -1052,11 +1068,11 @@ void main() {
 
       expect(
         tester
-            .widget<IconButton>(find.byKey(const Key('bigpicture_playStopAll')))
+            .widget<IconButton>(find.byKey(const Key('tracks_playStopAll')))
             .onPressed,
         isNotNull,
       );
-      await tester.tap(find.byKey(const Key('bigpicture_playStopAll')));
+      await tester.tap(find.byKey(const Key('tracks_playStopAll')));
       verify(() => bloc.add(const LooperPlayAllPressed())).called(1);
     });
 
@@ -1073,7 +1089,7 @@ void main() {
       await pump(tester);
 
       // A muted but active track can still be stopped.
-      await tester.tap(find.byKey(const Key('bigpicture_playStopAll')));
+      await tester.tap(find.byKey(const Key('tracks_playStopAll')));
       verify(() => bloc.add(const LooperStopAllPressed())).called(1);
     });
 
@@ -1103,9 +1119,9 @@ void main() {
       seed(connected());
       await pump(tester);
 
-      expect(find.byKey(const Key('bigpicture_fullscreen')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_fullscreen')), findsOneWidget);
       // The helper swallows the missing platform channel in tests.
-      await tester.tap(find.byKey(const Key('bigpicture_fullscreen')));
+      await tester.tap(find.byKey(const Key('tracks_fullscreen')));
       await tester.pump();
       debugDefaultTargetPlatformOverride = null;
     });
@@ -1119,14 +1135,14 @@ void main() {
       seed(connected());
       await pump(tester);
 
-      expect(find.byKey(const Key('bigpicture_fullscreen')), findsNothing);
+      expect(find.byKey(const Key('tracks_fullscreen')), findsNothing);
       debugDefaultTargetPlatformOverride = null;
     });
   });
 
   group('per-track undo/redo', () {
     testWidgets('appear only on the selected column', (tester) async {
-      bigPicture.select(0);
+      tracks.select(0);
       seed(
         const LooperState(
           tracks: [
@@ -1138,14 +1154,14 @@ void main() {
       );
       await pump(tester);
 
-      expect(find.byKey(const Key('bigpicture_undo_0')), findsOneWidget);
-      expect(find.byKey(const Key('bigpicture_redo_0')), findsOneWidget);
-      expect(find.byKey(const Key('bigpicture_undo_1')), findsNothing);
-      expect(find.byKey(const Key('bigpicture_redo_1')), findsNothing);
+      expect(find.byKey(const Key('tracks_undo_0')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_redo_0')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_undo_1')), findsNothing);
+      expect(find.byKey(const Key('tracks_redo_1')), findsNothing);
     });
 
     testWidgets('undo dispatches for the selected channel', (tester) async {
-      bigPicture.select(0);
+      tracks.select(0);
       seed(
         const LooperState(
           tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
@@ -1153,27 +1169,27 @@ void main() {
       );
       await pump(tester);
 
-      await tester.tap(find.byKey(const Key('bigpicture_undo_0')));
+      await tester.tap(find.byKey(const Key('tracks_undo_0')));
       verify(() => bloc.add(const LooperUndoPressed(0))).called(1);
     });
 
     testWidgets('undo is disabled when the track has no content', (
       tester,
     ) async {
-      bigPicture.select(0);
+      tracks.select(0);
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
 
       expect(
         tester
-            .widget<IconButton>(find.byKey(const Key('bigpicture_undo_0')))
+            .widget<IconButton>(find.byKey(const Key('tracks_undo_0')))
             .onPressed,
         isNull,
       );
     });
 
     testWidgets('redo is disabled with no redo history', (tester) async {
-      bigPicture.select(0);
+      tracks.select(0);
       seed(
         const LooperState(
           tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
@@ -1183,14 +1199,14 @@ void main() {
 
       expect(
         tester
-            .widget<IconButton>(find.byKey(const Key('bigpicture_redo_0')))
+            .widget<IconButton>(find.byKey(const Key('tracks_redo_0')))
             .onPressed,
         isNull,
       );
     });
 
     testWidgets('redo dispatches when a layer can be redone', (tester) async {
-      bigPicture.select(0);
+      tracks.select(0);
       seed(
         const LooperState(
           tracks: [
@@ -1200,13 +1216,13 @@ void main() {
       );
       await pump(tester);
 
-      await tester.tap(find.byKey(const Key('bigpicture_redo_0')));
+      await tester.tap(find.byKey(const Key('tracks_redo_0')));
       verify(() => bloc.add(const LooperRedoPressed(0))).called(1);
     });
 
     testWidgets('the tooltips name the macOS shortcut', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-      bigPicture.select(0);
+      tracks.select(0);
       seed(
         const LooperState(
           tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
@@ -1222,7 +1238,7 @@ void main() {
 
     testWidgets('the tooltips use Ctrl off macOS', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      bigPicture.select(0);
+      tracks.select(0);
       seed(
         const LooperState(
           tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
