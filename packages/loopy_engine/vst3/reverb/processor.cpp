@@ -50,15 +50,11 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& newSetup) {
 
 tresult PLUGIN_API Processor::terminate() {
   // Reverb packs both stereo banks into delay[0][0] only (delay[0][1] is
-  // never allocated for LE_FX_REVERB — engine_fx.c's fx_reverb comment).
-  // le_fx_free_octaver is a defensive no-op here (its buffers are never
-  // allocated for this type either), called anyway for parity with the
-  // engine's own full slot-teardown pattern (engine.c's le_lane_reset /
-  // le_monitor_input_reset), in case a future change ever reuses fx_ for a
-  // different effect type.
+  // never allocated for LE_FX_REVERB — engine_fx.c's fx_reverb comment; no
+  // octaver buffers for this type either), so only delay[0][0] needs
+  // freeing here.
   free(fx_.delay[0][0]);
   fx_.delay[0][0] = nullptr;
-  le_fx_free_octaver(&fx_, 0);
   return AudioEffect::terminate();
 }
 
