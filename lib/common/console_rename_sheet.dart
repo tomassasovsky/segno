@@ -5,7 +5,7 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
-/// Asks for a track's name.
+/// Asks for a name.
 ///
 /// Returns the new name, or null when dismissed.
 ///
@@ -13,29 +13,57 @@ import 'package:segno/theme/theme.dart';
 /// sheet is one: the console has no physical keyboard, and the app-wide
 /// keyboard host is driven by field focus, which would put the keys in a
 /// second panel under a dialog trying to centre itself in what is left. The
-/// stage's own rename is a dialog and stays one — this is the console's.
-Future<String?> showTrackRenameSheet(
+/// stage's own rename is a dialog and stays one — this is the console's, for
+/// tracks, for hardware inputs, and for whatever else it lets you name.
+Future<String?> showConsoleRenameSheet(
   BuildContext context, {
+  required String title,
   required String initial,
+  String? subtitle,
+  bool allowEmpty = false,
 }) => showModalBottomSheet<String>(
   context: context,
   isScrollControlled: true,
   backgroundColor: Colors.transparent,
   barrierColor: context.surface.scrim,
   constraints: const BoxConstraints(),
-  builder: (sheetContext) => _TrackRenameSheet(initial: initial),
+  builder: (sheetContext) => _RenameSheet(
+    title: title,
+    subtitle: subtitle,
+    initial: initial,
+    allowEmpty: allowEmpty,
+  ),
 );
 
-class _TrackRenameSheet extends StatefulWidget {
-  const _TrackRenameSheet({required this.initial});
+class _RenameSheet extends StatefulWidget {
+  const _RenameSheet({
+    required this.title,
+    required this.initial,
+    required this.allowEmpty,
+    this.subtitle,
+  });
+
+  final String title;
+
+  /// What is being renamed, in the rig's own terms — the socket an input is,
+  /// beside the name you are giving it.
+  final String? subtitle;
 
   final String initial;
 
+  /// Whether clearing the field and saving is a valid answer.
+  ///
+  /// It is for a hardware input: emptying the name hands the socket back its
+  /// ordinal, which is the only way the mockups offer to undo a naming — the
+  /// sheet has no Clear button, it has a backspace. A track is never nameless
+  /// (its fallback IS a name), so it does not take this.
+  final bool allowEmpty;
+
   @override
-  State<_TrackRenameSheet> createState() => _TrackRenameSheetState();
+  State<_RenameSheet> createState() => _RenameSheetState();
 }
 
-class _TrackRenameSheetState extends State<_TrackRenameSheet> {
+class _RenameSheetState extends State<_RenameSheet> {
   /// The name being typed. Held here rather than in a controller behind a real
   /// `TextField`, which would summon the app-wide keyboard over this sheet's
   /// own keys.
@@ -62,7 +90,7 @@ class _TrackRenameSheetState extends State<_TrackRenameSheet> {
 
   void _submit() {
     final name = _value.trim();
-    if (name.isEmpty) return;
+    if (name.isEmpty && !widget.allowEmpty) return;
     Navigator.of(context).pop(name);
   }
 
@@ -116,18 +144,26 @@ class _TrackRenameSheetState extends State<_TrackRenameSheet> {
               children: [
                 Row(
                   children: [
+                    Text(
+                      widget.title,
+                      style: TextStyle(
+                        color: surface.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        l10n.trackRenameTitle,
+                        widget.subtitle ?? '',
                         style: TextStyle(
-                          color: surface.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
+                          color: surface.textMuted,
+                          fontSize: 14,
                         ),
                       ),
                     ),
                     ConsoleSmallButton(
-                      key: const Key('track_rename_cancel'),
+                      key: const Key('console_rename_cancel'),
                       label: l10n.cancel,
                       large: true,
                       onPressed: () => Navigator.of(context).pop(),
@@ -148,7 +184,7 @@ class _TrackRenameSheetState extends State<_TrackRenameSheet> {
                     ),
                     child: Text(
                       _value,
-                      key: const Key('track_rename_field'),
+                      key: const Key('console_rename_field'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -164,7 +200,7 @@ class _TrackRenameSheetState extends State<_TrackRenameSheet> {
                 OnScreenKeyboard(
                   layout: OnScreenKeyboardLayout.text,
                   showNumberRow: true,
-                  doneLabel: l10n.done,
+                  doneLabel: l10n.save,
                   onKey: _type,
                   onBackspace: _backspace,
                   onDone: _submit,
