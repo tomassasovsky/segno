@@ -34,8 +34,9 @@ import 'package:segno/theme/theme.dart';
 /// rig has no such gate to draw, so the drawing is corrected rather than
 /// implemented (see `c/signal-detail`).
 ///
-/// Racks are #535, so the panel carries no rack chooser yet, and the chain's
-/// chips are inert: opening one is the FX editor, which is the next PR.
+/// Racks are #535, so the panel carries no rack chooser yet. A chain chip
+/// opens that entry in the editor, which takes the place of `level` and
+/// `in the mix` while it is open.
 class SignalDetailPanel extends StatelessWidget {
   /// Creates a [SignalDetailPanel] for the chain at [address].
   const SignalDetailPanel({required this.address, super.key});
@@ -339,10 +340,23 @@ class _PanelBody extends StatelessWidget {
     final inMix = heard;
     final mode = monitorMode;
 
-    final editing = context.select<SettingsTrayCubit, int?>(
+    final selected = context.select<SettingsTrayCubit, int?>(
       (c) => c.state.signalEffect,
     );
     final tray = context.read<SettingsTrayCubit>();
+    // An entry can go while its editor is open — removed from another
+    // surface, or the whole chain rewritten by a record-time snapshot copy.
+    // The editor is DROPPED here rather than rendered empty: leaving the
+    // selection set would suppress `level` and `in the mix` too, and with no
+    // chip left to tap there would be nothing on the face able to clear it.
+    final editing = selected != null && selected < chain.length
+        ? selected
+        : null;
+    if (selected != null && editing == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) tray.clearSignalEffect();
+      });
+    }
     return Container(
       key: const Key('signal_detail_panel'),
       width: double.infinity,
@@ -374,6 +388,7 @@ class _PanelBody extends StatelessWidget {
               scope: scope,
               index: editing,
               onClose: () => tray.selectSignalEffect(editing),
+              onMoved: tray.showSignalEffect,
             )
           else ...[
             if (gain != null && onLevel != null) ...[
@@ -493,9 +508,9 @@ class _Caption extends StatelessWidget {
 
 /// The chain as a strip of chips, in processing order.
 ///
-/// Inert in this PR: a chip opens the FX editor, which is the next one, and a
-/// chip that highlighted with nothing to show would be a state with no
-/// consequence — the same rule the cards followed before this panel existed.
+/// A chip opens its entry in the editor below, and the open one takes the
+/// accent pair. `+ effect` — the add affordance the mockups draw as the last
+/// chip — arrives with the browse-and-add PR.
 class _ChainStrip extends StatelessWidget {
   const _ChainStrip({
     required this.chain,

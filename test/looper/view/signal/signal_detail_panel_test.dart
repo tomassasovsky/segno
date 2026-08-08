@@ -10,6 +10,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -867,6 +868,92 @@ void main() {
       // The index means nothing against another chain.
       expect(find.byKey(const Key('signal_fx_editor')), findsNothing);
       expect(tray.state.signalEffect, isNull);
+    });
+  });
+
+  group('the editor follows its entry', () {
+    testWidgets('moving carries the editor to the new slot', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      // Chip 1 (Tremolo) of [Reverb, Tremolo].
+      await tester.tap(find.byKey(const Key('signal_panel_chip_1')));
+      await tester.pumpAndSettle();
+      expect(tray.state.signalEffect, 1);
+
+      await tester.tap(find.byKey(const Key('signal_fx_move_up')));
+      await tester.pumpAndSettle();
+
+      // Without this the editor stays on the SLOT: one press would swap it
+      // onto the neighbour that moved in, and a second would swap it back,
+      // so an effect could never travel further than one place.
+      expect(tray.state.signalEffect, 0);
+      verify(
+        () => bloc.add(any(that: isA<LooperBusEffectMoved>())),
+      ).called(1);
+    });
+
+    testWidgets('a chain that empties hands the panel back', (tester) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      await pump(tester, stage: FxStage.track, states: states.stream);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // Another surface strips the chain while the editor is open.
+      states.add(
+        LooperState(
+          tracks: [
+            Track(volume: 0.5, lanes: _rig.tracks.first.lanes),
+            _rig.tracks[1],
+          ],
+          status: _rig.status,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Not a panel with no editor, no level, no mix and no chip to tap.
+      expect(find.byKey(const Key('signal_fx_editor')), findsNothing);
+      expect(tray.state.signalEffect, isNull);
+      expect(find.text(l10n.signalPanelLevel), findsOneWidget);
+    });
+  });
+
+  group('what the editor says about itself', () {
+    testWidgets('a chain switched off says why nothing changed', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+      await tester.pumpAndSettle();
+
+      // The rig's chain power is on, so no notice.
+      expect(find.byKey(const Key('signal_fx_chain_off')), findsNothing);
+    });
+
+    testWidgets('a parameter is announced with the effect it belongs to', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // "MIX, slider" tells a reader nothing about whose mix it is.
+      final bar = tester.widget<ConsoleValueBar>(
+        find.byKey(const Key('signal_fx_param_0')),
+      );
+      expect(bar.semanticLabel, isNotNull);
+      expect(bar.semanticLabel, contains(l10n.effectReverb));
+      handle.dispose();
     });
   });
 

@@ -2061,6 +2061,19 @@
     "signalMonitorOff": "MONITOR: NO",
     "signalMasterCardName": "salida máster",
     "signalOutputsGroup": "SALIDAS",
+    "fxNoParameters": "Este efecto no expone controles aquí.",
+    "a11yFxParam": "{param} de {effect}",
+    "@a11yFxParam": {
+        "placeholders": {
+            "param": {
+                "type": "String"
+            },
+            "effect": {
+                "type": "String"
+            }
+        }
+    },
+    "fxChainOffHere": "La cadena entera está apagada, así que esto todavía no cambia nada de lo que se oye.",
     "fxBypass": "puentear",
     "fxMoveEarlier": "Mover antes en la cadena",
     "fxMoveLater": "Mover después en la cadena",

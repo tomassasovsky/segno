@@ -2780,6 +2780,26 @@
     "@signalOutputsGroup": {
         "description": "Caption over the master tab's hardware-output list."
     },
+    "fxNoParameters": "This effect exposes no controls here.",
+    "@fxNoParameters": {
+        "description": "Editor block for an entry whose parameters the host has not enumerated — a plugin that has not loaded, or one with none. Said out loud rather than drawing a footer with nothing above it."
+    },
+    "a11yFxParam": "{param} of {effect}",
+    "@a11yFxParam": {
+        "description": "Announced name for one parameter bar. The visible label is an upper-cased fragment (RATE, DEPTH) with no indication of whose it is.",
+        "placeholders": {
+            "param": {
+                "type": "String"
+            },
+            "effect": {
+                "type": "String"
+            }
+        }
+    },
+    "fxChainOffHere": "The whole chain is switched off, so this changes nothing you can hear yet.",
+    "@fxChainOffHere": {
+        "description": "Shown in the editor when the chain's own power is off (R15). Without it, un-bypassing an entry visibly does nothing and the surface never says why."
+    },
     "fxBypass": "bypass",
     "@fxBypass": {
         "description": "The editor's per-entry power, lower case like the panel's other controls. Bypass leaves the effect in the chain and stops it sounding — it is not a remove."

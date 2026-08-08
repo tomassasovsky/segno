@@ -155,11 +155,28 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
         : state.copyWith(signalSelection: card, clearSignalEffect: true),
   );
 
+  /// Shuts the editor without touching the open card.
+  ///
+  /// Called when the entry it was opened on stops existing — removed from
+  /// another surface, or a chain rewritten wholesale by a record-time
+  /// snapshot copy. Leaving the selection set would suppress the panel's
+  /// `level` and `in the mix` rows as well, with no chip left to tap.
+  void clearSignalEffect() {
+    if (state.signalEffect == null) return;
+    emit(state.copyWith(clearSignalEffect: true));
+  }
+
+  /// Opens chain entry [index] outright, without the toggle.
+  ///
+  /// The editor follows its entry through a move, and a move onto the slot
+  /// the editor already sits on would otherwise CLOSE it.
+  void showSignalEffect(int index) => emit(state.copyWith(signalEffect: index));
+
   /// Opens chain entry [index] in the editor, or closes it when it is already
   /// the open one.
   ///
   /// Closing leaves the CARD open: the editor is a link of the chain, and
-  /// shutting it should hand back the chain rather than the whole face.
+  /// shutting it hands back the chain rather than the whole face.
   void selectSignalEffect(int index) => emit(
     state.signalEffect == index
         ? state.copyWith(clearSignalEffect: true)

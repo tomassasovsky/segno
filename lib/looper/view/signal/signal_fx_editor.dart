@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -23,6 +24,7 @@ class SignalFxEditor extends StatelessWidget {
     required this.scope,
     required this.index,
     required this.onClose,
+    required this.onMoved,
     super.key,
   });
 
@@ -35,6 +37,13 @@ class SignalFxEditor extends StatelessWidget {
   /// Called when the entry goes, so the face can stop showing an editor for
   /// something that is no longer in the chain.
   final VoidCallback onClose;
+
+  /// Called with the entry's new slot after a move.
+  ///
+  /// The editor is opened on an INDEX, so moving the entry without this
+  /// leaves the editor on the position — one press would silently swap it
+  /// onto a neighbour, and a second press would swap it back.
+  final ValueChanged<int> onMoved;
 
   /// Inside padding of the block.
   static const double padding = 18;
@@ -55,6 +64,7 @@ class SignalFxEditor extends StatelessWidget {
     // block of someone else's parameters.
     if (index < 0 || index >= chain.length) return const SizedBox.shrink();
     final effect = chain[index];
+    final params = _paramsOf(effect);
 
     return Container(
       key: const Key('signal_fx_editor'),
@@ -68,14 +78,54 @@ class SignalFxEditor extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (final (param, spec) in _paramsOf(effect).indexed) ...[
+          if (params.isEmpty)
+            Padding(
+              key: const Key('signal_fx_no_params'),
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                l10n.fxNoParameters,
+                style: TextStyle(
+                  color: surface.textMuted,
+                  fontSize: 14,
+                  height: 1.21,
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
+              ),
+            ),
+          for (final (param, spec) in params.indexed) ...[
             if (param > 0) const SizedBox(height: rowGap),
             ConsoleValueBar(
               key: Key('signal_fx_param_$param'),
               label: l10n.effectParamLabel(spec.label).toUpperCase(),
+              // Named for the reader, which the display label cannot do —
+              // it is an upper-cased fragment with no idea whose it is.
+              semanticLabel: l10n.a11yFxParam(
+                spec.label,
+                fxBlockName(l10n, effect),
+              ),
               value: _valueOf(effect, param),
               readout: fxParamReadout(l10n, spec, _valueOf(effect, param)),
-              onChanged: (value) => scope.setParam(index, param, value),
+              onChanged: (value) => switch (effect) {
+                PluginEffect(:final params) => scope.setPluginParam(
+                  index,
+                  params[param].id,
+                  value,
+                ),
+                BuiltInEffect() => scope.setParam(index, param, value),
+              },
+            ),
+          ],
+          if (!scope.chainEnabled) ...[
+            const SizedBox(height: rowGap),
+            Text(
+              key: const Key('signal_fx_chain_off'),
+              l10n.fxChainOffHere,
+              style: TextStyle(
+                color: surface.textMuted,
+                fontSize: 14,
+                height: 1.21,
+                leadingDistribution: TextLeadingDistribution.even,
+              ),
             ),
           ],
           const SizedBox(height: footerGap),
@@ -84,25 +134,31 @@ class SignalFxEditor extends StatelessWidget {
             index: index,
             effect: effect,
             onClose: onClose,
+            onMoved: onMoved,
           ),
         ],
       ),
     );
   }
 
-  /// The parameter descriptors for [effect] — a built-in's own, or the host's
-  /// generic list for a plugin.
+  /// The parameter descriptors for [effect] — a built-in's own, or the live
+  /// list the host enumerated from the loaded plugin.
   static List<TrackEffectParam> _paramsOf(TrackEffect effect) =>
       switch (effect) {
         BuiltInEffect(:final type) => type.params,
-        // A hosted plugin reports its parameters by name; until the host hands
-        // them over there is nothing to draw but the footer.
-        _ => const [],
+        // A plugin's parameters are enumerated metadata rather than a fixed
+        // set: it reports them by name, and they arrive with the loaded
+        // plugin. Empty means the host has not enumerated any — which the
+        // block says out loud rather than drawing a footer with no subject.
+        PluginEffect(:final params) => [
+          for (final p in params) TrackEffectParam(p.name),
+        ],
       };
 
   static double _valueOf(TrackEffect effect, int param) => switch (effect) {
     BuiltInEffect(:final params) => param < params.length ? params[param] : 0.0,
-    _ => 0.0,
+    PluginEffect(:final params, :final paramValues) =>
+      param < params.length ? paramValues[params[param].id] ?? 0.0 : 0.0,
   };
 }
 
@@ -113,12 +169,21 @@ class _Footer extends StatelessWidget {
     required this.index,
     required this.effect,
     required this.onClose,
+    required this.onMoved,
   });
 
   final FxScope scope;
   final int index;
   final TrackEffect effect;
   final VoidCallback onClose;
+  final ValueChanged<int> onMoved;
+
+  void _move(int to) {
+    scope.moveEffect(index, to);
+    // Follow the entry to its new slot, or the editor is left describing
+    // whatever moved into the old one.
+    onMoved(to);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -149,16 +214,14 @@ class _Footer extends StatelessWidget {
             semanticLabel: l10n.fxMoveEarlier,
             // Processing order IS signal order, so earlier means earlier in
             // the sound. Nothing to do at the head of the chain.
-            onTap: index <= 0 ? null : () => scope.moveEffect(index, index - 1),
+            onTap: index <= 0 ? null : () => _move(index - 1),
           ),
           const SizedBox(width: 10),
           _Glyph(
             glyphKey: const Key('signal_fx_move_down'),
             glyph: '▶',
             semanticLabel: l10n.fxMoveLater,
-            onTap: index >= last
-                ? null
-                : () => scope.moveEffect(index, index + 1),
+            onTap: index >= last ? null : () => _move(index + 1),
           ),
           const Spacer(),
           _Glyph(
