@@ -75,7 +75,7 @@ class _CardRun extends StatelessWidget {
   const _CardRun({
     required this.cards,
     required this.emptyMessage,
-    this.drawn = const [],
+    required this.drawn,
   });
 
   final List<Widget> cards;
@@ -101,7 +101,9 @@ class _CardRun extends StatelessWidget {
     // The panel hangs under the WHOLE run, not off the card that opened it:
     // the cards wrap, so an anchored panel would sit somewhere different on
     // every rig, and there would be no width left to put rows in.
-    final selection = context.watch<SettingsTrayCubit>().state.signalSelection;
+    final selection = context.select<SettingsTrayCubit, FxAddress?>(
+      (c) => c.state.signalSelection,
+    );
     final open = drawn.contains(selection) ? selection : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -147,7 +149,9 @@ class _InputCards extends StatelessWidget {
       ),
     );
 
-    final open = context.watch<SettingsTrayCubit>().state.signalSelection;
+    final open = context.select<SettingsTrayCubit, FxAddress?>(
+      (c) => c.state.signalSelection,
+    );
     final tray = context.read<SettingsTrayCubit>();
     final cards = <Widget>[
       for (var input = 0; input < count; input++)
@@ -199,7 +203,9 @@ class _LoopCards extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final names = context.watch<TracksCubit>().state.names;
-    final open = context.watch<SettingsTrayCubit>().state.signalSelection;
+    final open = context.select<SettingsTrayCubit, FxAddress?>(
+      (c) => c.state.signalSelection,
+    );
     final tray = context.read<SettingsTrayCubit>();
 
     return BlocBuilder<LooperBloc, LooperState>(
@@ -248,7 +254,9 @@ class _TrackCards extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final names = context.watch<TracksCubit>().state.names;
-    final open = context.watch<SettingsTrayCubit>().state.signalSelection;
+    final open = context.select<SettingsTrayCubit, FxAddress?>(
+      (c) => c.state.signalSelection,
+    );
     final tray = context.read<SettingsTrayCubit>();
 
     return BlocBuilder<LooperBloc, LooperState>(
@@ -291,7 +299,9 @@ class _MasterStage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final open = context.watch<SettingsTrayCubit>().state.signalSelection;
+    final open = context.select<SettingsTrayCubit, FxAddress?>(
+      (c) => c.state.signalSelection,
+    );
     final tray = context.read<SettingsTrayCubit>();
     // The gate mask and the channel count, not the whole state: this group is
     // four switches, and the roster behind it moves at the meter rate.

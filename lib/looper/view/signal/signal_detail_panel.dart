@@ -112,12 +112,16 @@ class _InputPanel extends StatelessWidget {
     // The socket has to still BE there. `MonitorState.forInput` synthesizes a
     // default rather than reporting absence, so without this the panel would
     // draw invented facts for a jack the rig no longer has — and writing to it
-    // would materialize and persist a monitor the player never created, which
-    // is the one thing `MonitorCubit` asks callers to check `hasInput` for.
+    // would persist a monitor against a socket that is gone. Checked against
+    // the ENGINE's roster, not `MonitorCubit.hasInput`: the question is
+    // whether the rig still has the jack, not whether anyone has configured
+    // it.
     final (count, excluded) = context.select<LooperBloc, (int, int)>(
       (b) => (b.state.status.inputChannels, b.state.status.excludedInputMask),
     );
-    if (input >= count || excluded & (1 << input) != 0) {
+    // `input < 0` first: `1 << -1` throws, and the lane helper next door
+    // already shrinks on a negative rather than crashing.
+    if (input < 0 || input >= count || excluded & (1 << input) != 0) {
       return const SizedBox.shrink();
     }
     final monitor = context.watch<MonitorCubit>().state.forInput(input);
@@ -495,6 +499,9 @@ class _LevelRow extends StatefulWidget {
   final ValueChanged<double> onChanged;
 
   /// The bar's own height and corner, as the mockups draw them.
+  static const double rowHeight = 52;
+
+  /// The bar's own height and corner, as the mockups draw them.
   static const double barHeight = 24;
   static const double barRadius = 6;
 
@@ -513,13 +520,61 @@ class _LevelRowState extends State<_LevelRow> {
   /// at frame rate instead of waiting for the write to come back.
   double? _dragging;
 
+  /// Whether the finger is up and the bar is waiting for the rig to agree.
+  bool _pendingRelease = false;
+
   void _report(double width, double dx) {
-    final fraction = (dx / width).clamp(0.0, 1.0);
-    setState(() => _dragging = fraction);
+    // Right-to-left reads the other way: the fill grows from the leading edge,
+    // which is the right one there.
+    final leading = Directionality.of(context) == TextDirection.rtl
+        ? width - dx
+        : dx;
+    _set((leading / width).clamp(0.0, 1.0));
+  }
+
+  void _set(double fraction) {
+    setState(() {
+      _dragging = fraction;
+      _pendingRelease = false;
+    });
     widget.onChanged(fraction * kSignalMaxGain);
   }
 
-  void _release() => setState(() => _dragging = null);
+  /// One step of the assistive-tech increase/decrease actions, in dB-ish
+  /// terms: twenty steps across the travel, so a swipe moves audibly without
+  /// crossing the whole range.
+  static const double step = 0.05;
+
+  void _nudge(double by) {
+    final at =
+        _dragging ?? widget.value.clamp(0.0, kSignalMaxGain) / kSignalMaxGain;
+    _set((at + by).clamp(0.0, 1.0));
+  }
+
+  void _release() {
+    // Deliberately NOT clearing `_dragging` here. The rig answers on its own
+    // schedule — a lane's volume comes back on the next engine snapshot — so
+    // dropping the local value the instant the finger lifts snaps the fill
+    // back to the old gain and animates it there and back. It is released in
+    // [didUpdateWidget], once the value coming in agrees with what the finger
+    // asked for.
+    _pendingRelease = true;
+  }
+
+  @override
+  void didUpdateWidget(_LevelRow old) {
+    super.didUpdateWidget(old);
+    final asked = _dragging;
+    if (!_pendingRelease || asked == null) return;
+    // Close enough is the rig having taken the write: the value it reports is
+    // quantised and clamped, so exact equality would strand the bar forever.
+    if ((widget.value / kSignalMaxGain - asked).abs() < 0.005) {
+      setState(() {
+        _dragging = null;
+        _pendingRelease = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -527,12 +582,10 @@ class _LevelRowState extends State<_LevelRow> {
     final l10n = context.l10n;
     final gain = widget.value.clamp(0.0, kSignalMaxGain);
     final fraction = _dragging ?? gain / kSignalMaxGain;
-    final readout = signalGainReadout(
-      _dragging == null ? gain : _dragging! * kSignalMaxGain,
-    );
+    final readout = signalGainReadout(fraction * kSignalMaxGain);
 
     return Container(
-      height: 52,
+      height: _LevelRow.rowHeight,
       padding: const EdgeInsets.symmetric(horizontal: _LevelRow.inset),
       decoration: BoxDecoration(
         color: surface.background,
@@ -545,11 +598,30 @@ class _LevelRowState extends State<_LevelRow> {
               slider: true,
               label: l10n.signalPanelLevel,
               value: readout,
+              // Flutter requires the neighbouring values alongside the
+              // actions, and they are what the reader speaks after a swipe.
+              increasedValue: signalGainReadout(
+                (fraction + step).clamp(0.0, 1.0) * kSignalMaxGain,
+              ),
+              decreasedValue: signalGainReadout(
+                (fraction - step).clamp(0.0, 1.0) * kSignalMaxGain,
+              ),
+              // The reader adjusts through THESE, not through the detector
+              // below: Flutter synthesises `tap`/`scrollLeft`/`scrollRight`
+              // from a bare GestureDetector, with a position in global space
+              // that `_report` would read as a bar-local x — a swipe to turn
+              // the monitor DOWN slammed it to +6 dB into whatever the rig is
+              // plugged into.
+              onIncrease: () => _nudge(step),
+              onDecrease: () => _nudge(-step),
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final width = constraints.maxWidth;
                   return GestureDetector(
                     behavior: HitTestBehavior.opaque,
+                    // Silenced, so its synthesised actions cannot reach the
+                    // rig; the slider node above is what the reader drives.
+                    excludeFromSemantics: true,
                     onTapDown: (d) => _report(width, d.localPosition.dx),
                     onTapUp: (_) => _release(),
                     onTapCancel: _release,
@@ -559,33 +631,42 @@ class _LevelRowState extends State<_LevelRow> {
                         _report(width, d.localPosition.dx),
                     onHorizontalDragEnd: (_) => _release(),
                     onHorizontalDragCancel: _release,
-                    child: Container(
+                    // The grab area is the whole ROW, not the 24 the bar
+                    // draws: this is the only fader on a console worked with
+                    // a finger, and halving its height put dead bands above
+                    // and below the thing you are aiming at.
+                    child: SizedBox(
                       key: const Key('signal_panel_level'),
-                      height: _LevelRow.barHeight,
-                      decoration: BoxDecoration(
-                        color: surface.control,
-                        borderRadius: BorderRadius.circular(
-                          _LevelRow.barRadius,
-                        ),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(
-                          _LevelRow.barRadius,
-                        ),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: AnimatedContainer(
-                            duration: _dragging == null
-                                ? consoleMotion(context)
-                                : Duration.zero,
-                            curve: Curves.easeOut,
-                            width: width * fraction,
-                            decoration: BoxDecoration(
-                              color: surface.accentSurface,
-                              border: Border(
-                                right: BorderSide(
-                                  color: surface.accent,
-                                  width: 2,
+                      height: _LevelRow.rowHeight,
+                      child: Center(
+                        child: Container(
+                          height: _LevelRow.barHeight,
+                          decoration: BoxDecoration(
+                            color: surface.control,
+                            borderRadius: BorderRadius.circular(
+                              _LevelRow.barRadius,
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(
+                              _LevelRow.barRadius,
+                            ),
+                            child: Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: AnimatedContainer(
+                                duration: _dragging == null
+                                    ? consoleMotion(context)
+                                    : Duration.zero,
+                                curve: Curves.easeOut,
+                                width: width * fraction,
+                                decoration: BoxDecoration(
+                                  color: surface.accentSurface,
+                                  border: BorderDirectional(
+                                    end: BorderSide(
+                                      color: surface.accent,
+                                      width: 2,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -603,7 +684,7 @@ class _LevelRowState extends State<_LevelRow> {
             width: _LevelRow.readoutWidth,
             child: Text(
               readout,
-              textAlign: TextAlign.right,
+              textAlign: TextAlign.end,
               style: TextStyle(
                 color: surface.textSecondary,
                 fontFamily: SurfaceTheme.monoFont,

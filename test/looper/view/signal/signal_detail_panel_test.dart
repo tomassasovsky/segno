@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -593,6 +594,52 @@ void main() {
       expect(sameLaneFacts(base, null), isFalse);
       expect(sameLaneFacts(null, null), isTrue);
       expect(sameTrackFacts(null, const Track()), isFalse);
+    });
+  });
+
+  group('a screen reader can work the face', () {
+    testWidgets('a card is a button it can actually activate', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pump(tester);
+
+      final l10n = l10nOf(tester);
+      final node = tester.getSemantics(
+        find.byKey(const Key('signal_card_input_0')),
+      );
+      // Announced as a button AND carrying the tap action that activates it.
+      // Silencing the whole subtree — the InkWell included — leaves a node
+      // that says "button" and does nothing when double-tapped, which is the
+      // panel being unreachable for anyone using assistive tech.
+      // Carries the tap action that ACTIVATES it, not just the button flag:
+      // silencing the whole subtree — the InkWell included — leaves a node
+      // that says "button" and does nothing when double-tapped.
+      expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+      // One node carrying the card's facts, not six loose texts.
+      expect(node.label, contains(l10n.signalCoordInput(1)));
+      expect(node.label, contains(l10n.signalMonitorOff));
+      handle.dispose();
+    });
+
+    testWidgets('the chosen segment stays reachable', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // The segment that says what the setting IS must still be focusable and
+      // activatable: guarding the re-tap by nulling `onTap` would drop it out
+      // of traversal, so the reader could never land on the current value.
+      final chosen = tester.getSemantics(
+        find
+            .ancestor(
+              of: find.text(l10n.signalMixHeard),
+              matching: find.byType(Semantics),
+            )
+            .first,
+      );
+      expect(chosen.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+      handle.dispose();
     });
   });
 

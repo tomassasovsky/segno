@@ -1682,9 +1682,16 @@ class ConsoleSegmented<T> extends StatelessWidget {
                   // Load-bearing beyond tidiness — a caller whose handler
                   // TOGGLES would otherwise invert the rig from the very
                   // segment that says what the rig is currently doing.
-                  onTap: segment.value == selected
-                      ? null
-                      : () => onChanged(segment.value),
+                  //
+                  // Guarded INSIDE the callback, exactly as [PillTabs] does
+                  // it: a null `onTap` would also drop the chosen segment's
+                  // tap action and take it out of focus traversal, so a
+                  // screen reader could no longer reach the segment that
+                  // says what the setting currently is.
+                  onTap: () {
+                    if (segment.value == selected) return;
+                    onChanged(segment.value);
+                  },
                   borderRadius: BorderRadius.circular(7),
                   child: AnimatedContainer(
                     duration: consoleMotion(context),

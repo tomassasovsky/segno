@@ -180,19 +180,25 @@ class SignalCard extends StatelessWidget {
     // ONE node, labelled with the facts the card draws — a card is a single
     // control that opens a panel, and letting its six texts through would read
     // the whole thing out before saying it is tappable at all.
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: [
-        name,
-        coordinate,
-        if (line != null) line.label,
-      ].join(', '),
-      child: ExcludeSemantics(
+    //
+    // [ExcludeSemantics] wraps only the VISUAL, never the [InkWell]: the tap
+    // action is what a screen reader activates the card with, and silencing
+    // the whole subtree leaves a node announced as a button that does nothing
+    // when double-tapped. `FocusableTapTarget` states the same rule for the
+    // same reason.
+    return MergeSemantics(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: [
+          name,
+          coordinate,
+          if (line != null) line.label,
+        ].join(', '),
         child: InkWell(
           onTap: tap,
           borderRadius: BorderRadius.circular(12),
-          child: card,
+          child: ExcludeSemantics(child: card),
         ),
       ),
     );

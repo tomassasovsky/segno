@@ -2061,7 +2061,7 @@
     "signalMonitorOff": "MONITOR: NO",
     "signalMasterCardName": "salida máster",
     "signalOutputsGroup": "SALIDAS",
-    "signalPanelSubtitle": "{coordinate} · etapa {stage}",
+    "signalPanelSubtitle": "{coordinate} · etapa de {stage}",
     "@signalPanelSubtitle": {
         "placeholders": {
             "coordinate": {
@@ -2078,7 +2078,7 @@
     "signalPanelInMix": "en la mezcla",
     "signalPanelHearWhilePlaying": "escuchar mientras tocas",
     "signalMixMuted": "silenciada",
-    "signalMixHeard": "se oye",
+    "signalMixHeard": "audible",
     "signalMonitorSegOff": "no",
     "signalMonitorSegAuto": "auto",
     "signalMonitorSegOn": "sí",
