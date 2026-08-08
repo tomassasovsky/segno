@@ -1308,6 +1308,17 @@ void main() {
     );
   }, skip: !hasFonts);
 
+  testWidgets('signal domain, a card open on its panel', (tester) async {
+    await pumpSignal(tester, FxStage.input);
+    await tester.tap(find.byKey(const Key('signal_card_input_0')));
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_signal_detail.png'),
+    );
+  }, skip: !hasFonts);
+
   testWidgets('signal domain, a stopped engine has no chains', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());

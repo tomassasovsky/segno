@@ -111,6 +111,7 @@ class SettingsTrayState extends Equatable {
     this.brightness = 0.8,
     this.destination = SettingsTrayDestination.home,
     this.signalTab = FxStage.input,
+    this.signalSelection,
     this.networkTab = NetworkTab.wifi,
     this.controlTab = ControlTab.pedal,
     this.loopTab = LoopTab.tempo,
@@ -149,6 +150,19 @@ class SettingsTrayState extends Equatable {
   /// Starts on [FxStage.input], the head of the signal path.
   final FxStage signalTab;
 
+  /// The Signal card whose panel is open, or null when none is.
+  ///
+  /// Typed as [FxAddress] rather than a selection struct of its own: a card IS
+  /// one chain, and `{stage, index, lane}` is already how the app names one.
+  /// The same argument as [signalTab] being [FxStage] — a parallel model here
+  /// would be a second way to say "track 3, lane A" and the one free to drift.
+  ///
+  /// One at a time, and it survives a tab change only in the sense that the
+  /// tab change clears it: a card on the loop tab has no meaning while the
+  /// input tab is showing, and a panel hanging under the wrong run would be a
+  /// selection the face cannot draw.
+  final FxAddress? signalSelection;
+
   /// Which tab the Network domain shows.
   ///
   /// Survives leaving and returning to the domain — closing the tray resets
@@ -178,6 +192,8 @@ class SettingsTrayState extends Equatable {
     double? brightness,
     SettingsTrayDestination? destination,
     FxStage? signalTab,
+    FxAddress? signalSelection,
+    bool clearSignalSelection = false,
     NetworkTab? networkTab,
     ControlTab? controlTab,
     LoopTab? loopTab,
@@ -190,6 +206,11 @@ class SettingsTrayState extends Equatable {
     brightness: brightness ?? this.brightness,
     destination: destination ?? this.destination,
     signalTab: signalTab ?? this.signalTab,
+    // Null is a real value here (nothing selected), so it needs its own flag —
+    // `?? this` alone could never clear a selection.
+    signalSelection: clearSignalSelection
+        ? null
+        : signalSelection ?? this.signalSelection,
     networkTab: networkTab ?? this.networkTab,
     controlTab: controlTab ?? this.controlTab,
     loopTab: loopTab ?? this.loopTab,
@@ -205,6 +226,7 @@ class SettingsTrayState extends Equatable {
     brightness,
     destination,
     signalTab,
+    signalSelection,
     networkTab,
     controlTab,
     loopTab,

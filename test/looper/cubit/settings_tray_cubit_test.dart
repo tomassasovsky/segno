@@ -1,6 +1,7 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/tracks_tab.dart';
@@ -253,5 +254,54 @@ void main() {
         ),
       ],
     );
+  });
+
+  group('the Signal card selection', () {
+    test('selecting opens, re-selecting the same card closes', () {
+      final cubit = SettingsTrayCubit(settings: settings);
+      addTearDown(cubit.close);
+      const card = FxAddress(stage: FxStage.loop, index: 2, lane: 1);
+
+      cubit.selectSignalCard(card);
+      expect(cubit.state.signalSelection, card);
+
+      // A disclosure that cannot be shut leaves no way back to the plain run.
+      cubit.selectSignalCard(card);
+      expect(cubit.state.signalSelection, isNull);
+    });
+
+    test('a different card replaces rather than closes', () {
+      final cubit = SettingsTrayCubit(settings: settings);
+      addTearDown(cubit.close);
+      cubit
+        ..selectSignalCard(const FxAddress(stage: FxStage.input))
+        ..selectSignalCard(const FxAddress(stage: FxStage.input, index: 1));
+
+      expect(
+        cubit.state.signalSelection,
+        const FxAddress(stage: FxStage.input, index: 1),
+      );
+    });
+
+    test('changing stage clears it', () {
+      final cubit = SettingsTrayCubit(settings: settings);
+      addTearDown(cubit.close);
+      cubit
+        ..selectSignalCard(const FxAddress(stage: FxStage.input))
+        ..showSignalTab(FxStage.master);
+
+      expect(cubit.state.signalSelection, isNull);
+      expect(cubit.state.signalTab, FxStage.master);
+    });
+
+    test('copyWith cannot clear it by accident, only by flag', () {
+      const open = SettingsTrayState(
+        signalSelection: FxAddress(stage: FxStage.master),
+      );
+      // `?? this` can never clear — the flag is what makes null reachable.
+      expect(open.copyWith().signalSelection, isNotNull);
+      expect(open.copyWith(brightness: 0.2).signalSelection, isNotNull);
+      expect(open.copyWith(clearSignalSelection: true).signalSelection, isNull);
+    });
   });
 }

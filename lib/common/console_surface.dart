@@ -1213,10 +1213,7 @@ class ConsoleBanner extends StatelessWidget {
               ],
             ),
           ),
-          for (final action in actions) ...[
-            const SizedBox(width: 10),
-            action,
-          ],
+          for (final action in actions) ...[const SizedBox(width: 10), action],
         ],
       ),
     );
@@ -1638,8 +1635,18 @@ class ConsoleSegmented<T> extends StatelessWidget {
     required this.segments,
     required this.selected,
     required this.onChanged,
+    this.stretch = false,
     super.key,
   });
+
+  /// Whether the strip fills its parent instead of shrink-wrapping.
+  ///
+  /// Shrink-wrapped is right where the strip sits beside the thing it
+  /// qualifies. The Signal panel's two strips are **rows in a stack of rows**,
+  /// each under its own caption, and a stack whose rows end at different
+  /// x-positions reads as a ragged edge rather than as a column of settings —
+  /// so there the segments divide the panel's full width.
+  final bool stretch;
 
   /// The choices, in display order.
   final List<ConsoleSegment<T>> segments;
@@ -1653,62 +1660,77 @@ class ConsoleSegmented<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return IntrinsicWidth(
-      child: Container(
-        padding: const EdgeInsets.all(5),
-        decoration: BoxDecoration(
-          color: surface.background,
-          borderRadius: BorderRadius.circular(11),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final (index, segment) in segments.indexed) ...[
-              if (index > 0) const SizedBox(width: 5),
-              Expanded(
-                child: Semantics(
-                  button: true,
-                  selected: segment.value == selected,
-                  label: segment.label,
-                  child: InkWell(
-                    onTap: () => onChanged(segment.value),
-                    borderRadius: BorderRadius.circular(7),
-                    child: AnimatedContainer(
-                      duration: consoleMotion(context),
-                      curve: Curves.easeOut,
-                      height: 42,
-                      alignment: Alignment.center,
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      decoration: BoxDecoration(
+    final strip = Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: surface.background,
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Row(
+        mainAxisSize: stretch ? MainAxisSize.max : MainAxisSize.min,
+        children: [
+          for (final (index, segment) in segments.indexed) ...[
+            if (index > 0) const SizedBox(width: 5),
+            Expanded(
+              child: Semantics(
+                button: true,
+                selected: segment.value == selected,
+                label: segment.label,
+                child: InkWell(
+                  // Re-tapping the chosen segment is a no-op, as on
+                  // [PillTabs]: this is a pick-one and there is no "none".
+                  // Load-bearing beyond tidiness — a caller whose handler
+                  // TOGGLES would otherwise invert the rig from the very
+                  // segment that says what the rig is currently doing.
+                  //
+                  // Guarded INSIDE the callback, exactly as [PillTabs] does
+                  // it: a null `onTap` would also drop the chosen segment's
+                  // tap action and take it out of focus traversal, so a
+                  // screen reader could no longer reach the segment that
+                  // says what the setting currently is.
+                  onTap: () {
+                    if (segment.value == selected) return;
+                    onChanged(segment.value);
+                  },
+                  borderRadius: BorderRadius.circular(7),
+                  child: AnimatedContainer(
+                    duration: consoleMotion(context),
+                    curve: Curves.easeOut,
+                    height: 42,
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    decoration: BoxDecoration(
+                      color: segment.value == selected
+                          ? surface.accent
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Text(
+                      segment.label,
+                      style: TextStyle(
                         color: segment.value == selected
-                            ? surface.accent
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(7),
-                      ),
-                      child: Text(
-                        segment.label,
-                        style: TextStyle(
-                          color: segment.value == selected
-                              ? surface.onAccent
-                              : surface.textSecondary,
-                          fontSize: 16,
-                          height: 1.13,
-                          leadingDistribution: TextLeadingDistribution.even,
-                          // One weight for both states, as everywhere on this
-                          // surface: a weight change re-measures the label and
-                          // the pair either side of it moves.
-                          fontWeight: FontWeight.w600,
-                        ),
+                            ? surface.onAccent
+                            : surface.textSecondary,
+                        fontSize: 16,
+                        height: 1.13,
+                        leadingDistribution: TextLeadingDistribution.even,
+                        // One weight for both states, as everywhere on this
+                        // surface: a weight change re-measures the label and
+                        // the pair either side of it moves.
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ),
               ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
     );
+    // Shrink-wrapped by default; a stretched strip takes the width its parent
+    // offers, which is what makes the segments divide it evenly.
+    return stretch ? strip : IntrinsicWidth(child: strip);
   }
 }
 
@@ -1959,11 +1981,7 @@ class ConsolePickRow extends StatelessWidget {
 /// the close takes.
 class ConsoleChooser extends StatelessWidget {
   /// Creates a [ConsoleChooser].
-  const ConsoleChooser({
-    required this.open,
-    required this.children,
-    super.key,
-  });
+  const ConsoleChooser({required this.open, required this.children, super.key});
 
   /// A chooser holding one [ConsoleChipGrid], inset the way a drawer's
   /// contents always are.
@@ -2187,10 +2205,7 @@ class _ConsoleChip extends StatelessWidget {
       onTap: onTap,
       selected: selected,
       borderRadius: 11,
-      semanticLabel: [
-        label,
-        ?sub,
-      ].where((text) => text.isNotEmpty).join(', '),
+      semanticLabel: [label, ?sub].where((text) => text.isNotEmpty).join(', '),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(11),
@@ -2203,9 +2218,7 @@ class _ConsoleChip extends StatelessWidget {
           decoration: BoxDecoration(
             color: selected ? surface.accentSurface : surface.cardHigh,
             borderRadius: BorderRadius.circular(11),
-            border: Border.all(
-              color: selected ? surface.accent : surface.line,
-            ),
+            border: Border.all(color: selected ? surface.accent : surface.line),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
