@@ -2780,6 +2780,14 @@
     "@signalOutputsGroup": {
         "description": "Caption over the master tab's hardware-output list."
     },
+    "fxPluginUnavailable": "This plugin did not load, so it has no controls to show.",
+    "@fxPluginUnavailable": {
+        "description": "Editor block for a chain entry whose plugin failed to resolve (uninstalled, moved, incompatible — D-MISS). Distinct from fxNoParameters: the entry is intact and the plugin is missing, not control-less."
+    },
+    "fxPluginUnsupportedHere": "This plugin cannot run on this stage.",
+    "@fxPluginUnsupportedHere": {
+        "description": "Editor block for a plugin on a stage that cannot host it — the two bus stages mark every plugin unsupported by design."
+    },
     "fxNoParameters": "This effect exposes no controls here.",
     "@fxNoParameters": {
         "description": "Editor block for an entry whose parameters the host has not enumerated — a plugin that has not loaded, or one with none. Said out loud rather than drawing a footer with nothing above it."

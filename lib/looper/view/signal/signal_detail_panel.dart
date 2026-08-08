@@ -92,6 +92,11 @@ bool sameLaneFacts(Lane? a, Lane? b) => a == null || b == null
     ? identical(a, b)
     : a.volume == b.volume &&
           a.muted == b.muted &&
+          // The chain's own power is drawn too, by the editor's notice that
+          // says why un-bypassing an entry changed nothing audible. Left out
+          // of this list, that notice could never appear: nothing else in the
+          // panel subscribes to the flag.
+          a.chainEnabled == b.chainEnabled &&
           listEquals(a.effects, b.effects);
 
 /// Whether the three facts a panel draws about a track bus are unchanged.
@@ -100,6 +105,7 @@ bool sameTrackFacts(Track? a, Track? b) => a == null || b == null
     ? identical(a, b)
     : a.volume == b.volume &&
           a.muted == b.muted &&
+          a.chainEnabled == b.chainEnabled &&
           listEquals(a.effects, b.effects);
 
 /// An input's panel: its monitor chain, and the three facts about hearing it.
@@ -279,7 +285,8 @@ class _MasterPanel extends StatelessWidget {
     // a hash would be a collision-shaped subscription.
     return BlocBuilder<LooperBloc, LooperState>(
       buildWhen: (previous, current) =>
-          !listEquals(previous.masterEffects, current.masterEffects),
+          !listEquals(previous.masterEffects, current.masterEffects) ||
+          previous.masterChainEnabled != current.masterChainEnabled,
       builder: (context, state) => _PanelBody(
         address: const FxAddress(stage: FxStage.master),
         scope: StageFxScope(
@@ -354,7 +361,10 @@ class _PanelBody extends StatelessWidget {
         : null;
     if (selected != null && editing == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) tray.clearSignalEffect();
+        // `context.mounted` guards the element; the cubit needs its own check,
+        // since emitting on a closed one throws — reachable in tests whose
+        // tearDown closes the cubit before the frame settles.
+        if (context.mounted && !tray.isClosed) tray.clearSignalEffect();
       });
     }
     return Container(

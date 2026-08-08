@@ -64,7 +64,7 @@ class SignalFxEditor extends StatelessWidget {
     // block of someone else's parameters.
     if (index < 0 || index >= chain.length) return const SizedBox.shrink();
     final effect = chain[index];
-    final params = _paramsOf(effect);
+    final rows = _rowsFor(l10n, effect);
 
     return Container(
       key: const Key('signal_fx_editor'),
@@ -78,12 +78,12 @@ class SignalFxEditor extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (params.isEmpty)
+          if (rows.isEmpty)
             Padding(
               key: const Key('signal_fx_no_params'),
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
-                l10n.fxNoParameters,
+                _emptyReason(l10n, effect),
                 style: TextStyle(
                   color: surface.textMuted,
                   fontSize: 14,
@@ -92,27 +92,20 @@ class SignalFxEditor extends StatelessWidget {
                 ),
               ),
             ),
-          for (final (param, spec) in params.indexed) ...[
+          for (final (param, row) in rows.indexed) ...[
             if (param > 0) const SizedBox(height: rowGap),
             ConsoleValueBar(
               key: Key('signal_fx_param_$param'),
-              label: l10n.effectParamLabel(spec.label).toUpperCase(),
-              // Named for the reader, which the display label cannot do —
-              // it is an upper-cased fragment with no idea whose it is.
+              label: row.label.toUpperCase(),
+              // Named for the reader, which the display label cannot do — it
+              // is an upper-cased fragment with no idea whose it is.
               semanticLabel: l10n.a11yFxParam(
-                spec.label,
+                row.label,
                 fxBlockName(l10n, effect),
               ),
-              value: _valueOf(effect, param),
-              readout: fxParamReadout(l10n, spec, _valueOf(effect, param)),
-              onChanged: (value) => switch (effect) {
-                PluginEffect(:final params) => scope.setPluginParam(
-                  index,
-                  params[param].id,
-                  value,
-                ),
-                BuiltInEffect() => scope.setParam(index, param, value),
-              },
+              value: row.normalized,
+              readout: row.readout,
+              onChanged: row.onChanged,
             ),
           ],
           if (!scope.chainEnabled) ...[
@@ -141,25 +134,88 @@ class SignalFxEditor extends StatelessWidget {
     );
   }
 
-  /// The parameter descriptors for [effect] — a built-in's own, or the live
-  /// list the host enumerated from the loaded plugin.
-  static List<TrackEffectParam> _paramsOf(TrackEffect effect) =>
+  /// One row per parameter, already in the units each side expects.
+  ///
+  /// A built-in's parameters are normalized `0..1` end to end, which is what
+  /// [ConsoleValueBar] speaks. **A hosted plugin's are not**: it reports and
+  /// takes PLAIN values in its own units, with its own `min`/`max`. Feeding
+  /// one straight to the bar pins anything above 1 to full, and writing the
+  /// bar's fraction straight back sets a 20 kHz filter to 0.06 Hz. Both ends
+  /// are converted here, the same way `fx_param_tile.dart` did it.
+  List<_ParamRow> _rowsFor(AppLocalizations l10n, TrackEffect effect) =>
       switch (effect) {
-        BuiltInEffect(:final type) => type.params,
-        // A plugin's parameters are enumerated metadata rather than a fixed
-        // set: it reports them by name, and they arrive with the loaded
-        // plugin. Empty means the host has not enumerated any — which the
-        // block says out loud rather than drawing a footer with no subject.
-        PluginEffect(:final params) => [
-          for (final p in params) TrackEffectParam(p.name),
+        BuiltInEffect(:final type, :final params) => [
+          for (final (param, spec) in type.params.indexed)
+            _ParamRow(
+              label: l10n.effectParamLabel(spec.label),
+              normalized: param < params.length ? params[param] : 0,
+              readout: fxParamReadout(
+                l10n,
+                spec,
+                param < params.length ? params[param] : 0,
+              ),
+              onChanged: (value) => scope.setParam(index, param, value),
+            ),
+        ],
+        PluginEffect(:final params, :final paramValues) => [
+          for (final info in params)
+            _pluginRow(info, paramValues[info.id] ?? info.def),
         ],
       };
 
-  static double _valueOf(TrackEffect effect, int param) => switch (effect) {
-    BuiltInEffect(:final params) => param < params.length ? params[param] : 0.0,
-    PluginEffect(:final params, :final paramValues) =>
-      param < params.length ? paramValues[params[param].id] ?? 0.0 : 0.0,
-  };
+  _ParamRow _pluginRow(PluginParamInfo info, double plain) {
+    final span = info.max - info.min;
+    // A degenerate range would divide by zero; the bar then reads empty and
+    // the write clamps to the single value the plugin accepts.
+    final normalized = span == 0
+        ? 0.0
+        : ((plain - info.min) / span).clamp(0.0, 1.0);
+    return _ParamRow(
+      label: info.name,
+      normalized: normalized,
+      // The live instance's own string first — it is the only thing that
+      // knows what its numbers MEAN. A percentage of a plain value would be
+      // meaningless even after the conversion above.
+      readout:
+          scope.formatPluginValue(index, info.id, plain) ??
+          _plainReadout(info, plain),
+      onChanged: (value) =>
+          scope.setPluginParam(index, info.id, info.min + value * span),
+    );
+  }
+
+  /// What a plugin parameter reads as when the host cannot say — the two bus
+  /// stages never can, since they hold no live instance to ask.
+  static String _plainReadout(PluginParamInfo info, double plain) {
+    final text = info.valueTexts.isNotEmpty && info.stepCount > 0
+        ? _stepText(info, plain)
+        : null;
+    if (text != null) return text;
+    final rounded = plain.abs() >= 100
+        ? plain.round().toString()
+        : plain.toStringAsFixed(2);
+    return info.unit.isEmpty ? rounded : '$rounded ${info.unit}';
+  }
+
+  static String? _stepText(PluginParamInfo info, double plain) {
+    final span = info.max - info.min;
+    if (span == 0) return info.valueTexts.first;
+    final step = ((plain - info.min) / span * info.stepCount).round();
+    return step >= 0 && step < info.valueTexts.length
+        ? info.valueTexts[step]
+        : null;
+  }
+
+  /// Why a chain entry is showing no controls — which is four different
+  /// facts, and only one of them is "it has none".
+  static String _emptyReason(AppLocalizations l10n, TrackEffect effect) =>
+      switch (effect) {
+        PluginEffect(:final unavailable) when unavailable =>
+          l10n.fxPluginUnavailable,
+        PluginEffect(:final unsupported) when unsupported =>
+          l10n.fxPluginUnsupportedHere,
+        _ => l10n.fxNoParameters,
+      };
 }
 
 /// The block's footer: what this entry does, and where it sits.
@@ -365,4 +421,19 @@ String fxParamReadout(
     ParamReadout.pitchShift => l10n.formatLocalizedPitchShift(v),
     ParamReadout.octaverMode => l10n.octaverModeLabel(v),
   };
+}
+
+/// One parameter of one chain entry, in the units the bar speaks.
+class _ParamRow {
+  const _ParamRow({
+    required this.label,
+    required this.normalized,
+    required this.readout,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double normalized;
+  final String readout;
+  final ValueChanged<double> onChanged;
 }

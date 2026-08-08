@@ -2061,6 +2061,8 @@
     "signalMonitorOff": "MONITOR: NO",
     "signalMasterCardName": "salida máster",
     "signalOutputsGroup": "SALIDAS",
+    "fxPluginUnavailable": "Este plugin no se cargó, así que no tiene controles que mostrar.",
+    "fxPluginUnsupportedHere": "Este plugin no puede funcionar en esta etapa.",
     "fxNoParameters": "Este efecto no expone controles aquí.",
     "a11yFxParam": "{param} de {effect}",
     "@a11yFxParam": {
