@@ -2061,6 +2061,10 @@
     "signalMonitorOff": "MONITOR: NO",
     "signalMasterCardName": "salida máster",
     "signalOutputsGroup": "SALIDAS",
+    "fxBypass": "puentear",
+    "fxMoveEarlier": "Mover antes en la cadena",
+    "fxMoveLater": "Mover después en la cadena",
+    "fxRemove": "Quitar",
     "signalPanelSubtitle": "{coordinate} · etapa de {stage}",
     "@signalPanelSubtitle": {
         "placeholders": {

@@ -149,7 +149,21 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   void selectSignalCard(FxAddress card) => emit(
     state.signalSelection == card
         ? state.copyWith(clearSignalSelection: true)
-        : state.copyWith(signalSelection: card),
+        // Clears the open editor too: an entry index means nothing against a
+        // different chain, so carrying it over would open a stranger's third
+        // effect — or nothing at all — on the card just tapped.
+        : state.copyWith(signalSelection: card, clearSignalEffect: true),
+  );
+
+  /// Opens chain entry [index] in the editor, or closes it when it is already
+  /// the open one.
+  ///
+  /// Closing leaves the CARD open: the editor is a link of the chain, and
+  /// shutting it should hand back the chain rather than the whole face.
+  void selectSignalEffect(int index) => emit(
+    state.signalEffect == index
+        ? state.copyWith(clearSignalEffect: true)
+        : state.copyWith(signalEffect: index),
   );
 
   /// Moves the Control domain's tab. Same rule as [showNetworkTab].

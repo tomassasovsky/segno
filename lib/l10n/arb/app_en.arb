@@ -2780,6 +2780,22 @@
     "@signalOutputsGroup": {
         "description": "Caption over the master tab's hardware-output list."
     },
+    "fxBypass": "bypass",
+    "@fxBypass": {
+        "description": "The editor's per-entry power, lower case like the panel's other controls. Bypass leaves the effect in the chain and stops it sounding — it is not a remove."
+    },
+    "fxMoveEarlier": "Move earlier in the chain",
+    "@fxMoveEarlier": {
+        "description": "Accessibility label for the editor's left arrow. Processing order IS signal order, so earlier means earlier in the sound rather than higher in a list."
+    },
+    "fxMoveLater": "Move later in the chain",
+    "@fxMoveLater": {
+        "description": "Accessibility label for the editor's right arrow."
+    },
+    "fxRemove": "Remove",
+    "@fxRemove": {
+        "description": "Takes the entry out of the chain entirely, unlike fxBypass which leaves it in place and silent."
+    },
     "signalPanelSubtitle": "{coordinate} · {stage} stage",
     "@signalPanelSubtitle": {
         "description": "The open panel's second line: where this chain sits, then which stage it is. The title above it is the chain's own name.",
