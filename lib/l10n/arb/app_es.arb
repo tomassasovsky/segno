@@ -2061,6 +2061,27 @@
     "signalMonitorOff": "MONITOR: NO",
     "signalMasterCardName": "salida máster",
     "signalOutputsGroup": "SALIDAS",
+    "signalPanelSubtitle": "{coordinate} · etapa {stage}",
+    "@signalPanelSubtitle": {
+        "placeholders": {
+            "coordinate": {
+                "type": "String"
+            },
+            "stage": {
+                "type": "String"
+            }
+        }
+    },
+    "signalPanelChain": "cadena",
+    "signalPanelChainEmpty": "sin efectos en esta cadena",
+    "signalPanelLevel": "nivel",
+    "signalPanelInMix": "en la mezcla",
+    "signalPanelHearWhilePlaying": "escuchar mientras tocas",
+    "signalMixMuted": "silenciada",
+    "signalMixHeard": "se oye",
+    "signalMonitorSegOff": "no",
+    "signalMonitorSegAuto": "auto",
+    "signalMonitorSegOn": "sí",
     "signalNoInputs": "Sin entradas — el motor no está en marcha.",
     "signalOnlyLoopbackInputs": "Todas las entradas de este dispositivo son de bucle interno — ninguna se puede monitorizar ni grabar.",
     "signalNoLanes": "Aún no hay tomas — graba una y su cadena aparece aquí.",

@@ -2780,6 +2780,49 @@
     "@signalOutputsGroup": {
         "description": "Caption over the master tab's hardware-output list."
     },
+    "signalPanelSubtitle": "{coordinate} · {stage} stage",
+    "@signalPanelSubtitle": {
+        "description": "The open panel's second line: where this chain sits, then which stage it is. The title above it is the chain's own name.",
+        "placeholders": {
+            "coordinate": {
+                "type": "String"
+            },
+            "stage": {
+                "type": "String"
+            }
+        }
+    },
+    "signalPanelChain": "chain",
+    "@signalPanelChain": {
+        "description": "Caption over the panel's chain-of-effects strip. Sentence case, like its siblings — these read as questions about the chain rather than as group headings."
+    },
+    "signalPanelChainEmpty": "no effects on this chain",
+    "@signalPanelChainEmpty": {
+        "description": "Stands where the chain chips go when the chain is empty. An empty chain is the clean path, not a fault."
+    },
+    "signalPanelLevel": "level",
+    "@signalPanelLevel": {
+        "description": "Caption over the panel's gain row."
+    },
+    "signalPanelInMix": "in the mix",
+    "@signalPanelInMix": {
+        "description": "Caption over the muted/heard pair — whether this chain reaches the mix at all."
+    },
+    "signalPanelHearWhilePlaying": "hear while playing",
+    "@signalPanelHearWhilePlaying": {
+        "description": "Caption over the monitor tri-state. INPUT CARDS ONLY: an input is the only thing on this face that can be armed, and AUTO resolves against the arm."
+    },
+    "signalMixMuted": "muted",
+    "signalMixHeard": "heard",
+    "@signalMixHeard": {
+        "description": "The two halves of the in-the-mix pair. Lower case, as the mockups set the panel's controls."
+    },
+    "signalMonitorSegOff": "off",
+    "signalMonitorSegAuto": "auto",
+    "signalMonitorSegOn": "on",
+    "@signalMonitorSegOn": {
+        "description": "The three monitor modes as segment labels. Lower case here, unlike the card's MONITOR: ON line, which is a readout rather than a control."
+    },
     "signalNoInputs": "No inputs — the engine is not running.",
     "@signalNoInputs": {
         "description": "Input tab with nothing to draw. Same shape as tracksEmpty, and for the same reason: every card on this face is an object the engine reports."

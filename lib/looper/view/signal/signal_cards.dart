@@ -6,8 +6,10 @@ import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/signal/signal_card.dart';
+import 'package:segno/looper/view/signal/signal_detail_panel.dart';
 
 /// One Signal tab: the scope chip, then the chains at that stage as a row of
 /// cards, then whatever else that stage owns.
@@ -83,13 +85,26 @@ class _CardRun extends StatelessWidget {
         message: emptyMessage,
       );
     }
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Wrap(
-        spacing: SignalCard.gap,
-        runSpacing: SignalCard.gap,
-        children: cards,
-      ),
+    // The panel hangs under the WHOLE run, not off the card that opened it:
+    // the cards wrap, so an anchored panel would sit somewhere different on
+    // every rig, and there would be no width left to put rows in.
+    final open = context.watch<SettingsTrayCubit>().state.signalSelection;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Wrap(
+            spacing: SignalCard.gap,
+            runSpacing: SignalCard.gap,
+            children: cards,
+          ),
+        ),
+        if (open != null) ...[
+          const SizedBox(height: kConsoleBlockGap),
+          SignalDetailPanel(address: open),
+        ],
+      ],
     );
   }
 }
@@ -118,11 +133,17 @@ class _InputCards extends StatelessWidget {
       ),
     );
 
+    final open = context.watch<SettingsTrayCubit>().state.signalSelection;
+    final tray = context.read<SettingsTrayCubit>();
     final cards = <Widget>[
       for (var input = 0; input < count; input++)
         if (excluded & (1 << input) == 0)
           SignalCard(
             key: Key('signal_card_input_$input'),
+            selected: open == FxAddress(stage: FxStage.input, index: input),
+            onTap: () => tray.selectSignalCard(
+              FxAddress(stage: FxStage.input, index: input),
+            ),
             name: l10n.inputName(names, input),
             coordinate: l10n.signalCoordInput(input + 1),
             routesTo: l10n.signalRouteRecorder,
@@ -159,6 +180,8 @@ class _LoopCards extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final names = context.watch<TracksCubit>().state.names;
+    final open = context.watch<SettingsTrayCubit>().state.signalSelection;
+    final tray = context.read<SettingsTrayCubit>();
 
     return BlocBuilder<LooperBloc, LooperState>(
       buildWhen: (previous, current) =>
@@ -169,6 +192,9 @@ class _LoopCards extends StatelessWidget {
             for (final (lane, _) in track.lanes.indexed)
               SignalCard(
                 key: Key('signal_card_loop_${track.channel}_$lane'),
+                selected: open == _loopAddress(track.channel, lane),
+                onTap: () =>
+                    tray.selectSignalCard(_loopAddress(track.channel, lane)),
                 name: l10n.trackName(names, track.channel),
                 coordinate: l10n.signalCoordTrackLane(
                   track.channel + 1,
@@ -198,6 +224,8 @@ class _TrackCards extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final names = context.watch<TracksCubit>().state.names;
+    final open = context.watch<SettingsTrayCubit>().state.signalSelection;
+    final tray = context.read<SettingsTrayCubit>();
 
     return BlocBuilder<LooperBloc, LooperState>(
       buildWhen: (previous, current) =>
@@ -207,6 +235,8 @@ class _TrackCards extends StatelessWidget {
           for (final track in state.tracks)
             SignalCard(
               key: Key('signal_card_track_${track.channel}'),
+              selected: open == _trackAddress(track.channel),
+              onTap: () => tray.selectSignalCard(_trackAddress(track.channel)),
               name: l10n.trackName(names, track.channel),
               coordinate: l10n.signalCoordTrack(track.channel + 1),
               routesTo: l10n.signalRouteMaster,
@@ -234,6 +264,8 @@ class _MasterStage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final open = context.watch<SettingsTrayCubit>().state.signalSelection;
+    final tray = context.read<SettingsTrayCubit>();
     // The gate mask and the channel count, not the whole state: this group is
     // four switches, and the roster behind it moves at the meter rate.
     //
@@ -257,6 +289,9 @@ class _MasterStage extends StatelessWidget {
       children: [
         SignalCard(
           key: const Key('signal_card_master'),
+          selected: open == const FxAddress(stage: FxStage.master),
+          onTap: () =>
+              tray.selectSignalCard(const FxAddress(stage: FxStage.master)),
           name: l10n.signalMasterCardName,
           coordinate: l10n.signalCoordMain,
           routesTo: l10n.signalRouteOutputs,
@@ -264,6 +299,14 @@ class _MasterStage extends StatelessWidget {
           summary: l10n.signalTapToLoadRack,
           width: null,
         ),
+        // Under the card it belongs to, and above the group that answers a
+        // different question — where the sum goes.
+        if (open == const FxAddress(stage: FxStage.master)) ...[
+          const SizedBox(height: kConsoleBlockGap),
+          const SignalDetailPanel(
+            address: FxAddress(stage: FxStage.master),
+          ),
+        ],
         const SizedBox(height: kConsoleGroupGap),
         ConsoleGroupLabel(l10n.signalOutputsGroup),
         const SizedBox(height: kConsoleLabelGap),
@@ -346,6 +389,14 @@ class _OutputRow extends StatelessWidget {
     );
   }
 }
+
+/// The address of the loop-stage chain on [track]'s lane [lane].
+FxAddress _loopAddress(int track, int lane) =>
+    FxAddress(stage: FxStage.loop, index: track, lane: lane);
+
+/// The address of [track]'s bus chain.
+FxAddress _trackAddress(int track) =>
+    FxAddress(stage: FxStage.track, index: track);
 
 /// Whether [a] and [b] hold the same set of loop- and track-stage chains —
 /// same tracks, same lane count on each.
