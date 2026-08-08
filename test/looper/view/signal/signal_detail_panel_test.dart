@@ -599,7 +599,7 @@ void main() {
   });
 
   group('the fader tells the truth', () {
-    testWidgets('it holds the finger\'s value until the rig answers', (
+    testWidgets("it holds the finger's value until the rig answers", (
       tester,
     ) async {
       await pump(tester);
