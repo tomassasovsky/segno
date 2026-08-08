@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/theme/theme.dart';
 
 /// One chain on the Signal face, as a card: what it is, where it sits, where
@@ -29,6 +30,8 @@ class SignalCard extends StatelessWidget {
     required this.rack,
     required this.summary,
     this.monitor,
+    this.selected = false,
+    this.onTap,
     this.width = defaultWidth,
     super.key,
   });
@@ -58,6 +61,16 @@ class SignalCard extends StatelessWidget {
   /// about the jack, not about the chain on it.
   final SignalMonitorLine? monitor;
 
+  /// Whether this card's panel is the open one.
+  ///
+  /// Drawn as an accent BORDER, not a fill: the fill already says which
+  /// surface this is, and the panel opening below shares the same accent, so
+  /// the two read as one object rather than as a card and a stranger.
+  final bool selected;
+
+  /// Opens (or, on the open card, closes) this card's panel.
+  final VoidCallback? onTap;
+
   /// The card's width. Full width on the master tab, where there is one card.
   final double? width;
 
@@ -77,12 +90,16 @@ class SignalCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final line = monitor;
-    return Container(
+    final card = AnimatedContainer(
+      duration: consoleMotion(context),
+      curve: Curves.easeOut,
       width: width,
       decoration: BoxDecoration(
         color: surface.cardHigh,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: surface.line),
+        border: Border.all(
+          color: selected ? surface.accent : surface.line,
+        ),
       ),
       padding: const EdgeInsets.all(padding - 1),
       child: Column(
@@ -155,6 +172,34 @@ class SignalCard extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+
+    final tap = onTap;
+    if (tap == null) return card;
+    // ONE node, labelled with the facts the card draws — a card is a single
+    // control that opens a panel, and letting its six texts through would read
+    // the whole thing out before saying it is tappable at all.
+    //
+    // [ExcludeSemantics] wraps only the VISUAL, never the [InkWell]: the tap
+    // action is what a screen reader activates the card with, and silencing
+    // the whole subtree leaves a node announced as a button that does nothing
+    // when double-tapped. `FocusableTapTarget` states the same rule for the
+    // same reason.
+    return MergeSemantics(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: [
+          name,
+          coordinate,
+          if (line != null) line.label,
+        ].join(', '),
+        child: InkWell(
+          onTap: tap,
+          borderRadius: BorderRadius.circular(12),
+          child: ExcludeSemantics(child: card),
+        ),
       ),
     );
   }

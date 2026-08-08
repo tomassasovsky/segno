@@ -80,4 +80,77 @@ void main() {
       handle.dispose();
     });
   });
+
+  group('ConsoleSegmented', () {
+    Widget host({required bool stretch}) => MaterialApp(
+      theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+      home: Scaffold(
+        body: SizedBox(
+          width: 600,
+          // Align, not a bare SizedBox parent: a tight constraint would force
+          // 600 on the shrink-wrapped variant too and the test would prove
+          // nothing.
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: ConsoleSegmented<int>(
+              key: const Key('strip'),
+              stretch: stretch,
+              selected: 0,
+              onChanged: (_) {},
+              segments: const [
+                ConsoleSegment(value: 0, label: 'one'),
+                ConsoleSegment(value: 1, label: 'two'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('shrink-wraps by default, so it can sit beside a caption', (
+      tester,
+    ) async {
+      await tester.pumpWidget(host(stretch: false));
+      expect(
+        tester.getSize(find.byKey(const Key('strip'))).width,
+        lessThan(600),
+      );
+    });
+
+    testWidgets('stretched, it divides the width it is given', (tester) async {
+      await tester.pumpWidget(host(stretch: true));
+      // The Signal panel stacks these as rows under captions; rows that ended
+      // at different x would read as a ragged edge.
+      expect(tester.getSize(find.byKey(const Key('strip'))).width, 600);
+    });
+
+    testWidgets('re-tapping the chosen segment does not fire', (tester) async {
+      var fired = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+          home: Scaffold(
+            body: ConsoleSegmented<int>(
+              selected: 0,
+              onChanged: (_) => fired++,
+              segments: const [
+                ConsoleSegment(value: 0, label: 'one'),
+                ConsoleSegment(value: 1, label: 'two'),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('one'));
+      await tester.pumpAndSettle();
+      // A caller whose handler TOGGLES would otherwise invert the rig from the
+      // segment that already says what the rig is doing.
+      expect(fired, 0);
+
+      await tester.tap(find.text('two'));
+      await tester.pumpAndSettle();
+      expect(fired, 1);
+    });
+  });
 }

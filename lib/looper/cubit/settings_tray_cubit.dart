@@ -1,7 +1,8 @@
 import 'package:bloc/bloc.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:equatable/equatable.dart';
-import 'package:looper_repository/looper_repository.dart' show FxStage;
+import 'package:looper_repository/looper_repository.dart'
+    show FxAddress, FxStage;
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
@@ -133,7 +134,23 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   void showNetworkTab(NetworkTab tab) => emit(state.copyWith(networkTab: tab));
 
   /// Moves the Signal domain's stage tab. Same rule as [showNetworkTab].
-  void showSignalTab(FxStage tab) => emit(state.copyWith(signalTab: tab));
+  ///
+  /// Clears any open card panel: a card belongs to one stage's run, so a
+  /// panel left open under a different tab would be hanging off a card that
+  /// is no longer on screen.
+  void showSignalTab(FxStage tab) =>
+      emit(state.copyWith(signalTab: tab, clearSignalSelection: true));
+
+  /// Opens [card]'s panel, or closes it when it is already the open one.
+  ///
+  /// Re-tapping to close rather than only ever switching: the panel is a
+  /// disclosure on a card, and a disclosure that cannot be shut leaves the
+  /// face with no way back to the plain run of cards.
+  void selectSignalCard(FxAddress card) => emit(
+    state.signalSelection == card
+        ? state.copyWith(clearSignalSelection: true)
+        : state.copyWith(signalSelection: card),
+  );
 
   /// Moves the Control domain's tab. Same rule as [showNetworkTab].
   void showControlTab(ControlTab tab) => emit(state.copyWith(controlTab: tab));

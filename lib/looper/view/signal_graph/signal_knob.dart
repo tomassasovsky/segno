@@ -69,14 +69,10 @@ class SignalKnob extends StatelessWidget {
   static const double _sweep = 1.5 * math.pi;
   static const double _start = -0.75 * math.pi;
 
-  /// A linear gain [v] as a signed dB readout, to one decimal (`+6.0 dB`,
-  /// `0.0 dB`, `−3.5 dB`, `−∞`).
-  static String _readout(double v) {
-    if (v <= 0.001) return '−∞';
-    final db = 20 * (math.log(v) / math.ln10);
-    if (db.abs() < 0.05) return '0.0 dB';
-    return '${db >= 0 ? '+' : '−'}${db.abs().toStringAsFixed(1)} dB';
-  }
+  /// A linear gain [v] as a signed dB readout. Delegates to
+  /// [signalGainReadout] so the knob and the Signal panel's level row cannot
+  /// disagree about what a gain is worth in decibels.
+  static String _readout(double v) => signalGainReadout(v);
 
   static const double _snapTol = 0.022;
 
