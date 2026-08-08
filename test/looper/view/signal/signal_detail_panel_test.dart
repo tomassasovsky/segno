@@ -16,6 +16,7 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/signal/signal_detail_panel.dart';
 import 'package:segno/looper/view/signal/signal_tray_panel.dart';
+import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -594,6 +595,51 @@ void main() {
       expect(sameLaneFacts(base, null), isFalse);
       expect(sameLaneFacts(null, null), isTrue);
       expect(sameTrackFacts(null, const Track()), isFalse);
+    });
+  });
+
+  group('the fader tells the truth', () {
+    testWidgets('it holds the finger\'s value until the rig answers', (
+      tester,
+    ) async {
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+
+      // The input path writes through MonitorCubit, which answers
+      // synchronously — so the bar keeps the dragged value rather than
+      // rubber-banding to the gain the rig reported before the drag.
+      await tester.drag(
+        find.byKey(const Key('signal_panel_level')),
+        const Offset(-300, 0),
+      );
+      await tester.pumpAndSettle();
+
+      final after = monitor.state.forInput(0).volume;
+      expect(after, lessThan(1.0));
+      expect(find.text(signalGainReadout(after)), findsOneWidget);
+    });
+
+    testWidgets('a rig that never answers does not strand the bar', (
+      tester,
+    ) async {
+      // The track path raises a bloc event; the mocked bloc never emits, so
+      // the rig never confirms. The bar must still fall back to what the rig
+      // says rather than showing the finger's value forever.
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      await tester.drag(
+        find.byKey(const Key('signal_panel_level')),
+        const Offset(-300, 0),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+
+      // Track 0 sits at 0.5 gain, which is −6.0 dB.
+      expect(find.text(signalGainReadout(0.5)), findsOneWidget);
     });
   });
 

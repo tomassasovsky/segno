@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -523,6 +524,14 @@ class _LevelRowState extends State<_LevelRow> {
   /// Whether the finger is up and the bar is waiting for the rig to agree.
   bool _pendingRelease = false;
 
+  /// Bounds that wait. The rig can answer with something ELSE — a clamp, a
+  /// refusal, an engine that is not running — and a bar that waited for
+  /// agreement it will never get would show the finger's value forever, which
+  /// is the same lie as snapping back to a stale one.
+  Timer? _releaseTimer;
+
+  static const Duration _releaseGrace = Duration(milliseconds: 250);
+
   void _report(double width, double dx) {
     // Right-to-left reads the other way: the fill grows from the leading edge,
     // which is the right one there.
@@ -559,6 +568,24 @@ class _LevelRowState extends State<_LevelRow> {
     // [didUpdateWidget], once the value coming in agrees with what the finger
     // asked for.
     _pendingRelease = true;
+    _releaseTimer?.cancel();
+    _releaseTimer = Timer(_releaseGrace, _acceptRig);
+  }
+
+  /// Drops the local value and shows whatever the rig now says.
+  void _acceptRig() {
+    _releaseTimer = null;
+    if (!mounted || !_pendingRelease) return;
+    setState(() {
+      _dragging = null;
+      _pendingRelease = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    _releaseTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -569,10 +596,8 @@ class _LevelRowState extends State<_LevelRow> {
     // Close enough is the rig having taken the write: the value it reports is
     // quantised and clamped, so exact equality would strand the bar forever.
     if ((widget.value / kSignalMaxGain - asked).abs() < 0.005) {
-      setState(() {
-        _dragging = null;
-        _pendingRelease = false;
-      });
+      _releaseTimer?.cancel();
+      _acceptRig();
     }
   }
 
