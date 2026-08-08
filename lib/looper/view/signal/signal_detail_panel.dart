@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -48,11 +49,53 @@ class SignalDetailPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => switch (address.stage) {
     FxStage.input => _InputPanel(input: address.index),
-    FxStage.loop => _LoopPanel(track: address.index, lane: address.lane ?? 0),
+    // A loop address with no lane names no chain — `FxAddress.fromJson` can
+    // mint one from a corrupt persisted string. Defaulting it to lane A would
+    // drive a take nobody selected, and no card would match to close it.
+    FxStage.loop => address.lane == null
+        ? const SizedBox.shrink()
+        : _LoopPanel(track: address.index, lane: address.lane!),
     FxStage.track => _TrackPanel(track: address.index),
     FxStage.master => const _MasterPanel(),
   };
 }
+
+/// The lane at [lane] on [track], or null when it is gone.
+Lane? _laneOf(LooperState state, int track, int lane) {
+  for (final t in state.tracks) {
+    if (t.channel != track) continue;
+    return lane >= 0 && lane < t.lanes.length ? t.lanes[lane] : null;
+  }
+  return null;
+}
+
+/// The bus at [track], or null when it is gone.
+Track? _trackOf(LooperState state, int track) {
+  for (final t in state.tracks) {
+    if (t.channel == track) return t;
+  }
+  return null;
+}
+
+/// Whether the three facts a panel draws about a lane are unchanged.
+///
+/// Deliberately NOT `a == b`: a [Lane] carries live meters, so value equality
+/// on the whole object is false on every audio frame and the panel would
+/// redraw at the meter rate. It draws a chain, a volume and a mute; only those
+/// decide. Same argument as `sameChainShape` makes for the card runs.
+bool sameLaneFacts(Lane? a, Lane? b) => a == null || b == null
+    ? identical(a, b)
+    : a.volume == b.volume &&
+          a.muted == b.muted &&
+          listEquals(a.effects, b.effects);
+
+/// Whether the three facts a panel draws about a track bus are unchanged.
+/// See [sameLaneFacts] — a [Track] carries live meters for the same reason.
+bool sameTrackFacts(Track? a, Track? b) => a == null || b == null
+    ? identical(a, b)
+    : a.volume == b.volume &&
+          a.muted == b.muted &&
+          listEquals(a.effects, b.effects);
 
 /// An input's panel: its monitor chain, and the three facts about hearing it.
 class _InputPanel extends StatelessWidget {
@@ -65,6 +108,17 @@ class _InputPanel extends StatelessWidget {
     final l10n = context.l10n;
     final names = context.watch<InputsCubit>().state.names;
     final cubit = context.read<MonitorCubit>();
+    // The socket has to still BE there. `MonitorState.forInput` synthesizes a
+    // default rather than reporting absence, so without this the panel would
+    // draw invented facts for a jack the rig no longer has — and writing to it
+    // would materialize and persist a monitor the player never created, which
+    // is the one thing `MonitorCubit` asks callers to check `hasInput` for.
+    final (count, excluded) = context.select<LooperBloc, (int, int)>(
+      (b) => (b.state.status.inputChannels, b.state.status.excludedInputMask),
+    );
+    if (input >= count || excluded & (1 << input) != 0) {
+      return const SizedBox.shrink();
+    }
     final monitor = context.watch<MonitorCubit>().state.forInput(input);
 
     return _PanelBody(
@@ -98,29 +152,39 @@ class _LoopPanel extends StatelessWidget {
     final l10n = context.l10n;
     final names = context.watch<TracksCubit>().state.names;
     final bloc = context.read<LooperBloc>();
-    final take = context.select<LooperBloc, Lane?>(
-      (b) => b.state.tracks
-          .where((t) => t.channel == track)
-          .expand((t) => t.lanes.indexed)
-          .where((entry) => entry.$1 == lane)
-          .map((entry) => entry.$2)
-          .firstOrNull,
-    );
-    // The lane can go while its panel is open — a track's lane count is a
-    // live setting. Nothing to draw is better than a panel of stale numbers.
-    if (take == null) return const SizedBox.shrink();
-
-    return _PanelBody(
-      title: l10n.trackName(names, track),
-      subtitle: l10n.signalPanelSubtitle(
-        l10n.signalCoordTrackLane(track + 1, laneLetter(lane)),
-        l10n.signalStageLoop,
+    // NOT `context.select` on the lane itself: a [Lane] carries live meters,
+    // so selecting it would rebuild this panel at the meter rate. Only the
+    // three facts the panel draws decide whether it needs redrawing — the
+    // same argument `sameChainShape` makes for the card runs.
+    return BlocBuilder<LooperBloc, LooperState>(
+      buildWhen: (previous, current) => !sameLaneFacts(
+        _laneOf(previous, track, lane),
+        _laneOf(current, track, lane),
       ),
-      chain: take.effects,
-      level: take.volume,
-      onLevel: (value) => bloc.add(LooperLaneVolumeChanged(track, lane, value)),
-      heard: !take.muted,
-      onHeard: (_) => bloc.add(LooperLaneMuteToggled(track, lane)),
+      builder: (context, state) {
+        final take = _laneOf(state, track, lane);
+        // The lane can go while its panel is open — a track's lane count is a
+        // live setting. Nothing beats a panel of stale numbers.
+        if (take == null) return const SizedBox.shrink();
+        return _PanelBody(
+          title: l10n.trackName(names, track),
+          subtitle: l10n.signalPanelSubtitle(
+            l10n.signalCoordTrackLane(track + 1, laneLetter(lane)),
+            l10n.signalStageLoop,
+          ),
+          chain: take.effects,
+          level: take.volume,
+          onLevel: (value) =>
+              bloc.add(LooperLaneVolumeChanged(track, lane, value)),
+          heard: !take.muted,
+          // The lane's event is a TOGGLE and this control is a pick-one, so
+          // it only fires when the pick actually differs from the rig.
+          onHeard: (heard) {
+            if (heard == !take.muted) return;
+            bloc.add(LooperLaneMuteToggled(track, lane));
+          },
+        );
+      },
     );
   }
 }
@@ -136,22 +200,31 @@ class _TrackPanel extends StatelessWidget {
     final l10n = context.l10n;
     final names = context.watch<TracksCubit>().state.names;
     final bloc = context.read<LooperBloc>();
-    final bus = context.select<LooperBloc, Track?>(
-      (b) => b.state.tracks.where((t) => t.channel == track).firstOrNull,
-    );
-    if (bus == null) return const SizedBox.shrink();
-
-    return _PanelBody(
-      title: l10n.trackName(names, track),
-      subtitle: l10n.signalPanelSubtitle(
-        l10n.signalCoordTrack(track + 1),
-        l10n.signalStageTrack,
+    // Same reason as the loop panel: a [Track] carries live meters.
+    return BlocBuilder<LooperBloc, LooperState>(
+      buildWhen: (previous, current) => !sameTrackFacts(
+        _trackOf(previous, track),
+        _trackOf(current, track),
       ),
-      chain: bus.effects,
-      level: bus.volume,
-      onLevel: (value) => bloc.add(LooperVolumeChanged(track, value)),
-      heard: !bus.muted,
-      onHeard: (_) => bloc.add(LooperMuteToggled(track)),
+      builder: (context, state) {
+        final bus = _trackOf(state, track);
+        if (bus == null) return const SizedBox.shrink();
+        return _PanelBody(
+          title: l10n.trackName(names, track),
+          subtitle: l10n.signalPanelSubtitle(
+            l10n.signalCoordTrack(track + 1),
+            l10n.signalStageTrack,
+          ),
+          chain: bus.effects,
+          level: bus.volume,
+          onLevel: (value) => bloc.add(LooperVolumeChanged(track, value)),
+          heard: !bus.muted,
+          onHeard: (heard) {
+            if (heard == !bus.muted) return;
+            bloc.add(LooperMuteToggled(track));
+          },
+        );
+      },
     );
   }
 }
@@ -167,17 +240,21 @@ class _MasterPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final chain = context.select<LooperBloc, List<TrackEffect>>(
-      (b) => b.state.masterEffects,
-    );
-
-    return _PanelBody(
-      title: l10n.signalMasterCardName,
-      subtitle: l10n.signalPanelSubtitle(
-        l10n.signalCoordMain,
-        l10n.signalStageMaster,
+    // A list compares by identity, so `context.select` on `masterEffects`
+    // would redraw whenever the projection rebuilt the list — every meter
+    // tick. Compared by VALUE here, the same way the other two panels do it;
+    // a hash would be a collision-shaped subscription.
+    return BlocBuilder<LooperBloc, LooperState>(
+      buildWhen: (previous, current) =>
+          !listEquals(previous.masterEffects, current.masterEffects),
+      builder: (context, state) => _PanelBody(
+        title: l10n.signalMasterCardName,
+        subtitle: l10n.signalPanelSubtitle(
+          l10n.signalCoordMain,
+          l10n.signalStageMaster,
+        ),
+        chain: state.masterEffects,
       ),
-      chain: chain,
     );
   }
 }
@@ -292,7 +369,9 @@ class _Header extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
-      spacing: 5,
+      // 9, not an eyeballed 5: title 23x1.17 + subtitle 14x1.21 + this gap is
+      // what makes the header the 53 the mockups measure.
+      spacing: kConsoleLabelGap,
       children: [
         Text(
           title,
@@ -377,10 +456,10 @@ class _ChainStrip extends StatelessWidget {
             height: 38,
             padding: const EdgeInsets.symmetric(horizontal: 17),
             alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: surface.control,
-              borderRadius: BorderRadius.circular(8),
-            ),
+            // No fill: the mockups give an unselected chip none at all, and
+            // the selected pair (accentSurface + accent text) arrives with the
+            // editor that makes a chip selectable in the first place.
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(8)),
             child: Text(
               fxBlockName(l10n, effect),
               style: TextStyle(
@@ -398,22 +477,62 @@ class _ChainStrip extends StatelessWidget {
 
 /// The level row: a full-bleed bar with its dB readout at the trailing edge.
 ///
-/// Not [ConsoleValueBar], which draws its own label in a 106px gutter at the
-/// left. Here the caption sits *above* the row, so a gutter would be an empty
-/// column and the bar would stop short of the panel's edge for no reason.
-class _LevelRow extends StatelessWidget {
+/// Not [ConsoleValueBar], which draws a label in a 106px gutter, stands 51
+/// tall on a 12 radius and reads `0..1`. Here the caption is *above* the row,
+/// the bar is 24 on a 6, and the range runs to [kSignalMaxGain].
+///
+/// **Not a Material [Slider] either**, which was the first attempt: its track
+/// shape rounds to half its height, its active segment paints 2px taller than
+/// the track it sits in, it insets the rail by the thumb radius, and it pads
+/// the thumb's travel by a full track height so the fill stops tracking the
+/// pointer near both ends. The fill is drawn directly instead — the same way
+/// [ConsoleValueBar] draws its own.
+class _LevelRow extends StatefulWidget {
   const _LevelRow({required this.value, required this.onChanged});
 
   final double value;
   final ValueChanged<double> onChanged;
 
+  /// The bar's own height and corner, as the mockups draw them.
+  static const double barHeight = 24;
+  static const double barRadius = 6;
+
+  /// Inside inset of the row, and the gap before the readout.
+  static const double inset = 14;
+
+  /// Width of the readout column.
+  static const double readoutWidth = 52;
+
+  @override
+  State<_LevelRow> createState() => _LevelRowState();
+}
+
+class _LevelRowState extends State<_LevelRow> {
+  /// The fraction under the finger while a drag is live, so the bar tracks it
+  /// at frame rate instead of waiting for the write to come back.
+  double? _dragging;
+
+  void _report(double width, double dx) {
+    final fraction = (dx / width).clamp(0.0, 1.0);
+    setState(() => _dragging = fraction);
+    widget.onChanged(fraction * kSignalMaxGain);
+  }
+
+  void _release() => setState(() => _dragging = null);
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     final l10n = context.l10n;
+    final gain = widget.value.clamp(0.0, kSignalMaxGain);
+    final fraction = _dragging ?? gain / kSignalMaxGain;
+    final readout = signalGainReadout(
+      _dragging == null ? gain : _dragging! * kSignalMaxGain,
+    );
+
     return Container(
       height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      padding: const EdgeInsets.symmetric(horizontal: _LevelRow.inset),
       decoration: BoxDecoration(
         color: surface.background,
         borderRadius: BorderRadius.circular(10),
@@ -424,33 +543,65 @@ class _LevelRow extends StatelessWidget {
             child: Semantics(
               slider: true,
               label: l10n.signalPanelLevel,
-              value: signalGainReadout(value),
-              child: SliderTheme(
-                data: SliderThemeData(
-                  trackHeight: 24,
-                  activeTrackColor: surface.accentSurface,
-                  inactiveTrackColor: surface.control,
-                  thumbColor: surface.accent,
-                  overlayShape: SliderComponentShape.noOverlay,
-                  thumbShape: const RoundSliderThumbShape(
-                    enabledThumbRadius: 3,
-                  ),
-                  trackShape: const RoundedRectSliderTrackShape(),
-                ),
-                child: Slider(
-                  key: const Key('signal_panel_level'),
-                  value: value.clamp(0, kSignalMaxGain),
-                  max: kSignalMaxGain,
-                  onChanged: onChanged,
-                ),
+              value: readout,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final width = constraints.maxWidth;
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (d) => _report(width, d.localPosition.dx),
+                    onTapUp: (_) => _release(),
+                    onTapCancel: _release,
+                    onHorizontalDragStart: (d) =>
+                        _report(width, d.localPosition.dx),
+                    onHorizontalDragUpdate: (d) =>
+                        _report(width, d.localPosition.dx),
+                    onHorizontalDragEnd: (_) => _release(),
+                    onHorizontalDragCancel: _release,
+                    child: Container(
+                      key: const Key('signal_panel_level'),
+                      height: _LevelRow.barHeight,
+                      decoration: BoxDecoration(
+                        color: surface.control,
+                        borderRadius: BorderRadius.circular(
+                          _LevelRow.barRadius,
+                        ),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(
+                          _LevelRow.barRadius,
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: AnimatedContainer(
+                            duration: _dragging == null
+                                ? consoleMotion(context)
+                                : Duration.zero,
+                            curve: Curves.easeOut,
+                            width: width * fraction,
+                            decoration: BoxDecoration(
+                              color: surface.accentSurface,
+                              border: Border(
+                                right: BorderSide(
+                                  color: surface.accent,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: _LevelRow.inset),
           SizedBox(
-            width: 52,
+            width: _LevelRow.readoutWidth,
             child: Text(
-              signalGainReadout(value),
+              readout,
               textAlign: TextAlign.right,
               style: TextStyle(
                 color: surface.textSecondary,

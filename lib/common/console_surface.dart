@@ -194,24 +194,10 @@ class _ConsoleExpansionState extends State<ConsoleExpansion>
 /// rounded corner instead of stopping inside it.
 class ConsoleCard extends StatelessWidget {
   /// Creates a [ConsoleCard].
-  const ConsoleCard({
-    required this.children,
-    this.fill,
-    this.border,
-    super.key,
-  });
+  const ConsoleCard({required this.children, this.fill, super.key});
 
   /// The rows, in display order.
   final List<Widget> children;
-
-  /// The card's own border colour; defaults to [SurfaceTheme.line].
-  ///
-  /// The Signal face passes [SurfaceTheme.accent] on the card it has open, so
-  /// the card and the panel below it read as one object rather than two that
-  /// happen to be adjacent. A **border**, not a fill: the card already carries
-  /// a fill that says which surface it is, and one property cannot say two
-  /// things.
-  final Color? border;
 
   /// The card's own fill; defaults to [SurfaceTheme.cardHigh].
   ///
@@ -239,7 +225,7 @@ class ConsoleCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: fill ?? surface.cardHigh,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: border ?? surface.line),
+        border: Border.all(color: surface.line),
       ),
       child: Padding(
         padding: const EdgeInsets.all(1),
@@ -1691,7 +1677,14 @@ class ConsoleSegmented<T> extends StatelessWidget {
                 selected: segment.value == selected,
                 label: segment.label,
                 child: InkWell(
-                  onTap: () => onChanged(segment.value),
+                  // Re-tapping the chosen segment is a no-op, as on
+                  // [PillTabs]: this is a pick-one and there is no "none".
+                  // Load-bearing beyond tidiness — a caller whose handler
+                  // TOGGLES would otherwise invert the rig from the very
+                  // segment that says what the rig is currently doing.
+                  onTap: segment.value == selected
+                      ? null
+                      : () => onChanged(segment.value),
                   borderRadius: BorderRadius.circular(7),
                   child: AnimatedContainer(
                     duration: consoleMotion(context),

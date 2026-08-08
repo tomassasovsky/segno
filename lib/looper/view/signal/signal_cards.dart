@@ -72,10 +72,23 @@ class SignalStageBody extends StatelessWidget {
 /// second line instead of overflowing the pane. The mockups only ever draw one
 /// line because they draw a three-track rig.
 class _CardRun extends StatelessWidget {
-  const _CardRun({required this.cards, required this.emptyMessage});
+  const _CardRun({
+    required this.cards,
+    required this.emptyMessage,
+    this.drawn = const [],
+  });
 
   final List<Widget> cards;
   final String emptyMessage;
+
+  /// The addresses this run actually drew a card for.
+  ///
+  /// The panel hangs off THIS list rather than off the selection alone: a
+  /// selection can outlive its chain — a lane removed, a socket that went with
+  /// its interface, a stage that is not the showing one — and a panel under a
+  /// card that is not on screen draws facts about something the player cannot
+  /// see, and writes to it.
+  final List<FxAddress> drawn;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +101,8 @@ class _CardRun extends StatelessWidget {
     // The panel hangs under the WHOLE run, not off the card that opened it:
     // the cards wrap, so an anchored panel would sit somewhere different on
     // every rig, and there would be no width left to put rows in.
-    final open = context.watch<SettingsTrayCubit>().state.signalSelection;
+    final selection = context.watch<SettingsTrayCubit>().state.signalSelection;
+    final open = drawn.contains(selection) ? selection : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -155,6 +169,11 @@ class _InputCards extends StatelessWidget {
 
     return _CardRun(
       cards: cards,
+      drawn: [
+        for (var input = 0; input < count; input++)
+          if (excluded & (1 << input) == 0)
+            FxAddress(stage: FxStage.input, index: input),
+      ],
       // An empty run has two causes and they are different facts: no sockets
       // at all is a stopped engine, while sockets that are every one of them
       // loopback is a RUNNING engine on a device with nothing capturable —
@@ -205,6 +224,11 @@ class _LoopCards extends StatelessWidget {
                 summary: l10n.signalTapToLoadRack,
               ),
         ],
+        drawn: [
+          for (final track in state.tracks)
+            for (final (lane, _) in track.lanes.indexed)
+              _loopAddress(track.channel, lane),
+        ],
         emptyMessage: l10n.signalNoLanes,
       ),
     );
@@ -243,6 +267,9 @@ class _TrackCards extends StatelessWidget {
               rack: l10n.signalNoRack,
               summary: l10n.signalTapToLoadRack,
             ),
+        ],
+        drawn: [
+          for (final track in state.tracks) _trackAddress(track.channel),
         ],
         emptyMessage: l10n.signalNoTracks,
       ),

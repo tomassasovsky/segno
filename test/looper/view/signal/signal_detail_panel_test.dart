@@ -13,7 +13,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
-import 'package:segno/looper/view/signal/signal_card.dart';
+import 'package:segno/looper/view/signal/signal_detail_panel.dart';
 import 'package:segno/looper/view/signal/signal_tray_panel.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -32,8 +32,12 @@ final _rig = LooperState(
       volume: 0.5,
       lanes: const [
         Lane(inputChannel: 0, volume: 0.5),
+        Lane(inputChannel: 1),
       ],
-      effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+      effects: [
+        BuiltInEffect(type: TrackEffectType.reverb),
+        BuiltInEffect(type: TrackEffectType.tremolo),
+      ],
     ),
     const Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
   ],
@@ -98,6 +102,7 @@ void main() {
     WidgetTester tester, {
     FxStage stage = FxStage.input,
     LooperState? state,
+    Stream<LooperState>? states,
   }) async {
     final rig = state ?? _rig;
     tester.view
@@ -107,7 +112,11 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     when(() => bloc.state).thenReturn(rig);
-    whenListen(bloc, const Stream<LooperState>.empty(), initialState: rig);
+    whenListen(
+      bloc,
+      states ?? const Stream<LooperState>.empty(),
+      initialState: rig,
+    );
 
     settings = SettingsRepository(store: FakeKeyValueStore());
     tracks = TracksCubit(settings: settings);
@@ -157,6 +166,24 @@ void main() {
 
   Finder panel() => find.byKey(const Key('signal_detail_panel'));
 
+  /// Whether the segment labelled [label] is the chosen one, read off the
+  /// RENDERED fill rather than off any widget input — inverting the display
+  /// while leaving the write path correct is exactly the mutation that would
+  /// otherwise ship green.
+  bool selectedLabel(WidgetTester tester, String label) {
+    final box = tester.widget<AnimatedContainer>(
+      find
+          .ancestor(
+            of: find.text(label),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    return (box.decoration! as BoxDecoration).color ==
+        SurfaceTheme.dark.accent;
+  }
+
+
   // ------------------------------------------- SIGNAL / signal-detail
 
   group('opening and closing', () {
@@ -172,12 +199,22 @@ void main() {
         tray.state.signalSelection,
         const FxAddress(stage: FxStage.input),
       );
-      expect(
-        tester
-            .widget<SignalCard>(find.byKey(const Key('signal_card_input_0')))
-            .selected,
-        isTrue,
-      );
+      // The RENDERED border, not the prop the tap just wrote: asserting
+      // `SignalCard.selected` would pass with the accent deleted entirely.
+      Color borderOf(String key) {
+        final box = tester.widget<AnimatedContainer>(
+          find
+              .descendant(
+                of: find.byKey(Key(key)),
+                matching: find.byType(AnimatedContainer),
+              )
+              .first,
+        );
+        return ((box.decoration! as BoxDecoration).border! as Border).top.color;
+      }
+
+      expect(borderOf('signal_card_input_0'), SurfaceTheme.dark.accent);
+      expect(borderOf('signal_card_input_1'), SurfaceTheme.dark.line);
     });
 
     testWidgets('tapping the open card closes it again', (tester) async {
@@ -297,13 +334,41 @@ void main() {
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
 
+      // Reads `heard` before the tap — the panel must SHOW what the rig is,
+      // not merely write correctly when tapped. Inverting the display alone
+      // would otherwise ship green.
+      expect(selectedLabel(tester, l10n.signalMixHeard), isTrue);
+      expect(selectedLabel(tester, l10n.signalMixMuted), isFalse);
+
       await tester.tap(find.text(l10n.signalMixMuted));
       await tester.pumpAndSettle();
 
       expect(monitor.state.forInput(0).muted, isTrue);
-      verify(
-        () => repository.setMonitorMute(input: 0, muted: true),
-      ).called(1);
+      verify(() => repository.setMonitorMute(input: 0, muted: true)).called(1);
+      expect(selectedLabel(tester, l10n.signalMixMuted), isTrue);
+
+      // And back — the unmute leg, which the write-path-only version never ran.
+      await tester.tap(find.text(l10n.signalMixHeard));
+      await tester.pumpAndSettle();
+
+      expect(monitor.state.forInput(0).muted, isFalse);
+      verify(() => repository.setMonitorMute(input: 0, muted: false)).called(1);
+    });
+
+    testWidgets('re-tapping the segment the rig is already on does nothing', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // The track is audible, so `heard` is the shown segment. A toggle event
+      // raised from it would mute the very thing the segment says is heard.
+      await tester.tap(find.text(l10n.signalMixHeard));
+      await tester.pumpAndSettle();
+
+      verifyNever(() => bloc.add(const LooperMuteToggled(0)));
     });
 
     testWidgets('the monitor segment writes the mode', (tester) async {
@@ -312,10 +377,23 @@ void main() {
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
 
+      expect(selectedLabel(tester, l10n.signalMonitorSegOff), isTrue);
+
       await tester.tap(find.text(l10n.signalMonitorSegOn));
       await tester.pumpAndSettle();
 
       expect(monitor.state.forInput(0).mode, MonitorMode.on);
+      expect(selectedLabel(tester, l10n.signalMonitorSegOn), isTrue);
+      expect(selectedLabel(tester, l10n.signalMonitorSegOff), isFalse);
+    });
+
+    testWidgets('the readout says what the level is', (tester) async {
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+
+      // Unity gain, which is 0.0 dB and not "1.0" or a raw fraction.
+      expect(find.text('0.0 dB'), findsOneWidget);
     });
 
     testWidgets('the level fader writes the input monitor volume', (
@@ -378,8 +456,18 @@ void main() {
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
 
-      expect(find.byKey(const Key('signal_panel_chip_0')), findsOneWidget);
-      expect(find.text(l10n.effectReverb), findsOneWidget);
+      // Two effects, so the ORDER the test is named for can actually fail.
+      String chipText(int index) => tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byKey(Key('signal_panel_chip_$index')),
+              matching: find.byType(Text),
+            ),
+          )
+          .data!;
+
+      expect(chipText(0), l10n.effectReverb);
+      expect(chipText(1), l10n.effectTremolo);
     });
 
     testWidgets('an empty chain says so rather than drawing nothing', (
@@ -405,6 +493,108 @@ void main() {
       final l10n = l10nOf(tester);
 
       expect(find.text(l10n.effectDrive), findsOneWidget);
+    });
+  });
+
+  group('a selection outliving its card', () {
+    testWidgets('a lane that goes takes its panel with it', (tester) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      await pump(tester, stage: FxStage.loop, states: states.stream);
+      await tester.tap(find.byKey(const Key('signal_card_loop_0_1')));
+      await tester.pumpAndSettle();
+      expect(panel(), findsOneWidget);
+
+      // The track drops to one lane while lane B's panel is open.
+      states.add(
+        LooperState(
+          tracks: [
+            Track(
+              volume: 0.5,
+              lanes: const [Lane(inputChannel: 0, volume: 0.5)],
+              effects: _rig.tracks.first.effects,
+            ),
+            const Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
+          ],
+          status: _rig.status,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Not a dangling gap under the run: no card, no panel.
+      expect(panel(), findsNothing);
+      expect(find.byKey(const Key('signal_card_loop_0_1')), findsNothing);
+    });
+
+    testWidgets('a socket that goes takes its panel with it', (tester) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      await pump(tester, states: states.stream);
+      await tester.tap(find.byKey(const Key('signal_card_input_1')));
+      await tester.pumpAndSettle();
+      expect(panel(), findsOneWidget);
+
+      // A two-in interface becomes a one-in one. `forInput` would happily
+      // synthesize a monitor for socket 1 and the panel would write it to disk.
+      states.add(
+        LooperState(
+          tracks: _rig.tracks,
+          status: const EngineStatus(
+            deviceName: 'Built-in',
+            inputChannels: 1,
+            outputChannels: 2,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(panel(), findsNothing);
+    });
+  });
+
+  group('what a panel redraws for', () {
+    test('a meter tick is not a reason to redraw', () {
+      // The whole point: `Lane == Lane` is false on every audio frame, so the
+      // panel cannot key its rebuild off the object.
+      const quiet = Lane(inputChannel: 0, volume: 0.5);
+      const loud = Lane(inputChannel: 0, volume: 0.5, rms: 0.8, peak: 0.9);
+      expect(quiet == loud, isFalse);
+      expect(sameLaneFacts(quiet, loud), isTrue);
+
+      const bus = Track(volume: 0.5);
+      const busLoud = Track(volume: 0.5, rms: 0.8, peak: 0.9);
+      expect(bus == busLoud, isFalse);
+      expect(sameTrackFacts(bus, busLoud), isTrue);
+    });
+
+    test('the three facts it draws are', () {
+      const base = Lane(inputChannel: 0, volume: 0.5);
+      expect(
+        sameLaneFacts(base, const Lane(inputChannel: 0, volume: 0.6)),
+        isFalse,
+      );
+      expect(
+        sameLaneFacts(
+          base,
+          const Lane(inputChannel: 0, volume: 0.5, muted: true),
+        ),
+        isFalse,
+      );
+      expect(
+        sameLaneFacts(
+          base,
+          Lane(
+            inputChannel: 0,
+            volume: 0.5,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          ),
+        ),
+        isFalse,
+      );
+      // A lane that went away, and one that came back.
+      expect(sameLaneFacts(base, null), isFalse);
+      expect(sameLaneFacts(null, null), isTrue);
+      expect(sameTrackFacts(null, const Track()), isFalse);
     });
   });
 
