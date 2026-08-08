@@ -93,10 +93,10 @@ void main() {
           child: Align(
             alignment: Alignment.centerLeft,
             child: ConsoleSegmented<int>(
-            key: const Key('strip'),
-            stretch: stretch,
-            selected: 0,
-            onChanged: (_) {},
+              key: const Key('strip'),
+              stretch: stretch,
+              selected: 0,
+              onChanged: (_) {},
               segments: const [
                 ConsoleSegment(value: 0, label: 'one'),
                 ConsoleSegment(value: 1, label: 'two'),

@@ -52,9 +52,10 @@ class SignalDetailPanel extends StatelessWidget {
     // A loop address with no lane names no chain — `FxAddress.fromJson` can
     // mint one from a corrupt persisted string. Defaulting it to lane A would
     // drive a take nobody selected, and no card would match to close it.
-    FxStage.loop => address.lane == null
-        ? const SizedBox.shrink()
-        : _LoopPanel(track: address.index, lane: address.lane!),
+    FxStage.loop =>
+      address.lane == null
+          ? const SizedBox.shrink()
+          : _LoopPanel(track: address.index, lane: address.lane!),
     FxStage.track => _TrackPanel(track: address.index),
     FxStage.master => const _MasterPanel(),
   };

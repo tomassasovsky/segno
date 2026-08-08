@@ -179,10 +179,8 @@ void main() {
           )
           .first,
     );
-    return (box.decoration! as BoxDecoration).color ==
-        SurfaceTheme.dark.accent;
+    return (box.decoration! as BoxDecoration).color == SurfaceTheme.dark.accent;
   }
-
 
   // ------------------------------------------- SIGNAL / signal-detail
 
