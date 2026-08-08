@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -128,6 +127,7 @@ class _InputPanel extends StatelessWidget {
     final monitor = context.watch<MonitorCubit>().state.forInput(input);
 
     return _PanelBody(
+      address: FxAddress(stage: FxStage.input, index: input),
       title: l10n.inputName(names, input),
       subtitle: l10n.signalPanelSubtitle(
         l10n.signalCoordInput(input + 1),
@@ -173,6 +173,11 @@ class _LoopPanel extends StatelessWidget {
         // live setting. Nothing beats a panel of stale numbers.
         if (take == null) return const SizedBox.shrink();
         return _PanelBody(
+          address: FxAddress(
+            stage: FxStage.loop,
+            index: track,
+            lane: lane,
+          ),
           title: l10n.trackName(names, track),
           subtitle: l10n.signalPanelSubtitle(
             l10n.signalCoordTrackLane(track + 1, laneLetter(lane)),
@@ -216,6 +221,7 @@ class _TrackPanel extends StatelessWidget {
         final bus = _trackOf(state, track);
         if (bus == null) return const SizedBox.shrink();
         return _PanelBody(
+          address: FxAddress(stage: FxStage.track, index: track),
           title: l10n.trackName(names, track),
           subtitle: l10n.signalPanelSubtitle(
             l10n.signalCoordTrack(track + 1),
@@ -254,6 +260,7 @@ class _MasterPanel extends StatelessWidget {
       buildWhen: (previous, current) =>
           !listEquals(previous.masterEffects, current.masterEffects),
       builder: (context, state) => _PanelBody(
+        address: const FxAddress(stage: FxStage.master),
         title: l10n.signalMasterCardName,
         subtitle: l10n.signalPanelSubtitle(
           l10n.signalCoordMain,
@@ -269,6 +276,7 @@ class _MasterPanel extends StatelessWidget {
 /// the chain, then how loud it is, then whether it is heard at all.
 class _PanelBody extends StatelessWidget {
   const _PanelBody({
+    required this.address,
     required this.title,
     required this.subtitle,
     required this.chain,
@@ -279,6 +287,10 @@ class _PanelBody extends StatelessWidget {
     this.monitorMode,
     this.onMonitorMode,
   });
+
+  /// Which chain this panel is for — the fader keys off it, so a drag on one
+  /// card cannot leave its value showing on the next.
+  final FxAddress address;
 
   final String title;
   final String subtitle;
@@ -318,7 +330,11 @@ class _PanelBody extends StatelessWidget {
           _ChainStrip(chain: chain),
           if (gain != null && onLevel != null) ...[
             _Caption(l10n.signalPanelLevel),
-            _LevelRow(value: gain, onChanged: onLevel!),
+            _LevelRow(
+              key: ValueKey(address),
+              value: gain,
+              onChanged: onLevel!,
+            ),
           ],
           if (inMix != null && onHeard != null) ...[
             _Caption(l10n.signalPanelInMix),
@@ -494,7 +510,7 @@ class _ChainStrip extends StatelessWidget {
 /// pointer near both ends. The fill is drawn directly instead — the same way
 /// [ConsoleValueBar] draws its own.
 class _LevelRow extends StatefulWidget {
-  const _LevelRow({required this.value, required this.onChanged});
+  const _LevelRow({required this.value, required this.onChanged, super.key});
 
   final double value;
   final ValueChanged<double> onChanged;
@@ -521,20 +537,23 @@ class _LevelRowState extends State<_LevelRow> {
   /// at frame rate instead of waiting for the write to come back.
   double? _dragging;
 
-  /// Whether the finger is up and the bar is waiting for the rig to agree.
-  bool _pendingRelease = false;
-
-  /// Bounds that wait. The rig can answer with something ELSE — a clamp, a
-  /// refusal, an engine that is not running — and a bar that waited for
-  /// agreement it will never get would show the finger's value forever, which
-  /// is the same lie as snapping back to a stale one.
-  Timer? _releaseTimer;
-
-  static const Duration _releaseGrace = Duration(milliseconds: 250);
+  /// What the rig was reporting when the finger went down.
+  ///
+  /// The release rule is "has the rig spoken", and this is what it is
+  /// measured against. Two failures sit either side of it: dropping the local
+  /// value the instant the finger lifts snaps the bar back to a gain the rig
+  /// has not answered with yet and animates it there and back, while waiting
+  /// for the rig to AGREE strands the bar forever when it clamps, refuses, or
+  /// is an engine with no device running — and a lane's volume only reaches
+  /// the snapshot once the audio callback drains the command queue, so
+  /// silence is the normal case, not an error. Silence means the write was
+  /// cached and will apply; only a DIFFERENT answer is the rig overruling the
+  /// finger.
+  double? _valueAtGrab;
 
   void _report(double width, double dx) {
-    // Right-to-left reads the other way: the fill grows from the leading edge,
-    // which is the right one there.
+    // Right-to-left reads the other way: the fill grows from the leading
+    // edge, which is the right one there.
     final leading = Directionality.of(context) == TextDirection.rtl
         ? width - dx
         : dx;
@@ -543,15 +562,14 @@ class _LevelRowState extends State<_LevelRow> {
 
   void _set(double fraction) {
     setState(() {
+      _valueAtGrab ??= widget.value;
       _dragging = fraction;
-      _pendingRelease = false;
     });
     widget.onChanged(fraction * kSignalMaxGain);
   }
 
-  /// One step of the assistive-tech increase/decrease actions, in dB-ish
-  /// terms: twenty steps across the travel, so a swipe moves audibly without
-  /// crossing the whole range.
+  /// One step of the assistive-tech increase/decrease actions: twenty across
+  /// the travel, so a swipe moves audibly without crossing the whole range.
   static const double step = 0.05;
 
   void _nudge(double by) {
@@ -560,45 +578,16 @@ class _LevelRowState extends State<_LevelRow> {
     _set((at + by).clamp(0.0, 1.0));
   }
 
-  void _release() {
-    // Deliberately NOT clearing `_dragging` here. The rig answers on its own
-    // schedule — a lane's volume comes back on the next engine snapshot — so
-    // dropping the local value the instant the finger lifts snaps the fill
-    // back to the old gain and animates it there and back. It is released in
-    // [didUpdateWidget], once the value coming in agrees with what the finger
-    // asked for.
-    _pendingRelease = true;
-    _releaseTimer?.cancel();
-    _releaseTimer = Timer(_releaseGrace, _acceptRig);
-  }
-
-  /// Drops the local value and shows whatever the rig now says.
-  void _acceptRig() {
-    _releaseTimer = null;
-    if (!mounted || !_pendingRelease) return;
-    setState(() {
-      _dragging = null;
-      _pendingRelease = false;
-    });
-  }
-
-  @override
-  void dispose() {
-    _releaseTimer?.cancel();
-    super.dispose();
-  }
-
   @override
   void didUpdateWidget(_LevelRow old) {
     super.didUpdateWidget(old);
-    final asked = _dragging;
-    if (!_pendingRelease || asked == null) return;
-    // Close enough is the rig having taken the write: the value it reports is
-    // quantised and clamped, so exact equality would strand the bar forever.
-    if ((widget.value / kSignalMaxGain - asked).abs() < 0.005) {
-      _releaseTimer?.cancel();
-      _acceptRig();
-    }
+    if (_dragging == null || widget.value == _valueAtGrab) return;
+    // The rig has spoken — agreeing or overruling, either way it is now the
+    // one telling the truth about this chain.
+    setState(() {
+      _dragging = null;
+      _valueAtGrab = null;
+    });
   }
 
   @override
@@ -625,20 +614,22 @@ class _LevelRowState extends State<_LevelRow> {
               value: readout,
               // Flutter requires the neighbouring values alongside the
               // actions, and they are what the reader speaks after a swipe.
-              increasedValue: signalGainReadout(
-                (fraction + step).clamp(0.0, 1.0) * kSignalMaxGain,
-              ),
-              decreasedValue: signalGainReadout(
-                (fraction - step).clamp(0.0, 1.0) * kSignalMaxGain,
-              ),
+              increasedValue: fraction >= 1
+                  ? readout
+                  : signalGainReadout((fraction + step) * kSignalMaxGain),
+              decreasedValue: fraction <= 0
+                  ? readout
+                  : signalGainReadout((fraction - step) * kSignalMaxGain),
               // The reader adjusts through THESE, not through the detector
               // below: Flutter synthesises `tap`/`scrollLeft`/`scrollRight`
               // from a bare GestureDetector, with a position in global space
               // that `_report` would read as a bar-local x — a swipe to turn
               // the monitor DOWN slammed it to +6 dB into whatever the rig is
               // plugged into.
-              onIncrease: () => _nudge(step),
-              onDecrease: () => _nudge(-step),
+              // Not offered where it cannot move: a swipe at the end of the
+              // travel would otherwise write the value the rig already has.
+              onIncrease: fraction >= 1 ? null : () => _nudge(step),
+              onDecrease: fraction <= 0 ? null : () => _nudge(-step),
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final width = constraints.maxWidth;
@@ -648,14 +639,10 @@ class _LevelRowState extends State<_LevelRow> {
                     // rig; the slider node above is what the reader drives.
                     excludeFromSemantics: true,
                     onTapDown: (d) => _report(width, d.localPosition.dx),
-                    onTapUp: (_) => _release(),
-                    onTapCancel: _release,
                     onHorizontalDragStart: (d) =>
                         _report(width, d.localPosition.dx),
                     onHorizontalDragUpdate: (d) =>
                         _report(width, d.localPosition.dx),
-                    onHorizontalDragEnd: (_) => _release(),
-                    onHorizontalDragCancel: _release,
                     // The grab area is the whole ROW, not the 24 the bar
                     // draws: this is the only fader on a console worked with
                     // a finger, and halving its height put dead bands above

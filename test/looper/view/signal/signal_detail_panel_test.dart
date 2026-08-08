@@ -620,12 +620,13 @@ void main() {
       expect(find.text(signalGainReadout(after)), findsOneWidget);
     });
 
-    testWidgets('a rig that never answers does not strand the bar', (
+    testWidgets('a silent rig keeps the move rather than undoing it', (
       tester,
     ) async {
-      // The track path raises a bloc event; the mocked bloc never emits, so
-      // the rig never confirms. The bar must still fall back to what the rig
-      // says rather than showing the finger's value forever.
+      // A lane's volume only reaches the snapshot once the audio callback
+      // drains the command queue — with no device running that never happens,
+      // while the repository has cached the write and will apply it at the
+      // next start. Falling back would animate away a setting that was kept.
       await pump(tester, stage: FxStage.track);
       await tester.tap(find.byKey(const Key('signal_card_track_0')));
       await tester.pumpAndSettle();
@@ -634,12 +635,94 @@ void main() {
         find.byKey(const Key('signal_panel_level')),
         const Offset(-300, 0),
       );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
 
-      // Track 0 sits at 0.5 gain, which is −6.0 dB.
-      expect(find.text(signalGainReadout(0.5)), findsOneWidget);
+      // Track 0 sits at 0.5 gain (−6.0 dB); the drag moved it below that and
+      // it stays moved.
+      expect(find.text(signalGainReadout(0.5)), findsNothing);
+    });
+
+    testWidgets('a rig that answers differently wins', (tester) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      await pump(tester, stage: FxStage.track, states: states.stream);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      await tester.drag(
+        find.byKey(const Key('signal_panel_level')),
+        const Offset(-300, 0),
+      );
+      await tester.pump();
+
+      // The rig clamps it somewhere else entirely.
+      states.add(
+        LooperState(
+          tracks: [
+            Track(volume: 0.25, lanes: _rig.tracks.first.lanes),
+            _rig.tracks[1],
+          ],
+          status: _rig.status,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(signalGainReadout(0.25)), findsOneWidget);
+    });
+
+    testWidgets('a reader nudge does not freeze the fader', (tester) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      await pump(tester, stage: FxStage.track, states: states.stream);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // Invoked the way a reader would: the increase handler the slider
+      // publishes, not a gesture.
+      final slider = tester.widget<Semantics>(
+        find
+            .ancestor(
+              of: find.byKey(const Key('signal_panel_level')),
+              matching: find.byType(Semantics),
+            )
+            .first,
+      );
+      slider.properties.onIncrease!();
+      await tester.pumpAndSettle();
+
+      // A nudge is press-and-lift in one, so the rig's own answer still lands
+      // — otherwise the bar keeps the nudged number for the life of the panel.
+      states.add(
+        LooperState(
+          tracks: [
+            Track(volume: 0.25, lanes: _rig.tracks.first.lanes),
+            _rig.tracks[1],
+          ],
+          status: _rig.status,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(signalGainReadout(0.25)), findsOneWidget);
+    });
+
+    testWidgets("one card's drag does not show on the next", (tester) async {
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byKey(const Key('signal_panel_level')),
+        const Offset(-400, 0),
+      );
+      await tester.pumpAndSettle();
+      final moved = signalGainReadout(monitor.state.forInput(0).volume);
+
+      await tester.tap(find.byKey(const Key('signal_card_input_1')));
+      await tester.pumpAndSettle();
+
+      // Input 1 is untouched, so it reads unity — not input 0's number.
+      expect(find.text(moved), findsNothing);
+      expect(find.text('0.0 dB'), findsOneWidget);
     });
   });
 
