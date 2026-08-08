@@ -4,6 +4,7 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
+import 'package:segno/looper/view/signal_graph/signal_fx_chrome.dart';
 import 'package:segno/theme/theme.dart';
 
 /// One link of a chain, opened in place: its parameters, and the four things
@@ -158,8 +159,15 @@ class SignalFxEditor extends StatelessWidget {
             ),
         ],
         PluginEffect(:final params, :final paramValues) => [
+          // The rack's filter, and R23's reasoning: a plugin's own bypass is
+          // not a fader — the footer's pill is THE power control (D-POWER),
+          // and a second one beside it is the ambiguity that rule exists to
+          // prevent. Meters and hidden parameters are not controls at all,
+          // and a bar over a read-only meter now genuinely writes, since the
+          // unit conversion above made these writes land.
           for (final info in params)
-            _pluginRow(info, paramValues[info.id] ?? info.def),
+            if (info.isUserVisible && !info.isBypass && !info.isReadOnly)
+              _pluginRow(info, paramValues[info.id] ?? info.def),
         ],
       };
 
@@ -179,8 +187,18 @@ class SignalFxEditor extends StatelessWidget {
       readout:
           scope.formatPluginValue(index, info.id, plain) ??
           _plainReadout(info, plain),
-      onChanged: (value) =>
-          scope.setPluginParam(index, info.id, info.min + value * span),
+      onChanged: (value) => scope.setPluginParam(
+        index,
+        info.id,
+        // A stepped parameter has to LAND on a step: the readout names one,
+        // and a value parked between two would leave the plugin holding
+        // something the label says it is not.
+        info.min +
+            (info.stepCount > 0
+                    ? (value * info.stepCount).round() / info.stepCount
+                    : value) *
+                span,
+      ),
     );
   }
 
@@ -206,14 +224,25 @@ class SignalFxEditor extends StatelessWidget {
         : null;
   }
 
-  /// Why a chain entry is showing no controls — which is four different
+  /// Why a chain entry is showing no controls — which is several different
   /// facts, and only one of them is "it has none".
+  ///
+  /// Delegates to [fxPluginPlaceholderReason], which the placeholder card and
+  /// the summary chip already share, so the three cannot disagree. The
+  /// nesting is load-bearing: the repository sets `unsupported` and `loading`
+  /// **alongside** `unavailable` rather than instead of it, so testing
+  /// `unavailable` first makes the other two unreachable — a plugin still
+  /// being scanned would be told it failed, and a bus plugin would be told it
+  /// did not load rather than that this stage cannot host it.
   static String _emptyReason(AppLocalizations l10n, TrackEffect effect) =>
       switch (effect) {
-        PluginEffect(:final unavailable) when unavailable =>
-          l10n.fxPluginUnavailable,
-        PluginEffect(:final unsupported) when unsupported =>
-          l10n.fxPluginUnsupportedHere,
+        PluginEffect(:final unavailable, :final unsupported, :final loading)
+            when unavailable || loading =>
+          fxPluginPlaceholderReason(
+            l10n,
+            loading: loading,
+            unsupported: unsupported,
+          ),
         _ => l10n.fxNoParameters,
       };
 }

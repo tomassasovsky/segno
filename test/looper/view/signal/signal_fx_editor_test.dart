@@ -45,7 +45,31 @@ const _freq = PluginParamInfo(
   max: 20000,
   def: 440,
   stepCount: 0,
-  flags: 0,
+  // Automatable and visible — the only kind the editor draws a fader for.
+  flags: 0x01,
+);
+
+/// A meter and the plugin's own bypass: present in `params`, but not controls.
+const _meter = PluginParamInfo(
+  id: 8,
+  name: 'Gain Reduction',
+  unit: 'dB',
+  min: -60,
+  max: 0,
+  def: 0,
+  stepCount: 0,
+  flags: 0x01 | 0x02,
+);
+
+const _pluginBypass = PluginParamInfo(
+  id: 9,
+  name: 'Bypass',
+  unit: '',
+  min: 0,
+  max: 1,
+  def: 0,
+  stepCount: 1,
+  flags: 0x01 | 0x04,
 );
 
 PluginEffect _plugin({Map<int, double> values = const {}}) => PluginEffect(
@@ -103,19 +127,23 @@ void main() {
       ]);
       await pump(tester, scope);
 
-      await tester.tapAt(
-        tester.getTopLeft(find.byKey(const Key('signal_fx_param_0'))) +
-            const Offset(1200, 25),
-      );
+      final bar = find.byKey(const Key('signal_fx_param_0'));
+      final left = tester.getTopLeft(bar);
+      final width = tester.getSize(bar).width;
+      // A quarter along the bar, measured — so the assertion below pins the
+      // MAPPING and not merely that the write landed somewhere in range. An
+      // inverted map (drag right = lower) passes a range check and fails this.
+      await tester.tapAt(left + Offset(width * 0.25, 25));
       await tester.pumpAndSettle();
 
-      // Sending the bar's fraction straight through would set a 20 kHz filter
-      // to 0.06 Hz. The write has to land inside the plugin's own range.
       expect(scope.pluginWrites, isNotEmpty);
-      final (_, id, written) = scope.pluginWrites.last;
+      final (entry, id, written) = scope.pluginWrites.last;
+      // The chain entry, not just the parameter: writing the right value to
+      // the wrong slot is the other half of getting this right.
+      expect(entry, 0);
       expect(id, 7);
-      expect(written, greaterThan(_freq.min));
-      expect(written, lessThanOrEqualTo(_freq.max));
+      final expected = _freq.min + 0.25 * (_freq.max - _freq.min);
+      expect(written, closeTo(expected, (_freq.max - _freq.min) * 0.05));
     });
 
     testWidgets('an untouched parameter reads the plugin default', (
@@ -136,10 +164,14 @@ void main() {
     ) async {
       final scope = _FakeScope([
         _plugin(values: const {7: 440}),
-      ], formatted: '440 Hz');
+      ], formatted: 'A4');
       await pump(tester, scope);
 
-      expect(find.text('440 Hz'), findsOneWidget);
+      // Deliberately NOT what the fallback would produce: two tests that both
+      // expect '440 Hz' cannot tell the live path from the fallback, and the
+      // whole "ask the instance first" decision would be untested.
+      expect(find.text('A4'), findsOneWidget);
+      expect(find.text('440 Hz'), findsNothing);
     });
 
     testWidgets('and falls back to plain units when it cannot', (tester) async {
@@ -148,9 +180,66 @@ void main() {
       ]);
       await pump(tester, scope);
 
-      // The two bus stages hold no live instance to ask; a percentage of a
-      // plain value would say nothing.
+      // No live instance to ask — the plain value with the parameter's own
+      // unit, rather than a percentage of a number that is not a fraction.
       expect(find.text('440 Hz'), findsOneWidget);
+      expect(find.text('A4'), findsNothing);
+    });
+  });
+
+  testWidgets('a stepped parameter lands on a step', (tester) async {
+    const type = PluginParamInfo(
+      id: 11,
+      name: 'Type',
+      unit: '',
+      min: 0,
+      max: 2,
+      def: 0,
+      stepCount: 2,
+      flags: 0x01 | 0x10,
+      valueTexts: ['Lowpass', 'Bandpass', 'Highpass'],
+    );
+    final scope = _FakeScope([
+      const PluginEffect(
+        ref: PluginRef(format: PluginFormat.vst3, id: 'test.filter'),
+        params: [type],
+      ),
+    ]);
+    await pump(tester, scope);
+
+    final bar = find.byKey(const Key('signal_fx_param_0'));
+    await tester.tapAt(
+      tester.getTopLeft(bar) + Offset(tester.getSize(bar).width * 0.45, 25),
+    );
+    await tester.pumpAndSettle();
+
+    // The readout names a step, so the value has to BE one — a plugin parked
+    // between two while the label claims one of them is the mismatch.
+    expect(scope.pluginWrites, isNotEmpty);
+    final (_, _, written) = scope.pluginWrites.last;
+    expect(written, closeTo(written.roundToDouble(), 0.0001));
+  });
+
+  group('what is a control and what is only a number', () {
+    testWidgets("a meter and the plugin's own bypass get no fader", (
+      tester,
+    ) async {
+      final scope = _FakeScope([
+        const PluginEffect(
+          ref: PluginRef(format: PluginFormat.vst3, id: 'test.filter'),
+          name: 'Filter',
+          params: [_freq, _meter, _pluginBypass],
+          paramValues: {7: 440},
+        ),
+      ]);
+      await pump(tester, scope);
+
+      // One fader, for the one parameter that is a control. A read-only meter
+      // with a working bar over it now WRITES, and a second bypass beside the
+      // footer's pill is the ambiguity R23 exists to prevent.
+      expect(find.byKey(const Key('signal_fx_param_0')), findsOneWidget);
+      expect(find.byKey(const Key('signal_fx_param_1')), findsNothing);
+      expect(find.text('GAIN REDUCTION'), findsNothing);
     });
   });
 
@@ -167,8 +256,51 @@ void main() {
         tester.element(find.byType(SignalFxEditor)),
       );
 
-      expect(find.text(l10n.fxPluginUnavailable), findsOneWidget);
+      // The repo's own placeholder wording, shared with the card and the
+      // summary chip so the three cannot drift apart.
+      expect(find.text(l10n.signalPluginUnavailable), findsOneWidget);
       expect(find.text(l10n.fxNoParameters), findsNothing);
+    });
+
+    testWidgets('a plugin still being scanned is not called a failure', (
+      tester,
+    ) async {
+      final scope = _FakeScope([
+        const PluginEffect(
+          ref: PluginRef(format: PluginFormat.vst3, id: 'scanning'),
+          // The cold-boot posture: the repository sets `loading` ALONGSIDE
+          // `unavailable`, so testing unavailable first would tell the player
+          // it failed.
+          unavailable: true,
+          loading: true,
+        ),
+      ]);
+      await pump(tester, scope);
+      final l10n = AppLocalizations.of(
+        tester.element(find.byType(SignalFxEditor)),
+      );
+
+      expect(find.text(l10n.signalPluginLoading), findsOneWidget);
+      expect(find.text(l10n.signalPluginUnavailable), findsNothing);
+    });
+
+    testWidgets('a stage that cannot host it says that, not that it failed', (
+      tester,
+    ) async {
+      final scope = _FakeScope([
+        const PluginEffect(
+          ref: PluginRef(format: PluginFormat.vst3, id: 'bus'),
+          unavailable: true,
+          unsupported: true,
+        ),
+      ]);
+      await pump(tester, scope);
+      final l10n = AppLocalizations.of(
+        tester.element(find.byType(SignalFxEditor)),
+      );
+
+      expect(find.text(l10n.signalPluginUnsupported), findsOneWidget);
+      expect(find.text(l10n.signalPluginUnavailable), findsNothing);
     });
 
     testWidgets('a built-in with no parameters says only that', (tester) async {

@@ -82,12 +82,13 @@ Track? _trackOf(LooperState state, int track) {
   return null;
 }
 
-/// Whether the three facts a panel draws about a lane are unchanged.
+/// Whether the facts a panel draws about a lane are unchanged.
 ///
 /// Deliberately NOT `a == b`: a [Lane] carries live meters, so value equality
 /// on the whole object is false on every audio frame and the panel would
-/// redraw at the meter rate. It draws a chain, a volume and a mute; only those
-/// decide. Same argument as `sameChainShape` makes for the card runs.
+/// redraw at the meter rate. It draws a chain, a volume, a mute and the
+/// chain's own power; only those decide. Same argument as `sameChainShape`
+/// makes for the card runs.
 bool sameLaneFacts(Lane? a, Lane? b) => a == null || b == null
     ? identical(a, b)
     : a.volume == b.volume &&
@@ -99,7 +100,7 @@ bool sameLaneFacts(Lane? a, Lane? b) => a == null || b == null
           a.chainEnabled == b.chainEnabled &&
           listEquals(a.effects, b.effects);
 
-/// Whether the three facts a panel draws about a track bus are unchanged.
+/// Whether the facts a panel draws about a track bus are unchanged.
 /// See [sameLaneFacts] — a [Track] carries live meters for the same reason.
 bool sameTrackFacts(Track? a, Track? b) => a == null || b == null
     ? identical(a, b)
