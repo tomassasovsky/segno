@@ -193,11 +193,7 @@ class _LoopPanel extends StatelessWidget {
         // live setting. Nothing beats a panel of stale numbers.
         if (take == null) return const SizedBox.shrink();
         return _PanelBody(
-          address: FxAddress(
-            stage: FxStage.loop,
-            index: track,
-            lane: lane,
-          ),
+          address: FxAddress(stage: FxStage.loop, index: track, lane: lane),
           scope: LaneFxScope(
             looper: bloc,
             repository: context.read<LooperRepository>(),
@@ -239,10 +235,8 @@ class _TrackPanel extends StatelessWidget {
     final bloc = context.read<LooperBloc>();
     // Same reason as the loop panel: a [Track] carries live meters.
     return BlocBuilder<LooperBloc, LooperState>(
-      buildWhen: (previous, current) => !sameTrackFacts(
-        _trackOf(previous, track),
-        _trackOf(current, track),
-      ),
+      buildWhen: (previous, current) =>
+          !sameTrackFacts(_trackOf(previous, track), _trackOf(current, track)),
       builder: (context, state) {
         final bus = _trackOf(state, track);
         if (bus == null) return const SizedBox.shrink();
@@ -745,13 +739,18 @@ class _LiftedChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
       border: Border.all(color: surface.accent),
     ),
-    child: Text(
-      label,
-      style: TextStyle(
-        color: surface.accent,
-        fontSize: 16,
-        height: 1.13,
-        leadingDistribution: TextLeadingDistribution.even,
+    // Centred the same way the chips in the run are — this is the copy that
+    // flies, and a label that sits differently here jumps on the lift.
+    child: Center(
+      widthFactor: 1,
+      child: Text(
+        label,
+        style: TextStyle(
+          color: surface.accent,
+          fontSize: 16,
+          height: 1.13,
+          leadingDistribution: TextLeadingDistribution.even,
+        ),
       ),
     ),
   );
@@ -793,6 +792,13 @@ class _ChainStrip extends StatefulWidget {
 }
 
 class _ChainStripState extends State<_ChainStrip> {
+  /// Between two chips, and between the last one and `+ effect`.
+  ///
+  /// The pen draws the run at 10: `Drive` ends at 74 and `Tremolo` starts at
+  /// 84, the same on `SIGNAL / signal-detail` and `SIGNAL / fx-edit`. It was
+  /// built at 5, which reads as a tighter strip than the design.
+  static const double chipGap = 10;
+
   /// Every entry currently in the air, by slot id.
   ///
   /// Normally one. The chips are disarmed on the rebuild that follows a drag
@@ -943,9 +949,7 @@ class _ChainStripState extends State<_ChainStrip> {
             // silences its tap action, and the chip then announces as
             // a button a screen reader cannot activate — the editor
             // becomes unreachable from assistive tech entirely.
-            child: ExcludeSemantics(
-              child: _chip(context, index, effect),
-            ),
+            child: ExcludeSemantics(child: _chip(context, index, effect)),
           ),
         ),
       ),
@@ -969,10 +973,6 @@ class _ChainStripState extends State<_ChainStrip> {
     final selected = effect.slotId != null && effect.slotId == widget.editing;
     return Opacity(
       opacity: ghosted ? 0.3 : 1,
-      // No `alignment`: a Container with one expands to its constraints, which
-      // inside a Wrap makes every chip span the whole panel — and then the add
-      // chip wraps below the run instead of following it. The padding centres
-      // the label on its own.
       child: Container(
         height: 38,
         padding: const EdgeInsets.symmetric(horizontal: 17),
@@ -982,13 +982,21 @@ class _ChainStripState extends State<_ChainStrip> {
           color: selected ? surface.accentSurface : null,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text(
-          fxBlockName(l10n, effect),
-          style: TextStyle(
-            color: selected ? surface.accent : surface.textSecondary,
-            fontSize: 16,
-            height: 1.13,
-            leadingDistribution: TextLeadingDistribution.even,
+        // `Center` with a width factor, not the Container's `alignment`: an
+        // alignment makes a Container expand to its constraints, which inside
+        // a Wrap gives every chip the whole panel's width. Without either,
+        // the label sits at the TOP of the 38 — beside an add chip that has
+        // always centred its own, so the run read as misaligned.
+        child: Center(
+          widthFactor: 1,
+          child: Text(
+            fxBlockName(l10n, effect),
+            style: TextStyle(
+              color: selected ? surface.accent : surface.textSecondary,
+              fontSize: 16,
+              height: 1.13,
+              leadingDistribution: TextLeadingDistribution.even,
+            ),
           ),
         ),
       ),
@@ -1028,8 +1036,8 @@ class _ChainStripState extends State<_ChainStrip> {
           // Unchanged whether a drag is up or not: the drop targets are the
           // chips themselves, so nothing is inserted into the run and nothing
           // moves under the hand that just pressed one.
-          spacing: 5,
-          runSpacing: 5,
+          spacing: chipGap,
+          runSpacing: chipGap,
           children: [
             for (final (index, effect) in chain.indexed)
               _entry(context, index, effect, carrying),

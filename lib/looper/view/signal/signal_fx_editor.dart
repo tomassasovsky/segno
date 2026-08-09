@@ -138,12 +138,7 @@ class SignalFxEditor extends StatelessWidget {
             ),
           ],
           const SizedBox(height: footerGap),
-          _Footer(
-            scope: scope,
-            index: index,
-            effect: effect,
-            onClose: onClose,
-          ),
+          _Footer(scope: scope, index: index, effect: effect, onClose: onClose),
         ],
       ),
     );
@@ -360,7 +355,7 @@ class _Footer extends StatelessWidget {
           const SizedBox(width: 10),
           _Glyph(
             glyphKey: const Key('signal_fx_move_up'),
-            glyph: '◀',
+            glyph: _Glyph.earlier,
             semanticLabel: l10n.fxMoveEarlier,
             // Processing order IS signal order, so earlier means earlier in
             // the sound. Nothing to do at the head of the chain.
@@ -369,7 +364,7 @@ class _Footer extends StatelessWidget {
           const SizedBox(width: 10),
           _Glyph(
             glyphKey: const Key('signal_fx_move_down'),
-            glyph: '▶',
+            glyph: _Glyph.later,
             semanticLabel: l10n.fxMoveLater,
             onTap: index >= last ? null : () => _move(index + 1),
           ),
@@ -439,9 +434,7 @@ class _Pill extends StatelessWidget {
             decoration: BoxDecoration(
               color: active ? surface.accentSurface : null,
               borderRadius: BorderRadius.circular(119),
-              border: Border.all(
-                color: active ? surface.accent : surface.line,
-              ),
+              border: Border.all(color: active ? surface.accent : surface.line),
             ),
             child: Text(
               label,
@@ -470,11 +463,35 @@ class _Glyph extends StatelessWidget {
   });
 
   final Key glyphKey;
+
+  /// Which way the triangle points, or null for a text button.
+  ///
+  /// PAINTED, not typed. `◀` and `▶` are emoji-presentation by default, so
+  /// macOS renders them out of Apple Color Emoji — a fat coloured lozenge
+  /// sitting off the text baseline, next to a `Remove` in Inter. A path is
+  /// the same shape on every platform the console runs on.
   final String? glyph;
+
+  /// The two directions [glyph] can name.
+  static const String earlier = 'earlier';
+  static const String later = 'later';
   final String? label;
   final String semanticLabel;
   final VoidCallback? onTap;
 
+  /// The triangle, keyed by the way it points.
+  ///
+  /// One value drives both the key and the path, so a direction that gets
+  /// flipped is a direction a test can see — nothing about a painted
+  /// triangle reaches the widget tree otherwise.
+  static Widget _triangle({required bool pointsLeft, required Color color}) =>
+      CustomPaint(
+        key: Key(
+          pointsLeft ? 'signal_fx_points_left' : 'signal_fx_points_right',
+        ),
+        size: const Size(11, 13),
+        painter: _TrianglePainter(pointsLeft: pointsLeft, color: color),
+      );
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
@@ -497,22 +514,56 @@ class _Glyph extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: surface.borderStrong),
             ),
-            child: Text(
-              glyph ?? label!,
-              style: TextStyle(
-                // A disabled end of the chain recedes rather than disappears:
-                // the button is still where it was a moment ago.
-                color: enabled ? surface.textPrimary : surface.textMuted,
-                fontSize: glyph != null ? 15 : 14,
-                height: 1.21,
-                leadingDistribution: TextLeadingDistribution.even,
-              ),
-            ),
+            // A disabled end of the chain recedes rather than disappears: the
+            // button is still where it was a moment ago.
+            child: glyph == null
+                ? Text(
+                    label!,
+                    style: TextStyle(
+                      color: enabled ? surface.textPrimary : surface.textMuted,
+                      fontSize: 14,
+                      height: 1.21,
+                      leadingDistribution: TextLeadingDistribution.even,
+                    ),
+                  )
+                : _triangle(
+                    pointsLeft: glyph == _Glyph.earlier,
+                    color: enabled ? surface.textPrimary : surface.textMuted,
+                  ),
           ),
         ),
       ),
     );
   }
+}
+
+/// The solid triangle the move buttons carry.
+class _TrianglePainter extends CustomPainter {
+  const _TrianglePainter({required this.pointsLeft, required this.color});
+
+  final bool pointsLeft;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path();
+    if (pointsLeft) {
+      path
+        ..moveTo(size.width, 0)
+        ..lineTo(size.width, size.height)
+        ..lineTo(0, size.height / 2);
+    } else {
+      path
+        ..moveTo(0, 0)
+        ..lineTo(0, size.height)
+        ..lineTo(size.width, size.height / 2);
+    }
+    canvas.drawPath(path..close(), Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_TrianglePainter old) =>
+      old.pointsLeft != pointsLeft || old.color != color;
 }
 
 /// A parameter's value in its own units.
