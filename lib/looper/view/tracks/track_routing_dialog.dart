@@ -234,7 +234,9 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
                           // it hands over to.
                           upcoming: l10n.trackQuantizeGroup,
                           upcomingExtent: _quantizeExtent,
-                          previewKey: const Key('track_routing_upcoming_group'),
+                          previewKey: const Key(
+                            'track_routing_upcoming_group',
+                          ),
                           slivers: [
                             // A group per caption, so a caption pins only
                             // while its OWN section is passing: plain pinned
@@ -574,7 +576,11 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
 /// recording this input*. The slot is the same width lit or not, so the names
 /// beside it do not move as lanes come and go.
 class _LaneCheck extends StatelessWidget {
-  const _LaneCheck({required this.recorded, required this.onTap, super.key});
+  const _LaneCheck({
+    required this.recorded,
+    required this.onTap,
+    super.key,
+  });
 
   final bool recorded;
   final VoidCallback? onTap;

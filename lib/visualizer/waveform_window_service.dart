@@ -86,7 +86,9 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
 
     _readyCompleter = Completer<void>();
     final controller = await WindowController.create(
-      WindowConfiguration(arguments: WaveformWindowArgs.encode(title: title)),
+      WindowConfiguration(
+        arguments: WaveformWindowArgs.encode(title: title),
+      ),
     );
     _controller = controller;
 

@@ -93,7 +93,10 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// domain's own tab alone, so returning to a domain lands where it was
   /// left.
   void closeTray() => emit(
-    state.copyWith(dragProgress: 0, destination: SettingsTrayDestination.home),
+    state.copyWith(
+      dragProgress: 0,
+      destination: SettingsTrayDestination.home,
+    ),
   );
 
   /// Toggles open/closed. Only ever called from a tap (never mid-drag), so

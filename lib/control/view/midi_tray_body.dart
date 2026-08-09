@@ -128,7 +128,9 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
     _relearning = null;
     if (_openKey != armed.key) return;
     final moved = bindings
-        .where((b) => b.target == armed.key.$2 && !armed.before.contains(b.key))
+        .where(
+          (b) => b.target == armed.key.$2 && !armed.before.contains(b.key),
+        )
         .firstOrNull;
     if (moved == null) return;
     setState(() => _open = _MappingOpen(moved.key));

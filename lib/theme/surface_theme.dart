@@ -342,7 +342,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       ledBlue: c(ledBlue, other.ledBlue),
       ringGlow: c(ringGlow, other.ringGlow),
       chromeGradientTop: c(chromeGradientTop, other.chromeGradientTop),
-      chromeGradientBottom: c(chromeGradientBottom, other.chromeGradientBottom),
+      chromeGradientBottom: c(
+        chromeGradientBottom,
+        other.chromeGradientBottom,
+      ),
       chromeBar: c(chromeBar, other.chromeBar),
       meterTrack: c(meterTrack, other.meterTrack),
       pageGlow: c(pageGlow, other.pageGlow),

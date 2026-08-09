@@ -276,7 +276,9 @@ class _TrackCards extends StatelessWidget {
               summary: l10n.signalTapToLoadRack,
             ),
         ],
-        drawn: [for (final track in state.tracks) _trackAddress(track.channel)],
+        drawn: [
+          for (final track in state.tracks) _trackAddress(track.channel),
+        ],
         emptyMessage: l10n.signalNoTracks,
       ),
     );
@@ -309,8 +311,10 @@ class _MasterStage extends StatelessWidget {
     // 64-output interface reports 32 here and `1 << output` never runs off
     // the end of the default `0xFFFFFFFF`.
     final (outputs, mask) = context.select<LooperBloc, (int, int)>(
-      (bloc) =>
-          (bloc.state.status.outputChannels, bloc.state.outputEnabledMask),
+      (bloc) => (
+        bloc.state.status.outputChannels,
+        bloc.state.outputEnabledMask,
+      ),
     );
     final live = [
       for (var output = 0; output < outputs; output++)
@@ -336,7 +340,9 @@ class _MasterStage extends StatelessWidget {
         // different question — where the sum goes.
         if (open == const FxAddress(stage: FxStage.master)) ...[
           const SizedBox(height: kConsoleBlockGap),
-          const SignalDetailPanel(address: FxAddress(stage: FxStage.master)),
+          const SignalDetailPanel(
+            address: FxAddress(stage: FxStage.master),
+          ),
         ],
         const SizedBox(height: kConsoleGroupGap),
         ConsoleGroupLabel(l10n.signalOutputsGroup),

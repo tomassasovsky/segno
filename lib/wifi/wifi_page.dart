@@ -107,7 +107,10 @@ class _WifiPageState extends State<WifiPage> {
                             padding: const EdgeInsets.all(20),
                             child: Text(
                               state.errorMessage != null
-                                  ? wifiErrorMessage(l10n, state.errorMessage)
+                                  ? wifiErrorMessage(
+                                      l10n,
+                                      state.errorMessage,
+                                    )
                                   : l10n.wifiUnsupportedBody,
                               style: context.setupBody,
                             ),
@@ -134,8 +137,9 @@ class _WifiPageState extends State<WifiPage> {
                                         state: state,
                                         onDisconnect: state.busy
                                             ? null
-                                            : () =>
-                                                  unawaited(cubit.disconnect()),
+                                            : () => unawaited(
+                                                cubit.disconnect(),
+                                              ),
                                         onForget:
                                             state.busy ||
                                                 !state.status.connected

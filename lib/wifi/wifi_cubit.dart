@@ -55,7 +55,13 @@ class WifiCubit extends Cubit<WifiState> {
       final sorted = bySsid.values.toList()
         ..sort((a, b) => b.signal.compareTo(a.signal));
       final status = await _repository.status();
-      emit(state.copyWith(networks: sorted, status: status, scanning: false));
+      emit(
+        state.copyWith(
+          networks: sorted,
+          status: status,
+          scanning: false,
+        ),
+      );
     } on Object catch (e) {
       emit(state.copyWith(scanning: false, errorMessage: '$e'));
     }
@@ -128,10 +134,20 @@ class WifiCubit extends Cubit<WifiState> {
     try {
       await _repository.disconnect();
       final status = await _repository.status();
-      emit(state.copyWith(status: status, busy: false, disconnecting: false));
+      emit(
+        state.copyWith(
+          status: status,
+          busy: false,
+          disconnecting: false,
+        ),
+      );
     } on Object catch (e) {
       emit(
-        state.copyWith(busy: false, disconnecting: false, errorMessage: '$e'),
+        state.copyWith(
+          busy: false,
+          disconnecting: false,
+          errorMessage: '$e',
+        ),
       );
     }
   }
@@ -165,7 +181,11 @@ class WifiCubit extends Cubit<WifiState> {
       );
     } on Object catch (e) {
       emit(
-        state.copyWith(busy: false, disconnecting: false, errorMessage: '$e'),
+        state.copyWith(
+          busy: false,
+          disconnecting: false,
+          errorMessage: '$e',
+        ),
       );
     }
   }

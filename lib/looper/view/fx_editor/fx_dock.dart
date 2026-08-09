@@ -266,7 +266,10 @@ class _OverdubMismatchHint extends StatelessWidget {
           Icon(Icons.info_outline, size: 14, color: surface.warning),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(message, style: signalLabel(color: surface.warning)),
+            child: Text(
+              message,
+              style: signalLabel(color: surface.warning),
+            ),
           ),
         ],
       ),

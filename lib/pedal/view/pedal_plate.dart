@@ -157,7 +157,10 @@ class PedalPlate extends StatelessWidget {
             _slotD + aboveHmm,
             Column(
               children: [
-                Expanded(flex: _ledD.round(), child: statusLed),
+                Expanded(
+                  flex: _ledD.round(),
+                  child: statusLed,
+                ),
                 Expanded(
                   flex: _ledBehind.round(),
                   child: const SizedBox.shrink(),
@@ -413,7 +416,10 @@ List<_SilkLine> _silkLabelLines(String label, double pedalU, double pedalV) {
 /// Bold sans legend at a fixed cap height; squish X only when wider than the
 /// slot.
 class _SilkLabel extends StatelessWidget {
-  const _SilkLabel({required this.text, required this.align});
+  const _SilkLabel({
+    required this.text,
+    required this.align,
+  });
 
   final String text;
   final TextAlign align;
@@ -513,7 +519,10 @@ class _ScreenBezel extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: context.surface.line, width: 2),
       ),
-      child: ClipRRect(borderRadius: BorderRadius.circular(6), child: child),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: child,
+      ),
     );
   }
 }

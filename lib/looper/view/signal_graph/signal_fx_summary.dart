@@ -128,7 +128,11 @@ class SignalFxSummary extends StatelessWidget {
 /// the editor, not colour-coded on the routing card). A powered-off entry dims
 /// and strikes through; a plugin needing attention leads with its glyph.
 class _SummaryChip extends StatelessWidget {
-  const _SummaryChip({required this.label, required this.enabled, this.status});
+  const _SummaryChip({
+    required this.label,
+    required this.enabled,
+    this.status,
+  });
 
   final String label;
 
@@ -201,7 +205,10 @@ class _ChainOffChip extends StatelessWidget {
         children: [
           Icon(Icons.power_off, size: 11, color: surface.warning),
           const SizedBox(width: 4),
-          Text(label, style: signalMono(color: surface.warning, size: 10)),
+          Text(
+            label,
+            style: signalMono(color: surface.warning, size: 10),
+          ),
         ],
       ),
     );
@@ -278,7 +285,10 @@ class _AddFxChip extends StatelessWidget {
         children: [
           Icon(Icons.add, size: 13, color: surface.textTertiary),
           const SizedBox(width: 4),
-          Text(label, style: signalMono(color: surface.textTertiary, size: 10)),
+          Text(
+            label,
+            style: signalMono(color: surface.textTertiary, size: 10),
+          ),
         ],
       ),
     );

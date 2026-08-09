@@ -65,7 +65,10 @@ class AudioDevicePicker extends StatelessWidget {
             isExpanded: true,
             dropdownColor: context.surface.cardHigh,
             borderRadius: BorderRadius.circular(12),
-            icon: Icon(Icons.expand_more, color: context.surface.textSecondary),
+            icon: Icon(
+              Icons.expand_more,
+              color: context.surface.textSecondary,
+            ),
             style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
             items: [
               if (includeSystemDefault)

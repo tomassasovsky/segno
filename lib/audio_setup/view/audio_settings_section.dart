@@ -25,7 +25,10 @@ import 'package:url_launcher/url_launcher.dart';
 /// pickers omit "System default" so a concrete interface stays pinned.
 class AudioSettingsSection extends StatelessWidget {
   /// Creates an [AudioSettingsSection].
-  const AudioSettingsSection({super.key, this.consoleMode = kConsoleMode});
+  const AudioSettingsSection({
+    super.key,
+    this.consoleMode = kConsoleMode,
+  });
 
   /// Whether this is the floor-console build. Defaults to [kConsoleMode];
   /// tests inject `true`/`false` without a dart-define.
@@ -218,7 +221,10 @@ class AudioSettingsSection extends StatelessWidget {
         const SizedBox(height: 12),
         SetupInfoTable(
           rows: [
-            (l10n.deviceLabel, _displayDeviceName(context, state)),
+            (
+              l10n.deviceLabel,
+              _displayDeviceName(context, state),
+            ),
             (
               l10n.sampleRateLabel,
               status.sampleRate > 0
@@ -231,7 +237,10 @@ class AudioSettingsSection extends StatelessWidget {
                   ? l10n.bufferFrames(status.bufferFrames)
                   : l10n.emDash,
             ),
-            (l10n.roundTripLatencyLabel, _roundTripLatency(l10n, status)),
+            (
+              l10n.roundTripLatencyLabel,
+              _roundTripLatency(l10n, status),
+            ),
             (
               l10n.recordOffsetLabel,
               l10n.bufferFrames(status.recordOffsetFrames),

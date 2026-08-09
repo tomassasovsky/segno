@@ -81,7 +81,11 @@ class FxPowerToggle extends StatelessWidget {
 /// workable), or an individual summary chip.
 class FxDisabledDim extends StatelessWidget {
   /// Creates an [FxDisabledDim]; [enabled] false dims [child].
-  const FxDisabledDim({required this.enabled, required this.child, super.key});
+  const FxDisabledDim({
+    required this.enabled,
+    required this.child,
+    super.key,
+  });
 
   /// Whether the subtree is engaged (true renders at full strength).
   final bool enabled;
@@ -124,7 +128,10 @@ class FxDisabledDim extends StatelessWidget {
     );
   }
   if (effect.versionChanged) {
-    return (icon: Icons.info_outline, message: l10n.signalPluginVersionChanged);
+    return (
+      icon: Icons.info_outline,
+      message: l10n.signalPluginVersionChanged,
+    );
   }
   return null;
 }

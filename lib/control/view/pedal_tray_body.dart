@@ -269,7 +269,10 @@ class _PedalTrayBodyState extends State<PedalTrayBody> {
         const SizedBox(height: _gap),
         ConsoleGroupLabel(
           PedalBindingKey.isBankKeyed(button)
-              ? l10n.controlAssignGroup(legend, String.fromCharCode(65 + bank))
+              ? l10n.controlAssignGroup(
+                  legend,
+                  String.fromCharCode(65 + bank),
+                )
               : l10n.controlAssignGroupPlain(legend),
         ),
         const SizedBox(height: _gap),
@@ -454,7 +457,11 @@ class _SwitchCard extends StatelessWidget {
 
 /// The assign list's footer: one tap deeper, to the individual effect slots.
 class _EffectsToggle extends StatelessWidget {
-  const _EffectsToggle({required this.showing, required this.onTap, super.key});
+  const _EffectsToggle({
+    required this.showing,
+    required this.onTap,
+    super.key,
+  });
 
   final bool showing;
   final VoidCallback onTap;

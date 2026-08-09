@@ -106,7 +106,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 children: [
                   SizedBox(
                     width: 264,
-                    child: _SettingsRail(current: _section, onSelect: _select),
+                    child: _SettingsRail(
+                      current: _section,
+                      onSelect: _select,
+                    ),
                   ),
                   VerticalDivider(
                     width: 1,
@@ -196,8 +199,9 @@ class _SettingsPageState extends State<SettingsPage> {
         title: l10n.trackIndicatorsTitle,
         subtitle: l10n.trackIndicatorsSubtitle,
         value: showIndicators,
-        onChanged: (on) =>
-            unawaited(context.read<TracksCubit>().setShowIndicators(value: on)),
+        onChanged: (on) => unawaited(
+          context.read<TracksCubit>().setShowIndicators(value: on),
+        ),
       ),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.looperGroupLabel),

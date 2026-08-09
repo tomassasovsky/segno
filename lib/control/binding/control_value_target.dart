@@ -61,7 +61,11 @@ sealed class ControlValueTarget extends Equatable {
     final param = raw['param'];
     if (slot is! String || slot.isEmpty) return null;
     if (param is! num || param < 0) return null;
-    return FxParamTarget(address: address, slotId: slot, param: param.toInt());
+    return FxParamTarget(
+      address: address,
+      slotId: slot,
+      param: param.toInt(),
+    );
   }
 
   /// The byte-stable canonical serialization (see the class doc).

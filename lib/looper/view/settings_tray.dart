@@ -204,8 +204,9 @@ class _SettingsTrayState extends State<SettingsTray> {
             // events can fire back-to-back before the next rebuild, and
             // accumulating from a build-time snapshot would drop all but
             // the last delta in that batch instead of summing them.
-            onDragUpdate: (dy) =>
-                cubit.dragTo(cubit.state.dragProgress + dy / trayHeight),
+            onDragUpdate: (dy) => cubit.dragTo(
+              cubit.state.dragProgress + dy / trayHeight,
+            ),
             onDragEnd: () {
               cubit.settleFromDrag();
               setState(() => _dragging = false);

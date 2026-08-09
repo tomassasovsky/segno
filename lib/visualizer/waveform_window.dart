@@ -99,12 +99,12 @@ Future<void> runWaveformWindow(WindowController controller) async {
 
   final args = WaveformWindowArgs.parse(controller.arguments);
   final title = args.title ?? 'Segno — Output';
-  final frame = ValueNotifier<WaveformFrame>((
-    samples: Float32List(0),
-    progress: 0,
-    selectedTrack: '',
-  ));
-  final readout = ValueNotifier<PerformanceReadout>(const PerformanceReadout());
+  final frame = ValueNotifier<WaveformFrame>(
+    (samples: Float32List(0), progress: 0, selectedTrack: ''),
+  );
+  final readout = ValueNotifier<PerformanceReadout>(
+    const PerformanceReadout(),
+  );
 
   // Register the shared channel before any slow init so the main window can
   // reach us as soon as [WindowController.create] returns.
