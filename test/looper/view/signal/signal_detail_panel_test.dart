@@ -1717,6 +1717,37 @@ void main() {
       verify(() => bloc.add(any(that: isA<LooperBusEffectMoved>()))).called(1);
     });
 
+    testWidgets('the other release order also leaves one drag standing', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track, state: three);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      final first = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('signal_panel_chip_0'))),
+      );
+      final second = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('signal_panel_chip_2'))),
+      );
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await tester.pump();
+
+      // The SECOND finger lets go first. Following one slot rather than the
+      // set left the panel naming only the last drag to start: the first
+      // entry was still in the air, and the strip unfolded around it — gaps
+      // gone, add chip back, the level fader live again under a chip nobody
+      // could drop, and a third chip liftable on top of it.
+      await second.up();
+      await tester.pump();
+      expect(tailShowing(tester), isFalse);
+      expect(find.byKey(const Key('signal_panel_add_chip')), findsNothing);
+
+      await first.up();
+      await tester.pumpAndSettle();
+      expect(tailShowing(tester), isTrue);
+    });
+
     testWidgets('a fader already under a finger stops when a chip lifts', (
       tester,
     ) async {

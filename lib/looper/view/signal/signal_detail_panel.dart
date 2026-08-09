@@ -739,17 +739,25 @@ class _ChainStrip extends StatefulWidget {
 }
 
 class _ChainStripState extends State<_ChainStrip> {
-  /// The entry being carried, by slot id, or null when none is.
+  /// Every entry currently in the air, by slot id.
   ///
-  /// One at a time, and the other chips are made undraggable while it is set.
-  /// Two entries in flight cannot both be placed: a drop is expressed against
-  /// the chain as it is drawn, the rewrite only lands on the bloc round-trip,
-  /// and so the second drop of a pair released together is computed in
-  /// coordinates the first drop has already invalidated — moving an entry the
-  /// second finger never touched. Placing one entry at a time is the whole of
-  /// the fix; there is nothing here that could speculatively apply the first
-  /// move to make the second one's coordinates true.
-  String? _dragging;
+  /// Normally one. The chips are disarmed on the rebuild that follows a drag
+  /// starting, but two long presses maturing in the SAME frame both go live —
+  /// the gate cannot take effect between them. This set is what the panel's
+  /// mode follows, so that whichever of the two is released first, the strip
+  /// stays folded while a finger is still holding something.
+  final Set<String> _airborne = {};
+
+  /// The one entry that may actually be PLACED, or null.
+  ///
+  /// The first to start, and it is never handed on. Two entries in flight
+  /// cannot both be placed: a drop is expressed against the chain as it is
+  /// drawn, the rewrite only lands on the bloc round-trip, and so the second
+  /// of a pair is computed in coordinates the first has already invalidated —
+  /// moving an entry that finger never touched. There is nothing here that
+  /// could speculatively apply the first move to make the second's
+  /// coordinates true, so the second one springs back.
+  String? _carrying;
 
   /// Where [slotId] sits in the chain right now, or -1 if it is gone.
   int _positionOf(String slotId) =>
@@ -782,11 +790,18 @@ class _ChainStripState extends State<_ChainStrip> {
   /// drag mode with no way back out but closing the card.
   void _setDragging(String slotId, {required bool dragging}) {
     if (!mounted) return;
-    // Guarded on the id: an end belongs to the drag that started it, and a
-    // stale one must not clear a drag that began after it.
-    if (!dragging && _dragging != slotId) return;
-    setState(() => _dragging = dragging ? slotId : null);
-    widget.onDragging(dragging);
+    setState(() {
+      if (dragging) {
+        _airborne.add(slotId);
+        // Never handed on: promoting the survivor of a same-frame pair would
+        // make its already-stale coordinates placeable.
+        _carrying ??= slotId;
+      } else {
+        _airborne.remove(slotId);
+        if (_carrying == slotId) _carrying = null;
+      }
+    });
+    widget.onDragging(_airborne.isNotEmpty);
   }
 
   /// One chain chip, as it sits in the run.
@@ -840,7 +855,10 @@ class _ChainStripState extends State<_ChainStrip> {
     final editing = widget.editing;
     final onSelect = widget.onSelect;
     final add = widget.onAdd;
-    final dragging = _dragging;
+    // The gaps belong to the entry that can be placed; the fold belongs to
+    // anything still in the air.
+    final carrying = _carrying;
+    final airborne = _airborne.isNotEmpty;
     // The empty line and the add chip together: an empty chain is exactly the
     // case where "put something on it" needs to be reachable, so the early
     // return that used to sit here hid the one affordance that mattered.
@@ -864,15 +882,15 @@ class _ChainStripState extends State<_ChainStrip> {
           // The gaps carry the spacing themselves while a drag is up, so that
           // a drop target can grow between two chips instead of a fixed 5
           // sitting beside it.
-          spacing: dragging == null ? 5.0 : 0.0,
+          spacing: carrying == null ? 5.0 : 0.0,
           runSpacing: 5,
           children: [
             for (final (index, effect) in chain.indexed) ...[
-              if (dragging != null)
+              if (carrying != null)
                 _DropGap(
                   key: Key('signal_panel_gap_$index'),
                   insertAt: index,
-                  carrying: dragging,
+                  carrying: carrying,
                   positionOf: _positionOf,
                   onDrop: _reorderTo,
                 ),
@@ -901,7 +919,7 @@ class _ChainStripState extends State<_ChainStrip> {
                   // out from under the other one.
                   maxSimultaneousDrags:
                       effect.slotId == null ||
-                          (dragging != null && dragging != effect.slotId)
+                          (airborne && !_airborne.contains(effect.slotId))
                       ? 0
                       : 1,
                   // The panel is a touch surface on a floor console: a plain
@@ -954,17 +972,17 @@ class _ChainStripState extends State<_ChainStrip> {
                 ),
               ),
             ],
-            if (dragging != null)
+            if (carrying != null)
               _DropGap(
                 key: Key('signal_panel_gap_${chain.length}'),
                 insertAt: chain.length,
-                carrying: dragging,
+                carrying: carrying,
                 positionOf: _positionOf,
                 onDrop: _reorderTo,
               ),
             // No add chip mid-drag: it is not a drop target, and a gap beside
             // it would offer an insertion point past the end of the chain.
-            if (add != null && dragging == null)
+            if (add != null && !airborne)
               Semantics(
                 button: true,
                 label: l10n.fxAddChip,
