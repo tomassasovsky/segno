@@ -1345,7 +1345,13 @@ class ConsoleValueBar extends StatefulWidget {
   final String readout;
 
   /// Called with each new value during and at the end of a drag.
-  final ValueChanged<double> onChanged;
+  /// Called with the new value while a finger is on the bar, or null when
+  /// the bar only READS.
+  ///
+  /// A null one is a meter: a plugin can mark a parameter non-automatable —
+  /// a mode selector, a gain-reduction readout — and hiding those said the
+  /// effect exposed no controls when it plainly did.
+  final ValueChanged<double>? onChanged;
 
   /// What a double tap snaps back to, or null for a bar with no default.
   ///
@@ -1424,7 +1430,10 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
   void _report(double width, double dx) {
     final next = (dx / width).clamp(0.0, 1.0);
     setState(() => _dragging = next);
-    widget.onChanged(next);
+    // Null on a read-only bar. The gestures are already gated on that, so
+    // this is the second lock on the same door rather than a branch of its
+    // own.
+    widget.onChanged?.call(next);
   }
 
   /// A tap: applies where it landed, unless it is the second of a pair —
@@ -1460,7 +1469,7 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
     if (applyReset && reset != null) {
       if (_resetPending) {
         unawaited(HapticFeedback.selectionClick());
-        widget.onChanged(reset.clamp(0.0, 1.0));
+        widget.onChanged?.call(reset.clamp(0.0, 1.0));
         // No fresh window: a third tap starts its own pair rather than
         // resetting again.
       } else {
@@ -1487,6 +1496,7 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    final live = widget.onChanged != null;
     final value = (_dragging ?? widget.value).clamp(0.0, 1.0);
     return Row(
       children: [
@@ -1507,7 +1517,10 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
         const SizedBox(width: kConsoleRowGap),
         Expanded(
           child: Semantics(
-            slider: true,
+            // A read-only bar is not a slider: announcing one invites an
+            // adjust gesture that does nothing.
+            slider: live,
+            readOnly: !live,
             label: widget.semanticLabel ?? widget.label,
             value: widget.readout,
             child: LayoutBuilder(
@@ -1515,20 +1528,24 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
                 final width = constraints.maxWidth;
                 return GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTapDown: (d) => _tap(width, d.localPosition.dx),
+                  onTapDown: live
+                      ? (d) => _tap(width, d.localPosition.dx)
+                      : null,
                   // A tap ends a touch as much as a drag does. Without these
                   // the bar stayed pinned to the last tapped fraction for the
                   // rest of its life, and stopped redrawing the value it is
                   // supposed to be reading — visible the moment a write is
                   // clamped, as the threshold's own floor clamps it.
-                  onTapUp: (_) => _release(applyReset: true),
-                  onTapCancel: _release,
-                  onHorizontalDragStart: (d) =>
-                      _dragStart(width, d.localPosition.dx),
-                  onHorizontalDragUpdate: (d) =>
-                      _report(width, d.localPosition.dx),
-                  onHorizontalDragEnd: (_) => _release(),
-                  onHorizontalDragCancel: _release,
+                  onTapUp: live ? (_) => _release(applyReset: true) : null,
+                  onTapCancel: live ? _release : null,
+                  onHorizontalDragStart: live
+                      ? (d) => _dragStart(width, d.localPosition.dx)
+                      : null,
+                  onHorizontalDragUpdate: live
+                      ? (d) => _report(width, d.localPosition.dx)
+                      : null,
+                  onHorizontalDragEnd: live ? (_) => _release() : null,
+                  onHorizontalDragCancel: live ? _release : null,
                   child: Container(
                     height: ConsoleValueBar.height,
                     decoration: BoxDecoration(
@@ -1550,10 +1567,16 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
                           curve: Curves.easeOut,
                           width: (width - 2) * value,
                           decoration: BoxDecoration(
-                            color: surface.accentSurface,
+                            // A meter reads in the muted pair, so a bar you
+                            // cannot move does not look like one you can.
+                            color: live
+                                ? surface.accentSurface
+                                : surface.control,
                             border: Border(
                               right: BorderSide(
-                                color: surface.accent,
+                                color: live
+                                    ? surface.accent
+                                    : surface.textMuted,
                                 width: 2,
                               ),
                             ),

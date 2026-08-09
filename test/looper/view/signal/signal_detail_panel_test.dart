@@ -2027,6 +2027,58 @@ void main() {
     });
   });
 
+  group('a missing plugin is not a dead end', () {
+    testWidgets('relinking points the entry at an installed plugin', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        stage: FxStage.track,
+        state: LooperState(
+          tracks: const [
+            Track(
+              volume: 0.5,
+              lanes: [Lane(inputChannel: 0)],
+              effects: [
+                PluginEffect(
+                  ref: PluginRef(format: PluginFormat.vst3, id: 'moved.vst3'),
+                  name: 'Moved',
+                  slotId: 'slot-moved',
+                  unavailable: true,
+                ),
+              ],
+            ),
+          ],
+          status: _rig.status,
+        ),
+      );
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('signal_fx_relink')));
+      await tester.pumpAndSettle();
+      // The same sheet the add dialog browses with — everything the scan
+      // found, not a second list that could disagree with it.
+      await tester.tap(find.byKey(const Key('signal_browse_plug.ok')));
+      await tester.pumpAndSettle();
+
+      // Relinked, NOT removed and re-added: the entry keeps the state that
+      // `PluginEffect.state` exists to preserve, which is the whole reason
+      // this is worth reaching.
+      final event =
+          verify(
+                () =>
+                    bloc.add(captureAny(that: isA<LooperBusPluginRelinked>())),
+              ).captured.single
+              as LooperBusPluginRelinked;
+      expect(event.index, 0);
+      expect(event.ref.id, 'plug.ok');
+      verifyNever(() => bloc.add(any(that: isA<LooperBusEffectRemoved>())));
+    });
+  });
+
   group('a screen reader can work the face', () {
     testWidgets('a card is a button it can actually activate', (tester) async {
       final handle = tester.ensureSemantics();

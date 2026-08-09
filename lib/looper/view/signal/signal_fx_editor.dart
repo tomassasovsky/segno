@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/fx_editor/fx_plugin_state.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
+import 'package:segno/looper/view/signal/signal_browse_plugins.dart';
 import 'package:segno/theme/theme.dart';
 
 /// One link of a chain, opened in place: its parameters, and the four things
@@ -75,14 +79,33 @@ class SignalFxEditor extends StatelessWidget {
             Padding(
               key: const Key('signal_fx_no_params'),
               padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
-                _emptyReason(l10n, effect),
-                style: TextStyle(
-                  color: surface.textMuted,
-                  fontSize: 14,
-                  height: 1.21,
-                  leadingDistribution: TextLeadingDistribution.even,
-                ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _emptyReason(l10n, effect),
+                      style: TextStyle(
+                        color: surface.textMuted,
+                        fontSize: 14,
+                        height: 1.21,
+                        leadingDistribution: TextLeadingDistribution.even,
+                      ),
+                    ),
+                  ),
+                  // Only where it can help: a plugin the rig cannot FIND is
+                  // what relinking is for. One this stage cannot host is not
+                  // missing, and one still being looked for may yet arrive.
+                  // Without this the entry can only be removed and added
+                  // again, which throws away the state `PluginEffect.state`
+                  // exists to keep.
+                  if (_canRelink(effect))
+                    _Glyph(
+                      glyphKey: const Key('signal_fx_relink'),
+                      label: l10n.fxRelink,
+                      semanticLabel: l10n.signalPluginRelinkTooltip,
+                      onTap: () => unawaited(_relink(context)),
+                    ),
+                ],
               ),
             ),
           for (final (param, row) in rows.indexed) ...[
@@ -126,6 +149,30 @@ class SignalFxEditor extends StatelessWidget {
     );
   }
 
+  /// Whether relinking [effect] is the thing that would help.
+  static bool _canRelink(TrackEffect effect) => switch (effect) {
+    PluginEffect(:final unavailable, :final unsupported, :final loading) =>
+      unavailable && !unsupported && !loading,
+    _ => false,
+  };
+
+  /// Points the entry at an installed plugin, keeping what it had.
+  Future<void> _relink(BuildContext context) async {
+    final picked = await showSignalBrowsePlugins(
+      context,
+      catalog: context.read<LooperRepository>().pluginCatalog,
+    );
+    if (picked == null) return;
+    scope.relinkPlugin(
+      index,
+      PluginRef(
+        format: picked.format,
+        id: picked.id,
+        version: picked.version,
+      ),
+    );
+  }
+
   /// One row per parameter, already in the units each side expects.
   ///
   /// A built-in's parameters are normalized `0..1` end to end, which is what
@@ -150,20 +197,26 @@ class SignalFxEditor extends StatelessWidget {
             ),
         ],
         PluginEffect(:final params, :final paramValues) => [
-          // The rack's filter, and R23's reasoning: a plugin's own bypass is
-          // not a fader — the footer's pill is THE power control (D-POWER),
-          // and a second one beside it is the ambiguity that rule exists to
-          // prevent. Meters and hidden parameters are not controls at all,
-          // and a bar over a read-only meter now genuinely writes, since the
-          // unit conversion above made these writes land.
+          // Everything the plugin means a person to see. A plugin's own
+          // bypass is not a fader — the footer's pill is THE power control
+          // (D-POWER), and a second one beside it is the ambiguity that rule
+          // exists to prevent — and a hidden parameter is not a control at
+          // all. Everything else is drawn, and what cannot be WRITTEN is
+          // drawn as a meter rather than dropped: `isAutomatable` is optional
+          // per parameter, so a plugin that marks its mode selector
+          // non-automatable rendered nothing at all and was told it exposes
+          // no controls, which was untrue of it.
           for (final info in params)
-            if (info.isUserVisible && !info.isBypass && !info.isReadOnly)
+            if (!info.isHidden && !info.isBypass)
               _pluginRow(info, paramValues[info.id] ?? info.def),
         ],
       };
 
   _ParamRow _pluginRow(PluginParamInfo info, double plain) {
     final span = info.max - info.min;
+    // A meter: the plugin either will not be automated on this parameter or
+    // reports it read-only. The bar reads and does not write.
+    final live = info.isAutomatable && !info.isReadOnly;
     // A degenerate range would divide by zero; the bar then reads empty and
     // the write clamps to the single value the plugin accepts.
     final normalized = span == 0
@@ -178,18 +231,20 @@ class SignalFxEditor extends StatelessWidget {
       readout:
           scope.formatPluginValue(index, info.id, plain) ??
           _plainReadout(info, plain),
-      onChanged: (value) => scope.setPluginParam(
-        index,
-        info.id,
-        // A stepped parameter has to LAND on a step: the readout names one,
-        // and a value parked between two would leave the plugin holding
-        // something the label says it is not.
-        info.min +
-            (info.stepCount > 0
-                    ? (value * info.stepCount).round() / info.stepCount
-                    : value) *
-                span,
-      ),
+      onChanged: !live
+          ? null
+          : (value) => scope.setPluginParam(
+              index,
+              info.id,
+              // A stepped parameter has to LAND on a step: the readout
+              // names one, and a value parked between two would leave the
+              // plugin holding something the label says it is not.
+              info.min +
+                  (info.stepCount > 0
+                          ? (value * info.stepCount).round() / info.stepCount
+                          : value) *
+                      span,
+            ),
     );
   }
 
@@ -296,6 +351,22 @@ class _Footer extends StatelessWidget {
             semanticLabel: l10n.fxMoveLater,
             onTap: index >= last ? null : () => _move(index + 1),
           ),
+          // Only for a plugin that is actually LOADED: there is no window to
+          // open for a built-in, and none for one that failed to resolve.
+          // The console edits parameters generically, but a plugin's own UI
+          // is the only place some of them exist at all.
+          if (effect case PluginEffect(
+            :final unavailable,
+            :final loading,
+          ) when !unavailable && !loading) ...[
+            const SizedBox(width: 10),
+            _Glyph(
+              glyphKey: const Key('signal_fx_open_window'),
+              label: l10n.fxOpenWindow,
+              semanticLabel: l10n.signalPluginOpenEditorTooltip,
+              onTap: () => scope.openPluginEditor(index),
+            ),
+          ],
           const Spacer(),
           _Glyph(
             glyphKey: const Key('signal_fx_remove'),
@@ -452,5 +523,7 @@ class _ParamRow {
   final String label;
   final double normalized;
   final String readout;
-  final ValueChanged<double> onChanged;
+
+  /// Null when the parameter only reads — see [ConsoleValueBar.onChanged].
+  final ValueChanged<double>? onChanged;
 }

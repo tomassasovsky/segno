@@ -658,6 +658,14 @@
     "signalPluginUnsupported": "Plugin unsupported",
     "signalPluginVersionChanged": "Version changed since saved",
     "signalPluginRelinkTooltip": "Relink to an installed plugin",
+    "fxOpenWindow": "Open window",
+    "@fxOpenWindow": {
+        "description": "Footer action: opens a hosted plugin's own editor window."
+    },
+    "fxRelink": "Relink",
+    "@fxRelink": {
+        "description": "Footer action: points a missing plugin entry at an installed plugin, keeping its saved state."
+    },
     "signalPluginBrowserTitle": "Plugins",
     "signalPluginBrowserSearchHint": "Search plugins",
     "signalPluginBrowserEmpty": "No plugins found",
