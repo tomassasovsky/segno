@@ -2074,6 +2074,46 @@
         }
     },
     "fxChainOffHere": "La cadena entera está apagada, así que esto todavía no cambia nada de lo que se oye.",
+    "fxAddChip": "+ efecto",
+    "fxAddTitle": "Añadir un efecto",
+    "fxAddInto": "En “{chain}”, al final de la cadena.",
+    "@fxAddInto": {
+        "placeholders": {
+            "chain": {
+                "type": "String"
+            }
+        }
+    },
+    "fxAddBuiltIn": "INCLUIDOS",
+    "fxAddRecentPlugins": "PLUGINS · RECIENTES",
+    "fxAddBrowseAll": "Ver los {count} plugins…",
+    "@fxAddBrowseAll": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxBrowseTitle": "Añadir un plugin",
+    "fxBrowseInstalled": "{count} instalados",
+    "@fxBrowseInstalled": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxBrowseSearchHint": "Buscar plugins",
+    "fxBrowseMatches": "{count} coincidencias",
+    "@fxBrowseMatches": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxBrowseNoMatches": "No hay coincidencias.",
+    "fxBrowseNoPlugins": "No se encontraron plugins en esta máquina.",
     "fxBypass": "puentear",
     "fxMoveEarlier": "Mover antes en la cadena",
     "fxMoveLater": "Mover después en la cadena",

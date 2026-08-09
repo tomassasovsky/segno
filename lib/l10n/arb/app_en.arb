@@ -2800,6 +2800,74 @@
     "@fxChainOffHere": {
         "description": "Shown in the editor when the chain's own power is off (R15). Without it, un-bypassing an entry visibly does nothing and the surface never says why."
     },
+    "fxAddChip": "+ effect",
+    "@fxAddChip": {
+        "description": "The last chip of a chain strip, which opens the add dialog. A chip rather than a button beside the strip: it sits where the effect it makes will, at the end of the chain."
+    },
+    "fxAddTitle": "Add an effect",
+    "@fxAddTitle": {
+        "description": "Title of the dialog that puts a new entry on the end of a chain."
+    },
+    "fxAddInto": "Into “{chain}”, at the end of the chain.",
+    "@fxAddInto": {
+        "description": "Says which chain is being added to and where the entry lands. The end, always — order is signal order and is changed by dragging, not by choosing an insertion point here.",
+        "placeholders": {
+            "chain": {
+                "type": "String"
+            }
+        }
+    },
+    "fxAddBuiltIn": "BUILT IN",
+    "@fxAddBuiltIn": {
+        "description": "Caption over the seven effects the app ships."
+    },
+    "fxAddRecentPlugins": "PLUGINS · RECENT",
+    "@fxAddRecentPlugins": {
+        "description": "Caption over the shelf of plugins most recently added. Omitted entirely when nothing has been added yet."
+    },
+    "fxAddBrowseAll": "Browse all {count} plugins…",
+    "@fxAddBrowseAll": {
+        "description": "Opens the search sheet over everything the scan found.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxBrowseTitle": "Add a plugin",
+    "@fxBrowseTitle": {
+        "description": "Header of the plugin search sheet."
+    },
+    "fxBrowseInstalled": "{count} installed",
+    "@fxBrowseInstalled": {
+        "description": "Beside the sheet's title: how many the scan found.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxBrowseSearchHint": "Search plugins",
+    "@fxBrowseSearchHint": {
+        "description": "Placeholder in the search field."
+    },
+    "fxBrowseMatches": "{count} matches",
+    "@fxBrowseMatches": {
+        "description": "Under the results grid: how many of the installed plugins the query left.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxBrowseNoMatches": "Nothing matches that.",
+    "@fxBrowseNoMatches": {
+        "description": "Results grid with an empty result. A fact about the query, not about the rig."
+    },
+    "fxBrowseNoPlugins": "No plugins found on this machine.",
+    "@fxBrowseNoPlugins": {
+        "description": "The scan itself came back empty — distinct from a query that matched nothing."
+    },
     "fxBypass": "bypass",
     "@fxBypass": {
         "description": "The editor's per-entry power, lower case like the panel's other controls. Bypass leaves the effect in the chain and stops it sounding — it is not a remove."

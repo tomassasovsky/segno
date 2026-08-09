@@ -75,6 +75,10 @@ void main() {
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     when(() => repository.state).thenReturn(_rig);
     when(repository.allMonitors).thenReturn(const {});
+    // The add dialog reads the scan catalog for its plugin shelf.
+    when(() => repository.pluginCatalog).thenReturn(
+      PluginCatalog(engine: FakeAudioEngine(), appVersion: 'test'),
+    );
     for (final stub in [
       () => when(
         () => repository.setMonitorInputMode(
@@ -152,8 +156,13 @@ void main() {
             routingGraphThemeFromSurface(SurfaceTheme.dark),
           ],
         ),
-        home: RepositoryProvider<LooperRepository>.value(
-          value: repository,
+        home: MultiRepositoryProvider(
+          providers: [
+            RepositoryProvider<LooperRepository>.value(value: repository),
+            // The add dialog reads it for the recent-plugin shelf; the real
+            // tray inherits it from `App`.
+            RepositoryProvider<SettingsRepository>.value(value: settings),
+          ],
           child: MultiBlocProvider(
             providers: [
               BlocProvider<LooperBloc>.value(value: bloc),
@@ -954,6 +963,80 @@ void main() {
       expect(bar.semanticLabel, isNotNull);
       expect(bar.semanticLabel, contains(l10n.effectReverb));
       handle.dispose();
+    });
+  });
+
+  group('the add affordance', () {
+    testWidgets('is the last chip, and is there on an empty chain', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track);
+      // Track 1 carries no effects at all — the case where "put something on
+      // it" matters most, and the one an early return used to hide.
+      await tester.tap(find.byKey(const Key('signal_card_track_1')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      expect(find.byKey(const Key('signal_panel_chain_empty')), findsOneWidget);
+      expect(find.byKey(const Key('signal_panel_add_chip')), findsOneWidget);
+      expect(find.text(l10n.fxAddChip), findsOneWidget);
+    });
+
+    testWidgets('sits after the chain it will be added to', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // It lands at the end, so it sits at the end.
+      final lastChip = tester.getTopLeft(
+        find.byKey(const Key('signal_panel_chip_1')),
+      );
+      final add = tester.getTopLeft(
+        find.byKey(const Key('signal_panel_add_chip')),
+      );
+      expect(add.dx, greaterThan(lastChip.dx));
+    });
+
+    testWidgets('opens the dialog, which names the chain and the place', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('signal_add_effect')), findsOneWidget);
+      expect(find.text(l10n.fxAddTitle), findsOneWidget);
+      // Named, so there is no doubt which of three cards is being added to.
+      final prose = tester.widget<Text>(
+        find
+            .descendant(
+              of: find.byKey(const Key('signal_add_effect')),
+              matching: find.byType(Text),
+            )
+            .at(1),
+      );
+      expect(prose.data, contains(l10n.trackName(const [], 0)));
+    });
+
+    testWidgets('a built-in tap adds it and closes', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('signal_add_builtin_delay')));
+      await tester.pumpAndSettle();
+
+      // No confirm step: the tap IS the choice.
+      expect(find.byKey(const Key('signal_add_effect')), findsNothing);
+      verify(
+        () => bloc.add(any(that: isA<LooperBusEffectAdded>())),
+      ).called(1);
     });
   });
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -11,6 +13,7 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
+import 'package:segno/looper/view/signal/signal_add_effect.dart';
 import 'package:segno/looper/view/signal/signal_cards.dart';
 import 'package:segno/looper/view/signal/signal_fx_editor.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
@@ -389,6 +392,15 @@ class _PanelBody extends StatelessWidget {
             chain: chain,
             editing: editing,
             onSelect: tray.selectSignalEffect,
+            onAdd: scope.canAddEffect
+                ? () => unawaited(
+                    showSignalAddEffect(
+                      context,
+                      scope: scope,
+                      chainName: title,
+                    ),
+                  )
+                : null,
           ),
           // The editor takes the place of `level` and `in the mix`: you are
           // looking at ONE effect now, and how loud the whole chain is is a
@@ -520,13 +532,14 @@ class _Caption extends StatelessWidget {
 /// The chain as a strip of chips, in processing order.
 ///
 /// A chip opens its entry in the editor below, and the open one takes the
-/// accent pair. `+ effect` — the add affordance the mockups draw as the last
-/// chip — arrives with the browse-and-add PR.
+/// accent pair. The last chip is `+ effect`, which is where the effect it
+/// adds will land — the end of the chain.
 class _ChainStrip extends StatelessWidget {
   const _ChainStrip({
     required this.chain,
     required this.editing,
     required this.onSelect,
+    required this.onAdd,
   });
 
   final List<TrackEffect> chain;
@@ -537,63 +550,111 @@ class _ChainStrip extends StatelessWidget {
   /// Opens (or, on the open chip, closes) an entry's editor.
   final ValueChanged<int> onSelect;
 
+  /// Opens the add dialog, or null when the chain is at its cap.
+  ///
+  /// The add affordance is the LAST CHIP, not a button beside the strip: it
+  /// sits where the effect it makes will, which is the end of the chain.
+  final VoidCallback? onAdd;
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    if (chain.isEmpty) {
-      return Text(
-        l10n.signalPanelChainEmpty,
-        key: const Key('signal_panel_chain_empty'),
-        style: TextStyle(
-          color: surface.textMuted,
-          fontSize: 16,
-          height: 1.13,
-          leadingDistribution: TextLeadingDistribution.even,
-        ),
-      );
-    }
-    return Wrap(
+    final add = onAdd;
+    // The empty line and the add chip together: an empty chain is exactly the
+    // case where "put something on it" needs to be reachable, so the early
+    // return that used to sit here hid the one affordance that mattered.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       spacing: 5,
-      runSpacing: 5,
       children: [
-        for (final (index, effect) in chain.indexed)
-          Semantics(
-            button: true,
-            selected: index == editing,
-            label: fxBlockName(l10n, effect),
-            child: InkWell(
-              key: Key('signal_panel_chip_$index'),
-              onTap: () => onSelect(index),
-              borderRadius: BorderRadius.circular(8),
-              child: ExcludeSemantics(
-                // No `alignment`: a Container with one expands to its
-                // constraints, which inside a Wrap made every chip span the
-                // whole panel. The padding centres the label on its own.
-                child: Container(
-                  height: 38,
-                  padding: const EdgeInsets.symmetric(horizontal: 17),
-                  decoration: BoxDecoration(
-                    // Unselected carries no fill at all, as the mockups draw
-                    // it; the open one takes the accent pair.
-                    color: index == editing ? surface.accentSurface : null,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    fxBlockName(l10n, effect),
-                    style: TextStyle(
-                      color: index == editing
-                          ? surface.accent
-                          : surface.textSecondary,
-                      fontSize: 16,
-                      height: 1.13,
-                      leadingDistribution: TextLeadingDistribution.even,
+        if (chain.isEmpty)
+          Text(
+            l10n.signalPanelChainEmpty,
+            key: const Key('signal_panel_chain_empty'),
+            style: TextStyle(
+              color: surface.textMuted,
+              fontSize: 16,
+              height: 1.13,
+              leadingDistribution: TextLeadingDistribution.even,
+            ),
+          ),
+        Wrap(
+          spacing: 5,
+          runSpacing: 5,
+          children: [
+            for (final (index, effect) in chain.indexed)
+              Semantics(
+                button: true,
+                selected: index == editing,
+                label: fxBlockName(l10n, effect),
+                child: InkWell(
+                  key: Key('signal_panel_chip_$index'),
+                  onTap: () => onSelect(index),
+                  borderRadius: BorderRadius.circular(8),
+                  child: ExcludeSemantics(
+                    // No `alignment`: a Container with one expands to its
+                    // constraints, which inside a Wrap made every chip span the
+                    // whole panel. The padding centres the label on its own.
+                    child: Container(
+                      height: 38,
+                      padding: const EdgeInsets.symmetric(horizontal: 17),
+                      decoration: BoxDecoration(
+                        // Unselected carries no fill at all, as the mockups
+                        // draw it; the open one takes the accent pair.
+                        color: index == editing ? surface.accentSurface : null,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        fxBlockName(l10n, effect),
+                        style: TextStyle(
+                          color: index == editing
+                              ? surface.accent
+                              : surface.textSecondary,
+                          fontSize: 16,
+                          height: 1.13,
+                          leadingDistribution: TextLeadingDistribution.even,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
+            if (add != null)
+              Semantics(
+                button: true,
+                label: l10n.fxAddChip,
+                child: InkWell(
+                  key: const Key('signal_panel_add_chip'),
+                  onTap: add,
+                  borderRadius: BorderRadius.circular(8),
+                  child: ExcludeSemantics(
+                    child: Container(
+                      height: 38,
+                      padding: const EdgeInsets.symmetric(horizontal: 17),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: surface.line),
+                      ),
+                      child: Center(
+                        widthFactor: 1,
+                        child: Text(
+                          l10n.fxAddChip,
+                          style: TextStyle(
+                            color: surface.textSecondary,
+                            fontSize: 16,
+                            height: 1.13,
+                            leadingDistribution: TextLeadingDistribution.even,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ],
     );
   }

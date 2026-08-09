@@ -396,6 +396,21 @@ class SettingsRepository {
   Future<void> savePedalBindings(String encoded) =>
       _store.setString(_pedalBindingsKey, encoded);
 
+  static const String _recentPluginsKey = 'fx.recent_plugins';
+
+  /// The plugin ids most recently added to a chain, newest first.
+  ///
+  /// A convenience, not a source of truth: the add dialog offers a short
+  /// shelf so the four plugins someone actually uses are one tap away rather
+  /// than behind a search of a hundred. An id that no longer scans is simply
+  /// not drawn — the catalog decides what exists, this only remembers an
+  /// order.
+  Future<String?> loadRecentPlugins() => _store.getString(_recentPluginsKey);
+
+  /// Saves the recent-plugin ids as a newline-separated list.
+  Future<void> saveRecentPlugins(String encoded) =>
+      _store.setString(_recentPluginsKey, encoded);
+
   static const String _controllerMappingsKey = 'controller.mappings';
 
   /// Loads the external-MIDI mapping set as its opaque encoded string, or
