@@ -19,7 +19,7 @@ import 'package:segno/looper/view/signal/signal_cards.dart';
 ///
 /// **This face replaces a full-screen route, not a settings group.** Signal
 /// was the last surface the rail deliberately did not carry: a tile on the
-/// home face that pushed `lib/looper/view/signal_graph/`'s three-pane layout
+/// home face that pushed the old three-pane `signal_graph/` layout
 /// away from the stage. The tile is gone as of this PR and the surface itself
 /// goes with the last of the slice, which is why the rail no longer documents
 /// a route-pushing exception.

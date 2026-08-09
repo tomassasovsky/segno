@@ -126,6 +126,19 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
     ),
   );
 
+  /// Opens the tray at the Signal domain (the toolbar's Signal button, `G`).
+  ///
+  /// Signal used to be a pushed full-screen page of its own; it is a rail
+  /// destination now, so the ways in point at the tray rather than at a
+  /// route. Same shape as [_openNetwork], and for the same reason: a way in
+  /// from outside the tray has to say both "open" and "at what".
+  void openSignal() => emit(
+    state.copyWith(
+      dragProgress: 1,
+      destination: SettingsTrayDestination.signal,
+    ),
+  );
+
   /// Moves the Network domain's tab.
   ///
   /// Deliberately does NOT touch `destination`: the strip is only reachable

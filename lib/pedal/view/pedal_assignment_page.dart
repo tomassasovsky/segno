@@ -15,8 +15,7 @@ import 'package:segno/theme/theme.dart';
 ///
 /// Re-provides what the page drives into the pushed route — [ControlCubit]
 /// (the binding owner) and the [LooperRepository] the target picker enumerates
-/// from — the same way `showSignalPage` re-provides its own, since a pushed
-/// route does not inherit the caller's providers.
+/// from, since a pushed route does not inherit the caller's providers.
 Future<void> showPedalAssignmentPage(BuildContext context) {
   final control = context.read<ControlCubit>();
   final looper = context.read<LooperRepository>();

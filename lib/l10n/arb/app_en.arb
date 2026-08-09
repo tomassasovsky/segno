@@ -592,7 +592,7 @@
     "signalReassignInput": "Change recorded input",
     "signalTooltip": "Signal flow (G)",
     "@signalTooltip": {
-        "description": "Tooltip for the tracks-view button that opens the full-screen Signal surface."
+        "description": "Tooltip for the tracks-view button that opens the tray at Signal."
     },
     "settingsTooltip": "Settings (S)",
     "@settingsTooltip": {
@@ -2365,7 +2365,7 @@
     "trackLanesGroup": "LANES",
     "trackLaneOutputsGroup": "OUTPUTS FOR THIS LANE",
     "trackLaneOutputsNone": "nothing",
-    "trackLaneFxNote": "Effects for this lane live on the Signal page.",
+    "trackLaneFxNote": "Effects for this lane live in Signal.",
     "trackLaneUnrouted": "Nothing routed here — this lane will not be heard.",
     "trackQuantizeGroup": "QUANTIZE RECORDING",
     "trackQuantizeFollow": "Follow the global setting",

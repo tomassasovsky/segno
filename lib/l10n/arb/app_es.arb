@@ -1814,7 +1814,7 @@
     "trackLanesGroup": "CARRILES",
     "trackLaneOutputsGroup": "SALIDAS DE ESTE CARRIL",
     "trackLaneOutputsNone": "nada",
-    "trackLaneFxNote": "Los efectos de este carril están en la página Señal.",
+    "trackLaneFxNote": "Los efectos de este carril están en Señal.",
     "trackLaneUnrouted": "No hay nada enrutado aquí — este carril no se oirá.",
     "trackQuantizeGroup": "CUANTIZAR GRABACIÓN",
     "trackQuantizeFollow": "Seguir el ajuste global",
