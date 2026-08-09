@@ -10,15 +10,6 @@ import 'package:segno/looper/view/signal/signal_browse_plugins.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-/// What can go on the end of a chain: the seven built-ins, the plugins you
-/// reached for last, and a way to the rest.
-///
-/// **The accent here does not mean "picked".** It marks what is ALREADY in
-/// this chain — the mockups draw `Drive` and `Filter` lit on a chain that is
-/// Drive → Filter, with nothing selected at all. A grid used as a pick-one
-/// gets that backwards, which is why the grid's `selected` set is fed the
-/// chain's own contents rather than a cursor. There is no confirm step: a tap
-/// adds, and the dialog closes.
 /// Whether a dialog is already on its way up.
 ///
 /// Guards the window BEFORE the dialog exists, and only that: reading the
@@ -34,6 +25,15 @@ bool _opening = false;
 /// the shelf is a convenience, and a dialog with no shelf still adds effects.
 const Duration _shelfTimeout = Duration(seconds: 2);
 
+/// Offers what can go on the end of a chain: the seven built-ins, the plugins
+/// you reached for last, and a way to the rest.
+///
+/// **The accent in the grid does not mean "picked".** It marks what is
+/// ALREADY in this chain — the mockups draw `Drive` and `Filter` lit on a
+/// chain that is Drive → Filter, with nothing selected at all. A grid used as
+/// a pick-one gets that backwards, which is why its `selected` set is fed the
+/// chain's own contents rather than a cursor. There is no confirm step: a tap
+/// adds, and the dialog closes.
 Future<void> showSignalAddEffect(
   BuildContext context, {
   required FxScope scope,
@@ -300,7 +300,10 @@ class _AddEffectDialogState extends State<_AddEffectDialog> {
                         ? l10n.fxAddScanning
                         : l10n.fxAddBrowseAll(descriptors.length),
                     // Nor tappable at zero: the sheet it opens would have
-                    // nothing in it but the same sentence.
+                    // nothing in it but the same sentence. "Available", not
+                    // "installed" — a machine can have plugin files that all
+                    // failed to load, and this row cannot tell the player
+                    // there are none when there are.
                     onTap: scanning || descriptors.isEmpty
                         ? null
                         : () => unawaited(_browse(context)),

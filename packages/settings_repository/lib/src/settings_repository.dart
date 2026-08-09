@@ -398,9 +398,12 @@ class SettingsRepository {
 
   /// The key the recent-plugin order lives under.
   ///
-  /// Public so a test can fail THIS read specifically without copying the
+  /// Visible so a test can fail THIS read specifically without copying the
   /// string — a copy stops matching the day the key is renamed, and the test
-  /// then passes because nothing threw at all.
+  /// then passes because nothing threw at all. The only key here that is not
+  /// private, and annotated so production code does not start depending on
+  /// one storage detail out of fifty.
+  @visibleForTesting
   static const String recentPluginsKey = 'fx.recent_plugins';
 
   /// The plugin ids most recently added to a chain, newest first.

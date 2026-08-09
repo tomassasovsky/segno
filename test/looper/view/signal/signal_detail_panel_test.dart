@@ -29,12 +29,6 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
-/// A store whose reads take a frame or two, as the appliance's platform
-/// channel does.
-///
-/// The zero-latency fake makes the add dialog's re-entrancy window disappear
-/// entirely, so a guard against double-opening cannot be tested against it —
-/// the bug it prevents only exists when the read is slow.
 /// A store whose recent-plugins read fails the way the real backends do.
 ///
 /// An `ArgumentError`, not an `Exception`: `shared_preferences_foundation`
@@ -60,6 +54,12 @@ class _ThrowingStore extends FakeKeyValueStore {
   }
 }
 
+/// A store whose reads take a frame or two, as the appliance's platform
+/// channel does.
+///
+/// The zero-latency fake makes the add dialog's re-entrancy window disappear
+/// entirely, so a guard against double-opening cannot be tested against it —
+/// the bug it prevents only exists when the read is slow.
 class _SlowStore extends FakeKeyValueStore {
   @override
   Future<String?> getString(String key) async {
@@ -1154,6 +1154,30 @@ void main() {
 
       expect(find.text(l10n.fxAddScanning), findsNothing);
       expect(find.text(l10n.fxAddBrowseAll(1)), findsOneWidget);
+    });
+
+    testWidgets('a rig with nothing loadable says so, and leads nowhere', (
+      tester,
+    ) async {
+      catalogEngine.pluginScanResults = const [];
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // Not "Browse all 0 plugins…", and not a tap into a sheet whose only
+      // content is the same sentence.
+      expect(find.text(l10n.fxAddBrowseAll(0)), findsOneWidget);
+      final row = tester.widget<ConsoleRow>(
+        find.descendant(
+          of: find.byKey(const Key('signal_add_browse')),
+          matching: find.byType(ConsoleRow),
+        ),
+      );
+      expect(row.onTap, isNull);
     });
 
     testWidgets('a shelf read that throws still opens the dialog', (
