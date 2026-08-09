@@ -1241,9 +1241,12 @@ void main() {
     tracks: [
       Track(
         lanes: const [Lane(inputChannel: 0)],
+        // With slot ids, as anything read back from the repository has: the
+        // panel names the entry its editor is open on by identity, so a chain
+        // without them draws chips that cannot be opened at all.
         effects: [
-          BuiltInEffect(type: TrackEffectType.drive),
-          BuiltInEffect(type: TrackEffectType.tremolo),
+          BuiltInEffect(type: TrackEffectType.drive, slotId: 'shot-drive'),
+          BuiltInEffect(type: TrackEffectType.tremolo, slotId: 'shot-tremolo'),
         ],
       ),
       const Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
