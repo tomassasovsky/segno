@@ -111,6 +111,10 @@ void main() {
   late _ThrowingStore throwingStore;
   late PluginCatalog catalog;
 
+  /// What the fake repository has been told each input's monitor chain is,
+  /// minted, so a read-back behaves like the real write boundary.
+  final monitorChains = <int, List<TrackEffect>>{};
+
   setUpAll(() {
     registerFallbackValue(MonitorMode.off);
     registerFallbackValue(const LooperMuteToggled(0));
@@ -118,6 +122,7 @@ void main() {
   });
 
   setUp(() {
+    monitorChains.clear();
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
     when(
@@ -180,13 +185,27 @@ void main() {
           mask: any(named: 'mask'),
         ),
       ).thenReturn(EngineResult.ok),
-      () => when(
-        () => repository.setMonitorEffects(
-          input: any(named: 'input'),
-          effects: any(named: 'effects'),
-        ),
-      ).thenReturn(EngineResult.ok),
-      () => when(() => repository.monitorEffects(any())).thenReturn(const []),
+      // The chain comes back MINTED, as the repository's write boundary does
+      // it: the cubit re-reads after every push, and the panel names the entry
+      // its editor is open on by slot id. A fake that answers with a bare list
+      // hands back id-less entries, whose chips are inert — and every input-
+      // stage test that opens one then quietly asserts nothing.
+      () =>
+          when(
+            () => repository.setMonitorEffects(
+              input: any(named: 'input'),
+              effects: any(named: 'effects'),
+            ),
+          ).thenAnswer((call) {
+            monitorChains[call.namedArguments[#input]
+                as int] = withMintedSlotIds(
+              call.namedArguments[#effects] as List<TrackEffect>,
+            );
+            return EngineResult.ok;
+          }),
+      () => when(() => repository.monitorEffects(any())).thenAnswer(
+        (call) => monitorChains[call.positionalArguments.first] ?? const [],
+      ),
     ]) {
       stub();
     }
@@ -1616,6 +1635,57 @@ void main() {
         fxBlockName(l10nOf(tester), three.tracks.first.effects[1]),
       );
       handle.dispose();
+    });
+
+    testWidgets('a drop lands from a fingers width off the gap', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track, state: three);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      final gesture = await lift(tester, from: 0, over: 2);
+      // 10 logical pixels off centre — nothing on a 5px-wide target, which is
+      // what the gaps were. The chips flanking a gap accept nothing, so a
+      // near miss is not a wrong move, it is silence: the entry springs back
+      // and the console gives no reason why.
+      await gesture.moveTo(
+        tester.getCenter(find.byKey(const Key('signal_panel_gap_2'))) +
+            const Offset(10, 0),
+      );
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      verify(
+        () => bloc.add(any(that: isA<LooperBusEffectMoved>())),
+      ).called(1);
+    });
+
+    testWidgets('one chip cannot be lifted twice at once', (tester) async {
+      await pump(tester, stage: FxStage.track, state: three);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      final first = await lift(tester, from: 0, over: 2);
+      // On the ghost: the chip it was lifted from keeps its place in the run,
+      // and a second finger lands on exactly that.
+      final second = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('signal_panel_ghost_0'))),
+      );
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await tester.pump();
+
+      // Both pointers are on the SAME chip, so both would carry the same slot
+      // id — and the set the strip tracks cannot tell them apart. The first
+      // release would then unfold the panel while the second finger was still
+      // holding something, and that drag could only be abandoned.
+      expect(find.byKey(const Key('signal_panel_lift')), findsOneWidget);
+
+      await first.up();
+      await second.up();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('signal_panel_in_mix')), findsOneWidget);
     });
 
     testWidgets('a tap still opens the editor rather than lifting', (

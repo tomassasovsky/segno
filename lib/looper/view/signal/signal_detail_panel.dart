@@ -608,7 +608,13 @@ class _DropGap extends StatelessWidget {
         final active = candidate.isNotEmpty;
         return AnimatedContainer(
           duration: Durations.short3,
-          width: active ? 18 : 5,
+          // Idle it is the 5 the run would have had anyway — until a drag is
+          // up, and then it is a TARGET on a floor console worked with a
+          // finger. At 5 wide the feature was a 5px acquisition with a silent
+          // miss on either side, since the chips flanking it accept nothing.
+          // The chips reflow by a few pixels when the gaps open; the mockups
+          // draw the strip re-laying-out during a drag anyway.
+          width: active ? 34 : 24,
           height: 38,
           alignment: Alignment.center,
           child: active
@@ -635,7 +641,7 @@ class _DropGap extends StatelessWidget {
 /// from has none — otherwise the thing being carried is invisible over the
 /// panel.
 class _LiftedChip extends StatelessWidget {
-  const _LiftedChip({required this.surface, required this.label});
+  const _LiftedChip({required this.surface, required this.label, super.key});
 
   final SurfaceTheme surface;
   final String label;
@@ -843,7 +849,11 @@ class _ChainStripState extends State<_ChainStrip> {
                 // inert until it has one.
                 child: LongPressDraggable<String>(
                   data: effect.slotId ?? '',
-                  maxSimultaneousDrags: effect.slotId == null ? 0 : null,
+                  // Two fingers on TWO chips is fine — the strip tracks a set.
+                  // Two on ONE chip is not: both would register the same slot
+                  // id, and the first release would take the gaps out from
+                  // under the second finger.
+                  maxSimultaneousDrags: effect.slotId == null ? 0 : 1,
                   // The panel is a touch surface on a floor console: a plain
                   // drag would steal every tap-to-open on the way past.
                   // The press is what says "I mean to move this one".
@@ -864,6 +874,7 @@ class _ChainStripState extends State<_ChainStrip> {
                       child: Transform.scale(
                         scale: 1.0135,
                         child: _LiftedChip(
+                          key: const Key('signal_panel_lift'),
                           surface: surface,
                           label: fxBlockName(l10n, effect),
                         ),
@@ -871,7 +882,10 @@ class _ChainStripState extends State<_ChainStrip> {
                     ),
                   ),
                   childWhenDragging: ExcludeSemantics(
-                    child: _chip(context, index, effect, ghosted: true),
+                    child: KeyedSubtree(
+                      key: Key('signal_panel_ghost_$index'),
+                      child: _chip(context, index, effect, ghosted: true),
+                    ),
                   ),
                   child: InkWell(
                     key: Key('signal_panel_chip_$index'),
