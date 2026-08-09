@@ -19,6 +19,7 @@ import 'package:segno/looper/view/signal/signal_detail_panel.dart';
 import 'package:segno/looper/view/signal/signal_tray_panel.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno_engine/segno_engine.dart' as engine;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../../helpers/helpers.dart';
@@ -60,6 +61,8 @@ void main() {
   late InputsCubit inputs;
   late MonitorCubit monitor;
   late SettingsTrayCubit tray;
+  late FakeAudioEngine catalogEngine;
+  late PluginCatalog catalog;
 
   setUpAll(() {
     registerFallbackValue(MonitorMode.off);
@@ -75,10 +78,35 @@ void main() {
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     when(() => repository.state).thenReturn(_rig);
     when(repository.allMonitors).thenReturn(const {});
-    // The add dialog reads the scan catalog for its plugin shelf.
-    when(() => repository.pluginCatalog).thenReturn(
-      PluginCatalog(engine: FakeAudioEngine(), appVersion: 'test'),
+    // The add dialog reads the scan catalog for its shelf and its count. One
+    // plugin that loaded and one file that did not — the failed entry keeps
+    // an EMPTY id, so it must not be counted or offered.
+    catalogEngine = FakeAudioEngine()
+      ..pluginScanResults = const [
+        engine.PluginDescriptor(
+          id: 'plug.ok',
+          name: 'Alpha',
+          vendor: 'Acme',
+          path: '/ok.vst3',
+          format: engine.PluginFormat.vst3,
+          version: 1,
+        ),
+        engine.PluginDescriptor(
+          id: '',
+          name: 'Broken.vst3',
+          vendor: '',
+          path: '/broken.vst3',
+          format: engine.PluginFormat.vst3,
+          version: 0,
+        ),
+      ];
+    catalog = PluginCatalog(
+      engine: catalogEngine,
+      appVersion: 'test',
+      pollInterval: const Duration(milliseconds: 1),
+      statFile: (path) => (mtimeMs: 1, sizeBytes: 1),
     );
+    when(() => repository.pluginCatalog).thenReturn(catalog);
     for (final stub in [
       () => when(
         () => repository.setMonitorInputMode(
@@ -1022,6 +1050,21 @@ void main() {
       expect(prose.data, contains(l10n.trackName(const [], 0)));
     });
 
+    testWidgets('the browse row counts only what loaded', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.runAsync(catalog.scan);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // Two entries scanned, one of them a file that failed — offering it
+      // would insert a `PluginRef` with no identity.
+      expect(find.text(l10n.fxAddBrowseAll(1)), findsOneWidget);
+      expect(find.text(l10n.fxAddBrowseAll(2)), findsNothing);
+    });
+
     testWidgets('a built-in tap adds it and closes', (tester) async {
       await pump(tester, stage: FxStage.track);
       await tester.tap(find.byKey(const Key('signal_card_track_0')));
@@ -1037,6 +1080,54 @@ void main() {
       verify(
         () => bloc.add(any(that: isA<LooperBusEffectAdded>())),
       ).called(1);
+    });
+  });
+
+  group('the add dialog on the smallest screen', () {
+    testWidgets('fits a 1024x600 console, shelf and all', (tester) async {
+      tester.view
+        ..physicalSize = const Size(1024, 600)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pumpAndSettle();
+
+      // Two pixels short of the grid's four columns and it falls to two,
+      // doubling the dialog's height and overflowing the shortest screen the
+      // console ships on.
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('signal_add_effect')), findsOneWidget);
+      expect(find.byKey(const Key('signal_add_cancel')), findsOneWidget);
+
+      // FOUR across, which is what makes it fit: the grid needs 694 for four
+      // columns, and two pixels short it falls to two and doubles in height.
+      final first = tester.getTopLeft(
+        find.byKey(const Key('signal_add_builtin_drive')),
+      );
+      final fourth = tester.getTopLeft(
+        find.byKey(const Key('signal_add_builtin_tremolo')),
+      );
+      expect(fourth.dy, first.dy);
+    });
+
+    testWidgets('one tap, one dialog', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // Two taps inside the settings round-trip. On the appliance that read
+      // is a real platform hop, so without a guard the second tap stacks a
+      // second dialog and the effect gets added twice.
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('signal_add_effect')), findsOneWidget);
     });
   });
 

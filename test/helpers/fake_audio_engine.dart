@@ -861,10 +861,19 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult scanBegin({bool rescan = false}) => EngineResult.ok;
 
   @override
-  PluginScanProgress scanPoll() => PluginScanProgress.empty;
+  PluginScanProgress scanPoll() => PluginScanProgress(
+    done: true,
+    found: pluginScanResults.length,
+    scanned: pluginScanResults.length,
+    total: pluginScanResults.length,
+  );
+
+  /// What a scan finds. Seed it to stand a plugin catalog up in a widget
+  /// test without a real host.
+  List<PluginDescriptor> pluginScanResults = const [];
 
   @override
-  List<PluginDescriptor> scanResults() => const [];
+  List<PluginDescriptor> scanResults() => pluginScanResults;
 
   @override
   EngineResult scanCancel() => EngineResult.ok;

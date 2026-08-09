@@ -19,14 +19,40 @@ import 'package:settings_repository/settings_repository.dart';
 /// gets that backwards, which is why the grid's `selected` set is fed the
 /// chain's own contents rather than a cursor. There is no confirm step: a tap
 /// adds, and the dialog closes.
+/// Whether a dialog is already on its way up.
+///
+/// Guards the window BEFORE the dialog exists, and only that: reading the
+/// recent shelf is a real platform round-trip on the appliance, and a second
+/// tap inside it would open a second dialog and add the effect twice. Once
+/// the dialog is up its own modal barrier does the job — holding the flag
+/// until it closes would strand it forever on a route that never pops.
+bool _opening = false;
+
 Future<void> showSignalAddEffect(
   BuildContext context, {
   required FxScope scope,
   required String chainName,
 }) async {
-  final repository = context.read<LooperRepository>();
-  final settings = context.read<SettingsRepository>();
-  final recents = await SignalRecentPlugins.load(settings);
+  if (_opening) return;
+  _opening = true;
+  final PluginCatalog catalog;
+  final SettingsRepository settings;
+  final List<String> recents;
+  try {
+    final repository = context.read<LooperRepository>();
+    settings = context.read<SettingsRepository>();
+    catalog = repository.pluginCatalog;
+    recents = await SignalRecentPlugins.load(settings);
+    // Nothing else in the console scans: the repository only does so when a
+    // restored session names a plugin it cannot find, and the surface that
+    // scanned on open is the one #533 deletes. Without this the dialog offers
+    // "Browse all 0 plugins…" on a machine full of them.
+    if (catalog.availablePlugins.isEmpty) {
+      unawaited(catalog.scan());
+    }
+  } finally {
+    _opening = false;
+  }
   if (!context.mounted) return;
 
   await showDialog<void>(
@@ -34,11 +60,12 @@ Future<void> showSignalAddEffect(
     builder: (_) => _AddEffectDialog(
       scope: scope,
       chainName: chainName,
-      catalog: repository.pluginCatalog,
+      catalog: catalog,
       recents: recents,
       settings: settings,
     ),
   );
+  _opening = false;
 }
 
 /// The plugin ids most recently added, newest first.
@@ -62,6 +89,9 @@ class SignalRecentPlugins {
     SettingsRepository settings,
     String id,
   ) async {
+    // A newline would split one id into two phantoms on the way back out, and
+    // an empty id is what a failed scan carries — neither is a plugin.
+    if (id.isEmpty || id.contains('\n')) return;
     final current = await load(settings);
     final next = [id, ...current.where((existing) => existing != id)];
     await settings.saveRecentPlugins(next.take(shelf * 2).join('\n'));
@@ -96,15 +126,24 @@ class _AddEffectDialog extends StatelessWidget {
   final List<String> recents;
   final SettingsRepository settings;
 
-  /// The dialog's width, as the mockups draw it — the same 744 the pick-one
-  /// settled on, so two dialogs on one surface are not two widths.
-  static const double width = 744;
+  /// The dialog's width.
+  ///
+  /// 746, not the 744 the mockups measure: the grid inside needs 694 for its
+  /// four columns (4x166 + 3x10), and 744 less 25 of padding either side and
+  /// the 1px border leaves 692 — two short, which drops the grid to TWO
+  /// columns and makes the dialog tall enough to overflow a 1024x600 screen.
+  /// The pen's own arithmetic is what is off by the border.
+  static const double width = 746;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final descriptors = catalog.descriptors;
+    // `availablePlugins`, not `descriptors`: a file that failed to scan is
+    // kept in the catalog with an EMPTY id, so offering it would insert a
+    // `PluginRef` with no identity — an instant D-MISS placeholder — and two
+    // such chips would resolve to the same entry.
+    final descriptors = catalog.availablePlugins;
     final shelf = SignalRecentPlugins.resolve(recents, descriptors);
     // The types already on this chain, which is what the accent marks.
     final present = {
@@ -123,95 +162,100 @@ class _AddEffectDialog extends StatelessWidget {
           borderRadius: BorderRadius.circular(17),
           border: Border.all(color: surface.borderStrong),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              l10n.fxAddTitle,
-              style: TextStyle(
-                color: surface.textPrimary,
-                fontSize: 19,
-                height: 1.16,
-                leadingDistribution: TextLeadingDistribution.even,
-                fontWeight: FontWeight.w600,
+        // Scrollable, because the shelf appears only after a plugin has been
+        // added once — so the dialog that fits today can stop fitting later,
+        // on the shortest screen the console ships on.
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                l10n.fxAddTitle,
+                style: TextStyle(
+                  color: surface.textPrimary,
+                  fontSize: 19,
+                  height: 1.16,
+                  leadingDistribution: TextLeadingDistribution.even,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              l10n.fxAddInto(chainName),
-              style: TextStyle(
-                color: surface.textSecondary,
-                fontSize: 16,
-                height: 1.55,
-                leadingDistribution: TextLeadingDistribution.even,
-              ),
-            ),
-            const SizedBox(height: 19),
-            ConsoleGroupLabel(l10n.fxAddBuiltIn),
-            const SizedBox(height: 10),
-            ConsoleChipGrid<TrackEffectType>(
-              key: const Key('signal_add_builtin'),
-              selected: present,
-              onTap: (type) {
-                scope.addEffectOfType(type);
-                Navigator.of(context).pop();
-              },
-              options: [
-                // `none` is the absence of an effect, not one of the seven.
-                for (final type in TrackEffectType.values)
-                  if (type != TrackEffectType.none)
-                    ConsoleSegment(
-                      value: type,
-                      label: l10n.effectTypeLabel(type),
-                      optionKey: Key('signal_add_builtin_${type.name}'),
-                    ),
-              ],
-            ),
-            if (shelf.isNotEmpty) ...[
-              const SizedBox(height: 19),
-              ConsoleGroupLabel(l10n.fxAddRecentPlugins),
               const SizedBox(height: 10),
-              ConsoleChipGrid<String>(
-                key: const Key('signal_add_recent'),
-                selected: const {},
-                onTap: (id) => _addPlugin(context, shelf, id),
+              Text(
+                l10n.fxAddInto(chainName),
+                style: TextStyle(
+                  color: surface.textSecondary,
+                  fontSize: 16,
+                  height: 1.55,
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
+              ),
+              const SizedBox(height: 19),
+              ConsoleGroupLabel(l10n.fxAddBuiltIn),
+              const SizedBox(height: 10),
+              ConsoleChipGrid<TrackEffectType>(
+                key: const Key('signal_add_builtin'),
+                selected: present,
+                onTap: (type) {
+                  scope.addEffectOfType(type);
+                  Navigator.of(context).pop();
+                },
                 options: [
-                  for (final plugin in shelf)
-                    ConsoleSegment(
-                      value: plugin.id,
-                      label: plugin.name,
-                      // The format is a real fact in the wrong place on a
-                      // chain chip; here it is exactly what a sublabel is for
-                      // (D4/D7) — and it makes the cell the vocabulary's own
-                      // two-line height instead of a size nothing else has.
-                      sublabel: plugin.format.name.toUpperCase(),
-                      optionKey: Key('signal_add_recent_${plugin.id}'),
-                    ),
+                  // `none` is the absence of an effect, not one of the seven.
+                  for (final type in TrackEffectType.values)
+                    if (type != TrackEffectType.none)
+                      ConsoleSegment(
+                        value: type,
+                        label: l10n.effectTypeLabel(type),
+                        optionKey: Key('signal_add_builtin_${type.name}'),
+                      ),
                 ],
               ),
-            ],
-            const SizedBox(height: 19),
-            ConsoleCard(
-              key: const Key('signal_add_browse'),
-              children: [
-                ConsoleRow(
-                  title: l10n.fxAddBrowseAll(descriptors.length),
-                  onTap: () => unawaited(_browse(context)),
-                  showDivider: false,
+              if (shelf.isNotEmpty) ...[
+                const SizedBox(height: 19),
+                ConsoleGroupLabel(l10n.fxAddRecentPlugins),
+                const SizedBox(height: 10),
+                ConsoleChipGrid<String>(
+                  key: const Key('signal_add_recent'),
+                  selected: const {},
+                  onTap: (id) => _addPlugin(context, shelf, id),
+                  options: [
+                    for (final plugin in shelf)
+                      ConsoleSegment(
+                        value: plugin.id,
+                        label: plugin.name,
+                        // The format is a real fact in the wrong place on a
+                        // chain chip; here it is exactly what a sublabel is for
+                        // (D4/D7) — and it makes the cell the vocabulary's own
+                        // two-line height instead of a size nothing else has.
+                        sublabel: plugin.format.name.toUpperCase(),
+                        optionKey: Key('signal_add_recent_${plugin.id}'),
+                      ),
+                  ],
                 ),
               ],
-            ),
-            const SizedBox(height: 19),
-            Align(
-              alignment: Alignment.centerRight,
-              child: ConsoleSmallButton(
-                key: const Key('signal_add_cancel'),
-                label: l10n.cancel,
-                onPressed: Navigator.of(context).pop,
+              const SizedBox(height: 19),
+              ConsoleCard(
+                key: const Key('signal_add_browse'),
+                children: [
+                  ConsoleRow(
+                    title: l10n.fxAddBrowseAll(descriptors.length),
+                    onTap: () => unawaited(_browse(context)),
+                    showDivider: false,
+                  ),
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 19),
+              Align(
+                alignment: Alignment.centerRight,
+                child: ConsoleSmallButton(
+                  key: const Key('signal_add_cancel'),
+                  label: l10n.cancel,
+                  onPressed: Navigator.of(context).pop,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

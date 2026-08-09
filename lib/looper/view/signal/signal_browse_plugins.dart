@@ -18,6 +18,10 @@ Future<PluginDescriptor?> showSignalBrowsePlugins(
 }) => showModalBottomSheet<PluginDescriptor>(
   context: context,
   isScrollControlled: true,
+  // Material caps a bottom sheet at 640 wide. Every console sheet overrides
+  // it for the same reason: this is a list across a 1920 surface, not a phone
+  // dialog, and at 640 the results grid drops to three columns.
+  constraints: const BoxConstraints(),
   backgroundColor: Colors.transparent,
   barrierColor: context.surface.scrim,
   builder: (_) => _BrowseSheet(catalog: catalog),
@@ -35,6 +39,13 @@ class _BrowseSheet extends StatefulWidget {
 class _BrowseSheetState extends State<_BrowseSheet> {
   String _query = '';
 
+  /// What the scan could actually load.
+  ///
+  /// A file that failed to scan stays in the catalog with an EMPTY id, so
+  /// listing it would offer a chip that inserts a `PluginRef` with no
+  /// identity — and two such chips would resolve to the same entry.
+  List<PluginDescriptor> get _installed => widget.catalog.availablePlugins;
+
   /// Matches on the plugin's own words — its name and its vendor.
   ///
   /// Not the path: a search that matched a directory would rank plugins by
@@ -42,9 +53,11 @@ class _BrowseSheetState extends State<_BrowseSheet> {
   /// plugin. Case-insensitive and substring rather than prefix, because the
   /// vendor is often the prefix and the name is what is being looked for.
   List<PluginDescriptor> get _results {
-    final all = widget.catalog.descriptors;
-    if (_query.isEmpty) return all;
-    final needle = _query.toLowerCase();
+    final all = _installed;
+    // Trimmed: a trailing space from an on-screen keyboard is not part of
+    // what someone typed, and a whitespace-only query is not a query.
+    final needle = _query.trim().toLowerCase();
+    if (needle.isEmpty) return all;
     return [
       for (final plugin in all)
         if (plugin.name.toLowerCase().contains(needle) ||
@@ -57,7 +70,7 @@ class _BrowseSheetState extends State<_BrowseSheet> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final all = widget.catalog.descriptors;
+    final all = _installed;
     final results = _results;
 
     return Container(
