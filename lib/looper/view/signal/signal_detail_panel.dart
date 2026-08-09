@@ -408,6 +408,7 @@ class _PanelBodyState extends State<_PanelBody> {
           _LevelRow(
             key: ValueKey(address),
             value: gain,
+            live: !_dragging,
             onChanged: onLevel,
           ),
         ],
@@ -594,10 +595,21 @@ class _Caption extends StatelessWidget {
 class _DropGap extends StatelessWidget {
   const _DropGap({
     required this.insertAt,
+    required this.carrying,
     required this.positionOf,
     required this.onDrop,
     super.key,
   });
+
+  /// The slot id of the entry the strip considers to be in flight.
+  ///
+  /// A drop from anything else is refused. The chips are disarmed on the
+  /// rebuild that follows a drag starting, but two long presses maturing in
+  /// the SAME frame both go live, and placing both is corruption: each drop
+  /// is expressed against the chain as drawn, and the second lands on a chain
+  /// the first has already rewritten — moving an entry that finger never
+  /// touched.
+  final String? carrying;
 
   /// The index a drop here would insert at, in the CURRENT list.
   final int insertAt;
@@ -623,6 +635,7 @@ class _DropGap extends StatelessWidget {
       // strip from offering a move that does nothing. An entry that has left
       // the chain mid-drag has no place at all, and is refused outright.
       onWillAcceptWithDetails: (d) {
+        if (d.data != carrying) return false;
         final from = positionOf(d.data);
         return from >= 0 && from != insertAt && from + 1 != insertAt;
       },
@@ -859,6 +872,7 @@ class _ChainStripState extends State<_ChainStrip> {
                 _DropGap(
                   key: Key('signal_panel_gap_$index'),
                   insertAt: index,
+                  carrying: dragging,
                   positionOf: _positionOf,
                   onDrop: _reorderTo,
                 ),
@@ -944,6 +958,7 @@ class _ChainStripState extends State<_ChainStrip> {
               _DropGap(
                 key: Key('signal_panel_gap_${chain.length}'),
                 insertAt: chain.length,
+                carrying: dragging,
                 positionOf: _positionOf,
                 onDrop: _reorderTo,
               ),
@@ -1001,7 +1016,20 @@ class _ChainStripState extends State<_ChainStrip> {
 /// pointer near both ends. The fill is drawn directly instead — the same way
 /// [ConsoleValueBar] draws its own.
 class _LevelRow extends StatefulWidget {
-  const _LevelRow({required this.value, required this.onChanged, super.key});
+  const _LevelRow({
+    required this.value,
+    required this.onChanged,
+    this.live = true,
+    super.key,
+  });
+
+  /// Whether the fader may still write.
+  ///
+  /// False while an entry is being carried. Hiding the row stops new touches
+  /// but not one already in flight: `Visibility` ignores POINTERS, and a
+  /// finger that was already on the fader keeps its recogniser and goes on
+  /// setting the gain on a control nobody can see.
+  final bool live;
 
   final double value;
   final ValueChanged<double> onChanged;
@@ -1052,6 +1080,7 @@ class _LevelRowState extends State<_LevelRow> {
   }
 
   void _set(double fraction) {
+    if (!widget.live) return;
     setState(() {
       _valueAtGrab ??= widget.value;
       _dragging = fraction;

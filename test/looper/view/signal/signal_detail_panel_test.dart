@@ -218,10 +218,15 @@ void main() {
     Stream<LooperState>? states,
     bool slowSettings = false,
     bool throwingSettings = false,
+    // Sized HERE, because this sets the view itself: a test that assigns
+    // `tester.view.physicalSize` before calling it has its size overwritten
+    // and quietly runs at 1920x1080, which is exactly where the small-console
+    // failures do not reproduce.
+    Size size = const Size(1920, 1080),
   }) async {
     final rig = state ?? _rig;
     tester.view
-      ..physicalSize = const Size(1920, 1080)
+      ..physicalSize = size
       ..devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -1309,13 +1314,7 @@ void main() {
 
   group('the add dialog on the smallest screen', () {
     testWidgets('fits a 1024x600 console, shelf and all', (tester) async {
-      tester.view
-        ..physicalSize = const Size(1024, 600)
-        ..devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      await pump(tester, stage: FxStage.track);
+      await pump(tester, stage: FxStage.track, size: const Size(1024, 600));
       await tester.tap(find.byKey(const Key('signal_card_track_0')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
@@ -1631,10 +1630,12 @@ void main() {
     testWidgets('the strip stays put under the finger on a small console', (
       tester,
     ) async {
-      tester.view
-        ..physicalSize = const Size(1024, 600)
-        ..devicePixelRatio = 1;
-      await pump(tester, stage: FxStage.track, state: three);
+      await pump(
+        tester,
+        stage: FxStage.track,
+        state: three,
+        size: const Size(1024, 600),
+      );
       await tester.tap(find.byKey(const Key('signal_card_track_0')));
       await tester.pumpAndSettle();
 
@@ -1686,6 +1687,16 @@ void main() {
       await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
       await tester.pump();
 
+      // Both are carried to a gap and both released — the corruption case.
+      // A drops past the end, C drops at the head.
+      await first.moveTo(
+        tester.getCenter(find.byKey(const Key('signal_panel_gap_3'))),
+      );
+      await second.moveTo(
+        tester.getCenter(find.byKey(const Key('signal_panel_gap_0'))),
+      );
+      await tester.pump();
+
       await first.up();
       await tester.pump();
 
@@ -1697,6 +1708,50 @@ void main() {
       await second.up();
       await tester.pumpAndSettle();
       expect(tailShowing(tester), isTrue);
+
+      // And only ONE of them is placed. Each drop is expressed against the
+      // chain as drawn, and the rewrite only lands on the bloc round-trip, so
+      // the second lands on a chain the first has already changed: taken
+      // together they moved A — which the second finger never touched — and
+      // left the chain exactly as it started.
+      verify(() => bloc.add(any(that: isA<LooperBusEffectMoved>()))).called(1);
+    });
+
+    testWidgets('a fader already under a finger stops when a chip lifts', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track, state: three);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // One finger working the level row...
+      final fader = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('signal_panel_level'))),
+      );
+      await fader.moveBy(const Offset(40, 0));
+      await tester.pump();
+      verify(
+        () => bloc.add(any(that: isA<LooperVolumeChanged>())),
+      ).called(greaterThan(0));
+
+      // ...while another lifts a chip.
+      final chip = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('signal_panel_chip_0'))),
+      );
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await tester.pump();
+
+      await fader.moveBy(const Offset(60, 0));
+      await tester.pump();
+
+      // Hiding the row stops new touches but not one already in flight:
+      // `Visibility` ignores POINTERS, and the recogniser under this finger
+      // survives, so the gain went on moving on a fader nobody could see.
+      verifyNever(() => bloc.add(any(that: isA<LooperVolumeChanged>())));
+
+      await fader.up();
+      await chip.up();
+      await tester.pumpAndSettle();
     });
 
     testWidgets('a chip is a button a screen reader can activate', (
