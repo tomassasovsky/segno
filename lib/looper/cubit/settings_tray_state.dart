@@ -112,7 +112,7 @@ class SettingsTrayState extends Equatable {
     this.destination = SettingsTrayDestination.home,
     this.signalTab = FxStage.input,
     this.signalSelection,
-    this.signalEffect,
+    this.signalEffectSlot,
     this.networkTab = NetworkTab.wifi,
     this.controlTab = ControlTab.pedal,
     this.loopTab = LoopTab.tempo,
@@ -167,11 +167,14 @@ class SettingsTrayState extends Equatable {
   /// Which entry of the open card's chain is being edited, or null when the
   /// panel is showing the chain rather than one link of it.
   ///
-  /// An INDEX, not the entry itself: a chain is edited while it is being
-  /// reordered and removed from, so anything holding the entry would be
-  /// holding a copy of something that has since moved. The index is what
-  /// `FxScope`'s own edit methods take.
-  final int? signalEffect;
+  /// The entry's `slotId` — its stable identity (A9), minted at the repository
+  /// write boundary and preserved across edits, reorders and restore — NOT its
+  /// position. A position is what the chain changes when an entry is dragged,
+  /// so an index here means the editor describes whoever moved into the slot;
+  /// with drag-and-drop that stops being a one-frame race and becomes the
+  /// normal case. Resolving an identity to a position at draw time cannot
+  /// drift, and an identity that is no longer in the chain simply closes.
+  final String? signalEffectSlot;
 
   /// Which tab the Network domain shows.
   ///
@@ -204,7 +207,7 @@ class SettingsTrayState extends Equatable {
     FxStage? signalTab,
     FxAddress? signalSelection,
     bool clearSignalSelection = false,
-    int? signalEffect,
+    String? signalEffectSlot,
     bool clearSignalEffect = false,
     NetworkTab? networkTab,
     ControlTab? controlTab,
@@ -223,9 +226,9 @@ class SettingsTrayState extends Equatable {
     signalSelection: clearSignalSelection
         ? null
         : signalSelection ?? this.signalSelection,
-    signalEffect: clearSignalSelection || clearSignalEffect
+    signalEffectSlot: clearSignalSelection || clearSignalEffect
         ? null
-        : signalEffect ?? this.signalEffect,
+        : signalEffectSlot ?? this.signalEffectSlot,
     networkTab: networkTab ?? this.networkTab,
     controlTab: controlTab ?? this.controlTab,
     loopTab: loopTab ?? this.loopTab,
@@ -242,7 +245,7 @@ class SettingsTrayState extends Equatable {
     destination,
     signalTab,
     signalSelection,
-    signalEffect,
+    signalEffectSlot,
     networkTab,
     controlTab,
     loopTab,

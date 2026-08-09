@@ -25,7 +25,6 @@ class SignalFxEditor extends StatelessWidget {
     required this.scope,
     required this.index,
     required this.onClose,
-    required this.onMoved,
     super.key,
   });
 
@@ -38,13 +37,6 @@ class SignalFxEditor extends StatelessWidget {
   /// Called when the entry goes, so the face can stop showing an editor for
   /// something that is no longer in the chain.
   final VoidCallback onClose;
-
-  /// Called with the entry's new slot after a move.
-  ///
-  /// The editor is opened on an INDEX, so moving the entry without this
-  /// leaves the editor on the position — one press would silently swap it
-  /// onto a neighbour, and a second press would swap it back.
-  final ValueChanged<int> onMoved;
 
   /// Inside padding of the block.
   static const double padding = 18;
@@ -128,7 +120,6 @@ class SignalFxEditor extends StatelessWidget {
             index: index,
             effect: effect,
             onClose: onClose,
-            onMoved: onMoved,
           ),
         ],
       ),
@@ -256,21 +247,16 @@ class _Footer extends StatelessWidget {
     required this.index,
     required this.effect,
     required this.onClose,
-    required this.onMoved,
   });
 
   final FxScope scope;
   final int index;
   final TrackEffect effect;
   final VoidCallback onClose;
-  final ValueChanged<int> onMoved;
 
-  void _move(int to) {
-    scope.moveEffect(index, to);
-    // Follow the entry to its new slot, or the editor is left describing
-    // whatever moved into the old one.
-    onMoved(to);
-  }
+  // The editor follows its entry by IDENTITY now, so a move needs no
+  // follow-up: the selection names the entry, not the slot it was in.
+  void _move(int to) => scope.moveEffect(index, to);
 
   @override
   Widget build(BuildContext context) {

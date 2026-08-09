@@ -162,25 +162,23 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// snapshot copy. Leaving the selection set would suppress the panel's
   /// `level` and `in the mix` rows as well, with no chip left to tap.
   void clearSignalEffect() {
-    if (state.signalEffect == null) return;
+    if (state.signalEffectSlot == null) return;
     emit(state.copyWith(clearSignalEffect: true));
   }
 
-  /// Opens chain entry [index] outright, without the toggle.
-  ///
-  /// The editor follows its entry through a move, and a move onto the slot
-  /// the editor already sits on would otherwise CLOSE it.
-  void showSignalEffect(int index) => emit(state.copyWith(signalEffect: index));
-
-  /// Opens chain entry [index] in the editor, or closes it when it is already
-  /// the open one.
+  /// Opens the chain entry identified by [slot], or closes it when it is
+  /// already the open one.
   ///
   /// Closing leaves the CARD open: the editor is a link of the chain, and
   /// shutting it hands back the chain rather than the whole face.
-  void selectSignalEffect(int index) => emit(
-    state.signalEffect == index
+  ///
+  /// Takes the entry's identity rather than its position, so dragging it
+  /// somewhere else in the chain moves the editor with it and needs no
+  /// follow-up call.
+  void selectSignalEffect(String slot) => emit(
+    state.signalEffectSlot == slot
         ? state.copyWith(clearSignalEffect: true)
-        : state.copyWith(signalEffect: index),
+        : state.copyWith(signalEffectSlot: slot),
   );
 
   /// Moves the Control domain's tab. Same rule as [showNetworkTab].
