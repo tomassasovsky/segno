@@ -208,6 +208,12 @@ void main() {
       () => when(
         () => repository.laneCanInheritFromInput(any(), any()),
       ).thenReturn(false),
+      () => when(
+        () => repository.setMonitorChainEnabled(
+          input: any(named: 'input'),
+          enabled: any(named: 'enabled'),
+        ),
+      ).thenReturn(EngineResult.ok),
       () => when(() => repository.monitorEffects(any())).thenAnswer(
         (call) => monitorChains[call.positionalArguments.first] ?? const [],
       ),
@@ -2286,9 +2292,84 @@ void main() {
       await tester.tap(find.byKey(const Key('signal_panel_chain_power')));
       await tester.pumpAndSettle();
 
+      // ON, not "toggled": a pill that writes the state it is already in
+      // leaves a chain that is off unable to come back, which is the whole
+      // reason this control exists.
+      final event =
+          verify(
+                () => bloc.add(
+                  captureAny(that: isA<LooperTrackChainEnabledToggled>()),
+                ),
+              ).captured.single
+              as LooperTrackChainEnabledToggled;
+      expect(event.enabled, isTrue);
+    });
+
+    testWidgets("an input's chain switches through its monitor", (
+      tester,
+    ) async {
+      await pump(tester);
+      // The input needs a monitor of its own: the cubit refuses to flip one
+      // that was never configured, rather than materialize a phantom that
+      // would come back on every boot.
+      monitor.addEffect(0);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+
+      // Each stage writes through its own carrier — the input's is the
+      // monitor, not the bloc.
+      await tester.tap(find.byKey(const Key('signal_panel_chain_power')));
+      await tester.pumpAndSettle();
+
       verify(
-        () => bloc.add(any(that: isA<LooperTrackChainEnabledToggled>())),
+        () => repository.setMonitorChainEnabled(
+          input: 0,
+          enabled: any(named: 'enabled'),
+        ),
       ).called(1);
+    });
+
+    testWidgets('the overdub warning appears when the overdub starts', (
+      tester,
+    ) async {
+      final states = StreamController<LooperState>();
+      addTearDown(states.close);
+      await pump(tester, stage: FxStage.loop, states: states.stream);
+      await tester.tap(find.byKey(const Key('signal_card_loop_0_0')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('signal_panel_overdub_mismatch')),
+        findsNothing,
+      );
+
+      // The overdub begins and the take has drifted from its input. NOTHING
+      // about the lane's own numbers changes — a panel watching only those
+      // would show this warning solely if the player happened to touch the
+      // fader while the overdub ran, which is never, in the one case A7
+      // exists for.
+      states.add(
+        LooperState(
+          tracks: [
+            Track(
+              volume: 0.5,
+              state: TrackState.overdubbing,
+              lanes: const [
+                Lane(inputChannel: 0, volume: 0.5, inputChainDiverges: true),
+                Lane(inputChannel: 1),
+              ],
+              effects: _rig.tracks.first.effects,
+            ),
+            const Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
+          ],
+          status: _rig.status,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('signal_panel_overdub_mismatch')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('a lane offers a re-inherit when the input has one', (

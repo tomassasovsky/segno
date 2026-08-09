@@ -101,6 +101,13 @@ bool sameLaneFacts(Lane? a, Lane? b) => a == null || b == null
           // of this list, that notice could never appear: nothing else in the
           // panel subscribes to the flag.
           a.chainEnabled == b.chainEnabled &&
+          // And whether the take has drifted from its input, which the
+          // overdub notice and the re-inherit action both read. It changes
+          // when an input's chain is edited, not when the lane is — so a
+          // panel watching only the lane's own numbers would never redraw for
+          // it, and the A7 warning would appear only if the player happened
+          // to touch this lane's fader while the overdub ran.
+          a.inputChainDiverges == b.inputChainDiverges &&
           listEquals(a.effects, b.effects);
 
 /// Whether the facts a panel draws about a track bus are unchanged.
@@ -183,10 +190,15 @@ class _LoopPanel extends StatelessWidget {
     // three facts the panel draws decide whether it needs redrawing — the
     // same argument `sameChainShape` makes for the card runs.
     return BlocBuilder<LooperBloc, LooperState>(
-      buildWhen: (previous, current) => !sameLaneFacts(
-        _laneOf(previous, track, lane),
-        _laneOf(current, track, lane),
-      ),
+      buildWhen: (previous, current) =>
+          !sameLaneFacts(
+            _laneOf(previous, track, lane),
+            _laneOf(current, track, lane),
+          ) ||
+          // The overdub notice is about the TRACK's state, which no lane
+          // fact carries: an overdub starting or ending changes nothing on
+          // the lane itself.
+          _trackOf(previous, track)?.state != _trackOf(current, track)?.state,
       builder: (context, state) {
         final take = _laneOf(state, track, lane);
         // The lane can go while its panel is open — a track's lane count is a

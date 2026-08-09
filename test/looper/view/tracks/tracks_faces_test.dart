@@ -848,22 +848,6 @@ void main() {
 
       verify(() => bloc.add(const LooperLaneInputChanged(0, 0, -1))).called(1);
       verifyNever(() => bloc.add(const LooperLaneInputChanged(0, 0, 1)));
-      // And lane 1 still records In 2, so nothing is trimmed off the tail.
-      verifyNever(() => bloc.add(any(that: isA<LooperLaneCountChanged>())));
-    });
-
-    testWidgets('freeing the last lane gives its slot back', (tester) async {
-      await openPanel(tester);
-
-      // Track 0's lane 1 records In 2 and holds no audio. Freeing it used to
-      // leave the lane behind for good: the count only ever grew, so a track
-      // routed and un-routed a few times sat at the cap with no slot left to
-      // give a further input.
-      await tester.tap(find.byKey(const Key('track_routing_check_1')));
-      await tester.pumpAndSettle();
-
-      verify(() => bloc.add(const LooperLaneInputChanged(0, 1, -1))).called(1);
-      verify(() => bloc.add(const LooperLaneCountChanged(0, 1))).called(1);
     });
 
     testWidgets('an output chip moves ONLY its own lane', (tester) async {

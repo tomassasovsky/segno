@@ -114,7 +114,6 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
       // lanes and move a recorded take onto another source.
       bloc.add(LooperLaneInputChanged(channel, existing, -1));
       if (_openLane == existing) setState(() => _openLane = null);
-      _trimEmptyTail(bloc, lanes, freed: existing);
       return;
     }
     final freed = lanes.indexWhere((lane) => lane.inputChannel < 0);
@@ -136,34 +135,12 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
   }
 
   /// Stops every lane recording while each keeps the audio it already has.
-  /// Drops trailing lanes that record nothing and hold nothing.
-  ///
-  /// The count only ever grew: routing an input adds a lane, un-routing frees
-  /// it in place, so a track that was routed and un-routed a few times sat at
-  /// the cap and could take no further input. Only the TAIL, and only while
-  /// it is silent — a lane in the middle keeps its index or every take after
-  /// it moves onto another source, which is the whole reason freeing happens
-  /// in place.
-  void _trimEmptyTail(LooperBloc bloc, List<Lane> lanes, {required int freed}) {
-    var count = lanes.length;
-    while (count > 1) {
-      final lane = lanes[count - 1];
-      final unrouted = count - 1 == freed || lane.inputChannel < 0;
-      if (!unrouted || lane.lengthFrames > 0) break;
-      count--;
-    }
-    if (count < lanes.length) {
-      bloc.add(LooperLaneCountChanged(widget.channel, count));
-    }
-  }
-
   void _recordNothing(List<Lane> lanes) {
     final bloc = context.read<LooperBloc>();
     for (final (lane, value) in lanes.indexed) {
       if (value.inputChannel < 0) continue;
       bloc.add(LooperLaneInputChanged(widget.channel, lane, -1));
     }
-    _trimEmptyTail(bloc, lanes, freed: lanes.length - 1);
     setState(() => _openLane = null);
   }
 
