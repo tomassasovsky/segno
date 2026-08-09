@@ -569,23 +569,41 @@ class _Caption extends StatelessWidget {
 /// is carrying an entry it opens and shows the stroke that says where the
 /// entry would land.
 class _DropGap extends StatelessWidget {
-  const _DropGap({required this.insertAt, required this.onDrop, super.key});
+  const _DropGap({
+    required this.insertAt,
+    required this.positionOf,
+    required this.onDrop,
+    super.key,
+  });
 
   /// The index a drop here would insert at, in the CURRENT list.
   final int insertAt;
+
+  /// Where the entry with this slot id sits in the chain right now, or -1 if
+  /// it is gone.
+  ///
+  /// Resolved on every accept rather than carried in the payload: Flutter
+  /// snapshots a [Draggable]'s data when the drag starts and never revisits
+  /// it, so an index put in there goes stale the moment anything else edits
+  /// the chain — and the drop then moves whichever entry has since slid into
+  /// that position.
+  final int Function(String slotId) positionOf;
 
   final void Function(int from, int insertAt) onDrop;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return DragTarget<int>(
+    return DragTarget<String>(
       // The two gaps flanking the dragged entry are no-ops: they name the
       // place it already occupies. Rejecting them here is what keeps the
-      // strip from offering a move that does nothing.
-      onWillAcceptWithDetails: (d) =>
-          d.data != insertAt && d.data + 1 != insertAt,
-      onAcceptWithDetails: (d) => onDrop(d.data, insertAt),
+      // strip from offering a move that does nothing. An entry that has left
+      // the chain mid-drag has no place at all, and is refused outright.
+      onWillAcceptWithDetails: (d) {
+        final from = positionOf(d.data);
+        return from >= 0 && from != insertAt && from + 1 != insertAt;
+      },
+      onAcceptWithDetails: (d) => onDrop(positionOf(d.data), insertAt),
       builder: (context, candidate, rejected) {
         final active = candidate.isNotEmpty;
         return AnimatedContainer(
@@ -679,8 +697,17 @@ class _ChainStrip extends StatefulWidget {
 }
 
 class _ChainStripState extends State<_ChainStrip> {
-  /// The entry being dragged, or null. Drawn as a gap in the run.
-  int? _dragging;
+  /// The entries currently being carried, by slot id.
+  ///
+  /// A set, not one index: this is a touch surface, and two fingers can lift
+  /// two chips. With a single slot the first drop to land tore the gaps out
+  /// from under the second finger, and that drag could then only be
+  /// abandoned.
+  final Set<String> _dragging = {};
+
+  /// Where [slotId] sits in the chain right now, or -1 if it is gone.
+  int _positionOf(String slotId) =>
+      widget.chain.indexWhere((effect) => effect.slotId == slotId);
 
   /// A drop onto the gap [insertAt] — an index in the CURRENT list.
   ///
@@ -693,12 +720,24 @@ class _ChainStripState extends State<_ChainStrip> {
   /// The rack also guarded the two gaps flanking the entry here; that guard is
   /// [_DropGap]'s, which is where it can also decline to draw a drop marker
   /// for a move that would do nothing.
-  void _reorderTo(int from, int insertAt) =>
-      widget.onReorder(from, insertAt > from ? insertAt - 1 : insertAt);
+  void _reorderTo(int from, int insertAt) {
+    if (from < 0) return;
+    widget.onReorder(from, insertAt > from ? insertAt - 1 : insertAt);
+  }
 
-  void _setDragging(int? index) {
-    setState(() => _dragging = index);
-    widget.onDragging(index != null);
+  /// Records that [slotId] is now in flight, or no longer is.
+  ///
+  /// Both ends are reported by `onDragCompleted` / `onDraggableCanceled`
+  /// rather than by `onDragEnd`, because Flutter gates `onDragEnd` on the
+  /// draggable still being MOUNTED. The chips are keyed by slot id, so a
+  /// chain that gets re-identified mid-drag — starting a recording inherits
+  /// the monitor chain onto the lane with fresh ids — tears the held chip
+  /// down, and `onDragEnd` is then silently skipped. The strip was left in
+  /// drag mode with no way back out but closing the card.
+  void _setDragging(String slotId, {required bool dragging}) {
+    if (!mounted) return;
+    setState(() => dragging ? _dragging.add(slotId) : _dragging.remove(slotId));
+    widget.onDragging(_dragging.isNotEmpty);
   }
 
   /// One chain chip, as it sits in the run.
@@ -752,7 +791,7 @@ class _ChainStripState extends State<_ChainStrip> {
     final editing = widget.editing;
     final onSelect = widget.onSelect;
     final add = widget.onAdd;
-    final dragging = _dragging;
+    final dragging = _dragging.isNotEmpty;
     // The empty line and the add chip together: an empty chain is exactly the
     // case where "put something on it" needs to be reachable, so the early
     // return that used to sit here hid the one affordance that mattered.
@@ -776,14 +815,15 @@ class _ChainStripState extends State<_ChainStrip> {
           // The gaps carry the spacing themselves while a drag is up, so that
           // a drop target can grow between two chips instead of a fixed 5
           // sitting beside it.
-          spacing: dragging == null ? 5 : 0,
+          spacing: dragging ? 0.0 : 5.0,
           runSpacing: 5,
           children: [
             for (final (index, effect) in chain.indexed) ...[
-              if (dragging != null)
+              if (dragging)
                 _DropGap(
                   key: Key('signal_panel_gap_$index'),
                   insertAt: index,
+                  positionOf: _positionOf,
                   onDrop: _reorderTo,
                 ),
               Semantics(
@@ -797,59 +837,69 @@ class _ChainStripState extends State<_ChainStrip> {
                 button: true,
                 selected: effect.slotId != null && effect.slotId == editing,
                 label: fxBlockName(l10n, effect),
-                child: ExcludeSemantics(
-                  child: LongPressDraggable<int>(
-                    data: index,
-                    // The panel is a touch surface on a floor console: a plain
-                    // drag would steal every tap-to-open on the way past.
-                    // The press is what says "I mean to move this one".
-                    onDragStarted: () => _setDragging(index),
-                    onDragEnd: (_) => _setDragging(null),
-                    onDraggableCanceled: (_, _) => _setDragging(null),
-                    feedback: Material(
-                      color: Colors.transparent,
-                      // 74x38 lifts to 75x40 — the one scale the mockups draw.
-                      child: Transform.translate(
-                        offset: const Offset(-2, -5),
-                        child: Transform.scale(
-                          scale: 1.0135,
-                          child: _LiftedChip(
-                            surface: surface,
-                            label: fxBlockName(l10n, effect),
-                          ),
+                // An entry with no slot id has not crossed a repository write
+                // yet, so nothing can name it — neither a selection nor a
+                // drag payload. That is momentary, and the chip is simply
+                // inert until it has one.
+                child: LongPressDraggable<String>(
+                  data: effect.slotId ?? '',
+                  maxSimultaneousDrags: effect.slotId == null ? 0 : null,
+                  // The panel is a touch surface on a floor console: a plain
+                  // drag would steal every tap-to-open on the way past.
+                  // The press is what says "I mean to move this one".
+                  onDragStarted: () =>
+                      _setDragging(effect.slotId!, dragging: true),
+                  // Not `onDragEnd` — see [_setDragging]. Between them these
+                  // two cover both endings, and neither is gated on the chip
+                  // still being mounted.
+                  onDragCompleted: () =>
+                      _setDragging(effect.slotId!, dragging: false),
+                  onDraggableCanceled: (_, _) =>
+                      _setDragging(effect.slotId!, dragging: false),
+                  feedback: Material(
+                    color: Colors.transparent,
+                    // 74x38 lifts to 75x40 — the one scale the mockups draw.
+                    child: Transform.translate(
+                      offset: const Offset(-2, -5),
+                      child: Transform.scale(
+                        scale: 1.0135,
+                        child: _LiftedChip(
+                          surface: surface,
+                          label: fxBlockName(l10n, effect),
                         ),
                       ),
                     ),
-                    childWhenDragging: _chip(
-                      context,
-                      index,
-                      effect,
-                      ghosted: true,
-                    ),
-                    child: InkWell(
-                      key: Key('signal_panel_chip_$index'),
-                      // An entry with no slot id has not crossed a repository
-                      // write yet, so nothing can name it; that is momentary,
-                      // and the chip is simply inert until it has one.
-                      onTap: effect.slotId == null
-                          ? null
-                          : () => onSelect(effect.slotId!),
-                      borderRadius: BorderRadius.circular(8),
+                  ),
+                  childWhenDragging: ExcludeSemantics(
+                    child: _chip(context, index, effect, ghosted: true),
+                  ),
+                  child: InkWell(
+                    key: Key('signal_panel_chip_$index'),
+                    onTap: effect.slotId == null
+                        ? null
+                        : () => onSelect(effect.slotId!),
+                    borderRadius: BorderRadius.circular(8),
+                    // Only the DRAWING is excluded. Wrapping the InkWell too
+                    // silences its tap action, and the chip then announces as
+                    // a button a screen reader cannot activate — the editor
+                    // becomes unreachable from assistive tech entirely.
+                    child: ExcludeSemantics(
                       child: _chip(context, index, effect),
                     ),
                   ),
                 ),
               ),
             ],
-            if (dragging != null)
+            if (dragging)
               _DropGap(
                 key: Key('signal_panel_gap_${chain.length}'),
                 insertAt: chain.length,
+                positionOf: _positionOf,
                 onDrop: _reorderTo,
               ),
             // No add chip mid-drag: it is not a drop target, and a gap beside
             // it would offer an insertion point past the end of the chain.
-            if (add != null && dragging == null)
+            if (add != null && !dragging)
               Semantics(
                 button: true,
                 label: l10n.fxAddChip,
