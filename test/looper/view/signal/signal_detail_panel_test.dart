@@ -1786,6 +1786,32 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets('a drag does not undo what the fader was holding', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track, state: three);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      await tester.drag(
+        find.byKey(const Key('signal_panel_level')),
+        const Offset(-300, 0),
+      );
+      await tester.pumpAndSettle();
+      // Track 0 sits at 0.5 gain; the rig is silent, so the fader is holding
+      // the moved value on its own.
+      expect(find.text(signalGainReadout(0.5)), findsNothing);
+
+      final gesture = await lift(tester, from: 0, over: 2);
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      // Tearing the whole tail down to dispose its recognisers takes the
+      // fader's held value with it, and the bar snaps back to a gain the
+      // engine no longer has — undoing a setting by reordering an effect.
+      expect(find.text(signalGainReadout(0.5)), findsNothing);
+    });
+
     testWidgets('an effect is not deleted by a finger the fold hid', (
       tester,
     ) async {

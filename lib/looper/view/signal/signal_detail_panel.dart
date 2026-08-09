@@ -394,7 +394,24 @@ class _PanelBodyState extends State<_PanelBody> {
         if (context.mounted && !tray.isClosed) tray.clearSignalEffect();
       });
     }
-    // What sits under the chain strip, in signal order.
+    // The fader, which is the one thing under the chain that HOLDS anything:
+    // the value a finger set, kept until the rig answers. It is guarded
+    // rather than torn down for exactly that reason — see [_LevelRow.live]
+    // and the keyed subtree below.
+    final level = <Widget>[
+      if (editing == null && gain != null && onLevel != null) ...[
+        _Caption(l10n.signalPanelLevel),
+        _LevelRow(
+          key: ValueKey(address),
+          value: gain,
+          live: !_dragging,
+          onChanged: onLevel,
+        ),
+      ],
+    ];
+
+    // The rest, in signal order. Every one of these is stateless, so it can
+    // be thrown away and rebuilt for nothing.
     final tail = <Widget>[
       if (editing != null)
         SignalFxEditor(
@@ -403,14 +420,6 @@ class _PanelBodyState extends State<_PanelBody> {
           onClose: tray.clearSignalEffect,
         )
       else ...[
-        if (gain != null && onLevel != null) ...[
-          _Caption(l10n.signalPanelLevel),
-          _LevelRow(
-            key: ValueKey(address),
-            value: gain,
-            onChanged: onLevel,
-          ),
-        ],
         if (inMix != null && onHeard != null) ...[
           _Caption(l10n.signalPanelInMix),
           ConsoleSegmented<bool>(
@@ -497,27 +506,39 @@ class _PanelBodyState extends State<_PanelBody> {
           // looking at ONE effect now, and how loud the whole chain is is a
           // question about the chain. The monitor segment stays — what you
           // hear is still true while you change what it sounds like.
-          if (tail.isNotEmpty)
+          if (level.isNotEmpty || tail.isNotEmpty)
             Visibility(
               key: const Key('signal_panel_tail'),
               visible: !_dragging,
               maintainSize: true,
               maintainAnimation: true,
               maintainState: true,
-              // Keyed on the mode, so engaging the fold rebuilds the whole
-              // tail from scratch and every recogniser under it is disposed.
-              // `Visibility` only stops NEW hit tests: a finger already on
-              // the remove button, the mute segment or a parameter bar would
-              // otherwise complete its gesture on a control that is no longer
-              // on screen — deleting an effect, mid-drag, with nothing said.
-              child: KeyedSubtree(
-                key: ValueKey(_dragging),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  spacing: SignalDetailPanel.rowGap,
-                  children: tail,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                spacing: SignalDetailPanel.rowGap,
+                children: [
+                  ...level,
+                  // Keyed on the mode, so engaging the fold rebuilds this part
+                  // from scratch and every recogniser under it is disposed.
+                  // `Visibility` only stops NEW hit tests: a finger already on
+                  // the remove button, the mute segment or a parameter bar
+                  // would otherwise complete its gesture on a control no
+                  // longer on screen — deleting an effect, mid-drag, with
+                  // nothing said. The fader is outside this because it is the
+                  // one control that would LOSE something: its held value,
+                  // which the rig may not have answered on yet.
+                  if (tail.isNotEmpty)
+                    KeyedSubtree(
+                      key: ValueKey(_dragging),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: SignalDetailPanel.rowGap,
+                        children: tail,
+                      ),
+                    ),
+                ],
               ),
             ),
         ],
@@ -1042,7 +1063,21 @@ class _ChainStripState extends State<_ChainStrip> {
 /// pointer near both ends. The fill is drawn directly instead — the same way
 /// [ConsoleValueBar] draws its own.
 class _LevelRow extends StatefulWidget {
-  const _LevelRow({required this.value, required this.onChanged, super.key});
+  const _LevelRow({
+    required this.value,
+    required this.onChanged,
+    this.live = true,
+    super.key,
+  });
+
+  /// Whether the fader may still write.
+  ///
+  /// False while an entry is being carried. Hiding the row stops new touches
+  /// but not one already in flight: `Visibility` ignores POINTERS, and a
+  /// finger already on the fader keeps its recogniser and goes on setting the
+  /// gain on a control nobody can see. Guarded rather than torn down, because
+  /// the value under that finger is the one thing here worth keeping.
+  final bool live;
 
   final double value;
   final ValueChanged<double> onChanged;
@@ -1093,6 +1128,7 @@ class _LevelRowState extends State<_LevelRow> {
   }
 
   void _set(double fraction) {
+    if (!widget.live) return;
     setState(() {
       _valueAtGrab ??= widget.value;
       _dragging = fraction;
