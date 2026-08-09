@@ -2156,6 +2156,55 @@ void main() {
     });
   });
 
+  group('the chain run is drawn as the pen draws it', () {
+    testWidgets('a chip label sits in the middle of its chip', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      final l10n = l10nOf(tester);
+      final chip = tester.getRect(find.byKey(const Key('signal_panel_chip_0')));
+      final label = tester.getRect(
+        find.text(fxBlockName(l10n, _rig.tracks.first.effects.first)),
+      );
+      // The chip is a fixed 38 and the label is shorter, so without centring
+      // it sits at the TOP of it — beside an add chip that has always centred
+      // its own, which is what made the run read as misaligned.
+      expect(label.center.dy, moreOrLessEquals(chip.center.dy, epsilon: 0.5));
+
+      final add = tester.getRect(
+        find.byKey(const Key('signal_panel_add_chip')),
+      );
+      final addLabel = tester.getRect(find.text(l10n.fxAddChip));
+      expect(addLabel.center.dy, moreOrLessEquals(add.center.dy, epsilon: 0.5));
+      // And the two labels share a line.
+      expect(
+        label.center.dy,
+        moreOrLessEquals(addLabel.center.dy, epsilon: 0.5),
+      );
+    });
+
+    testWidgets('the run is spaced as the pen spaces it', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // `Drive` ends at 74 and `Tremolo` starts at 84 in SIGNAL/signal-detail,
+      // and the same 10 sits before `+ effect`.
+      final first = tester.getRect(
+        find.byKey(const Key('signal_panel_chip_0')),
+      );
+      final second = tester.getRect(
+        find.byKey(const Key('signal_panel_chip_1')),
+      );
+      final add = tester.getRect(
+        find.byKey(const Key('signal_panel_add_chip')),
+      );
+      expect(second.left - first.right, 10);
+      expect(add.left - second.right, 10);
+    });
+  });
+
   group('a screen reader can work the face', () {
     testWidgets('a card is a button it can actually activate', (tester) async {
       final handle = tester.ensureSemantics();

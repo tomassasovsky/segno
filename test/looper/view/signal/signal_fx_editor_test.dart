@@ -252,6 +252,32 @@ void main() {
     expect(written, closeTo(written.roundToDouble(), 0.0001));
   });
 
+  testWidgets('the move buttons are drawn, not typed', (tester) async {
+    final scope = _FakeScope([
+      BuiltInEffect(type: TrackEffectType.reverb, slotId: 'a'),
+      BuiltInEffect(type: TrackEffectType.drive, slotId: 'b'),
+    ]);
+    await pump(tester, scope);
+
+    for (final key in ['signal_fx_move_up', 'signal_fx_move_down']) {
+      // `◀` and `▶` are emoji-presentation by default, so macOS renders them
+      // out of Apple Color Emoji: a fat coloured lozenge off the baseline,
+      // beside a `Remove` in Inter. A path is the same on every platform the
+      // console runs on.
+      expect(
+        find.descendant(of: find.byKey(Key(key)), matching: find.byType(Text)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(Key(key)),
+          matching: find.byType(CustomPaint),
+        ),
+        findsWidgets,
+      );
+    }
+  });
+
   group('what is a control and what is only a number', () {
     testWidgets("a meter and the plugin's own bypass get no fader", (
       tester,

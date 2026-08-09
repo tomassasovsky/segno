@@ -968,10 +968,6 @@ class _ChainStripState extends State<_ChainStrip> {
     final selected = effect.slotId != null && effect.slotId == widget.editing;
     return Opacity(
       opacity: ghosted ? 0.3 : 1,
-      // No `alignment`: a Container with one expands to its constraints, which
-      // inside a Wrap makes every chip span the whole panel — and then the add
-      // chip wraps below the run instead of following it. The padding centres
-      // the label on its own.
       child: Container(
         height: 38,
         padding: const EdgeInsets.symmetric(horizontal: 17),
@@ -981,13 +977,21 @@ class _ChainStripState extends State<_ChainStrip> {
           color: selected ? surface.accentSurface : null,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text(
-          fxBlockName(l10n, effect),
-          style: TextStyle(
-            color: selected ? surface.accent : surface.textSecondary,
-            fontSize: 16,
-            height: 1.13,
-            leadingDistribution: TextLeadingDistribution.even,
+        // `Center` with a width factor, not the Container's `alignment`: an
+        // alignment makes a Container expand to its constraints, which inside
+        // a Wrap gives every chip the whole panel's width. Without either,
+        // the label sits at the TOP of the 38 — beside an add chip that has
+        // always centred its own, so the run read as misaligned.
+        child: Center(
+          widthFactor: 1,
+          child: Text(
+            fxBlockName(l10n, effect),
+            style: TextStyle(
+              color: selected ? surface.accent : surface.textSecondary,
+              fontSize: 16,
+              height: 1.13,
+              leadingDistribution: TextLeadingDistribution.even,
+            ),
           ),
         ),
       ),
