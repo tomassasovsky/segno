@@ -311,7 +311,7 @@ class _MasterPanel extends StatelessWidget {
 
 /// The panel's shape: a captioned stack of rows, in signal order — what is on
 /// the chain, then how loud it is, then whether it is heard at all.
-class _PanelBody extends StatelessWidget {
+class _PanelBody extends StatefulWidget {
   const _PanelBody({
     required this.address,
     required this.scope,
@@ -344,25 +344,48 @@ class _PanelBody extends StatelessWidget {
   final ValueChanged<MonitorMode>? onMonitorMode;
 
   @override
+  State<_PanelBody> createState() => _PanelBodyState();
+}
+
+class _PanelBodyState extends State<_PanelBody> {
+  /// Whether an entry is being dragged along the chain right now.
+  ///
+  /// While one is, the panel is the chain and nothing else. Dragging is its
+  /// own mode: the rows below would jump as the panel changed height under a
+  /// held finger, and an editor open on the entry being carried would be
+  /// describing a thing in motion.
+  bool _dragging = false;
+
+  @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final gain = level;
-    final inMix = heard;
-    final mode = monitorMode;
+    final chain = widget.chain;
+    final address = widget.address;
+    final scope = widget.scope;
+    final title = widget.title;
+    final gain = widget.level;
+    final onLevel = widget.onLevel;
+    final inMix = widget.heard;
+    final onHeard = widget.onHeard;
+    final mode = widget.monitorMode;
+    final onMonitorMode = widget.onMonitorMode;
 
-    final selected = context.select<SettingsTrayCubit, int?>(
-      (c) => c.state.signalEffect,
+    final selected = context.select<SettingsTrayCubit, String?>(
+      (c) => c.state.signalEffectSlot,
     );
     final tray = context.read<SettingsTrayCubit>();
-    // An entry can go while its editor is open — removed from another
-    // surface, or the whole chain rewritten by a record-time snapshot copy.
-    // The editor is DROPPED here rather than rendered empty: leaving the
-    // selection set would suppress `level` and `in the mix` too, and with no
-    // chip left to tap there would be nothing on the face able to clear it.
-    final editing = selected != null && selected < chain.length
-        ? selected
-        : null;
+    // Identity resolved to a position at DRAW time, so a reorder moves the
+    // editor with its entry and needs no follow-up write. An entry can also
+    // go while its editor is open — removed from another surface, or the
+    // whole chain rewritten by a record-time snapshot copy — and then it
+    // resolves to nothing. The editor is DROPPED rather than rendered empty:
+    // leaving the selection set would suppress `level` and `in the mix` too,
+    // and with no chip left to tap there would be nothing able to clear it.
+    final at = selected == null
+        ? -1
+        : chain.indexWhere((effect) => effect.slotId == selected);
+    final editing = at >= 0 ? at : null;
     if (selected != null && editing == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         // `context.mounted` guards the element; the cubit needs its own check,
@@ -386,12 +409,16 @@ class _PanelBody extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         spacing: SignalDetailPanel.rowGap,
         children: [
-          _Header(title: title, subtitle: subtitle),
+          _Header(title: title, subtitle: widget.subtitle),
           _Caption(l10n.signalPanelChain),
           _ChainStrip(
             chain: chain,
-            editing: editing,
+            // The slot only when it still resolves — an id naming nothing
+            // would mark no chip and the panel is already dropping it.
+            editing: editing == null ? null : selected,
             onSelect: tray.selectSignalEffect,
+            onReorder: scope.moveEffect,
+            onDragging: (dragging) => setState(() => _dragging = dragging),
             onAdd: scope.canAddEffect
                 ? () => unawaited(
                     showSignalAddEffect(
@@ -406,12 +433,14 @@ class _PanelBody extends StatelessWidget {
           // looking at ONE effect now, and how loud the whole chain is is a
           // question about the chain. The monitor segment below stays — what
           // you hear is still true while you change what it sounds like.
-          if (editing != null)
+          if (_dragging)
+            // Nothing: the chain above is the whole panel while a drag is up.
+            const SizedBox.shrink()
+          else if (editing != null)
             SignalFxEditor(
               scope: scope,
               index: editing,
-              onClose: () => tray.selectSignalEffect(editing),
-              onMoved: tray.showSignalEffect,
+              onClose: tray.clearSignalEffect,
             )
           else ...[
             if (gain != null && onLevel != null) ...[
@@ -419,7 +448,7 @@ class _PanelBody extends StatelessWidget {
               _LevelRow(
                 key: ValueKey(address),
                 value: gain,
-                onChanged: onLevel!,
+                onChanged: onLevel,
               ),
             ],
             if (inMix != null && onHeard != null) ...[
@@ -428,7 +457,7 @@ class _PanelBody extends StatelessWidget {
                 key: const Key('signal_panel_in_mix'),
                 stretch: true,
                 selected: inMix,
-                onChanged: onHeard!,
+                onChanged: onHeard,
                 segments: [
                   ConsoleSegment(value: false, label: l10n.signalMixMuted),
                   ConsoleSegment(value: true, label: l10n.signalMixHeard),
@@ -442,7 +471,7 @@ class _PanelBody extends StatelessWidget {
               key: const Key('signal_panel_monitor'),
               stretch: true,
               selected: mode,
-              onChanged: onMonitorMode!,
+              onChanged: onMonitorMode,
               segments: [
                 ConsoleSegment(
                   value: MonitorMode.off,
@@ -534,21 +563,103 @@ class _Caption extends StatelessWidget {
 /// A chip opens its entry in the editor below, and the open one takes the
 /// accent pair. The last chip is `+ effect`, which is where the effect it
 /// adds will land — the end of the chain.
-class _ChainStrip extends StatelessWidget {
+/// The gap between two chips, and the insertion point it stands for.
+///
+/// Idle it is just the 5 the run would have had anyway; under a pointer that
+/// is carrying an entry it opens and shows the stroke that says where the
+/// entry would land.
+class _DropGap extends StatelessWidget {
+  const _DropGap({required this.insertAt, required this.onDrop, super.key});
+
+  /// The index a drop here would insert at, in the CURRENT list.
+  final int insertAt;
+
+  final void Function(int from, int insertAt) onDrop;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return DragTarget<int>(
+      // The two gaps flanking the dragged entry are no-ops: they name the
+      // place it already occupies. Rejecting them here is what keeps the
+      // strip from offering a move that does nothing.
+      onWillAcceptWithDetails: (d) =>
+          d.data != insertAt && d.data + 1 != insertAt,
+      onAcceptWithDetails: (d) => onDrop(d.data, insertAt),
+      builder: (context, candidate, rejected) {
+        final active = candidate.isNotEmpty;
+        return AnimatedContainer(
+          duration: Durations.short3,
+          width: active ? 18 : 5,
+          height: 38,
+          alignment: Alignment.center,
+          child: active
+              ? Container(
+                  width: 4,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: surface.accent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                )
+              : null,
+        );
+      },
+    );
+  }
+}
+
+/// The chip under the pointer during a drag.
+///
+/// Its own widget rather than [_ChainStripState._chip]: the feedback layer is
+/// outside the strip's build, so it cannot read anything that would make it
+/// look selected or ghosted, and it draws a fill even when the entry it came
+/// from has none — otherwise the thing being carried is invisible over the
+/// panel.
+class _LiftedChip extends StatelessWidget {
+  const _LiftedChip({required this.surface, required this.label});
+
+  final SurfaceTheme surface;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 38,
+    padding: const EdgeInsets.symmetric(horizontal: 17),
+    decoration: BoxDecoration(
+      color: surface.accentSurface,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: surface.accent),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        color: surface.accent,
+        fontSize: 16,
+        height: 1.13,
+        leadingDistribution: TextLeadingDistribution.even,
+      ),
+    ),
+  );
+}
+
+class _ChainStrip extends StatefulWidget {
   const _ChainStrip({
     required this.chain,
     required this.editing,
     required this.onSelect,
     required this.onAdd,
+    required this.onReorder,
+    required this.onDragging,
   });
 
   final List<TrackEffect> chain;
 
-  /// Which entry is open in the editor, or null when none is.
-  final int? editing;
+  /// Which entry is open in the editor, by slot id, or null when none is.
+  final String? editing;
 
-  /// Opens (or, on the open chip, closes) an entry's editor.
-  final ValueChanged<int> onSelect;
+  /// Opens (or, on the open chip, closes) an entry's editor, by identity.
+  final ValueChanged<String> onSelect;
 
   /// Opens the add dialog, or null when the chain is at its cap.
   ///
@@ -556,11 +667,92 @@ class _ChainStrip extends StatelessWidget {
   /// sits where the effect it makes will, which is the end of the chain.
   final VoidCallback? onAdd;
 
+  /// Moves the entry at `from` to `to`, both post-normalisation indices.
+  final void Function(int from, int to) onReorder;
+
+  /// Reports whether a drag is in progress, so the panel can fold to the
+  /// chain alone while one is.
+  final ValueChanged<bool> onDragging;
+
+  @override
+  State<_ChainStrip> createState() => _ChainStripState();
+}
+
+class _ChainStripState extends State<_ChainStrip> {
+  /// The entry being dragged, or null. Drawn as a gap in the run.
+  int? _dragging;
+
+  /// A drop onto the gap [insertAt] — an index in the CURRENT list.
+  ///
+  /// The normalisation is ported from `signal_fx_rack.dart` rather than
+  /// re-derived: a gap PAST the entry's own position has to come down by one,
+  /// because the entry is removed before it is re-inserted, and every gap
+  /// after it has already shifted by the time the insert happens. Off by one
+  /// here and an entry dragged rightwards always lands one place short.
+  ///
+  /// The rack also guarded the two gaps flanking the entry here; that guard is
+  /// [_DropGap]'s, which is where it can also decline to draw a drop marker
+  /// for a move that would do nothing.
+  void _reorderTo(int from, int insertAt) =>
+      widget.onReorder(from, insertAt > from ? insertAt - 1 : insertAt);
+
+  void _setDragging(int? index) {
+    setState(() => _dragging = index);
+    widget.onDragging(index != null);
+  }
+
+  /// One chain chip, as it sits in the run.
+  ///
+  /// [ghosted] draws the entry a drag has picked up: it stays in the run so
+  /// the other chips keep their places, and only fades — removing it would
+  /// reflow the whole strip under the pointer at the moment the drag starts,
+  /// which reads as the chip jumping away from the finger holding it.
+  Widget _chip(
+    BuildContext context,
+    int index,
+    TrackEffect effect, {
+    bool ghosted = false,
+  }) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final selected = effect.slotId != null && effect.slotId == widget.editing;
+    return Opacity(
+      opacity: ghosted ? 0.3 : 1,
+      // No `alignment`: a Container with one expands to its constraints, which
+      // inside a Wrap makes every chip span the whole panel — and then the add
+      // chip wraps below the run instead of following it. The padding centres
+      // the label on its own.
+      child: Container(
+        height: 38,
+        padding: const EdgeInsets.symmetric(horizontal: 17),
+        decoration: BoxDecoration(
+          // Unselected carries no fill at all, as the mockups draw it; the
+          // open one takes the accent pair.
+          color: selected ? surface.accentSurface : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          fxBlockName(l10n, effect),
+          style: TextStyle(
+            color: selected ? surface.accent : surface.textSecondary,
+            fontSize: 16,
+            height: 1.13,
+            leadingDistribution: TextLeadingDistribution.even,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final add = onAdd;
+    final chain = widget.chain;
+    final editing = widget.editing;
+    final onSelect = widget.onSelect;
+    final add = widget.onAdd;
+    final dragging = _dragging;
     // The empty line and the add chip together: an empty chain is exactly the
     // case where "put something on it" needs to be reachable, so the early
     // return that used to sit here hid the one affordance that mattered.
@@ -581,47 +773,83 @@ class _ChainStrip extends StatelessWidget {
             ),
           ),
         Wrap(
-          spacing: 5,
+          // The gaps carry the spacing themselves while a drag is up, so that
+          // a drop target can grow between two chips instead of a fixed 5
+          // sitting beside it.
+          spacing: dragging == null ? 5 : 0,
           runSpacing: 5,
           children: [
-            for (final (index, effect) in chain.indexed)
+            for (final (index, effect) in chain.indexed) ...[
+              if (dragging != null)
+                _DropGap(
+                  key: Key('signal_panel_gap_$index'),
+                  insertAt: index,
+                  onDrop: _reorderTo,
+                ),
               Semantics(
+                // Keyed, and keyed by IDENTITY: the gaps appear between the
+                // chips when a drag starts, so every chip changes slot in the
+                // run at that moment. Unkeyed, Flutter matches children by
+                // position and the chip being dragged is torn down and rebuilt
+                // mid-drag — its `onDragEnd` then never fires, and the strip
+                // stays stuck in drag mode with no way out.
+                key: ValueKey('slot-${effect.slotId ?? index}'),
                 button: true,
-                selected: index == editing,
+                selected: effect.slotId != null && effect.slotId == editing,
                 label: fxBlockName(l10n, effect),
-                child: InkWell(
-                  key: Key('signal_panel_chip_$index'),
-                  onTap: () => onSelect(index),
-                  borderRadius: BorderRadius.circular(8),
-                  child: ExcludeSemantics(
-                    // No `alignment`: a Container with one expands to its
-                    // constraints, which inside a Wrap made every chip span the
-                    // whole panel. The padding centres the label on its own.
-                    child: Container(
-                      height: 38,
-                      padding: const EdgeInsets.symmetric(horizontal: 17),
-                      decoration: BoxDecoration(
-                        // Unselected carries no fill at all, as the mockups
-                        // draw it; the open one takes the accent pair.
-                        color: index == editing ? surface.accentSurface : null,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        fxBlockName(l10n, effect),
-                        style: TextStyle(
-                          color: index == editing
-                              ? surface.accent
-                              : surface.textSecondary,
-                          fontSize: 16,
-                          height: 1.13,
-                          leadingDistribution: TextLeadingDistribution.even,
+                child: ExcludeSemantics(
+                  child: LongPressDraggable<int>(
+                    data: index,
+                    // The panel is a touch surface on a floor console: a plain
+                    // drag would steal every tap-to-open on the way past.
+                    // The press is what says "I mean to move this one".
+                    onDragStarted: () => _setDragging(index),
+                    onDragEnd: (_) => _setDragging(null),
+                    onDraggableCanceled: (_, _) => _setDragging(null),
+                    feedback: Material(
+                      color: Colors.transparent,
+                      // 74x38 lifts to 75x40 — the one scale the mockups draw.
+                      child: Transform.translate(
+                        offset: const Offset(-2, -5),
+                        child: Transform.scale(
+                          scale: 1.0135,
+                          child: _LiftedChip(
+                            surface: surface,
+                            label: fxBlockName(l10n, effect),
+                          ),
                         ),
                       ),
+                    ),
+                    childWhenDragging: _chip(
+                      context,
+                      index,
+                      effect,
+                      ghosted: true,
+                    ),
+                    child: InkWell(
+                      key: Key('signal_panel_chip_$index'),
+                      // An entry with no slot id has not crossed a repository
+                      // write yet, so nothing can name it; that is momentary,
+                      // and the chip is simply inert until it has one.
+                      onTap: effect.slotId == null
+                          ? null
+                          : () => onSelect(effect.slotId!),
+                      borderRadius: BorderRadius.circular(8),
+                      child: _chip(context, index, effect),
                     ),
                   ),
                 ),
               ),
-            if (add != null)
+            ],
+            if (dragging != null)
+              _DropGap(
+                key: Key('signal_panel_gap_${chain.length}'),
+                insertAt: chain.length,
+                onDrop: _reorderTo,
+              ),
+            // No add chip mid-drag: it is not a drop target, and a gap beside
+            // it would offer an insertion point past the end of the chain.
+            if (add != null && dragging == null)
               Semantics(
                 button: true,
                 label: l10n.fxAddChip,

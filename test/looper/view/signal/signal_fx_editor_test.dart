@@ -96,7 +96,6 @@ void main() {
             scope: scope,
             index: 0,
             onClose: () {},
-            onMoved: (_) {},
           ),
         ),
       ),
