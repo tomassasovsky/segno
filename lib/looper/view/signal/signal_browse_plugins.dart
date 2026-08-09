@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/common/console_surface.dart';
@@ -38,6 +40,25 @@ class _BrowseSheet extends StatefulWidget {
 
 class _BrowseSheetState extends State<_BrowseSheet> {
   String _query = '';
+
+  StreamSubscription<void>? _progress;
+
+  @override
+  void initState() {
+    super.initState();
+    // The catalog is not a Listenable, and a scan can still be running when
+    // the sheet opens — without this the results are whatever was there at
+    // open, and the only thing that refreshed them was typing a character.
+    _progress = widget.catalog.progressStream.listen((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_progress?.cancel());
+    super.dispose();
+  }
 
   /// What the scan could actually load.
   ///
@@ -125,7 +146,11 @@ class _BrowseSheetState extends State<_BrowseSheet> {
             if (all.isEmpty)
               ConsoleEmptyCard(
                 key: const Key('signal_browse_empty'),
-                message: l10n.fxBrowseNoPlugins,
+                // "None installed" is a claim about the machine; while the
+                // scan runs the honest answer is that nobody has looked yet.
+                message: widget.catalog.isScanning
+                    ? l10n.fxAddScanning
+                    : l10n.fxBrowseNoPlugins,
               )
             else if (results.isEmpty)
               ConsoleEmptyCard(

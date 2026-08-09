@@ -2804,6 +2804,10 @@
     "@fxAddChip": {
         "description": "The last chip of a chain strip, which opens the add dialog. A chip rather than a button beside the strip: it sits where the effect it makes will, at the end of the chain."
     },
+    "fxAddScanning": "Looking for plugins…",
+    "@fxAddScanning": {
+        "description": "Stands in for the browse row's count while the scan is still running — a count of zero mid-scan is not a fact about the machine."
+    },
     "fxAddTitle": "Add an effect",
     "@fxAddTitle": {
         "description": "Title of the dialog that puts a new entry on the end of a chain."

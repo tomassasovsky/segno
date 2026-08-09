@@ -55,6 +55,7 @@ void main() {
     );
     // Real async: the scan polls on a timer, which `testWidgets`' fake clock
     // never advances on its own.
+    addTearDown(catalog.dispose);
     await tester.runAsync(catalog.scan);
     PluginDescriptor? picked;
     await tester.pumpWidget(

@@ -28,6 +28,12 @@ import 'package:settings_repository/settings_repository.dart';
 /// until it closes would strand it forever on a route that never pops.
 bool _opening = false;
 
+/// How long the shelf read is given before the dialog opens anyway.
+///
+/// A wedged platform channel must not make the add button a permanent no-op:
+/// the shelf is a convenience, and a dialog with no shelf still adds effects.
+const Duration _shelfTimeout = Duration(seconds: 2);
+
 Future<void> showSignalAddEffect(
   BuildContext context, {
   required FxScope scope,
@@ -37,19 +43,14 @@ Future<void> showSignalAddEffect(
   _opening = true;
   final PluginCatalog catalog;
   final SettingsRepository settings;
-  final List<String> recents;
+  List<String> recents;
   try {
     final repository = context.read<LooperRepository>();
     settings = context.read<SettingsRepository>();
     catalog = repository.pluginCatalog;
-    recents = await SignalRecentPlugins.load(settings);
-    // Nothing else in the console scans: the repository only does so when a
-    // restored session names a plugin it cannot find, and the surface that
-    // scanned on open is the one #533 deletes. Without this the dialog offers
-    // "Browse all 0 plugins…" on a machine full of them.
-    if (catalog.availablePlugins.isEmpty) {
-      unawaited(catalog.scan());
-    }
+    recents = await SignalRecentPlugins.load(
+      settings,
+    ).timeout(_shelfTimeout, onTimeout: () => const []);
   } finally {
     _opening = false;
   }
@@ -65,7 +66,6 @@ Future<void> showSignalAddEffect(
       settings: settings,
     ),
   );
-  _opening = false;
 }
 
 /// The plugin ids most recently added, newest first.
@@ -111,7 +111,7 @@ class SignalRecentPlugins {
   ].take(shelf).toList();
 }
 
-class _AddEffectDialog extends StatelessWidget {
+class _AddEffectDialog extends StatefulWidget {
   const _AddEffectDialog({
     required this.scope,
     required this.chainName,
@@ -136,15 +136,44 @@ class _AddEffectDialog extends StatelessWidget {
   static const double width = 746;
 
   @override
+  State<_AddEffectDialog> createState() => _AddEffectDialogState();
+}
+
+class _AddEffectDialogState extends State<_AddEffectDialog> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_scanIfNeeded());
+  }
+
+  /// Fills the catalog, once, if nothing has looked yet.
+  ///
+  /// Gated on `descriptors`, not `availablePlugins`: a machine where every
+  /// candidate file fails to load has a full catalog and an empty available
+  /// list, and gating on the latter would rescan the filesystem on every
+  /// open. AWAITED and redrawn — a fire-and-forget scan into a snapshot
+  /// leaves the dialog saying "0 plugins" for as long as it is open, and the
+  /// only thing that refreshed it was typing a character into the search box.
+  Future<void> _scanIfNeeded() async {
+    final catalog = widget.catalog;
+    if (catalog.descriptors.isNotEmpty || catalog.isScanning) return;
+    await catalog.scan();
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
+    final scope = widget.scope;
+    final catalog = widget.catalog;
     // `availablePlugins`, not `descriptors`: a file that failed to scan is
     // kept in the catalog with an EMPTY id, so offering it would insert a
     // `PluginRef` with no identity — an instant D-MISS placeholder — and two
     // such chips would resolve to the same entry.
     final descriptors = catalog.availablePlugins;
-    final shelf = SignalRecentPlugins.resolve(recents, descriptors);
+    final scanning = catalog.isScanning;
+    final shelf = SignalRecentPlugins.resolve(widget.recents, descriptors);
     // The types already on this chain, which is what the accent marks.
     final present = {
       for (final effect in scope.effects)
@@ -155,7 +184,7 @@ class _AddEffectDialog extends StatelessWidget {
       backgroundColor: Colors.transparent,
       child: Container(
         key: const Key('signal_add_effect'),
-        width: width,
+        width: _AddEffectDialog.width,
         padding: const EdgeInsets.all(25),
         decoration: BoxDecoration(
           color: surface.card,
@@ -182,7 +211,7 @@ class _AddEffectDialog extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                l10n.fxAddInto(chainName),
+                l10n.fxAddInto(widget.chainName),
                 style: TextStyle(
                   color: surface.textSecondary,
                   fontSize: 16,
@@ -239,8 +268,12 @@ class _AddEffectDialog extends StatelessWidget {
                 key: const Key('signal_add_browse'),
                 children: [
                   ConsoleRow(
-                    title: l10n.fxAddBrowseAll(descriptors.length),
-                    onTap: () => unawaited(_browse(context)),
+                    // A count of zero mid-scan is not a fact about the
+                    // machine, so the row says what it is doing instead.
+                    title: scanning
+                        ? l10n.fxAddScanning
+                        : l10n.fxAddBrowseAll(descriptors.length),
+                    onTap: scanning ? null : () => unawaited(_browse(context)),
                     showDivider: false,
                   ),
                 ],
@@ -268,23 +301,26 @@ class _AddEffectDialog extends StatelessWidget {
   ) {
     final plugin = shelf.where((d) => d.id == id).firstOrNull;
     if (plugin == null) return;
-    scope.insertPlugin(
+    widget.scope.insertPlugin(
       PluginRef(format: plugin.format, id: plugin.id, version: plugin.version),
     );
-    unawaited(SignalRecentPlugins.remember(settings, plugin.id));
+    unawaited(SignalRecentPlugins.remember(widget.settings, plugin.id));
     Navigator.of(context).pop();
   }
 
   Future<void> _browse(BuildContext context) async {
     final navigator = Navigator.of(context);
-    final picked = await showSignalBrowsePlugins(context, catalog: catalog);
+    final picked = await showSignalBrowsePlugins(
+      context,
+      catalog: widget.catalog,
+    );
     if (picked == null) {
       return;
     }
-    scope.insertPlugin(
+    widget.scope.insertPlugin(
       PluginRef(format: picked.format, id: picked.id, version: picked.version),
     );
-    unawaited(SignalRecentPlugins.remember(settings, picked.id));
+    unawaited(SignalRecentPlugins.remember(widget.settings, picked.id));
     navigator.pop();
   }
 }

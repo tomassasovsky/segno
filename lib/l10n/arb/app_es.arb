@@ -2075,6 +2075,7 @@
     },
     "fxChainOffHere": "La cadena entera está apagada, así que esto todavía no cambia nada de lo que se oye.",
     "fxAddChip": "+ efecto",
+    "fxAddScanning": "Buscando plugins…",
     "fxAddTitle": "Añadir un efecto",
     "fxAddInto": "En “{chain}”, al final de la cadena.",
     "@fxAddInto": {

@@ -29,6 +29,20 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
+/// A store whose reads take a frame or two, as the appliance's platform
+/// channel does.
+///
+/// The zero-latency fake makes the add dialog's re-entrancy window disappear
+/// entirely, so a guard against double-opening cannot be tested against it —
+/// the bug it prevents only exists when the read is slow.
+class _SlowStore extends FakeKeyValueStore {
+  @override
+  Future<String?> getString(String key) async {
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    return super.getString(key);
+  }
+}
+
 /// A rig with a chain on every stage, so each panel has something to draw.
 final _rig = LooperState(
   tracks: [
@@ -107,6 +121,7 @@ void main() {
       statFile: (path) => (mtimeMs: 1, sizeBytes: 1),
     );
     when(() => repository.pluginCatalog).thenReturn(catalog);
+    addTearDown(catalog.dispose);
     for (final stub in [
       () => when(
         () => repository.setMonitorInputMode(
@@ -149,6 +164,7 @@ void main() {
     FxStage stage = FxStage.input,
     LooperState? state,
     Stream<LooperState>? states,
+    bool slowSettings = false,
   }) async {
     final rig = state ?? _rig;
     tester.view
@@ -164,7 +180,9 @@ void main() {
       initialState: rig,
     );
 
-    settings = SettingsRepository(store: FakeKeyValueStore());
+    settings = SettingsRepository(
+      store: slowSettings ? _SlowStore() : FakeKeyValueStore(),
+    );
     tracks = TracksCubit(settings: settings);
     inputs = InputsCubit(settings: settings, repository: repository);
     monitor = MonitorCubit(repository: repository, settings: settings);
@@ -1050,6 +1068,28 @@ void main() {
       expect(prose.data, contains(l10n.trackName(const [], 0)));
     });
 
+    testWidgets('a scan that lands while the dialog is open reaches it', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // Opened on a cold catalog: nothing has scanned yet.
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // The dialog does the looking itself and redraws when it finishes. A
+      // fire-and-forget scan into a snapshot leaves the row reading zero for
+      // as long as the dialog is open.
+      await tester.runAsync(catalog.scan);
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.fxAddBrowseAll(1)), findsOneWidget);
+      expect(find.text(l10n.fxAddBrowseAll(0)), findsNothing);
+    });
+
     testWidgets('the browse row counts only what loaded', (tester) async {
       await pump(tester, stage: FxStage.track);
       await tester.runAsync(catalog.scan);
@@ -1104,6 +1144,23 @@ void main() {
       expect(find.byKey(const Key('signal_add_effect')), findsOneWidget);
       expect(find.byKey(const Key('signal_add_cancel')), findsOneWidget);
 
+      // Nothing to scroll: a `SingleChildScrollView` can never overflow, so
+      // `takeException` proves nothing here — what matters is that the whole
+      // dialog fits without one.
+      final scroller = tester.widget<Scrollable>(
+        find.descendant(
+          of: find.byKey(const Key('signal_add_effect')),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      expect(
+        tester
+            .state<ScrollableState>(find.byWidget(scroller))
+            .position
+            .maxScrollExtent,
+        0,
+      );
+
       // FOUR across, which is what makes it fit: the grid needs 694 for four
       // columns, and two pixels short it falls to two and doubles in height.
       final first = tester.getTopLeft(
@@ -1116,15 +1173,24 @@ void main() {
     });
 
     testWidgets('one tap, one dialog', (tester) async {
-      await pump(tester, stage: FxStage.track);
+      await pump(tester, stage: FxStage.track, slowSettings: true);
       await tester.tap(find.byKey(const Key('signal_card_track_0')));
       await tester.pumpAndSettle();
 
       // Two taps inside the settings round-trip. On the appliance that read
       // is a real platform hop, so without a guard the second tap stacks a
       // second dialog and the effect gets added twice.
-      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
-      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      //
+      // Both taps are dispatched at the SAME location before pumping: tapping
+      // twice with a pump between lets the first dialog cover the chip, and
+      // the second tap silently misses — which is what made the first version
+      // of this test pass with the guard deleted.
+      final chip = tester.getCenter(
+        find.byKey(const Key('signal_panel_add_chip')),
+      );
+      await tester.tapAt(chip);
+      await tester.pump(const Duration(milliseconds: 10));
+      await tester.tapAt(chip);
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('signal_add_effect')), findsOneWidget);
