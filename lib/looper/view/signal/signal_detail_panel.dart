@@ -625,12 +625,18 @@ class _Caption extends StatelessWidget {
 /// disappearing, the panel changing height under the hand that was holding
 /// it. Half a chip is both a bigger target than any gap could be and free:
 /// the strip is laid out exactly the same whether a drag is up or not.
-class _DropHalves extends StatefulWidget {
+///
+/// Two targets, one per half, rather than one target that works out which
+/// half the pointer is on. Hit testing already answers that question exactly,
+/// for the right pointer, with no bookkeeping: nothing hands a drop target
+/// the pointer id that belongs to the drag, and a strip that tried to track
+/// that itself had to guess which finger was carrying — a guess any second
+/// touch during the half-second press could steal.
+class _DropHalves extends StatelessWidget {
   const _DropHalves({
     required this.index,
     required this.carrying,
     required this.positionOf,
-    required this.pointerOf,
     required this.onDrop,
     required this.child,
   });
@@ -658,94 +664,63 @@ class _DropHalves extends StatefulWidget {
   /// that position.
   final int Function(String slotId) positionOf;
 
-  /// Where the finger actually is.
-  ///
-  /// NOT `DragTargetDetails.offset`, which is the feedback's top-left corner
-  /// — `globalPosition - dragStartPoint`. Grab a chip in the middle and that
-  /// point sits half a chip to the left of the finger, so the trailing half
-  /// of a chip could not be reached at all: every drop read as leading.
-  final Offset? Function() pointerOf;
-
   final void Function(int from, int insertAt) onDrop;
 
   final Widget child;
 
-  @override
-  State<_DropHalves> createState() => _DropHalvesState();
-}
-
-class _DropHalvesState extends State<_DropHalves> {
-  /// The insertion point the pointer is currently over, or null.
-  int? _over;
-
-  /// Which side of this chip the finger is on, as an insertion index.
-  int _sideAt() {
-    final box = context.findRenderObject() as RenderBox?;
-    final global = widget.pointerOf();
-    if (box == null || global == null) return widget.index;
-    final local = box.globalToLocal(global);
-    final leading = Directionality.of(context) == TextDirection.rtl
-        ? box.size.width - local.dx
-        : local.dx;
-    return leading < box.size.width / 2 ? widget.index : widget.index + 1;
-  }
-
-  /// Whether inserting at [insertAt] would actually move [from] anywhere.
-  ///
-  /// The two sides flanking the dragged entry are no-ops: they name the place
-  /// it already occupies. Refusing them is what keeps the strip from marking
-  /// a move that would do nothing.
-  bool _moves(int from, int insertAt) =>
-      from >= 0 && from != insertAt && from + 1 != insertAt;
-
-  @override
-  Widget build(BuildContext context) {
+  /// One half of the chip, and the insertion point it stands for.
+  Widget _side(BuildContext context, {required bool leading}) {
     final surface = context.surface;
-    final over = _over;
-    return DragTarget<String>(
-      // Refused unless it is the entry the strip considers to be in flight,
-      // and unless that entry is still in the chain at all.
-      onWillAcceptWithDetails: (d) =>
-          d.data == widget.carrying && widget.positionOf(d.data) >= 0,
-      onMove: (d) {
-        final side = _sideAt();
-        final at = _moves(widget.positionOf(d.data), side) ? side : null;
-        if (at != _over) setState(() => _over = at);
-      },
-      onLeave: (_) {
-        if (_over != null) setState(() => _over = null);
-      },
-      onAcceptWithDetails: (d) {
-        final side = _sideAt();
-        setState(() => _over = null);
-        final from = widget.positionOf(d.data);
-        if (_moves(from, side)) widget.onDrop(from, side);
-      },
-      builder: (context, candidate, rejected) => Stack(
-        clipBehavior: Clip.none,
-        children: [
-          widget.child,
-          // Painted OVER the chip rather than laid out beside it, so marking
-          // the landing place moves nothing.
-          if (over != null)
-            Positioned(
-              top: 0,
-              bottom: 0,
-              left: over == widget.index ? -2 : null,
-              right: over == widget.index ? null : -2,
-              child: Container(
-                key: Key('signal_panel_mark_$over'),
-                width: 4,
-                decoration: BoxDecoration(
-                  color: surface.accent,
-                  borderRadius: BorderRadius.circular(2),
+    final insertAt = leading ? index : index + 1;
+    return Expanded(
+      child: DragTarget<String>(
+        // The two sides flanking the dragged entry name the place it already
+        // occupies. Refusing them here is what keeps the strip from marking a
+        // landing place for a move that would do nothing — and an entry that
+        // has left the chain mid-drag has no place at all.
+        onWillAcceptWithDetails: (d) {
+          if (d.data != carrying) return false;
+          final from = positionOf(d.data);
+          return from >= 0 && from != insertAt && from + 1 != insertAt;
+        },
+        onAcceptWithDetails: (d) => onDrop(positionOf(d.data), insertAt),
+        builder: (context, candidate, rejected) => Align(
+          alignment: leading
+              ? AlignmentDirectional.centerStart
+              : AlignmentDirectional.centerEnd,
+          child: candidate.isEmpty
+              ? const SizedBox.expand()
+              : Container(
+                  key: Key('signal_panel_mark_$insertAt'),
+                  width: 4,
+                  decoration: BoxDecoration(
+                    color: surface.accent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    clipBehavior: Clip.none,
+    children: [
+      child,
+      // Over the chip, so marking a landing place moves nothing. A drop
+      // target hit-tests translucently, so the chip underneath still takes
+      // the tap that opens its entry in the editor.
+      Positioned.fill(
+        child: Row(
+          children: [
+            _side(context, leading: true),
+            _side(context, leading: false),
+          ],
+        ),
+      ),
+    ],
+  );
 }
 
 /// The chip under the pointer during a drag.
@@ -838,23 +813,6 @@ class _ChainStripState extends State<_ChainStrip> {
   /// coordinates true, so the second one springs back.
   String? _carrying;
 
-  /// Where the finger carrying [_carrying] is, in global coordinates.
-  ///
-  /// A [Listener] around the run keeps this: a pointer's route is fixed at
-  /// pointer-down and every ancestor of the chip pressed is on it, so the
-  /// moves keep arriving here even once the drag owns the gesture.
-  Offset? _pointer;
-
-  /// The most recent pointer to go down on the run.
-  int? _lastDown;
-
-  /// Which pointer is carrying, once one is.
-  ///
-  /// Followed by id, not just "the last thing that moved": a second finger
-  /// resting anywhere on the run would otherwise write its own position into
-  /// [_pointer], and the drop would then be placed wherever THAT finger was.
-  int? _dragPointer;
-
   /// Where [slotId] sits in the chain right now, or -1 if it is gone.
   int _positionOf(String slotId) =>
       widget.chain.indexWhere((effect) => effect.slotId == slotId);
@@ -891,16 +849,10 @@ class _ChainStripState extends State<_ChainStrip> {
         _airborne.add(slotId);
         // Never handed on: promoting the survivor of a same-frame pair would
         // make its already-stale coordinates placeable.
-        if (_carrying == null) {
-          _carrying = slotId;
-          _dragPointer = _lastDown;
-        }
+        _carrying ??= slotId;
       } else {
         _airborne.remove(slotId);
-        if (_carrying == slotId) {
-          _carrying = null;
-          _dragPointer = null;
-        }
+        if (_carrying == slotId) _carrying = null;
       }
     });
     widget.onDragging(_airborne.isNotEmpty);
@@ -936,7 +888,6 @@ class _ChainStripState extends State<_ChainStrip> {
         index: index,
         carrying: carrying,
         positionOf: _positionOf,
-        pointerOf: () => _pointer,
         onDrop: _reorderTo,
         child: LongPressDraggable<String>(
           data: effect.slotId ?? '',
@@ -1057,12 +1008,7 @@ class _ChainStripState extends State<_ChainStrip> {
     // The empty line and the add chip together: an empty chain is exactly the
     // case where "put something on it" needs to be reachable, so the early
     // return that used to sit here hid the one affordance that mattered.
-    //
-    // Wrapped in a [Listener] below, which is how the drop targets know where
-    // the finger actually is: a pointer's route is fixed at pointer-down and
-    // every ancestor of the chip pressed is on it, so the moves keep arriving
-    // here even once the drag owns the gesture.
-    final run = Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       spacing: 5,
@@ -1135,18 +1081,6 @@ class _ChainStripState extends State<_ChainStrip> {
           ],
         ),
       ],
-    );
-    return Listener(
-      onPointerDown: (event) {
-        _lastDown = event.pointer;
-        if (_dragPointer == null) _pointer = event.position;
-      },
-      onPointerMove: (event) {
-        if (_dragPointer == null || _dragPointer == event.pointer) {
-          _pointer = event.position;
-        }
-      },
-      child: run,
     );
   }
 }

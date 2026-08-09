@@ -1416,17 +1416,23 @@ void main() {
       BuiltInEffect(type: TrackEffectType.drive, slotId: 'slot-c'),
     ]);
 
-    /// A point on one half of the chip at [chip] — the insertion point on
-    /// that side of it.
-    Offset half(WidgetTester tester, int chip, {required bool leading}) {
-      // The lifted chip answers to its ghost key: the InkWell is swapped out
-      // for `childWhenDragging` while it is in the air.
+    /// The rect of the chip at [chip], wherever it currently is.
+    ///
+    /// The lifted chip answers to its ghost key: the InkWell is swapped out
+    /// for `childWhenDragging` while it is in the air.
+    Rect chipRect(WidgetTester tester, int chip) {
       final chipAt = find.byKey(Key('signal_panel_chip_$chip'));
-      final box = tester.getRect(
+      return tester.getRect(
         chipAt.evaluate().isEmpty
             ? find.byKey(Key('signal_panel_ghost_$chip'))
             : chipAt,
       );
+    }
+
+    /// A point on one half of the chip at [chip] — the insertion point on
+    /// that side of it.
+    Offset half(WidgetTester tester, int chip, {required bool leading}) {
+      final box = chipRect(tester, chip);
       return Offset(
         leading ? box.left + box.width * 0.25 : box.right - box.width * 0.25,
         box.center.dy,
@@ -1719,11 +1725,16 @@ void main() {
       await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
       await tester.pump();
 
-      // Both are carried to a gap and both released — the corruption case.
-      // A drops past the end, C drops at the head.
+      // Both are carried somewhere and both released — the corruption case.
+      // A over the end of the run, C over the head of it.
       await first.moveTo(half(tester, 2, leading: false));
       await second.moveTo(half(tester, 0, leading: true));
       await tester.pump();
+
+      // The refused entry marks nothing. Flutter drives `onMove` on every
+      // entered target, including one that already declined the data, so an
+      // ungated strip painted a landing place for a move it would never make.
+      expect(find.byKey(const Key('signal_panel_mark_0')), findsNothing);
 
       await first.up();
       await tester.pump();
@@ -1737,12 +1748,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(tailShowing(tester), isTrue);
 
-      // And only ONE of them is placed. Each drop is expressed against the
-      // chain as drawn, and the rewrite only lands on the bloc round-trip, so
-      // the second lands on a chain the first has already changed: taken
-      // together they moved A — which the second finger never touched — and
-      // left the chain exactly as it started.
-      verify(() => bloc.add(any(that: isA<LooperBusEffectMoved>()))).called(1);
+      // And only ONE of them is placed — the first, where ITS finger was.
+      // Each drop is expressed against the chain as drawn, and the rewrite
+      // only lands on the bloc round-trip, so a second drop lands on a chain
+      // the first has already changed: taken together the two moved A, which
+      // the second finger never touched, and left the chain as it started.
+      final moved =
+          verify(
+                () => bloc.add(captureAny(that: isA<LooperBusEffectMoved>())),
+              ).captured.single
+              as LooperBusEffectMoved;
+      expect(moved.from, 0);
+      expect(moved.to, 2);
     });
 
     testWidgets('the other release order also leaves one drag standing', (
