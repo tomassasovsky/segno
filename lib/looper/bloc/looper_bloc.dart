@@ -313,6 +313,13 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       // everything the user owns: the persisted state blob, their parameter
       // tweaks, the power decision, and the slot id. A bus plugin's Relink is
       // its ONLY action, so dropping those would destroy them irrecoverably.
+      //
+      // Deliberately unlike the repository, which drops the parameter capture
+      // when a relink points at a DIFFERENT plugin, because ids are not
+      // portable between plugins. A bus-stage entry never loads — the
+      // repository marks every one of them unsupported — so nothing here is
+      // ever replayed into anything, and what is kept is kept against the day
+      // this stage can host.
       _pushBusChain(
         event.address,
         [...chain]

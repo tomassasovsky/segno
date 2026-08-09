@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/fx_editor/fx_plugin_state.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
 import 'package:segno/looper/view/signal/signal_browse_plugins.dart';
 import 'package:segno/theme/theme.dart';
@@ -161,29 +162,12 @@ class _AddEffectDialogState extends State<_AddEffectDialog> {
     unawaited(_scanIfNeeded());
   }
 
-  /// Fills the catalog, once, if nobody has looked yet.
-  ///
-  /// Gated on whether a scan has ever COMPLETED — `cache.appVersion` is only
-  /// set by a finished harvest — rather than on whether it found anything.
-  /// Gating on `descriptors` rescans the filesystem on every open of the
-  /// default appliance, which has no plugins at all; gating on
-  /// `availablePlugins` also rescans a machine where every candidate file
-  /// fails to load.
-  ///
-  /// A scan already in flight is JOINED, not skipped, whether or not one has
-  /// completed before: `PluginCatalog.scan()` hands back the running future.
-  /// Returning early there leaves the dialog subscribed to nothing while its
-  /// build already read `isScanning` and drew "Looking for plugins…" with the
-  /// browse row disabled — stuck that way for good. That is reachable on the
-  /// rescan path as easily as on the first scan, which is why the check is on
-  /// BOTH conditions rather than either.
+  /// See [scanPluginsIfCold] for when this actually scans.
   ///
   /// AWAITED and redrawn: a fire-and-forget scan into a snapshot leaves the
   /// dialog reading "0 plugins" for as long as it is open.
   Future<void> _scanIfNeeded() async {
-    final catalog = widget.catalog;
-    if (catalog.cache.appVersion.isNotEmpty && !catalog.isScanning) return;
-    await catalog.scan();
+    await scanPluginsIfCold(widget.catalog);
     if (mounted) setState(() {});
   }
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/fx_editor/fx_plugin_state.dart';
 import 'package:segno/theme/theme.dart';
 
 /// Everything the scan found, searchable — the way to a plugin that is not on
@@ -52,6 +53,17 @@ class _BrowseSheetState extends State<_BrowseSheet> {
     _progress = widget.catalog.progressStream.listen((_) {
       if (mounted) setState(() {});
     });
+    // The sheet can be the FIRST thing to ask for plugins: the missing-plugin
+    // relink opens it directly, without the add dialog's scan ahead of it.
+    // Cold, it listed nothing and told the user there were no plugins.
+    unawaited(_scanIfNeeded());
+  }
+
+  /// See [scanPluginsIfCold]. Redrawn after, or the sheet holds the empty
+  /// list it opened with.
+  Future<void> _scanIfNeeded() async {
+    await scanPluginsIfCold(widget.catalog);
+    if (mounted) setState(() {});
   }
 
   @override

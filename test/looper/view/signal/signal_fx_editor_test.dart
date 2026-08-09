@@ -17,6 +17,12 @@ class _FakeScope extends Fake implements FxScope {
   final List<(int, int, double)> pluginWrites = [];
   final List<(int, int, double)> builtInWrites = [];
 
+  /// Entries whose own editor window was asked for.
+  final List<int> opened = [];
+
+  /// Relinks, as (entry, what it was pointed at).
+  final List<(int, PluginRef)> relinked = [];
+
   @override
   List<TrackEffect> get effects => chain;
 
@@ -30,6 +36,12 @@ class _FakeScope extends Fake implements FxScope {
   @override
   void setParam(int index, int param, double value) =>
       builtInWrites.add((index, param, value));
+
+  @override
+  void openPluginEditor(int index) => opened.add(index);
+
+  @override
+  void relinkPlugin(int index, PluginRef ref) => relinked.add((index, ref));
 
   @override
   String? formatPluginValue(int index, int paramId, double value) => formatted;
@@ -50,6 +62,8 @@ const _freq = PluginParamInfo(
 );
 
 /// A meter and the plugin's own bypass: present in `params`, but not controls.
+/// A read-only meter — automatable, so the host may READ it, and read-only,
+/// so it may not set it.
 const _meter = PluginParamInfo(
   id: 8,
   name: 'Gain Reduction',
@@ -59,6 +73,25 @@ const _meter = PluginParamInfo(
   def: 0,
   stepCount: 0,
   flags: 0x01 | 0x02,
+);
+
+/// A mode selector the plugin will not have automated: visible, writable by
+/// hand in the plugin's own window, and NOT automatable.
+///
+/// `isAutomatable` is optional per parameter, and `isUserVisible` is
+/// `isAutomatable && !isHidden` — so a filter written against that hid this
+/// one entirely. A plugin whose parameters are all of this shape was told it
+/// exposes no controls at all.
+const _mode = PluginParamInfo(
+  id: 10,
+  name: 'Mode',
+  unit: '',
+  min: 0,
+  max: 2,
+  def: 0,
+  stepCount: 2,
+  flags: 0x10,
+  valueTexts: ['Lowpass', 'Bandpass', 'Highpass'],
 );
 
 const _pluginBypass = PluginParamInfo(
@@ -233,12 +266,142 @@ void main() {
       ]);
       await pump(tester, scope);
 
-      // One fader, for the one parameter that is a control. A read-only meter
-      // with a working bar over it now WRITES, and a second bypass beside the
-      // footer's pill is the ambiguity R23 exists to prevent.
+      // One fader, for the one parameter that is a control.
       expect(find.byKey(const Key('signal_fx_param_0')), findsOneWidget);
       expect(find.byKey(const Key('signal_fx_param_1')), findsNothing);
+
+      // The meter is not drawn: it is only true for the instant it was read,
+      // and the console can only read one while the plugin's own window is
+      // open — which on the appliance is never. A number that never moves
+      // where a number that always moves belongs is worse than no number.
       expect(find.text('GAIN REDUCTION'), findsNothing);
+
+      // And the plugin's own bypass is not a fader: the footer's pill is THE
+      // power control, and a second one beside it is the ambiguity R23 exists
+      // to prevent.
+      expect(find.text('BYPASS'), findsNothing);
+    });
+
+    testWidgets('a plugin with nothing automatable still has controls', (
+      tester,
+    ) async {
+      final scope = _FakeScope([
+        const PluginEffect(
+          ref: PluginRef(format: PluginFormat.vst3, id: 'test.filter'),
+          name: 'Filter',
+          params: [_mode],
+        ),
+      ]);
+      await pump(tester, scope);
+
+      // `isAutomatable` is optional per parameter — a plugin whose every
+      // parameter is like this rendered nothing at all, and the panel said so
+      // in as many words. A setting read at load is still true at load.
+      expect(find.byKey(const Key('signal_fx_no_params')), findsNothing);
+      expect(find.text('MODE'), findsOneWidget);
+
+      final handle = tester.ensureSemantics();
+      final row = find.byKey(const Key('signal_fx_param_0'));
+      await tester.drag(row, const Offset(200, 0));
+      await tester.pumpAndSettle();
+      // Read-only, because the plugin says the host may not set it — and it
+      // does not ANNOUNCE itself as adjustable either: a slider a screen
+      // reader can reach and cannot move is a worse lie than a number.
+      expect(scope.pluginWrites, isEmpty);
+      final node = tester.getSemantics(
+        find.descendant(of: row, matching: find.byType(Semantics)).first,
+      );
+      expect(node.getSemanticsData().flagsCollection.isSlider, isFalse);
+      handle.dispose();
+    });
+  });
+
+  group('a hosted plugin is reachable on its own terms', () {
+    testWidgets('a loaded plugin can be opened in its own window', (
+      tester,
+    ) async {
+      final scope = _FakeScope([_plugin()]);
+      await pump(tester, scope);
+
+      await tester.tap(find.byKey(const Key('signal_fx_open_window')));
+      await tester.pump();
+
+      // The console edits parameters generically, but some of a plugin's
+      // exist only in its own UI. Deleting the last route to that window
+      // would have made them unreachable on this machine.
+      expect(scope.opened, [0]);
+    });
+
+    testWidgets('a built-in offers no window, because it has none', (
+      tester,
+    ) async {
+      final scope = _FakeScope([
+        BuiltInEffect(type: TrackEffectType.reverb, slotId: 'a'),
+      ]);
+      await pump(tester, scope);
+
+      expect(find.byKey(const Key('signal_fx_open_window')), findsNothing);
+    });
+
+    testWidgets('a plugin that did not load offers no window either', (
+      tester,
+    ) async {
+      final scope = _FakeScope([
+        const PluginEffect(
+          ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+          unavailable: true,
+        ),
+      ]);
+      await pump(tester, scope);
+
+      // There is no instance to show — the action would open nothing.
+      expect(find.byKey(const Key('signal_fx_open_window')), findsNothing);
+    });
+  });
+
+  group('a plugin that went missing can be pointed at a new one', () {
+    testWidgets('the placeholder offers a relink', (tester) async {
+      final scope = _FakeScope([
+        const PluginEffect(
+          ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+          unavailable: true,
+        ),
+      ]);
+      await pump(tester, scope);
+
+      // Without this the entry can only be removed and added again, which
+      // throws away the state `PluginEffect.state` exists to keep.
+      expect(find.byKey(const Key('signal_fx_relink')), findsOneWidget);
+    });
+
+    testWidgets('a plugin this stage cannot host is not missing', (
+      tester,
+    ) async {
+      final scope = _FakeScope([
+        const PluginEffect(
+          ref: PluginRef(format: PluginFormat.vst3, id: 'x'),
+          unavailable: true,
+          unsupported: true,
+        ),
+      ]);
+      await pump(tester, scope);
+
+      // Relinking it would point at a plugin this stage still cannot host.
+      expect(find.byKey(const Key('signal_fx_relink')), findsNothing);
+    });
+
+    testWidgets('one still being looked for is not missing yet', (
+      tester,
+    ) async {
+      final scope = _FakeScope([
+        const PluginEffect(
+          ref: PluginRef(format: PluginFormat.vst3, id: 'x'),
+          loading: true,
+        ),
+      ]);
+      await pump(tester, scope);
+
+      expect(find.byKey(const Key('signal_fx_relink')), findsNothing);
     });
   });
 

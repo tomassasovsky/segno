@@ -154,15 +154,26 @@ void main() {
     expect(find.text('Beta'), findsNothing);
   });
 
+  testWidgets('a sheet opened cold looks for plugins itself', (tester) async {
+    // Nothing has scanned. The relink action opens this sheet DIRECTLY, with
+    // no add dialog ahead of it to have filled the catalog — and a sheet that
+    // only listed what was already there told the player, on a fresh boot,
+    // that they had no plugins at all.
+    await open(tester, [_good('a', 'Alpha')], holdScan: true);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Alpha'), findsOneWidget);
+  });
+
   testWidgets('a scan that lands while the sheet is open reaches it', (
     tester,
   ) async {
-    // Opened before anything has scanned — which is the real case, since the
-    // dialog kicks the scan and the player can tap Browse before it lands.
-    await open(tester, [_good('a', 'Alpha')], holdScan: true);
+    // Already scanned once and found nothing, so the sheet's own look is a
+    // no-op: what lands here is somebody ELSE's scan, underneath it.
+    await open(tester, []);
     expect(find.text('Alpha'), findsNothing);
 
-    // The scan completes underneath the open sheet.
+    fake.pluginScanResults = [_good('a', 'Alpha')];
     await tester.runAsync(catalog.scan);
     await tester.pump();
     await tester.pump();

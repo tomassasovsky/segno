@@ -2225,8 +2225,30 @@ class LooperRepository {
     return _engine.pluginParamSet(handle, paramId, value);
   }
 
+  /// [fx] pointed at [ref], keeping what still belongs to it.
+  ///
+  /// The captured state blob travels either way: a plugin that does not
+  /// recognise a blob rejects it, and the alternative is losing the settings
+  /// of an entry whose plugin merely moved.
+  ///
+  /// The parameter capture does NOT travel to a different plugin. A parameter
+  /// id means whatever the plugin behind it says it means, so replaying one
+  /// sets an unrelated parameter to a number out of another plugin's range —
+  /// a `-40` read from a gain-reduction meter written into a `0..1` mix. The
+  /// console can reach this: its relink browses every installed plugin, not
+  /// only the one that went missing.
+  static PluginEffect _relinked(PluginEffect fx, PluginRef ref) =>
+      fx.ref.id == ref.id
+      ? fx.copyWith(ref: ref, unavailable: false)
+      : PluginEffect(
+          ref: ref,
+          enabled: fx.enabled,
+          slotId: fx.slotId,
+          state: fx.state,
+        );
+
   /// Relinks lane [lane]'s chain entry [index] to plugin [ref] (umbrella
-  /// D-MISS), keeping the captured [PluginEffect.state] + paramValues and
+  /// D-MISS), keeping what still belongs to it — see [_relinked] — and
   /// clearing the unavailable flag, then reloads it. Use to resolve a
   /// placeholder (uninstalled/moved) or accept a version change. Returns
   /// [EngineResult.invalid] when the entry is not a plugin.
@@ -2243,7 +2265,7 @@ class LooperRepository {
     final fx = effects[index];
     if (fx is! PluginEffect) return EngineResult.invalid;
     _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
-      ..[index] = fx.copyWith(ref: ref, unavailable: false);
+      ..[index] = _relinked(fx, ref);
     _reproject();
     if (!_intendRunning) return EngineResult.ok;
     // Re-applying reloads the new plugin and restores the preserved state blob.
@@ -2265,7 +2287,7 @@ class LooperRepository {
     final fx = effects[index];
     if (fx is! PluginEffect) return EngineResult.invalid;
     _monitorEffects[input] = List<TrackEffect>.of(effects)
-      ..[index] = fx.copyWith(ref: ref, unavailable: false);
+      ..[index] = _relinked(fx, ref);
     if (!_intendRunning) return EngineResult.ok;
     return _applyMonitorEffects(input);
   }
@@ -2333,9 +2355,16 @@ class LooperRepository {
     return true;
   }
 
-  /// Reads every user-visible param of [fx] from its loaded [handle]; returns a
-  /// copy with the changed values, or null if nothing moved. Shared by the lane
-  /// and monitor read-back paths.
+  /// Reads every param of [fx] the user can SEE from its loaded [handle];
+  /// returns a copy with the changed values, or null if nothing moved. Shared
+  /// by the lane and monitor read-back paths.
+  ///
+  /// Not `isUserVisible` — that is `isAutomatable && !isHidden`, and a
+  /// parameter can be shown without being automatable: a mode selector, a
+  /// gain-reduction meter. The console draws those (read-only), and a drawn
+  /// value that is never read back is frozen at the plugin's default forever
+  /// — a live-looking number guaranteed to be wrong, including right after
+  /// the user has changed it in the plugin's own window.
   ///
   /// The plugin is the source of truth (D-SYNC), so a value the plugin reports
   /// overwrites the model. One known transient: an in-app knob set is RT-queued
@@ -2346,8 +2375,11 @@ class LooperRepository {
     final values = Map<int, double>.of(fx.paramValues);
     var changed = false;
     for (final p in fx.params) {
-      if (!p.isUserVisible) continue;
+      if (p.isHidden) continue;
       final live = _engine.pluginParamGet(handle, p.id);
+      // See [_bindPluginSlot]: a non-finite reading cannot be persisted, and
+      // taking one poisons every later write of this chain.
+      if (!live.isFinite) continue;
       if (values[p.id] != live) {
         values[p.id] = live;
         changed = true;
@@ -2475,8 +2507,49 @@ class LooperRepository {
       handle,
       _engine.pluginParamInfos(handle).map(pluginParamInfoFromEngine).toList(),
     );
+    // Everything except what the plugin SAYS the host may not set.
+    // `paramValues` holds every parameter the console reads back, and
+    // replaying one the host does not own writes a stale reading into the
+    // plugin's own storage, or overrides with a captured value what the state
+    // blob just restored.
+    //
+    // Stated as what to SKIP rather than what to keep: a plugin can enumerate
+    // no parameters at all — a VST3 whose edit controller failed to
+    // instantiate, a CLAP with no params extension — and a keep-list built
+    // from that is empty, which would silently discard every saved value on
+    // each engine start. No flags is no evidence, and no evidence is not a
+    // refusal.
+    final unwritable = {
+      for (final info in infos)
+        if (!info.isAutomatable || info.isReadOnly) info.id,
+    };
     for (final entry in fx.paramValues.entries) {
+      if (unwritable.contains(entry.key)) continue;
       _engine.pluginParamSet(handle, entry.key, entry.value);
+    }
+    // And read back the drawn parameters the replay did NOT write, so a value
+    // the console shows is true as of load. The refresh polls run only while
+    // the plugin's own window is open — on the appliance, never — so without
+    // this a drawn setting is whatever was last persisted, which is not what
+    // the plugin is at once its state blob has been restored on top.
+    //
+    // ONLY the ones not just written. A param set is RT-queued and drained at
+    // the next process block, while this read is synchronous and immediate:
+    // read one back here and it still answers with its pre-replay value,
+    // which would then overwrite the user's saved setting with the plugin's
+    // default — and permanently on VST3, whose controller is never told what
+    // the host set.
+    final values = Map<int, double>.of(fx.paramValues);
+    for (final info in infos) {
+      if (info.isHidden || !unwritable.contains(info.id)) continue;
+      final live = _engine.pluginParamGet(handle, info.id);
+      // Finite only. A dB meter reads `-inf` at silence, which is ordinary
+      // plugin behaviour and which the hosts pass through unclamped — and
+      // `jsonEncode` throws on it, so a chain carrying one could never be
+      // persisted again. That throw escapes from inside the bloc's own push,
+      // so the failure is not this value: it is every later edit of the chain
+      // going unsaved.
+      if (live.isFinite) values[info.id] = live;
     }
     final descriptor = _descriptorFor(fx.ref.id);
     // The installed version differs from what the take saved (same id, new
@@ -2490,6 +2563,7 @@ class LooperRepository {
         descriptor.version != fx.ref.version;
     return fx.copyWith(
       params: infos,
+      paramValues: values,
       name: descriptor?.name ?? fx.name,
       unavailable: false,
       unsupported: false,
