@@ -119,85 +119,95 @@ class _TracksViewState extends State<TracksView> {
           },
           child: Stack(
             children: [
-              Focus(
-                autofocus: true,
-                onKeyEvent: commands.handleKey,
-                child: GestureDetector(
-                  key: const Key('tracks_settings_secondaryTap'),
-                  behavior: HitTestBehavior.translucent,
-                  onSecondaryTapUp: (_) => unawaited(openSegnoSettings()),
-                  child: Scaffold(
-                    body: SafeArea(
-                      child: Padding(
-                        // Console/kiosk mode hides the on-screen toolbar (the
-                        // foot pedals drive transport/mode/clear) and tightens
-                        // the layout for the fixed panel; desktop builds keep
-                        // the full chrome.
-                        padding: kConsoleMode
-                            ? const EdgeInsets.symmetric(vertical: 8)
-                            : const EdgeInsets.all(18),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            if (!kConsoleMode) ...[
-                              TracksToolbar(
-                                mode: mode,
-                                activeBank: overlay.activeBank,
-                                anyActive: anyActive,
-                                playStopEnabled: playStopEnabled,
-                                transportEnabled: transportEnabled,
-                                onToggleMode: commands.toggleMode,
-                                onPlayStopAll: () =>
-                                    commands.togglePlayAll(playing: anyActive),
-                                onClearAll: commands.clearAll,
-                              ),
-                              const SizedBox(height: 14),
-                            ],
-                            // With no first-run gate, a stopped engine lands
-                            // here; a full-width affordance opens settings to
-                            // (re)start it.
-                            if (!state.status.isConnected) ...[
-                              const AudioNotRunningBanner(),
-                              const SizedBox(height: 14),
-                            ],
-                            Expanded(
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  for (final track in tracks)
-                                    Expanded(
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                        ),
-                                        child: Align(
-                                          alignment: Alignment.bottomCenter,
-                                          child: TrackColumn(
-                                            track: track,
-                                            name: l10n.displayTrackName(
-                                              tracksState.nameOf(track.channel),
-                                              track.channel,
+              // Its own commands, built from a context UNDER the tray cubit
+              // just created: the outer `commands` predates the provider, and
+              // `G` reads the cubit to open the tray at Signal.
+              Builder(
+                builder: (context) => Focus(
+                  autofocus: true,
+                  onKeyEvent: TracksCommands(context).handleKey,
+                  child: GestureDetector(
+                    key: const Key('tracks_settings_secondaryTap'),
+                    behavior: HitTestBehavior.translucent,
+                    onSecondaryTapUp: (_) => unawaited(openSegnoSettings()),
+                    child: Scaffold(
+                      body: SafeArea(
+                        child: Padding(
+                          // Console/kiosk mode hides the on-screen toolbar (the
+                          // foot pedals drive transport/mode/clear) and tightens
+                          // the layout for the fixed panel; desktop builds keep
+                          // the full chrome.
+                          padding: kConsoleMode
+                              ? const EdgeInsets.symmetric(vertical: 8)
+                              : const EdgeInsets.all(18),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (!kConsoleMode) ...[
+                                TracksToolbar(
+                                  mode: mode,
+                                  activeBank: overlay.activeBank,
+                                  anyActive: anyActive,
+                                  playStopEnabled: playStopEnabled,
+                                  transportEnabled: transportEnabled,
+                                  onToggleMode: commands.toggleMode,
+                                  onPlayStopAll: () => commands.togglePlayAll(
+                                    playing: anyActive,
+                                  ),
+                                  onClearAll: commands.clearAll,
+                                ),
+                                const SizedBox(height: 14),
+                              ],
+                              // With no first-run gate, a stopped engine lands
+                              // here; a full-width affordance opens settings to
+                              // (re)start it.
+                              if (!state.status.isConnected) ...[
+                                const AudioNotRunningBanner(),
+                                const SizedBox(height: 14),
+                              ],
+                              Expanded(
+                                child: Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    for (final track in tracks)
+                                      Expanded(
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                          ),
+                                          child: Align(
+                                            alignment: Alignment.bottomCenter,
+                                            child: TrackColumn(
+                                              track: track,
+                                              name: l10n.displayTrackName(
+                                                tracksState.nameOf(
+                                                  track.channel,
+                                                ),
+                                                track.channel,
+                                              ),
+                                              selected:
+                                                  track.channel ==
+                                                  overlay.cursor,
+                                              mode: mode,
+                                              onUndo: commands.undo,
+                                              onRedo: commands.redo,
+                                              looperMode:
+                                                  state.transport.looperMode,
+                                              isPrimary:
+                                                  track.channel ==
+                                                  state.transport.primaryTrack,
+                                              onCrownPrimary:
+                                                  commands.crownPrimary,
                                             ),
-                                            selected:
-                                                track.channel == overlay.cursor,
-                                            mode: mode,
-                                            onUndo: commands.undo,
-                                            onRedo: commands.redo,
-                                            looperMode:
-                                                state.transport.looperMode,
-                                            isPrimary:
-                                                track.channel ==
-                                                state.transport.primaryTrack,
-                                            onCrownPrimary:
-                                                commands.crownPrimary,
                                           ),
                                         ),
                                       ),
-                                    ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
