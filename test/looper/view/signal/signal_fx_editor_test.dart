@@ -62,6 +62,8 @@ const _freq = PluginParamInfo(
 );
 
 /// A meter and the plugin's own bypass: present in `params`, but not controls.
+/// A read-only meter — automatable, so the host may READ it, and read-only,
+/// so it may not set it.
 const _meter = PluginParamInfo(
   id: 8,
   name: 'Gain Reduction',
@@ -71,6 +73,25 @@ const _meter = PluginParamInfo(
   def: 0,
   stepCount: 0,
   flags: 0x01 | 0x02,
+);
+
+/// A mode selector the plugin will not have automated: visible, writable by
+/// hand in the plugin's own window, and NOT automatable.
+///
+/// `isAutomatable` is optional per parameter, and `isUserVisible` is
+/// `isAutomatable && !isHidden` — so a filter written against that hid this
+/// one entirely. A plugin whose parameters are all of this shape was told it
+/// exposes no controls at all.
+const _mode = PluginParamInfo(
+  id: 10,
+  name: 'Mode',
+  unit: '',
+  min: 0,
+  max: 2,
+  def: 0,
+  stepCount: 2,
+  flags: 0x10,
+  valueTexts: ['Lowpass', 'Bandpass', 'Highpass'],
 );
 
 const _pluginBypass = PluginParamInfo(
@@ -273,23 +294,24 @@ void main() {
       expect(find.byKey(const Key('signal_fx_param_2')), findsNothing);
     });
 
-    testWidgets('a plugin with only meters is not told it has no controls', (
+    testWidgets('a plugin with nothing automatable still has controls', (
       tester,
     ) async {
       final scope = _FakeScope([
         const PluginEffect(
           ref: PluginRef(format: PluginFormat.vst3, id: 'test.filter'),
           name: 'Filter',
-          params: [_meter],
+          params: [_mode, _meter],
         ),
       ]);
       await pump(tester, scope);
 
-      // `isAutomatable` is optional per parameter — a plugin that marks its
-      // mode selector non-automatable used to render nothing at all, and the
-      // panel said so in as many words.
+      // `isAutomatable` is optional per parameter — a plugin whose every
+      // parameter is like this rendered nothing at all, and the panel said so
+      // in as many words.
       expect(find.byKey(const Key('signal_fx_no_params')), findsNothing);
-      expect(find.byKey(const Key('signal_fx_param_0')), findsOneWidget);
+      expect(find.text('MODE'), findsOneWidget);
+      expect(find.text('GAIN REDUCTION'), findsOneWidget);
     });
   });
 

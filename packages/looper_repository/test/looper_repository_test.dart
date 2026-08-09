@@ -1386,6 +1386,67 @@ void main() {
       expect(values.containsKey(101), isFalse);
     });
 
+    test('what the plugin will not let the host set is never set', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain Reduction',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          // Read-only, and not automatable: the console draws it, so the
+          // read-back puts it in `paramValues` — but the host does not own
+          // it. Replaying it writes a stale meter reading into the plugin's
+          // own storage, and overrides with a captured value whatever the
+          // restored state blob had just put there.
+          flags: 0x02,
+        ),
+        le.PluginParamInfo(
+          id: 101,
+          name: 'Mix',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+      engine.nextParamValues[100] = -12;
+      engine.nextParamValues[101] = 0.7;
+      expect(
+        repo.refreshLanePluginParams(channel: 0, lane: 0, index: 0),
+        isTrue,
+      );
+
+      // Re-apply the chain: every structural edit, engine restart and session
+      // reload comes back through here.
+      engine.pluginParamSets.clear();
+      repo.setLaneEffects(
+        lane: 0,
+        channel: 0,
+        effects: repo.laneEffects(0, 0),
+      );
+
+      expect(
+        engine.pluginParamSets.map((s) => s.paramId),
+        everyElement(101),
+      );
+    });
+
     test('closeLanePluginEditor closes the slot and reads params back', () {
       engine.nextParamInfos = const [
         le.PluginParamInfo(

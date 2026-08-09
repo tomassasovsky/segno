@@ -2482,7 +2482,19 @@ class LooperRepository {
       handle,
       _engine.pluginParamInfos(handle).map(pluginParamInfoFromEngine).toList(),
     );
+    // Only what the host may actually SET. `paramValues` holds every
+    // parameter the console shows, meters included — the read-back covers
+    // them so a drawn value is not frozen at the plugin's default — and
+    // replaying one of those writes a stale meter reading into the plugin's
+    // own storage, or overrides with a captured value what the state blob
+    // just restored. A parameter the plugin says is not automatable is
+    // exactly one the host does not own.
+    final writable = {
+      for (final info in infos)
+        if (info.isAutomatable && !info.isReadOnly) info.id,
+    };
     for (final entry in fx.paramValues.entries) {
+      if (!writable.contains(entry.key)) continue;
       _engine.pluginParamSet(handle, entry.key, entry.value);
     }
     final descriptor = _descriptorFor(fx.ref.id);
