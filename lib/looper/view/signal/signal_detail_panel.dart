@@ -739,13 +739,18 @@ class _LiftedChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
       border: Border.all(color: surface.accent),
     ),
-    child: Text(
-      label,
-      style: TextStyle(
-        color: surface.accent,
-        fontSize: 16,
-        height: 1.13,
-        leadingDistribution: TextLeadingDistribution.even,
+    // Centred the same way the chips in the run are — this is the copy that
+    // flies, and a label that sits differently here jumps on the lift.
+    child: Center(
+      widthFactor: 1,
+      child: Text(
+        label,
+        style: TextStyle(
+          color: surface.accent,
+          fontSize: 16,
+          height: 1.13,
+          leadingDistribution: TextLeadingDistribution.even,
+        ),
       ),
     ),
   );

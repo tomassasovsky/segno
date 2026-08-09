@@ -259,11 +259,15 @@ void main() {
     ]);
     await pump(tester, scope);
 
-    for (final key in ['signal_fx_move_up', 'signal_fx_move_down']) {
-      // `◀` and `▶` are emoji-presentation by default, so macOS renders them
-      // out of Apple Color Emoji: a fat coloured lozenge off the baseline,
-      // beside a `Remove` in Inter. A path is the same on every platform the
-      // console runs on.
+    // `◀` and `▶` are emoji-presentation by default, so macOS renders them
+    // out of Apple Color Emoji: a fat coloured lozenge off the baseline,
+    // beside a `Remove` in Inter. A path is the same on every platform the
+    // console runs on — and it points the way the button says it does, which
+    // nothing else in the tree would show.
+    for (final (key, points) in [
+      ('signal_fx_move_up', 'signal_fx_points_left'),
+      ('signal_fx_move_down', 'signal_fx_points_right'),
+    ]) {
       expect(
         find.descendant(of: find.byKey(Key(key)), matching: find.byType(Text)),
         findsNothing,
@@ -271,9 +275,9 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(Key(key)),
-          matching: find.byType(CustomPaint),
+          matching: find.byKey(Key(points)),
         ),
-        findsWidgets,
+        findsOneWidget,
       );
     }
   });

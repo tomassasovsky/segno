@@ -479,6 +479,19 @@ class _Glyph extends StatelessWidget {
   final String semanticLabel;
   final VoidCallback? onTap;
 
+  /// The triangle, keyed by the way it points.
+  ///
+  /// One value drives both the key and the path, so a direction that gets
+  /// flipped is a direction a test can see — nothing about a painted
+  /// triangle reaches the widget tree otherwise.
+  static Widget _triangle({required bool pointsLeft, required Color color}) =>
+      CustomPaint(
+        key: Key(
+          pointsLeft ? 'signal_fx_points_left' : 'signal_fx_points_right',
+        ),
+        size: const Size(11, 13),
+        painter: _TrianglePainter(pointsLeft: pointsLeft, color: color),
+      );
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
@@ -513,12 +526,9 @@ class _Glyph extends StatelessWidget {
                       leadingDistribution: TextLeadingDistribution.even,
                     ),
                   )
-                : CustomPaint(
-                    size: const Size(11, 13),
-                    painter: _TrianglePainter(
-                      pointsLeft: glyph == _Glyph.earlier,
-                      color: enabled ? surface.textPrimary : surface.textMuted,
-                    ),
+                : _triangle(
+                    pointsLeft: glyph == _Glyph.earlier,
+                    color: enabled ? surface.textPrimary : surface.textMuted,
                   ),
           ),
         ),

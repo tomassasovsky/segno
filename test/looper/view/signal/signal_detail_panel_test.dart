@@ -2167,21 +2167,60 @@ void main() {
       final label = tester.getRect(
         find.text(fxBlockName(l10n, _rig.tracks.first.effects.first)),
       );
-      // The chip is a fixed 38 and the label is shorter, so without centring
-      // it sits at the TOP of it — beside an add chip that has always centred
-      // its own, which is what made the run read as misaligned.
-      expect(label.center.dy, moreOrLessEquals(chip.center.dy, epsilon: 0.5));
+      // Its own height, not the chip's — and comparing CENTRES would prove
+      // nothing: an uncentred label is a text box stretched to the whole 38,
+      // so its centre matches the chip's exactly while the glyphs inside sit
+      // at the top, which is the thing being reported.
+      expect(label.height, lessThan(chip.height));
+      expect(
+        label.top - chip.top,
+        moreOrLessEquals(chip.bottom - label.bottom, epsilon: 0.5),
+      );
 
       final add = tester.getRect(
         find.byKey(const Key('signal_panel_add_chip')),
       );
       final addLabel = tester.getRect(find.text(l10n.fxAddChip));
-      expect(addLabel.center.dy, moreOrLessEquals(add.center.dy, epsilon: 0.5));
-      // And the two labels share a line.
-      expect(
-        label.center.dy,
-        moreOrLessEquals(addLabel.center.dy, epsilon: 0.5),
+      expect(addLabel.height, lessThan(add.height));
+      // And the two sit on the same line, which is what made the run read as
+      // misaligned: the add chip has always centred its own.
+      expect(label.top, moreOrLessEquals(addLabel.top, epsilon: 0.5));
+    });
+
+    testWidgets('the chip a drag lifts carries its label the same way', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      final l10n = l10nOf(tester);
+      final name = fxBlockName(l10n, _rig.tracks.first.effects.first);
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('signal_panel_chip_0'))),
       );
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await tester.pump();
+
+      // The flying copy is a chip of its own, and a label that sits
+      // differently in it jumps the moment the chip leaves the run.
+      final lifted = tester.getRect(
+        find.byKey(const Key('signal_panel_lift')),
+      );
+      final label = tester.getRect(
+        find.descendant(
+          of: find.byKey(const Key('signal_panel_lift')),
+          matching: find.text(name),
+        ),
+      );
+      expect(label.height, lessThan(lifted.height));
+      expect(
+        label.top - lifted.top,
+        moreOrLessEquals(lifted.bottom - label.bottom, epsilon: 0.5),
+      );
+
+      await gesture.up();
+      await tester.pumpAndSettle();
     });
 
     testWidgets('the run is spaced as the pen spaces it', (tester) async {
