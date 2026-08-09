@@ -396,7 +396,12 @@ class SettingsRepository {
   Future<void> savePedalBindings(String encoded) =>
       _store.setString(_pedalBindingsKey, encoded);
 
-  static const String _recentPluginsKey = 'fx.recent_plugins';
+  /// The key the recent-plugin order lives under.
+  ///
+  /// Public so a test can fail THIS read specifically without copying the
+  /// string — a copy stops matching the day the key is renamed, and the test
+  /// then passes because nothing threw at all.
+  static const String recentPluginsKey = 'fx.recent_plugins';
 
   /// The plugin ids most recently added to a chain, newest first.
   ///
@@ -405,11 +410,11 @@ class SettingsRepository {
   /// than behind a search of a hundred. An id that no longer scans is simply
   /// not drawn — the catalog decides what exists, this only remembers an
   /// order.
-  Future<String?> loadRecentPlugins() => _store.getString(_recentPluginsKey);
+  Future<String?> loadRecentPlugins() => _store.getString(recentPluginsKey);
 
   /// Saves the recent-plugin ids as a newline-separated list.
   Future<void> saveRecentPlugins(String encoded) =>
-      _store.setString(_recentPluginsKey, encoded);
+      _store.setString(recentPluginsKey, encoded);
 
   static const String _controllerMappingsKey = 'controller.mappings';
 

@@ -35,15 +35,27 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 /// The zero-latency fake makes the add dialog's re-entrancy window disappear
 /// entirely, so a guard against double-opening cannot be tested against it —
 /// the bug it prevents only exists when the read is slow.
-/// A store whose recent-plugins read fails, as a missing platform plugin
-/// does.
+/// A store whose recent-plugins read fails the way the real backends do.
 ///
-/// Scoped to that one key: every cubit in the tray loads through this store
-/// too, and failing all of them would test the harness rather than the shelf.
+/// An `ArgumentError`, not an `Exception`: `shared_preferences_foundation`
+/// converts a platform argument failure into one on purpose, and the backends
+/// cast the platform reply, so a corrupt stored value raises `TypeError`.
+/// Both are `Error`s, so a catch narrowed to `Exception` misses them.
+///
+/// Scoped to the one key by asking the repository which it is, rather than
+/// copying the string: a hardcoded key silently stops matching when the
+/// repository renames it, and the test then passes because the read returned
+/// null instead of throwing.
 class _ThrowingStore extends FakeKeyValueStore {
+  /// Whether the read under test actually failed.
+  bool threw = false;
+
   @override
   Future<String?> getString(String key) async {
-    if (key == 'fx.recent_plugins') throw Exception('no prefs here');
+    if (key == SettingsRepository.recentPluginsKey) {
+      threw = true;
+      throw ArgumentError('no prefs here');
+    }
     return super.getString(key);
   }
 }
@@ -89,6 +101,7 @@ void main() {
   late MonitorCubit monitor;
   late SettingsTrayCubit tray;
   late FakeAudioEngine catalogEngine;
+  late _ThrowingStore throwingStore;
   late PluginCatalog catalog;
 
   setUpAll(() {
@@ -197,7 +210,7 @@ void main() {
     settings = SettingsRepository(
       store: switch ((slowSettings, throwingSettings)) {
         (true, _) => _SlowStore(),
-        (_, true) => _ThrowingStore(),
+        (_, true) => throwingStore = _ThrowingStore(),
         _ => FakeKeyValueStore(),
       },
     );
@@ -1158,6 +1171,9 @@ void main() {
       // is what happened when the error escaped the `unawaited` call site.
       expect(tester.takeException(), isNull);
       expect(find.byKey(const Key('signal_add_effect')), findsOneWidget);
+      // The read really did fail — otherwise this passes for the wrong
+      // reason the moment the key it watches stops matching.
+      expect(throwingStore.threw, isTrue);
     });
 
     testWidgets('a rig with no plugins does not rescan on every open', (

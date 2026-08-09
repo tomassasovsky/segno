@@ -48,19 +48,22 @@ Future<void> showSignalAddEffect(
     final repository = context.read<LooperRepository>();
     settings = context.read<SettingsRepository>();
     catalog = repository.pluginCatalog;
-    // The shelf is a convenience. A store that hangs, or throws — a
-    // `MissingPluginException` is the likelier prefs failure — must not stop
-    // the dialog opening; without the catch the error escapes through the
-    // `unawaited` at the call site and no dialog appears at all.
+    // The shelf is a convenience. A store that hangs, or throws, must not
+    // stop the dialog opening; without the catch the failure escapes through
+    // the `unawaited` at the call site and no dialog appears at all.
     //
-    // `on Exception`, not `on Object`: a programming error in the load path
-    // should surface as one rather than presenting as a permanently empty
-    // shelf.
+    // `on Object`, deliberately, and NOT `on Exception`: the prefs backends
+    // throw `Error`s for exactly the cases this guards. The Foundation
+    // implementation converts a platform argument failure into `ArgumentError`
+    // on purpose, and every backend casts the platform reply (`… as String?`),
+    // which raises `TypeError` on a value of the wrong type — a stored key
+    // that got corrupted, say. Narrowing this to `Exception` looked tidier and
+    // put the permanent no-op straight back.
     try {
       recents = await SignalRecentPlugins.load(
         settings,
       ).timeout(_shelfTimeout, onTimeout: () => const []);
-    } on Exception {
+    } on Object {
       recents = const [];
     }
   } finally {
@@ -296,7 +299,11 @@ class _AddEffectDialogState extends State<_AddEffectDialog> {
                     title: scanning
                         ? l10n.fxAddScanning
                         : l10n.fxAddBrowseAll(descriptors.length),
-                    onTap: scanning ? null : () => unawaited(_browse(context)),
+                    // Nor tappable at zero: the sheet it opens would have
+                    // nothing in it but the same sentence.
+                    onTap: scanning || descriptors.isEmpty
+                        ? null
+                        : () => unawaited(_browse(context)),
                     showDivider: false,
                   ),
                 ],
