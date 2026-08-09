@@ -616,19 +616,27 @@ class _Caption extends StatelessWidget {
 /// A chip opens its entry in the editor below, and the open one takes the
 /// accent pair. The last chip is `+ effect`, which is where the effect it
 /// adds will land — the end of the chain.
-/// The gap between two chips, and the insertion point it stands for.
+/// A chip as a drop target: its two halves are the insertion points on either
+/// side of it.
 ///
-/// Idle it is just the 5 the run would have had anyway; under a pointer that
-/// is carrying an entry it opens and shows the stroke that says where the
-/// entry would land.
-class _DropGap extends StatelessWidget {
-  const _DropGap({
-    required this.insertAt,
+/// NOT a gap widget between the chips. A gap wide enough for a finger has to
+/// come from somewhere, and taking it from the run relaid the whole strip out
+/// the instant a press matured — chips sliding sideways, rows appearing and
+/// disappearing, the panel changing height under the hand that was holding
+/// it. Half a chip is both a bigger target than any gap could be and free:
+/// the strip is laid out exactly the same whether a drag is up or not.
+class _DropHalves extends StatefulWidget {
+  const _DropHalves({
+    required this.index,
     required this.carrying,
     required this.positionOf,
+    required this.pointerOf,
     required this.onDrop,
-    super.key,
+    required this.child,
   });
+
+  /// This chip's position in the chain as drawn.
+  final int index;
 
   /// The slot id of the entry the strip considers to be in flight.
   ///
@@ -640,9 +648,6 @@ class _DropGap extends StatelessWidget {
   /// touched.
   final String? carrying;
 
-  /// The index a drop here would insert at, in the CURRENT list.
-  final int insertAt;
-
   /// Where the entry with this slot id sits in the chain right now, or -1 if
   /// it is gone.
   ///
@@ -653,47 +658,92 @@ class _DropGap extends StatelessWidget {
   /// that position.
   final int Function(String slotId) positionOf;
 
+  /// Where the finger actually is.
+  ///
+  /// NOT `DragTargetDetails.offset`, which is the feedback's top-left corner
+  /// — `globalPosition - dragStartPoint`. Grab a chip in the middle and that
+  /// point sits half a chip to the left of the finger, so the trailing half
+  /// of a chip could not be reached at all: every drop read as leading.
+  final Offset? Function() pointerOf;
+
   final void Function(int from, int insertAt) onDrop;
+
+  final Widget child;
+
+  @override
+  State<_DropHalves> createState() => _DropHalvesState();
+}
+
+class _DropHalvesState extends State<_DropHalves> {
+  /// The insertion point the pointer is currently over, or null.
+  int? _over;
+
+  /// Which side of this chip the finger is on, as an insertion index.
+  int _sideAt() {
+    final box = context.findRenderObject() as RenderBox?;
+    final global = widget.pointerOf();
+    if (box == null || global == null) return widget.index;
+    final local = box.globalToLocal(global);
+    final leading = Directionality.of(context) == TextDirection.rtl
+        ? box.size.width - local.dx
+        : local.dx;
+    return leading < box.size.width / 2 ? widget.index : widget.index + 1;
+  }
+
+  /// Whether inserting at [insertAt] would actually move [from] anywhere.
+  ///
+  /// The two sides flanking the dragged entry are no-ops: they name the place
+  /// it already occupies. Refusing them is what keeps the strip from marking
+  /// a move that would do nothing.
+  bool _moves(int from, int insertAt) =>
+      from >= 0 && from != insertAt && from + 1 != insertAt;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    final over = _over;
     return DragTarget<String>(
-      // The two gaps flanking the dragged entry are no-ops: they name the
-      // place it already occupies. Rejecting them here is what keeps the
-      // strip from offering a move that does nothing. An entry that has left
-      // the chain mid-drag has no place at all, and is refused outright.
-      onWillAcceptWithDetails: (d) {
-        if (d.data != carrying) return false;
-        final from = positionOf(d.data);
-        return from >= 0 && from != insertAt && from + 1 != insertAt;
+      // Refused unless it is the entry the strip considers to be in flight,
+      // and unless that entry is still in the chain at all.
+      onWillAcceptWithDetails: (d) =>
+          d.data == widget.carrying && widget.positionOf(d.data) >= 0,
+      onMove: (d) {
+        final side = _sideAt();
+        final at = _moves(widget.positionOf(d.data), side) ? side : null;
+        if (at != _over) setState(() => _over = at);
       },
-      onAcceptWithDetails: (d) => onDrop(positionOf(d.data), insertAt),
-      builder: (context, candidate, rejected) {
-        final active = candidate.isNotEmpty;
-        return AnimatedContainer(
-          duration: Durations.short3,
-          // Idle it is the 5 the run would have had anyway — until a drag is
-          // up, and then it is a TARGET on a floor console worked with a
-          // finger. At 5 wide the feature was a 5px acquisition with a silent
-          // miss on either side, since the chips flanking it accept nothing.
-          // The chips reflow by a few pixels when the gaps open; the mockups
-          // draw the strip re-laying-out during a drag anyway.
-          width: active ? 34 : 24,
-          height: 38,
-          alignment: Alignment.center,
-          child: active
-              ? Container(
-                  width: 4,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: surface.accent,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                )
-              : null,
-        );
+      onLeave: (_) {
+        if (_over != null) setState(() => _over = null);
       },
+      onAcceptWithDetails: (d) {
+        final side = _sideAt();
+        setState(() => _over = null);
+        final from = widget.positionOf(d.data);
+        if (_moves(from, side)) widget.onDrop(from, side);
+      },
+      builder: (context, candidate, rejected) => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          widget.child,
+          // Painted OVER the chip rather than laid out beside it, so marking
+          // the landing place moves nothing.
+          if (over != null)
+            Positioned(
+              top: 0,
+              bottom: 0,
+              left: over == widget.index ? -2 : null,
+              right: over == widget.index ? null : -2,
+              child: Container(
+                key: Key('signal_panel_mark_$over'),
+                width: 4,
+                decoration: BoxDecoration(
+                  color: surface.accent,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -788,6 +838,23 @@ class _ChainStripState extends State<_ChainStrip> {
   /// coordinates true, so the second one springs back.
   String? _carrying;
 
+  /// Where the finger carrying [_carrying] is, in global coordinates.
+  ///
+  /// A [Listener] around the run keeps this: a pointer's route is fixed at
+  /// pointer-down and every ancestor of the chip pressed is on it, so the
+  /// moves keep arriving here even once the drag owns the gesture.
+  Offset? _pointer;
+
+  /// The most recent pointer to go down on the run.
+  int? _lastDown;
+
+  /// Which pointer is carrying, once one is.
+  ///
+  /// Followed by id, not just "the last thing that moved": a second finger
+  /// resting anywhere on the run would otherwise write its own position into
+  /// [_pointer], and the drop would then be placed wherever THAT finger was.
+  int? _dragPointer;
+
   /// Where [slotId] sits in the chain right now, or -1 if it is gone.
   int _positionOf(String slotId) =>
       widget.chain.indexWhere((effect) => effect.slotId == slotId);
@@ -800,9 +867,9 @@ class _ChainStripState extends State<_ChainStrip> {
   /// after it has already shifted by the time the insert happens. Off by one
   /// here and an entry dragged rightwards always lands one place short.
   ///
-  /// The rack also guarded the two gaps flanking the entry here; that guard is
-  /// [_DropGap]'s, which is where it can also decline to draw a drop marker
-  /// for a move that would do nothing.
+  /// The rack also guarded the two insertion points flanking the entry here;
+  /// that guard is [_DropHalves]', which is where it can also decline to mark
+  /// a landing place for a move that would do nothing.
   void _reorderTo(int from, int insertAt) {
     if (from < 0) return;
     widget.onReorder(from, insertAt > from ? insertAt - 1 : insertAt);
@@ -824,13 +891,114 @@ class _ChainStripState extends State<_ChainStrip> {
         _airborne.add(slotId);
         // Never handed on: promoting the survivor of a same-frame pair would
         // make its already-stale coordinates placeable.
-        _carrying ??= slotId;
+        if (_carrying == null) {
+          _carrying = slotId;
+          _dragPointer = _lastDown;
+        }
       } else {
         _airborne.remove(slotId);
-        if (_carrying == slotId) _carrying = null;
+        if (_carrying == slotId) {
+          _carrying = null;
+          _dragPointer = null;
+        }
       }
     });
     widget.onDragging(_airborne.isNotEmpty);
+  }
+
+  /// One entry of the run: the chip, what it accepts, and what carries it.
+  Widget _entry(
+    BuildContext context,
+    int index,
+    TrackEffect effect,
+    String? carrying,
+  ) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final onSelect = widget.onSelect;
+    final editing = widget.editing;
+    return Semantics(
+      // Keyed, and keyed by IDENTITY: the gaps appear between the
+      // chips when a drag starts, so every chip changes slot in the
+      // run at that moment. Unkeyed, Flutter matches children by
+      // position and the chip being dragged is torn down and rebuilt
+      // mid-drag — its `onDragEnd` then never fires, and the strip
+      // stays stuck in drag mode with no way out.
+      key: ValueKey('slot-${effect.slotId ?? index}'),
+      button: true,
+      selected: effect.slotId != null && effect.slotId == editing,
+      label: fxBlockName(l10n, effect),
+      // An entry with no slot id has not crossed a repository write
+      // yet, so nothing can name it — neither a selection nor a
+      // drag payload. That is momentary, and the chip is simply
+      // inert until it has one.
+      child: _DropHalves(
+        index: index,
+        carrying: carrying,
+        positionOf: _positionOf,
+        pointerOf: () => _pointer,
+        onDrop: _reorderTo,
+        child: LongPressDraggable<String>(
+          data: effect.slotId ?? '',
+          // One entry travels at a time, and one pointer carries it.
+          // A second finger on a second chip would place its entry
+          // against a chain the first drop has already rewritten; a
+          // second finger on the SAME chip would register the same
+          // slot id twice, and the first release would take the gaps
+          // out from under the other one.
+          maxSimultaneousDrags:
+              effect.slotId == null ||
+                  (_airborne.isNotEmpty && !_airborne.contains(effect.slotId))
+              ? 0
+              : 1,
+          // The panel is a touch surface on a floor console: a plain
+          // drag would steal every tap-to-open on the way past.
+          // The press is what says "I mean to move this one".
+          onDragStarted: () => _setDragging(effect.slotId!, dragging: true),
+          // Not `onDragEnd` — see [_setDragging]. Between them these
+          // two cover both endings, and neither is gated on the chip
+          // still being mounted.
+          onDragCompleted: () => _setDragging(effect.slotId!, dragging: false),
+          onDraggableCanceled: (_, _) =>
+              _setDragging(effect.slotId!, dragging: false),
+          feedback: Material(
+            color: Colors.transparent,
+            // 74x38 lifts to 75x40 — the one scale the mockups draw.
+            child: Transform.translate(
+              offset: const Offset(-2, -5),
+              child: Transform.scale(
+                scale: 1.0135,
+                child: _LiftedChip(
+                  key: const Key('signal_panel_lift'),
+                  surface: surface,
+                  label: fxBlockName(l10n, effect),
+                ),
+              ),
+            ),
+          ),
+          childWhenDragging: ExcludeSemantics(
+            child: KeyedSubtree(
+              key: Key('signal_panel_ghost_$index'),
+              child: _chip(context, index, effect, ghosted: true),
+            ),
+          ),
+          child: InkWell(
+            key: Key('signal_panel_chip_$index'),
+            onTap: effect.slotId == null
+                ? null
+                : () => onSelect(effect.slotId!),
+            borderRadius: BorderRadius.circular(8),
+            // Only the DRAWING is excluded. Wrapping the InkWell too
+            // silences its tap action, and the chip then announces as
+            // a button a screen reader cannot activate — the editor
+            // becomes unreachable from assistive tech entirely.
+            child: ExcludeSemantics(
+              child: _chip(context, index, effect),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// One chain chip, as it sits in the run.
@@ -881,17 +1049,20 @@ class _ChainStripState extends State<_ChainStrip> {
     final l10n = context.l10n;
     final surface = context.surface;
     final chain = widget.chain;
-    final editing = widget.editing;
-    final onSelect = widget.onSelect;
     final add = widget.onAdd;
-    // The gaps belong to the entry that can be placed; the fold belongs to
-    // anything still in the air.
+    // A landing place belongs to the entry that can be placed; the fold
+    // belongs to anything still in the air.
     final carrying = _carrying;
     final airborne = _airborne.isNotEmpty;
     // The empty line and the add chip together: an empty chain is exactly the
     // case where "put something on it" needs to be reachable, so the early
     // return that used to sit here hid the one affordance that mattered.
-    return Column(
+    //
+    // Wrapped in a [Listener] below, which is how the drop targets know where
+    // the finger actually is: a pointer's route is fixed at pointer-down and
+    // every ancestor of the chip pressed is on it, so the moves keep arriving
+    // here even once the drag owns the gesture.
+    final run = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       spacing: 5,
@@ -908,134 +1079,52 @@ class _ChainStripState extends State<_ChainStrip> {
             ),
           ),
         Wrap(
-          // The gaps carry the spacing themselves while a drag is up, so that
-          // a drop target can grow between two chips instead of a fixed 5
-          // sitting beside it.
-          spacing: carrying == null ? 5.0 : 0.0,
+          // Unchanged whether a drag is up or not: the drop targets are the
+          // chips themselves, so nothing is inserted into the run and nothing
+          // moves under the hand that just pressed one.
+          spacing: 5,
           runSpacing: 5,
           children: [
-            for (final (index, effect) in chain.indexed) ...[
-              if (carrying != null)
-                _DropGap(
-                  key: Key('signal_panel_gap_$index'),
-                  insertAt: index,
-                  carrying: carrying,
-                  positionOf: _positionOf,
-                  onDrop: _reorderTo,
-                ),
-              Semantics(
-                // Keyed, and keyed by IDENTITY: the gaps appear between the
-                // chips when a drag starts, so every chip changes slot in the
-                // run at that moment. Unkeyed, Flutter matches children by
-                // position and the chip being dragged is torn down and rebuilt
-                // mid-drag — its `onDragEnd` then never fires, and the strip
-                // stays stuck in drag mode with no way out.
-                key: ValueKey('slot-${effect.slotId ?? index}'),
-                button: true,
-                selected: effect.slotId != null && effect.slotId == editing,
-                label: fxBlockName(l10n, effect),
-                // An entry with no slot id has not crossed a repository write
-                // yet, so nothing can name it — neither a selection nor a
-                // drag payload. That is momentary, and the chip is simply
-                // inert until it has one.
-                child: LongPressDraggable<String>(
-                  data: effect.slotId ?? '',
-                  // One entry travels at a time, and one pointer carries it.
-                  // A second finger on a second chip would place its entry
-                  // against a chain the first drop has already rewritten; a
-                  // second finger on the SAME chip would register the same
-                  // slot id twice, and the first release would take the gaps
-                  // out from under the other one.
-                  maxSimultaneousDrags:
-                      effect.slotId == null ||
-                          (airborne && !_airborne.contains(effect.slotId))
-                      ? 0
-                      : 1,
-                  // The panel is a touch surface on a floor console: a plain
-                  // drag would steal every tap-to-open on the way past.
-                  // The press is what says "I mean to move this one".
-                  onDragStarted: () =>
-                      _setDragging(effect.slotId!, dragging: true),
-                  // Not `onDragEnd` — see [_setDragging]. Between them these
-                  // two cover both endings, and neither is gated on the chip
-                  // still being mounted.
-                  onDragCompleted: () =>
-                      _setDragging(effect.slotId!, dragging: false),
-                  onDraggableCanceled: (_, _) =>
-                      _setDragging(effect.slotId!, dragging: false),
-                  feedback: Material(
-                    color: Colors.transparent,
-                    // 74x38 lifts to 75x40 — the one scale the mockups draw.
-                    child: Transform.translate(
-                      offset: const Offset(-2, -5),
-                      child: Transform.scale(
-                        scale: 1.0135,
-                        child: _LiftedChip(
-                          key: const Key('signal_panel_lift'),
-                          surface: surface,
-                          label: fxBlockName(l10n, effect),
-                        ),
-                      ),
-                    ),
-                  ),
-                  childWhenDragging: ExcludeSemantics(
-                    child: KeyedSubtree(
-                      key: Key('signal_panel_ghost_$index'),
-                      child: _chip(context, index, effect, ghosted: true),
-                    ),
-                  ),
+            for (final (index, effect) in chain.indexed)
+              _entry(context, index, effect, carrying),
+            // The add chip stays exactly where it is and only goes dark: it
+            // is not a drop target, and removing it would empty a row of the
+            // run — six entries and a `+ effect` need two rows on a
+            // 1024-wide console — shortening the panel, clamping the scroll
+            // view it sits at the bottom of, and sliding the whole strip out
+            // from under the finger that just pressed it.
+            if (add != null)
+              Visibility(
+                key: const Key('signal_panel_add_room'),
+                visible: !airborne,
+                maintainSize: true,
+                maintainAnimation: true,
+                maintainState: true,
+                child: Semantics(
+                  button: true,
+                  label: l10n.fxAddChip,
                   child: InkWell(
-                    key: Key('signal_panel_chip_$index'),
-                    onTap: effect.slotId == null
-                        ? null
-                        : () => onSelect(effect.slotId!),
+                    key: const Key('signal_panel_add_chip'),
+                    onTap: add,
                     borderRadius: BorderRadius.circular(8),
-                    // Only the DRAWING is excluded. Wrapping the InkWell too
-                    // silences its tap action, and the chip then announces as
-                    // a button a screen reader cannot activate — the editor
-                    // becomes unreachable from assistive tech entirely.
                     child: ExcludeSemantics(
-                      child: _chip(context, index, effect),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-            if (carrying != null)
-              _DropGap(
-                key: Key('signal_panel_gap_${chain.length}'),
-                insertAt: chain.length,
-                carrying: carrying,
-                positionOf: _positionOf,
-                onDrop: _reorderTo,
-              ),
-            // No add chip mid-drag: it is not a drop target, and a gap beside
-            // it would offer an insertion point past the end of the chain.
-            if (add != null && !airborne)
-              Semantics(
-                button: true,
-                label: l10n.fxAddChip,
-                child: InkWell(
-                  key: const Key('signal_panel_add_chip'),
-                  onTap: add,
-                  borderRadius: BorderRadius.circular(8),
-                  child: ExcludeSemantics(
-                    child: Container(
-                      height: 38,
-                      padding: const EdgeInsets.symmetric(horizontal: 17),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: surface.line),
-                      ),
-                      child: Center(
-                        widthFactor: 1,
-                        child: Text(
-                          l10n.fxAddChip,
-                          style: TextStyle(
-                            color: surface.textSecondary,
-                            fontSize: 16,
-                            height: 1.13,
-                            leadingDistribution: TextLeadingDistribution.even,
+                      child: Container(
+                        height: 38,
+                        padding: const EdgeInsets.symmetric(horizontal: 17),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: surface.line),
+                        ),
+                        child: Center(
+                          widthFactor: 1,
+                          child: Text(
+                            l10n.fxAddChip,
+                            style: TextStyle(
+                              color: surface.textSecondary,
+                              fontSize: 16,
+                              height: 1.13,
+                              leadingDistribution: TextLeadingDistribution.even,
+                            ),
                           ),
                         ),
                       ),
@@ -1046,6 +1135,18 @@ class _ChainStripState extends State<_ChainStrip> {
           ],
         ),
       ],
+    );
+    return Listener(
+      onPointerDown: (event) {
+        _lastDown = event.pointer;
+        if (_dragPointer == null) _pointer = event.position;
+      },
+      onPointerMove: (event) {
+        if (_dragPointer == null || _dragPointer == event.pointer) {
+          _pointer = event.position;
+        }
+      },
+      child: run,
     );
   }
 }
