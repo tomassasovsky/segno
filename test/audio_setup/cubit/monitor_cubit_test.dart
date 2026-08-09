@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -12,6 +13,7 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
+  late PluginCatalog catalog;
 
   setUpAll(() {
     registerFallbackValue(<TrackEffect>[]);
@@ -21,6 +23,16 @@ void main() {
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
+    // The cubit follows the scan: the repository's answer about whether a
+    // plugin loaded changes when one lands.
+    catalog = PluginCatalog(
+      engine: FakeAudioEngine(),
+      appVersion: 'test',
+      pollInterval: const Duration(milliseconds: 1),
+      statFile: (path) => (mtimeMs: 1, sizeBytes: 1),
+    );
+    addTearDown(catalog.dispose);
+    when(() => repository.pluginCatalog).thenReturn(catalog);
     when(
       () => repository.setMonitorInputMode(
         input: any(named: 'input'),
@@ -411,6 +423,108 @@ void main() {
         },
       );
     });
+
+    blocTest<MonitorCubit, MonitorState>(
+      "a restored chain takes the repository's answer, not the saved one",
+      setUp: () async {
+        await settings.saveMonitorEffects(
+          0,
+          encodeFxChain(
+            const FxChainEnvelope(
+              entries: [
+                PluginEffect(
+                  ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+                  slotId: 'slot-gone',
+                ),
+              ],
+            ),
+          ),
+        );
+        // What the repository made of it while applying: the plugin is not
+        // installed any more.
+        when(() => repository.monitorEffects(0)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+            slotId: 'slot-gone',
+            unavailable: true,
+          ),
+        ]);
+      },
+      build: build,
+      act: (cubit) => cubit.load(),
+      verify: (cubit) {
+        // Decoded settings say nothing about whether a plugin LOADED. Left at
+        // the saved answer, the console offers to open the window of a plugin
+        // that is not there and never offers to relink the one that is
+        // missing — on the one stage where hosting actually happens.
+        final entry = cubit.state.forInput(0).effects.single as PluginEffect;
+        expect(entry.unavailable, isTrue);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a chain still loading at boot picks up what the scan resolves',
+      setUp: () async {
+        await settings.saveMonitorEffects(
+          0,
+          encodeFxChain(
+            const FxChainEnvelope(
+              entries: [
+                PluginEffect(
+                  ref: PluginRef(format: PluginFormat.vst3, id: 'late'),
+                  slotId: 'slot-late',
+                ),
+              ],
+            ),
+          ),
+        );
+        // The engine starts before the app with a cold plugin cache, so at
+        // restore time every hosted entry has just failed to load and is
+        // waiting on the repository's own recovery scan.
+        when(() => repository.monitorEffects(0)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'late'),
+            slotId: 'slot-late',
+            loading: true,
+          ),
+        ]);
+      },
+      build: build,
+      act: (cubit) async {
+        await cubit.load();
+        expect(
+          (cubit.state.forInput(0).effects.single as PluginEffect).loading,
+          isTrue,
+        );
+        // The repository re-applies the chains from the SCAN FUTURE, and the
+        // catalog publishes its last progress event before completing that
+        // future — so a read hung straight off the event runs a microtask too
+        // early and sees the chain still loading, with no later event coming.
+        // Modelled here the way the repository does it: a `then` registered
+        // before the cubit's own join.
+        unawaited(
+          catalog.scan().then((_) {
+            when(() => repository.monitorEffects(0)).thenReturn(const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.vst3, id: 'late'),
+                slotId: 'slot-late',
+                name: 'Late',
+              ),
+            ]);
+          }),
+        );
+        await catalog.scan();
+        await pumpEventQueue();
+      },
+      verify: (cubit) {
+        // Nothing tells this cubit that on its own, so a plugin that resolves
+        // perfectly well sat in the console reading "loading…" — no
+        // parameters, no window, no relink — until somebody edited the chain.
+        final entry = cubit.state.forInput(0).effects.single as PluginEffect;
+        expect(entry.loading, isFalse);
+        expect(entry.name, 'Late');
+      },
+    );
 
     group('monitor power controls (D-POWER)', () {
       blocTest<MonitorCubit, MonitorState>(

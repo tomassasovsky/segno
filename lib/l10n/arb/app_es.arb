@@ -320,6 +320,8 @@
     "signalPluginUnsupported": "Plugin no compatible",
     "signalPluginVersionChanged": "La versión cambió desde que se guardó",
     "signalPluginRelinkTooltip": "Volver a vincular a un plugin instalado",
+    "fxOpenWindow": "Abrir ventana",
+    "fxRelink": "Revincular",
     "signalPluginBrowserTitle": "Plugins",
     "signalPluginBrowserSearchHint": "Buscar plugins",
     "signalPluginBrowserEmpty": "No se encontraron plugins",

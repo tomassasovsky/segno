@@ -59,6 +59,9 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// close / [close] so a closed editor never leaves a ticking timer.
   final Map<(int, int), Timer> _editorTimers = {};
 
+  /// Follows the plugin scan, so the chains pick up what it resolves.
+  StreamSubscription<void>? _catalogWatch;
+
   /// Restores the persisted per-input monitors and applies them to the
   /// repository. Reads the single-chain keys; the multi-lane → single-chain
   /// fold (v3) runs at bootstrap, before this.
@@ -77,22 +80,70 @@ class MonitorCubit extends Cubit<MonitorState> {
     }
     emit(MonitorState(inputs: restored));
     restored.values.forEach(_applyMonitor);
+    // Read the APPLIED chains back into state. What was decoded from settings
+    // says nothing about whether a plugin actually loaded: `unavailable`,
+    // `loading` and the enumerated params are the repository's answer, made
+    // while applying just above, and without this the console draws a stale
+    // one — offering to open the window of a plugin that is not there, and
+    // never offering to relink the one that is missing.
+    //
     // Mint-once for legacy payloads (A9): the repository minted stable slot
-    // ids for any id-less restored entries while the chains were applied
-    // above. Re-read the minted chains into state and persist them back, or
-    // every launch would re-mint DIFFERENT ids for the same legacy chain.
+    // ids for any id-less restored entries as it applied them, and those have
+    // to be persisted back or every launch re-mints DIFFERENT ids for the
+    // same legacy chain. Only that case writes; a chain that already had ids
+    // is read, not rewritten.
     for (final monitor in restored.values) {
       if (isClosed) return;
-      if (!monitor.effects.any((fx) => fx.slotId == null)) continue;
-      final minted = _repository.monitorEffects(monitor.input);
+      final applied = _repository.monitorEffects(monitor.input);
       // Nothing applied (engine not running / a unit-test fake): keep the
-      // un-minted state; the next real apply re-mints and persists.
-      if (minted.isEmpty) continue;
-      emit(state.withInput(monitor.copyWith(effects: minted)));
+      // restored state; the next real apply re-reads and re-mints.
+      if (applied.isEmpty) continue;
+      emit(state.withInput(monitor.copyWith(effects: applied)));
+      if (!monitor.effects.any((fx) => fx.slotId == null)) continue;
       await _settings.saveMonitorEffects(
         monitor.input,
-        _encodedChain(monitor.input, minted),
+        _encodedChain(monitor.input, applied),
       );
+    }
+    // And keep reading it. The engine starts before the app, with a cold
+    // plugin cache, so by now every hosted entry has just failed to load and
+    // is `loading` while the repository's own recovery scan runs. That scan
+    // re-applies the chains when it lands, and nothing tells this cubit — so
+    // a plugin that resolves perfectly well would sit in the console reading
+    // "loading..." until somebody edited the chain, and a missing one would
+    // never offer the relink it needs.
+    _catalogWatch ??= _repository.pluginCatalog.progressStream.listen(
+      (_) => unawaited(_readAfterScan()),
+    );
+  }
+
+  /// Re-reads once the scan's own listeners have run.
+  ///
+  /// The catalog publishes its last progress event BEFORE it completes the
+  /// scan future, and the repository re-applies the chains from that future.
+  /// Read straight off the event and the chains are still `loading` — and no
+  /// later event is coming, because the poll timer stops in the same breath.
+  /// Nor can this join the scan and wait: `_finish` clears the running scan
+  /// before completing it, so by delivery time there is nothing left to join.
+  ///
+  /// Yielding to the event loop is what lands after: the repository's
+  /// callback is already queued when this one runs.
+  Future<void> _readAfterScan() async {
+    await Future<void>.delayed(Duration.zero);
+    _readApplied();
+  }
+
+  /// Re-reads every known input's applied chain.
+  ///
+  /// The repository is the one that knows whether a plugin loaded, and its
+  /// answer changes when a scan lands. Nothing here writes: what is persisted
+  /// is what the user set, not what the rig happened to resolve.
+  void _readApplied() {
+    if (isClosed) return;
+    for (final input in state.inputs.keys.toList()) {
+      final applied = _repository.monitorEffects(input);
+      if (applied.isEmpty) continue;
+      emit(state.withInput(state.forInput(input).copyWith(effects: applied)));
     }
   }
 
@@ -481,6 +532,7 @@ class MonitorCubit extends Cubit<MonitorState> {
       timer.cancel();
     }
     _editorTimers.clear();
+    unawaited(_catalogWatch?.cancel());
     return super.close();
   }
 }

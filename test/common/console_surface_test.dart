@@ -153,4 +153,59 @@ void main() {
       expect(fired, 1);
     });
   });
+
+  group('a value bar that only reads', () {
+    /// Pumps a bar whose value never moves, so what is drawn is either the
+    /// widget's value or a fraction the bar is holding on its own.
+    Future<void> pumpBar(WidgetTester tester, {required bool live}) =>
+        tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+            home: Scaffold(
+              body: ConsoleValueBar(
+                label: 'GAIN',
+                value: 0,
+                readout: '0',
+                onChanged: live ? (_) {} : null,
+              ),
+            ),
+          ),
+        );
+
+    double fillWidth(WidgetTester tester) =>
+        tester.getSize(find.byKey(ConsoleValueBar.fillKey)).width;
+
+    testWidgets('takes no gesture at all', (tester) async {
+      await pumpBar(tester, live: false);
+
+      await tester.drag(find.byType(ConsoleValueBar), const Offset(200, 0));
+      await tester.pumpAndSettle();
+      // Nothing to write to, so nothing to show for it either — a bar that
+      // moved under the finger and snapped back is a control that lied.
+      expect(fillWidth(tester), 0);
+    });
+
+    testWidgets('going read-only under a finger lets the fraction go', (
+      tester,
+    ) async {
+      await pumpBar(tester, live: true);
+      final bar = find.byType(ConsoleValueBar);
+      final gesture = await tester.startGesture(tester.getCenter(bar));
+      await gesture.moveBy(const Offset(120, 0));
+      await tester.pumpAndSettle();
+      expect(fillWidth(tester), greaterThan(0));
+
+      // These bars are keyed by POSITION, so the same state is reused when the
+      // editor switches to another effect — and row N there may be a meter.
+      // Only the release handlers clear the held fraction and they are wired
+      // only while the bar is live, so it stayed pinned where the finger left
+      // it and stopped reading the value it is supposed to show, for good.
+      await pumpBar(tester, live: false);
+      await tester.pumpAndSettle();
+      expect(fillWidth(tester), 0);
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+    });
+  });
 }

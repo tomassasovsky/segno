@@ -22,7 +22,8 @@ import 'package:segno_engine/segno_engine.dart'
         PluginRef,
         TrackEffect,
         TrackEffectParam,
-        TrackEffectType;
+        TrackEffectType,
+        encodeTrackEffects;
 import 'package:segno_engine/segno_engine.dart'
     as le
     show
@@ -1330,6 +1331,420 @@ void main() {
       expect(
         repo.refreshLanePluginParams(channel: 0, lane: 0, index: 0),
         isFalse,
+      );
+    });
+
+    test('a parameter that is shown but not automatable is read back too', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain Reduction',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          // Visible and READ-ONLY, and not automatable — a meter. The console
+          // draws these, so a read-back that skips them leaves the drawn
+          // value frozen at the plugin's default for good: a live-looking
+          // number guaranteed to be wrong, including right after the user
+          // moved it in the plugin's own window.
+          flags: 0x02,
+        ),
+        le.PluginParamInfo(
+          id: 101,
+          name: 'Secret',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0,
+          stepCount: 0,
+          // Hidden: not drawn anywhere, so not read either.
+          flags: 0x08,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+
+      engine.nextParamValues[100] = -12;
+      engine.nextParamValues[101] = 0.9;
+      expect(
+        repo.refreshLanePluginParams(channel: 0, lane: 0, index: 0),
+        isTrue,
+      );
+      final values =
+          (repo.laneEffects(0, 0).single as PluginEffect).paramValues;
+      expect(values[100], -12);
+      expect(values.containsKey(101), isFalse);
+    });
+
+    test('what the plugin will not let the host set is never set', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain Reduction',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          // Read-only, and not automatable: the console draws it, so the
+          // read-back puts it in `paramValues` — but the host does not own
+          // it. Replaying it writes a stale meter reading into the plugin's
+          // own storage, and overrides with a captured value whatever the
+          // restored state blob had just put there.
+          flags: 0x02,
+        ),
+        le.PluginParamInfo(
+          id: 101,
+          name: 'Mix',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+        le.PluginParamInfo(
+          id: 102,
+          name: 'Output Level',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          // Automatable AND read-only — a meter the host may watch but not
+          // move. Either flag alone is enough to refuse the write.
+          flags: 0x01 | 0x02,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+      engine.nextParamValues[100] = -12;
+      engine.nextParamValues[101] = 0.7;
+      engine.nextParamValues[102] = -3;
+      expect(
+        repo.refreshLanePluginParams(channel: 0, lane: 0, index: 0),
+        isTrue,
+      );
+
+      // Re-apply the chain: every structural edit, engine restart and session
+      // reload comes back through here.
+      engine.pluginParamSets.clear();
+      repo.setLaneEffects(
+        lane: 0,
+        channel: 0,
+        effects: repo.laneEffects(0, 0),
+      );
+
+      // The exact set, not `everyElement` — which is true of an empty list,
+      // and an empty list is the failure where the replay is dropped
+      // altogether.
+      expect(engine.pluginParamSets.map((s) => s.paramId).toSet(), {101});
+    });
+
+    test('what the console will draw is read back at load', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 10,
+          name: 'Mode',
+          unit: '',
+          min: 0,
+          max: 2,
+          def: 0,
+          stepCount: 2,
+          // Visible and NOT automatable — a setting the console draws
+          // read-only. Nothing replays it, and the refresh polls only run
+          // while the plugin's own window is open, which on the appliance is
+          // never. Unread at load, the console would draw whatever was last
+          // persisted rather than what the plugin is at once its state blob
+          // has been restored on top.
+          flags: 0x10,
+        ),
+      ];
+      engine.nextParamValues[10] = 2;
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              paramValues: {10: 0},
+            ),
+          ],
+        );
+
+      expect(
+        (repo.laneEffects(0, 0).single as PluginEffect).paramValues[10],
+        2,
+      );
+    });
+
+    test('a saved value is not clobbered by the read it was written past', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      // The plugin is still at its default: a param set is RT-queued and
+      // drained at the next process block, while a get is immediate. Reading
+      // one back at bind time therefore answers with the PRE-replay value.
+      engine.nextParamValues[100] = 0;
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              paramValues: {100: -12},
+            ),
+          ],
+        );
+
+      // Capturing that would overwrite the user's setting with the plugin's
+      // default — on every structural edit, engine restart and relink, and
+      // permanently on VST3, whose controller is never told what the host
+      // set. What was just written is not read back.
+      expect(
+        (repo.laneEffects(0, 0).single as PluginEffect).paramValues[100],
+        -12,
+      );
+    });
+
+    test('a meter reading -inf never reaches the chain', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 10,
+          name: 'Mode',
+          unit: '',
+          min: 0,
+          max: 2,
+          def: 0,
+          stepCount: 2,
+          flags: 0x10,
+        ),
+      ];
+      // What a dB meter reads at silence. The hosts pass it through
+      // unclamped, and `jsonEncode` throws on it — from inside the bloc's own
+      // push, so the failure is not the value: it is every later edit of this
+      // chain going unsaved.
+      engine.nextParamValues[10] = double.negativeInfinity;
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              paramValues: {10: 1},
+            ),
+          ],
+        );
+
+      final chain = repo.laneEffects(0, 0);
+      expect((chain.single as PluginEffect).paramValues[10], 1);
+      // The repository's own encoder, which is what the bloc and the monitor
+      // cubit call on every push.
+      expect(() => encodeTrackEffects(chain), returnsNormally);
+    });
+
+    test(
+      "relinking to a DIFFERENT plugin does not carry the old one's values",
+      () {
+        engine.nextParamInfos = const [
+          le.PluginParamInfo(
+            id: 100,
+            name: 'Gain Reduction',
+            unit: 'dB',
+            min: -60,
+            max: 0,
+            def: 0,
+            stepCount: 0,
+            flags: 0x01 | 0x02,
+          ),
+        ];
+        engine.nextParamValues[100] = -40;
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            lane: 0,
+            channel: 0,
+            effects: const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.clap, id: 'A'),
+                state: 'AAAA',
+              ),
+            ],
+          );
+
+        // Param 100 on the NEW plugin is an ordinary 0..1 mix.
+        engine
+          ..nextParamInfos = const [
+            le.PluginParamInfo(
+              id: 100,
+              name: 'Mix',
+              unit: '',
+              min: 0,
+              max: 1,
+              def: 0.5,
+              stepCount: 0,
+              flags: 0x01,
+            ),
+          ]
+          ..nextParamValues.clear()
+          ..pluginParamSets.clear();
+        repo.relinkLanePlugin(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          ref: const PluginRef(format: PluginFormat.clap, id: 'B'),
+        );
+
+        // Parameter ids mean whatever the new plugin says they mean. Carrying
+        // the old one's capture across sets an unrelated parameter to a number
+        // from another plugin's range — here a 0..1 mix to −40 — and hands it a
+        // state blob that is not even its format. Reachable from the console,
+        // whose relink browses every installed plugin.
+        final fx = repo.laneEffects(0, 0).single as PluginEffect;
+        expect(fx.paramValues, isEmpty);
+        expect(engine.pluginParamSets, isEmpty);
+        // The blob still travels: a plugin that does not recognise one
+        // rejects it, and the alternative is losing the settings of an entry
+        // whose plugin merely moved.
+        expect(fx.state, 'AAAA');
+      },
+    );
+
+    test('relinking to the SAME plugin keeps its state and tweaks', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Mix',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'A'),
+              state: 'AAAA',
+              paramValues: {100: 0.25},
+            ),
+          ],
+        )
+        ..relinkLanePlugin(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          // Same plugin, new version — the file moved, or the installed one
+          // drifted. This is what the capture exists for.
+          ref: const PluginRef(format: PluginFormat.clap, id: 'A', version: 2),
+        );
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.paramValues[100], 0.25);
+      expect(fx.state, 'AAAA');
+    });
+
+    test('a refresh drops a -inf reading too', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain Reduction',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          flags: 0x01 | 0x02,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+
+      // The editor-sync poll reaches this on every tick while a plugin window
+      // is open, and once more on close. A `-inf` taken here cannot be
+      // encoded, and the throw comes out of the cubit's own push — so the
+      // damage is every later edit of the chain going unsaved.
+      engine.nextParamValues[100] = double.negativeInfinity;
+      repo.refreshLanePluginParams(channel: 0, lane: 0, index: 0);
+
+      // Left at what the bind-time read saw, rather than taking the -inf.
+      final chain = repo.laneEffects(0, 0);
+      expect((chain.single as PluginEffect).paramValues[100], 0);
+      expect(() => encodeTrackEffects(chain), returnsNormally);
+    });
+
+    test('a plugin that enumerates nothing still gets its saved values', () {
+      // A VST3 whose edit controller failed to instantiate, a CLAP with no
+      // params extension: the plugin loads and reports no parameters. A
+      // keep-list built from those flags is empty, and would discard every
+      // saved value on each engine start.
+      engine.nextParamInfos = const [];
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              paramValues: {42: 0.75},
+            ),
+          ],
+        );
+
+      expect(
+        engine.pluginParamSets.map((s) => (s.paramId, s.value)),
+        contains((42, 0.75)),
       );
     });
 
