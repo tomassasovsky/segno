@@ -2213,7 +2213,12 @@ void main() {
           matching: find.text(name),
         ),
       );
-      expect(label.height, lessThan(lifted.height));
+      // ONE LINE tall, not merely shorter than the chip: this one carries a
+      // border, and a `Container` folds that into its padding — so an
+      // uncentred label is a box inset 1px from each edge, which is both
+      // shorter than the chip and symmetric about its middle. Only its own
+      // height tells the two apart.
+      expect(label.height, lessThan(20));
       expect(
         label.top - lifted.top,
         moreOrLessEquals(lifted.bottom - label.bottom, epsilon: 0.5),
