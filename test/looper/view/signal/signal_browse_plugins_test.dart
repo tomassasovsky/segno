@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -182,6 +183,41 @@ void main() {
     // sheet keeps showing whatever was there when it opened, and the only
     // thing that refreshed it was typing a character into the search box.
     expect(find.text('Alpha'), findsOneWidget);
+  });
+
+  testWidgets('a plugin installed later can be found by asking again', (
+    tester,
+  ) async {
+    await open(tester, []);
+    expect(find.byKey(const Key('signal_browse_empty')), findsOneWidget);
+
+    // The cold-start scan is gated on one having COMPLETED, so a plugin
+    // installed after the first boot can never appear on its own — the
+    // catalog stays whatever the rig had the first time it looked.
+    fake.pluginScanResults = [_good('a', 'Alpha')];
+    await tester.tap(find.byKey(const Key('signal_browse_rescan')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Alpha'), findsOneWidget);
+  });
+
+  testWidgets('a scan in flight says so, and can be stopped', (tester) async {
+    await open(tester, [_good('a', 'Alpha')], holdScan: true);
+    fake.pluginScanPending = true;
+    unawaited(catalog.scan(rescan: true));
+    // The poll runs on a timer, so the sheet only hears about the scan on the
+    // first tick.
+    await tester.pump(const Duration(milliseconds: 5));
+
+    expect(find.byKey(const Key('signal_browse_scanning')), findsOneWidget);
+    expect(find.byKey(const Key('signal_browse_rescan')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('signal_browse_stop_scan')));
+    await tester.pumpAndSettle();
+
+    // A scan of a big plugin folder is minutes long; with no way to stop one
+    // the sheet was hostage to it.
+    expect(catalog.isScanning, isFalse);
   });
 
   testWidgets('an empty catalog and an empty result are different facts', (

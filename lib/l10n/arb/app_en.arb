@@ -691,6 +691,10 @@
     "signalEditTrackFx": "Edit the track bus FX chain",
     "signalEditMasterFx": "Edit the master FX chain",
     "signalChainOff": "Chain off",
+    "signalChainOn": "Chain on",
+    "@signalChainOn": {
+        "description": "The Signal panel's chain-power pill while the chain is running."
+    },
     "signalShowAllLanes": "All lanes",
     "signalShowRecordedLanes": "Recorded lanes",
     "signalInherited": "Inherited",

@@ -347,6 +347,7 @@
     "signalEditTrackFx": "Editar la cadena de FX del bus de la pista",
     "signalEditMasterFx": "Editar la cadena de FX del master",
     "signalChainOff": "Cadena apagada",
+    "signalChainOn": "Cadena encendida",
     "signalShowAllLanes": "Todos los carriles",
     "signalShowRecordedLanes": "Carriles grabados",
     "signalInherited": "Heredada",

@@ -203,6 +203,11 @@ void main() {
             );
             return EngineResult.ok;
           }),
+      // The panel offers a re-inherit only when the routed input has an
+      // audible chain to copy; the fake says it does not.
+      () => when(
+        () => repository.laneCanInheritFromInput(any(), any()),
+      ).thenReturn(false),
       () => when(() => repository.monitorEffects(any())).thenAnswer(
         (call) => monitorChains[call.positionalArguments.first] ?? const [],
       ),
@@ -2246,6 +2251,75 @@ void main() {
       );
       expect(second.left - first.right, 10);
       expect(add.left - second.right, 10);
+    });
+  });
+
+  group('the chain can be switched, and re-inherited', () {
+    testWidgets('a chain that is off can be switched back on', (tester) async {
+      await pump(
+        tester,
+        stage: FxStage.track,
+        state: LooperState(
+          tracks: [
+            Track(
+              volume: 0.5,
+              lanes: const [Lane(inputChannel: 0)],
+              chainEnabled: false,
+              effects: [
+                BuiltInEffect(type: TrackEffectType.reverb, slotId: 'slot-a'),
+              ],
+            ),
+          ],
+          status: _rig.status,
+        ),
+      );
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // The dock used to carry this and the dock is gone. A chain switched
+      // off from anywhere else — a pedal binding, a restored session — could
+      // be SEEN to be off and never turned back on.
+      expect(
+        find.byKey(const Key('signal_panel_chain_off_consequence')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('signal_panel_chain_power')));
+      await tester.pumpAndSettle();
+
+      verify(
+        () => bloc.add(any(that: isA<LooperTrackChainEnabledToggled>())),
+      ).called(1);
+    });
+
+    testWidgets('a lane offers a re-inherit when the input has one', (
+      tester,
+    ) async {
+      when(
+        () => repository.laneCanInheritFromInput(any(), any()),
+      ).thenReturn(true);
+      await pump(tester, stage: FxStage.loop);
+      await tester.tap(find.byKey(const Key('signal_card_loop_0_0')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('signal_panel_resync')));
+      await tester.pumpAndSettle();
+
+      // A6: explicit and user-initiated — the take does not re-inherit on its
+      // own, so without this the only way back was rebuilding the chain by
+      // hand.
+      verify(
+        () => bloc.add(any(that: isA<LooperLaneChainResyncedFromInput>())),
+      ).called(1);
+    });
+
+    testWidgets('no re-inherit when the input has nothing to copy', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.loop);
+      await tester.tap(find.byKey(const Key('signal_card_loop_0_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('signal_panel_resync')), findsNothing);
     });
   });
 
