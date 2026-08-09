@@ -34,11 +34,13 @@ const _broken = engine.PluginDescriptor(
 
 void main() {
   late PluginCatalog catalog;
+  late FakeAudioEngine fake;
 
   Future<PluginDescriptor?> open(
     WidgetTester tester,
     List<engine.PluginDescriptor> entries, {
     Size size = const Size(1920, 1080),
+    bool holdScan = false,
   }) async {
     tester.view
       ..physicalSize = size
@@ -46,17 +48,19 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final fake = FakeAudioEngine()..pluginScanResults = entries;
+    fake = FakeAudioEngine()..pluginScanResults = entries;
     catalog = PluginCatalog(
       engine: fake,
       appVersion: 'test',
       pollInterval: const Duration(milliseconds: 1),
       statFile: (path) => (mtimeMs: 1, sizeBytes: 1),
     );
-    // Real async: the scan polls on a timer, which `testWidgets`' fake clock
-    // never advances on its own.
     addTearDown(catalog.dispose);
-    await tester.runAsync(catalog.scan);
+    if (!holdScan) {
+      // Real async: the scan polls on a timer, which `testWidgets`' fake
+      // clock never advances on its own.
+      await tester.runAsync(catalog.scan);
+    }
     PluginDescriptor? picked;
     await tester.pumpWidget(
       MaterialApp(
@@ -148,6 +152,25 @@ void main() {
 
     expect(find.text('Alpha'), findsOneWidget);
     expect(find.text('Beta'), findsNothing);
+  });
+
+  testWidgets('a scan that lands while the sheet is open reaches it', (
+    tester,
+  ) async {
+    // Opened before anything has scanned — which is the real case, since the
+    // dialog kicks the scan and the player can tap Browse before it lands.
+    await open(tester, [_good('a', 'Alpha')], holdScan: true);
+    expect(find.text('Alpha'), findsNothing);
+
+    // The scan completes underneath the open sheet.
+    await tester.runAsync(catalog.scan);
+    await tester.pump();
+    await tester.pump();
+
+    // The catalog is not a Listenable. Without following its progress the
+    // sheet keeps showing whatever was there when it opened, and the only
+    // thing that refreshed it was typing a character into the search box.
+    expect(find.text('Alpha'), findsOneWidget);
   });
 
   testWidgets('an empty catalog and an empty result are different facts', (

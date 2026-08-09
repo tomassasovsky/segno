@@ -48,9 +48,17 @@ Future<void> showSignalAddEffect(
     final repository = context.read<LooperRepository>();
     settings = context.read<SettingsRepository>();
     catalog = repository.pluginCatalog;
-    recents = await SignalRecentPlugins.load(
-      settings,
-    ).timeout(_shelfTimeout, onTimeout: () => const []);
+    // The shelf is a convenience. A store that hangs, or throws — a
+    // `MissingPluginException` is the likelier prefs failure — must not stop
+    // the dialog opening; without the catch the error escapes through the
+    // `unawaited` at the call site and no dialog appears at all.
+    try {
+      recents = await SignalRecentPlugins.load(
+        settings,
+      ).timeout(_shelfTimeout, onTimeout: () => const []);
+    } on Object {
+      recents = const [];
+    }
   } finally {
     _opening = false;
   }
@@ -146,17 +154,26 @@ class _AddEffectDialogState extends State<_AddEffectDialog> {
     unawaited(_scanIfNeeded());
   }
 
-  /// Fills the catalog, once, if nothing has looked yet.
+  /// Fills the catalog, once, if nobody has looked yet.
   ///
-  /// Gated on `descriptors`, not `availablePlugins`: a machine where every
-  /// candidate file fails to load has a full catalog and an empty available
-  /// list, and gating on the latter would rescan the filesystem on every
-  /// open. AWAITED and redrawn — a fire-and-forget scan into a snapshot
-  /// leaves the dialog saying "0 plugins" for as long as it is open, and the
-  /// only thing that refreshed it was typing a character into the search box.
+  /// Gated on whether a scan has ever COMPLETED — `cache.appVersion` is only
+  /// set by a finished harvest — rather than on whether it found anything.
+  /// Gating on `descriptors` rescans the filesystem on every open of the
+  /// default appliance, which has no plugins at all; gating on
+  /// `availablePlugins` also rescans a machine where every candidate file
+  /// fails to load.
+  ///
+  /// It deliberately does NOT skip while a scan is already running:
+  /// `PluginCatalog.scan()` hands back the in-flight future, so this joins it
+  /// rather than starting a second one — and returning early instead would
+  /// leave a dialog opened mid-scan subscribed to nothing, stuck on "Looking
+  /// for plugins…" with its browse row disabled even after the scan landed.
+  ///
+  /// AWAITED and redrawn: a fire-and-forget scan into a snapshot leaves the
+  /// dialog reading "0 plugins" for as long as it is open.
   Future<void> _scanIfNeeded() async {
     final catalog = widget.catalog;
-    if (catalog.descriptors.isNotEmpty || catalog.isScanning) return;
+    if (catalog.cache.appVersion.isNotEmpty) return;
     await catalog.scan();
     if (mounted) setState(() {});
   }

@@ -1068,6 +1068,55 @@ void main() {
       expect(prose.data, contains(l10n.trackName(const [], 0)));
     });
 
+    testWidgets('a dialog opened mid-scan is not stuck looking', (
+      tester,
+    ) async {
+      // A scan already in flight when the dialog opens — the appliance's
+      // takes seconds, so this is "open it, close it, open it again".
+      catalogEngine.pluginScanPending = true;
+      await pump(tester, stage: FxStage.track);
+      unawaited(catalog.scan());
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pump();
+      final l10n = l10nOf(tester);
+
+      expect(find.text(l10n.fxAddScanning), findsOneWidget);
+
+      // The scan lands. Skipping when one was already running left the dialog
+      // subscribed to nothing: stuck on "Looking for plugins…" with its
+      // browse row dead, recoverable only by closing and reopening.
+      catalogEngine.pluginScanPending = false;
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.fxAddScanning), findsNothing);
+      expect(find.text(l10n.fxAddBrowseAll(1)), findsOneWidget);
+    });
+
+    testWidgets('a rig with no plugins does not rescan on every open', (
+      tester,
+    ) async {
+      catalogEngine.pluginScanResults = const [];
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      for (var open = 0; open < 3; open++) {
+        await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('signal_add_cancel')));
+        await tester.pumpAndSettle();
+      }
+
+      // Gating on "did it FIND anything" walks the filesystem again on every
+      // open of the default appliance, which has no plugins at all.
+      expect(catalogEngine.pluginScanCount, lessThanOrEqualTo(1));
+    });
+
     testWidgets('a scan that lands while the dialog is open reaches it', (
       tester,
     ) async {
