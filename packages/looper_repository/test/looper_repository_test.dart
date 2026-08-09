@@ -22,7 +22,8 @@ import 'package:segno_engine/segno_engine.dart'
         PluginRef,
         TrackEffect,
         TrackEffectParam,
-        TrackEffectType;
+        TrackEffectType,
+        encodeTrackEffects;
 import 'package:segno_engine/segno_engine.dart'
     as le
     show
@@ -1537,6 +1538,44 @@ void main() {
         (repo.laneEffects(0, 0).single as PluginEffect).paramValues[100],
         -12,
       );
+    });
+
+    test('a meter reading -inf never reaches the chain', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 10,
+          name: 'Mode',
+          unit: '',
+          min: 0,
+          max: 2,
+          def: 0,
+          stepCount: 2,
+          flags: 0x10,
+        ),
+      ];
+      // What a dB meter reads at silence. The hosts pass it through
+      // unclamped, and `jsonEncode` throws on it — from inside the bloc's own
+      // push, so the failure is not the value: it is every later edit of this
+      // chain going unsaved.
+      engine.nextParamValues[10] = double.negativeInfinity;
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              paramValues: {10: 1},
+            ),
+          ],
+        );
+
+      final chain = repo.laneEffects(0, 0);
+      expect((chain.single as PluginEffect).paramValues[10], 1);
+      // The repository's own encoder, which is what the bloc and the monitor
+      // cubit call on every push.
+      expect(() => encodeTrackEffects(chain), returnsNormally);
     });
 
     test('a plugin that enumerates nothing still gets its saved values', () {

@@ -2355,6 +2355,9 @@ class LooperRepository {
     for (final p in fx.params) {
       if (p.isHidden) continue;
       final live = _engine.pluginParamGet(handle, p.id);
+      // See [_bindPluginSlot]: a non-finite reading cannot be persisted, and
+      // taking one poisons every later write of this chain.
+      if (!live.isFinite) continue;
       if (values[p.id] != live) {
         values[p.id] = live;
         changed = true;
@@ -2517,7 +2520,14 @@ class LooperRepository {
     final values = Map<int, double>.of(fx.paramValues);
     for (final info in infos) {
       if (info.isHidden || !unwritable.contains(info.id)) continue;
-      values[info.id] = _engine.pluginParamGet(handle, info.id);
+      final live = _engine.pluginParamGet(handle, info.id);
+      // Finite only. A dB meter reads `-inf` at silence, which is ordinary
+      // plugin behaviour and which the hosts pass through unclamped — and
+      // `jsonEncode` throws on it, so a chain carrying one could never be
+      // persisted again. That throw escapes from inside the bloc's own push,
+      // so the failure is not this value: it is every later edit of the chain
+      // going unsaved.
+      if (live.isFinite) values[info.id] = live;
     }
     final descriptor = _descriptorFor(fx.ref.id);
     // The installed version differs from what the take saved (same id, new

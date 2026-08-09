@@ -412,6 +412,44 @@ void main() {
       );
     });
 
+    blocTest<MonitorCubit, MonitorState>(
+      "a restored chain takes the repository's answer, not the saved one",
+      setUp: () async {
+        await settings.saveMonitorEffects(
+          0,
+          encodeFxChain(
+            const FxChainEnvelope(
+              entries: [
+                PluginEffect(
+                  ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+                  slotId: 'slot-gone',
+                ),
+              ],
+            ),
+          ),
+        );
+        // What the repository made of it while applying: the plugin is not
+        // installed any more.
+        when(() => repository.monitorEffects(0)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+            slotId: 'slot-gone',
+            unavailable: true,
+          ),
+        ]);
+      },
+      build: build,
+      act: (cubit) => cubit.load(),
+      verify: (cubit) {
+        // Decoded settings say nothing about whether a plugin LOADED. Left at
+        // the saved answer, the console offers to open the window of a plugin
+        // that is not there and never offers to relink the one that is
+        // missing — on the one stage where hosting actually happens.
+        final entry = cubit.state.forInput(0).effects.single as PluginEffect;
+        expect(entry.unavailable, isTrue);
+      },
+    );
+
     group('monitor power controls (D-POWER)', () {
       blocTest<MonitorCubit, MonitorState>(
         'setEffectEnabled flips one slot, pushes it, and re-persists',

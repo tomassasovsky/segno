@@ -77,21 +77,29 @@ class MonitorCubit extends Cubit<MonitorState> {
     }
     emit(MonitorState(inputs: restored));
     restored.values.forEach(_applyMonitor);
+    // Read the APPLIED chains back into state. What was decoded from settings
+    // says nothing about whether a plugin actually loaded: `unavailable`,
+    // `loading` and the enumerated params are the repository's answer, made
+    // while applying just above, and without this the console draws a stale
+    // one — offering to open the window of a plugin that is not there, and
+    // never offering to relink the one that is missing.
+    //
     // Mint-once for legacy payloads (A9): the repository minted stable slot
-    // ids for any id-less restored entries while the chains were applied
-    // above. Re-read the minted chains into state and persist them back, or
-    // every launch would re-mint DIFFERENT ids for the same legacy chain.
+    // ids for any id-less restored entries as it applied them, and those have
+    // to be persisted back or every launch re-mints DIFFERENT ids for the
+    // same legacy chain. Only that case writes; a chain that already had ids
+    // is read, not rewritten.
     for (final monitor in restored.values) {
       if (isClosed) return;
-      if (!monitor.effects.any((fx) => fx.slotId == null)) continue;
-      final minted = _repository.monitorEffects(monitor.input);
+      final applied = _repository.monitorEffects(monitor.input);
       // Nothing applied (engine not running / a unit-test fake): keep the
-      // un-minted state; the next real apply re-mints and persists.
-      if (minted.isEmpty) continue;
-      emit(state.withInput(monitor.copyWith(effects: minted)));
+      // restored state; the next real apply re-reads and re-mints.
+      if (applied.isEmpty) continue;
+      emit(state.withInput(monitor.copyWith(effects: applied)));
+      if (!monitor.effects.any((fx) => fx.slotId == null)) continue;
       await _settings.saveMonitorEffects(
         monitor.input,
-        _encodedChain(monitor.input, minted),
+        _encodedChain(monitor.input, applied),
       );
     }
   }
