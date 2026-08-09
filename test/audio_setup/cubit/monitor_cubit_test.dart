@@ -12,6 +12,7 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
+  late PluginCatalog catalog;
 
   setUpAll(() {
     registerFallbackValue(<TrackEffect>[]);
@@ -21,6 +22,16 @@ void main() {
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
+    // The cubit follows the scan: the repository's answer about whether a
+    // plugin loaded changes when one lands.
+    catalog = PluginCatalog(
+      engine: FakeAudioEngine(),
+      appVersion: 'test',
+      pollInterval: const Duration(milliseconds: 1),
+      statFile: (path) => (mtimeMs: 1, sizeBytes: 1),
+    );
+    addTearDown(catalog.dispose);
+    when(() => repository.pluginCatalog).thenReturn(catalog);
     when(
       () => repository.setMonitorInputMode(
         input: any(named: 'input'),
@@ -447,6 +458,60 @@ void main() {
         // missing — on the one stage where hosting actually happens.
         final entry = cubit.state.forInput(0).effects.single as PluginEffect;
         expect(entry.unavailable, isTrue);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a chain still loading at boot picks up what the scan resolves',
+      setUp: () async {
+        await settings.saveMonitorEffects(
+          0,
+          encodeFxChain(
+            const FxChainEnvelope(
+              entries: [
+                PluginEffect(
+                  ref: PluginRef(format: PluginFormat.vst3, id: 'late'),
+                  slotId: 'slot-late',
+                ),
+              ],
+            ),
+          ),
+        );
+        // The engine starts before the app with a cold plugin cache, so at
+        // restore time every hosted entry has just failed to load and is
+        // waiting on the repository's own recovery scan.
+        when(() => repository.monitorEffects(0)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'late'),
+            slotId: 'slot-late',
+            loading: true,
+          ),
+        ]);
+      },
+      build: build,
+      act: (cubit) async {
+        await cubit.load();
+        expect(
+          (cubit.state.forInput(0).effects.single as PluginEffect).loading,
+          isTrue,
+        );
+        // The scan lands and the repository re-applies the chain.
+        when(() => repository.monitorEffects(0)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'late'),
+            slotId: 'slot-late',
+            name: 'Late',
+          ),
+        ]);
+        await catalog.scan();
+      },
+      verify: (cubit) {
+        // Nothing tells this cubit that on its own, so a plugin that resolves
+        // perfectly well sat in the console reading "loading…" — no
+        // parameters, no window, no relink — until somebody edited the chain.
+        final entry = cubit.state.forInput(0).effects.single as PluginEffect;
+        expect(entry.loading, isFalse);
+        expect(entry.name, 'Late');
       },
     );
 

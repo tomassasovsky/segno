@@ -59,6 +59,9 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// close / [close] so a closed editor never leaves a ticking timer.
   final Map<(int, int), Timer> _editorTimers = {};
 
+  /// Follows the plugin scan, so the chains pick up what it resolves.
+  StreamSubscription<void>? _catalogWatch;
+
   /// Restores the persisted per-input monitors and applies them to the
   /// repository. Reads the single-chain keys; the multi-lane → single-chain
   /// fold (v3) runs at bootstrap, before this.
@@ -101,6 +104,30 @@ class MonitorCubit extends Cubit<MonitorState> {
         monitor.input,
         _encodedChain(monitor.input, applied),
       );
+    }
+    // And keep reading it. The engine starts before the app, with a cold
+    // plugin cache, so by now every hosted entry has just failed to load and
+    // is `loading` while the repository's own recovery scan runs. That scan
+    // re-applies the chains when it lands, and nothing tells this cubit — so
+    // a plugin that resolves perfectly well would sit in the console reading
+    // "loading..." until somebody edited the chain, and a missing one would
+    // never offer the relink it needs.
+    _catalogWatch ??= _repository.pluginCatalog.progressStream.listen(
+      (_) => _readApplied(),
+    );
+  }
+
+  /// Re-reads every known input's applied chain.
+  ///
+  /// The repository is the one that knows whether a plugin loaded, and its
+  /// answer changes when a scan lands. Nothing here writes: what is persisted
+  /// is what the user set, not what the rig happened to resolve.
+  void _readApplied() {
+    if (isClosed) return;
+    for (final input in state.inputs.keys.toList()) {
+      final applied = _repository.monitorEffects(input);
+      if (applied.isEmpty) continue;
+      emit(state.withInput(state.forInput(input).copyWith(effects: applied)));
     }
   }
 
@@ -489,6 +516,7 @@ class MonitorCubit extends Cubit<MonitorState> {
       timer.cancel();
     }
     _editorTimers.clear();
+    unawaited(_catalogWatch?.cancel());
     return super.close();
   }
 }
