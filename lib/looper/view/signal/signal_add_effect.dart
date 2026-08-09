@@ -52,11 +52,15 @@ Future<void> showSignalAddEffect(
     // `MissingPluginException` is the likelier prefs failure — must not stop
     // the dialog opening; without the catch the error escapes through the
     // `unawaited` at the call site and no dialog appears at all.
+    //
+    // `on Exception`, not `on Object`: a programming error in the load path
+    // should surface as one rather than presenting as a permanently empty
+    // shelf.
     try {
       recents = await SignalRecentPlugins.load(
         settings,
       ).timeout(_shelfTimeout, onTimeout: () => const []);
-    } on Object {
+    } on Exception {
       recents = const [];
     }
   } finally {
@@ -163,17 +167,19 @@ class _AddEffectDialogState extends State<_AddEffectDialog> {
   /// `availablePlugins` also rescans a machine where every candidate file
   /// fails to load.
   ///
-  /// It deliberately does NOT skip while a scan is already running:
-  /// `PluginCatalog.scan()` hands back the in-flight future, so this joins it
-  /// rather than starting a second one — and returning early instead would
-  /// leave a dialog opened mid-scan subscribed to nothing, stuck on "Looking
-  /// for plugins…" with its browse row disabled even after the scan landed.
+  /// A scan already in flight is JOINED, not skipped, whether or not one has
+  /// completed before: `PluginCatalog.scan()` hands back the running future.
+  /// Returning early there leaves the dialog subscribed to nothing while its
+  /// build already read `isScanning` and drew "Looking for plugins…" with the
+  /// browse row disabled — stuck that way for good. That is reachable on the
+  /// rescan path as easily as on the first scan, which is why the check is on
+  /// BOTH conditions rather than either.
   ///
   /// AWAITED and redrawn: a fire-and-forget scan into a snapshot leaves the
   /// dialog reading "0 plugins" for as long as it is open.
   Future<void> _scanIfNeeded() async {
     final catalog = widget.catalog;
-    if (catalog.cache.appVersion.isNotEmpty) return;
+    if (catalog.cache.appVersion.isNotEmpty && !catalog.isScanning) return;
     await catalog.scan();
     if (mounted) setState(() {});
   }

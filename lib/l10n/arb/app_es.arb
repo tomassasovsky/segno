@@ -2087,7 +2087,7 @@
     },
     "fxAddBuiltIn": "INCLUIDOS",
     "fxAddRecentPlugins": "PLUGINS · RECIENTES",
-    "fxAddBrowseAll": "Ver los {count} plugins…",
+    "fxAddBrowseAll": "{count, plural, =1{Ver el plugin…} other{Ver los {count} plugins…}}",
     "@fxAddBrowseAll": {
         "placeholders": {
             "count": {
@@ -2096,7 +2096,7 @@
         }
     },
     "fxBrowseTitle": "Añadir un plugin",
-    "fxBrowseInstalled": "{count} instalados",
+    "fxBrowseInstalled": "{count, plural, =1{1 instalado} other{{count} instalados}}",
     "@fxBrowseInstalled": {
         "placeholders": {
             "count": {
@@ -2105,7 +2105,7 @@
         }
     },
     "fxBrowseSearchHint": "Buscar plugins",
-    "fxBrowseMatches": "{count} coincidencias",
+    "fxBrowseMatches": "{count, plural, =1{1 coincidencia} other{{count} coincidencias}}",
     "@fxBrowseMatches": {
         "placeholders": {
             "count": {

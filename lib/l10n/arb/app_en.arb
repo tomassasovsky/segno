@@ -2829,7 +2829,7 @@
     "@fxAddRecentPlugins": {
         "description": "Caption over the shelf of plugins most recently added. Omitted entirely when nothing has been added yet."
     },
-    "fxAddBrowseAll": "Browse all {count} plugins…",
+    "fxAddBrowseAll": "{count, plural, =1{Browse the 1 plugin…} other{Browse all {count} plugins…}}",
     "@fxAddBrowseAll": {
         "description": "Opens the search sheet over everything the scan found.",
         "placeholders": {
@@ -2842,7 +2842,7 @@
     "@fxBrowseTitle": {
         "description": "Header of the plugin search sheet."
     },
-    "fxBrowseInstalled": "{count} installed",
+    "fxBrowseInstalled": "{count, plural, =1{1 installed} other{{count} installed}}",
     "@fxBrowseInstalled": {
         "description": "Beside the sheet's title: how many the scan found.",
         "placeholders": {
@@ -2855,7 +2855,7 @@
     "@fxBrowseSearchHint": {
         "description": "Placeholder in the search field."
     },
-    "fxBrowseMatches": "{count} matches",
+    "fxBrowseMatches": "{count, plural, =1{1 match} other{{count} matches}}",
     "@fxBrowseMatches": {
         "description": "Under the results grid: how many of the installed plugins the query left.",
         "placeholders": {

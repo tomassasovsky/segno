@@ -35,6 +35,19 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 /// The zero-latency fake makes the add dialog's re-entrancy window disappear
 /// entirely, so a guard against double-opening cannot be tested against it —
 /// the bug it prevents only exists when the read is slow.
+/// A store whose recent-plugins read fails, as a missing platform plugin
+/// does.
+///
+/// Scoped to that one key: every cubit in the tray loads through this store
+/// too, and failing all of them would test the harness rather than the shelf.
+class _ThrowingStore extends FakeKeyValueStore {
+  @override
+  Future<String?> getString(String key) async {
+    if (key == 'fx.recent_plugins') throw Exception('no prefs here');
+    return super.getString(key);
+  }
+}
+
 class _SlowStore extends FakeKeyValueStore {
   @override
   Future<String?> getString(String key) async {
@@ -165,6 +178,7 @@ void main() {
     LooperState? state,
     Stream<LooperState>? states,
     bool slowSettings = false,
+    bool throwingSettings = false,
   }) async {
     final rig = state ?? _rig;
     tester.view
@@ -181,7 +195,11 @@ void main() {
     );
 
     settings = SettingsRepository(
-      store: slowSettings ? _SlowStore() : FakeKeyValueStore(),
+      store: switch ((slowSettings, throwingSettings)) {
+        (true, _) => _SlowStore(),
+        (_, true) => _ThrowingStore(),
+        _ => FakeKeyValueStore(),
+      },
     );
     tracks = TracksCubit(settings: settings);
     inputs = InputsCubit(settings: settings, repository: repository);
@@ -1096,6 +1114,52 @@ void main() {
       expect(find.text(l10n.fxAddBrowseAll(1)), findsOneWidget);
     });
 
+    testWidgets('a dialog opened mid-RESCAN is not stuck looking either', (
+      tester,
+    ) async {
+      // A scan has already completed once, so the cache is warm — which is
+      // where the first version of this fix still stranded the dialog: it
+      // returned early on the warm cache, subscribed to nothing, while its
+      // build had already drawn "Looking for plugins…" off `isScanning`.
+      await pump(tester, stage: FxStage.track);
+      await tester.runAsync(catalog.scan);
+
+      catalogEngine.pluginScanPending = true;
+      unawaited(catalog.scan(rescan: true));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pump();
+      final l10n = l10nOf(tester);
+
+      expect(find.text(l10n.fxAddScanning), findsOneWidget);
+
+      catalogEngine.pluginScanPending = false;
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.fxAddScanning), findsNothing);
+      expect(find.text(l10n.fxAddBrowseAll(1)), findsOneWidget);
+    });
+
+    testWidgets('a shelf read that throws still opens the dialog', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track, throwingSettings: true);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pumpAndSettle();
+
+      // A `MissingPluginException` is the likelier prefs failure, and the
+      // shelf is a convenience — losing it must not lose the dialog, which
+      // is what happened when the error escaped the `unawaited` call site.
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('signal_add_effect')), findsOneWidget);
+    });
+
     testWidgets('a rig with no plugins does not rescan on every open', (
       tester,
     ) async {
@@ -1114,7 +1178,9 @@ void main() {
 
       // Gating on "did it FIND anything" walks the filesystem again on every
       // open of the default appliance, which has no plugins at all.
-      expect(catalogEngine.pluginScanCount, lessThanOrEqualTo(1));
+      // Exactly one: `lessThanOrEqualTo(1)` also passes at zero, so it would
+      // survive the scan being deleted outright.
+      expect(catalogEngine.pluginScanCount, 1);
     });
 
     testWidgets('a scan that lands while the dialog is open reaches it', (
