@@ -611,8 +611,6 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// An inline caption over the row it names. Sentence case, as the mockups set
-/// them — these read as questions about the chain, not as group headings.
 /// The `chain` caption, and the two things that act on the chain as a whole.
 ///
 /// The power switch used to live in the dock's header, and the dock is gone.
@@ -753,6 +751,8 @@ class _Notice extends StatelessWidget {
   );
 }
 
+/// An inline caption over the row it names. Sentence case, as the mockups set
+/// them — these read as questions about the chain, not as group headings.
 class _Caption extends StatelessWidget {
   const _Caption(this.label);
 
