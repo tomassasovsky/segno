@@ -1499,6 +1499,46 @@ void main() {
       );
     });
 
+    test('a saved value is not clobbered by the read it was written past', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      // The plugin is still at its default: a param set is RT-queued and
+      // drained at the next process block, while a get is immediate. Reading
+      // one back at bind time therefore answers with the PRE-replay value.
+      engine.nextParamValues[100] = 0;
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              paramValues: {100: -12},
+            ),
+          ],
+        );
+
+      // Capturing that would overwrite the user's setting with the plugin's
+      // default — on every structural edit, engine restart and relink, and
+      // permanently on VST3, whose controller is never told what the host
+      // set. What was just written is not read back.
+      expect(
+        (repo.laneEffects(0, 0).single as PluginEffect).paramValues[100],
+        -12,
+      );
+    });
+
     test('a plugin that enumerates nothing still gets its saved values', () {
       // A VST3 whose edit controller failed to instantiate, a CLAP with no
       // params extension: the plugin loads and reports no parameters. A

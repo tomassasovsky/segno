@@ -2502,12 +2502,23 @@ class LooperRepository {
       if (unwritable.contains(entry.key)) continue;
       _engine.pluginParamSet(handle, entry.key, entry.value);
     }
-    // And read back what the console will DRAW, so a value it shows is true
-    // as of load. The refresh polls only run while the plugin's own window is
-    // open — on the appliance, never — so without this a drawn setting is
-    // whatever was last persisted, which is not what the plugin is at after
-    // its state blob has been restored on top.
-    final loaded = _readBackParams(fx.copyWith(params: infos), handle);
+    // And read back the drawn parameters the replay did NOT write, so a value
+    // the console shows is true as of load. The refresh polls run only while
+    // the plugin's own window is open — on the appliance, never — so without
+    // this a drawn setting is whatever was last persisted, which is not what
+    // the plugin is at once its state blob has been restored on top.
+    //
+    // ONLY the ones not just written. A param set is RT-queued and drained at
+    // the next process block, while this read is synchronous and immediate:
+    // read one back here and it still answers with its pre-replay value,
+    // which would then overwrite the user's saved setting with the plugin's
+    // default — and permanently on VST3, whose controller is never told what
+    // the host set.
+    final values = Map<int, double>.of(fx.paramValues);
+    for (final info in infos) {
+      if (info.isHidden || !unwritable.contains(info.id)) continue;
+      values[info.id] = _engine.pluginParamGet(handle, info.id);
+    }
     final descriptor = _descriptorFor(fx.ref.id);
     // The installed version differs from what the take saved (same id, new
     // version) — the plugin still loaded, but note the drift (D-MISS). Drift is
@@ -2520,7 +2531,7 @@ class LooperRepository {
         descriptor.version != fx.ref.version;
     return fx.copyWith(
       params: infos,
-      paramValues: loaded?.paramValues ?? fx.paramValues,
+      paramValues: values,
       name: descriptor?.name ?? fx.name,
       unavailable: false,
       unsupported: false,
