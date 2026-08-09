@@ -1748,7 +1748,7 @@ void main() {
       expect(tailShowing(tester), isTrue);
     });
 
-    testWidgets('a fader already under a finger stops when a chip lifts', (
+    testWidgets('a control already under a finger stops when a chip lifts', (
       tester,
     ) async {
       await pump(tester, stage: FxStage.track, state: three);
@@ -1774,13 +1774,44 @@ void main() {
 
       await fader.moveBy(const Offset(60, 0));
       await tester.pump();
+      await fader.up();
+      await tester.pump();
 
-      // Hiding the row stops new touches but not one already in flight:
-      // `Visibility` ignores POINTERS, and the recogniser under this finger
-      // survives, so the gain went on moving on a fader nobody could see.
+      // Hiding the tail stops new touches and nothing else: `Visibility`
+      // ignores POINTERS, so a recogniser that already owns one goes on
+      // reporting to a control that is no longer on screen.
       verifyNever(() => bloc.add(any(that: isA<LooperVolumeChanged>())));
 
-      await fader.up();
+      await chip.up();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('an effect is not deleted by a finger the fold hid', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track, state: three);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_chip_1')));
+      await tester.pumpAndSettle();
+
+      // A finger comes down on Remove...
+      final remove = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('signal_fx_remove'))),
+      );
+      // ...and before it lifts, another one picks up a chip.
+      final chip = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('signal_panel_chip_0'))),
+      );
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await tester.pump();
+      await remove.up();
+      await tester.pump();
+
+      // The worst of the family: an entry deleted while the user was dragging
+      // an unrelated one, with no editor on screen and nothing said.
+      verifyNever(() => bloc.add(any(that: isA<LooperBusEffectRemoved>())));
+
       await chip.up();
       await tester.pumpAndSettle();
     });

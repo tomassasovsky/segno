@@ -408,7 +408,6 @@ class _PanelBodyState extends State<_PanelBody> {
           _LevelRow(
             key: ValueKey(address),
             value: gain,
-            live: !_dragging,
             onChanged: onLevel,
           ),
         ],
@@ -505,11 +504,20 @@ class _PanelBodyState extends State<_PanelBody> {
               maintainSize: true,
               maintainAnimation: true,
               maintainState: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                spacing: SignalDetailPanel.rowGap,
-                children: tail,
+              // Keyed on the mode, so engaging the fold rebuilds the whole
+              // tail from scratch and every recogniser under it is disposed.
+              // `Visibility` only stops NEW hit tests: a finger already on
+              // the remove button, the mute segment or a parameter bar would
+              // otherwise complete its gesture on a control that is no longer
+              // on screen — deleting an effect, mid-drag, with nothing said.
+              child: KeyedSubtree(
+                key: ValueKey(_dragging),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: SignalDetailPanel.rowGap,
+                  children: tail,
+                ),
               ),
             ),
         ],
@@ -1034,20 +1042,7 @@ class _ChainStripState extends State<_ChainStrip> {
 /// pointer near both ends. The fill is drawn directly instead — the same way
 /// [ConsoleValueBar] draws its own.
 class _LevelRow extends StatefulWidget {
-  const _LevelRow({
-    required this.value,
-    required this.onChanged,
-    this.live = true,
-    super.key,
-  });
-
-  /// Whether the fader may still write.
-  ///
-  /// False while an entry is being carried. Hiding the row stops new touches
-  /// but not one already in flight: `Visibility` ignores POINTERS, and a
-  /// finger that was already on the fader keeps its recogniser and goes on
-  /// setting the gain on a control nobody can see.
-  final bool live;
+  const _LevelRow({required this.value, required this.onChanged, super.key});
 
   final double value;
   final ValueChanged<double> onChanged;
@@ -1098,7 +1093,6 @@ class _LevelRowState extends State<_LevelRow> {
   }
 
   void _set(double fraction) {
-    if (!widget.live) return;
     setState(() {
       _valueAtGrab ??= widget.value;
       _dragging = fraction;
