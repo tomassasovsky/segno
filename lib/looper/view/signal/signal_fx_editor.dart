@@ -3,8 +3,8 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
+import 'package:segno/looper/view/fx_editor/fx_plugin_state.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
-import 'package:segno/looper/view/signal_graph/signal_fx_chrome.dart';
 import 'package:segno/theme/theme.dart';
 
 /// One link of a chain, opened in place: its parameters, and the four things
@@ -228,12 +228,14 @@ class SignalFxEditor extends StatelessWidget {
   /// facts, and only one of them is "it has none".
   ///
   /// Delegates to [fxPluginPlaceholderReason], which the placeholder card and
-  /// the summary chip already share, so the three cannot disagree. The
-  /// nesting is load-bearing: the repository sets `unsupported` and `loading`
-  /// **alongside** `unavailable` rather than instead of it, so testing
-  /// `unavailable` first makes the other two unreachable — a plugin still
-  /// being scanned would be told it failed, and a bus plugin would be told it
-  /// did not load rather than that this stage cannot host it.
+  /// the summary chip already share, so the three cannot disagree.
+  ///
+  /// The guard admits two different postures. `unsupported` is set
+  /// **alongside** `unavailable` — so testing `unavailable` first would tell a
+  /// bus-stage plugin it failed to load rather than that the stage cannot host
+  /// it. `loading` is the opposite: the repository sets it with `unavailable`
+  /// FALSE while a scan is in flight, so it needs its own way in or a plugin
+  /// still being looked for reads as one that was not found.
   static String _emptyReason(AppLocalizations l10n, TrackEffect effect) =>
       switch (effect) {
         PluginEffect(:final unavailable, :final unsupported, :final loading)

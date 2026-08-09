@@ -268,10 +268,10 @@ void main() {
       final scope = _FakeScope([
         const PluginEffect(
           ref: PluginRef(format: PluginFormat.vst3, id: 'scanning'),
-          // The cold-boot posture: the repository sets `loading` ALONGSIDE
-          // `unavailable`, so testing unavailable first would tell the player
-          // it failed.
-          unavailable: true,
+          // The posture the repository ACTUALLY produces while a scan is in
+          // flight: `loading` true with `unavailable` FALSE. Testing
+          // `unavailable` alone would miss it entirely and the entry would
+          // fall through to "exposes no controls".
           loading: true,
         ),
       ]);
