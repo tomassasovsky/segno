@@ -1413,6 +1413,18 @@ void main() {
           stepCount: 0,
           flags: 0x01,
         ),
+        le.PluginParamInfo(
+          id: 102,
+          name: 'Output Level',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          // Automatable AND read-only — a meter the host may watch but not
+          // move. Either flag alone is enough to refuse the write.
+          flags: 0x01 | 0x02,
+        ),
       ];
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -1427,6 +1439,7 @@ void main() {
         );
       engine.nextParamValues[100] = -12;
       engine.nextParamValues[101] = 0.7;
+      engine.nextParamValues[102] = -3;
       expect(
         repo.refreshLanePluginParams(channel: 0, lane: 0, index: 0),
         isTrue,
@@ -1441,9 +1454,73 @@ void main() {
         effects: repo.laneEffects(0, 0),
       );
 
+      // The exact set, not `everyElement` — which is true of an empty list,
+      // and an empty list is the failure where the replay is dropped
+      // altogether.
+      expect(engine.pluginParamSets.map((s) => s.paramId).toSet(), {101});
+    });
+
+    test('what the console will draw is read back at load', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 10,
+          name: 'Mode',
+          unit: '',
+          min: 0,
+          max: 2,
+          def: 0,
+          stepCount: 2,
+          // Visible and NOT automatable — a setting the console draws
+          // read-only. Nothing replays it, and the refresh polls only run
+          // while the plugin's own window is open, which on the appliance is
+          // never. Unread at load, the console would draw whatever was last
+          // persisted rather than what the plugin is at once its state blob
+          // has been restored on top.
+          flags: 0x10,
+        ),
+      ];
+      engine.nextParamValues[10] = 2;
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              paramValues: {10: 0},
+            ),
+          ],
+        );
+
       expect(
-        engine.pluginParamSets.map((s) => s.paramId),
-        everyElement(101),
+        (repo.laneEffects(0, 0).single as PluginEffect).paramValues[10],
+        2,
+      );
+    });
+
+    test('a plugin that enumerates nothing still gets its saved values', () {
+      // A VST3 whose edit controller failed to instantiate, a CLAP with no
+      // params extension: the plugin loads and reports no parameters. A
+      // keep-list built from those flags is empty, and would discard every
+      // saved value on each engine start.
+      engine.nextParamInfos = const [];
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              paramValues: {42: 0.75},
+            ),
+          ],
+        );
+
+      expect(
+        engine.pluginParamSets.map((s) => (s.paramId, s.value)),
+        contains((42, 0.75)),
       );
     });
 

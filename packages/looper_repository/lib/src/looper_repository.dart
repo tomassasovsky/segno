@@ -2482,21 +2482,32 @@ class LooperRepository {
       handle,
       _engine.pluginParamInfos(handle).map(pluginParamInfoFromEngine).toList(),
     );
-    // Only what the host may actually SET. `paramValues` holds every
-    // parameter the console shows, meters included — the read-back covers
-    // them so a drawn value is not frozen at the plugin's default — and
-    // replaying one of those writes a stale meter reading into the plugin's
-    // own storage, or overrides with a captured value what the state blob
-    // just restored. A parameter the plugin says is not automatable is
-    // exactly one the host does not own.
-    final writable = {
+    // Everything except what the plugin SAYS the host may not set.
+    // `paramValues` holds every parameter the console reads back, and
+    // replaying one the host does not own writes a stale reading into the
+    // plugin's own storage, or overrides with a captured value what the state
+    // blob just restored.
+    //
+    // Stated as what to SKIP rather than what to keep: a plugin can enumerate
+    // no parameters at all — a VST3 whose edit controller failed to
+    // instantiate, a CLAP with no params extension — and a keep-list built
+    // from that is empty, which would silently discard every saved value on
+    // each engine start. No flags is no evidence, and no evidence is not a
+    // refusal.
+    final unwritable = {
       for (final info in infos)
-        if (info.isAutomatable && !info.isReadOnly) info.id,
+        if (!info.isAutomatable || info.isReadOnly) info.id,
     };
     for (final entry in fx.paramValues.entries) {
-      if (!writable.contains(entry.key)) continue;
+      if (unwritable.contains(entry.key)) continue;
       _engine.pluginParamSet(handle, entry.key, entry.value);
     }
+    // And read back what the console will DRAW, so a value it shows is true
+    // as of load. The refresh polls only run while the plugin's own window is
+    // open — on the appliance, never — so without this a drawn setting is
+    // whatever was last persisted, which is not what the plugin is at after
+    // its state blob has been restored on top.
+    final loaded = _readBackParams(fx.copyWith(params: infos), handle);
     final descriptor = _descriptorFor(fx.ref.id);
     // The installed version differs from what the take saved (same id, new
     // version) — the plugin still loaded, but note the drift (D-MISS). Drift is
@@ -2509,6 +2520,7 @@ class LooperRepository {
         descriptor.version != fx.ref.version;
     return fx.copyWith(
       params: infos,
+      paramValues: loaded?.paramValues ?? fx.paramValues,
       name: descriptor?.name ?? fx.name,
       unavailable: false,
       unsupported: false,
