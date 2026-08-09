@@ -113,8 +113,24 @@ class MonitorCubit extends Cubit<MonitorState> {
     // "loading..." until somebody edited the chain, and a missing one would
     // never offer the relink it needs.
     _catalogWatch ??= _repository.pluginCatalog.progressStream.listen(
-      (_) => _readApplied(),
+      (_) => unawaited(_readAfterScan()),
     );
+  }
+
+  /// Re-reads once the scan's own listeners have run.
+  ///
+  /// The catalog publishes its last progress event BEFORE it completes the
+  /// scan future, and the repository re-applies the chains from that future.
+  /// Read straight off the event and the chains are still `loading` — and no
+  /// later event is coming, because the poll timer stops in the same breath.
+  /// Nor can this join the scan and wait: `_finish` clears the running scan
+  /// before completing it, so by delivery time there is nothing left to join.
+  ///
+  /// Yielding to the event loop is what lands after: the repository's
+  /// callback is already queued when this one runs.
+  Future<void> _readAfterScan() async {
+    await Future<void>.delayed(Duration.zero);
+    _readApplied();
   }
 
   /// Re-reads every known input's applied chain.

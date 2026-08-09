@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -495,15 +496,25 @@ void main() {
           (cubit.state.forInput(0).effects.single as PluginEffect).loading,
           isTrue,
         );
-        // The scan lands and the repository re-applies the chain.
-        when(() => repository.monitorEffects(0)).thenReturn(const [
-          PluginEffect(
-            ref: PluginRef(format: PluginFormat.vst3, id: 'late'),
-            slotId: 'slot-late',
-            name: 'Late',
-          ),
-        ]);
+        // The repository re-applies the chains from the SCAN FUTURE, and the
+        // catalog publishes its last progress event before completing that
+        // future — so a read hung straight off the event runs a microtask too
+        // early and sees the chain still loading, with no later event coming.
+        // Modelled here the way the repository does it: a `then` registered
+        // before the cubit's own join.
+        unawaited(
+          catalog.scan().then((_) {
+            when(() => repository.monitorEffects(0)).thenReturn(const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.vst3, id: 'late'),
+                slotId: 'slot-late',
+                name: 'Late',
+              ),
+            ]);
+          }),
+        );
         await catalog.scan();
+        await pumpEventQueue();
       },
       verify: (cubit) {
         // Nothing tells this cubit that on its own, so a plugin that resolves

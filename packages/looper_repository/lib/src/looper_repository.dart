@@ -2225,8 +2225,30 @@ class LooperRepository {
     return _engine.pluginParamSet(handle, paramId, value);
   }
 
+  /// [fx] pointed at [ref], keeping what still belongs to it.
+  ///
+  /// The captured state blob travels either way: a plugin that does not
+  /// recognise a blob rejects it, and the alternative is losing the settings
+  /// of an entry whose plugin merely moved.
+  ///
+  /// The parameter capture does NOT travel to a different plugin. A parameter
+  /// id means whatever the plugin behind it says it means, so replaying one
+  /// sets an unrelated parameter to a number out of another plugin's range —
+  /// a `-40` read from a gain-reduction meter written into a `0..1` mix. The
+  /// console can reach this: its relink browses every installed plugin, not
+  /// only the one that went missing.
+  static PluginEffect _relinked(PluginEffect fx, PluginRef ref) =>
+      fx.ref.id == ref.id
+      ? fx.copyWith(ref: ref, unavailable: false)
+      : PluginEffect(
+          ref: ref,
+          enabled: fx.enabled,
+          slotId: fx.slotId,
+          state: fx.state,
+        );
+
   /// Relinks lane [lane]'s chain entry [index] to plugin [ref] (umbrella
-  /// D-MISS), keeping the captured [PluginEffect.state] + paramValues and
+  /// D-MISS), keeping what still belongs to it — see [_relinked] — and
   /// clearing the unavailable flag, then reloads it. Use to resolve a
   /// placeholder (uninstalled/moved) or accept a version change. Returns
   /// [EngineResult.invalid] when the entry is not a plugin.
@@ -2243,7 +2265,7 @@ class LooperRepository {
     final fx = effects[index];
     if (fx is! PluginEffect) return EngineResult.invalid;
     _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
-      ..[index] = fx.copyWith(ref: ref, unavailable: false);
+      ..[index] = _relinked(fx, ref);
     _reproject();
     if (!_intendRunning) return EngineResult.ok;
     // Re-applying reloads the new plugin and restores the preserved state blob.
@@ -2265,7 +2287,7 @@ class LooperRepository {
     final fx = effects[index];
     if (fx is! PluginEffect) return EngineResult.invalid;
     _monitorEffects[input] = List<TrackEffect>.of(effects)
-      ..[index] = fx.copyWith(ref: ref, unavailable: false);
+      ..[index] = _relinked(fx, ref);
     if (!_intendRunning) return EngineResult.ok;
     return _applyMonitorEffects(input);
   }

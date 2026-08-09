@@ -1578,6 +1578,113 @@ void main() {
       expect(() => encodeTrackEffects(chain), returnsNormally);
     });
 
+    test(
+      "relinking to a DIFFERENT plugin does not carry the old one's values",
+      () {
+        engine.nextParamInfos = const [
+          le.PluginParamInfo(
+            id: 100,
+            name: 'Gain Reduction',
+            unit: 'dB',
+            min: -60,
+            max: 0,
+            def: 0,
+            stepCount: 0,
+            flags: 0x01 | 0x02,
+          ),
+        ];
+        engine.nextParamValues[100] = -40;
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            lane: 0,
+            channel: 0,
+            effects: const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.clap, id: 'A'),
+                state: 'AAAA',
+              ),
+            ],
+          );
+
+        // Param 100 on the NEW plugin is an ordinary 0..1 mix.
+        engine
+          ..nextParamInfos = const [
+            le.PluginParamInfo(
+              id: 100,
+              name: 'Mix',
+              unit: '',
+              min: 0,
+              max: 1,
+              def: 0.5,
+              stepCount: 0,
+              flags: 0x01,
+            ),
+          ]
+          ..nextParamValues.clear()
+          ..pluginParamSets.clear();
+        repo.relinkLanePlugin(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          ref: const PluginRef(format: PluginFormat.clap, id: 'B'),
+        );
+
+        // Parameter ids mean whatever the new plugin says they mean. Carrying
+        // the old one's capture across sets an unrelated parameter to a number
+        // from another plugin's range — here a 0..1 mix to −40 — and hands it a
+        // state blob that is not even its format. Reachable from the console,
+        // whose relink browses every installed plugin.
+        final fx = repo.laneEffects(0, 0).single as PluginEffect;
+        expect(fx.paramValues, isEmpty);
+        expect(engine.pluginParamSets, isEmpty);
+        // The blob still travels: a plugin that does not recognise one
+        // rejects it, and the alternative is losing the settings of an entry
+        // whose plugin merely moved.
+        expect(fx.state, 'AAAA');
+      },
+    );
+
+    test('relinking to the SAME plugin keeps its state and tweaks', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Mix',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'A'),
+              state: 'AAAA',
+              paramValues: {100: 0.25},
+            ),
+          ],
+        )
+        ..relinkLanePlugin(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          // Same plugin, new version — the file moved, or the installed one
+          // drifted. This is what the capture exists for.
+          ref: const PluginRef(format: PluginFormat.clap, id: 'A', version: 2),
+        );
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.paramValues[100], 0.25);
+      expect(fx.state, 'AAAA');
+    });
+
     test('a plugin that enumerates nothing still gets its saved values', () {
       // A VST3 whose edit controller failed to instantiate, a CLAP with no
       // params extension: the plugin loads and reports no parameters. A
