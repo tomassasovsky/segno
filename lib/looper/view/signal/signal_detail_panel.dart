@@ -973,19 +973,17 @@ class _ChainStripState extends State<_ChainStrip> {
       // inside a Wrap makes every chip span the whole panel — and then the add
       // chip wraps below the run instead of following it. The padding centres
       // the label on its own.
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child:Center(
-            widthFactor: 1,
-            child: Container(
-          height: 38,
-          padding: const EdgeInsets.symmetric(horizontal: 17),
-          decoration: BoxDecoration(
-            // Unselected carries no fill at all, as the mockups draw it; the
-            // open one takes the accent pair.
-            color: selected ? surface.accentSurface : null,
-            borderRadius: BorderRadius.circular(8),
-          ),
+      child: Container(
+        height: 38,
+        padding: const EdgeInsets.symmetric(horizontal: 17),
+        decoration: BoxDecoration(
+          // Unselected carries no fill at all, as the mockups draw it; the
+          // open one takes the accent pair.
+          color: selected ? surface.accentSurface : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          widthFactor: 1,
           child: Text(
             fxBlockName(l10n, effect),
             style: TextStyle(
