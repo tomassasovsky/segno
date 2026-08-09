@@ -177,9 +177,9 @@ class _BrowseSheetState extends State<_BrowseSheet> {
                   child: ConsoleChipGrid<String>(
                     key: const Key('signal_browse_results'),
                     selected: const {},
-                    onTap: (id) => Navigator.of(context).pop(
-                      results.where((d) => d.id == id).firstOrNull,
-                    ),
+                    onTap: (id) => Navigator.of(
+                      context,
+                    ).pop(results.where((d) => d.id == id).firstOrNull),
                     options: [
                       for (final plugin in results)
                         ConsoleSegment(

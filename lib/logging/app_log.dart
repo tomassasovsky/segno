@@ -52,11 +52,8 @@ class AppLog {
   static void warn(String message) => _write('W', message);
 
   /// Error, optionally with [error] / [stack].
-  static void error(
-    String message, {
-    Object? error,
-    StackTrace? stack,
-  }) => _write('E', message, error: error, stack: stack);
+  static void error(String message, {Object? error, StackTrace? stack}) =>
+      _write('E', message, error: error, stack: stack);
 
   static void _write(
     String level,

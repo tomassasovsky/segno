@@ -30,10 +30,7 @@ class _SignalLegend extends StatelessWidget {
         spacing: 20,
         runSpacing: 6,
         children: [
-          item(
-            const SignalGateDot(on: true, size: 8),
-            l10n.signalLegendLive,
-          ),
+          item(const SignalGateDot(on: true, size: 8), l10n.signalLegendLive),
           item(
             Icon(Icons.auto_awesome, size: 11, color: surface.accent),
             l10n.signalLegendSnapshot,

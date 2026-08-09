@@ -188,9 +188,7 @@ class _TakeRow extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               _CaptureBadge(
-                badgeKey: Key(
-                  'signalCapture_${take.track}_${take.laneIndex}',
-                ),
+                badgeKey: Key('signalCapture_${take.track}_${take.laneIndex}'),
                 inputChannel: lane.inputChannel,
                 inputCount: inputCount,
                 onReassign: onReassignInput,

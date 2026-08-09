@@ -215,10 +215,7 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
               blocks: [thisConsole],
             ),
           if (hardware != null)
-            ConsoleGroup(
-              caption: l10n.systemHardwareGroup,
-              blocks: [hardware],
-            ),
+            ConsoleGroup(caption: l10n.systemHardwareGroup, blocks: [hardware]),
           // Never null: the licence is a fact of the build, not of the rig.
           ConsoleGroup(caption: l10n.systemLegalGroup, blocks: [legal!]),
         ],

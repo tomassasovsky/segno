@@ -200,10 +200,7 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
     final display = label ?? (_shifted ? value.toUpperCase() : value);
     return Padding(
       padding: const EdgeInsets.all(3),
-      child: _KeyCap(
-        label: display,
-        onPressed: () => _tap(value),
-      ),
+      child: _KeyCap(label: display, onPressed: () => _tap(value)),
     );
   }
 

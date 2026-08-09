@@ -432,18 +432,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         channel: event.channel,
         multiple: event.multiple,
       );
-      unawaited(
-        _settings?.saveTrackMultiple(event.channel, event.multiple),
-      );
+      unawaited(_settings?.saveTrackMultiple(event.channel, event.multiple));
     });
     on<LooperTrackLengthPresetChanged>((event, _) {
       _repository.setTrackLengthPreset(
         channel: event.channel,
         bars: event.bars,
       );
-      unawaited(
-        _settings?.saveTrackLengthPreset(event.channel, event.bars),
-      );
+      unawaited(_settings?.saveTrackLengthPreset(event.channel, event.bars));
     });
     on<LooperOneShotToggled>(
       (event, _) => _repository.setOneShot(

@@ -34,13 +34,11 @@ class TracksState extends Equatable {
       : storedDefaultTrackName(channel);
 
   /// Returns a copy with the given overrides.
-  TracksState copyWith({
-    List<String>? names,
-    bool? showIndicators,
-  }) => TracksState(
-    names: names ?? this.names,
-    showIndicators: showIndicators ?? this.showIndicators,
-  );
+  TracksState copyWith({List<String>? names, bool? showIndicators}) =>
+      TracksState(
+        names: names ?? this.names,
+        showIndicators: showIndicators ?? this.showIndicators,
+      );
 
   @override
   List<Object?> get props => [names, showIndicators];

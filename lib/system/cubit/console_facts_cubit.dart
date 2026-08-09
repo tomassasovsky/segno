@@ -31,10 +31,7 @@ class ConsoleFactsCubit extends Cubit<ConsoleFactsState> {
   /// cannot read the disk says so, and there is nothing above it to catch.
   Future<void> load() async {
     emit(
-      state.copyWith(
-        status: ConsoleFactsStatus.loading,
-        actionFailed: false,
-      ),
+      state.copyWith(status: ConsoleFactsStatus.loading, actionFailed: false),
     );
     try {
       final storage = await _client.storage();

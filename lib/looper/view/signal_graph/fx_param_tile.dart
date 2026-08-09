@@ -126,10 +126,7 @@ class _FxParamBox extends StatelessWidget {
         borderRadius: BorderRadius.circular(FxParamTileMetrics._boxRadius),
       ),
       child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: children,
-        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: children),
       ),
     );
   }
@@ -333,10 +330,7 @@ class FxParamEnumCell extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 2),
-                Text(
-                  '▾',
-                  style: signalMono(color: surface.textMuted, size: 9),
-                ),
+                Text('▾', style: signalMono(color: surface.textMuted, size: 9)),
               ],
             ),
           ],

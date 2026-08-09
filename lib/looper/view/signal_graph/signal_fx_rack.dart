@@ -683,10 +683,9 @@ class _PluginDeviceCard extends StatelessWidget {
     if (fx.unavailable || fx.loading || controls.isEmpty) {
       return kSignalRackMinHeight;
     }
-    final rows = _rowsFor(
-      [for (final p in controls) _slotWidth(p)],
-      kPluginCardMaxBodyWidth,
-    );
+    final rows = _rowsFor([
+      for (final p in controls) _slotWidth(p),
+    ], kPluginCardMaxBodyWidth);
     final needed = _headerHeight + _bodyVPad + rows * _cellHeight;
     return needed.clamp(kSignalRackMinHeight, kSignalRackMaxHeight);
   }

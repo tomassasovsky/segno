@@ -866,10 +866,8 @@ class _AppViewState extends State<_AppView> {
             // so cubit rebuilds cannot remount the macOS menu delegate.
             final brightened = BlocBuilder<DisplayBrightnessCubit, double>(
               buildWhen: (previous, current) => previous != current,
-              builder: (context, brightness) => SoftwareBrightness(
-                brightness: brightness,
-                child: typed,
-              ),
+              builder: (context, brightness) =>
+                  SoftwareBrightness(brightness: brightness, child: typed),
             );
             if (defaultTargetPlatform != TargetPlatform.macOS) {
               return brightened;

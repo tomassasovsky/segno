@@ -459,9 +459,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   void _emitInputEffects(int input) {
     final next = state
         .forInput(input)
-        .copyWith(
-          effects: _repository.monitorEffects(input),
-        );
+        .copyWith(effects: _repository.monitorEffects(input));
     emit(state.withInput(next));
   }
 

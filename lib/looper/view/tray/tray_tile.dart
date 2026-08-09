@@ -65,10 +65,7 @@ class TrayTile extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final shortSide = math.min(
-          constraints.maxWidth,
-          constraints.maxHeight,
-        );
+        final shortSide = math.min(constraints.maxWidth, constraints.maxHeight);
         final radius = math.min(shortSide * _radiusFraction, _maxRadius);
         // Everything scales off the card's shorter side, clamped so a very
         // large pane does not produce a comically oversized glyph and a very

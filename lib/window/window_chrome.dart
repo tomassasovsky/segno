@@ -199,10 +199,7 @@ class _SegnoWindowChromeShellState extends State<SegnoWindowChromeShell> {
       content = Scaffold(
         backgroundColor: widget.backgroundColor,
         appBar: _titleBarVisible
-            ? SegnoWindowTitleBar(
-                title: widget.title,
-                onHide: _hideTitleBar,
-              )
+            ? SegnoWindowTitleBar(title: widget.title, onHide: _hideTitleBar)
             : SegnoWindowHiddenTitleStrip(
                 revealed: _chromeRevealed,
                 onShow: _showTitleBar,
@@ -232,11 +229,7 @@ class _SegnoWindowChromeShellState extends State<SegnoWindowChromeShell> {
 class SegnoWindowTitleBar extends StatefulWidget
     implements PreferredSizeWidget {
   /// Creates a [SegnoWindowTitleBar] showing [title].
-  const SegnoWindowTitleBar({
-    required this.title,
-    this.onHide,
-    super.key,
-  });
+  const SegnoWindowTitleBar({required this.title, this.onHide, super.key});
 
   /// OS window title.
   final String title;

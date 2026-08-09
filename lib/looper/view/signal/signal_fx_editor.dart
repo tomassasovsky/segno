@@ -138,12 +138,7 @@ class SignalFxEditor extends StatelessWidget {
             ),
           ],
           const SizedBox(height: footerGap),
-          _Footer(
-            scope: scope,
-            index: index,
-            effect: effect,
-            onClose: onClose,
-          ),
+          _Footer(scope: scope, index: index, effect: effect, onClose: onClose),
         ],
       ),
     );
@@ -439,9 +434,7 @@ class _Pill extends StatelessWidget {
             decoration: BoxDecoration(
               color: active ? surface.accentSurface : null,
               borderRadius: BorderRadius.circular(119),
-              border: Border.all(
-                color: active ? surface.accent : surface.line,
-              ),
+              border: Border.all(color: active ? surface.accent : surface.line),
             ),
             child: Text(
               label,

@@ -58,9 +58,7 @@ class UpdateCubit extends Cubit<UpdateState> {
       final manifest = await _updates.checkForUpdate();
       if (isClosed) return;
       if (manifest != null) {
-        emit(
-          state.copyWith(phase: UpdatePhase.available, available: manifest),
-        );
+        emit(state.copyWith(phase: UpdatePhase.available, available: manifest));
         return;
       }
       // Nothing newer to download — but a prior stage may still be waiting for

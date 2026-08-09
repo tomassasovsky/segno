@@ -232,16 +232,8 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
         other.recordMeterColors,
         t,
       ),
-      muteMeterColors: _lerpColorMap(
-        muteMeterColors,
-        other.muteMeterColors,
-        t,
-      ),
-      indicatorColors: _lerpColorMap(
-        indicatorColors,
-        other.indicatorColors,
-        t,
-      ),
+      muteMeterColors: _lerpColorMap(muteMeterColors, other.muteMeterColors, t),
+      indicatorColors: _lerpColorMap(indicatorColors, other.indicatorColors, t),
       toolbarIconColor:
           Color.lerp(toolbarIconColor, other.toolbarIconColor, t) ??
           toolbarIconColor,

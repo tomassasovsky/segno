@@ -370,11 +370,8 @@ Future<String?> showSessionNameDialog({
 }) {
   return showDialog<String>(
     context: context,
-    builder: (_) => _SessionNameDialog(
-      title: title,
-      initial: initial,
-      taken: taken,
-    ),
+    builder: (_) =>
+        _SessionNameDialog(title: title, initial: initial, taken: taken),
   );
 }
 

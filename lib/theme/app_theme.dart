@@ -209,11 +209,7 @@ abstract final class AppTheme {
       secondaryLabelStyle: TextStyle(color: scheme.onSecondary),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
     ),
-    extensions: [
-      looper,
-      surface,
-      routingGraphThemeFromSurface(surface),
-    ],
+    extensions: [looper, surface, routingGraphThemeFromSurface(surface)],
   );
 
   static ThemeData _base(ColorScheme scheme) => ThemeData(

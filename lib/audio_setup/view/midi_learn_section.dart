@@ -110,9 +110,8 @@ class _AddRow extends StatelessWidget {
         PopupMenuButton<ControlValueTarget>(
           key: const Key('midiLearn_addSweep'),
           tooltip: l10n.midiLearnAddSweep,
-          onSelected: (target) => cubit.learnControllerBinding(
-            target: target.canonicalString(),
-          ),
+          onSelected: (target) =>
+              cubit.learnControllerBinding(target: target.canonicalString()),
           itemBuilder: (context) => [
             for (final target in valueTargets)
               PopupMenuItem(
@@ -475,11 +474,7 @@ class _Notice extends StatelessWidget {
       child: Row(
         children: [
           if (warning) ...[
-            Icon(
-              Icons.usb_off_rounded,
-              size: 16,
-              color: surface.textTertiary,
-            ),
+            Icon(Icons.usb_off_rounded, size: 16, color: surface.textTertiary),
             const SizedBox(width: 8),
           ],
           Expanded(
