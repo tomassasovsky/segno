@@ -266,32 +266,20 @@ void main() {
       ]);
       await pump(tester, scope);
 
-      // The meter is DRAWN — it is a number the plugin means you to see —
-      // and it does not write. Hiding it instead was how a plugin whose
-      // parameters are all non-automatable came to be told it exposes no
-      // controls at all.
+      // One fader, for the one parameter that is a control.
       expect(find.byKey(const Key('signal_fx_param_0')), findsOneWidget);
-      expect(find.byKey(const Key('signal_fx_param_1')), findsOneWidget);
-      expect(find.text('GAIN REDUCTION'), findsOneWidget);
+      expect(find.byKey(const Key('signal_fx_param_1')), findsNothing);
 
-      final handle = tester.ensureSemantics();
-      final meter = find.byKey(const Key('signal_fx_param_1'));
-      await tester.drag(meter, const Offset(200, 0));
-      await tester.pumpAndSettle();
-      expect(scope.pluginWrites, isEmpty);
+      // The meter is not drawn: it is only true for the instant it was read,
+      // and the console can only read one while the plugin's own window is
+      // open — which on the appliance is never. A number that never moves
+      // where a number that always moves belongs is worse than no number.
+      expect(find.text('GAIN REDUCTION'), findsNothing);
 
-      // And it does not ANNOUNCE itself as adjustable: a slider a screen
-      // reader can reach and cannot move is a worse lie than a number.
-      final node = tester.getSemantics(
-        find.descendant(of: meter, matching: find.byType(Semantics)).first,
-      );
-      expect(node.getSemanticsData().flagsCollection.isSlider, isFalse);
-      handle.dispose();
-
-      // The plugin's own bypass is still not a fader: the footer's pill is
-      // THE power control, and a second one beside it is the ambiguity R23
-      // exists to prevent.
-      expect(find.byKey(const Key('signal_fx_param_2')), findsNothing);
+      // And the plugin's own bypass is not a fader: the footer's pill is THE
+      // power control, and a second one beside it is the ambiguity R23 exists
+      // to prevent.
+      expect(find.text('BYPASS'), findsNothing);
     });
 
     testWidgets('a plugin with nothing automatable still has controls', (
@@ -301,17 +289,30 @@ void main() {
         const PluginEffect(
           ref: PluginRef(format: PluginFormat.vst3, id: 'test.filter'),
           name: 'Filter',
-          params: [_mode, _meter],
+          params: [_mode],
         ),
       ]);
       await pump(tester, scope);
 
       // `isAutomatable` is optional per parameter — a plugin whose every
       // parameter is like this rendered nothing at all, and the panel said so
-      // in as many words.
+      // in as many words. A setting read at load is still true at load.
       expect(find.byKey(const Key('signal_fx_no_params')), findsNothing);
       expect(find.text('MODE'), findsOneWidget);
-      expect(find.text('GAIN REDUCTION'), findsOneWidget);
+
+      final handle = tester.ensureSemantics();
+      final row = find.byKey(const Key('signal_fx_param_0'));
+      await tester.drag(row, const Offset(200, 0));
+      await tester.pumpAndSettle();
+      // Read-only, because the plugin says the host may not set it — and it
+      // does not ANNOUNCE itself as adjustable either: a slider a screen
+      // reader can reach and cannot move is a worse lie than a number.
+      expect(scope.pluginWrites, isEmpty);
+      final node = tester.getSemantics(
+        find.descendant(of: row, matching: find.byType(Semantics)).first,
+      );
+      expect(node.getSemanticsData().flagsCollection.isSlider, isFalse);
+      handle.dispose();
     });
   });
 

@@ -982,16 +982,13 @@ class _ChainStripState extends State<_ChainStrip> {
           color: selected ? surface.accentSurface : null,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Center(
-          widthFactor: 1,
-          child: Text(
-            fxBlockName(l10n, effect),
-            style: TextStyle(
-              color: selected ? surface.accent : surface.textSecondary,
-              fontSize: 16,
-              height: 1.13,
-              leadingDistribution: TextLeadingDistribution.even,
-            ),
+        child: Text(
+          fxBlockName(l10n, effect),
+          style: TextStyle(
+            color: selected ? surface.accent : surface.textSecondary,
+            fontSize: 16,
+            height: 1.13,
+            leadingDistribution: TextLeadingDistribution.even,
           ),
         ),
       ),
@@ -1033,7 +1030,6 @@ class _ChainStripState extends State<_ChainStrip> {
           // moves under the hand that just pressed one.
           spacing: 5,
           runSpacing: 5,
-          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             for (final (index, effect) in chain.indexed)
               _entry(context, index, effect, carrying),

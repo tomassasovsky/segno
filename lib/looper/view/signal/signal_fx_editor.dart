@@ -103,7 +103,7 @@ class SignalFxEditor extends StatelessWidget {
                       glyphKey: const Key('signal_fx_relink'),
                       label: l10n.fxRelink,
                       semanticLabel: l10n.signalPluginRelinkTooltip,
-                      onTap: () => unawaited(_relink(context)),
+                      onTap: () => unawaited(_relink(context, effect.slotId)),
                     ),
                 ],
               ),
@@ -158,15 +158,16 @@ class SignalFxEditor extends StatelessWidget {
 
   /// Points the entry at an installed plugin, keeping what it had.
   ///
-  /// The entry is named by IDENTITY across the sheet, and re-found after it
-  /// closes. A modal sheet is open for as long as someone takes to choose,
-  /// and the chain can be rewritten underneath it — a record pass snapshots
-  /// the monitor chain onto the lane, another surface removes an entry. The
-  /// captured position would then name whatever had slid into it, and the
-  /// relink would swap an unrelated plugin's `ref` while replaying the saved
-  /// state of the one that is gone into it.
-  Future<void> _relink(BuildContext context) async {
-    final slot = scope.effects[index].slotId;
+  /// [slot] is the identity of the entry this placeholder was DRAWN for, and
+  /// the entry is re-found by it after the sheet closes. A modal sheet is
+  /// open for as long as someone takes to choose, and the chain can be
+  /// rewritten underneath it — a record pass snapshots the monitor chain onto
+  /// the lane, another surface removes an entry. A position would then name
+  /// whatever had slid into it, and the relink would swap an unrelated
+  /// plugin's `ref` while replaying the saved state of the one that is gone
+  /// into it. Read at BUILD time rather than on the tap for the same reason:
+  /// a tap dispatched in the frame the chain changed reads the new chain.
+  Future<void> _relink(BuildContext context, String? slot) async {
     final picked = await showSignalBrowsePlugins(
       context,
       catalog: context.read<LooperRepository>().pluginCatalog,
@@ -210,17 +211,25 @@ class SignalFxEditor extends StatelessWidget {
             ),
         ],
         PluginEffect(:final params, :final paramValues) => [
-          // Everything the plugin means a person to see. A plugin's own
+          // Everything the plugin means a person to SETTLE. A plugin's own
           // bypass is not a fader — the footer's pill is THE power control
           // (D-POWER), and a second one beside it is the ambiguity that rule
           // exists to prevent — and a hidden parameter is not a control at
-          // all. Everything else is drawn, and what cannot be WRITTEN is
-          // drawn as a meter rather than dropped: `isAutomatable` is optional
-          // per parameter, so a plugin that marks its mode selector
+          // all.
+          //
+          // A non-automatable one IS drawn, read-only: `isAutomatable` is
+          // optional per parameter, so a plugin that marks its mode selector
           // non-automatable rendered nothing at all and was told it exposes
-          // no controls, which was untrue of it.
+          // no controls, which was untrue of it. Its value is a setting, and
+          // a setting read at load is still true at load.
+          //
+          // A READ-ONLY one is not, and that is the difference: a gain
+          // reduction meter is only true for the instant it was read, and the
+          // console can only read one while the plugin's own window is open.
+          // Drawing it would put a number that never moves where a number
+          // that always moves belongs.
           for (final info in params)
-            if (!info.isHidden && !info.isBypass)
+            if (!info.isHidden && !info.isBypass && !info.isReadOnly)
               _pluginRow(info, paramValues[info.id] ?? info.def),
         ],
       };

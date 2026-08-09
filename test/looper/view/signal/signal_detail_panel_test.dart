@@ -2117,6 +2117,43 @@ void main() {
               as LooperBusPluginRelinked;
       expect(event.index, 1);
     });
+    testWidgets('a tap in the frame the chain changed still names it', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track, state: busWith(const [moved]));
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+      await tester.pumpAndSettle();
+
+      // The chain changes and the tap lands before the rebuild — the tree
+      // still holds the placeholder that was drawn for the missing entry,
+      // while a live read of the chain already sees a different one at 0.
+      when(() => bloc.state).thenReturn(
+        busWith(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'innocent'),
+            name: 'Innocent',
+            slotId: 'slot-innocent',
+          ),
+          moved,
+        ]),
+      );
+      await tester.tap(find.byKey(const Key('signal_fx_relink')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_browse_plug.ok')));
+      await tester.pumpAndSettle();
+
+      // The identity comes from the entry the placeholder was DRAWN for, so
+      // the innocent plugin at 0 is left alone.
+      final event =
+          verify(
+                () =>
+                    bloc.add(captureAny(that: isA<LooperBusPluginRelinked>())),
+              ).captured.single
+              as LooperBusPluginRelinked;
+      expect(event.index, 1);
+    });
   });
 
   group('a screen reader can work the face', () {
