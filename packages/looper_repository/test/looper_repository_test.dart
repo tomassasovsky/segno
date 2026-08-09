@@ -1685,6 +1685,44 @@ void main() {
       expect(fx.state, 'AAAA');
     });
 
+    test('a refresh drops a -inf reading too', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain Reduction',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          flags: 0x01 | 0x02,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+
+      // The editor-sync poll reaches this on every tick while a plugin window
+      // is open, and once more on close. A `-inf` taken here cannot be
+      // encoded, and the throw comes out of the cubit's own push — so the
+      // damage is every later edit of the chain going unsaved.
+      engine.nextParamValues[100] = double.negativeInfinity;
+      repo.refreshLanePluginParams(channel: 0, lane: 0, index: 0);
+
+      // Left at what the bind-time read saw, rather than taking the -inf.
+      final chain = repo.laneEffects(0, 0);
+      expect((chain.single as PluginEffect).paramValues[100], 0);
+      expect(() => encodeTrackEffects(chain), returnsNormally);
+    });
+
     test('a plugin that enumerates nothing still gets its saved values', () {
       // A VST3 whose edit controller failed to instantiate, a CLAP with no
       // params extension: the plugin loads and reports no parameters. A
