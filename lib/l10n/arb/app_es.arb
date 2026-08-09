@@ -2074,6 +2074,47 @@
         }
     },
     "fxChainOffHere": "La cadena entera está apagada, así que esto todavía no cambia nada de lo que se oye.",
+    "fxAddChip": "+ efecto",
+    "fxAddScanning": "Buscando plugins…",
+    "fxAddTitle": "Añadir un efecto",
+    "fxAddInto": "En “{chain}”, al final de la cadena.",
+    "@fxAddInto": {
+        "placeholders": {
+            "chain": {
+                "type": "String"
+            }
+        }
+    },
+    "fxAddBuiltIn": "INCLUIDOS",
+    "fxAddRecentPlugins": "PLUGINS · RECIENTES",
+    "fxAddBrowseAll": "{count, plural, =0{No hay plugins disponibles} =1{Ver el plugin…} other{Ver los {count} plugins…}}",
+    "@fxAddBrowseAll": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxBrowseTitle": "Añadir un plugin",
+    "fxBrowseInstalled": "{count, plural, =0{ninguno disponible} =1{1 instalado} other{{count} instalados}}",
+    "@fxBrowseInstalled": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxBrowseSearchHint": "Buscar plugins",
+    "fxBrowseMatches": "{count, plural, =1{1 coincidencia} other{{count} coincidencias}}",
+    "@fxBrowseMatches": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxBrowseNoMatches": "No hay coincidencias.",
+    "fxBrowseNoPlugins": "No se encontraron plugins en esta máquina.",
     "fxBypass": "puentear",
     "fxMoveEarlier": "Mover antes en la cadena",
     "fxMoveLater": "Mover después en la cadena",

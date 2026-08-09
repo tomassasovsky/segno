@@ -19,6 +19,7 @@ import 'package:segno/looper/view/signal/signal_detail_panel.dart';
 import 'package:segno/looper/view/signal/signal_tray_panel.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno_engine/segno_engine.dart' as engine;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../../helpers/helpers.dart';
@@ -27,6 +28,45 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
+
+/// A store whose recent-plugins read fails the way the real backends do.
+///
+/// An `ArgumentError`, not an `Exception`: `shared_preferences_foundation`
+/// converts a platform argument failure into one on purpose, and the backends
+/// cast the platform reply, so a corrupt stored value raises `TypeError`.
+/// Both are `Error`s, so a catch narrowed to `Exception` misses them.
+///
+/// Scoped to the one key by asking the repository which it is, rather than
+/// copying the string: a hardcoded key silently stops matching when the
+/// repository renames it, and the test then passes because the read returned
+/// null instead of throwing.
+class _ThrowingStore extends FakeKeyValueStore {
+  /// Whether the read under test actually failed.
+  bool threw = false;
+
+  @override
+  Future<String?> getString(String key) async {
+    if (key == SettingsRepository.recentPluginsKey) {
+      threw = true;
+      throw ArgumentError('no prefs here');
+    }
+    return super.getString(key);
+  }
+}
+
+/// A store whose reads take a frame or two, as the appliance's platform
+/// channel does.
+///
+/// The zero-latency fake makes the add dialog's re-entrancy window disappear
+/// entirely, so a guard against double-opening cannot be tested against it —
+/// the bug it prevents only exists when the read is slow.
+class _SlowStore extends FakeKeyValueStore {
+  @override
+  Future<String?> getString(String key) async {
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    return super.getString(key);
+  }
+}
 
 /// A rig with a chain on every stage, so each panel has something to draw.
 final _rig = LooperState(
@@ -60,6 +100,9 @@ void main() {
   late InputsCubit inputs;
   late MonitorCubit monitor;
   late SettingsTrayCubit tray;
+  late FakeAudioEngine catalogEngine;
+  late _ThrowingStore throwingStore;
+  late PluginCatalog catalog;
 
   setUpAll(() {
     registerFallbackValue(MonitorMode.off);
@@ -75,6 +118,36 @@ void main() {
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     when(() => repository.state).thenReturn(_rig);
     when(repository.allMonitors).thenReturn(const {});
+    // The add dialog reads the scan catalog for its shelf and its count. One
+    // plugin that loaded and one file that did not — the failed entry keeps
+    // an EMPTY id, so it must not be counted or offered.
+    catalogEngine = FakeAudioEngine()
+      ..pluginScanResults = const [
+        engine.PluginDescriptor(
+          id: 'plug.ok',
+          name: 'Alpha',
+          vendor: 'Acme',
+          path: '/ok.vst3',
+          format: engine.PluginFormat.vst3,
+          version: 1,
+        ),
+        engine.PluginDescriptor(
+          id: '',
+          name: 'Broken.vst3',
+          vendor: '',
+          path: '/broken.vst3',
+          format: engine.PluginFormat.vst3,
+          version: 0,
+        ),
+      ];
+    catalog = PluginCatalog(
+      engine: catalogEngine,
+      appVersion: 'test',
+      pollInterval: const Duration(milliseconds: 1),
+      statFile: (path) => (mtimeMs: 1, sizeBytes: 1),
+    );
+    when(() => repository.pluginCatalog).thenReturn(catalog);
+    addTearDown(catalog.dispose);
     for (final stub in [
       () => when(
         () => repository.setMonitorInputMode(
@@ -117,6 +190,8 @@ void main() {
     FxStage stage = FxStage.input,
     LooperState? state,
     Stream<LooperState>? states,
+    bool slowSettings = false,
+    bool throwingSettings = false,
   }) async {
     final rig = state ?? _rig;
     tester.view
@@ -132,7 +207,13 @@ void main() {
       initialState: rig,
     );
 
-    settings = SettingsRepository(store: FakeKeyValueStore());
+    settings = SettingsRepository(
+      store: switch ((slowSettings, throwingSettings)) {
+        (true, _) => _SlowStore(),
+        (_, true) => throwingStore = _ThrowingStore(),
+        _ => FakeKeyValueStore(),
+      },
+    );
     tracks = TracksCubit(settings: settings);
     inputs = InputsCubit(settings: settings, repository: repository);
     monitor = MonitorCubit(repository: repository, settings: settings);
@@ -152,8 +233,13 @@ void main() {
             routingGraphThemeFromSurface(SurfaceTheme.dark),
           ],
         ),
-        home: RepositoryProvider<LooperRepository>.value(
-          value: repository,
+        home: MultiRepositoryProvider(
+          providers: [
+            RepositoryProvider<LooperRepository>.value(value: repository),
+            // The add dialog reads it for the recent-plugin shelf; the real
+            // tray inherits it from `App`.
+            RepositoryProvider<SettingsRepository>.value(value: settings),
+          ],
           child: MultiBlocProvider(
             providers: [
               BlocProvider<LooperBloc>.value(value: bloc),
@@ -954,6 +1040,315 @@ void main() {
       expect(bar.semanticLabel, isNotNull);
       expect(bar.semanticLabel, contains(l10n.effectReverb));
       handle.dispose();
+    });
+  });
+
+  group('the add affordance', () {
+    testWidgets('is the last chip, and is there on an empty chain', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track);
+      // Track 1 carries no effects at all — the case where "put something on
+      // it" matters most, and the one an early return used to hide.
+      await tester.tap(find.byKey(const Key('signal_card_track_1')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      expect(find.byKey(const Key('signal_panel_chain_empty')), findsOneWidget);
+      expect(find.byKey(const Key('signal_panel_add_chip')), findsOneWidget);
+      expect(find.text(l10n.fxAddChip), findsOneWidget);
+    });
+
+    testWidgets('sits after the chain it will be added to', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // It lands at the end, so it sits at the end.
+      final lastChip = tester.getTopLeft(
+        find.byKey(const Key('signal_panel_chip_1')),
+      );
+      final add = tester.getTopLeft(
+        find.byKey(const Key('signal_panel_add_chip')),
+      );
+      expect(add.dx, greaterThan(lastChip.dx));
+    });
+
+    testWidgets('opens the dialog, which names the chain and the place', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('signal_add_effect')), findsOneWidget);
+      expect(find.text(l10n.fxAddTitle), findsOneWidget);
+      // Named, so there is no doubt which of three cards is being added to.
+      final prose = tester.widget<Text>(
+        find
+            .descendant(
+              of: find.byKey(const Key('signal_add_effect')),
+              matching: find.byType(Text),
+            )
+            .at(1),
+      );
+      expect(prose.data, contains(l10n.trackName(const [], 0)));
+    });
+
+    testWidgets('a dialog opened mid-scan is not stuck looking', (
+      tester,
+    ) async {
+      // A scan already in flight when the dialog opens — the appliance's
+      // takes seconds, so this is "open it, close it, open it again".
+      catalogEngine.pluginScanPending = true;
+      await pump(tester, stage: FxStage.track);
+      unawaited(catalog.scan());
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pump();
+      final l10n = l10nOf(tester);
+
+      expect(find.text(l10n.fxAddScanning), findsOneWidget);
+
+      // The scan lands. Skipping when one was already running left the dialog
+      // subscribed to nothing: stuck on "Looking for plugins…" with its
+      // browse row dead, recoverable only by closing and reopening.
+      catalogEngine.pluginScanPending = false;
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.fxAddScanning), findsNothing);
+      expect(find.text(l10n.fxAddBrowseAll(1)), findsOneWidget);
+    });
+
+    testWidgets('a dialog opened mid-RESCAN is not stuck looking either', (
+      tester,
+    ) async {
+      // A scan has already completed once, so the cache is warm — which is
+      // where the first version of this fix still stranded the dialog: it
+      // returned early on the warm cache, subscribed to nothing, while its
+      // build had already drawn "Looking for plugins…" off `isScanning`.
+      await pump(tester, stage: FxStage.track);
+      await tester.runAsync(catalog.scan);
+
+      catalogEngine.pluginScanPending = true;
+      unawaited(catalog.scan(rescan: true));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pump();
+      final l10n = l10nOf(tester);
+
+      expect(find.text(l10n.fxAddScanning), findsOneWidget);
+
+      catalogEngine.pluginScanPending = false;
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.fxAddScanning), findsNothing);
+      expect(find.text(l10n.fxAddBrowseAll(1)), findsOneWidget);
+    });
+
+    testWidgets('a rig with nothing loadable says so, and leads nowhere', (
+      tester,
+    ) async {
+      catalogEngine.pluginScanResults = const [];
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // Not "Browse all 0 plugins…", and not a tap into a sheet whose only
+      // content is the same sentence.
+      expect(find.text(l10n.fxAddBrowseAll(0)), findsOneWidget);
+      final row = tester.widget<ConsoleRow>(
+        find.descendant(
+          of: find.byKey(const Key('signal_add_browse')),
+          matching: find.byType(ConsoleRow),
+        ),
+      );
+      expect(row.onTap, isNull);
+    });
+
+    testWidgets('a shelf read that throws still opens the dialog', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track, throwingSettings: true);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pumpAndSettle();
+
+      // A `MissingPluginException` is the likelier prefs failure, and the
+      // shelf is a convenience — losing it must not lose the dialog, which
+      // is what happened when the error escaped the `unawaited` call site.
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('signal_add_effect')), findsOneWidget);
+      // The read really did fail — otherwise this passes for the wrong
+      // reason the moment the key it watches stops matching.
+      expect(throwingStore.threw, isTrue);
+    });
+
+    testWidgets('a rig with no plugins does not rescan on every open', (
+      tester,
+    ) async {
+      catalogEngine.pluginScanResults = const [];
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      for (var open = 0; open < 3; open++) {
+        await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('signal_add_cancel')));
+        await tester.pumpAndSettle();
+      }
+
+      // Gating on "did it FIND anything" walks the filesystem again on every
+      // open of the default appliance, which has no plugins at all.
+      // Exactly one: `lessThanOrEqualTo(1)` also passes at zero, so it would
+      // survive the scan being deleted outright.
+      expect(catalogEngine.pluginScanCount, 1);
+    });
+
+    testWidgets('a scan that lands while the dialog is open reaches it', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // Opened on a cold catalog: nothing has scanned yet.
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // The dialog does the looking itself and redraws when it finishes. A
+      // fire-and-forget scan into a snapshot leaves the row reading zero for
+      // as long as the dialog is open.
+      await tester.runAsync(catalog.scan);
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.fxAddBrowseAll(1)), findsOneWidget);
+      expect(find.text(l10n.fxAddBrowseAll(0)), findsNothing);
+    });
+
+    testWidgets('the browse row counts only what loaded', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.runAsync(catalog.scan);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // Two entries scanned, one of them a file that failed — offering it
+      // would insert a `PluginRef` with no identity.
+      expect(find.text(l10n.fxAddBrowseAll(1)), findsOneWidget);
+      expect(find.text(l10n.fxAddBrowseAll(2)), findsNothing);
+    });
+
+    testWidgets('a built-in tap adds it and closes', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('signal_add_builtin_delay')));
+      await tester.pumpAndSettle();
+
+      // No confirm step: the tap IS the choice.
+      expect(find.byKey(const Key('signal_add_effect')), findsNothing);
+      verify(
+        () => bloc.add(any(that: isA<LooperBusEffectAdded>())),
+      ).called(1);
+    });
+  });
+
+  group('the add dialog on the smallest screen', () {
+    testWidgets('fits a 1024x600 console, shelf and all', (tester) async {
+      tester.view
+        ..physicalSize = const Size(1024, 600)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_add_chip')));
+      await tester.pumpAndSettle();
+
+      // Two pixels short of the grid's four columns and it falls to two,
+      // doubling the dialog's height and overflowing the shortest screen the
+      // console ships on.
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('signal_add_effect')), findsOneWidget);
+      expect(find.byKey(const Key('signal_add_cancel')), findsOneWidget);
+
+      // Nothing to scroll: a `SingleChildScrollView` can never overflow, so
+      // `takeException` proves nothing here — what matters is that the whole
+      // dialog fits without one.
+      final scroller = tester.widget<Scrollable>(
+        find.descendant(
+          of: find.byKey(const Key('signal_add_effect')),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      expect(
+        tester
+            .state<ScrollableState>(find.byWidget(scroller))
+            .position
+            .maxScrollExtent,
+        0,
+      );
+
+      // FOUR across, which is what makes it fit: the grid needs 694 for four
+      // columns, and two pixels short it falls to two and doubles in height.
+      final first = tester.getTopLeft(
+        find.byKey(const Key('signal_add_builtin_drive')),
+      );
+      final fourth = tester.getTopLeft(
+        find.byKey(const Key('signal_add_builtin_tremolo')),
+      );
+      expect(fourth.dy, first.dy);
+    });
+
+    testWidgets('one tap, one dialog', (tester) async {
+      await pump(tester, stage: FxStage.track, slowSettings: true);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // Two taps inside the settings round-trip. On the appliance that read
+      // is a real platform hop, so without a guard the second tap stacks a
+      // second dialog and the effect gets added twice.
+      //
+      // Both taps are dispatched at the SAME location before pumping: tapping
+      // twice with a pump between lets the first dialog cover the chip, and
+      // the second tap silently misses — which is what made the first version
+      // of this test pass with the guard deleted.
+      final chip = tester.getCenter(
+        find.byKey(const Key('signal_panel_add_chip')),
+      );
+      await tester.tapAt(chip);
+      await tester.pump(const Duration(milliseconds: 10));
+      await tester.tapAt(chip);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('signal_add_effect')), findsOneWidget);
     });
   });
 

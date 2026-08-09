@@ -858,13 +858,35 @@ class FakeAudioEngine implements AudioEngine {
   // --- Plugin hosting (scan: part 2; slots: part 3) ---
 
   @override
-  EngineResult scanBegin({bool rescan = false}) => EngineResult.ok;
+  EngineResult scanBegin({bool rescan = false}) {
+    pluginScanCount++;
+    return EngineResult.ok;
+  }
 
   @override
-  PluginScanProgress scanPoll() => PluginScanProgress.empty;
+  PluginScanProgress scanPoll() => PluginScanProgress(
+    done: !pluginScanPending,
+    found: pluginScanPending ? 0 : pluginScanResults.length,
+    scanned: pluginScanPending ? 0 : pluginScanResults.length,
+    total: pluginScanResults.length,
+  );
+
+  /// What a scan finds. Seed it to stand a plugin catalog up in a widget
+  /// test without a real host.
+  List<PluginDescriptor> pluginScanResults = const [];
+
+  /// Holds a scan open, so a test can observe the state DURING one.
+  ///
+  /// Without this every poll reports `done: true` and no test can render a
+  /// mid-scan surface — which is how "Looking for plugins…" and the browse
+  /// row it disables went untested.
+  bool pluginScanPending = false;
+
+  /// How many scans were started, for asserting a rescan did not happen.
+  int pluginScanCount = 0;
 
   @override
-  List<PluginDescriptor> scanResults() => const [];
+  List<PluginDescriptor> scanResults() => pluginScanResults;
 
   @override
   EngineResult scanCancel() => EngineResult.ok;
