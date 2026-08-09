@@ -2156,6 +2156,99 @@ void main() {
     });
   });
 
+  group('the chain run is drawn as the pen draws it', () {
+    testWidgets('a chip label sits in the middle of its chip', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      final l10n = l10nOf(tester);
+      final chip = tester.getRect(find.byKey(const Key('signal_panel_chip_0')));
+      final label = tester.getRect(
+        find.text(fxBlockName(l10n, _rig.tracks.first.effects.first)),
+      );
+      // Its own height, not the chip's — and comparing CENTRES would prove
+      // nothing: an uncentred label is a text box stretched to the whole 38,
+      // so its centre matches the chip's exactly while the glyphs inside sit
+      // at the top, which is the thing being reported.
+      expect(label.height, lessThan(chip.height));
+      expect(
+        label.top - chip.top,
+        moreOrLessEquals(chip.bottom - label.bottom, epsilon: 0.5),
+      );
+
+      final add = tester.getRect(
+        find.byKey(const Key('signal_panel_add_chip')),
+      );
+      final addLabel = tester.getRect(find.text(l10n.fxAddChip));
+      expect(addLabel.height, lessThan(add.height));
+      // And the two sit on the same line, which is what made the run read as
+      // misaligned: the add chip has always centred its own.
+      expect(label.top, moreOrLessEquals(addLabel.top, epsilon: 0.5));
+    });
+
+    testWidgets('the chip a drag lifts carries its label the same way', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      final l10n = l10nOf(tester);
+      final name = fxBlockName(l10n, _rig.tracks.first.effects.first);
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('signal_panel_chip_0'))),
+      );
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await tester.pump();
+
+      // The flying copy is a chip of its own, and a label that sits
+      // differently in it jumps the moment the chip leaves the run.
+      final lifted = tester.getRect(
+        find.byKey(const Key('signal_panel_lift')),
+      );
+      final label = tester.getRect(
+        find.descendant(
+          of: find.byKey(const Key('signal_panel_lift')),
+          matching: find.text(name),
+        ),
+      );
+      // ONE LINE tall, not merely shorter than the chip: this one carries a
+      // border, and a `Container` folds that into its padding — so an
+      // uncentred label is a box inset 1px from each edge, which is both
+      // shorter than the chip and symmetric about its middle. Only its own
+      // height tells the two apart.
+      expect(label.height, lessThan(20));
+      expect(
+        label.top - lifted.top,
+        moreOrLessEquals(lifted.bottom - label.bottom, epsilon: 0.5),
+      );
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('the run is spaced as the pen spaces it', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // `Drive` ends at 74 and `Tremolo` starts at 84 in SIGNAL/signal-detail,
+      // and the same 10 sits before `+ effect`.
+      final first = tester.getRect(
+        find.byKey(const Key('signal_panel_chip_0')),
+      );
+      final second = tester.getRect(
+        find.byKey(const Key('signal_panel_chip_1')),
+      );
+      final add = tester.getRect(
+        find.byKey(const Key('signal_panel_add_chip')),
+      );
+      expect(second.left - first.right, 10);
+      expect(add.left - second.right, 10);
+    });
+  });
+
   group('a screen reader can work the face', () {
     testWidgets('a card is a button it can actually activate', (tester) async {
       final handle = tester.ensureSemantics();

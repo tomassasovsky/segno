@@ -138,6 +138,7 @@ class _TunerReadout extends StatelessWidget {
             fontWeight: FontWeight.w600,
             color: state.isStale ? surface.textSecondary : surface.textPrimary,
           ),
+          strutStyle: const StrutStyle(forceStrutHeight: true),
         ),
         const SizedBox(height: 24),
         _TunerNeedle(cents: pitch.cents, inTune: pitch.isInTune),
