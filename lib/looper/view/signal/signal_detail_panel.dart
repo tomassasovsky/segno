@@ -394,6 +394,62 @@ class _PanelBodyState extends State<_PanelBody> {
         if (context.mounted && !tray.isClosed) tray.clearSignalEffect();
       });
     }
+    // What sits under the chain strip, in signal order.
+    final tail = <Widget>[
+      if (editing != null)
+        SignalFxEditor(
+          scope: scope,
+          index: editing,
+          onClose: tray.clearSignalEffect,
+        )
+      else ...[
+        if (gain != null && onLevel != null) ...[
+          _Caption(l10n.signalPanelLevel),
+          _LevelRow(
+            key: ValueKey(address),
+            value: gain,
+            onChanged: onLevel,
+          ),
+        ],
+        if (inMix != null && onHeard != null) ...[
+          _Caption(l10n.signalPanelInMix),
+          ConsoleSegmented<bool>(
+            key: const Key('signal_panel_in_mix'),
+            stretch: true,
+            selected: inMix,
+            onChanged: onHeard,
+            segments: [
+              ConsoleSegment(value: false, label: l10n.signalMixMuted),
+              ConsoleSegment(value: true, label: l10n.signalMixHeard),
+            ],
+          ),
+        ],
+      ],
+      if (mode != null && onMonitorMode != null) ...[
+        _Caption(l10n.signalPanelHearWhilePlaying),
+        ConsoleSegmented<MonitorMode>(
+          key: const Key('signal_panel_monitor'),
+          stretch: true,
+          selected: mode,
+          onChanged: onMonitorMode,
+          segments: [
+            ConsoleSegment(
+              value: MonitorMode.off,
+              label: l10n.signalMonitorSegOff,
+            ),
+            ConsoleSegment(
+              value: MonitorMode.auto,
+              label: l10n.signalMonitorSegAuto,
+            ),
+            ConsoleSegment(
+              value: MonitorMode.on,
+              label: l10n.signalMonitorSegOn,
+            ),
+          ],
+        ),
+      ],
+    ];
+
     return Container(
       key: const Key('signal_detail_panel'),
       width: double.infinity,
@@ -429,65 +485,32 @@ class _PanelBodyState extends State<_PanelBody> {
                   )
                 : null,
           ),
+          // Everything below the chain is hidden while an entry is being
+          // carried, and its ROOM IS KEPT. Actually removing it shortens the
+          // panel, and the panel is the last thing in a scroll view: on a
+          // 1024x600 console, scrolled far enough down to be touching the
+          // chain at all, the clamp then drags the whole strip up to 180px
+          // out from under the finger the instant the press lands, and a
+          // release where the chip was picked up hits a track card instead.
+          //
           // The editor takes the place of `level` and `in the mix`: you are
           // looking at ONE effect now, and how loud the whole chain is is a
-          // question about the chain. The monitor segment below stays — what
-          // you hear is still true while you change what it sounds like.
-          if (_dragging)
-            // Nothing: the chain above is the whole panel while a drag is up.
-            const SizedBox.shrink()
-          else if (editing != null)
-            SignalFxEditor(
-              scope: scope,
-              index: editing,
-              onClose: tray.clearSignalEffect,
-            )
-          else ...[
-            if (gain != null && onLevel != null) ...[
-              _Caption(l10n.signalPanelLevel),
-              _LevelRow(
-                key: ValueKey(address),
-                value: gain,
-                onChanged: onLevel,
+          // question about the chain. The monitor segment stays — what you
+          // hear is still true while you change what it sounds like.
+          if (tail.isNotEmpty)
+            Visibility(
+              key: const Key('signal_panel_tail'),
+              visible: !_dragging,
+              maintainSize: true,
+              maintainAnimation: true,
+              maintainState: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                spacing: SignalDetailPanel.rowGap,
+                children: tail,
               ),
-            ],
-            if (inMix != null && onHeard != null) ...[
-              _Caption(l10n.signalPanelInMix),
-              ConsoleSegmented<bool>(
-                key: const Key('signal_panel_in_mix'),
-                stretch: true,
-                selected: inMix,
-                onChanged: onHeard,
-                segments: [
-                  ConsoleSegment(value: false, label: l10n.signalMixMuted),
-                  ConsoleSegment(value: true, label: l10n.signalMixHeard),
-                ],
-              ),
-            ],
-          ],
-          if (mode != null && onMonitorMode != null) ...[
-            _Caption(l10n.signalPanelHearWhilePlaying),
-            ConsoleSegmented<MonitorMode>(
-              key: const Key('signal_panel_monitor'),
-              stretch: true,
-              selected: mode,
-              onChanged: onMonitorMode,
-              segments: [
-                ConsoleSegment(
-                  value: MonitorMode.off,
-                  label: l10n.signalMonitorSegOff,
-                ),
-                ConsoleSegment(
-                  value: MonitorMode.auto,
-                  label: l10n.signalMonitorSegAuto,
-                ),
-                ConsoleSegment(
-                  value: MonitorMode.on,
-                  label: l10n.signalMonitorSegOn,
-                ),
-              ],
             ),
-          ],
         ],
       ),
     );
@@ -703,13 +726,17 @@ class _ChainStrip extends StatefulWidget {
 }
 
 class _ChainStripState extends State<_ChainStrip> {
-  /// The entries currently being carried, by slot id.
+  /// The entry being carried, by slot id, or null when none is.
   ///
-  /// A set, not one index: this is a touch surface, and two fingers can lift
-  /// two chips. With a single slot the first drop to land tore the gaps out
-  /// from under the second finger, and that drag could then only be
-  /// abandoned.
-  final Set<String> _dragging = {};
+  /// One at a time, and the other chips are made undraggable while it is set.
+  /// Two entries in flight cannot both be placed: a drop is expressed against
+  /// the chain as it is drawn, the rewrite only lands on the bloc round-trip,
+  /// and so the second drop of a pair released together is computed in
+  /// coordinates the first drop has already invalidated — moving an entry the
+  /// second finger never touched. Placing one entry at a time is the whole of
+  /// the fix; there is nothing here that could speculatively apply the first
+  /// move to make the second one's coordinates true.
+  String? _dragging;
 
   /// Where [slotId] sits in the chain right now, or -1 if it is gone.
   int _positionOf(String slotId) =>
@@ -742,8 +769,11 @@ class _ChainStripState extends State<_ChainStrip> {
   /// drag mode with no way back out but closing the card.
   void _setDragging(String slotId, {required bool dragging}) {
     if (!mounted) return;
-    setState(() => dragging ? _dragging.add(slotId) : _dragging.remove(slotId));
-    widget.onDragging(_dragging.isNotEmpty);
+    // Guarded on the id: an end belongs to the drag that started it, and a
+    // stale one must not clear a drag that began after it.
+    if (!dragging && _dragging != slotId) return;
+    setState(() => _dragging = dragging ? slotId : null);
+    widget.onDragging(dragging);
   }
 
   /// One chain chip, as it sits in the run.
@@ -797,7 +827,7 @@ class _ChainStripState extends State<_ChainStrip> {
     final editing = widget.editing;
     final onSelect = widget.onSelect;
     final add = widget.onAdd;
-    final dragging = _dragging.isNotEmpty;
+    final dragging = _dragging;
     // The empty line and the add chip together: an empty chain is exactly the
     // case where "put something on it" needs to be reachable, so the early
     // return that used to sit here hid the one affordance that mattered.
@@ -821,11 +851,11 @@ class _ChainStripState extends State<_ChainStrip> {
           // The gaps carry the spacing themselves while a drag is up, so that
           // a drop target can grow between two chips instead of a fixed 5
           // sitting beside it.
-          spacing: dragging ? 0.0 : 5.0,
+          spacing: dragging == null ? 5.0 : 0.0,
           runSpacing: 5,
           children: [
             for (final (index, effect) in chain.indexed) ...[
-              if (dragging)
+              if (dragging != null)
                 _DropGap(
                   key: Key('signal_panel_gap_$index'),
                   insertAt: index,
@@ -849,11 +879,17 @@ class _ChainStripState extends State<_ChainStrip> {
                 // inert until it has one.
                 child: LongPressDraggable<String>(
                   data: effect.slotId ?? '',
-                  // Two fingers on TWO chips is fine — the strip tracks a set.
-                  // Two on ONE chip is not: both would register the same slot
-                  // id, and the first release would take the gaps out from
-                  // under the second finger.
-                  maxSimultaneousDrags: effect.slotId == null ? 0 : 1,
+                  // One entry travels at a time, and one pointer carries it.
+                  // A second finger on a second chip would place its entry
+                  // against a chain the first drop has already rewritten; a
+                  // second finger on the SAME chip would register the same
+                  // slot id twice, and the first release would take the gaps
+                  // out from under the other one.
+                  maxSimultaneousDrags:
+                      effect.slotId == null ||
+                          (dragging != null && dragging != effect.slotId)
+                      ? 0
+                      : 1,
                   // The panel is a touch surface on a floor console: a plain
                   // drag would steal every tap-to-open on the way past.
                   // The press is what says "I mean to move this one".
@@ -904,7 +940,7 @@ class _ChainStripState extends State<_ChainStrip> {
                 ),
               ),
             ],
-            if (dragging)
+            if (dragging != null)
               _DropGap(
                 key: Key('signal_panel_gap_${chain.length}'),
                 insertAt: chain.length,
@@ -913,7 +949,7 @@ class _ChainStripState extends State<_ChainStrip> {
               ),
             // No add chip mid-drag: it is not a drop target, and a gap beside
             // it would offer an insertion point past the end of the chain.
-            if (add != null && !dragging)
+            if (add != null && dragging == null)
               Semantics(
                 button: true,
                 label: l10n.fxAddChip,

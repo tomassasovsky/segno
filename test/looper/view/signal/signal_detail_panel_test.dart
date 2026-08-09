@@ -1382,6 +1382,14 @@ void main() {
   });
 
   group('the chain reorders by dragging', () {
+    /// Whether the rows below the chain are showing.
+    ///
+    /// Their ROOM is kept while a drag is up, so their presence in the tree
+    /// says nothing — only this does.
+    bool tailShowing(WidgetTester tester) => tester
+        .widget<Visibility>(find.byKey(const Key('signal_panel_tail')))
+        .visible;
+
     /// A rig whose first track carries [effects] and nothing else.
     LooperState chainOf(List<TrackEffect> effects) => LooperState(
       tracks: [
@@ -1465,14 +1473,20 @@ void main() {
       await pump(tester, stage: FxStage.track, state: three);
       await tester.tap(find.byKey(const Key('signal_card_track_0')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('signal_panel_in_mix')), findsOneWidget);
+      expect(tailShowing(tester), isTrue);
 
       final gesture = await lift(tester, from: 0, over: 2);
 
-      // Level and `in the mix` would otherwise sit under the finger and change
-      // height as the strip reflows — a drag is its own mode.
-      expect(find.byKey(const Key('signal_panel_in_mix')), findsNothing);
-      expect(find.byKey(const Key('signal_panel_level')), findsNothing);
+      // Level and `in the mix` go: they are questions about the chain, and
+      // one of its entries is in the air. Hidden and untappable, but their
+      // ROOM is kept — see `the strip stays put under the finger`.
+      expect(tailShowing(tester), isFalse);
+      await tester.tap(
+        find.byKey(const Key('signal_panel_in_mix')),
+        warnIfMissed: false,
+      );
+      await tester.pump();
+      verifyNever(() => bloc.add(any(that: isA<LooperMuteToggled>())));
       // The chain itself is still all there — the entry being carried keeps
       // its place in the run as a ghost, so the chips around it do not slide
       // out from under the finger the moment the drag begins.
@@ -1482,7 +1496,7 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
       // And it comes back: a drop is not a way to lose the rest of the panel.
-      expect(find.byKey(const Key('signal_panel_in_mix')), findsOneWidget);
+      expect(tailShowing(tester), isTrue);
     });
 
     testWidgets('a cancelled drag leaves the chain alone', (tester) async {
@@ -1495,7 +1509,7 @@ void main() {
       await tester.pumpAndSettle();
 
       verifyNever(() => bloc.add(any(that: isA<LooperBusEffectMoved>())));
-      expect(find.byKey(const Key('signal_panel_in_mix')), findsOneWidget);
+      expect(tailShowing(tester), isTrue);
     });
 
     testWidgets('the entry that moves is the one under the finger', (
@@ -1579,11 +1593,11 @@ void main() {
       // `onDragEnd` is gated on the chip still being MOUNTED, so hanging the
       // reset off it left the panel folded into drag mode for good — no level
       // row, no editor, no add chip, recoverable only by closing the card.
-      expect(find.byKey(const Key('signal_panel_in_mix')), findsOneWidget);
+      expect(tailShowing(tester), isTrue);
       expect(find.byKey(const Key('signal_panel_gap_0')), findsNothing);
     });
 
-    testWidgets('two fingers can carry two entries', (tester) async {
+    testWidgets('one entry travels at a time', (tester) async {
       await pump(tester, stage: FxStage.track, state: three);
       await tester.tap(find.byKey(const Key('signal_card_track_0')));
       await tester.pumpAndSettle();
@@ -1598,20 +1612,91 @@ void main() {
       );
       await tester.pump();
 
-      await first.up();
-      await tester.pump();
+      // The second chip does not lift. Both drops would be expressed against
+      // the chain as it is drawn now, and the rewrite only lands on the bloc
+      // round-trip — so the second, released a frame after the first, moves an
+      // entry from a position the first drop has already invalidated. Nothing
+      // here could speculatively apply the first move to make the second
+      // one's coordinates true, so only one entry travels.
+      expect(find.byKey(const Key('signal_panel_lift')), findsOneWidget);
 
-      // The first drop must not take the gaps out from under the second
-      // finger: with one slot for the drag, the second entry could then only
-      // be abandoned, and the move was lost with no feedback.
-      expect(find.byKey(const Key('signal_panel_gap_1')), findsOneWidget);
+      await first.up();
       await second.up();
       await tester.pumpAndSettle();
 
-      verify(
-        () => bloc.add(any(that: isA<LooperBusEffectMoved>())),
-      ).called(2);
-      expect(find.byKey(const Key('signal_panel_in_mix')), findsOneWidget);
+      verify(() => bloc.add(any(that: isA<LooperBusEffectMoved>()))).called(1);
+      expect(tailShowing(tester), isTrue);
+    });
+
+    testWidgets('the strip stays put under the finger on a small console', (
+      tester,
+    ) async {
+      tester.view
+        ..physicalSize = const Size(1024, 600)
+        ..devicePixelRatio = 1;
+      await pump(tester, stage: FxStage.track, state: three);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // Down to the bottom, which is the only way to be touching the chain at
+      // all on a console this size.
+      await tester.drag(
+        find.byKey(const Key('signal_detail_panel')),
+        const Offset(0, -600),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+      final before = tester.getCenter(
+        find.byKey(const Key('signal_panel_chip_0')),
+      );
+
+      final gesture = await tester.startGesture(before);
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await tester.pump();
+
+      // Hiding the rows below the chain WITHOUT keeping their room shortens
+      // the panel, the scroll view clamps, and the whole strip is dragged up
+      // to 180px out from under the finger the instant the press lands — a
+      // release where the chip was picked up then hits a track card.
+      final after = tester.getCenter(
+        find.byKey(const Key('signal_panel_ghost_0')),
+      );
+      expect(after.dy, moreOrLessEquals(before.dy, epsilon: 1));
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('two presses in one frame still leave one drag standing', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track, state: three);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // Both presses mature in the SAME frame, so the second chip's
+      // recogniser fires before the rebuild that would have disarmed it —
+      // the one race the build-time gate cannot close.
+      final first = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('signal_panel_chip_0'))),
+      );
+      final second = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('signal_panel_chip_2'))),
+      );
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await tester.pump();
+
+      await first.up();
+      await tester.pump();
+
+      // The first drag ending must not clear a mode the second one owns: the
+      // gaps would go while a finger was still carrying an entry, and that
+      // drag could then only be abandoned.
+      expect(tailShowing(tester), isFalse);
+
+      await second.up();
+      await tester.pumpAndSettle();
+      expect(tailShowing(tester), isTrue);
     });
 
     testWidgets('a chip is a button a screen reader can activate', (
@@ -1685,7 +1770,7 @@ void main() {
       await first.up();
       await second.up();
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('signal_panel_in_mix')), findsOneWidget);
+      expect(tailShowing(tester), isTrue);
     });
 
     testWidgets('a tap still opens the editor rather than lifting', (
