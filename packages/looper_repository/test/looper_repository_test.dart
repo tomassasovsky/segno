@@ -1333,6 +1333,59 @@ void main() {
       );
     });
 
+    test('a parameter that is shown but not automatable is read back too', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain Reduction',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          // Visible and READ-ONLY, and not automatable — a meter. The console
+          // draws these, so a read-back that skips them leaves the drawn
+          // value frozen at the plugin's default for good: a live-looking
+          // number guaranteed to be wrong, including right after the user
+          // moved it in the plugin's own window.
+          flags: 0x02,
+        ),
+        le.PluginParamInfo(
+          id: 101,
+          name: 'Secret',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0,
+          stepCount: 0,
+          // Hidden: not drawn anywhere, so not read either.
+          flags: 0x08,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+
+      engine.nextParamValues[100] = -12;
+      engine.nextParamValues[101] = 0.9;
+      expect(
+        repo.refreshLanePluginParams(channel: 0, lane: 0, index: 0),
+        isTrue,
+      );
+      final values =
+          (repo.laneEffects(0, 0).single as PluginEffect).paramValues;
+      expect(values[100], -12);
+      expect(values.containsKey(101), isFalse);
+    });
+
     test('closeLanePluginEditor closes the slot and reads params back', () {
       engine.nextParamInfos = const [
         le.PluginParamInfo(

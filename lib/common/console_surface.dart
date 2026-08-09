@@ -1422,6 +1422,20 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
   bool _resetPending = false;
 
   @override
+  void didUpdateWidget(ConsoleValueBar old) {
+    super.didUpdateWidget(old);
+    // A bar that goes read-only under a finger keeps no fraction. Only the
+    // release handlers clear one, and they are wired only while the bar is
+    // live — so the fill stayed pinned where the finger left it and stopped
+    // reading the value it is supposed to be showing, for good. Reachable
+    // because these bars are keyed by POSITION: row N of the next entry
+    // reuses this state, and row N there may be a meter.
+    if (widget.onChanged == null && _dragging != null) {
+      _release();
+    }
+  }
+
+  @override
   void dispose() {
     _tapWindow?.cancel();
     super.dispose();

@@ -2333,9 +2333,16 @@ class LooperRepository {
     return true;
   }
 
-  /// Reads every user-visible param of [fx] from its loaded [handle]; returns a
-  /// copy with the changed values, or null if nothing moved. Shared by the lane
-  /// and monitor read-back paths.
+  /// Reads every param of [fx] the user can SEE from its loaded [handle];
+  /// returns a copy with the changed values, or null if nothing moved. Shared
+  /// by the lane and monitor read-back paths.
+  ///
+  /// Not `isUserVisible` — that is `isAutomatable && !isHidden`, and a
+  /// parameter can be shown without being automatable: a mode selector, a
+  /// gain-reduction meter. The console draws those (read-only), and a drawn
+  /// value that is never read back is frozen at the plugin's default forever
+  /// — a live-looking number guaranteed to be wrong, including right after
+  /// the user has changed it in the plugin's own window.
   ///
   /// The plugin is the source of truth (D-SYNC), so a value the plugin reports
   /// overwrites the model. One known transient: an in-app knob set is RT-queued
@@ -2346,7 +2353,7 @@ class LooperRepository {
     final values = Map<int, double>.of(fx.paramValues);
     var changed = false;
     for (final p in fx.params) {
-      if (!p.isUserVisible) continue;
+      if (p.isHidden) continue;
       final live = _engine.pluginParamGet(handle, p.id);
       if (values[p.id] != live) {
         values[p.id] = live;

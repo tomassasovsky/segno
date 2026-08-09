@@ -157,14 +157,27 @@ class SignalFxEditor extends StatelessWidget {
   };
 
   /// Points the entry at an installed plugin, keeping what it had.
+  ///
+  /// The entry is named by IDENTITY across the sheet, and re-found after it
+  /// closes. A modal sheet is open for as long as someone takes to choose,
+  /// and the chain can be rewritten underneath it — a record pass snapshots
+  /// the monitor chain onto the lane, another surface removes an entry. The
+  /// captured position would then name whatever had slid into it, and the
+  /// relink would swap an unrelated plugin's `ref` while replaying the saved
+  /// state of the one that is gone into it.
   Future<void> _relink(BuildContext context) async {
+    final slot = scope.effects[index].slotId;
     final picked = await showSignalBrowsePlugins(
       context,
       catalog: context.read<LooperRepository>().pluginCatalog,
     );
     if (picked == null) return;
+    final at = slot == null
+        ? -1
+        : scope.effects.indexWhere((effect) => effect.slotId == slot);
+    if (at < 0) return;
     scope.relinkPlugin(
-      index,
+      at,
       PluginRef(
         format: picked.format,
         id: picked.id,

@@ -2028,30 +2028,29 @@ void main() {
   });
 
   group('a missing plugin is not a dead end', () {
+    /// A track whose chain is [effects].
+    LooperState busWith(List<TrackEffect> effects) => LooperState(
+      tracks: [
+        Track(
+          volume: 0.5,
+          lanes: const [Lane(inputChannel: 0)],
+          effects: effects,
+        ),
+      ],
+      status: _rig.status,
+    );
+
+    const moved = PluginEffect(
+      ref: PluginRef(format: PluginFormat.vst3, id: 'moved.vst3'),
+      name: 'Moved',
+      slotId: 'slot-moved',
+      unavailable: true,
+    );
+
     testWidgets('relinking points the entry at an installed plugin', (
       tester,
     ) async {
-      await pump(
-        tester,
-        stage: FxStage.track,
-        state: LooperState(
-          tracks: const [
-            Track(
-              volume: 0.5,
-              lanes: [Lane(inputChannel: 0)],
-              effects: [
-                PluginEffect(
-                  ref: PluginRef(format: PluginFormat.vst3, id: 'moved.vst3'),
-                  name: 'Moved',
-                  slotId: 'slot-moved',
-                  unavailable: true,
-                ),
-              ],
-            ),
-          ],
-          status: _rig.status,
-        ),
-      );
+      await pump(tester, stage: FxStage.track, state: busWith(const [moved]));
       await tester.tap(find.byKey(const Key('signal_card_track_0')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
@@ -2076,6 +2075,47 @@ void main() {
       expect(event.index, 0);
       expect(event.ref.id, 'plug.ok');
       verifyNever(() => bloc.add(any(that: isA<LooperBusEffectRemoved>())));
+    });
+
+    testWidgets('it relinks the entry it was opened on, not a position', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track, state: busWith(const [moved]));
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_fx_relink')));
+      await tester.pumpAndSettle();
+
+      // The chain is rewritten while the picker is open — a record pass
+      // snapshotting the monitor chain onto the lane, another surface adding
+      // an entry. The editor was opened on position 0; a DIFFERENT plugin is
+      // there now.
+      when(() => bloc.state).thenReturn(
+        busWith(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'innocent'),
+            name: 'Innocent',
+            slotId: 'slot-innocent',
+          ),
+          moved,
+        ]),
+      );
+
+      await tester.tap(find.byKey(const Key('signal_browse_plug.ok')));
+      await tester.pumpAndSettle();
+
+      // A captured position would have swapped the innocent entry's ref, and
+      // replayed the missing plugin's saved state into a plugin it never came
+      // from. The entry is named by identity across the wait.
+      final event =
+          verify(
+                () =>
+                    bloc.add(captureAny(that: isA<LooperBusPluginRelinked>())),
+              ).captured.single
+              as LooperBusPluginRelinked;
+      expect(event.index, 1);
     });
   });
 
