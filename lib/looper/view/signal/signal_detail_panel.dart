@@ -184,6 +184,12 @@ class _LoopPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final names = context.watch<TracksCubit>().state.names;
+    // Watched, not read: whether this take can be re-inherited is a fact
+    // about the INPUT's chain, not the lane's — a pedal switching that chain
+    // on is what makes the action appear, and nothing about the lane moves
+    // when it does. `MonitorState` carries no meters, so this is a handful of
+    // rebuilds a session, not a rebuild a frame.
+    context.watch<MonitorCubit>();
     final bloc = context.read<LooperBloc>();
     // NOT `context.select` on the lane itself: a [Lane] carries live meters,
     // so selecting it would rebuild this panel at the meter rate. Only the

@@ -2261,6 +2261,27 @@ void main() {
   });
 
   group('the chain can be switched, and re-inherited', () {
+    /// Track 0 mid-take, with lane 0 drifted from its input or not.
+    LooperState drifted({required bool overdubbing, bool diverges = true}) =>
+        LooperState(
+          tracks: [
+            Track(
+              volume: 0.5,
+              state: overdubbing ? TrackState.overdubbing : TrackState.playing,
+              lanes: [
+                Lane(
+                  volume: 0.5,
+                  inputChainDiverges: diverges,
+                ),
+                const Lane(inputChannel: 1),
+              ],
+              effects: _rig.tracks.first.effects,
+            ),
+            const Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
+          ],
+          status: _rig.status,
+        );
+
     testWidgets('a chain that is off can be switched back on', (tester) async {
       await pump(
         tester,
@@ -2342,34 +2363,69 @@ void main() {
         findsNothing,
       );
 
-      // The overdub begins and the take has drifted from its input. NOTHING
-      // about the lane's own numbers changes — a panel watching only those
-      // would show this warning solely if the player happened to touch the
-      // fader while the overdub ran, which is never, in the one case A7
-      // exists for.
-      states.add(
-        LooperState(
-          tracks: [
-            Track(
-              volume: 0.5,
-              state: TrackState.overdubbing,
-              lanes: const [
-                Lane(inputChannel: 0, volume: 0.5, inputChainDiverges: true),
-                Lane(inputChannel: 1),
-              ],
-              effects: _rig.tracks.first.effects,
-            ),
-            const Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
-          ],
-          status: _rig.status,
-        ),
-      );
+      // The take has ALREADY drifted, and the overdub begins: only the
+      // track's state moves. A panel watching the lane's own numbers sees
+      // nothing at all, so the warning would appear solely if the player
+      // happened to touch the fader while the overdub ran — never, in the one
+      // case A7 exists for.
+      states.add(drifted(overdubbing: false));
       await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('signal_panel_overdub_mismatch')),
+        findsNothing,
+      );
 
+      states.add(drifted(overdubbing: true));
+      await tester.pumpAndSettle();
       expect(
         find.byKey(const Key('signal_panel_overdub_mismatch')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('and when the drift appears mid-overdub', (tester) async {
+      final states = StreamController<LooperState>();
+      addTearDown(states.close);
+      await pump(tester, stage: FxStage.loop, states: states.stream);
+      await tester.tap(find.byKey(const Key('signal_card_loop_0_0')));
+      await tester.pumpAndSettle();
+
+      // The other order: the overdub is already running and the input's chain
+      // is edited underneath it. Now only the DRIFT moves.
+      states.add(drifted(overdubbing: true, diverges: false));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('signal_panel_overdub_mismatch')),
+        findsNothing,
+      );
+
+      states.add(drifted(overdubbing: true));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('signal_panel_overdub_mismatch')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the re-inherit appears when the input gains a chain', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.loop);
+      await tester.tap(find.byKey(const Key('signal_card_loop_0_0')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('signal_panel_resync')), findsNothing);
+
+      // Whether a take can be re-inherited is a fact about the INPUT's chain
+      // — a pedal switching that chain on is what makes the action possible,
+      // and nothing about the lane moves when it does. The dock used to watch
+      // this; the dock is gone.
+      when(
+        () => repository.laneCanInheritFromInput(any(), any()),
+      ).thenReturn(true);
+      monitor.addEffect(0);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('signal_panel_resync')), findsOneWidget);
     });
 
     testWidgets('a lane offers a re-inherit when the input has one', (
