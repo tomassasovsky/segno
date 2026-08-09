@@ -112,6 +112,7 @@ class SettingsTrayState extends Equatable {
     this.destination = SettingsTrayDestination.home,
     this.signalTab = FxStage.input,
     this.signalSelection,
+    this.signalEffect,
     this.networkTab = NetworkTab.wifi,
     this.controlTab = ControlTab.pedal,
     this.loopTab = LoopTab.tempo,
@@ -163,6 +164,15 @@ class SettingsTrayState extends Equatable {
   /// selection the face cannot draw.
   final FxAddress? signalSelection;
 
+  /// Which entry of the open card's chain is being edited, or null when the
+  /// panel is showing the chain rather than one link of it.
+  ///
+  /// An INDEX, not the entry itself: a chain is edited while it is being
+  /// reordered and removed from, so anything holding the entry would be
+  /// holding a copy of something that has since moved. The index is what
+  /// `FxScope`'s own edit methods take.
+  final int? signalEffect;
+
   /// Which tab the Network domain shows.
   ///
   /// Survives leaving and returning to the domain — closing the tray resets
@@ -194,6 +204,8 @@ class SettingsTrayState extends Equatable {
     FxStage? signalTab,
     FxAddress? signalSelection,
     bool clearSignalSelection = false,
+    int? signalEffect,
+    bool clearSignalEffect = false,
     NetworkTab? networkTab,
     ControlTab? controlTab,
     LoopTab? loopTab,
@@ -211,6 +223,9 @@ class SettingsTrayState extends Equatable {
     signalSelection: clearSignalSelection
         ? null
         : signalSelection ?? this.signalSelection,
+    signalEffect: clearSignalSelection || clearSignalEffect
+        ? null
+        : signalEffect ?? this.signalEffect,
     networkTab: networkTab ?? this.networkTab,
     controlTab: controlTab ?? this.controlTab,
     loopTab: loopTab ?? this.loopTab,
@@ -227,6 +242,7 @@ class SettingsTrayState extends Equatable {
     destination,
     signalTab,
     signalSelection,
+    signalEffect,
     networkTab,
     controlTab,
     loopTab,

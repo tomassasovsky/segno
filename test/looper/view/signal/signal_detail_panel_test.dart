@@ -10,6 +10,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -60,7 +61,11 @@ void main() {
   late MonitorCubit monitor;
   late SettingsTrayCubit tray;
 
-  setUpAll(() => registerFallbackValue(MonitorMode.off));
+  setUpAll(() {
+    registerFallbackValue(MonitorMode.off);
+    registerFallbackValue(const LooperMuteToggled(0));
+    registerFallbackValue(const <TrackEffect>[]);
+  });
 
   setUp(() {
     bloc = _MockLooperBloc();
@@ -95,6 +100,13 @@ void main() {
           mask: any(named: 'mask'),
         ),
       ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setMonitorEffects(
+          input: any(named: 'input'),
+          effects: any(named: 'effects'),
+        ),
+      ).thenReturn(EngineResult.ok),
+      () => when(() => repository.monitorEffects(any())).thenReturn(const []),
     ]) {
       stub();
     }
@@ -723,6 +735,225 @@ void main() {
       // Input 1 is untouched, so it reads unity — not input 0's number.
       expect(find.text(moved), findsNothing);
       expect(find.text('0.0 dB'), findsOneWidget);
+    });
+  });
+
+  // ------------------------------------------------ SIGNAL / fx-edit
+
+  group('the FX editor', () {
+    Future<void> openEditor(WidgetTester tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a chip opens the editor in place of level and in the mix', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      expect(find.text(l10n.signalPanelLevel), findsOneWidget);
+      expect(find.byKey(const Key('signal_fx_editor')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('signal_fx_editor')), findsOneWidget);
+      // You are looking at ONE effect now — how loud the whole chain is is a
+      // question about the chain.
+      expect(find.text(l10n.signalPanelLevel), findsNothing);
+      expect(find.text(l10n.signalPanelInMix), findsNothing);
+    });
+
+    testWidgets('the monitor segment survives, because it is still true', (
+      tester,
+    ) async {
+      await pump(tester);
+      // An input's monitor chain is empty by default; give it something to
+      // open.
+      monitor.addEffect(0);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // Whether you hear the jack is still a fact while you edit its tone.
+      expect(find.text(l10n.signalPanelHearWhilePlaying), findsOneWidget);
+      expect(find.byKey(const Key('signal_panel_monitor')), findsOneWidget);
+    });
+
+    testWidgets('re-tapping the open chip hands back the chain', (
+      tester,
+    ) async {
+      await openEditor(tester);
+      await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // Shuts the editor, NOT the card — the editor is a link of the chain.
+      expect(find.byKey(const Key('signal_fx_editor')), findsNothing);
+      expect(panel(), findsOneWidget);
+      expect(find.text(l10n.signalPanelLevel), findsOneWidget);
+    });
+
+    testWidgets('a param row per parameter, driving the chain', (tester) async {
+      await openEditor(tester);
+
+      // Reverb's own parameters, from the engine's metadata.
+      expect(find.byKey(const Key('signal_fx_param_0')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+      await tester.pumpAndSettle();
+
+      verify(
+        () => bloc.add(any(that: isA<LooperBusEffectParamChanged>())),
+      ).called(greaterThan(0));
+    });
+
+    testWidgets('bypass leaves the entry in the chain', (tester) async {
+      await openEditor(tester);
+
+      await tester.tap(find.byKey(const Key('signal_fx_bypass')));
+      await tester.pumpAndSettle();
+
+      // Power, not removal: the chip is still there.
+      expect(find.byKey(const Key('signal_panel_chip_0')), findsOneWidget);
+      verify(
+        () => bloc.add(any(that: isA<LooperTrackEffectEnabledToggled>())),
+      ).called(1);
+    });
+
+    testWidgets('the ends of the chain cannot be moved past', (tester) async {
+      await openEditor(tester);
+
+      // Chip 0 of a two-effect chain: nothing earlier to move to, but a
+      // later slot exists.
+      InkWell button(String key) =>
+          tester.widget<InkWell>(find.byKey(Key(key)));
+
+      expect(button('signal_fx_move_up').onTap, isNull);
+      expect(button('signal_fx_move_down').onTap, isNotNull);
+
+      await tester.tap(find.byKey(const Key('signal_fx_move_down')));
+      await tester.pumpAndSettle();
+      verify(
+        () => bloc.add(any(that: isA<LooperBusEffectMoved>())),
+      ).called(1);
+    });
+
+    testWidgets('removing closes the editor it was opened from', (
+      tester,
+    ) async {
+      await openEditor(tester);
+
+      await tester.tap(find.byKey(const Key('signal_fx_remove')));
+      await tester.pumpAndSettle();
+
+      // An editor cannot outlive what it edits.
+      expect(find.byKey(const Key('signal_fx_editor')), findsNothing);
+      expect(tray.state.signalEffect, isNull);
+    });
+
+    testWidgets('opening a different card closes the editor', (tester) async {
+      await openEditor(tester);
+      await tester.tap(find.byKey(const Key('signal_card_track_1')));
+      await tester.pumpAndSettle();
+
+      // The index means nothing against another chain.
+      expect(find.byKey(const Key('signal_fx_editor')), findsNothing);
+      expect(tray.state.signalEffect, isNull);
+    });
+  });
+
+  group('the editor follows its entry', () {
+    testWidgets('moving carries the editor to the new slot', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      // Chip 1 (Tremolo) of [Reverb, Tremolo].
+      await tester.tap(find.byKey(const Key('signal_panel_chip_1')));
+      await tester.pumpAndSettle();
+      expect(tray.state.signalEffect, 1);
+
+      await tester.tap(find.byKey(const Key('signal_fx_move_up')));
+      await tester.pumpAndSettle();
+
+      // Without this the editor stays on the SLOT: one press would swap it
+      // onto the neighbour that moved in, and a second would swap it back,
+      // so an effect could never travel further than one place.
+      expect(tray.state.signalEffect, 0);
+      verify(
+        () => bloc.add(any(that: isA<LooperBusEffectMoved>())),
+      ).called(1);
+    });
+
+    testWidgets('a chain that empties hands the panel back', (tester) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      await pump(tester, stage: FxStage.track, states: states.stream);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // Another surface strips the chain while the editor is open.
+      states.add(
+        LooperState(
+          tracks: [
+            Track(volume: 0.5, lanes: _rig.tracks.first.lanes),
+            _rig.tracks[1],
+          ],
+          status: _rig.status,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Not a panel with no editor, no level, no mix and no chip to tap.
+      expect(find.byKey(const Key('signal_fx_editor')), findsNothing);
+      expect(tray.state.signalEffect, isNull);
+      expect(find.text(l10n.signalPanelLevel), findsOneWidget);
+    });
+  });
+
+  group('what the editor says about itself', () {
+    testWidgets('a chain switched off says why nothing changed', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+      await tester.pumpAndSettle();
+
+      // The rig's chain power is on, so no notice.
+      expect(find.byKey(const Key('signal_fx_chain_off')), findsNothing);
+    });
+
+    testWidgets('a parameter is announced with the effect it belongs to', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await pump(tester, stage: FxStage.track);
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // "MIX, slider" tells a reader nothing about whose mix it is.
+      final bar = tester.widget<ConsoleValueBar>(
+        find.byKey(const Key('signal_fx_param_0')),
+      );
+      expect(bar.semanticLabel, isNotNull);
+      expect(bar.semanticLabel, contains(l10n.effectReverb));
+      handle.dispose();
     });
   });
 

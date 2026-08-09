@@ -728,9 +728,14 @@ The first draft accounted for ~2,900 of the 5,698 lines. The rest goes too.
 | `fx_param_tile.dart` | 347 | `signal_fx_rack.dart` |
 | `signal_fx_summary.dart` | 296 | `signal_list_view.dart` |
 | `fx_param_edit_sheet.dart` | 267 | `signal_fx_rack.dart` |
-| `signal_fx_chrome.dart` | 205 | `fx_dock`, `signal_fx_rack`, `signal_fx_summary`, `signal_list_view` |
+| `signal_fx_chrome.dart` | 197 | `fx_dock`, `signal_fx_rack`, `signal_fx_summary`, `signal_list_view` |
 | `signal_routing_chips.dart` | 167 | `signal_list_view.dart` |
 | | **2,791** | |
+
+**Moved out ahead of the demolition:** `fxPluginPlaceholderReason` (the one
+sentence saying why a hosted plugin shows no controls) now lives in
+`fx_editor/fx_plugin_state.dart`, because the Signal panel's editor says it
+too — PR 4 would otherwise have imported a file this PR deletes.
 
 **Survives — it has other consumers:** `signal_knob.dart` (326, used by
 `audio_setup/view/midi_learn_section.dart`) and `signal_style.dart` (83, used
