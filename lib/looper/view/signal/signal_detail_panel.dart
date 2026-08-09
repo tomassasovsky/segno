@@ -7,9 +7,12 @@ import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
+import 'package:segno/looper/view/fx_editor/fx_scope.dart';
 import 'package:segno/looper/view/signal/signal_cards.dart';
+import 'package:segno/looper/view/signal/signal_fx_editor.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -31,8 +34,9 @@ import 'package:segno/theme/theme.dart';
 /// rig has no such gate to draw, so the drawing is corrected rather than
 /// implemented (see `c/signal-detail`).
 ///
-/// Racks are #535, so the panel carries no rack chooser yet, and the chain's
-/// chips are inert: opening one is the FX editor, which is the next PR.
+/// Racks are #535, so the panel carries no rack chooser yet. A chain chip
+/// opens that entry in the editor, which takes the place of `level` and
+/// `in the mix` while it is open.
 class SignalDetailPanel extends StatelessWidget {
   /// Creates a [SignalDetailPanel] for the chain at [address].
   const SignalDetailPanel({required this.address, super.key});
@@ -78,24 +82,31 @@ Track? _trackOf(LooperState state, int track) {
   return null;
 }
 
-/// Whether the three facts a panel draws about a lane are unchanged.
+/// Whether the facts a panel draws about a lane are unchanged.
 ///
 /// Deliberately NOT `a == b`: a [Lane] carries live meters, so value equality
 /// on the whole object is false on every audio frame and the panel would
-/// redraw at the meter rate. It draws a chain, a volume and a mute; only those
-/// decide. Same argument as `sameChainShape` makes for the card runs.
+/// redraw at the meter rate. It draws a chain, a volume, a mute and the
+/// chain's own power; only those decide. Same argument as `sameChainShape`
+/// makes for the card runs.
 bool sameLaneFacts(Lane? a, Lane? b) => a == null || b == null
     ? identical(a, b)
     : a.volume == b.volume &&
           a.muted == b.muted &&
+          // The chain's own power is drawn too, by the editor's notice that
+          // says why un-bypassing an entry changed nothing audible. Left out
+          // of this list, that notice could never appear: nothing else in the
+          // panel subscribes to the flag.
+          a.chainEnabled == b.chainEnabled &&
           listEquals(a.effects, b.effects);
 
-/// Whether the three facts a panel draws about a track bus are unchanged.
+/// Whether the facts a panel draws about a track bus are unchanged.
 /// See [sameLaneFacts] — a [Track] carries live meters for the same reason.
 bool sameTrackFacts(Track? a, Track? b) => a == null || b == null
     ? identical(a, b)
     : a.volume == b.volume &&
           a.muted == b.muted &&
+          a.chainEnabled == b.chainEnabled &&
           listEquals(a.effects, b.effects);
 
 /// An input's panel: its monitor chain, and the three facts about hearing it.
@@ -128,6 +139,12 @@ class _InputPanel extends StatelessWidget {
 
     return _PanelBody(
       address: FxAddress(stage: FxStage.input, index: input),
+      scope: InputFxScope(
+        monitor: cubit,
+        looper: context.read<LooperBloc>(),
+        repository: context.read<LooperRepository>(),
+        input: input,
+      ),
       title: l10n.inputName(names, input),
       subtitle: l10n.signalPanelSubtitle(
         l10n.signalCoordInput(input + 1),
@@ -178,6 +195,12 @@ class _LoopPanel extends StatelessWidget {
             index: track,
             lane: lane,
           ),
+          scope: LaneFxScope(
+            looper: bloc,
+            repository: context.read<LooperRepository>(),
+            track: track,
+            lane: lane,
+          ),
           title: l10n.trackName(names, track),
           subtitle: l10n.signalPanelSubtitle(
             l10n.signalCoordTrackLane(track + 1, laneLetter(lane)),
@@ -222,6 +245,11 @@ class _TrackPanel extends StatelessWidget {
         if (bus == null) return const SizedBox.shrink();
         return _PanelBody(
           address: FxAddress(stage: FxStage.track, index: track),
+          scope: StageFxScope(
+            looper: bloc,
+            address: FxAddress(stage: FxStage.track, index: track),
+            trackNames: names,
+          ),
           title: l10n.trackName(names, track),
           subtitle: l10n.signalPanelSubtitle(
             l10n.signalCoordTrack(track + 1),
@@ -258,9 +286,15 @@ class _MasterPanel extends StatelessWidget {
     // a hash would be a collision-shaped subscription.
     return BlocBuilder<LooperBloc, LooperState>(
       buildWhen: (previous, current) =>
-          !listEquals(previous.masterEffects, current.masterEffects),
+          !listEquals(previous.masterEffects, current.masterEffects) ||
+          previous.masterChainEnabled != current.masterChainEnabled,
       builder: (context, state) => _PanelBody(
         address: const FxAddress(stage: FxStage.master),
+        scope: StageFxScope(
+          looper: context.read<LooperBloc>(),
+          address: const FxAddress(stage: FxStage.master),
+          trackNames: const [],
+        ),
         title: l10n.signalMasterCardName,
         subtitle: l10n.signalPanelSubtitle(
           l10n.signalCoordMain,
@@ -277,6 +311,7 @@ class _MasterPanel extends StatelessWidget {
 class _PanelBody extends StatelessWidget {
   const _PanelBody({
     required this.address,
+    required this.scope,
     required this.title,
     required this.subtitle,
     required this.chain,
@@ -291,6 +326,9 @@ class _PanelBody extends StatelessWidget {
   /// Which chain this panel is for — the fader keys off it, so a drag on one
   /// card cannot leave its value showing on the next.
   final FxAddress address;
+
+  /// The chain's own edit surface, for the editor the chips open.
+  final FxScope scope;
 
   final String title;
   final String subtitle;
@@ -310,6 +348,26 @@ class _PanelBody extends StatelessWidget {
     final inMix = heard;
     final mode = monitorMode;
 
+    final selected = context.select<SettingsTrayCubit, int?>(
+      (c) => c.state.signalEffect,
+    );
+    final tray = context.read<SettingsTrayCubit>();
+    // An entry can go while its editor is open — removed from another
+    // surface, or the whole chain rewritten by a record-time snapshot copy.
+    // The editor is DROPPED here rather than rendered empty: leaving the
+    // selection set would suppress `level` and `in the mix` too, and with no
+    // chip left to tap there would be nothing on the face able to clear it.
+    final editing = selected != null && selected < chain.length
+        ? selected
+        : null;
+    if (selected != null && editing == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // `context.mounted` guards the element; the cubit needs its own check,
+        // since emitting on a closed one throws — reachable in tests whose
+        // tearDown closes the cubit before the frame settles.
+        if (context.mounted && !tray.isClosed) tray.clearSignalEffect();
+      });
+    }
     return Container(
       key: const Key('signal_detail_panel'),
       width: double.infinity,
@@ -327,27 +385,44 @@ class _PanelBody extends StatelessWidget {
         children: [
           _Header(title: title, subtitle: subtitle),
           _Caption(l10n.signalPanelChain),
-          _ChainStrip(chain: chain),
-          if (gain != null && onLevel != null) ...[
-            _Caption(l10n.signalPanelLevel),
-            _LevelRow(
-              key: ValueKey(address),
-              value: gain,
-              onChanged: onLevel!,
-            ),
-          ],
-          if (inMix != null && onHeard != null) ...[
-            _Caption(l10n.signalPanelInMix),
-            ConsoleSegmented<bool>(
-              key: const Key('signal_panel_in_mix'),
-              stretch: true,
-              selected: inMix,
-              onChanged: onHeard!,
-              segments: [
-                ConsoleSegment(value: false, label: l10n.signalMixMuted),
-                ConsoleSegment(value: true, label: l10n.signalMixHeard),
-              ],
-            ),
+          _ChainStrip(
+            chain: chain,
+            editing: editing,
+            onSelect: tray.selectSignalEffect,
+          ),
+          // The editor takes the place of `level` and `in the mix`: you are
+          // looking at ONE effect now, and how loud the whole chain is is a
+          // question about the chain. The monitor segment below stays — what
+          // you hear is still true while you change what it sounds like.
+          if (editing != null)
+            SignalFxEditor(
+              scope: scope,
+              index: editing,
+              onClose: () => tray.selectSignalEffect(editing),
+              onMoved: tray.showSignalEffect,
+            )
+          else ...[
+            if (gain != null && onLevel != null) ...[
+              _Caption(l10n.signalPanelLevel),
+              _LevelRow(
+                key: ValueKey(address),
+                value: gain,
+                onChanged: onLevel!,
+              ),
+            ],
+            if (inMix != null && onHeard != null) ...[
+              _Caption(l10n.signalPanelInMix),
+              ConsoleSegmented<bool>(
+                key: const Key('signal_panel_in_mix'),
+                stretch: true,
+                selected: inMix,
+                onChanged: onHeard!,
+                segments: [
+                  ConsoleSegment(value: false, label: l10n.signalMixMuted),
+                  ConsoleSegment(value: true, label: l10n.signalMixHeard),
+                ],
+              ),
+            ],
           ],
           if (mode != null && onMonitorMode != null) ...[
             _Caption(l10n.signalPanelHearWhilePlaying),
@@ -444,13 +519,23 @@ class _Caption extends StatelessWidget {
 
 /// The chain as a strip of chips, in processing order.
 ///
-/// Inert in this PR: a chip opens the FX editor, which is the next one, and a
-/// chip that highlighted with nothing to show would be a state with no
-/// consequence — the same rule the cards followed before this panel existed.
+/// A chip opens its entry in the editor below, and the open one takes the
+/// accent pair. `+ effect` — the add affordance the mockups draw as the last
+/// chip — arrives with the browse-and-add PR.
 class _ChainStrip extends StatelessWidget {
-  const _ChainStrip({required this.chain});
+  const _ChainStrip({
+    required this.chain,
+    required this.editing,
+    required this.onSelect,
+  });
 
   final List<TrackEffect> chain;
+
+  /// Which entry is open in the editor, or null when none is.
+  final int? editing;
+
+  /// Opens (or, on the open chip, closes) an entry's editor.
+  final ValueChanged<int> onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -473,22 +558,39 @@ class _ChainStrip extends StatelessWidget {
       runSpacing: 5,
       children: [
         for (final (index, effect) in chain.indexed)
-          Container(
-            key: Key('signal_panel_chip_$index'),
-            height: 38,
-            padding: const EdgeInsets.symmetric(horizontal: 17),
-            alignment: Alignment.center,
-            // No fill: the mockups give an unselected chip none at all, and
-            // the selected pair (accentSurface + accent text) arrives with the
-            // editor that makes a chip selectable in the first place.
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(8)),
-            child: Text(
-              fxBlockName(l10n, effect),
-              style: TextStyle(
-                color: surface.textSecondary,
-                fontSize: 16,
-                height: 1.13,
-                leadingDistribution: TextLeadingDistribution.even,
+          Semantics(
+            button: true,
+            selected: index == editing,
+            label: fxBlockName(l10n, effect),
+            child: InkWell(
+              key: Key('signal_panel_chip_$index'),
+              onTap: () => onSelect(index),
+              borderRadius: BorderRadius.circular(8),
+              child: ExcludeSemantics(
+                // No `alignment`: a Container with one expands to its
+                // constraints, which inside a Wrap made every chip span the
+                // whole panel. The padding centres the label on its own.
+                child: Container(
+                  height: 38,
+                  padding: const EdgeInsets.symmetric(horizontal: 17),
+                  decoration: BoxDecoration(
+                    // Unselected carries no fill at all, as the mockups draw
+                    // it; the open one takes the accent pair.
+                    color: index == editing ? surface.accentSurface : null,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    fxBlockName(l10n, effect),
+                    style: TextStyle(
+                      color: index == editing
+                          ? surface.accent
+                          : surface.textSecondary,
+                      fontSize: 16,
+                      height: 1.13,
+                      leadingDistribution: TextLeadingDistribution.even,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

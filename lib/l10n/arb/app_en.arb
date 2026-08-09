@@ -2780,6 +2780,42 @@
     "@signalOutputsGroup": {
         "description": "Caption over the master tab's hardware-output list."
     },
+    "fxNoParameters": "This effect exposes no controls here.",
+    "@fxNoParameters": {
+        "description": "Editor block for an entry that genuinely exposes no controls. A plugin that failed, is unsupported here, or is still scanning says so through fxPluginPlaceholderReason instead."
+    },
+    "a11yFxParam": "{param} of {effect}",
+    "@a11yFxParam": {
+        "description": "Announced name for one parameter bar. The visible label is an upper-cased fragment (RATE, DEPTH) with no indication of whose it is.",
+        "placeholders": {
+            "param": {
+                "type": "String"
+            },
+            "effect": {
+                "type": "String"
+            }
+        }
+    },
+    "fxChainOffHere": "The whole chain is switched off, so this changes nothing you can hear yet.",
+    "@fxChainOffHere": {
+        "description": "Shown in the editor when the chain's own power is off (R15). Without it, un-bypassing an entry visibly does nothing and the surface never says why."
+    },
+    "fxBypass": "bypass",
+    "@fxBypass": {
+        "description": "The editor's per-entry power, lower case like the panel's other controls. Bypass leaves the effect in the chain and stops it sounding — it is not a remove."
+    },
+    "fxMoveEarlier": "Move earlier in the chain",
+    "@fxMoveEarlier": {
+        "description": "Accessibility label for the editor's left arrow. Processing order IS signal order, so earlier means earlier in the sound rather than higher in a list."
+    },
+    "fxMoveLater": "Move later in the chain",
+    "@fxMoveLater": {
+        "description": "Accessibility label for the editor's right arrow."
+    },
+    "fxRemove": "Remove",
+    "@fxRemove": {
+        "description": "Takes the entry out of the chain entirely, unlike fxBypass which leaves it in place and silent."
+    },
     "signalPanelSubtitle": "{coordinate} · {stage} stage",
     "@signalPanelSubtitle": {
         "description": "The open panel's second line: where this chain sits, then which stage it is. The title above it is the chain's own name.",

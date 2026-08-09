@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/fx_editor/fx_plugin_state.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/theme/surface_theme.dart';
 
@@ -133,19 +134,6 @@ class FxDisabledDim extends StatelessWidget {
     );
   }
   return null;
-}
-
-/// The placeholder card's explanatory line, and the summary chip's tooltip for
-/// the same state — declared once so the two always say the same thing.
-String fxPluginPlaceholderReason(
-  AppLocalizations l10n, {
-  required bool loading,
-  required bool unsupported,
-}) {
-  if (loading) return l10n.signalPluginLoading;
-  return unsupported
-      ? l10n.signalPluginUnsupported
-      : l10n.signalPluginUnavailable;
 }
 
 /// The **inherited** marker on a loop-stage chain (A6/R13): this take's chain

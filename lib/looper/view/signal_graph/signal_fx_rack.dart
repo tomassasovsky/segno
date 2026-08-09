@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/view/fx_editor/fx_plugin_state.dart';
 import 'package:segno/looper/view/signal_graph/fx_param_edit_sheet.dart';
 import 'package:segno/looper/view/signal_graph/fx_param_tile.dart';
 import 'package:segno/looper/view/signal_graph/signal_fx_chrome.dart';

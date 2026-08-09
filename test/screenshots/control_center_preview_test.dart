@@ -1237,14 +1237,20 @@ void main() {
   ///
   /// The fourth output is OFF, so the `OUTPUTS` group shows both switch states
   /// rather than a column of identical ones.
-  const signalRig = LooperState(
+  final signalRig = LooperState(
     tracks: [
-      Track(lanes: [Lane(inputChannel: 0)]),
-      Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
-      Track(channel: 2, lanes: [Lane(inputChannel: 0)]),
+      Track(
+        lanes: const [Lane(inputChannel: 0)],
+        effects: [
+          BuiltInEffect(type: TrackEffectType.drive),
+          BuiltInEffect(type: TrackEffectType.tremolo),
+        ],
+      ),
+      const Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
+      const Track(channel: 2, lanes: [Lane(inputChannel: 0)]),
     ],
     outputEnabledMask: 0x7,
-    status: EngineStatus(
+    status: const EngineStatus(
       sampleRate: 48000,
       inputChannels: 4,
       outputChannels: 4,
@@ -1316,6 +1322,21 @@ void main() {
     await expectLater(
       find.byType(Scaffold),
       matchesGoldenFile('goldens/control_center_signal_detail.png'),
+    );
+  }, skip: !hasFonts);
+
+  testWidgets('signal domain, a chain entry open in the editor', (
+    tester,
+  ) async {
+    await pumpSignal(tester, FxStage.track);
+    await tester.tap(find.byKey(const Key('signal_card_track_0')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('signal_panel_chip_0')));
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(Scaffold),
+      matchesGoldenFile('goldens/control_center_signal_fx_edit.png'),
     );
   }, skip: !hasFonts);
 
