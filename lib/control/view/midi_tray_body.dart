@@ -732,6 +732,11 @@ class _MappingRow extends StatelessWidget {
                     key: const Key('midi_lo'),
                     label: l10n.midiLearnLo,
                     value: sweep.lo,
+                    // Where a calibration starts before anyone has moved a
+                    // pedal: the bottom of the CC range. A calibration you
+                    // cannot undo except by aiming at an edge is one you stop
+                    // experimenting with.
+                    resetValue: 0,
                     readout: '${(sweep.lo * 127).round()}',
                     semanticLabel: l10n.a11yMidiLearnLo,
                     onChanged: (value) => unawaited(
@@ -746,6 +751,7 @@ class _MappingRow extends StatelessWidget {
                     key: const Key('midi_hi'),
                     label: l10n.midiLearnHi,
                     value: sweep.hi,
+                    resetValue: 1,
                     readout: '${(sweep.hi * 127).round()}',
                     semanticLabel: l10n.a11yMidiLearnHi,
                     onChanged: (value) => unawaited(
@@ -761,6 +767,7 @@ class _MappingRow extends StatelessWidget {
                     key: const Key('midi_threshold'),
                     label: l10n.midiLearnThreshold,
                     value: stomp.threshold / 127,
+                    resetValue: DiscreteBinding.defaultThreshold / 127,
                     readout: '${stomp.threshold}',
                     semanticLabel: l10n.a11yMidiLearnThreshold,
                     onChanged: (value) => unawaited(

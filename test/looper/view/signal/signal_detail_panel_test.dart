@@ -561,6 +561,58 @@ void main() {
       ).called(greaterThan(0));
     });
 
+    testWidgets('a double tap on the level fader snaps it back to unity', (
+      tester,
+    ) async {
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+
+      // A quarter along, deliberately NOT the centre — the centre of this bar
+      // IS unity, so a reset there would be indistinguishable from the tap
+      // that opened the window.
+      final box = tester.getRect(find.byKey(const Key('signal_panel_level')));
+      final spot = Offset(box.left + box.width / 4, box.center.dy);
+      await tester.tapAt(spot);
+      await tester.pumpAndSettle();
+      expect(
+        monitor.state.forInput(0).volume,
+        moreOrLessEquals(kSignalMaxGain / 4, epsilon: 0.1),
+      );
+
+      // A bar has no numbers on it, so landing back on unity by dragging is
+      // luck. The same tap twice, inside the double-tap window.
+      await tester.tapAt(spot);
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tapAt(spot);
+      await tester.pumpAndSettle();
+
+      expect(monitor.state.forInput(0).volume, moreOrLessEquals(1));
+    });
+
+    testWidgets('two taps far apart are two adjustments, not a reset', (
+      tester,
+    ) async {
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+
+      final box = tester.getRect(find.byKey(const Key('signal_panel_level')));
+      await tester.tapAt(Offset(box.left + box.width / 4, box.center.dy));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tapAt(Offset(box.left + box.width * 3 / 4, box.center.dy));
+      await tester.pumpAndSettle();
+
+      // Where the second tap was aimed, NOT unity: two taps further apart
+      // than kDoubleTapSlop are never one double tap, and reading them as a
+      // reset would throw the second one's position away.
+      expect(
+        monitor.state.forInput(0).volume,
+        moreOrLessEquals(kSignalMaxGain * 3 / 4, epsilon: 0.1),
+      );
+      await tester.pump(kDoubleTapTimeout * 2);
+    });
+
     testWidgets("a lane's mix control raises the lane's own event", (
       tester,
     ) async {

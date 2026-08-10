@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:controller_repository/controller_repository.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -697,6 +698,51 @@ void main() {
       expect(find.byKey(const Key('midi_remove')), findsOneWidget);
       // A sweep has travel, not a threshold and a behaviour.
       expect(find.byKey(const Key('midi_threshold')), findsNothing);
+    });
+
+    testWidgets('a double tap puts a calibration edge back where it started', (
+      tester,
+    ) async {
+      await pump(tester, connection: connected);
+      await control.setControllerBindings(mappings());
+      await showMidi(tester);
+      final sweep = control.state.controllerBindings.bindings
+          .whereType<ContinuousBinding>()
+          .single;
+      await tester.tap(
+        find.byKey(Key('midi_mapping_${sweep.trigger}_${sweep.target}')),
+      );
+      await tester.pumpAndSettle();
+
+      // Dragged off, then put back — a calibration you can only undo by
+      // aiming at an edge is one you stop experimenting with, and this pedal
+      // is under someone's foot.
+      final box = tester.getRect(find.byKey(const Key('midi_lo')));
+      final spot = Offset(box.left + box.width * 0.75, box.center.dy);
+      await tester.tapAt(spot);
+      await tester.pumpAndSettle();
+      expect(
+        control.state.controllerBindings.bindings
+            .whereType<ContinuousBinding>()
+            .single
+            .lo,
+        greaterThan(0.1),
+      );
+
+      await tester.tapAt(spot);
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tapAt(spot);
+      await tester.pumpAndSettle();
+
+      expect(
+        control.state.controllerBindings.bindings
+            .whereType<ContinuousBinding>()
+            .single
+            .lo,
+        moreOrLessEquals(0, epsilon: 0.001),
+      );
+      // Drain the window the first tap opened, or it outlives the tree.
+      await tester.pump(kDoubleTapTimeout * 2);
     });
 
     testWidgets('a switch mapping opens onto a threshold and a behaviour', (

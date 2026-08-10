@@ -1309,7 +1309,12 @@ class _LevelRow extends StatefulWidget {
   State<_LevelRow> createState() => _LevelRowState();
 }
 
-class _LevelRowState extends State<_LevelRow> {
+class _LevelRowState extends State<_LevelRow> with ConsoleResetTap<_LevelRow> {
+  /// The fader has one: unity, the gain that changes nothing. It is also the
+  /// one value a finger cannot find by eye on a bar with no numbers on it.
+  @override
+  bool get hasReset => true;
+
   /// The fraction under the finger while a drag is live, so the bar tracks it
   /// at frame rate instead of waiting for the write to come back.
   double? _dragging;
@@ -1416,9 +1421,21 @@ class _LevelRowState extends State<_LevelRow> {
                     // Silenced, so its synthesised actions cannot reach the
                     // rig; the slider node above is what the reader drives.
                     excludeFromSemantics: true,
-                    onTapDown: (d) => _report(width, d.localPosition.dx),
-                    onHorizontalDragStart: (d) =>
-                        _report(width, d.localPosition.dx),
+                    // Tap-DOWN only arms; the write waits for the release,
+                    // because a press that becomes a drag fires this too.
+                    onTapDown: (d) {
+                      if (!armReset(d.localPosition.dx)) {
+                        _report(width, d.localPosition.dx);
+                      }
+                    },
+                    onTapUp: (_) {
+                      if (spendReset()) _set(1 / kSignalMaxGain);
+                    },
+                    onTapCancel: dropReset,
+                    onHorizontalDragStart: (d) {
+                      closeResetWindow();
+                      _report(width, d.localPosition.dx);
+                    },
                     onHorizontalDragUpdate: (d) =>
                         _report(width, d.localPosition.dx),
                     // The grab area is the whole ROW, not the 24 the bar
