@@ -6331,6 +6331,36 @@ void main() {
       expect(seen, [0, 1, 2, 3, 4, 4, 5]);
     });
 
+    test('a disposed repository announces nothing', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      final seen = <int>[];
+      final sub = repo.monitorChanges.listen(seen.add);
+      addTearDown(sub.cancel);
+      // A chain whose plugin cannot bind, which arms the cold-start recovery
+      // scan — the ordinary "quit while the plugin scan is running" path.
+      repo.setMonitorEffects(
+        input: 0,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+          ),
+        ],
+      );
+
+      await repo.dispose();
+      // The scan outlives the dispose, and `dispose` does not clear the
+      // running intent — only `stopEngine` does — so its continuation
+      // re-applies the chain and announces into a closed controller.
+      await repo.pluginCatalog.scan();
+      await Future<void>.delayed(Duration.zero);
+      // And a plain write after the close, which applySession and the
+      // reconnect path can both still make on the way down.
+      repo.setMonitorMute(input: 0, muted: true);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, [0]); // the one before the dispose, and nothing after
+    });
+
     test('a parameter write does not announce', () async {
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);

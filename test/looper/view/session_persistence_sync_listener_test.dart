@@ -168,14 +168,12 @@ void main() {
       // would hold simply because nothing had run yet.
       await settleBlocEvents(tester);
 
-      // Deliberately NOT `monitor.state.inputs, isEmpty`: the cubit now
-      // follows every monitor write the repository makes, so the fixture's own
-      // two writes reach it whether this listener runs or not. That probe
-      // would now be asserting the follow, not the listener.
-      //
-      // Neither half ran: a save must not rewrite persistence. The Master key
-      // is the sharpest probe — the resync writes it unconditionally, and
-      // nothing else in this test touches it.
+      // Still empty: the fixture writes its monitors BEFORE the cubit exists,
+      // so the follow never saw them and only the re-sync could have put them
+      // here. Neither half ran — a save must not rewrite persistence — and
+      // the Master key is the sharpest probe of the other half, since the
+      // resync writes it unconditionally and nothing else here touches it.
+      expect(monitor.state.inputs, isEmpty);
       expect(await settings.loadMasterFxChain(), isNull);
     });
   });

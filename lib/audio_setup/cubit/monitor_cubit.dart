@@ -238,8 +238,12 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Re-reads every known input's applied chain.
   ///
   /// The repository is the one that knows whether a plugin loaded, and its
-  /// answer changes when a scan lands. Nothing here writes: what is persisted
-  /// is what the user set, not what the rig happened to resolve.
+  /// answer changes when a scan lands. Nothing HERE writes — this path exists
+  /// for the transient flags (`loading`, `unavailable`, the enumerated
+  /// params), none of which belong in settings and none of which the wire
+  /// format carries. What a scan resolves that IS worth saving — a plugin's
+  /// display name — reaches settings through [_readMonitor], because a rebind
+  /// that rewrote the chain announces and that path persists.
   void _readApplied() {
     if (isClosed) return;
     for (final input in state.inputs.keys.toList()) {
