@@ -6304,6 +6304,155 @@ void main() {
     });
   });
 
+  group('monitorChanges', () {
+    test('every monitor write announces its input', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final seen = <int>[];
+      final sub = repo.monitorChanges.listen(seen.add);
+      addTearDown(sub.cancel);
+
+      // Monitor state is the one part of the rig that is not projected onto
+      // LooperState, so a cache of it (MonitorCubit) has no other way to
+      // notice a writer that went straight to the repository.
+      repo
+        ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
+        ..setMonitorOutput(input: 1, mask: 0x2)
+        ..setMonitorVolume(input: 2, volume: 0.5)
+        ..setMonitorMute(input: 3, muted: true)
+        ..setMonitorEffects(
+          input: 4,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMonitorEffectEnabled(input: 4, index: 0, enabled: false)
+        ..setMonitorChainEnabled(input: 5, enabled: false);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, [0, 1, 2, 3, 4, 4, 5]);
+    });
+
+    test('a disposed repository announces nothing', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      final seen = <int>[];
+      final sub = repo.monitorChanges.listen(seen.add);
+      addTearDown(sub.cancel);
+      // A chain whose plugin cannot bind, which arms the cold-start recovery
+      // scan — the ordinary "quit while the plugin scan is running" path.
+      repo.setMonitorEffects(
+        input: 0,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+          ),
+        ],
+      );
+
+      await repo.dispose();
+      // The scan outlives the dispose, and `dispose` does not clear the
+      // running intent — only `stopEngine` does — so its continuation
+      // re-applies the chain and announces into a closed controller.
+      await repo.pluginCatalog.scan();
+      await Future<void>.delayed(Duration.zero);
+      // And a plain write after the close, which applySession and the
+      // reconnect path can both still make on the way down.
+      repo.setMonitorMute(input: 0, muted: true);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, [0]); // the one before the dispose, and nothing after
+    });
+
+    test('a parameter write does not announce', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      repo.setMonitorEffects(
+        input: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+      );
+      final seen = <int>[];
+      final sub = repo.monitorChanges.listen(seen.add);
+      addTearDown(sub.cancel);
+
+      // Deliberate, and load-bearing: these arrive at controller rate from a
+      // mapped CC, and the listener persists what it reads — announcing would
+      // write five settings keys per frame of a sweep. #605 owns the cadence
+      // question; until then this stays quiet on purpose.
+      repo.setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.4);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, isEmpty);
+    });
+
+    test('a relink announces', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      repo.setMonitorEffects(
+        input: 0,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'old'),
+          ),
+        ],
+      );
+      final seen = <int>[];
+      final sub = repo.monitorChanges.listen(seen.add);
+      addTearDown(sub.cancel);
+
+      // Re-identifying an entry changes what the console draws as much as
+      // replacing it does — and this is the ONE action a placeholder offers.
+      repo.relinkMonitorPlugin(
+        input: 0,
+        index: 0,
+        ref: const PluginRef(format: PluginFormat.vst3, id: 'new'),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, [0]);
+    });
+
+    test(
+      'a rebind that rewrites the chain announces, with no setter called',
+      () async {
+        engine.pluginScanResults = const [
+          le.PluginDescriptor(
+            id: 'verb',
+            name: 'Catalog Reverb',
+            vendor: 'Acme',
+            path: '/Library/Audio/Plug-Ins/VST3/verb.vst3',
+            format: le.PluginFormat.vst3,
+            version: 0,
+          ),
+        ];
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        await repo.pluginCatalog.scan();
+        final seen = <int>[];
+        final sub = repo.monitorChanges.listen(seen.add);
+        addTearDown(sub.cancel);
+
+        repo.setMonitorEffects(
+          input: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'verb'),
+            ),
+          ],
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        // TWO: the write itself, and the apply behind it rewriting the entry
+        // with what the bind resolved — here the display name. That second one
+        // is the only announce a device reconnect makes, since `_reapplyAll`
+        // rebinds every slot without anyone calling a setter, and a plugin that
+        // comes back fine would otherwise read "loading…" forever.
+        expect(seen, [0, 0]);
+        expect(
+          (repo.monitorEffects(0).single as PluginEffect).name,
+          'Catalog Reverb',
+        );
+      },
+    );
+  });
+
   group('monitor mode (tri-state)', () {
     EngineSnapshot snapshotWith({
       required TrackState state,

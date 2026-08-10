@@ -85,6 +85,9 @@ void main() {
       const Stream<ControlState>.empty(),
       initialState: const ControlState(),
     );
+    when(() => repository.monitorChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
+    );
     when(repository.allMonitors).thenReturn(const {});
     when(repository.allLaneChains).thenReturn(const {});
     when(repository.allTrackChains).thenReturn(const {});
