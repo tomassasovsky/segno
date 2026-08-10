@@ -368,6 +368,14 @@ class LooperRepository {
   /// Carries the input, not the new state: a listener re-reads what it needs
   /// from the getters, which is what makes this correct for every writer
   /// rather than for the ones that remembered to describe their change.
+  ///
+  /// Every STRUCTURAL write announces — the chain, its power, an entry's
+  /// power, the mode, mask, volume, mute, a relink, and a rebind that
+  /// rewrote the chain. A parameter write does not: those arrive at
+  /// controller rate from a mapped CC, and a listener that persists what it
+  /// reads would write settings on every frame of a sweep. Following a
+  /// swept param needs the ≤10 Hz cadence the editor poll already uses
+  /// (#605).
   Stream<int> get monitorChanges => _monitorChanges.stream;
 
   /// Announces a change to monitor [input]. Every monitor setter ends here.
@@ -3334,7 +3342,14 @@ class LooperRepository {
     // Monitor chains are not part of the projected `LooperState` (the
     // MonitorCubit owns and emits them), so we only refresh the remembered
     // chain with the live param metadata — no `_reproject()`.
-    if (mutated) _monitorEffects[input] = next;
+    if (mutated) {
+      _monitorEffects[input] = next;
+      // The projection's job for every other stage: an entry that just
+      // rebound (loading -> loaded, its name resolved, its params
+      // enumerated) is a change to what the console draws, and a reconnect
+      // reaches here without anyone having called a setter.
+      _monitorChanged(input);
+    }
     final result = _engine.setMonitorInputFxCount(
       input: input,
       count: effects.length,

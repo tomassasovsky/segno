@@ -6331,20 +6331,75 @@ void main() {
       expect(seen, [0, 1, 2, 3, 4, 4, 5]);
     });
 
-    test('a disposed repository announces nothing', () async {
+    test('a relink announces', () async {
       final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      repo.setMonitorEffects(
+        input: 0,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'old'),
+          ),
+        ],
+      );
       final seen = <int>[];
       final sub = repo.monitorChanges.listen(seen.add);
       addTearDown(sub.cancel);
 
-      await repo.dispose();
-      // Not an error, and not a leak: applySession and the reconnect path can
-      // both write on the way down.
-      repo.setMonitorMute(input: 0, muted: true);
+      // Re-identifying an entry changes what the console draws as much as
+      // replacing it does — and this is the ONE action a placeholder offers.
+      repo.relinkMonitorPlugin(
+        input: 0,
+        index: 0,
+        ref: const PluginRef(format: PluginFormat.vst3, id: 'new'),
+      );
       await Future<void>.delayed(Duration.zero);
 
-      expect(seen, isEmpty);
+      expect(seen, [0]);
     });
+
+    test(
+      'a rebind that rewrites the chain announces, with no setter called',
+      () async {
+        engine.pluginScanResults = const [
+          le.PluginDescriptor(
+            id: 'verb',
+            name: 'Catalog Reverb',
+            vendor: 'Acme',
+            path: '/Library/Audio/Plug-Ins/VST3/verb.vst3',
+            format: le.PluginFormat.vst3,
+            version: 0,
+          ),
+        ];
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        await repo.pluginCatalog.scan();
+        final seen = <int>[];
+        final sub = repo.monitorChanges.listen(seen.add);
+        addTearDown(sub.cancel);
+
+        repo.setMonitorEffects(
+          input: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'verb'),
+            ),
+          ],
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        // TWO: the write itself, and the apply behind it rewriting the entry
+        // with what the bind resolved — here the display name. That second one
+        // is the only announce a device reconnect makes, since `_reapplyAll`
+        // rebinds every slot without anyone calling a setter, and a plugin that
+        // comes back fine would otherwise read "loading…" forever.
+        expect(seen, [0, 0]);
+        expect(
+          (repo.monitorEffects(0).single as PluginEffect).name,
+          'Catalog Reverb',
+        );
+      },
+    );
   });
 
   group('monitor mode (tri-state)', () {

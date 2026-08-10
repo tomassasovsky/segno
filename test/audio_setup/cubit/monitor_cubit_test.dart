@@ -128,6 +128,20 @@ void main() {
       when(() => repository.monitorChainEnabled(any())).thenReturn(true);
     });
 
+    test('a closed cubit stops listening', () async {
+      final cubit = build();
+      await cubit.load();
+      await cubit.close();
+
+      changes.add(0);
+      await Future<void>.delayed(Duration.zero);
+
+      // Not just silent — off the stream. A closed cubit that is still a
+      // listener keeps its whole object graph alive for as long as the
+      // repository lives, and this cubit outlives nothing.
+      expect(changes.hasListener, isFalse);
+    });
+
     blocTest<MonitorCubit, MonitorState>(
       'a chain switched off elsewhere reaches the console',
       build: build,
@@ -195,7 +209,7 @@ void main() {
     );
 
     blocTest<MonitorCubit, MonitorState>(
-      'what it reads is not written back',
+      'what it reads is saved, and never pushed back',
       build: build,
       act: (cubit) async {
         await cubit.load();
@@ -204,17 +218,57 @@ void main() {
         await Future<void>.delayed(Duration.zero);
       },
       verify: (_) async {
-        // A pedal's bypass is a performance decision, and the surface's own
-        // saved state is what the user set. Persisting here would also mean
-        // this cubit re-applying, to the engine, the state it just read FROM
-        // the engine's owner.
+        // Never back to the engine: the repository is where this came from,
+        // and pushing it back is this cubit re-applying the state the
+        // engine's owner just set.
         verifyNever(
           () => repository.setMonitorChainEnabled(
             input: any(named: 'input'),
             enabled: any(named: 'enabled'),
           ),
         );
-        expect(await settings.loadMonitorEffects(0), isNull);
+        // But saved — because the persisted envelope is built from this
+        // state. Read and NOT saved, the flag would still ride into settings
+        // on the next unrelated edit of that chain, so a footswitch bypass
+        // would survive a restart if and only if the player happened to touch
+        // the chain afterwards.
+        final saved = decodeFxChain(await settings.loadMonitorEffects(0));
+        expect(saved.chainEnabled, isFalse);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a chain that changed shape drops the editor polls keyed to the old one',
+      build: build,
+      act: (cubit) async {
+        await cubit.load();
+        when(() => repository.monitorEffects(0)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'p'),
+            slotId: 'a',
+          ),
+        ]);
+        changes.add(0);
+        await Future<void>.delayed(Duration.zero);
+        cubit.openPluginEditor(0, 0);
+        // A different entry in the same slot index: a poll still keyed to it
+        // would start syncing a plugin the player never opened.
+        when(() => repository.monitorEffects(0)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'q'),
+            slotId: 'b',
+          ),
+        ]);
+        changes.add(0);
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      },
+      verify: (_) async {
+        verifyNever(
+          () => repository.refreshMonitorPluginParams(
+            input: any(named: 'input'),
+            index: any(named: 'index'),
+          ),
+        );
       },
     );
   });

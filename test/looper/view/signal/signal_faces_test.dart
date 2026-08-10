@@ -59,15 +59,18 @@ void main() {
   late InputsCubit inputs;
   late MonitorCubit monitor;
   late SettingsTrayCubit tray;
+  late StreamController<int> monitorChanges;
 
   setUpAll(() => registerFallbackValue(MonitorMode.off));
 
   setUp(() {
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
-    when(() => repository.monitorChanges).thenAnswer(
-      (_) => const Stream<int>.empty(),
-    );
+    monitorChanges = StreamController<int>.broadcast();
+    addTearDown(monitorChanges.close);
+    when(
+      () => repository.monitorChanges,
+    ).thenAnswer((_) => monitorChanges.stream);
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
@@ -854,6 +857,39 @@ void main() {
       // The run redraws on a chain CHANGING, not only on the roster changing
       // — a shape check that counted tracks and lanes would never see this.
       expect(find.text(l10n.effectReverb), findsOneWidget);
+    });
+
+    testWidgets("a footswitch bypass reaches the input's card", (tester) async {
+      when(repository.allMonitors).thenReturn({
+        1: InputMonitor(
+          input: 1,
+          effects: [BuiltInEffect(type: TrackEffectType.drive, slotId: 'a')],
+        ),
+      });
+      when(() => repository.monitorMode(any())).thenReturn(MonitorMode.off);
+      when(() => repository.monitorOutput(any())).thenReturn(0x3);
+      when(() => repository.monitorVolume(any())).thenReturn(1);
+      when(() => repository.monitorMuted(any())).thenReturn(false);
+      when(() => repository.monitorChainEnabled(any())).thenReturn(true);
+      when(
+        () => repository.monitorEffects(1),
+      ).thenReturn([BuiltInEffect(type: TrackEffectType.drive, slotId: 'a')]);
+      await pump(tester);
+      await monitor.syncFromRepository();
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.effectDrive), findsOneWidget);
+
+      // A pedal writes straight to the repository, past the cubit. The card
+      // has to stop saying the chain is running the moment it stops.
+      when(() => repository.monitorChainEnabled(1)).thenReturn(false);
+      monitorChanges.add(1);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(l10n.signalCardChainOffRun(l10n.effectDrive)),
+        findsOneWidget,
+      );
     });
 
     testWidgets("an input's own chain reads on its card", (tester) async {
