@@ -50,6 +50,8 @@ class MonitorCubit extends Cubit<MonitorState> {
     // Subscribed at construction, not in [load]: this cubit is a cache of
     // state another writer can change from the first frame, and a session
     // applied before the restore finished would already have gone past it.
+    // Announcements that arrive before the restore are held, not read — see
+    // [_readMonitor].
     _monitorWatch = _repository.monitorChanges.listen(_readMonitor);
   }
 
@@ -78,6 +80,12 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// leave the console drawing it as running, with the first tap writing the
   /// state it was already in and looking inert.
   late final StreamSubscription<int> _monitorWatch;
+
+  /// Whether [_restore] has pushed the saved monitors into the repository.
+  bool _restored = false;
+
+  /// Inputs announced before that, to be read once it has.
+  final Set<int> _heldReads = {};
 
   /// Restores the persisted per-input monitors and applies them to the
   /// repository. Reads the single-chain keys; the multi-lane → single-chain
@@ -132,6 +140,20 @@ class MonitorCubit extends Cubit<MonitorState> {
     _catalogWatch ??= _repository.pluginCatalog.progressStream.listen(
       (_) => unawaited(_readAfterScan()),
     );
+    _followRepository();
+  }
+
+  /// Marks the repository authoritative and reads whatever was announced
+  /// before it was.
+  ///
+  /// Both the restore and a session re-projection end here: each is a moment
+  /// when the repository stops holding defaults this cubit has not filled in
+  /// yet and starts holding the rig.
+  void _followRepository() {
+    _restored = true;
+    final held = _heldReads.toList();
+    _heldReads.clear();
+    held.forEach(_readMonitor);
   }
 
   /// Re-reads everything this cubit caches about [input].
@@ -152,12 +174,27 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// the answer that is the same every time.
   void _readMonitor(int input) {
     if (isClosed) return;
+    // Before the restore, the repository does not hold the player's saved
+    // monitors — [_restore] is what puts them there. Reading now would take
+    // the repository's DEFAULTS as truth and, worse, save them over good
+    // settings, which is silent, permanent, and only visible on the next
+    // boot. Held instead, and read once the restore has landed, when the
+    // repository really is the authority this treats it as.
+    if (!_restored) {
+      _heldReads.add(input);
+      return;
+    }
     final current = state.forInput(input);
     final applied = current.copyWith(
       mode: _repository.monitorMode(input),
       outputMask: _repository.monitorOutput(input),
       volume: _repository.monitorVolume(input),
       muted: _repository.monitorMuted(input),
+      // No `isNotEmpty` fallback, unlike every optimistic read here: those
+      // guard against reading back a write the repository may have refused.
+      // This one is not a read-back — the repository just said this input
+      // changed — so an empty chain is a real clear (a session apply), and
+      // refusing it would leave the console showing a rack that is gone.
       effects: _repository.monitorEffects(input),
       chainEnabled: _repository.monitorChainEnabled(input),
     );
@@ -276,6 +313,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     // Any open editor-sync poll is keyed to a chain index the load reseated.
     state.inputs.keys.forEach(_cancelEditorTimers);
     emit(MonitorState(inputs: applied));
+    _followRepository();
     await Future.wait([
       for (final monitor in applied.values) _persistMonitor(monitor),
       for (final input in dropped) _persistMonitor(InputMonitor(input: input)),

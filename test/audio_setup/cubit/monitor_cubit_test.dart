@@ -119,14 +119,119 @@ void main() {
       changes = StreamController<int>.broadcast();
       addTearDown(changes.close);
       when(() => repository.monitorChanges).thenAnswer((_) => changes.stream);
-      // The repository's answers start where the cubit's own defaults are, so
-      // a test only sees what that test changes.
-      when(() => repository.monitorMode(any())).thenReturn(MonitorMode.off);
-      when(() => repository.monitorOutput(any())).thenReturn(0x3);
-      when(() => repository.monitorVolume(any())).thenReturn(1);
-      when(() => repository.monitorMuted(any())).thenReturn(false);
+      // Answers that REMEMBER what was written to them, the way the real
+      // repository does — the cubit's restore pushes the saved monitors in,
+      // and a follow that read a fixture frozen at the defaults would report
+      // a clobbering that only the fixture was doing. Everything starts where
+      // the cubit's own defaults are, so a test only sees what it changes.
+      final modes = <int, MonitorMode>{};
+      final volumes = <int, double>{};
+      final masks = <int, int>{};
+      final mutes = <int, bool>{};
+      when(() => repository.monitorMode(any())).thenAnswer(
+        (call) => modes[call.positionalArguments.first] ?? MonitorMode.off,
+      );
+      when(() => repository.monitorOutput(any())).thenAnswer(
+        (call) => masks[call.positionalArguments.first] ?? 0x3,
+      );
+      when(() => repository.monitorVolume(any())).thenAnswer(
+        (call) => volumes[call.positionalArguments.first] ?? 1.0,
+      );
+      when(() => repository.monitorMuted(any())).thenAnswer(
+        (call) => mutes[call.positionalArguments.first] ?? false,
+      );
       when(() => repository.monitorChainEnabled(any())).thenReturn(true);
+      when(
+        () => repository.setMonitorInputMode(
+          input: any(named: 'input'),
+          mode: any(named: 'mode'),
+        ),
+      ).thenAnswer((call) {
+        modes[call.namedArguments[#input] as int] =
+            call.namedArguments[#mode] as MonitorMode;
+        return EngineResult.ok;
+      });
+      when(
+        () => repository.setMonitorVolume(
+          input: any(named: 'input'),
+          volume: any(named: 'volume'),
+        ),
+      ).thenAnswer((call) {
+        volumes[call.namedArguments[#input] as int] =
+            call.namedArguments[#volume] as double;
+        return EngineResult.ok;
+      });
+      when(
+        () => repository.setMonitorOutput(
+          input: any(named: 'input'),
+          mask: any(named: 'mask'),
+        ),
+      ).thenAnswer((call) {
+        masks[call.namedArguments[#input] as int] =
+            call.namedArguments[#mask] as int;
+        return EngineResult.ok;
+      });
+      when(
+        () => repository.setMonitorMute(
+          input: any(named: 'input'),
+          muted: any(named: 'muted'),
+        ),
+      ).thenAnswer((call) {
+        mutes[call.namedArguments[#input] as int] =
+            call.namedArguments[#muted] as bool;
+        return EngineResult.ok;
+      });
     });
+
+    test(
+      'an announce before the restore does not save over saved state',
+      () async {
+        // What the player set, last session.
+        await settings.saveMonitorInputMode(1, mode: MonitorMode.on.name);
+        await settings.saveMonitorVolume(1, 0.5);
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        // Announced while the restore is still in flight: the repository does
+        // not hold the saved monitors yet — this cubit is what puts them there
+        // — so reading it now would take its defaults as truth and SAVE them
+        // over the settings that have not been read yet. Silent, permanent, and
+        // only visible on the next boot.
+        // A session applied in the first frames: the repository now differs
+        // from this cubit's defaults, which is what makes the read do
+        // anything at all.
+        when(() => repository.monitorChainEnabled(1)).thenReturn(false);
+        changes.add(1);
+        // Long enough for the read's own five-key save to land: what it
+        // WRITES is the damage, and a restore racing ahead of that would read
+        // the good settings by luck rather than by design.
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.load();
+
+        expect(cubit.state.forInput(1).mode, MonitorMode.on);
+        expect(cubit.state.forInput(1).volume, 0.5);
+        expect(await settings.loadMonitorInputMode(1), MonitorMode.on.name);
+        expect(await settings.loadMonitorVolume(1), 0.5);
+      },
+    );
+
+    test(
+      'an input announced during the restore is read once it lands',
+      () async {
+        final cubit = build();
+        addTearDown(cubit.close);
+        when(() => repository.monitorChainEnabled(2)).thenReturn(false);
+
+        // Held, not dropped: a session applied in the first frames is a real
+        // change, and the console has to end up showing it.
+        changes.add(2);
+        await Future<void>.delayed(Duration.zero);
+        await cubit.load();
+        await Future<void>.delayed(Duration.zero);
+
+        expect(cubit.state.forInput(2).chainEnabled, isFalse);
+      },
+    );
 
     test('a closed cubit stops listening', () async {
       final cubit = build();

@@ -60,12 +60,16 @@ void main() {
         ticker: const Stream<void>.empty(),
       )..startEngine(const EngineConfig());
       settings = SettingsRepository(store: FakeKeyValueStore());
-      monitor = MonitorCubit(repository: looper, settings: settings);
-      bloc = LooperBloc(repository: looper, settings: settings);
-      session = _MockSessionCubit();
+      // The rig BEFORE the cubit exists: the cubit follows every monitor write
+      // the repository makes, so a fixture that wrote after constructing it
+      // would put these in state on its own — and every assertion about the
+      // listener re-syncing would hold with the listener deleted.
       looper
         ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
         ..setMonitorOutput(input: 1, mask: 0x2);
+      monitor = MonitorCubit(repository: looper, settings: settings);
+      bloc = LooperBloc(repository: looper, settings: settings);
+      session = _MockSessionCubit();
     });
 
     tearDown(() async {

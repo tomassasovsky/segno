@@ -6331,6 +6331,27 @@ void main() {
       expect(seen, [0, 1, 2, 3, 4, 4, 5]);
     });
 
+    test('a parameter write does not announce', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      repo.setMonitorEffects(
+        input: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+      );
+      final seen = <int>[];
+      final sub = repo.monitorChanges.listen(seen.add);
+      addTearDown(sub.cancel);
+
+      // Deliberate, and load-bearing: these arrive at controller rate from a
+      // mapped CC, and the listener persists what it reads — announcing would
+      // write five settings keys per frame of a sweep. #605 owns the cadence
+      // question; until then this stays quiet on purpose.
+      repo.setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.4);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, isEmpty);
+    });
+
     test('a relink announces', () async {
       final repo = buildRepo()..startEngine(const EngineConfig());
       addTearDown(repo.dispose);
