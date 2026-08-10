@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:controller_repository/controller_repository.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -555,6 +555,73 @@ void main() {
       // old widget-key assertions can never match. Coverage is rebuilt with
       // the persistent-surface work — see #453.
       skip: true,
+    );
+
+    testWidgets(
+      'macOS PlatformMenuBar survives MaterialApp theme rebuild and '
+      'DevTools select-widget override without remounting',
+      (tester) async {
+        // Regression for #614: PlatformMenuBar inside MaterialApp.builder
+        // remounted when the inspector override flipped, tripping the
+        // single-delegate lock assertion.
+        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(
+              const MethodChannel('flutter/menu'),
+              (_) async => null,
+            );
+
+        try {
+          await pumpApp(tester, NoopWaveformWindowService());
+
+          expect(
+            find.byKey(const Key('segno_platform_menu')),
+            findsOneWidget,
+          );
+
+          // Theme change rebuilds MaterialApp (context.watch on
+          // HighContrastCubit).
+          await tester
+              .element(find.byType(MaterialApp))
+              .read<HighContrastCubit>()
+              .toggle();
+          await tester.pump();
+
+          // DevTools "Select Widget Mode" flips this notifier on WidgetsApp.
+          WidgetsBinding
+                  .instance
+                  .debugShowWidgetInspectorOverrideNotifier
+                  .value =
+              true;
+          await tester.pump();
+          WidgetsBinding
+                  .instance
+                  .debugShowWidgetInspectorOverrideNotifier
+                  .value =
+              false;
+          await tester.pump();
+
+          expect(
+            find.byKey(const Key('segno_platform_menu')),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        } finally {
+          // Must clear before the test binding's invariant check (addTearDown
+          // runs too late).
+          debugDefaultTargetPlatformOverride = null;
+          WidgetsBinding
+                  .instance
+                  .debugShowWidgetInspectorOverrideNotifier
+                  .value =
+              false;
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(
+                const MethodChannel('flutter/menu'),
+                null,
+              );
+        }
+      },
     );
   });
 }

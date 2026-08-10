@@ -767,22 +767,88 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
-  List<PlatformMenuItem> _menus(BuildContext context) => [
-    PlatformMenu(
-      label: context.l10n.appMenuLabel,
-      menus: [
-        PlatformMenuItem(
-          label: context.l10n.settingsMenuItem,
-          shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
-          onSelected: openSegnoSettings,
-        ),
-        const PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.quit),
-      ],
-    ),
-  ];
+  /// Labels come from [_l10n] (above [MaterialApp]), not a builder context —
+  /// the menu bar must not live under [MaterialApp] or DevTools / theme
+  /// rebuilds remount it and trip the single-delegate lock assertion.
+  List<PlatformMenuItem> get _menus {
+    final l10n = _l10n;
+    return [
+      PlatformMenu(
+        label: l10n.appMenuLabel,
+        menus: [
+          PlatformMenuItem(
+            label: l10n.settingsMenuItem,
+            shortcut: const SingleActivator(
+              LogicalKeyboardKey.comma,
+              meta: true,
+            ),
+            onSelected: openSegnoSettings,
+          ),
+          const PlatformProvidedMenuItem(
+            type: PlatformProvidedMenuItemType.quit,
+          ),
+        ],
+      ),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
+    final materialApp = MaterialApp(
+      navigatorKey: segnoNavigatorKey,
+      // Manual toggle forces high-contrast on every platform;
+      // highContrastTheme also honors the OS flag (iOS).
+      theme: context.watch<HighContrastCubit>().state
+          ? AppTheme.highContrast
+          : AppTheme.neon,
+      highContrastTheme: AppTheme.highContrast,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Builder(
+        builder: (context) {
+          final Widget page = PedalFirmwareGate(
+            child: LooperPage(exportDirectory: widget.exportDirectory),
+          );
+          if (!segnoUsesFlutterTitleBar && !segnoUsesCursorAutoHide) {
+            return page;
+          }
+          return SegnoWindowChromeShell(
+            title: context.l10n.appMenuLabel,
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+            body: page,
+          );
+        },
+      ),
+      debugShowCheckedModeBanner: false,
+      builder: (context, child) {
+        // Console only: weston's kiosk-shell spawns no input panel and the
+        // image ships no IME, so without this every TextField on the
+        // appliance is dead — including this branch's own Wi-Fi password
+        // field. Inside the brightness wrapper so the keys dim with
+        // everything else.
+        final typed = OnScreenKeyboardHost(
+          child: child ?? const SizedBox.shrink(),
+        );
+        return BlocBuilder<DisplayBrightnessCubit, double>(
+          buildWhen: (previous, current) => previous != current,
+          builder: (context, brightness) => SoftwareBrightness(
+            brightness: brightness,
+            child: typed,
+          ),
+        );
+      },
+    );
+
+    // Above MaterialApp so WidgetsApp's inspector wrap / theme animation
+    // cannot remount the macOS menu delegate (single-lock assertion).
+    final rooted = defaultTargetPlatform == TargetPlatform.macOS
+        ? PlatformMenuBar(
+            key: const ValueKey<String>('segno_platform_menu'),
+            menus: _menus,
+            child: materialApp,
+          )
+        : materialApp;
+
     return MultiBlocListener(
       listeners: [
         BlocListener<WaveformWindowCubit, WaveformWindowState>(
@@ -827,60 +893,7 @@ class _AppViewState extends State<_AppView> {
           itemWidth: 520,
           animationDuration: Duration(milliseconds: 280),
         ),
-        child: MaterialApp(
-          navigatorKey: segnoNavigatorKey,
-          // Manual toggle forces high-contrast on every platform;
-          // highContrastTheme also honors the OS flag (iOS).
-          theme: context.watch<HighContrastCubit>().state
-              ? AppTheme.highContrast
-              : AppTheme.neon,
-          highContrastTheme: AppTheme.highContrast,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: Builder(
-            builder: (context) {
-              final Widget page = PedalFirmwareGate(
-                child: LooperPage(exportDirectory: widget.exportDirectory),
-              );
-              if (!segnoUsesFlutterTitleBar && !segnoUsesCursorAutoHide) {
-                return page;
-              }
-              return SegnoWindowChromeShell(
-                title: context.l10n.appMenuLabel,
-                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-                body: page,
-              );
-            },
-          ),
-          debugShowCheckedModeBanner: false,
-          builder: (context, child) {
-            // Console only: weston's kiosk-shell spawns no input panel and the
-            // image ships no IME, so without this every TextField on the
-            // appliance is dead — including this branch's own Wi-Fi password
-            // field. Inside the brightness wrapper so the keys dim with
-            // everything else.
-            final typed = OnScreenKeyboardHost(
-              child: child ?? const SizedBox.shrink(),
-            );
-            // Brightness wraps the route child only — never PlatformMenuBar —
-            // so cubit rebuilds cannot remount the macOS menu delegate.
-            final brightened = BlocBuilder<DisplayBrightnessCubit, double>(
-              buildWhen: (previous, current) => previous != current,
-              builder: (context, brightness) => SoftwareBrightness(
-                brightness: brightness,
-                child: typed,
-              ),
-            );
-            if (defaultTargetPlatform != TargetPlatform.macOS) {
-              return brightened;
-            }
-            return PlatformMenuBar(
-              key: const ValueKey<String>('segno_platform_menu'),
-              menus: _menus(context),
-              child: brightened,
-            );
-          },
-        ),
+        child: rooted,
       ),
     );
   }
