@@ -23,6 +23,16 @@ enum MonitorMode {
   on,
 }
 
+/// The [MonitorMode] called [name], or null when nothing is.
+///
+/// Null rather than a default, deliberately: a name this build does not know
+/// means "written by something else", and what to do about that is the
+/// caller's decision — the session restore falls back to the manifest's older
+/// boolean, the settings restore treats it as "nothing saved". Neither should
+/// read it as a deliberate `off`.
+MonitorMode? monitorModeFromName(String name) =>
+    MonitorMode.values.asNameMap()[name];
+
 /// The live-monitor configuration for one hardware input.
 ///
 /// When [mode] opens the gate, hardware input [input] is monitored live

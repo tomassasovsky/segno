@@ -93,4 +93,22 @@ void main() {
       expect(disabled.copyWith(chainEnabled: true), monitor);
     });
   });
+
+  group('monitorModeFromName', () {
+    test('reads back every gate the enum has', () {
+      for (final mode in MonitorMode.values) {
+        expect(monitorModeFromName(mode.name), mode);
+      }
+    });
+
+    test('a name it does not know is null, never a default', () {
+      // Null is the point: what an unknown name means belongs to the caller.
+      // The session restore falls back to the manifest's older boolean and the
+      // settings restore reads it as "nothing saved" — and NEITHER may read it
+      // as a deliberate `off`, which is what a default would give them.
+      expect(monitorModeFromName(''), isNull);
+      expect(monitorModeFromName('sidechain-from-2027'), isNull);
+      expect(monitorModeFromName('ON'), isNull);
+    });
+  });
 }
