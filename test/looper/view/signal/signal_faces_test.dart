@@ -1015,6 +1015,46 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets("the master's chain power redraws while the run is up", (
+      tester,
+    ) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      final chain = [BuiltInEffect(type: TrackEffectType.reverb, slotId: 'a')];
+      await pump(
+        tester,
+        stage: FxStage.master,
+        state: LooperState(
+          tracks: _rig.tracks,
+          outputEnabledMask: _rig.outputEnabledMask,
+          masterEffects: chain,
+          status: _rig.status,
+        ),
+        states: states.stream,
+      );
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.effectReverb), findsOneWidget);
+
+      states.add(
+        LooperState(
+          tracks: _rig.tracks,
+          outputEnabledMask: _rig.outputEnabledMask,
+          masterChainEnabled: false,
+          // The SAME list instance: switching the master chain off does not
+          // touch `masterEffects`, so the chain's own subscription sees
+          // nothing here and the power's is the only thing that redraws.
+          masterEffects: chain,
+          status: _rig.status,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(l10n.signalCardChainOffRun(l10n.effectReverb)),
+        findsOneWidget,
+      );
+    });
+
     testWidgets("the master's chain says when it is switched off", (
       tester,
     ) async {
@@ -1204,6 +1244,25 @@ void main() {
         ),
       ];
       expect(sameChainShape(before, relinked), isFalse);
+    });
+
+    test('a built-in swapped for another built-in redraws', () {
+      final drive = [
+        Track(
+          lanes: const [Lane()],
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        ),
+      ];
+      final reverb = [
+        Track(
+          lanes: const [Lane()],
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        ),
+      ];
+      // The editor changes an entry's type in place, through
+      // `LooperBusEffectTypeChanged` — same length, same position, a
+      // different name on the card.
+      expect(sameChainShape(drive, reverb), isFalse);
     });
 
     test('a built-in swapped for a plugin in place redraws', () {
