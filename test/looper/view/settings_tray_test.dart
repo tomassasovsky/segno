@@ -9,9 +9,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/common/pen_icons.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -485,6 +487,64 @@ void main() {
       // and `closeTray` resets the destination under it, so it came back
       // floating over a face it was never opened from.
       expect(find.byKey(const Key('trayBrightness_popover')), findsNothing);
+    });
+
+    testWidgets('every rail entry wears the glyph the pen screens draw', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      // The pen's `NavRail` COMPONENT names lucide icons its own screens do
+      // not draw — `activity` for a sine, `align-justify` for upright bars,
+      // `target` for a bar chart, `speaker` for a cone with waves. Reading the
+      // component is what put the wrong glyphs on this rail twice, so this
+      // asserts the screens' answer: four drawn from the pen's geometry, five
+      // from the font, and which is which.
+      const drawn = {
+        SettingsTrayDestination.signal: PenIcon.signal,
+        SettingsTrayDestination.control: PenIcon.control,
+        SettingsTrayDestination.tracks: PenIcon.tracks,
+        SettingsTrayDestination.tuner: PenIcon.tuner,
+      };
+      const fromFont = {
+        SettingsTrayDestination.loop: LucideIcons.repeat,
+        SettingsTrayDestination.audio: LucideIcons.volume2,
+        SettingsTrayDestination.network: LucideIcons.wifiHigh,
+        SettingsTrayDestination.system: LucideIcons.cpu,
+      };
+
+      for (final entry in drawn.entries) {
+        final view = tester.widget<PenIconView>(
+          find.descendant(
+            of: find.byKey(Key('settingsTrayRail_${entry.key.name}')),
+            matching: find.byType(PenIconView),
+          ),
+        );
+        expect(view.icon, entry.value, reason: entry.key.name);
+        expect(view.size, TrayNavigationRail.iconSize);
+      }
+      for (final entry in fromFont.entries) {
+        final icon = tester.widget<Icon>(
+          find.descendant(
+            of: find.byKey(Key('settingsTrayRail_${entry.key.name}')),
+            matching: find.byType(Icon),
+          ),
+        );
+        expect(icon.icon, entry.value, reason: entry.key.name);
+        expect(icon.size, TrayNavigationRail.iconSize);
+      }
+
+      // And the sun, which is the pen's too and the only rail glyph that is
+      // not a domain.
+      final bright = tester.widget<Icon>(
+        find.descendant(
+          of: find.byKey(const Key('settingsTrayRail_brightness')),
+          matching: find.byType(Icon),
+        ),
+      );
+      expect(bright.icon, LucideIcons.sun);
     });
 
     testWidgets('the brightness readout is centred over its capsule', (

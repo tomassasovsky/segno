@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -174,7 +175,12 @@ class _BrightnessCapsuleState extends State<BrightnessCapsule> {
                               right: 0,
                               bottom: BrightnessCapsule._glyphInset,
                               child: Icon(
-                                Icons.brightness_6_outlined,
+                                // The pen draws the sun outright — `na1CY` is
+                                // a stroked circle with rays, which is lucide
+                                // `sun`. The half-lit disc that shipped here
+                                // is Material's idea of brightness, not this
+                                // design's.
+                                LucideIcons.sun,
                                 size: BrightnessCapsule.glyphSize,
                                 color: surface.background,
                               ),
