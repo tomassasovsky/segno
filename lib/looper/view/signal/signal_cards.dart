@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -8,6 +9,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/signal/signal_card.dart';
 import 'package:segno/looper/view/signal/signal_detail_panel.dart';
 
@@ -166,7 +168,7 @@ class _InputCards extends StatelessWidget {
             coordinate: l10n.signalCoordInput(input + 1),
             routesTo: l10n.signalRouteRecorder,
             rack: l10n.signalNoRack,
-            summary: l10n.signalTapToLoadRack,
+            summary: chainSummary(l10n, monitors.forInput(input).effects),
             monitor: monitorLine(l10n, monitors.forInput(input)),
           ),
     ];
@@ -214,7 +216,7 @@ class _LoopCards extends StatelessWidget {
       builder: (context, state) => _CardRun(
         cards: [
           for (final track in state.tracks)
-            for (final (lane, _) in track.lanes.indexed)
+            for (final (lane, take) in track.lanes.indexed)
               SignalCard(
                 key: Key('signal_card_loop_${track.channel}_$lane'),
                 selected: open == _loopAddress(track.channel, lane),
@@ -227,7 +229,7 @@ class _LoopCards extends StatelessWidget {
                 ),
                 routesTo: l10n.signalRouteMix,
                 rack: l10n.signalNoRack,
-                summary: l10n.signalTapToLoadRack,
+                summary: chainSummary(l10n, take.effects),
               ),
         ],
         drawn: [
@@ -273,12 +275,10 @@ class _TrackCards extends StatelessWidget {
               coordinate: l10n.signalCoordTrack(track.channel + 1),
               routesTo: l10n.signalRouteMaster,
               rack: l10n.signalNoRack,
-              summary: l10n.signalTapToLoadRack,
+              summary: chainSummary(l10n, track.effects),
             ),
         ],
-        drawn: [
-          for (final track in state.tracks) _trackAddress(track.channel),
-        ],
+        drawn: [for (final track in state.tracks) _trackAddress(track.channel)],
         emptyMessage: l10n.signalNoTracks,
       ),
     );
@@ -310,11 +310,14 @@ class _MasterStage extends StatelessWidget {
     // both channel counts to `LE_MAX_CHANNELS` (32) at device open, so a
     // 64-output interface reports 32 here and `1 << output` never runs off
     // the end of the default `0xFFFFFFFF`.
+    // The master's own chain, for the card's summary line. Selected rather
+    // than watched: the state carries meters, and the card draws none.
+    final master = context.select<LooperBloc, List<TrackEffect>>(
+      (b) => b.state.masterEffects,
+    );
     final (outputs, mask) = context.select<LooperBloc, (int, int)>(
-      (bloc) => (
-        bloc.state.status.outputChannels,
-        bloc.state.outputEnabledMask,
-      ),
+      (bloc) =>
+          (bloc.state.status.outputChannels, bloc.state.outputEnabledMask),
     );
     final live = [
       for (var output = 0; output < outputs; output++)
@@ -333,16 +336,14 @@ class _MasterStage extends StatelessWidget {
           coordinate: l10n.signalCoordMain,
           routesTo: l10n.signalRouteOutputs,
           rack: l10n.signalNoRack,
-          summary: l10n.signalTapToLoadRack,
+          summary: chainSummary(l10n, master),
           width: null,
         ),
         // Under the card it belongs to, and above the group that answers a
         // different question — where the sum goes.
         if (open == const FxAddress(stage: FxStage.master)) ...[
           const SizedBox(height: kConsoleBlockGap),
-          const SignalDetailPanel(
-            address: FxAddress(stage: FxStage.master),
-          ),
+          const SignalDetailPanel(address: FxAddress(stage: FxStage.master)),
         ],
         const SizedBox(height: kConsoleGroupGap),
         ConsoleGroupLabel(l10n.signalOutputsGroup),
@@ -435,20 +436,46 @@ FxAddress _loopAddress(int track, int lane) =>
 FxAddress _trackAddress(int track) =>
     FxAddress(stage: FxStage.track, index: track);
 
-/// Whether [a] and [b] hold the same set of loop- and track-stage chains —
-/// same tracks, same lane count on each.
+/// The card's chain line: the chain in one line, or the invitation to load one.
+///
+/// A chain with entries reads as those entries in signal order, which is what
+/// the mockups draw under the rack name — and the only place the surface says
+/// a chain exists at all before you open its panel.
+///
+/// A configured chain that shows nothing is the bug this exists to close
+/// (#525): the entries are live in the repository and start processing the
+/// moment the carrier does, so a card that says "tap to load one" over a
+/// Reverb is telling the player their rig is clean when it is not.
+String chainSummary(AppLocalizations l10n, List<TrackEffect> chain) =>
+    chain.isEmpty
+    ? l10n.signalTapToLoadRack
+    : [for (final fx in chain) fxBlockName(l10n, fx)].join(' → ');
+
+/// Whether `a` and `b` hold the same set of loop- and track-stage chains —
+/// same tracks, same lane count on each, and the same entries on every one of
+/// those chains.
 ///
 /// The loop and track faces cannot `context.select` the roster: a [Track]
 /// carries live meters, so `state.tracks` changes at the meter rate, and a
 /// `List` compares by identity anyway, so a projected list would never test
 /// equal either. Both faces drive a `buildWhen` off this instead — and what
-/// they draw is only the SHAPE, since a card's name comes from `TracksCubit`
-/// and everything else on it is a constant until racks land.
+/// they draw is the shape plus the chains, since a card's name comes from
+/// `TracksCubit` and everything else on it is a constant until racks land.
+
 bool sameChainShape(List<Track> a, List<Track> b) {
   if (a.length != b.length) return false;
   for (var i = 0; i < a.length; i++) {
     if (a[i].channel != b[i].channel) return false;
     if (a[i].lanes.length != b[i].lanes.length) return false;
+    // The runs draw each chain's summary, so a chain gaining or losing an
+    // entry changes what is on screen — while a meter moving does not, which
+    // is why this compares the chains and not the tracks.
+    if (!listEquals(a[i].effects, b[i].effects)) return false;
+    for (var lane = 0; lane < a[i].lanes.length; lane++) {
+      if (!listEquals(a[i].lanes[lane].effects, b[i].lanes[lane].effects)) {
+        return false;
+      }
+    }
   }
   return true;
 }
