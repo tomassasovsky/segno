@@ -70,6 +70,36 @@ List<Track> _tracksWith(List<Track> overrides) => [
 /// intent invalidation reducer, and the pedal I/O it owns through
 /// [PedalRepository] — footswitch decode in, projected LED frames out.
 void main() {
+  /// Completes when [repository] reaches a status [matches] accepts.
+  ///
+  /// `ControlCubit` fires `arm()`/`disarm()` and forgets them, and both write
+  /// to the filesystem — so how many turns of the event queue they take is a
+  /// property of the machine, not of the code. Pumping the queue (or waiting
+  /// out a long-press and pumping) and then reading `armedDirectory` is a
+  /// race these tests lost under load and under a reordered run.
+  ///
+  /// Bounded, because `arm()` has two paths that return without emitting at
+  /// all — an idempotent re-arm, and the rollback when the engine refuses. An
+  /// unbounded wait there is a thirty-second stall pointing at a stream; this
+  /// is a prompt failure naming what never happened.
+  Future<void> awaitStatusWhere(
+    PerformanceRepository repository,
+    bool Function(PerformanceCaptureStatus) matches, {
+    String what = 'the expected status',
+  }) => repository.captureStatus
+      .firstWhere(matches)
+      .timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw StateError('never reached $what'),
+      );
+
+  /// Completes when [repository] reaches exactly [status].
+  Future<void> awaitStatus(
+    PerformanceRepository repository,
+    PerformanceCaptureStatus status,
+  ) =>
+      awaitStatusWhere(repository, (value) => value == status, what: '$status');
+
   group('ControlCubit', () {
     late _MockLooperRepository looper;
     late StreamController<LooperState> looperStates;
@@ -668,7 +698,12 @@ void main() {
       test(
         'MODE long-press still arms performance recording (unchanged)',
         () async {
+          final armed = awaitStatus(
+            performance,
+            PerformanceCaptureStatus.armed,
+          );
           await hold(PedalButton.mode);
+          await armed;
           expect(performance.armedDirectory, isNotNull);
           expect(cubit.state.mode, InteractionMode.fx); // not a mode cycle
         },
@@ -1157,20 +1192,27 @@ void main() {
         () async {
           expect(performance.armedDirectory, isNull);
 
-          cubit.togglePerformanceRecord();
-          await pumpEventQueue();
-          expect(performance.armedDirectory, isNotNull);
-          expect(
-            await performance.captureStatus.first,
+          final armed = awaitStatus(
+            performance,
             PerformanceCaptureStatus.armed,
           );
+          cubit.togglePerformanceRecord();
+          await armed;
+          expect(performance.armedDirectory, isNotNull);
 
           // Past disarm's double-press guard window (D-GUARD) — this test
           // proves the toggle mechanic, not the guard itself.
           clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
 
+          // `done`, not merely "no longer armed": disarm passes through
+          // `finalizing` and only clears the directory at the end of it, so a
+          // wait that stops at the first non-armed status reads it too early.
+          final disarmed = awaitStatus(
+            performance,
+            PerformanceCaptureStatus.done,
+          );
           cubit.togglePerformanceRecord();
-          await pumpEventQueue();
+          await disarmed;
           expect(performance.armedDirectory, isNull);
         },
       );
@@ -1204,9 +1246,12 @@ void main() {
           );
           addTearDown(wired.close);
 
+          final armed = awaitStatus(
+            performance,
+            PerformanceCaptureStatus.armed,
+          );
           wired.togglePerformanceRecord();
-
-          await pumpEventQueue();
+          await armed;
 
           final snapshot =
               jsonDecode(
@@ -1458,11 +1503,15 @@ void main() {
         test(
           'long-press arms performance recording and does NOT flip mode',
           () async {
+            final armed = awaitStatus(
+              performance,
+              PerformanceCaptureStatus.armed,
+            );
             transport.emit(0x90, PedalButton.mode.note, 100);
             // Default long-press threshold is 500 ms.
             await Future<void>.delayed(const Duration(milliseconds: 600));
             transport.emit(0x80, PedalButton.mode.note, 0);
-            await pumpEventQueue();
+            await armed;
 
             expect(cubit.state.mode, InteractionMode.record); // unchanged
             expect(performance.armedDirectory, isNotNull);
@@ -1470,10 +1519,14 @@ void main() {
         );
 
         test('a long-press then a second long-press disarms again', () async {
+          final armed = awaitStatus(
+            performance,
+            PerformanceCaptureStatus.armed,
+          );
           transport.emit(0x90, PedalButton.mode.note, 100);
           await Future<void>.delayed(const Duration(milliseconds: 600));
           transport.emit(0x80, PedalButton.mode.note, 0);
-          await pumpEventQueue();
+          await armed;
           expect(performance.armedDirectory, isNotNull);
 
           // Past disarm's double-press guard window (D-GUARD) — the fake
@@ -1482,10 +1535,16 @@ void main() {
           // to actually disarm rather than be guarded.
           clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
 
+          // `done`, not the first non-armed status: disarm passes through
+          // `finalizing` and only clears the directory at the end of it.
+          final disarmed = awaitStatus(
+            performance,
+            PerformanceCaptureStatus.done,
+          );
           transport.emit(0x90, PedalButton.mode.note, 100);
           await Future<void>.delayed(const Duration(milliseconds: 600));
           transport.emit(0x80, PedalButton.mode.note, 0);
-          await pumpEventQueue();
+          await disarmed;
 
           expect(performance.armedDirectory, isNull);
         });
@@ -1702,9 +1761,14 @@ void main() {
           await cubit.setGlobalBindings(
             PedalBindingSet([bind(PedalButton.mode)]),
           );
+          final armed = awaitStatus(
+            performance,
+            PerformanceCaptureStatus.armed,
+          );
           await press(PedalButton.mode);
           await Future<void>.delayed(const Duration(milliseconds: 600));
           await release(PedalButton.mode);
+          await armed;
 
           expect(performance.armedDirectory, isNotNull);
         });
