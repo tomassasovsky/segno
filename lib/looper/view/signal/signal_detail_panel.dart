@@ -69,6 +69,19 @@ class SignalDetailPanel extends StatelessWidget {
   };
 }
 
+/// A caption and the control it names, as ONE row of the panel.
+///
+/// The pair takes a single slot in the panel's spaced column, so the gap that
+/// used to sit between a caption and its control is gone. It is not missing:
+/// the `?` gave the caption a 48px tap box around a 17px line, and the ~15px
+/// of slack under the words now IS that gap. Two gaps in a row read as a hole,
+/// and the panel had grown 27px per caption for spacing it already had.
+Widget _captioned(Widget caption, Widget control) => Column(
+  crossAxisAlignment: CrossAxisAlignment.stretch,
+  mainAxisSize: MainAxisSize.min,
+  children: [caption, control],
+);
+
 /// The lane at [lane] on [track], or null when it is gone.
 Lane? _laneOf(LooperState state, int track, int lane) {
   for (final t in state.tracks) {
@@ -415,12 +428,22 @@ class _PanelBodyState extends State<_PanelBody> {
     // and the keyed subtree below.
     final level = <Widget>[
       if (editing == null && gain != null && onLevel != null) ...[
-        _Caption(l10n.signalPanelLevel),
-        _LevelRow(
-          key: ValueKey(address),
-          value: gain,
-          live: !_dragging,
-          onChanged: onLevel,
+        _captioned(
+          ConsoleCaption(
+            l10n.signalPanelLevel,
+            // Per stage, for the same reason `in the mix` is: an input's fader
+            // is the monitor's own volume, and the monitor is never recorded.
+            explain: address.stage == FxStage.input
+                ? l10n.signalPanelLevelInputExplain
+                : l10n.signalPanelLevelExplain,
+            explainLabel: l10n.a11yExplainControl(l10n.signalPanelLevel),
+          ),
+          _LevelRow(
+            key: ValueKey(address),
+            value: gain,
+            live: !_dragging,
+            onChanged: onLevel,
+          ),
         ),
       ],
     ];
@@ -435,43 +458,61 @@ class _PanelBodyState extends State<_PanelBody> {
           onClose: tray.clearSignalEffect,
         )
       else ...[
-        if (inMix != null && onHeard != null) ...[
-          _Caption(l10n.signalPanelInMix),
-          ConsoleSegmented<bool>(
-            key: const Key('signal_panel_in_mix'),
+        if (inMix != null && onHeard != null)
+          _captioned(
+            ConsoleCaption(
+              l10n.signalPanelInMix,
+              // Per stage, because the generic sentence is about a signal that
+              // records and plays. An input's monitor path does neither, so
+              // "muted still records" is not merely imprecise there — it
+              // describes a different control.
+              explain: address.stage == FxStage.input
+                  ? l10n.signalPanelInMixInputExplain
+                  : l10n.signalPanelInMixExplain,
+              explainLabel: l10n.a11yExplainControl(l10n.signalPanelInMix),
+            ),
+            ConsoleSegmented<bool>(
+              key: const Key('signal_panel_in_mix'),
+              stretch: true,
+              selected: inMix,
+              onChanged: onHeard,
+              segments: [
+                ConsoleSegment(value: false, label: l10n.signalMixMuted),
+                ConsoleSegment(value: true, label: l10n.signalMixHeard),
+              ],
+            ),
+          ),
+      ],
+      if (mode != null && onMonitorMode != null)
+        _captioned(
+          ConsoleCaption(
+            l10n.signalPanelHearWhilePlaying,
+            explain: l10n.signalPanelHearWhilePlayingExplain,
+            explainLabel: l10n.a11yExplainControl(
+              l10n.signalPanelHearWhilePlaying,
+            ),
+          ),
+          ConsoleSegmented<MonitorMode>(
+            key: const Key('signal_panel_monitor'),
             stretch: true,
-            selected: inMix,
-            onChanged: onHeard,
+            selected: mode,
+            onChanged: onMonitorMode,
             segments: [
-              ConsoleSegment(value: false, label: l10n.signalMixMuted),
-              ConsoleSegment(value: true, label: l10n.signalMixHeard),
+              ConsoleSegment(
+                value: MonitorMode.off,
+                label: l10n.signalMonitorSegOff,
+              ),
+              ConsoleSegment(
+                value: MonitorMode.auto,
+                label: l10n.signalMonitorSegAuto,
+              ),
+              ConsoleSegment(
+                value: MonitorMode.on,
+                label: l10n.signalMonitorSegOn,
+              ),
             ],
           ),
-        ],
-      ],
-      if (mode != null && onMonitorMode != null) ...[
-        _Caption(l10n.signalPanelHearWhilePlaying),
-        ConsoleSegmented<MonitorMode>(
-          key: const Key('signal_panel_monitor'),
-          stretch: true,
-          selected: mode,
-          onChanged: onMonitorMode,
-          segments: [
-            ConsoleSegment(
-              value: MonitorMode.off,
-              label: l10n.signalMonitorSegOff,
-            ),
-            ConsoleSegment(
-              value: MonitorMode.auto,
-              label: l10n.signalMonitorSegAuto,
-            ),
-            ConsoleSegment(
-              value: MonitorMode.on,
-              label: l10n.signalMonitorSegOn,
-            ),
-          ],
         ),
-      ],
     ];
 
     return Container(
@@ -497,7 +538,7 @@ class _PanelBodyState extends State<_PanelBody> {
               key: const Key('signal_panel_overdub_mismatch'),
               message: l10n.fxOverdubMismatchHint,
             ),
-          _ChainCaption(scope: scope),
+          _ChainCaption(scope: scope, stage: address.stage),
           _ChainStrip(
             chain: chain,
             // The slot only when it still resolves — an id naming nothing
@@ -622,59 +663,84 @@ class _Header extends StatelessWidget {
 /// turned back on. It sits on the caption because it belongs to the whole
 /// run, not to any one entry: an entry's own power is the editor's bypass.
 class _ChainCaption extends StatelessWidget {
-  const _ChainCaption({required this.scope});
+  const _ChainCaption({required this.scope, required this.stage});
 
   final FxScope scope;
+
+  /// Which stage's chain this is. Only the input's caption differs, and it
+  /// differs because only there does the chain's power reach the recording.
+  final FxStage stage;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
     final on = scope.chainEnabled;
-    return Row(
-      children: [
-        _Caption(l10n.signalPanelChain),
-        // What the switch COSTS while it is off, in the warning pair — the
-        // same sentence the dock put beside it.
-        if (!on) ...[
-          const SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              scope.chainDisabledConsequence(l10n),
-              key: const Key('signal_panel_chain_off_consequence'),
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: surface.warning,
-                fontSize: 14,
-                height: 1.21,
-                leadingDistribution: TextLeadingDistribution.even,
+    return ConsoleCaption(
+      l10n.signalPanelChain,
+      explain: stage == FxStage.input
+          ? l10n.signalPanelChainInputExplain
+          : l10n.signalPanelChainExplain,
+      explainLabel: l10n.a11yExplainControl(l10n.signalPanelChain),
+      // The controls ride in the caption's own row, so its explanation can
+      // open UNDER them at the panel's full width rather than in the third
+      // of a row a `Flexible` would leave it.
+      trailing: Row(
+        // Hard right, as the pen draws it and as the panel drew it before the
+        // caption grew a row: the caption's `?` is at the leading edge and the
+        // chain's power is at the trailing one, and a pill that floats to
+        // wherever the consequence text ends is at neither. This alignment is
+        // what places the pill on a chain that is ON and so has nothing else
+        // in the row.
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          // What the switch COSTS while it is off, beside the caption it
+          // qualifies — the same sentence, in the same place, the dock put it.
+          //
+          // `Expanded` and not `Flexible`: a loose child leaves the row's free
+          // space to the alignment above, which dragged this sentence across
+          // the panel to sit against the power pill. Taking the space keeps
+          // the sentence next to the words it is about and still leaves the
+          // pill at the far edge.
+          if (!on) ...[
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                scope.chainDisabledConsequence(l10n),
+                key: const Key('signal_panel_chain_off_consequence'),
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: surface.warning,
+                  fontSize: 14,
+                  height: 1.21,
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
               ),
             ),
-          ),
+          ],
+          // A6: an explicit, user-initiated re-inherit, offered only while the
+          // routed input actually has an audible chain to copy.
+          if (scope.canResyncFromInput) ...[
+            _ChainAction(
+              actionKey: const Key('signal_panel_resync'),
+              label: l10n.fxResyncFromInput,
+              onTap: scope.resyncFromInput,
+            ),
+            const SizedBox(width: 10),
+          ],
+          // A chain whose target is gone has nothing to switch: writing through
+          // a vanished input would mint a phantom monitor and persist a key
+          // that comes back on the next boot.
+          if (scope.isPresent)
+            _ChainAction(
+              actionKey: const Key('signal_panel_chain_power'),
+              label: on ? l10n.signalChainOn : l10n.signalChainOff,
+              semanticLabel: on ? l10n.a11yFxChainOn : l10n.a11yFxChainOff,
+              active: on,
+              onTap: () => scope.setChainEnabled(enabled: !on),
+            ),
         ],
-        const Spacer(),
-        // A6: an explicit, user-initiated re-inherit, offered only while the
-        // routed input actually has an audible chain to copy.
-        if (scope.canResyncFromInput) ...[
-          _ChainAction(
-            actionKey: const Key('signal_panel_resync'),
-            label: l10n.fxResyncFromInput,
-            onTap: scope.resyncFromInput,
-          ),
-          const SizedBox(width: 10),
-        ],
-        // A chain whose target is gone has nothing to switch: writing through
-        // a vanished input would mint a phantom monitor and persist a key
-        // that comes back on the next boot.
-        if (scope.isPresent)
-          _ChainAction(
-            actionKey: const Key('signal_panel_chain_power'),
-            label: on ? l10n.signalChainOn : l10n.signalChainOff,
-            semanticLabel: on ? l10n.a11yFxChainOn : l10n.a11yFxChainOff,
-            active: on,
-            onTap: () => scope.setChainEnabled(enabled: !on),
-          ),
-      ],
+      ),
     );
   }
 }
@@ -747,25 +813,6 @@ class _Notice extends StatelessWidget {
     message,
     style: TextStyle(
       color: context.surface.warning,
-      fontSize: 14,
-      height: 1.21,
-      leadingDistribution: TextLeadingDistribution.even,
-    ),
-  );
-}
-
-/// An inline caption over the row it names. Sentence case, as the mockups set
-/// them — these read as questions about the chain, not as group headings.
-class _Caption extends StatelessWidget {
-  const _Caption(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Text(
-    label,
-    style: TextStyle(
-      color: context.surface.textSecondary,
       fontSize: 14,
       height: 1.21,
       leadingDistribution: TextLeadingDistribution.even,
