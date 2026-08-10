@@ -2166,6 +2166,41 @@ void main() {
       expect(engine.calls.where((c) => c == 'setLanePlugin').length, pushes);
     });
 
+    test('a TRACK bus chain alone is named when the scan lands', () async {
+      engine.pluginScanResults = const [
+        le.PluginDescriptor(
+          id: 'aab1cc2200000000',
+          name: 'Valhalla Vintage Verb',
+          vendor: 'Valhalla DSP',
+          path: '/Library/Audio/Plug-Ins/VST3/verb.vst3',
+          format: le.PluginFormat.vst3,
+          version: 0,
+        ),
+      ];
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // No master chain: a rig whose only plugin is on a track bus has to be
+      // named by that setter's own kick, and nothing else will do it for it.
+      repo.setTrackEffects(
+        channel: 1,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'aab1cc2200000000'),
+          ),
+        ],
+      );
+      expect((repo.trackEffects(1).single as PluginEffect).name, isEmpty);
+
+      await repo.pluginCatalog.scan();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        (repo.trackEffects(1).single as PluginEffect).name,
+        'Valhalla Vintage Verb',
+      );
+    });
+
     test('a bus plugin whose id decoded to nothing is not named after a '
         'failed scan entry', () async {
       engine.pluginScanResults = const [

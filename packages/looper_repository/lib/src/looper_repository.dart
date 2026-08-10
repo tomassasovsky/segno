@@ -129,9 +129,14 @@ class LooperRepository {
   /// recovers a device the user did not deliberately stop.
   bool _intendRunning = false;
 
-  /// Single-flight scan backing [_recoverUnavailablePlugins]: started the first
-  /// time a restored chain surfaces an unavailable plugin, then reused so the
-  /// plugin dirs are scanned at most once per session.
+  /// Single-flight scan behind both recoveries: started the first time a
+  /// restored chain surfaces a plugin that cannot be resolved — unavailable
+  /// on a lane or a monitor ([_recoverUnavailablePlugins]), unnamed on a bus
+  /// ([_recoverUnnamedBusPlugins]) — then reused so the plugin dirs are
+  /// scanned at most once per session.
+  ///
+  /// The bus recovery runs whether or not the engine is running, so this can
+  /// first be set with it stopped. Scanning does not touch the device.
   Future<List<PluginDescriptor>>? _restoredPluginScan;
 
   /// The desired quantize-recording state, re-applied to the engine on every
