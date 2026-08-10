@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -32,6 +33,7 @@ import 'package:segno/looper/loop_tab.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/network/network_tab.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/system/system_tab.dart';
@@ -139,6 +141,37 @@ ThemeData _theme() => ThemeData(
     routingGraphThemeFromSurface(SurfaceTheme.dark),
   ],
 );
+
+/// An asset inside a pub package, resolved through the package config rather
+/// than a guessed pub-cache path — the version is in that path, so hard-coding
+/// it would silently stop loading on the next bump and put the tofu back.
+/// Read from `package_config.json` rather than `Isolate.resolvePackageUri`,
+/// which the test runtime does not implement.
+///
+/// Throws rather than returning null when it cannot find the asset. A silent
+/// skip here is a golden full of tofu boxes that still passes, which is the
+/// exact failure this function exists to prevent.
+String _packageAsset(String package, String asset) {
+  final config = File('.dart_tool/package_config.json');
+  final packages =
+      (jsonDecode(config.readAsStringSync())
+              as Map<String, dynamic>)['packages']
+          as List<dynamic>;
+  for (final entry in packages.cast<Map<String, dynamic>>()) {
+    if (entry['name'] != package) continue;
+    // The trailing slash matters: without it `resolve` treats the package
+    // directory as a FILE and replaces it, so the asset lands one level up in
+    // `pub.dev/` and nothing is there.
+    final root = entry['rootUri']! as String;
+    final path = config.uri
+        .resolve(root.endsWith('/') ? root : '$root/')
+        .resolve(asset)
+        .toFilePath();
+    if (File(path).existsSync()) return path;
+    throw StateError('$package has no $asset (looked in $path)');
+  }
+  throw StateError('$package is not in the package config');
+}
 
 Future<void> _loadFont(String family, List<String> paths) async {
   final loader = FontLoader(family);
@@ -364,6 +397,17 @@ void main() {
       'assets/fonts/Inter-Medium.ttf',
       'assets/fonts/Inter-SemiBold.ttf',
       'assets/fonts/Inter-Bold.ttf',
+    ]);
+    // And the rail's own glyphs. A package font is bundled from the package's
+    // pubspec at run time but not by the test harness, so every rail icon and
+    // the brightness sun rendered as a tofu box in these previews — the same
+    // failure the mono and Inter loads above exist to prevent, and the one
+    // that makes an icon golden worthless.
+    //
+    // Registered under the name Flutter resolves a package font by, since
+    // that is what `IconData(fontPackage:)` asks the engine for.
+    await _loadFont('packages/lucide_icons_flutter/Lucide', [
+      _packageAsset('lucide_icons_flutter', 'assets/lucide.ttf'),
     ]);
   });
 
@@ -686,7 +730,10 @@ void main() {
   testWidgets('network domain, wifi tab', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.wifi);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -704,7 +751,10 @@ void main() {
   testWidgets('network domain, wifi off', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.wifi);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -724,7 +774,10 @@ void main() {
   testWidgets('network domain, wifi row open', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.wifi);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -744,7 +797,10 @@ void main() {
   testWidgets('network domain, forget confirm', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.wifi);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -768,7 +824,10 @@ void main() {
   testWidgets('network domain, join sheet', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.wifi);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -790,7 +849,10 @@ void main() {
   testWidgets('network domain, bluetooth tab', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openBluetooth();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.bluetooth);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -808,7 +870,10 @@ void main() {
   testWidgets('network domain, bluetooth row open', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openBluetooth();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.bluetooth);
     addTearDown(cubit.close);
 
     await pumpTray(

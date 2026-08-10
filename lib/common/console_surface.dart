@@ -604,6 +604,544 @@ class ConsoleProse extends StatelessWidget {
   }
 }
 
+/// A group caption that can explain what its controls do.
+///
+/// The console names its controls accurately and explains them nowhere. "In
+/// the mix", "hear while playing" — someone who built this knows what they
+/// mean; nobody else does, and there is no manual, no hover and no tooltip on
+/// a screen operated with a foot.
+///
+/// **Here on one caller, against this file's own rule.** The library doc above
+/// says a primitive earns its place here once a SECOND domain reads it, and
+/// today only the Signal panel does. It sits here anyway because it is made of
+/// what is here — [ConsoleProse] for the answer, the same caption type
+/// [ConsoleGroupLabel] uses — and moving it beside its caller would put a
+/// widget that composes three neighbours in a different library from all three.
+/// Worth revisiting if Signal is still its only reader when the next domain
+/// grows captions.
+///
+/// **Per GROUP, not per control.** A `?` on every switch would litter a dense
+/// face, and one help page per screen makes you hunt for the control you were
+/// confused about. A caption already names a group, so it is where the
+/// question belongs.
+///
+/// **A floating answer, not inline prose.** It began inline, under the
+/// caption, on the argument that an overlay covers the control it explains.
+/// What inline actually did was push every control below it down by a
+/// paragraph's height — on a face with four captions that is most of a 600px
+/// console, and the shove lands under the finger that just tapped. The
+/// overlay opens under the caption, over the face, and closes on the next
+/// touch anywhere; the control it describes is one tap away, unmoved.
+class ConsoleCaption extends StatefulWidget {
+  /// Creates a [ConsoleCaption].
+  const ConsoleCaption(
+    this.label, {
+    this.explain,
+    this.explainLabel,
+    this.trailing,
+    super.key,
+  }) : assert(
+         (explain == null) == (explainLabel == null),
+         'explain and explainLabel travel together: an explanation with no '
+         'label is an unnamed button, and a label with no explanation is a '
+         'button that does nothing.',
+       );
+
+  /// The caption itself.
+  final String label;
+
+  /// What the group's controls do, in plain language — or null for a caption
+  /// whose own word is the whole answer.
+  final String? explain;
+
+  /// What a screen reader calls the button that opens [explain]. A row of
+  /// identical "?" buttons says nothing about which control each belongs to.
+  final String? explainLabel;
+
+  /// Controls that belong beside the caption, at the trailing edge of its
+  /// row — a chain's power switch, say.
+  ///
+  /// Here rather than in a `Row` around this widget, because the explanation
+  /// has to escape that row: a paragraph sharing a row with controls gets a
+  /// fraction of the width and stacks into a narrow column with the panel
+  /// blank beside it, and without a `Flexible` it overflows them off screen
+  /// instead. Given the row, the caption can put its controls IN it and its
+  /// prose UNDER it, at the full width the panel has.
+  final Widget? trailing;
+
+  /// The glyph's drawn size.
+  static const double _glyphSize = 18;
+
+  /// Gap between the caption's question mark and whatever rides beside it.
+  static const double _captionGap = 16;
+
+  /// Minimum height of the tappable caption row. 48, not the 44 of Apple's
+  /// guideline: Android's is the stricter of the two and this is a console
+  /// people stand over, where the finger arrives at a worse angle than either
+  /// guideline assumes.
+  static const double _targetHeight = 48;
+
+  @override
+  State<ConsoleCaption> createState() => _ConsoleCaptionState();
+}
+
+class _ConsoleCaptionState extends State<ConsoleCaption> {
+  final GlobalKey _anchorKey = GlobalKey();
+  final _portal = OverlayPortalController();
+  bool _open = false;
+
+  /// Where the caption sits in the overlay.
+  ///
+  /// Measured rather than followed: a `CompositedTransformFollower` moves the
+  /// answer with the caption but cannot see the screen, so it will happily
+  /// place a paragraph past the bottom edge — which on the 1024x600 console is
+  /// exactly what the lowest caption on the panel did. Positioning from a rect
+  /// lets the layout flip the answer above the caption when there is no room
+  /// under it.
+  ///
+  /// Re-measured after every frame it is open, which is what the follower gave
+  /// for free. The barrier stops a FINGER reaching the face, not the face
+  /// changing under it: this panel grows an overdub-mismatch notice on its own,
+  /// the rig can add a lane while you read, and a desktop window resizes. Any
+  /// of those moved the caption and left the answer hanging off nothing.
+  Rect? _anchor;
+
+  /// Whether a re-measuring chain is already running. See [_watchAnchor].
+  bool _watching = false;
+
+  @override
+  void didUpdateWidget(ConsoleCaption oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A caption that loses its explanation while the answer is up takes the
+    // overlay out of the tree without closing it, and `_open` stays true — so
+    // the next tap toggles the state SHUT and the one after it opens, which
+    // from the outside is a `?` that ignores you. Rare, but the null-explain
+    // caption is a supported shape of this widget, not a hypothetical.
+    //
+    // The FLAG only, not [_close]: this runs inside the build that is about to
+    // drop the portal, and `hide()` asserts when it is called during one. The
+    // rebuild takes the overlay away by itself; all that is left is to stop
+    // believing it is up.
+    if (widget.explain == null) _open = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final explain = widget.explain;
+    final caption = Text(
+      widget.label,
+      style: TextStyle(
+        color: surface.textSecondary,
+        fontSize: 14,
+        height: 1.21,
+        leadingDistribution: TextLeadingDistribution.even,
+      ),
+    );
+    final trailing = widget.trailing;
+    if (explain == null) {
+      if (trailing == null) return caption;
+      // The same row the explaining caption builds, minus the question — same
+      // gap included. Two shapes of one widget that differ by a spacer is how
+      // a group with a `?` and a group without stop looking like siblings.
+      return Row(
+        children: [
+          caption,
+          const SizedBox(width: ConsoleCaption._captionGap),
+          Expanded(child: trailing),
+        ],
+      );
+    }
+
+    // One row, whatever happens. The explanation is an OVERLAY, so opening it
+    // moves nothing: as inline prose it pushed every control on the card down
+    // by its own height, which on a face with four captions is most of a
+    // small console's screen, and it did it under the reader's finger.
+    final button = OverlayPortal(
+      controller: _portal,
+      overlayChildBuilder: (context) => _Explanation(
+        anchor: _anchor ?? Rect.zero,
+        text: explain,
+        surface: surface,
+        onDismiss: _close,
+        // Flutter's own word for this, not one of ours: every barrier in the
+        // app should say the same thing to a reader, and this one is already
+        // translated into every locale the framework ships.
+        dismissLabel: MaterialLocalizations.of(
+          context,
+        ).modalBarrierDismissLabel,
+      ),
+      child: _button(surface, caption),
+    );
+    // Shrink-wrapped to the words. The panel that hosts these captions lays
+    // its children out with `CrossAxisAlignment.stretch`, so a bare return
+    // here handed the tap target the full panel width — 950px at 1024x600,
+    // most of it blank. A tap on empty panel, or one aimed slightly high of
+    // the control below, opened a paragraph over the face, and the next tap
+    // went on dismissing it. The caption with `trailing` never had this: its
+    // `Row` bounds the button already.
+    if (trailing == null) {
+      // What does the work is the `Align` itself: it re-loosens the child's
+      // constraints, so the `InkWell` shrinks to the words, and
+      // `RenderPositionedBox` does not hit-test itself — so the blank
+      // remainder of a stretched row takes no taps.
+      //
+      // `heightFactor` for the case the panel does not cover: under the loose
+      // BOUNDED constraints a caption gets outside a stretching column, an
+      // `Align` without it fills the height it is offered and moves the
+      // caption instead of bounding it. There is no `widthFactor` because
+      // there is nothing for one to do — under a tight width the constrain
+      // returns the full width either way.
+      return Align(
+        alignment: AlignmentDirectional.centerStart,
+        heightFactor: 1,
+        child: button,
+      );
+    }
+    // `Expanded`, so [trailing]'s own flex children get a bounded width: this
+    // row shrink-wraps otherwise, and a `Flexible` inside an unbounded row is
+    // a layout assertion.
+    return Row(
+      children: [
+        button,
+        // The controls do not butt against the question mark.
+        const SizedBox(width: ConsoleCaption._captionGap),
+        Expanded(child: trailing),
+      ],
+    );
+  }
+
+  /// The caption and its glyph, which together ARE the button.
+  ///
+  /// The whole caption and not just the glyph, and a real 48px of it: an
+  /// `OverflowBox` around an 18px child grows what is PAINTED and not what is
+  /// hit — every ancestor's `hitTest` rejects a pointer outside its own size
+  /// before the larger child is consulted — so the earlier version drew a
+  /// 48px affordance you had to hit within 18px of centre. On a floor unit
+  /// aimed at with a foot-height finger that is the difference between a
+  /// control and a decoration.
+  ///
+  /// The label opens it too. A `?` that only answers when struck dead centre
+  /// teaches people it is broken; the words beside it are the same question.
+  Widget _button(SurfaceTheme surface, Widget caption) => Semantics(
+    key: _anchorKey,
+    button: true,
+    expanded: _open,
+    label: widget.explainLabel,
+    child: InkWell(
+      key: const Key('console_caption_explain'),
+      onTap: _toggle,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minHeight: ConsoleCaption._targetHeight,
+        ),
+        // Inside the InkWell, not around it: outside, the exclusion swallows
+        // the tap action too, and the node a reader lands on is a button it
+        // cannot press. Inside, the gesture survives and only the words go —
+        // the label already says them, and the bare "?" was being read out.
+        child: ExcludeSemantics(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [caption, const SizedBox(width: 8), _glyph(surface)],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  /// The `?` itself. Drawn, never hit — [_button] is the target.
+  Widget _glyph(SurfaceTheme surface) => Container(
+    width: ConsoleCaption._glyphSize,
+    height: ConsoleCaption._glyphSize,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.all(color: _open ? surface.accent : surface.borderStrong),
+      color: _open ? surface.accent : null,
+    ),
+    child: Center(
+      child: Text(
+        '?',
+        style: TextStyle(
+          color: _open ? surface.onAccent : surface.textSecondary,
+          fontSize: 11,
+          height: 1,
+          fontWeight: FontWeight.w600,
+          leadingDistribution: TextLeadingDistribution.even,
+        ),
+      ),
+    ),
+  );
+
+  /// Catches the caption up with wherever each frame put it, until it closes.
+  ///
+  /// After every frame rather than on every build, because the caption is not
+  /// what rebuilds when it moves: a notice appearing above it, or a window
+  /// resize, leaves this widget untouched and its position different. Cheap
+  /// and self-limiting — it schedules no frame of its own (so it costs nothing
+  /// on a still screen), and a measurement equal to the one held does not
+  /// `setState`, so it cannot spin.
+  ///
+  /// Both its guards are pinned by tests: dropping `mounted` fails eleven of
+  /// them, and dropping the arming call fails the one that moves the face.
+  /// That it stops on CLOSE is deliberately NOT claimed as proven — a chain
+  /// that kept running would measure, find nothing changed and be invisible
+  /// from outside the widget.
+  ///
+  /// [_watching] holds it to one chain. The barrier does NOT: `show()` only
+  /// marks this state dirty, so the barrier is not in the render tree until
+  /// the next frame is built, and every touch arriving in that gap lands on
+  /// the `?` itself. Taps inside one frame interval — a bouncing panel, a
+  /// double-tap — arm a chain each, and each is a `findRenderObject` plus a
+  /// `localToGlobal` on every frame until the answer closes. Bounded, since
+  /// they all die at the first post-frame after `_open` goes false, and still
+  /// work nobody asked for on an appliance.
+  ///
+  /// Not pinned by a test, and it cannot be: chain count is invisible from
+  /// outside the widget — two chains measure the same rect and produce the
+  /// same one rebuild as one. It stays because the state is reproducible with
+  /// an instrumented chain id, not because it might happen.
+  void _watchAnchor() {
+    if (_watching) return;
+    _watching = true;
+    void tick() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_open) {
+          _watching = false;
+          return;
+        }
+        final now = _measure();
+        if (now != null && now != _anchor) setState(() => _anchor = now);
+        tick();
+      });
+    }
+
+    tick();
+  }
+
+  /// The caption's rect in the overlay's own coordinates, or null if either
+  /// render object is missing — which only happens before the first layout,
+  /// and a caption cannot be tapped before then.
+  Rect? _measure() {
+    final box = _anchorKey.currentContext?.findRenderObject();
+    final overlay = Overlay.of(context).context.findRenderObject();
+    if (box is! RenderBox || overlay is! RenderBox) return null;
+    final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
+    return topLeft & box.size;
+  }
+
+  void _close() {
+    if (!_open) return;
+    setState(() => _open = false);
+    _portal.hide();
+  }
+
+  /// Opens or closes, and SAYS which.
+  ///
+  /// Focus stays on the button, so without this a reader hears nothing at all
+  /// — the paragraph it just summoned is only found by swiping forward, which
+  /// is a poor result for a control whose entire job is answering a question.
+  void _toggle() {
+    if (_open) {
+      _close();
+      return;
+    }
+    setState(() {
+      _open = true;
+      _anchor = _measure();
+    });
+    _portal.show();
+    _watchAnchor();
+    final explain = widget.explain;
+    if (explain != null) {
+      unawaited(
+        SemanticsService.sendAnnouncement(
+          View.of(context),
+          explain,
+          Directionality.of(context),
+        ),
+      );
+    }
+  }
+}
+
+/// The floating answer, anchored under the `?` that summoned it.
+///
+/// A barrier under it rather than beside it: an explanation that stays up
+/// while you go and use the control it describes is a panel, not an answer,
+/// and this surface already has one thing at a time everywhere else.
+class _Explanation extends StatelessWidget {
+  const _Explanation({
+    required this.anchor,
+    required this.text,
+    required this.surface,
+    required this.onDismiss,
+    required this.dismissLabel,
+  });
+
+  /// The caption's rect, in the overlay's coordinates.
+  final Rect anchor;
+  final String text;
+  final SurfaceTheme surface;
+  final VoidCallback onDismiss;
+  final String dismissLabel;
+
+  /// Wide enough for a sentence to breathe, narrow enough to read as a note
+  /// about one control rather than as the face's own body text.
+  static const double _width = 460;
+
+  /// Keeps the answer off the screen edge on every side.
+  static const double _margin = 12;
+
+  /// How far the answer rides up into the caption's own row, so it reads as
+  /// hanging off the `?` rather than floating loose under it. The row is 48px
+  /// tall around a 17px line, so this eats slack, not the caption.
+  static const double _overlap = 6;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      // Dismiss on a tap anywhere else, INCLUDING on another caption's `?`:
+      // that tap closes this one and the next tap opens that one, which is
+      // one tap more than it looks like it should be, and still better than
+      // two explanations open over each other.
+      //
+      // A real barrier, not a GestureDetector: the face underneath must not
+      // take a drag either. A bare tap-only detector absorbs the touch and
+      // then nothing recognises the gesture, so a scroll under an open answer
+      // silently does nothing — which reads as the console having frozen.
+      // `ModalBarrier` blocks POINTERS on every platform, and brings its own
+      // `BlockSemantics` for readers — but it only offers the DISMISS action
+      // where the host platform has a back gesture, which it reads as Android,
+      // iOS and macOS. On Linux, Windows and Fuchsia it excludes itself from
+      // semantics entirely, and since the face behind is blocked either way, a
+      // reader was left holding one paragraph and no way out. This console
+      // SHIPS on Linux.
+      Positioned.fill(
+        child: ModalBarrier(
+          key: const Key('console_caption_scrim'),
+          semanticsLabel: dismissLabel,
+          onDismiss: onDismiss,
+        ),
+      ),
+      // And a keyboard is the third way in, which the barrier does not cover
+      // at all: tab walked straight through it to the control the answer was
+      // describing, and space operated it with the answer still up — the
+      // "panel, not an answer" state the class doc rejects. The scope keeps
+      // traversal in here; `DismissIntent` is what Escape already means
+      // everywhere else in the app.
+      Positioned.fill(
+        child: FocusScope(
+          child: Actions(
+            actions: {
+              DismissIntent: CallbackAction<DismissIntent>(
+                onInvoke: (_) => onDismiss(),
+              ),
+            },
+            child: Focus(
+              autofocus: true,
+              child: CustomSingleChildLayout(
+                delegate: _ExplanationLayout(anchor),
+                // So the answer itself carries the way out, on every platform
+                // — and carries it on the SAME node as the words. Split across
+                // two, the node that answers the question announces nothing
+                // and the node that announces it cannot be closed, so a reader
+                // has to swipe back to silence to get out.
+                child: Semantics(
+                  container: true,
+                  label: text,
+                  onDismiss: onDismiss,
+                  child: Material(
+                    key: const Key('console_caption_explanation'),
+                    color: surface.cardHigh,
+                    elevation: 8,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                      // Scrolls only when the answer is taller than the room
+                      // on either side of the caption — which the longest of
+                      // them is, on the short console, with the tallest
+                      // caption open. Clipping instead would drop the last
+                      // sentence, and the last sentence is where these
+                      // paragraphs put the consequence.
+                      //
+                      // The prose is excluded because the label above already
+                      // IS it: left in, the same paragraph is a second node,
+                      // and which one a reader lands on decides whether they
+                      // can close it.
+                      child: SingleChildScrollView(
+                        child: ExcludeSemantics(child: ConsoleProse(text)),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+/// Puts the answer under its caption, or above it when the screen is out of
+/// room, and never past an edge.
+///
+/// Left-anchored, not leading-anchored: the app ships `en` and `es`, and a
+/// direction this delegate never receives would be a parameter nothing could
+/// exercise. An RTL locale would want [getPositionForChild] to hang the answer
+/// off `anchor.right` instead.
+class _ExplanationLayout extends SingleChildLayoutDelegate {
+  const _ExplanationLayout(this.anchor);
+
+  /// The caption's rect, in the same coordinates as the laid-out box.
+  final Rect anchor;
+
+  /// The taller of the two gaps the answer could occupy.
+  double _room(BoxConstraints constraints) => math.max(
+    constraints.maxHeight - anchor.bottom - _Explanation._margin,
+    anchor.top - _Explanation._margin,
+  );
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      BoxConstraints(
+        maxWidth: math.min(
+          _Explanation._width,
+          math.max(0, constraints.maxWidth - _Explanation._margin * 2),
+        ),
+        // Plus the overlap, which is room the answer gets back by sitting in
+        // the caption's own row.
+        maxHeight: math.max(0, _room(constraints) + _Explanation._overlap),
+      );
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final below = anchor.bottom - _Explanation._overlap;
+    final fitsBelow =
+        below + childSize.height <= size.height - _Explanation._margin;
+    final top = fitsBelow
+        ? below
+        : anchor.top + _Explanation._overlap - childSize.height;
+    // Leading edge of the caption, where the eye already is — pulled back
+    // only by however much of the answer would otherwise leave the screen.
+    return Offset(
+      _clamp(anchor.left, size.width, childSize.width),
+      _clamp(top, size.height, childSize.height),
+    );
+  }
+
+  /// Keeps `start` inside a [span] with a margin at both ends, preferring the
+  /// near edge when the child is too big for the span at all.
+  static double _clamp(double start, double span, double extent) => start.clamp(
+    _Explanation._margin,
+    math.max(_Explanation._margin, span - extent - _Explanation._margin),
+  );
+
+  @override
+  bool shouldRelayout(_ExplanationLayout oldDelegate) =>
+      oldDelegate.anchor != anchor;
+}
+
 /// A row that can open in place: the row itself over a tinted, bordered card
 /// of its actions.
 ///
@@ -1014,6 +1552,7 @@ class ConsoleSwitch extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.semanticLabel,
+    this.small = false,
     super.key,
   });
 
@@ -1026,13 +1565,28 @@ class ConsoleSwitch extends StatelessWidget {
   /// The announced label.
   final String? semanticLabel;
 
-  /// Track size.
+  /// The pen's `ToggleSm` rather than its `Toggle` — the size the FX
+  /// parameter grid uses, where a full-size switch would be wider than the
+  /// 78px tile that holds it.
+  final bool small;
+
+  /// Track size for a row switch.
   static const Size trackSize = Size(53, 31);
 
-  /// Knob diameter.
+  /// Track size inside a parameter tile.
+  static const Size smallTrackSize = Size(37, 22);
+
+  /// Knob diameter for a row switch.
   static const double knobSize = 25;
 
+  /// Knob diameter inside a parameter tile.
+  static const double smallKnobSize = 18;
+
   static const double _inset = 3;
+
+  Size get _track => small ? smallTrackSize : trackSize;
+
+  double get _knob => small ? smallKnobSize : knobSize;
 
   @override
   Widget build(BuildContext context) {
@@ -1043,11 +1597,11 @@ class ConsoleSwitch extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         curve: Curves.easeOut,
-        width: trackSize.width,
-        height: trackSize.height,
+        width: _track.width,
+        height: _track.height,
         decoration: BoxDecoration(
           color: value ? surface.accent : surface.control,
-          borderRadius: BorderRadius.circular(trackSize.height),
+          borderRadius: BorderRadius.circular(_track.height),
           border: Border.all(color: value ? surface.accent : surface.line),
         ),
         child: Stack(
@@ -1056,12 +1610,10 @@ class ConsoleSwitch extends StatelessWidget {
               duration: const Duration(milliseconds: 160),
               curve: Curves.easeOut,
               top: _inset - 1,
-              left: value
-                  ? trackSize.width - knobSize - _inset - 1
-                  : _inset - 1,
+              left: value ? _track.width - _knob - _inset - 1 : _inset - 1,
               child: Container(
-                width: knobSize,
-                height: knobSize,
+                width: _knob,
+                height: _knob,
                 decoration: BoxDecoration(
                   color: value ? surface.onAccent : surface.textSecondary,
                   shape: BoxShape.circle,
@@ -1078,7 +1630,7 @@ class ConsoleSwitch extends StatelessWidget {
       label: semanticLabel,
       child: FocusableTapTarget(
         onTap: changed == null ? null : () => changed(!value),
-        borderRadius: trackSize.height,
+        borderRadius: _track.height,
         semanticLabel: semanticLabel,
         child: GestureDetector(
           onTap: changed == null ? null : () => changed(!value),

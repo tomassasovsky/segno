@@ -3,11 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/fx_editor/fx_plugin_state.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
+import 'package:segno/looper/view/signal/fx_param_edit_sheet.dart';
+import 'package:segno/looper/view/signal/fx_param_tile.dart';
 import 'package:segno/looper/view/signal/signal_browse_plugins.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -20,9 +21,9 @@ import 'package:segno/theme/theme.dart';
 /// stays, because whether you hear the input at all is still true while you
 /// are editing what it sounds like.
 ///
-/// Parameters are [ConsoleValueBar] with no adjustment: the mockups' own
-/// measure — 106 label + 14 + 1400 track + 14 + 94 readout — is 1628, which is
-/// what that widget already draws.
+/// Parameters are the grid `DS / 06` resolves: one 78px tile per parameter,
+/// wrapping, with the kind of parameter choosing the cell. A tile opens the
+/// editor sheet and writes nothing itself.
 class SignalFxEditor extends StatelessWidget {
   /// Creates a [SignalFxEditor] for entry [index] of [scope]'s chain.
   const SignalFxEditor({
@@ -61,7 +62,7 @@ class SignalFxEditor extends StatelessWidget {
     // block of someone else's parameters.
     if (index < 0 || index >= chain.length) return const SizedBox.shrink();
     final effect = chain[index];
-    final rows = _rowsFor(l10n, effect);
+    final rows = _cellsFor(l10n, effect);
 
     return Container(
       key: const Key('signal_fx_editor'),
@@ -108,22 +109,23 @@ class SignalFxEditor extends StatelessWidget {
                 ],
               ),
             ),
-          for (final (param, row) in rows.indexed) ...[
-            if (param > 0) const SizedBox(height: rowGap),
-            ConsoleValueBar(
-              key: Key('signal_fx_param_$param'),
-              label: row.label.toUpperCase(),
-              // Named for the reader, which the display label cannot do — it
-              // is an upper-cased fragment with no idea whose it is.
-              semanticLabel: l10n.a11yFxParam(
-                row.label,
-                fxBlockName(l10n, effect),
-              ),
-              value: row.normalized,
-              readout: row.readout,
-              onChanged: row.onChanged,
+          if (rows.isNotEmpty)
+            // The grid, not a column of faders: every parameter kind wears the
+            // same 78px skeleton, so a two-knob built-in and a 24-parameter
+            // compressor read as the same surface. It wraps and never scrolls
+            // sideways, so no parameter hides off the edge.
+            Wrap(
+              key: const Key('signal_fx_param_grid'),
+              spacing: FxParamTileMetrics.gutter,
+              runSpacing: FxParamTileMetrics.gutter,
+              children: [
+                for (final (param, row) in rows.indexed)
+                  KeyedSubtree(
+                    key: Key('signal_fx_param_$param'),
+                    child: row.build(context, this),
+                  ),
+              ],
             ),
-          ],
           if (!scope.chainEnabled) ...[
             const SizedBox(height: rowGap),
             AppText(
@@ -182,27 +184,38 @@ class SignalFxEditor extends StatelessWidget {
     );
   }
 
-  /// One row per parameter, already in the units each side expects.
+  /// One cell per parameter, each already in the units its own side speaks.
   ///
-  /// A built-in's parameters are normalized `0..1` end to end, which is what
-  /// [ConsoleValueBar] speaks. **A hosted plugin's are not**: it reports and
-  /// takes PLAIN values in its own units, with its own `min`/`max`. Feeding
-  /// one straight to the bar pins anything above 1 to full, and writing the
-  /// bar's fraction straight back sets a 20 kHz filter to 0.06 Hz. Both ends
-  /// are converted here, the same way `fx_param_tile.dart` did it.
-  List<_ParamRow> _rowsFor(AppLocalizations l10n, TrackEffect effect) =>
+  /// A built-in's parameters are normalized `0..1` end to end; a hosted
+  /// plugin's are PLAIN values in its own units with its own `min`/`max`.
+  /// Nothing converts between them, because nothing has to: the cells and the
+  /// sheet work in the parameter's own range, which `_builtInSpec` states for
+  /// a built-in as the `0..1` it actually is. The fader this replaced spoke
+  /// only `0..1` and had to convert both ends.
+  List<_ParamCell> _cellsFor(AppLocalizations l10n, TrackEffect effect) =>
       switch (effect) {
         BuiltInEffect(:final type, :final params) => [
           for (final (param, spec) in type.params.indexed)
-            _ParamRow(
-              label: l10n.effectParamLabel(spec.label),
-              normalized: param < params.length ? params[param] : 0,
+            _ParamCell(
+              spec: _builtInSpec(l10n, type, param, spec),
+              plain: param < params.length ? params[param] : 0,
+              slot: effect.slotId,
+              semanticLabel: l10n.a11yFxParam(
+                l10n.effectParamLabel(spec.label),
+                fxBlockName(l10n, effect),
+              ),
               readout: fxParamReadout(
                 l10n,
                 spec,
                 param < params.length ? params[param] : 0,
               ),
-              onChanged: (value) => scope.setParam(index, param, value),
+              formatValue: (value) => fxParamReadout(l10n, spec, value),
+              onChanged: _bySlot(
+                effect.slotId,
+                (at) => (value) {
+                  scope.setParam(at, param, value);
+                },
+              ),
             ),
         ],
         PluginEffect(:final params, :final paramValues) => [
@@ -215,53 +228,175 @@ class SignalFxEditor extends StatelessWidget {
           // A non-automatable one IS drawn, read-only: `isAutomatable` is
           // optional per parameter, so a plugin that marks its mode selector
           // non-automatable rendered nothing at all and was told it exposes
-          // no controls, which was untrue of it. Its value is a setting, and
-          // a setting read at load is still true at load.
+          // no controls, which was untrue of it.
           //
-          // A READ-ONLY one is not, and that is the difference: a gain
-          // reduction meter is only true for the instant it was read, and the
-          // console can only read one while the plugin's own window is open.
-          // Drawing it would put a number that never moves where a number
-          // that always moves belongs.
+          // So is a READ-ONLY one, and `DS / 06` says where it lands: a
+          // borderless, untappable tile, muted, with the accent off its
+          // indicator. A gain-reduction meter is only true for the instant it
+          // was read — which is the argument for drawing it as something that
+          // is plainly not a control, not for hiding a value the plugin
+          // publishes about itself.
           for (final info in params)
-            if (!info.isHidden && !info.isBypass && !info.isReadOnly)
-              _pluginRow(info, paramValues[info.id] ?? info.def),
+            if (!info.isHidden && !info.isBypass)
+              _pluginCell(l10n, effect, info, paramValues[info.id] ?? info.def),
         ],
       };
 
-  _ParamRow _pluginRow(PluginParamInfo info, double plain) {
-    final span = info.max - info.min;
+  _ParamCell _pluginCell(
+    AppLocalizations l10n,
+    TrackEffect effect,
+    PluginParamInfo info,
+    double plain,
+  ) {
     // A meter: the plugin either will not be automated on this parameter or
-    // reports it read-only. The bar reads and does not write.
+    // reports it read-only. It draws, borderless and untappable, rather than
+    // being dropped — a value the plugin publishes is part of what the plugin
+    // IS, and a strip missing its gain-reduction readout is a strip that
+    // silently disagrees with the plugin's own window.
     final live = info.isAutomatable && !info.isReadOnly;
-    // A degenerate range would divide by zero; the bar then reads empty and
-    // the write clamps to the single value the plugin accepts.
-    final normalized = span == 0
-        ? 0.0
-        : ((plain - info.min) / span).clamp(0.0, 1.0);
-    return _ParamRow(
-      label: info.name,
-      normalized: normalized,
+    return _ParamCell(
+      spec: info,
+      plain: plain,
+      slot: effect.slotId,
+      semanticLabel: l10n.a11yFxParam(info.name, fxBlockName(l10n, effect)),
       // The live instance's own string first — it is the only thing that
-      // knows what its numbers MEAN. A percentage of a plain value would be
-      // meaningless even after the conversion above.
+      // knows what its numbers MEAN.
       readout:
-          scope.formatPluginValue(index, info.id, plain) ??
+          _atSlot(effect.slotId, (at) {
+            return scope.formatPluginValue(at, info.id, plain);
+          }) ??
           _plainReadout(info, plain),
+      // Through the SAME entry the writes go to, and with the same fallback
+      // the tile uses. Asking by position would format the value through a
+      // different plugin the moment the chain moved under the open sheet, and
+      // no fallback at all left a bus stage — which never has a live instance
+      // to ask — showing `2` in the sheet under a tile reading `Highpass`.
+      formatValue: (value) =>
+          _atSlot(effect.slotId, (at) {
+            return scope.formatPluginValue(at, info.id, value);
+          }) ??
+          _plainReadout(info, value),
+      // Plain values, both ways: the sheet and the cells speak the
+      // parameter's own units, so nothing here converts. The old fader spoke
+      // `0..1` and had to.
       onChanged: !live
           ? null
-          : (value) => scope.setPluginParam(
-              index,
-              info.id,
-              // A stepped parameter has to LAND on a step: the readout
-              // names one, and a value parked between two would leave the
-              // plugin holding something the label says it is not.
-              info.min +
-                  (info.stepCount > 0
-                          ? (value * info.stepCount).round() / info.stepCount
-                          : value) *
-                      span,
+          : _bySlot(
+              effect.slotId,
+              (at) => (value) {
+                scope.setPluginParam(at, info.id, value);
+              },
             ),
+    );
+  }
+
+  /// A write aimed at the entry identified by [slot], wherever it has moved
+  /// to by the time it lands.
+  ///
+  /// The sheet is modal and stays open for as long as someone takes to settle
+  /// a value, and the chain can be rewritten underneath it — a record pass
+  /// snapshots the monitor chain onto the lane, another surface removes an
+  /// entry. A captured POSITION would then name whatever slid into it, and
+  /// the drag would move a parameter of an unrelated effect. The same
+  /// argument [_relink] already makes, for the same reason.
+  ///
+  /// A slot that is GONE takes no writes at all: an edit with nothing to edit
+  /// is not an edit to apply somewhere else. [_relink] refuses the same way,
+  /// though it parts company on the no-id case — see [_slotIndex].
+  ValueChanged<double> _bySlot(
+    String? slot,
+    ValueChanged<double> Function(int at) write,
+  ) => (value) {
+    final at = _slotIndex(slot);
+    if (at < 0) return;
+    write(at)(value);
+  };
+
+  /// Where the entry identified by [slot] is NOW, or -1 when it is gone.
+  ///
+  /// An entry with no slot id keeps the position it was drawn at: there is
+  /// nothing to re-find it by, which is what the whole surface did before
+  /// this. The repository mints ids at its write boundary, so a live chain has
+  /// them and that path does not happen.
+  int _slotIndex(String? slot) {
+    final chain = scope.effects;
+    final at = slot == null
+        ? index
+        : chain.indexWhere((effect) => effect.slotId == slot);
+    return at >= 0 && at < chain.length ? at : -1;
+  }
+
+  /// Reads something about the entry identified by [slot], or null when it is
+  /// gone — the read half of [_bySlot], so what the sheet SHOWS and what it
+  /// writes cannot end up describing two different effects.
+  T? _atSlot<T>(String? slot, T? Function(int at) read) {
+    final at = _slotIndex(slot);
+    return at < 0 ? null : read(at);
+  }
+
+  /// The breadcrumb under the parameter's name in the sheet — which effect,
+  /// on which chain.
+  ///
+  /// The sheet is raised over a dimmed console, so the one thing it cannot
+  /// rely on is the surface behind it still answering "what am I editing".
+  String _sourceLine(BuildContext context, String? slot) {
+    final l10n = context.l10n;
+    final name =
+        _atSlot(slot, (at) => fxBlockName(l10n, scope.effects[at])) ?? '';
+    return '$name · ${scope.label(l10n)}';
+  }
+
+  /// A built-in parameter's range, in the type the sheet and the taxonomy
+  /// speak.
+  ///
+  /// Not a pretend plugin: [PluginParamInfo] describes a parameter's RANGE,
+  /// and a built-in's range is continuous over `0..1` with a name, a default
+  /// and — where it has steps — a name for each of them, all of which the
+  /// effect already declares. Writing that down is what lets one grid draw
+  /// both kinds; the alternative is a second taxonomy that decides the same
+  /// things again for built-ins.
+  PluginParamInfo _builtInSpec(
+    AppLocalizations l10n,
+    TrackEffectType type,
+    int param,
+    TrackEffectParam spec,
+  ) {
+    // A built-in's divisions are its steps, and a continuous one has none.
+    final steps = spec.divisions ?? 0;
+    final defaults = type.defaultParams;
+    return PluginParamInfo(
+      id: param,
+      name: l10n.effectParamLabel(spec.label),
+      unit: '',
+      min: 0,
+      max: 1,
+      // The effect's OWN default, not zero. The sheet's Reset writes this,
+      // and zero is silence for most of them — a reset that switches the
+      // effect off is not a reset.
+      def: param < defaults.length ? defaults[param] : 0,
+      stepCount: steps,
+      flags: 0x01,
+      // What each step is CALLED, in the effect's own words — the octaver's
+      // mode is the built-in that has names, and without these it reads as a
+      // bare index or as nothing at all.
+      //
+      // Only where they are NAMES, and only where a menu could show them.
+      //
+      // A percentage is not a step name: a future built-in with four plain
+      // divisions must not become a dropdown of `0% 25% 50% 75% 100%`. That
+      // half is protection — no built-in is shaped that way today, so no test
+      // can reach it, and the first one added would find the trap sprung.
+      //
+      // The step ceiling changes nothing observable, since the routing gate
+      // already excludes anything past 24. It stops the octaver's 48-step
+      // Shift building a 49-element list through the localiser on every
+      // rebuild of a panel that never reads it.
+      valueTexts: steps == 0 || steps > 24 || spec.readout == ParamReadout.none
+          ? const []
+          : [
+              for (var step = 0; step <= steps; step++)
+                fxParamReadout(l10n, spec, step / steps),
+            ],
     );
   }
 
@@ -584,19 +719,112 @@ String fxParamReadout(
   };
 }
 
-/// One parameter of one chain entry, in the units the bar speaks.
-class _ParamRow {
-  const _ParamRow({
-    required this.label,
-    required this.normalized,
+/// One parameter's place in the grid: what the tile reads, and what the sheet
+/// edits when it is tapped.
+///
+/// A single type for both kinds. A built-in's parameters are a fixed list of
+/// normalized knobs and a plugin's are a described range, but the design puts
+/// them in one grid, so what differs is confined to how a cell is BUILT.
+class _ParamCell {
+  const _ParamCell({
+    required this.spec,
+    required this.plain,
+    required this.slot,
     required this.readout,
+    required this.semanticLabel,
     required this.onChanged,
+    this.formatValue,
   });
 
-  final String label;
-  final double normalized;
+  /// The parameter's range, as the sheet needs it. For a built-in this is
+  /// written here rather than reported by a plugin — a built-in parameter IS
+  /// continuous over `0..1`, and saying so in the type the sheet already
+  /// speaks beats a second sheet that says the same thing differently.
+  final PluginParamInfo spec;
+
+  /// The current value in [spec]'s own units.
+  final double plain;
+
+  /// The identity of the chain entry this parameter belongs to. Everything
+  /// the sheet reads and everything it writes goes through it, so a chain
+  /// rewritten under an open sheet cannot leave the two describing different
+  /// effects.
+  final String? slot;
+
+  /// The value as it should read, unit included.
   final String readout;
 
-  /// Null when the parameter only reads — see [ConsoleValueBar.onChanged].
+  /// Null when the parameter only reports — a meter, or a plugin that says the
+  /// value is read-only.
   final ValueChanged<double>? onChanged;
+
+  /// The plugin's own rendering of an arbitrary value, for the sheet's live
+  /// readout. Null for a built-in, which formats through its own spec.
+  final String? Function(double value)? formatValue;
+
+  /// What the tile says out loud: the parameter AND the effect it belongs to.
+  final String semanticLabel;
+
+  /// The cell the taxonomy calls for. First match wins, so a read-only
+  /// parameter never reaches the step-count branches.
+  Widget build(BuildContext context, SignalFxEditor editor) {
+    final set = onChanged;
+    // Read-only first, then the step count: a meter reports a value it will
+    // not take, so it is never a switch and never a menu however many steps
+    // it claims.
+    if (set == null) {
+      return FxParamTile(
+        spec: spec,
+        value: plain,
+        valueText: readout,
+        semanticLabel: semanticLabel,
+        onTap: null,
+      );
+    }
+    // Named steps go to the menu, whatever their count — including two of
+    // them. A switch has no room for a caption (36px, by the DS), so a
+    // two-state parameter whose states have names would show neither.
+    final named =
+        spec.valueTexts.length == spec.stepCount + 1 && spec.stepCount >= 1;
+    if (spec.stepCount == 1 && !named) {
+      return FxParamSwitchCell(
+        spec: spec,
+        value: plain,
+        semanticLabel: semanticLabel,
+        onChanged: set,
+      );
+    }
+    // Labelled, not merely small: steps AND a name for each one. A three-step
+    // parameter with no names would draw a menu of `0 1 2 3`, which says less
+    // than the value it replaced.
+    if (named && spec.stepCount <= 24) {
+      return FxParamEnumCell(
+        spec: spec,
+        value: plain,
+        semanticLabel: semanticLabel,
+        onChanged: set,
+      );
+    }
+    return FxParamTile(
+      spec: spec,
+      value: plain,
+      valueText: readout,
+      semanticLabel: semanticLabel,
+      onTap: () => unawaited(
+        FxParamEditSheet.show(
+          context,
+          spec: spec,
+          value: plain,
+          source: editor._sourceLine(context, slot),
+          onChanged: set,
+          formatValue: formatValue,
+          // The entry can go while its sheet is open. Every write would then
+          // land nowhere and every drag would move a value that no longer
+          // exists, under a panel that has already collapsed behind the
+          // scrim. Closing says so; swallowing the drags does not.
+          isGone: () => editor._slotIndex(slot) < 0,
+        ),
+      ),
+    );
+  }
 }

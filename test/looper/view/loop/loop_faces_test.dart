@@ -312,7 +312,7 @@ void main() {
       await tester.tap(find.text(l10nOf(tester).loopModeTab));
       await tester.pumpAndSettle();
 
-      tray.showHome();
+      tray.showLanding();
       await tester.pumpAndSettle();
       tray.showDestination(SettingsTrayDestination.loop);
       await tester.pumpAndSettle();
