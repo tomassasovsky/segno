@@ -62,6 +62,9 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Follows the plugin scan, so the chains pick up what it resolves.
   StreamSubscription<void>? _catalogWatch;
 
+  /// Follows monitor writes that did not come through here.
+  StreamSubscription<int>? _monitorWatch;
+
   /// Restores the persisted per-input monitors and applies them to the
   /// repository. Reads the single-chain keys; the multi-lane → single-chain
   /// fold (v3) runs at bootstrap, before this.
@@ -115,6 +118,40 @@ class MonitorCubit extends Cubit<MonitorState> {
     _catalogWatch ??= _repository.pluginCatalog.progressStream.listen(
       (_) => unawaited(_readAfterScan()),
     );
+    // And follow the repository itself. This cubit is a write-through cache of
+    // state the repository owns, and it is not the only writer: a pedal
+    // binding resolving an `FxStage.input` target goes straight there
+    // (`FxBindingResolver`), as does a session apply. The other stages are
+    // projected onto `LooperState` and so correct themselves; a monitor lives
+    // only in the repository's own maps, so nothing corrected this one — a
+    // footswitch could switch an input chain off and leave the console
+    // drawing it as running, with the first tap writing the state it was
+    // already in and looking inert.
+    _monitorWatch ??= _repository.monitorChanges.listen(_readMonitor);
+  }
+
+  /// Re-reads everything this cubit caches about [input].
+  ///
+  /// Emits only on a real difference: every write from here comes back
+  /// through the same stream, and re-emitting an identical state would rebuild
+  /// the console on each one.
+  ///
+  /// Reads, never writes — neither to the engine nor to settings. What is
+  /// persisted is what the user set on this surface; a pedal's bypass is a
+  /// performance decision, and the other stages do not persist theirs either.
+  void _readMonitor(int input) {
+    if (isClosed) return;
+    final current = state.forInput(input);
+    final applied = current.copyWith(
+      mode: _repository.monitorMode(input),
+      outputMask: _repository.monitorOutput(input),
+      volume: _repository.monitorVolume(input),
+      muted: _repository.monitorMuted(input),
+      effects: _repository.monitorEffects(input),
+      chainEnabled: _repository.monitorChainEnabled(input),
+    );
+    if (applied == current) return;
+    emit(state.withInput(applied));
   }
 
   /// Re-reads once the scan's own listeners have run.
@@ -533,6 +570,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     }
     _editorTimers.clear();
     unawaited(_catalogWatch?.cancel());
+    unawaited(_monitorWatch?.cancel());
     return super.close();
   }
 }

@@ -6304,6 +6304,49 @@ void main() {
     });
   });
 
+  group('monitorChanges', () {
+    test('every monitor write announces its input', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final seen = <int>[];
+      final sub = repo.monitorChanges.listen(seen.add);
+      addTearDown(sub.cancel);
+
+      // Monitor state is the one part of the rig that is not projected onto
+      // LooperState, so a cache of it (MonitorCubit) has no other way to
+      // notice a writer that went straight to the repository.
+      repo
+        ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
+        ..setMonitorOutput(input: 1, mask: 0x2)
+        ..setMonitorVolume(input: 2, volume: 0.5)
+        ..setMonitorMute(input: 3, muted: true)
+        ..setMonitorEffects(
+          input: 4,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMonitorEffectEnabled(input: 4, index: 0, enabled: false)
+        ..setMonitorChainEnabled(input: 5, enabled: false);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, [0, 1, 2, 3, 4, 4, 5]);
+    });
+
+    test('a disposed repository announces nothing', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      final seen = <int>[];
+      final sub = repo.monitorChanges.listen(seen.add);
+      addTearDown(sub.cancel);
+
+      await repo.dispose();
+      // Not an error, and not a leak: applySession and the reconnect path can
+      // both write on the way down.
+      repo.setMonitorMute(input: 0, muted: true);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, isEmpty);
+    });
+  });
+
   group('monitor mode (tri-state)', () {
     EngineSnapshot snapshotWith({
       required TrackState state,

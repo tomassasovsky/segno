@@ -83,6 +83,9 @@ void main() {
         status: EngineStatus(inputChannels: 2, outputChannels: 2),
       ),
     );
+    when(() => repository.monitorChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
+    );
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());

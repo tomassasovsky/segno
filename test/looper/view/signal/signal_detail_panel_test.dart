@@ -125,6 +125,9 @@ void main() {
     monitorChains.clear();
     bloc = _MockLooperBloc();
     repository = _MockLooperRepository();
+    when(() => repository.monitorChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
+    );
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());

@@ -119,6 +119,10 @@ class LooperRepository {
   final Stream<void>? _reconnectTicker;
   final Duration _reconnectInterval;
   late final StreamController<LooperState> _controller;
+
+  /// Broadcasts the input whose monitor-owned state a caller just changed.
+  final StreamController<int> _monitorChanges =
+      StreamController<int>.broadcast();
   StreamSubscription<void>? _tickerSub;
   Timer? _pollTimer;
   LooperState? _last;
@@ -350,6 +354,27 @@ class LooperRepository {
   String? _lastAttemptSignature;
 
   bool get _isReconnecting => _reconnectSub != null || _reconnectTimer != null;
+
+  /// The input of every monitor change, as it happens.
+  ///
+  /// Monitor state is the one part of the rig that is NOT in [looperState]:
+  /// the projection carries tracks and buses, and a monitor lives only in
+  /// these maps. So a writer that goes straight to the repository — a pedal
+  /// binding resolving an `FxStage.input` target, a session apply — is
+  /// invisible to anything holding its own copy, and `MonitorCubit` holds
+  /// exactly that. Without this, a footswitch that bypasses an input chain
+  /// leaves the console still drawing it as running.
+  ///
+  /// Carries the input, not the new state: a listener re-reads what it needs
+  /// from the getters, which is what makes this correct for every writer
+  /// rather than for the ones that remembered to describe their change.
+  Stream<int> get monitorChanges => _monitorChanges.stream;
+
+  /// Announces a change to monitor [input]. Every monitor setter ends here.
+  void _monitorChanged(int input) {
+    if (_monitorChanges.isClosed) return;
+    _monitorChanges.add(input);
+  }
 
   /// Distinct stream of looper states.
   ///
@@ -2053,6 +2078,7 @@ class LooperRepository {
     _monitorInputMode[input] = mode;
     final resolved = monitorResolved(input);
     _monitorResolvedPushed[input] = resolved;
+    _monitorChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMonitorInputEnabled(input: input, enabled: resolved);
   }
@@ -2062,6 +2088,7 @@ class LooperRepository {
   /// only while running.
   EngineResult setMonitorOutput({required int input, required int mask}) {
     _monitorOutput[input] = mask;
+    _monitorChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMonitorInputOutput(input: input, mask: mask);
   }
@@ -2071,6 +2098,7 @@ class LooperRepository {
   /// (re)start; takes effect immediately while running.
   EngineResult setMonitorVolume({required int input, required double volume}) {
     _monitorVolume[input] = volume;
+    _monitorChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMonitorInputVolume(input: input, volume: volume);
   }
@@ -2079,6 +2107,7 @@ class LooperRepository {
   /// (re)start; takes effect immediately only while running.
   EngineResult setMonitorMute({required int input, required bool muted}) {
     _monitorMute[input] = muted;
+    _monitorChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMonitorInputMute(input: input, muted: muted);
   }
@@ -2349,6 +2378,7 @@ class LooperRepository {
     if (fx is! PluginEffect) return EngineResult.invalid;
     _monitorEffects[input] = List<TrackEffect>.of(effects)
       ..[index] = _relinked(fx, ref);
+    _monitorChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     return _applyMonitorEffects(input);
   }
@@ -2929,6 +2959,7 @@ class LooperRepository {
     }
     _monitorEffects[input] = List<TrackEffect>.of(effects)
       ..[index] = _withEnabled(effects[index], enabled);
+    _monitorChanged(input);
     return _engine.setMonitorInputFxEnabled(
       input: input,
       index: index,
@@ -3007,6 +3038,7 @@ class LooperRepository {
     } else {
       _monitorChainEnabled[input] = false;
     }
+    _monitorChanged(input);
     return _engine.setMonitorInputFxChainEnabled(
       input: input,
       enabled: enabled,
@@ -3139,6 +3171,7 @@ class LooperRepository {
     } else {
       _monitorEffects[input] = clamped;
     }
+    _monitorChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     final result = _applyMonitorEffects(input);
     // Same cold-start recovery as setLaneEffects: a restored monitor chain
@@ -3530,6 +3563,7 @@ class LooperRepository {
   Future<void> _stopPollingAndClose() async {
     _stopPolling();
     _stopReconnectPolling();
+    await _monitorChanges.close();
     await _controller.close();
   }
 }

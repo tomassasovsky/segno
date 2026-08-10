@@ -33,6 +33,11 @@ void main() {
     );
     addTearDown(catalog.dispose);
     when(() => repository.pluginCatalog).thenReturn(catalog);
+    // And it follows the repository's own monitor writes, so a change that
+    // did not come through this cubit still reaches the console.
+    when(
+      () => repository.monitorChanges,
+    ).thenAnswer((_) => const Stream<int>.empty());
     when(
       () => repository.setMonitorInputMode(
         input: any(named: 'input'),
@@ -106,6 +111,113 @@ void main() {
 
   MonitorCubit build() =>
       MonitorCubit(repository: repository, settings: settings);
+
+  group('following the repository', () {
+    late StreamController<int> changes;
+
+    setUp(() {
+      changes = StreamController<int>.broadcast();
+      addTearDown(changes.close);
+      when(() => repository.monitorChanges).thenAnswer((_) => changes.stream);
+      // The repository's answers start where the cubit's own defaults are, so
+      // a test only sees what that test changes.
+      when(() => repository.monitorMode(any())).thenReturn(MonitorMode.off);
+      when(() => repository.monitorOutput(any())).thenReturn(0x3);
+      when(() => repository.monitorVolume(any())).thenReturn(1);
+      when(() => repository.monitorMuted(any())).thenReturn(false);
+      when(() => repository.monitorChainEnabled(any())).thenReturn(true);
+    });
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a chain switched off elsewhere reaches the console',
+      build: build,
+      // The state `load` emits on the way in; every test here is about what
+      // comes AFTER it.
+      skip: 1,
+      act: (cubit) async {
+        await cubit.load();
+        // What a footswitch bound to an `FxStage.input` chain does: it writes
+        // straight to the repository, past this cubit, and a monitor is not
+        // in the projection that corrects every other stage.
+        when(() => repository.monitorChainEnabled(0)).thenReturn(false);
+        changes.add(0);
+        await Future<void>.delayed(Duration.zero);
+      },
+      expect: () => [
+        isA<MonitorState>().having(
+          (s) => s.forInput(0).chainEnabled,
+          'chainEnabled',
+          isFalse,
+        ),
+      ],
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'every monitor fact is re-read, not just the chain',
+      build: build,
+      skip: 1,
+      act: (cubit) async {
+        await cubit.load();
+        when(() => repository.monitorMuted(1)).thenReturn(true);
+        when(() => repository.monitorVolume(1)).thenReturn(0.25);
+        when(() => repository.monitorOutput(1)).thenReturn(0x2);
+        when(() => repository.monitorMode(1)).thenReturn(MonitorMode.auto);
+        when(
+          () => repository.monitorEffects(1),
+        ).thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
+        changes.add(1);
+        await Future<void>.delayed(Duration.zero);
+      },
+      expect: () => [
+        isA<MonitorState>()
+            .having((s) => s.forInput(1).muted, 'muted', isTrue)
+            .having((s) => s.forInput(1).volume, 'volume', 0.25)
+            .having((s) => s.forInput(1).outputMask, 'outputMask', 0x2)
+            .having((s) => s.forInput(1).mode, 'mode', MonitorMode.auto)
+            .having((s) => s.forInput(1).effects, 'effects', hasLength(1)),
+      ],
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a change that changes nothing does not rebuild the console',
+      build: build,
+      skip: 1,
+      act: (cubit) async {
+        await cubit.load();
+        // Every write from this cubit comes back through the same stream, so
+        // an unconditional emit would double every edit the surface makes.
+        changes
+          ..add(0)
+          ..add(0);
+        await Future<void>.delayed(Duration.zero);
+      },
+      expect: () => <MonitorState>[],
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'what it reads is not written back',
+      build: build,
+      act: (cubit) async {
+        await cubit.load();
+        when(() => repository.monitorChainEnabled(0)).thenReturn(false);
+        changes.add(0);
+        await Future<void>.delayed(Duration.zero);
+      },
+      verify: (_) async {
+        // A pedal's bypass is a performance decision, and the surface's own
+        // saved state is what the user set. Persisting here would also mean
+        // this cubit re-applying, to the engine, the state it just read FROM
+        // the engine's owner.
+        verifyNever(
+          () => repository.setMonitorChainEnabled(
+            input: any(named: 'input'),
+            enabled: any(named: 'enabled'),
+          ),
+        );
+        expect(await settings.loadMonitorEffects(0), isNull);
+      },
+    );
+  });
 
   group('MonitorCubit', () {
     test('defaults to no configured inputs (disabled, clean chain)', () {
