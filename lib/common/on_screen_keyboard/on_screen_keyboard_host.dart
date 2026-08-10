@@ -11,7 +11,10 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 /// that hardware unless the app draws its own keys.
 ///
 /// It watches focus rather than wrapping fields, so no call site changes and
-/// every future field is covered for free.
+/// every future field is covered for free — and it follows the focused field's
+/// own node, so the keyboard goes away when that field does. On a console
+/// whose whole UI is the touch screen, one that stays up covers the thing the
+/// player is reaching for.
 ///
 /// The keyboard's height is reported back through [MediaQuery]'s
 /// `viewInsets.bottom` — the same channel a real soft keyboard uses. Every
@@ -40,6 +43,10 @@ class OnScreenKeyboardHost extends StatefulWidget {
 class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   EditableText? _field;
 
+  /// The focus node of the field the keyboard is typing into, watched so the
+  /// keyboard goes away when that field does.
+  FocusNode? _watched;
+
   @override
   void initState() {
     super.initState();
@@ -49,23 +56,18 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   @override
   void dispose() {
     if (widget.enabled) FocusManager.instance.removeListener(_onFocusChanged);
+    _watched?.removeListener(_onFieldFocusChanged);
     super.dispose();
   }
 
   void _onFocusChanged() {
     final next = _focusedEditable();
-    // STICKY. Only a different field replaces the current one; focus merely
-    // leaving does not clear it.
-    //
-    // Pressing a key moves focus off the field for an instant — the keys are
-    // ordinary buttons, and neither TextFieldTapRegion nor a non-focusable
-    // Focus wrapper reliably prevents it. Clearing on focus loss therefore
-    // destroys the target between the press and the callback, and every
-    // keystroke lands on nothing.
-    //
-    // It is also the better behaviour here: a keyboard that vanishes halfway
-    // through a Wi-Fi password because a stray tap moved focus is worse than
-    // one that waits to be dismissed. [_done] is the way out.
+    // Focus merely LEAVING is not handled here — see [_onFieldFocusChanged].
+    // A key press moves focus off the field for an instant (the keys are
+    // ordinary buttons), so a keyboard that closed on every focus loss would
+    // destroy its own target between the press and the callback, and every
+    // keystroke would land on nothing. The field's own node is watched
+    // instead, and asked again once the frame has settled.
     if (next == null) return;
     // Compared by CONTROLLER, not by widget instance: the EditableText widget
     // is rebuilt constantly, so comparing widgets would rebuild every frame.
@@ -74,7 +76,44 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
         next.readOnly == _field?.readOnly) {
       return;
     }
+    _watch(next);
     setState(() => _field = next);
+  }
+
+  /// Follows [field]'s own focus node, so the keyboard can close when the
+  /// field it types into stops being focused.
+  void _watch(EditableText field) {
+    if (identical(_watched, field.focusNode)) return;
+    _watched?.removeListener(_onFieldFocusChanged);
+    _watched = field.focusNode..addListener(_onFieldFocusChanged);
+  }
+
+  void _onFieldFocusChanged() {
+    if (_watched?.hasFocus ?? false) return;
+    // Asked AGAIN after the frame, deliberately, and this is the one thing
+    // here no test can reach: under `flutter_test` the keys never steal focus
+    // (the panel's `Focus` refuses it and the framework coalesces focus
+    // changes within a frame), so a bounce produces no callback at all and an
+    // immediate dismissal would pass every check in this suite.
+    //
+    // On the console it is the case the sticky field existed for: the report
+    // this replaces says a key press can move focus off the field for an
+    // instant. Closing on that first notification would take the keyboard away
+    // under the player's own keystroke — a worse bug than the one being fixed,
+    // and one that would only show up on the hardware. The frame boundary
+    // costs nothing and settles the question.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_watched?.hasFocus ?? false) return;
+      _dismiss();
+    });
+  }
+
+  /// Drops the field the keyboard was typing into, closing it.
+  void _dismiss() {
+    _watched?.removeListener(_onFieldFocusChanged);
+    _watched = null;
+    if (_field != null) setState(() => _field = null);
   }
 
   /// The [EditableText] the primary focus sits inside, or `null` when focus is
@@ -150,11 +189,12 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   }
 
   void _done() {
-    // The explicit way out, since the field is sticky. Unfocus first so the
-    // field's own submit/validation paths (which hang off losing focus) run,
-    // then drop the reference that keeps the keyboard on screen.
+    // Unfocus first so the field's own submit/validation paths (which hang off
+    // losing focus) run, then drop the reference — rather than waiting for the
+    // unfocus to come back around, which would close the keyboard a frame
+    // later and for a reason the player did not give.
     FocusManager.instance.primaryFocus?.unfocus();
-    setState(() => _field = null);
+    _dismiss();
   }
 
   @override

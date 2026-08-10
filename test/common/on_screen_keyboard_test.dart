@@ -159,6 +159,135 @@ void main() {
       expect(controller.text, 'z');
     });
 
+    testWidgets('typing does not dismiss it', (tester) async {
+      // The keys are ordinary buttons: pressing one can move focus off the
+      // field for an instant. A keyboard that closed on that would destroy its
+      // own target between the press and the callback.
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      await tapKey(tester, 'h');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
+      expect(controller.text, 'h');
+    });
+
+    testWidgets('the field losing focus dismisses it', (tester) async {
+      // The console is all touch screen: a keyboard that will not go away
+      // covers the thing the player is reaching for.
+      final node = FocusNode();
+      addTearDown(node.dispose);
+      await tester.pumpApp(
+        OnScreenKeyboardHost(
+          enabled: true,
+          child: Scaffold(
+            body: TextField(controller: controller, focusNode: node),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
+
+      node.unfocus();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('onScreenKeyboard')), findsNothing);
+    });
+
+    testWidgets('a focus bounce does not dismiss it', (tester) async {
+      // What a key press can look like on the appliance: focus leaves the
+      // field and comes straight back. Answering mid-frame would close the
+      // keyboard under its own keys, so the answer is taken after it.
+      final node = FocusNode();
+      addTearDown(node.dispose);
+      await tester.pumpApp(
+        OnScreenKeyboardHost(
+          enabled: true,
+          child: Scaffold(
+            body: TextField(controller: controller, focusNode: node),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      node
+        ..unfocus()
+        ..requestFocus();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
+    });
+
+    testWidgets('focus moving to another field keeps a keyboard up', (
+      tester,
+    ) async {
+      final other = TextEditingController();
+      final first = FocusNode();
+      final second = FocusNode();
+      addTearDown(other.dispose);
+      addTearDown(first.dispose);
+      addTearDown(second.dispose);
+      await tester.pumpApp(
+        OnScreenKeyboardHost(
+          enabled: true,
+          child: Scaffold(
+            body: Column(
+              children: [
+                TextField(controller: controller, focusNode: first),
+                TextField(controller: other, focusNode: second),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+
+      // Moving between two fields is one editing session as far as the player
+      // is concerned; the keyboard must not blink out and back.
+      second.requestFocus();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
+
+      await tapKey(tester, 'h');
+      expect(other.text, 'h');
+      expect(controller.text, isEmpty);
+    });
+
+    testWidgets('a dismissed keyboard comes back for the next field', (
+      tester,
+    ) async {
+      final node = FocusNode();
+      addTearDown(node.dispose);
+      await tester.pumpApp(
+        OnScreenKeyboardHost(
+          enabled: true,
+          child: Scaffold(
+            body: TextField(controller: controller, focusNode: node),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      node.unfocus();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('onScreenKeyboard')), findsNothing);
+
+      // The dismissal drops the watched node; re-focusing has to re-arm it, or
+      // the keyboard comes back once and never closes again.
+      node.requestFocus();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
+
+      node.unfocus();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('onScreenKeyboard')), findsNothing);
+    });
+
     testWidgets('done dismisses the keyboard', (tester) async {
       await pumpField(tester);
       await tester.tap(find.byType(TextField));
