@@ -658,5 +658,59 @@ void main() {
       );
       handle.dispose();
     });
+
+    testWidgets('the reader is told it opened, and that it is open', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      const explain = 'Whether you hear it.';
+      final announced = <String>[];
+      tester.binding.defaultBinaryMessenger
+          .setMockDecodedMessageHandler<Object?>(
+            SystemChannels.accessibility,
+            (message) async {
+              final data = (message! as Map<Object?, Object?>)['data'];
+              final text =
+                  (data as Map<Object?, Object?>?)?['message'] as String?;
+              if (text != null) announced.add(text);
+              return null;
+            },
+          );
+      final messenger = tester.binding.defaultBinaryMessenger;
+      addTearDown(
+        () => messenger.setMockDecodedMessageHandler<Object?>(
+          SystemChannels.accessibility,
+          null,
+        ),
+      );
+
+      await pumpCaption(tester, explain: explain);
+      final button = find.byKey(const Key('console_caption_explain'));
+      // Read off the widget, not the compiled node: once the answer is open
+      // the barrier's `BlockSemantics` takes the caption out of the tree, so
+      // there is no node left to ask — which is correct, and is exactly why
+      // the flag has to be checked where it is declared.
+      bool isExpanded() => tester
+          .widget<Semantics>(
+            find.ancestor(of: button, matching: find.byType(Semantics)).first,
+          )
+          .properties
+          .expanded!;
+      expect(isExpanded(), isFalse);
+
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+
+      // Both halves of "the reader knows what just happened", and neither was
+      // pinned before: focus STAYS on the button when the answer opens, so
+      // without the announcement a reader hears nothing at all and has to go
+      // looking for the paragraph they just summoned; and without the flag the
+      // button goes on claiming to be shut while its answer is up.
+      expect(announced, contains(explain));
+      expect(isExpanded(), isTrue);
+      // Inline, not a tear-down: the framework checks for a live handle
+      // before tear-downs run and reports the leak instead of the failure.
+      handle.dispose();
+    });
   });
 }

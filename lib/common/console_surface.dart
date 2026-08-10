@@ -611,6 +611,15 @@ class ConsoleProse extends StatelessWidget {
 /// mean; nobody else does, and there is no manual, no hover and no tooltip on
 /// a screen operated with a foot.
 ///
+/// **Here on one caller, against this file's own rule.** The library doc above
+/// says a primitive earns its place here once a SECOND domain reads it, and
+/// today only the Signal panel does. It sits here anyway because it is made of
+/// what is here — [ConsoleProse] for the answer, the same caption type
+/// [ConsoleGroupLabel] uses — and moving it beside its caller would put a
+/// widget that composes three neighbours in a different library from all three.
+/// Worth revisiting if Signal is still its only reader when the next domain
+/// grows captions.
+///
 /// **Per GROUP, not per control.** A `?` on every switch would litter a dense
 /// face, and one help page per screen makes you hunt for the control you were
 /// confused about. A caption already names a group, so it is where the
@@ -772,13 +781,19 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
     // went on dismissing it. The caption with `trailing` never had this: its
     // `Row` bounds the button already.
     if (trailing == null) {
-      // The factors matter: a bare `Align` fills whatever it is given, which
-      // under the LOOSE constraints a caption gets outside a stretching
-      // column would move the caption instead of bounding it. With them it
-      // shrink-wraps when it may and aligns when it must.
+      // What does the work is the `Align` itself: it re-loosens the child's
+      // constraints, so the `InkWell` shrinks to the words, and
+      // `RenderPositionedBox` does not hit-test itself — so the blank
+      // remainder of a stretched row takes no taps.
+      //
+      // `heightFactor` for the case the panel does not cover: under the loose
+      // BOUNDED constraints a caption gets outside a stretching column, an
+      // `Align` without it fills the height it is offered and moves the
+      // caption instead of bounding it. There is no `widthFactor` because
+      // there is nothing for one to do — under a tight width the constrain
+      // returns the full width either way.
       return Align(
         alignment: AlignmentDirectional.centerStart,
-        widthFactor: 1,
         heightFactor: 1,
         child: button,
       );
@@ -866,7 +881,7 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
   /// on a still screen), and a measurement equal to the one held does not
   /// `setState`, so it cannot spin.
   ///
-  /// Both its guards are pinned by tests: dropping `mounted` fails eight of
+  /// Both its guards are pinned by tests: dropping `mounted` fails eleven of
   /// them, and dropping the arming call fails the one that moves the face.
   /// That it stops on CLOSE is deliberately NOT claimed as proven — a chain
   /// that kept running would measure, find nothing changed and be invisible
