@@ -80,14 +80,23 @@ class TrayBrightnessPopover extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // Centred over the capsule, in the console's mono, at
+                      // the pen's own size — `JFpjr` is `textAlign: center`
+                      // across the full content width, SF Mono 14/1.14. It
+                      // shipped left-aligned in the UI face at 13, which put
+                      // a number that changes width as it counts (7% / 72% /
+                      // 100%) hard against the capsule's left edge, shifting
+                      // under the thumb that was dragging it.
                       Text(
                         l10n.trayBrightnessPercent(
                           (state.brightness * 100).round(),
                         ),
+                        textAlign: TextAlign.center,
                         style: TextStyle(
+                          fontFamily: SurfaceTheme.monoFont,
                           color: surface.textSecondary,
-                          fontSize: 13,
-                          height: 1.21,
+                          fontSize: 14,
+                          height: 1.14,
                           leadingDistribution: TextLeadingDistribution.even,
                         ),
                       ),

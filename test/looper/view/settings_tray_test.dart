@@ -259,20 +259,19 @@ void main() {
     expect(cubit.state.dragProgress, 1);
   });
 
-  testWidgets(
-    'dragging the handle down under the threshold settles closed',
-    (tester) async {
-      await pump(tester);
+  testWidgets('dragging the handle down under the threshold settles closed', (
+    tester,
+  ) async {
+    await pump(tester);
 
-      await tester.drag(
-        find.byKey(const Key('settingsTray_handle')),
-        const Offset(0, 40),
-      );
-      await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const Key('settingsTray_handle')),
+      const Offset(0, 40),
+    );
+    await tester.pumpAndSettle();
 
-      expect(cubit.state.dragProgress, 0);
-    },
-  );
+    expect(cubit.state.dragProgress, 0);
+  });
 
   testWidgets('tapping the scrim closes an open tray', (tester) async {
     cubit.open();
@@ -463,10 +462,7 @@ void main() {
       // here. Left as a known gap rather than a test that claims otherwise.
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       expect(find.bySemanticsLabel(l10n.dismiss), findsWidgets);
-      expect(
-        find.byKey(const Key('trayBrightness_scrim')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('trayBrightness_scrim')), findsOneWidget);
       handle.dispose();
     });
 
@@ -491,6 +487,30 @@ void main() {
       expect(find.byKey(const Key('trayBrightness_popover')), findsNothing);
     });
 
+    testWidgets('the brightness readout is centred over its capsule', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
+      await tester.pumpAndSettle();
+
+      // The pen's `JFpjr` is centred across the popover's full content width.
+      // Left-aligned, a readout that changes width as it counts — 7%, 72%,
+      // 100% — sits hard against the capsule's left edge and shifts under the
+      // thumb dragging it.
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      final at80 = find.text(l10n.trayBrightnessPercent(80));
+      expect(tester.widget<Text>(at80).textAlign, TextAlign.center);
+
+      final capsule = tester.getRect(
+        find.byKey(const Key('settingsTray_brightness')),
+      );
+      final text = tester.getRect(at80);
+      expect(text.center.dx, closeTo(capsule.center.dx, 0.5));
+    });
+
     testWidgets('brightness sits at the foot, not under the last domain', (
       tester,
     ) async {
@@ -510,10 +530,7 @@ void main() {
       // it the entry lands directly under System with the whole lower rail
       // blank — which a golden will happily record as correct.
       expect(bright.top, greaterThan(system.bottom + 100));
-      expect(
-        rail.bottom - bright.bottom,
-        lessThan(kTrayHandleHeight + 24),
-      );
+      expect(rail.bottom - bright.bottom, lessThan(kTrayHandleHeight + 24));
     });
 
     testWidgets('the tuner opens in the tray and its back goes home', (
@@ -611,10 +628,7 @@ void main() {
       // tappable node whose activation does nothing — so the rail's own
       // labelled node must carry no tap action of its own.
       final rail = tester.getSemantics(find.byType(TrayNavigationRail));
-      expect(
-        rail.getSemanticsData().hasAction(SemanticsAction.tap),
-        isFalse,
-      );
+      expect(rail.getSemanticsData().hasAction(SemanticsAction.tap), isFalse);
     });
 
     testWidgets('focus traversal runs rail before face', (tester) async {
@@ -649,31 +663,30 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets(
-      'exposes the state default (0.8) as an 80% semantics value',
-      (tester) async {
-        final handle = tester.ensureSemantics();
-        cubit.open();
-        await pump(tester);
-        await tester.pumpAndSettle();
-        await openBrightness(tester);
+    testWidgets('exposes the state default (0.8) as an 80% semantics value', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+      await openBrightness(tester);
 
-        // Slider sets its own semantics boundary — an ancestor label never
-        // merges into it, so `_BrightnessSliderTile` excludes Slider's own
-        // semantics and replaces them wholesale with one node.
-        expect(
-          tester.getSemantics(find.byType(BrightnessCapsule)),
-          isSemantics(
-            isSlider: true,
-            label: 'Brightness',
-            value: '80%',
-            hasIncreaseAction: true,
-            hasDecreaseAction: true,
-          ),
-        );
-        handle.dispose();
-      },
-    );
+      // Slider sets its own semantics boundary — an ancestor label never
+      // merges into it, so `_BrightnessSliderTile` excludes Slider's own
+      // semantics and replaces them wholesale with one node.
+      expect(
+        tester.getSemantics(find.byType(BrightnessCapsule)),
+        isSemantics(
+          isSlider: true,
+          label: 'Brightness',
+          value: '80%',
+          hasIncreaseAction: true,
+          hasDecreaseAction: true,
+        ),
+      );
+      handle.dispose();
+    });
 
     testWidgets('dragging down (toward the bottom) lowers the value', (
       tester,
@@ -705,24 +718,23 @@ void main() {
       expect(cubit.state.brightness, greaterThan(0.9));
     });
 
-    testWidgets(
-      'a tap moves the value to the tapped position — unlike a plain '
-      'Slider ignoring taps, this one changes value on tap, not just drag',
-      (tester) async {
-        cubit.open();
-        await pump(tester);
-        await tester.pumpAndSettle();
-        await openBrightness(tester);
+    testWidgets('a tap moves the value to the tapped position — unlike a plain '
+        'Slider ignoring taps, this one changes value on tap, not just drag', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+      await openBrightness(tester);
 
-        await tester.tap(find.byKey(const Key('settingsTray_brightness')));
-        await tester.pump();
+      await tester.tap(find.byKey(const Key('settingsTray_brightness')));
+      await tester.pump();
 
-        // The tapped position, not merely "a brightness": the value is
-        // clamped to 0.1..1 by construction, so a range assertion here
-        // passes whatever the tap does.
-        expect(cubit.state.brightness, closeTo(0.55, 0.001));
-      },
-    );
+      // The tapped position, not merely "a brightness": the value is
+      // clamped to 0.1..1 by construction, so a range assertion here
+      // passes whatever the tap does.
+      expect(cubit.state.brightness, closeTo(0.55, 0.001));
+    });
 
     testWidgets('the arrow-up key increases the value by the 5% step', (
       tester,
