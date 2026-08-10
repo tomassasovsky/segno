@@ -1977,6 +1977,8 @@ void main() {
           effects: const [
             PluginEffect(
               ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              state: 'AAAA',
+              paramValues: {1: 0.25},
               // A chain copied from somewhere it DID load — a rack, or a
               // lane-to-bus paste — arrives carrying the enumerated params of
               // that instance.
@@ -2004,6 +2006,11 @@ void main() {
       final fx = repo.trackEffects(0).single as PluginEffect;
       expect(fx.unsupported, isTrue);
       expect(fx.params, isEmpty);
+      // And keeps everything it would need to become hostable later, which
+      // is the whole argument for keeping the entry at all.
+      expect(fx.paramValues, {1: 0.25});
+      expect(fx.state, 'AAAA');
+      expect(fx.slotId, isNotNull);
     });
 
     test('a loaded plugin whose installed version drifts is flagged', () async {

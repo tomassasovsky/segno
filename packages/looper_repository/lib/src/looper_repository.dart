@@ -1816,8 +1816,10 @@ class LooperRepository {
 
   /// The fingerprint of the CACHED Master insert chain (see
   /// [trackFxChainFingerprint]).
-  int masterFxChainFingerprint() =>
-      fxChainFingerprint(_masterEffects, chainEnabled: _masterChainEnabled);
+  int masterFxChainFingerprint() => fxChainFingerprint(
+    _masterEffects,
+    chainEnabled: _masterChainEnabled,
+  );
 
   /// Whether lane [lane] of track [channel]'s chain currently SOUNDS
   /// different from its routed input's monitor chain (A7). The domain query
