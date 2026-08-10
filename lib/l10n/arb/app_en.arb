@@ -1443,9 +1443,14 @@
     "@trayBluetoothLabel": {
         "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
     },
-    "trayHomeLabel": "Controls",
-    "@trayHomeLabel": {
-        "description": "Navigation rail entry for the settings tray's home face — the quick-access tiles and brightness slider."
+    "trayBrightnessPercent": "{percent}%",
+    "@trayBrightnessPercent": {
+        "description": "The readout above the brightness capsule in its popover.",
+        "placeholders": { "percent": { "type": "int" } }
+    },
+    "trayBrightLabel": "Bright",
+    "@trayBrightLabel": {
+        "description": "Navigation rail entry for screen brightness, pinned below the eight domains as the mockups draw it."
     },
     "a11yTrayRail": "Tray destinations",
     "@a11yTrayRail": {
@@ -2657,6 +2662,18 @@
         }
     },
     "aboutSystemImageRow": "System image",
+    "aboutPedalFirmwareNone": "not found",
+    "@aboutPedalFirmwareNone": {
+        "description": "The pedal firmware readout on SYSTEM / about when no pedal is bound. The row is drawn anyway — no pedal is the case worth seeing."
+    },
+    "aboutPedalFirmwareError": "could not be reached",
+    "@aboutPedalFirmwareError": {
+        "description": "Bind status on the SYSTEM / about pedal row when binding failed."
+    },
+    "aboutPedalFirmwareUpdate": "update available",
+    "@aboutPedalFirmwareUpdate": {
+        "description": "Appended to the SYSTEM / about pedal row's subtitle when the pedal's firmware is behind the app's wire version."
+    },
     "aboutPedalFirmwareRow": "Pedal firmware",
     "aboutPedalFirmwareSubtitle": "4 switches · 2 banks",
     "aboutProtocolVersion": "v{version}",
