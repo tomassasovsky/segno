@@ -39,6 +39,7 @@ class _FxParamCell extends StatelessWidget {
     required this.name,
     required this.control,
     required this.fill,
+    this.muted = false,
   });
 
   /// The parameter's name. Ellipsizes at roughly ten characters; the full name
@@ -50,6 +51,10 @@ class _FxParamCell extends StatelessWidget {
 
   /// Indicator fill in `0..1`, or null for a cell with no position to report.
   final double? fill;
+
+  /// Whether this cell reports rather than sets. The indicator loses the
+  /// accent with it: accent means "this is live", and a meter is not.
+  final bool muted;
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +77,7 @@ class _FxParamCell extends StatelessWidget {
           const SizedBox(height: FxParamTileMetrics._gap),
           SizedBox(height: FxParamTileMetrics.boxHeight, child: control),
           const SizedBox(height: FxParamTileMetrics._gap),
-          _FxParamIndicator(fill: fill),
+          _FxParamIndicator(fill: fill, muted: muted),
         ],
       ),
     );
@@ -81,9 +86,10 @@ class _FxParamCell extends StatelessWidget {
 
 /// The 3px value-position bar under a cell.
 class _FxParamIndicator extends StatelessWidget {
-  const _FxParamIndicator({required this.fill});
+  const _FxParamIndicator({required this.fill, this.muted = false});
 
   final double? fill;
+  final bool muted;
 
   @override
   Widget build(BuildContext context) {
@@ -102,7 +108,7 @@ class _FxParamIndicator extends StatelessWidget {
                 widthFactor: fill!.clamp(0.0, 1.0),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: surface.accent,
+                    color: muted ? surface.textMuted : surface.accent,
                     borderRadius: BorderRadius.circular(999),
                   ),
                 ),
@@ -114,15 +120,20 @@ class _FxParamIndicator extends StatelessWidget {
 
 /// The boxed value readout shared by the continuous tile and the enum cell.
 class _FxParamBox extends StatelessWidget {
-  const _FxParamBox({required this.children});
+  const _FxParamBox({required this.children, this.bordered = true});
 
   final List<Widget> children;
+
+  /// A read-only cell drops the box entirely — borderless is what tells a
+  /// finger not to bother, and a meter that looks like every other tile is a
+  /// control that ignores you.
+  final bool bordered;
 
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: context.surface.cardHigh,
+        color: bordered ? context.surface.cardHigh : null,
         borderRadius: BorderRadius.circular(FxParamTileMetrics._boxRadius),
       ),
       child: Center(
@@ -146,6 +157,7 @@ class FxParamTile extends StatelessWidget {
     required this.value,
     required this.valueText,
     required this.onTap,
+    this.semanticLabel,
     super.key,
   });
 
@@ -161,6 +173,12 @@ class FxParamTile extends StatelessWidget {
 
   /// Opens the editor sheet. Null for a read-only parameter.
   final VoidCallback? onTap;
+
+  /// What a screen reader hears instead of the bare parameter name — "MIX of
+  /// Reverb". A tile is 78px of mono at 9pt, so what it can PRINT is a
+  /// truncated name; what it says out loud has no such limit, and "MIX" alone
+  /// does not say whose.
+  final String? semanticLabel;
 
   /// [value] as a `0..1` position within the parameter's range.
   double get _fraction {
@@ -182,17 +200,23 @@ class FxParamTile extends StatelessWidget {
               ? value.round().toString()
               : value.toStringAsFixed(2));
 
+    final readOnly = onTap == null;
     final cell = _FxParamCell(
       name: spec.name,
       fill: _fraction,
+      muted: readOnly,
       control: _FxParamBox(
+        bordered: !readOnly,
         children: [
           Text(
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: signalMono(color: surface.textPrimary, size: 10),
+            style: signalMono(
+              color: readOnly ? surface.textTertiary : surface.textPrimary,
+              size: 10,
+            ),
           ),
           if (!fromPlugin && spec.unit.isNotEmpty)
             Text(
@@ -205,10 +229,17 @@ class FxParamTile extends StatelessWidget {
       ),
     );
 
-    if (onTap == null) return Semantics(readOnly: true, child: cell);
+    if (onTap == null) {
+      return Semantics(
+        readOnly: true,
+        label: semanticLabel ?? spec.name,
+        value: text,
+        child: cell,
+      );
+    }
     return Semantics(
       button: true,
-      label: spec.name,
+      label: semanticLabel ?? spec.name,
       value: text,
       child: InkWell(
         onTap: onTap,
@@ -219,9 +250,15 @@ class FxParamTile extends StatelessWidget {
   }
 }
 
-/// A two-state plugin parameter (`stepCount == 1`). The switch's position is
-/// its value, so the cell carries no caption — the DS drops the redundant line
-/// the old control had.
+/// A two-state plugin parameter (`stepCount == 1`) whose states have no
+/// names of their own. The switch's position IS its value, so the cell carries
+/// no caption — the DS drops the redundant line the old control had, and gives
+/// the control exactly 36px, which leaves room for nothing else.
+///
+/// A two-state parameter whose states ARE named — an octaver's phase vocoder
+/// against its PSOLA — goes to [FxParamEnumCell] instead. A switch cannot show
+/// a name, and a parameter reduced to a nameless toggle has lost the only
+/// thing that said what it does.
 class FxParamSwitchCell extends StatelessWidget {
   /// Creates an [FxParamSwitchCell].
   const FxParamSwitchCell({

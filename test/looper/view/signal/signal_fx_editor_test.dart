@@ -118,6 +118,9 @@ PluginEffect _plugin({Map<int, double> values = const {}}) => PluginEffect(
   paramValues: values,
 );
 
+Future<AppLocalizations> _l10n(WidgetTester tester) async =>
+    AppLocalizations.of(tester.element(find.byType(SignalFxEditor)));
+
 void main() {
   Future<void> pump(WidgetTester tester, _FakeScope scope) async {
     tester.view
@@ -244,7 +247,9 @@ void main() {
     });
   });
 
-  testWidgets('a two-state parameter is a switch, not a menu', (tester) async {
+  testWidgets('an unnamed two-state parameter is a switch, not a menu', (
+    tester,
+  ) async {
     const vintage = PluginParamInfo(
       id: 12,
       name: 'Vintage',
@@ -252,11 +257,10 @@ void main() {
       min: 0,
       max: 1,
       def: 0,
-      // One step: two states. The taxonomy's own boundary — a menu of two
-      // named things is a menu you have to open to read.
+      // One step: two states, and no names for them. Its position is its
+      // value, which is the one case a switch says everything about.
       stepCount: 1,
       flags: 0x01,
-      valueTexts: ['Off', 'On'],
     );
     final scope = _FakeScope([
       const PluginEffect(
@@ -276,6 +280,210 @@ void main() {
     // the value, so it has no sheet to open and nothing to confirm.
     expect(scope.pluginWrites, isNotEmpty);
     expect(scope.pluginWrites.last.$3, 1);
+  });
+
+  testWidgets('a tile says whose parameter it is, and a meter says it reads', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    final scope = _FakeScope([
+      const PluginEffect(
+        ref: PluginRef(format: PluginFormat.vst3, id: 'test.filter'),
+        name: 'Filter',
+        params: [_freq, _meter],
+        paramValues: {7: 440},
+      ),
+    ]);
+    await pump(tester, scope);
+    final l10n = await _l10n(tester);
+
+    // "FREQ" alone tells a reader nothing about whose freq it is, and 78px of
+    // mono at 9pt is all the tile itself can print.
+    final tile = tester.getSemantics(
+      find.byKey(const Key('signal_fx_param_0')),
+    );
+    expect(tile.label, contains('Filter'));
+
+    // And a meter has to announce that it only reports — a reader cannot see
+    // that it is borderless.
+    final meter = tester.getSemantics(
+      find.byKey(const Key('signal_fx_param_1')),
+    );
+    expect(meter.label, contains('Filter'));
+    expect(meter.getSemanticsData().flagsCollection.isReadOnly, isTrue);
+    expect(l10n, isNotNull);
+    handle.dispose();
+  });
+
+  testWidgets('a meter is not drawn as a box a finger could aim at', (
+    tester,
+  ) async {
+    final scope = _FakeScope([
+      const PluginEffect(
+        ref: PluginRef(format: PluginFormat.vst3, id: 'test.filter'),
+        name: 'Filter',
+        params: [_freq, _meter],
+        paramValues: {7: 440},
+      ),
+    ]);
+    await pump(tester, scope);
+
+    Color? boxColour(Key key) {
+      final box = tester.widgetList<DecoratedBox>(
+        find.descendant(
+          of: find.byKey(key),
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+      return (box.first.decoration as BoxDecoration).color;
+    }
+
+    // The control has a box; the meter has none. Untappable is not something
+    // a finger can see, and a meter that looks like every other tile is a
+    // control that ignores you.
+    expect(boxColour(const Key('signal_fx_param_0')), isNotNull);
+    expect(boxColour(const Key('signal_fx_param_1')), isNull);
+  });
+
+  testWidgets('the sheet follows its entry when the chain moves under it', (
+    tester,
+  ) async {
+    final scope = _FakeScope([
+      const PluginEffect(
+        ref: PluginRef(format: PluginFormat.vst3, id: 'test.a'),
+        name: 'A',
+        params: [_freq],
+        slotId: 'slot-a',
+      ),
+      const PluginEffect(
+        ref: PluginRef(format: PluginFormat.vst3, id: 'test.b'),
+        name: 'B',
+        params: [_freq],
+        slotId: 'slot-b',
+      ),
+    ]);
+    await pump(tester, scope);
+
+    await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+    await tester.pumpAndSettle();
+
+    // The chain is rewritten while the sheet is up — a record pass snapshots
+    // a monitor chain onto the lane, another surface removes an entry. The
+    // sheet is modal and stays open for as long as someone takes to settle a
+    // value, so this is not a rare frame.
+    scope.chain = [scope.chain[1], scope.chain[0]];
+
+    final track = find.byKey(const Key('fxParamSheet_track'));
+    await tester.tapAt(
+      tester.getTopLeft(track) + Offset(tester.getSize(track).width * 0.25, 12),
+    );
+    await tester.pumpAndSettle();
+
+    // Entry 1 now, because that is where the entry it was opened for went. By
+    // position it would have moved a parameter of the OTHER plugin.
+    expect(scope.pluginWrites, isNotEmpty);
+    expect(scope.pluginWrites.last.$1, 1);
+  });
+
+  group('a built-in speaks 0..1, and the sheet keeps it that way', () {
+    testWidgets('the sheet writes a normalized value back', (tester) async {
+      final scope = _FakeScope([
+        BuiltInEffect(type: TrackEffectType.drive),
+      ]);
+      await pump(tester, scope);
+
+      await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+      await tester.pumpAndSettle();
+      final track = find.byKey(const Key('fxParamSheet_track'));
+      await tester.tapAt(
+        tester.getTopLeft(track) +
+            Offset(tester.getSize(track).width * 0.25, 12),
+      );
+      await tester.pumpAndSettle();
+
+      // A built-in takes `0..1`, a plugin takes its own units, and one grid
+      // now feeds both. A plain value written here would set a knob far past
+      // its own ceiling — the mirror of the bug the plugin side had.
+      expect(scope.builtInWrites, isNotEmpty);
+      final (entry, param, written) = scope.builtInWrites.last;
+      expect(entry, 0);
+      expect(param, 0);
+      expect(written, closeTo(0.25, 0.05));
+    });
+
+    testWidgets("the octaver's mode says which mode it is in", (tester) async {
+      final scope = _FakeScope([
+        BuiltInEffect(type: TrackEffectType.octaver),
+      ]);
+      await pump(tester, scope);
+      final l10n = await _l10n(tester);
+
+      // Two states with NAMES — the one built-in shaped like that. Drawn as a
+      // bare switch it would say neither, and nothing on screen would tell a
+      // player which algorithm is running.
+      expect(find.byType(FxParamEnumCell), findsOneWidget);
+      expect(find.text(l10n.octaverModeLabel(0)), findsOneWidget);
+    });
+
+    testWidgets('reset puts back the effect default, not zero', (tester) async {
+      final scope = _FakeScope([
+        BuiltInEffect(type: TrackEffectType.drive),
+      ]);
+      await pump(tester, scope);
+
+      await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+      await tester.pumpAndSettle();
+      // Moved off the default first: reset from the default is a no-op, and a
+      // no-op cannot tell a right default from a wrong one.
+      final track = find.byKey(const Key('fxParamSheet_track'));
+      await tester.tapAt(
+        tester.getTopLeft(track) +
+            Offset(tester.getSize(track).width * 0.9, 12),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('fxParamSheet_reset')));
+      await tester.pumpAndSettle();
+
+      // Zero is silence for most built-ins: a reset that switches the effect
+      // off is not a reset.
+      expect(scope.builtInWrites, isNotEmpty);
+      expect(
+        scope.builtInWrites.last.$3,
+        TrackEffectType.drive.defaultParams.first,
+      );
+      expect(scope.builtInWrites.last.$3, isNot(0));
+    });
+  });
+
+  testWidgets('a two-state parameter with NAMED states is a menu', (
+    tester,
+  ) async {
+    const mode = PluginParamInfo(
+      id: 13,
+      name: 'Mode',
+      unit: '',
+      min: 0,
+      max: 1,
+      def: 0,
+      stepCount: 1,
+      flags: 0x01,
+      // The octaver's own shape: two states that are not on and off.
+      valueTexts: ['Phase vocoder', 'PSOLA'],
+    );
+    final scope = _FakeScope([
+      const PluginEffect(
+        ref: PluginRef(format: PluginFormat.vst3, id: 'test.oct'),
+        params: [mode],
+      ),
+    ]);
+    await pump(tester, scope);
+
+    // A switch is 36px with no room for a caption, so a named pair drawn as
+    // one would say neither name — the parameter would lose the only thing
+    // that said what it does.
+    expect(find.byType(FxParamSwitchCell), findsNothing);
+    expect(find.byType(FxParamEnumCell), findsOneWidget);
+    expect(find.text('Phase vocoder'), findsOneWidget);
   });
 
   testWidgets('a stepped parameter lands on a step', (tester) async {
