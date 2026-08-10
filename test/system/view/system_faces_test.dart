@@ -817,18 +817,25 @@ void main() {
       expect(image.showDivider, isFalse);
     });
 
-    testWidgets('a bound pedal names its firmware; an unbound one draws no '
-        'row for it', (tester) async {
+    testWidgets('the pedal row is drawn even with no pedal to report', (
+      tester,
+    ) async {
       await pump(tester, tab: SystemTab.about);
-      expect(find.byKey(const Key('system_about_pedal')), findsNothing);
+      final l10n = l10nOf(tester);
+
+      // Drawn on an unbound rig, where it used to be dropped: this row is now
+      // the console's only surface for whether auto-detect found the pedal,
+      // and "no row" is indistinguishable from "no problem". The full-screen
+      // Settings page carried it, and the appliance lost its touch route
+      // there when the rail dropped its "Controls" entry.
+      expect(find.byKey(const Key('system_about_pedal')), findsOneWidget);
+      expect(find.text(l10n.aboutPedalFirmwareNone), findsOneWidget);
+      expect(find.text(l10n.pedalStatusNone), findsOneWidget);
 
       await pedal.selectFirmwareVersion(3);
       await tester.pumpAndSettle();
 
-      final l10n = l10nOf(tester);
-      expect(find.byKey(const Key('system_about_pedal')), findsOneWidget);
       expect(find.text(l10n.aboutProtocolVersion(3)), findsOneWidget);
-      expect(find.text(l10n.aboutPedalFirmwareSubtitle), findsOneWidget);
     });
 
     testWidgets("both LEGAL rows reach the console's own notices panel — never "

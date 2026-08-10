@@ -21,7 +21,10 @@ import 'package:segno/theme/theme.dart';
 /// rail is.
 class TrayNavigationRail extends StatelessWidget {
   /// Creates a [TrayNavigationRail].
-  const TrayNavigationRail({super.key});
+  const TrayNavigationRail({required this.onBrightness, super.key});
+
+  /// Opens the brightness popover. Not a destination — see [domains].
+  final VoidCallback onBrightness;
 
   /// Rail width. Sized for an icon beside a full-size label, because the rail
   /// is a navigation spine and should read as one — a column of icon-over-
@@ -29,9 +32,20 @@ class TrayNavigationRail extends StatelessWidget {
   ///
   /// From the redesign mockups (#490); the earlier 84px stacked form was built
   /// without them, since the decision record carries no diagrams.
-  static const double _width = 165;
+  /// Rail width. Public because the brightness popover hangs off its edge.
+  static const double width = 165;
 
   static const double _itemGap = 4;
+
+  /// The rail's destinations, in the order the mockups stack them.
+  ///
+  /// Every value: brightness is NOT one of them — it opens a popover rather
+  /// than a face, so it is a button pinned below these, not a ninth domain.
+  ///
+  /// Public so a test can aim at the gap between the two groups without
+  /// naming a destination that a later part will move.
+  static const List<SettingsTrayDestination> domains =
+      SettingsTrayDestination.values;
 
   /// The glyph for [destination].
   ///
@@ -42,7 +56,6 @@ class TrayNavigationRail extends StatelessWidget {
   /// too, or a destination can be reachable in code and invisible on screen.
   static IconData _iconFor(SettingsTrayDestination destination) =>
       switch (destination) {
-        SettingsTrayDestination.home => Icons.tune,
         // A line with stops on it, as the mockups draw it: this domain is the
         // signal PATH and the four stages along it. The Audio entry gives up
         // the waveform glyph for exactly this reason — a waveform says
@@ -77,7 +90,6 @@ class TrayNavigationRail extends StatelessWidget {
     AppLocalizations l10n,
     SettingsTrayDestination destination,
   ) => switch (destination) {
-    SettingsTrayDestination.home => l10n.trayHomeLabel,
     SettingsTrayDestination.signal => l10n.traySignalLabel,
     SettingsTrayDestination.control => l10n.trayControlLabel,
     SettingsTrayDestination.loop => l10n.trayLoopLabel,
@@ -100,11 +112,11 @@ class TrayNavigationRail extends StatelessWidget {
     // not only in a test harness.
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth.isFinite
-            ? math.min(_width, constraints.maxWidth)
-            : _width;
+        final railWidth = constraints.maxWidth.isFinite
+            ? math.min(TrayNavigationRail.width, constraints.maxWidth)
+            : TrayNavigationRail.width;
         return SizedBox(
-          width: width,
+          width: railWidth,
           // The rail absorbs taps that miss an item. Without this they fall
           // through to the panel's full-bleed dismiss detector and close the
           // tray — fine for the home face's tile grid (Control Center
@@ -130,33 +142,68 @@ class TrayNavigationRail extends StatelessWidget {
                     ),
                   ),
                 ),
-                child: SingleChildScrollView(
-                  // The drag handle rides at the open panel's bottom edge, over
-                  // the rail's last band — pad past it so a future destination
-                  // cannot land under a control that closes the tray.
-                  padding: const EdgeInsets.only(bottom: kTrayHandleHeight),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      spacing: _itemGap,
-                      children: [
-                        for (final target
-                            in SettingsTrayDestination.values) ...[
-                          // Stretch so every pill spans the rail: pills
-                          // sized to their own text read as chips, not
-                          // as rows of one list.
-                          _RailItem(
-                            key: Key('settingsTrayRail_${target.name}'),
-                            icon: _iconFor(target),
-                            label: _labelFor(l10n, target),
-                            selected: destination == target,
-                            onTap: () => cubit.showDestination(target),
+                // The domains scroll; brightness does not. The pen pins it
+                // at the foot of the rail behind a fill spacer, which inside
+                // a scroll view would do nothing — an unbounded child has no
+                // slack to give. Splitting the two puts it where the mockups
+                // draw it at any height, and keeps it reachable when the
+                // domain list is taller than the rail.
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: _itemGap,
+                    children: [
+                      // Expanded, not Flexible: under a loose fit the scroll
+                      // view takes its CONTENT height, so with eight domains
+                      // shorter than the rail — which is every real height —
+                      // the column packs to the top and brightness sits under
+                      // System with the slack below it. It pinned only when
+                      // the list overflowed, which is the one case the pen is
+                      // not describing.
+                      Expanded(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            spacing: _itemGap,
+                            children: [
+                              for (final target in domains)
+                                // Stretch so every pill spans the rail: pills
+                                // sized to their own text read as chips, not
+                                // as rows of one list.
+                                _RailItem(
+                                  key: Key('settingsTrayRail_${target.name}'),
+                                  icon: _iconFor(target),
+                                  label: _labelFor(l10n, target),
+                                  selected: destination == target,
+                                  onTap: () => cubit.showDestination(target),
+                                ),
+                            ],
                           ),
-                        ],
-                      ],
-                    ),
+                        ),
+                      ),
+                      // The drag handle rides at the open panel's bottom
+                      // edge — pad past it so this does not sit under a
+                      // control that closes the tray.
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: kTrayHandleHeight,
+                        ),
+                        child: _RailItem(
+                          key: const Key('settingsTrayRail_brightness'),
+                          // A sun, as the mockups draw it — the one entry
+                          // that is about the screen rather than the rig.
+                          icon: Icons.brightness_6_outlined,
+                          label: l10n.trayBrightLabel,
+                          // Never "selected": it does not replace the face
+                          // behind it, so a lit pill here would claim a
+                          // destination the rail has not moved to.
+                          selected: false,
+                          onTap: onBrightness,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

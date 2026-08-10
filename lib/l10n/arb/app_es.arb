@@ -1086,9 +1086,10 @@
     "@trayBluetoothLabel": {
         "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
     },
-    "trayHomeLabel": "Controles",
-    "@trayHomeLabel": {
-        "description": "Navigation rail entry for the settings tray's home face — the quick-access tiles and brightness slider."
+    "trayBrightnessPercent": "{percent}%",
+    "trayBrightLabel": "Brillo",
+    "@trayBrightLabel": {
+        "description": "Navigation rail entry for screen brightness, pinned below the eight domains as the mockups draw it."
     },
     "a11yTrayRail": "Destinos de la bandeja",
     "@a11yTrayRail": {
@@ -1966,6 +1967,9 @@
         }
     },
     "aboutSystemImageRow": "Imagen del sistema",
+    "aboutPedalFirmwareNone": "no encontrado",
+    "aboutPedalFirmwareError": "no se pudo conectar",
+    "aboutPedalFirmwareUpdate": "hay una actualización",
     "aboutPedalFirmwareRow": "Firmware del pedal",
     "aboutPedalFirmwareSubtitle": "4 pulsadores · 2 bancos",
     "aboutProtocolVersion": "v{version}",

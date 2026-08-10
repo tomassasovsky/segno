@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
@@ -80,12 +81,33 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
     await cubit.rename(name);
   }
 
+  /// What the pedal is doing, under its firmware row.
+  ///
+  /// The same four states the Settings page spelled out, in the subtitle
+  /// slot the row already has — a second line here beats a second surface.
+  /// The pedal's bind state, and whether its firmware is behind.
+  ///
+  /// Both in the subtitle the row already has rather than as a `mark`: on
+  /// this surface a mark is a check, and the widget's own doc says one mark
+  /// cannot carry two meanings.
+  static String _pedalStatus(AppLocalizations l10n, PedalState pedal) {
+    final status = switch (pedal.bindStatus) {
+      PedalBindStatus.none => l10n.pedalStatusNone,
+      PedalBindStatus.connecting => l10n.pedalStatusConnecting,
+      PedalBindStatus.bound => l10n.aboutPedalFirmwareSubtitle,
+      PedalBindStatus.error => l10n.aboutPedalFirmwareError,
+    };
+    if (!pedal.firmwareUpdateAvailable) return status;
+    return '$status · ${l10n.aboutPedalFirmwareUpdate}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final facts = context.watch<ConsoleFactsCubit>().state;
     final update = context.watch<UpdateCubit>().state;
-    final pedalVersion = context.watch<PedalCubit>().state.firmwareVersion;
+    final pedal = context.watch<PedalCubit>().state;
+    final pedalVersion = pedal.firmwareVersion;
     final engine = context.watch<AudioSetupCubit>().state.engineStatus;
     final packages = _packages;
 
@@ -138,15 +160,23 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
     ]);
 
     final hardware = _card([
-      if (pedalVersion != null)
-        ({required last}) => ConsoleRow(
-          key: const Key('system_about_pedal'),
-          title: l10n.aboutPedalFirmwareRow,
-          subtitle: l10n.aboutPedalFirmwareSubtitle,
-          value: l10n.aboutProtocolVersion(pedalVersion),
-          showDisclosure: false,
-          showDivider: !last,
-        ),
+      // Always drawn, even with no firmware version to report — because the
+      // case worth seeing is the one where there is none. The bind status
+      // used to live only in the full-screen Settings page, whose own comment
+      // called this line "the ONLY way to see whether auto-detect actually
+      // found the pedal", and the console lost its touch route there when the
+      // rail dropped its "Controls" entry. A performer whose pedal does not
+      // bind has to be told somewhere.
+      ({required last}) => ConsoleRow(
+        key: const Key('system_about_pedal'),
+        title: l10n.aboutPedalFirmwareRow,
+        subtitle: _pedalStatus(l10n, pedal),
+        value: pedalVersion == null
+            ? l10n.aboutPedalFirmwareNone
+            : l10n.aboutProtocolVersion(pedalVersion),
+        showDisclosure: false,
+        showDivider: !last,
+      ),
       // Off the ENGINE's own report, not the requested config: what this row
       // states is what the interface is running at, and a build with nothing
       // open has no interface to name rather than one running at 0 Hz.

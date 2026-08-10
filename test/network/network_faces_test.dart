@@ -227,7 +227,7 @@ void main() {
       expect(find.byKey(const Key('bluetooth_tray_body')), findsOneWidget);
       expect(find.byKey(const Key('wifi_tray_body')), findsNothing);
       // Moving the tab must not move the destination.
-      expect(tray.state.destination, SettingsTrayDestination.home);
+      expect(tray.state.destination, SettingsTrayDestination.signal);
     });
   });
 

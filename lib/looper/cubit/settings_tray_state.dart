@@ -1,7 +1,7 @@
 part of 'settings_tray_cubit.dart';
 
-/// Which face the open tray is showing — home tiles, or one of the in-tray
-/// config panels (Control-Center expand, not a full-screen route).
+/// Which face the open tray is showing — one of the in-tray config panels
+/// (Control-Center expand, not a full-screen route).
 ///
 /// Every value here is a destination the tray's own navigation rail can
 /// select. Settings still pushes a full-screen route and so deliberately has
@@ -12,9 +12,6 @@ part of 'settings_tray_cubit.dart';
 /// placeholders, because a rail item that does nothing when tapped is worse
 /// than a two-line enum edit.
 enum SettingsTrayDestination {
-  /// Tile grid + brightness.
-  home,
-
   /// In-tray Signal domain — the four FX stages as tabs of one entry.
   ///
   /// **First of the domains**, as the mockups draw the rail: the signal path
@@ -28,7 +25,8 @@ enum SettingsTrayDestination {
   /// card on every tab is one chain.
   ///
   /// This is the destination that closed the rail's last exception. Signal was
-  /// a tile on the home face pushing a full-screen route, which #533 replaced
+  /// a tile on the old home face pushing a full-screen route, which #533
+  /// replaced
   /// with the face beside the rail.
   signal,
 
@@ -107,9 +105,8 @@ class SettingsTrayState extends Equatable {
   /// Creates a [SettingsTrayState].
   const SettingsTrayState({
     this.dragProgress = 0,
-    this.isNavigating = false,
     this.brightness = 0.8,
-    this.destination = SettingsTrayDestination.home,
+    this.destination = SettingsTrayDestination.signal,
     this.signalTab = FxStage.input,
     this.signalSelection,
     this.signalEffectSlot,
@@ -129,16 +126,12 @@ class SettingsTrayState extends Equatable {
   /// always settled at exactly `0` or `1`.
   final double dragProgress;
 
-  /// True from the instant a tray nav button is tapped until the pushed
-  /// route pops — so a rapid double-tap cannot push the same route twice, and
-  /// so the tile reads as disabled while its route is on its way up.
-  final bool isNavigating;
-
   /// Brightness slider value (`0..1`). Persisted via SettingsRepository;
   /// applied through BrightnessClient when DDC/CI is available.
   final double brightness;
 
-  /// In-tray face: home tiles or one of the rail's domain panels.
+  /// In-tray face: one of the rail's domain panels. Brightness is NOT one —
+  /// it opens a popover over whichever face is showing.
   final SettingsTrayDestination destination;
 
   /// Which FX stage the Signal domain shows.
@@ -201,7 +194,6 @@ class SettingsTrayState extends Equatable {
   /// Returns a copy with the given fields replaced.
   SettingsTrayState copyWith({
     double? dragProgress,
-    bool? isNavigating,
     double? brightness,
     SettingsTrayDestination? destination,
     FxStage? signalTab,
@@ -217,7 +209,6 @@ class SettingsTrayState extends Equatable {
     SystemTab? systemTab,
   }) => SettingsTrayState(
     dragProgress: dragProgress ?? this.dragProgress,
-    isNavigating: isNavigating ?? this.isNavigating,
     brightness: brightness ?? this.brightness,
     destination: destination ?? this.destination,
     signalTab: signalTab ?? this.signalTab,
@@ -240,7 +231,6 @@ class SettingsTrayState extends Equatable {
   @override
   List<Object?> get props => [
     dragProgress,
-    isNavigating,
     brightness,
     destination,
     signalTab,

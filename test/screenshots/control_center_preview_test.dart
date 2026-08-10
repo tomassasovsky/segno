@@ -32,6 +32,7 @@ import 'package:segno/looper/loop_tab.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/network/network_tab.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/system/system_tab.dart';
@@ -686,7 +687,10 @@ void main() {
   testWidgets('network domain, wifi tab', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.wifi);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -704,7 +708,10 @@ void main() {
   testWidgets('network domain, wifi off', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.wifi);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -724,7 +731,10 @@ void main() {
   testWidgets('network domain, wifi row open', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.wifi);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -744,7 +754,10 @@ void main() {
   testWidgets('network domain, forget confirm', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.wifi);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -768,7 +781,10 @@ void main() {
   testWidgets('network domain, join sheet', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openWifi();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.wifi);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -790,7 +806,10 @@ void main() {
   testWidgets('network domain, bluetooth tab', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openBluetooth();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.bluetooth);
     addTearDown(cubit.close);
 
     await pumpTray(
@@ -808,7 +827,10 @@ void main() {
   testWidgets('network domain, bluetooth row open', (tester) async {
     await size(tester);
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    final cubit = SettingsTrayCubit(settings: settings)..openBluetooth();
+    final cubit = SettingsTrayCubit(settings: settings)
+      ..open()
+      ..showDestination(SettingsTrayDestination.network)
+      ..showNetworkTab(NetworkTab.bluetooth);
     addTearDown(cubit.close);
 
     await pumpTray(

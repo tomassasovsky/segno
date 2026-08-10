@@ -1000,7 +1000,7 @@ void main() {
 
       // Leaving the domain and coming back lands where it was left.
       tray
-        ..showDestination(SettingsTrayDestination.home)
+        ..showDestination(SettingsTrayDestination.tuner)
         ..showDestination(SettingsTrayDestination.audio);
       await tester.pumpAndSettle();
       expect(tray.state.audioTab, AudioTab.recording);
