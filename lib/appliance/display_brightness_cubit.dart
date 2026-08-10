@@ -15,7 +15,7 @@ class DisplayBrightnessCubit extends Cubit<double> {
     BrightnessClient client = const UnsupportedBrightnessClient(),
   }) : _settings = settings,
        _client = client,
-       super(kDefaultDisplayBrightness);
+       super(0.8);
 
   final SettingsRepository _settings;
   final BrightnessClient _client;

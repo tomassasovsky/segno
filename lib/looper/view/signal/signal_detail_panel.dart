@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
@@ -1421,15 +1422,21 @@ class _LevelRowState extends State<_LevelRow> with ConsoleResetTap<_LevelRow> {
                     // Silenced, so its synthesised actions cannot reach the
                     // rig; the slider node above is what the reader drives.
                     excludeFromSemantics: true,
-                    // Tap-DOWN only arms; the write waits for the release,
-                    // because a press that becomes a drag fires this too.
+                    // An ordinary tap writes where it landed, at once. Only
+                    // the RESET waits for the release, because a press that
+                    // becomes a drag fires this too.
                     onTapDown: (d) {
                       if (!armReset(d.localPosition.dx)) {
                         _report(width, d.localPosition.dx);
                       }
                     },
                     onTapUp: (_) {
-                      if (spendReset()) _set(1 / kSignalMaxGain);
+                      if (!spendReset()) return;
+                      // The same confirmation `ConsoleValueBar` gives: a
+                      // 0.25 → 0.5 snap is a small visible move, and this is
+                      // the fader where you most need to know it took.
+                      unawaited(HapticFeedback.selectionClick());
+                      _set(1 / kSignalMaxGain);
                     },
                     onTapCancel: dropReset,
                     onHorizontalDragStart: (d) {

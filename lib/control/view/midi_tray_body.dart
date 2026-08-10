@@ -732,10 +732,15 @@ class _MappingRow extends StatelessWidget {
                     key: const Key('midi_lo'),
                     label: l10n.midiLearnLo,
                     value: sweep.lo,
-                    // Where a calibration starts before anyone has moved a
-                    // pedal: the bottom of the CC range. A calibration you
-                    // cannot undo except by aiming at an edge is one you stop
-                    // experimenting with.
+                    // The binding's own default: the value this pedal sends
+                    // at CC 0, over the TARGET's normalized domain rather
+                    // than the CC's. A calibration you cannot undo except by
+                    // aiming at an edge is one you stop experimenting with.
+                    //
+                    // It does undo an INVERTED range (`lo > hi`, which is how
+                    // a heel-down-loud pedal is set up) — deliberately, since
+                    // that is a full-domain reset and not a nudge, and the
+                    // other edge is one tap away.
                     resetValue: 0,
                     readout: '${(sweep.lo * 127).round()}',
                     semanticLabel: l10n.a11yMidiLearnLo,
