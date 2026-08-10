@@ -336,12 +336,7 @@ engine.TrackEffectType trackEffectTypeToEngine(TrackEffectType type) =>
 /// thread through both arms — a field silently dropped here round-trips as its
 /// default and the bug stays invisible until a stomp un-bypasses a chain.
 engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
-  BuiltInEffect(
-    :final type,
-    :final params,
-    :final enabled,
-    :final slotId,
-  ) =>
+  BuiltInEffect(:final type, :final params, :final enabled, :final slotId) =>
     engine.BuiltInEffect(
       type: trackEffectTypeToEngine(type),
       params: params,
@@ -427,10 +422,8 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
 ///
 /// Delegates to the engine's wire-format serializer so the persisted format
 /// stays the single source of truth (no domain/engine drift).
-String encodeTrackEffects(List<TrackEffect> effects) =>
-    engine.encodeTrackEffects([
-      for (final e in effects) _trackEffectToEngine(e),
-    ]);
+String encodeTrackEffects(List<TrackEffect> effects) => engine
+    .encodeTrackEffects([for (final e in effects) _trackEffectToEngine(e)]);
 
 /// Decodes a chain produced by [encodeTrackEffects]; malformed input yields an
 /// empty chain. Delegates to the engine serializer, then maps to domain types.

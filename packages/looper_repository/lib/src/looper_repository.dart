@@ -1816,10 +1816,8 @@ class LooperRepository {
 
   /// The fingerprint of the CACHED Master insert chain (see
   /// [trackFxChainFingerprint]).
-  int masterFxChainFingerprint() => fxChainFingerprint(
-    _masterEffects,
-    chainEnabled: _masterChainEnabled,
-  );
+  int masterFxChainFingerprint() =>
+      fxChainFingerprint(_masterEffects, chainEnabled: _masterChainEnabled);
 
   /// Whether lane [lane] of track [channel]'s chain currently SOUNDS
   /// different from its routed input's monitor chain (A7). The domain query
@@ -3021,12 +3019,26 @@ class LooperRepository {
   /// (see the section comment above the bus setters), so the entry is kept
   /// but must not read as an active slot: the UI gets the "installed but not
   /// loadable here" placeholder instead of an active-looking silent effect.
+  ///
+  /// The enumerated params go with the flags, exactly as [_bindPluginSlot]'s
+  /// null-handle branch does it. They describe a LOADED instance, and there
+  /// is none: an entry that keeps them while being marked unhostable draws a
+  /// row per parameter in the Signal editor — working-looking faders over a
+  /// plugin that is not running — and the placeholder line that explains the
+  /// situation never appears, because a chain with rows to draw is not empty.
+  /// Nothing copies a bound chain onto a bus today, so this bites the moment
+  /// something does: racks (#535), or a lane-to-bus paste.
   static List<TrackEffect> _markBusUnsupportedPlugins(
     List<TrackEffect> effects,
   ) => [
     for (final fx in effects)
       if (fx is PluginEffect)
-        fx.copyWith(unavailable: true, unsupported: true, loading: false)
+        fx.copyWith(
+          unavailable: true,
+          unsupported: true,
+          loading: false,
+          params: const [],
+        )
       else
         fx,
   ];
