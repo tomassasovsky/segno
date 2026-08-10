@@ -107,6 +107,7 @@ class _FxParamIndicator extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 widthFactor: fill!.clamp(0.0, 1.0),
                 child: DecoratedBox(
+                  key: const Key('fx_param_indicator_fill'),
                   decoration: BoxDecoration(
                     // `textTertiary`, not `textMuted`: muted lands at 1.1:1
                     // against the track in the high-contrast theme — the
@@ -269,6 +270,7 @@ class FxParamSwitchCell extends StatelessWidget {
     required this.spec,
     required this.value,
     required this.onChanged,
+    this.semanticLabel,
     super.key,
   });
 
@@ -281,6 +283,10 @@ class FxParamSwitchCell extends StatelessWidget {
   /// Called with the new plain value — [PluginParamInfo.max] or `min`.
   final ValueChanged<double> onChanged;
 
+  /// What a screen reader calls this cell. Defaults to the parameter's name,
+  /// which on a grid of four effects is four cells all called "Mix".
+  final String? semanticLabel;
+
   /// A plain value reads as on from the midpoint up.
   bool get _on => value >= (spec.min + spec.max) / 2;
 
@@ -291,7 +297,7 @@ class FxParamSwitchCell extends StatelessWidget {
       fill: _on ? 1 : 0,
       control: Center(
         child: Semantics(
-          label: spec.name,
+          label: semanticLabel ?? spec.name,
           child: Switch(
             value: _on,
             onChanged: (on) => onChanged(on ? spec.max : spec.min),
@@ -311,6 +317,7 @@ class FxParamEnumCell extends StatelessWidget {
     required this.spec,
     required this.value,
     required this.onChanged,
+    this.semanticLabel,
     super.key,
   });
 
@@ -322,6 +329,9 @@ class FxParamEnumCell extends StatelessWidget {
 
   /// Called with the plain value of the chosen step.
   final ValueChanged<double> onChanged;
+
+  /// What a screen reader calls this cell. Same rule as the switch cell's.
+  final String? semanticLabel;
 
   /// The step index nearest [value], in `0..spec.stepCount`.
   int get _step {
@@ -345,42 +355,49 @@ class FxParamEnumCell extends StatelessWidget {
     return _FxParamCell(
       name: spec.name,
       fill: spec.stepCount == 0 ? 0 : step / spec.stepCount,
-      control: PopupMenuButton<int>(
-        tooltip: spec.name,
-        padding: EdgeInsets.zero,
-        initialValue: step,
-        onSelected: (s) => onChanged(_plainFor(s)),
-        itemBuilder: (context) => [
-          for (var s = 0; s <= spec.stepCount; s++)
-            PopupMenuItem<int>(
-              value: s,
-              child: Text(
-                s < spec.valueTexts.length ? spec.valueTexts[s] : '$s',
-                style: signalMono(color: surface.textPrimary),
-              ),
-            ),
-        ],
-        child: _FxParamBox(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    label,
-                    overflow: TextOverflow.ellipsis,
-                    style: signalMono(color: surface.textPrimary, size: 9),
-                  ),
+      control: Semantics(
+        label: semanticLabel ?? spec.name,
+        value: label,
+        button: true,
+        child: PopupMenuButton<int>(
+          tooltip: semanticLabel ?? spec.name,
+          padding: EdgeInsets.zero,
+          initialValue: step,
+          onSelected: (s) => onChanged(_plainFor(s)),
+          itemBuilder: (context) => [
+            for (var s = 0; s <= spec.stepCount; s++)
+              PopupMenuItem<int>(
+                value: s,
+                child: Text(
+                  s < spec.valueTexts.length ? spec.valueTexts[s] : '$s',
+                  style: signalMono(color: surface.textPrimary),
                 ),
-                const SizedBox(width: 2),
-                Text(
-                  '▾',
-                  style: signalMono(color: surface.textMuted, size: 9),
+              ),
+          ],
+          child: ExcludeSemantics(
+            child: _FxParamBox(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        label,
+                        overflow: TextOverflow.ellipsis,
+                        style: signalMono(color: surface.textPrimary, size: 9),
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    Text(
+                      '▾',
+                      style: signalMono(color: surface.textMuted, size: 9),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );

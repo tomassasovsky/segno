@@ -122,7 +122,7 @@ class SignalFxEditor extends StatelessWidget {
                 for (final (param, row) in rows.indexed)
                   KeyedSubtree(
                     key: Key('signal_fx_param_$param'),
-                    child: row.build(context, this, param),
+                    child: row.build(context, this),
                   ),
               ],
             ),
@@ -269,9 +269,11 @@ class SignalFxEditor extends StatelessWidget {
       // different plugin the moment the chain moved under the open sheet, and
       // no fallback at all left a bus stage — which never has a live instance
       // to ask — showing `2` in the sheet under a tile reading `Highpass`.
-      formatValue: (value) => _atSlot(effect.slotId, (at) {
-        return scope.formatPluginValue(at, info.id, value);
-      }),
+      formatValue: (value) =>
+          _atSlot(effect.slotId, (at) {
+            return scope.formatPluginValue(at, info.id, value);
+          }) ??
+          _plainReadout(info, value),
       // Plain values, both ways: the sheet and the cells speak the
       // parameter's own units, so nothing here converts. The old fader spoke
       // `0..1` and had to.
@@ -763,7 +765,7 @@ class _ParamCell {
 
   /// The cell the taxonomy calls for. First match wins, so a read-only
   /// parameter never reaches the step-count branches.
-  Widget build(BuildContext context, SignalFxEditor editor, int index) {
+  Widget build(BuildContext context, SignalFxEditor editor) {
     final set = onChanged;
     // Read-only first, then the step count: a meter reports a value it will
     // not take, so it is never a switch and never a menu however many steps
@@ -783,13 +785,23 @@ class _ParamCell {
     final named =
         spec.valueTexts.length == spec.stepCount + 1 && spec.stepCount >= 1;
     if (spec.stepCount == 1 && !named) {
-      return FxParamSwitchCell(spec: spec, value: plain, onChanged: set);
+      return FxParamSwitchCell(
+        spec: spec,
+        value: plain,
+        semanticLabel: semanticLabel,
+        onChanged: set,
+      );
     }
     // Labelled, not merely small: steps AND a name for each one. A three-step
     // parameter with no names would draw a menu of `0 1 2 3`, which says less
     // than the value it replaced.
     if (named && spec.stepCount <= 24) {
-      return FxParamEnumCell(spec: spec, value: plain, onChanged: set);
+      return FxParamEnumCell(
+        spec: spec,
+        value: plain,
+        semanticLabel: semanticLabel,
+        onChanged: set,
+      );
     }
     return FxParamTile(
       spec: spec,

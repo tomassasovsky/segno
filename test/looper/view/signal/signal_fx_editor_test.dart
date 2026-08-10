@@ -51,7 +51,6 @@ class _FakeScope extends Fake implements FxScope {
   @override
   void relinkPlugin(int index, PluginRef ref) => relinked.add((index, ref));
 
-  @override
   /// Per ENTRY, deliberately: a fake that ignores the index cannot tell the
   /// sheet formatting through the entry it edits from the sheet formatting
   /// through whatever happens to sit at that position.
@@ -105,6 +104,32 @@ const _mode = PluginParamInfo(
   stepCount: 2,
   flags: 0x10,
   valueTexts: ['Lowpass', 'Bandpass', 'Highpass'],
+);
+
+/// [_mode], but automatable — `_mode` is a read-only list, which lands on the
+/// tile rather than the menu.
+const _modeLive = PluginParamInfo(
+  id: 12,
+  name: 'Mode',
+  unit: '',
+  min: 0,
+  max: 2,
+  def: 0,
+  stepCount: 2,
+  flags: 0x01 | 0x10,
+  valueTexts: ['Lowpass', 'Bandpass', 'Highpass'],
+);
+
+/// A plain two-state parameter — no bypass flag, so it reaches the grid.
+const _twoState = PluginParamInfo(
+  id: 11,
+  name: 'Vintage',
+  unit: '',
+  min: 0,
+  max: 1,
+  def: 0,
+  stepCount: 1,
+  flags: 0x01,
 );
 
 const _pluginBypass = PluginParamInfo(
@@ -351,23 +376,72 @@ void main() {
 
     // And its indicator is off the accent, which is what says "live" on every
     // other cell on this surface.
+    // By its own key, not by position in the tile: `boxes.last` is the
+    // indicator only while every cell has a fill, and it silently becomes the
+    // TRACK — grey, and so passing `isNot(accent)` — for one that does not.
     Color? indicatorColour(Key key) {
-      final boxes = tester
-          .widgetList<DecoratedBox>(
-            find.descendant(
-              of: find.byKey(key),
-              matching: find.byType(DecoratedBox),
-            ),
-          )
-          .toList();
-      return (boxes.last.decoration as BoxDecoration).color;
+      final fill = tester.widget<DecoratedBox>(
+        find.descendant(
+          of: find.byKey(key),
+          matching: find.byKey(const Key('fx_param_indicator_fill')),
+        ),
+      );
+      return (fill.decoration as BoxDecoration).color;
     }
 
     const surface = SurfaceTheme.dark;
     expect(indicatorColour(const Key('signal_fx_param_0')), surface.accent);
+    // Exactly tertiary, not merely "not the accent": `textMuted` — what this
+    // drew before, at 1.1:1 on the track — satisfies `isNot(accent)` too, so
+    // the loose form is a test the bug passes.
     expect(
       indicatorColour(const Key('signal_fx_param_1')),
-      isNot(surface.accent),
+      surface.textTertiary,
+    );
+  });
+
+  testWidgets('a switch and a menu say which effect they belong to', (
+    tester,
+  ) async {
+    final scope = _FakeScope([
+      const PluginEffect(
+        ref: PluginRef(format: PluginFormat.vst3, id: 'test.oct'),
+        name: 'Octaver',
+        params: [_twoState, _modeLive],
+        paramValues: {11: 1, 12: 0},
+      ),
+    ]);
+    await pump(tester, scope);
+
+    // Not "Bypass" and "Mode": a grid of four effects has four of each, and a
+    // screen reader hears the same word four times with nothing to tell it
+    // which effect answers to it.
+    expect(
+      tester.getSemantics(find.byType(Switch)),
+      matchesSemantics(
+        label: 'Vintage of Octaver',
+        hasTapAction: true,
+        hasEnabledState: true,
+        isEnabled: true,
+        isFocusable: true,
+        hasToggledState: true,
+        isToggled: true,
+        hasFocusAction: true,
+      ),
+    );
+    // Name and step, and nothing else: the box's own text and its "▾" are
+    // excluded, or the reader announces the glyph.
+    expect(
+      tester.getSemantics(find.byType(PopupMenuButton<int>)),
+      matchesSemantics(
+        label: 'Mode of Octaver',
+        value: 'Lowpass',
+        isButton: true,
+        hasTapAction: true,
+        hasFocusAction: true,
+        hasExpandedState: true,
+        isFocusable: true,
+      ),
     );
   });
 
@@ -531,10 +605,32 @@ void main() {
     await tester.tap(find.byKey(const Key('signal_fx_param_0')));
     await tester.pumpAndSettle();
 
-    // The live instance's own string, in both places. A bus stage never has
-    // one to ask, and without the same fallback the tile uses, the sheet
-    // opened from `Highpass` reads `2`.
     expect(find.text('A4'), findsWidgets);
+  });
+
+  testWidgets('and the same words when nothing can name the value', (
+    tester,
+  ) async {
+    // No live instance to ask — which is not an edge case: a bus stage never
+    // has one, so this is what the Track and Master stages always do.
+    final scope = _FakeScope([
+      _plugin(values: const {7: 440}),
+    ]);
+    await pump(tester, scope);
+    expect(find.text('440 Hz'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+    await tester.pumpAndSettle();
+
+    // The tile's own fallback, not a bare number: a sheet opened from a tile
+    // reading `440 Hz` that says `440` has dropped the unit on the way.
+    expect(
+      find.descendant(
+        of: find.byType(FxParamEditSheet),
+        matching: find.text('440 Hz'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a two-state parameter with NAMED states is a menu', (
