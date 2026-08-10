@@ -413,9 +413,13 @@ class SessionMonitor {
 
   /// Whether live monitoring of the input is enabled.
   ///
-  /// The coarse gate every manifest has carried. True for any monitor that is
-  /// not off, which is what a v6 reader needs; [mode] is what says WHICH of
-  /// the two non-off states it was.
+  /// The coarse gate every manifest has carried, and the one this build's own
+  /// fallback reads when a bundle predates [mode]. True for any monitor that
+  /// is not off; [mode] is what says WHICH of the two non-off states it was.
+  ///
+  /// Not for older builds — a v6 reader rejects a v7 manifest on the version
+  /// gate and never reaches this field. It is written because every manifest
+  /// has it and because the fallback is real.
   final bool enabled;
 
   /// Bitmask of output channels the monitor plays to.
@@ -526,6 +530,13 @@ class SessionMonitor {
 /// as the chains: the model lives app-side, this package only stores the blob.
 /// Presence-keyed like every rung before it, so a v5 manifest loads with `''`
 /// and the global remap applies.
+///
+/// Schema v7 (#575) adds [SessionMonitor.mode] — the monitor's gate by name,
+/// beside the boolean the manifest has always carried. The gate grew a third
+/// state (`auto`: follow the record arm), and a boolean cannot tell it from
+/// `on`, so a session saved with an input on `auto` reloaded monitoring
+/// unconditionally. Presence-keyed like the rest: a v6 manifest lacks the key
+/// and restores exactly what its boolean used to say.
 @immutable
 class Session {
   /// Creates a [Session].
@@ -740,7 +751,7 @@ class Session {
   final String pedalBindings;
 
   /// Serializes this session manifest to a JSON map. Always writes the
-  /// current [formatVersion] (v6 — this code never writes an older schema).
+  /// current [formatVersion] (v7 — this code never writes an older schema).
   Map<String, dynamic> toJson() => {
     'version': formatVersion,
     'sampleRate': sampleRate,

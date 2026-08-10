@@ -57,8 +57,9 @@ void main() {
         for (final m in chainsFromLooper(looper).monitors) m.input: m,
       };
 
-      // The boolean stays: it is what a manifest reader older than this rung
-      // has to go on, and it is still the answer to "was this monitoring".
+      // The boolean stays — not for older readers, which reject a v7 manifest
+      // on the version gate before they reach it, but because it is what THIS
+      // build reads back from every bundle written before the name existed.
       expect(saved[0]!.enabled, isTrue);
       expect(saved[1]!.enabled, isTrue);
       expect(saved[2]!.enabled, isFalse);
@@ -466,6 +467,33 @@ void main() {
         // `on`, not `auto`: it is what the bundle was heard as, and guessing
         // `auto` would make a monitor that played unconditionally start
         // following the arm.
+        expect(rig.monitors.single.mode, expected);
+      }
+    });
+
+    test('the name wins when the two disagree', () {
+      // Unreachable from this build's writer, which derives one from the
+      // other — but the precedence is the whole design: the name carries
+      // strictly more than the boolean, so it decides.
+      for (final (enabled, mode, expected) in [
+        (false, 'auto', MonitorMode.auto),
+        (true, 'off', MonitorMode.off),
+      ]) {
+        final rig = rigFromBundle((
+          session: sessionWithMonitor(
+            SessionMonitor(
+              input: 0,
+              enabled: enabled,
+              mode: mode,
+              outputMask: 0x3,
+              volume: 1,
+              muted: false,
+              encoded: '',
+            ),
+          ),
+          laneStems: const {},
+        ));
+
         expect(rig.monitors.single.mode, expected);
       }
     });

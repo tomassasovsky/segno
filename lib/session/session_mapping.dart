@@ -187,12 +187,9 @@ SessionRigMonitor _rigMonitor(SessionMonitor monitor, FxChainEnvelope chain) =>
 /// A name this build does not know reads as "the manifest did not say" rather
 /// than as `off`, for the same reason the settings restore does: a gate
 /// written by a future build is not a deliberate disable.
-MonitorMode _monitorMode(SessionMonitor monitor) {
-  for (final mode in MonitorMode.values) {
-    if (mode.name == monitor.mode) return mode;
-  }
-  return monitor.enabled ? MonitorMode.on : MonitorMode.off;
-}
+MonitorMode _monitorMode(SessionMonitor monitor) =>
+    monitorModeFromName(monitor.mode) ??
+    (monitor.enabled ? MonitorMode.on : MonitorMode.off);
 
 /// Builds the rig's tracks from [bundle], zipping each manifest lane with its
 /// decoded PCM. A lane with no decoded audio is dropped; a track left with no

@@ -256,12 +256,8 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Maps a persisted mode name back to the enum. An unrecognised name reads
   /// as `null` — "nothing saved" — rather than silently becoming `off`, so a
   /// key written by a future build is not mistaken for a deliberate disable.
-  static MonitorMode? _modeFromName(String? name) {
-    for (final mode in MonitorMode.values) {
-      if (mode.name == name) return mode;
-    }
-    return null;
-  }
+  static MonitorMode? _modeFromName(String? name) =>
+      name == null ? null : monitorModeFromName(name);
 
   /// Reads hardware [input]'s persisted single-chain monitor, or null if none
   /// was saved. The chain key holds the envelope (R15) — the chain-enabled
