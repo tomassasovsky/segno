@@ -31,6 +31,23 @@ abstract final class FxParamTileMetrics {
   static const double _boxRadius = 7;
 }
 
+/// [name] as the grid prints it: upper case, with camel-case run back apart.
+///
+/// Plugins name parameters however they like, and plenty report `OutputMode`
+/// or `dryWet` with no space in them. Upper-casing those gives `OUTPUTMODE`,
+/// which reads as one long word at mono 9pt in a 78px tile. Only touched when
+/// the name has no space of its own — a plugin that punctuates its own names
+/// gets left alone, acronyms included.
+String spacedParamName(String name) {
+  if (name.contains(' ')) return name.toUpperCase();
+  return name
+      .replaceAllMapped(
+        RegExp('([a-z0-9])([A-Z])'),
+        (m) => '${m[1]} ${m[2]}',
+      )
+      .toUpperCase();
+}
+
 /// The shared name / control / indicator skeleton every parameter cell wears.
 ///
 /// Nothing here states in words what the control already shows — a switch's
@@ -74,7 +91,7 @@ class _FxParamCell extends StatelessWidget {
               // Uppercased for the same reason the DS specimens are, and the
               // rotary caption was before it: at mono 9 in 78px this is a
               // legend, and caps keep a dense grid's names scanning as one row.
-              name.toUpperCase(),
+              spacedParamName(name),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: signalMono(color: surface.textSecondary, size: 9),
