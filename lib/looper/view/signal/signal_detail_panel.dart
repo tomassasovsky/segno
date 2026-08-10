@@ -295,10 +295,12 @@ class _MasterPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    // A list compares by identity, so `context.select` on `masterEffects`
-    // would redraw whenever the projection rebuilt the list — every meter
-    // tick. Compared by VALUE here, the same way the other two panels do it;
-    // a hash would be a collision-shaped subscription.
+    // Compared by VALUE, the same way the other two panels do it: this panel
+    // draws the entries themselves, so an entry changing under a stable list
+    // is a redraw. (The card run selects the same field by identity instead —
+    // it only names the chain, and the projection passes the repository's own
+    // field through, so identity moves exactly when the chain does.) A hash
+    // would be a collision-shaped subscription.
     return BlocBuilder<LooperBloc, LooperState>(
       buildWhen: (previous, current) =>
           !listEquals(previous.masterEffects, current.masterEffects) ||

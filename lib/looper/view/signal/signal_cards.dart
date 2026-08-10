@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -21,8 +20,9 @@ import 'package:segno/looper/view/signal/signal_detail_panel.dart';
 /// a take's playback chain, a track bus, the master insert — and the questions
 /// the card answers are the same six either way.
 ///
-/// **Racks are #535, so every card here is rackless.** That is the mockups'
-/// own empty state (`no rack` / `tap to load one`), and it has one consequence
+/// **Racks are #535, so every card here is rackless** — the rack line reads
+/// `no rack` on every card, though the line under it names whatever chain the
+/// card carries. That is the mockups' empty state, and it has one consequence
 /// worth stating plainly: a card carries its monitor line only when a rack is
 /// loaded, so on the loop, track and master tabs no card shows one. The input
 /// tab is the decided exception — an input's monitor gate is a fact about the
@@ -168,7 +168,11 @@ class _InputCards extends StatelessWidget {
             coordinate: l10n.signalCoordInput(input + 1),
             routesTo: l10n.signalRouteRecorder,
             rack: l10n.signalNoRack,
-            summary: chainSummary(l10n, monitors.forInput(input).effects),
+            summary: chainSummary(
+              l10n,
+              monitors.forInput(input).effects,
+              enabled: monitors.forInput(input).chainEnabled,
+            ),
             monitor: monitorLine(l10n, monitors.forInput(input)),
           ),
     ];
@@ -229,7 +233,11 @@ class _LoopCards extends StatelessWidget {
                 ),
                 routesTo: l10n.signalRouteMix,
                 rack: l10n.signalNoRack,
-                summary: chainSummary(l10n, take.effects),
+                summary: chainSummary(
+                  l10n,
+                  take.effects,
+                  enabled: take.chainEnabled,
+                ),
               ),
         ],
         drawn: [
@@ -275,7 +283,11 @@ class _TrackCards extends StatelessWidget {
               coordinate: l10n.signalCoordTrack(track.channel + 1),
               routesTo: l10n.signalRouteMaster,
               rack: l10n.signalNoRack,
-              summary: chainSummary(l10n, track.effects),
+              summary: chainSummary(
+                l10n,
+                track.effects,
+                enabled: track.chainEnabled,
+              ),
             ),
         ],
         drawn: [for (final track in state.tracks) _trackAddress(track.channel)],
@@ -310,10 +322,17 @@ class _MasterStage extends StatelessWidget {
     // both channel counts to `LE_MAX_CHANNELS` (32) at device open, so a
     // 64-output interface reports 32 here and `1 << output` never runs off
     // the end of the default `0xFFFFFFFF`.
-    // The master's own chain, for the card's summary line. Selected rather
-    // than watched: the state carries meters, and the card draws none.
+    // The master's own chain and its power, for the card's summary line.
+    // Selected rather than watched: the state carries meters, and the card
+    // draws none. A `List` compares by identity, which is exactly right here —
+    // the projection passes the repository's own field through and only a
+    // mutation reassigns it, so this fires when the chain changes and not when
+    // a meter does.
     final master = context.select<LooperBloc, List<TrackEffect>>(
       (b) => b.state.masterEffects,
+    );
+    final masterOn = context.select<LooperBloc, bool>(
+      (b) => b.state.masterChainEnabled,
     );
     final (outputs, mask) = context.select<LooperBloc, (int, int)>(
       (bloc) =>
@@ -336,7 +355,7 @@ class _MasterStage extends StatelessWidget {
           coordinate: l10n.signalCoordMain,
           routesTo: l10n.signalRouteOutputs,
           rack: l10n.signalNoRack,
-          summary: chainSummary(l10n, master),
+          summary: chainSummary(l10n, master, enabled: masterOn),
           width: null,
         ),
         // Under the card it belongs to, and above the group that answers a
@@ -446,10 +465,20 @@ FxAddress _trackAddress(int track) =>
 /// (#525): the entries are live in the repository and start processing the
 /// moment the carrier does, so a card that says "tap to load one" over a
 /// Reverb is telling the player their rig is clean when it is not.
-String chainSummary(AppLocalizations l10n, List<TrackEffect> chain) =>
-    chain.isEmpty
-    ? l10n.signalTapToLoadRack
-    : [for (final fx in chain) fxBlockName(l10n, fx)].join(' → ');
+///
+/// A chain switched off carries the same risk the other way round, so it says
+/// so: the entries are still there to name, and the panel's own `Chain off`
+/// word goes in front of them. A run that read identically either way would
+/// promise a Drive the player switched out.
+String chainSummary(
+  AppLocalizations l10n,
+  List<TrackEffect> chain, {
+  required bool enabled,
+}) {
+  if (chain.isEmpty) return l10n.signalTapToLoadRack;
+  final run = [for (final fx in chain) fxBlockName(l10n, fx)].join(' → ');
+  return enabled ? run : l10n.signalCardChainOffRun(run);
+}
 
 /// Whether `a` and `b` hold the same set of loop- and track-stage chains —
 /// same tracks, same lane count on each, and the same entries on every one of
@@ -459,23 +488,50 @@ String chainSummary(AppLocalizations l10n, List<TrackEffect> chain) =>
 /// carries live meters, so `state.tracks` changes at the meter rate, and a
 /// `List` compares by identity anyway, so a projected list would never test
 /// equal either. Both faces drive a `buildWhen` off this instead — and what
-/// they draw is the shape plus the chains, since a card's name comes from
-/// `TracksCubit` and everything else on it is a constant until racks land.
-
+/// they draw is the shape plus each chain's SUMMARY LINE — the names in it and
+/// whether it is running — since a card's name comes from `TracksCubit` and
+/// everything else on it is a constant until racks land.
+///
+/// Deliberately not `listEquals` on the chains: a [TrackEffect] compares by
+/// value down to its params, and a knob moving in an open plugin window
+/// rewrites the whole entry ten times a second through the editor poll. The
+/// card draws none of that, so none of it decides a rebuild.
 bool sameChainShape(List<Track> a, List<Track> b) {
   if (a.length != b.length) return false;
   for (var i = 0; i < a.length; i++) {
     if (a[i].channel != b[i].channel) return false;
     if (a[i].lanes.length != b[i].lanes.length) return false;
-    // The runs draw each chain's summary, so a chain gaining or losing an
-    // entry changes what is on screen — while a meter moving does not, which
-    // is why this compares the chains and not the tracks.
-    if (!listEquals(a[i].effects, b[i].effects)) return false;
+    if (a[i].chainEnabled != b[i].chainEnabled) return false;
+    if (!sameChainLine(a[i].effects, b[i].effects)) return false;
     for (var lane = 0; lane < a[i].lanes.length; lane++) {
-      if (!listEquals(a[i].lanes[lane].effects, b[i].lanes[lane].effects)) {
-        return false;
-      }
+      final (x, y) = (a[i].lanes[lane], b[i].lanes[lane]);
+      if (x.chainEnabled != y.chainEnabled) return false;
+      if (!sameChainLine(x.effects, y.effects)) return false;
     }
+  }
+  return true;
+}
+
+/// Whether `a` and `b` read the same in a card's summary — same entries, in
+/// the same order, each naming itself the same way.
+///
+/// A built-in names itself by type; a plugin by the name it resolved to, and
+/// by the reference behind it, so a relink onto a different plugin that
+/// happens to share a display name still redraws.
+bool sameChainLine(List<TrackEffect> a, List<TrackEffect> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    final same = switch ((a[i], b[i])) {
+      (BuiltInEffect(:final type), BuiltInEffect(type: final other)) =>
+        type == other,
+      (
+        PluginEffect(:final name, :final ref),
+        PluginEffect(name: final otherName, ref: final otherRef),
+      ) =>
+        name == otherName && ref == otherRef,
+      _ => false,
+    };
+    if (!same) return false;
   }
   return true;
 }
