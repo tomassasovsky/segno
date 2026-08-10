@@ -19,8 +19,8 @@ export 'package:segno_engine/segno_engine.dart'
         PluginScanProgress,
         TempoSource,
         TrackState,
-        kMaxInputs,
         kMaxLanes,
+        kMaxMonitoredInputs,
         kTrackEffectMax,
         kTrackEffectParams;
 
@@ -82,12 +82,15 @@ export 'src/plugin_catalog.dart'
     show PluginCacheKey, PluginCatalog, PluginCatalogCache, PluginFileStat;
 
 /// The iteration ceiling for the structural output gate's bootstrap reapply
-/// scan, engine-aligned with `kMaxInputs` (`LE_MAX_INPUTS == 8`).
+/// scan.
 ///
 /// The output count is device-dependent and unknown at bootstrap, and the gate
 /// is default-on (only explicitly-disabled outputs are persisted), so no exact
 /// bound is needed for correctness. This is only how far the bootstrap reapply
 /// scans the `output_enabled.$out` keys — matching how the monitor reapply
-/// scans `[0, kMaxInputs)`. A stored off-state for an output beyond the current
-/// device's channel count is ignored by the engine and never corrupts routing.
+/// scans `[0, kMaxMonitoredInputs)` — a scan of the same LENGTH, not the same
+/// ceiling: outputs have nothing to do with what the monitor path covers, and
+/// the two numbers merely coincide. A stored off-state for an output beyond
+/// the current device's channel count is ignored by the engine and never
+/// corrupts routing.
 const int kMaxOutputs = 8;

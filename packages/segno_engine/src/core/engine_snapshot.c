@@ -81,7 +81,7 @@ static int32_t le_max_fx_latency(le_engine* engine) {
       }
     }
   }
-  for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_monitor_input* m = &engine->monitors[c];
     int32_t n = load_i32(&m->a_fx_count);
     if (n > LE_FX_MAX) n = LE_FX_MAX;
@@ -145,7 +145,7 @@ uint64_t le_engine_lane_fx_fingerprint(le_engine* engine, int32_t channel,
 }
 
 uint64_t le_engine_monitor_fx_fingerprint(le_engine* engine, int32_t input) {
-  if (engine == NULL || input < 0 || input >= LE_MAX_INPUTS) return 0;
+  if (engine == NULL || input < 0 || input >= LE_MAX_MONITORED_INPUTS) return 0;
   le_monitor_input* m = &engine->monitors[input];
   return le_fx_chain_fingerprint(&m->a_fx_count, m->a_fx_type, m->a_fx_param,
                                  m->a_fx_enabled, &m->a_fx_chain_enabled);

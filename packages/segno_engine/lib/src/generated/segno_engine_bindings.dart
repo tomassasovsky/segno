@@ -5010,9 +5010,9 @@ const int LE_FX_PARAMS = 4;
 
 const int LE_MAX_TRACKS = 8;
 
-const int LE_MAX_INPUTS = 8;
-
 const int LE_MAX_LANES = 8;
+
+const int LE_MAX_MONITORED_INPUTS = 8;
 
 const double LE_MAX_GAIN = 2.0;
 

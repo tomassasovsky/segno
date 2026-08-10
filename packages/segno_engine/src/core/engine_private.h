@@ -62,9 +62,9 @@
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
 #include "segno_engine_api.h"  /* le_engine typedef, le_config, le_device_info,
-                                * LE_MAX_CHANNELS / LE_MAX_TRACKS / LE_MAX_INPUTS
-                                * / LE_MAX_LANES / LE_FX_MAX / LE_FX_PARAMS /
-                                * LE_VIZ_POINTS */
+                                * LE_MAX_CHANNELS / LE_MAX_TRACKS / LE_MAX_LANES
+                                * / LE_MAX_MONITORED_INPUTS / LE_FX_MAX /
+                                * LE_FX_PARAMS / LE_VIZ_POINTS */
 #include "miniaudio.h"         /* ma_device, ma_context, ma_device_id */
 #include "perf_log_ring.h"     /* le_perf_log_ring (performance event log) */
 
@@ -760,7 +760,7 @@ typedef struct le_perf_capture {
   /* One stereo ring per hardware input, valid iff its bit is set in
    * input_mask (frozen at arm: inputs enabled later are not retroactively
    * captured). */
-  le_audio_ring monitor_ring[LE_MAX_INPUTS];
+  le_audio_ring monitor_ring[LE_MAX_MONITORED_INPUTS];
   uint32_t input_mask;
 
   int armed;
@@ -925,7 +925,7 @@ struct le_engine {
   /* Per-input live monitors: one independent route per hardware input. Each
    * sounds iff its a_enabled is set (a loopback measurement clears them all to
    * break the cable feedback loop; a fresh start restores defaults). */
-  le_monitor_input monitors[LE_MAX_INPUTS];
+  le_monitor_input monitors[LE_MAX_MONITORED_INPUTS];
 
   /* Master insert chain (FX v3 part 1b): runs on the summed track mix between
    * mix_tracks_frame and mix_monitors_frame — see le_fx_bus's doc for the

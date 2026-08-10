@@ -130,18 +130,27 @@ void main() {
         },
       );
 
-      test('the highest scanned input (kMaxInputs-1) is migrated', () async {
-        await settings.saveMonitorInput(
-          kMaxInputs - 1,
-          enabled: true,
-          outputMask: 0x1,
-        );
+      test(
+        'the highest scanned input (kMaxMonitoredInputs-1) is migrated',
+        () async {
+          await settings.saveMonitorInput(
+            kMaxMonitoredInputs - 1,
+            enabled: true,
+            outputMask: 0x1,
+          );
 
-        await runMonitorMigration(settings);
+          await runMonitorMigration(settings);
 
-        expect(await settings.loadMonitorInputMode(kMaxInputs - 1), 'on');
-        expect(await settings.loadMonitorOutput(kMaxInputs - 1), 0x1);
-      });
+          expect(
+            await settings.loadMonitorInputMode(kMaxMonitoredInputs - 1),
+            'on',
+          );
+          expect(
+            await settings.loadMonitorOutput(kMaxMonitoredInputs - 1),
+            0x1,
+          );
+        },
+      );
     });
 
     group('v3 (multi-lane → single chain)', () {

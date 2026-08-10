@@ -6,9 +6,15 @@ import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
 /// `LE_MAX_LANES`. Referenced (not re-typed) so it can never drift from the C.
 const int kMaxLanes = LE_MAX_LANES;
 
-/// The maximum number of monitorable hardware inputs, mirroring the native
-/// `LE_MAX_INPUTS`. Referenced (not re-typed) so it can never drift from the C.
-const int kMaxInputs = LE_MAX_INPUTS;
+/// The number of hardware inputs the live-monitor path covers, mirroring the
+/// native `LE_MAX_MONITORED_INPUTS`. Referenced (not re-typed) so it can never
+/// drift from the C.
+///
+/// Not "the inputs the rig can use": an input past this can still be RECORDED
+/// into a lane, it simply cannot be monitored. The old name for this
+/// (`kMaxInputs`) read as the former, and was misread that way at least once
+/// (#558) — capping what a socket could be NAMED at eight.
+const int kMaxMonitoredInputs = LE_MAX_MONITORED_INPUTS;
 
 /// Phase of the loopback round-trip latency harness.
 ///
