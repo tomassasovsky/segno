@@ -69,6 +69,19 @@ class SignalDetailPanel extends StatelessWidget {
   };
 }
 
+/// A caption and the control it names, as ONE row of the panel.
+///
+/// The pair takes a single slot in the panel's spaced column, so the gap that
+/// used to sit between a caption and its control is gone. It is not missing:
+/// the `?` gave the caption a 48px tap box around a 17px line, and the ~15px
+/// of slack under the words now IS that gap. Two gaps in a row read as a hole,
+/// and the panel had grown 27px per caption for spacing it already had.
+Widget _captioned(Widget caption, Widget control) => Column(
+  crossAxisAlignment: CrossAxisAlignment.stretch,
+  mainAxisSize: MainAxisSize.min,
+  children: [caption, control],
+);
+
 /// The lane at [lane] on [track], or null when it is gone.
 Lane? _laneOf(LooperState state, int track, int lane) {
   for (final t in state.tracks) {
@@ -415,20 +428,22 @@ class _PanelBodyState extends State<_PanelBody> {
     // and the keyed subtree below.
     final level = <Widget>[
       if (editing == null && gain != null && onLevel != null) ...[
-        ConsoleCaption(
-          l10n.signalPanelLevel,
-          // Per stage, for the same reason `in the mix` is: an input's fader
-          // is the monitor's own volume, and the monitor is never recorded.
-          explain: address.stage == FxStage.input
-              ? l10n.signalPanelLevelInputExplain
-              : l10n.signalPanelLevelExplain,
-          explainLabel: l10n.a11yExplainControl(l10n.signalPanelLevel),
-        ),
-        _LevelRow(
-          key: ValueKey(address),
-          value: gain,
-          live: !_dragging,
-          onChanged: onLevel,
+        _captioned(
+          ConsoleCaption(
+            l10n.signalPanelLevel,
+            // Per stage, for the same reason `in the mix` is: an input's fader
+            // is the monitor's own volume, and the monitor is never recorded.
+            explain: address.stage == FxStage.input
+                ? l10n.signalPanelLevelInputExplain
+                : l10n.signalPanelLevelExplain,
+            explainLabel: l10n.a11yExplainControl(l10n.signalPanelLevel),
+          ),
+          _LevelRow(
+            key: ValueKey(address),
+            value: gain,
+            live: !_dragging,
+            onChanged: onLevel,
+          ),
         ),
       ],
     ];
@@ -443,59 +458,61 @@ class _PanelBodyState extends State<_PanelBody> {
           onClose: tray.clearSignalEffect,
         )
       else ...[
-        if (inMix != null && onHeard != null) ...[
-          ConsoleCaption(
-            l10n.signalPanelInMix,
-            // Per stage, because the generic sentence is about a signal that
-            // records and plays. An input's monitor path does neither, so
-            // "muted still records" is not merely imprecise there — it
-            // describes a different control.
-            explain: address.stage == FxStage.input
-                ? l10n.signalPanelInMixInputExplain
-                : l10n.signalPanelInMixExplain,
-            explainLabel: l10n.a11yExplainControl(l10n.signalPanelInMix),
+        if (inMix != null && onHeard != null)
+          _captioned(
+            ConsoleCaption(
+              l10n.signalPanelInMix,
+              // Per stage, because the generic sentence is about a signal that
+              // records and plays. An input's monitor path does neither, so
+              // "muted still records" is not merely imprecise there — it
+              // describes a different control.
+              explain: address.stage == FxStage.input
+                  ? l10n.signalPanelInMixInputExplain
+                  : l10n.signalPanelInMixExplain,
+              explainLabel: l10n.a11yExplainControl(l10n.signalPanelInMix),
+            ),
+            ConsoleSegmented<bool>(
+              key: const Key('signal_panel_in_mix'),
+              stretch: true,
+              selected: inMix,
+              onChanged: onHeard,
+              segments: [
+                ConsoleSegment(value: false, label: l10n.signalMixMuted),
+                ConsoleSegment(value: true, label: l10n.signalMixHeard),
+              ],
+            ),
           ),
-          ConsoleSegmented<bool>(
-            key: const Key('signal_panel_in_mix'),
+      ],
+      if (mode != null && onMonitorMode != null)
+        _captioned(
+          ConsoleCaption(
+            l10n.signalPanelHearWhilePlaying,
+            explain: l10n.signalPanelHearWhilePlayingExplain,
+            explainLabel: l10n.a11yExplainControl(
+              l10n.signalPanelHearWhilePlaying,
+            ),
+          ),
+          ConsoleSegmented<MonitorMode>(
+            key: const Key('signal_panel_monitor'),
             stretch: true,
-            selected: inMix,
-            onChanged: onHeard,
+            selected: mode,
+            onChanged: onMonitorMode,
             segments: [
-              ConsoleSegment(value: false, label: l10n.signalMixMuted),
-              ConsoleSegment(value: true, label: l10n.signalMixHeard),
+              ConsoleSegment(
+                value: MonitorMode.off,
+                label: l10n.signalMonitorSegOff,
+              ),
+              ConsoleSegment(
+                value: MonitorMode.auto,
+                label: l10n.signalMonitorSegAuto,
+              ),
+              ConsoleSegment(
+                value: MonitorMode.on,
+                label: l10n.signalMonitorSegOn,
+              ),
             ],
           ),
-        ],
-      ],
-      if (mode != null && onMonitorMode != null) ...[
-        ConsoleCaption(
-          l10n.signalPanelHearWhilePlaying,
-          explain: l10n.signalPanelHearWhilePlayingExplain,
-          explainLabel: l10n.a11yExplainControl(
-            l10n.signalPanelHearWhilePlaying,
-          ),
         ),
-        ConsoleSegmented<MonitorMode>(
-          key: const Key('signal_panel_monitor'),
-          stretch: true,
-          selected: mode,
-          onChanged: onMonitorMode,
-          segments: [
-            ConsoleSegment(
-              value: MonitorMode.off,
-              label: l10n.signalMonitorSegOff,
-            ),
-            ConsoleSegment(
-              value: MonitorMode.auto,
-              label: l10n.signalMonitorSegAuto,
-            ),
-            ConsoleSegment(
-              value: MonitorMode.on,
-              label: l10n.signalMonitorSegOn,
-            ),
-          ],
-        ),
-      ],
     ];
 
     return Container(
