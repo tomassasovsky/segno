@@ -11,7 +11,11 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 /// that hardware unless the app draws its own keys.
 ///
 /// It watches focus rather than wrapping fields, so no call site changes and
-/// every future field is covered for free.
+/// every future field is covered for free. Focus arriving at a field opens it;
+/// focus arriving anywhere that takes no text closes it — including the field
+/// being destroyed outright, which nothing else reports. On a console whose
+/// whole UI is the touch screen, a keyboard that stays up covers the thing the
+/// player is reaching for.
 ///
 /// The keyboard's height is reported back through [MediaQuery]'s
 /// `viewInsets.bottom` — the same channel a real soft keyboard uses. Every
@@ -54,19 +58,14 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
 
   void _onFocusChanged() {
     final next = _focusedEditable();
-    // STICKY. Only a different field replaces the current one; focus merely
-    // leaving does not clear it.
-    //
-    // Pressing a key moves focus off the field for an instant — the keys are
-    // ordinary buttons, and neither TextFieldTapRegion nor a non-focusable
-    // Focus wrapper reliably prevents it. Clearing on focus loss therefore
-    // destroys the target between the press and the callback, and every
-    // keystroke lands on nothing.
-    //
-    // It is also the better behaviour here: a keyboard that vanishes halfway
-    // through a Wi-Fi password because a stray tap moved focus is worse than
-    // one that waits to be dismissed. [_done] is the way out.
-    if (next == null) return;
+    // Focus went somewhere that takes no text: a button, a scope, nothing at
+    // all. Also the only signal there is when a focused field is DESTROYED
+    // outright — a disposed node is detached before it can notify, so nothing
+    // else will ever say so.
+    if (next == null) {
+      if (_field != null) _dismissAfterFrame();
+      return;
+    }
     // Compared by CONTROLLER, not by widget instance: the EditableText widget
     // is rebuilt constantly, so comparing widgets would rebuild every frame.
     // The controller is what identifies where a keystroke lands.
@@ -77,6 +76,32 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
     setState(() => _field = next);
   }
 
+  /// Closes the keyboard unless something takes text again once the frame has
+  /// settled.
+  ///
+  /// After the frame, because a HAND-OFF dips through nothing on its way: a
+  /// dialog popping restores focus to what was under it, a field swap detaches
+  /// one node before attaching the next, and both report "nothing takes text"
+  /// for an instant. Closing on that first answer would take the keyboard away
+  /// mid-hand-off and bring it straight back — a flicker under the player's
+  /// hands.
+  ///
+  /// No test here can produce that dip (the framework coalesces focus changes
+  /// inside a frame, so an immediate dismissal passes every check in this
+  /// suite), which is why the delay is argued rather than pinned.
+  void _dismissAfterFrame() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_focusedEditable() != null) return;
+      _dismiss();
+    });
+  }
+
+  /// Drops the field the keyboard was typing into, closing it.
+  void _dismiss() {
+    if (_field != null) setState(() => _field = null);
+  }
+
   /// The [EditableText] the primary focus sits inside, or `null` when focus is
   /// somewhere that does not take text.
   ///
@@ -85,9 +110,10 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   /// descendant of the field, never the field and never above it (verified
   /// against the framework rather than assumed).
   ///
-  /// Upwards-only also makes dismissal correct for free: once focus returns to
-  /// a scope, nothing above it is an `EditableText`, so the keyboard closes
-  /// instead of latching onto some unrelated field elsewhere in the tree.
+  /// Upwards-only also keeps the answer honest: once focus returns to a scope,
+  /// nothing above it is an `EditableText`, so this reports "no field" rather
+  /// than latching onto some unrelated one elsewhere in the tree — and "no
+  /// field" is what asks the keyboard to close.
   EditableText? _focusedEditable() {
     final context = FocusManager.instance.primaryFocus?.context;
     if (context is! Element || !context.mounted) return null;
@@ -150,27 +176,33 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   }
 
   void _done() {
-    // The explicit way out, since the field is sticky. Unfocus first so the
-    // field's own submit/validation paths (which hang off losing focus) run,
-    // then drop the reference that keeps the keyboard on screen.
+    // Unfocus first so the field's own submit/validation paths (which hang off
+    // losing focus) run, then drop the reference — rather than waiting for the
+    // unfocus to come back around, which would close the keyboard a frame
+    // later and for a reason the player did not give.
     FocusManager.instance.primaryFocus?.unfocus();
-    setState(() => _field = null);
+    _dismiss();
   }
 
   @override
   Widget build(BuildContext context) {
     final field = _field;
     final open = widget.enabled && field != null && !_readOnly;
-    if (!open) return widget.child;
 
-    final layout = layoutForInputType(field.keyboardType);
+    final layout = layoutForInputType(field?.keyboardType);
     // Five rows of 54px keys plus 3px padding either side, plus the panel's
     // own 6px inset. Sized from the keys rather than guessed, so a key-height
     // change cannot silently overflow the panel.
     final rows = layout == OnScreenKeyboardLayout.numeric ? 5 : 4;
-    final height = rows * (OnScreenKeyboard.keyHeight + 6) + 12;
+    final height = open ? rows * (OnScreenKeyboard.keyHeight + 6) + 12 : 0.0;
     final media = MediaQuery.of(context);
 
+    // The SAME shape open or closed. Returning the child bare when closed
+    // would move it between slots on every open, and with no GlobalKey below
+    // this host that re-inflates the whole subtree — disposing the focused
+    // field's node, which now reads as "nothing takes text" and closes the
+    // keyboard on the first keystroke. The app survives it today only because
+    // the Navigator carries a key; nothing below here should have to.
     return Column(
       children: [
         Expanded(
@@ -192,33 +224,34 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
         // TextFieldTapRegion additionally stops the tap reading as "outside
         // the field", which is what would otherwise dismiss the editing
         // session on the first key.
-        TextFieldTapRegion(
-          child: Focus(
-            canRequestFocus: false,
-            descendantsAreFocusable: false,
-            skipTraversal: true,
-            child: Material(
-              key: const Key('onScreenKeyboard'),
-              elevation: 8,
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: SafeArea(
-                top: false,
-                child: SizedBox(
-                  height: height,
-                  child: Padding(
-                    padding: const EdgeInsets.all(6),
-                    child: OnScreenKeyboard(
-                      layout: layout,
-                      onKey: _insert,
-                      onBackspace: _backspace,
-                      onDone: _done,
+        if (open)
+          TextFieldTapRegion(
+            child: Focus(
+              canRequestFocus: false,
+              descendantsAreFocusable: false,
+              skipTraversal: true,
+              child: Material(
+                key: const Key('onScreenKeyboard'),
+                elevation: 8,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: SafeArea(
+                  top: false,
+                  child: SizedBox(
+                    height: height,
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: OnScreenKeyboard(
+                        layout: layout,
+                        onKey: _insert,
+                        onBackspace: _backspace,
+                        onDone: _done,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
