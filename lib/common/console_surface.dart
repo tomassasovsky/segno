@@ -697,6 +697,9 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
   /// of those moved the caption and left the answer hanging off nothing.
   Rect? _anchor;
 
+  /// Whether a re-measuring chain is already running. See [_watchAnchor].
+  bool _watching = false;
+
   @override
   void didUpdateWidget(ConsoleCaption oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -706,9 +709,10 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
     // from the outside is a `?` that ignores you. Rare, but the null-explain
     // caption is a supported shape of this widget, not a hypothetical.
     //
-    // The FLAG only, not [_close]: the portal went with the explanation, and
-    // hiding a controller whose `OverlayPortal` has left the tree asserts.
-    // Nothing to hide, everything to forget.
+    // The FLAG only, not [_close]: this runs inside the build that is about to
+    // drop the portal, and `hide()` asserts when it is called during one. The
+    // rebuild takes the overlay away by itself; all that is left is to stop
+    // believing it is up.
     if (widget.explain == null) _open = false;
   }
 
@@ -850,18 +854,35 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
   /// that kept running would measure, find nothing changed and be invisible
   /// from outside the widget.
   ///
-  /// One chain, structurally: it is armed only where an answer opens, and
-  /// while one is open the barrier is what a touch lands on — including a
-  /// touch on this very caption — so nothing can close and re-open inside the
-  /// frame that would be needed to arm a second. A flag guarding that was a
-  /// guard against a state the widget's own inputs cannot reach.
+  /// [_watching] holds it to one chain. The barrier does NOT: `show()` only
+  /// marks this state dirty, so the barrier is not in the render tree until
+  /// the next frame is built, and every touch arriving in that gap lands on
+  /// the `?` itself. Taps inside one frame interval — a bouncing panel, a
+  /// double-tap — arm a chain each, and each is a `findRenderObject` plus a
+  /// `localToGlobal` on every frame until the answer closes. Bounded, since
+  /// they all die at the first post-frame after `_open` goes false, and still
+  /// work nobody asked for on an appliance.
+  ///
+  /// Not pinned by a test, and it cannot be: chain count is invisible from
+  /// outside the widget — two chains measure the same rect and produce the
+  /// same one rebuild as one. It stays because the state is reproducible with
+  /// an instrumented chain id, not because it might happen.
   void _watchAnchor() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_open) return;
-      final now = _measure();
-      if (now != null && now != _anchor) setState(() => _anchor = now);
-      _watchAnchor();
-    });
+    if (_watching) return;
+    _watching = true;
+    void tick() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_open) {
+          _watching = false;
+          return;
+        }
+        final now = _measure();
+        if (now != null && now != _anchor) setState(() => _anchor = now);
+        tick();
+      });
+    }
+
+    tick();
   }
 
   /// The caption's rect in the overlay's own coordinates, or null if either
