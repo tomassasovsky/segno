@@ -15,7 +15,7 @@ import 'package:wifi_repository/wifi_repository.dart';
 /// pull-tab [_TrayHandle] pinned at the top edge at all times — tap or drag
 /// it down to reveal a near-fullscreen translucent sheet. The open sheet is a
 /// [TrayPanel]: a persistent navigation rail down the left, and the
-/// destination it selects (home tiles + brightness, Tuner, WiFi, Bluetooth)
+/// destination it selects (the eight domains, then brightness)
 /// filling the rest. Tap the scrim or drag the handle back up to dismiss.
 ///
 /// Hand-rolled (not the `anydrawer` package's route-based drawer): the
@@ -204,8 +204,9 @@ class _SettingsTrayState extends State<SettingsTray> {
             // events can fire back-to-back before the next rebuild, and
             // accumulating from a build-time snapshot would drop all but
             // the last delta in that batch instead of summing them.
-            onDragUpdate: (dy) =>
-                cubit.dragTo(cubit.state.dragProgress + dy / trayHeight),
+            onDragUpdate: (dy) => cubit.dragTo(
+              cubit.state.dragProgress + dy / trayHeight,
+            ),
             onDragEnd: () {
               cubit.settleFromDrag();
               setState(() => _dragging = false);

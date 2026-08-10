@@ -429,6 +429,54 @@ void main() {
       expect(find.byKey(const Key('settingsTray_brightness')), findsOneWidget);
     });
 
+    testWidgets('brightness sits at the foot, not under the last domain', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      final rail = tester.getRect(find.byType(TrayNavigationRail));
+      final bright = tester.getRect(
+        find.byKey(const Key('settingsTrayRail_brightness')),
+      );
+      final system = tester.getRect(
+        find.byKey(const Key('settingsTrayRail_system')),
+      );
+
+      // The pen puts a fill spacer between the domains and Bright. Without
+      // it the entry lands directly under System with the whole lower rail
+      // blank — which a golden will happily record as correct.
+      expect(bright.top, greaterThan(system.bottom + 100));
+      expect(
+        rail.bottom - bright.bottom,
+        lessThan(kTrayHandleHeight + 24),
+      );
+    });
+
+    testWidgets('the tuner opens in the tray and its back goes home', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('settingsTrayRail_tuner')));
+      await tester.pumpAndSettle();
+
+      // In the tray, not a dialog — the rail is the way between faces, and
+      // the deleted home-face group was the only thing asserting this.
+      expect(cubit.state.destination, SettingsTrayDestination.tuner);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(cubit.state.dragProgress, 1);
+
+      await tester.tap(find.byKey(const Key('tuner_back')));
+      await tester.pumpAndSettle();
+
+      expect(cubit.state.destination, SettingsTrayDestination.signal);
+      expect(cubit.state.dragProgress, 1);
+    });
+
     testWidgets('a tap that misses an item does not dismiss the tray', (
       tester,
     ) async {
@@ -445,16 +493,25 @@ void main() {
       // last 21px, so a tap there hits the handle and closes the tray for a
       // completely different (correct) reason.
       final rail = tester.getRect(find.byType(TrayNavigationRail));
-      // The LAST rail item, whichever destination that is — a hard-coded
-      // name here silently starts testing the second-to-last one the next
-      // time a domain is added, and the tap lands on a real item instead of
-      // the background this test is about.
-      final lastItem = tester.getRect(
+      // The gap between the last DOMAIN and the pinned brightness entry —
+      // which is where the rail's bare background now is. Taking the last
+      // item instead would land in the drag handle's 21px, closing the tray
+      // for a different and correct reason.
+      //
+      // Derived from the two entries rather than hard-coded, so adding a
+      // domain moves the tap with them instead of silently landing on one.
+      final lastDomain = tester.getRect(
         find.byKey(
-          Key('settingsTrayRail_${SettingsTrayDestination.values.last.name}'),
+          Key('settingsTrayRail_${TrayNavigationRail.domains.last.name}'),
         ),
       );
-      final tapPoint = Offset(rail.center.dx, lastItem.bottom + 40);
+      final bright = tester.getRect(
+        find.byKey(const Key('settingsTrayRail_brightness')),
+      );
+      final tapPoint = Offset(
+        rail.center.dx,
+        (lastDomain.bottom + bright.top) / 2,
+      );
       // Assert the point really is rail background before tapping, so a
       // layout change fails here with an obvious reason rather than through
       // the dragProgress assertion below.

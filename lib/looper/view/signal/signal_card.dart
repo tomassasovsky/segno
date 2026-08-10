@@ -97,7 +97,9 @@ class SignalCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: surface.cardHigh,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: selected ? surface.accent : surface.line),
+        border: Border.all(
+          color: selected ? surface.accent : surface.line,
+        ),
       ),
       padding: const EdgeInsets.all(padding - 1),
       child: Column(
@@ -312,7 +314,9 @@ class SignalScopeChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: printed ? surface.recDeep : surface.control,
         borderRadius: BorderRadius.circular(height),
-        border: Border.all(color: printed ? surface.rec : surface.borderStrong),
+        border: Border.all(
+          color: printed ? surface.rec : surface.borderStrong,
+        ),
       ),
       child: Center(
         widthFactor: 1,

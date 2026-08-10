@@ -174,7 +174,11 @@ class SignalFxEditor extends StatelessWidget {
     if (at < 0) return;
     scope.relinkPlugin(
       at,
-      PluginRef(format: picked.format, id: picked.id, version: picked.version),
+      PluginRef(
+        format: picked.format,
+        id: picked.id,
+        version: picked.version,
+      ),
     );
   }
 

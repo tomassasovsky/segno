@@ -1445,7 +1445,7 @@
     },
     "trayBrightLabel": "Bright",
     "@trayBrightLabel": {
-        "description": "Navigation rail entry for the settings tray's home face — the quick-access tiles and brightness slider."
+        "description": "Navigation rail entry for screen brightness, pinned below the eight domains as the mockups draw it."
     },
     "a11yTrayRail": "Tray destinations",
     "@a11yTrayRail": {

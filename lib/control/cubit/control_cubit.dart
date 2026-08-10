@@ -730,7 +730,9 @@ class ControlCubit extends Cubit<ControlState> {
     } else {
       // Joining is the explicit un-exclude.
       if (state.excluded.contains(channel)) {
-        emit(state.copyWith(excluded: {...state.excluded}..remove(channel)));
+        emit(
+          state.copyWith(excluded: {...state.excluded}..remove(channel)),
+        );
       }
       _looper
         ..setMute(muted: false, channel: channel)
@@ -827,7 +829,9 @@ class ControlCubit extends Cubit<ControlState> {
         ..setMute(muted: false, channel: track.channel);
       final lanes = track.lanes.isEmpty ? 1 : track.lanes.length;
       for (var lane = 0; lane < lanes; lane++) {
-        unawaited(_settings.saveLaneMute(track.channel, lane, muted: false));
+        unawaited(
+          _settings.saveLaneMute(track.channel, lane, muted: false),
+        );
       }
     }
     emit(

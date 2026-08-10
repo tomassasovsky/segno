@@ -88,8 +88,9 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// Closes the tray (tap-on-handle, tap-on-scrim, or programmatic). Named
   /// `closeTray` rather than `close` — the latter is `Cubit.close()`, which
   /// disposes the bloc's stream; overriding it here would be a hard
-  /// invalid-override error, not a UI action. Always returns to the home
-  /// face so the next open isn't stuck in a config domain — but leaves every
+  /// invalid-override error, not a UI action. Always returns to the landing
+  /// destination so the next open isn't stuck in a config domain — but
+  /// leaves every
   /// domain's own tab alone, so returning to a domain lands where it was
   /// left.
   void closeTray() => emit(
@@ -109,28 +110,10 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
     }
   }
 
-  /// Expands the Network domain at its WiFi tab (tray stays open).
-  void openWifi() => _openNetwork(NetworkTab.wifi);
-
-  /// Expands the Network domain at its Bluetooth tab (tray stays open).
-  void openBluetooth() => _openNetwork(NetworkTab.bluetooth);
-
-  /// The one way in from a shortcut: the tray home tiles still land on a
-  /// *specific* radio, which after the merge means opening the domain **at** a
-  /// tab rather than at a destination of its own.
-  void _openNetwork(NetworkTab tab) => emit(
-    state.copyWith(
-      dragProgress: 1,
-      destination: SettingsTrayDestination.network,
-      networkTab: tab,
-    ),
-  );
-
   /// Opens the tray at the Signal domain (the toolbar's Signal button, `G`).
   ///
   /// Signal used to be a pushed full-screen page of its own; it is a rail
   /// destination now, so the ways in point at the tray rather than at a
-  /// route. Same shape as [_openNetwork], and for the same reason: a way in
   /// from outside the tray has to say both "open" and "at what".
   void openSignal() => emit(
     state.copyWith(
@@ -209,8 +192,11 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// Moves the System domain's tab. Same rule as [showNetworkTab].
   void showSystemTab(SystemTab tab) => emit(state.copyWith(systemTab: tab));
 
-  /// Returns from an expanded panel to the tile grid.
-  void showHome() =>
+  /// Returns to the landing destination.
+  ///
+  /// Named for what it does, not for the face it used to reach: the `home`
+  /// tile grid is gone and Signal is where the rail lands.
+  void showLanding() =>
       emit(state.copyWith(destination: SettingsTrayDestination.signal));
 
   /// Selects [destination] without changing whether the tray is open — the

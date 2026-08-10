@@ -154,28 +154,26 @@ void main() {
     );
 
     blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'openWifi expands in-tray and closeTray resets to home',
+      'a domain opened at a tab survives closeTray, which resets only where',
       build: buildCubit,
       act: (cubit) => cubit
-        ..openWifi()
-        ..showHome()
-        ..openBluetooth()
+        ..open()
+        ..showDestination(SettingsTrayDestination.network)
+        ..showNetworkTab(NetworkTab.bluetooth)
         ..closeTray(),
       expect: () => [
+        const SettingsTrayState(dragProgress: 1),
         const SettingsTrayState(
           dragProgress: 1,
           destination: SettingsTrayDestination.network,
-        ),
-        const SettingsTrayState(
-          dragProgress: 1,
         ),
         const SettingsTrayState(
           dragProgress: 1,
           destination: SettingsTrayDestination.network,
           networkTab: NetworkTab.bluetooth,
         ),
-        // Closing resets the destination and NOT the tab: returning to
-        // Network lands where it was left.
+        // Closing puts the destination back to the landing face and leaves
+        // the tab where it was: reopening Network lands on Bluetooth.
         const SettingsTrayState(networkTab: NetworkTab.bluetooth),
       ],
     );
@@ -206,25 +204,6 @@ void main() {
       act: (cubit) => cubit.showDestination(SettingsTrayDestination.network),
       expect: () => [
         const SettingsTrayState(
-          destination: SettingsTrayDestination.network,
-        ),
-      ],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'the tray home shortcuts open the domain AT a tab',
-      build: buildCubit,
-      act: (cubit) => cubit
-        ..openBluetooth()
-        ..openWifi(),
-      expect: () => [
-        const SettingsTrayState(
-          dragProgress: 1,
-          destination: SettingsTrayDestination.network,
-          networkTab: NetworkTab.bluetooth,
-        ),
-        const SettingsTrayState(
-          dragProgress: 1,
           destination: SettingsTrayDestination.network,
         ),
       ],

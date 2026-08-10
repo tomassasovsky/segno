@@ -19,7 +19,10 @@ class MidiSetupState extends Equatable {
   final int activityTick;
 
   /// Returns a copy with the given fields replaced.
-  MidiSetupState copyWith({MidiConnection? connection, int? activityTick}) {
+  MidiSetupState copyWith({
+    MidiConnection? connection,
+    int? activityTick,
+  }) {
     return MidiSetupState(
       connection: connection ?? this.connection,
       activityTick: activityTick ?? this.activityTick,

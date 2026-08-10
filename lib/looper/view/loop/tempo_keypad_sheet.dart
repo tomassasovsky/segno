@@ -112,7 +112,9 @@ class _TempoKeypadSheetState extends State<_TempoKeypadSheet> {
     final value = double.tryParse(_typed?.trim() ?? '');
     if (value != null && value > 0) {
       unawaited(
-        widget.tempo.setTempo(value.clamp(kTempoRange.$1, kTempoRange.$2)),
+        widget.tempo.setTempo(
+          value.clamp(kTempoRange.$1, kTempoRange.$2),
+        ),
       );
     }
     Navigator.of(context).pop();

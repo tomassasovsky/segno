@@ -101,7 +101,10 @@ class SignalRecentPlugins {
   }
 
   /// Moves [id] to the front and writes the list back.
-  static Future<void> remember(SettingsRepository settings, String id) async {
+  static Future<void> remember(
+    SettingsRepository settings,
+    String id,
+  ) async {
     // A newline would split one id into two phantoms on the way back out, and
     // an empty id is what a failed scan carries — neither is a plugin.
     if (id.isEmpty || id.contains('\n')) return;

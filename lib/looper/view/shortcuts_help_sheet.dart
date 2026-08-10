@@ -131,7 +131,10 @@ class _ShortcutsHelpDialog extends StatelessWidget {
             children: [
               Container(
                 constraints: const BoxConstraints(minWidth: 46),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(6),

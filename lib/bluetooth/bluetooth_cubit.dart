@@ -37,7 +37,13 @@ class BluetoothCubit extends Cubit<BluetoothState> {
     try {
       final devices = await _repository.scan();
       final status = await _repository.status();
-      emit(state.copyWith(devices: devices, status: status, scanning: false));
+      emit(
+        state.copyWith(
+          devices: devices,
+          status: status,
+          scanning: false,
+        ),
+      );
     } on Object catch (e) {
       emit(state.copyWith(scanning: false, errorMessage: '$e'));
     }
@@ -92,7 +98,9 @@ class BluetoothCubit extends Cubit<BluetoothState> {
   /// stays usable behind the banner.
   Future<void> pair(String address) async {
     if (!state.supported) return;
-    emit(state.copyWith(pairingAddress: address, clearError: true));
+    emit(
+      state.copyWith(pairingAddress: address, clearError: true),
+    );
     try {
       await _repository.pair(address);
       await _refreshDevices(clearPairing: true);
@@ -118,16 +126,22 @@ class BluetoothCubit extends Cubit<BluetoothState> {
   }
 
   /// Connects an already-paired [address].
-  Future<void> connect(String address) =>
-      _deviceAction(address, () => _repository.connect(address));
+  Future<void> connect(String address) => _deviceAction(
+    address,
+    () => _repository.connect(address),
+  );
 
   /// Drops the link to [address], leaving the pairing in place.
-  Future<void> disconnect(String address) =>
-      _deviceAction(address, () => _repository.disconnect(address));
+  Future<void> disconnect(String address) => _deviceAction(
+    address,
+    () => _repository.disconnect(address),
+  );
 
   /// Removes the pairing for [address] entirely.
-  Future<void> forget(String address) =>
-      _deviceAction(address, () => _repository.forget(address));
+  Future<void> forget(String address) => _deviceAction(
+    address,
+    () => _repository.forget(address),
+  );
 
   Future<void> _deviceAction(
     String address,
@@ -140,7 +154,11 @@ class BluetoothCubit extends Cubit<BluetoothState> {
       await _refreshDevices();
     } on Object catch (e) {
       emit(
-        state.copyWith(busy: false, errorMessage: '$e', failedAddress: address),
+        state.copyWith(
+          busy: false,
+          errorMessage: '$e',
+          failedAddress: address,
+        ),
       );
     }
   }

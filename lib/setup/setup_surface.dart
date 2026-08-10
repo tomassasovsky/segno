@@ -724,7 +724,11 @@ class SetupTrackLengthPresetRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              Icon(Icons.expand_more, size: 18, color: surface.textTertiary),
+              Icon(
+                Icons.expand_more,
+                size: 18,
+                color: surface.textTertiary,
+              ),
             ],
           ),
         ),

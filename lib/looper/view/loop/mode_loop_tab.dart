@@ -13,7 +13,11 @@ import 'package:segno/theme/theme.dart';
 
 /// Exactly what the Mode face draws. See `TempoLoopTab` for why this is a
 /// record fed to `context.select` rather than the whole `LooperState`.
-typedef _ModeValues = ({LooperMode mode, bool allOneShot, bool hasTracks});
+typedef _ModeValues = ({
+  LooperMode mode,
+  bool allOneShot,
+  bool hasTracks,
+});
 
 _ModeValues _modeValues(LooperState state) => (
   mode: state.transport.looperMode,

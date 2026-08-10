@@ -36,7 +36,10 @@ class TrayNavigationRail extends StatelessWidget {
   /// The eight domain entries, in the order the mockups stack them.
   /// [SettingsTrayDestination.brightness] is deliberately absent — it is
   /// pinned below these rather than being one of them.
-  static final List<SettingsTrayDestination> _domains = [
+  ///
+  /// Public so a test can aim at the gap between the two groups without
+  /// naming a destination that a later part will move.
+  static final List<SettingsTrayDestination> domains = [
     for (final d in SettingsTrayDestination.values)
       if (d != SettingsTrayDestination.brightness) d,
   ];
@@ -152,14 +155,21 @@ class TrayNavigationRail extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     spacing: _itemGap,
                     children: [
-                      Flexible(
+                      // Expanded, not Flexible: under a loose fit the scroll
+                      // view takes its CONTENT height, so with eight domains
+                      // shorter than the rail — which is every real height —
+                      // the column packs to the top and brightness sits under
+                      // System with the slack below it. It pinned only when
+                      // the list overflowed, which is the one case the pen is
+                      // not describing.
+                      Expanded(
                         child: SingleChildScrollView(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             spacing: _itemGap,
                             children: [
-                              for (final target in _domains)
+                              for (final target in domains)
                                 // Stretch so every pill spans the rail: pills
                                 // sized to their own text read as chips, not
                                 // as rows of one list.

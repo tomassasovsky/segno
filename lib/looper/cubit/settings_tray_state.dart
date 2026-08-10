@@ -1,7 +1,7 @@
 part of 'settings_tray_cubit.dart';
 
-/// Which face the open tray is showing — home tiles, or one of the in-tray
-/// config panels (Control-Center expand, not a full-screen route).
+/// Which face the open tray is showing — one of the in-tray config panels
+/// (Control-Center expand, not a full-screen route), or brightness.
 ///
 /// Every value here is a destination the tray's own navigation rail can
 /// select. Settings still pushes a full-screen route and so deliberately has
@@ -25,7 +25,8 @@ enum SettingsTrayDestination {
   /// card on every tab is one chain.
   ///
   /// This is the destination that closed the rail's last exception. Signal was
-  /// a tile on the home face pushing a full-screen route, which #533 replaced
+  /// a tile on the old home face pushing a full-screen route, which #533
+  /// replaced
   /// with the face beside the rail.
   signal,
 
@@ -139,7 +140,7 @@ class SettingsTrayState extends Equatable {
   /// applied through BrightnessClient when DDC/CI is available.
   final double brightness;
 
-  /// In-tray face: home tiles or one of the rail's domain panels.
+  /// In-tray face: one of the rail's domain panels, or brightness.
   final SettingsTrayDestination destination;
 
   /// Which FX stage the Signal domain shows.

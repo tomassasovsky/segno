@@ -140,7 +140,9 @@ class TrayPanel extends StatelessWidget {
                               SettingsTrayDestination.audio =>
                                 const _TrayFaceFrame(child: AudioTrayPanel()),
                               SettingsTrayDestination.tuner => _TrayFaceFrame(
-                                child: TunerTrayPanel(onBack: cubit.showHome),
+                                child: TunerTrayPanel(
+                                  onBack: cubit.showLanding,
+                                ),
                               ),
                               SettingsTrayDestination.network =>
                                 const _TrayFaceFrame(child: NetworkTrayPanel()),

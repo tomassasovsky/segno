@@ -713,7 +713,9 @@ class _ChainAction extends StatelessWidget {
             decoration: BoxDecoration(
               color: active ? surface.accentSurface : null,
               borderRadius: BorderRadius.circular(119),
-              border: Border.all(color: active ? surface.accent : surface.line),
+              border: Border.all(
+                color: active ? surface.accent : surface.line,
+              ),
             ),
             child: Center(
               widthFactor: 1,

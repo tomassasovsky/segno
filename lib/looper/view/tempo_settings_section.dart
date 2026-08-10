@@ -168,7 +168,9 @@ class _BpmControlState extends State<_BpmControl> {
             key: const Key('tempoSettings_bpm_field'),
             controller: _controller,
             focusNode: _focus,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: const TextInputType.numberWithOptions(
+              decimal: true,
+            ),
             decoration: InputDecoration(
               labelText: l10n.bpmFieldLabel,
               helperText: widget.bpm > 0

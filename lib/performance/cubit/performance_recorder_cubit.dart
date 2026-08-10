@@ -190,7 +190,10 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       PerformanceRecordDone() => PerformanceRecordDone(newPath),
       PerformanceRecordPartial() => PerformanceRecordPartial(newPath),
       PerformanceRecordStoppedEarly(:final reason) =>
-        PerformanceRecordStoppedEarly(newPath, reason),
+        PerformanceRecordStoppedEarly(
+          newPath,
+          reason,
+        ),
     };
     _emit(PerformanceRecorderCompleted(renamed, tracks: current.tracks));
   }
