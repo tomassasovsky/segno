@@ -203,6 +203,17 @@ void main() {
             );
             return EngineResult.ok;
           }),
+      // The panel offers a re-inherit only when the routed input has an
+      // audible chain to copy; the fake says it does not.
+      () => when(
+        () => repository.laneCanInheritFromInput(any(), any()),
+      ).thenReturn(false),
+      () => when(
+        () => repository.setMonitorChainEnabled(
+          input: any(named: 'input'),
+          enabled: any(named: 'enabled'),
+        ),
+      ).thenReturn(EngineResult.ok),
       () => when(() => repository.monitorEffects(any())).thenAnswer(
         (call) => monitorChains[call.positionalArguments.first] ?? const [],
       ),
@@ -2246,6 +2257,206 @@ void main() {
       );
       expect(second.left - first.right, 10);
       expect(add.left - second.right, 10);
+    });
+  });
+
+  group('the chain can be switched, and re-inherited', () {
+    /// Track 0 mid-take, with lane 0 drifted from its input or not.
+    LooperState drifted({required bool overdubbing, bool diverges = true}) =>
+        LooperState(
+          tracks: [
+            Track(
+              volume: 0.5,
+              state: overdubbing ? TrackState.overdubbing : TrackState.playing,
+              lanes: [
+                Lane(
+                  volume: 0.5,
+                  inputChainDiverges: diverges,
+                ),
+                const Lane(inputChannel: 1),
+              ],
+              effects: _rig.tracks.first.effects,
+            ),
+            const Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
+          ],
+          status: _rig.status,
+        );
+
+    testWidgets('a chain that is off can be switched back on', (tester) async {
+      await pump(
+        tester,
+        stage: FxStage.track,
+        state: LooperState(
+          tracks: [
+            Track(
+              volume: 0.5,
+              lanes: const [Lane(inputChannel: 0)],
+              chainEnabled: false,
+              effects: [
+                BuiltInEffect(type: TrackEffectType.reverb, slotId: 'slot-a'),
+              ],
+            ),
+          ],
+          status: _rig.status,
+        ),
+      );
+      await tester.tap(find.byKey(const Key('signal_card_track_0')));
+      await tester.pumpAndSettle();
+
+      // The dock used to carry this and the dock is gone. A chain switched
+      // off from anywhere else — a pedal binding, a restored session — could
+      // be SEEN to be off and never turned back on.
+      expect(
+        find.byKey(const Key('signal_panel_chain_off_consequence')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('signal_panel_chain_power')));
+      await tester.pumpAndSettle();
+
+      // ON, not "toggled": a pill that writes the state it is already in
+      // leaves a chain that is off unable to come back, which is the whole
+      // reason this control exists.
+      final event =
+          verify(
+                () => bloc.add(
+                  captureAny(that: isA<LooperTrackChainEnabledToggled>()),
+                ),
+              ).captured.single
+              as LooperTrackChainEnabledToggled;
+      expect(event.enabled, isTrue);
+    });
+
+    testWidgets("an input's chain switches through its monitor", (
+      tester,
+    ) async {
+      await pump(tester);
+      // The input needs a monitor of its own: the cubit refuses to flip one
+      // that was never configured, rather than materialize a phantom that
+      // would come back on every boot.
+      monitor.addEffect(0);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+
+      // Each stage writes through its own carrier — the input's is the
+      // monitor, not the bloc.
+      await tester.tap(find.byKey(const Key('signal_panel_chain_power')));
+      await tester.pumpAndSettle();
+
+      verify(
+        () => repository.setMonitorChainEnabled(
+          input: 0,
+          enabled: any(named: 'enabled'),
+        ),
+      ).called(1);
+    });
+
+    testWidgets('the overdub warning appears when the overdub starts', (
+      tester,
+    ) async {
+      final states = StreamController<LooperState>();
+      addTearDown(states.close);
+      await pump(tester, stage: FxStage.loop, states: states.stream);
+      await tester.tap(find.byKey(const Key('signal_card_loop_0_0')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('signal_panel_overdub_mismatch')),
+        findsNothing,
+      );
+
+      // The take has ALREADY drifted, and the overdub begins: only the
+      // track's state moves. A panel watching the lane's own numbers sees
+      // nothing at all, so the warning would appear solely if the player
+      // happened to touch the fader while the overdub ran — never, in the one
+      // case A7 exists for.
+      states.add(drifted(overdubbing: false));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('signal_panel_overdub_mismatch')),
+        findsNothing,
+      );
+
+      states.add(drifted(overdubbing: true));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('signal_panel_overdub_mismatch')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('and when the drift appears mid-overdub', (tester) async {
+      final states = StreamController<LooperState>();
+      addTearDown(states.close);
+      await pump(tester, stage: FxStage.loop, states: states.stream);
+      await tester.tap(find.byKey(const Key('signal_card_loop_0_0')));
+      await tester.pumpAndSettle();
+
+      // The other order: the overdub is already running and the input's chain
+      // is edited underneath it. Now only the DRIFT moves.
+      states.add(drifted(overdubbing: true, diverges: false));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('signal_panel_overdub_mismatch')),
+        findsNothing,
+      );
+
+      states.add(drifted(overdubbing: true));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('signal_panel_overdub_mismatch')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the re-inherit appears when the input gains a chain', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.loop);
+      await tester.tap(find.byKey(const Key('signal_card_loop_0_0')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('signal_panel_resync')), findsNothing);
+
+      // Whether a take can be re-inherited is a fact about the INPUT's chain
+      // — a pedal switching that chain on is what makes the action possible,
+      // and nothing about the lane moves when it does. The dock used to watch
+      // this; the dock is gone.
+      when(
+        () => repository.laneCanInheritFromInput(any(), any()),
+      ).thenReturn(true);
+      monitor.addEffect(0);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('signal_panel_resync')), findsOneWidget);
+    });
+
+    testWidgets('a lane offers a re-inherit when the input has one', (
+      tester,
+    ) async {
+      when(
+        () => repository.laneCanInheritFromInput(any(), any()),
+      ).thenReturn(true);
+      await pump(tester, stage: FxStage.loop);
+      await tester.tap(find.byKey(const Key('signal_card_loop_0_0')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('signal_panel_resync')));
+      await tester.pumpAndSettle();
+
+      // A6: explicit and user-initiated — the take does not re-inherit on its
+      // own, so without this the only way back was rebuilding the chain by
+      // hand.
+      verify(
+        () => bloc.add(any(that: isA<LooperLaneChainResyncedFromInput>())),
+      ).called(1);
+    });
+
+    testWidgets('no re-inherit when the input has nothing to copy', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.loop);
+      await tester.tap(find.byKey(const Key('signal_card_loop_0_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('signal_panel_resync')), findsNothing);
     });
   });
 

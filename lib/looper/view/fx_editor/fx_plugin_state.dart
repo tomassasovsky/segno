@@ -35,7 +35,8 @@ Future<void> scanPluginsIfCold(PluginCatalog catalog) async {
 /// being scanned would read as a failure rather than as work in progress.
 ///
 /// Lives in `fx_editor/` rather than beside the surface it was written for:
-/// `signal_graph/` goes with #533's demolition and this outlives it.
+/// written for the surface `signal_graph/` used to hold, which #533's
+/// demolition removed; this outlived it.
 String fxPluginPlaceholderReason(
   AppLocalizations l10n, {
   required bool loading,

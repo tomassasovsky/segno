@@ -8,8 +8,8 @@ import 'package:segno/l10n/l10n.dart';
 ///
 /// The footnote is not decoration. Every setting on this domain reaches beyond
 /// the tray — a name shows on the stage and in the pedal targets, a length
-/// only takes effect on the next defining take, a lane is what the Signal page
-/// hangs its effects off — and a 70px list row has nowhere to say so.
+/// only takes effect on the next defining take, a lane is what Signal hangs
+/// its effects off — and a 70px list row has nowhere to say so.
 ///
 /// The empty card is here rather than in each tab because the reason is the
 /// same on all three: on Control and Loop a row is a global setting and there

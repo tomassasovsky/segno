@@ -101,6 +101,13 @@ bool sameLaneFacts(Lane? a, Lane? b) => a == null || b == null
           // of this list, that notice could never appear: nothing else in the
           // panel subscribes to the flag.
           a.chainEnabled == b.chainEnabled &&
+          // And whether the take has drifted from its input, which the
+          // overdub notice and the re-inherit action both read. It changes
+          // when an input's chain is edited, not when the lane is — so a
+          // panel watching only the lane's own numbers would never redraw for
+          // it, and the A7 warning would appear only if the player happened
+          // to touch this lane's fader while the overdub ran.
+          a.inputChainDiverges == b.inputChainDiverges &&
           listEquals(a.effects, b.effects);
 
 /// Whether the facts a panel draws about a track bus are unchanged.
@@ -177,16 +184,27 @@ class _LoopPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final names = context.watch<TracksCubit>().state.names;
+    // Watched, not read: whether this take can be re-inherited is a fact
+    // about the INPUT's chain, not the lane's — a pedal switching that chain
+    // on is what makes the action appear, and nothing about the lane moves
+    // when it does. `MonitorState` carries no meters, so this is a handful of
+    // rebuilds a session, not a rebuild a frame.
+    context.watch<MonitorCubit>();
     final bloc = context.read<LooperBloc>();
     // NOT `context.select` on the lane itself: a [Lane] carries live meters,
     // so selecting it would rebuild this panel at the meter rate. Only the
     // three facts the panel draws decide whether it needs redrawing — the
     // same argument `sameChainShape` makes for the card runs.
     return BlocBuilder<LooperBloc, LooperState>(
-      buildWhen: (previous, current) => !sameLaneFacts(
-        _laneOf(previous, track, lane),
-        _laneOf(current, track, lane),
-      ),
+      buildWhen: (previous, current) =>
+          !sameLaneFacts(
+            _laneOf(previous, track, lane),
+            _laneOf(current, track, lane),
+          ) ||
+          // The overdub notice is about the TRACK's state, which no lane
+          // fact carries: an overdub starting or ending changes nothing on
+          // the lane itself.
+          _trackOf(previous, track)?.state != _trackOf(current, track)?.state,
       builder: (context, state) {
         final take = _laneOf(state, track, lane);
         // The lane can go while its panel is open — a track's lane count is a
@@ -469,7 +487,14 @@ class _PanelBodyState extends State<_PanelBody> {
         spacing: SignalDetailPanel.rowGap,
         children: [
           _Header(title: title, subtitle: widget.subtitle),
-          _Caption(l10n.signalPanelChain),
+          // A7: an overdub never re-inherits, so a chain that has drifted
+          // from its input since the take is worth saying while it counts.
+          if (scope.overdubMismatch)
+            _Notice(
+              key: const Key('signal_panel_overdub_mismatch'),
+              message: l10n.fxOverdubMismatchHint,
+            ),
+          _ChainCaption(scope: scope),
           _ChainStrip(
             chain: chain,
             // The slot only when it still resolves — an id naming nothing
@@ -584,6 +609,146 @@ class _Header extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The `chain` caption, and the two things that act on the chain as a whole.
+///
+/// The power switch used to live in the dock's header, and the dock is gone.
+/// Without it a chain switched off from anywhere else — a pedal binding, a
+/// restored session — could be SEEN to be off (the editor says so) and never
+/// turned back on. It sits on the caption because it belongs to the whole
+/// run, not to any one entry: an entry's own power is the editor's bypass.
+class _ChainCaption extends StatelessWidget {
+  const _ChainCaption({required this.scope});
+
+  final FxScope scope;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final on = scope.chainEnabled;
+    return Row(
+      children: [
+        _Caption(l10n.signalPanelChain),
+        // What the switch COSTS while it is off, in the warning pair — the
+        // same sentence the dock put beside it.
+        if (!on) ...[
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              scope.chainDisabledConsequence(l10n),
+              key: const Key('signal_panel_chain_off_consequence'),
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: surface.warning,
+                fontSize: 14,
+                height: 1.21,
+                leadingDistribution: TextLeadingDistribution.even,
+              ),
+            ),
+          ),
+        ],
+        const Spacer(),
+        // A6: an explicit, user-initiated re-inherit, offered only while the
+        // routed input actually has an audible chain to copy.
+        if (scope.canResyncFromInput) ...[
+          _ChainAction(
+            actionKey: const Key('signal_panel_resync'),
+            label: l10n.fxResyncFromInput,
+            onTap: scope.resyncFromInput,
+          ),
+          const SizedBox(width: 10),
+        ],
+        // A chain whose target is gone has nothing to switch: writing through
+        // a vanished input would mint a phantom monitor and persist a key
+        // that comes back on the next boot.
+        if (scope.isPresent)
+          _ChainAction(
+            actionKey: const Key('signal_panel_chain_power'),
+            label: on ? l10n.signalChainOn : l10n.signalChainOff,
+            semanticLabel: on ? l10n.a11yFxChainOn : l10n.a11yFxChainOff,
+            active: on,
+            onTap: () => scope.setChainEnabled(enabled: !on),
+          ),
+      ],
+    );
+  }
+}
+
+/// A small pill acting on the whole chain — power, or re-sync.
+class _ChainAction extends StatelessWidget {
+  const _ChainAction({
+    required this.actionKey,
+    required this.label,
+    required this.onTap,
+    this.semanticLabel,
+    this.active = false,
+  });
+
+  final Key actionKey;
+  final String label;
+  final String? semanticLabel;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Semantics(
+      button: true,
+      selected: active,
+      label: semanticLabel ?? label,
+      child: InkWell(
+        key: actionKey,
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(119),
+        child: ExcludeSemantics(
+          child: Container(
+            height: 33,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: active ? surface.accentSurface : null,
+              borderRadius: BorderRadius.circular(119),
+              border: Border.all(
+                color: active ? surface.accent : surface.line,
+              ),
+            ),
+            child: Center(
+              widthFactor: 1,
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: active ? surface.accent : surface.textSecondary,
+                  fontSize: 14,
+                  height: 1.21,
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A line the panel says out loud, in the warning pair.
+class _Notice extends StatelessWidget {
+  const _Notice({required this.message, super.key});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    message,
+    style: TextStyle(
+      color: context.surface.warning,
+      fontSize: 14,
+      height: 1.21,
+      leadingDistribution: TextLeadingDistribution.even,
+    ),
+  );
 }
 
 /// An inline caption over the row it names. Sentence case, as the mockups set

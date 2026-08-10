@@ -55,7 +55,7 @@ enum SettingsTrayDestination {
   ///
   /// One destination, not three: all three tabs answer the same question —
   /// *what is each track, and where does it go?* — and they had been split
-  /// between the Settings scroll's `tracks` section, the Signal page and, for
+  /// between the Settings scroll's `tracks` section, the Signal domain and, for
   /// the quantize override, nowhere at all (#523).
   ///
   /// The difference from [control] and [loop] is what a ROW means: there a row

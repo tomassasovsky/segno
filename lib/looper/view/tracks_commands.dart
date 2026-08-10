@@ -9,9 +9,9 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/shortcuts_help_sheet.dart';
-import 'package:segno/looper/view/signal_graph/signal_graph.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/window/window_chrome.dart';
@@ -212,7 +212,7 @@ class TracksCommands {
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyG) {
-      unawaited(showSignalPage(context));
+      context.read<SettingsTrayCubit>().openSignal();
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyF) {
