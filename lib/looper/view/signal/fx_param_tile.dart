@@ -66,14 +66,19 @@ class _FxParamCell extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            // Uppercased for the same reason the DS specimens are, and the
-            // rotary caption was before it: at mono 9 in 78px this is a legend,
-            // and caps keep a dense grid's names scanning as one row.
-            name.toUpperCase(),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: signalMono(color: surface.textSecondary, size: 9),
+          // Excluded here rather than at each of the four call sites: every
+          // cell's wrapper already announces the name, so left in, a reader
+          // hears "VINTAGE" and then "Vintage of Octaver".
+          ExcludeSemantics(
+            child: Text(
+              // Uppercased for the same reason the DS specimens are, and the
+              // rotary caption was before it: at mono 9 in 78px this is a
+              // legend, and caps keep a dense grid's names scanning as one row.
+              name.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: signalMono(color: surface.textSecondary, size: 9),
+            ),
           ),
           const SizedBox(height: FxParamTileMetrics._gap),
           SizedBox(height: FxParamTileMetrics.boxHeight, child: control),
@@ -240,7 +245,7 @@ class FxParamTile extends StatelessWidget {
         readOnly: true,
         label: semanticLabel ?? spec.name,
         value: text,
-        child: cell,
+        child: ExcludeSemantics(child: cell),
       );
     }
     return Semantics(
@@ -302,12 +307,21 @@ class FxParamSwitchCell extends StatelessWidget {
       // At 60x36 it also overflowed the pen's 37x22 `ToggleSm`, and with no
       // `switchTheme` registered it painted its "on" track near-white
       // directly above an accent-blue indicator.
-      control: Center(
-        child: ConsoleSwitch(
-          small: true,
-          value: _on,
-          semanticLabel: semanticLabel ?? spec.name,
-          onChanged: (on) => onChanged(on ? spec.max : spec.min),
+      // The whole 78x36 control band toggles, not just the 37x22 pill: the
+      // pen's geometry is a drawing size, and taking it as the target would
+      // put a 37x22 hit area on a console aimed at with a foot-height finger.
+      // Nothing else in the cell wants the tap.
+      control: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        excludeFromSemantics: true,
+        onTap: () => onChanged(_on ? spec.min : spec.max),
+        child: Center(
+          child: ConsoleSwitch(
+            small: true,
+            value: _on,
+            semanticLabel: semanticLabel ?? spec.name,
+            onChanged: (on) => onChanged(on ? spec.max : spec.min),
+          ),
         ),
       ),
     );
@@ -366,6 +380,10 @@ class FxParamEnumCell extends StatelessWidget {
         value: label,
         button: true,
         child: PopupMenuButton<int>(
+          // Empty, not absent: absent means Flutter's own "Show menu", which
+          // is a worse answer than the parameter's name and is what the
+          // wrapper above already says properly.
+          tooltip: '',
           padding: EdgeInsets.zero,
           initialValue: step,
           onSelected: (s) => onChanged(_plainFor(s)),

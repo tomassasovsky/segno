@@ -354,14 +354,16 @@ void main() {
     final tile = tester.getSemantics(
       find.byKey(const Key('signal_fx_param_0')),
     );
-    expect(tile.label, contains('Filter'));
+    expect(tile.label, 'Freq of Filter');
 
     // And a meter has to announce that it only reports — a reader cannot see
     // that it is borderless.
     final meter = tester.getSemantics(
       find.byKey(const Key('signal_fx_param_1')),
     );
-    expect(meter.label, contains('Filter'));
+    // Equality, not `contains`: the leak this guards against ADDS to the
+    // label — "Meter of Filter / METER / 0.00" contains 'Filter' too.
+    expect(meter.label, 'Gain Reduction of Filter');
     expect(meter.getSemanticsData().flagsCollection.isReadOnly, isTrue);
     handle.dispose();
   });
@@ -455,7 +457,9 @@ void main() {
     await tester.pump();
     expect(scope.pluginWrites.last.$3, 0);
     // Name and step, and nothing else: the box's own text and its "▾" are
-    // excluded, or the reader announces the glyph.
+    // excluded, or the reader announces the glyph. The tooltip is set
+    // empty rather than left off, which would fall back to Flutter's
+    // own "Show menu".
     expect(
       tester.getSemantics(find.byType(PopupMenuButton<int>)),
       matchesSemantics(
@@ -488,6 +492,41 @@ void main() {
       tester.getSize(find.byType(ConsoleSwitch)),
       ConsoleSwitch.smallTrackSize,
     );
+  });
+
+  testWidgets('the sheet track can be adjusted, not just announced', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    final scope = _FakeScope([
+      _plugin(values: const {7: 440}),
+    ]);
+    await pump(tester, scope);
+    await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+    await tester.pumpAndSettle();
+
+    // `slider: true` with no increase/decrease tells a screen-reader user the
+    // control is adjustable and then gives them no way to adjust it — WCAG
+    // 2.1.1. The values on either side are asserted too: Flutter accepts the
+    // actions with `increasedValue` equal to `value`, which announces a
+    // nudge that goes nowhere.
+    expect(
+      tester.getSemantics(find.byKey(const Key('fxParamSheet_slider'))),
+      matchesSemantics(
+        isSlider: true,
+        label: 'Freq',
+        value: '2%',
+        increasedValue: '7%',
+        decreasedValue: '0%',
+        hasIncreaseAction: true,
+        hasDecreaseAction: true,
+        hasTapAction: true,
+        hasScrollLeftAction: true,
+        hasScrollRightAction: true,
+      ),
+    );
+
+    handle.dispose();
   });
 
   testWidgets('a stepped parameter can only land on a step', (tester) async {

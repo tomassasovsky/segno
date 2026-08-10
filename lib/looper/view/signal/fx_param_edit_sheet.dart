@@ -199,6 +199,11 @@ class _FxParamEditSheetState extends State<FxParamEditSheet> {
                 fraction: _fraction,
                 onMoved: _setFromFraction,
                 semanticLabel: widget.spec.name,
+                // A step where the parameter has them, 5% where it does
+                // not — the grain a keyboard gets on every other bar here.
+                step: widget.spec.stepCount > 0
+                    ? 1 / widget.spec.stepCount
+                    : 0.05,
               ),
               const SizedBox(height: 16),
               Row(
@@ -232,6 +237,7 @@ class _FxParamTrack extends StatelessWidget {
     required this.fraction,
     required this.onMoved,
     required this.semanticLabel,
+    required this.step,
     super.key,
   });
 
@@ -239,19 +245,39 @@ class _FxParamTrack extends StatelessWidget {
   final ValueChanged<double> onMoved;
   final String semanticLabel;
 
+  /// One nudge, as a fraction of the track.
+  final double step;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     return LayoutBuilder(
       builder: (context, constraints) {
+        String percent(double v) => '${(v.clamp(0.0, 1.0) * 100).round()}%';
         void moveTo(Offset local) => onMoved(
           local.dx / constraints.maxWidth.clamp(1.0, double.infinity),
         );
 
         return Semantics(
+          // Its own node, so a reader lands on the bar rather than on the
+          // whole sheet — without this the nearest node above it is the
+          // Dialog, which is also what a test finds when it asks for it.
+          key: const Key('fxParamSheet_slider'),
+          container: true,
           slider: true,
           label: semanticLabel,
-          value: '${(fraction * 100).round()}%',
+          value: percent(fraction),
+          // Flutter asserts that a node offering increase/decrease names the
+          // value on either side of the nudge.
+          increasedValue:
+              '${(((fraction + step).clamp(0.0, 1.0)) * 100).round()}%',
+          decreasedValue:
+              '${(((fraction - step).clamp(0.0, 1.0)) * 100).round()}%',
+          // A node that says "adjustable" and offers no way to adjust is
+          // WCAG 2.1.1. One step of a stepped parameter, or 5% of a
+          // continuous one — the same grain the keyboard gets elsewhere.
+          onIncrease: () => onMoved(fraction + step),
+          onDecrease: () => onMoved(fraction - step),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapDown: (d) => moveTo(d.localPosition),
