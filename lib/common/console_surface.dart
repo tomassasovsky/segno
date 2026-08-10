@@ -1325,6 +1325,107 @@ class ConsoleEmptyCard extends StatelessWidget {
   }
 }
 
+/// The double-tap-to-default window, for a console control with a default
+/// worth snapping back to.
+///
+/// Wired into four callbacks: [armReset] from `onTapDown`, [spendReset] from
+/// `onTapUp`, [dropReset] from `onTapCancel`, and [closeResetWindow] when a
+/// drag starts. Miss the last one and the tap that ends a drag becomes half a
+/// pair.
+///
+/// Not every reset in the app comes through here: `SignalKnob` has its own on
+/// `onDoubleTap`, which it can afford because its single tap only takes focus
+/// — there is no immediate action for the recognizer's latency to delay.
+///
+/// **Not** `GestureDetector.onDoubleTap`: a disambiguating recognizer charges
+/// its latency to the common path, so every single tap would wait out
+/// `kDoubleTapTimeout` — a third of a second of nothing on a control people
+/// drag. The first tap applies immediately and opens a window; a second tap
+/// inside it overrides with the default.
+///
+/// It has to be the same tap twice, and both halves are measured off the
+/// RELEASE, the way Flutter's own recognizer measures them:
+/// - **the window opens on tap-UP.** A tap-down is not yet a tap: the pointer
+///   can still be stolen by the scroll view the face sits in, and a cancelled
+///   press must not leave a live window for the next real tap to fall into.
+///   Anchoring on the release also gives the second tap the whole
+///   `kDoubleTapTimeout` rather than what a slow first press left of it.
+/// - **near the first**, within `kDoubleTapSlop` — the gate Flutter's own
+///   recognizer applies. Two taps at opposite ends of a bar are two
+///   adjustments, and reading them as a reset throws away the second one's
+///   position.
+/// - **spent on tap-UP too.** A press that becomes a drag still fires
+///   `onTapDown` once it outlives `kPressTimeout`, so writing on the way down
+///   would send the default to the engine every time someone tapped and then
+///   dragged.
+///
+/// Drags bypass the window entirely.
+mixin ConsoleResetTap<T extends StatefulWidget> on State<T> {
+  Timer? _resetWindow;
+  double? _resetTapAt;
+  bool _resetPending = false;
+
+  /// Whether the control has a default to snap back to at all.
+  bool get hasReset;
+
+  /// Call from `onTapDown`. Returns true when this tap is the SECOND of a
+  /// pair and has armed a reset — the caller must then not apply the tap's own
+  /// position, because this tap means "put it back", not "put it here".
+  bool armReset(double dx) {
+    final first = _resetTapAt;
+    if (hasReset &&
+        _resetWindow != null &&
+        first != null &&
+        (dx - first).abs() <= kDoubleTapSlop) {
+      _resetWindow!.cancel();
+      _resetWindow = null;
+      _resetPending = true;
+      return true;
+    }
+    _resetTapAt = dx;
+    return false;
+  }
+
+  /// Call from `onTapUp`. Returns true when an armed reset should now be
+  /// applied; otherwise opens the window for a second tap.
+  bool spendReset() {
+    var apply = false;
+    if (hasReset) {
+      if (_resetPending) {
+        apply = true;
+        // No fresh window: a third tap starts its own pair rather than
+        // resetting again.
+      } else {
+        _resetWindow?.cancel();
+        _resetWindow = Timer(kDoubleTapTimeout, () => _resetWindow = null);
+      }
+    }
+    _resetPending = false;
+    return apply;
+  }
+
+  /// Call from `onTapCancel` and from the drag ends: an armed reset must not
+  /// survive a press that was stolen or became a drag. The WINDOW survives —
+  /// closing it is [closeResetWindow], which a drag start does.
+  void dropReset() => _resetPending = false;
+
+  /// Call when a drag STARTS. A drag is not the first half of a double tap,
+  /// and leaving the window open would let the tap that ends the drag be read
+  /// as one.
+  void closeResetWindow() {
+    _resetWindow?.cancel();
+    _resetWindow = null;
+    _resetTapAt = null;
+    _resetPending = false;
+  }
+
+  @override
+  void dispose() {
+    _resetWindow?.cancel();
+    super.dispose();
+  }
+}
+
 /// A labelled bar that both reads and sets one `0..1` value — a mapping's LO,
 /// HI, or threshold.
 ///
@@ -1370,30 +1471,8 @@ class ConsoleValueBar extends StatefulWidget {
   /// What a double tap snaps back to, or null for a bar with no default.
   ///
   /// A bar has no numbers to aim at, so landing back on unity by dragging is
-  /// luck. **Not** `GestureDetector.onDoubleTap`: a disambiguating recognizer
-  /// charges its latency to the common path, so every single tap would wait
-  /// out `kDoubleTapTimeout` — a third of a second of nothing on a control
-  /// people drag. The first tap applies immediately and opens a timer; a
-  /// second tap while it is live overrides with this value.
-  ///
-  /// It has to be the same tap twice, though, and both halves are measured
-  /// off the RELEASE, the way Flutter's own recognizer measures them:
-  /// - **the window opens on tap-UP.** A tap-down is not yet a tap: the
-  ///   pointer can still be stolen by the scroll view this face sits in, and
-  ///   a cancelled press must not leave a live window for the next real tap
-  ///   to fall into. Anchoring on the release also gives the second tap the
-  ///   whole `kDoubleTapTimeout` rather than what a slow first press left of
-  ///   it.
-  /// - **near the first**, within `kDoubleTapSlop`, which is the gate
-  ///   Flutter's own recognizer applies. Two taps at opposite ends of the bar
-  ///   are two adjustments, and reading them as a reset throws away the
-  ///   second one's position.
-  /// - **applied on tap-UP too.** A press that becomes a drag still fires
-  ///   `onTapDown` once it outlives `kPressTimeout`, so writing on the way
-  ///   down would send the default to the engine every time someone tapped
-  ///   and then dragged.
-  ///
-  /// Drags bypass the window entirely.
+  /// luck. The gesture itself — and why it is hand-rolled rather than
+  /// `onDoubleTap` — is [ConsoleResetTap].
   final double? resetValue;
 
   /// The announced label; defaults to [label].
@@ -1418,22 +1497,13 @@ class ConsoleValueBar extends StatefulWidget {
   State<ConsoleValueBar> createState() => _ConsoleValueBarState();
 }
 
-class _ConsoleValueBarState extends State<ConsoleValueBar> {
+class _ConsoleValueBarState extends State<ConsoleValueBar>
+    with ConsoleResetTap<ConsoleValueBar> {
   /// The value the finger is on, or null when nothing is dragging.
   double? _dragging;
 
-  /// Live between the two taps of a double tap. See
-  /// [ConsoleValueBar.resetValue] for why this is hand-rolled.
-  Timer? _tapWindow;
-
-  /// Where the tap that opened [_tapWindow] landed, so the second one can be
-  /// required to land near it.
-  double? _tapAt;
-
-  /// Set by a tap-down that qualifies as the second of a pair, and spent on
-  /// the tap-UP that follows — see [ConsoleValueBar.resetValue] for why the
-  /// write cannot happen on the way down.
-  bool _resetPending = false;
+  @override
+  bool get hasReset => widget.resetValue != null;
 
   @override
   void didUpdateWidget(ConsoleValueBar old) {
@@ -1447,12 +1517,6 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
     if (widget.onChanged == null && _dragging != null) {
       _release();
     }
-  }
-
-  @override
-  void dispose() {
-    _tapWindow?.cancel();
-    super.dispose();
   }
 
   void _report(double width, double dx) {
@@ -1469,18 +1533,7 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
   /// default to snap to. That case only ARMS the reset; [_release] spends it,
   /// because a tap-down is not yet proof the gesture stayed a tap.
   void _tap(double width, double dx) {
-    final reset = widget.resetValue;
-    final first = _tapAt;
-    if (reset != null &&
-        _tapWindow != null &&
-        first != null &&
-        (dx - first).abs() <= kDoubleTapSlop) {
-      _tapWindow!.cancel();
-      _tapWindow = null;
-      _resetPending = true;
-      return;
-    }
-    _tapAt = dx;
+    if (armReset(dx)) return;
     _report(width, dx);
   }
 
@@ -1494,18 +1547,14 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
   /// to be dropped and no window may be left behind.
   void _release({bool applyReset = false}) {
     final reset = widget.resetValue;
-    if (applyReset && reset != null) {
-      if (_resetPending) {
+    if (applyReset) {
+      if (spendReset() && reset != null) {
         unawaited(HapticFeedback.selectionClick());
         widget.onChanged?.call(reset.clamp(0.0, 1.0));
-        // No fresh window: a third tap starts its own pair rather than
-        // resetting again.
-      } else {
-        _tapWindow?.cancel();
-        _tapWindow = Timer(kDoubleTapTimeout, () => _tapWindow = null);
       }
+    } else {
+      dropReset();
     }
-    _resetPending = false;
     if (_dragging == null) return;
     setState(() => _dragging = null);
   }
@@ -1514,10 +1563,7 @@ class _ConsoleValueBarState extends State<ConsoleValueBar> {
   /// double tap, and leaving the window open would let the tap that ends the
   /// drag get read as one.
   void _dragStart(double width, double dx) {
-    _tapWindow?.cancel();
-    _tapWindow = null;
-    _tapAt = null;
-    _resetPending = false;
+    closeResetWindow();
     _report(width, dx);
   }
 
