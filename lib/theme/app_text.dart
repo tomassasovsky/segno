@@ -100,17 +100,16 @@ class AppText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effective = DefaultTextStyle.of(context).style.merge(style);
-    final resolvedStrut =
-        strutStyle ??
-        StrutStyle(
-          fontSize: effective.fontSize ?? 14,
-          height: effective.height ?? 1,
-          fontWeight: effective.fontWeight,
-          fontFamily: effective.fontFamily,
-          leading: 0,
-          forceStrutHeight: true,
-        );
+    // No synthesised strut. A forcing one CANCELS the very collapse this
+    // widget exists for: `applyHeightToFirstAscent: false` trims the first
+    // line's ascent, and then `forceStrutHeight: true` puts a full line box
+    // back underneath it. Measured on the shipping Inter at 14/1.43 — plain
+    // `Text` 20.0, `Text` + the height behaviour 17.0, and with the strut
+    // 20.0 again. It also carries no `leadingDistribution`, so it reverted
+    // `even` to `proportional` and undid `withAppTextMetrics` everywhere.
+    //
+    // A caller may still pass one; nothing is built here on their behalf.
+    final resolvedStrut = strutStyle;
     final text = data != null
         ? Text(
             data!,

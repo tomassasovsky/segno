@@ -97,11 +97,18 @@ class AppTextDefaults extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => DefaultTextStyle.merge(
-    style: const TextStyle(
-      leadingDistribution: TextLeadingDistribution.even,
-    ),
+  Widget build(BuildContext context) => DefaultTextHeightBehavior(
+    // Separately from `DefaultTextStyle`, because `Material` installs a
+    // `DefaultTextStyle` of its own with `textHeightBehavior: null` — so the
+    // behaviour set here never reached a `Text` inside any Material, which is
+    // nearly every `Text` in the app. `DefaultTextHeightBehavior` is its own
+    // inherited widget and survives that.
     textHeightBehavior: kAppTextHeightBehavior,
-    child: child,
+    child: DefaultTextStyle.merge(
+      style: const TextStyle(
+        leadingDistribution: TextLeadingDistribution.even,
+      ),
+      child: child,
+    ),
   );
 }
