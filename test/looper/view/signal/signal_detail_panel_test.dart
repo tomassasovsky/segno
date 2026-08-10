@@ -941,13 +941,26 @@ void main() {
       expect(find.text(l10n.signalPanelLevel), findsOneWidget);
     });
 
-    testWidgets('a param row per parameter, driving the chain', (tester) async {
+    testWidgets('a tile per parameter, and the sheet drives the chain', (
+      tester,
+    ) async {
       await openEditor(tester);
 
       // Reverb's own parameters, from the engine's metadata.
       expect(find.byKey(const Key('signal_fx_param_0')), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+      await tester.pumpAndSettle();
+      // The tile opened the editor and wrote nothing on the way.
+      verifyNever(
+        () => bloc.add(any(that: isA<LooperBusEffectParamChanged>())),
+      );
+
+      final track = find.byKey(const Key('fxParamSheet_track'));
+      await tester.tapAt(
+        tester.getTopLeft(track) +
+            Offset(tester.getSize(track).width * 0.75, 12),
+      );
       await tester.pumpAndSettle();
 
       verify(
@@ -1087,12 +1100,21 @@ void main() {
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
 
-      // "MIX, slider" tells a reader nothing about whose mix it is.
-      final bar = tester.widget<ConsoleValueBar>(
+      // A tile is 78px of mono at 9pt: what it can say in writing is a
+      // truncated name. What it says to a reader has to be the whole thing.
+      final tile = tester.getSemantics(
         find.byKey(const Key('signal_fx_param_0')),
       );
-      expect(bar.semanticLabel, isNotNull);
-      expect(bar.semanticLabel, contains(l10n.effectReverb));
+      expect(tile.label, isNotEmpty);
+      await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSemantics(find.byKey(const Key('fxParamSheet_name'))).label,
+        isNotEmpty,
+      );
+      // The sheet is where the parameter says whose it is — the breadcrumb
+      // under its name, because the console behind it is dimmed out.
+      expect(find.textContaining(l10n.effectReverb), findsWidgets);
       handle.dispose();
     });
   });

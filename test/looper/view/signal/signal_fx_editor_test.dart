@@ -4,11 +4,17 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
+import 'package:segno/looper/view/signal/fx_param_edit_sheet.dart';
+import 'package:segno/looper/view/signal/fx_param_tile.dart';
 import 'package:segno/looper/view/signal/signal_fx_editor.dart';
 import 'package:segno/theme/theme.dart';
 
 class _FakeScope extends Fake implements FxScope {
   _FakeScope(this.chain, {this.chainOn = true, this.formatted});
+
+  /// The sheet's breadcrumb names the chain, so the fake has to have one.
+  @override
+  String label(AppLocalizations l10n) => 'Input 1';
 
   List<TrackEffect> chain;
   bool chainOn;
@@ -136,22 +142,8 @@ void main() {
     await tester.pump();
   }
 
-  group('a hosted plugin speaks plain units, the bar speaks 0..1', () {
-    testWidgets('a plain value is normalized onto the bar', (tester) async {
-      final scope = _FakeScope([
-        _plugin(values: const {7: 10010}),
-      ]);
-      await pump(tester, scope);
-
-      // Halfway up a 20..20000 range. Fed straight in, anything above 1 pins
-      // the bar to full and every plugin reads 100%.
-      final bar = tester.widget<ConsoleValueBar>(
-        find.byKey(const Key('signal_fx_param_0')),
-      );
-      expect(bar.value, closeTo(0.5, 0.001));
-    });
-
-    testWidgets("a drag writes back in the plugin's own units", (
+  group('a hosted plugin speaks plain units, the tile speaks its own', () {
+    testWidgets('a plain value sits where it belongs in its range', (
       tester,
     ) async {
       final scope = _FakeScope([
@@ -159,13 +151,48 @@ void main() {
       ]);
       await pump(tester, scope);
 
-      final bar = find.byKey(const Key('signal_fx_param_0'));
+      // Halfway up a 20..20000 range. Fed straight to an indicator, anything
+      // above 1 pins it full and every plugin reads the same.
+      final tile = tester.widget<FxParamTile>(find.byType(FxParamTile));
+      expect(tile.value, 10010);
+      expect(tile.spec.min, _freq.min);
+      expect(tile.spec.max, _freq.max);
+    });
+
+    testWidgets('a tile opens the editor and changes nothing on its own', (
+      tester,
+    ) async {
+      final scope = _FakeScope([
+        _plugin(values: const {7: 10010}),
+      ]);
+      await pump(tester, scope);
+
+      await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+      await tester.pumpAndSettle();
+
+      // THE rule the grid exists for: the console lies on the floor under
+      // someone playing, so a touch on the surface cannot be audible.
+      expect(scope.pluginWrites, isEmpty);
+      expect(find.byType(FxParamEditSheet), findsOneWidget);
+    });
+
+    testWidgets("the sheet writes back in the plugin's own units", (
+      tester,
+    ) async {
+      final scope = _FakeScope([
+        _plugin(values: const {7: 10010}),
+      ]);
+      await pump(tester, scope);
+      await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+      await tester.pumpAndSettle();
+
+      final bar = find.byKey(const Key('fxParamSheet_track'));
       final left = tester.getTopLeft(bar);
-      final width = tester.getSize(bar).width;
-      // A quarter along the bar, measured — so the assertion below pins the
-      // MAPPING and not merely that the write landed somewhere in range. An
-      // inverted map (drag right = lower) passes a range check and fails this.
-      await tester.tapAt(left + Offset(width * 0.25, 25));
+      final size = tester.getSize(bar);
+      // A quarter along, measured — so this pins the MAPPING and not merely
+      // that the write landed in range. An inverted map passes a range check
+      // and fails this.
+      await tester.tapAt(left + Offset(size.width * 0.25, size.height / 2));
       await tester.pumpAndSettle();
 
       expect(scope.pluginWrites, isNotEmpty);
@@ -185,10 +212,8 @@ void main() {
       await pump(tester, scope);
 
       // Absent means "the plugin's default", not zero.
-      final bar = tester.widget<ConsoleValueBar>(
-        find.byKey(const Key('signal_fx_param_0')),
-      );
-      expect(bar.value, closeTo((440 - 20) / (20000 - 20), 0.001));
+      final tile = tester.widget<FxParamTile>(find.byType(FxParamTile));
+      expect(tile.value, 440);
     });
 
     testWidgets('the live instance names its own value when it can', (
@@ -219,6 +244,40 @@ void main() {
     });
   });
 
+  testWidgets('a two-state parameter is a switch, not a menu', (tester) async {
+    const vintage = PluginParamInfo(
+      id: 12,
+      name: 'Vintage',
+      unit: '',
+      min: 0,
+      max: 1,
+      def: 0,
+      // One step: two states. The taxonomy's own boundary — a menu of two
+      // named things is a menu you have to open to read.
+      stepCount: 1,
+      flags: 0x01,
+      valueTexts: ['Off', 'On'],
+    );
+    final scope = _FakeScope([
+      const PluginEffect(
+        ref: PluginRef(format: PluginFormat.vst3, id: 'test.comp'),
+        params: [vintage],
+      ),
+    ]);
+    await pump(tester, scope);
+
+    expect(find.byType(FxParamSwitchCell), findsOneWidget);
+    expect(find.byType(FxParamEnumCell), findsNothing);
+
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+
+    // Straight to the value: a switch is the one control whose position IS
+    // the value, so it has no sheet to open and nothing to confirm.
+    expect(scope.pluginWrites, isNotEmpty);
+    expect(scope.pluginWrites.last.$3, 1);
+  });
+
   testWidgets('a stepped parameter lands on a step', (tester) async {
     const type = PluginParamInfo(
       id: 11,
@@ -239,17 +298,17 @@ void main() {
     ]);
     await pump(tester, scope);
 
-    final bar = find.byKey(const Key('signal_fx_param_0'));
-    await tester.tapAt(
-      tester.getTopLeft(bar) + Offset(tester.getSize(bar).width * 0.45, 25),
-    );
+    // Two steps is a menu, not a bar: the taxonomy sends 2..24 to the enum
+    // cell, where every value it can write IS a step by construction.
+    expect(find.byType(FxParamEnumCell), findsOneWidget);
+    await tester.tap(find.byType(FxParamEnumCell));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Highpass').last);
     await tester.pumpAndSettle();
 
-    // The readout names a step, so the value has to BE one — a plugin parked
-    // between two while the label claims one of them is the mismatch.
     expect(scope.pluginWrites, isNotEmpty);
     final (_, _, written) = scope.pluginWrites.last;
-    expect(written, closeTo(written.roundToDouble(), 0.0001));
+    expect(written, 2);
   });
 
   testWidgets('the move buttons are drawn, not typed', (tester) async {
@@ -296,15 +355,22 @@ void main() {
       ]);
       await pump(tester, scope);
 
-      // One fader, for the one parameter that is a control.
+      // Two cells: the control, and the meter beside it.
       expect(find.byKey(const Key('signal_fx_param_0')), findsOneWidget);
-      expect(find.byKey(const Key('signal_fx_param_1')), findsNothing);
+      expect(find.byKey(const Key('signal_fx_param_1')), findsOneWidget);
 
-      // The meter is not drawn: it is only true for the instant it was read,
-      // and the console can only read one while the plugin's own window is
-      // open — which on the appliance is never. A number that never moves
-      // where a number that always moves belongs is worse than no number.
-      expect(find.text('GAIN REDUCTION'), findsNothing);
+      // The meter IS drawn, and drawn as what it is. `DS / 06` sends a
+      // read-only parameter to a borderless, untappable tile and says meters
+      // land there — a value the plugin publishes is part of what the plugin
+      // is, and a strip missing its gain reduction silently disagrees with
+      // the plugin's own window. What it must not do is look tappable.
+      final meter = tester.widget<FxParamTile>(
+        find.descendant(
+          of: find.byKey(const Key('signal_fx_param_1')),
+          matching: find.byType(FxParamTile),
+        ),
+      );
+      expect(meter.onTap, isNull);
 
       // And the plugin's own bypass is not a fader: the footer's pill is THE
       // power control, and a second one beside it is the ambiguity R23 exists
