@@ -494,8 +494,8 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   `docs/plan/2026-06-22-feat-unified-signal-surface-plan.md`, brainstorm +
   mockup in `docs/{brainstorm,design}/`). Replaced the three old node-and-wire
   surfaces (Audio Setup monitor graph, Big Picture settings Routing tab,
-  per-track lane dialog) with ONE full-screen **Signal** canvas
-  (`lib/looper/view/signal_graph/`): hardware **inputs** on the left (rich node =
+  per-track lane dialog) with ONE full-screen **Signal** canvas: hardware
+  **inputs** on the left (rich node =
   on/off gate + the single live FX chain that records + level, reusing the kit's
   `EffectChainCard`s), every track's **lanes** in the middle (FX-snapshot badge
   per recorded lane), hardware **outputs** on the right (structural on/off gate,
@@ -510,7 +510,11 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   performance view by a visible chrome button **and** the `G` shortcut;
   `showSignalPage` re-provides `LooperBloc` + `MonitorCubit` + `AudioSetupCubit`
   into the pushed route. Audio Setup keeps only device/SR/buffer/latency; the
-  `LaneNode` moved into `signal_graph/`. Built in 3 stacked phases (scaffold →
+  `LaneNode` moved into `signal_graph/`.
+  **Superseded (#533):** Signal is a tray rail destination now — cards, a
+  detail panel, an FX editor and an add dialog under
+  `lib/looper/view/signal/`. `signal_graph/` and the FX dock were deleted
+  whole; the chrome button and `G` open the tray at Signal. Built in 3 stacked phases (scaffold →
   rich node + dock → deletions); ~1.3k lines of old-surface tests removed with
   their load-bearing coverage migrated onto the `signal_*` tests.
 - **Segno FX plugins** — Segno's own built-in effects, shipped *as* real,

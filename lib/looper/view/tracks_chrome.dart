@@ -8,9 +8,9 @@ import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/shortcuts_help_sheet.dart';
-import 'package:segno/looper/view/signal_graph/signal_graph.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -112,7 +112,7 @@ class TracksToolbar extends StatelessWidget {
           iconSize: 20,
           color: toolbarIconColor,
           icon: const Icon(Icons.account_tree_outlined),
-          onPressed: () => unawaited(showSignalPage(context)),
+          onPressed: () => context.read<SettingsTrayCubit>().openSignal(),
         ),
         // Settings is also reachable by `S` or right-click; this surfaces it
         // for pointer/touch users.

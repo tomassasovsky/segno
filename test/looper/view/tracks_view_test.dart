@@ -11,9 +11,12 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -132,6 +135,16 @@ void main() {
             BlocProvider<PerformanceRecorderCubit>.value(
               value: performanceRecorder,
             ),
+            // The tray's Signal domain draws input cards, so opening it needs
+            // the same cubits the app provides around it.
+            BlocProvider<InputsCubit>(
+              create: (_) =>
+                  InputsCubit(settings: settings, repository: repository),
+            ),
+            BlocProvider<MonitorCubit>(
+              create: (_) =>
+                  MonitorCubit(repository: repository, settings: settings),
+            ),
           ],
           child: const TracksView(),
         ),
@@ -173,13 +186,39 @@ void main() {
     expect(find.byKey(const Key('settingsTray_handle')), findsOneWidget);
   });
 
-  testWidgets('exposes a visible entry to the Signal surface', (tester) async {
+  /// The tray's own state, read from inside the provider it lives under.
+  SettingsTrayState trayState(WidgetTester tester) =>
+      BlocProvider.of<SettingsTrayCubit>(
+        tester.element(find.byType(SettingsTray)),
+      ).state;
+
+  testWidgets('the Signal button opens the tray at Signal', (tester) async {
     seed(const LooperState(tracks: [Track()]));
     await pump(tester);
 
-    // The chrome carries one global affordance opening the Signal surface
-    // (the per-track routing dialog is gone — wiring lives on Signal now).
     expect(find.byKey(const Key('tracks_openSignal')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('tracks_openSignal')));
+    await tester.pumpAndSettle();
+
+    // Signal used to be a pushed page of its own. Asserting the button EXISTS
+    // is what let it keep existing while leading nowhere.
+    expect(trayState(tester).destination, SettingsTrayDestination.signal);
+    expect(trayState(tester).dragProgress, 1);
+  });
+
+  testWidgets('G opens the tray at Signal too', (tester) async {
+    seed(const LooperState(tracks: [Track()]));
+    await pump(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+    await tester.pumpAndSettle();
+
+    // The key handler is built from a context ABOVE the tray's own provider
+    // unless something puts it below: reading the cubit from the wrong one
+    // throws `ProviderNotFoundException` out of the key callback, and on a
+    // console build — where the toolbar is hidden — `G` is the only way in.
+    expect(tester.takeException(), isNull);
+    expect(trayState(tester).destination, SettingsTrayDestination.signal);
   });
 
   testWidgets('exposes a visible Settings button', (tester) async {

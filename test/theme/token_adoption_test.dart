@@ -21,8 +21,6 @@ const _allowed = <String, String>{
   // Drop shadows. The design system has no shadow tokens at all; these are not
   // palette drift, they are a gap on the DS side.
   'lib/app/app_toasts.dart': 'drop shadow — DS defines no shadow tokens',
-  'lib/looper/view/signal_graph/signal_fx_rack.dart':
-      'drag shadow — DS defines no shadow tokens',
 
   // The DS scrim (`bg-scrim`, ~42% alpha) is tuned for tray/overlay dimming.
   // This barrier blocks the whole app on incompatible firmware and needs to

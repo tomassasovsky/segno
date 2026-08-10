@@ -59,6 +59,12 @@ class _BrowseSheetState extends State<_BrowseSheet> {
     unawaited(_scanIfNeeded());
   }
 
+  /// Looks again, whatever the cache says — what `Rescan` is for.
+  Future<void> _rescan() async {
+    await widget.catalog.scan(rescan: true);
+    if (mounted) setState(() {});
+  }
+
   /// See [scanPluginsIfCold]. Redrawn after, or the sheet holds the empty
   /// list it opened with.
   Future<void> _scanIfNeeded() async {
@@ -103,6 +109,8 @@ class _BrowseSheetState extends State<_BrowseSheet> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
+    final catalog = widget.catalog;
+    final scanning = catalog.isScanning;
     final all = _installed;
     final results = _results;
 
@@ -142,6 +150,39 @@ class _BrowseSheetState extends State<_BrowseSheet> {
                   ),
                 ),
                 const Spacer(),
+                // What a scan is doing, while it is doing it — the sheet is
+                // the only place a scan is visible at all now.
+                if (scanning) ...[
+                  Text(
+                    l10n.signalPluginScanProgress(
+                      catalog.progress.scanned,
+                      catalog.progress.total,
+                    ),
+                    key: const Key('signal_browse_scanning'),
+                    style: TextStyle(
+                      color: surface.textMuted,
+                      fontSize: 14,
+                      height: 1.21,
+                      leadingDistribution: TextLeadingDistribution.even,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  ConsoleSmallButton(
+                    key: const Key('signal_browse_stop_scan'),
+                    label: l10n.signalPluginCancelScan,
+                    onPressed: catalog.cancel,
+                  ),
+                ] else
+                  // A plugin installed after the first successful scan can
+                  // never appear on its own: the cold-start scan is gated on
+                  // one having COMPLETED, so without a way to ask again the
+                  // catalog is whatever the rig had at first boot.
+                  ConsoleSmallButton(
+                    key: const Key('signal_browse_rescan'),
+                    label: l10n.signalPluginRescan,
+                    onPressed: () => unawaited(_rescan()),
+                  ),
+                const SizedBox(width: 12),
                 ConsoleSmallButton(
                   key: const Key('signal_browse_cancel'),
                   label: l10n.cancel,
