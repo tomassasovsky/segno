@@ -109,7 +109,9 @@ void main() {
         l10n.inputChannelLabel(0),
       );
     });
+  });
 
+  group('the console explains its controls', () {
     testWidgets('an explanation uses the words of the control it explains', (
       tester,
     ) async {

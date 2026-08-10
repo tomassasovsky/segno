@@ -764,7 +764,25 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
       ),
       child: _button(surface, caption),
     );
-    if (trailing == null) return button;
+    // Shrink-wrapped to the words. The panel that hosts these captions lays
+    // its children out with `CrossAxisAlignment.stretch`, so a bare return
+    // here handed the tap target the full panel width — 950px at 1024x600,
+    // most of it blank. A tap on empty panel, or one aimed slightly high of
+    // the control below, opened a paragraph over the face, and the next tap
+    // went on dismissing it. The caption with `trailing` never had this: its
+    // `Row` bounds the button already.
+    if (trailing == null) {
+      // The factors matter: a bare `Align` fills whatever it is given, which
+      // under the LOOSE constraints a caption gets outside a stretching
+      // column would move the caption instead of bounding it. With them it
+      // shrink-wraps when it may and aligns when it must.
+      return Align(
+        alignment: AlignmentDirectional.centerStart,
+        widthFactor: 1,
+        heightFactor: 1,
+        child: button,
+      );
+    }
     // `Expanded`, so [trailing]'s own flex children get a bounded width: this
     // row shrink-wraps otherwise, and a `Flexible` inside an unbounded row is
     // a layout assertion.
@@ -848,7 +866,7 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
   /// on a still screen), and a measurement equal to the one held does not
   /// `setState`, so it cannot spin.
   ///
-  /// Both its guards are pinned by tests: dropping `mounted` fails seven of
+  /// Both its guards are pinned by tests: dropping `mounted` fails eight of
   /// them, and dropping the arming call fails the one that moves the face.
   /// That it stops on CLOSE is deliberately NOT claimed as proven — a chain
   /// that kept running would measure, find nothing changed and be invisible

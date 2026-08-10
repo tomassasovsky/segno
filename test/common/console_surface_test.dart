@@ -530,6 +530,55 @@ void main() {
       expect(trailing.left - caption.right, closeTo(16, 0.5));
     });
 
+    testWidgets('the face behind the answer is gone from the reader too', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            extensions: [
+              SurfaceTheme.dark,
+              routingGraphThemeFromSurface(SurfaceTheme.dark),
+            ],
+          ),
+          home: Scaffold(
+            body: Column(
+              children: [
+                const ConsoleCaption(
+                  'in the mix',
+                  explain: 'Whether you hear it.',
+                  explainLabel: 'What "in the mix" does',
+                ),
+                TextButton(onPressed: () {}, child: const Text('behind')),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('console_caption_explain')));
+      await tester.pumpAndSettle();
+
+      // The barrier's OPACITY already stops pointers, so swapping it for a
+      // plain detector leaves every touch test passing. What only
+      // `ModalBarrier` brings is the `BlockSemantics` — and a reader who can
+      // still reach the control an answer is covering is in the same state
+      // the keyboard was before the focus trap.
+      final labels = <String>[];
+      void walk(SemanticsNode node) {
+        if (node.label.isNotEmpty) labels.add(node.label);
+        node.visitChildren((child) {
+          walk(child);
+          return true;
+        });
+      }
+
+      walk(tester.getSemantics(find.byType(MaterialApp)));
+      expect(labels, isNot(contains('behind')));
+      expect(labels, contains('Whether you hear it.'));
+      handle.dispose();
+    });
+
     testWidgets('a tap anywhere else puts the answer away', (tester) async {
       await pumpCaption(tester, explain: 'Whether you hear it.');
       await tester.tap(find.byKey(const Key('console_caption_explain')));

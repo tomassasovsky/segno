@@ -424,6 +424,43 @@ void main() {
       expect(find.byKey(const Key('signal_panel_monitor')), findsOneWidget);
     });
 
+    testWidgets('a lane explains itself in the words for a lane', (
+      tester,
+    ) async {
+      await pump(tester, stage: FxStage.loop);
+      await tester.tap(find.byKey(const Key('signal_card_loop_0_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // Every explanation on this panel is per STAGE, and until now only the
+      // input half was ever rendered: replacing all three ternaries with their
+      // input variant left the whole suite green. The split is the decision
+      // the ARB descriptions spend paragraphs defending — an input's monitor
+      // neither records nor plays back, so "muted still records" there is not
+      // imprecise, it describes a different control.
+      for (final caption in [
+        (l10n.signalPanelChain, l10n.signalPanelChainExplain),
+        (l10n.signalPanelLevel, l10n.signalPanelLevelExplain),
+        (l10n.signalPanelInMix, l10n.signalPanelInMixExplain),
+      ]) {
+        final button = find.descendant(
+          of: find.ancestor(
+            of: find.text(caption.$1),
+            matching: find.byType(ConsoleCaption),
+          ),
+          matching: find.byKey(const Key('console_caption_explain')),
+        );
+        await tester.ensureVisible(button);
+        await tester.pumpAndSettle();
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        expect(find.text(caption.$2), findsOneWidget, reason: caption.$1);
+
+        await tester.tap(find.byKey(const Key('console_caption_scrim')));
+        await tester.pumpAndSettle();
+      }
+    });
+
     testWidgets('a lane answers three — no monitor gate exists for it', (
       tester,
     ) async {
@@ -1333,6 +1370,75 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text(entry.value), findsNothing, reason: entry.key);
       }
+    });
+
+    testWidgets('the question is the words, not the panel beside them', (
+      tester,
+    ) async {
+      await pump(tester, size: const Size(1024, 600));
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      final button = find.descendant(
+        of: find.ancestor(
+          of: find.text(l10n.signalPanelInMix),
+          matching: find.byType(ConsoleCaption),
+        ),
+        matching: find.byKey(const Key('console_caption_explain')),
+      );
+
+      // The panel stretches its children, so a caption that does not shrink
+      // to its own words is handed the whole width — 950px of mostly blank
+      // panel, all of it opening an explanation. A tap aimed slightly high of
+      // the segmented control below would spend itself on a paragraph, and
+      // the next tap on dismissing it.
+      final target = tester.getRect(button);
+      final words = tester.getRect(find.text(l10n.signalPanelInMix));
+      expect(target.width, lessThan(words.width + 60));
+
+      // And the blank panel out at the trailing edge does nothing.
+      await tester.tapAt(Offset(target.right + 300, target.center.dy));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.signalPanelInMixInputExplain), findsNothing);
+    });
+
+    testWidgets('the answer is on screen from its very first frame', (
+      tester,
+    ) async {
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      await tester.tap(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text(l10n.signalPanelInMix),
+            matching: find.byType(ConsoleCaption),
+          ),
+          matching: find.byKey(const Key('console_caption_explain')),
+        ),
+      );
+
+      // ONE frame, not `pumpAndSettle`: the anchor is measured when the answer
+      // opens, and without that measurement the layout runs from `Rect.zero`
+      // for a frame — a flash at the screen's top-left, then a jump down to
+      // the caption. Settling first hides it completely.
+      await tester.pump();
+      final answer = tester.getRect(
+        find.byKey(const Key('console_caption_explanation')),
+      );
+      final caption = tester.getRect(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text(l10n.signalPanelInMix),
+            matching: find.byType(ConsoleCaption),
+          ),
+          matching: find.byKey(const Key('console_caption_explain')),
+        ),
+      );
+      expect(answer.top, greaterThan(caption.top));
     });
 
     testWidgets('the chain keeps its power pill at the trailing edge', (
