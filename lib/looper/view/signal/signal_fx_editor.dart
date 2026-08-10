@@ -199,7 +199,7 @@ class SignalFxEditor extends StatelessWidget {
             _ParamCell(
               spec: _builtInSpec(l10n, type, param, spec),
               plain: param < params.length ? params[param] : 0,
-              label: l10n.effectParamLabel(spec.label),
+              slot: effect.slotId,
               semanticLabel: l10n.a11yFxParam(
                 l10n.effectParamLabel(spec.label),
                 fxBlockName(l10n, effect),
@@ -257,14 +257,21 @@ class SignalFxEditor extends StatelessWidget {
     return _ParamCell(
       spec: info,
       plain: plain,
-      label: info.name,
+      slot: effect.slotId,
       semanticLabel: l10n.a11yFxParam(info.name, fxBlockName(l10n, effect)),
       // The live instance's own string first — it is the only thing that
       // knows what its numbers MEAN.
       readout:
           scope.formatPluginValue(index, info.id, plain) ??
           _plainReadout(info, plain),
-      formatValue: (value) => scope.formatPluginValue(index, info.id, value),
+      // Through the SAME entry the writes go to, and with the same fallback
+      // the tile uses. Asking by position would format the value through a
+      // different plugin the moment the chain moved under the open sheet, and
+      // no fallback at all left a bus stage — which never has a live instance
+      // to ask — showing `2` in the sheet under a tile reading `Highpass`.
+      formatValue: (value) => _atSlot(effect.slotId, (at) {
+        return scope.formatPluginValue(at, info.id, value);
+      }),
       // Plain values, both ways: the sheet and the cells speak the
       // parameter's own units, so nothing here converts. The old fader spoke
       // `0..1` and had to.
@@ -290,34 +297,48 @@ class SignalFxEditor extends StatelessWidget {
   /// argument [_relink] already makes, for the same reason.
   ///
   /// A slot that is GONE takes no writes at all: an edit with nothing to edit
-  /// is not an edit to apply somewhere else. An entry with no slot id is a
-  /// different case — nothing to re-find it by, so the position stands, which
-  /// is what the whole surface did before this. The repository mints ids at
-  /// its write boundary, so a live chain has them and this is the path that
-  /// does not happen.
+  /// is not an edit to apply somewhere else. [_relink] refuses the same way,
+  /// though it parts company on the no-id case — see [_slotIndex].
   ValueChanged<double> _bySlot(
     String? slot,
     ValueChanged<double> Function(int at) write,
   ) => (value) {
+    final at = _slotIndex(slot);
+    if (at < 0) return;
+    write(at)(value);
+  };
+
+  /// Where the entry identified by [slot] is NOW, or -1 when it is gone.
+  ///
+  /// An entry with no slot id keeps the position it was drawn at: there is
+  /// nothing to re-find it by, which is what the whole surface did before
+  /// this. The repository mints ids at its write boundary, so a live chain has
+  /// them and that path does not happen.
+  int _slotIndex(String? slot) {
     final chain = scope.effects;
     final at = slot == null
         ? index
         : chain.indexWhere((effect) => effect.slotId == slot);
-    if (at < 0 || at >= chain.length) return;
-    write(at)(value);
-  };
+    return at >= 0 && at < chain.length ? at : -1;
+  }
+
+  /// Reads something about the entry identified by [slot], or null when it is
+  /// gone — the read half of [_bySlot], so what the sheet SHOWS and what it
+  /// writes cannot end up describing two different effects.
+  T? _atSlot<T>(String? slot, T? Function(int at) read) {
+    final at = _slotIndex(slot);
+    return at < 0 ? null : read(at);
+  }
 
   /// The breadcrumb under the parameter's name in the sheet — which effect,
   /// on which chain.
   ///
   /// The sheet is raised over a dimmed console, so the one thing it cannot
   /// rely on is the surface behind it still answering "what am I editing".
-  String _sourceLine(BuildContext context, int param) {
+  String _sourceLine(BuildContext context, String? slot) {
     final l10n = context.l10n;
-    final chain = scope.effects;
-    final name = param >= 0 && index < chain.length
-        ? fxBlockName(l10n, chain[index])
-        : '';
+    final name =
+        _atSlot(slot, (at) => fxBlockName(l10n, scope.effects[at])) ?? '';
     return '$name · ${scope.label(l10n)}';
   }
 
@@ -354,7 +375,19 @@ class SignalFxEditor extends StatelessWidget {
       // What each step is CALLED, in the effect's own words — the octaver's
       // mode is the built-in that has names, and without these it reads as a
       // bare index or as nothing at all.
-      valueTexts: steps == 0
+      //
+      // Only where they are NAMES, and only where a menu could show them.
+      //
+      // A percentage is not a step name: a future built-in with four plain
+      // divisions must not become a dropdown of `0% 25% 50% 75% 100%`. That
+      // half is protection — no built-in is shaped that way today, so no test
+      // can reach it, and the first one added would find the trap sprung.
+      //
+      // The step ceiling changes nothing observable, since the routing gate
+      // already excludes anything past 24. It stops the octaver's 48-step
+      // Shift building a 49-element list through the localiser on every
+      // rebuild of a panel that never reads it.
+      valueTexts: steps == 0 || steps > 24 || spec.readout == ParamReadout.none
           ? const []
           : [
               for (var step = 0; step <= steps; step++)
@@ -682,7 +715,6 @@ String fxParamReadout(
   };
 }
 
-/// One parameter of one chain entry, in the units the bar speaks.
 /// One parameter's place in the grid: what the tile reads, and what the sheet
 /// edits when it is tapped.
 ///
@@ -693,7 +725,7 @@ class _ParamCell {
   const _ParamCell({
     required this.spec,
     required this.plain,
-    required this.label,
+    required this.slot,
     required this.readout,
     required this.semanticLabel,
     required this.onChanged,
@@ -709,8 +741,11 @@ class _ParamCell {
   /// The current value in [spec]'s own units.
   final double plain;
 
-  /// The parameter's name as the grid shows it.
-  final String label;
+  /// The identity of the chain entry this parameter belongs to. Everything
+  /// the sheet reads and everything it writes goes through it, so a chain
+  /// rewritten under an open sheet cannot leave the two describing different
+  /// effects.
+  final String? slot;
 
   /// The value as it should read, unit included.
   final String readout;
@@ -725,13 +760,6 @@ class _ParamCell {
 
   /// What the tile says out loud: the parameter AND the effect it belongs to.
   final String semanticLabel;
-
-  /// Where [plain] sits in the parameter's range, `0..1`.
-  double get fraction {
-    final span = spec.max - spec.min;
-    if (span == 0) return 0;
-    return ((plain - spec.min) / span).clamp(0.0, 1.0);
-  }
 
   /// The cell the taxonomy calls for. First match wins, so a read-only
   /// parameter never reaches the step-count branches.
@@ -773,9 +801,14 @@ class _ParamCell {
           context,
           spec: spec,
           value: plain,
-          source: editor._sourceLine(context, index),
+          source: editor._sourceLine(context, slot),
           onChanged: set,
           formatValue: formatValue,
+          // The entry can go while its sheet is open. Every write would then
+          // land nowhere and every drag would move a value that no longer
+          // exists, under a panel that has already collapsed behind the
+          // scrim. Closing says so; swallowing the drags does not.
+          isGone: () => editor._slotIndex(slot) < 0,
         ),
       ),
     );
