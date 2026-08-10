@@ -422,7 +422,7 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
+          AppText(
             _latency(l10n, status),
             style: TextStyle(
               color: context.surface.textSecondary,

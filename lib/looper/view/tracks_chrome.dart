@@ -166,7 +166,7 @@ class AudioNotRunningBanner extends StatelessWidget {
             children: [
               const Icon(Icons.warning_amber_rounded, size: 18),
               const SizedBox(width: 10),
-              Expanded(child: Text(context.l10n.engineStoppedBanner)),
+              Expanded(child: AppText(context.l10n.engineStoppedBanner)),
               const Icon(Icons.settings, size: 18),
             ],
           ),
@@ -198,7 +198,7 @@ class SessionMenu extends StatelessWidget {
         // document-model indicator a quick Save writes back to.
         BlocBuilder<SessionCubit, SessionState>(
           buildWhen: (a, b) => a.currentSessionName != b.currentSessionName,
-          builder: (context, state) => Text(
+          builder: (context, state) => AppText(
             state.currentSessionName ?? l10n.sessionUnsaved,
             key: const Key('tracks_session_name'),
             style: TextStyle(
@@ -278,7 +278,7 @@ class ModeIndicator extends StatelessWidget {
           children: [
             Icon(icon, size: 16, color: color),
             const SizedBox(width: 6),
-            Text(
+            AppText(
               modeName,
               style: theme.textTheme.labelLarge?.copyWith(
                 color: color,
@@ -339,7 +339,7 @@ class BankSwitch extends StatelessWidget {
                   color: i == active ? accent : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
+                child: AppText(
                   String.fromCharCode(0x41 + i),
                   style: theme.textTheme.titleMedium?.copyWith(
                     color: i == active
@@ -415,7 +415,7 @@ class TransportTempoDisplay extends StatelessWidget {
               spacing: 8,
               children: [
                 Flexible(
-                  child: Text(
+                  child: AppText(
                     transport.countingIn
                         ? l10n.countingInLabel(transport.countInBeatsLeft)
                         : l10n.currentTempoLabel(
@@ -472,7 +472,7 @@ class _BeatIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (count > _maxDots) {
-      return Text(
+      return AppText(
         context.l10n.beatPositionLabel(current + 1, count),
         overflow: TextOverflow.ellipsis,
         maxLines: 1,

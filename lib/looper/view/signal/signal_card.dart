@@ -107,7 +107,7 @@ class SignalCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         spacing: rowGap,
         children: [
-          Text(
+          AppText(
             name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -119,7 +119,7 @@ class SignalCard extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
-          Text(
+          AppText(
             coordinate,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -133,7 +133,7 @@ class SignalCard extends StatelessWidget {
             ),
           ),
           _RoutingLine(label: routesTo),
-          Text(
+          AppText(
             rack,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -145,7 +145,7 @@ class SignalCard extends StatelessWidget {
               fontWeight: FontWeight.w500,
             ),
           ),
-          Text(
+          AppText(
             summary,
             // Two, because the mockups size a card for exactly that (196 tall
             // with a one-line chain, 215 with two) — and a chain runs to eight
@@ -162,7 +162,7 @@ class SignalCard extends StatelessWidget {
             ),
           ),
           if (line != null)
-            Text(
+            AppText(
               line.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -254,7 +254,7 @@ class _RoutingLine extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       spacing: 5,
       children: [
-        Text(
+        AppText(
           '→',
           style: TextStyle(
             color: surface.textMuted,
@@ -264,7 +264,7 @@ class _RoutingLine extends StatelessWidget {
           ),
         ),
         Flexible(
-          child: Text(
+          child: AppText(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -320,18 +320,14 @@ class SignalScopeChip extends StatelessWidget {
       ),
       child: Center(
         widthFactor: 1,
-        child: Transform.translate(
-          offset: const Offset(0, 1),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: printed ? surface.rec : surface.textSecondary,
-              fontSize: 12,
-              height: 1.5,
-              letterSpacing: 0.72,
-              leadingDistribution: TextLeadingDistribution.even,
-              fontWeight: FontWeight.w600,
-            ),
+        child: AppText(
+          label,
+          style: TextStyle(
+            color: printed ? surface.rec : surface.textSecondary,
+            fontSize: 12,
+            height: 1,
+            letterSpacing: 0.72,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),

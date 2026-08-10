@@ -98,7 +98,7 @@ class _BluetoothPageState extends State<BluetoothPage> {
                     child: !state.supported
                         ? Padding(
                             padding: const EdgeInsets.all(20),
-                            child: Text(
+                            child: AppText(
                               l10n.bluetoothUnsupportedBody,
                               style: context.setupBody,
                             ),
@@ -140,7 +140,7 @@ class _BluetoothPageState extends State<BluetoothPage> {
                                       ),
                                       if (state.errorMessage != null) ...[
                                         const SizedBox(height: 8),
-                                        Text(
+                                        AppText(
                                           state.errorMessage!,
                                           style: context.setupBody.copyWith(
                                             fontSize: 12,
@@ -196,7 +196,7 @@ class _BluetoothControlStrip extends StatelessWidget {
           children: [
             Icon(Icons.bluetooth, size: 18, color: surface.accent),
             const SizedBox(width: 10),
-            Text(
+            AppText(
               alias,
               style: TextStyle(
                 color: surface.textPrimary,
@@ -205,7 +205,7 @@ class _BluetoothControlStrip extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Text(
+            AppText(
               state.status.powered ? l10n.bluetoothOn : l10n.bluetoothOff,
               style: TextStyle(color: surface.textSecondary, fontSize: 12),
             ),
@@ -249,7 +249,7 @@ class _InlineToggle extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
+        AppText(
           label,
           style: TextStyle(
             color: surface.textSecondary,
@@ -285,7 +285,7 @@ class _BluetoothDeviceList extends StatelessWidget {
         SetupGroupLabel(l10n.bluetoothDevicesGroup),
         const SizedBox(height: 6),
         if (state.devices.isEmpty && !state.scanning)
-          Text(l10n.bluetoothEmptyDevices, style: context.setupBody)
+          AppText(l10n.bluetoothEmptyDevices, style: context.setupBody)
         else
           DecoratedBox(
             decoration: BoxDecoration(
@@ -313,7 +313,7 @@ class _BluetoothDeviceList extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
+                          child: AppText(
                             state.devices[i].name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -325,7 +325,7 @@ class _BluetoothDeviceList extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text(
+                        AppText(
                           state.devices[i].address,
                           style: TextStyle(
                             color: surface.textTertiary,

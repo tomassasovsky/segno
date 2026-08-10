@@ -1398,7 +1398,7 @@ void main() {
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
-      final label = tester.widget<Text>(
+      final label = tester.widget<AppText>(
         find.byKey(const Key('tracks_session_name')),
       );
       expect(label.data, l10n.sessionUnsaved);
@@ -1411,7 +1411,9 @@ void main() {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
       expect(
-        tester.widget<Text>(find.byKey(const Key('tracks_session_name'))).data,
+        tester
+            .widget<AppText>(find.byKey(const Key('tracks_session_name')))
+            .data,
         'Verse',
       );
     });

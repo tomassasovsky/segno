@@ -6,7 +6,7 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/setup/setup_surface.dart';
-import 'package:segno/theme/surface_theme.dart';
+import 'package:segno/theme/theme.dart';
 
 /// Dropdown value for the "None" item — not a real device id (hosts may expose
 /// ports whose id is empty, which would duplicate `''` and trip
@@ -43,7 +43,7 @@ class MidiDevicePicker extends StatelessWidget {
         const SizedBox(height: 12),
         const MidiActivityIndicator(),
         const SizedBox(height: 12),
-        Text(l10n.midiRequiredCcsHint, style: context.setupBody),
+        AppText(l10n.midiRequiredCcsHint, style: context.setupBody),
       ],
     );
   }
@@ -64,7 +64,7 @@ class _MidiEmptyState extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: context.surface.line),
       ),
-      child: Text(context.l10n.midiNoDevicesFound, style: context.setupBody),
+      child: AppText(context.l10n.midiNoDevicesFound, style: context.setupBody),
     );
   }
 }
@@ -112,7 +112,7 @@ class _MidiDropdown extends StatelessWidget {
             items: [
               DropdownMenuItem(
                 value: _kMidiNoneValue,
-                child: Text(
+                child: AppText(
                   l10n.midiNone,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -122,7 +122,7 @@ class _MidiDropdown extends StatelessWidget {
                 if (seenIds.add(device.id))
                   DropdownMenuItem(
                     value: device.id,
-                    child: Text(
+                    child: AppText(
                       device.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -131,7 +131,7 @@ class _MidiDropdown extends StatelessWidget {
               if (showAbsentPinned)
                 DropdownMenuItem(
                   value: connection.selectedId,
-                  child: Text(
+                  child: AppText(
                     l10n.midiDeviceNotFound(
                       connection.selectedName.isEmpty
                           ? connection.selectedId
@@ -181,7 +181,7 @@ class _MidiStatusLine extends StatelessWidget {
     // changing Text is not announced on its own.
     return Semantics(
       liveRegion: true,
-      child: Text(
+      child: AppText(
         message,
         key: const Key('midiSettings_status'),
         style: context.setupBody.copyWith(
@@ -247,7 +247,7 @@ class _MidiActivityIndicatorState extends State<MidiActivityIndicator> {
                 color: color,
               ),
               const SizedBox(width: 8),
-              Text(label, style: context.setupBody.copyWith(color: color)),
+              AppText(label, style: context.setupBody.copyWith(color: color)),
             ],
           ),
         ),

@@ -8,6 +8,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/performance/view/performance_completion_sheet.dart';
+import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -132,9 +133,9 @@ void main() {
     // rather than pinning the exact macOS/Windows/other string.
     final labelFinder = find.descendant(
       of: find.byKey(const Key('perfCompletion_reveal')),
-      matching: find.byType(Text),
+      matching: find.byType(AppText),
     );
-    final label = tester.widget<Text>(labelFinder).data;
+    final label = tester.widget<AppText>(labelFinder).data;
     expect(label, isNotNull);
     expect(label, isNotEmpty);
   });

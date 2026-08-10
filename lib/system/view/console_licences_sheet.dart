@@ -133,7 +133,7 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
+                  AppText(
                     l10n.aboutNoticesRow,
                     style: TextStyle(
                       color: surface.textPrimary,
@@ -144,7 +144,7 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
                     ),
                   ),
                   const SizedBox(height: kConsoleLabelGap),
-                  Text(
+                  AppText(
                     // Silent until the walk finishes: a count of nothing is
                     // not a count of zero.
                     packages == null
@@ -265,7 +265,7 @@ class _ConsoleLicencesSheetState extends State<_ConsoleLicencesSheet> {
                           left: _indent(paragraph),
                           bottom: 12,
                         ),
-                        child: Text(
+                        child: AppText(
                           paragraph.text,
                           textAlign:
                               paragraph.indent ==

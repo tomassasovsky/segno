@@ -105,7 +105,7 @@ class _WifiPageState extends State<WifiPage> {
                     child: !state.supported
                         ? Padding(
                             padding: const EdgeInsets.all(20),
-                            child: Text(
+                            child: AppText(
                               state.errorMessage != null
                                   ? wifiErrorMessage(
                                       l10n,
@@ -154,7 +154,7 @@ class _WifiPageState extends State<WifiPage> {
                                       ),
                                       if (state.errorMessage != null) ...[
                                         const SizedBox(height: 8),
-                                        Text(
+                                        AppText(
                                           wifiErrorMessage(
                                             l10n,
                                             state.errorMessage,
@@ -214,7 +214,7 @@ class _WifiPageState extends State<WifiPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         key: const Key('wifi_password_dialog'),
-        title: Text(l10n.wifiPasswordTitle(network.ssid)),
+        title: AppText(l10n.wifiPasswordTitle(network.ssid)),
         content: TextField(
           key: const Key('wifi_password_field'),
           controller: controller,
@@ -226,12 +226,12 @@ class _WifiPageState extends State<WifiPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(l10n.cancel),
+            child: AppText(l10n.cancel),
           ),
           TextButton(
             key: const Key('wifi_password_join'),
             onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-            child: Text(l10n.wifiJoinAction),
+            child: AppText(l10n.wifiJoinAction),
           ),
         ],
       ),
@@ -250,17 +250,17 @@ class _WifiPageState extends State<WifiPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.wifiForgetTitle),
-        content: Text(l10n.wifiForgetConfirm(ssid)),
+        title: AppText(l10n.wifiForgetTitle),
+        content: AppText(l10n.wifiForgetConfirm(ssid)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.cancel),
+            child: AppText(l10n.cancel),
           ),
           TextButton(
             key: const Key('wifi_forget_confirm'),
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.wifiForgetTitle),
+            child: AppText(l10n.wifiForgetTitle),
           ),
         ],
       ),
@@ -332,7 +332,7 @@ class _WifiStatusStrip extends StatelessWidget {
                 duration: const Duration(milliseconds: 280),
                 switchInCurve: Curves.easeOutCubic,
                 switchOutCurve: Curves.easeInCubic,
-                child: Text.rich(
+                child: AppText.rich(
                   key: ValueKey<String>('$ssid|$detail'),
                   TextSpan(
                     children: [
@@ -403,7 +403,7 @@ class _WifiNetworkList extends StatelessWidget {
         SetupGroupLabel(l10n.wifiNetworksGroup),
         const SizedBox(height: 6),
         if (state.networks.isEmpty && !state.scanning)
-          Text(l10n.wifiEmptyNetworks, style: context.setupBody)
+          AppText(l10n.wifiEmptyNetworks, style: context.setupBody)
         else
           DecoratedBox(
             decoration: BoxDecoration(
@@ -489,7 +489,7 @@ class _NetworkRow extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
+                child: AppText(
                   network.ssid,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -504,7 +504,7 @@ class _NetworkRow extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               if (network.saved && !connecting) ...[
-                Text(
+                AppText(
                   network.inRange
                       ? l10n.wifiSavedLabel
                       : l10n.wifiSavedOutOfRange,
@@ -531,7 +531,7 @@ class _NetworkRow extends StatelessWidget {
                   ),
                 )
               else if (network.inRange)
-                Text(
+                AppText(
                   '${network.signal} dBm',
                   style: TextStyle(
                     color: surface.textTertiary,

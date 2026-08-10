@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:segno/l10n/gen/app_localizations.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
 
 class _MockSessionCubit extends MockCubit<SessionState>
@@ -95,7 +96,9 @@ void main() {
       final strings = await l10n();
       await openManager(tester);
       expect(
-        tester.widget<Text>(find.byKey(const Key('sessions_currentName'))).data,
+        tester
+            .widget<AppText>(find.byKey(const Key('sessions_currentName')))
+            .data,
         strings.sessionUnsaved,
       );
     });

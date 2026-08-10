@@ -36,19 +36,20 @@ class HostChromeBar extends StatelessWidget {
             key: backKey,
             onPressed: () => unawaited(Navigator.of(context).maybePop()),
             icon: const Icon(Icons.chevron_left, size: 18),
-            label: Text(l10n.close),
+            label: AppText(l10n.close),
             style: TextButton.styleFrom(
               foregroundColor: surface.textSecondary,
               visualDensity: VisualDensity.compact,
             ),
           ),
           const SizedBox(width: 4),
-          Text(
+          AppText(
             title,
             style: TextStyle(
               color: surface.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.w600,
+              height: 1,
             ),
           ),
           const Spacer(),
@@ -124,28 +125,13 @@ class HostTrayChromeBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          // Caps-only titles (WiFi / Bluetooth) paint slightly high of the
-          // Material icon optical center; 1px nudge matches chevron/refresh.
-          Transform.translate(
-            offset: const Offset(0, 1),
-            child: Text(
-              title,
-              strutStyle: const StrutStyle(
-                fontSize: 16,
-                height: 1,
-                leading: 0,
-                forceStrutHeight: true,
-              ),
-              textHeightBehavior: const TextHeightBehavior(
-                applyHeightToFirstAscent: false,
-                applyHeightToLastDescent: false,
-              ),
-              style: TextStyle(
-                color: surface.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                height: 1,
-              ),
+          AppText(
+            title,
+            style: TextStyle(
+              color: surface.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              height: 1,
             ),
           ),
           const Spacer(),
@@ -245,7 +231,7 @@ class HostActionChip extends StatelessWidget {
                     : surface.textSecondary,
               ),
               const SizedBox(width: 6),
-              Text(
+              AppText(
                 label,
                 style: TextStyle(
                   color: onPressed == null

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/theme.dart';
 
 /// Opens the keyboard-shortcut legend for the Big Picture performance surface
 /// as a dismissible [AlertDialog] (Esc / tap-outside close it). Surfaced by the
@@ -48,7 +49,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
       key: const Key('shortcutsHelp_dialog'),
       // Names the route so assistive tech announces the legend as it opens.
       semanticLabel: l10n.a11yShortcutsHelp,
-      title: Text(l10n.a11yShortcutsHelp),
+      title: AppText(l10n.a11yShortcutsHelp),
       content: SizedBox(
         width: 360,
         child: SingleChildScrollView(
@@ -88,7 +89,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
         TextButton(
           key: const Key('shortcutsHelp_close'),
           onPressed: () => Navigator.of(context).pop(),
-          child: Text(l10n.close),
+          child: AppText(l10n.close),
         ),
       ],
     );
@@ -101,7 +102,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(top: 14, bottom: 2),
-          child: Text(
+          child: AppText(
             title,
             style: theme.textTheme.titleSmall?.copyWith(
               color: theme.colorScheme.primary,
@@ -140,7 +141,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: scheme.outlineVariant),
                 ),
-                child: Text(
+                child: AppText(
                   row.chip,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.labelLarge?.copyWith(
@@ -152,7 +153,7 @@ class _ShortcutsHelpDialog extends StatelessWidget {
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.only(top: 3),
-                  child: Text(row.description),
+                  child: AppText(row.description),
                 ),
               ),
             ],

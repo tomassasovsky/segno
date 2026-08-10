@@ -83,7 +83,7 @@ class _ReadoutHeader extends StatelessWidget {
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Text(
+            child: AppText(
               _modeLabel(l10n, readout.mode),
               style: TextStyle(
                 color: surface.accent,
@@ -132,7 +132,7 @@ class _Stat extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
+        AppText(
           label,
           style: TextStyle(
             color: surface.textTertiary,
@@ -140,7 +140,7 @@ class _Stat extends StatelessWidget {
             letterSpacing: 0.6,
           ),
         ),
-        Text(
+        AppText(
           value,
           style: TextStyle(
             color: emphasised ? surface.textPrimary : surface.textSecondary,
@@ -205,7 +205,7 @@ class _TrackCell extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              AppText(
                 track.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -216,7 +216,7 @@ class _TrackCell extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              Text(
+              AppText(
                 _stateLabel(l10n, track),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

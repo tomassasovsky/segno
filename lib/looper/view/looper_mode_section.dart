@@ -8,7 +8,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/looper_mode_change.dart';
 import 'package:segno/setup/setup_surface.dart';
-import 'package:segno/theme/surface_theme.dart';
+import 'package:segno/theme/theme.dart';
 
 /// The looper feature's own mode-picker settings surface (index plan's UI
 /// conventions — same "lives in the looper feature, not `audio_setup`"
@@ -37,7 +37,7 @@ class LooperModeSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(l10n.looperModeIntro, style: context.setupBody),
+        AppText(l10n.looperModeIntro, style: context.setupBody),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.looperModeGroupLabel),
         const SizedBox(height: 12),
@@ -125,7 +125,7 @@ class _ModeListTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  AppText(
                     label,
                     style: TextStyle(
                       color: selected ? surface.accent : surface.textPrimary,
@@ -134,7 +134,7 @@ class _ModeListTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
+                  AppText(
                     subtitle,
                     style: TextStyle(
                       color: surface.textSecondary,

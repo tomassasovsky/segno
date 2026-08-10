@@ -7,7 +7,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/pedal/view/pedal_assignment_page.dart';
 import 'package:segno/setup/setup_surface.dart';
-import 'package:segno/theme/surface_theme.dart';
+import 'package:segno/theme/theme.dart';
 
 /// Dropdown value for the "None" item — not a real device id (hosts may expose
 /// ports whose id is empty, which would duplicate `''` and trip
@@ -76,7 +76,7 @@ class PedalSettingsSection extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         if (!consoleMode) ...[
-          Text(l10n.pedalOutputHint, style: context.setupBody),
+          AppText(l10n.pedalOutputHint, style: context.setupBody),
           const SizedBox(height: 24),
         ],
         // No hint line under this one: the assignment page opens with the
@@ -92,7 +92,7 @@ class PedalSettingsSection extends StatelessWidget {
             key: const Key('pedalSettings_openAssignments'),
             onPressed: () => showPedalAssignmentPage(context),
             icon: const Icon(Icons.piano_outlined, size: 16),
-            label: Text(l10n.pedalAssignTitle),
+            label: AppText(l10n.pedalAssignTitle),
           ),
         ),
         const SizedBox(height: 24),
@@ -104,7 +104,7 @@ class PedalSettingsSection extends StatelessWidget {
             onSelected: cubit.selectFirmwareVersion,
           ),
           const SizedBox(height: 12),
-          Text(l10n.pedalFirmwareHint, style: context.setupBody),
+          AppText(l10n.pedalFirmwareHint, style: context.setupBody),
         ],
         // The condition itself is the cubit's (it reads the repository's
         // resolved wire version) — this only renders the answer.
@@ -142,7 +142,7 @@ class _PedalEmptyState extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: context.surface.line),
       ),
-      child: Text(context.l10n.pedalNoOutputs, style: context.setupBody),
+      child: AppText(context.l10n.pedalNoOutputs, style: context.setupBody),
     );
   }
 }
@@ -190,7 +190,7 @@ class _PedalFirmwareUpdateBanner extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            AppText(
               l10n.pedalFirmwareUpdateTitle,
               style: context.setupBody.copyWith(
                 color: theme.colorScheme.primary,
@@ -198,7 +198,7 @@ class _PedalFirmwareUpdateBanner extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            Text(body, style: context.setupBody),
+            AppText(body, style: context.setupBody),
           ],
         ),
       ),
@@ -234,7 +234,7 @@ class _PedalDropdown extends StatelessWidget {
       items: [
         DropdownMenuItem(
           value: _kPedalNoneValue,
-          child: Text(
+          child: AppText(
             l10n.pedalNone,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -244,7 +244,7 @@ class _PedalDropdown extends StatelessWidget {
           if (seenIds.add(device.id))
             DropdownMenuItem(
               value: device.id,
-              child: Text(
+              child: AppText(
                 device.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -353,7 +353,7 @@ class _PedalFirmwareVersionDropdown extends StatelessWidget {
       items: [
         DropdownMenuItem(
           value: _kPedalVersionUnknownValue,
-          child: Text(
+          child: AppText(
             l10n.pedalFirmwareUnknown(PedalCodec.protocolVersion),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -366,7 +366,7 @@ class _PedalFirmwareVersionDropdown extends StatelessWidget {
         )
           DropdownMenuItem(
             value: version,
-            child: Text(
+            child: AppText(
               l10n.pedalFirmwareVersion(version),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -402,7 +402,7 @@ class _PedalStatusLine extends StatelessWidget {
     // they happen, not only on navigation (WCAG 4.1.3).
     return Semantics(
       liveRegion: true,
-      child: Text(
+      child: AppText(
         message,
         key: const Key('pedalSettings_status'),
         style: context.setupBody.copyWith(

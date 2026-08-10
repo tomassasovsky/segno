@@ -107,7 +107,11 @@ class TrackColumn extends StatelessWidget {
       fontWeight: FontWeight.w800,
       letterSpacing: 1.5,
     );
-    final nameText = Text(name, textAlign: TextAlign.center, style: nameStyle);
+    final nameText = AppText(
+      name,
+      textAlign: TextAlign.center,
+      style: nameStyle,
+    );
     // Undo/Redo shortcut hints adapt to the host platform — Segno targets
     // Windows/Linux too, so this must not hardcode the macOS modifier.
     final isMac = defaultTargetPlatform == TargetPlatform.macOS;
@@ -145,7 +149,7 @@ class TrackColumn extends StatelessWidget {
             Stack(
               alignment: Alignment.center,
               children: [
-                Text(
+                AppText(
                   '${track.channel + 1}',
                   style: theme.textTheme.titleMedium?.copyWith(
                     color: surface.textSecondary,
@@ -156,7 +160,7 @@ class TrackColumn extends StatelessWidget {
                 if (track.isMultiple)
                   Align(
                     alignment: Alignment.centerRight,
-                    child: Text(
+                    child: AppText(
                       l10n.loopMultipleLabel(track.multiple),
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: theme.colorScheme.primary,
@@ -179,7 +183,7 @@ class TrackColumn extends StatelessWidget {
                   crownBadge,
                   const SizedBox(width: 6),
                 ],
-                Text(
+                AppText(
                   '${track.channel + 1}',
                   style: theme.textTheme.titleMedium?.copyWith(
                     color: surface.textSecondary,
@@ -191,7 +195,7 @@ class TrackColumn extends StatelessWidget {
                 ],
                 const Spacer(),
                 if (track.isMultiple)
-                  Text(
+                  AppText(
                     l10n.loopMultipleLabel(track.multiple),
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: theme.colorScheme.primary,
@@ -326,7 +330,7 @@ class TrackColumn extends StatelessWidget {
                 // Fixed console name size: uniform height across columns, tuned
                 // so a 6-char name (e.g. GUITAR) reaches ~60% of the column
                 // width on the 16" panel. Hard-coded (not width-relative).
-                ? Text(
+                ? AppText(
                     name,
                     textAlign: TextAlign.center,
                     maxLines: 1,
@@ -554,7 +558,7 @@ class _ChainOffPill extends StatelessWidget {
       // The tile's own semantic label already reads the chain state, so this
       // stays out of the tree a screen reader walks.
       child: ExcludeSemantics(
-        child: Text(
+        child: AppText(
           label,
           textAlign: TextAlign.center,
           maxLines: 1,

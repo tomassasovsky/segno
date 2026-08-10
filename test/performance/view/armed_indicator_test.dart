@@ -159,10 +159,10 @@ void main() {
       reason: 'chrome red must not fall back to the stage red',
     );
 
-    final text = tester.widget<Text>(
+    final text = tester.widget<AppText>(
       find.descendant(
         of: find.byKey(const Key('tracks_armedIndicator')),
-        matching: find.byType(Text),
+        matching: find.byType(AppText),
       ),
     );
     expect(text.style?.color, surface.rec);

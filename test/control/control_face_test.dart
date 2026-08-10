@@ -612,7 +612,7 @@ void main() {
           .where((e) => e.trigger.kind == ControllerSourceKind.midiCc)
           .length;
       final prose = tester
-          .widgetList<Text>(find.byType(Text))
+          .widgetList<AppText>(find.byType(AppText))
           .map((t) => t.data ?? '')
           .firstWhere((s) => s.startsWith('CC '));
       expect(prose.split(' · ').length, expected);

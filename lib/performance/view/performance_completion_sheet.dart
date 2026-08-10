@@ -7,6 +7,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/performance/view/export_device_chain_summary.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Shows the [PerformanceCompletionSheet] for the live
@@ -64,7 +65,9 @@ class PerformanceCompletionSheet extends StatelessWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(l10n.perfRenameDuplicate(e.slug))));
+      ).showSnackBar(
+        SnackBar(content: AppText(l10n.perfRenameDuplicate(e.slug))),
+      );
     }
   }
 
@@ -100,20 +103,20 @@ class PerformanceCompletionSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(l10n.perfDone, style: theme.textTheme.titleMedium),
+              AppText(l10n.perfDone, style: theme.textTheme.titleMedium),
               if (message != null) ...[
                 const SizedBox(height: 8),
-                Text(message),
+                AppText(message),
               ],
               const SizedBox(height: 4),
-              Text(_basename(path), style: theme.textTheme.bodySmall),
+              AppText(_basename(path), style: theme.textTheme.bodySmall),
               if (state.tracks.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 ExportDeviceChainSummary(tracks: state.tracks),
               ],
               if (state.reExportFailed) ...[
                 const SizedBox(height: 8),
-                Text(
+                AppText(
                   l10n.perfExportReExportFailed,
                   style: TextStyle(color: theme.colorScheme.error),
                 ),
@@ -135,7 +138,7 @@ class PerformanceCompletionSheet extends StatelessWidget {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.refresh),
-                  label: Text(l10n.perfExportReExport),
+                  label: AppText(l10n.perfExportReExport),
                 ),
               ),
               const SizedBox(height: 4),
@@ -145,20 +148,20 @@ class PerformanceCompletionSheet extends StatelessWidget {
                     key: const Key('perfCompletion_reveal'),
                     onPressed: () => unawaited(_reveal(path)),
                     icon: const Icon(Icons.folder_open),
-                    label: Text(_revealLabel(l10n)),
+                    label: AppText(_revealLabel(l10n)),
                   ),
                   const SizedBox(width: 8),
                   TextButton.icon(
                     key: const Key('perfCompletion_rename'),
                     onPressed: () => unawaited(_rename(context, path)),
                     icon: const Icon(Icons.drive_file_rename_outline),
-                    label: Text(l10n.perfRenameButton),
+                    label: AppText(l10n.perfRenameButton),
                   ),
                   const Spacer(),
                   TextButton(
                     key: const Key('perfCompletion_close'),
                     onPressed: () => Navigator.of(context).pop(),
-                    child: Text(l10n.done),
+                    child: AppText(l10n.done),
                   ),
                 ],
               ),
@@ -205,7 +208,7 @@ class _RenameCaptureDialogState extends State<_RenameCaptureDialog> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return AlertDialog(
-      title: Text(l10n.perfRenameTitle),
+      title: AppText(l10n.perfRenameTitle),
       content: TextField(
         key: const Key('perfRename_field'),
         controller: _controller,
@@ -222,12 +225,12 @@ class _RenameCaptureDialogState extends State<_RenameCaptureDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: Text(l10n.cancel),
+          child: AppText(l10n.cancel),
         ),
         TextButton(
           key: const Key('perfRename_save'),
           onPressed: _submit,
-          child: Text(l10n.perfRenameButton),
+          child: AppText(l10n.perfRenameButton),
         ),
       ],
     );

@@ -129,7 +129,7 @@ class _BrowseSheetState extends State<_BrowseSheet> {
           children: [
             Row(
               children: [
-                Text(
+                AppText(
                   l10n.fxBrowseTitle,
                   style: TextStyle(
                     color: surface.textPrimary,
@@ -140,7 +140,7 @@ class _BrowseSheetState extends State<_BrowseSheet> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
+                AppText(
                   l10n.fxBrowseInstalled(all.length),
                   style: TextStyle(
                     color: surface.textMuted,
@@ -153,7 +153,7 @@ class _BrowseSheetState extends State<_BrowseSheet> {
                 // What a scan is doing, while it is doing it — the sheet is
                 // the only place a scan is visible at all now.
                 if (scanning) ...[
-                  Text(
+                  AppText(
                     l10n.signalPluginScanProgress(
                       catalog.progress.scanned,
                       catalog.progress.total,
@@ -236,7 +236,7 @@ class _BrowseSheetState extends State<_BrowseSheet> {
                 ),
               ),
               const SizedBox(height: 10),
-              Text(
+              AppText(
                 l10n.fxBrowseMatches(results.length),
                 style: TextStyle(
                   color: surface.textMuted,

@@ -8,7 +8,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tempo_cubit.dart';
 import 'package:segno/setup/setup_surface.dart';
-import 'package:segno/theme/surface_theme.dart';
+import 'package:segno/theme/theme.dart';
 
 /// The looper feature's own tempo settings surface (index plan's UI
 /// conventions: tempo/click/quantize/count-in controls live here, not in
@@ -42,7 +42,7 @@ class TempoSettingsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(l10n.tempoSettingsIntro, style: context.setupBody),
+        AppText(l10n.tempoSettingsIntro, style: context.setupBody),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.tempoGroupLabel),
         const SizedBox(height: 12),
@@ -52,7 +52,7 @@ class TempoSettingsSection extends StatelessWidget {
           onTap: cubit.tapTempo,
         ),
         const SizedBox(height: 16),
-        Text(l10n.timeSignatureLabel, style: context.setupBody),
+        AppText(l10n.timeSignatureLabel, style: context.setupBody),
         const SizedBox(height: 12),
         _TimeSignaturePicker(
           tsNum: transport.tsNum,
@@ -71,7 +71,7 @@ class TempoSettingsSection extends StatelessWidget {
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.quantizeGroupLabel),
         const SizedBox(height: 12),
-        Text(l10n.quantizeDivIntro, style: context.setupBody),
+        AppText(l10n.quantizeDivIntro, style: context.setupBody),
         const SizedBox(height: 12),
         _QuantizeDivisionPicker(
           selected: transport.quantizeDiv,
@@ -80,7 +80,7 @@ class TempoSettingsSection extends StatelessWidget {
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.clickGroupLabel),
         const SizedBox(height: 12),
-        Text(l10n.clickModeIntro, style: context.setupBody),
+        AppText(l10n.clickModeIntro, style: context.setupBody),
         const SizedBox(height: 12),
         _ClickSettingsGroup(
           mode: transport.clickMode,
@@ -94,7 +94,7 @@ class TempoSettingsSection extends StatelessWidget {
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.countInGroupLabel),
         const SizedBox(height: 12),
-        Text(l10n.countInIntro, style: context.setupBody),
+        AppText(l10n.countInIntro, style: context.setupBody),
         const SizedBox(height: 12),
         _CountInPicker(
           bars: transport.countInBars,
@@ -186,7 +186,7 @@ class _BpmControlState extends State<_BpmControl> {
         FilledButton(
           key: const Key('tempoSettings_bpm_apply'),
           onPressed: _apply,
-          child: Text(l10n.applyLabel),
+          child: AppText(l10n.applyLabel),
         ),
         const SizedBox(width: 12),
         Tooltip(
@@ -194,7 +194,7 @@ class _BpmControlState extends State<_BpmControl> {
           child: OutlinedButton(
             key: const Key('tempoSettings_tap_button'),
             onPressed: widget.onTap,
-            child: Text(l10n.tapTempoButton),
+            child: AppText(l10n.tapTempoButton),
           ),
         ),
       ],
@@ -302,7 +302,7 @@ class _SignatureChip extends StatelessWidget {
             width: selected ? 1.5 : 1,
           ),
         ),
-        child: Text(
+        child: AppText(
           label,
           style: TextStyle(
             color: selected ? surface.accent : surface.textPrimary,
@@ -389,7 +389,7 @@ class _ClickSettingsGroup extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
-        Text(l10n.clickOutputLabel, style: context.setupBody),
+        AppText(l10n.clickOutputLabel, style: context.setupBody),
         const SizedBox(height: 12),
         SetupChannelChips(
           channelCount: outputChannelCount,
@@ -422,7 +422,7 @@ class _ClickVolumeSlider extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              AppText(
                 l10n.clickVolumeLabel,
                 style: TextStyle(color: surface.textPrimary, fontSize: 13),
               ),
@@ -441,7 +441,7 @@ class _ClickVolumeSlider extends StatelessWidget {
         const SizedBox(width: 12),
         SizedBox(
           width: 48,
-          child: Text(
+          child: AppText(
             '${(clamped * 100).round()}%',
             textAlign: TextAlign.right,
             style: TextStyle(

@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
-import 'package:segno/theme/surface_theme.dart';
+import 'package:segno/theme/theme.dart';
 
 /// A rotary **knob** — the instrument-panel control that replaces a flat slider
 /// for the mix level. Drag up/down (or use arrow keys when focused) to turn it;
@@ -181,7 +181,7 @@ class SignalKnob extends StatelessWidget {
           ExcludeSemantics(
             child: SizedBox(
               width: size * 1.5,
-              child: Text(
+              child: AppText(
                 label.toUpperCase(),
                 style: signalMono(color: surface.textTertiary, size: 9),
                 maxLines: 1,
@@ -194,7 +194,7 @@ class SignalKnob extends StatelessWidget {
           ExcludeSemantics(
             child: SizedBox(
               width: size * 1.5,
-              child: Text(
+              child: AppText(
                 read(v),
                 style: signalMono(color: surface.textSecondary, size: 10.5),
                 maxLines: 1,

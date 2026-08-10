@@ -1035,8 +1035,9 @@ void main() {
   });
 
   group('Tempo keypad sheet', () {
-    String? fieldText(WidgetTester tester) =>
-        tester.widget<Text>(find.byKey(const Key('tempo_keypad_field'))).data;
+    String? fieldText(WidgetTester tester) => tester
+        .widget<AppText>(find.byKey(const Key('tempo_keypad_field')))
+        .data;
 
     Future<void> openSheet(WidgetTester tester) async {
       await tester.tap(find.byKey(const Key('loop_tempo_row')));
@@ -1105,7 +1106,9 @@ void main() {
         await tester.pump();
         await tester.pump();
         expect(
-          tester.widget<Text>(find.byKey(const Key('tempo_keypad_field'))).data,
+          tester
+              .widget<AppText>(find.byKey(const Key('tempo_keypad_field')))
+              .data,
           '143.2',
         );
       },

@@ -847,7 +847,10 @@ void main() {
       ('signal_fx_move_down', 'signal_fx_points_right'),
     ]) {
       expect(
-        find.descendant(of: find.byKey(Key(key)), matching: find.byType(Text)),
+        find.descendant(
+          of: find.byKey(Key(key)),
+          matching: find.byType(AppText),
+        ),
         findsNothing,
       );
       expect(

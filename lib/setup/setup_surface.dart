@@ -1,7 +1,7 @@
 import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:flutter/material.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
-import 'package:segno/theme/surface_theme.dart';
+import 'package:segno/theme/theme.dart';
 
 /// Tabular figures keep numeric values vertically aligned in status tables.
 const _setupNumerals = [FontFeature.tabularFigures()];
@@ -57,7 +57,7 @@ class SetupGroupLabel extends StatelessWidget {
     final surface = context.surface;
     return Row(
       children: [
-        Text(label, style: context.setupKicker),
+        AppText(label, style: context.setupKicker),
         const SizedBox(width: 10),
         Expanded(child: Divider(color: surface.line, height: 1)),
       ],
@@ -98,7 +98,7 @@ class SetupToggleRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                AppText(
                   title,
                   style: TextStyle(
                     color: surface.textPrimary,
@@ -107,7 +107,7 @@ class SetupToggleRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
+                AppText(
                   subtitle,
                   style: TextStyle(
                     color: surface.textSecondary,
@@ -270,7 +270,7 @@ class _OptionCardState<T> extends State<_OptionCard<T>> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
+                AppText(
                   option.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -283,7 +283,7 @@ class _OptionCardState<T> extends State<_OptionCard<T>> {
                 ),
                 if (option.sub.isNotEmpty) ...[
                   const SizedBox(height: 3),
-                  Text(
+                  AppText(
                     option.sub,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -382,7 +382,7 @@ class _ChannelChip extends StatelessWidget {
             width: selected ? 1.5 : 1,
           ),
         ),
-        child: Text(
+        child: AppText(
           label,
           style: TextStyle(
             color: selected ? surface.accent : surface.textSecondary,
@@ -445,7 +445,7 @@ class SetupNavRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    AppText(
                       title,
                       style: TextStyle(
                         color: enabled
@@ -456,7 +456,7 @@ class SetupNavRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
+                    AppText(
                       subtitle,
                       style: TextStyle(
                         color: surface.textSecondary,
@@ -508,7 +508,7 @@ class SetupInfoTable extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
+                    child: AppText(
                       rows[i].$1,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -520,7 +520,7 @@ class SetupInfoTable extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   Flexible(
-                    child: Text(
+                    child: AppText(
                       rows[i].$2,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -584,7 +584,7 @@ class SetupTrackNameRow extends StatelessWidget {
                   shape: BoxShape.circle,
                   border: Border.all(color: surface.line),
                 ),
-                child: Text(
+                child: AppText(
                   '${channel + 1}',
                   style: TextStyle(
                     color: surface.textSecondary,
@@ -595,7 +595,7 @@ class SetupTrackNameRow extends StatelessWidget {
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Text(
+                child: AppText(
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -672,7 +672,7 @@ class SetupTrackLengthPresetRow extends StatelessWidget {
           for (final preset in presets)
             PopupMenuItem<int>(
               value: preset,
-              child: Text(preset <= 0 ? autoLabel : barsLabel(preset)),
+              child: AppText(preset <= 0 ? autoLabel : barsLabel(preset)),
             ),
         ],
         child: Container(
@@ -692,7 +692,7 @@ class SetupTrackLengthPresetRow extends StatelessWidget {
                   shape: BoxShape.circle,
                   border: Border.all(color: surface.line),
                 ),
-                child: Text(
+                child: AppText(
                   '${channel + 1}',
                   style: TextStyle(
                     color: surface.textSecondary,
@@ -703,7 +703,7 @@ class SetupTrackLengthPresetRow extends StatelessWidget {
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Text(
+                child: AppText(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -715,7 +715,7 @@ class SetupTrackLengthPresetRow extends StatelessWidget {
                   ),
                 ),
               ),
-              Text(
+              AppText(
                 valueLabel,
                 style: TextStyle(
                   color: surface.textSecondary,
@@ -788,7 +788,7 @@ class SetupTrackOneShotRow extends StatelessWidget {
               shape: BoxShape.circle,
               border: Border.all(color: surface.line),
             ),
-            child: Text(
+            child: AppText(
               '${channel + 1}',
               style: TextStyle(
                 color: surface.textSecondary,
@@ -799,7 +799,7 @@ class SetupTrackOneShotRow extends StatelessWidget {
           ),
           const SizedBox(width: 14),
           Expanded(
-            child: Text(
+            child: AppText(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

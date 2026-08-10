@@ -90,7 +90,7 @@ class _TrackMeter extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
+          AppText(
             '${track.channel + 1}',
             textAlign: TextAlign.center,
             style: theme.textTheme.headlineSmall?.copyWith(
@@ -109,7 +109,7 @@ class _TrackMeter extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
+          AppText(
             name,
             key: Key('pedalScreen_name_${track.channel}'),
             textAlign: TextAlign.center,

@@ -189,7 +189,7 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
+                      AppText(
                         l10n.trackSettingsDialogTitle(
                           l10n.trackName(names, widget.channel),
                         ),
@@ -204,7 +204,7 @@ class _TrackRoutingDialogState extends State<_TrackRoutingDialog> {
                       const SizedBox(height: kConsoleLabelGap),
                       // The ordinal stays under the name, where it still says
                       // which pad on the pedal this track is.
-                      Text(
+                      AppText(
                         l10n.tracksOrdinal(widget.channel + 1),
                         style: TextStyle(
                           color: surface.textSecondary,

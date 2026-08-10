@@ -113,11 +113,11 @@ void main() {
   double needleX(WidgetTester tester) =>
       tester.getCenter(find.byKey(const Key('tuner_needle'))).dx;
 
-  Text noteText(WidgetTester tester) =>
-      tester.widget<Text>(find.byKey(const Key('tuner_note')));
+  AppText noteText(WidgetTester tester) =>
+      tester.widget<AppText>(find.byKey(const Key('tuner_note')));
 
-  Text centsText(WidgetTester tester) =>
-      tester.widget<Text>(find.byKey(const Key('tuner_cents')));
+  AppText centsText(WidgetTester tester) =>
+      tester.widget<AppText>(find.byKey(const Key('tuner_cents')));
 
   group('TunerTrayPanel', () {
     testWidgets('arms on show and disarms on hide', (tester) async {

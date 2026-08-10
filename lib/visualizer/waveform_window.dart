@@ -250,6 +250,8 @@ class WaveformWindowApp extends StatelessWidget {
       theme: AppTheme.neon,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
+      builder: (context, child) =>
+          AppTextDefaults(child: child ?? const SizedBox.shrink()),
       home: SegnoWindowChromeShell(
         title: title,
         body: Padding(

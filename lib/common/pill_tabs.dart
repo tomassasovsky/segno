@@ -111,7 +111,7 @@ class _Pill extends StatelessWidget {
             borderRadius: BorderRadius.circular(_radius),
             color: selected ? surface.accentSurface : Colors.transparent,
           ),
-          child: Text(
+          child: AppText(
             label,
             textAlign: TextAlign.center,
             style: TextStyle(

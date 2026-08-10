@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/theme/surface_theme.dart';
+import 'package:segno/theme/theme.dart';
 
 /// A dark-styled dropdown that picks an audio device by id: optionally
 /// "System default" (empty id) plus the enumerated [devices]. A selected id
@@ -74,7 +74,7 @@ class AudioDevicePicker extends StatelessWidget {
               if (includeSystemDefault)
                 DropdownMenuItem(
                   value: '',
-                  child: Text(
+                  child: AppText(
                     defaultName == null
                         ? l10n.systemDefault
                         : l10n.systemDefaultNamed(defaultName),
@@ -85,7 +85,7 @@ class AudioDevicePicker extends StatelessWidget {
               for (final device in devices)
                 DropdownMenuItem(
                   value: device.id,
-                  child: Text(
+                  child: AppText(
                     device.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
