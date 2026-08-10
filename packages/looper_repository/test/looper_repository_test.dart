@@ -1969,6 +1969,50 @@ void main() {
       expect(fx.unsupported, isTrue);
     });
 
+    test('a bus-stage plugin keeps no parameters to draw', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              state: 'AAAA',
+              paramValues: {1: 0.25},
+              // A chain copied from somewhere it DID load — a rack, or a
+              // lane-to-bus paste — arrives carrying the enumerated params of
+              // that instance.
+              params: [
+                PluginParamInfo(
+                  id: 1,
+                  name: 'Mix',
+                  unit: '',
+                  min: 0,
+                  max: 1,
+                  def: 0.5,
+                  stepCount: 0,
+                  flags: 0x01,
+                ),
+              ],
+            ),
+          ],
+        );
+
+      // The params describe a LOADED instance and there is none: the engine
+      // hosts no plugins at this stage. Kept, they draw a row per parameter
+      // in the editor — working-looking faders over a plugin that is not
+      // running — and the placeholder saying so never appears, because a
+      // chain with rows to draw is not empty.
+      final fx = repo.trackEffects(0).single as PluginEffect;
+      expect(fx.unsupported, isTrue);
+      expect(fx.params, isEmpty);
+      // And keeps everything it would need to become hostable later, which
+      // is the whole argument for keeping the entry at all.
+      expect(fx.paramValues, {1: 0.25});
+      expect(fx.state, 'AAAA');
+      expect(fx.slotId, isNotNull);
+    });
+
     test('a loaded plugin whose installed version drifts is flagged', () async {
       // Same id, different installed version than the saved ref -> the plugin
       // still loads, but the card notes the drift (D-MISS).
