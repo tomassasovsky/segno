@@ -266,7 +266,7 @@ class ConsoleDisclosure extends StatelessWidget {
       width: kConsoleDisclosureWidth,
       child: open == null
           ? const SizedBox.shrink()
-          : Text(
+          : AppText(
               open ? '▾' : '▸',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -435,7 +435,7 @@ class ConsoleRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  AppText(
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -448,7 +448,7 @@ class ConsoleRow extends StatelessWidget {
                   ),
                   if (subtitle case final sub?) ...[
                     const SizedBox(height: 2),
-                    Text(
+                    AppText(
                       sub,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -471,7 +471,7 @@ class ConsoleRow extends StatelessWidget {
             if (state case final word?) ...[
               const SizedBox(width: kConsoleRowGap),
               quiet(
-                Text(
+                AppText(
                   word,
                   textAlign: TextAlign.right,
                   style: TextStyle(
@@ -488,7 +488,7 @@ class ConsoleRow extends StatelessWidget {
               const SizedBox(width: kConsoleRowGap),
               Expanded(
                 child: quiet(
-                  Text(
+                  AppText(
                     name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -556,7 +556,7 @@ class ConsoleGroupLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return Text(
+    return AppText(
       label,
       style: TextStyle(
         color: surface.textMuted,
@@ -591,7 +591,7 @@ class ConsoleProse extends StatelessWidget {
     final surface = context.surface;
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: maxWidth),
-      child: Text(
+      child: AppText(
         text,
         style: TextStyle(
           color: surface.textMuted,
@@ -734,7 +734,7 @@ class ConsoleActionChip extends StatelessWidget {
                   Icon(glyph, size: 17, color: tint),
                   const SizedBox(width: 10),
                 ],
-                Text(
+                AppText(
                   label,
                   style: TextStyle(
                     color: tint,
@@ -799,7 +799,7 @@ class ConsoleDomainPanel<T> extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
+        AppText(
           title,
           style: TextStyle(
             color: surface.textPrimary,
@@ -864,7 +864,7 @@ class ConsoleFaceHeader extends StatelessWidget {
       height: height,
       child: Row(
         children: [
-          Text(
+          AppText(
             title,
             style: TextStyle(
               color: surface.textPrimary,
@@ -878,7 +878,7 @@ class ConsoleFaceHeader extends StatelessWidget {
           Expanded(
             child: status == null
                 ? const SizedBox.shrink()
-                : Text(
+                : AppText(
                     status!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1186,7 +1186,7 @@ class ConsoleBanner extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
+                AppText(
                   message,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -1256,7 +1256,7 @@ class ConsoleSmallButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: surface.borderStrong),
             ),
-            child: Text(
+            child: AppText(
               label,
               style: TextStyle(
                 color: surface.textPrimary,
@@ -1295,7 +1295,7 @@ class ConsoleEmptyCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(ConsoleCard.radius),
         border: Border.all(color: surface.borderStrong),
       ),
-      child: Text(
+      child: AppText(
         message,
         textAlign: TextAlign.center,
         maxLines: 2,
@@ -1562,7 +1562,7 @@ class _ConsoleValueBarState extends State<ConsoleValueBar>
       children: [
         SizedBox(
           width: ConsoleValueBar.labelWidth,
-          child: Text(
+          child: AppText(
             widget.label,
             textAlign: TextAlign.right,
             style: TextStyle(
@@ -1653,7 +1653,7 @@ class _ConsoleValueBarState extends State<ConsoleValueBar>
         const SizedBox(width: kConsoleRowGap),
         SizedBox(
           width: ConsoleValueBar.readoutWidth,
-          child: Text(
+          child: AppText(
             widget.readout,
             style: TextStyle(
               color: surface.textSecondary,
@@ -1788,7 +1788,7 @@ class ConsoleSegmented<T> extends StatelessWidget {
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(7),
                     ),
-                    child: Text(
+                    child: AppText(
                       segment.label,
                       style: TextStyle(
                         color: segment.value == selected
@@ -1875,7 +1875,7 @@ class ConsoleMiniToggle<T> extends StatelessWidget {
                     color: segment.value == selected
                         ? surface.control
                         : Colors.transparent,
-                    child: Text(
+                    child: AppText(
                       segment.label,
                       style: TextStyle(
                         color: segment.value == selected
@@ -1993,7 +1993,7 @@ class ConsolePickRow extends StatelessWidget {
           SizedBox(
             width: checkWidth,
             child: selected
-                ? Text(
+                ? AppText(
                     '✓',
                     // Set in the bundled mono face, like the disclosure
                     // markers: the check is a glyph the text face is not
@@ -2011,7 +2011,7 @@ class ConsolePickRow extends StatelessWidget {
           ),
           const SizedBox(width: kConsoleRowGap),
           Expanded(
-            child: Text(
+            child: AppText(
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -2025,7 +2025,7 @@ class ConsolePickRow extends StatelessWidget {
           ),
           if (state case final word?) ...[
             const SizedBox(width: kConsoleRowGap),
-            Text(
+            AppText(
               word,
               textAlign: TextAlign.right,
               style: TextStyle(
@@ -2307,7 +2307,7 @@ class _ConsoleChip extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (label.isNotEmpty)
-                Text(
+                AppText(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -2322,7 +2322,7 @@ class _ConsoleChip extends StatelessWidget {
                 ),
               if (sub != null) ...[
                 if (label.isNotEmpty) const SizedBox(height: 2),
-                Text(
+                AppText(
                   sub,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -2351,7 +2351,7 @@ class ConsoleCheck extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
+    return AppText(
       '✓',
       // Mono, for the same reason [ConsolePickRow]'s check is: the glyph is
       // not in every text face, and a tofu box marks nothing.
@@ -2411,7 +2411,7 @@ Future<bool> showConsoleConfirmDialog(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              AppText(
                 title,
                 style: TextStyle(
                   color: surface.textPrimary,
@@ -2420,7 +2420,7 @@ Future<bool> showConsoleConfirmDialog(
                 ),
               ),
               const SizedBox(height: 10),
-              Text(
+              AppText(
                 body,
                 style: TextStyle(
                   color: surface.textSecondary,
@@ -2833,7 +2833,7 @@ class ConsoleDialogButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: edge),
           ),
-          child: Text(
+          child: AppText(
             label,
             style: TextStyle(
               color: ink,

@@ -298,7 +298,7 @@ class _KeyCap extends StatelessWidget {
                     color: tint,
                     semanticLabel: semanticLabel,
                   )
-                : Text(
+                : AppText(
                     label ?? '',
                     style: TextStyle(
                       color: tint,

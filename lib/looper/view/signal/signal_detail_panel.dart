@@ -586,7 +586,7 @@ class _Header extends StatelessWidget {
       // what makes the header the 53 the mockups measure.
       spacing: kConsoleLabelGap,
       children: [
-        Text(
+        AppText(
           title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -598,7 +598,7 @@ class _Header extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
-        Text(
+        AppText(
           subtitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -639,7 +639,7 @@ class _ChainCaption extends StatelessWidget {
         if (!on) ...[
           const SizedBox(width: 10),
           Flexible(
-            child: Text(
+            child: AppText(
               scope.chainDisabledConsequence(l10n),
               key: const Key('signal_panel_chain_off_consequence'),
               overflow: TextOverflow.ellipsis,
@@ -719,7 +719,7 @@ class _ChainAction extends StatelessWidget {
             ),
             child: Center(
               widthFactor: 1,
-              child: Text(
+              child: AppText(
                 label,
                 style: TextStyle(
                   color: active ? surface.accent : surface.textSecondary,
@@ -743,7 +743,7 @@ class _Notice extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => Text(
+  Widget build(BuildContext context) => AppText(
     message,
     style: TextStyle(
       color: context.surface.warning,
@@ -762,7 +762,7 @@ class _Caption extends StatelessWidget {
   final String label;
 
   @override
-  Widget build(BuildContext context) => Text(
+  Widget build(BuildContext context) => AppText(
     label,
     style: TextStyle(
       color: context.surface.textSecondary,
@@ -911,7 +911,7 @@ class _LiftedChip extends StatelessWidget {
     // flies, and a label that sits differently here jumps on the lift.
     child: Center(
       widthFactor: 1,
-      child: Text(
+      child: AppText(
         label,
         style: TextStyle(
           color: surface.accent,
@@ -1157,7 +1157,7 @@ class _ChainStripState extends State<_ChainStrip> {
         // always centred its own, so the run read as misaligned.
         child: Center(
           widthFactor: 1,
-          child: Text(
+          child: AppText(
             fxBlockName(l10n, effect),
             style: TextStyle(
               color: selected ? surface.accent : surface.textSecondary,
@@ -1190,7 +1190,7 @@ class _ChainStripState extends State<_ChainStrip> {
       spacing: 5,
       children: [
         if (chain.isEmpty)
-          Text(
+          AppText(
             l10n.signalPanelChainEmpty,
             key: const Key('signal_panel_chain_empty'),
             style: TextStyle(
@@ -1239,7 +1239,7 @@ class _ChainStripState extends State<_ChainStrip> {
                         ),
                         child: Center(
                           widthFactor: 1,
-                          child: Text(
+                          child: AppText(
                             l10n.fxAddChip,
                             style: TextStyle(
                               color: surface.textSecondary,
@@ -1496,7 +1496,7 @@ class _LevelRowState extends State<_LevelRow> with ConsoleResetTap<_LevelRow> {
           const SizedBox(width: _LevelRow.inset),
           SizedBox(
             width: _LevelRow.readoutWidth,
-            child: Text(
+            child: AppText(
               readout,
               textAlign: TextAlign.end,
               style: TextStyle(

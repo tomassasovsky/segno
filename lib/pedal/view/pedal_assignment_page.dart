@@ -54,7 +54,7 @@ class PedalAssignmentPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: context.surface.background,
-      appBar: AppBar(title: Text(context.l10n.pedalAssignTitle)),
+      appBar: AppBar(title: AppText(context.l10n.pedalAssignTitle)),
       body: const PedalAssignmentView(),
     );
   }
@@ -107,7 +107,7 @@ class _PedalAssignmentViewState extends State<PedalAssignmentView> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text(
+        AppText(
           l10n.pedalAssignIntro,
           style: TextStyle(color: surface.textSecondary),
         ),
@@ -247,7 +247,7 @@ class _Editor extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        AppText(
           button.name.toUpperCase(),
           style: TextStyle(
             color: surface.textPrimary,
@@ -322,7 +322,7 @@ class _UnassignedRow extends StatelessWidget {
     }
     return Row(
       children: [
-        Text(
+        AppText(
           l10n.pedalAssignUnassigned,
           style: TextStyle(color: surface.textTertiary),
         ),
@@ -400,7 +400,7 @@ class _BindingRow extends StatelessWidget {
                   const SizedBox(width: 6),
                 ],
                 Expanded(
-                  child: Text(
+                  child: AppText(
                     label,
                     style: TextStyle(
                       color: resolves
@@ -419,20 +419,20 @@ class _BindingRow extends StatelessWidget {
                 TextButton(
                   key: const Key('assign_clear'),
                   onPressed: onClear,
-                  child: Text(l10n.pedalAssignClear),
+                  child: AppText(l10n.pedalAssignClear),
                 ),
               ],
             ),
             if (!resolves) ...[
               const SizedBox(height: 6),
-              Text(
+              AppText(
                 l10n.pedalAssignStaleDetail,
                 key: const Key('assign_stale_detail'),
                 style: TextStyle(color: surface.textTertiary, fontSize: 12),
               ),
             ],
             const SizedBox(height: 10),
-            Text(
+            AppText(
               l10n.pedalAssignBehavior,
               style: TextStyle(color: surface.textSecondary, fontSize: 12),
             ),
@@ -490,10 +490,10 @@ class _TargetPicker extends StatelessWidget {
         for (final target in targets)
           PopupMenuItem(
             value: target,
-            child: Text(bindingTargetLabel(l10n, trackNames, target)),
+            child: AppText(bindingTargetLabel(l10n, trackNames, target)),
           ),
       ],
-      child: Text(label ?? l10n.pedalAssignTarget),
+      child: AppText(label ?? l10n.pedalAssignTarget),
     );
   }
 }
@@ -527,7 +527,10 @@ class _Notice extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           Expanded(
-            child: Text(text, style: TextStyle(color: surface.textSecondary)),
+            child: AppText(
+              text,
+              style: TextStyle(color: surface.textSecondary),
+            ),
           ),
         ],
       ),

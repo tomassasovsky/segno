@@ -699,10 +699,10 @@ void main() {
 
       // Two effects, so the ORDER the test is named for can actually fail.
       String chipText(int index) => tester
-          .widget<Text>(
+          .widget<AppText>(
             find.descendant(
               of: find.byKey(Key('signal_panel_chip_$index')),
-              matching: find.byType(Text),
+              matching: find.byType(AppText),
             ),
           )
           .data!;
@@ -1240,11 +1240,11 @@ void main() {
       expect(find.byKey(const Key('signal_add_effect')), findsOneWidget);
       expect(find.text(l10n.fxAddTitle), findsOneWidget);
       // Named, so there is no doubt which of three cards is being added to.
-      final prose = tester.widget<Text>(
+      final prose = tester.widget<AppText>(
         find
             .descendant(
               of: find.byKey(const Key('signal_add_effect')),
-              matching: find.byType(Text),
+              matching: find.byType(AppText),
             )
             .at(1),
       );

@@ -263,7 +263,9 @@ void main() {
       }
       await tester.pump();
       expect(
-        tester.widget<Text>(find.byKey(const Key('console_rename_field'))).data,
+        tester
+            .widget<AppText>(find.byKey(const Key('console_rename_field')))
+            .data,
         isEmpty,
       );
       // Backspace on an empty field is a no-op rather than an error.

@@ -2,8 +2,7 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/setup/setup_surface.dart';
-import 'package:segno/theme/app_theme.dart';
-import 'package:segno/theme/surface_theme.dart';
+import 'package:segno/theme/theme.dart';
 
 /// Pumps [child] under [theme] and returns its build context.
 Future<BuildContext> _pump(

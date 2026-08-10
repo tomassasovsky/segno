@@ -2,6 +2,7 @@ import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/theme/looper_theme.dart';
 import 'package:segno/theme/page_transitions.dart';
 import 'package:segno/theme/surface_theme.dart';
+import 'package:segno/theme/text_metrics.dart';
 
 /// Maps the app's neutral [SurfaceTheme] tokens onto the structural tokens the
 /// `routing_graph` package reads via `context.routingGraph`, so the graphs
@@ -192,29 +193,42 @@ abstract final class AppTheme {
     required Color scaffoldBackground,
     required SurfaceTheme surface,
     required LooperTheme looper,
-  }) => _base(scheme).copyWith(
-    scaffoldBackgroundColor: scaffoldBackground,
-    // The design system's hover/pressed tiers as the app-wide ink defaults, so
-    // stock InkWells answer the pointer without each call site restating it
-    // (#499). Widgets that paint their own state layer — the setup option
-    // cards — resolve the same tokens directly.
-    hoverColor: surface.borderHairline,
-    highlightColor: surface.borderSubtle,
-    focusColor: surface.accent.withValues(alpha: 0.24),
-    chipTheme: ChipThemeData(
-      backgroundColor: scheme.surfaceContainerHighest,
-      selectedColor: scheme.primary,
-      secondarySelectedColor: scheme.secondary,
-      labelStyle: TextStyle(color: scheme.onSurface),
-      secondaryLabelStyle: TextStyle(color: scheme.onSecondary),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-    ),
-    extensions: [
-      looper,
-      surface,
-      routingGraphThemeFromSurface(surface),
-    ],
-  );
+  }) {
+    final base = _base(scheme);
+    return base.copyWith(
+      scaffoldBackgroundColor: scaffoldBackground,
+      // Inter metrics sit high of ink; even leading on every text role so
+      // Material widgets that read the theme inherit the same fix (#627).
+      textTheme: withAppTextMetrics(base.textTheme),
+      primaryTextTheme: withAppTextMetrics(base.primaryTextTheme),
+      // The design system's hover/pressed tiers as the app-wide ink defaults, so
+      // stock InkWells answer the pointer without each call site restating it
+      // (#499). Widgets that paint their own state layer — the setup option
+      // cards — resolve the same tokens directly.
+      hoverColor: surface.borderHairline,
+      highlightColor: surface.borderSubtle,
+      focusColor: surface.accent.withValues(alpha: 0.24),
+      chipTheme: ChipThemeData(
+        backgroundColor: scheme.surfaceContainerHighest,
+        selectedColor: scheme.primary,
+        secondarySelectedColor: scheme.secondary,
+        labelStyle: TextStyle(
+          color: scheme.onSurface,
+          leadingDistribution: TextLeadingDistribution.even,
+        ),
+        secondaryLabelStyle: TextStyle(
+          color: scheme.onSecondary,
+          leadingDistribution: TextLeadingDistribution.even,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      ),
+      extensions: [
+        looper,
+        surface,
+        routingGraphThemeFromSurface(surface),
+      ],
+    );
+  }
 
   static ThemeData _base(ColorScheme scheme) => ThemeData(
     useMaterial3: true,

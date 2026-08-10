@@ -82,7 +82,7 @@ class SignalFxEditor extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
+                    child: AppText(
                       _emptyReason(l10n, effect),
                       style: TextStyle(
                         color: surface.textMuted,
@@ -126,7 +126,7 @@ class SignalFxEditor extends StatelessWidget {
           ],
           if (!scope.chainEnabled) ...[
             const SizedBox(height: rowGap),
-            Text(
+            AppText(
               key: const Key('signal_fx_chain_off'),
               l10n.fxChainOffHere,
               style: TextStyle(
@@ -436,7 +436,7 @@ class _Pill extends StatelessWidget {
               borderRadius: BorderRadius.circular(119),
               border: Border.all(color: active ? surface.accent : surface.line),
             ),
-            child: Text(
+            child: AppText(
               label,
               style: TextStyle(
                 color: active ? surface.accent : surface.textSecondary,
@@ -517,7 +517,7 @@ class _Glyph extends StatelessWidget {
             // A disabled end of the chain recedes rather than disappears: the
             // button is still where it was a moment ago.
             child: glyph == null
-                ? Text(
+                ? AppText(
                     label!,
                     style: TextStyle(
                       color: enabled ? surface.textPrimary : surface.textMuted,

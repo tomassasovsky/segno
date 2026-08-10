@@ -642,13 +642,13 @@ class _AppViewState extends State<_AppView> {
         showAppToast(
           id: AppToastId.deviceLost,
           type: ToastificationType.warning,
-          title: Text(l10n.deviceDisconnectedBanner(name)),
+          title: AppText(l10n.deviceDisconnectedBanner(name)),
           icon: const Icon(Icons.warning_amber_rounded),
         );
       case DeviceConnectivity.restored:
         showAppSnackToast(
           id: AppToastId.deviceRestored,
-          title: Text(l10n.deviceReconnectedSnackbar(name)),
+          title: AppText(l10n.deviceReconnectedSnackbar(name)),
           icon: const Icon(Icons.check_circle_outline),
         );
       case DeviceConnectivity.none:
@@ -669,13 +669,13 @@ class _AppViewState extends State<_AppView> {
         showAppToast(
           id: AppToastId.midiLost,
           type: ToastificationType.warning,
-          title: Text(l10n.midiDisconnectedBanner(name)),
+          title: AppText(l10n.midiDisconnectedBanner(name)),
           icon: const Icon(Icons.piano_off_outlined),
         );
       case MidiConnectivity.restored:
         showAppSnackToast(
           id: AppToastId.midiRestored,
-          title: Text(l10n.midiReconnectedSnackbar(name)),
+          title: AppText(l10n.midiReconnectedSnackbar(name)),
           icon: const Icon(Icons.check_circle_outline),
         );
       case MidiConnectivity.none:
@@ -694,12 +694,12 @@ class _AppViewState extends State<_AppView> {
     showAppToast(
       id: AppToastId.audioRecovery,
       type: ToastificationType.warning,
-      title: Text(l10n.audioRecoveryWaitingBanner),
+      title: AppText(l10n.audioRecoveryWaitingBanner),
       icon: const Icon(Icons.usb_off_outlined),
       actions: [
         TextButton(
           onPressed: () => unawaited(openSegnoSettings()),
-          child: Text(l10n.settingsMenuItem),
+          child: AppText(l10n.settingsMenuItem),
         ),
       ],
     );
@@ -722,7 +722,7 @@ class _AppViewState extends State<_AppView> {
     final cubit = context.read<UpdateCubit>();
     showAppToast(
       id: AppToastId.update,
-      title: Text(l10n.updateBannerTitle('${manifest.version}')),
+      title: AppText(l10n.updateBannerTitle('${manifest.version}')),
       icon: const Icon(Icons.system_update_outlined),
       actions: [
         TextButton(
@@ -731,7 +731,7 @@ class _AppViewState extends State<_AppView> {
             dismissAppToast(AppToastId.update);
             unawaited(cubit.dismiss(manifest.version));
           },
-          child: Text(l10n.updateBannerDismissAction),
+          child: AppText(l10n.updateBannerDismissAction),
         ),
         TextButton(
           key: const Key(AppToastId.updateAction),
@@ -739,7 +739,7 @@ class _AppViewState extends State<_AppView> {
             dismissAppToast(AppToastId.update);
             unawaited(openSegnoSettings(section: SettingsSection.updates));
           },
-          child: Text(l10n.updateBannerUpdateAction),
+          child: AppText(l10n.updateBannerUpdateAction),
         ),
       ],
     );
@@ -751,7 +751,7 @@ class _AppViewState extends State<_AppView> {
     showAppToast(
       id: AppToastId.waveformFailed,
       type: ToastificationType.error,
-      title: Text(l10n.waveformWindowFailedBanner),
+      title: AppText(l10n.waveformWindowFailedBanner),
       icon: const Icon(Icons.desktop_access_disabled_outlined),
     );
   }
@@ -762,7 +762,7 @@ class _AppViewState extends State<_AppView> {
     showAppToast(
       id: AppToastId.singleDisplay,
       type: ToastificationType.warning,
-      title: Text(l10n.singleDisplayNotice),
+      title: AppText(l10n.singleDisplayNotice),
       icon: const Icon(Icons.monitor_outlined),
     );
   }
@@ -827,7 +827,7 @@ class _AppViewState extends State<_AppView> {
         // field. Inside the brightness wrapper so the keys dim with
         // everything else.
         final typed = OnScreenKeyboardHost(
-          child: child ?? const SizedBox.shrink(),
+          child: AppTextDefaults(child: child ?? const SizedBox.shrink()),
         );
         return BlocBuilder<DisplayBrightnessCubit, double>(
           buildWhen: (previous, current) => previous != current,

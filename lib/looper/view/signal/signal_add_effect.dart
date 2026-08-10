@@ -209,7 +209,7 @@ class _AddEffectDialogState extends State<_AddEffectDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
+              AppText(
                 l10n.fxAddTitle,
                 style: TextStyle(
                   color: surface.textPrimary,
@@ -220,7 +220,7 @@ class _AddEffectDialogState extends State<_AddEffectDialog> {
                 ),
               ),
               const SizedBox(height: 10),
-              Text(
+              AppText(
                 l10n.fxAddInto(widget.chainName),
                 style: TextStyle(
                   color: surface.textSecondary,

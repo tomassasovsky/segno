@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:segno/common/console_mode.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// The chrome renders in both the main window and the secondary waveform window
@@ -290,7 +291,7 @@ class _SegnoWindowTitleBarState extends State<SegnoWindowTitleBar>
                   alignment: Alignment.centerLeft,
                   child: Padding(
                     padding: const EdgeInsets.only(left: 16),
-                    child: Text(
+                    child: AppText(
                       widget.title,
                       style: const TextStyle(color: Colors.white, fontSize: 14),
                       overflow: TextOverflow.ellipsis,
