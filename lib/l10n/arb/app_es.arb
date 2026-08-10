@@ -1966,6 +1966,9 @@
         }
     },
     "aboutSystemImageRow": "Imagen del sistema",
+    "aboutPedalFirmwareNone": "no encontrado",
+    "aboutPedalFirmwareError": "no se pudo conectar",
+    "aboutPedalFirmwareUpdate": "hay una actualización",
     "aboutPedalFirmwareRow": "Firmware del pedal",
     "aboutPedalFirmwareSubtitle": "4 pulsadores · 2 bancos",
     "aboutProtocolVersion": "v{version}",

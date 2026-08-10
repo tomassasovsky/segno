@@ -2657,6 +2657,18 @@
         }
     },
     "aboutSystemImageRow": "System image",
+    "aboutPedalFirmwareNone": "not found",
+    "@aboutPedalFirmwareNone": {
+        "description": "The pedal firmware readout on SYSTEM / about when no pedal is bound. The row is drawn anyway — no pedal is the case worth seeing."
+    },
+    "aboutPedalFirmwareError": "could not be reached",
+    "@aboutPedalFirmwareError": {
+        "description": "Bind status on the SYSTEM / about pedal row when binding failed."
+    },
+    "aboutPedalFirmwareUpdate": "update available",
+    "@aboutPedalFirmwareUpdate": {
+        "description": "Appended to the SYSTEM / about pedal row's subtitle when the pedal's firmware is behind the app's wire version."
+    },
     "aboutPedalFirmwareRow": "Pedal firmware",
     "aboutPedalFirmwareSubtitle": "4 switches · 2 banks",
     "aboutProtocolVersion": "v{version}",
