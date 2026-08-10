@@ -820,6 +820,14 @@ class LooperRepository {
   static bool _hasUnavailablePlugin(Iterable<TrackEffect> effects) =>
       effects.any((e) => e is PluginEffect && e.unavailable);
 
+  /// Whether [effects] holds a hosted plugin with no display name.
+  ///
+  /// The bus twin of [_hasUnavailablePlugin]: every bus plugin is unavailable
+  /// by construction, so that test would say "needs a scan" forever. What a
+  /// bus entry can be missing is its NAME, and only a scan can supply one.
+  static bool _hasUnnamedPlugin(Iterable<TrackEffect> effects) =>
+      effects.any((e) => e is PluginEffect && e.name.isEmpty);
+
   /// Recovers plugins that failed to load because the engine's in-process scan
   /// cache was empty when their chain was applied.
   ///
@@ -846,7 +854,21 @@ class LooperRepository {
       for (final e in _monitorEffects.entries)
         if (_hasUnavailablePlugin(e.value)) e.key,
     ];
-    if (laneKeys.isEmpty && monitorKeys.isEmpty) return;
+    // A bus chain restored cold — every chain saved before bus entries were
+    // named, and every one saved while nothing had scanned — carries no name,
+    // and no load will ever resolve one for it. The scan is the only thing
+    // that can, so it is worth kicking for these too.
+    final trackKeys = [
+      for (final e in _trackEffects.entries)
+        if (_hasUnnamedPlugin(e.value)) e.key,
+    ];
+    final masterUnnamed = _hasUnnamedPlugin(_masterEffects);
+    if (laneKeys.isEmpty &&
+        monitorKeys.isEmpty &&
+        trackKeys.isEmpty &&
+        !masterUnnamed) {
+      return;
+    }
     // A populated catalog means a scan already ran this session: the chains
     // were applied against a warm cache, so a plugin still unavailable is
     // genuinely missing/unsupported and rescanning cannot change that.
@@ -855,6 +877,19 @@ class LooperRepository {
     final scan = _restoredPluginScan ??= pluginCatalog.scan();
     unawaited(
       scan.then((_) {
+        // The bus re-mark first, and outside the running check: it writes no
+        // engine slot (a bus plugin has none), so a chain that lost its engine
+        // while the scan ran still ends up named.
+        for (final channel in trackKeys) {
+          final effects = _trackEffects[channel];
+          if (effects != null) {
+            _trackEffects[channel] = _markBusUnsupportedPlugins(effects);
+          }
+        }
+        if (masterUnnamed) {
+          _masterEffects = _markBusUnsupportedPlugins(_masterEffects);
+        }
+        if (trackKeys.isNotEmpty || masterUnnamed) _reproject();
         if (!_intendRunning) return; // stopped while scanning
         for (final key in laneKeys) {
           _applyLaneEffects(key.$1, key.$2);
@@ -2575,6 +2610,10 @@ class LooperRepository {
   /// The scanned descriptor for plugin [id], or null when the catalog hasn't
   /// seen it (not yet scanned, or uninstalled).
   PluginDescriptor? _descriptorFor(String id) {
+    // A failed-to-scan descriptor carries an EMPTY id and the offending
+    // FILE's name, so an entry whose id decoded to nothing would match one
+    // and take a broken bundle's filename as its display name.
+    if (id.isEmpty) return null;
     for (final d in pluginCatalog.descriptors) {
       if (d.id == id) return d;
     }
@@ -2665,6 +2704,10 @@ class LooperRepository {
       _trackEffects[channel] = clamped;
     }
     _reproject();
+    // Same cold-start recovery as setLaneEffects: a restored bus chain whose
+    // plugin was not yet scanned lands with no name, and nothing else will
+    // ever fill one in.
+    _recoverUnavailablePlugins();
     if (!_intendRunning) return EngineResult.ok;
     return _applyTrackEffects(channel);
   }
@@ -2680,6 +2723,7 @@ class LooperRepository {
   EngineResult setMasterEffects({required List<TrackEffect> effects}) {
     _masterEffects = _markBusUnsupportedPlugins(_clampAndMint(effects));
     _reproject();
+    _recoverUnavailablePlugins();
     if (!_intendRunning) return EngineResult.ok;
     return _applyMasterEffects();
   }

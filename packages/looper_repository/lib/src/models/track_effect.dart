@@ -237,8 +237,13 @@ class PluginEffect extends TrackEffect {
   final List<PluginParamInfo> params;
 
   /// The plugin's user-visible display name, resolved from the scan catalog
-  /// when loaded. Transient (never persisted — re-resolved from [ref]); empty
-  /// when unresolved, in which case the UI falls back to the stable id.
+  /// when the plugin loads — or, at a bus stage where nothing loads, when the
+  /// chain is written. Empty when unresolved, in which case the UI falls back
+  /// to the stable id.
+  ///
+  /// PERSISTED (the wire format carries it whenever it is non-empty), so an
+  /// uninstalled plugin still says which one it was — which is what tells the
+  /// player what to relink to.
   final String name;
 
   /// Whether the plugin failed to resolve/load on the running engine

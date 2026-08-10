@@ -325,6 +325,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         [...chain]
           ..[event.index] = old.copyWith(
             ref: event.ref,
+            // …except the name, when this points at a DIFFERENT plugin: the
+            // repository re-resolves it from the catalog, and if the catalog
+            // cannot (cold, uninstalled) an empty name falls back to the id.
+            // Keeping the old one would leave the card naming the plugin that
+            // was just replaced, which is worse than naming none.
+            name: old.ref.id == event.ref.id ? old.name : '',
             unavailable: false,
             unsupported: false,
             versionChanged: false,

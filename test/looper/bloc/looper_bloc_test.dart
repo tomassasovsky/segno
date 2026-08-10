@@ -1257,6 +1257,75 @@ void main() {
       );
 
       blocTest<LooperBloc, LooperState>(
+        'a bus relink onto another plugin drops the name it replaced',
+        setUp: () {
+          when(() => repository.masterEffects).thenReturn([
+            const PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'old'),
+              name: 'Ancient Chorus',
+              unavailable: true,
+              unsupported: true,
+            ),
+          ]);
+        },
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) => bloc.add(
+          const LooperBusPluginRelinked(
+            FxAddress(stage: FxStage.master),
+            0,
+            PluginRef(format: PluginFormat.vst3, id: 'new'),
+          ),
+        ),
+        verify: (_) {
+          final pushed =
+              verify(
+                    () => repository.setMasterEffects(
+                      effects: captureAny(named: 'effects'),
+                    ),
+                  ).captured.single
+                  as List<TrackEffect>;
+          // The repository re-resolves it from the catalog. Carrying the old
+          // name through leaves the card confidently naming the plugin that
+          // was replaced whenever the catalog cannot answer.
+          expect((pushed.single as PluginEffect).name, isEmpty);
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
+        'a bus relink onto the SAME plugin keeps its name',
+        setUp: () {
+          when(() => repository.masterEffects).thenReturn([
+            const PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'same'),
+              name: 'Ancient Chorus',
+              unavailable: true,
+              unsupported: true,
+            ),
+          ]);
+        },
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) => bloc.add(
+          const LooperBusPluginRelinked(
+            FxAddress(stage: FxStage.master),
+            0,
+            // Accepting a version change: same plugin, so the name it is
+            // already showing is the right one whatever the catalog knows.
+            PluginRef(format: PluginFormat.vst3, id: 'same', version: 2),
+          ),
+        ),
+        verify: (_) {
+          final pushed =
+              verify(
+                    () => repository.setMasterEffects(
+                      effects: captureAny(named: 'effects'),
+                    ),
+                  ).captured.single
+                  as List<TrackEffect>;
+          expect((pushed.single as PluginEffect).name, 'Ancient Chorus');
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
         'a bus relink keeps the persisted state, tweaks and power flag',
         setUp: () {
           when(() => repository.masterEffects).thenReturn([
