@@ -97,16 +97,6 @@ enum SettingsTrayDestination {
   /// had nowhere to live at all, because nothing in the app knew what the
   /// disk held or what the box was called (#530).
   system,
-
-  /// Screen brightness, pinned at the foot of the rail.
-  ///
-  /// Last and apart from the eight domains above it, as the mockups draw it:
-  /// the others answer "how is the rig configured", and this one answers
-  /// "can I see the screen". It replaced a `home` face whose other tiles —
-  /// WiFi, Bluetooth, Settings — had all become rail domains of their own,
-  /// leaving a destination called "Controls" that led to two shortcuts and a
-  /// slider. The pen's rail has no such entry.
-  brightness,
 }
 
 /// State for [SettingsTrayCubit]: tray open/drag is ephemeral; brightness is

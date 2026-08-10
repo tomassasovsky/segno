@@ -1086,6 +1086,7 @@
     "@trayBluetoothLabel": {
         "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
     },
+    "trayBrightnessPercent": "{percent}%",
     "trayBrightLabel": "Brillo",
     "@trayBrightLabel": {
         "description": "Navigation rail entry for screen brightness, pinned below the eight domains as the mockups draw it."

@@ -425,8 +425,20 @@ void main() {
       await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
       await tester.pumpAndSettle();
 
-      expect(cubit.state.destination, SettingsTrayDestination.brightness);
-      expect(find.byKey(const Key('settingsTray_brightness')), findsOneWidget);
+      // A popover over the face, not a face of its own — `SYSTEM /
+      // brightness` draws the System panel still showing behind it, and
+      // `t/brightness` calls it a popover outright. The destination does not
+      // move, so the rail has not navigated anywhere.
+      expect(find.byKey(const Key('trayBrightness_popover')), findsOneWidget);
+      expect(cubit.state.destination, SettingsTrayDestination.network);
+      expect(find.byKey(const Key('network_tray_panel')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('trayBrightness_scrim')));
+      await tester.pumpAndSettle();
+
+      // And the scrim closes the popover WITHOUT closing the tray under it.
+      expect(find.byKey(const Key('trayBrightness_popover')), findsNothing);
+      expect(cubit.state.dragProgress, 1);
     });
 
     testWidgets('brightness sits at the foot, not under the last domain', (
@@ -580,7 +592,12 @@ void main() {
   });
 
   group('brightness slider tile', () {
-    setUp(() => cubit.showDestination(SettingsTrayDestination.brightness));
+    /// The slider lives in the rail's popover now, so every test here opens
+    /// it first.
+    Future<void> openBrightness(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
+      await tester.pumpAndSettle();
+    }
 
     testWidgets(
       'exposes the state default (0.8) as an 80% semantics value',
@@ -588,7 +605,8 @@ void main() {
         final handle = tester.ensureSemantics();
         cubit.open();
         await pump(tester);
-        await tester.pump();
+        await tester.pumpAndSettle();
+        await openBrightness(tester);
 
         // Slider sets its own semantics boundary — an ancestor label never
         // merges into it, so `_BrightnessSliderTile` excludes Slider's own
@@ -612,7 +630,8 @@ void main() {
     ) async {
       cubit.open();
       await pump(tester);
-      await tester.pump();
+      await tester.pumpAndSettle();
+      await openBrightness(tester);
 
       final slider = find.byKey(const Key('settingsTray_brightness'));
       await tester.drag(slider, const Offset(0, 100));
@@ -626,7 +645,8 @@ void main() {
     ) async {
       cubit.open();
       await pump(tester);
-      await tester.pump();
+      await tester.pumpAndSettle();
+      await openBrightness(tester);
 
       final slider = find.byKey(const Key('settingsTray_brightness'));
       await tester.drag(slider, const Offset(0, -300));
@@ -641,7 +661,8 @@ void main() {
       (tester) async {
         cubit.open();
         await pump(tester);
-        await tester.pump();
+        await tester.pumpAndSettle();
+        await openBrightness(tester);
 
         await tester.tap(find.byKey(const Key('settingsTray_brightness')));
         await tester.pump();
@@ -663,7 +684,8 @@ void main() {
 
       cubit.open();
       await pump(tester);
-      await tester.pump();
+      await tester.pumpAndSettle();
+      await openBrightness(tester);
 
       // The tile's own pointer listener requests focus on tap.
       await tester.tap(find.byKey(const Key('settingsTray_brightness')));

@@ -21,7 +21,10 @@ import 'package:segno/theme/theme.dart';
 /// rail is.
 class TrayNavigationRail extends StatelessWidget {
   /// Creates a [TrayNavigationRail].
-  const TrayNavigationRail({super.key});
+  const TrayNavigationRail({required this.onBrightness, super.key});
+
+  /// Opens the brightness popover. Not a destination — see [domains].
+  final VoidCallback onBrightness;
 
   /// Rail width. Sized for an icon beside a full-size label, because the rail
   /// is a navigation spine and should read as one — a column of icon-over-
@@ -29,20 +32,20 @@ class TrayNavigationRail extends StatelessWidget {
   ///
   /// From the redesign mockups (#490); the earlier 84px stacked form was built
   /// without them, since the decision record carries no diagrams.
-  static const double _width = 165;
+  /// Rail width. Public because the brightness popover hangs off its edge.
+  static const double width = 165;
 
   static const double _itemGap = 4;
 
-  /// The eight domain entries, in the order the mockups stack them.
-  /// [SettingsTrayDestination.brightness] is deliberately absent — it is
-  /// pinned below these rather than being one of them.
+  /// The rail's destinations, in the order the mockups stack them.
+  ///
+  /// Every value: brightness is NOT one of them — it opens a popover rather
+  /// than a face, so it is a button pinned below these, not a ninth domain.
   ///
   /// Public so a test can aim at the gap between the two groups without
   /// naming a destination that a later part will move.
-  static final List<SettingsTrayDestination> domains = [
-    for (final d in SettingsTrayDestination.values)
-      if (d != SettingsTrayDestination.brightness) d,
-  ];
+  static const List<SettingsTrayDestination> domains =
+      SettingsTrayDestination.values;
 
   /// The glyph for [destination].
   ///
@@ -79,9 +82,6 @@ class TrayNavigationRail extends StatelessWidget {
         // inside is the console itself — the box, its screens, its disk and
         // its build — not any one of the four tabs.
         SettingsTrayDestination.system => Icons.memory_outlined,
-        // A sun, as the mockups draw it — the one entry that is about the
-        // screen rather than about the rig.
-        SettingsTrayDestination.brightness => Icons.brightness_6_outlined,
       };
 
   /// The caption for [destination]. Exhaustive for the same reason as
@@ -98,7 +98,6 @@ class TrayNavigationRail extends StatelessWidget {
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
     SettingsTrayDestination.network => l10n.trayNetworkLabel,
     SettingsTrayDestination.system => l10n.traySystemLabel,
-    SettingsTrayDestination.brightness => l10n.trayBrightLabel,
   };
 
   @override
@@ -113,11 +112,11 @@ class TrayNavigationRail extends StatelessWidget {
     // not only in a test harness.
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth.isFinite
-            ? math.min(_width, constraints.maxWidth)
-            : _width;
+        final railWidth = constraints.maxWidth.isFinite
+            ? math.min(TrayNavigationRail.width, constraints.maxWidth)
+            : TrayNavigationRail.width;
         return SizedBox(
-          width: width,
+          width: railWidth,
           // The rail absorbs taps that miss an item. Without this they fall
           // through to the panel's full-bleed dismiss detector and close the
           // tray — fine for the home face's tile grid (Control Center
@@ -184,25 +183,24 @@ class TrayNavigationRail extends StatelessWidget {
                           ),
                         ),
                       ),
-                      // The drag handle rides at the open panel's bottom edge,
-                      // over the rail's last band — pad past it so this does
-                      // not sit under a control that closes the tray.
+                      // The drag handle rides at the open panel's bottom
+                      // edge — pad past it so this does not sit under a
+                      // control that closes the tray.
                       Padding(
                         padding: const EdgeInsets.only(
                           bottom: kTrayHandleHeight,
                         ),
                         child: _RailItem(
                           key: const Key('settingsTrayRail_brightness'),
-                          icon: _iconFor(SettingsTrayDestination.brightness),
-                          label: _labelFor(
-                            l10n,
-                            SettingsTrayDestination.brightness,
-                          ),
-                          selected:
-                              destination == SettingsTrayDestination.brightness,
-                          onTap: () => cubit.showDestination(
-                            SettingsTrayDestination.brightness,
-                          ),
+                          // A sun, as the mockups draw it — the one entry
+                          // that is about the screen rather than the rig.
+                          icon: Icons.brightness_6_outlined,
+                          label: l10n.trayBrightLabel,
+                          // Never "selected": it does not replace the face
+                          // behind it, so a lit pill here would claim a
+                          // destination the rail has not moved to.
+                          selected: false,
+                          onTap: onBrightness,
                         ),
                       ),
                     ],
