@@ -7,7 +7,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/fx_editor/fx_plugin_state.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
-import 'package:segno/looper/view/signal/fx_param_edit_sheet.dart';
+import 'package:segno/looper/view/signal/fx_param_editor.dart';
 import 'package:segno/looper/view/signal/fx_param_tile.dart';
 import 'package:segno/looper/view/signal/signal_browse_plugins.dart';
 import 'package:segno/theme/theme.dart';
@@ -24,7 +24,7 @@ import 'package:segno/theme/theme.dart';
 /// Parameters are the grid `DS / 06` resolves: one 78px tile per parameter,
 /// wrapping, with the kind of parameter choosing the cell. A tile opens the
 /// editor sheet and writes nothing itself.
-class SignalFxEditor extends StatelessWidget {
+class SignalFxEditor extends StatefulWidget {
   /// Creates a [SignalFxEditor] for entry [index] of [scope]'s chain.
   const SignalFxEditor({
     required this.scope,
@@ -51,22 +51,68 @@ class SignalFxEditor extends StatelessWidget {
 
   /// Gap between the last parameter and the footer's divider.
   static const double footerGap = 15;
+  @override
+  State<SignalFxEditor> createState() => _SignalFxEditorState();
+}
+
+class _SignalFxEditorState extends State<SignalFxEditor> {
+  /// The slot and parameter being edited, or null when the grid is just
+  /// a grid. Keyed by SLOT, for the same reason the panel keys its
+  /// selection by slot: a drag reorders the chain under an open editor.
+  ({String slot, int param})? _editing;
+
+  void _open(String slot, int param) =>
+      setState(() => _editing = (slot: slot, param: param));
+
+  void _closeEditor() => setState(() => _editing = null);
+
+  /// The open parameter's editor, in the card under the grid.
+  Widget _editorFor(({String slot, int param}) open) {
+    // The same no-id fallback the rest of this file uses: an entry minted
+    // before slot ids, or a fake in a test, has an empty one, and addressing
+    // it by position is the only thing left.
+    final resolved = _slotIndex(open.slot);
+    final at = resolved < 0 && open.slot.isEmpty ? widget.index : resolved;
+    if (at < 0 || at >= widget.scope.effects.length) {
+      return const SizedBox.shrink();
+    }
+    final effect = widget.scope.effects[at];
+    final cell = _cellsFor(context.l10n, effect).firstWhere(
+      (c) => c.spec.id == open.param,
+      orElse: () => throw StateError('no cell for ${open.param}'),
+    );
+    return FxParamEditor(
+      key: Key('signal_fx_editor_param_${open.param}'),
+      spec: cell.spec,
+      value: cell.plain,
+      source: _sourceLine(context, open.slot),
+      onChanged: cell.onChanged!,
+      formatValue: cell.formatValue,
+      onClose: _closeEditor,
+      // The entry can go while its editor is open. Every write would then
+      // land nowhere and every drag would move a value that no longer
+      // exists. Closing says so; swallowing the drags does not.
+      isGone: () => _slotIndex(open.slot) < 0,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final chain = scope.effects;
+    final chain = widget.scope.effects;
     // The entry can go while its editor is open — another surface removing it,
     // a record-time snapshot rewriting the chain. Nothing to draw beats a
     // block of someone else's parameters.
-    if (index < 0 || index >= chain.length) return const SizedBox.shrink();
-    final effect = chain[index];
+    if (widget.index < 0 || widget.index >= chain.length) {
+      return const SizedBox.shrink();
+    }
+    final effect = chain[widget.index];
     final rows = _cellsFor(l10n, effect);
 
     return Container(
       key: const Key('signal_fx_editor'),
-      padding: const EdgeInsets.all(padding - 1),
+      padding: const EdgeInsets.all(SignalFxEditor.padding - 1),
       decoration: BoxDecoration(
         color: surface.background,
         borderRadius: BorderRadius.circular(12),
@@ -126,8 +172,12 @@ class SignalFxEditor extends StatelessWidget {
                   ),
               ],
             ),
-          if (!scope.chainEnabled) ...[
-            const SizedBox(height: rowGap),
+          if (_editing case final open?) ...[
+            const SizedBox(height: SignalFxEditor.rowGap),
+            _editorFor(open),
+          ],
+          if (!widget.scope.chainEnabled) ...[
+            const SizedBox(height: SignalFxEditor.rowGap),
             Text(
               key: const Key('signal_fx_chain_off'),
               l10n.fxChainOffHere,
@@ -139,8 +189,13 @@ class SignalFxEditor extends StatelessWidget {
               ),
             ),
           ],
-          const SizedBox(height: footerGap),
-          _Footer(scope: scope, index: index, effect: effect, onClose: onClose),
+          const SizedBox(height: SignalFxEditor.footerGap),
+          _Footer(
+            scope: widget.scope,
+            index: widget.index,
+            effect: effect,
+            onClose: widget.onClose,
+          ),
         ],
       ),
     );
@@ -172,9 +227,9 @@ class SignalFxEditor extends StatelessWidget {
     if (picked == null) return;
     final at = slot == null
         ? -1
-        : scope.effects.indexWhere((effect) => effect.slotId == slot);
+        : widget.scope.effects.indexWhere((effect) => effect.slotId == slot);
     if (at < 0) return;
-    scope.relinkPlugin(
+    widget.scope.relinkPlugin(
       at,
       PluginRef(
         format: picked.format,
@@ -213,7 +268,7 @@ class SignalFxEditor extends StatelessWidget {
               onChanged: _bySlot(
                 effect.slotId,
                 (at) => (value) {
-                  scope.setParam(at, param, value);
+                  widget.scope.setParam(at, param, value);
                 },
               ),
             ),
@@ -262,7 +317,11 @@ class SignalFxEditor extends StatelessWidget {
       // The live instance's own string first — it is the only thing that
       // knows what its numbers MEAN.
       readout:
-          scope.formatPluginValue(_slotIndex(effect.slotId), info.id, plain) ??
+          widget.scope.formatPluginValue(
+            _slotIndex(effect.slotId),
+            info.id,
+            plain,
+          ) ??
           _plainReadout(info, plain),
       // Through the SAME entry the writes go to, and with the same fallback
       // the tile uses. Asking by position would format the value through a
@@ -271,7 +330,7 @@ class SignalFxEditor extends StatelessWidget {
       // to ask — showing `2` in the sheet under a tile reading `Highpass`.
       formatValue: (value) =>
           _atSlot(effect.slotId, (at) {
-            return scope.formatPluginValue(at, info.id, value);
+            return widget.scope.formatPluginValue(at, info.id, value);
           }) ??
           _plainReadout(info, value),
       // Plain values, both ways: the sheet and the cells speak the
@@ -280,9 +339,9 @@ class SignalFxEditor extends StatelessWidget {
       onChanged: !live
           ? null
           : _bySlot(
-              scope.effects[index].slotId,
+              widget.scope.effects[widget.index].slotId,
               (at) => (value) {
-                scope.setPluginParam(at, info.id, value);
+                widget.scope.setPluginParam(at, info.id, value);
               },
             ),
     );
@@ -317,9 +376,9 @@ class SignalFxEditor extends StatelessWidget {
   /// this. The repository mints ids at its write boundary, so a live chain has
   /// them and that path does not happen.
   int _slotIndex(String? slot) {
-    final chain = scope.effects;
+    final chain = widget.scope.effects;
     final at = slot == null
-        ? index
+        ? widget.index
         : chain.indexWhere((effect) => effect.slotId == slot);
     return at >= 0 && at < chain.length ? at : -1;
   }
@@ -340,8 +399,9 @@ class SignalFxEditor extends StatelessWidget {
   String _sourceLine(BuildContext context, String? slot) {
     final l10n = context.l10n;
     final name =
-        _atSlot(slot, (at) => fxBlockName(l10n, scope.effects[at])) ?? '';
-    return '$name · ${scope.label(l10n)}';
+        _atSlot(slot, (at) => fxBlockName(l10n, widget.scope.effects[at])) ??
+        '';
+    return '$name · ${widget.scope.label(l10n)}';
   }
 
   /// A built-in parameter's range, in the type the sheet and the taxonomy
@@ -376,7 +436,7 @@ class SignalFxEditor extends StatelessWidget {
       flags: 0x01,
       // What each step is CALLED, in the effect's own words — the octaver's
       // mode is the built-in that has names, and without these it reads as a
-      // bare index or as nothing at all.
+      // bare widget.index or as nothing at all.
       //
       // Only where they are NAMES, and only where a menu could show them.
       //
@@ -765,64 +825,22 @@ class _ParamCell {
 
   /// The cell the taxonomy calls for. First match wins, so a read-only
   /// parameter never reaches the step-count branches.
-  Widget build(BuildContext context, SignalFxEditor editor) {
-    final set = onChanged;
-    // Read-only first, then the step count: a meter reports a value it will
-    // not take, so it is never a switch and never a menu however many steps
-    // it claims.
-    if (set == null) {
-      return FxParamTile(
-        spec: spec,
-        value: plain,
-        valueText: readout,
-        semanticLabel: semanticLabel,
-        onTap: null,
-      );
-    }
-    // Named steps go to the menu, whatever their count — including two of
-    // them. A switch has no room for a caption (36px, by the DS), so a
-    // two-state parameter whose states have names would show neither.
-    final named =
-        spec.valueTexts.length == spec.stepCount + 1 && spec.stepCount >= 1;
-    if (spec.stepCount == 1 && !named) {
-      return FxParamSwitchCell(
-        spec: spec,
-        value: plain,
-        semanticLabel: semanticLabel,
-        onChanged: set,
-      );
-    }
-    // Labelled, not merely small: steps AND a name for each one. A three-step
-    // parameter with no names would draw a menu of `0 1 2 3`, which says less
-    // than the value it replaced.
-    if (named && spec.stepCount <= 24) {
-      return FxParamEnumCell(
-        spec: spec,
-        value: plain,
-        semanticLabel: semanticLabel,
-        onChanged: set,
-      );
-    }
+  Widget build(BuildContext context, _SignalFxEditorState editor) {
+    // Every writable parameter is a tile, and every tile opens the editor.
+    // The grid used to carry a switch that committed the moment you touched
+    // it and a menu that was a stock Material dropdown — one changed the
+    // sound from a surface meant to be an overview, and the other did not
+    // look like anything else on this console.
     return FxParamTile(
       spec: spec,
       value: plain,
       valueText: readout,
       semanticLabel: semanticLabel,
-      onTap: () => unawaited(
-        FxParamEditSheet.show(
-          context,
-          spec: spec,
-          value: plain,
-          source: editor._sourceLine(context, slot),
-          onChanged: set,
-          formatValue: formatValue,
-          // The entry can go while its sheet is open. Every write would then
-          // land nowhere and every drag would move a value that no longer
-          // exists, under a panel that has already collapsed behind the
-          // scrim. Closing says so; swallowing the drags does not.
-          isGone: () => editor._slotIndex(slot) < 0,
-        ),
-      ),
+      // A cell with no slot is a built-in's parameter, which the grid
+      // addresses by position rather than identity.
+      onTap: onChanged == null || slot == null
+          ? null
+          : () => editor._open(slot!, spec.id),
     );
   }
 }

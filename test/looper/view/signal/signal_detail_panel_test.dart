@@ -17,7 +17,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
-import 'package:segno/looper/view/signal/fx_param_edit_sheet.dart';
+import 'package:segno/looper/view/signal/fx_param_editor.dart';
 import 'package:segno/looper/view/signal/signal_detail_panel.dart';
 import 'package:segno/looper/view/signal/signal_tray_panel.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
@@ -957,7 +957,7 @@ void main() {
         () => bloc.add(any(that: isA<LooperBusEffectParamChanged>())),
       );
 
-      final track = find.byKey(const Key('fxParamSheet_track'));
+      final track = find.byKey(const Key('fxParamEditor_track'));
       await tester.tapAt(
         tester.getTopLeft(track) +
             Offset(tester.getSize(track).width * 0.75, 12),
@@ -1118,7 +1118,7 @@ void main() {
       // unscoped finder passes with no breadcrumb at all.
       expect(
         find.descendant(
-          of: find.byType(FxParamEditSheet),
+          of: find.byType(FxParamEditor),
           matching: find.textContaining(l10n.effectReverb),
         ),
         findsOneWidget,
