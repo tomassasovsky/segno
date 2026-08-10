@@ -20,6 +20,7 @@ keyboard or mouse.
 | `compositor/labwc/autostart` | `~/.config/labwc/autostart` | Pins displays, then launches the app |
 | `compositor/labwc/rc.xml` | `~/.config/labwc/rc.xml` | Chromeless, maximized, no kill chord |
 | `pin-displays.sh` | (run from autostart) | Deterministic output pinning by name |
+| `profile-on-device.sh` | (run from your workstation) | Runs a profile bundle + tunnels the VM service for DevTools |
 | `overlayfs/README.md` | — | Read-only root + writable data partition setup |
 
 ## Install
@@ -74,3 +75,39 @@ keyboard or mouse.
   ([`run_segno.dart`](../../lib/app/run_segno.dart)).
 - **Per-display scale** is set with `wlr-randr --scale` in `pin-displays.sh`.
   Final values depend on the Part-6 HDMI-vs-DSI panel choice; tune on hardware.
+
+## Profiling the UI on real hardware
+
+The shipped bundle is **release-mode AOT** — no `kernel_blob.bin`, no Dart VM
+service — so DevTools cannot attach to it, and the Yocto image is a pure runtime
+with no `flutter`/`dart`/`gcc`/`ninja` so it cannot build a profile bundle
+itself. macOS cannot cross-compile a Linux arm64 bundle either.
+
+The containerized builder above (`build/build-arm64-bundle.sh`) is **release-only
+today** — `segno-build.sh` hardcodes `flutter build linux --release`. Teaching it
+a profile mode is the better long-term answer and would drop the CI round-trip;
+until then the arm64 CI runner is the path that needs no local Docker.
+
+1. Get a profile bundle from the `appliance-profile-bundle` workflow
+   ([`.github/workflows/appliance-profile.yaml`](../../.github/workflows/appliance-profile.yaml)),
+   which runs on demand or on any push to a `perf/**` branch:
+   ```bash
+   gh run download <run-id> -n segno-linux-arm64-profile -D /tmp/segno-profile
+   ```
+2. Run it on the device and tunnel the VM service to your workstation:
+   ```bash
+   deploy/rpi/profile-on-device.sh /tmp/segno-profile
+   ```
+   The script stops `segno.service` for the duration and restarts it on exit
+   however the run ends, stages the bundle under `/data/profile` so the release
+   install at `/opt/segno` and the ~1 GB rootfs are both left alone, and
+   forwards the VM service to `127.0.0.1:8181` for DevTools.
+
+**Read the result as a split, not a score.** UI thread over budget points at the
+snapshot poll cadence and `context.watch` fan-out; raster thread over budget
+points at missing `RepaintBoundary`s, the per-sample waveform rects, and card
+elevation. Which half is over budget decides the work — see #638.
+
+**Check the appliance is in a sane state first.** A full `/data`, a capture left
+running, or a stale bundle all make the numbers measure something other than the
+UI. `df -h /data` before you start.
