@@ -187,13 +187,16 @@ void main() {
       seed: () => const SettingsTrayState(dragProgress: 1),
       act: (cubit) => cubit
         ..showDestination(SettingsTrayDestination.tuner)
-        ..showDestination(SettingsTrayDestination.home),
+        ..showDestination(SettingsTrayDestination.brightness),
       expect: () => [
         const SettingsTrayState(
           dragProgress: 1,
           destination: SettingsTrayDestination.tuner,
         ),
-        const SettingsTrayState(dragProgress: 1),
+        const SettingsTrayState(
+          dragProgress: 1,
+          destination: SettingsTrayDestination.brightness,
+        ),
       ],
     );
 

@@ -33,6 +33,14 @@ class TrayNavigationRail extends StatelessWidget {
 
   static const double _itemGap = 4;
 
+  /// The eight domain entries, in the order the mockups stack them.
+  /// [SettingsTrayDestination.brightness] is deliberately absent — it is
+  /// pinned below these rather than being one of them.
+  static final List<SettingsTrayDestination> _domains = [
+    for (final d in SettingsTrayDestination.values)
+      if (d != SettingsTrayDestination.brightness) d,
+  ];
+
   /// The glyph for [destination].
   ///
   /// An exhaustive `switch`, deliberately — the rail is built by iterating
@@ -42,7 +50,6 @@ class TrayNavigationRail extends StatelessWidget {
   /// too, or a destination can be reachable in code and invisible on screen.
   static IconData _iconFor(SettingsTrayDestination destination) =>
       switch (destination) {
-        SettingsTrayDestination.home => Icons.tune,
         // A line with stops on it, as the mockups draw it: this domain is the
         // signal PATH and the four stages along it. The Audio entry gives up
         // the waveform glyph for exactly this reason — a waveform says
@@ -69,6 +76,9 @@ class TrayNavigationRail extends StatelessWidget {
         // inside is the console itself — the box, its screens, its disk and
         // its build — not any one of the four tabs.
         SettingsTrayDestination.system => Icons.memory_outlined,
+        // A sun, as the mockups draw it — the one entry that is about the
+        // screen rather than about the rig.
+        SettingsTrayDestination.brightness => Icons.brightness_6_outlined,
       };
 
   /// The caption for [destination]. Exhaustive for the same reason as
@@ -77,7 +87,6 @@ class TrayNavigationRail extends StatelessWidget {
     AppLocalizations l10n,
     SettingsTrayDestination destination,
   ) => switch (destination) {
-    SettingsTrayDestination.home => l10n.trayHomeLabel,
     SettingsTrayDestination.signal => l10n.traySignalLabel,
     SettingsTrayDestination.control => l10n.trayControlLabel,
     SettingsTrayDestination.loop => l10n.trayLoopLabel,
@@ -86,6 +95,7 @@ class TrayNavigationRail extends StatelessWidget {
     SettingsTrayDestination.tuner => l10n.trayTunerLabel,
     SettingsTrayDestination.network => l10n.trayNetworkLabel,
     SettingsTrayDestination.system => l10n.traySystemLabel,
+    SettingsTrayDestination.brightness => l10n.trayBrightLabel,
   };
 
   @override
@@ -130,33 +140,62 @@ class TrayNavigationRail extends StatelessWidget {
                     ),
                   ),
                 ),
-                child: SingleChildScrollView(
-                  // The drag handle rides at the open panel's bottom edge, over
-                  // the rail's last band — pad past it so a future destination
-                  // cannot land under a control that closes the tray.
-                  padding: const EdgeInsets.only(bottom: kTrayHandleHeight),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      spacing: _itemGap,
-                      children: [
-                        for (final target
-                            in SettingsTrayDestination.values) ...[
-                          // Stretch so every pill spans the rail: pills
-                          // sized to their own text read as chips, not
-                          // as rows of one list.
-                          _RailItem(
-                            key: Key('settingsTrayRail_${target.name}'),
-                            icon: _iconFor(target),
-                            label: _labelFor(l10n, target),
-                            selected: destination == target,
-                            onTap: () => cubit.showDestination(target),
+                // The domains scroll; brightness does not. The pen pins it
+                // at the foot of the rail behind a fill spacer, which inside
+                // a scroll view would do nothing — an unbounded child has no
+                // slack to give. Splitting the two puts it where the mockups
+                // draw it at any height, and keeps it reachable when the
+                // domain list is taller than the rail.
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: _itemGap,
+                    children: [
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            spacing: _itemGap,
+                            children: [
+                              for (final target in _domains)
+                                // Stretch so every pill spans the rail: pills
+                                // sized to their own text read as chips, not
+                                // as rows of one list.
+                                _RailItem(
+                                  key: Key('settingsTrayRail_${target.name}'),
+                                  icon: _iconFor(target),
+                                  label: _labelFor(l10n, target),
+                                  selected: destination == target,
+                                  onTap: () => cubit.showDestination(target),
+                                ),
+                            ],
                           ),
-                        ],
-                      ],
-                    ),
+                        ),
+                      ),
+                      // The drag handle rides at the open panel's bottom edge,
+                      // over the rail's last band — pad past it so this does
+                      // not sit under a control that closes the tray.
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: kTrayHandleHeight,
+                        ),
+                        child: _RailItem(
+                          key: const Key('settingsTrayRail_brightness'),
+                          icon: _iconFor(SettingsTrayDestination.brightness),
+                          label: _labelFor(
+                            l10n,
+                            SettingsTrayDestination.brightness,
+                          ),
+                          selected:
+                              destination == SettingsTrayDestination.brightness,
+                          onTap: () => cubit.showDestination(
+                            SettingsTrayDestination.brightness,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

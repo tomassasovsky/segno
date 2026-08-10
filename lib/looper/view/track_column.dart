@@ -265,9 +265,9 @@ class TrackColumn extends StatelessWidget {
                     // polled snapshot, a poll behind any flip another surface
                     // just made. The announcement shares the keyboard path's
                     // helper so the two cannot drift.
-                    TracksCommands(context).announceFxChainToggle(
-                      track.channel,
-                    );
+                    TracksCommands(
+                      context,
+                    ).announceFxChainToggle(track.channel);
                     bloc.add(LooperTrackChainToggled(track.channel));
                 }
               },
@@ -367,10 +367,7 @@ class TrackColumn extends StatelessWidget {
 /// bright dots are undoable layers, grey dots are redoable ones, and faint
 /// dots are unused slots — so the white/grey boundary marks where you are.
 class _TrackHistoryDots extends StatelessWidget {
-  const _TrackHistoryDots({
-    required this.undoDepth,
-    required this.redoDepth,
-  });
+  const _TrackHistoryDots({required this.undoDepth, required this.redoDepth});
 
   final int undoDepth;
 

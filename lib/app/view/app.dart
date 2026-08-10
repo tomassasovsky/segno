@@ -831,10 +831,8 @@ class _AppViewState extends State<_AppView> {
         );
         return BlocBuilder<DisplayBrightnessCubit, double>(
           buildWhen: (previous, current) => previous != current,
-          builder: (context, brightness) => SoftwareBrightness(
-            brightness: brightness,
-            child: typed,
-          ),
+          builder: (context, brightness) =>
+              SoftwareBrightness(brightness: brightness, child: typed),
         );
       },
     );

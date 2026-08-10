@@ -34,10 +34,7 @@ class PerformanceReadoutView extends StatelessWidget {
         const SizedBox(height: 12),
         Expanded(flex: 3, child: waveform),
         const SizedBox(height: 12),
-        Expanded(
-          flex: 2,
-          child: _TrackStrip(tracks: readout.tracks),
-        ),
+        Expanded(flex: 2, child: _TrackStrip(tracks: readout.tracks)),
       ],
     );
   }

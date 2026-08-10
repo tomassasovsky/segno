@@ -170,9 +170,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         ? state.asioDrivers.first.id
         : state.asioDriver;
     emit(
-      _snapRateAndBuffer(
-        state.copyWith(backend: backend, asioDriver: driver),
-      ),
+      _snapRateAndBuffer(state.copyWith(backend: backend, asioDriver: driver)),
     );
     _persistAndApply();
   }

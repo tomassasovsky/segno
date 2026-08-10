@@ -1086,8 +1086,8 @@
     "@trayBluetoothLabel": {
         "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
     },
-    "trayHomeLabel": "Controles",
-    "@trayHomeLabel": {
+    "trayBrightLabel": "Brillo",
+    "@trayBrightLabel": {
         "description": "Navigation rail entry for the settings tray's home face — the quick-access tiles and brightness slider."
     },
     "a11yTrayRail": "Destinos de la bandeja",

@@ -95,7 +95,7 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   void closeTray() => emit(
     state.copyWith(
       dragProgress: 0,
-      destination: SettingsTrayDestination.home,
+      destination: SettingsTrayDestination.signal,
     ),
   );
 
@@ -211,7 +211,7 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
 
   /// Returns from an expanded panel to the tile grid.
   void showHome() =>
-      emit(state.copyWith(destination: SettingsTrayDestination.home));
+      emit(state.copyWith(destination: SettingsTrayDestination.signal));
 
   /// Selects [destination] without changing whether the tray is open — the
   /// navigation rail's one entry point.
@@ -222,13 +222,6 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// stays [SettingsTrayState.dragProgress]'s alone.
   void showDestination(SettingsTrayDestination destination) =>
       emit(state.copyWith(destination: destination));
-
-  /// Marks a tray nav-button push as in flight — the tray disables both nav
-  /// buttons until [endNavigating].
-  void beginNavigating() => emit(state.copyWith(isNavigating: true));
-
-  /// Clears the in-flight navigation guard set by [beginNavigating].
-  void endNavigating() => emit(state.copyWith(isNavigating: false));
 
   /// Sets brightness (`kMinDisplayBrightness..1`), persists it, and applies
   /// (software + optional DDC via [DisplayBrightnessCubit], or the legacy

@@ -53,11 +53,7 @@ int? pedalTrackChannel(PedalButton button, int bank) {
 ///
 /// Sentence case for the track switches: a column of list items shouting in
 /// upper case reads as four headings rather than four rows.
-String pedalSwitchLabel(
-  AppLocalizations l10n,
-  PedalButton button,
-  int bank,
-) {
+String pedalSwitchLabel(AppLocalizations l10n, PedalButton button, int bank) {
   final channel = pedalTrackChannel(button, bank);
   if (channel == null) return pedalButtonLegend(button);
   return l10n.controlTrackSwitchName(channel + 1);
@@ -69,11 +65,7 @@ String pedalSwitchLabel(
 /// A second string rather than `toUpperCase()` on the first: a locale where a
 /// caption is not upper-cased has to be able to say so, and casing a
 /// translated string in code takes that away.
-String pedalSwitchLegend(
-  AppLocalizations l10n,
-  PedalButton button,
-  int bank,
-) {
+String pedalSwitchLegend(AppLocalizations l10n, PedalButton button, int bank) {
   final channel = pedalTrackChannel(button, bank);
   if (channel == null) return pedalButtonLegend(button);
   return l10n.controlTrackSwitchLegend(channel + 1);

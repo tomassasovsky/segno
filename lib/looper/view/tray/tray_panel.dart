@@ -7,7 +7,7 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/loop/loop_tray_panel.dart';
 import 'package:segno/looper/view/signal/signal_tray_panel.dart';
 import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
-import 'package:segno/looper/view/tray/tray_home.dart';
+import 'package:segno/looper/view/tray/tray_brightness.dart';
 import 'package:segno/looper/view/tray/tray_metrics.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/network/network_tray_panel.dart';
@@ -127,40 +127,25 @@ class TrayPanel extends StatelessWidget {
                           child: KeyedSubtree(
                             key: ValueKey(state.destination),
                             child: switch (state.destination) {
-                              SettingsTrayDestination.home => const TrayHome(),
+                              SettingsTrayDestination.brightness =>
+                                const TrayBrightness(),
                               SettingsTrayDestination.signal =>
-                                const _TrayFaceFrame(
-                                  child: SignalTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: SignalTrayPanel()),
                               SettingsTrayDestination.control =>
-                                const _TrayFaceFrame(
-                                  child: ControlTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: ControlTrayPanel()),
                               SettingsTrayDestination.loop =>
-                                const _TrayFaceFrame(
-                                  child: LoopTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: LoopTrayPanel()),
                               SettingsTrayDestination.tracks =>
-                                const _TrayFaceFrame(
-                                  child: TracksTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: TracksTrayPanel()),
                               SettingsTrayDestination.audio =>
-                                const _TrayFaceFrame(
-                                  child: AudioTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: AudioTrayPanel()),
                               SettingsTrayDestination.tuner => _TrayFaceFrame(
-                                child: TunerTrayPanel(
-                                  onBack: cubit.showHome,
-                                ),
+                                child: TunerTrayPanel(onBack: cubit.showHome),
                               ),
                               SettingsTrayDestination.network =>
-                                const _TrayFaceFrame(
-                                  child: NetworkTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: NetworkTrayPanel()),
                               SettingsTrayDestination.system =>
-                                const _TrayFaceFrame(
-                                  child: SystemTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: SystemTrayPanel()),
                             },
                           ),
                         ),

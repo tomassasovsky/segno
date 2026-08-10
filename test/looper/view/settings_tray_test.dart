@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bloc_test/bloc_test.dart';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -8,14 +9,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:mocktail/mocktail.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
+import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/tray/tray.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
-import 'package:segno/network/network_tab.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -102,9 +104,13 @@ class _ToggleBluetoothClient implements BluetoothClient {
   Future<void> forget(String address) async {}
 }
 
+class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
+    implements LooperBloc {}
+
 void main() {
   late SettingsTrayCubit cubit;
   late SettingsRepository settings;
+  late _MockLooperBloc looperBloc;
   late _ToggleWifiClient wifiClient;
   late _ToggleBluetoothClient bluetoothClient;
   late LooperRepository looper;
@@ -113,6 +119,13 @@ void main() {
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
+    looperBloc = _MockLooperBloc();
+    when(() => looperBloc.state).thenReturn(const LooperState());
+    whenListen(
+      looperBloc,
+      const Stream<LooperState>.empty(),
+      initialState: const LooperState(),
+    );
     cubit = SettingsTrayCubit(settings: settings);
     wifiClient = _ToggleWifiClient();
     bluetoothClient = _ToggleBluetoothClient();
@@ -147,6 +160,14 @@ void main() {
             BlocProvider<SettingsTrayCubit>.value(value: cubit),
             BlocProvider<TunerCubit>.value(value: tunerCubit),
             BlocProvider<InputsCubit>.value(value: inputsCubit),
+            // The tray now opens on Signal, so the shell's own tests mount
+            // that face's dependencies. Cheaper than the alternative — a
+            // landing face chosen to keep this harness small.
+            BlocProvider<LooperBloc>.value(value: looperBloc),
+            BlocProvider<MonitorCubit>(
+              create: (_) =>
+                  MonitorCubit(repository: looper, settings: settings),
+            ),
           ],
           // A Scaffold + Stack mirrors how TracksView actually mounts the
           // tray: as a Stack sibling over full-screen content, top edge at
@@ -170,23 +191,29 @@ void main() {
   });
 
   testWidgets(
-    'renders the nav buttons, stub buttons, and brightness slider once open',
+    'the rail carries every destination, and no tile survives beside it',
     (tester) async {
       cubit.open();
       await pump(tester);
       await tester.pump();
 
-      expect(find.byKey(const Key('settingsTray_settings')), findsOneWidget);
-      // Signal is a RAIL DESTINATION now, not a tile that pushes a route
-      // away from the tray (#533). Asserted as an absence, because the tile
-      // is exactly what a reader would expect to still be here.
-      expect(find.byKey(const Key('settingsTray_signal')), findsNothing);
-      expect(find.byKey(const Key('settingsTray_wifi')), findsOneWidget);
-      expect(find.byKey(const Key('settingsTray_bluetooth')), findsOneWidget);
-      expect(
-        find.byKey(const Key('settingsTray_brightness')),
-        findsOneWidget,
-      );
+      for (final target in SettingsTrayDestination.values) {
+        expect(
+          find.byKey(Key('settingsTrayRail_${target.name}')),
+          findsOneWidget,
+          reason: '${target.name} must be reachable from the rail',
+        );
+      }
+
+      // Asserted as absences, because these are exactly what a reader would
+      // expect to still be here. Every one was a tile on the `home` face:
+      // Signal became a rail domain (#533), WiFi and Bluetooth became the
+      // Network domain (#498), and Settings' six sections are each a domain
+      // now — which left the rail entry over them saying "Controls" and
+      // leading nowhere the rail did not already go.
+      for (final gone in ['signal', 'wifi', 'bluetooth', 'settings']) {
+        expect(find.byKey(Key('settingsTray_$gone')), findsNothing);
+      }
     },
   );
 
@@ -273,205 +300,6 @@ void main() {
 
     expect(cubit.state.dragProgress, 0);
     expect(tester.takeException(), isNull);
-  });
-
-  group('WiFi / Bluetooth tiles and the Tuner face', () {
-    testWidgets(
-      'tapping WiFi while on turns radio off and stays on home',
-      (tester) async {
-        cubit.open();
-        await pump(tester);
-        await tester.pumpAndSettle();
-
-        expect(wifiClient.enabled, isTrue);
-        await tester.tap(find.byKey(const Key('settingsTray_wifi')));
-        await tester.pumpAndSettle();
-
-        expect(cubit.state.destination, SettingsTrayDestination.home);
-        expect(wifiClient.enabled, isFalse);
-        expect(find.byKey(const Key('settingsTray_wifi')), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'tapping WiFi while off turns radio on and opens the panel',
-      (tester) async {
-        wifiClient.enabled = false;
-        cubit.open();
-        await pump(tester);
-        await tester.pumpAndSettle();
-
-        await tester.tap(find.byKey(const Key('settingsTray_wifi')));
-        await tester.pumpAndSettle();
-
-        expect(wifiClient.enabled, isTrue);
-        expect(cubit.state.destination, SettingsTrayDestination.network);
-        expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'long-pressing WiFi expands the in-tray panel without dismissing',
-      (tester) async {
-        cubit.open();
-        await pump(tester);
-        await tester.pumpAndSettle();
-
-        await tester.longPress(find.byKey(const Key('settingsTray_wifi')));
-        await tester.pumpAndSettle();
-
-        expect(cubit.state.dragProgress, 1);
-        expect(cubit.state.destination, SettingsTrayDestination.network);
-        // The shortcut opens the domain AT the WiFi tab.
-        expect(cubit.state.networkTab, NetworkTab.wifi);
-        expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
-        expect(find.byKey(const Key('settingsTray_wifi')), findsNothing);
-
-        // No back chevron on a domain face — the rail is the way back.
-        await tester.tap(find.byKey(const Key('settingsTrayRail_home')));
-        await tester.pumpAndSettle();
-        expect(cubit.state.destination, SettingsTrayDestination.home);
-        expect(find.byKey(const Key('settingsTray_wifi')), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'tapping Bluetooth while on turns power off and stays on home',
-      (tester) async {
-        cubit.open();
-        await pump(tester);
-        await tester.pumpAndSettle();
-
-        expect(bluetoothClient.powered, isTrue);
-        await tester.tap(find.byKey(const Key('settingsTray_bluetooth')));
-        await tester.pumpAndSettle();
-
-        expect(cubit.state.destination, SettingsTrayDestination.home);
-        expect(bluetoothClient.powered, isFalse);
-      },
-    );
-
-    testWidgets(
-      'tapping Bluetooth while off turns power on and opens the panel',
-      (tester) async {
-        bluetoothClient.powered = false;
-        cubit.open();
-        await pump(tester);
-        await tester.pumpAndSettle();
-
-        await tester.tap(find.byKey(const Key('settingsTray_bluetooth')));
-        await tester.pumpAndSettle();
-
-        expect(bluetoothClient.powered, isTrue);
-        expect(cubit.state.destination, SettingsTrayDestination.network);
-        expect(find.byKey(const Key('bluetooth_tray_body')), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'long-pressing Bluetooth expands the in-tray panel without dismissing',
-      (tester) async {
-        cubit.open();
-        await pump(tester);
-        await tester.pumpAndSettle();
-
-        await tester.longPress(
-          find.byKey(const Key('settingsTray_bluetooth')),
-        );
-        await tester.pumpAndSettle();
-
-        expect(cubit.state.dragProgress, 1);
-        expect(
-          cubit.state.destination,
-          SettingsTrayDestination.network,
-        );
-        expect(cubit.state.networkTab, NetworkTab.bluetooth);
-        expect(find.byKey(const Key('bluetooth_tray_body')), findsOneWidget);
-
-        await tester.tap(find.byKey(const Key('settingsTrayRail_home')));
-        await tester.pumpAndSettle();
-        expect(cubit.state.destination, SettingsTrayDestination.home);
-        // The tab survives leaving the domain.
-        expect(cubit.state.networkTab, NetworkTab.bluetooth);
-      },
-    );
-
-    testWidgets(
-      'WiFi tile shows the SSID when associated',
-      (tester) async {
-        wifiClient
-          ..connected = true
-          ..ssid = 'Studio-5G';
-        cubit.open();
-        await pump(tester);
-        await tester.pumpAndSettle();
-
-        expect(
-          find.descendant(
-            of: find.byKey(const Key('settingsTray_wifi')),
-            matching: find.text('Studio-5G'),
-          ),
-          findsOneWidget,
-        );
-
-        // The full-pane card carries the SSID as a status line *under* the
-        // label, rather than replacing it the way the old 72px tile had to.
-        final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-        expect(
-          find.descendant(
-            of: find.byKey(const Key('settingsTray_wifi')),
-            matching: find.text(l10n.trayWifiLabel),
-          ),
-          findsOneWidget,
-        );
-      },
-    );
-
-    testWidgets(
-      'Bluetooth tile shows the connected device name',
-      (tester) async {
-        bluetoothClient
-          ..connected = true
-          ..device = 'AirPods Pro';
-        cubit.open();
-        await pump(tester);
-        await tester.pumpAndSettle();
-
-        expect(
-          find.descendant(
-            of: find.byKey(const Key('settingsTray_bluetooth')),
-            matching: find.text('AirPods Pro'),
-          ),
-          findsOneWidget,
-        );
-      },
-    );
-
-    testWidgets(
-      'the Tuner is an in-tray face, not a dialog, and asks for a note',
-      (tester) async {
-        cubit.open();
-        await pump(tester);
-        await tester.pump();
-
-        await tester.tap(
-          find.byKey(const Key('settingsTrayRail_tuner')),
-        );
-        await tester.pumpAndSettle();
-
-        final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-        expect(find.byKey(const Key('tuner_tray_panel')), findsOneWidget);
-        expect(find.byType(AlertDialog), findsNothing);
-        // No device is open in this harness, so the face says so rather than
-        // drawing a needle for a signal that cannot exist.
-        expect(find.text(l10n.tunerNoDevice), findsOneWidget);
-        expect(cubit.state.dragProgress, 1);
-
-        await tester.tap(find.byKey(const Key('tuner_back')));
-        await tester.pumpAndSettle();
-        expect(cubit.state.destination, SettingsTrayDestination.home);
-      },
-    );
   });
 
   group('the sheet', () {
@@ -594,10 +422,10 @@ void main() {
       expect(find.byKey(const Key('wifi_tray_body')), findsOneWidget);
       expect(cubit.state.dragProgress, 1);
 
-      await tester.tap(find.byKey(const Key('settingsTrayRail_home')));
+      await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
       await tester.pumpAndSettle();
 
-      expect(cubit.state.destination, SettingsTrayDestination.home);
+      expect(cubit.state.destination, SettingsTrayDestination.brightness);
       expect(find.byKey(const Key('settingsTray_brightness')), findsOneWidget);
     });
 
@@ -694,48 +522,9 @@ void main() {
     });
   });
 
-  group('isNavigating guard on Settings', () {
-    testWidgets('disables the nav button while a push is in flight', (
-      tester,
-    ) async {
-      cubit
-        ..open()
-        ..beginNavigating();
-      await pump(tester);
-      await tester.pump();
-
-      expect(
-        tester
-            .widget<FocusableTapTarget>(
-              find.descendant(
-                of: find.byKey(const Key('settingsTray_settings')),
-                matching: find.byType(FocusableTapTarget),
-              ),
-            )
-            .onTap,
-        isNull,
-      );
-    });
-
-    testWidgets(
-      'tapping Settings closes the tray and clears isNavigating once the '
-      'push settles (no navigator wired in this harness, so the push '
-      'no-ops instead of actually pushing a route)',
-      (tester) async {
-        cubit.open();
-        await pump(tester);
-        await tester.pump();
-
-        await tester.tap(find.byKey(const Key('settingsTray_settings')));
-        await tester.pumpAndSettle();
-
-        expect(cubit.state.dragProgress, 0);
-        expect(cubit.state.isNavigating, isFalse);
-      },
-    );
-  });
-
   group('brightness slider tile', () {
+    setUp(() => cubit.showDestination(SettingsTrayDestination.brightness));
+
     testWidgets(
       'exposes the state default (0.8) as an 80% semantics value',
       (tester) async {

@@ -75,12 +75,8 @@ class _TrayBrightnessSliderState extends State<TrayBrightnessSlider> {
         slider: true,
         label: l10n.trayBrightnessLabel,
         value: _percent(widget.value),
-        increasedValue: _percent(
-          clampDisplayBrightness(widget.value + _step),
-        ),
-        decreasedValue: _percent(
-          clampDisplayBrightness(widget.value - _step),
-        ),
+        increasedValue: _percent(clampDisplayBrightness(widget.value + _step)),
+        decreasedValue: _percent(clampDisplayBrightness(widget.value - _step)),
         onIncrease: _increase,
         onDecrease: _decrease,
         child: ExcludeSemantics(
