@@ -110,4 +110,43 @@ void main() {
       );
     });
   });
+
+  group('the console explains its controls', () {
+    testWidgets('an explanation uses the words of the control it explains', (
+      tester,
+    ) async {
+      late AppLocalizations en;
+      late AppLocalizations es;
+      for (final locale in const [Locale('en'), Locale('es')]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            locale: locale,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: Builder(
+              builder: (context) {
+                if (locale.languageCode == 'en') {
+                  en = context.l10n;
+                } else {
+                  es = context.l10n;
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        );
+      }
+
+      // Spanish agrees for gender, so an explanation translated without its
+      // control in view says "Silenciado" over a segment reading
+      // "silenciada". It reads as being about something else on the screen.
+      for (final l10n in [en, es]) {
+        expect(
+          l10n.signalPanelInMixExplain.toLowerCase(),
+          contains(l10n.signalMixMuted.toLowerCase()),
+          reason: "the muted/heard explanation must use the segment's word",
+        );
+      }
+    });
+  });
 }

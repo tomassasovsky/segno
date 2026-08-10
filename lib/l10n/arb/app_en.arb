@@ -2950,6 +2950,43 @@
     "@signalPanelLevel": {
         "description": "Caption over the panel's gain row."
     },
+    "signalPanelInMixExplain": "Whether this chain's sound reaches the mix at all. Muted still records and still plays; you just don't hear it.",
+    "@signalPanelInMixExplain": {
+        "description": "Explains the muted/heard pair on the Signal panel."
+    },
+    "signalPanelHearWhilePlayingExplain": "Whether you hear this input through your outputs while you play. Auto opens it only while a track fed by this input is armed or recording, so you hear yourself on the take and nothing between them. It never changes what gets recorded.",
+    "@signalPanelHearWhilePlayingExplain": {
+        "description": "Explains the monitor tri-state. The AUTO sentence is the load-bearing one — it is the state nobody guesses."
+    },
+    "signalPanelLevelExplain": "How loud this chain is in the mix. Double-tap the bar to put it back to unity — the level that changes nothing.",
+    "@signalPanelLevelExplain": {
+        "description": "Explains the gain row, and names the double-tap, which has no other affordance."
+    },
+    "signalPanelInMixInputExplain": "Whether you hear this input at all. It has no effect on recording: a take prints the signal itself, not what you monitor. The three below decide WHEN this opens — muted here and nothing below can bring it back.",
+    "@signalPanelInMixInputExplain": {
+        "description": "The muted/heard pair on the INPUT card, where the generic 'still records and still plays' is meaningless — the monitor path never records and never plays. Answers the question the input card actually raises: why two switches for hearing one input. Both gates must be open (engine_process.c: `!mon_on[c] || mon_mut[c]` silences)."
+    },
+    "signalPanelLevelInputExplain": "How loud this input is in what you hear. Like the switches under it, it never reaches a take: a recording prints the signal itself, at the level it arrived.",
+    "@signalPanelLevelInputExplain": {
+        "description": "The gain row on the INPUT card. The generic string says 'this chain in the mix', but an input's fader is the monitor's own volume — engine mon_vol, applied only in mix_monitors_frame and never recorded. Same argument as the in-mix and chain splits."
+    },
+    "signalPanelChainInputExplain": "The effects this input passes through, in order. Switching the chain off leaves the effects loaded, takes them out of what you hear — and prints new takes dry, since a take copies the chain that was on when it started.",
+    "@signalPanelChainInputExplain": {
+        "description": "The chain caption on the INPUT card. The generic string stops at 'out of the sound', which on an input is half the story: _snapshotMonitorChainsOntoLanes bails on a disabled chain, so the take is dry too. Saying so only after the fact — in fxChainOffInputConsequence — tells people once it is too late."
+    },
+    "signalPanelChainExplain": "The effects this signal passes through, in order. Switching the chain off leaves the effects loaded and takes them out of the sound.",
+    "@signalPanelChainExplain": {
+        "description": "Explains the chain strip and what its power switch does."
+    },
+    "a11yExplainControl": "What \"{group}\" does",
+    "@a11yExplainControl": {
+        "description": "Screen-reader label for the ? button beside a group caption.",
+        "placeholders": {
+            "group": {
+                "type": "String"
+            }
+        }
+    },
     "signalPanelInMix": "in the mix",
     "@signalPanelInMix": {
         "description": "Caption over the muted/heard pair — whether this chain reaches the mix at all."
