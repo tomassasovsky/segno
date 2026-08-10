@@ -669,6 +669,11 @@ class _ChainCaption extends StatelessWidget {
       // open UNDER them at the panel's full width rather than in the third
       // of a row a `Flexible` would leave it.
       trailing: Row(
+        // Hard right, as the pen draws it and as the panel drew it before the
+        // caption grew a row: the caption's `?` is at the leading edge and the
+        // chain's power is at the trailing one, and a pill that floats to
+        // wherever the consequence text ends is at neither.
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
           // What the switch COSTS while it is off, in the warning pair — the
           // same sentence the dock put beside it.

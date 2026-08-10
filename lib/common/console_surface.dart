@@ -616,9 +616,13 @@ class ConsoleProse extends StatelessWidget {
 /// confused about. A caption already names a group, so it is where the
 /// question belongs.
 ///
-/// **Inline, not an overlay.** The answer appears under the caption and pushes
-/// the controls down. An overlay would cover the thing being explained, which
-/// on a touch console is the one place it must not be.
+/// **A floating answer, not inline prose.** It began inline, under the
+/// caption, on the argument that an overlay covers the control it explains.
+/// What inline actually did was push every control below it down by a
+/// paragraph's height — on a face with four captions that is most of a 600px
+/// console, and the shove lands under the finger that just tapped. The
+/// overlay opens under the caption, over the face, and closes on the next
+/// touch anywhere; the control it describes is one tap away, unmoved.
 class ConsoleCaption extends StatefulWidget {
   /// Creates a [ConsoleCaption].
   const ConsoleCaption(
@@ -673,9 +677,20 @@ class ConsoleCaption extends StatefulWidget {
 }
 
 class _ConsoleCaptionState extends State<ConsoleCaption> {
-  final _link = LayerLink();
+  final GlobalKey _anchorKey = GlobalKey();
   final _portal = OverlayPortalController();
   bool _open = false;
+
+  /// Where the caption sits in the overlay, measured when it opens.
+  ///
+  /// Measured rather than followed: a `CompositedTransformFollower` moves the
+  /// answer with the caption but cannot see the screen, so it will happily
+  /// place a paragraph past the bottom edge — which on the 1024x600 console is
+  /// exactly what the lowest caption on the panel did. Positioning from a rect
+  /// lets the layout flip the answer above the caption when there is no room
+  /// under it. Nothing moves underneath while it is open (the barrier eats the
+  /// scroll), so a measurement cannot go stale before it is dismissed.
+  Rect? _anchor;
 
   @override
   Widget build(BuildContext context) {
@@ -705,18 +720,21 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
     // moves nothing: as inline prose it pushed every control on the card down
     // by its own height, which on a face with four captions is most of a
     // small console's screen, and it did it under the reader's finger.
-    final button = CompositedTransformTarget(
-      link: _link,
-      child: OverlayPortal(
-        controller: _portal,
-        overlayChildBuilder: (context) => _Explanation(
-          link: _link,
-          text: explain,
-          surface: surface,
-          onDismiss: _close,
-        ),
-        child: _button(surface, caption),
+    final button = OverlayPortal(
+      controller: _portal,
+      overlayChildBuilder: (context) => _Explanation(
+        anchor: _anchor ?? Rect.zero,
+        text: explain,
+        surface: surface,
+        onDismiss: _close,
+        // Flutter's own word for this, not one of ours: every barrier in the
+        // app should say the same thing to a reader, and this one is already
+        // translated into every locale the framework ships.
+        dismissLabel: MaterialLocalizations.of(
+          context,
+        ).modalBarrierDismissLabel,
       ),
+      child: _button(surface, caption),
     );
     if (trailing == null) return button;
     // `Expanded`, so [trailing]'s own flex children get a bounded width: this
@@ -745,6 +763,7 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
   /// The label opens it too. A `?` that only answers when struck dead centre
   /// teaches people it is broken; the words beside it are the same question.
   Widget _button(SurfaceTheme surface, Widget caption) => Semantics(
+    key: _anchorKey,
     button: true,
     expanded: _open,
     label: widget.explainLabel,
@@ -792,6 +811,17 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
     ),
   );
 
+  /// The caption's rect in the overlay's own coordinates, or null if either
+  /// render object is missing — which only happens before the first layout,
+  /// and a caption cannot be tapped before then.
+  Rect? _measure() {
+    final box = _anchorKey.currentContext?.findRenderObject();
+    final overlay = Overlay.of(context).context.findRenderObject();
+    if (box is! RenderBox || overlay is! RenderBox) return null;
+    final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
+    return topLeft & box.size;
+  }
+
   void _close() {
     if (!_open) return;
     setState(() => _open = false);
@@ -808,7 +838,10 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
       _close();
       return;
     }
-    setState(() => _open = true);
+    setState(() {
+      _open = true;
+      _anchor = _measure();
+    });
     _portal.show();
     final explain = widget.explain;
     if (explain != null) {
@@ -830,20 +863,31 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
 /// and this surface already has one thing at a time everywhere else.
 class _Explanation extends StatelessWidget {
   const _Explanation({
-    required this.link,
+    required this.anchor,
     required this.text,
     required this.surface,
     required this.onDismiss,
+    required this.dismissLabel,
   });
 
-  final LayerLink link;
+  /// The caption's rect, in the overlay's coordinates.
+  final Rect anchor;
   final String text;
   final SurfaceTheme surface;
   final VoidCallback onDismiss;
+  final String dismissLabel;
 
   /// Wide enough for a sentence to breathe, narrow enough to read as a note
   /// about one control rather than as the face's own body text.
   static const double _width = 460;
+
+  /// Keeps the answer off the screen edge on every side.
+  static const double _margin = 12;
+
+  /// How far the answer rides up into the caption's own row, so it reads as
+  /// hanging off the `?` rather than floating loose under it. The row is 48px
+  /// tall around a 17px line, so this eats slack, not the caption.
+  static const double _overlap = 6;
 
   @override
   Widget build(BuildContext context) => Stack(
@@ -852,39 +896,96 @@ class _Explanation extends StatelessWidget {
       // that tap closes this one and the next tap opens that one, which is
       // one tap more than it looks like it should be, and still better than
       // two explanations open over each other.
+      //
+      // A real barrier, not a GestureDetector: the face underneath must not
+      // take a drag either. A bare tap-only detector absorbs the touch and
+      // then nothing recognises the gesture, so a scroll under an open answer
+      // silently does nothing — which reads as the console having frozen.
       Positioned.fill(
-        child: GestureDetector(
-          key: const Key('console_caption_scrim'),
-          behavior: HitTestBehavior.opaque,
-          excludeFromSemantics: true,
-          onTap: onDismiss,
+        child: BlockSemantics(
+          child: ModalBarrier(
+            key: const Key('console_caption_scrim'),
+            semanticsLabel: dismissLabel,
+            onDismiss: onDismiss,
+          ),
         ),
       ),
-      CompositedTransformFollower(
-        link: link,
-        // Under the caption, aligned to its leading edge — where the eye
-        // already is, and where the inline version used to put it.
-        targetAnchor: Alignment.bottomLeft,
-        offset: const Offset(0, -6),
-        child: Align(
-          alignment: Alignment.topLeft,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: _width),
-            child: Material(
-              key: const Key('console_caption_explanation'),
-              color: surface.cardHigh,
-              elevation: 8,
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-                child: ConsoleProse(text),
-              ),
+      Positioned.fill(
+        child: CustomSingleChildLayout(
+          delegate: _ExplanationLayout(anchor),
+          child: Material(
+            key: const Key('console_caption_explanation'),
+            color: surface.cardHigh,
+            elevation: 8,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              // Scrolls only when the answer is taller than the room on
+              // either side of the caption — which the longest of them is, on
+              // the short console, with the tallest caption open. Clipping
+              // instead would drop the last sentence, and the last sentence
+              // is where these paragraphs put the consequence.
+              child: SingleChildScrollView(child: ConsoleProse(text)),
             ),
           ),
         ),
       ),
     ],
   );
+}
+
+/// Puts the answer under its caption, or above it when the screen is out of
+/// room, and never past an edge.
+class _ExplanationLayout extends SingleChildLayoutDelegate {
+  const _ExplanationLayout(this.anchor);
+
+  /// The caption's rect, in the same coordinates as the laid-out box.
+  final Rect anchor;
+
+  /// The taller of the two gaps the answer could occupy.
+  double _room(BoxConstraints constraints) => math.max(
+    constraints.maxHeight - anchor.bottom - _Explanation._margin,
+    anchor.top - _Explanation._margin,
+  );
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      BoxConstraints(
+        maxWidth: math.min(
+          _Explanation._width,
+          math.max(0, constraints.maxWidth - _Explanation._margin * 2),
+        ),
+        // Plus the overlap, which is room the answer gets back by sitting in
+        // the caption's own row.
+        maxHeight: math.max(0, _room(constraints) + _Explanation._overlap),
+      );
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final below = anchor.bottom - _Explanation._overlap;
+    final fitsBelow =
+        below + childSize.height <= size.height - _Explanation._margin;
+    final top = fitsBelow
+        ? below
+        : anchor.top + _Explanation._overlap - childSize.height;
+    // Leading edge of the caption, where the eye already is — pulled back
+    // only by however much of the answer would otherwise leave the screen.
+    return Offset(
+      _clamp(anchor.left, size.width, childSize.width),
+      _clamp(top, size.height, childSize.height),
+    );
+  }
+
+  /// Keeps `start` inside a [span] with a margin at both ends, preferring the
+  /// near edge when the child is too big for the span at all.
+  static double _clamp(double start, double span, double extent) => start.clamp(
+    _Explanation._margin,
+    math.max(_Explanation._margin, span - extent - _Explanation._margin),
+  );
+
+  @override
+  bool shouldRelayout(_ExplanationLayout oldDelegate) =>
+      oldDelegate.anchor != anchor;
 }
 
 /// A row that can open in place: the row itself over a tinted, bordered card

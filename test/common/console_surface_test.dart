@@ -254,6 +254,55 @@ void main() {
       expect(tester.getRect(find.byType(ConsoleCaption)), shut);
     });
 
+    testWidgets('an answer with no room around it still lands on screen', (
+      tester,
+    ) async {
+      // The worst corner and the longest answer: a caption at the bottom
+      // right has no room under it, none to its right, and this paragraph is
+      // taller than the screen it has to fit on.
+      final long = List.filled(60, 'Whether you hear it.').join(' ');
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            extensions: [
+              SurfaceTheme.dark,
+              routingGraphThemeFromSurface(SurfaceTheme.dark),
+            ],
+          ),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomRight,
+              child: ConsoleCaption(
+                'in the mix',
+                explain: long,
+                explainLabel: 'What "in the mix" does',
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('console_caption_explain')));
+      await tester.pumpAndSettle();
+
+      const screen = Rect.fromLTWH(0, 0, 800, 600);
+      final answer = tester.getRect(
+        find.byKey(const Key('console_caption_explanation')),
+      );
+      expect(
+        screen.contains(answer.topLeft) && screen.contains(answer.bottomRight),
+        isTrue,
+        reason: '$answer is not inside $screen',
+      );
+
+      // And what will not fit is reachable rather than gone. Clipping the
+      // overflow would take the end of the paragraph, which is where these
+      // answers put the consequence.
+      final before = tester.getRect(find.text(long)).top;
+      await tester.drag(find.text(long), const Offset(0, -120));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.text(long)).top, lessThan(before));
+    });
+
     testWidgets('a tap anywhere else puts the answer away', (tester) async {
       await pumpCaption(tester, explain: 'Whether you hear it.');
       await tester.tap(find.byKey(const Key('console_caption_explain')));

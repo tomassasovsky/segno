@@ -2949,7 +2949,7 @@
     "@signalPanelInMixInputExplain": {
         "description": "The muted/heard pair on the INPUT card, where the generic 'still records and still plays' is meaningless — the monitor path never records and never plays. Answers the question the input card actually raises: why two switches for hearing one input. Both gates must be open (engine_process.c: `!mon_on[c] || mon_mut[c]` silences)."
     },
-    "signalPanelLevelInputExplain": "How loud this input is in what you hear. Like the switches above it, it never reaches a take: a recording prints the signal itself, at the level it arrived.",
+    "signalPanelLevelInputExplain": "How loud this input is in what you hear. Like the switches under it, it never reaches a take: a recording prints the signal itself, at the level it arrived.",
     "@signalPanelLevelInputExplain": {
         "description": "The gain row on the INPUT card. The generic string says 'this chain in the mix', but an input's fader is the monitor's own volume — engine mon_vol, applied only in mix_monitors_frame and never recorded. Same argument as the in-mix and chain splits."
     },
