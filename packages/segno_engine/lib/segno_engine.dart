@@ -35,8 +35,8 @@ export 'src/engine_snapshot.dart'
         TempoSource,
         TrackSnapshot,
         TrackState,
-        kMaxInputs,
-        kMaxLanes;
+        kMaxLanes,
+        kMaxMonitoredInputs;
 export 'src/fx_fingerprint.dart' show FxFingerprint;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/mock_audio_engine.dart' show MockAudioEngine, MockPluginSlotHandle;

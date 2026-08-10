@@ -2208,7 +2208,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
      * lanei / lanef); their `channel` field holds the input index. */
     case LE_CMD_SET_MONITOR_INPUT: {
       const int32_t input = cmd->arg_i;
-      if (input < 0 || input >= LE_MAX_INPUTS) break;
+      if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) break;
       le_plog_push(e, frame, *cmd);
       const uint32_t excluded = atomic_load_explicit(
           &e->a_excluded_input_mask, memory_order_relaxed);
@@ -2220,7 +2220,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
     case LE_CMD_SET_MONITOR_INPUT_FX: {
       const int32_t input = cmd->fx.channel; /* `channel` holds the input index */
       const int32_t index = cmd->fx.index;
-      if (input < 0 || input >= LE_MAX_INPUTS || index < 0 ||
+      if (input < 0 || input >= LE_MAX_MONITORED_INPUTS || index < 0 ||
           index >= LE_FX_MAX) {
         break;
       }
@@ -2234,7 +2234,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
     case LE_CMD_SET_MONITOR_INPUT_FX_COUNT: {
       const int32_t input = cmd->fxcount.channel;
       int32_t count = cmd->fxcount.count;
-      if (input < 0 || input >= LE_MAX_INPUTS) break;
+      if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) break;
       le_plog_push(e, frame, *cmd);
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
@@ -2281,7 +2281,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
     }
     case LE_CMD_SET_MONITOR_INPUT_OUTPUT: {
       const int32_t input = cmd->trackmask.channel;
-      if (input < 0 || input >= LE_MAX_INPUTS) break;
+      if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) break;
       le_plog_push(e, frame, *cmd);
       const uint32_t valid = e->out_channels >= 32
                                  ? 0xFFFFFFFFu
@@ -2292,7 +2292,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
     }
     case LE_CMD_SET_MONITOR_INPUT_VOLUME: {
       const int32_t input = cmd->arg_i;
-      if (input < 0 || input >= LE_MAX_INPUTS) break;
+      if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) break;
       le_plog_push(e, frame, *cmd);
       float v = cmd->arg_f;
       if (v < 0.0f) v = 0.0f;
@@ -2302,7 +2302,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
     }
     case LE_CMD_SET_MONITOR_INPUT_MUTE: {
       const int32_t input = cmd->arg_i;
-      if (input < 0 || input >= LE_MAX_INPUTS) break;
+      if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) break;
       le_plog_push(e, frame, *cmd);
       store_i32(&e->monitors[input].a_muted, cmd->arg_f != 0.0f ? 1 : 0);
       break;
@@ -3112,7 +3112,7 @@ static inline void snapshot_monitor_fx(
     int32_t mon_fx_type[][LE_FX_MAX],
     float mon_fx_params[][LE_FX_MAX][LE_FX_PARAMS],
     int32_t mon_fx_enabled[][LE_FX_MAX], int* mon_has_fx) {
-  for (int c = 0; c < ch_in && c < LE_MAX_INPUTS; ++c) {
+  for (int c = 0; c < ch_in && c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_monitor_input* m = &e->monitors[c];
     mon_on[c] = load_i32(&m->a_enabled) && !(excluded & (1u << c));
     mon_out[c] = atomic_load_explicit(&m->a_output_mask, memory_order_relaxed);
@@ -3481,7 +3481,7 @@ static inline void mix_monitors_frame(
     int32_t mon_fx_enabled[][LE_FX_MAX], const float* mon_vol,
     const uint32_t* mon_out) {
   if (in) {
-    for (int c = 0; c < ch_in && c < LE_MAX_INPUTS; ++c) {
+    for (int c = 0; c < ch_in && c < LE_MAX_MONITORED_INPUTS; ++c) {
       const int captured =
           e->perf.armed && (e->perf.input_mask & (1u << c)) != 0;
       if (!mon_on[c] || mon_mut[c]) {
@@ -4073,15 +4073,15 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   /* Per-input live monitor chain, snapshotted once per buffer (see
    * snapshot_monitor_fx). mon_on gates the whole input (loopback exclusion +
    * enable); mute/volume/output/chain drive the single chain. */
-  int mon_on[LE_MAX_INPUTS] = {0};
-  uint32_t mon_out[LE_MAX_INPUTS];
-  float mon_vol[LE_MAX_INPUTS];
-  int mon_mut[LE_MAX_INPUTS];
-  int32_t mon_fx_count[LE_MAX_INPUTS];
-  int32_t mon_fx_type[LE_MAX_INPUTS][LE_FX_MAX];
-  float mon_fx_params[LE_MAX_INPUTS][LE_FX_MAX][LE_FX_PARAMS];
-  int32_t mon_fx_enabled[LE_MAX_INPUTS][LE_FX_MAX];
-  int mon_has_fx[LE_MAX_INPUTS];
+  int mon_on[LE_MAX_MONITORED_INPUTS] = {0};
+  uint32_t mon_out[LE_MAX_MONITORED_INPUTS];
+  float mon_vol[LE_MAX_MONITORED_INPUTS];
+  int mon_mut[LE_MAX_MONITORED_INPUTS];
+  int32_t mon_fx_count[LE_MAX_MONITORED_INPUTS];
+  int32_t mon_fx_type[LE_MAX_MONITORED_INPUTS][LE_FX_MAX];
+  float mon_fx_params[LE_MAX_MONITORED_INPUTS][LE_FX_MAX][LE_FX_PARAMS];
+  int32_t mon_fx_enabled[LE_MAX_MONITORED_INPUTS][LE_FX_MAX];
+  int mon_has_fx[LE_MAX_MONITORED_INPUTS];
   snapshot_monitor_fx(e, ch_in, excluded, mon_on, mon_out, mon_vol, mon_mut,
                       mon_fx_count, mon_fx_type, mon_fx_params, mon_fx_enabled,
                       mon_has_fx);

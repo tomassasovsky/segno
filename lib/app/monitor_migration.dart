@@ -1,5 +1,5 @@
 import 'package:looper_repository/looper_repository.dart'
-    show MonitorMode, decodeFxChain, kMaxInputs, kMaxLanes;
+    show MonitorMode, decodeFxChain, kMaxLanes, kMaxMonitoredInputs;
 import 'package:settings_repository/settings_repository.dart';
 
 /// One-time courtesy + structural migrations of the persisted monitor settings,
@@ -53,11 +53,11 @@ Future<void> _runMonitorMigrationV1(SettingsRepository settings) async {
 }
 
 /// Whether any hardware input already has an enabled, audible legacy monitor
-/// route saved. Scans the same `[0, kMaxInputs)` range the `MonitorCubit`
-/// restores. A route enabled but routed to no output (`outputMask == 0`) is
-/// inaudible and so does not count.
+/// route saved. Scans the same `[0, kMaxMonitoredInputs)` range the
+/// `MonitorCubit` restores. A route enabled but routed to no output
+/// (`outputMask == 0`) is inaudible and so does not count.
 Future<bool> _hasEnabledRoute(SettingsRepository settings) async {
-  for (var input = 0; input < kMaxInputs; input++) {
+  for (var input = 0; input < kMaxMonitoredInputs; input++) {
     final routing = await settings.loadMonitorInput(input);
     if (routing != null && routing.$1 && routing.$2 != 0) return true;
   }
@@ -70,7 +70,7 @@ Future<bool> _hasEnabledRoute(SettingsRepository settings) async {
 Future<void> _runMonitorMigrationV2(SettingsRepository settings) async {
   if (await settings.loadMonitorMigratedV2()) return;
 
-  for (var input = 0; input < kMaxInputs; input++) {
+  for (var input = 0; input < kMaxMonitoredInputs; input++) {
     await _migrateInputToLanes(settings, input);
   }
 
@@ -133,7 +133,7 @@ Future<void> _migrateInputToLanes(
 Future<void> _runMonitorMigrationV3(SettingsRepository settings) async {
   if (await settings.loadMonitorMigratedV3()) return;
 
-  for (var input = 0; input < kMaxInputs; input++) {
+  for (var input = 0; input < kMaxMonitoredInputs; input++) {
     await _foldInputToSingleChain(settings, input);
   }
 

@@ -19,11 +19,11 @@ part 'inputs_state.dart';
 /// patched last. Keyed off the engine's reported device name, the same shape
 /// `latency_offset.$device.$rate.$buffer` already uses.
 ///
-/// **There is no ceiling.** An earlier version stopped at the engine's
-/// `LE_MAX_INPUTS`, on the reading that a socket past it was unusable. That
-/// constant caps how many lanes one TRACK may have and which inputs can be
-/// monitored — a higher-numbered channel is still recordable, so it is still
-/// worth naming (#558). The list follows whatever the device reports.
+/// **There is no ceiling.** An earlier version stopped at the engine constant
+/// now called `LE_MAX_MONITORED_INPUTS`, on the reading that a socket past it
+/// was unusable. It caps which inputs the monitor path covers — a
+/// higher-numbered channel is still recordable, so it is still worth naming
+/// (#558). The list follows whatever the device reports.
 ///
 /// One persisted map and nothing else. Provided at app level and loaded once,
 /// because an input is called what the player calls it on every surface that

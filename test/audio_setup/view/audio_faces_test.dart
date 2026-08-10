@@ -514,9 +514,9 @@ void main() {
       tester,
     ) async {
       // The rig reports eighteen and gets eighteen. Naming used to stop at
-      // LE_MAX_INPUTS on the reading that a socket past it was unusable — that
-      // constant caps lanes per TRACK and which inputs can be MONITORED, and a
-      // higher-numbered channel is still recordable (#558).
+      // the constant now called LE_MAX_MONITORED_INPUTS, on the reading that a
+      // socket past it was unusable — it caps which inputs can be MONITORED,
+      // and a higher-numbered channel is still recordable (#558).
       await pump(tester);
       await tester.tap(find.byKey(const Key('audio_inputs_row')));
       await tester.pumpAndSettle();

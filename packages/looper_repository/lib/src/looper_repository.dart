@@ -1145,7 +1145,7 @@ class LooperRepository {
   /// chain-DISABLED one — D2/D-CHAINDIS, R18).
   List<TrackEffect>? _inheritableChain(int channel, int lane) {
     final input = _laneInput[(channel, lane)] ?? lane;
-    if (input < 0 || input >= kMaxInputs) return null;
+    if (input < 0 || input >= kMaxMonitoredInputs) return null;
     final chain = _monitorEffects[input];
     if (chain == null || chain.isEmpty) return null;
     return monitorChainEnabled(input) ? chain : null;
@@ -1930,7 +1930,7 @@ class LooperRepository {
   /// compare by sound fingerprint.
   bool laneChainDivergesFromInput(int channel, int lane) {
     final input = _laneInput[(channel, lane)] ?? lane;
-    if (input < 0 || input >= kMaxInputs) return false;
+    if (input < 0 || input >= kMaxMonitoredInputs) return false;
     final laneDry = _chainAudiblyDry(
       _laneEffects[(channel, lane)] ?? const [],
       chainEnabled: laneChainEnabled(channel, lane),

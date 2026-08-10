@@ -51,7 +51,7 @@ static le_fx_state* lane_fx(le_engine* e, int32_t channel, int32_t lane,
 
 static le_fx_state* monitor_fx(le_engine* e, int32_t input, int32_t index,
                                _Atomic int32_t** out_type) {
-  if (!e || input < 0 || input >= LE_MAX_INPUTS) return NULL;
+  if (!e || input < 0 || input >= LE_MAX_MONITORED_INPUTS) return NULL;
   if (index < 0 || index >= LE_FX_MAX) return NULL;
   le_monitor_input* m = &e->monitors[input];
   *out_type = &m->a_fx_type[index];

@@ -822,7 +822,7 @@ class _Harness {
         }
       }
     }
-    for (var input = 0; input < kMaxInputs; input++) {
+    for (var input = 0; input < kMaxMonitoredInputs; input++) {
       final cache = repo.monitorChainFingerprint(input);
       final engineFp = engine.monitorFxFingerprint(input: input);
       if (cache != engineFp) {

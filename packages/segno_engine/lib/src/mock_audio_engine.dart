@@ -911,7 +911,9 @@ class MockAudioEngine implements AudioEngine {
     required int index,
     required bool enabled,
   }) {
-    if (input < 0 || input >= LE_MAX_INPUTS) return EngineResult.invalid;
+    if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) {
+      return EngineResult.invalid;
+    }
     if (index < 0 || index >= LE_FX_MAX) return EngineResult.invalid;
     monitorInputFxEnabledCalls.add(
       (input: input, index: index, enabled: enabled),
@@ -924,7 +926,9 @@ class MockAudioEngine implements AudioEngine {
     required int input,
     required bool enabled,
   }) {
-    if (input < 0 || input >= LE_MAX_INPUTS) return EngineResult.invalid;
+    if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) {
+      return EngineResult.invalid;
+    }
     monitorInputFxChainEnabledCalls.add((input: input, enabled: enabled));
     return EngineResult.ok;
   }
