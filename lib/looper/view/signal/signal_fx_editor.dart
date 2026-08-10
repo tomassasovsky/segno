@@ -262,7 +262,9 @@ class SignalFxEditor extends StatelessWidget {
       // The live instance's own string first — it is the only thing that
       // knows what its numbers MEAN.
       readout:
-          scope.formatPluginValue(_slotIndex(effect.slotId), info.id, plain) ??
+          _atSlot(effect.slotId, (at) {
+            return scope.formatPluginValue(at, info.id, plain);
+          }) ??
           _plainReadout(info, plain),
       // Through the SAME entry the writes go to, and with the same fallback
       // the tile uses. Asking by position would format the value through a
@@ -280,7 +282,7 @@ class SignalFxEditor extends StatelessWidget {
       onChanged: !live
           ? null
           : _bySlot(
-              scope.effects[index].slotId,
+              effect.slotId,
               (at) => (value) {
                 scope.setPluginParam(at, info.id, value);
               },

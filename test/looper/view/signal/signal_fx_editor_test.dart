@@ -460,6 +460,15 @@ void main() {
     // excluded, or the reader announces the glyph. The tooltip is set
     // empty rather than left off, which would fall back to Flutter's
     // own "Show menu".
+    // The tooltip explicitly: `matchesSemantics` does not look at it, so the
+    // guard for "no Show menu" passed with the fix removed.
+    expect(
+      tester
+          .getSemantics(find.byType(PopupMenuButton<int>))
+          .getSemanticsData()
+          .tooltip,
+      isEmpty,
+    );
     expect(
       tester.getSemantics(find.byType(PopupMenuButton<int>)),
       matchesSemantics(
