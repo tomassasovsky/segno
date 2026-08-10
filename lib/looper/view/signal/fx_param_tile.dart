@@ -108,7 +108,11 @@ class _FxParamIndicator extends StatelessWidget {
                 widthFactor: fill!.clamp(0.0, 1.0),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: muted ? surface.textMuted : surface.accent,
+                    // `textTertiary`, not `textMuted`: muted lands at 1.1:1
+                    // against the track in the high-contrast theme — the
+                    // meter's position bar disappears in the one theme people
+                    // choose because things were hard to see.
+                    color: muted ? surface.textTertiary : surface.accent,
                     borderRadius: BorderRadius.circular(999),
                   ),
                 ),

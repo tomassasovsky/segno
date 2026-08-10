@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
 import 'package:segno/looper/view/signal/fx_param_edit_sheet.dart';
@@ -19,6 +18,9 @@ class _FakeScope extends Fake implements FxScope {
   List<TrackEffect> chain;
   bool chainOn;
   String? formatted;
+
+  /// The live instance's own string, by chain position.
+  final Map<int, String> formattedPerEntry = {};
 
   final List<(int, int, double)> pluginWrites = [];
   final List<(int, int, double)> builtInWrites = [];
@@ -50,11 +52,16 @@ class _FakeScope extends Fake implements FxScope {
   void relinkPlugin(int index, PluginRef ref) => relinked.add((index, ref));
 
   @override
-  String? formatPluginValue(int index, int paramId, double value) => formatted;
+  /// Per ENTRY, deliberately: a fake that ignores the index cannot tell the
+  /// sheet formatting through the entry it edits from the sheet formatting
+  /// through whatever happens to sit at that position.
+  @override
+  String? formatPluginValue(int index, int paramId, double value) =>
+      formattedPerEntry[index] ?? formatted;
 }
 
 /// A filter frequency: the shape that made the unit bug destructive — a plain
-/// range far outside the `0..1` a [ConsoleValueBar] speaks.
+/// range far outside the `0..1` a normalized control speaks.
 const _freq = PluginParamInfo(
   id: 7,
   name: 'Freq',
@@ -295,7 +302,6 @@ void main() {
       ),
     ]);
     await pump(tester, scope);
-    final l10n = await _l10n(tester);
 
     // "FREQ" alone tells a reader nothing about whose freq it is, and 78px of
     // mono at 9pt is all the tile itself can print.
@@ -311,7 +317,6 @@ void main() {
     );
     expect(meter.label, contains('Filter'));
     expect(meter.getSemanticsData().flagsCollection.isReadOnly, isTrue);
-    expect(l10n, isNotNull);
     handle.dispose();
   });
 
@@ -343,6 +348,57 @@ void main() {
     // control that ignores you.
     expect(boxColour(const Key('signal_fx_param_0')), isNotNull);
     expect(boxColour(const Key('signal_fx_param_1')), isNull);
+
+    // And its indicator is off the accent, which is what says "live" on every
+    // other cell on this surface.
+    Color? indicatorColour(Key key) {
+      final boxes = tester
+          .widgetList<DecoratedBox>(
+            find.descendant(
+              of: find.byKey(key),
+              matching: find.byType(DecoratedBox),
+            ),
+          )
+          .toList();
+      return (boxes.last.decoration as BoxDecoration).color;
+    }
+
+    const surface = SurfaceTheme.dark;
+    expect(indicatorColour(const Key('signal_fx_param_0')), surface.accent);
+    expect(
+      indicatorColour(const Key('signal_fx_param_1')),
+      isNot(surface.accent),
+    );
+  });
+
+  testWidgets('the sheet closes when its entry leaves the chain', (
+    tester,
+  ) async {
+    final scope = _FakeScope([
+      const PluginEffect(
+        ref: PluginRef(format: PluginFormat.vst3, id: 'test.a'),
+        name: 'A',
+        params: [_freq],
+        slotId: 'slot-a',
+      ),
+    ]);
+    await pump(tester, scope);
+    await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+    await tester.pumpAndSettle();
+    expect(find.byType(FxParamEditSheet), findsOneWidget);
+
+    scope.chain = [];
+    final track = find.byKey(const Key('fxParamSheet_track'));
+    await tester.tapAt(
+      tester.getTopLeft(track) + Offset(tester.getSize(track).width * 0.25, 12),
+    );
+    await tester.pumpAndSettle();
+
+    // The panel behind it has already collapsed to nothing. A sheet left over
+    // an entry that no longer exists takes drags that go nowhere and cancels
+    // to nothing — closing says so, swallowing them does not.
+    expect(find.byType(FxParamEditSheet), findsNothing);
+    expect(scope.pluginWrites, isEmpty);
   });
 
   testWidgets('the sheet follows its entry when the chain moves under it', (
@@ -371,7 +427,10 @@ void main() {
     // a monitor chain onto the lane, another surface removes an entry. The
     // sheet is modal and stays open for as long as someone takes to settle a
     // value, so this is not a rare frame.
-    scope.chain = [scope.chain[1], scope.chain[0]];
+    scope
+      ..chain = [scope.chain[1], scope.chain[0]]
+      ..formattedPerEntry[0] = 'WRONG'
+      ..formattedPerEntry[1] = 'RIGHT';
 
     final track = find.byKey(const Key('fxParamSheet_track'));
     await tester.tapAt(
@@ -383,6 +442,13 @@ void main() {
     // position it would have moved a parameter of the OTHER plugin.
     expect(scope.pluginWrites, isNotEmpty);
     expect(scope.pluginWrites.last.$1, 1);
+
+    // And it READS through the same entry. Writing to the right effect while
+    // showing the other one's value is the same bug wearing a disguise: the
+    // live readout asks the instance to name the value, and asking by
+    // position would ask the plugin that slid into the slot.
+    expect(find.text('RIGHT'), findsWidgets);
+    expect(find.text('WRONG'), findsNothing);
   });
 
   group('a built-in speaks 0..1, and the sheet keeps it that way', () {
@@ -453,6 +519,22 @@ void main() {
       );
       expect(scope.builtInWrites.last.$3, isNot(0));
     });
+  });
+
+  testWidgets('the sheet reads the same words the tile does', (tester) async {
+    final scope = _FakeScope([
+      _plugin(values: const {7: 440}),
+    ], formatted: 'A4');
+    await pump(tester, scope);
+    expect(find.text('A4'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+    await tester.pumpAndSettle();
+
+    // The live instance's own string, in both places. A bus stage never has
+    // one to ask, and without the same fallback the tile uses, the sheet
+    // opened from `Highpass` reads `2`.
+    expect(find.text('A4'), findsWidgets);
   });
 
   testWidgets('a two-state parameter with NAMED states is a menu', (

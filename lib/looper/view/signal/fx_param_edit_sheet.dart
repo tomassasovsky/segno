@@ -25,6 +25,7 @@ class FxParamEditSheet extends StatefulWidget {
     required this.source,
     required this.onChanged,
     this.formatValue,
+    this.isGone,
     super.key,
   });
 
@@ -44,6 +45,11 @@ class FxParamEditSheet extends StatefulWidget {
   /// The plugin's own rendering of a plain value, or null for a numeric one.
   final String? Function(double value)? formatValue;
 
+  /// Whether the entry this sheet edits has left the chain. Checked as the
+  /// value moves: a sheet over an entry that no longer exists writes nothing
+  /// and cancels to nothing, which is worse than being closed.
+  final bool Function()? isGone;
+
   /// Opens the sheet for [spec] and resolves once it closes.
   ///
   /// Returns the committed plain value, or null if the edit was cancelled —
@@ -56,6 +62,7 @@ class FxParamEditSheet extends StatefulWidget {
     required String source,
     required ValueChanged<double> onChanged,
     String? Function(double value)? formatValue,
+    bool Function()? isGone,
   }) {
     return showModalBottomSheet<double>(
       context: context,
@@ -68,6 +75,7 @@ class FxParamEditSheet extends StatefulWidget {
         source: source,
         onChanged: onChanged,
         formatValue: formatValue,
+        isGone: isGone,
       ),
     );
   }
@@ -99,6 +107,10 @@ class _FxParamEditSheetState extends State<FxParamEditSheet> {
   }
 
   void _setFromFraction(double fraction) {
+    if (widget.isGone?.call() ?? false) {
+      Navigator.of(context).pop();
+      return;
+    }
     final next = _plainAt(fraction);
     if (next == _value) return;
     setState(() => _value = next);

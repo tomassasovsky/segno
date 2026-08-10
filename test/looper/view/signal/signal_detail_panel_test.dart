@@ -17,6 +17,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
+import 'package:segno/looper/view/signal/fx_param_edit_sheet.dart';
 import 'package:segno/looper/view/signal/signal_detail_panel.dart';
 import 'package:segno/looper/view/signal/signal_tray_panel.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
@@ -1100,21 +1101,28 @@ void main() {
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
 
-      // A tile is 78px of mono at 9pt: what it can say in writing is a
-      // truncated name. What it says to a reader has to be the whole thing.
+      // A tile is 78px of mono at 9pt: what it can PRINT is a truncated name.
+      // What it says out loud has to be the whole thing — "MIX" alone tells a
+      // reader nothing about whose mix it is.
       final tile = tester.getSemantics(
         find.byKey(const Key('signal_fx_param_0')),
       );
-      expect(tile.label, isNotEmpty);
+      expect(tile.label, contains(l10n.effectReverb));
+
       await tester.tap(find.byKey(const Key('signal_fx_param_0')));
       await tester.pumpAndSettle();
+
+      // And the sheet's own breadcrumb says it in writing, because the
+      // console behind it is dimmed out. Scoped to the sheet: the block chip
+      // and the panel title are still mounted behind the scrim, so an
+      // unscoped finder passes with no breadcrumb at all.
       expect(
-        tester.getSemantics(find.byKey(const Key('fxParamSheet_name'))).label,
-        isNotEmpty,
+        find.descendant(
+          of: find.byType(FxParamEditSheet),
+          matching: find.textContaining(l10n.effectReverb),
+        ),
+        findsOneWidget,
       );
-      // The sheet is where the parameter says whose it is — the breadcrumb
-      // under its name, because the console behind it is dimmed out.
-      expect(find.textContaining(l10n.effectReverb), findsWidgets);
       handle.dispose();
     });
   });
