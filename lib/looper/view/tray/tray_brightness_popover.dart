@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
-import 'package:segno/looper/view/tray/tray_brightness_slider.dart';
+import 'package:segno/looper/view/tray/brightness_capsule.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -83,12 +83,12 @@ class TrayBrightnessPopover extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Expanded(
-                      child: TrayBrightnessSlider(
-                        value: state.brightness,
-                        onChanged: (value) =>
-                            unawaited(cubit.setBrightness(value)),
-                      ),
+                    BrightnessCapsule(
+                      key: const Key('settingsTray_brightness'),
+                      value: state.brightness,
+                      semanticLabel: l10n.trayBrightnessLabel,
+                      onChanged: (value) =>
+                          unawaited(cubit.setBrightness(value)),
                     ),
                   ],
                 ),

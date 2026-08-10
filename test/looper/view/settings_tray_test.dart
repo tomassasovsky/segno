@@ -16,6 +16,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/tray/brightness_capsule.dart';
 import 'package:segno/looper/view/tray/tray.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/theme/theme.dart';
@@ -591,7 +592,7 @@ void main() {
     });
   });
 
-  group('brightness slider tile', () {
+  group('brightness capsule', () {
     /// The slider lives in the rail's popover now, so every test here opens
     /// it first.
     Future<void> openBrightness(WidgetTester tester) async {
@@ -612,7 +613,7 @@ void main() {
         // merges into it, so `_BrightnessSliderTile` excludes Slider's own
         // semantics and replaces them wholesale with one node.
         expect(
-          tester.getSemantics(find.byType(Slider)),
+          tester.getSemantics(find.byType(BrightnessCapsule)),
           isSemantics(
             isSlider: true,
             label: 'Brightness',
