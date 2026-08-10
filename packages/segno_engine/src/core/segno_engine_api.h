@@ -536,10 +536,10 @@ typedef struct le_config {
  * path stops short.
  *
  * Its own literal, not an alias: it merely HAPPENS to equal LE_MAX_LANES
- * today. Defined as one, raising the lane ceiling would silently grow the
- * monitor array (each le_monitor_input embeds a whole le_fx_state) and every
- * per-buffer monitor array in le_engine_process — which is the one-number-two-
- * meanings this constant was split to end. */
+ * today. As an alias, raising the lane ceiling would silently grow the monitor
+ * array (each le_monitor_input embeds a whole le_fx_state) and every
+ * per-buffer monitor array in le_engine_process — the one-number-two-meanings
+ * this constant was split to end. */
 #define LE_MAX_MONITORED_INPUTS 8
 
 /* Ceiling for a per-lane / per-monitor channel volume. 2.0 is +6.02 dB, so the

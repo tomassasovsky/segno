@@ -23,7 +23,7 @@
 
 #include "audio_ring.h"      /* le_audio_ring_pop */
 #include "engine_private.h"  /* le_engine, le_perf_capture,
-                              LE_MAX_MONITORED_INPUTS */
+                              * LE_MAX_MONITORED_INPUTS */
 #include "layer_staging_ring.h" /* le_layer_staging_ring_pop (retired-layer persistence) */
 #include "perf_log_ring.h"   /* le_perf_log_ring_pop (performance event log) */
 
