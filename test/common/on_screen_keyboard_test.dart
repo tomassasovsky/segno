@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
-
-import '../helpers/helpers.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/theme.dart';
 
 void main() {
   group('layoutForInputType', () {
@@ -46,22 +46,45 @@ void main() {
     setUp(() => controller = TextEditingController());
     tearDown(() => controller.dispose());
 
+    /// Mounts [body] under a host wired the way the app wires it: in
+    /// `MaterialApp.builder`, ABOVE the `Navigator`.
+    ///
+    /// It matters. Below the Navigator (which is what `pumpApp` does with a
+    /// plain `home:`) the host's open/close swaps the widget at that slot, and
+    /// with no `GlobalKey` beneath it the whole subtree is re-inflated — which
+    /// disposes the field's own `FocusNode` and detaches it. The app never
+    /// sees that because the Navigator's key reparents instead. Any test about
+    /// FOCUS has to use this shape or it is measuring the harness.
+    Future<void> pumpAsApp(
+      WidgetTester tester,
+      Widget body, {
+      bool enabled = true,
+    }) => tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.neon,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        builder: (context, child) => OnScreenKeyboardHost(
+          enabled: enabled,
+          child: child ?? const SizedBox.shrink(),
+        ),
+        home: Scaffold(body: body),
+      ),
+    );
+
     Future<void> pumpField(
       WidgetTester tester, {
       bool enabled = true,
       TextInputType? keyboardType,
       bool readOnly = false,
-    }) => tester.pumpApp(
-      OnScreenKeyboardHost(
-        enabled: enabled,
-        child: Scaffold(
-          body: TextField(
-            controller: controller,
-            keyboardType: keyboardType,
-            readOnly: readOnly,
-          ),
-        ),
+    }) => pumpAsApp(
+      tester,
+      TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        readOnly: readOnly,
       ),
+      enabled: enabled,
     );
 
     Future<void> tapKey(WidgetTester tester, String label) async {
@@ -163,46 +186,95 @@ void main() {
       tester,
     ) async {
       // The keys are ordinary buttons; the panel's `Focus` is what stops them
-      // taking focus. If it ever stopped working the field would lose focus on
-      // the first keystroke, which is the thing dismissal now watches for.
-      await pumpField(tester);
+      // taking focus. If that ever stopped working the field would lose focus
+      // on the first keystroke — which is now the thing that closes the
+      // keyboard, so this is load-bearing rather than incidental.
+      final node = FocusNode();
+      addTearDown(node.dispose);
+      await pumpAsApp(
+        tester,
+        TextField(controller: controller, focusNode: node),
+      );
       await tester.tap(find.byType(TextField));
-      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(node.hasFocus, isTrue);
 
       await tapKey(tester, 'h');
       await tester.pumpAndSettle();
 
+      expect(node.hasFocus, isTrue);
       expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
       expect(controller.text, 'h');
     });
 
-    testWidgets('a field handed a different focus node is still watched', (
+    testWidgets('a field with no focus node of its own dismisses too', (
+      tester,
+    ) async {
+      // Five of the seven fields in the app pass no `focusNode` — the Wi-Fi
+      // password among them. They are the ones this exists for, and every
+      // other dismissal test here hands one in.
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
+
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('onScreenKeyboard')), findsNothing);
+    });
+
+    testWidgets('a field destroyed while focused takes the keyboard with it', (
+      tester,
+    ) async {
+      // Nothing notifies here: a disposed node is detached before it can. The
+      // only signal is the focus manager reporting that nothing takes text.
+      var showField = true;
+      late StateSetter setShown;
+      await pumpAsApp(
+        tester,
+        StatefulBuilder(
+          builder: (context, setState) {
+            setShown = setState;
+            return showField
+                ? TextField(controller: controller)
+                : const SizedBox.shrink();
+          },
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
+
+      setShown(() => showField = false);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('onScreenKeyboard')), findsNothing);
+    });
+
+    testWidgets('a field handed a different focus node still dismisses', (
       tester,
     ) async {
       // The same field under a new node — a parent that swaps them, a State
-      // rebuilt under a new key. A watch left on the old node is a watch on a
-      // DETACHED node: it never fires again, and the keyboard could not be
-      // dismissed by focus loss for the rest of the session.
+      // rebuilt under a new key. Anything that tracked the FIRST node would
+      // be tracking a detached one after the swap, and a detached node never
+      // notifies again.
       final first = FocusNode();
       final second = FocusNode();
       addTearDown(first.dispose);
       addTearDown(second.dispose);
       var useFirst = true;
       late StateSetter setSwap;
-      await tester.pumpApp(
-        OnScreenKeyboardHost(
-          enabled: true,
-          child: Scaffold(
-            body: StatefulBuilder(
-              builder: (context, setState) {
-                setSwap = setState;
-                return TextField(
-                  controller: controller,
-                  focusNode: useFirst ? first : second,
-                );
-              },
-            ),
-          ),
+      await pumpAsApp(
+        tester,
+        StatefulBuilder(
+          builder: (context, setState) {
+            setSwap = setState;
+            return TextField(
+              controller: controller,
+              focusNode: useFirst ? first : second,
+            );
+          },
         ),
       );
       await tester.tap(find.byType(TextField));
@@ -226,13 +298,9 @@ void main() {
       // covers the thing the player is reaching for.
       final node = FocusNode();
       addTearDown(node.dispose);
-      await tester.pumpApp(
-        OnScreenKeyboardHost(
-          enabled: true,
-          child: Scaffold(
-            body: TextField(controller: controller, focusNode: node),
-          ),
-        ),
+      await pumpAsApp(
+        tester,
+        TextField(controller: controller, focusNode: node),
       );
       await tester.tap(find.byType(TextField));
       await tester.pump();
@@ -247,20 +315,15 @@ void main() {
     testWidgets('focus that leaves and returns within a frame is not a '
         'departure', (tester) async {
       // The framework coalesces focus changes inside a frame, so this never
-      // reaches the dismissal path at all — which is the point: a bounce is
-      // not something the keyboard should have to survive twice. The
-      // appliance's own bounce (a key press stealing focus for an instant) is
-      // what the post-frame recheck in the host is for, and no test here can
-      // produce one.
+      // reaches the dismissal path at all — which is worth pinning: it is why
+      // the appliance's own bounce (a key press stealing focus for an
+      // instant) cannot be reproduced here, and why the post-frame recheck in
+      // the host is argued rather than tested.
       final node = FocusNode();
       addTearDown(node.dispose);
-      await tester.pumpApp(
-        OnScreenKeyboardHost(
-          enabled: true,
-          child: Scaffold(
-            body: TextField(controller: controller, focusNode: node),
-          ),
-        ),
+      await pumpAsApp(
+        tester,
+        TextField(controller: controller, focusNode: node),
       );
       await tester.tap(find.byType(TextField));
       await tester.pump();
@@ -282,17 +345,13 @@ void main() {
       addTearDown(other.dispose);
       addTearDown(first.dispose);
       addTearDown(second.dispose);
-      await tester.pumpApp(
-        OnScreenKeyboardHost(
-          enabled: true,
-          child: Scaffold(
-            body: Column(
-              children: [
-                TextField(controller: controller, focusNode: first),
-                TextField(controller: other, focusNode: second),
-              ],
-            ),
-          ),
+      await pumpAsApp(
+        tester,
+        Column(
+          children: [
+            TextField(controller: controller, focusNode: first),
+            TextField(controller: other, focusNode: second),
+          ],
         ),
       );
       await tester.tap(find.byType(TextField).first);
@@ -314,13 +373,9 @@ void main() {
     ) async {
       final node = FocusNode();
       addTearDown(node.dispose);
-      await tester.pumpApp(
-        OnScreenKeyboardHost(
-          enabled: true,
-          child: Scaffold(
-            body: TextField(controller: controller, focusNode: node),
-          ),
-        ),
+      await pumpAsApp(
+        tester,
+        TextField(controller: controller, focusNode: node),
       );
       await tester.tap(find.byType(TextField));
       await tester.pump();
@@ -376,15 +431,21 @@ void main() {
       // is precisely how it avoids the keyboard — so measuring inside its body
       // would read zero even when everything is working.
       late double inset;
-      await tester.pumpApp(
-        OnScreenKeyboardHost(
-          enabled: true,
-          child: Builder(
-            builder: (context) {
-              inset = MediaQuery.of(context).viewInsets.bottom;
-              return Material(child: TextField(controller: controller));
-            },
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.neon,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          builder: (context, child) => OnScreenKeyboardHost(
+            enabled: true,
+            child: Builder(
+              builder: (context) {
+                inset = MediaQuery.of(context).viewInsets.bottom;
+                return child ?? const SizedBox.shrink();
+              },
+            ),
           ),
+          home: Material(child: TextField(controller: controller)),
         ),
       );
       expect(inset, 0);
@@ -400,17 +461,13 @@ void main() {
     ) async {
       // The point of reporting through viewInsets: every layout already in the
       // app avoids the keyboard with no change at its call site.
-      await tester.pumpApp(
-        OnScreenKeyboardHost(
-          enabled: true,
-          child: Scaffold(
-            body: Column(
-              children: [
-                const Spacer(),
-                TextField(controller: controller),
-              ],
-            ),
-          ),
+      await pumpAsApp(
+        tester,
+        Column(
+          children: [
+            const Spacer(),
+            TextField(controller: controller),
+          ],
         ),
       );
       final before = tester.getBottomLeft(find.byType(TextField)).dy;

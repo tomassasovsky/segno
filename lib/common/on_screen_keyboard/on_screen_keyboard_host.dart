@@ -43,10 +43,6 @@ class OnScreenKeyboardHost extends StatefulWidget {
 class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   EditableText? _field;
 
-  /// The focus node of the field the keyboard is typing into, watched so the
-  /// keyboard goes away when that field does.
-  FocusNode? _watched;
-
   @override
   void initState() {
     super.initState();
@@ -56,31 +52,19 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   @override
   void dispose() {
     if (widget.enabled) FocusManager.instance.removeListener(_onFocusChanged);
-    _watched?.removeListener(_onFieldFocusChanged);
     super.dispose();
   }
 
   void _onFocusChanged() {
     final next = _focusedEditable();
-    // Focus merely LEAVING is not handled here — see [_onFieldFocusChanged].
-    // A key press moves focus off the field for an instant (the keys are
-    // ordinary buttons), so a keyboard that closed on every focus loss would
-    // destroy its own target between the press and the callback, and every
-    // keystroke would land on nothing. The field's own node is watched
-    // instead, and asked again once the frame has settled.
-    // A null answer is NOT a dismissal. Focus lands on a scope constantly in
-    // this app — every dialog and sheet reports one, and a field that has just
-    // been tapped is reported through its scope before its own node settles —
-    // so "no editable focused right now" and "the player is done typing" are
-    // the same event here and cannot be told apart. The field's own node can
-    // tell them apart, and that is what drives dismissal.
-    if (next == null) return;
-    // Watched FIRST, and outside the early return below: the same field can be
-    // handed a different node (a parent that swaps them, a State rebuilt under
-    // a new key), and a watch left on the old one is a watch on a detached
-    // node — it never fires again, and the keyboard could never be dismissed
-    // by focus loss for the rest of the session.
-    _watch(next);
+    // Focus went somewhere that takes no text: a button, a scope, nothing at
+    // all. Also the only signal there is when a focused field is DESTROYED
+    // outright — a disposed node is detached before it can notify, so nothing
+    // else will ever say so.
+    if (next == null) {
+      _dismissAfterFrame();
+      return;
+    }
     // Compared by CONTROLLER, not by widget instance: the EditableText widget
     // is rebuilt constantly, so comparing widgets would rebuild every frame.
     // The controller is what identifies where a keystroke lands.
@@ -91,45 +75,30 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
     setState(() => _field = next);
   }
 
-  /// Follows [field]'s own focus node, so the keyboard can close when the
-  /// field it types into stops being focused.
-  void _watch(EditableText field) {
-    if (identical(_watched, field.focusNode)) return;
-    _watched?.removeListener(_onFieldFocusChanged);
-    _watched = field.focusNode..addListener(_onFieldFocusChanged);
-  }
-
-  void _onFieldFocusChanged() {
-    _dismissAfterFrame();
-  }
-
-  /// Closes the keyboard unless the field it types into still has focus once
-  /// the frame has settled.
+  /// Closes the keyboard unless something takes text again once the frame has
+  /// settled.
+  ///
+  /// The frame boundary is the whole reason this is safe to do at all, and it
+  /// is the one thing here no test can reach: under `flutter_test` the keys
+  /// never steal focus (the panel's `Focus` refuses it, and the framework
+  /// coalesces focus changes within a frame), so an immediate dismissal would
+  /// pass every check in this suite.
+  ///
+  /// On the console it is the case the sticky field existed for — the report
+  /// this replaces says a key press can move focus off the field for an
+  /// instant. Closing on that first notification would take the keyboard away
+  /// under the player's own keystroke: a worse bug than the one being fixed,
+  /// and one that would only show up on the hardware.
   void _dismissAfterFrame() {
-    if (_watched?.hasFocus ?? false) return;
-    // Asked AGAIN after the frame, deliberately, and this is the one thing
-    // here no test can reach: under `flutter_test` the keys never steal focus
-    // (the panel's `Focus` refuses it and the framework coalesces focus
-    // changes within a frame), so a bounce produces no callback at all and an
-    // immediate dismissal would pass every check in this suite.
-    //
-    // On the console it is the case the sticky field existed for: the report
-    // this replaces says a key press can move focus off the field for an
-    // instant. Closing on that first notification would take the keyboard away
-    // under the player's own keystroke — a worse bug than the one being fixed,
-    // and one that would only show up on the hardware. The frame boundary
-    // costs nothing and settles the question.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (_watched?.hasFocus ?? false) return;
+      if (_focusedEditable() != null) return;
       _dismiss();
     });
   }
 
   /// Drops the field the keyboard was typing into, closing it.
   void _dismiss() {
-    _watched?.removeListener(_onFieldFocusChanged);
-    _watched = null;
     if (_field != null) setState(() => _field = null);
   }
 
