@@ -1,7 +1,7 @@
 part of 'settings_tray_cubit.dart';
 
 /// Which face the open tray is showing — one of the in-tray config panels
-/// (Control-Center expand, not a full-screen route), or brightness.
+/// (Control-Center expand, not a full-screen route).
 ///
 /// Every value here is a destination the tray's own navigation rail can
 /// select. Settings still pushes a full-screen route and so deliberately has
@@ -130,7 +130,8 @@ class SettingsTrayState extends Equatable {
   /// applied through BrightnessClient when DDC/CI is available.
   final double brightness;
 
-  /// In-tray face: one of the rail's domain panels, or brightness.
+  /// In-tray face: one of the rail's domain panels. Brightness is NOT one —
+  /// it opens a popover over whichever face is showing.
   final SettingsTrayDestination destination;
 
   /// Which FX stage the Signal domain shows.

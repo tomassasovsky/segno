@@ -44,12 +44,20 @@ class TrayBrightnessPopover extends StatelessWidget {
 
     return Stack(
       children: [
+        // A real barrier, not a bare `GestureDetector`: that stopped POINTERS
+        // and nothing else, so a screen reader could still activate a rail
+        // item behind the popover and Tab walked straight out of it — states
+        // no sighted pointer user can reach.
+        // `BlockSemantics` as well as the barrier: the barrier stops
+        // POINTERS, and on its own left a screen reader able to activate a
+        // rail item behind the popover — a state no sighted user can reach.
         Positioned.fill(
-          child: GestureDetector(
-            key: const Key('trayBrightness_scrim'),
-            behavior: HitTestBehavior.opaque,
-            excludeFromSemantics: true,
-            onTap: onDismiss,
+          child: BlockSemantics(
+            child: ModalBarrier(
+              key: const Key('trayBrightness_scrim'),
+              semanticsLabel: l10n.dismiss,
+              onDismiss: onDismiss,
+            ),
           ),
         ),
         Positioned(
@@ -58,39 +66,41 @@ class TrayBrightnessPopover extends StatelessWidget {
           // dialog about brightness rather than as the button's own drawer.
           left: TrayNavigationRail.width + 10,
           bottom: 44,
-          child: Material(
-            key: const Key('trayBrightness_popover'),
-            color: surface.surface,
-            elevation: 12,
-            borderRadius: BorderRadius.circular(_radius),
-            child: SizedBox(
-              width: size.width,
-              height: size.height,
-              child: Padding(
-                padding: const EdgeInsets.all(_pad),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      l10n.trayBrightnessPercent(
-                        (state.brightness * 100).round(),
+          child: FocusScope(
+            child: Material(
+              key: const Key('trayBrightness_popover'),
+              color: surface.surface,
+              elevation: 12,
+              borderRadius: BorderRadius.circular(_radius),
+              child: SizedBox(
+                width: size.width,
+                height: size.height,
+                child: Padding(
+                  padding: const EdgeInsets.all(_pad),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        l10n.trayBrightnessPercent(
+                          (state.brightness * 100).round(),
+                        ),
+                        style: TextStyle(
+                          color: surface.textSecondary,
+                          fontSize: 13,
+                          height: 1.21,
+                          leadingDistribution: TextLeadingDistribution.even,
+                        ),
                       ),
-                      style: TextStyle(
-                        color: surface.textSecondary,
-                        fontSize: 13,
-                        height: 1.21,
-                        leadingDistribution: TextLeadingDistribution.even,
+                      const SizedBox(height: 12),
+                      BrightnessCapsule(
+                        key: const Key('settingsTray_brightness'),
+                        value: state.brightness,
+                        semanticLabel: l10n.trayBrightnessLabel,
+                        onChanged: (value) =>
+                            unawaited(cubit.setBrightness(value)),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    BrightnessCapsule(
-                      key: const Key('settingsTray_brightness'),
-                      value: state.brightness,
-                      semanticLabel: l10n.trayBrightnessLabel,
-                      onChanged: (value) =>
-                          unawaited(cubit.setBrightness(value)),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

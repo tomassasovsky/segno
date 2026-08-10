@@ -442,6 +442,55 @@ void main() {
       expect(cubit.state.dragProgress, 1);
     });
 
+    testWidgets('the popover is modal to assistive tech, not just to taps', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
+      await tester.pumpAndSettle();
+
+      // The scrim was a bare `GestureDetector` with `excludeFromSemantics`,
+      // which stops POINTERS and offers a reader nothing at all — no way to
+      // find the dismiss, and no sign the popover is modal. It is a labelled
+      // `ModalBarrier` now.
+      //
+      // NOT asserted: that the rail behind it is unreachable. `BlockSemantics`
+      // is in place, but the rail sits in its own `Semantics(
+      // explicitChildNodes: true)` container and is still reachable by label
+      // here. Left as a known gap rather than a test that claims otherwise.
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.bySemanticsLabel(l10n.dismiss), findsWidgets);
+      expect(
+        find.byKey(const Key('trayBrightness_scrim')),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('the popover does not survive closing the tray', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settingsTrayRail_brightness')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('trayBrightness_popover')), findsOneWidget);
+
+      cubit.closeTray();
+      await tester.pumpAndSettle();
+      cubit.open();
+      await tester.pumpAndSettle();
+
+      // `TrayPanel` is never unmounted, so a popover left open stayed open —
+      // and `closeTray` resets the destination under it, so it came back
+      // floating over a face it was never opened from.
+      expect(find.byKey(const Key('trayBrightness_popover')), findsNothing);
+    });
+
     testWidgets('brightness sits at the foot, not under the last domain', (
       tester,
     ) async {
@@ -668,7 +717,10 @@ void main() {
         await tester.tap(find.byKey(const Key('settingsTray_brightness')));
         await tester.pump();
 
-        expect(cubit.state.brightness, inInclusiveRange(0.0, 1.0));
+        // The tapped position, not merely "a brightness": the value is
+        // clamped to 0.1..1 by construction, so a range assertion here
+        // passes whatever the tap does.
+        expect(cubit.state.brightness, closeTo(0.55, 0.001));
       },
     );
 

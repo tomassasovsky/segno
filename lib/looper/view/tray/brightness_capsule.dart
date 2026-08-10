@@ -3,6 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/theme/theme.dart';
 
+/// One arrow-key press: `+1` up, `-1` down.
+class _NudgeIntent extends Intent {
+  const _NudgeIntent(this.direction);
+
+  final int direction;
+}
+
 /// The brightness control from `SYSTEM / brightness`, drawn as the pen draws
 /// it: a capsule whose LIT PART is the value.
 ///
@@ -11,13 +18,6 @@ import 'package:segno/theme/theme.dart';
 /// you push its top edge up and down. A thumb would be a second thing to aim
 /// at on a control whose whole surface is already the target, and at 79px
 /// wide on a floor console the surface is the point.
-/// One arrow-key press, in [direction] `+1` or `-1`.
-class _NudgeIntent extends Intent {
-  const _NudgeIntent(this.direction);
-
-  final int direction;
-}
-
 class BrightnessCapsule extends StatefulWidget {
   /// Creates a [BrightnessCapsule].
   const BrightnessCapsule({

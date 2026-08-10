@@ -51,6 +51,16 @@ class _TrayPanelState extends State<TrayPanel> {
     final l10n = context.l10n;
     final surface = context.surface;
     final state = context.watch<SettingsTrayCubit>().state;
+    // `TrayPanel` is never unmounted — the shell translates it off-screen —
+    // so a popover left open stays open, and `closeTray` resets the
+    // destination under it. Reopening would then float it over a face it was
+    // never opened from. Cleared here rather than in a listener because this
+    // already rebuilds on every drag frame.
+    if (state.dragProgress == 0 && _brightness) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _brightness = false);
+      });
+    }
     final cubit = context.read<SettingsTrayCubit>();
 
     return Material(
