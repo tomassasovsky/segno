@@ -22,7 +22,7 @@
 #include <string.h>
 
 #include "audio_ring.h"      /* le_audio_ring_pop */
-#include "engine_private.h"  /* le_engine, le_perf_capture, LE_MAX_INPUTS */
+#include "engine_private.h"  /* le_engine, le_perf_capture, LE_MAX_MONITORED_INPUTS */
 #include "layer_staging_ring.h" /* le_layer_staging_ring_pop (retired-layer persistence) */
 #include "perf_log_ring.h"   /* le_perf_log_ring_pop (performance event log) */
 
@@ -209,7 +209,7 @@ struct le_perf_drain {
   char capture_dir[LE_PD_PATH_MAX];
 
   le_pd_file master_file;
-  le_pd_file monitor_file[LE_MAX_INPUTS]; /* valid iff input_mask bit set */
+  le_pd_file monitor_file[LE_MAX_MONITORED_INPUTS]; /* valid iff input_mask bit set */
 
   /* Performance event log (part 3): append-only, header written once at
    * start; every subsequent drain cycle appends whatever both perf-log rings
@@ -492,7 +492,7 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full) {
   if (off < 0) goto done;
 
   int first = 1;
-  for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (!(d->engine->perf.input_mask & (1u << c))) continue;
     off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "%s%d",
                     first ? "" : ", ", c);
@@ -596,7 +596,7 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
                        LE_PD_SCRATCH_SAMPLES)) {
     ok = 0;
   }
-  for (int32_t c = 0; ok && c < LE_MAX_INPUTS; ++c) {
+  for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (!(e->perf.input_mask & (1u << c))) continue;
     if (!le_pd_drain_ring(&d->monitor_file[c], &e->perf.monitor_ring[c], 2,
                          scratch, LE_PD_SCRATCH_SAMPLES)) {
@@ -610,7 +610,7 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
     if (!le_pd_catch_up(d, &d->master_file, e->perf.master_channels, elapsed)) {
       ok = 0;
     }
-    for (int32_t c = 0; ok && c < LE_MAX_INPUTS; ++c) {
+    for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
       if (!(e->perf.input_mask & (1u << c))) continue;
       if (!le_pd_catch_up(d, &d->monitor_file[c], 2, elapsed)) ok = 0;
     }
@@ -643,7 +643,7 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
    * has actually reached disk for yet) until fclose. This is THE flush the
    * ~250 ms cadence documented in perf_drain.h refers to. */
   if (ok && !le_pd_flush(d->master_file.f)) ok = 0;
-  for (int32_t c = 0; ok && c < LE_MAX_INPUTS; ++c) {
+  for (int32_t c = 0; ok && c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (!(e->perf.input_mask & (1u << c))) continue;
     if (!le_pd_flush(d->monitor_file[c].f)) ok = 0;
   }
@@ -704,7 +704,7 @@ le_perf_drain* le_perf_drain_start(le_engine* engine, const char* capture_dir) {
     return NULL;
   }
 
-  for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (!(engine->perf.input_mask & (1u << c))) continue;
     snprintf(path, sizeof(path), "%s/input-%d.pcm", d->capture_dir, c);
     d->monitor_file[c].f = fopen(path, "wb");
@@ -724,7 +724,7 @@ le_perf_drain* le_perf_drain_start(le_engine* engine, const char* capture_dir) {
       !le_pd_write_events_header(d->events_file, engine->sample_rate)) {
     if (d->events_file != NULL) fclose(d->events_file);
     fclose(d->master_file.f);
-    for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+    for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
       if (d->monitor_file[c].f != NULL) fclose(d->monitor_file[c].f);
     }
     free(d);
@@ -735,7 +735,7 @@ le_perf_drain* le_perf_drain_start(le_engine* engine, const char* capture_dir) {
   if (!le_pd_thread_start(&d->thread, d)) {
     fclose(d->events_file);
     fclose(d->master_file.f);
-    for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+    for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
       if (d->monitor_file[c].f != NULL) fclose(d->monitor_file[c].f);
     }
     free(d);
@@ -754,7 +754,7 @@ void le_perf_drain_stop(le_perf_drain* drain, le_perf_stop_reason reason) {
   le_pd_thread_join(drain->thread);
 
   if (drain->master_file.f != NULL) fclose(drain->master_file.f);
-  for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (drain->monitor_file[c].f != NULL) fclose(drain->monitor_file[c].f);
   }
   if (drain->events_file != NULL) fclose(drain->events_file);

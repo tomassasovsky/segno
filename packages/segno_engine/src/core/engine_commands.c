@@ -1688,7 +1688,7 @@ int32_t le_engine_set_lane_fx_chain_enabled(le_engine* engine, int32_t channel,
 int32_t le_engine_set_monitor_input(le_engine* engine, int32_t input,
                                     int32_t enabled) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   return le_push(engine, LE_CMD_SET_MONITOR_INPUT, input,
                  enabled ? 1.0f : 0.0f);
 }
@@ -1699,7 +1699,7 @@ int32_t le_engine_set_monitor_input(le_engine* engine, int32_t input,
  * (channel = input, lane field unused). */
 int32_t le_engine_set_monitor_input_output(le_engine* engine, int32_t input,
                                            int32_t mask) {
-  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   return le_push_cmd(engine,
                      (le_command){.code = LE_CMD_SET_MONITOR_INPUT_OUTPUT,
                                   .trackmask = {input, (uint32_t)mask}});
@@ -1707,13 +1707,13 @@ int32_t le_engine_set_monitor_input_output(le_engine* engine, int32_t input,
 
 int32_t le_engine_set_monitor_input_volume(le_engine* engine, int32_t input,
                                            float volume) {
-  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   return le_push(engine, LE_CMD_SET_MONITOR_INPUT_VOLUME, input, volume);
 }
 
 int32_t le_engine_set_monitor_input_mute(le_engine* engine, int32_t input,
                                          int32_t muted) {
-  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   return le_push(engine, LE_CMD_SET_MONITOR_INPUT_MUTE, input,
                  muted ? 1.0f : 0.0f);
 }
@@ -1721,7 +1721,7 @@ int32_t le_engine_set_monitor_input_mute(le_engine* engine, int32_t input,
 int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
                                        int32_t index, int32_t type) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
   le_monitor_input* m = &engine->monitors[input];
@@ -1743,7 +1743,7 @@ int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
 int32_t le_engine_set_monitor_input_fx_count(le_engine* engine, int32_t input,
                                              int32_t count) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
   le_monitor_input* m = &engine->monitors[input];
@@ -1760,7 +1760,7 @@ int32_t le_engine_set_monitor_input_fx_param(le_engine* engine, int32_t input,
                                              int32_t index, int32_t param,
                                              float value) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
   if (value < 0.0f) value = 0.0f;
@@ -1780,7 +1780,7 @@ int32_t le_engine_set_monitor_input_fx_param(le_engine* engine, int32_t input,
 int32_t le_engine_set_monitor_input_fx_enabled(le_engine* engine, int32_t input,
                                                int32_t index, int32_t enabled) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   const int32_t on = enabled ? 1 : 0;
   store_i32(&engine->monitors[input].a_fx_enabled[index], on);
@@ -1793,7 +1793,7 @@ int32_t le_engine_set_monitor_input_fx_chain_enabled(le_engine* engine,
                                                      int32_t input,
                                                      int32_t enabled) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   const int32_t on = enabled ? 1 : 0;
   store_i32(&engine->monitors[input].a_fx_chain_enabled, on);
   le_plog_push_ctrl(
@@ -2099,7 +2099,7 @@ static int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]) {
 static void le_perf_free_unpublished(le_engine* e, uint32_t monitors_done) {
   free(e->perf.master_ring.buffer);
   e->perf.master_ring = (le_audio_ring){0};
-  for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (monitors_done & (1u << c)) {
       free(e->perf.monitor_ring[c].buffer);
       e->perf.monitor_ring[c] = (le_audio_ring){0};
@@ -2149,7 +2149,7 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
    * (the monitor's own chain, e.g. a reverb, may decorrelate l/r). */
   uint32_t input_mask = 0;
   const size_t monitor_cap = le_perf_ring_capacity(2, sr);
-  for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (!load_i32(&engine->monitors[c].a_enabled)) continue;
     float* buf = (float*)malloc(monitor_cap * sizeof(float));
     if (buf == NULL) {
@@ -2266,7 +2266,7 @@ int32_t le_perf_disarm(le_engine* engine) {
 
   free(engine->perf.master_ring.buffer);
   engine->perf.master_ring = (le_audio_ring){0};
-  for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (engine->perf.input_mask & (1u << c)) {
       free(engine->perf.monitor_ring[c].buffer);
       engine->perf.monitor_ring[c] = (le_audio_ring){0};
@@ -2299,7 +2299,7 @@ int32_t le_engine_perf_master_channels_for_test(le_engine* engine) {
 int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
                                             float* out, int32_t max_frames) {
   if (engine == NULL || out == NULL || max_frames <= 0) return 0;
-  if (input < 0 || input >= LE_MAX_INPUTS) return 0;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return 0;
   if (!(engine->perf.input_mask & (1u << input))) return 0;
   const size_t popped = le_audio_ring_pop(&engine->perf.monitor_ring[input],
                                           out, (size_t)max_frames * 2);

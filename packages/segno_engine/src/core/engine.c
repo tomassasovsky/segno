@@ -293,7 +293,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * (uncancellable, unpollable, and leaked once the handle is lost). */
   le_perf_render_cancel(engine);
   free(engine->perf.master_ring.buffer);
-  for (int c = 0; c < LE_MAX_INPUTS; ++c) {
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     free(engine->perf.monitor_ring[c].buffer);
   }
   /* Layers staged after the drain thread died (its self-stop on a write
@@ -521,7 +521,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   /* Per-input live monitors: all disabled by default (each defaults to full
    * stereo output, empty chain). Inputs are monitored only when explicitly
    * routed through the per-input monitor graph (le_engine_set_monitor_input). */
-  for (int c = 0; c < LE_MAX_INPUTS; ++c) {
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_monitor_input_reset(&engine->monitors[c]);
   }
 
@@ -753,7 +753,7 @@ void le_engine_destroy(le_engine* engine) {
           &engine->tracks[t].bus.fx.plugin[s], memory_order_relaxed));
     }
   }
-  for (int c = 0; c < LE_MAX_INPUTS; ++c) {
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     for (int s = 0; s < LE_FX_MAX; ++s) {
       free(engine->monitors[c].fx.delay[s][0]);
       free(engine->monitors[c].fx.delay[s][1]);
@@ -788,7 +788,7 @@ void le_engine_destroy(le_engine* engine) {
    * render before this engine (and its perf.render handle) is freed. */
   le_perf_render_cancel(engine);
   free(engine->perf.master_ring.buffer);
-  for (int c = 0; c < LE_MAX_INPUTS; ++c) {
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     free(engine->perf.monitor_ring[c].buffer);
   }
   le_platform_on_engine_teardown(); /* Linux restores PipeWire's dynamic quantum */
@@ -913,7 +913,7 @@ int32_t le_engine_stop(le_engine* engine) {
       }
     }
   }
-  for (int c = 0; c < LE_MAX_INPUTS; ++c) {
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_monitor_input* m = &engine->monitors[c];
     const int32_t chain_on = load_i32(&m->a_fx_chain_enabled);
     for (int s = 0; s < LE_FX_MAX; ++s) {

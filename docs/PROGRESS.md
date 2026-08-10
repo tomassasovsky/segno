@@ -107,7 +107,7 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
   is a container that owns the **transport** (state / multiple / pending-arm),
   one **shared latency-compensated write head** (`record_pos`), and **one undo
   span** (`undo_stack`/`redo_stack`, the same slot index in every lane). Each
-  `le_lane` (`lanes[LE_MAX_LANES]`, `LE_MAX_LANES == LE_MAX_INPUTS == 8`) records
+  `le_lane` (`lanes[LE_MAX_LANES]`, `LE_MAX_LANES == 8`) records
   **one** hardware input (`a_input_channel`, -1 = none) into its **own clean mono
   buffer** — sibling lanes are **never merged/averaged** — with per-lane output
   mask / volume / mute / effects. Recording is **track-addressed** and fans out
@@ -124,8 +124,10 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
   lane's own `fx` state — the pre/post `stage` and the per-lane `mon_fx` are
   gone): `le_engine_set_lane_fx(channel,lane,index,type)` / `…_fx_count` /
   `…_fx_param`. Track-addressed FX setters map to **lane 0** for back-compat.
-- **Live monitoring is per hardware input** (`le_monitor_input monitors[LE_MAX_INPUTS]`,
-  one slot per input, ≤ `LE_MAX_INPUTS`=8): each enabled input is summed live
+- **Live monitoring is per hardware input**
+  (`le_monitor_input monitors[LE_MAX_MONITORED_INPUTS]`, one slot per input,
+  ≤ `LE_MAX_MONITORED_INPUTS`=8; a higher-numbered channel is still recordable,
+  just not monitorable): each enabled input is summed live
   through **its own** stageless chain into its output mask, **never recorded**,
   independent of all track state — replacing the old global monitor-FX bus,
   monitor-follow-track, and monitor masks. `le_engine_set_monitor_input(input,

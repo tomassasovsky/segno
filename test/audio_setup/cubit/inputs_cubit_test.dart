@@ -103,7 +103,8 @@ void main() {
 
     test('names survive past the engine lane ceiling', () async {
       // Socket 12 of an 18-in rig is recordable, so it is nameable — the cap
-      // this used to have was a misreading of LE_MAX_INPUTS (#558).
+      // this used to have was a misreading of the constant now called
+      // LE_MAX_MONITORED_INPUTS (#558).
       final cubit = build();
       await settle();
 

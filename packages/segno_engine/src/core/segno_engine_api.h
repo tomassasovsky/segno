@@ -518,21 +518,23 @@ typedef struct le_config {
 /* Maximum number of simultaneous looper tracks (two banks of four). */
 #define LE_MAX_TRACKS 8
 
-/* Maximum hardware input channels a single track can fan out across lanes, and
- * therefore the maximum number of lanes per track: one lane per input. A lane
+/* Lanes a single track may own: one lane per hardware input it records. A lane
  * is the fundamental recordable unit — one clean mono buffer fed by one input —
  * and a track owns up to this many, all sharing one transport and undo span.
  * Lane buffers are allocated lazily (only recorded/counted lanes), so the
- * worst-case LE_MAX_TRACKS * LE_MAX_LANES does not inflate idle memory.
+ * worst-case LE_MAX_TRACKS * LE_MAX_LANES does not inflate idle memory. */
+#define LE_MAX_LANES 8
+
+/* Input channels the live-monitor path covers, [0, LE_MAX_MONITORED_INPUTS).
+ * Bounds the per-input monitor array (le_engine_set_monitor_input and friends)
+ * and the per-input capture rings beside it.
  *
- * This also bounds the per-input live-monitor array (le_engine_set_monitor_input
- * and friends), so live monitoring covers input channels [0, LE_MAX_INPUTS). On
- * an interface with more than LE_MAX_INPUTS inputs, a higher-numbered channel
- * can still be RECORDED into a lane (le_engine_set_lane_input accepts any
- * in-range channel) but cannot be monitored; raise LE_MAX_INPUTS if that ceiling
- * is ever a problem. */
-#define LE_MAX_INPUTS 8
-#define LE_MAX_LANES LE_MAX_INPUTS
+ * Equal to LE_MAX_LANES by construction — one lane per input — but a DISTINCT
+ * bound, and the reason this name exists: an input past it can still be
+ * RECORDED (le_engine_set_lane_input accepts any in-range channel), it simply
+ * cannot be monitored. A rig on an 18-in interface records channel 18 exactly
+ * as well as channel 1; only the monitor path stops short. */
+#define LE_MAX_MONITORED_INPUTS LE_MAX_LANES
 
 /* Ceiling for a per-lane / per-monitor channel volume. 2.0 is +6.02 dB, so the
  * UI can boost a quiet take/input up to +6 dB rather than only attenuate from
