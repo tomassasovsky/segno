@@ -60,12 +60,16 @@ void main() {
         ticker: const Stream<void>.empty(),
       )..startEngine(const EngineConfig());
       settings = SettingsRepository(store: FakeKeyValueStore());
-      monitor = MonitorCubit(repository: looper, settings: settings);
-      bloc = LooperBloc(repository: looper, settings: settings);
-      session = _MockSessionCubit();
+      // The rig BEFORE the cubit exists: the cubit follows every monitor write
+      // the repository makes, so a fixture that wrote after constructing it
+      // would put these in state on its own — and every assertion about the
+      // listener re-syncing would hold with the listener deleted.
       looper
         ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
         ..setMonitorOutput(input: 1, mask: 0x2);
+      monitor = MonitorCubit(repository: looper, settings: settings);
+      bloc = LooperBloc(repository: looper, settings: settings);
+      session = _MockSessionCubit();
     });
 
     tearDown(() async {
@@ -164,9 +168,12 @@ void main() {
       // would hold simply because nothing had run yet.
       await settleBlocEvents(tester);
 
+      // Still empty: the fixture writes its monitors BEFORE the cubit exists,
+      // so the follow never saw them and only the re-sync could have put them
+      // here. Neither half ran — a save must not rewrite persistence — and
+      // the Master key is the sharpest probe of the other half, since the
+      // resync writes it unconditionally and nothing else here touches it.
       expect(monitor.state.inputs, isEmpty);
-      // Neither half ran: a save must not rewrite persistence. The Master key
-      // is the sharpest probe — the resync writes it unconditionally.
       expect(await settings.loadMasterFxChain(), isNull);
     });
   });

@@ -399,6 +399,9 @@ void main() {
     final looper = _MockLooperRepository();
     final looperStates = StreamController<LooperState>.broadcast();
     addTearDown(looperStates.close);
+    when(() => looper.monitorChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
+    );
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
     when(() => looper.state).thenReturn(
       LooperState(

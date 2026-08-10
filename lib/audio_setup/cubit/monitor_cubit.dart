@@ -46,7 +46,14 @@ class MonitorCubit extends Cubit<MonitorState> {
     required SettingsRepository settings,
   }) : _repository = repository,
        _settings = settings,
-       super(const MonitorState());
+       super(const MonitorState()) {
+    // Subscribed at construction, not in [load]: this cubit is a cache of
+    // state another writer can change from the first frame, and a session
+    // applied before the restore finished would already have gone past it.
+    // Announcements that arrive before the restore are held, not read — see
+    // [_readMonitor].
+    _monitorWatch = _repository.monitorChanges.listen(_readMonitor);
+  }
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -61,6 +68,24 @@ class MonitorCubit extends Cubit<MonitorState> {
 
   /// Follows the plugin scan, so the chains pick up what it resolves.
   StreamSubscription<void>? _catalogWatch;
+
+  /// Follows monitor writes that did not come through here.
+  ///
+  /// This cubit is a write-through cache of state the repository owns, and it
+  /// is not the only writer: a pedal binding resolving an `FxStage.input`
+  /// target goes straight there (`FxBindingResolver`), as does a session
+  /// apply. The other stages are projected onto `LooperState` and so correct
+  /// themselves; a monitor lives only in the repository's own maps, so nothing
+  /// corrected this one — a footswitch could switch an input chain off and
+  /// leave the console drawing it as running, with the first tap writing the
+  /// state it was already in and looking inert.
+  late final StreamSubscription<int> _monitorWatch;
+
+  /// Whether [_restore] has pushed the saved monitors into the repository.
+  bool _restored = false;
+
+  /// Inputs announced before that, to be read once it has.
+  final Set<int> _heldReads = {};
 
   /// Restores the persisted per-input monitors and applies them to the
   /// repository. Reads the single-chain keys; the multi-lane → single-chain
@@ -115,6 +140,83 @@ class MonitorCubit extends Cubit<MonitorState> {
     _catalogWatch ??= _repository.pluginCatalog.progressStream.listen(
       (_) => unawaited(_readAfterScan()),
     );
+    _followRepository();
+  }
+
+  /// Marks the repository authoritative and reads whatever was announced
+  /// before it was.
+  ///
+  /// Both the restore and a session re-projection end here: each is a moment
+  /// when the repository stops holding defaults this cubit has not filled in
+  /// yet and starts holding the rig.
+  void _followRepository() {
+    _restored = true;
+    final held = _heldReads.toList();
+    _heldReads.clear();
+    held.forEach(_readMonitor);
+  }
+
+  /// Re-reads everything this cubit caches about [input].
+  ///
+  /// Emits only on a real difference: every write from here comes back
+  /// through the same stream, and re-emitting an identical state would rebuild
+  /// the console on each one.
+  ///
+  /// Never writes to the ENGINE: the repository is where this came from, and
+  /// pushing it back would be this cubit re-applying, to the engine, the state
+  /// the engine's owner just set.
+  ///
+  /// It does persist, because the alternative is worse than either pole. The
+  /// persisted envelope is built from this state, so a bypass read here and
+  /// deliberately not saved would still ride into settings on the next
+  /// unrelated edit of that chain — the flag would survive a restart if and
+  /// only if the player happened to touch the chain afterwards. Saving it is
+  /// the answer that is the same every time.
+  void _readMonitor(int input) {
+    if (isClosed) return;
+    // Before the restore, the repository does not hold the player's saved
+    // monitors — [_restore] is what puts them there. Reading now would take
+    // the repository's DEFAULTS as truth and, worse, save them over good
+    // settings, which is silent, permanent, and only visible on the next
+    // boot. Held instead, and read once the restore has landed, when the
+    // repository really is the authority this treats it as.
+    if (!_restored) {
+      _heldReads.add(input);
+      return;
+    }
+    final current = state.forInput(input);
+    final applied = current.copyWith(
+      mode: _repository.monitorMode(input),
+      outputMask: _repository.monitorOutput(input),
+      volume: _repository.monitorVolume(input),
+      muted: _repository.monitorMuted(input),
+      // No `isNotEmpty` fallback, unlike every optimistic read here: those
+      // guard against reading back a write the repository may have refused.
+      // This one is not a read-back — the repository just said this input
+      // changed — so an empty chain is a real clear (a session apply), and
+      // refusing it would leave the console showing a rack that is gone.
+      effects: _repository.monitorEffects(input),
+      chainEnabled: _repository.monitorChainEnabled(input),
+    );
+    if (applied == current) return;
+    // A chain that changed SHAPE reseats the slots, so an editor-sync poll
+    // keyed to a chain index would start reading a different entry — the same
+    // reason [_pushEffects] cancels them on its own edits.
+    if (!_sameShape(current.effects, applied.effects)) {
+      _cancelEditorTimers(input);
+    }
+    emit(state.withInput(applied));
+    unawaited(_persistMonitor(applied));
+  }
+
+  /// Whether two chains hold the same entries in the same slots — what an
+  /// editor poll's `(input, index)` key depends on.
+  static bool _sameShape(List<TrackEffect> a, List<TrackEffect> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].slotId != b[i].slotId) return false;
+    }
+    return true;
   }
 
   /// Re-reads once the scan's own listeners have run.
@@ -136,8 +238,12 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// Re-reads every known input's applied chain.
   ///
   /// The repository is the one that knows whether a plugin loaded, and its
-  /// answer changes when a scan lands. Nothing here writes: what is persisted
-  /// is what the user set, not what the rig happened to resolve.
+  /// answer changes when a scan lands. Nothing HERE writes — this path exists
+  /// for the transient flags (`loading`, `unavailable`, the enumerated
+  /// params), none of which belong in settings and none of which the wire
+  /// format carries. What a scan resolves that IS worth saving — a plugin's
+  /// display name — reaches settings through [_readMonitor], because a rebind
+  /// that rewrote the chain announces and that path persists.
   void _readApplied() {
     if (isClosed) return;
     for (final input in state.inputs.keys.toList()) {
@@ -211,6 +317,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     // Any open editor-sync poll is keyed to a chain index the load reseated.
     state.inputs.keys.forEach(_cancelEditorTimers);
     emit(MonitorState(inputs: applied));
+    _followRepository();
     await Future.wait([
       for (final monitor in applied.values) _persistMonitor(monitor),
       for (final input in dropped) _persistMonitor(InputMonitor(input: input)),
@@ -533,6 +640,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     }
     _editorTimers.clear();
     unawaited(_catalogWatch?.cancel());
+    unawaited(_monitorWatch.cancel());
     return super.close();
   }
 }

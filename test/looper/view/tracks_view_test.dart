@@ -55,6 +55,9 @@ void main() {
     // The FX-chain announcement reads the repository's remembered intent —
     // the same value the bloc's toggle handler negates.
     when(() => repository.trackChainEnabled(any())).thenReturn(true);
+    when(() => repository.monitorChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
+    );
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
