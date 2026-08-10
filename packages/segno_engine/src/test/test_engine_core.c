@@ -5672,7 +5672,8 @@ static void test_monitor_mute(void) {
     CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
   }
   CHECK(le_engine_set_monitor_input_mute(e, -1, 1) == LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input_mute(e, LE_MAX_MONITORED_INPUTS, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_input_mute(e, LE_MAX_MONITORED_INPUTS, 1) ==
+        LE_ERR_INVALID);
 
   le_engine_destroy(e);
 }
@@ -10310,7 +10311,8 @@ static void test_monitor_input_fx_rejects_invalid_args(void) {
 
   CHECK(le_engine_set_monitor_input(NULL, 0, 1) == LE_ERR_INVALID);
   CHECK(le_engine_set_monitor_input(e, -1, 1) == LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input(e, LE_MAX_MONITORED_INPUTS, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_input(e, LE_MAX_MONITORED_INPUTS, 1) ==
+        LE_ERR_INVALID);
 
   /* The single-chain setters reject an out-of-range input. */
   CHECK(le_engine_set_monitor_input_output(e, -1, 0x1) == LE_ERR_INVALID);
@@ -10321,7 +10323,8 @@ static void test_monitor_input_fx_rejects_invalid_args(void) {
   CHECK(le_engine_set_monitor_input_fx(NULL, 0, 0, LE_FX_DRIVE) ==
         LE_ERR_INVALID);
   CHECK(le_engine_set_monitor_input_fx(e, -1, 0, LE_FX_DRIVE) == LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input_fx(e, LE_MAX_MONITORED_INPUTS, 0, LE_FX_DRIVE) ==
+  CHECK(le_engine_set_monitor_input_fx(e, LE_MAX_MONITORED_INPUTS, 0,
+                                       LE_FX_DRIVE) ==
         LE_ERR_INVALID);
   CHECK(le_engine_set_monitor_input_fx(e, 0, LE_FX_MAX, LE_FX_DRIVE) ==
         LE_ERR_INVALID);
@@ -17508,7 +17511,8 @@ static void test_fx_enable_works_while_stopped(void) {
         LE_ERR_INVALID);
   CHECK(le_engine_set_lane_fx_chain_enabled(e, 0, LE_MAX_LANES, 1) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input_fx_enabled(e, LE_MAX_MONITORED_INPUTS, 0, 1) ==
+  CHECK(le_engine_set_monitor_input_fx_enabled(e, LE_MAX_MONITORED_INPUTS, 0,
+                                               1) ==
         LE_ERR_INVALID);
   CHECK(le_engine_set_monitor_input_fx_enabled(e, 0, LE_FX_MAX, 1) ==
         LE_ERR_INVALID);

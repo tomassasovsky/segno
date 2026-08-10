@@ -529,12 +529,18 @@ typedef struct le_config {
  * Bounds the per-input monitor array (le_engine_set_monitor_input and friends)
  * and the per-input capture rings beside it.
  *
- * Equal to LE_MAX_LANES by construction — one lane per input — but a DISTINCT
- * bound, and the reason this name exists: an input past it can still be
- * RECORDED (le_engine_set_lane_input accepts any in-range channel), it simply
- * cannot be monitored. A rig on an 18-in interface records channel 18 exactly
- * as well as channel 1; only the monitor path stops short. */
-#define LE_MAX_MONITORED_INPUTS LE_MAX_LANES
+ * A DISTINCT bound from LE_MAX_LANES, which is the reason this name exists: an
+ * input past it can still be RECORDED (le_engine_set_lane_input accepts any
+ * in-range channel), it simply cannot be monitored. A rig on an 18-in
+ * interface records channel 18 exactly as well as channel 1; only the monitor
+ * path stops short.
+ *
+ * Its own literal, not an alias: it merely HAPPENS to equal LE_MAX_LANES
+ * today. Defined as one, raising the lane ceiling would silently grow the
+ * monitor array (each le_monitor_input embeds a whole le_fx_state) and every
+ * per-buffer monitor array in le_engine_process — which is the one-number-two-
+ * meanings this constant was split to end. */
+#define LE_MAX_MONITORED_INPUTS 8
 
 /* Ceiling for a per-lane / per-monitor channel volume. 2.0 is +6.02 dB, so the
  * UI can boost a quiet take/input up to +6 dB rather than only attenuate from

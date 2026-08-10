@@ -22,7 +22,8 @@
 #include <string.h>
 
 #include "audio_ring.h"      /* le_audio_ring_pop */
-#include "engine_private.h"  /* le_engine, le_perf_capture, LE_MAX_MONITORED_INPUTS */
+#include "engine_private.h"  /* le_engine, le_perf_capture,
+                              LE_MAX_MONITORED_INPUTS */
 #include "layer_staging_ring.h" /* le_layer_staging_ring_pop (retired-layer persistence) */
 #include "perf_log_ring.h"   /* le_perf_log_ring_pop (performance event log) */
 
@@ -209,7 +210,8 @@ struct le_perf_drain {
   char capture_dir[LE_PD_PATH_MAX];
 
   le_pd_file master_file;
-  le_pd_file monitor_file[LE_MAX_MONITORED_INPUTS]; /* valid iff input_mask bit set */
+  /* valid iff the matching input_mask bit is set */
+  le_pd_file monitor_file[LE_MAX_MONITORED_INPUTS];
 
   /* Performance event log (part 3): append-only, header written once at
    * start; every subsequent drain cycle appends whatever both perf-log rings

@@ -101,7 +101,7 @@ void main() {
       expect(cubit.state.nameOf(0), 'guitar');
     });
 
-    test('names survive past the engine lane ceiling', () async {
+    test('names survive past the monitored-input ceiling', () async {
       // Socket 12 of an 18-in rig is recordable, so it is nameable — the cap
       // this used to have was a misreading of the constant now called
       // LE_MAX_MONITORED_INPUTS (#558).
