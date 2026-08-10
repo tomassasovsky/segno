@@ -417,7 +417,11 @@ class _PanelBodyState extends State<_PanelBody> {
       if (editing == null && gain != null && onLevel != null) ...[
         ConsoleCaption(
           l10n.signalPanelLevel,
-          explain: l10n.signalPanelLevelExplain,
+          // Per stage, for the same reason `in the mix` is: an input's fader
+          // is the monitor's own volume, and the monitor is never recorded.
+          explain: address.stage == FxStage.input
+              ? l10n.signalPanelLevelInputExplain
+              : l10n.signalPanelLevelExplain,
           explainLabel: l10n.a11yExplainControl(l10n.signalPanelLevel),
         ),
         _LevelRow(
@@ -655,61 +659,58 @@ class _ChainCaption extends StatelessWidget {
     final l10n = context.l10n;
     final surface = context.surface;
     final on = scope.chainEnabled;
-    return Row(
-      children: [
-        // Flexible, because this caption is the one inside a Row: its
-        // explanation is a paragraph, and an unbounded paragraph takes the
-        // whole width and overflows the pill off the small console's screen.
-        Flexible(
-          child: ConsoleCaption(
-            l10n.signalPanelChain,
-            explain: stage == FxStage.input
-                ? l10n.signalPanelChainInputExplain
-                : l10n.signalPanelChainExplain,
-            explainLabel: l10n.a11yExplainControl(l10n.signalPanelChain),
-          ),
-        ),
-        // What the switch COSTS while it is off, in the warning pair — the
-        // same sentence the dock put beside it.
-        if (!on) ...[
-          const SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              scope.chainDisabledConsequence(l10n),
-              key: const Key('signal_panel_chain_off_consequence'),
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: surface.warning,
-                fontSize: 14,
-                height: 1.21,
-                leadingDistribution: TextLeadingDistribution.even,
+    return ConsoleCaption(
+      l10n.signalPanelChain,
+      explain: stage == FxStage.input
+          ? l10n.signalPanelChainInputExplain
+          : l10n.signalPanelChainExplain,
+      explainLabel: l10n.a11yExplainControl(l10n.signalPanelChain),
+      // The controls ride in the caption's own row, so its explanation can
+      // open UNDER them at the panel's full width rather than in the third
+      // of a row a `Flexible` would leave it.
+      trailing: Row(
+        children: [
+          // What the switch COSTS while it is off, in the warning pair — the
+          // same sentence the dock put beside it.
+          if (!on) ...[
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                scope.chainDisabledConsequence(l10n),
+                key: const Key('signal_panel_chain_off_consequence'),
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: surface.warning,
+                  fontSize: 14,
+                  height: 1.21,
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
               ),
             ),
-          ),
+          ],
+          // A6: an explicit, user-initiated re-inherit, offered only while the
+          // routed input actually has an audible chain to copy.
+          if (scope.canResyncFromInput) ...[
+            _ChainAction(
+              actionKey: const Key('signal_panel_resync'),
+              label: l10n.fxResyncFromInput,
+              onTap: scope.resyncFromInput,
+            ),
+            const SizedBox(width: 10),
+          ],
+          // A chain whose target is gone has nothing to switch: writing through
+          // a vanished input would mint a phantom monitor and persist a key
+          // that comes back on the next boot.
+          if (scope.isPresent)
+            _ChainAction(
+              actionKey: const Key('signal_panel_chain_power'),
+              label: on ? l10n.signalChainOn : l10n.signalChainOff,
+              semanticLabel: on ? l10n.a11yFxChainOn : l10n.a11yFxChainOff,
+              active: on,
+              onTap: () => scope.setChainEnabled(enabled: !on),
+            ),
         ],
-        const Spacer(),
-        // A6: an explicit, user-initiated re-inherit, offered only while the
-        // routed input actually has an audible chain to copy.
-        if (scope.canResyncFromInput) ...[
-          _ChainAction(
-            actionKey: const Key('signal_panel_resync'),
-            label: l10n.fxResyncFromInput,
-            onTap: scope.resyncFromInput,
-          ),
-          const SizedBox(width: 10),
-        ],
-        // A chain whose target is gone has nothing to switch: writing through
-        // a vanished input would mint a phantom monitor and persist a key
-        // that comes back on the next boot.
-        if (scope.isPresent)
-          _ChainAction(
-            actionKey: const Key('signal_panel_chain_power'),
-            label: on ? l10n.signalChainOn : l10n.signalChainOff,
-            semanticLabel: on ? l10n.a11yFxChainOn : l10n.a11yFxChainOff,
-            active: on,
-            onTap: () => scope.setChainEnabled(enabled: !on),
-          ),
-      ],
+      ),
     );
   }
 }

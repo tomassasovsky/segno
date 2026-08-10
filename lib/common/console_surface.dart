@@ -625,6 +625,7 @@ class ConsoleCaption extends StatefulWidget {
     this.label, {
     this.explain,
     this.explainLabel,
+    this.trailing,
     super.key,
   }) : assert(
          (explain == null) == (explainLabel == null),
@@ -643,6 +644,17 @@ class ConsoleCaption extends StatefulWidget {
   /// What a screen reader calls the button that opens [explain]. A row of
   /// identical "?" buttons says nothing about which control each belongs to.
   final String? explainLabel;
+
+  /// Controls that belong beside the caption, at the trailing edge of its
+  /// row — a chain's power switch, say.
+  ///
+  /// Here rather than in a `Row` around this widget, because the explanation
+  /// has to escape that row: a paragraph sharing a row with controls gets a
+  /// fraction of the width and stacks into a narrow column with the panel
+  /// blank beside it, and without a `Flexible` it overflows them off screen
+  /// instead. Given the row, the caption can put its controls IN it and its
+  /// prose UNDER it, at the full width the panel has.
+  final Widget? trailing;
 
   /// The glyph's drawn size.
   static const double _glyphSize = 18;
@@ -673,13 +685,33 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
         leadingDistribution: TextLeadingDistribution.even,
       ),
     );
-    if (explain == null) return caption;
+    final trailing = widget.trailing;
+    if (explain == null) {
+      if (trailing == null) return caption;
+      return Row(
+        children: [
+          caption,
+          Expanded(child: trailing),
+        ],
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        _button(surface, caption),
+        if (trailing == null)
+          _button(surface, caption)
+        else
+          // `Expanded`, so [trailing]'s own flex children get a bounded
+          // width: this row shrink-wraps otherwise, and a `Flexible` inside
+          // an unbounded row is a layout assertion.
+          Row(
+            children: [
+              _button(surface, caption),
+              Expanded(child: trailing),
+            ],
+          ),
         if (_open)
           Padding(
             key: const Key('console_caption_explanation'),
@@ -690,13 +722,13 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
     );
   }
 
-  /// The caption row, which IS the button.
+  /// The caption and its glyph, which together ARE the button.
   ///
-  /// The whole row and not just the glyph, and a real 44px of it: an
+  /// The whole caption and not just the glyph, and a real 48px of it: an
   /// `OverflowBox` around an 18px child grows what is PAINTED and not what is
   /// hit — every ancestor's `hitTest` rejects a pointer outside its own size
   /// before the larger child is consulted — so the earlier version drew a
-  /// 44px affordance you had to hit within 18px of centre. On a floor unit
+  /// 48px affordance you had to hit within 18px of centre. On a floor unit
   /// aimed at with a foot-height finger that is the difference between a
   /// control and a decoration.
   ///

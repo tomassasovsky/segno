@@ -1236,7 +1236,7 @@ void main() {
 
       // One caption opening must not open the others — four explanations at
       // once is the wall of text this replaces.
-      expect(find.text(l10n.signalPanelLevelExplain), findsOneWidget);
+      expect(find.text(l10n.signalPanelLevelInputExplain), findsOneWidget);
       expect(find.text(l10n.signalPanelInMixInputExplain), findsNothing);
       expect(find.text(l10n.signalPanelHearWhilePlayingExplain), findsNothing);
     });
