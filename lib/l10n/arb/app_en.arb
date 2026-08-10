@@ -2945,11 +2945,19 @@
     "@signalPanelLevelExplain": {
         "description": "Explains the gain row, and names the double-tap, which has no other affordance."
     },
+    "signalPanelInMixInputExplain": "Whether you hear this input at all. It has no effect on recording: a take prints the signal itself, not what you monitor. The pair below decides WHEN this opens — muted here and nothing below can bring it back.",
+    "@signalPanelInMixInputExplain": {
+        "description": "The muted/heard pair on the INPUT card, where the generic 'still records and still plays' is meaningless — the monitor path never records and never plays. Answers the question the input card actually raises: why two switches for hearing one input. Both gates must be open (engine_process.c: `!mon_on[c] || mon_mut[c]` silences)."
+    },
+    "signalPanelChainInputExplain": "The effects this input passes through, in order. Switching the chain off leaves the effects loaded, takes them out of what you hear — and prints new takes dry, since a take copies the chain that was on when it started.",
+    "@signalPanelChainInputExplain": {
+        "description": "The chain caption on the INPUT card. The generic string stops at 'out of the sound', which on an input is half the story: _snapshotMonitorChainsOntoLanes bails on a disabled chain, so the take is dry too. Saying so only after the fact — in fxChainOffInputConsequence — tells people once it is too late."
+    },
     "signalPanelChainExplain": "The effects this signal passes through, in order. Switching the chain off leaves the effects loaded and takes them out of the sound.",
     "@signalPanelChainExplain": {
         "description": "Explains the chain strip and what its power switch does."
     },
-    "a11yExplainControl": "What {group} does",
+    "a11yExplainControl": "What \"{group}\" does",
     "@a11yExplainControl": {
         "description": "Screen-reader label for the ? button beside a group caption.",
         "placeholders": {

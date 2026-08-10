@@ -415,7 +415,7 @@ class _PanelBodyState extends State<_PanelBody> {
     // and the keyed subtree below.
     final level = <Widget>[
       if (editing == null && gain != null && onLevel != null) ...[
-        _Caption(
+        ConsoleCaption(
           l10n.signalPanelLevel,
           explain: l10n.signalPanelLevelExplain,
           explainLabel: l10n.a11yExplainControl(l10n.signalPanelLevel),
@@ -440,9 +440,15 @@ class _PanelBodyState extends State<_PanelBody> {
         )
       else ...[
         if (inMix != null && onHeard != null) ...[
-          _Caption(
+          ConsoleCaption(
             l10n.signalPanelInMix,
-            explain: l10n.signalPanelInMixExplain,
+            // Per stage, because the generic sentence is about a signal that
+            // records and plays. An input's monitor path does neither, so
+            // "muted still records" is not merely imprecise there — it
+            // describes a different control.
+            explain: address.stage == FxStage.input
+                ? l10n.signalPanelInMixInputExplain
+                : l10n.signalPanelInMixExplain,
             explainLabel: l10n.a11yExplainControl(l10n.signalPanelInMix),
           ),
           ConsoleSegmented<bool>(
@@ -458,7 +464,7 @@ class _PanelBodyState extends State<_PanelBody> {
         ],
       ],
       if (mode != null && onMonitorMode != null) ...[
-        _Caption(
+        ConsoleCaption(
           l10n.signalPanelHearWhilePlaying,
           explain: l10n.signalPanelHearWhilePlayingExplain,
           explainLabel: l10n.a11yExplainControl(
@@ -511,7 +517,7 @@ class _PanelBodyState extends State<_PanelBody> {
               key: const Key('signal_panel_overdub_mismatch'),
               message: l10n.fxOverdubMismatchHint,
             ),
-          _ChainCaption(scope: scope),
+          _ChainCaption(scope: scope, stage: address.stage),
           _ChainStrip(
             chain: chain,
             // The slot only when it still resolves — an id naming nothing
@@ -636,9 +642,13 @@ class _Header extends StatelessWidget {
 /// turned back on. It sits on the caption because it belongs to the whole
 /// run, not to any one entry: an entry's own power is the editor's bypass.
 class _ChainCaption extends StatelessWidget {
-  const _ChainCaption({required this.scope});
+  const _ChainCaption({required this.scope, required this.stage});
 
   final FxScope scope;
+
+  /// Which stage's chain this is. Only the input's caption differs, and it
+  /// differs because only there does the chain's power reach the recording.
+  final FxStage stage;
 
   @override
   Widget build(BuildContext context) {
@@ -647,10 +657,17 @@ class _ChainCaption extends StatelessWidget {
     final on = scope.chainEnabled;
     return Row(
       children: [
-        _Caption(
-          l10n.signalPanelChain,
-          explain: l10n.signalPanelChainExplain,
-          explainLabel: l10n.a11yExplainControl(l10n.signalPanelChain),
+        // Flexible, because this caption is the one inside a Row: its
+        // explanation is a paragraph, and an unbounded paragraph takes the
+        // whole width and overflows the pill off the small console's screen.
+        Flexible(
+          child: ConsoleCaption(
+            l10n.signalPanelChain,
+            explain: stage == FxStage.input
+                ? l10n.signalPanelChainInputExplain
+                : l10n.signalPanelChainExplain,
+            explainLabel: l10n.a11yExplainControl(l10n.signalPanelChain),
+          ),
         ),
         // What the switch COSTS while it is off, in the warning pair — the
         // same sentence the dock put beside it.
@@ -769,26 +786,6 @@ class _Notice extends StatelessWidget {
       height: 1.21,
       leadingDistribution: TextLeadingDistribution.even,
     ),
-  );
-}
-
-/// An inline caption over the row it names. Sentence case, as the mockups set
-/// them — these read as questions about the chain, not as group headings.
-class _Caption extends StatelessWidget {
-  const _Caption(this.label, {this.explain, this.explainLabel});
-
-  final String label;
-
-  /// What this group's controls do, or null where the caption's own word is
-  /// the whole answer.
-  final String? explain;
-  final String? explainLabel;
-
-  @override
-  Widget build(BuildContext context) => ConsoleCaption(
-    label,
-    explain: explain,
-    explainLabel: explainLabel,
   );
 }
 

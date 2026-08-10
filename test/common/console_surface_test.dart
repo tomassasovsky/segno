@@ -210,14 +210,19 @@ void main() {
   });
 
   group('ConsoleCaption', () {
-    Future<void> pumpCaption(WidgetTester tester, {String? explain}) =>
-        pumpRows(tester, [
-          ConsoleCaption(
-            'in the mix',
-            explain: explain,
-            explainLabel: 'What in the mix does',
-          ),
-        ]);
+    Future<void> pumpCaption(
+      WidgetTester tester, {
+      String? explain,
+      String explainLabel = 'What "in the mix" does',
+    }) => pumpRows(tester, [
+      ConsoleCaption(
+        'in the mix',
+        explain: explain,
+        // Together or not at all — the widget asserts it, since an
+        // explanation with no label is an unnamed button.
+        explainLabel: explain == null ? null : explainLabel,
+      ),
+    ]);
 
     testWidgets('a caption with nothing to explain has no question', (
       tester,
@@ -229,37 +234,68 @@ void main() {
       expect(find.byKey(const Key('console_caption_explain')), findsNothing);
     });
 
-    testWidgets('the question does not make the caption taller', (
-      tester,
-    ) async {
-      await pumpCaption(tester);
-      final plain = tester.getSize(find.byType(ConsoleCaption)).height;
-
+    testWidgets('a tap 15px off centre still opens it', (tester) async {
       await pumpCaption(tester, explain: 'Whether you hear it.');
-      final asked = tester.getSize(find.byType(ConsoleCaption)).height;
+      final target = find.byKey(const Key('console_caption_explain'));
 
-      // The tap target is 44 and OVERFLOWS the row. Laid out at its full size
-      // it would push every control under every caption down by 27px — four
-      // times over on the Signal panel alone. What it may cost is the glyph's
-      // own 18 against the caption's 17: one pixel, not twenty-seven.
-      expect(asked, lessThanOrEqualTo(plain + 2));
+      // The gap this replaces: an `OverflowBox` grew what was PAINTED to 44
+      // and left the hit test at the 18px the ancestors were sized to, so a
+      // finger that landed inside the drawn circle did nothing. Layout size
+      // proved nothing about it — the old test measured 44 and passed while
+      // this tap did not work.
+      await tester.tapAt(tester.getCenter(target) + const Offset(0, -15));
+      await tester.pump();
+      expect(
+        find.byKey(const Key('console_caption_explanation')),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('the target is bigger than the glyph it draws', (
-      tester,
-    ) async {
+    testWidgets('the words open it too', (tester) async {
       await pumpCaption(tester, explain: 'Whether you hear it.');
 
-      // A console someone is standing over, aimed at with a finger. The glyph
-      // is 18; anything like that as a target is a miss.
-      final target = tester.getSize(
-        find.descendant(
-          of: find.byKey(const Key('console_caption_explain')),
-          matching: find.byType(Center).first,
+      // A question mark that answers only when struck dead centre teaches
+      // people it is broken. The caption beside it asks the same question.
+      await tester.tap(find.text('in the mix'));
+      await tester.pump();
+      expect(
+        find.byKey(const Key('console_caption_explanation')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('it meets the platform tap target guideline', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpCaption(tester, explain: 'Whether you hear it.');
+
+      // The floor unit is aimed at with a finger by someone standing over it.
+      await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+      handle.dispose();
+    });
+
+    testWidgets('the reader hears the name, not the glyph', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpCaption(
+        tester,
+        explain: 'Whether you hear it.',
+      );
+
+      // Without excluding the subtree the node reads "What "in the mix" does
+      // \n in the mix \n ?" — the reader announces the question mark.
+      expect(
+        tester.getSemantics(
+          find.byKey(const Key('console_caption_explain')),
+        ),
+        matchesSemantics(
+          label: 'What "in the mix" does',
+          isButton: true,
+          hasTapAction: true,
+          hasFocusAction: true,
+          hasExpandedState: true,
+          isFocusable: true,
         ),
       );
-      expect(target.width, greaterThanOrEqualTo(44));
-      expect(target.height, greaterThanOrEqualTo(44));
+      handle.dispose();
     });
   });
 }

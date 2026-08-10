@@ -626,7 +626,12 @@ class ConsoleCaption extends StatefulWidget {
     this.explain,
     this.explainLabel,
     super.key,
-  });
+  }) : assert(
+         (explain == null) == (explainLabel == null),
+         'explain and explainLabel travel together: an explanation with no '
+         'label is an unnamed button, and a label with no explanation is a '
+         'button that does nothing.',
+       );
 
   /// The caption itself.
   final String label;
@@ -639,10 +644,14 @@ class ConsoleCaption extends StatefulWidget {
   /// identical "?" buttons says nothing about which control each belongs to.
   final String? explainLabel;
 
-  /// The glyph's drawn size. The tap target is [_targetSize] and overflows it.
-  static const double glyphSize = 18;
+  /// The glyph's drawn size.
+  static const double _glyphSize = 18;
 
-  static const double _targetSize = 44;
+  /// Minimum height of the tappable caption row. 48, not the 44 of Apple's
+  /// guideline: Android's is the stricter of the two and this is a console
+  /// people stand over, where the finger arrives at a worse angle than either
+  /// guideline assumes.
+  static const double _targetHeight = 48;
 
   @override
   State<ConsoleCaption> createState() => _ConsoleCaptionState();
@@ -670,69 +679,95 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [caption, const SizedBox(width: 8), _button(surface)],
-        ),
+        _button(surface, caption),
         if (_open)
           Padding(
             key: const Key('console_caption_explanation'),
-            padding: const EdgeInsets.only(top: 4, bottom: 6),
+            padding: const EdgeInsets.only(bottom: 6),
             child: ConsoleProse(explain),
           ),
       ],
     );
   }
 
-  /// The `?` itself.
+  /// The caption row, which IS the button.
   ///
-  /// Drawn at [ConsoleCaption.glyphSize] and TARGETED at
-  /// [ConsoleCaption._targetSize], which overflows the layout rather than
-  /// growing it: a 44px row per caption would push every control on the face
-  /// down by the same amount, four times over on the Signal panel alone.
-  Widget _button(SurfaceTheme surface) => Semantics(
+  /// The whole row and not just the glyph, and a real 44px of it: an
+  /// `OverflowBox` around an 18px child grows what is PAINTED and not what is
+  /// hit — every ancestor's `hitTest` rejects a pointer outside its own size
+  /// before the larger child is consulted — so the earlier version drew a
+  /// 44px affordance you had to hit within 18px of centre. On a floor unit
+  /// aimed at with a foot-height finger that is the difference between a
+  /// control and a decoration.
+  ///
+  /// The label opens it too. A `?` that only answers when struck dead centre
+  /// teaches people it is broken; the words beside it are the same question.
+  Widget _button(SurfaceTheme surface, Widget caption) => Semantics(
     button: true,
     expanded: _open,
     label: widget.explainLabel,
-    child: SizedBox(
-      width: ConsoleCaption.glyphSize,
-      height: ConsoleCaption.glyphSize,
-      child: OverflowBox(
-        maxWidth: ConsoleCaption._targetSize,
-        maxHeight: ConsoleCaption._targetSize,
-        child: InkWell(
-          key: const Key('console_caption_explain'),
-          onTap: () => setState(() => _open = !_open),
-          customBorder: const CircleBorder(),
-          child: Center(
-            child: Container(
-              width: ConsoleCaption.glyphSize,
-              height: ConsoleCaption.glyphSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: _open ? surface.accent : surface.borderStrong,
-                ),
-                color: _open ? surface.accent : null,
-              ),
-              child: Center(
-                child: Text(
-                  '?',
-                  style: TextStyle(
-                    color: _open ? surface.onAccent : surface.textSecondary,
-                    fontSize: 11,
-                    height: 1,
-                    fontWeight: FontWeight.w600,
-                    leadingDistribution: TextLeadingDistribution.even,
-                  ),
-                ),
-              ),
-            ),
+    child: InkWell(
+      key: const Key('console_caption_explain'),
+      onTap: _toggle,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minHeight: ConsoleCaption._targetHeight,
+        ),
+        // Inside the InkWell, not around it: outside, the exclusion swallows
+        // the tap action too, and the node a reader lands on is a button it
+        // cannot press. Inside, the gesture survives and only the words go —
+        // the label already says them, and the bare "?" was being read out.
+        child: ExcludeSemantics(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [caption, const SizedBox(width: 8), _glyph(surface)],
           ),
         ),
       ),
     ),
   );
+
+  /// The `?` itself. Drawn, never hit — [_button] is the target.
+  Widget _glyph(SurfaceTheme surface) => Container(
+    width: ConsoleCaption._glyphSize,
+    height: ConsoleCaption._glyphSize,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.all(color: _open ? surface.accent : surface.borderStrong),
+      color: _open ? surface.accent : null,
+    ),
+    child: Center(
+      child: Text(
+        '?',
+        style: TextStyle(
+          color: _open ? surface.onAccent : surface.textSecondary,
+          fontSize: 11,
+          height: 1,
+          fontWeight: FontWeight.w600,
+          leadingDistribution: TextLeadingDistribution.even,
+        ),
+      ),
+    ),
+  );
+
+  /// Opens or closes, and SAYS which.
+  ///
+  /// Focus stays on the button, so without this a reader hears nothing at all
+  /// — the paragraph it just summoned is only found by swiping forward, which
+  /// is a poor result for a control whose entire job is answering a question.
+  void _toggle() {
+    setState(() => _open = !_open);
+    final explain = widget.explain;
+    if (_open && explain != null) {
+      unawaited(
+        SemanticsService.sendAnnouncement(
+          View.of(context),
+          explain,
+          Directionality.of(context),
+        ),
+      );
+    }
+  }
 }
 
 /// A row that can open in place: the row itself over a tinted, bordered card

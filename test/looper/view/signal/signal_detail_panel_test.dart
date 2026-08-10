@@ -1210,11 +1210,11 @@ void main() {
       );
       await tester.tap(button);
       await tester.pumpAndSettle();
-      expect(find.text(l10n.signalPanelInMixExplain), findsOneWidget);
+      expect(find.text(l10n.signalPanelInMixInputExplain), findsOneWidget);
 
       await tester.tap(button);
       await tester.pumpAndSettle();
-      expect(find.text(l10n.signalPanelInMixExplain), findsNothing);
+      expect(find.text(l10n.signalPanelInMixInputExplain), findsNothing);
     });
 
     testWidgets('each caption answers for itself', (tester) async {
@@ -1237,8 +1237,38 @@ void main() {
       // One caption opening must not open the others — four explanations at
       // once is the wall of text this replaces.
       expect(find.text(l10n.signalPanelLevelExplain), findsOneWidget);
-      expect(find.text(l10n.signalPanelInMixExplain), findsNothing);
+      expect(find.text(l10n.signalPanelInMixInputExplain), findsNothing);
       expect(find.text(l10n.signalPanelHearWhilePlayingExplain), findsNothing);
+    });
+
+    testWidgets('the chain explanation fits the small console', (
+      tester,
+    ) async {
+      await pump(tester, size: const Size(1024, 600));
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      await tester.tap(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text(l10n.signalPanelChain),
+            matching: find.byType(ConsoleCaption),
+          ),
+          matching: find.byKey(const Key('console_caption_explain')),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The only caption inside a Row, and so the only one that can take the
+      // whole width and push the chain's power pill off the screen: a
+      // non-flex Row child is given unbounded width, and this one's content
+      // is a paragraph. At 1920 there is room for both and nothing shows.
+      expect(tester.takeException(), isNull);
+      final prose = tester.getRect(
+        find.text(l10n.signalPanelChainInputExplain),
+      );
+      expect(prose.right, lessThanOrEqualTo(1024));
     });
 
     testWidgets('the question names the group it is about', (tester) async {
