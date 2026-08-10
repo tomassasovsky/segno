@@ -747,6 +747,442 @@ void main() {
 
   // ------------------------------------------------------------ helpers
 
+  group('a card says what is on its chain', () {
+    testWidgets('a lane with effects and no audio still shows them', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        stage: FxStage.loop,
+        state: LooperState(
+          tracks: [
+            Track(
+              lanes: [
+                const Lane(inputChannel: 0),
+                // Configured and empty: the chain is live in the repository
+                // and starts processing the moment this lane records. The
+                // surface that hid it told the player their rig was clean.
+                Lane(
+                  effects: [
+                    BuiltInEffect(type: TrackEffectType.reverb, slotId: 'a'),
+                  ],
+                ),
+              ],
+            ),
+          ],
+          status: const EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      expect(find.byKey(const Key('signal_card_loop_0_1')), findsOneWidget);
+      expect(find.text(l10n.effectReverb), findsOneWidget);
+    });
+
+    testWidgets('a chain reads in signal order', (tester) async {
+      await pump(
+        tester,
+        stage: FxStage.track,
+        state: LooperState(
+          tracks: [
+            Track(
+              lanes: const [Lane(inputChannel: 0)],
+              effects: [
+                BuiltInEffect(type: TrackEffectType.drive, slotId: 'a'),
+                BuiltInEffect(type: TrackEffectType.tremolo, slotId: 'b'),
+                BuiltInEffect(type: TrackEffectType.reverb, slotId: 'c'),
+              ],
+            ),
+          ],
+          status: const EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      // The mockups draw the run under the rack name, in the order the sound
+      // takes — the only place the surface says a chain exists at all before
+      // you open its panel.
+      expect(
+        find.text(
+          '${l10n.effectDrive} → ${l10n.effectTremolo} → ${l10n.effectReverb}',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an empty chain still invites one', (tester) async {
+      await pump(tester, stage: FxStage.track);
+      final l10n = l10nOf(tester);
+
+      expect(find.text(l10n.signalTapToLoadRack), findsWidgets);
+    });
+
+    testWidgets('a chain added while the run is up appears on it', (
+      tester,
+    ) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      await pump(tester, stage: FxStage.track, states: states.stream);
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.effectReverb), findsNothing);
+
+      states.add(
+        LooperState(
+          // The SAME roster as the rig, down to the lane count — the only
+          // difference is the chain. A redraw check that compared the shape of
+          // the run would see nothing here, and the card would go on naming a
+          // chain the track no longer has.
+          tracks: [
+            Track(
+              lanes: const [Lane(inputChannel: 0)],
+              effects: [
+                BuiltInEffect(type: TrackEffectType.reverb, slotId: 'a'),
+              ],
+            ),
+            const Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
+            const Track(channel: 2, lanes: [Lane(inputChannel: 0)]),
+          ],
+          outputEnabledMask: _rig.outputEnabledMask,
+          status: _rig.status,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The run redraws on a chain CHANGING, not only on the roster changing
+      // — a shape check that counted tracks and lanes would never see this.
+      expect(find.text(l10n.effectReverb), findsOneWidget);
+    });
+
+    testWidgets("an input's own chain reads on its card", (tester) async {
+      when(repository.allMonitors).thenReturn({
+        1: InputMonitor(
+          input: 1,
+          effects: [BuiltInEffect(type: TrackEffectType.drive, slotId: 'a')],
+        ),
+      });
+      await pump(tester);
+      await monitor.syncFromRepository();
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // On the card for THAT socket: the input run draws one card per input,
+      // and a chain read off the wrong one would name it under a socket the
+      // player never touched.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('signal_card_input_1')),
+          matching: find.text(l10n.effectDrive),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("the master's chain reads on its card", (tester) async {
+      await pump(
+        tester,
+        stage: FxStage.master,
+        state: LooperState(
+          tracks: _rig.tracks,
+          outputEnabledMask: _rig.outputEnabledMask,
+          masterEffects: [
+            BuiltInEffect(type: TrackEffectType.reverb, slotId: 'a'),
+          ],
+          status: _rig.status,
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('signal_card_master')),
+          matching: find.text(l10n.effectReverb),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a chain switched off says so, and still names itself', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        stage: FxStage.track,
+        state: LooperState(
+          tracks: [
+            Track(
+              lanes: const [Lane(inputChannel: 0)],
+              chainEnabled: false,
+              effects: [
+                BuiltInEffect(type: TrackEffectType.drive, slotId: 'a'),
+              ],
+            ),
+          ],
+          status: const EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      // The inverse of #525, and just as wrong: a run that read the same
+      // either way would promise a Drive the player has switched out.
+      expect(
+        find.text(l10n.signalCardChainOffRun(l10n.effectDrive)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("a loop card reads its LANE's power, not its track's", (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        stage: FxStage.loop,
+        state: LooperState(
+          tracks: [
+            Track(
+              // The track bus is running; the lane on it is not. Reading the
+              // track's flag here is the confusion this call site invites, and
+              // it would tell the player a switched-off lane is processing.
+              lanes: [
+                Lane(
+                  inputChannel: 0,
+                  chainEnabled: false,
+                  effects: [
+                    BuiltInEffect(type: TrackEffectType.tremolo, slotId: 'a'),
+                  ],
+                ),
+              ],
+              effects: [
+                BuiltInEffect(type: TrackEffectType.drive, slotId: 'b'),
+              ],
+            ),
+          ],
+          status: const EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      expect(
+        find.text(l10n.signalCardChainOffRun(l10n.effectTremolo)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("an input's switched-off chain says so", (tester) async {
+      when(repository.allMonitors).thenReturn({
+        0: InputMonitor(
+          input: 0,
+          chainEnabled: false,
+          effects: [BuiltInEffect(type: TrackEffectType.drive, slotId: 'a')],
+        ),
+      });
+      await pump(tester);
+      await monitor.syncFromRepository();
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      expect(
+        find.text(l10n.signalCardChainOffRun(l10n.effectDrive)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a card announces the chain it carries', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pump(
+        tester,
+        stage: FxStage.track,
+        state: LooperState(
+          tracks: [
+            Track(
+              lanes: const [Lane(inputChannel: 0)],
+              effects: [
+                BuiltInEffect(type: TrackEffectType.drive, slotId: 'a'),
+              ],
+            ),
+          ],
+          status: const EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      // The card is ONE node, so what it does not put in its label is not
+      // announced at all — and a rig you cannot hear is exactly the rig a
+      // screen reader user has to read.
+      expect(
+        tester.getSemantics(find.byKey(const Key('signal_card_track_0'))).label,
+        contains(l10n.effectDrive),
+      );
+      handle.dispose();
+    });
+
+    testWidgets("the master's chain power redraws while the run is up", (
+      tester,
+    ) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      final chain = [BuiltInEffect(type: TrackEffectType.reverb, slotId: 'a')];
+      await pump(
+        tester,
+        stage: FxStage.master,
+        state: LooperState(
+          tracks: _rig.tracks,
+          outputEnabledMask: _rig.outputEnabledMask,
+          masterEffects: chain,
+          status: _rig.status,
+        ),
+        states: states.stream,
+      );
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.effectReverb), findsOneWidget);
+
+      states.add(
+        LooperState(
+          tracks: _rig.tracks,
+          outputEnabledMask: _rig.outputEnabledMask,
+          masterChainEnabled: false,
+          // The SAME list instance: switching the master chain off does not
+          // touch `masterEffects`, so the chain's own subscription sees
+          // nothing here and the power's is the only thing that redraws.
+          masterEffects: chain,
+          status: _rig.status,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(l10n.signalCardChainOffRun(l10n.effectReverb)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("the master's chain says when it is switched off", (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        stage: FxStage.master,
+        state: LooperState(
+          tracks: _rig.tracks,
+          outputEnabledMask: _rig.outputEnabledMask,
+          masterChainEnabled: false,
+          masterEffects: [
+            BuiltInEffect(type: TrackEffectType.reverb, slotId: 'a'),
+          ],
+          status: _rig.status,
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      expect(
+        find.text(l10n.signalCardChainOffRun(l10n.effectReverb)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a long chain does not stretch its card', (tester) async {
+      await pump(
+        tester,
+        stage: FxStage.track,
+        state: LooperState(
+          tracks: [
+            Track(
+              lanes: const [Lane(inputChannel: 0)],
+              // A full chain of plugins, each naming itself in full: the
+              // longest line the surface can be asked to draw.
+              effects: [
+                for (var i = 0; i < 8; i++)
+                  PluginEffect(
+                    ref: PluginRef(
+                      format: PluginFormat.vst3,
+                      id: 'com.example.verb$i',
+                    ),
+                    name: 'Valhalla Vintage Verb $i',
+                    slotId: 's$i',
+                  ),
+              ],
+            ),
+            const Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
+          ],
+          status: const EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+      );
+
+      // The mockups size a card at 196 with a one-line chain and 215 with a
+      // two-line one. Uncapped, eight plugin names wrap to eight lines and
+      // that one card runs to three times its neighbour's height, which is
+      // what a `Wrap` of cards makes ugly.
+      final tall = tester.getSize(find.byKey(const Key('signal_card_track_0')));
+      final short = tester.getSize(
+        find.byKey(const Key('signal_card_track_1')),
+      );
+      // EQUAL, not merely bounded: two lines is what a card is sized for, so
+      // a full chain costs it nothing. A cap that crept to three would pass a
+      // "not unbounded" check and still break the run's line.
+      expect(tall.height, short.height);
+    });
+
+    testWidgets("the master's chain redraws while the run is up", (
+      tester,
+    ) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      await pump(tester, stage: FxStage.master, states: states.stream);
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.effectDelay), findsNothing);
+
+      states.add(
+        LooperState(
+          tracks: _rig.tracks,
+          outputEnabledMask: _rig.outputEnabledMask,
+          masterEffects: [
+            BuiltInEffect(type: TrackEffectType.delay, slotId: 'a'),
+          ],
+          status: _rig.status,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The master run does not go through `sameChainShape` — it selects the
+      // chain off the bloc — so this is the only thing holding that
+      // subscription in place.
+      expect(find.text(l10n.effectDelay), findsOneWidget);
+    });
+
+    testWidgets('a lane chain added while the run is up appears on it', (
+      tester,
+    ) async {
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      await pump(tester, stage: FxStage.loop, states: states.stream);
+      final l10n = l10nOf(tester);
+      expect(find.text(l10n.effectTremolo), findsNothing);
+
+      states.add(
+        LooperState(
+          tracks: [
+            Track(
+              lanes: [
+                Lane(
+                  inputChannel: 0,
+                  effects: [
+                    BuiltInEffect(type: TrackEffectType.tremolo, slotId: 'a'),
+                  ],
+                ),
+              ],
+            ),
+            const Track(channel: 1, lanes: [Lane(inputChannel: 1)]),
+            const Track(channel: 2, lanes: [Lane(inputChannel: 0)]),
+          ],
+          outputEnabledMask: _rig.outputEnabledMask,
+          status: _rig.status,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.effectTremolo), findsOneWidget);
+    });
+  });
+
   group('helpers', () {
     test('lanes are lettered, and fall back to the ordinal past Z', () {
       expect(laneLetter(0), 'A');
@@ -771,6 +1207,121 @@ void main() {
       ];
       expect(sameChainShape(a, grown), isFalse);
       expect(sameChainShape(a, const []), isFalse);
+    });
+
+    test('a plugin knob moving is not a redraw, a relink is', () {
+      const ref = PluginRef(format: PluginFormat.vst3, id: 'com.v.verb');
+      const before = [
+        Track(
+          lanes: [Lane()],
+          effects: [PluginEffect(ref: ref, name: 'Verb')],
+        ),
+      ];
+      // The editor poll rewrites the entry ten times a second while a native
+      // window is open. The card names the plugin and nothing else, so none of
+      // that reaches it.
+      const knob = [
+        Track(
+          lanes: [Lane()],
+          effects: [
+            PluginEffect(ref: ref, name: 'Verb', paramValues: {3: 0.42}),
+          ],
+        ),
+      ];
+      expect(sameChainShape(before, knob), isTrue);
+
+      // A relink onto a plugin that happens to carry the same display name is
+      // a different plugin, and the card is the only place that says which.
+      const relinked = [
+        Track(
+          lanes: [Lane()],
+          effects: [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'com.other.verb'),
+              name: 'Verb',
+            ),
+          ],
+        ),
+      ];
+      expect(sameChainShape(before, relinked), isFalse);
+    });
+
+    test('a built-in swapped for another built-in redraws', () {
+      final drive = [
+        Track(
+          lanes: const [Lane()],
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        ),
+      ];
+      final reverb = [
+        Track(
+          lanes: const [Lane()],
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        ),
+      ];
+      // The editor changes an entry's type in place, through
+      // `LooperBusEffectTypeChanged` — same length, same position, a
+      // different name on the card.
+      expect(sameChainShape(drive, reverb), isFalse);
+    });
+
+    test('a built-in swapped for a plugin in place redraws', () {
+      final builtIn = [
+        Track(
+          lanes: const [Lane()],
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        ),
+      ];
+      const plugin = [
+        Track(
+          lanes: [Lane()],
+          effects: [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'com.v.verb'),
+              name: 'Verb',
+            ),
+          ],
+        ),
+      ];
+      // Same length, same position, different name on the card — the entry
+      // was replaced rather than added to, which the lengths alone hide.
+      expect(sameChainShape(builtIn, plugin), isFalse);
+    });
+
+    test('a chain losing its power redraws', () {
+      final on = [
+        Track(
+          lanes: const [Lane()],
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        ),
+      ];
+      final off = [
+        Track(
+          lanes: const [Lane()],
+          chainEnabled: false,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        ),
+      ];
+      expect(sameChainShape(on, off), isFalse);
+
+      final laneOn = [
+        Track(
+          lanes: [
+            Lane(effects: [BuiltInEffect(type: TrackEffectType.drive)]),
+          ],
+        ),
+      ];
+      final laneOff = [
+        Track(
+          lanes: [
+            Lane(
+              chainEnabled: false,
+              effects: [BuiltInEffect(type: TrackEffectType.drive)],
+            ),
+          ],
+        ),
+      ];
+      expect(sameChainShape(laneOn, laneOff), isFalse);
     });
   });
 
