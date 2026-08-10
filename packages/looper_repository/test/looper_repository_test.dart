@@ -2047,16 +2047,6 @@ void main() {
         // name to fall back on. Nothing loads a bus plugin, so without the
         // recovery this entry reads as a 32-character TUID for the whole
         // session — and the next write persists the empty name again.
-        repo.setMasterEffects(
-          effects: const [
-            PluginEffect(
-              ref: PluginRef(format: PluginFormat.vst3, id: 'aab1cc2200000000'),
-            ),
-          ],
-        );
-        expect((repo.masterEffects.single as PluginEffect).name, isEmpty);
-
-        // A track bus is restored the same way, out of its own map.
         repo.setTrackEffects(
           channel: 1,
           effects: const [
@@ -2067,8 +2057,35 @@ void main() {
         );
         expect((repo.trackEffects(1).single as PluginEffect).name, isEmpty);
 
+        // The master is restored after it, out of its own field — and after
+        // the track's kick has already registered its continuation, so this
+        // chain is named only if the master write kicks the recovery too.
+        repo.setMasterEffects(
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'aab1cc2200000000'),
+            ),
+          ],
+        );
+        expect((repo.masterEffects.single as PluginEffect).name, isEmpty);
+
+        // On the STREAM, not just the getters: the cards read the projected
+        // state, so a recovery that names the cache without emitting leaves
+        // every one of them showing the id it was meant to replace.
+        final named = expectLater(
+          repo.looperState,
+          emitsThrough(
+            predicate<LooperState>(
+              (s) =>
+                  (s.masterEffects.singleOrNull as PluginEffect?)?.name ==
+                  'Valhalla Vintage Verb',
+              'the master chain named',
+            ),
+          ),
+        );
         await repo.pluginCatalog.scan();
         await Future<void>.delayed(Duration.zero);
+        await named;
 
         expect(
           (repo.masterEffects.single as PluginEffect).name,
@@ -2080,6 +2097,74 @@ void main() {
         );
       },
     );
+
+    test('a repository disposed mid-scan does not project into a closed '
+        'stream', () async {
+      engine.pluginScanResults = const [
+        le.PluginDescriptor(
+          id: 'aab1cc2200000000',
+          name: 'Valhalla Vintage Verb',
+          vendor: 'Valhalla DSP',
+          path: '/Library/Audio/Plug-Ins/VST3/verb.vst3',
+          format: le.PluginFormat.vst3,
+          version: 0,
+        ),
+      ];
+      // The scan outlives the repository: the recovery's continuation runs
+      // after the dispose below, and projecting into a closed controller
+      // throws an uncaught async error — in whichever test happens to be
+      // running when it lands, since the isolate is shared.
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMasterEffects(
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(
+                format: PluginFormat.vst3,
+                id: 'aab1cc2200000000',
+              ),
+            ),
+          ],
+        );
+      await repo.dispose();
+      await repo.pluginCatalog.scan();
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    test('a bus write does not disturb an unavailable LANE plugin', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      engine.nextSlotHandle = null; // nothing loads: the lane entry is D-MISS
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+          ),
+        ],
+      );
+      await repo.pluginCatalog.scan(); // settle the lane's own recovery
+      final pushes = engine.calls.where((c) => c == 'setLanePlugin').length;
+      expect((repo.laneEffects(0, 0).single as PluginEffect).loading, isFalse);
+
+      // A knob on a bus chain, fired at drag rate. The lane recovery must not
+      // ride along: it flips every unavailable lane entry to "loading…" and
+      // re-applies the chain, so the card would strobe between a spinner and
+      // its relink offer for the length of the drag.
+      for (var i = 0; i < 3; i++) {
+        repo.setMasterEffects(
+          effects: [
+            BuiltInEffect(type: TrackEffectType.drive, params: [i / 3]),
+          ],
+        );
+      }
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.loading, isFalse);
+      expect(fx.unavailable, isTrue);
+      expect(engine.calls.where((c) => c == 'setLanePlugin').length, pushes);
+    });
 
     test('a bus plugin whose id decoded to nothing is not named after a '
         'failed scan entry', () async {
