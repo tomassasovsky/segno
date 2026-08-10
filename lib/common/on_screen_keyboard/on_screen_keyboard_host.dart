@@ -68,7 +68,19 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
     // destroy its own target between the press and the callback, and every
     // keystroke would land on nothing. The field's own node is watched
     // instead, and asked again once the frame has settled.
+    // A null answer is NOT a dismissal. Focus lands on a scope constantly in
+    // this app — every dialog and sheet reports one, and a field that has just
+    // been tapped is reported through its scope before its own node settles —
+    // so "no editable focused right now" and "the player is done typing" are
+    // the same event here and cannot be told apart. The field's own node can
+    // tell them apart, and that is what drives dismissal.
     if (next == null) return;
+    // Watched FIRST, and outside the early return below: the same field can be
+    // handed a different node (a parent that swaps them, a State rebuilt under
+    // a new key), and a watch left on the old one is a watch on a detached
+    // node — it never fires again, and the keyboard could never be dismissed
+    // by focus loss for the rest of the session.
+    _watch(next);
     // Compared by CONTROLLER, not by widget instance: the EditableText widget
     // is rebuilt constantly, so comparing widgets would rebuild every frame.
     // The controller is what identifies where a keystroke lands.
@@ -76,7 +88,6 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
         next.readOnly == _field?.readOnly) {
       return;
     }
-    _watch(next);
     setState(() => _field = next);
   }
 
@@ -89,6 +100,12 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   }
 
   void _onFieldFocusChanged() {
+    _dismissAfterFrame();
+  }
+
+  /// Closes the keyboard unless the field it types into still has focus once
+  /// the frame has settled.
+  void _dismissAfterFrame() {
     if (_watched?.hasFocus ?? false) return;
     // Asked AGAIN after the frame, deliberately, and this is the one thing
     // here no test can reach: under `flutter_test` the keys never steal focus
@@ -124,9 +141,10 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   /// descendant of the field, never the field and never above it (verified
   /// against the framework rather than assumed).
   ///
-  /// Upwards-only also makes dismissal correct for free: once focus returns to
-  /// a scope, nothing above it is an `EditableText`, so the keyboard closes
-  /// instead of latching onto some unrelated field elsewhere in the tree.
+  /// Upwards-only also keeps the answer honest: once focus returns to a scope,
+  /// nothing above it is an `EditableText`, so this reports "no field" rather
+  /// than latching onto some unrelated one elsewhere in the tree — and "no
+  /// field" is what asks the keyboard to close.
   EditableText? _focusedEditable() {
     final context = FocusManager.instance.primaryFocus?.context;
     if (context is! Element || !context.mounted) return null;

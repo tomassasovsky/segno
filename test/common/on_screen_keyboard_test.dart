@@ -159,10 +159,12 @@ void main() {
       expect(controller.text, 'z');
     });
 
-    testWidgets('typing does not dismiss it', (tester) async {
-      // The keys are ordinary buttons: pressing one can move focus off the
-      // field for an instant. A keyboard that closed on that would destroy its
-      // own target between the press and the callback.
+    testWidgets('the keys do not take focus away from the field', (
+      tester,
+    ) async {
+      // The keys are ordinary buttons; the panel's `Focus` is what stops them
+      // taking focus. If it ever stopped working the field would lose focus on
+      // the first keystroke, which is the thing dismissal now watches for.
       await pumpField(tester);
       await tester.tap(find.byType(TextField));
       await tester.pump();
@@ -172,6 +174,51 @@ void main() {
 
       expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
       expect(controller.text, 'h');
+    });
+
+    testWidgets('a field handed a different focus node is still watched', (
+      tester,
+    ) async {
+      // The same field under a new node — a parent that swaps them, a State
+      // rebuilt under a new key. A watch left on the old node is a watch on a
+      // DETACHED node: it never fires again, and the keyboard could not be
+      // dismissed by focus loss for the rest of the session.
+      final first = FocusNode();
+      final second = FocusNode();
+      addTearDown(first.dispose);
+      addTearDown(second.dispose);
+      var useFirst = true;
+      late StateSetter setSwap;
+      await tester.pumpApp(
+        OnScreenKeyboardHost(
+          enabled: true,
+          child: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                setSwap = setState;
+                return TextField(
+                  controller: controller,
+                  focusNode: useFirst ? first : second,
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
+
+      setSwap(() => useFirst = false);
+      await tester.pump();
+      second.requestFocus();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
+
+      second.unfocus();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('onScreenKeyboard')), findsNothing);
     });
 
     testWidgets('the field losing focus dismisses it', (tester) async {
@@ -197,10 +244,14 @@ void main() {
       expect(find.byKey(const Key('onScreenKeyboard')), findsNothing);
     });
 
-    testWidgets('a focus bounce does not dismiss it', (tester) async {
-      // What a key press can look like on the appliance: focus leaves the
-      // field and comes straight back. Answering mid-frame would close the
-      // keyboard under its own keys, so the answer is taken after it.
+    testWidgets('focus that leaves and returns within a frame is not a '
+        'departure', (tester) async {
+      // The framework coalesces focus changes inside a frame, so this never
+      // reaches the dismissal path at all — which is the point: a bounce is
+      // not something the keyboard should have to survive twice. The
+      // appliance's own bounce (a key press stealing focus for an instant) is
+      // what the post-frame recheck in the host is for, and no test here can
+      // produce one.
       final node = FocusNode();
       addTearDown(node.dispose);
       await tester.pumpApp(
