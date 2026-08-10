@@ -697,6 +697,9 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
   /// of those moved the caption and left the answer hanging off nothing.
   Rect? _anchor;
 
+  /// Whether a re-measuring chain is already running. See [_watchAnchor].
+  bool _watching = false;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
@@ -821,16 +824,36 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
   /// After every frame rather than on every build, because the caption is not
   /// what rebuilds when it moves: a notice appearing above it, or a window
   /// resize, leaves this widget untouched and its position different. Cheap
-  /// and self-limiting — it only runs while an answer is open, it schedules no
-  /// frame of its own (so it costs nothing on a still screen), and a
-  /// measurement equal to the one held does not `setState`, so it cannot spin.
+  /// and self-limiting — it schedules no frame of its own (so it costs nothing
+  /// on a still screen), and a measurement equal to the one held does not
+  /// `setState`, so it cannot spin.
+  ///
+  /// Two of its three guards are pinned by tests: dropping `mounted` fails
+  /// seven of them, and dropping the arming call fails the one that moves the
+  /// face. That it stops on CLOSE is deliberately NOT claimed as proven — a
+  /// chain that kept running would measure, find nothing changed and be
+  /// invisible from outside the widget. [_watching] is what bounds it instead:
+  /// one chain at a time, whatever the guards do.
   void _watchAnchor() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_open) return;
-      final now = _measure();
-      if (now != null && now != _anchor) setState(() => _anchor = now);
-      _watchAnchor();
-    });
+    // One chain at a time. A close and re-open inside a single frame — which a
+    // bouncing touch panel can produce — would otherwise arm a second, and
+    // each one left behind is a `localToGlobal` on every frame for the life of
+    // the process, on an appliance.
+    if (_watching) return;
+    _watching = true;
+    void tick() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_open) {
+          _watching = false;
+          return;
+        }
+        final now = _measure();
+        if (now != null && now != _anchor) setState(() => _anchor = now);
+        tick();
+      });
+    }
+
+    tick();
   }
 
   /// The caption's rect in the overlay's own coordinates, or null if either
@@ -926,8 +949,8 @@ class _Explanation extends StatelessWidget {
       // silently does nothing — which reads as the console having frozen.
       // `ModalBarrier` blocks the face behind it on every platform, and it
       // brings its own `BlockSemantics` to do it — but it only offers the
-      // DISMISS action where the host platform has a back gesture, which
-      // `ModalBarrier` reads as Android and iOS. On Linux and Windows it
+      // DISMISS action where the host platform has a back gesture, which it
+      // reads as Android, iOS and macOS. On Linux, Windows and Fuchsia it
       // excludes itself from semantics entirely, and since the face behind is
       // blocked either way, a reader was left holding one paragraph and no
       // way out. This console SHIPS on Linux.
@@ -941,10 +964,14 @@ class _Explanation extends StatelessWidget {
       Positioned.fill(
         child: CustomSingleChildLayout(
           delegate: _ExplanationLayout(anchor),
-          // So the answer itself carries the way out, on every platform: the
-          // node a reader lands on is the one that closes.
+          // So the answer itself carries the way out, on every platform — and
+          // carries it on the SAME node as the words. Split across two, the
+          // node that answers the question announces nothing and the node
+          // that announces it cannot be closed, so a reader has to swipe back
+          // to silence to get out.
           child: Semantics(
             container: true,
+            label: text,
             onDismiss: onDismiss,
             child: Material(
               key: const Key('console_caption_explanation'),
@@ -958,7 +985,13 @@ class _Explanation extends StatelessWidget {
                 // on the short console, with the tallest caption open.
                 // Clipping instead would drop the last sentence, and the last
                 // sentence is where these paragraphs put the consequence.
-                child: SingleChildScrollView(child: ConsoleProse(text)),
+                //
+                // The prose is excluded because the label above already IS it:
+                // left in, the same paragraph is a second node, and which one
+                // a reader lands on decides whether they can close it.
+                child: SingleChildScrollView(
+                  child: ExcludeSemantics(child: ConsoleProse(text)),
+                ),
               ),
             ),
           ),

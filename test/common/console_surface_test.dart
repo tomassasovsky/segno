@@ -309,35 +309,47 @@ void main() {
       tester,
     ) async {
       // Linux is what the appliance runs. `ModalBarrier` offers its dismiss
-      // action only where the platform has a back gesture — Android and iOS —
-      // and excludes itself from semantics everywhere else, while still
-      // blocking the face behind. That left a reader on this console holding
-      // one paragraph with no action on it and nothing else in the tree.
-      // Reset inside the body, not in a tear-down: the framework asserts every
-      // foundation debug variable is back before the test returns.
+      // action only where the platform has a back gesture — Android, iOS and
+      // macOS — and excludes itself from semantics everywhere else, while
+      // still blocking the face behind. That left a reader on this console
+      // holding one paragraph with no action on it and nothing else in tree.
+      //
+      // `finally`, not a tear-down: the framework asserts every foundation
+      // debug variable is back before the test RETURNS, so a tear-down is too
+      // late and trips its own check. Restoring only on the happy path is
+      // worse than either — one failure here then fails every test after it
+      // in this file, which buries the one that actually broke.
       debugDefaultTargetPlatformOverride = TargetPlatform.linux;
       final handle = tester.ensureSemantics();
-      await pumpCaption(tester, explain: 'Whether you hear it.');
-      await tester.tap(find.byKey(const Key('console_caption_explain')));
-      await tester.pumpAndSettle();
+      const explain = 'Whether you hear it.';
+      try {
+        await pumpCaption(tester, explain: explain);
+        await tester.tap(find.byKey(const Key('console_caption_explain')));
+        await tester.pumpAndSettle();
 
-      final answer = tester.getSemantics(
-        find.byKey(const Key('console_caption_explanation')),
-      );
-      expect(
-        answer.getSemanticsData().hasAction(SemanticsAction.dismiss),
-        isTrue,
-      );
+        final answer = tester.getSemantics(
+          find.byKey(const Key('console_caption_explanation')),
+        );
+        final data = answer.getSemanticsData();
+        expect(data.hasAction(SemanticsAction.dismiss), isTrue);
 
-      // And it is not decoration: performing it closes.
-      answer.owner!.performAction(answer.id, SemanticsAction.dismiss);
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const Key('console_caption_explanation')),
-        findsNothing,
-      );
-      handle.dispose();
-      debugDefaultTargetPlatformOverride = null;
+        // On the same node as the words. Split apart, the node that answers
+        // the question cannot be closed and the node that closes it announces
+        // nothing.
+        expect(data.label, explain);
+        expect(find.bySemanticsLabel(explain), findsOneWidget);
+
+        // And it is not decoration: performing it closes.
+        answer.owner!.performAction(answer.id, SemanticsAction.dismiss);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('console_caption_explanation')),
+          findsNothing,
+        );
+      } finally {
+        handle.dispose();
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
 
     testWidgets('the answer follows a caption the face moves', (tester) async {
