@@ -11,9 +11,10 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 /// that hardware unless the app draws its own keys.
 ///
 /// It watches focus rather than wrapping fields, so no call site changes and
-/// every future field is covered for free — and it follows the focused field's
-/// own node, so the keyboard goes away when that field does. On a console
-/// whose whole UI is the touch screen, one that stays up covers the thing the
+/// every future field is covered for free. Focus arriving at a field opens it;
+/// focus arriving anywhere that takes no text closes it — including the field
+/// being destroyed outright, which nothing else reports. On a console whose
+/// whole UI is the touch screen, a keyboard that stays up covers the thing the
 /// player is reaching for.
 ///
 /// The keyboard's height is reported back through [MediaQuery]'s
@@ -62,7 +63,7 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
     // outright — a disposed node is detached before it can notify, so nothing
     // else will ever say so.
     if (next == null) {
-      _dismissAfterFrame();
+      if (_field != null) _dismissAfterFrame();
       return;
     }
     // Compared by CONTROLLER, not by widget instance: the EditableText widget
@@ -78,17 +79,16 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   /// Closes the keyboard unless something takes text again once the frame has
   /// settled.
   ///
-  /// The frame boundary is the whole reason this is safe to do at all, and it
-  /// is the one thing here no test can reach: under `flutter_test` the keys
-  /// never steal focus (the panel's `Focus` refuses it, and the framework
-  /// coalesces focus changes within a frame), so an immediate dismissal would
-  /// pass every check in this suite.
+  /// After the frame, because a HAND-OFF dips through nothing on its way: a
+  /// dialog popping restores focus to what was under it, a field swap detaches
+  /// one node before attaching the next, and both report "nothing takes text"
+  /// for an instant. Closing on that first answer would take the keyboard away
+  /// mid-hand-off and bring it straight back — a flicker under the player's
+  /// hands.
   ///
-  /// On the console it is the case the sticky field existed for — the report
-  /// this replaces says a key press can move focus off the field for an
-  /// instant. Closing on that first notification would take the keyboard away
-  /// under the player's own keystroke: a worse bug than the one being fixed,
-  /// and one that would only show up on the hardware.
+  /// No test here can produce that dip (the framework coalesces focus changes
+  /// inside a frame, so an immediate dismissal passes every check in this
+  /// suite), which is why the delay is argued rather than pinned.
   void _dismissAfterFrame() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -188,16 +188,21 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
   Widget build(BuildContext context) {
     final field = _field;
     final open = widget.enabled && field != null && !_readOnly;
-    if (!open) return widget.child;
 
-    final layout = layoutForInputType(field.keyboardType);
+    final layout = layoutForInputType(field?.keyboardType);
     // Five rows of 54px keys plus 3px padding either side, plus the panel's
     // own 6px inset. Sized from the keys rather than guessed, so a key-height
     // change cannot silently overflow the panel.
     final rows = layout == OnScreenKeyboardLayout.numeric ? 5 : 4;
-    final height = rows * (OnScreenKeyboard.keyHeight + 6) + 12;
+    final height = open ? rows * (OnScreenKeyboard.keyHeight + 6) + 12 : 0.0;
     final media = MediaQuery.of(context);
 
+    // The SAME shape open or closed. Returning the child bare when closed
+    // would move it between slots on every open, and with no GlobalKey below
+    // this host that re-inflates the whole subtree — disposing the focused
+    // field's node, which now reads as "nothing takes text" and closes the
+    // keyboard on the first keystroke. The app survives it today only because
+    // the Navigator carries a key; nothing below here should have to.
     return Column(
       children: [
         Expanded(
@@ -219,33 +224,34 @@ class _OnScreenKeyboardHostState extends State<OnScreenKeyboardHost> {
         // TextFieldTapRegion additionally stops the tap reading as "outside
         // the field", which is what would otherwise dismiss the editing
         // session on the first key.
-        TextFieldTapRegion(
-          child: Focus(
-            canRequestFocus: false,
-            descendantsAreFocusable: false,
-            skipTraversal: true,
-            child: Material(
-              key: const Key('onScreenKeyboard'),
-              elevation: 8,
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: SafeArea(
-                top: false,
-                child: SizedBox(
-                  height: height,
-                  child: Padding(
-                    padding: const EdgeInsets.all(6),
-                    child: OnScreenKeyboard(
-                      layout: layout,
-                      onKey: _insert,
-                      onBackspace: _backspace,
-                      onDone: _done,
+        if (open)
+          TextFieldTapRegion(
+            child: Focus(
+              canRequestFocus: false,
+              descendantsAreFocusable: false,
+              skipTraversal: true,
+              child: Material(
+                key: const Key('onScreenKeyboard'),
+                elevation: 8,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: SafeArea(
+                  top: false,
+                  child: SizedBox(
+                    height: height,
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: OnScreenKeyboard(
+                        layout: layout,
+                        onKey: _insert,
+                        onBackspace: _backspace,
+                        onDone: _done,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
       ],
     );
   }

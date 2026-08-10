@@ -5,6 +5,8 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
+import '../helpers/helpers.dart';
+
 void main() {
   group('layoutForInputType', () {
     test('numeric fields get the pad', () {
@@ -49,12 +51,9 @@ void main() {
     /// Mounts [body] under a host wired the way the app wires it: in
     /// `MaterialApp.builder`, ABOVE the `Navigator`.
     ///
-    /// It matters. Below the Navigator (which is what `pumpApp` does with a
-    /// plain `home:`) the host's open/close swaps the widget at that slot, and
-    /// with no `GlobalKey` beneath it the whole subtree is re-inflated — which
-    /// disposes the field's own `FocusNode` and detaches it. The app never
-    /// sees that because the Navigator's key reparents instead. Any test about
-    /// FOCUS has to use this shape or it is measuring the harness.
+    /// Not because the host needs it — it draws the same shape open or closed
+    /// now, so the child never changes slots — but because a test about focus
+    /// should sit where the thing it tests sits.
     Future<void> pumpAsApp(
       WidgetTester tester,
       Widget body, {
@@ -207,6 +206,54 @@ void main() {
       expect(controller.text, 'h');
     });
 
+    testWidgets('opening it does not re-inflate the child', (tester) async {
+      // The host draws the same shape open or closed, so the child never
+      // changes slots. It matters more than it looks: an unkeyed wrapper
+      // between this host and the app — which is exactly the shape already
+      // used beside it in `MaterialApp.builder` — would otherwise have its
+      // subtree re-inflated on open, disposing the focused field's node, which
+      // now reads as "nothing takes text" and closes the keyboard on the first
+      // keystroke.
+      await tester.pumpApp(
+        OnScreenKeyboardHost(
+          enabled: true,
+          child: Scaffold(body: TextField(controller: controller)),
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+
+      await tapKey(tester, 'h');
+      await tester.pumpAndSettle();
+
+      expect(controller.text, 'h');
+      expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
+    });
+
+    testWidgets('focus moving to a button dismisses it', (tester) async {
+      // What actually happens on the console: the player finishes typing and
+      // reaches for the next control.
+      await pumpAsApp(
+        tester,
+        Column(
+          children: [
+            TextField(controller: controller),
+            ElevatedButton(onPressed: () {}, child: const Text('elsewhere')),
+          ],
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
+
+      Focus.of(
+        tester.element(find.text('elsewhere')),
+      ).requestFocus();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('onScreenKeyboard')), findsNothing);
+    });
+
     testWidgets('a field with no focus node of its own dismisses too', (
       tester,
     ) async {
@@ -256,9 +303,9 @@ void main() {
       tester,
     ) async {
       // The same field under a new node — a parent that swaps them, a State
-      // rebuilt under a new key. Anything that tracked the FIRST node would
-      // be tracking a detached one after the swap, and a detached node never
-      // notifies again.
+      // rebuilt under a new key. The swap dips through "nothing takes text",
+      // which is the one thing that closes the keyboard, so it must survive
+      // the dip and still close on the real departure after it.
       final first = FocusNode();
       final second = FocusNode();
       addTearDown(first.dispose);
@@ -312,13 +359,13 @@ void main() {
       expect(find.byKey(const Key('onScreenKeyboard')), findsNothing);
     });
 
-    testWidgets('focus that leaves and returns within a frame is not a '
-        'departure', (tester) async {
-      // The framework coalesces focus changes inside a frame, so this never
-      // reaches the dismissal path at all — which is worth pinning: it is why
-      // the appliance's own bounce (a key press stealing focus for an
-      // instant) cannot be reproduced here, and why the post-frame recheck in
-      // the host is argued rather than tested.
+    testWidgets('the framework coalesces a leave-and-return within a frame', (
+      tester,
+    ) async {
+      // Pinning the FRAMEWORK, not the host: no notification is delivered at
+      // all here, which is exactly why a hand-off dip cannot be reproduced in
+      // this suite and the host's post-frame recheck is argued rather than
+      // tested.
       final node = FocusNode();
       addTearDown(node.dispose);
       await pumpAsApp(
@@ -383,8 +430,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('onScreenKeyboard')), findsNothing);
 
-      // The dismissal drops the watched node; re-focusing has to re-arm it, or
-      // the keyboard comes back once and never closes again.
+      // A keyboard that could only be dismissed once would be worse than one
+      // that never was: the second field would be untypable AND covered.
       node.requestFocus();
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('onScreenKeyboard')), findsOneWidget);
