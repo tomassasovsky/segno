@@ -632,7 +632,15 @@ void main() {
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
 
-      expect(find.text(l10n.effectDrive), findsOneWidget);
+      // In the PANEL's strip: the card above it now names its chain too, so
+      // an unscoped finder would pass on the card's summary alone.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('signal_detail_panel')),
+          matching: find.text(l10n.effectDrive),
+        ),
+        findsOneWidget,
+      );
     });
   });
 

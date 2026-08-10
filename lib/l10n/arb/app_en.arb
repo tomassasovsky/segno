@@ -691,6 +691,15 @@
     "signalEditTrackFx": "Edit the track bus FX chain",
     "signalEditMasterFx": "Edit the master FX chain",
     "signalChainOff": "Chain off",
+    "signalCardChainOffRun": "Chain off · {run}",
+    "@signalCardChainOffRun": {
+        "description": "A Signal card's chain line while the chain is switched off: the entries, behind the word that says they are not running.",
+        "placeholders": {
+            "run": {
+                "type": "String"
+            }
+        }
+    },
     "signalChainOn": "Chain on",
     "@signalChainOn": {
         "description": "The Signal panel's chain-power pill while the chain is running."
