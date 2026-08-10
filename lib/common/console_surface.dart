@@ -681,15 +681,20 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
   final _portal = OverlayPortalController();
   bool _open = false;
 
-  /// Where the caption sits in the overlay, measured when it opens.
+  /// Where the caption sits in the overlay.
   ///
   /// Measured rather than followed: a `CompositedTransformFollower` moves the
   /// answer with the caption but cannot see the screen, so it will happily
   /// place a paragraph past the bottom edge — which on the 1024x600 console is
   /// exactly what the lowest caption on the panel did. Positioning from a rect
   /// lets the layout flip the answer above the caption when there is no room
-  /// under it. Nothing moves underneath while it is open (the barrier eats the
-  /// scroll), so a measurement cannot go stale before it is dismissed.
+  /// under it.
+  ///
+  /// Re-measured after every frame it is open, which is what the follower gave
+  /// for free. The barrier stops a FINGER reaching the face, not the face
+  /// changing under it: this panel grows an overdub-mismatch notice on its own,
+  /// the rig can add a lane while you read, and a desktop window resizes. Any
+  /// of those moved the caption and left the answer hanging off nothing.
   Rect? _anchor;
 
   @override
@@ -811,6 +816,23 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
     ),
   );
 
+  /// Catches the caption up with wherever each frame put it, until it closes.
+  ///
+  /// After every frame rather than on every build, because the caption is not
+  /// what rebuilds when it moves: a notice appearing above it, or a window
+  /// resize, leaves this widget untouched and its position different. Cheap
+  /// and self-limiting — it only runs while an answer is open, it schedules no
+  /// frame of its own (so it costs nothing on a still screen), and a
+  /// measurement equal to the one held does not `setState`, so it cannot spin.
+  void _watchAnchor() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_open) return;
+      final now = _measure();
+      if (now != null && now != _anchor) setState(() => _anchor = now);
+      _watchAnchor();
+    });
+  }
+
   /// The caption's rect in the overlay's own coordinates, or null if either
   /// render object is missing — which only happens before the first layout,
   /// and a caption cannot be tapped before then.
@@ -843,6 +865,7 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
       _anchor = _measure();
     });
     _portal.show();
+    _watchAnchor();
     final explain = widget.explain;
     if (explain != null) {
       unawaited(
@@ -901,31 +924,42 @@ class _Explanation extends StatelessWidget {
       // take a drag either. A bare tap-only detector absorbs the touch and
       // then nothing recognises the gesture, so a scroll under an open answer
       // silently does nothing — which reads as the console having frozen.
+      // `ModalBarrier` blocks the face behind it on every platform, and it
+      // brings its own `BlockSemantics` to do it — but it only offers the
+      // DISMISS action where the host platform has a back gesture, which
+      // `ModalBarrier` reads as Android and iOS. On Linux and Windows it
+      // excludes itself from semantics entirely, and since the face behind is
+      // blocked either way, a reader was left holding one paragraph and no
+      // way out. This console SHIPS on Linux.
       Positioned.fill(
-        child: BlockSemantics(
-          child: ModalBarrier(
-            key: const Key('console_caption_scrim'),
-            semanticsLabel: dismissLabel,
-            onDismiss: onDismiss,
-          ),
+        child: ModalBarrier(
+          key: const Key('console_caption_scrim'),
+          semanticsLabel: dismissLabel,
+          onDismiss: onDismiss,
         ),
       ),
       Positioned.fill(
         child: CustomSingleChildLayout(
           delegate: _ExplanationLayout(anchor),
-          child: Material(
-            key: const Key('console_caption_explanation'),
-            color: surface.cardHigh,
-            elevation: 8,
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-              // Scrolls only when the answer is taller than the room on
-              // either side of the caption — which the longest of them is, on
-              // the short console, with the tallest caption open. Clipping
-              // instead would drop the last sentence, and the last sentence
-              // is where these paragraphs put the consequence.
-              child: SingleChildScrollView(child: ConsoleProse(text)),
+          // So the answer itself carries the way out, on every platform: the
+          // node a reader lands on is the one that closes.
+          child: Semantics(
+            container: true,
+            onDismiss: onDismiss,
+            child: Material(
+              key: const Key('console_caption_explanation'),
+              color: surface.cardHigh,
+              elevation: 8,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                // Scrolls only when the answer is taller than the room on
+                // either side of the caption — which the longest of them is,
+                // on the short console, with the tallest caption open.
+                // Clipping instead would drop the last sentence, and the last
+                // sentence is where these paragraphs put the consequence.
+                child: SingleChildScrollView(child: ConsoleProse(text)),
+              ),
             ),
           ),
         ),
@@ -936,6 +970,11 @@ class _Explanation extends StatelessWidget {
 
 /// Puts the answer under its caption, or above it when the screen is out of
 /// room, and never past an edge.
+///
+/// Left-anchored, not leading-anchored: the app ships `en` and `es`, and a
+/// direction this delegate never receives would be a parameter nothing could
+/// exercise. An RTL locale would want [getPositionForChild] to hang the answer
+/// off `anchor.right` instead.
 class _ExplanationLayout extends SingleChildLayoutDelegate {
   const _ExplanationLayout(this.anchor);
 

@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/common/console_surface.dart';
@@ -301,6 +303,98 @@ void main() {
       await tester.drag(find.text(long), const Offset(0, -120));
       await tester.pumpAndSettle();
       expect(tester.getRect(find.text(long)).top, lessThan(before));
+    });
+
+    testWidgets('the answer carries its own way out, on the console OS', (
+      tester,
+    ) async {
+      // Linux is what the appliance runs. `ModalBarrier` offers its dismiss
+      // action only where the platform has a back gesture — Android and iOS —
+      // and excludes itself from semantics everywhere else, while still
+      // blocking the face behind. That left a reader on this console holding
+      // one paragraph with no action on it and nothing else in the tree.
+      // Reset inside the body, not in a tear-down: the framework asserts every
+      // foundation debug variable is back before the test returns.
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      final handle = tester.ensureSemantics();
+      await pumpCaption(tester, explain: 'Whether you hear it.');
+      await tester.tap(find.byKey(const Key('console_caption_explain')));
+      await tester.pumpAndSettle();
+
+      final answer = tester.getSemantics(
+        find.byKey(const Key('console_caption_explanation')),
+      );
+      expect(
+        answer.getSemanticsData().hasAction(SemanticsAction.dismiss),
+        isTrue,
+      );
+
+      // And it is not decoration: performing it closes.
+      answer.owner!.performAction(answer.id, SemanticsAction.dismiss);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('console_caption_explanation')),
+        findsNothing,
+      );
+      handle.dispose();
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('the answer follows a caption the face moves', (tester) async {
+      // The barrier stops a finger, not the face: this panel grows a notice on
+      // its own, and a window resizes. A rect measured once and never again
+      // left the paragraph hanging off whatever moved into its place.
+      // Grown from outside the tree, the way the real triggers are: a notice
+      // arriving from a bloc, a window resizing. A button would not do — the
+      // barrier is over it, and the tap would close the answer first.
+      final notice = ValueNotifier<double>(0);
+      addTearDown(notice.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            extensions: [
+              SurfaceTheme.dark,
+              routingGraphThemeFromSurface(SurfaceTheme.dark),
+            ],
+          ),
+          home: Scaffold(
+            body: Column(
+              children: [
+                ValueListenableBuilder<double>(
+                  valueListenable: notice,
+                  builder: (context, height, child) => SizedBox(height: height),
+                ),
+                const ConsoleCaption(
+                  'in the mix',
+                  explain: 'Whether you hear it.',
+                  explainLabel: 'What "in the mix" does',
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('console_caption_explain')));
+      await tester.pumpAndSettle();
+      final gap =
+          tester
+              .getRect(find.byKey(const Key('console_caption_explanation')))
+              .top -
+          tester.getRect(find.byKey(const Key('console_caption_explain'))).top;
+
+      notice.value = 200;
+      await tester.pumpAndSettle();
+
+      // Same distance from the caption, wherever the caption ended up.
+      expect(
+        tester
+                .getRect(find.byKey(const Key('console_caption_explanation')))
+                .top -
+            tester
+                .getRect(find.byKey(const Key('console_caption_explain')))
+                .top,
+        closeTo(gap, 0.5),
+      );
     });
 
     testWidgets('a tap anywhere else puts the answer away', (tester) async {

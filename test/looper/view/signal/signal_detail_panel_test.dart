@@ -1173,6 +1173,9 @@ void main() {
       // know yet, and a face that explains everything all the time is a face
       // nobody can scan.
       expect(find.text(l10n.signalPanelHearWhilePlayingExplain), findsNothing);
+      final monitorShut = tester.getRect(
+        find.byKey(const Key('signal_panel_monitor')),
+      );
 
       await tester.tap(
         find.descendant(
@@ -1190,8 +1193,13 @@ void main() {
         findsOneWidget,
       );
       // Over the face, not wedged into it: the control it explains keeps its
-      // place instead of being shoved down the panel by a paragraph.
-      expect(find.byKey(const Key('signal_panel_monitor')), findsOneWidget);
+      // place instead of being shoved down the panel by a paragraph. The row
+      // merely EXISTING proves nothing — it exists either way — so this is
+      // where it sits, before and after.
+      expect(
+        tester.getRect(find.byKey(const Key('signal_panel_monitor'))),
+        monitorShut,
+      );
     });
 
     testWidgets('asking again puts it away', (tester) async {
@@ -2618,6 +2626,22 @@ void main() {
         find.byKey(const Key('signal_panel_chain_off_consequence')),
         findsOneWidget,
       );
+
+      // And it sits beside the caption it qualifies, not across the panel
+      // against the power pill: the caption's row is right-aligned so the pill
+      // lands at the far edge, and a loose child would ride along with it.
+      final caption = tester.getRect(
+        find.text(l10nOf(tester).signalPanelChain),
+      );
+      final warning = tester.getRect(
+        find.byKey(const Key('signal_panel_chain_off_consequence')),
+      );
+      final pill = tester.getRect(
+        find.byKey(const Key('signal_panel_chain_power')),
+      );
+      expect(warning.left - caption.right, lessThan(100));
+      expect(pill.left - warning.left, greaterThan(200));
+
       await tester.tap(find.byKey(const Key('signal_panel_chain_power')));
       await tester.pumpAndSettle();
 

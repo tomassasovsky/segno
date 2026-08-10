@@ -672,14 +672,22 @@ class _ChainCaption extends StatelessWidget {
         // Hard right, as the pen draws it and as the panel drew it before the
         // caption grew a row: the caption's `?` is at the leading edge and the
         // chain's power is at the trailing one, and a pill that floats to
-        // wherever the consequence text ends is at neither.
+        // wherever the consequence text ends is at neither. This alignment is
+        // what places the pill on a chain that is ON and so has nothing else
+        // in the row.
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          // What the switch COSTS while it is off, in the warning pair — the
-          // same sentence the dock put beside it.
+          // What the switch COSTS while it is off, beside the caption it
+          // qualifies — the same sentence, in the same place, the dock put it.
+          //
+          // `Expanded` and not `Flexible`: a loose child leaves the row's free
+          // space to the alignment above, which dragged this sentence across
+          // the panel to sit against the power pill. Taking the space keeps
+          // the sentence next to the words it is about and still leaves the
+          // pill at the far edge.
           if (!on) ...[
             const SizedBox(width: 10),
-            Flexible(
+            Expanded(
               child: Text(
                 scope.chainDisabledConsequence(l10n),
                 key: const Key('signal_panel_chain_off_consequence'),
