@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
 import 'package:segno/looper/view/signal/fx_param_editor.dart';
@@ -105,32 +104,6 @@ const _mode = PluginParamInfo(
   stepCount: 2,
   flags: 0x10,
   valueTexts: ['Lowpass', 'Bandpass', 'Highpass'],
-);
-
-/// [_mode], but automatable — `_mode` is a read-only list, which lands on the
-/// tile rather than the menu.
-const _modeLive = PluginParamInfo(
-  id: 12,
-  name: 'Mode',
-  unit: '',
-  min: 0,
-  max: 2,
-  def: 0,
-  stepCount: 2,
-  flags: 0x01 | 0x10,
-  valueTexts: ['Lowpass', 'Bandpass', 'Highpass'],
-);
-
-/// A plain two-state parameter — no bypass flag, so it reaches the grid.
-const _twoState = PluginParamInfo(
-  id: 11,
-  name: 'Vintage',
-  unit: '',
-  min: 0,
-  max: 1,
-  def: 0,
-  stepCount: 1,
-  flags: 0x01,
 );
 
 /// The octaver's Shift: 48 divisions, past the menu's 24-step ceiling, so it
