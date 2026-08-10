@@ -17,7 +17,8 @@ abstract final class FxParamTileMetrics {
   /// Space between tiles, horizontally and between rows.
   static const double gutter = 7;
 
-  /// The value box — the only part that differs between kinds.
+  /// The value box at text scale 1 — the only part that differs between
+  /// kinds, and the part that absorbs any growth in the two text lines.
   static const double boxHeight = 36;
 
   /// The value-position readout under the box. A readout, not a handle.
@@ -97,7 +98,14 @@ class _FxParamCell extends StatelessWidget {
             ),
           ),
           const SizedBox(height: FxParamTileMetrics._gap),
-          SizedBox(height: FxParamTileMetrics.boxHeight, child: control),
+          // The box takes the slack, so the tile's own height stays exactly
+          // [FxParamTileMetrics.height] whatever the text does. It was a fixed
+          // 36 under a fixed 59, which left the name and the readout no room
+          // to grow: at a system text scale of 1.2 every tile in the grid
+          // overflowed its bottom, one red bar per parameter across the whole
+          // strip. [FxParamTileMetrics.boxHeight] is what it measures at
+          // scale 1, and now a floor to fall from rather than a promise.
+          Expanded(child: control),
           const SizedBox(height: FxParamTileMetrics._gap),
           _FxParamIndicator(fill: fill, muted: muted),
         ],
