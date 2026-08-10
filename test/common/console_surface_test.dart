@@ -234,6 +234,42 @@ void main() {
       expect(find.byKey(const Key('console_caption_explain')), findsNothing);
     });
 
+    testWidgets('opening the answer moves nothing on the face', (
+      tester,
+    ) async {
+      await pumpCaption(tester, explain: 'Whether you hear it.');
+      final shut = tester.getRect(find.byType(ConsoleCaption));
+
+      await tester.tap(find.byKey(const Key('console_caption_explain')));
+      await tester.pumpAndSettle();
+
+      // The whole point of the overlay. As inline prose this grew the caption
+      // by the paragraph's own height and pushed every control under it down
+      // — on a four-caption face, most of a small console's screen, and it
+      // moved under the finger that had just tapped.
+      expect(
+        find.byKey(const Key('console_caption_explanation')),
+        findsOneWidget,
+      );
+      expect(tester.getRect(find.byType(ConsoleCaption)), shut);
+    });
+
+    testWidgets('a tap anywhere else puts the answer away', (tester) async {
+      await pumpCaption(tester, explain: 'Whether you hear it.');
+      await tester.tap(find.byKey(const Key('console_caption_explain')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('console_caption_scrim')));
+      await tester.pumpAndSettle();
+
+      // An answer that stays up while you go and use the control it explains
+      // is a panel, not an answer.
+      expect(
+        find.byKey(const Key('console_caption_explanation')),
+        findsNothing,
+      );
+    });
+
     testWidgets('a tap 15px off centre still opens it', (tester) async {
       await pumpCaption(tester, explain: 'Whether you hear it.');
       final target = find.byKey(const Key('console_caption_explain'));

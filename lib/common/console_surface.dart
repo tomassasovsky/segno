@@ -659,6 +659,9 @@ class ConsoleCaption extends StatefulWidget {
   /// The glyph's drawn size.
   static const double _glyphSize = 18;
 
+  /// Gap between the caption's question mark and whatever rides beside it.
+  static const double _captionGap = 16;
+
   /// Minimum height of the tappable caption row. 48, not the 44 of Apple's
   /// guideline: Android's is the stricter of the two and this is a console
   /// people stand over, where the finger arrives at a worse angle than either
@@ -670,6 +673,8 @@ class ConsoleCaption extends StatefulWidget {
 }
 
 class _ConsoleCaptionState extends State<ConsoleCaption> {
+  final _link = LayerLink();
+  final _portal = OverlayPortalController();
   bool _open = false;
 
   @override
@@ -696,28 +701,33 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
+    // One row, whatever happens. The explanation is an OVERLAY, so opening it
+    // moves nothing: as inline prose it pushed every control on the card down
+    // by its own height, which on a face with four captions is most of a
+    // small console's screen, and it did it under the reader's finger.
+    final button = CompositedTransformTarget(
+      link: _link,
+      child: OverlayPortal(
+        controller: _portal,
+        overlayChildBuilder: (context) => _Explanation(
+          link: _link,
+          text: explain,
+          surface: surface,
+          onDismiss: _close,
+        ),
+        child: _button(surface, caption),
+      ),
+    );
+    if (trailing == null) return button;
+    // `Expanded`, so [trailing]'s own flex children get a bounded width: this
+    // row shrink-wraps otherwise, and a `Flexible` inside an unbounded row is
+    // a layout assertion.
+    return Row(
       children: [
-        if (trailing == null)
-          _button(surface, caption)
-        else
-          // `Expanded`, so [trailing]'s own flex children get a bounded
-          // width: this row shrink-wraps otherwise, and a `Flexible` inside
-          // an unbounded row is a layout assertion.
-          Row(
-            children: [
-              _button(surface, caption),
-              Expanded(child: trailing),
-            ],
-          ),
-        if (_open)
-          Padding(
-            key: const Key('console_caption_explanation'),
-            padding: const EdgeInsets.only(bottom: 6),
-            child: ConsoleProse(explain),
-          ),
+        button,
+        // The controls do not butt against the question mark.
+        const SizedBox(width: ConsoleCaption._captionGap),
+        Expanded(child: trailing),
       ],
     );
   }
@@ -782,15 +792,26 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
     ),
   );
 
+  void _close() {
+    if (!_open) return;
+    setState(() => _open = false);
+    _portal.hide();
+  }
+
   /// Opens or closes, and SAYS which.
   ///
   /// Focus stays on the button, so without this a reader hears nothing at all
   /// — the paragraph it just summoned is only found by swiping forward, which
   /// is a poor result for a control whose entire job is answering a question.
   void _toggle() {
-    setState(() => _open = !_open);
+    if (_open) {
+      _close();
+      return;
+    }
+    setState(() => _open = true);
+    _portal.show();
     final explain = widget.explain;
-    if (_open && explain != null) {
+    if (explain != null) {
       unawaited(
         SemanticsService.sendAnnouncement(
           View.of(context),
@@ -800,6 +821,70 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
       );
     }
   }
+}
+
+/// The floating answer, anchored under the `?` that summoned it.
+///
+/// A barrier under it rather than beside it: an explanation that stays up
+/// while you go and use the control it describes is a panel, not an answer,
+/// and this surface already has one thing at a time everywhere else.
+class _Explanation extends StatelessWidget {
+  const _Explanation({
+    required this.link,
+    required this.text,
+    required this.surface,
+    required this.onDismiss,
+  });
+
+  final LayerLink link;
+  final String text;
+  final SurfaceTheme surface;
+  final VoidCallback onDismiss;
+
+  /// Wide enough for a sentence to breathe, narrow enough to read as a note
+  /// about one control rather than as the face's own body text.
+  static const double _width = 460;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      // Dismiss on a tap anywhere else, INCLUDING on another caption's `?`:
+      // that tap closes this one and the next tap opens that one, which is
+      // one tap more than it looks like it should be, and still better than
+      // two explanations open over each other.
+      Positioned.fill(
+        child: GestureDetector(
+          key: const Key('console_caption_scrim'),
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: true,
+          onTap: onDismiss,
+        ),
+      ),
+      CompositedTransformFollower(
+        link: link,
+        // Under the caption, aligned to its leading edge — where the eye
+        // already is, and where the inline version used to put it.
+        targetAnchor: Alignment.bottomLeft,
+        offset: const Offset(0, -6),
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _width),
+            child: Material(
+              key: const Key('console_caption_explanation'),
+              color: surface.cardHigh,
+              elevation: 8,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                child: ConsoleProse(text),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
 }
 
 /// A row that can open in place: the row itself over a tinted, bordered card
