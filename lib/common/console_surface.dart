@@ -1014,6 +1014,7 @@ class ConsoleSwitch extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.semanticLabel,
+    this.small = false,
     super.key,
   });
 
@@ -1026,13 +1027,28 @@ class ConsoleSwitch extends StatelessWidget {
   /// The announced label.
   final String? semanticLabel;
 
-  /// Track size.
+  /// The pen's `ToggleSm` rather than its `Toggle` — the size the FX
+  /// parameter grid uses, where a full-size switch would be wider than the
+  /// 78px tile that holds it.
+  final bool small;
+
+  /// Track size for a row switch.
   static const Size trackSize = Size(53, 31);
 
-  /// Knob diameter.
+  /// Track size inside a parameter tile.
+  static const Size smallTrackSize = Size(37, 22);
+
+  /// Knob diameter for a row switch.
   static const double knobSize = 25;
 
+  /// Knob diameter inside a parameter tile.
+  static const double smallKnobSize = 18;
+
   static const double _inset = 3;
+
+  Size get _track => small ? smallTrackSize : trackSize;
+
+  double get _knob => small ? smallKnobSize : knobSize;
 
   @override
   Widget build(BuildContext context) {
@@ -1043,11 +1059,11 @@ class ConsoleSwitch extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         curve: Curves.easeOut,
-        width: trackSize.width,
-        height: trackSize.height,
+        width: _track.width,
+        height: _track.height,
         decoration: BoxDecoration(
           color: value ? surface.accent : surface.control,
-          borderRadius: BorderRadius.circular(trackSize.height),
+          borderRadius: BorderRadius.circular(_track.height),
           border: Border.all(color: value ? surface.accent : surface.line),
         ),
         child: Stack(
@@ -1056,12 +1072,10 @@ class ConsoleSwitch extends StatelessWidget {
               duration: const Duration(milliseconds: 160),
               curve: Curves.easeOut,
               top: _inset - 1,
-              left: value
-                  ? trackSize.width - knobSize - _inset - 1
-                  : _inset - 1,
+              left: value ? _track.width - _knob - _inset - 1 : _inset - 1,
               child: Container(
-                width: knobSize,
-                height: knobSize,
+                width: _knob,
+                height: _knob,
                 decoration: BoxDecoration(
                   color: value ? surface.onAccent : surface.textSecondary,
                   shape: BoxShape.circle,
@@ -1078,7 +1092,7 @@ class ConsoleSwitch extends StatelessWidget {
       label: semanticLabel,
       child: FocusableTapTarget(
         onTap: changed == null ? null : () => changed(!value),
-        borderRadius: trackSize.height,
+        borderRadius: _track.height,
         semanticLabel: semanticLabel,
         child: GestureDetector(
           onTap: changed == null ? null : () => changed(!value),

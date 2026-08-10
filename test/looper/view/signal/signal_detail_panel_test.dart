@@ -18,6 +18,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
+import 'package:segno/looper/view/signal/fx_param_edit_sheet.dart';
 import 'package:segno/looper/view/signal/signal_detail_panel.dart';
 import 'package:segno/looper/view/signal/signal_tray_panel.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
@@ -1039,13 +1040,26 @@ void main() {
       expect(find.text(l10n.signalPanelLevel), findsOneWidget);
     });
 
-    testWidgets('a param row per parameter, driving the chain', (tester) async {
+    testWidgets('a tile per parameter, and the sheet drives the chain', (
+      tester,
+    ) async {
       await openEditor(tester);
 
       // Reverb's own parameters, from the engine's metadata.
       expect(find.byKey(const Key('signal_fx_param_0')), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+      await tester.pumpAndSettle();
+      // The tile opened the editor and wrote nothing on the way.
+      verifyNever(
+        () => bloc.add(any(that: isA<LooperBusEffectParamChanged>())),
+      );
+
+      final track = find.byKey(const Key('fxParamSheet_track'));
+      await tester.tapAt(
+        tester.getTopLeft(track) +
+            Offset(tester.getSize(track).width * 0.75, 12),
+      );
       await tester.pumpAndSettle();
 
       verify(
@@ -1185,12 +1199,28 @@ void main() {
       await tester.pumpAndSettle();
       final l10n = l10nOf(tester);
 
-      // "MIX, slider" tells a reader nothing about whose mix it is.
-      final bar = tester.widget<ConsoleValueBar>(
+      // A tile is 78px of mono at 9pt: what it can PRINT is a truncated name.
+      // What it says out loud has to be the whole thing — "MIX" alone tells a
+      // reader nothing about whose mix it is.
+      final tile = tester.getSemantics(
         find.byKey(const Key('signal_fx_param_0')),
       );
-      expect(bar.semanticLabel, isNotNull);
-      expect(bar.semanticLabel, contains(l10n.effectReverb));
+      expect(tile.label, contains(l10n.effectReverb));
+
+      await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+      await tester.pumpAndSettle();
+
+      // And the sheet's own breadcrumb says it in writing, because the
+      // console behind it is dimmed out. Scoped to the sheet: the block chip
+      // and the panel title are still mounted behind the scrim, so an
+      // unscoped finder passes with no breadcrumb at all.
+      expect(
+        find.descendant(
+          of: find.byType(FxParamEditSheet),
+          matching: find.textContaining(l10n.effectReverb),
+        ),
+        findsOneWidget,
+      );
       handle.dispose();
     });
   });
