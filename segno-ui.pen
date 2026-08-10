@@ -21434,36 +21434,10 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "frame",
-                              "id": "di5nE",
-                              "name": "bypass",
-                              "context": "button",
-                              "width": 75.83,
-                              "height": 33,
-                              "cornerRadius": 119,
-                              "stroke": "#2a2a2e",
-                              "strokeWidth": 1,
-                              "strokeAlignment": "inner",
-                              "layout": "vertical",
-                              "padding": [
-                                7,
-                                14
-                              ],
-                              "justifyContent": "center",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "UwQME",
-                                  "fill": "#9a9aa2",
-                                  "content": "bypass",
-                                  "lineHeight": 1.21,
-                                  "textAlign": "center",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 14,
-                                  "fontWeight": "normal"
-                                }
-                              ]
+                              "id": "orwEd",
+                              "type": "ref",
+                              "ref": "U2c5ku",
+                              "name": "Bypass"
                             },
                             {
                               "type": "frame",
@@ -27199,6 +27173,28 @@
                                   }
                                 },
                                 {
+                                  "id": "R0D3A",
+                                  "type": "ref",
+                                  "ref": "EMYmp",
+                                  "name": "VINTAGE",
+                                  "descendants": {
+                                    "VMpHk": {
+                                      "content": "VINTAGE"
+                                    },
+                                    "X9hDA": {
+                                      "fill": "$accent",
+                                      "stroke": "$accent"
+                                    },
+                                    "X9hDA/l5fbjB": {
+                                      "x": 17,
+                                      "fill": "$text-on-accent"
+                                    },
+                                    "ZhUEm": {
+                                      "width": 78
+                                    }
+                                  }
+                                },
+                                {
                                   "id": "O5C3a6",
                                   "type": "ref",
                                   "ref": "dGBN6",
@@ -27240,6 +27236,23 @@
                                   }
                                 },
                                 {
+                                  "id": "kFZAt",
+                                  "type": "ref",
+                                  "ref": "pm7Ly",
+                                  "name": "TYPE",
+                                  "descendants": {
+                                    "CkKzd": {
+                                      "content": "TYPE"
+                                    },
+                                    "aWXsf": {
+                                      "content": "Opto"
+                                    },
+                                    "Z0w3Mv": {
+                                      "width": 20
+                                    }
+                                  }
+                                },
+                                {
                                   "id": "c4E0p",
                                   "type": "ref",
                                   "ref": "dGBN6",
@@ -27256,6 +27269,20 @@
                                     },
                                     "LspiA": {
                                       "width": 55
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "DG9Nj",
+                                  "type": "ref",
+                                  "ref": "EMYmp",
+                                  "name": "SIDECHAIN",
+                                  "descendants": {
+                                    "VMpHk": {
+                                      "content": "SIDECHAIN"
+                                    },
+                                    "ZhUEm": {
+                                      "width": 0
                                     }
                                   }
                                 },
@@ -27296,6 +27323,23 @@
                                     },
                                     "LspiA": {
                                       "width": 62
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "kkVTK",
+                                  "type": "ref",
+                                  "ref": "pm7Ly",
+                                  "name": "OVERSMPL",
+                                  "descendants": {
+                                    "CkKzd": {
+                                      "content": "OVERSMPL"
+                                    },
+                                    "aWXsf": {
+                                      "content": "4x"
+                                    },
+                                    "Z0w3Mv": {
+                                      "width": 59
                                     }
                                   }
                                 },
@@ -27341,6 +27385,32 @@
                                   }
                                 },
                                 {
+                                  "id": "SIGq6",
+                                  "type": "ref",
+                                  "ref": "dGBN6",
+                                  "name": "GR",
+                                  "descendants": {
+                                    "MAebN": {
+                                      "content": "GR"
+                                    },
+                                    "A5cwm": {
+                                      "stroke": "#00000000",
+                                      "fill": "#00000000"
+                                    },
+                                    "hTbP7": {
+                                      "content": "-4.2",
+                                      "fill": "$text-tertiary"
+                                    },
+                                    "dSIfP": {
+                                      "content": "dB"
+                                    },
+                                    "LspiA": {
+                                      "width": 29,
+                                      "fill": "$text-muted"
+                                    }
+                                  }
+                                },
+                                {
                                   "id": "VepqH",
                                   "type": "ref",
                                   "ref": "dGBN6",
@@ -27381,109 +27451,6 @@
                                   }
                                 }
                               ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "If4ir",
-                              "name": "Row 2",
-                              "width": "fill_container",
-                              "gap": 7,
-                              "children": [
-                                {
-                                  "id": "R0D3A",
-                                  "type": "ref",
-                                  "ref": "EMYmp",
-                                  "name": "VINTAGE",
-                                  "descendants": {
-                                    "VMpHk": {
-                                      "content": "VINTAGE"
-                                    },
-                                    "X9hDA": {
-                                      "fill": "$accent",
-                                      "stroke": "$accent"
-                                    },
-                                    "X9hDA/l5fbjB": {
-                                      "x": 17,
-                                      "fill": "$text-on-accent"
-                                    },
-                                    "ZhUEm": {
-                                      "width": 78
-                                    }
-                                  }
-                                },
-                                {
-                                  "id": "DG9Nj",
-                                  "type": "ref",
-                                  "ref": "EMYmp",
-                                  "name": "SIDECHAIN",
-                                  "descendants": {
-                                    "VMpHk": {
-                                      "content": "SIDECHAIN"
-                                    },
-                                    "ZhUEm": {
-                                      "width": 0
-                                    }
-                                  }
-                                },
-                                {
-                                  "id": "kFZAt",
-                                  "type": "ref",
-                                  "ref": "pm7Ly",
-                                  "name": "TYPE",
-                                  "descendants": {
-                                    "CkKzd": {
-                                      "content": "TYPE"
-                                    },
-                                    "aWXsf": {
-                                      "content": "Opto"
-                                    },
-                                    "Z0w3Mv": {
-                                      "width": 20
-                                    }
-                                  }
-                                },
-                                {
-                                  "id": "kkVTK",
-                                  "type": "ref",
-                                  "ref": "pm7Ly",
-                                  "name": "OVERSMPL",
-                                  "descendants": {
-                                    "CkKzd": {
-                                      "content": "OVERSMPL"
-                                    },
-                                    "aWXsf": {
-                                      "content": "4x"
-                                    },
-                                    "Z0w3Mv": {
-                                      "width": 59
-                                    }
-                                  }
-                                },
-                                {
-                                  "id": "SIGq6",
-                                  "type": "ref",
-                                  "ref": "dGBN6",
-                                  "name": "GR",
-                                  "descendants": {
-                                    "MAebN": {
-                                      "content": "GR"
-                                    },
-                                    "A5cwm": {
-                                      "stroke": "#00000000",
-                                      "fill": "#00000000"
-                                    },
-                                    "hTbP7": {
-                                      "content": "-4.2"
-                                    },
-                                    "dSIfP": {
-                                      "content": "dB"
-                                    },
-                                    "LspiA": {
-                                      "width": 29
-                                    }
-                                  }
-                                }
-                              ]
                             }
                           ]
                         },
@@ -27508,36 +27475,10 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "frame",
-                              "id": "konWe",
-                              "name": "bypass",
-                              "context": "button",
-                              "width": 75.83,
-                              "height": 33,
-                              "cornerRadius": 119,
-                              "stroke": "#2a2a2e",
-                              "strokeWidth": 1,
-                              "strokeAlignment": "inner",
-                              "layout": "vertical",
-                              "padding": [
-                                7,
-                                14
-                              ],
-                              "justifyContent": "center",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "Gmz1x",
-                                  "fill": "#9a9aa2",
-                                  "content": "bypass",
-                                  "lineHeight": 1.21,
-                                  "textAlign": "center",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 14,
-                                  "fontWeight": "normal"
-                                }
-                              ]
+                              "id": "TxWsk",
+                              "type": "ref",
+                              "ref": "U2c5ku",
+                              "name": "Bypass"
                             },
                             {
                               "type": "frame",
@@ -197421,7 +197362,7 @@
       "fill": "#9ea3b0",
       "textGrowth": "fixed-width",
       "width": 1800,
-      "content": "The same tile grid a plugin gets — a built-in's two parameters are two tiles, not two full-width faders. One design at two zoom levels, so a rig with a Tremolo and a rig with a 24-band compressor read the same way. While the chain's own power is off the editor still says so.",
+      "content": "The same tile grid a plugin gets — a built-in's two parameters are two tiles, not two full-width faders. One design at two zoom levels, so a rig with a Tremolo and a rig with a 24-band compressor read the same way.",
       "fontFamily": "Inter",
       "fontSize": 13,
       "fontWeight": "normal"
@@ -227263,7 +227204,7 @@
               "fill": "$text-secondary",
               "textGrowth": "fixed-width",
               "width": 1200,
-              "content": "A hosted VST3/CLAP parameter is not always a slider. The engine describes each one with step_count and a flag set, and the UI owes each shape its own control. This board defines which control expresses which kind of boolean — the rule the app currently lacks.",
+              "content": "A hosted VST3/CLAP parameter is not always a slider. The engine describes each one with step_count and a flag set, and the UI owes each shape its own control. This is the rule the app implements — resolved on DS / 06, restated here so the board a reader lands on first is not a stub.",
               "lineHeight": 1.5,
               "fontFamily": "$font-ui",
               "fontSize": "$text-base",
@@ -227274,7 +227215,7 @@
         {
           "type": "frame",
           "id": "H2JAtB",
-          "name": "Boolean taxonomy",
+          "name": "Parameter taxonomy",
           "width": "fill_container",
           "layout": "vertical",
           "gap": "$space-7",
@@ -227284,7 +227225,7 @@
               "type": "ref",
               "ref": "Oh5cq",
               "name": "Caption",
-              "content": "WHICH CONTROL FOR WHICH BOOLEAN"
+              "content": "ENGINE → CONTROL"
             },
             {
               "type": "frame",
@@ -227350,6 +227291,7 @@
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
                       "content": "NOTE",
+                      "lineHeight": 1.35,
                       "fontFamily": "$font-ui",
                       "fontSize": "$text-caption",
                       "fontWeight": "normal",
@@ -227395,9 +227337,9 @@
                       "textGrowth": "fixed-width",
                       "width": 340,
                       "content": "— not shown",
-                      "fontFamily": "$font-ui",
+                      "fontFamily": "$font-mono",
                       "fontSize": "$text-sm",
-                      "fontWeight": "600"
+                      "fontWeight": "normal"
                     },
                     {
                       "type": "text",
@@ -227407,6 +227349,7 @@
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
                       "content": "Dropped before the grid is built. Matches the current filter.",
+                      "lineHeight": 1.35,
                       "fontFamily": "$font-ui",
                       "fontSize": "$text-sm",
                       "fontWeight": "normal"
@@ -227451,9 +227394,9 @@
                       "textGrowth": "fixed-width",
                       "width": 340,
                       "content": "FxBypassPill",
-                      "fontFamily": "$font-ui",
+                      "fontFamily": "$font-mono",
                       "fontSize": "$text-sm",
-                      "fontWeight": "600"
+                      "fontWeight": "normal"
                     },
                     {
                       "type": "text",
@@ -227463,6 +227406,7 @@
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
                       "content": "Promoted to chain chrome; never duplicated as a tile.",
+                      "lineHeight": 1.35,
                       "fontFamily": "$font-ui",
                       "fontSize": "$text-sm",
                       "fontWeight": "normal"
@@ -227507,9 +227451,9 @@
                       "textGrowth": "fixed-width",
                       "width": 340,
                       "content": "FxParamTile · read-only",
-                      "fontFamily": "$font-ui",
+                      "fontFamily": "$font-mono",
                       "fontSize": "$text-sm",
-                      "fontWeight": "600"
+                      "fontWeight": "normal"
                     },
                     {
                       "type": "text",
@@ -227519,6 +227463,7 @@
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
                       "content": "Borderless, indicator only, not tappable. Meters land here.",
+                      "lineHeight": 1.35,
                       "fontFamily": "$font-ui",
                       "fontSize": "$text-sm",
                       "fontWeight": "normal"
@@ -227563,9 +227508,9 @@
                       "textGrowth": "fixed-width",
                       "width": 340,
                       "content": "FxParamSwitchCell",
-                      "fontFamily": "$font-ui",
+                      "fontFamily": "$font-mono",
                       "fontSize": "$text-sm",
-                      "fontWeight": "600"
+                      "fontWeight": "normal"
                     },
                     {
                       "type": "text",
@@ -227575,6 +227520,7 @@
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
                       "content": "On/off captions from paramValueText, not hardcoded.",
+                      "lineHeight": 1.35,
                       "fontFamily": "$font-ui",
                       "fontSize": "$text-sm",
                       "fontWeight": "normal"
@@ -227619,9 +227565,9 @@
                       "textGrowth": "fixed-width",
                       "width": 340,
                       "content": "FxParamEnumCell",
-                      "fontFamily": "$font-ui",
+                      "fontFamily": "$font-mono",
                       "fontSize": "$text-sm",
-                      "fontWeight": "600"
+                      "fontWeight": "normal"
                     },
                     {
                       "type": "text",
@@ -227631,6 +227577,7 @@
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
                       "content": "Menu of named steps; labels pre-fetched at load.",
+                      "lineHeight": 1.35,
                       "fontFamily": "$font-ui",
                       "fontSize": "$text-sm",
                       "fontWeight": "normal"
@@ -227675,9 +227622,9 @@
                       "textGrowth": "fixed-width",
                       "width": 340,
                       "content": "FxParamTile · snapped",
-                      "fontFamily": "$font-ui",
+                      "fontFamily": "$font-mono",
                       "fontSize": "$text-sm",
-                      "fontWeight": "600"
+                      "fontWeight": "normal"
                     },
                     {
                       "type": "text",
@@ -227687,6 +227634,7 @@
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
                       "content": "Too many for a menu. Sheet bar snaps to steps.",
+                      "lineHeight": 1.35,
                       "fontFamily": "$font-ui",
                       "fontSize": "$text-sm",
                       "fontWeight": "normal"
@@ -227728,9 +227676,9 @@
                       "textGrowth": "fixed-width",
                       "width": 340,
                       "content": "FxParamTile · continuous",
-                      "fontFamily": "$font-ui",
+                      "fontFamily": "$font-mono",
                       "fontSize": "$text-sm",
-                      "fontWeight": "600"
+                      "fontWeight": "normal"
                     },
                     {
                       "type": "text",
@@ -227740,6 +227688,7 @@
                       "textGrowth": "fixed-width",
                       "width": "fill_container",
                       "content": "The default. Sheet opens in bar mode.",
+                      "lineHeight": 1.35,
                       "fontFamily": "$font-ui",
                       "fontSize": "$text-sm",
                       "fontWeight": "normal"
@@ -282959,7 +282908,7 @@
     {
       "type": "frame",
       "id": "M3PQQ",
-      "x": 28612,
+      "x": 28616,
       "y": 1620,
       "name": "SIGNAL / fx-param-sheet",
       "context": "div",
@@ -285656,19 +285605,23 @@
                           "children": [
                             {
                               "type": "frame",
-                              "id": "SMGAr",
+                              "id": "MiEI6",
                               "name": "Row 1",
                               "width": "fill_container",
                               "gap": 7,
                               "children": [
                                 {
-                                  "id": "I1DE4",
+                                  "id": "ngcrE",
                                   "type": "ref",
                                   "ref": "dGBN6",
                                   "name": "THRESHLD",
                                   "descendants": {
                                     "MAebN": {
                                       "content": "THRESHLD"
+                                    },
+                                    "A5cwm": {
+                                      "fill": "$accent-surface",
+                                      "stroke": "$accent"
                                     },
                                     "hTbP7": {
                                       "content": "-16.0"
@@ -285682,7 +285635,7 @@
                                   }
                                 },
                                 {
-                                  "id": "BCLEB",
+                                  "id": "s1WASB",
                                   "type": "ref",
                                   "ref": "dGBN6",
                                   "name": "RATIO",
@@ -285703,7 +285656,7 @@
                                   }
                                 },
                                 {
-                                  "id": "hdF0Q",
+                                  "id": "hCIRV",
                                   "type": "ref",
                                   "ref": "dGBN6",
                                   "name": "ATTACK",
@@ -285723,198 +285676,7 @@
                                   }
                                 },
                                 {
-                                  "id": "L8yg5",
-                                  "type": "ref",
-                                  "ref": "dGBN6",
-                                  "name": "RELEASE",
-                                  "descendants": {
-                                    "MAebN": {
-                                      "content": "RELEASE"
-                                    },
-                                    "hTbP7": {
-                                      "content": "240"
-                                    },
-                                    "dSIfP": {
-                                      "content": "ms"
-                                    },
-                                    "LspiA": {
-                                      "width": 43
-                                    }
-                                  }
-                                },
-                                {
-                                  "id": "R01Ql",
-                                  "type": "ref",
-                                  "ref": "dGBN6",
-                                  "name": "KNEE",
-                                  "descendants": {
-                                    "MAebN": {
-                                      "content": "KNEE"
-                                    },
-                                    "hTbP7": {
-                                      "content": "soft"
-                                    },
-                                    "dSIfP": {
-                                      "content": "",
-                                      "enabled": false
-                                    },
-                                    "LspiA": {
-                                      "width": 31
-                                    }
-                                  }
-                                },
-                                {
-                                  "id": "hXqPt",
-                                  "type": "ref",
-                                  "ref": "dGBN6",
-                                  "name": "MAKEUP",
-                                  "descendants": {
-                                    "MAebN": {
-                                      "content": "MAKEUP"
-                                    },
-                                    "hTbP7": {
-                                      "content": "+3.0"
-                                    },
-                                    "dSIfP": {
-                                      "content": "dB"
-                                    },
-                                    "LspiA": {
-                                      "width": 55
-                                    }
-                                  }
-                                },
-                                {
-                                  "id": "CBuSc",
-                                  "type": "ref",
-                                  "ref": "dGBN6",
-                                  "name": "BANDGAIN",
-                                  "descendants": {
-                                    "MAebN": {
-                                      "content": "BANDGAIN"
-                                    },
-                                    "hTbP7": {
-                                      "content": "0.0"
-                                    },
-                                    "dSIfP": {
-                                      "content": "dB"
-                                    },
-                                    "LspiA": {
-                                      "width": 39
-                                    }
-                                  }
-                                },
-                                {
-                                  "id": "al5bB",
-                                  "type": "ref",
-                                  "ref": "dGBN6",
-                                  "name": "BANDFREQ",
-                                  "descendants": {
-                                    "MAebN": {
-                                      "content": "BANDFREQ"
-                                    },
-                                    "hTbP7": {
-                                      "content": "7.3"
-                                    },
-                                    "dSIfP": {
-                                      "content": "kHz"
-                                    },
-                                    "LspiA": {
-                                      "width": 62
-                                    }
-                                  }
-                                },
-                                {
-                                  "id": "jsEa3",
-                                  "type": "ref",
-                                  "ref": "dGBN6",
-                                  "name": "Q",
-                                  "descendants": {
-                                    "MAebN": {
-                                      "content": "Q"
-                                    },
-                                    "hTbP7": {
-                                      "content": "1.4"
-                                    },
-                                    "dSIfP": {
-                                      "content": "",
-                                      "enabled": false
-                                    },
-                                    "LspiA": {
-                                      "width": 28
-                                    }
-                                  }
-                                },
-                                {
-                                  "id": "hWiBk",
-                                  "type": "ref",
-                                  "ref": "dGBN6",
-                                  "name": "HPF",
-                                  "descendants": {
-                                    "MAebN": {
-                                      "content": "HPF"
-                                    },
-                                    "hTbP7": {
-                                      "content": "80"
-                                    },
-                                    "dSIfP": {
-                                      "content": "Hz"
-                                    },
-                                    "LspiA": {
-                                      "width": 16
-                                    }
-                                  }
-                                },
-                                {
-                                  "id": "aQwnz",
-                                  "type": "ref",
-                                  "ref": "dGBN6",
-                                  "name": "OUTPUT",
-                                  "descendants": {
-                                    "MAebN": {
-                                      "content": "OUTPUT"
-                                    },
-                                    "hTbP7": {
-                                      "content": "0.0"
-                                    },
-                                    "dSIfP": {
-                                      "content": "dB"
-                                    },
-                                    "LspiA": {
-                                      "width": 39
-                                    }
-                                  }
-                                },
-                                {
-                                  "id": "i1kvRW",
-                                  "type": "ref",
-                                  "ref": "dGBN6",
-                                  "name": "MIX",
-                                  "descendants": {
-                                    "MAebN": {
-                                      "content": "MIX"
-                                    },
-                                    "hTbP7": {
-                                      "content": "100"
-                                    },
-                                    "dSIfP": {
-                                      "content": "%"
-                                    },
-                                    "LspiA": {
-                                      "width": 78
-                                    }
-                                  }
-                                }
-                              ]
-                            },
-                            {
-                              "type": "frame",
-                              "id": "lqzZF",
-                              "name": "Row 2",
-                              "width": "fill_container",
-                              "gap": 7,
-                              "children": [
-                                {
-                                  "id": "uPMIG",
+                                  "id": "Rinb2",
                                   "type": "ref",
                                   "ref": "EMYmp",
                                   "name": "VINTAGE",
@@ -285936,21 +285698,48 @@
                                   }
                                 },
                                 {
-                                  "id": "n3OP3n",
+                                  "id": "pb2Mv",
                                   "type": "ref",
-                                  "ref": "EMYmp",
-                                  "name": "SIDECHAIN",
+                                  "ref": "dGBN6",
+                                  "name": "RELEASE",
                                   "descendants": {
-                                    "VMpHk": {
-                                      "content": "SIDECHAIN"
+                                    "MAebN": {
+                                      "content": "RELEASE"
                                     },
-                                    "ZhUEm": {
-                                      "width": 0
+                                    "hTbP7": {
+                                      "content": "240"
+                                    },
+                                    "dSIfP": {
+                                      "content": "ms"
+                                    },
+                                    "LspiA": {
+                                      "width": 43
                                     }
                                   }
                                 },
                                 {
-                                  "id": "rxRH0",
+                                  "id": "FvLWr",
+                                  "type": "ref",
+                                  "ref": "dGBN6",
+                                  "name": "KNEE",
+                                  "descendants": {
+                                    "MAebN": {
+                                      "content": "KNEE"
+                                    },
+                                    "hTbP7": {
+                                      "content": "soft"
+                                    },
+                                    "dSIfP": {
+                                      "content": "",
+                                      "enabled": false
+                                    },
+                                    "LspiA": {
+                                      "width": 31
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "c2c4XG",
                                   "type": "ref",
                                   "ref": "pm7Ly",
                                   "name": "TYPE",
@@ -285967,7 +285756,81 @@
                                   }
                                 },
                                 {
-                                  "id": "M5Q7o",
+                                  "id": "tPrMl",
+                                  "type": "ref",
+                                  "ref": "dGBN6",
+                                  "name": "MAKEUP",
+                                  "descendants": {
+                                    "MAebN": {
+                                      "content": "MAKEUP"
+                                    },
+                                    "hTbP7": {
+                                      "content": "+3.0"
+                                    },
+                                    "dSIfP": {
+                                      "content": "dB"
+                                    },
+                                    "LspiA": {
+                                      "width": 55
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "I13OC",
+                                  "type": "ref",
+                                  "ref": "EMYmp",
+                                  "name": "SIDECHAIN",
+                                  "descendants": {
+                                    "VMpHk": {
+                                      "content": "SIDECHAIN"
+                                    },
+                                    "ZhUEm": {
+                                      "width": 0
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "nwMtR",
+                                  "type": "ref",
+                                  "ref": "dGBN6",
+                                  "name": "BANDGAIN",
+                                  "descendants": {
+                                    "MAebN": {
+                                      "content": "BANDGAIN"
+                                    },
+                                    "hTbP7": {
+                                      "content": "0.0"
+                                    },
+                                    "dSIfP": {
+                                      "content": "dB"
+                                    },
+                                    "LspiA": {
+                                      "width": 39
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "cTdyT",
+                                  "type": "ref",
+                                  "ref": "dGBN6",
+                                  "name": "BANDFREQ",
+                                  "descendants": {
+                                    "MAebN": {
+                                      "content": "BANDFREQ"
+                                    },
+                                    "hTbP7": {
+                                      "content": "7.3"
+                                    },
+                                    "dSIfP": {
+                                      "content": "kHz"
+                                    },
+                                    "LspiA": {
+                                      "width": 62
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "a3K5d",
                                   "type": "ref",
                                   "ref": "pm7Ly",
                                   "name": "OVERSMPL",
@@ -285984,7 +285847,48 @@
                                   }
                                 },
                                 {
-                                  "id": "Jsl5F",
+                                  "id": "C28EV",
+                                  "type": "ref",
+                                  "ref": "dGBN6",
+                                  "name": "Q",
+                                  "descendants": {
+                                    "MAebN": {
+                                      "content": "Q"
+                                    },
+                                    "hTbP7": {
+                                      "content": "1.4"
+                                    },
+                                    "dSIfP": {
+                                      "content": "",
+                                      "enabled": false
+                                    },
+                                    "LspiA": {
+                                      "width": 28
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "crCIz",
+                                  "type": "ref",
+                                  "ref": "dGBN6",
+                                  "name": "HPF",
+                                  "descendants": {
+                                    "MAebN": {
+                                      "content": "HPF"
+                                    },
+                                    "hTbP7": {
+                                      "content": "80"
+                                    },
+                                    "dSIfP": {
+                                      "content": "Hz"
+                                    },
+                                    "LspiA": {
+                                      "width": 16
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "ZA24N",
                                   "type": "ref",
                                   "ref": "dGBN6",
                                   "name": "GR",
@@ -285997,13 +285901,55 @@
                                       "fill": "#00000000"
                                     },
                                     "hTbP7": {
-                                      "content": "-4.2"
+                                      "content": "-4.2",
+                                      "fill": "$text-tertiary"
                                     },
                                     "dSIfP": {
                                       "content": "dB"
                                     },
                                     "LspiA": {
-                                      "width": 29
+                                      "width": 29,
+                                      "fill": "$text-muted"
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "h1kRa",
+                                  "type": "ref",
+                                  "ref": "dGBN6",
+                                  "name": "OUTPUT",
+                                  "descendants": {
+                                    "MAebN": {
+                                      "content": "OUTPUT"
+                                    },
+                                    "hTbP7": {
+                                      "content": "0.0"
+                                    },
+                                    "dSIfP": {
+                                      "content": "dB"
+                                    },
+                                    "LspiA": {
+                                      "width": 39
+                                    }
+                                  }
+                                },
+                                {
+                                  "id": "RrhPk",
+                                  "type": "ref",
+                                  "ref": "dGBN6",
+                                  "name": "MIX",
+                                  "descendants": {
+                                    "MAebN": {
+                                      "content": "MIX"
+                                    },
+                                    "hTbP7": {
+                                      "content": "100"
+                                    },
+                                    "dSIfP": {
+                                      "content": "%"
+                                    },
+                                    "LspiA": {
+                                      "width": 78
                                     }
                                   }
                                 }
@@ -286032,36 +285978,10 @@
                           "alignItems": "center",
                           "children": [
                             {
-                              "type": "frame",
-                              "id": "bWhz4",
-                              "name": "bypass",
-                              "context": "button",
-                              "width": 75.83,
-                              "height": 33,
-                              "cornerRadius": 119,
-                              "stroke": "#2a2a2e",
-                              "strokeWidth": 1,
-                              "strokeAlignment": "inner",
-                              "layout": "vertical",
-                              "padding": [
-                                7,
-                                14
-                              ],
-                              "justifyContent": "center",
-                              "alignItems": "center",
-                              "children": [
-                                {
-                                  "type": "text",
-                                  "id": "AeRov",
-                                  "fill": "#9a9aa2",
-                                  "content": "bypass",
-                                  "lineHeight": 1.21,
-                                  "textAlign": "center",
-                                  "fontFamily": "Inter",
-                                  "fontSize": 14,
-                                  "fontWeight": "normal"
-                                }
-                              ]
+                              "id": "I3Lop",
+                              "type": "ref",
+                              "ref": "U2c5ku",
+                              "name": "Bypass"
                             },
                             {
                               "type": "frame",
@@ -286295,6 +286215,15 @@
                 },
                 "B0o5J": {
                   "content": "Dirty rhythm · track 3 · lane A · VST3"
+                },
+                "dQGiy": {
+                  "content": "-16.0"
+                },
+                "jmX93": {
+                  "content": "dB"
+                },
+                "gLPRg": {
+                  "width": 510
                 }
               }
             }
@@ -286305,7 +286234,7 @@
     {
       "type": "text",
       "id": "tVLb5",
-      "x": 28612,
+      "x": 28616,
       "y": 1584,
       "name": "t/fx-param-sheet",
       "fill": "#ffffff",
@@ -286317,7 +286246,7 @@
     {
       "type": "text",
       "id": "IrEFg",
-      "x": 28612,
+      "x": 28616,
       "y": 2713,
       "name": "g/fx-param-sheet",
       "fill": "#738cf2",
@@ -286329,13 +286258,13 @@
     {
       "type": "text",
       "id": "h4E9iN",
-      "x": 28612,
+      "x": 28616,
       "y": 2736,
       "name": "c/fx-param-sheet",
       "fill": "#9ea3b0",
       "textGrowth": "fixed-width",
       "width": 1800,
-      "content": "Tapping a tile raises this over a scrim; the tile itself changed nothing. That is the rule the grid exists for — the console lies on the floor under someone playing, and a knee or a cable against a draggable fader is audible and lands in the take. Mid-song adjustment belongs to the foot pedal; this screen is for between takes. The bar gives the full panel width of travel, and the dialpad swaps it for the keypad when the value is one you know rather than one you feel for.",
+      "content": "Tapping a tile raises this over a scrim; the tile itself changed nothing. That is the rule the grid exists for — the console lies on the floor under someone playing, and a knee or a cable against a draggable fader is audible and lands in the take. Mid-song adjustment belongs to the foot pedal; this screen is for between takes. The bar spans the sheet, which is far more travel than a 78px tile could offer, and the dialpad swaps it for the keypad when the value is one you know rather than one you feel for. The tile that opened it stays lit behind the scrim.",
       "fontFamily": "Inter",
       "fontSize": 13,
       "fontWeight": "normal"
