@@ -1969,6 +1969,88 @@ void main() {
       expect(fx.unsupported, isTrue);
     });
 
+    test(
+      'a bus-stage plugin is named from the catalog, not left a TUID',
+      () async {
+        engine.pluginScanResults = const [
+          le.PluginDescriptor(
+            id: 'aab1cc2200000000',
+            name: 'Valhalla Vintage Verb',
+            vendor: 'Valhalla DSP',
+            path: '/Library/Audio/Plug-Ins/VST3/verb.vst3',
+            format: le.PluginFormat.vst3,
+            version: 0,
+          ),
+          le.PluginDescriptor(
+            id: 'ddee4455ffff0000',
+            name: 'TAL Reverb 4',
+            vendor: 'TAL',
+            path: '/Library/Audio/Plug-Ins/VST3/tal.vst3',
+            format: le.PluginFormat.vst3,
+            version: 0,
+          ),
+        ];
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        await repo.pluginCatalog.scan();
+
+        // What the browse sheet builds: an identity, no name. On a lane the
+        // load resolves it; a bus entry never loads, so nothing else would.
+        repo.setMasterEffects(
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'aab1cc2200000000'),
+            ),
+          ],
+        );
+        expect(
+          (repo.masterEffects.single as PluginEffect).name,
+          'Valhalla Vintage Verb',
+        );
+
+        // And a relink onto a DIFFERENT plugin re-reads it: the surface keeps
+        // the entry's own name across the edit, which would leave the card
+        // naming the plugin that was replaced.
+        repo.setMasterEffects(
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'ddee4455ffff0000'),
+              name: 'Valhalla Vintage Verb',
+            ),
+          ],
+        );
+        expect(
+          (repo.masterEffects.single as PluginEffect).name,
+          'TAL Reverb 4',
+        );
+      },
+    );
+
+    test(
+      'a bus-stage plugin the catalog has never seen keeps its own name',
+      () {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        // Uninstalled, or scanned on another machine: the saved name is all
+        // there is, and it is what tells the player which plugin to relink to.
+        repo.setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+              name: 'Ancient Chorus',
+            ),
+          ],
+        );
+
+        expect(
+          (repo.trackEffects(0).single as PluginEffect).name,
+          'Ancient Chorus',
+        );
+      },
+    );
+
     test('a bus-stage plugin keeps no parameters to draw', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())

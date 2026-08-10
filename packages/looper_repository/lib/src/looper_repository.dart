@@ -3030,12 +3030,20 @@ class LooperRepository {
   /// situation never appears, because a chain with rows to draw is not empty.
   /// Nothing copies a bound chain onto a bus today, so this bites the moment
   /// something does: racks (#535), or a lane-to-bus paste.
-  static List<TrackEffect> _markBusUnsupportedPlugins(
-    List<TrackEffect> effects,
-  ) => [
+  ///
+  /// The name comes from the catalog, and at these stages the catalog is its
+  /// ONLY source: a bus entry never loads, so [_bindPluginSlot] — which is
+  /// what names a lane's or a monitor's plugin — never runs on one. Left to
+  /// the entry, an inserted plugin keeps the empty name the insert built it
+  /// with and reads as a 32-character TUID forever, and one that was relinked
+  /// onto a different plugin keeps the name of the plugin it replaced. An id
+  /// the catalog has never seen keeps whatever the entry carried, so an
+  /// uninstalled plugin still says which one it was.
+  List<TrackEffect> _markBusUnsupportedPlugins(List<TrackEffect> effects) => [
     for (final fx in effects)
       if (fx is PluginEffect)
         fx.copyWith(
+          name: _descriptorFor(fx.ref.id)?.name ?? fx.name,
           unavailable: true,
           unsupported: true,
           loading: false,
