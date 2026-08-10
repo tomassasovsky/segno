@@ -2,7 +2,7 @@
 
 A saved session is a directory (a `.segno` **bundle**) holding a JSON manifest,
 one WAV per audio layer, and a flattened mixdown. This document describes the
-**v5** schema and how legacy bundles migrate.
+**v7** schema and how legacy bundles migrate.
 
 Related: the performance-capture path stores retiring layers with its own
 numbered files + sidecar (see [performance-manifest-format](performance-manifest-format.md)
@@ -158,6 +158,9 @@ string per chain.
   ],
   "masterChain": "{…}",             // Master insert, v5; "" = none
 
+  // --- this session's pedal remap (v6) ---
+  "pedalBindings": "{…}",           // opaque, app-side model; "" = use the global remap
+
   // --- tempo grid / click / count-in (v4) ---
   "tempoBpm": 0.0,
   "tempoSource": "none",
@@ -253,3 +256,12 @@ silent:
   per-chain `chainEnabled`, per-entry `enabled`, stable `slotId`s, and Loop-stage
   inheritance provenance. A v4 bundle loads with both bus stages empty and
   everything enabled.
+- **v6** — this session's pedal remap (`pedalBindings`), one opaque string on
+  the same rule as the chains: the model lives app-side, the manifest only
+  carries the blob. A v5 bundle loads with `""`, and the global remap applies.
+- **v7** — the monitor gate by name (`monitors[].mode`), beside the boolean
+  every rung has carried. The gate has three states — `off`, `auto` (follow
+  the record arm) and `on` — and a boolean cannot tell the last two apart, so
+  a session saved with an input on `auto` used to reload monitoring
+  unconditionally. A v6 bundle loads with what its boolean said: `on` when it
+  was true, never `auto`, since `on` is what that bundle was heard as.
