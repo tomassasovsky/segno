@@ -46,6 +46,28 @@ void main() {
       expect(decodeFxChain(monitor.encoded), const FxChainEnvelope());
     });
 
+    test('saves the gate by name as well as by boolean', () {
+      when(looper.allMonitors).thenReturn(const {
+        0: InputMonitor(input: 0, mode: MonitorMode.auto),
+        1: InputMonitor(input: 1, mode: MonitorMode.on),
+        2: InputMonitor(input: 2),
+      });
+
+      final saved = {
+        for (final m in chainsFromLooper(looper).monitors) m.input: m,
+      };
+
+      // The boolean stays: it is what a manifest reader older than this rung
+      // has to go on, and it is still the answer to "was this monitoring".
+      expect(saved[0]!.enabled, isTrue);
+      expect(saved[1]!.enabled, isTrue);
+      expect(saved[2]!.enabled, isFalse);
+      // The name is which of the two non-off states it was.
+      expect(saved[0]!.mode, 'auto');
+      expect(saved[1]!.mode, 'on');
+      expect(saved[2]!.mode, 'off');
+    });
+
     test('carries a monitor FX chain through the encoding', () {
       when(looper.allMonitors).thenReturn({
         0: InputMonitor(
@@ -389,6 +411,84 @@ void main() {
         (monitorChain.single as BuiltInEffect).type,
         TrackEffectType.reverb,
       );
+    });
+
+    Session sessionWithMonitor(SessionMonitor monitor) => Session(
+      sampleRate: 48000,
+      channels: 1,
+      baseLengthFrames: 4,
+      tracks: const [],
+      monitors: [monitor],
+    );
+
+    test('an AUTO monitor comes back auto, not on', () {
+      // The bug: the manifest's gate was a boolean, so `auto` — follow the
+      // record arm — saved as "enabled" and reloaded as `on`, monitoring
+      // unconditionally. An input the player set to open only while arming
+      // came back open all the time.
+      final rig = rigFromBundle((
+        session: sessionWithMonitor(
+          const SessionMonitor(
+            input: 0,
+            enabled: true,
+            mode: 'auto',
+            outputMask: 0x3,
+            volume: 1,
+            muted: false,
+            encoded: '',
+          ),
+        ),
+        laneStems: const {},
+      ));
+
+      expect(rig.monitors.single.mode, MonitorMode.auto);
+    });
+
+    test('a v6 monitor still restores what its boolean said', () {
+      for (final (enabled, expected) in [
+        (true, MonitorMode.on),
+        (false, MonitorMode.off),
+      ]) {
+        final rig = rigFromBundle((
+          session: sessionWithMonitor(
+            SessionMonitor(
+              input: 0,
+              enabled: enabled,
+              outputMask: 0x3,
+              volume: 1,
+              muted: false,
+              encoded: '',
+            ),
+          ),
+          laneStems: const {},
+        ));
+
+        // `on`, not `auto`: it is what the bundle was heard as, and guessing
+        // `auto` would make a monitor that played unconditionally start
+        // following the arm.
+        expect(rig.monitors.single.mode, expected);
+      }
+    });
+
+    test('a gate name this build does not know falls back, never to off', () {
+      final rig = rigFromBundle((
+        session: sessionWithMonitor(
+          const SessionMonitor(
+            input: 0,
+            enabled: true,
+            mode: 'sidechain-from-2027',
+            outputMask: 0x3,
+            volume: 1,
+            muted: false,
+            encoded: '',
+          ),
+        ),
+        laneStems: const {},
+      ));
+
+      // A gate written by a future build is not a deliberate disable — the
+      // same reading the settings restore takes.
+      expect(rig.monitors.single.mode, MonitorMode.on);
     });
 
     test('decodes the v5 BUS stages into the rig, chain flags included', () {
