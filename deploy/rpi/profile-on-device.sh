@@ -16,10 +16,14 @@
 # duration so weston's kiosk-shell has a single client and the audio device is
 # not held, then restarted on exit however this script ends.
 #
-# UNVERIFIED on hardware: the VM service flag names below are the engine's
-# documented switches but have not yet been confirmed against a profile bundle on
-# this image. If no listening URL appears, check the captured log the script
-# prints the path to before assuming the deploy failed.
+# VERIFIED end-to-end on the Yocto Pi 4B: bundle deploys, app starts under
+# weston, audio opens (`audio auto-start: started ok pinned=true`), and the VM
+# service answers HTTP JSON-RPC through the tunnel.
+#
+# One caveat this script cannot remove: the appliance renders ZERO frames while
+# nothing is moving, so a profile session with no one touching the console
+# measures an idle isolate and nothing else. Someone has to drive the console --
+# transport, tray, waveform -- for the numbers to mean anything. See #638.
 set -euo pipefail
 
 BUNDLE="${1:-}"
@@ -74,7 +78,17 @@ echo "==> starting profile build"
 # ALSA/RT/HOME variables change how the engine and path_provider behave, and a
 # profile run under a different environment would not be measuring the appliance.
 # Kept in sync by hand -- if that launcher changes, change this too.
-ssh -o BatchMode=yes -f "$HOST" "
+#
+# setsid + nohup + </dev/null, NOT `ssh -f ... &`: with a bare trailing `&` the
+# remote shell exits immediately and SIGHUPs the app before it ever opens its
+# log. Detaching it from the session is what makes it survive the ssh close.
+#
+# No --vm-service-port / --disable-service-auth-codes: VERIFIED on device that
+# the Linux GTK embedder ignores both. It always picks a random port and always
+# mints an auth code, so the port is discovered from the log below rather than
+# dictated here. SEGNO_VM_PORT therefore only selects the LOCAL end of the
+# tunnel.
+ssh -o BatchMode=yes "$HOST" "
   export GDK_BACKEND=wayland
   export XDG_RUNTIME_DIR=/run/user/1000
   export WAYLAND_DISPLAY=wayland-1
@@ -84,18 +98,16 @@ ssh -o BatchMode=yes -f "$HOST" "
   export SEGNO_ALSA_ONLY=1
   export SEGNO_RT_AUDIO=1
   export SEGNO_ALSA_PERIODS=3
-  $REMOTE_DIR/segno \
-    --vm-service-port=$PORT \
-    --disable-service-auth-codes \
-    >$REMOTE_DIR/profile.log 2>&1 &
+  setsid nohup $REMOTE_DIR/segno >$REMOTE_DIR/profile.log 2>&1 </dev/null &
 "
 
 echo "==> waiting for the VM service"
 url=""
 for _ in $(seq 1 30); do
   sleep 1
+  # The full URL including the auth-code path segment -- DevTools needs it.
   url=$(ssh -o BatchMode=yes "$HOST" \
-    "grep -oE 'http://[0-9.]+:[0-9]+/[A-Za-z0-9_=-]*' $REMOTE_DIR/profile.log 2>/dev/null | head -1" \
+    "grep -oE 'http://127\.0\.0\.1:[0-9]+/[A-Za-z0-9_=-]*/' $REMOTE_DIR/profile.log 2>/dev/null | head -1" \
     || true)
   [ -n "$url" ] && break
 done
@@ -106,11 +118,14 @@ if [ -z "$url" ]; then
   exit 1
 fi
 
+remote_port=$(printf '%s' "$url" | sed -E 's#^http://127\.0\.0\.1:([0-9]+)/.*#\1#')
+local_url=${url/127.0.0.1:$remote_port/127.0.0.1:$PORT}
+
 echo "==> VM service up on device: $url"
-echo "==> forwarding localhost:$PORT -> device:$PORT (Ctrl-C to stop and restore)"
+echo "==> forwarding localhost:$PORT -> device:$remote_port (Ctrl-C to stop and restore)"
 echo
-echo "    Attach DevTools to: ${url/:$PORT//:$PORT}"
-echo "    (open it against http://127.0.0.1:$PORT once the tunnel is up)"
+echo "    Attach DevTools to:"
+echo "      $local_url"
 echo
 echo "    Measure, in this order:"
 echo "      1. idle console          -- the floor for everything else"
@@ -123,4 +138,4 @@ echo "    context.watch fan-out. Raster over budget -> RepaintBoundary, the"
 echo "    per-sample waveform rects, card elevation."
 echo
 
-exec ssh -o BatchMode=yes -N -L "$PORT:127.0.0.1:$PORT" "$HOST"
+exec ssh -o BatchMode=yes -N -L "$PORT:127.0.0.1:$remote_port" "$HOST"
