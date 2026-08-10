@@ -170,7 +170,10 @@ Future<AppLocalizations> _l10n(WidgetTester tester) async =>
 void main() {
   Future<void> pump(WidgetTester tester, _FakeScope scope) async {
     tester.view
-      ..physicalSize = const Size(1920, 400)
+      // Tall enough for the grid AND an open editor under it — the editor
+      // lives in the card now, so a 400px harness overflows the moment a
+      // parameter opens. The real panel scrolls; this has no reason to.
+      ..physicalSize = const Size(1920, 900)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -576,11 +579,20 @@ void main() {
       await pump(tester, scope);
       final l10n = await _l10n(tester);
 
-      // Two states with NAMES — the one built-in shaped like that. Drawn as a
-      // bare switch it would say neither, and nothing on screen would tell a
-      // player which algorithm is running.
-      expect(find.byType(FxParamEnumCell), findsOneWidget);
-      expect(find.text(l10n.octaverModeLabel(0)), findsOneWidget);
+      // Two states with NAMES — the one built-in shaped like that. The tile
+      // shows which one is running; opening it lists both by name. A bare
+      // switch would say neither, and a bar would ask a player to find a
+      // named mode by fraction.
+      expect(find.text(l10n.octaverModeLabel(0)), findsWidgets);
+
+      await tester.tap(find.byKey(const Key('signal_fx_param_1')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('fxParamEditor_steps')), findsOneWidget);
+      expect(find.byKey(const Key('fxParamEditor_track')), findsNothing);
+      for (final step in [0.0, 1.0]) {
+        expect(find.text(l10n.octaverModeLabel(step)), findsWidgets);
+      }
     });
 
     testWidgets('reset puts back the effect default, not zero', (tester) async {

@@ -66,16 +66,25 @@ class _SignalFxEditorState extends State<SignalFxEditor> {
 
   void _closeEditor() => setState(() => _editing = null);
 
+  /// Where [slot] sits in the chain, or `-1` if it is no longer in it.
+  ///
+  /// An empty slot is not a missing entry: a built-in's parameter, and any
+  /// entry minted before slot ids, have none, and the position the panel
+  /// already resolved is the only address they have.
+  int _resolve(String slot) {
+    final at = _slotIndex(slot);
+    final resolved = at < 0 && slot.isEmpty ? widget.index : at;
+    if (resolved < 0 || resolved >= widget.scope.effects.length) return -1;
+    return resolved;
+  }
+
   /// The open parameter's editor, in the card under the grid.
   Widget _editorFor(({String slot, int param}) open) {
     // The same no-id fallback the rest of this file uses: an entry minted
     // before slot ids, or a fake in a test, has an empty one, and addressing
     // it by position is the only thing left.
-    final resolved = _slotIndex(open.slot);
-    final at = resolved < 0 && open.slot.isEmpty ? widget.index : resolved;
-    if (at < 0 || at >= widget.scope.effects.length) {
-      return const SizedBox.shrink();
-    }
+    final at = _resolve(open.slot);
+    if (at < 0) return const SizedBox.shrink();
     final effect = widget.scope.effects[at];
     final cell = _cellsFor(context.l10n, effect).firstWhere(
       (c) => c.spec.id == open.param,
@@ -92,7 +101,10 @@ class _SignalFxEditorState extends State<SignalFxEditor> {
       // The entry can go while its editor is open. Every write would then
       // land nowhere and every drag would move a value that no longer
       // exists. Closing says so; swallowing the drags does not.
-      isGone: () => _slotIndex(open.slot) < 0,
+      // The SAME resolver the mount uses. Asking `_slotIndex` directly here
+      // reported every empty-slot entry as gone, so the editor closed itself
+      // the first time it was touched and wrote nothing.
+      isGone: () => _resolve(open.slot) < 0,
     );
   }
 
@@ -836,11 +848,11 @@ class _ParamCell {
       value: plain,
       valueText: readout,
       semanticLabel: semanticLabel,
-      // A cell with no slot is a built-in's parameter, which the grid
-      // addresses by position rather than identity.
-      onTap: onChanged == null || slot == null
-          ? null
-          : () => editor._open(slot!, spec.id),
+      // An empty slot is not "no cell": a built-in's parameter, and an entry
+      // minted before slot ids, both have none, and the editor falls back to
+      // the position the panel already resolved. Requiring a slot here made
+      // every tile untappable.
+      onTap: onChanged == null ? null : () => editor._open(slot ?? '', spec.id),
     );
   }
 }
