@@ -31,9 +31,15 @@ class _RecordingPerformanceRepository extends PerformanceRepository {
 
   final List<String> log;
 
+  /// When set, holds [persistLiveLanes] open until completed — lets a test
+  /// close the cubit while the D-CLEAR persist is still in flight.
+  Completer<void>? persistGate;
+
   @override
   Future<void> persistLiveLanes() async {
     log.add('persistLiveLanes');
+    final gate = persistGate;
+    if (gate != null) await gate.future;
     await super.persistLiveLanes();
   }
 }
@@ -1183,6 +1189,48 @@ void main() {
         expect(log, isEmpty);
         verify(() => looper.clear()).called(1);
       });
+
+      // The armed path is the only one that awaits, so it is the only one whose
+      // emit can land on a closed cubit. The engine clear still has to happen —
+      // it is what the user asked for, and the looper outlives the console.
+      test(
+        'while armed, clearAll survives the console closing mid-persist',
+        () async {
+          final log = <String>[];
+          final recordingPerformance = _RecordingPerformanceRepository(
+            log: log,
+            engine: FakeAudioEngine(),
+            exportsRoot: () async => tempDir.path,
+          );
+          addTearDown(recordingPerformance.dispose);
+          final armedCubit = ControlCubit(
+            looper: looper,
+            pedal: pedal,
+            settings: settings,
+            performance: recordingPerformance,
+            keepAliveInterval: Duration.zero,
+          );
+          addTearDown(armedCubit.close);
+
+          await recordingPerformance.arm();
+          await pumpEventQueue(); // deliver captureStatus.armed to the cubit
+
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+
+          recordingPerformance.persistGate = Completer<void>();
+          final pending = armedCubit.clearAll();
+          await pumpEventQueue();
+          await armedCubit.close();
+          recordingPerformance.persistGate!.complete();
+
+          await expectLater(pending, completes);
+          verify(() => looper.clear()).called(1);
+        },
+      );
     });
 
     group('performance recording (D-PEDAL)', () {
