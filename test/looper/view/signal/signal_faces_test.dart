@@ -930,6 +930,91 @@ void main() {
       );
     });
 
+    testWidgets("a loop card reads its LANE's power, not its track's", (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        stage: FxStage.loop,
+        state: LooperState(
+          tracks: [
+            Track(
+              // The track bus is running; the lane on it is not. Reading the
+              // track's flag here is the confusion this call site invites, and
+              // it would tell the player a switched-off lane is processing.
+              lanes: [
+                Lane(
+                  inputChannel: 0,
+                  chainEnabled: false,
+                  effects: [
+                    BuiltInEffect(type: TrackEffectType.tremolo, slotId: 'a'),
+                  ],
+                ),
+              ],
+              effects: [
+                BuiltInEffect(type: TrackEffectType.drive, slotId: 'b'),
+              ],
+            ),
+          ],
+          status: const EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      expect(
+        find.text(l10n.signalCardChainOffRun(l10n.effectTremolo)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("an input's switched-off chain says so", (tester) async {
+      when(repository.allMonitors).thenReturn({
+        0: InputMonitor(
+          input: 0,
+          chainEnabled: false,
+          effects: [BuiltInEffect(type: TrackEffectType.drive, slotId: 'a')],
+        ),
+      });
+      await pump(tester);
+      await monitor.syncFromRepository();
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      expect(
+        find.text(l10n.signalCardChainOffRun(l10n.effectDrive)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a card announces the chain it carries', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pump(
+        tester,
+        stage: FxStage.track,
+        state: LooperState(
+          tracks: [
+            Track(
+              lanes: const [Lane(inputChannel: 0)],
+              effects: [
+                BuiltInEffect(type: TrackEffectType.drive, slotId: 'a'),
+              ],
+            ),
+          ],
+          status: const EngineStatus(inputChannels: 2, outputChannels: 2),
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      // The card is ONE node, so what it does not put in its label is not
+      // announced at all — and a rig you cannot hear is exactly the rig a
+      // screen reader user has to read.
+      expect(
+        tester.getSemantics(find.byKey(const Key('signal_card_track_0'))).label,
+        contains(l10n.effectDrive),
+      );
+      handle.dispose();
+    });
+
     testWidgets("the master's chain says when it is switched off", (
       tester,
     ) async {
@@ -990,7 +1075,10 @@ void main() {
       final short = tester.getSize(
         find.byKey(const Key('signal_card_track_1')),
       );
-      expect(tall.height, lessThanOrEqualTo(short.height + 20));
+      // EQUAL, not merely bounded: two lines is what a card is sized for, so
+      // a full chain costs it nothing. A cap that crept to three would pass a
+      // "not unbounded" check and still break the run's line.
+      expect(tall.height, short.height);
     });
 
     testWidgets("the master's chain redraws while the run is up", (
@@ -1116,6 +1204,29 @@ void main() {
         ),
       ];
       expect(sameChainShape(before, relinked), isFalse);
+    });
+
+    test('a built-in swapped for a plugin in place redraws', () {
+      final builtIn = [
+        Track(
+          lanes: const [Lane()],
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        ),
+      ];
+      const plugin = [
+        Track(
+          lanes: [Lane()],
+          effects: [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'com.v.verb'),
+              name: 'Verb',
+            ),
+          ],
+        ),
+      ];
+      // Same length, same position, different name on the card — the entry
+      // was replaced rather than added to, which the lengths alone hide.
+      expect(sameChainShape(builtIn, plugin), isFalse);
     });
 
     test('a chain losing its power redraws', () {

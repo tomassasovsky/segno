@@ -49,7 +49,7 @@ class SignalCard extends StatelessWidget {
   /// The loaded rack's name, or `no rack`.
   final String rack;
 
-  /// The chain this card carries, in one line, or `tap to load one`.
+  /// The chain this card carries, in a line or two, or `tap to load one`.
   final String summary;
 
   /// The monitor line, or null to omit the row entirely.
@@ -197,9 +197,15 @@ class SignalCard extends StatelessWidget {
       child: Semantics(
         button: true,
         selected: selected,
+        // The chain line is IN the label: it is the only place the surface
+        // says a chain exists before you open the panel, and a card that
+        // announced everything except what it carries would leave a screen
+        // reader unable to tell a loaded rig from an empty one — or a running
+        // chain from a switched-off one.
         label: [
           name,
           coordinate,
+          summary,
           if (line != null) line.label,
         ].join(', '),
         child: InkWell(
