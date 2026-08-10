@@ -1610,6 +1610,51 @@ void main() {
         cubit.setMode(InteractionMode.fx);
       });
 
+      group('what the LED reports', () {
+        test('a bound switch lights from its own target, not the track', (
+        ) async {
+          pedal.bind('out');
+          // track1 bound to channel 3's chain, so its LED must follow THAT
+          // chain — channel 0's is a different flag, and stomping the switch
+          // never touches it.
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.track1, bank: 0)]),
+          );
+          cubit.setMode(InteractionMode.fx);
+          await pumpEventQueue();
+          transport.sent.clear();
+          await stomp(PedalButton.track1);
+          await pumpEventQueue();
+
+          expect(chainEnabled[3], isFalse, reason: 'the bound chain is off');
+          expect(
+            PedalCodec.decodeFrame(transport.sent.last)?.trackLeds[0],
+            PedalTrackLed.off,
+            reason: 'the LED follows the bound chain it just switched off',
+          );
+        });
+
+        test('a stale binding lights nothing', () async {
+          pedal.bind('out');
+          await cubit.setGlobalBindings(
+            PedalBindingSet([
+              bind(PedalButton.track1, bank: 0, rawTarget: 'not-a-target'),
+            ]),
+          );
+          transport.sent.clear();
+          cubit.setMode(InteractionMode.fx);
+          await pumpEventQueue();
+
+          // R25: a binding that names nothing writes nothing and lights
+          // nothing. Falling back to the channel's own chain would light for
+          // a chain the switch does not drive.
+          expect(
+            PedalCodec.decodeFrame(transport.sent.last)?.trackLeds[0],
+            PedalTrackLed.off,
+          );
+        });
+      });
+
       group('dispatch', () {
         test('a bound button overrides its contextual default', () async {
           // Unbound, track1 in bank A stomps channel 0's own chain.

@@ -1557,6 +1557,36 @@ class ControlCubit extends Cubit<ControlState> {
     releaseAllControllerMomentary();
   }
 
+  /// What each BOUND track switch's own target currently reads, by channel.
+  ///
+  /// Only in FX mode, because that is the only mode a binding overrides — the
+  /// other two are transport surfaces a remap must never shadow, and their
+  /// LEDs mean something else entirely.
+  ///
+  /// A present null is a binding that no longer resolves. It stays in the map
+  /// rather than being dropped, so the LED can go dark: R25 says a stale
+  /// binding writes nothing and lights nothing, and dropping it here would
+  /// fall back to this channel's track chain — lighting for a chain the switch
+  /// does not drive.
+  Map<int, bool?> _boundChains() {
+    if (state.mode != InteractionMode.fx) return const {};
+    final bound = <int, bool?>{};
+    for (final button in const [
+      PedalButton.track1,
+      PedalButton.track2,
+      PedalButton.track3,
+      PedalButton.track4,
+    ]) {
+      final binding = state.bindings.lookup(button, bank: state.activeBank);
+      if (binding == null) continue;
+      final target = binding.decodeTarget();
+      bound[_trackIndex(button)] = target == null
+          ? null
+          : _looper.bindingEnabled(target);
+    }
+    return bound;
+  }
+
   int _trackIndex(PedalButton button) => switch (button) {
     PedalButton.track1 => 0,
     PedalButton.track2 => 1,
@@ -1618,6 +1648,7 @@ class ControlCubit extends Cubit<ControlState> {
       clearFadeActive: _clearHeld,
       performanceArmed: _performanceArmed,
       masterGain: _masterGain,
+      boundChains: _boundChains(),
     );
     if (!force && frame == _lastFrame) return; // diff: only push on change
     _lastFrame = frame;
