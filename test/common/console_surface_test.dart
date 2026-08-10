@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/common/console_surface.dart';
@@ -407,6 +408,126 @@ void main() {
                 .top,
         closeTo(gap, 0.5),
       );
+    });
+
+    testWidgets(
+      'a keyboard cannot walk past the answer, and Escape closes it',
+      (
+        tester,
+      ) async {
+        // The barrier blocks POINTERS. Tab went straight through it to the
+        // control the answer was describing and Enter operated it — an
+        // explanation you can use the rig behind is the panel this design
+        // rejects.
+        var pressedBehind = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(
+              extensions: [
+                SurfaceTheme.dark,
+                routingGraphThemeFromSurface(SurfaceTheme.dark),
+              ],
+            ),
+            home: Scaffold(
+              body: Column(
+                children: [
+                  const ConsoleCaption(
+                    'in the mix',
+                    explain: 'Whether you hear it.',
+                    explainLabel: 'What "in the mix" does',
+                  ),
+                  ElevatedButton(
+                    onPressed: () => pressedBehind++,
+                    child: const Text('behind'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.byKey(const Key('console_caption_explain')));
+        await tester.pumpAndSettle();
+
+        for (var i = 0; i < 4; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.pumpAndSettle();
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await tester.pumpAndSettle();
+        }
+        expect(pressedBehind, 0);
+        expect(
+          find.byKey(const Key('console_caption_explanation')),
+          findsOneWidget,
+        );
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const Key('console_caption_explanation')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('a caption that loses its answer is not left half open', (
+      tester,
+    ) async {
+      Future<void> pump({required String? explain}) => tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            extensions: [
+              SurfaceTheme.dark,
+              routingGraphThemeFromSurface(SurfaceTheme.dark),
+            ],
+          ),
+          home: Scaffold(
+            body: ConsoleCaption(
+              'in the mix',
+              explain: explain,
+              explainLabel: explain == null ? null : 'What "in the mix" does',
+            ),
+          ),
+        ),
+      );
+      await pump(explain: 'Whether you hear it.');
+      await tester.tap(find.byKey(const Key('console_caption_explain')));
+      await tester.pumpAndSettle();
+
+      // The overlay leaves with the explanation, but the open FLAG does not
+      // follow it on its own — so the caption came back believing it was
+      // showing an answer, and the next tap on the `?` spent itself closing
+      // something invisible.
+      await pump(explain: null);
+      await tester.pumpAndSettle();
+      await pump(explain: 'Whether you hear it.');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('console_caption_explain')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('console_caption_explanation')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a caption with no question still carries its controls', (
+      tester,
+    ) async {
+      await pumpRows(tester, [
+        const ConsoleCaption(
+          'in the mix',
+          trailing: Text('switch', key: Key('caption_trailing')),
+        ),
+      ]);
+
+      // And at the same gap the explaining caption uses: two shapes of one
+      // widget that differ by a spacer stop looking like siblings on a face
+      // that shows both.
+      final caption = tester.getRect(find.text('in the mix'));
+      final trailing = tester.getRect(
+        find.byKey(const Key('caption_trailing')),
+      );
+      expect(trailing.left - caption.right, closeTo(16, 0.5));
     });
 
     testWidgets('a tap anywhere else puts the answer away', (tester) async {

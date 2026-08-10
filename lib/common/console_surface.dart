@@ -697,8 +697,20 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
   /// of those moved the caption and left the answer hanging off nothing.
   Rect? _anchor;
 
-  /// Whether a re-measuring chain is already running. See [_watchAnchor].
-  bool _watching = false;
+  @override
+  void didUpdateWidget(ConsoleCaption oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A caption that loses its explanation while the answer is up takes the
+    // overlay out of the tree without closing it, and `_open` stays true — so
+    // the next tap toggles the state SHUT and the one after it opens, which
+    // from the outside is a `?` that ignores you. Rare, but the null-explain
+    // caption is a supported shape of this widget, not a hypothetical.
+    //
+    // The FLAG only, not [_close]: the portal went with the explanation, and
+    // hiding a controller whose `OverlayPortal` has left the tree asserts.
+    // Nothing to hide, everything to forget.
+    if (widget.explain == null) _open = false;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -716,9 +728,13 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
     final trailing = widget.trailing;
     if (explain == null) {
       if (trailing == null) return caption;
+      // The same row the explaining caption builds, minus the question — same
+      // gap included. Two shapes of one widget that differ by a spacer is how
+      // a group with a `?` and a group without stop looking like siblings.
       return Row(
         children: [
           caption,
+          const SizedBox(width: ConsoleCaption._captionGap),
           Expanded(child: trailing),
         ],
       );
@@ -828,32 +844,24 @@ class _ConsoleCaptionState extends State<ConsoleCaption> {
   /// on a still screen), and a measurement equal to the one held does not
   /// `setState`, so it cannot spin.
   ///
-  /// Two of its three guards are pinned by tests: dropping `mounted` fails
-  /// seven of them, and dropping the arming call fails the one that moves the
-  /// face. That it stops on CLOSE is deliberately NOT claimed as proven — a
-  /// chain that kept running would measure, find nothing changed and be
-  /// invisible from outside the widget. [_watching] is what bounds it instead:
-  /// one chain at a time, whatever the guards do.
+  /// Both its guards are pinned by tests: dropping `mounted` fails seven of
+  /// them, and dropping the arming call fails the one that moves the face.
+  /// That it stops on CLOSE is deliberately NOT claimed as proven — a chain
+  /// that kept running would measure, find nothing changed and be invisible
+  /// from outside the widget.
+  ///
+  /// One chain, structurally: it is armed only where an answer opens, and
+  /// while one is open the barrier is what a touch lands on — including a
+  /// touch on this very caption — so nothing can close and re-open inside the
+  /// frame that would be needed to arm a second. A flag guarding that was a
+  /// guard against a state the widget's own inputs cannot reach.
   void _watchAnchor() {
-    // One chain at a time. A close and re-open inside a single frame — which a
-    // bouncing touch panel can produce — would otherwise arm a second, and
-    // each one left behind is a `localToGlobal` on every frame for the life of
-    // the process, on an appliance.
-    if (_watching) return;
-    _watching = true;
-    void tick() {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_open) {
-          _watching = false;
-          return;
-        }
-        final now = _measure();
-        if (now != null && now != _anchor) setState(() => _anchor = now);
-        tick();
-      });
-    }
-
-    tick();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_open) return;
+      final now = _measure();
+      if (now != null && now != _anchor) setState(() => _anchor = now);
+      _watchAnchor();
+    });
   }
 
   /// The caption's rect in the overlay's own coordinates, or null if either
@@ -947,13 +955,13 @@ class _Explanation extends StatelessWidget {
       // take a drag either. A bare tap-only detector absorbs the touch and
       // then nothing recognises the gesture, so a scroll under an open answer
       // silently does nothing — which reads as the console having frozen.
-      // `ModalBarrier` blocks the face behind it on every platform, and it
-      // brings its own `BlockSemantics` to do it — but it only offers the
-      // DISMISS action where the host platform has a back gesture, which it
-      // reads as Android, iOS and macOS. On Linux, Windows and Fuchsia it
-      // excludes itself from semantics entirely, and since the face behind is
-      // blocked either way, a reader was left holding one paragraph and no
-      // way out. This console SHIPS on Linux.
+      // `ModalBarrier` blocks POINTERS on every platform, and brings its own
+      // `BlockSemantics` for readers — but it only offers the DISMISS action
+      // where the host platform has a back gesture, which it reads as Android,
+      // iOS and macOS. On Linux, Windows and Fuchsia it excludes itself from
+      // semantics entirely, and since the face behind is blocked either way, a
+      // reader was left holding one paragraph and no way out. This console
+      // SHIPS on Linux.
       Positioned.fill(
         child: ModalBarrier(
           key: const Key('console_caption_scrim'),
@@ -961,36 +969,56 @@ class _Explanation extends StatelessWidget {
           onDismiss: onDismiss,
         ),
       ),
+      // And a keyboard is the third way in, which the barrier does not cover
+      // at all: tab walked straight through it to the control the answer was
+      // describing, and space operated it with the answer still up — the
+      // "panel, not an answer" state the class doc rejects. The scope keeps
+      // traversal in here; `DismissIntent` is what Escape already means
+      // everywhere else in the app.
       Positioned.fill(
-        child: CustomSingleChildLayout(
-          delegate: _ExplanationLayout(anchor),
-          // So the answer itself carries the way out, on every platform — and
-          // carries it on the SAME node as the words. Split across two, the
-          // node that answers the question announces nothing and the node
-          // that announces it cannot be closed, so a reader has to swipe back
-          // to silence to get out.
-          child: Semantics(
-            container: true,
-            label: text,
-            onDismiss: onDismiss,
-            child: Material(
-              key: const Key('console_caption_explanation'),
-              color: surface.cardHigh,
-              elevation: 8,
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-                // Scrolls only when the answer is taller than the room on
-                // either side of the caption — which the longest of them is,
-                // on the short console, with the tallest caption open.
-                // Clipping instead would drop the last sentence, and the last
-                // sentence is where these paragraphs put the consequence.
-                //
-                // The prose is excluded because the label above already IS it:
-                // left in, the same paragraph is a second node, and which one
-                // a reader lands on decides whether they can close it.
-                child: SingleChildScrollView(
-                  child: ExcludeSemantics(child: ConsoleProse(text)),
+        child: FocusScope(
+          child: Actions(
+            actions: {
+              DismissIntent: CallbackAction<DismissIntent>(
+                onInvoke: (_) => onDismiss(),
+              ),
+            },
+            child: Focus(
+              autofocus: true,
+              child: CustomSingleChildLayout(
+                delegate: _ExplanationLayout(anchor),
+                // So the answer itself carries the way out, on every platform
+                // — and carries it on the SAME node as the words. Split across
+                // two, the node that answers the question announces nothing
+                // and the node that announces it cannot be closed, so a reader
+                // has to swipe back to silence to get out.
+                child: Semantics(
+                  container: true,
+                  label: text,
+                  onDismiss: onDismiss,
+                  child: Material(
+                    key: const Key('console_caption_explanation'),
+                    color: surface.cardHigh,
+                    elevation: 8,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                      // Scrolls only when the answer is taller than the room
+                      // on either side of the caption — which the longest of
+                      // them is, on the short console, with the tallest
+                      // caption open. Clipping instead would drop the last
+                      // sentence, and the last sentence is where these
+                      // paragraphs put the consequence.
+                      //
+                      // The prose is excluded because the label above already
+                      // IS it: left in, the same paragraph is a second node,
+                      // and which one a reader lands on decides whether they
+                      // can close it.
+                      child: SingleChildScrollView(
+                        child: ExcludeSemantics(child: ConsoleProse(text)),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
