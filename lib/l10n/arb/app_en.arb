@@ -2933,6 +2933,31 @@
     "@signalPanelLevel": {
         "description": "Caption over the panel's gain row."
     },
+    "signalPanelInMixExplain": "Whether this chain's sound reaches the mix at all. Muted still records and still plays; you just don't hear it.",
+    "@signalPanelInMixExplain": {
+        "description": "Explains the muted/heard pair on the Signal panel."
+    },
+    "signalPanelHearWhilePlayingExplain": "Whether you hear this input through your outputs while you play. Auto opens it only while a track fed by this input is armed or recording, so you hear yourself on the take and nothing between them. It never changes what gets recorded.",
+    "@signalPanelHearWhilePlayingExplain": {
+        "description": "Explains the monitor tri-state. The AUTO sentence is the load-bearing one — it is the state nobody guesses."
+    },
+    "signalPanelLevelExplain": "How loud this chain is in the mix. Double-tap the bar to put it back to unity — the level that changes nothing.",
+    "@signalPanelLevelExplain": {
+        "description": "Explains the gain row, and names the double-tap, which has no other affordance."
+    },
+    "signalPanelChainExplain": "The effects this signal passes through, in order. Switching the chain off leaves the effects loaded and takes them out of the sound.",
+    "@signalPanelChainExplain": {
+        "description": "Explains the chain strip and what its power switch does."
+    },
+    "a11yExplainControl": "What {group} does",
+    "@a11yExplainControl": {
+        "description": "Screen-reader label for the ? button beside a group caption.",
+        "placeholders": {
+            "group": {
+                "type": "String"
+            }
+        }
+    },
     "signalPanelInMix": "in the mix",
     "@signalPanelInMix": {
         "description": "Caption over the muted/heard pair — whether this chain reaches the mix at all."

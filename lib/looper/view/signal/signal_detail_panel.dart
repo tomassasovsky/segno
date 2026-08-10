@@ -415,7 +415,11 @@ class _PanelBodyState extends State<_PanelBody> {
     // and the keyed subtree below.
     final level = <Widget>[
       if (editing == null && gain != null && onLevel != null) ...[
-        _Caption(l10n.signalPanelLevel),
+        _Caption(
+          l10n.signalPanelLevel,
+          explain: l10n.signalPanelLevelExplain,
+          explainLabel: l10n.a11yExplainControl(l10n.signalPanelLevel),
+        ),
         _LevelRow(
           key: ValueKey(address),
           value: gain,
@@ -436,7 +440,11 @@ class _PanelBodyState extends State<_PanelBody> {
         )
       else ...[
         if (inMix != null && onHeard != null) ...[
-          _Caption(l10n.signalPanelInMix),
+          _Caption(
+            l10n.signalPanelInMix,
+            explain: l10n.signalPanelInMixExplain,
+            explainLabel: l10n.a11yExplainControl(l10n.signalPanelInMix),
+          ),
           ConsoleSegmented<bool>(
             key: const Key('signal_panel_in_mix'),
             stretch: true,
@@ -450,7 +458,13 @@ class _PanelBodyState extends State<_PanelBody> {
         ],
       ],
       if (mode != null && onMonitorMode != null) ...[
-        _Caption(l10n.signalPanelHearWhilePlaying),
+        _Caption(
+          l10n.signalPanelHearWhilePlaying,
+          explain: l10n.signalPanelHearWhilePlayingExplain,
+          explainLabel: l10n.a11yExplainControl(
+            l10n.signalPanelHearWhilePlaying,
+          ),
+        ),
         ConsoleSegmented<MonitorMode>(
           key: const Key('signal_panel_monitor'),
           stretch: true,
@@ -633,7 +647,11 @@ class _ChainCaption extends StatelessWidget {
     final on = scope.chainEnabled;
     return Row(
       children: [
-        _Caption(l10n.signalPanelChain),
+        _Caption(
+          l10n.signalPanelChain,
+          explain: l10n.signalPanelChainExplain,
+          explainLabel: l10n.a11yExplainControl(l10n.signalPanelChain),
+        ),
         // What the switch COSTS while it is off, in the warning pair — the
         // same sentence the dock put beside it.
         if (!on) ...[
@@ -757,19 +775,20 @@ class _Notice extends StatelessWidget {
 /// An inline caption over the row it names. Sentence case, as the mockups set
 /// them — these read as questions about the chain, not as group headings.
 class _Caption extends StatelessWidget {
-  const _Caption(this.label);
+  const _Caption(this.label, {this.explain, this.explainLabel});
 
   final String label;
 
+  /// What this group's controls do, or null where the caption's own word is
+  /// the whole answer.
+  final String? explain;
+  final String? explainLabel;
+
   @override
-  Widget build(BuildContext context) => Text(
+  Widget build(BuildContext context) => ConsoleCaption(
     label,
-    style: TextStyle(
-      color: context.surface.textSecondary,
-      fontSize: 14,
-      height: 1.21,
-      leadingDistribution: TextLeadingDistribution.even,
-    ),
+    explain: explain,
+    explainLabel: explainLabel,
   );
 }
 

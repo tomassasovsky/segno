@@ -604,6 +604,137 @@ class ConsoleProse extends StatelessWidget {
   }
 }
 
+/// A group caption that can explain what its controls do.
+///
+/// The console names its controls accurately and explains them nowhere. "In
+/// the mix", "hear while playing" — someone who built this knows what they
+/// mean; nobody else does, and there is no manual, no hover and no tooltip on
+/// a screen operated with a foot.
+///
+/// **Per GROUP, not per control.** A `?` on every switch would litter a dense
+/// face, and one help page per screen makes you hunt for the control you were
+/// confused about. A caption already names a group, so it is where the
+/// question belongs.
+///
+/// **Inline, not an overlay.** The answer appears under the caption and pushes
+/// the controls down. An overlay would cover the thing being explained, which
+/// on a touch console is the one place it must not be.
+class ConsoleCaption extends StatefulWidget {
+  /// Creates a [ConsoleCaption].
+  const ConsoleCaption(
+    this.label, {
+    this.explain,
+    this.explainLabel,
+    super.key,
+  });
+
+  /// The caption itself.
+  final String label;
+
+  /// What the group's controls do, in plain language — or null for a caption
+  /// whose own word is the whole answer.
+  final String? explain;
+
+  /// What a screen reader calls the button that opens [explain]. A row of
+  /// identical "?" buttons says nothing about which control each belongs to.
+  final String? explainLabel;
+
+  /// The glyph's drawn size. The tap target is [_targetSize] and overflows it.
+  static const double glyphSize = 18;
+
+  static const double _targetSize = 44;
+
+  @override
+  State<ConsoleCaption> createState() => _ConsoleCaptionState();
+}
+
+class _ConsoleCaptionState extends State<ConsoleCaption> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final explain = widget.explain;
+    final caption = Text(
+      widget.label,
+      style: TextStyle(
+        color: surface.textSecondary,
+        fontSize: 14,
+        height: 1.21,
+        leadingDistribution: TextLeadingDistribution.even,
+      ),
+    );
+    if (explain == null) return caption;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [caption, const SizedBox(width: 8), _button(surface)],
+        ),
+        if (_open)
+          Padding(
+            key: const Key('console_caption_explanation'),
+            padding: const EdgeInsets.only(top: 4, bottom: 6),
+            child: ConsoleProse(explain),
+          ),
+      ],
+    );
+  }
+
+  /// The `?` itself.
+  ///
+  /// Drawn at [ConsoleCaption.glyphSize] and TARGETED at
+  /// [ConsoleCaption._targetSize], which overflows the layout rather than
+  /// growing it: a 44px row per caption would push every control on the face
+  /// down by the same amount, four times over on the Signal panel alone.
+  Widget _button(SurfaceTheme surface) => Semantics(
+    button: true,
+    expanded: _open,
+    label: widget.explainLabel,
+    child: SizedBox(
+      width: ConsoleCaption.glyphSize,
+      height: ConsoleCaption.glyphSize,
+      child: OverflowBox(
+        maxWidth: ConsoleCaption._targetSize,
+        maxHeight: ConsoleCaption._targetSize,
+        child: InkWell(
+          key: const Key('console_caption_explain'),
+          onTap: () => setState(() => _open = !_open),
+          customBorder: const CircleBorder(),
+          child: Center(
+            child: Container(
+              width: ConsoleCaption.glyphSize,
+              height: ConsoleCaption.glyphSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: _open ? surface.accent : surface.borderStrong,
+                ),
+                color: _open ? surface.accent : null,
+              ),
+              child: Center(
+                child: Text(
+                  '?',
+                  style: TextStyle(
+                    color: _open ? surface.onAccent : surface.textSecondary,
+                    fontSize: 11,
+                    height: 1,
+                    fontWeight: FontWeight.w600,
+                    leadingDistribution: TextLeadingDistribution.even,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 /// A row that can open in place: the row itself over a tinted, bordered card
 /// of its actions.
 ///

@@ -208,4 +208,58 @@ void main() {
       await tester.pumpAndSettle();
     });
   });
+
+  group('ConsoleCaption', () {
+    Future<void> pumpCaption(WidgetTester tester, {String? explain}) =>
+        pumpRows(tester, [
+          ConsoleCaption(
+            'in the mix',
+            explain: explain,
+            explainLabel: 'What in the mix does',
+          ),
+        ]);
+
+    testWidgets('a caption with nothing to explain has no question', (
+      tester,
+    ) async {
+      await pumpCaption(tester);
+
+      // Not every caption needs one: `chain` over a strip of named effects is
+      // its own answer, and a `?` beside it is noise on a dense face.
+      expect(find.byKey(const Key('console_caption_explain')), findsNothing);
+    });
+
+    testWidgets('the question does not make the caption taller', (
+      tester,
+    ) async {
+      await pumpCaption(tester);
+      final plain = tester.getSize(find.byType(ConsoleCaption)).height;
+
+      await pumpCaption(tester, explain: 'Whether you hear it.');
+      final asked = tester.getSize(find.byType(ConsoleCaption)).height;
+
+      // The tap target is 44 and OVERFLOWS the row. Laid out at its full size
+      // it would push every control under every caption down by 27px — four
+      // times over on the Signal panel alone. What it may cost is the glyph's
+      // own 18 against the caption's 17: one pixel, not twenty-seven.
+      expect(asked, lessThanOrEqualTo(plain + 2));
+    });
+
+    testWidgets('the target is bigger than the glyph it draws', (
+      tester,
+    ) async {
+      await pumpCaption(tester, explain: 'Whether you hear it.');
+
+      // A console someone is standing over, aimed at with a finger. The glyph
+      // is 18; anything like that as a target is a miss.
+      final target = tester.getSize(
+        find.descendant(
+          of: find.byKey(const Key('console_caption_explain')),
+          matching: find.byType(Center).first,
+        ),
+      );
+      expect(target.width, greaterThanOrEqualTo(44));
+      expect(target.height, greaterThanOrEqualTo(44));
+    });
+  });
 }

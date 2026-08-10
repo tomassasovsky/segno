@@ -1160,6 +1160,110 @@ void main() {
     });
   });
 
+  group('the console explains its own controls', () {
+    testWidgets('a caption answers what its controls do, in place', (
+      tester,
+    ) async {
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // Nothing until asked: the explanation is for the person who does not
+      // know yet, and a face that explains everything all the time is a face
+      // nobody can scan.
+      expect(find.text(l10n.signalPanelHearWhilePlayingExplain), findsNothing);
+
+      await tester.tap(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text(l10n.signalPanelHearWhilePlaying),
+            matching: find.byType(ConsoleCaption),
+          ),
+          matching: find.byKey(const Key('console_caption_explain')),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(l10n.signalPanelHearWhilePlayingExplain),
+        findsOneWidget,
+      );
+      // In place, under the caption — an overlay would cover the control it
+      // is explaining, which on a touch console is the one thing it must not
+      // do. The monitor segments are still on screen.
+      expect(find.byKey(const Key('signal_panel_monitor')), findsOneWidget);
+    });
+
+    testWidgets('asking again puts it away', (tester) async {
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      final button = find.descendant(
+        of: find.ancestor(
+          of: find.text(l10n.signalPanelInMix),
+          matching: find.byType(ConsoleCaption),
+        ),
+        matching: find.byKey(const Key('console_caption_explain')),
+      );
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.signalPanelInMixExplain), findsOneWidget);
+
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.signalPanelInMixExplain), findsNothing);
+    });
+
+    testWidgets('each caption answers for itself', (tester) async {
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      await tester.tap(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text(l10n.signalPanelLevel),
+            matching: find.byType(ConsoleCaption),
+          ),
+          matching: find.byKey(const Key('console_caption_explain')),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // One caption opening must not open the others — four explanations at
+      // once is the wall of text this replaces.
+      expect(find.text(l10n.signalPanelLevelExplain), findsOneWidget);
+      expect(find.text(l10n.signalPanelInMixExplain), findsNothing);
+      expect(find.text(l10n.signalPanelHearWhilePlayingExplain), findsNothing);
+    });
+
+    testWidgets('the question names the group it is about', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('signal_card_input_0')));
+      await tester.pumpAndSettle();
+      final l10n = l10nOf(tester);
+
+      // A row of identical "?" buttons tells a reader nothing about which
+      // control each one belongs to.
+      final node = tester.getSemantics(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text(l10n.signalPanelInMix),
+            matching: find.byType(ConsoleCaption),
+          ),
+          matching: find.byKey(const Key('console_caption_explain')),
+        ),
+      );
+      expect(node.label, contains(l10n.signalPanelInMix));
+      handle.dispose();
+    });
+  });
+
   group('what the editor says about itself', () {
     testWidgets('a chain switched off says why nothing changed', (
       tester,
