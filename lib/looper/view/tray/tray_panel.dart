@@ -158,11 +158,8 @@ class _TrayPanelState extends State<TrayPanel> {
                                 const _TrayFaceFrame(child: TracksTrayPanel()),
                               SettingsTrayDestination.audio =>
                                 const _TrayFaceFrame(child: AudioTrayPanel()),
-                              SettingsTrayDestination.tuner => _TrayFaceFrame(
-                                child: TunerTrayPanel(
-                                  onBack: cubit.showLanding,
-                                ),
-                              ),
+                              SettingsTrayDestination.tuner =>
+                                const _TrayFaceFrame(child: TunerTrayPanel()),
                               SettingsTrayDestination.network =>
                                 const _TrayFaceFrame(child: NetworkTrayPanel()),
                               SettingsTrayDestination.system =>

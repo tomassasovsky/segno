@@ -1348,15 +1348,20 @@ class ConsoleDomainPanel<T> extends StatelessWidget {
           ),
         ),
         const SizedBox(height: titleGap),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: PillTabs<T>(
-            key: tabsKey,
-            selected: selected,
-            onChanged: onChanged,
-            tabs: tabs,
+        // No strip at all when there is nothing to choose between. A domain
+        // can have one tab today and four tomorrow — the Tuner has one per
+        // tunable input, and a rig with none would otherwise get an empty
+        // rail of pills over its "nothing to tune" message.
+        if (tabs.isNotEmpty)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: PillTabs<T>(
+              key: tabsKey,
+              selected: selected,
+              onChanged: onChanged,
+              tabs: tabs,
+            ),
           ),
-        ),
         Expanded(child: body),
       ],
     );

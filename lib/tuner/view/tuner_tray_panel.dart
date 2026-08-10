@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/appliance/host_page_chrome.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/common/pill_tabs.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
@@ -21,10 +21,7 @@ import 'package:segno/tuner/cubit/tuner_cubit.dart';
 /// keeps that promise without a lifecycle of its own.
 class TunerTrayPanel extends StatefulWidget {
   /// Creates a [TunerTrayPanel].
-  const TunerTrayPanel({required this.onBack, super.key});
-
-  /// Returns to the tray's landing destination (does not dismiss the tray).
-  final VoidCallback onBack;
+  const TunerTrayPanel({super.key});
 
   @override
   State<TunerTrayPanel> createState() => _TunerTrayPanelState();
@@ -74,38 +71,21 @@ class _TunerTrayPanelState extends State<TunerTrayPanel> {
 
     return KeyedSubtree(
       key: const Key('tuner_tray_panel'),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          HostTrayChromeBar(
-            backKey: const Key('tuner_back'),
-            title: l10n.trayTunerLabel,
-            onBack: widget.onBack,
-          ),
-          if (tabs.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(19, 12, 19, 0),
-              child: PillTabs<int>(
-                tabs: tabs,
-                selected: tuner.input,
-                onChanged: context.read<TunerCubit>().selectInput,
-              ),
-            ),
-          Expanded(
-            child: Center(
-              child: channels == 0
-                  ? _TunerMessage(text: l10n.tunerNoDevice)
-                  : tabs.isEmpty
-                  // A device IS open, so "no audio device" would be wrong, and
-                  // "play a note" would be a promise nothing can keep: every
-                  // capture on this rig is a loopback of our own output.
-                  ? _TunerMessage(text: l10n.tunerNoTunableInput)
-                  : tuner.hasReading
-                  ? _TunerReadout(state: tuner)
-                  : _TunerMessage(text: l10n.tunerListening),
-            ),
-          ),
-        ],
+      child: ConsoleDomainPanel<int>(
+        title: l10n.trayTunerLabel,
+        tabsKey: const Key('tuner_tabs'),
+        selected: tuner.input,
+        onChanged: context.read<TunerCubit>().selectInput,
+        tabs: tabs,
+        body: Center(
+          child: channels == 0
+              ? _TunerMessage(text: l10n.tunerNoDevice)
+              : tabs.isEmpty
+              ? _TunerMessage(text: l10n.tunerNoTunableInput)
+              : tuner.hasReading
+              ? _TunerReadout(state: tuner)
+              : _TunerMessage(text: l10n.tunerListening),
+        ),
       ),
     );
   }
