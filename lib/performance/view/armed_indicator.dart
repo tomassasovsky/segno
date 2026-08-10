@@ -40,7 +40,7 @@ class ArmedIndicator extends StatelessWidget {
         children: [
           Icon(Icons.fiber_manual_record, size: 12, color: rec),
           const SizedBox(width: 6),
-          Text(
+          AppText(
             l10n.perfArmedElapsed(_format(state.elapsed)),
             style: theme.textTheme.labelLarge?.copyWith(
               color: rec,

@@ -14,6 +14,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/shortcuts_help_sheet.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:segno/window/window_chrome.dart';
 
 /// The commands for `TracksView`: the keyboard map plus the dispatch+announce
@@ -375,7 +376,7 @@ void showSessionOutcome(BuildContext context, SessionState state) {
     ..showSnackBar(
       SnackBar(
         key: const Key('tracks_session_snackbar'),
-        content: Semantics(liveRegion: true, child: Text(message)),
+        content: Semantics(liveRegion: true, child: AppText(message)),
       ),
     );
 }
@@ -418,17 +419,17 @@ Future<void> _promptPerformanceRecovery(BuildContext context) async {
       canPop: false,
       child: AlertDialog(
         key: const Key('perfRecovery_dialog'),
-        title: Text(l10n.perfRecoveryFound),
+        title: AppText(l10n.perfRecoveryFound),
         actions: [
           TextButton(
             key: const Key('perfRecovery_discard'),
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.perfRecoveryDiscard),
+            child: AppText(l10n.perfRecoveryDiscard),
           ),
           TextButton(
             key: const Key('perfRecovery_recover'),
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.perfRecoveryRecover),
+            child: AppText(l10n.perfRecoveryRecover),
           ),
         ],
       ),
@@ -446,7 +447,7 @@ void _showPerformanceDiscarded(BuildContext context) {
         key: const Key('tracks_perfDiscarded_snackbar'),
         content: Semantics(
           liveRegion: true,
-          child: Text(context.l10n.perfDiscarded),
+          child: AppText(context.l10n.perfDiscarded),
         ),
       ),
     );

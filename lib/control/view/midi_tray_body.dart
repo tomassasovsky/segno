@@ -792,7 +792,7 @@ class _MappingRow extends StatelessWidget {
                     children: [
                       SizedBox(
                         width: ConsoleValueBar.labelWidth,
-                        child: Text(
+                        child: AppText(
                           l10n.midiLearnBehavior.toUpperCase(),
                           textAlign: TextAlign.right,
                           style: TextStyle(

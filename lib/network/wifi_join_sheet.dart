@@ -119,7 +119,7 @@ class _WifiJoinSheetState extends State<_WifiJoinSheet> {
           children: [
             Row(
               children: [
-                Text(
+                AppText(
                   l10n.wifiJoinSheetTitle(widget.ssid),
                   style: TextStyle(
                     color: surface.textPrimary,
@@ -129,7 +129,7 @@ class _WifiJoinSheetState extends State<_WifiJoinSheet> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
+                  child: AppText(
                     widget.security ?? '',
                     style: TextStyle(
                       color: surface.textMuted,
@@ -150,7 +150,7 @@ class _WifiJoinSheetState extends State<_WifiJoinSheet> {
             _MaskedField(text: _passphrase, invalid: _tooShort),
             if (_tooShort) ...[
               const SizedBox(height: 10),
-              Text(
+              AppText(
                 l10n.wifiPassphraseTooShort(kWpa2PassphraseMinLength),
                 key: const Key('wifi_join_too_short'),
                 style: TextStyle(color: surface.rec, fontSize: 14),
@@ -195,7 +195,7 @@ class _MaskedField extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(
+          AppText(
             '•' * text.length,
             key: const Key('wifi_join_field'),
             style: TextStyle(

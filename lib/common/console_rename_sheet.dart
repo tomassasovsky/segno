@@ -140,7 +140,7 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
           children: [
             Row(
               children: [
-                Text(
+                AppText(
                   widget.title,
                   style: TextStyle(
                     color: surface.textPrimary,
@@ -152,7 +152,7 @@ class _ConsoleRenameSheetState extends State<_ConsoleRenameSheet> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
+                  child: AppText(
                     widget.subtitle,
                     style: TextStyle(
                       color: surface.textMuted,
@@ -216,7 +216,7 @@ class _NameField extends StatelessWidget {
         child: Row(
           children: [
             Flexible(
-              child: Text(
+              child: AppText(
                 text,
                 key: const Key('console_rename_field'),
                 maxLines: 1,

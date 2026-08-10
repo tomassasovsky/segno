@@ -377,15 +377,19 @@ void main() {
       await tester.pumpAndSettle();
       const surface = SurfaceTheme.dark;
 
-      final bare = tester.widget<Text>(
-        find.text(l10nOf(tester).inputOrdinal(1)),
+      final bare = tester.widget<AppText>(
+        find.byWidgetPredicate(
+          (w) => w is AppText && w.data == l10nOf(tester).inputOrdinal(1),
+        ),
       );
       expect(bare.style?.color, surface.textPrimary);
 
       await inputs.rename(0, 'guitar');
       await tester.pumpAndSettle();
-      final under = tester.widget<Text>(
-        find.text(l10nOf(tester).inputOrdinal(1)),
+      final under = tester.widget<AppText>(
+        find.byWidgetPredicate(
+          (w) => w is AppText && w.data == l10nOf(tester).inputOrdinal(1),
+        ),
       );
       expect(under.style?.color, surface.textMuted);
     });

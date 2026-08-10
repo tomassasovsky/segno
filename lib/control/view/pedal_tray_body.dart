@@ -417,7 +417,7 @@ class _SwitchCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              AppText(
                 legend,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -431,7 +431,7 @@ class _SwitchCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 5),
-              Text(
+              AppText(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -486,7 +486,7 @@ class _EffectsToggle extends StatelessWidget {
           decoration: BoxDecoration(
             border: Border(top: BorderSide(color: surface.line)),
           ),
-          child: Text(
+          child: AppText(
             label,
             style: TextStyle(
               color: surface.textMuted,

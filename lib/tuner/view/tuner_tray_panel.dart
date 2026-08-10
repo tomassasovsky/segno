@@ -129,7 +129,7 @@ class _TunerReadout extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         // The mockup's fs67, at the tray's own weight.
-        Text(
+        AppText(
           pitch.note,
           key: const Key('tuner_note'),
           style: TextStyle(
@@ -143,7 +143,7 @@ class _TunerReadout extends StatelessWidget {
         const SizedBox(height: 24),
         _TunerNeedle(cents: pitch.cents, inTune: pitch.isInTune),
         const SizedBox(height: 20),
-        Text(
+        AppText(
           l10n.tunerCentsAndHz(
             _cents(pitch.cents),
             state.hz.toStringAsFixed(1),
@@ -234,7 +234,7 @@ class _TunerMessage extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) => Text(
+  Widget build(BuildContext context) => AppText(
     text,
     key: const Key('tuner_message'),
     textAlign: TextAlign.center,

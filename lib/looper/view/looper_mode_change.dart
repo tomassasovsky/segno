@@ -7,6 +7,7 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/theme/theme.dart';
 
 /// The five looper modes, each with the one-liner that makes it choosable.
 ///
@@ -114,7 +115,7 @@ Future<bool> requestLooperModeChange(
         key: const Key('looperMode_timeout_snackbar'),
         content: Semantics(
           liveRegion: true,
-          child: Text(l10n.modeChangeTimedOut),
+          child: AppText(l10n.modeChangeTimedOut),
         ),
       ),
     );

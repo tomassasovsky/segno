@@ -80,7 +80,7 @@ class _GateBody extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              AppText(
                 failed
                     ? l10n.pedalFirmwareGateFailedTitle
                     : l10n.pedalFirmwareGateTitle,
@@ -91,7 +91,7 @@ class _GateBody extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
-              Text(
+              AppText(
                 failed
                     ? l10n.pedalFirmwareGateFailedBody
                     : l10n.pedalFirmwareGateBody(state.version ?? ''),
@@ -104,7 +104,7 @@ class _GateBody extends StatelessWidget {
                   child: FilledButton(
                     key: const Key('pedal_firmware_gate_continue'),
                     onPressed: context.read<PedalFirmwareCubit>().dismiss,
-                    child: Text(l10n.pedalFirmwareGateContinue),
+                    child: AppText(l10n.pedalFirmwareGateContinue),
                   ),
                 )
               else

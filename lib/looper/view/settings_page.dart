@@ -15,7 +15,7 @@ import 'package:segno/looper/view/looper_mode_section.dart';
 import 'package:segno/looper/view/rename_track_dialog.dart';
 import 'package:segno/looper/view/tempo_settings_section.dart';
 import 'package:segno/setup/setup_surface.dart';
-import 'package:segno/theme/surface_theme.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:segno/visualizer/visualizer.dart';
@@ -172,7 +172,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final defaultMode = context.watch<ControlCubit>().state.defaultMode;
     final refreshHz = context.watch<RefreshRateCubit>().state;
     return [
-      Text(l10n.settingsViewIntro, style: context.setupBody),
+      AppText(l10n.settingsViewIntro, style: context.setupBody),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.viewGroupLabel),
       const SizedBox(height: 12),
@@ -206,7 +206,7 @@ class _SettingsPageState extends State<SettingsPage> {
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.looperGroupLabel),
       const SizedBox(height: 12),
-      Text(l10n.defaultModeIntro, style: context.setupBody),
+      AppText(l10n.defaultModeIntro, style: context.setupBody),
       const SizedBox(height: 12),
       SetupOptionRow<InteractionMode>(
         selected: defaultMode,
@@ -227,7 +227,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
       const SizedBox(height: 20),
-      Text(l10n.refreshRateIntro, style: context.setupBody),
+      AppText(l10n.refreshRateIntro, style: context.setupBody),
       const SizedBox(height: 12),
       SetupOptionRow<int>(
         selected: refreshHz,
@@ -267,7 +267,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final tracks = context.watch<TracksCubit>();
     final looperTracks = context.watch<LooperBloc>().state.tracks;
     return [
-      Text(l10n.tracksIntro, style: context.setupBody),
+      AppText(l10n.tracksIntro, style: context.setupBody),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.tracksGroupLabel),
       const SizedBox(height: 12),
@@ -305,7 +305,7 @@ class _SettingsPageState extends State<SettingsPage> {
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.oneShotGroupLabel),
       const SizedBox(height: 12),
-      Text(l10n.oneShotIntro, style: context.setupBody),
+      AppText(l10n.oneShotIntro, style: context.setupBody),
       const SizedBox(height: 12),
       for (var i = 0; i < looperTracks.length; i++) ...[
         SetupTrackOneShotRow(
@@ -348,11 +348,11 @@ class _SettingsRail extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 9),
-              Text(l10n.settingsKicker, style: context.setupKicker),
+              AppText(l10n.settingsKicker, style: context.setupKicker),
             ],
           ),
           const SizedBox(height: 28),
-          Text(l10n.settingsTitle, style: context.setupTitle),
+          AppText(l10n.settingsTitle, style: context.setupTitle),
           const SizedBox(height: 20),
           for (final section in SettingsSection.values)
             // The Updates tab appears only where in-app updates are supported
@@ -405,7 +405,7 @@ class _SectionTab extends StatelessWidget {
             onTap: onTap,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-              child: Text(
+              child: AppText(
                 label,
                 style: TextStyle(
                   color: selected

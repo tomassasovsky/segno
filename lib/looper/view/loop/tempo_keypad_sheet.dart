@@ -178,7 +178,7 @@ class _TempoKeypadSheetState extends State<_TempoKeypadSheet> {
             children: [
               Row(
                 children: [
-                  Text(
+                  AppText(
                     l10n.loopTempoRow,
                     style: TextStyle(
                       color: surface.textPrimary,
@@ -188,7 +188,7 @@ class _TempoKeypadSheetState extends State<_TempoKeypadSheet> {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
+                    child: AppText(
                       l10n.loopTempoSheetUnit,
                       style: TextStyle(
                         color: surface.textMuted,
@@ -334,7 +334,7 @@ class _Field extends StatelessWidget {
           // row — the field is 18px mono on a 1920px sheet, but nothing about
           // the layout should depend on that staying true.
           Flexible(
-            child: Text(
+            child: AppText(
               text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -404,7 +404,7 @@ class _PadKey extends StatelessWidget {
           ),
           child: icon != null
               ? Icon(icon, size: 19, color: tint)
-              : Text(
+              : AppText(
                   label,
                   style: TextStyle(
                     color: tint,

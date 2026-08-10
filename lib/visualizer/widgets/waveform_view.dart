@@ -73,7 +73,7 @@ class WaveformView extends StatelessWidget {
             if (selectedTrack != null)
               Align(
                 alignment: Alignment.topCenter,
-                child: Text(
+                child: AppText(
                   selectedTrack!,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: surface?.textPrimary ?? Colors.white,

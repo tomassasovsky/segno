@@ -282,19 +282,15 @@ class _RailItem extends StatelessWidget {
             glyph(tint),
             const SizedBox(width: 9),
             Expanded(
-              child: Transform.translate(
-                offset: const Offset(0, 1),
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: tint,
-                    fontSize: 14,
-                    height: 1.1,
-                    leadingDistribution: TextLeadingDistribution.even,
-                    fontWeight: FontWeight.w500,
-                  ),
+              child: AppText(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: tint,
+                  fontSize: 14,
+                  height: 1.1,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
