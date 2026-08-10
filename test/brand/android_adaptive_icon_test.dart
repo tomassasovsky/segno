@@ -96,27 +96,50 @@ void main() {
       }
     });
 
-    test('a flavour band does not sit under the glyph', () {
-      // The band lives at the canvas edge, where a mask crops it. What it must
-      // not do is run into the glyph — the pre-rebrand icon kept its logo above
-      // it, and this keeps the same clearance.
+    test('a flavour band bleeds, clears the glyph, and names its build', () {
+      // The band is what tells three installed builds apart. It has to reach
+      // the canvas edge to be cropped rather than framed, has to stop short of
+      // the glyph, and has to carry letterforms — a bare blue band on all of
+      // them would pass a check that only looked for the colour.
+      final words = <String>{};
       for (final flavour in ['development', 'staging']) {
         final xml = File(
           'android/app/src/$flavour/res/drawable/ic_launcher_foreground.xml',
         ).readAsStringSync();
-        expect(xml, contains('#13B9FD'), reason: '$flavour lost its band');
+
         final band = RegExp(
-          r'<group\s+android:scaleX="([\d.]+)"[^>]*?'
-          r'android:translateY="([\d.]+)"[^>]*>\s*<path\s+'
-          r'android:fillColor="#13B9FD"\s+'
-          r'android:pathData="M0,(\d+)h',
+          r'<path\s+android:fillColor="#4FC3F7"\s+'
+          r'android:pathData="M0,([\d.]+)h108v([\d.]+)h-108z"',
         ).firstMatch(xml);
-        expect(band, isNotNull, reason: '$flavour band moved or was rewritten');
-        final top =
-            double.parse(band!.group(1)!) * double.parse(band.group(3)!) +
-            double.parse(band.group(2)!);
-        expect(_placedGlyph(xml).bottom, lessThan(top), reason: flavour);
+        expect(
+          band,
+          isNotNull,
+          reason:
+              '$flavour lost its band, or it stopped spanning the canvas — a '
+              'band inset from the edge reads as a frame under the mask, and '
+              '#4FC3F7 is the colour the shipped rasters use',
+        );
+        final top = double.parse(band!.group(1)!);
+        final height = double.parse(band.group(2)!);
+        expect(top + height, closeTo(canvas, 0.001), reason: flavour);
+        // Inside the visible 72dp area (18..90), or it is invisible on every
+        // mask before it is cropped by any of them.
+        expect(top, lessThan(90));
+
+        final glyph = _placedGlyph(xml);
+        expect(glyph.bottom, lessThan(top), reason: '$flavour glyph hits band');
+
+        final letters = RegExp(
+          'android:fillColor="#(?:FFFFFF|000000)"'
+          r'\s+'
+          'android:pathData="(M419[^"]+|M462[^"]+)"',
+        ).firstMatch(xml);
+        expect(letters, isNotNull, reason: '$flavour band says nothing');
+        words.add(letters!.group(1)!);
       }
+      // And they say DIFFERENT things: the regression this guards against is
+      // three builds that look identical in the launcher.
+      expect(words, hasLength(2));
     });
   });
 }
@@ -181,7 +204,6 @@ List<Offset> _flatten(String data) {
 
   final out = <Offset>[];
   var cursor = Offset.zero;
-  Offset? start;
   String? command;
   var i = 0;
   double next() => double.parse(tokens[i++]);
@@ -196,8 +218,6 @@ List<Offset> _flatten(String data) {
     switch (command) {
       case 'M' || 'L':
         cursor = Offset(next(), next());
-        start ??= cursor;
-        if (command == 'M') start = cursor;
         out.add(cursor);
       case 'C':
         final c1 = Offset(next(), next());
@@ -226,12 +246,9 @@ List<Offset> _flatten(String data) {
       case 'H':
         cursor = Offset(next(), cursor.dy);
         out.add(cursor);
-      case 'Z' || 'z':
-        if (start != null) {
-          cursor = start;
-          out.add(cursor);
-        }
-        i++;
+      // No `Z` case: letters are consumed at the top of the loop, so the
+      // switch only ever sees numbers. The closing segment adds no extreme a
+      // bounding box has not already seen.
       default:
         i++;
     }
