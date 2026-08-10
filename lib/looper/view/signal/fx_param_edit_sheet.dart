@@ -52,9 +52,13 @@ class FxParamEditSheet extends StatefulWidget {
 
   /// Opens the sheet for [spec] and resolves once it closes.
   ///
-  /// Returns the committed plain value, or null if the edit was cancelled —
-  /// the caller does not need it to restore, since [onChanged] has already been
-  /// called with the opening value by then.
+  /// Returns the committed plain value, or null if the sheet closed without
+  /// committing — which is NOT the same as cancelling. Only the Cancel button
+  /// restores: it calls [onChanged] with the opening value on the way out.
+  /// Tapping the scrim or dragging the sheet down keeps whatever the drag
+  /// last wrote, because every drag has already written it. That is the
+  /// behaviour a live parameter wants — the sound you are hearing when you
+  /// dismiss is the sound you keep — and Cancel is the way back.
   static Future<double?> show(
     BuildContext context, {
     required PluginParamInfo spec,
