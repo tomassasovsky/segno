@@ -129,9 +129,14 @@ class LooperRepository {
   /// recovers a device the user did not deliberately stop.
   bool _intendRunning = false;
 
-  /// Single-flight scan backing [_recoverUnavailablePlugins]: started the first
-  /// time a restored chain surfaces an unavailable plugin, then reused so the
-  /// plugin dirs are scanned at most once per session.
+  /// Single-flight scan behind both recoveries: started the first time a
+  /// restored chain surfaces a plugin that cannot be resolved — unavailable
+  /// on a lane or a monitor ([_recoverUnavailablePlugins]), unnamed on a bus
+  /// ([_recoverUnnamedBusPlugins]) — then reused so the plugin dirs are
+  /// scanned at most once per session.
+  ///
+  /// The bus recovery runs whether or not the engine is running, so this can
+  /// first be set with it stopped. Scanning does not touch the device.
   Future<List<PluginDescriptor>>? _restoredPluginScan;
 
   /// The desired quantize-recording state, re-applied to the engine on every
@@ -820,6 +825,14 @@ class LooperRepository {
   static bool _hasUnavailablePlugin(Iterable<TrackEffect> effects) =>
       effects.any((e) => e is PluginEffect && e.unavailable);
 
+  /// Whether [effects] holds a hosted plugin with no display name.
+  ///
+  /// The bus twin of [_hasUnavailablePlugin]: every bus plugin is unavailable
+  /// by construction, so that test would say "needs a scan" forever. What a
+  /// bus entry can be missing is its NAME, and only a scan can supply one.
+  static bool _hasUnnamedPlugin(Iterable<TrackEffect> effects) =>
+      effects.any((e) => e is PluginEffect && e.name.isEmpty);
+
   /// Recovers plugins that failed to load because the engine's in-process scan
   /// cache was empty when their chain was applied.
   ///
@@ -860,6 +873,54 @@ class LooperRepository {
           _applyLaneEffects(key.$1, key.$2);
         }
         monitorKeys.forEach(_applyMonitorEffects);
+      }),
+    );
+  }
+
+  /// Names the bus chains that have a plugin with no display name, scanning
+  /// once if nothing has scanned yet.
+  ///
+  /// The bus twin of [_recoverUnavailablePlugins], deliberately separate: what
+  /// a bus entry can be missing is its NAME, and the two recoveries share
+  /// neither their test nor their repair. Every bus plugin is unavailable by
+  /// construction, so the lane test would ask for a scan forever; and a bus
+  /// entry has no engine slot to rebind or to show as loading, so the repair
+  /// is a re-mark and a projection rather than a re-apply.
+  ///
+  /// The resolved name lives in memory until the chain is next written — a
+  /// write persists it, but this does not write. So a chain named only here,
+  /// whose plugin is then uninstalled, is nameless again on the next boot.
+  /// Rare, and the alternative is a repository that persists behind its
+  /// caller's back.
+  void _recoverUnnamedBusPlugins() {
+    final trackKeys = [
+      for (final e in _trackEffects.entries)
+        if (_hasUnnamedPlugin(e.value)) e.key,
+    ];
+    final masterUnnamed = _hasUnnamedPlugin(_masterEffects);
+    if (trackKeys.isEmpty && !masterUnnamed) return;
+    // A populated catalog means a scan already ran this session, so a name
+    // still missing is a plugin the catalog does not have — same argument as
+    // [_recoverUnavailablePlugins].
+    if (pluginCatalog.descriptors.isNotEmpty) return;
+    final scan = _restoredPluginScan ??= pluginCatalog.scan();
+    unawaited(
+      scan.then((_) {
+        // Not gated on the engine running: naming writes no engine slot, so a
+        // chain that lost its device while the scan ran still ends up named.
+        // It IS gated on being alive — the scan outlives a disposed
+        // repository, and projecting into a closed stream throws.
+        if (_controller.isClosed) return;
+        for (final channel in trackKeys) {
+          final effects = _trackEffects[channel];
+          if (effects != null) {
+            _trackEffects[channel] = _markBusUnsupportedPlugins(effects);
+          }
+        }
+        if (masterUnnamed) {
+          _masterEffects = _markBusUnsupportedPlugins(_masterEffects);
+        }
+        _reproject();
       }),
     );
   }
@@ -2575,6 +2636,10 @@ class LooperRepository {
   /// The scanned descriptor for plugin [id], or null when the catalog hasn't
   /// seen it (not yet scanned, or uninstalled).
   PluginDescriptor? _descriptorFor(String id) {
+    // A failed-to-scan descriptor carries an EMPTY id and the offending
+    // FILE's name, so an entry whose id decoded to nothing would match one
+    // and take a broken bundle's filename as its display name.
+    if (id.isEmpty) return null;
     for (final d in pluginCatalog.descriptors) {
       if (d.id == id) return d;
     }
@@ -2665,6 +2730,9 @@ class LooperRepository {
       _trackEffects[channel] = clamped;
     }
     _reproject();
+    // A restored bus chain whose plugin was not yet scanned lands with no
+    // name, and nothing else will ever fill one in.
+    _recoverUnnamedBusPlugins();
     if (!_intendRunning) return EngineResult.ok;
     return _applyTrackEffects(channel);
   }
@@ -2680,6 +2748,7 @@ class LooperRepository {
   EngineResult setMasterEffects({required List<TrackEffect> effects}) {
     _masterEffects = _markBusUnsupportedPlugins(_clampAndMint(effects));
     _reproject();
+    _recoverUnnamedBusPlugins();
     if (!_intendRunning) return EngineResult.ok;
     return _applyMasterEffects();
   }
@@ -3030,12 +3099,20 @@ class LooperRepository {
   /// situation never appears, because a chain with rows to draw is not empty.
   /// Nothing copies a bound chain onto a bus today, so this bites the moment
   /// something does: racks (#535), or a lane-to-bus paste.
-  static List<TrackEffect> _markBusUnsupportedPlugins(
-    List<TrackEffect> effects,
-  ) => [
+  ///
+  /// The name comes from the catalog, and at these stages the catalog is its
+  /// ONLY source: a bus entry never loads, so [_bindPluginSlot] — which is
+  /// what names a lane's or a monitor's plugin — never runs on one. Left to
+  /// the entry, an inserted plugin keeps the empty name the insert built it
+  /// with and reads as a 32-character TUID forever, and one that was relinked
+  /// onto a different plugin keeps the name of the plugin it replaced. An id
+  /// the catalog has never seen keeps whatever the entry carried, so an
+  /// uninstalled plugin still says which one it was.
+  List<TrackEffect> _markBusUnsupportedPlugins(List<TrackEffect> effects) => [
     for (final fx in effects)
       if (fx is PluginEffect)
         fx.copyWith(
+          name: _descriptorFor(fx.ref.id)?.name ?? fx.name,
           unavailable: true,
           unsupported: true,
           loading: false,
