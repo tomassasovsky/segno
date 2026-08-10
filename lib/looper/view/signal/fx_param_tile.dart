@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -249,7 +250,7 @@ class FxParamTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FxParamTileMetrics._boxRadius),
-        child: cell,
+        child: ExcludeSemantics(child: cell),
       ),
     );
   }
@@ -295,13 +296,18 @@ class FxParamSwitchCell extends StatelessWidget {
     return _FxParamCell(
       name: spec.name,
       fill: _on ? 1 : 0,
+      // The console's own switch, not Material's. `ConsoleSwitch`'s doc says
+      // why — Material brings a geometry, a ripple and a thumb elevation the
+      // mockups do not have — and this was the only `Switch(` left in `lib`.
+      // At 60x36 it also overflowed the pen's 37x22 `ToggleSm`, and with no
+      // `switchTheme` registered it painted its "on" track near-white
+      // directly above an accent-blue indicator.
       control: Center(
-        child: Semantics(
-          label: semanticLabel ?? spec.name,
-          child: Switch(
-            value: _on,
-            onChanged: (on) => onChanged(on ? spec.max : spec.min),
-          ),
+        child: ConsoleSwitch(
+          small: true,
+          value: _on,
+          semanticLabel: semanticLabel ?? spec.name,
+          onChanged: (on) => onChanged(on ? spec.max : spec.min),
         ),
       ),
     );
@@ -360,7 +366,6 @@ class FxParamEnumCell extends StatelessWidget {
         value: label,
         button: true,
         child: PopupMenuButton<int>(
-          tooltip: semanticLabel ?? spec.name,
           padding: EdgeInsets.zero,
           initialValue: step,
           onSelected: (s) => onChanged(_plainFor(s)),

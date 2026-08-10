@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
 import 'package:segno/looper/view/signal/fx_param_edit_sheet.dart';
@@ -132,6 +133,19 @@ const _twoState = PluginParamInfo(
   flags: 0x01,
 );
 
+/// The octaver's Shift: 48 divisions, past the menu's 24-step ceiling, so it
+/// routes to the tile and its sheet.
+const _shift = PluginParamInfo(
+  id: 13,
+  name: 'Shift',
+  unit: 'st',
+  min: -24,
+  max: 24,
+  def: 0,
+  stepCount: 48,
+  flags: 0x01,
+);
+
 const _pluginBypass = PluginParamInfo(
   id: 9,
   name: 'Bypass',
@@ -164,7 +178,14 @@ void main() {
       MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        theme: ThemeData(extensions: const [SurfaceTheme.dark]),
+        // Both extensions, from the app's own mapping: the switch cell draws
+        // a `ConsoleSwitch`, whose focus ring reads `context.routingGraph`.
+        theme: ThemeData(
+          extensions: [
+            SurfaceTheme.dark,
+            routingGraphThemeFromSurface(SurfaceTheme.dark),
+          ],
+        ),
         home: Scaffold(
           body: SignalFxEditor(
             scope: scope,
@@ -305,7 +326,7 @@ void main() {
     expect(find.byType(FxParamSwitchCell), findsOneWidget);
     expect(find.byType(FxParamEnumCell), findsNothing);
 
-    await tester.tap(find.byType(Switch));
+    await tester.tap(find.byType(ConsoleSwitch));
     await tester.pumpAndSettle();
 
     // Straight to the value: a switch is the one control whose position IS
@@ -416,19 +437,23 @@ void main() {
     // Not "Bypass" and "Mode": a grid of four effects has four of each, and a
     // screen reader hears the same word four times with nothing to tell it
     // which effect answers to it.
+    // By label rather than by node shape: `ConsoleSwitch` puts the toggle
+    // state on its own Semantics and the tap action on the
+    // `FocusableTapTarget` beneath it, so no single node carries both.
+    expect(find.bySemanticsLabel('Vintage of Octaver'), findsWidgets);
     expect(
-      tester.getSemantics(find.byType(Switch)),
+      tester.getSemantics(find.byType(ConsoleSwitch)),
       matchesSemantics(
         label: 'Vintage of Octaver',
-        hasTapAction: true,
-        hasEnabledState: true,
-        isEnabled: true,
-        isFocusable: true,
         hasToggledState: true,
         isToggled: true,
-        hasFocusAction: true,
       ),
     );
+
+    // And it is the control it announces itself as.
+    await tester.tap(find.byType(ConsoleSwitch));
+    await tester.pump();
+    expect(scope.pluginWrites.last.$3, 0);
     // Name and step, and nothing else: the box's own text and its "▾" are
     // excluded, or the reader announces the glyph.
     expect(
@@ -443,6 +468,66 @@ void main() {
         isFocusable: true,
       ),
     );
+  });
+
+  testWidgets("the switch cell wears the pen's small toggle", (tester) async {
+    final scope = _FakeScope([
+      const PluginEffect(
+        ref: PluginRef(format: PluginFormat.vst3, id: 'test.oct'),
+        name: 'Octaver',
+        params: [_twoState],
+        paramValues: {11: 1},
+      ),
+    ]);
+    await pump(tester, scope);
+
+    // `ToggleSm`, 37x22 — not `Toggle`, and emphatically not Material's
+    // `Switch`, which measured 60x36 here and painted a near-white track
+    // over an accent-blue indicator. A 78px tile cannot hold either.
+    expect(
+      tester.getSize(find.byType(ConsoleSwitch)),
+      ConsoleSwitch.smallTrackSize,
+    );
+  });
+
+  testWidgets('a stepped parameter can only land on a step', (tester) async {
+    final scope = _FakeScope([
+      const PluginEffect(
+        ref: PluginRef(format: PluginFormat.vst3, id: 'test.oct'),
+        name: 'Octaver',
+        params: [_shift],
+        paramValues: {13: 0},
+      ),
+    ]);
+    await pump(tester, scope);
+
+    await tester.tap(find.byKey(const Key('signal_fx_param_0')));
+    await tester.pumpAndSettle();
+
+    // Dragged across the track, not tapped once: the octaver's Shift has 48
+    // divisions and lives past the menu's 24-step ceiling, so the sheet is
+    // the ONLY thing keeping a pitch shift on a semitone. Every value it
+    // writes has to be one.
+    final track = find.byKey(const Key('fxParamSheet_track'));
+    final box = tester.getRect(track);
+    final drag = await tester.startGesture(box.centerLeft);
+    for (var i = 1; i <= 12; i++) {
+      await drag.moveTo(
+        Offset(box.left + box.width * i / 12.7, box.center.dy),
+      );
+      await tester.pump();
+    }
+    await drag.up();
+    await tester.pumpAndSettle();
+
+    expect(scope.pluginWrites, isNotEmpty);
+    for (final (_, _, value) in scope.pluginWrites) {
+      expect(
+        value,
+        closeTo(value.roundToDouble(), 1e-9),
+        reason: '$value is between two semitones',
+      );
+    }
   });
 
   testWidgets('the sheet closes when its entry leaves the chain', (
