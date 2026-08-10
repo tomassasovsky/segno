@@ -7,7 +7,7 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/view/loop/loop_tray_panel.dart';
 import 'package:segno/looper/view/signal/signal_tray_panel.dart';
 import 'package:segno/looper/view/tracks/tracks_tray_panel.dart';
-import 'package:segno/looper/view/tray/tray_home.dart';
+import 'package:segno/looper/view/tray/tray_brightness_popover.dart';
 import 'package:segno/looper/view/tray/tray_metrics.dart';
 import 'package:segno/looper/view/tray/tray_navigation_rail.dart';
 import 'package:segno/network/network_tray_panel.dart';
@@ -23,7 +23,7 @@ import 'package:segno/tuner/view/tuner_tray_panel.dart';
 /// routes the performer away from the stage view. The `KeyedSubtree` on the
 /// destination is what makes the swap discard the outgoing face's state
 /// rather than let Flutter reuse its element for the incoming one.
-class TrayPanel extends StatelessWidget {
+class TrayPanel extends StatefulWidget {
   /// Creates a [TrayPanel].
   const TrayPanel({this.motion = kTrayMotion, super.key});
 
@@ -37,10 +37,30 @@ class TrayPanel extends StatelessWidget {
   final Duration motion;
 
   @override
+  State<TrayPanel> createState() => _TrayPanelState();
+}
+
+class _TrayPanelState extends State<TrayPanel> {
+  /// Whether the brightness popover is up. Local, not tray state: it is a
+  /// drawer on one button, not a place the console can be in — nothing else
+  /// reads it, and it must not survive a close-and-reopen.
+  bool _brightness = false;
+
+  @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
     final state = context.watch<SettingsTrayCubit>().state;
+    // `TrayPanel` is never unmounted — the shell translates it off-screen —
+    // so a popover left open stays open, and `closeTray` resets the
+    // destination under it. Reopening would then float it over a face it was
+    // never opened from. Cleared here rather than in a listener because this
+    // already rebuilds on every drag frame.
+    if (state.dragProgress == 0 && _brightness) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _brightness = false);
+      });
+    }
     final cubit = context.read<SettingsTrayCubit>();
 
     return Material(
@@ -59,7 +79,7 @@ class TrayPanel extends StatelessWidget {
       // (opening). [motion] is the shell's own — zero mid-drag, so the drag
       // still tracks the finger exactly.
       child: TweenAnimationBuilder<double>(
-        duration: motion,
+        duration: widget.motion,
         curve: kTrayMotionCurve,
         tween: Tween<double>(end: state.dragProgress.clamp(0.0, 1.0)),
         builder: (context, lift, child) => DecoratedBox(
@@ -114,53 +134,39 @@ class TrayPanel extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const TrayNavigationRail(),
+                      TrayNavigationRail(
+                        onBrightness: () =>
+                            setState(() => _brightness = !_brightness),
+                      ),
                       Expanded(
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(20, 18, 20, 40),
-                          // Home FILLS the pane — it is a grid of cards sized
-                          // from the space available, not a content-sized
-                          // blob. The config faces keep a fixed
+                          // The config faces keep a fixed
                           // [_TrayFaceFrame] footprint and are centred
                           // individually, since a WiFi list stretched across
                           // a 1080p sheet reads worse than a centred panel.
                           child: KeyedSubtree(
                             key: ValueKey(state.destination),
                             child: switch (state.destination) {
-                              SettingsTrayDestination.home => const TrayHome(),
                               SettingsTrayDestination.signal =>
-                                const _TrayFaceFrame(
-                                  child: SignalTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: SignalTrayPanel()),
                               SettingsTrayDestination.control =>
-                                const _TrayFaceFrame(
-                                  child: ControlTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: ControlTrayPanel()),
                               SettingsTrayDestination.loop =>
-                                const _TrayFaceFrame(
-                                  child: LoopTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: LoopTrayPanel()),
                               SettingsTrayDestination.tracks =>
-                                const _TrayFaceFrame(
-                                  child: TracksTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: TracksTrayPanel()),
                               SettingsTrayDestination.audio =>
-                                const _TrayFaceFrame(
-                                  child: AudioTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: AudioTrayPanel()),
                               SettingsTrayDestination.tuner => _TrayFaceFrame(
                                 child: TunerTrayPanel(
-                                  onBack: cubit.showHome,
+                                  onBack: cubit.showLanding,
                                 ),
                               ),
                               SettingsTrayDestination.network =>
-                                const _TrayFaceFrame(
-                                  child: NetworkTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: NetworkTrayPanel()),
                               SettingsTrayDestination.system =>
-                                const _TrayFaceFrame(
-                                  child: SystemTrayPanel(),
-                                ),
+                                const _TrayFaceFrame(child: SystemTrayPanel()),
                             },
                           ),
                         ),
@@ -168,6 +174,16 @@ class TrayPanel extends StatelessWidget {
                     ],
                   ),
                 ),
+                // Over the rail and the face both, since it hangs off the
+                // rail's edge into the pane. Last in the Stack so its scrim
+                // takes the taps before the panel's own dismiss detector,
+                // which would otherwise close the whole tray.
+                if (_brightness)
+                  Positioned.fill(
+                    child: TrayBrightnessPopover(
+                      onDismiss: () => setState(() => _brightness = false),
+                    ),
+                  ),
               ],
             ),
           ),

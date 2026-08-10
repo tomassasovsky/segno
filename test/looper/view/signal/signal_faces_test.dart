@@ -182,12 +182,11 @@ void main() {
 
   group('the rail seam', () {
     test('Signal is a rail destination, first of the domains', () {
-      // The mockups draw the signal path before the things that drive it, and
-      // `home` stays ahead of all of them until the parent plan answers what
-      // the home face is for.
+      // The mockups draw the signal path before the things that drive it:
+      // Signal is what everything under it configures, so it reads first.
       expect(
-        SettingsTrayDestination.values.take(2),
-        [SettingsTrayDestination.home, SettingsTrayDestination.signal],
+        SettingsTrayDestination.values.first,
+        SettingsTrayDestination.signal,
       );
     });
 
@@ -222,7 +221,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tray.state.signalTab, FxStage.master);
-      expect(tray.state.destination, SettingsTrayDestination.home);
+      expect(tray.state.destination, SettingsTrayDestination.signal);
     });
   });
 

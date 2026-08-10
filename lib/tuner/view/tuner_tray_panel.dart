@@ -23,7 +23,7 @@ class TunerTrayPanel extends StatefulWidget {
   /// Creates a [TunerTrayPanel].
   const TunerTrayPanel({required this.onBack, super.key});
 
-  /// Returns to the tray home tiles (does not dismiss the tray).
+  /// Returns to the tray's landing destination (does not dismiss the tray).
   final VoidCallback onBack;
 
   @override
