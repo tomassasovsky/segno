@@ -63,8 +63,22 @@ ssh -o BatchMode=yes "$HOST" 'systemctl stop segno.service'
 # running its release build. Leaving a floor unit dark is not an acceptable exit.
 restore() {
   echo
+  echo "==> stopping the profile build"
+  # Kill the profile instance FIRST and by recorded PID. It holds the ALSA
+  # device; starting the release build while it is still alive makes the release
+  # build fail with `audio auto-start: open failed result=device` and look, from
+  # the console, like the appliance came back broken.
+  #
+  # By PID, not `pkill -f /data/profile/segno`: that pattern also matches the
+  # ssh-spawned shell running it, so pkill kills its own session and the rest of
+  # the restore never runs. Learned the hard way.
+  ssh -o BatchMode=yes "$HOST" "
+    [ -f $REMOTE_DIR/segno.pid ] && kill -9 \$(cat $REMOTE_DIR/segno.pid) 2>/dev/null
+    rm -f $REMOTE_DIR/segno.pid
+    true
+  " || true
   echo "==> restoring segno.service"
-  ssh -o BatchMode=yes "$HOST" 'systemctl start segno.service' || true
+  ssh -o BatchMode=yes "$HOST" 'systemctl restart segno.service' || true
 }
 trap restore EXIT INT TERM
 
@@ -99,6 +113,7 @@ ssh -o BatchMode=yes "$HOST" "
   export SEGNO_RT_AUDIO=1
   export SEGNO_ALSA_PERIODS=3
   setsid nohup $REMOTE_DIR/segno >$REMOTE_DIR/profile.log 2>&1 </dev/null &
+  echo \$! > $REMOTE_DIR/segno.pid
 "
 
 echo "==> waiting for the VM service"
