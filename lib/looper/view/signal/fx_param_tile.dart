@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/common/console_surface.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -18,7 +17,8 @@ abstract final class FxParamTileMetrics {
   /// Space between tiles, horizontally and between rows.
   static const double gutter = 7;
 
-  /// The value box — the only part that differs between kinds.
+  /// The value box at text scale 1 — the only part that differs between
+  /// kinds, and the part that absorbs any growth in the two text lines.
   static const double boxHeight = 36;
 
   /// The value-position readout under the box. A readout, not a handle.
@@ -98,7 +98,14 @@ class _FxParamCell extends StatelessWidget {
             ),
           ),
           const SizedBox(height: FxParamTileMetrics._gap),
-          SizedBox(height: FxParamTileMetrics.boxHeight, child: control),
+          // The box takes the slack, so the tile's own height stays exactly
+          // [FxParamTileMetrics.height] whatever the text does. It was a fixed
+          // 36 under a fixed 59, which left the name and the readout no room
+          // to grow: at a system text scale of 1.2 every tile in the grid
+          // overflowed its bottom, one red bar per parameter across the whole
+          // strip. [FxParamTileMetrics.boxHeight] is what it measures at
+          // scale 1, and now a floor to fall from rather than a promise.
+          Expanded(child: control),
           const SizedBox(height: FxParamTileMetrics._gap),
           _FxParamIndicator(fill: fill, muted: muted),
         ],
@@ -273,172 +280,6 @@ class FxParamTile extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(FxParamTileMetrics._boxRadius),
         child: ExcludeSemantics(child: cell),
-      ),
-    );
-  }
-}
-
-/// A two-state plugin parameter (`stepCount == 1`) whose states have no
-/// names of their own. The switch's position IS its value, so the cell carries
-/// no caption — the DS drops the redundant line the old control had, and gives
-/// the control exactly 36px, which leaves room for nothing else.
-///
-/// A two-state parameter whose states ARE named — an octaver's phase vocoder
-/// against its PSOLA — goes to [FxParamEnumCell] instead. A switch cannot show
-/// a name, and a parameter reduced to a nameless toggle has lost the only
-/// thing that said what it does.
-class FxParamSwitchCell extends StatelessWidget {
-  /// Creates an [FxParamSwitchCell].
-  const FxParamSwitchCell({
-    required this.spec,
-    required this.value,
-    required this.onChanged,
-    this.semanticLabel,
-    super.key,
-  });
-
-  /// The parameter this cell drives.
-  final PluginParamInfo spec;
-
-  /// The current plain value.
-  final double value;
-
-  /// Called with the new plain value — [PluginParamInfo.max] or `min`.
-  final ValueChanged<double> onChanged;
-
-  /// What a screen reader calls this cell. Defaults to the parameter's name,
-  /// which on a grid of four effects is four cells all called "Mix".
-  final String? semanticLabel;
-
-  /// A plain value reads as on from the midpoint up.
-  bool get _on => value >= (spec.min + spec.max) / 2;
-
-  @override
-  Widget build(BuildContext context) {
-    return _FxParamCell(
-      name: spec.name,
-      fill: _on ? 1 : 0,
-      // The console's own switch, not Material's. `ConsoleSwitch`'s doc says
-      // why — Material brings a geometry, a ripple and a thumb elevation the
-      // mockups do not have — and this was the only `Switch(` left in `lib`.
-      // At 60x36 it also overflowed the pen's 37x22 `ToggleSm`, and with no
-      // `switchTheme` registered it painted its "on" track near-white
-      // directly above an accent-blue indicator.
-      // The whole 78x36 control band toggles, not just the 37x22 pill: the
-      // pen's geometry is a drawing size, and taking it as the target would
-      // put a 37x22 hit area on a console aimed at with a foot-height finger.
-      // Nothing else in the cell wants the tap.
-      control: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        excludeFromSemantics: true,
-        onTap: () => onChanged(_on ? spec.min : spec.max),
-        child: Center(
-          child: ConsoleSwitch(
-            small: true,
-            value: _on,
-            semanticLabel: semanticLabel ?? spec.name,
-            onChanged: (on) => onChanged(on ? spec.max : spec.min),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A small named-step parameter (`2 <= stepCount <= 24`) as a menu of the
-/// plugin's own step labels. The indicator carries the step, so the cell shows
-/// no separate caption.
-class FxParamEnumCell extends StatelessWidget {
-  /// Creates an [FxParamEnumCell].
-  const FxParamEnumCell({
-    required this.spec,
-    required this.value,
-    required this.onChanged,
-    this.semanticLabel,
-    super.key,
-  });
-
-  /// The parameter this cell drives.
-  final PluginParamInfo spec;
-
-  /// The current plain value.
-  final double value;
-
-  /// Called with the plain value of the chosen step.
-  final ValueChanged<double> onChanged;
-
-  /// What a screen reader calls this cell. Same rule as the switch cell's.
-  final String? semanticLabel;
-
-  /// The step index nearest [value], in `0..spec.stepCount`.
-  int get _step {
-    final span = spec.max - spec.min;
-    if (span == 0) return 0;
-    final norm = ((value - spec.min) / span).clamp(0.0, 1.0);
-    return (norm * spec.stepCount).round();
-  }
-
-  double _plainFor(int step) =>
-      spec.min + (spec.max - spec.min) * step / spec.stepCount;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    final step = _step;
-    final label = step < spec.valueTexts.length
-        ? spec.valueTexts[step]
-        : step.toString();
-
-    return _FxParamCell(
-      name: spec.name,
-      fill: spec.stepCount == 0 ? 0 : step / spec.stepCount,
-      control: Semantics(
-        label: semanticLabel ?? spec.name,
-        value: label,
-        button: true,
-        child: PopupMenuButton<int>(
-          // Empty, not absent: absent means Flutter's own "Show menu", which
-          // is a worse answer than the parameter's name and is what the
-          // wrapper above already says properly.
-          tooltip: '',
-          padding: EdgeInsets.zero,
-          initialValue: step,
-          onSelected: (s) => onChanged(_plainFor(s)),
-          itemBuilder: (context) => [
-            for (var s = 0; s <= spec.stepCount; s++)
-              PopupMenuItem<int>(
-                value: s,
-                child: Text(
-                  s < spec.valueTexts.length ? spec.valueTexts[s] : '$s',
-                  style: signalMono(color: surface.textPrimary),
-                ),
-              ),
-          ],
-          child: ExcludeSemantics(
-            child: _FxParamBox(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        label,
-                        overflow: TextOverflow.ellipsis,
-                        style: signalMono(color: surface.textPrimary, size: 9),
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    Text(
-                      '▾',
-                      style: signalMono(color: surface.textMuted, size: 9),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
