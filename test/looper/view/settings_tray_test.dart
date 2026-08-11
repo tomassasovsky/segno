@@ -593,7 +593,7 @@ void main() {
       expect(rail.bottom - bright.bottom, lessThan(kTrayHandleHeight + 24));
     });
 
-    testWidgets('the tuner opens in the tray and its back goes home', (
+    testWidgets('the tuner opens in the tray, and the rail is the way out', (
       tester,
     ) async {
       cubit.open();
@@ -609,7 +609,12 @@ void main() {
       expect(find.byType(AlertDialog), findsNothing);
       expect(cubit.state.dragProgress, 1);
 
-      await tester.tap(find.byKey(const Key('tuner_back')));
+      // No back chrome on the face. Every other domain leaves by the rail,
+      // and a Back on one of them is a second way out that only that domain
+      // has — which is what made Tuner look like a dialog in a tray.
+      expect(find.byKey(const Key('tuner_back')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('settingsTrayRail_signal')));
       await tester.pumpAndSettle();
 
       expect(cubit.state.destination, SettingsTrayDestination.signal);
