@@ -17,6 +17,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -2092,6 +2093,89 @@ void main() {
       verify(() => bloc.add(const LooperRedoPressed(0))).called(1);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    });
+  });
+
+  group('rebuild scope', () {
+    // The whole point of #646: a level tick must not rebuild the console.
+    // `TracksToolbar` and `AudioNotRunningBanner` are built fresh (they carry
+    // closures, so they are never const-canonicalised) every time
+    // `TracksView.build` runs -- which makes widget identity an honest
+    // rebuild detector. Same instance across a pump => that subtree was not
+    // rebuilt.
+    late StreamController<LooperState> states;
+
+    setUp(() => states = StreamController<LooperState>.broadcast());
+    tearDown(() => states.close());
+
+    void seedStream(LooperState initial) {
+      when(() => bloc.state).thenReturn(initial);
+      when(() => repository.state).thenReturn(initial);
+      whenListen(bloc, states.stream, initialState: initial);
+    }
+
+    testWidgets('a level-only change does not rebuild the chrome', (
+      tester,
+    ) async {
+      const quiet = LooperState(
+        tracks: [Track(), Track(channel: 1)],
+        status: EngineStatus(isConnected: true),
+      );
+      seedStream(quiet);
+      await pump(tester);
+
+      final before = tester.widget<TracksToolbar>(find.byType(TracksToolbar));
+
+      // Exactly what a moving meter emits: same structure, new levels and a
+      // new playhead. Nothing the chrome renders depends on any of it.
+      const loud = LooperState(
+        tracks: [
+          Track(rms: 0.8, peak: 0.9, playheadFrames: 4410),
+          Track(channel: 1, rms: 0.5, peak: 0.6, playheadFrames: 4410),
+        ],
+        status: EngineStatus(isConnected: true),
+      );
+      when(() => bloc.state).thenReturn(loud);
+      states.add(loud);
+      await tester.pump();
+
+      expect(
+        identical(before, tester.widget<TracksToolbar>(find.byType(
+          TracksToolbar,
+        ))),
+        isTrue,
+        reason: 'a meter tick rebuilt TracksView -- the selector is leaking '
+            'live audio fields (see #646)',
+      );
+    });
+
+    testWidgets('a structural change still rebuilds the chrome', (
+      tester,
+    ) async {
+      const connected = LooperState(
+        tracks: [Track()],
+        status: EngineStatus(isConnected: true),
+      );
+      seedStream(connected);
+      await pump(tester);
+
+      final before = tester.widget<TracksToolbar>(find.byType(TracksToolbar));
+
+      // Losing the engine is exactly the kind of change the chrome exists to
+      // show: it must get through the selector.
+      const lost = LooperState(tracks: [Track()]);
+      when(() => bloc.state).thenReturn(lost);
+      states.add(lost);
+      await tester.pump();
+
+      expect(
+        identical(before, tester.widget<TracksToolbar>(find.byType(
+          TracksToolbar,
+        ))),
+        isFalse,
+        reason: 'the selector swallowed a structural change',
+      );
+      expect(find.byType(AudioNotRunningBanner), findsOneWidget);
     });
   });
 }
