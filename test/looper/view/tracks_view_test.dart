@@ -2140,11 +2140,17 @@ void main() {
       await tester.pump();
 
       expect(
-        identical(before, tester.widget<TracksToolbar>(find.byType(
-          TracksToolbar,
-        ))),
+        identical(
+          before,
+          tester.widget<TracksToolbar>(
+            find.byType(
+              TracksToolbar,
+            ),
+          ),
+        ),
         isTrue,
-        reason: 'a meter tick rebuilt TracksView -- the selector is leaking '
+        reason:
+            'a meter tick rebuilt TracksView -- the selector is leaking '
             'live audio fields (see #646)',
       );
     });
@@ -2169,9 +2175,14 @@ void main() {
       await tester.pump();
 
       expect(
-        identical(before, tester.widget<TracksToolbar>(find.byType(
-          TracksToolbar,
-        ))),
+        identical(
+          before,
+          tester.widget<TracksToolbar>(
+            find.byType(
+              TracksToolbar,
+            ),
+          ),
+        ),
         isFalse,
         reason: 'the selector swallowed a structural change',
       );

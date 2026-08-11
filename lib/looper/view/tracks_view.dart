@@ -315,9 +315,10 @@ class _TrackSlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final track = context.select<LooperBloc, Track?>(
-      (bloc) => bloc.state.tracks
-          .cast<Track?>()
-          .firstWhere((t) => t?.channel == channel, orElse: () => null),
+      (bloc) => bloc.state.tracks.cast<Track?>().firstWhere(
+        (t) => t?.channel == channel,
+        orElse: () => null,
+      ),
     );
     // A channel with no track is not a real state -- `channels` is built from
     // the same list -- but the bank can outlive a shrunken track list for one
