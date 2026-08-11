@@ -280,6 +280,12 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         _lowDiskAtArm = false;
         _ticksSinceDiskCheck = 0;
         _stoppingForDisk = false;
+        // Cleared on arm, not only in _finishRender: the short-empty path in
+        // _afterFinalized emits `discardedShort` and returns before ever
+        // reaching that reset, so a disk-stop on a capture too short to keep
+        // would leave the reason set and the NEXT capture would report itself
+        // as stopped-for-disk on a perfectly healthy volume.
+        _stopReason = null;
         _armedTicker?.cancel();
         _emitArmedTick();
         _armedTicker = Timer.periodic(
@@ -358,7 +364,12 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   int _capturedBytes(String dir) {
     try {
       var total = 0;
-      for (final entry in Directory(dir).listSync()) {
+      // Recursive: the bundle has `loops/` and `stems/` beneath it. Those are
+      // populated at finalize rather than during capture today, so a flat walk
+      // happens to be correct right now — but it would undercount silently the
+      // moment anything lands in a subdirectory mid-capture, and undercounting
+      // is precisely how the floor collapses to nothing.
+      for (final entry in Directory(dir).listSync(recursive: true)) {
         if (entry is File) total += entry.lengthSync();
       }
       return total;

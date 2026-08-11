@@ -1171,6 +1171,45 @@ void main() {
     );
 
     test(
+      'a disk stop on a discarded short capture does not taint the next',
+      () async {
+        // _afterFinalized emits `discardedShort` and RETURNS before the reset
+        // in _finishRender, so a reason left over from a stop would be
+        // reported against the next capture -- a healthy take blamed on a
+        // full disk.
+        var free = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
+        final cubit = build(freeSpaceBytes: (_) async => free);
+        addTearDown(cubit.close);
+
+        // First capture: stopped for disk, but too short/empty to keep.
+        await cubit.toggleArm();
+        await pumpEventQueue();
+        free = PerformanceRecorderCubit.finalizeHeadroomBytes ~/ 2;
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await pumpEventQueue();
+
+        // Second capture on a healthy volume, disarmed normally.
+        free = PerformanceRecorderCubit.lowDiskThresholdBytes * 4;
+        engine.renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+        await armWithLog(performance);
+        await pumpEventQueue();
+        clock = clock.add(const Duration(seconds: 5));
+        await cubit.toggleArm();
+        final completed = await waitForCompleted(cubit);
+
+        expect(
+          completed.result,
+          isNot(isA<PerformanceRecordStoppedEarly>()),
+          reason: 'a stale stop reason was blamed on a healthy capture',
+        );
+      },
+    );
+
+    test(
       'an unanswerable volume neither blocks arming nor stops a capture',
       () async {
         // Windows, or df failing. `null` means "unknown", and reading it as
