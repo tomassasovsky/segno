@@ -25,6 +25,7 @@ class WifiCubit extends Cubit<WifiState> {
     );
     try {
       final status = await _repository.status();
+      if (isClosed) return;
       emit(
         state.copyWith(
           supported: status.supported && _repository.isSupported,
@@ -33,6 +34,7 @@ class WifiCubit extends Cubit<WifiState> {
         ),
       );
     } on Object catch (e) {
+      if (isClosed) return;
       emit(state.copyWith(busy: false, errorMessage: '$e'));
     }
   }
@@ -55,6 +57,7 @@ class WifiCubit extends Cubit<WifiState> {
       final sorted = bySsid.values.toList()
         ..sort((a, b) => b.signal.compareTo(a.signal));
       final status = await _repository.status();
+      if (isClosed) return;
       emit(
         state.copyWith(
           networks: sorted,
@@ -63,6 +66,7 @@ class WifiCubit extends Cubit<WifiState> {
         ),
       );
     } on Object catch (e) {
+      if (isClosed) return;
       emit(state.copyWith(scanning: false, errorMessage: '$e'));
     }
   }
@@ -81,6 +85,7 @@ class WifiCubit extends Cubit<WifiState> {
     try {
       await _repository.connect(ssid, psk: psk);
       final status = await _repository.status();
+      if (isClosed) return;
       emit(
         state.copyWith(
           status: status,
@@ -96,6 +101,9 @@ class WifiCubit extends Cubit<WifiState> {
       } on Object {
         // Keep the last known status if refresh fails.
       }
+      // Guarded here rather than at the top of the catch: the refresh above is
+      // itself an await, so it re-opens the race.
+      if (isClosed) return;
       emit(
         state.copyWith(
           status: status,
@@ -134,6 +142,7 @@ class WifiCubit extends Cubit<WifiState> {
     try {
       await _repository.disconnect();
       final status = await _repository.status();
+      if (isClosed) return;
       emit(
         state.copyWith(
           status: status,
@@ -142,6 +151,7 @@ class WifiCubit extends Cubit<WifiState> {
         ),
       );
     } on Object catch (e) {
+      if (isClosed) return;
       emit(
         state.copyWith(
           busy: false,
@@ -168,6 +178,7 @@ class WifiCubit extends Cubit<WifiState> {
     try {
       await _repository.forget(ssid);
       final status = await _repository.status();
+      if (isClosed) return;
       emit(
         state.copyWith(
           status: status,
@@ -180,6 +191,7 @@ class WifiCubit extends Cubit<WifiState> {
         ),
       );
     } on Object catch (e) {
+      if (isClosed) return;
       emit(
         state.copyWith(
           busy: false,
@@ -204,8 +216,10 @@ class WifiCubit extends Cubit<WifiState> {
     try {
       await _repository.setEnabled(enabled: enabled);
       final status = await _repository.status();
+      if (isClosed) return;
       emit(state.copyWith(status: status, busy: false));
     } on Object catch (e) {
+      if (isClosed) return;
       emit(state.copyWith(busy: false, errorMessage: '$e'));
     }
   }

@@ -18,6 +18,7 @@ class BluetoothCubit extends Cubit<BluetoothState> {
     emit(state.copyWith(busy: true, clearError: true));
     try {
       final status = await _repository.status();
+      if (isClosed) return;
       emit(
         state.copyWith(
           supported: status.supported && _repository.isSupported,
@@ -26,6 +27,7 @@ class BluetoothCubit extends Cubit<BluetoothState> {
         ),
       );
     } on Object catch (e) {
+      if (isClosed) return;
       emit(state.copyWith(busy: false, errorMessage: '$e'));
     }
   }
@@ -37,6 +39,7 @@ class BluetoothCubit extends Cubit<BluetoothState> {
     try {
       final devices = await _repository.scan();
       final status = await _repository.status();
+      if (isClosed) return;
       emit(
         state.copyWith(
           devices: devices,
@@ -45,6 +48,7 @@ class BluetoothCubit extends Cubit<BluetoothState> {
         ),
       );
     } on Object catch (e) {
+      if (isClosed) return;
       emit(state.copyWith(scanning: false, errorMessage: '$e'));
     }
   }
@@ -56,8 +60,10 @@ class BluetoothCubit extends Cubit<BluetoothState> {
     try {
       await _repository.setPowered(enabled: enabled);
       final status = await _repository.status();
+      if (isClosed) return;
       emit(state.copyWith(status: status, busy: false));
     } on Object catch (e) {
+      if (isClosed) return;
       emit(state.copyWith(busy: false, errorMessage: '$e'));
     }
   }
@@ -72,8 +78,10 @@ class BluetoothCubit extends Cubit<BluetoothState> {
     try {
       await _repository.setDiscoverable(enabled: enabled);
       final status = await _repository.status();
+      if (isClosed) return;
       emit(state.copyWith(status: status, busy: false));
     } on Object catch (e) {
+      if (isClosed) return;
       emit(state.copyWith(busy: false, errorMessage: '$e'));
     }
   }
@@ -85,8 +93,10 @@ class BluetoothCubit extends Cubit<BluetoothState> {
     try {
       await _repository.setAdvertising(enabled: enabled);
       final status = await _repository.status();
+      if (isClosed) return;
       emit(state.copyWith(status: status, busy: false));
     } on Object catch (e) {
+      if (isClosed) return;
       emit(state.copyWith(busy: false, errorMessage: '$e'));
     }
   }
@@ -105,6 +115,7 @@ class BluetoothCubit extends Cubit<BluetoothState> {
       await _repository.pair(address);
       await _refreshDevices(clearPairing: true);
     } on Object catch (e) {
+      if (isClosed) return;
       emit(
         state.copyWith(
           clearPairing: true,
@@ -153,6 +164,7 @@ class BluetoothCubit extends Cubit<BluetoothState> {
       await action();
       await _refreshDevices();
     } on Object catch (e) {
+      if (isClosed) return;
       emit(
         state.copyWith(
           busy: false,
