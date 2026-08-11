@@ -86,8 +86,30 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// [PerformanceRepository.arm] already assumes when given nothing.
   static PerformanceChains _noChains() => const PerformanceChains();
 
-  /// Below this, [PerformanceRecorderArmed.lowDiskWarning] is set (D-FAIL).
+  /// Below this, [PerformanceRecorderArmed.lowDiskWarning] is set (D-FAIL),
+  /// and an arm is refused outright rather than started onto a volume that is
+  /// already in trouble.
   static const int lowDiskThresholdBytes = 500 * 1024 * 1024;
+
+  /// Below this, a RUNNING capture stops itself and finalizes what it has
+  /// (#640).
+  ///
+  /// Deliberately under [lowDiskThresholdBytes], so the warning is a window
+  /// the operator gets *before* the stop rather than a simultaneous surprise.
+  ///
+  /// The gap to zero is the point: finalize still has to write WAV headers and
+  /// the manifest, and a floor that cut it too fine would fail at exactly the
+  /// step that turns raw `.pcm` into a recoverable take — which is the failure
+  /// this exists to prevent, not to reproduce.
+  static const int stopFloorBytes = 256 * 1024 * 1024;
+
+  /// Armed ticks between free-space samples.
+  ///
+  /// The tick is 250ms and the sample shells out to `df`, so checking every
+  /// tick would spawn four processes a second for the whole capture. At 20 the
+  /// volume is read every ~5s — far finer than a disk fills, and cheap enough
+  /// to leave running for hours.
+  static const int _diskCheckEveryTicks = 20;
 
   final PerformanceRepository _performance;
   final DateTime Function() _now;
@@ -108,6 +130,12 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   String? _captureDir;
   DateTime? _armedAt;
   bool _lowDiskAtArm = false;
+  int _ticksSinceDiskCheck = 0;
+  bool _stoppingForDisk = false;
+
+  /// Why this capture stopped, when the cubit itself stopped it. Preferred
+  /// over the manifest's marker, which only the engine's own self-stop writes.
+  PerformanceStopReason? _stopReason;
   bool _loaded = false;
 
   /// Best-effort free-space check on [path]'s volume via `df` — `null` (no
@@ -214,6 +242,10 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     switch (state) {
       case PerformanceRecorderIdle(recoveryDirectory: null):
       case PerformanceRecorderCompleted():
+        if (await _volumeTooFullToArm()) {
+          _emit(const PerformanceRecorderIdle(lowDiskBlocked: true));
+          return;
+        }
         await _performance.arm(chains: _currentChains());
       case PerformanceRecorderArmed():
         await _performance.disarm();
@@ -232,6 +264,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         _captureDir = _performance.armedDirectory;
         _armedAt = _now();
         _lowDiskAtArm = false;
+        _ticksSinceDiskCheck = 0;
+        _stoppingForDisk = false;
         _armedTicker?.cancel();
         _emitArmedTick();
         _armedTicker = Timer.periodic(
@@ -249,6 +283,14 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   }
 
   void _emitArmedTick() {
+    // Re-sample the volume periodically. The old behaviour checked once at arm
+    // and carried that answer for the whole session, which is how a capture
+    // that armed onto a healthy disk ran 13.5 hours and filled 110GB unnoticed
+    // (#640) — the disk was fine at arm, and nothing ever looked again.
+    if (++_ticksSinceDiskCheck >= _diskCheckEveryTicks) {
+      _ticksSinceDiskCheck = 0;
+      unawaited(_checkLowDisk(_captureDir));
+    }
     final progress = _performance.captureProgress;
     _emit(
       PerformanceRecorderArmed(
@@ -259,11 +301,56 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     );
   }
 
+  /// Whether the export volume is already too full to start a capture.
+  ///
+  /// Gated at [lowDiskThresholdBytes] rather than [stopFloorBytes]: arming into
+  /// the band that would immediately trip the in-flight stop is worse than a
+  /// refusal, because it costs a bundle directory and a finalize to end up in
+  /// the same place. An unanswerable volume (Windows, or `df` failing) arms as
+  /// before — this gate only ever acts on a number it actually has.
+  Future<bool> _volumeTooFullToArm() async {
+    final String root;
+    try {
+      root = await _performance.exportsRoot();
+    } on Object {
+      return false; // cannot resolve the root: not this gate's call to block
+    }
+    final free = await _freeSpaceBytes(root);
+    return free != null && free < lowDiskThresholdBytes;
+  }
+
   Future<void> _checkLowDisk(String? dir) async {
     if (dir == null) return;
     final free = await _freeSpaceBytes(dir);
-    _lowDiskAtArm = free != null && free < lowDiskThresholdBytes;
+    // A platform that cannot answer (Windows, or df failing) must not be read
+    // as "no space" — that would stop every capture on it.
+    if (free == null) return;
+    if (free < stopFloorBytes) {
+      await _stopForLowDisk();
+      return;
+    }
+    _lowDiskAtArm = free < lowDiskThresholdBytes;
     if (state is PerformanceRecorderArmed) _emitArmedTick();
+  }
+
+  /// Stops a running capture that has crossed [stopFloorBytes] and finalizes
+  /// what it has, so the take is a playable bundle rather than orphaned `.pcm`.
+  ///
+  /// Goes through [PerformanceRepository.disarmAndFinalize], not
+  /// [PerformanceRepository.disarm]: this is not the operator's toggle
+  /// gesture, so it must not be swallowed by the double-press guard that path
+  /// applies.
+  Future<void> _stopForLowDisk() async {
+    if (_stoppingForDisk) return; // a slow finalize must not re-enter
+    _stoppingForDisk = true;
+    _armedTicker?.cancel();
+    _armedTicker = null;
+    // Remembered here because the engine's own `stopped_early` marker is
+    // written by perf_drain.c only when IT self-stops on a failed write. This
+    // stop happens before any write fails, so the manifest carries no marker
+    // and _readStoppedEarly would report a plain success.
+    _stopReason = PerformanceStopReason.diskFull;
+    await _performance.disarmAndFinalize();
   }
 
   Future<void> _afterFinalized() async {
@@ -317,7 +404,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     final tracks = await _writeDawExports(dir);
     _captureDir = null;
     final anyFailed = _performance.renderTrackStatuses.any((s) => !s.succeeded);
-    final stoppedEarly = _readStoppedEarly(dir);
+    final stoppedEarly = _stopReason ?? _readStoppedEarly(dir);
+    _stopReason = null;
     final PerformanceRecordResult result;
     if (stoppedEarly != null) {
       result = PerformanceRecordStoppedEarly(dir, stoppedEarly);

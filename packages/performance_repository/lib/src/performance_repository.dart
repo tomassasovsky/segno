@@ -40,6 +40,14 @@ class PerformanceRepository {
   final Future<String> Function() _exportsRoot;
   final DateTime Function() _now;
 
+  /// The `exports/` root new bundles are created under.
+  ///
+  /// Public so a caller can ask about the volume a capture WOULD land on
+  /// before [arm] creates anything on it — the free-space gate in
+  /// `PerformanceRecorderCubit` needs a path to measure while still idle, and
+  /// [armedDirectory] is necessarily null at that point (#640).
+  Future<String> exportsRoot() => _exportsRoot();
+
   final StreamController<PerformanceCaptureStatus> _statusController =
       StreamController<PerformanceCaptureStatus>.broadcast();
   PerformanceCaptureStatus _status = PerformanceCaptureStatus.idle;

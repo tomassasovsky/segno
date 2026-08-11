@@ -993,10 +993,14 @@ void main() {
     );
   });
 
-  group('low-disk warning', () {
+  group('free-space floor (#640)', () {
+    // A capture that armed onto a healthy disk ran 13.5 hours and filled a
+    // 110GB partition, because the only check ran once at arm. These pin both
+    // gates: refuse to start on a full volume, and stop a running capture
+    // before it can get there.
+
     test(
-      'lowDiskWarning becomes true when freeSpaceBytes reports below the '
-      'threshold',
+      'refuses to arm below the floor, and does not create a bundle',
       () async {
         final cubit = build(
           freeSpaceBytes: (_) async =>
@@ -1007,6 +1011,51 @@ void main() {
         await cubit.toggleArm();
         await pumpEventQueue();
 
+        expect(cubit.state, isA<PerformanceRecorderIdle>());
+        expect((cubit.state as PerformanceRecorderIdle).lowDiskBlocked, isTrue);
+        // The refusal must happen BEFORE arm(), or it costs a directory and a
+        // finalize to arrive at the same refusal.
+        expect(performance.armedDirectory, isNull);
+      },
+    );
+
+    test('arms normally when the volume has room', () async {
+      final cubit = build(
+        freeSpaceBytes: (_) async =>
+            PerformanceRecorderCubit.lowDiskThresholdBytes * 2,
+      );
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+      expect(
+        (cubit.state as PerformanceRecorderArmed).lowDiskWarning,
+        isFalse,
+      );
+    });
+
+    test(
+      'warns while armed once free space falls under the warning line',
+      () async {
+        var free = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
+        final cubit = build(freeSpaceBytes: (_) async => free);
+        addTearDown(cubit.close);
+
+        await cubit.toggleArm();
+        await pumpEventQueue();
+        expect(
+          (cubit.state as PerformanceRecorderArmed).lowDiskWarning,
+          isFalse,
+        );
+
+        // Between the warning line and the stop floor: warn, keep recording.
+        free = PerformanceRecorderCubit.lowDiskThresholdBytes - 1;
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await pumpEventQueue();
+
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
         expect(
           (cubit.state as PerformanceRecorderArmed).lowDiskWarning,
           isTrue,
@@ -1015,21 +1064,73 @@ void main() {
     );
 
     test(
-      'stays false when free space is comfortably above the threshold',
+      'stops a running capture when free space crosses the stop floor',
       () async {
-        final cubit = build(
-          freeSpaceBytes: (_) async =>
-              PerformanceRecorderCubit.lowDiskThresholdBytes * 2,
-        );
+        var free = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
+        final cubit = build(freeSpaceBytes: (_) async => free);
         addTearDown(cubit.close);
 
         await cubit.toggleArm();
         await pumpEventQueue();
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
 
-        expect(
-          (cubit.state as PerformanceRecorderArmed).lowDiskWarning,
-          isFalse,
-        );
+        free = PerformanceRecorderCubit.stopFloorBytes - 1;
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await pumpEventQueue();
+
+        // It must leave armed under its own steam -- nothing else disarmed it.
+        expect(cubit.state, isNot(isA<PerformanceRecorderArmed>()));
+        expect(performance.armedDirectory, isNull);
+      },
+    );
+
+    test('the stopped capture is reported as stopped-early for disk', () async {
+      // The reason cannot come from the manifest here: perf_drain.c only
+      // writes `stopped_early` when IT self-stops on a failed write, and this
+      // stop happens BEFORE any write fails. Without the cubit carrying its
+      // own reason the take would be reported as an ordinary success.
+      var free = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
+      final cubit = build(freeSpaceBytes: (_) async => free);
+      addTearDown(cubit.close);
+
+      // A capture with real content, so finalize delivers a bundle instead of
+      // discarding it as short-and-empty.
+      await armWithLog(performance);
+      await pumpEventQueue();
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+
+      free = PerformanceRecorderCubit.stopFloorBytes - 1;
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      await pumpEventQueue();
+
+      final state = cubit.state;
+      expect(state, isA<PerformanceRecorderCompleted>());
+      final result = (state as PerformanceRecorderCompleted).result;
+      expect(result, isA<PerformanceRecordStoppedEarly>());
+      expect(
+        (result! as PerformanceRecordStoppedEarly).reason,
+        PerformanceStopReason.diskFull,
+      );
+    });
+
+    test(
+      'an unanswerable volume neither blocks arming nor stops a capture',
+      () async {
+        // Windows, or df failing. `null` means "unknown", and reading it as
+        // "no space" would stop every capture on those platforms.
+        final cubit = build(freeSpaceBytes: (_) async => null);
+        addTearDown(cubit.close);
+
+        await cubit.toggleArm();
+        await pumpEventQueue();
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
+
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await pumpEventQueue();
+
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
       },
     );
   });

@@ -396,6 +396,12 @@ void onPerformanceRecorderState(
     unawaited(_promptPerformanceRecovery(context));
     return;
   }
+  // A refused arm has to say so. Silently doing nothing is indistinguishable
+  // from a dead control, and the operator would simply press again (#640).
+  if (state is PerformanceRecorderIdle && state.lowDiskBlocked) {
+    _showPerformanceLowDiskBlocked(context);
+    return;
+  }
   if (state is PerformanceRecorderCompleted) {
     if (state.discarded) {
       _showPerformanceDiscarded(context);
@@ -437,6 +443,20 @@ Future<void> _promptPerformanceRecovery(BuildContext context) async {
   );
   if (recover == null) return;
   await (recover ? cubit.recoverBootCapture() : cubit.discardBootCapture());
+}
+
+void _showPerformanceLowDiskBlocked(BuildContext context) {
+  ScaffoldMessenger.of(context)
+    ..clearSnackBars()
+    ..showSnackBar(
+      SnackBar(
+        key: const Key('tracks_perfLowDiskBlocked_snackbar'),
+        content: Semantics(
+          liveRegion: true,
+          child: AppText(context.l10n.perfLowDiskBlocked),
+        ),
+      ),
+    );
 }
 
 void _showPerformanceDiscarded(BuildContext context) {
