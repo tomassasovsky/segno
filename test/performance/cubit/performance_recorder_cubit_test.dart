@@ -1074,7 +1074,7 @@ void main() {
         await pumpEventQueue();
         expect(cubit.state, isA<PerformanceRecorderArmed>());
 
-        free = PerformanceRecorderCubit.stopFloorBytes - 1;
+        free = PerformanceRecorderCubit.finalizeHeadroomBytes ~/ 2;
         await Future<void>.delayed(const Duration(milliseconds: 400));
         await pumpEventQueue();
 
@@ -1099,7 +1099,7 @@ void main() {
       await pumpEventQueue();
       expect(cubit.state, isA<PerformanceRecorderArmed>());
 
-      free = PerformanceRecorderCubit.stopFloorBytes - 1;
+      free = PerformanceRecorderCubit.finalizeHeadroomBytes ~/ 2;
       await Future<void>.delayed(const Duration(milliseconds: 400));
       await pumpEventQueue();
       await Future<void>.delayed(const Duration(milliseconds: 400));
@@ -1114,6 +1114,61 @@ void main() {
         PerformanceStopReason.diskFull,
       );
     });
+
+    test('the floor scales with what has been captured, not a constant', () {
+      // The floor has to cover a FULL SECOND COPY of the capture: finalize
+      // writes every stream out as WAV and keeps the .pcm alongside. Measured
+      // on the appliance at 96kHz that is 384 KB/s per stream across three
+      // continuous streams, so a long take needs GBs, not a constant.
+      const captured = 4 * 1024 * 1024;
+      expect(
+        PerformanceRecorderCubit.stopFloorFor(captured),
+        greaterThan(captured),
+        reason: 'the floor must leave room to duplicate what was captured',
+      );
+      expect(
+        PerformanceRecorderCubit.stopFloorFor(captured * 100),
+        greaterThan(PerformanceRecorderCubit.stopFloorFor(captured)),
+        reason: 'a bigger capture must demand a bigger floor',
+      );
+      expect(
+        PerformanceRecorderCubit.stopFloorFor(0),
+        PerformanceRecorderCubit.finalizeHeadroomBytes,
+      );
+    });
+
+    test(
+      'a full disk during the .als export still completes the capture',
+      () async {
+        // Regression for what the appliance run caught: writeFrom failed with
+        // ENOSPC inside _writeDawExports, and because _finishRender awaits
+        // it on its first line, the Completed emit on its last line never
+        // ran -- the console sat in Rendering forever. The take is already
+        // safe by then, so a failed export must degrade, not hang.
+        engine.renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        final dir = await armWithLog(performance);
+        await pumpEventQueue();
+
+        // Fail the .als write the way a full volume does: a directory cannot be
+        // overwritten by a file, so writeAsBytes throws FileSystemException on
+        // exactly the path _writeDawExports targets.
+        Directory('$dir/project.als').createSync(recursive: true);
+
+        clock = clock.add(const Duration(seconds: 5));
+        await cubit.toggleArm();
+
+        expect(
+          await waitForCompleted(cubit),
+          isA<PerformanceRecorderCompleted>(),
+          reason: 'a failed export left the cubit stuck instead of completing',
+        );
+      },
+    );
 
     test(
       'an unanswerable volume neither blocks arming nor stops a capture',
