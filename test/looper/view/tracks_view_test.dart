@@ -17,6 +17,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
@@ -34,6 +35,12 @@ class _MockSessionCubit extends MockCubit<SessionState>
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit {}
+
+/// The rebuild probe for the `rebuild scope` group: a widget `TracksView.build`
+/// creates unconditionally, in console and desktop layouts alike.
+final Finder _chromeProbe = find.byKey(
+  const Key('tracks_settings_secondaryTap'),
+);
 
 void main() {
   late LooperBloc bloc;
@@ -828,6 +835,44 @@ void main() {
       controller.add(stopped);
       await tester.pump();
       expect(fillOf(tester, 0), live);
+    });
+
+    testWidgets('a rising level moves the bar', (tester) async {
+      // The companion to the freeze test above, and the guard #646 needs: that
+      // one asserts the fill STAYS PUT, so it passes whether or not updates
+      // reach the column. Since the track now arrives through a selector in
+      // `_TrackSlot` rather than being handed down directly, a selector that
+      // stopped yielding new values would freeze every meter on the console
+      // with the rest of the suite still green.
+      const low = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.2),
+        ],
+      );
+      const high = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.9),
+        ],
+      );
+      final controller = StreamController<LooperState>();
+      addTearDown(controller.close);
+      var current = low;
+      when(() => bloc.state).thenAnswer((_) => current);
+      whenListen(bloc, controller.stream, initialState: low);
+      await pump(tester);
+
+      final before = fillOf(tester, 0);
+      current = high;
+      controller.add(high);
+      await tester.pump();
+
+      expect(
+        fillOf(tester, 0),
+        greaterThan(before),
+        reason:
+            'a level change no longer reaches TrackColumn -- the '
+            '_TrackSlot selector has stopped yielding new tracks (see #646)',
+      );
     });
 
     testWidgets('a track with nothing recorded has no bar (height 0)', (
@@ -2092,6 +2137,92 @@ void main() {
       verify(() => bloc.add(const LooperRedoPressed(0))).called(1);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    });
+  });
+
+  group('rebuild scope', () {
+    // The whole point of #646: a level tick must not rebuild the console.
+    // `TracksView.build` creates this GestureDetector fresh every run (it
+    // carries closures, so it is never const-canonicalised), which makes widget
+    // identity an honest rebuild detector: the same instance across a pump
+    // means the method did not re-run.
+    //
+    // The probe is the keyed detector rather than `TracksToolbar` because the
+    // toolbar is compiled out when `kConsoleMode` is true -- and the console is
+    // the build whose frame budget prompted this. Probing something both
+    // layouts contain keeps the guard meaningful under
+    // `--dart-define=SEGNO_CONSOLE=true` instead of throwing on a missing
+    // widget.
+    late StreamController<LooperState> states;
+
+    setUp(() => states = StreamController<LooperState>.broadcast());
+    tearDown(() => states.close());
+
+    void seedStream(LooperState initial) {
+      when(() => bloc.state).thenReturn(initial);
+      when(() => repository.state).thenReturn(initial);
+      whenListen(bloc, states.stream, initialState: initial);
+    }
+
+    testWidgets('a level-only change does not rebuild the chrome', (
+      tester,
+    ) async {
+      const quiet = LooperState(
+        tracks: [Track(), Track(channel: 1)],
+        status: EngineStatus(isConnected: true),
+      );
+      seedStream(quiet);
+      await pump(tester);
+
+      final before = tester.widget<GestureDetector>(_chromeProbe);
+
+      // Exactly what a moving meter emits: same structure, new levels and a
+      // new playhead. Nothing the chrome renders depends on any of it.
+      const loud = LooperState(
+        tracks: [
+          Track(rms: 0.8, peak: 0.9, playheadFrames: 4410),
+          Track(channel: 1, rms: 0.5, peak: 0.6, playheadFrames: 4410),
+        ],
+        status: EngineStatus(isConnected: true),
+      );
+      when(() => bloc.state).thenReturn(loud);
+      states.add(loud);
+      await tester.pump();
+
+      expect(
+        identical(before, tester.widget<GestureDetector>(_chromeProbe)),
+        isTrue,
+        reason:
+            'a meter tick rebuilt TracksView -- the selector is leaking '
+            'live audio fields (see #646)',
+      );
+    });
+
+    testWidgets('a structural change still rebuilds the chrome', (
+      tester,
+    ) async {
+      const connected = LooperState(
+        tracks: [Track()],
+        status: EngineStatus(isConnected: true),
+      );
+      seedStream(connected);
+      await pump(tester);
+
+      final before = tester.widget<GestureDetector>(_chromeProbe);
+
+      // Losing the engine is exactly the kind of change the chrome exists to
+      // show: it must get through the selector.
+      const lost = LooperState(tracks: [Track()]);
+      when(() => bloc.state).thenReturn(lost);
+      states.add(lost);
+      await tester.pump();
+
+      expect(
+        identical(before, tester.widget<GestureDetector>(_chromeProbe)),
+        isFalse,
+        reason: 'the selector swallowed a structural change',
+      );
+      expect(find.byType(AudioNotRunningBanner), findsOneWidget);
     });
   });
 }
