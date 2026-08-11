@@ -4962,11 +4962,24 @@ static void test_enumerate_devices_counts_are_stable(void) {
                      : le_enumerate_playback_devices(again, MAXD,
                                                      &again_count)) == LE_OK);
       if (again_count != first_count) continue; /* the rig changed; not a memo */
+      /* Matched by id, not by index. An equal count does not mean an unchanged
+       * list: one virtual device deregistering as another registers — the Teams
+       * / Zoom case above, mid-call — leaves the count identical and the order
+       * different, and an index-wise compare would report that reshuffle as a
+       * memo defect. A device that is simply absent this pass is skipped for
+       * the same reason the count guard exists. */
       for (int32_t i = 0; i < first_count; ++i) {
-        CHECK(strcmp(first[i].id, again[i].id) == 0);
-        CHECK(strcmp(first[i].name, again[i].name) == 0);
-        CHECK(first[i].input_channels == again[i].input_channels);
-        CHECK(first[i].output_channels == again[i].output_channels);
+        const le_device_info* match = NULL;
+        for (int32_t j = 0; j < again_count; ++j) {
+          if (strcmp(first[i].id, again[j].id) == 0) {
+            match = &again[j];
+            break;
+          }
+        }
+        if (match == NULL) continue; /* that device left; not a memo defect */
+        CHECK(strcmp(first[i].name, match->name) == 0);
+        CHECK(first[i].input_channels == match->input_channels);
+        CHECK(first[i].output_channels == match->output_channels);
       }
     }
   }
