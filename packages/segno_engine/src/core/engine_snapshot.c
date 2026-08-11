@@ -37,8 +37,12 @@ static void le_fill_track_snapshot(le_track* tr, int active,
   out->undo_depth = load_i32(&tr->a_undo_depth);
   out->clear_restore = load_i32(&tr->a_clear_restore);
   out->redo_depth = load_i32(&tr->a_redo_depth);
-  out->rms = load_f32(&l0->a_rms_bits);
-  out->peak = load_f32(&l0->a_peak_bits);
+  /* The TRACK's level, summed across its lanes -- NOT lane 0's, which is what
+   * this reported until #655 and which under-read any track playing more than
+   * one layer. Per-lane figures are still published on the lane snapshots
+   * below for anything that wants them individually. */
+  out->rms = load_f32(&tr->a_trk_rms_bits);
+  out->peak = load_f32(&tr->a_trk_peak_bits);
   out->input_mask = le_lane_input_bits(l0);
   out->output_mask =
       atomic_load_explicit(&l0->a_output_mask, memory_order_relaxed);

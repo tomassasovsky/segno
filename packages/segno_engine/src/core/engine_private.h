@@ -507,6 +507,17 @@ static inline le_hist_entry le_hist_layer(int32_t slot) {
  * stacks and the lanes own only the buffers. */
 typedef struct le_track {
   le_lane lanes[LE_MAX_LANES];
+
+  /* This track's own level: every lane summed, not lane 0's (#655).
+   *
+   * The snapshot used to report lanes[0]'s rms/peak as the TRACK's, so a
+   * track playing several layers was metered by whichever one happened to be
+   * lane 0 -- and read near-silent whenever that lane was quiet or cleared
+   * while the others carried the loop. Written once per block by the audio
+   * thread beside the per-lane figures; float bit patterns, like every other
+   * meter here. */
+  _Atomic uint32_t a_trk_rms_bits;
+  _Atomic uint32_t a_trk_peak_bits;
   int32_t lane_count; /* active lanes (1..LE_MAX_LANES); control-thread plain
                        * int, like track_count — not an atomic, not a ring
                        * command (set before the first record into a new lane). */

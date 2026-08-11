@@ -323,6 +323,9 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->undo_count = 0;
     tr->redo_count = 0;
     store_i32(&tr->a_state, LE_TRACK_EMPTY);
+    /* Meters settle to silence with everything else (#655). */
+    store_f32(&tr->a_trk_rms_bits, 0.0f);
+    store_f32(&tr->a_trk_peak_bits, 0.0f);
     store_i32(&tr->a_undo_depth, 0);
     store_i32(&tr->a_redo_depth, 0);
     store_i32(&tr->a_multiple, 1);

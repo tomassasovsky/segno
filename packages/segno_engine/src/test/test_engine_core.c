@@ -9568,6 +9568,61 @@ static void record_long_base_loop(le_engine* e, float value, int32_t len) {
   CHECK(s.tracks[0].length_frames == len);
 }
 
+/* The TRACK meter must reflect every lane, not lane 0 (#655).
+ *
+ * Before this, le_fill_track_snapshot read lanes[0]'s rms/peak and reported
+ * them as the track's, so a track playing several layers was metered by
+ * whichever one happened to be lane 0 -- and a quiet (or cleared) lane 0
+ * under a loud second lane read as a near-silent track that was audibly loud.
+ *
+ * Feeds a deliberately lopsided pair: lane 0 barely above silence, lane 1 an
+ * order of magnitude louder. The track has to follow the pair; the LANE
+ * figures have to keep reporting themselves individually. */
+static void test_track_meter_sums_all_lanes(void) {
+  printf("test_track_meter_sums_all_lanes\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 200000);
+  le_engine_set_lane_count(e, 0, 2);
+  le_engine_set_lane_input(e, 0, 0, 0);
+  le_engine_set_lane_input(e, 0, 1, 1);
+  le_engine_set_lane_output(e, 0, 0, 0x1);
+  le_engine_set_lane_output(e, 0, 1, 0x1);
+  drain(e);
+
+  const float quiet = 0.05f;
+  const float loud = 0.80f;
+
+  le_engine_record(e, 0);
+  pump_two_lane(e, quiet, loud, 4000, NULL, NULL);
+  le_engine_record(e, 0); /* close the loop -> playing */
+  drain(e);
+  pump_two_lane(e, quiet, loud, 2000, NULL, NULL);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].lane_count == 2);
+
+  /* Each lane still reports itself (lanes come from le_engine_get_lane, not
+   * from the track snapshot). */
+  le_lane_snapshot l0;
+  le_lane_snapshot l1;
+  le_engine_get_lane(e, 0, 0, &l0);
+  le_engine_get_lane(e, 0, 1, &l1);
+  CHECK(l0.peak < quiet * 2.0f);
+  CHECK(l1.peak > loud * 0.5f);
+
+  /* The track follows the loud lane, not the quiet one. The exact value is
+   * the summed mix, so assert the property that actually failed before --
+   * the track is nowhere near lane 0's near-silence -- rather than pinning an
+   * arithmetic result that overdub gain staging could legitimately move. */
+  CHECK(s.tracks[0].peak > loud * 0.5f);
+  CHECK(s.tracks[0].peak > l0.peak * 4.0f);
+  CHECK(s.tracks[0].rms > l0.rms * 4.0f);
+
+  le_engine_destroy(e);
+}
+
 /* Multi-lane dub capture + layer save/load slot mapping at > 1 quantum: both
  * lanes' dub shadows and restored slots must cover the full loop, and
  * finalize_layers' slot mapping must survive a teardown/rebuild with
@@ -19357,6 +19412,7 @@ int main(void) {
   test_count_in_click_absent_from_perf_capture();
   test_first_wrap_prearm_footprint_bounded();
   test_rec_dub_long_loop_first_wrap_undo();
+  test_track_meter_sums_all_lanes();
   test_multi_lane_long_loop_dub_roundtrip();
   test_undo_pool_eviction_long_loop();
   test_record_offset_long_loop();
