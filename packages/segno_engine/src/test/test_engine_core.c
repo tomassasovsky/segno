@@ -4925,6 +4925,66 @@ static void test_enumerate_devices_runs(void) {
   CHECK(le_enumerate_capture_devices(NULL, MAXD, &count) == LE_ERR_INVALID);
 }
 
+/* The channel-count memo (engine_devices.c) must be INVISIBLE: enumeration has
+ * to report the same counts however many times it is asked. The picker polls at
+ * 1 Hz, so "the same" has to survive dozens of passes, not two.
+ *
+ * The pass count is the point. Each entry is seeded with a staggered trust of
+ * `index % LE_CHANNEL_CACHE_TTL + 1` and re-reads when it expires, so a couple
+ * of enumerations only ever exercise the memo HIT — the re-read branch, and the
+ * `if (fresh > 0)` guard inside it that stops a transient query failure from
+ * blanking a count the device already answered, are never reached. Running past
+ * the TTL takes every entry through that branch at least once, on any machine
+ * that has devices at all.
+ *
+ * Device-free like its neighbour, so it asserts what holds on a bare CI box as
+ * much as on a loaded rig: it compares element-wise only while the device list
+ * is unchanged, because a virtual device registering mid-test (Teams or Zoom on
+ * a developer machine, as a call starts) is not a memo defect and must not be
+ * reported as one. On Linux the platform seam takes enumeration before the memo
+ * is reached at all, so the loop is simply a no-op there. */
+static void test_enumerate_devices_counts_are_stable(void) {
+  printf("test_enumerate_devices_counts_are_stable\n");
+  enum { MAXD = 32, PASSES = LE_CHANNEL_CACHE_TTL + 8 };
+  le_device_info first[MAXD];
+  le_device_info again[MAXD];
+  int32_t first_count = -1;
+  int32_t again_count = -1;
+
+  for (int capture = 0; capture <= 1; ++capture) {
+    first_count = -1;
+    CHECK((capture ? le_enumerate_capture_devices(first, MAXD, &first_count)
+                   : le_enumerate_playback_devices(first, MAXD,
+                                                   &first_count)) == LE_OK);
+    for (int pass = 0; pass < PASSES; ++pass) {
+      again_count = -1;
+      CHECK((capture ? le_enumerate_capture_devices(again, MAXD, &again_count)
+                     : le_enumerate_playback_devices(again, MAXD,
+                                                     &again_count)) == LE_OK);
+      if (again_count != first_count) continue; /* the rig changed; not a memo */
+      /* Matched by id, not by index. An equal count does not mean an unchanged
+       * list: one virtual device deregistering as another registers — the Teams
+       * / Zoom case above, mid-call — leaves the count identical and the order
+       * different, and an index-wise compare would report that reshuffle as a
+       * memo defect. A device that is simply absent this pass is skipped for
+       * the same reason the count guard exists. */
+      for (int32_t i = 0; i < first_count; ++i) {
+        const le_device_info* match = NULL;
+        for (int32_t j = 0; j < again_count; ++j) {
+          if (strcmp(first[i].id, again[j].id) == 0) {
+            match = &again[j];
+            break;
+          }
+        }
+        if (match == NULL) continue; /* that device left; not a memo defect */
+        CHECK(strcmp(first[i].name, match->name) == 0);
+        CHECK(first[i].input_channels == match->input_channels);
+        CHECK(first[i].output_channels == match->output_channels);
+      }
+    }
+  }
+}
+
 /* The device-id serializer (engine_platform.h) turns a backend id into a
  * printable token used to match a user-selected device back to its native id.
  * On the char-string backends (CoreAudio/ALSA/PulseAudio) it copies verbatim;
@@ -19499,6 +19559,7 @@ int main(void) {
   test_classify_capture_device();
   test_detect_loopback_runs();
   test_enumerate_devices_runs();
+  test_enumerate_devices_counts_are_stable();
   test_device_id_to_str();
   test_select_backend_defaults_to_miniaudio();
   test_backend_struct_defaults();
