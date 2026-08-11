@@ -324,10 +324,8 @@ void main() {
       expect(violation(ok, 'parked-preview-matches-resume'), isNull);
     });
 
-    test(
-      'fx-led-mirrors-what-the-switch-drives: a dark LED over an engaged '
-      'chain violates',
-      () {
+    test('fx-led-mirrors-what-the-switch-drives: a dark LED over an engaged '
+        'chain violates', () {
       final c = ControlContext(
         looper: looper(),
         overlay: const ControlState(mode: InteractionMode.fx),
@@ -336,10 +334,8 @@ void main() {
       expect(violation(c, 'fx-led-mirrors-what-the-switch-drives'), isNotNull);
     });
 
-    test(
-      'fx-led-mirrors-what-the-switch-drives: a lit LED over a bypassed '
-      'chain violates',
-      () {
+    test('fx-led-mirrors-what-the-switch-drives: a lit LED over a bypassed '
+        'chain violates', () {
       final c = ControlContext(
         looper: looper(
           tracks: tracksWith(const Track(channel: 2, chainEnabled: false)),
@@ -401,10 +397,8 @@ void main() {
       },
     );
 
-    test(
-      'fx-led-mirrors-what-the-switch-drives: blue-for-engaged, '
-      'dark-for-bypassed holds',
-      () {
+    test('fx-led-mirrors-what-the-switch-drives: blue-for-engaged, '
+        'dark-for-bypassed holds', () {
       final c = ControlContext(
         looper: looper(
           tracks: tracksWith(const Track(channel: 2, chainEnabled: false)),

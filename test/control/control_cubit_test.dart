@@ -1611,28 +1611,30 @@ void main() {
       });
 
       group('what the LED reports', () {
-        test('a bound switch lights from its own target, not the track', (
-        ) async {
-          pedal.bind('out');
-          // track1 bound to channel 3's chain, so its LED must follow THAT
-          // chain — channel 0's is a different flag, and stomping the switch
-          // never touches it.
-          await cubit.setGlobalBindings(
-            PedalBindingSet([bind(PedalButton.track1, bank: 0)]),
-          );
-          cubit.setMode(InteractionMode.fx);
-          await pumpEventQueue();
-          transport.sent.clear();
-          await stomp(PedalButton.track1);
-          await pumpEventQueue();
+        test(
+          'a bound switch lights from its own target, not the track',
+          () async {
+            pedal.bind('out');
+            // track1 bound to channel 3's chain, so its LED must follow THAT
+            // chain — channel 0's is a different flag, and stomping the switch
+            // never touches it.
+            await cubit.setGlobalBindings(
+              PedalBindingSet([bind(PedalButton.track1, bank: 0)]),
+            );
+            cubit.setMode(InteractionMode.fx);
+            await pumpEventQueue();
+            transport.sent.clear();
+            await stomp(PedalButton.track1);
+            await pumpEventQueue();
 
-          expect(chainEnabled[3], isFalse, reason: 'the bound chain is off');
-          expect(
-            PedalCodec.decodeFrame(transport.sent.last)?.trackLeds[0],
-            PedalTrackLed.off,
-            reason: 'the LED follows the bound chain it just switched off',
-          );
-        });
+            expect(chainEnabled[3], isFalse, reason: 'the bound chain is off');
+            expect(
+              PedalCodec.decodeFrame(transport.sent.last)?.trackLeds[0],
+              PedalTrackLed.off,
+              reason: 'the LED follows the bound chain it just switched off',
+            );
+          },
+        );
 
         test('a stale binding lights nothing', () async {
           pedal.bind('out');
