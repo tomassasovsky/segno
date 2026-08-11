@@ -834,6 +834,11 @@ class ControlCubit extends Cubit<ControlState> {
         );
       }
     }
+    // The persist above is an await, so the surface may have been torn down
+    // while it ran. The engine clear still happens — it is what the user asked
+    // for and the looper outlives this cubit — but the overlay state and the
+    // LED frame belong to a console that is no longer there.
+    if (isClosed) return;
     emit(
       state.copyWith(
         mode: InteractionMode.record,

@@ -31,14 +31,29 @@ class _FakeWifiClient implements WifiClient {
   final forgotten = <String>[];
   Completer<void>? connectGate;
 
+  /// Holds [status] open until completed — completing with an error makes the
+  /// helper refuse the way a missing wpa_supplicant does.
+  Completer<void>? statusGate;
+
+  /// Holds [scan] open until completed, same contract as [statusGate].
+  Completer<void>? scanGate;
+
   @override
   bool get isSupported => supported;
 
   @override
-  Future<WifiStatus> status() async => statusValue;
+  Future<WifiStatus> status() async {
+    final gate = statusGate;
+    if (gate != null) await gate.future;
+    return statusValue;
+  }
 
   @override
-  Future<List<WifiNetwork>> scan() async => networks;
+  Future<List<WifiNetwork>> scan() async {
+    final gate = scanGate;
+    if (gate != null) await gate.future;
+    return networks;
+  }
 
   @override
   Future<void> connect(String ssid, {String? psk}) async {
@@ -267,6 +282,108 @@ void main() {
         final before = cubit.state;
         await cubit.cancelConnect();
         expect(cubit.state, before);
+      },
+    );
+  });
+
+  // Closing mid-flight is the network tray's ordinary shape: the helper calls
+  // are slow (seconds on the appliance) and the tray is dismissible the whole
+  // time. Without the post-await guards the continuation lands on a closed
+  // cubit and throws `Bad state: Cannot emit new states after calling close`
+  // — observed six times from `load` in the appliance log.
+  group('WifiCubit closing mid-flight', () {
+    test(
+      'load survives the tray closing while status is in flight',
+      () async {
+        final client = _FakeWifiClient()..statusGate = Completer<void>();
+        final cubit = WifiCubit(repository: _repo(client));
+
+        final pending = cubit.load();
+        await pumpEventQueue();
+        await cubit.close();
+        client.statusGate!.complete();
+
+        await expectLater(pending, completes);
+      },
+    );
+
+    test('load survives the tray closing while status is failing', () async {
+      final client = _FakeWifiClient()..statusGate = Completer<void>();
+      final cubit = WifiCubit(repository: _repo(client));
+
+      final pending = cubit.load();
+      await pumpEventQueue();
+      await cubit.close();
+      client.statusGate!.completeError(StateError('helper missing'));
+
+      await expectLater(pending, completes);
+    });
+
+    test(
+      'scan survives the tray closing while the scan is in flight',
+      () async {
+        final client = _FakeWifiClient();
+        final cubit = WifiCubit(repository: _repo(client));
+        await cubit.load();
+
+        client.scanGate = Completer<void>();
+        final pending = cubit.scan();
+        await pumpEventQueue();
+        await cubit.close();
+        client.scanGate!.complete();
+
+        await expectLater(pending, completes);
+      },
+    );
+
+    test(
+      'scan survives the tray closing while the scan is failing',
+      () async {
+        final client = _FakeWifiClient();
+        final cubit = WifiCubit(repository: _repo(client));
+        await cubit.load();
+
+        client.scanGate = Completer<void>();
+        final pending = cubit.scan();
+        await pumpEventQueue();
+        await cubit.close();
+        client.scanGate!.completeError(StateError('scan refused'));
+
+        await expectLater(pending, completes);
+      },
+    );
+
+    test(
+      'connect survives the tray closing while the join is in flight',
+      () async {
+        final client = _FakeWifiClient()..connectGate = Completer<void>();
+        final cubit = WifiCubit(repository: _repo(client));
+        await cubit.load();
+
+        final pending = cubit.connect('Home', psk: 'secret');
+        await pumpEventQueue();
+        await cubit.close();
+        client.connectGate!.complete();
+
+        await expectLater(pending, completes);
+      },
+    );
+
+    // The failure arm refreshes status before it reports, so its guard has to
+    // sit after that second await rather than at the top of the catch.
+    test(
+      'connect survives the tray closing while the join is failing',
+      () async {
+        final client = _FakeWifiClient()..connectGate = Completer<void>();
+        final cubit = WifiCubit(repository: _repo(client));
+        await cubit.load();
+
+        final pending = cubit.connect('Home', psk: 'secret');
+        await pumpEventQueue();
+        await cubit.close();
+        client.connectGate!.completeError(StateError('auth failed'));
+
+        await expectLater(pending, completes);
       },
     );
   });

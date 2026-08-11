@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,14 +25,29 @@ class _FakeBluetoothClient implements BluetoothClient {
   BluetoothStatus statusValue;
   List<BluetoothDevice> devices;
 
+  /// Holds [status] open until completed — completing with an error makes the
+  /// helper refuse the way an absent bluez does.
+  Completer<void>? statusGate;
+
+  /// Holds [scan] open until completed, same contract as [statusGate].
+  Completer<void>? scanGate;
+
   @override
   bool get isSupported => supported;
 
   @override
-  Future<BluetoothStatus> status() async => statusValue;
+  Future<BluetoothStatus> status() async {
+    final gate = statusGate;
+    if (gate != null) await gate.future;
+    return statusValue;
+  }
 
   @override
-  Future<List<BluetoothDevice>> scan() async => devices;
+  Future<List<BluetoothDevice>> scan() async {
+    final gate = scanGate;
+    if (gate != null) await gate.future;
+    return devices;
+  }
 
   @override
   Future<void> setPowered({required bool enabled}) async {
@@ -71,9 +88,17 @@ class _FakeBluetoothClient implements BluetoothClient {
   /// When set, the next [pair] throws with this message.
   String? pairFailure;
 
+  /// Holds [pair] open until completed, same contract as [statusGate].
+  Completer<void>? pairGate;
+
+  /// Holds [connect] open until completed, same contract as [statusGate].
+  Completer<void>? connectGate;
+
   @override
   Future<void> pair(String address) async {
     calls.add('pair $address');
+    final gate = pairGate;
+    if (gate != null) await gate.future;
     final failure = pairFailure;
     if (failure != null) {
       pairFailure = null;
@@ -95,7 +120,11 @@ class _FakeBluetoothClient implements BluetoothClient {
   }
 
   @override
-  Future<void> connect(String address) async => calls.add('connect $address');
+  Future<void> connect(String address) async {
+    calls.add('connect $address');
+    final gate = connectGate;
+    if (gate != null) await gate.future;
+  }
 
   @override
   Future<void> disconnect(String address) async =>
@@ -291,5 +320,113 @@ void main() {
         expect(cubit.state.pairingAddress, isNull);
       },
     );
+  });
+
+  // Same shape as the WiFi tray: bluez calls take seconds and the tray is
+  // dismissible throughout, so every post-await emit has to re-check
+  // `isClosed` or the continuation throws on a closed cubit.
+  group('BluetoothCubit closing mid-flight', () {
+    const address = 'AA:BB:CC:DD:EE:FF';
+
+    test(
+      'load survives the tray closing while status is in flight',
+      () async {
+        final client = _FakeBluetoothClient()..statusGate = Completer<void>();
+        final cubit = BluetoothCubit(repository: _repo(client));
+
+        final pending = cubit.load();
+        await pumpEventQueue();
+        await cubit.close();
+        client.statusGate!.complete();
+
+        await expectLater(pending, completes);
+      },
+    );
+
+    test('load survives the tray closing while status is failing', () async {
+      final client = _FakeBluetoothClient()..statusGate = Completer<void>();
+      final cubit = BluetoothCubit(repository: _repo(client));
+
+      final pending = cubit.load();
+      await pumpEventQueue();
+      await cubit.close();
+      client.statusGate!.completeError(StateError('helper missing'));
+
+      await expectLater(pending, completes);
+    });
+
+    test(
+      'scan survives the tray closing while discovery is in flight',
+      () async {
+        final client = _FakeBluetoothClient();
+        final cubit = BluetoothCubit(repository: _repo(client));
+        await cubit.load();
+
+        client.scanGate = Completer<void>();
+        final pending = cubit.scan();
+        await pumpEventQueue();
+        await cubit.close();
+        client.scanGate!.complete();
+
+        await expectLater(pending, completes);
+      },
+    );
+
+    test(
+      'scan survives the tray closing while discovery is failing',
+      () async {
+        final client = _FakeBluetoothClient();
+        final cubit = BluetoothCubit(repository: _repo(client));
+        await cubit.load();
+
+        client.scanGate = Completer<void>();
+        final pending = cubit.scan();
+        await pumpEventQueue();
+        await cubit.close();
+        client.scanGate!.completeError(StateError('discovery refused'));
+
+        await expectLater(pending, completes);
+      },
+    );
+
+    // Pairing waits on a human at the far device, so the tray outlives it least
+    // of all. The failure has to come from `pair` itself: a failure raised by
+    // the refresh behind it lands in `_refreshDevices`, which was already
+    // guarded, and would prove nothing about `pair`'s own catch.
+    test('pair survives the tray closing mid-pairing', () async {
+      final client = _FakeBluetoothClient(
+        devices: const [
+          BluetoothDevice(name: 'Phone', address: address),
+        ],
+      );
+      final cubit = BluetoothCubit(repository: _repo(client));
+      await cubit.load();
+
+      client.pairGate = Completer<void>();
+      final pending = cubit.pair(address);
+      await pumpEventQueue();
+      await cubit.close();
+      client.pairGate!.completeError(StateError('no such device'));
+
+      await expectLater(pending, completes);
+    });
+
+    test('a device verb survives the tray closing mid-call', () async {
+      final client = _FakeBluetoothClient(
+        devices: const [
+          BluetoothDevice(name: 'Phone', address: address, paired: true),
+        ],
+      );
+      final cubit = BluetoothCubit(repository: _repo(client));
+      await cubit.load();
+
+      client.connectGate = Completer<void>();
+      final pending = cubit.connect(address);
+      await pumpEventQueue();
+      await cubit.close();
+      client.connectGate!.completeError(StateError('link dropped'));
+
+      await expectLater(pending, completes);
+    });
   });
 }
