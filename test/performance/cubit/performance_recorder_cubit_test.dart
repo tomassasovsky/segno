@@ -993,10 +993,14 @@ void main() {
     );
   });
 
-  group('low-disk warning', () {
+  group('free-space floor (#640)', () {
+    // A capture that armed onto a healthy disk ran 13.5 hours and filled a
+    // 110GB partition, because the only check ran once at arm. These pin both
+    // gates: refuse to start on a full volume, and stop a running capture
+    // before it can get there.
+
     test(
-      'lowDiskWarning becomes true when freeSpaceBytes reports below the '
-      'threshold',
+      'refuses to arm below the floor, and does not create a bundle',
       () async {
         final cubit = build(
           freeSpaceBytes: (_) async =>
@@ -1007,6 +1011,51 @@ void main() {
         await cubit.toggleArm();
         await pumpEventQueue();
 
+        expect(cubit.state, isA<PerformanceRecorderIdle>());
+        expect((cubit.state as PerformanceRecorderIdle).lowDiskBlocked, isTrue);
+        // The refusal must happen BEFORE arm(), or it costs a directory and a
+        // finalize to arrive at the same refusal.
+        expect(performance.armedDirectory, isNull);
+      },
+    );
+
+    test('arms normally when the volume has room', () async {
+      final cubit = build(
+        freeSpaceBytes: (_) async =>
+            PerformanceRecorderCubit.lowDiskThresholdBytes * 2,
+      );
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+      expect(
+        (cubit.state as PerformanceRecorderArmed).lowDiskWarning,
+        isFalse,
+      );
+    });
+
+    test(
+      'warns while armed once free space falls under the warning line',
+      () async {
+        var free = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
+        final cubit = build(freeSpaceBytes: (_) async => free);
+        addTearDown(cubit.close);
+
+        await cubit.toggleArm();
+        await pumpEventQueue();
+        expect(
+          (cubit.state as PerformanceRecorderArmed).lowDiskWarning,
+          isFalse,
+        );
+
+        // Between the warning line and the stop floor: warn, keep recording.
+        free = PerformanceRecorderCubit.lowDiskThresholdBytes - 1;
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await pumpEventQueue();
+
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
         expect(
           (cubit.state as PerformanceRecorderArmed).lowDiskWarning,
           isTrue,
@@ -1015,21 +1064,167 @@ void main() {
     );
 
     test(
-      'stays false when free space is comfortably above the threshold',
+      'stops a running capture when free space crosses the stop floor',
       () async {
-        final cubit = build(
-          freeSpaceBytes: (_) async =>
-              PerformanceRecorderCubit.lowDiskThresholdBytes * 2,
-        );
+        var free = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
+        final cubit = build(freeSpaceBytes: (_) async => free);
         addTearDown(cubit.close);
 
         await cubit.toggleArm();
         await pumpEventQueue();
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
+
+        free = PerformanceRecorderCubit.finalizeHeadroomBytes ~/ 2;
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await pumpEventQueue();
+
+        // It must leave armed under its own steam -- nothing else disarmed it.
+        expect(cubit.state, isNot(isA<PerformanceRecorderArmed>()));
+        expect(performance.armedDirectory, isNull);
+      },
+    );
+
+    test('the stopped capture is reported as stopped-early for disk', () async {
+      // The reason cannot come from the manifest here: perf_drain.c only
+      // writes `stopped_early` when IT self-stops on a failed write, and this
+      // stop happens BEFORE any write fails. Without the cubit carrying its
+      // own reason the take would be reported as an ordinary success.
+      var free = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
+      final cubit = build(freeSpaceBytes: (_) async => free);
+      addTearDown(cubit.close);
+
+      // A capture with real content, so finalize delivers a bundle instead of
+      // discarding it as short-and-empty.
+      await armWithLog(performance);
+      await pumpEventQueue();
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+
+      free = PerformanceRecorderCubit.finalizeHeadroomBytes ~/ 2;
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      await pumpEventQueue();
+
+      final state = cubit.state;
+      expect(state, isA<PerformanceRecorderCompleted>());
+      final result = (state as PerformanceRecorderCompleted).result;
+      expect(result, isA<PerformanceRecordStoppedEarly>());
+      expect(
+        (result! as PerformanceRecordStoppedEarly).reason,
+        PerformanceStopReason.diskFull,
+      );
+    });
+
+    test('the floor scales with what has been captured, not a constant', () {
+      // The floor has to cover a FULL SECOND COPY of the capture: finalize
+      // writes every stream out as WAV and keeps the .pcm alongside. Measured
+      // on the appliance at 96kHz that is 384 KB/s per stream across three
+      // continuous streams, so a long take needs GBs, not a constant.
+      const captured = 4 * 1024 * 1024;
+      expect(
+        PerformanceRecorderCubit.stopFloorFor(captured),
+        greaterThan(captured),
+        reason: 'the floor must leave room to duplicate what was captured',
+      );
+      expect(
+        PerformanceRecorderCubit.stopFloorFor(captured * 100),
+        greaterThan(PerformanceRecorderCubit.stopFloorFor(captured)),
+        reason: 'a bigger capture must demand a bigger floor',
+      );
+      expect(
+        PerformanceRecorderCubit.stopFloorFor(0),
+        PerformanceRecorderCubit.finalizeHeadroomBytes,
+      );
+    });
+
+    test(
+      'a full disk during the .als export still completes the capture',
+      () async {
+        // Regression for what the appliance run caught: writeFrom failed with
+        // ENOSPC inside _writeDawExports, and because _finishRender awaits
+        // it on its first line, the Completed emit on its last line never
+        // ran -- the console sat in Rendering forever. The take is already
+        // safe by then, so a failed export must degrade, not hang.
+        engine.renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        final dir = await armWithLog(performance);
+        await pumpEventQueue();
+
+        // Fail the .als write the way a full volume does: a directory cannot be
+        // overwritten by a file, so writeAsBytes throws FileSystemException on
+        // exactly the path _writeDawExports targets.
+        Directory('$dir/project.als').createSync(recursive: true);
+
+        clock = clock.add(const Duration(seconds: 5));
+        await cubit.toggleArm();
 
         expect(
-          (cubit.state as PerformanceRecorderArmed).lowDiskWarning,
-          isFalse,
+          await waitForCompleted(cubit),
+          isA<PerformanceRecorderCompleted>(),
+          reason: 'a failed export left the cubit stuck instead of completing',
         );
+      },
+    );
+
+    test(
+      'a disk stop on a discarded short capture does not taint the next',
+      () async {
+        // _afterFinalized emits `discardedShort` and RETURNS before the reset
+        // in _finishRender, so a reason left over from a stop would be
+        // reported against the next capture -- a healthy take blamed on a
+        // full disk.
+        var free = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
+        final cubit = build(freeSpaceBytes: (_) async => free);
+        addTearDown(cubit.close);
+
+        // First capture: stopped for disk, but too short/empty to keep.
+        await cubit.toggleArm();
+        await pumpEventQueue();
+        free = PerformanceRecorderCubit.finalizeHeadroomBytes ~/ 2;
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await pumpEventQueue();
+
+        // Second capture on a healthy volume, disarmed normally.
+        free = PerformanceRecorderCubit.lowDiskThresholdBytes * 4;
+        engine.renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+        await armWithLog(performance);
+        await pumpEventQueue();
+        clock = clock.add(const Duration(seconds: 5));
+        await cubit.toggleArm();
+        final completed = await waitForCompleted(cubit);
+
+        expect(
+          completed.result,
+          isNot(isA<PerformanceRecordStoppedEarly>()),
+          reason: 'a stale stop reason was blamed on a healthy capture',
+        );
+      },
+    );
+
+    test(
+      'an unanswerable volume neither blocks arming nor stops a capture',
+      () async {
+        // Windows, or df failing. `null` means "unknown", and reading it as
+        // "no space" would stop every capture on those platforms.
+        final cubit = build(freeSpaceBytes: (_) async => null);
+        addTearDown(cubit.close);
+
+        await cubit.toggleArm();
+        await pumpEventQueue();
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
+
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await pumpEventQueue();
+
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
       },
     );
   });

@@ -77,14 +77,25 @@ sealed class PerformanceRecorderState extends Equatable {
 /// [PerformanceRecorderCubit.discardBootCapture]) resolves it.
 class PerformanceRecorderIdle extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderIdle].
-  const PerformanceRecorderIdle({this.recoveryDirectory});
+  const PerformanceRecorderIdle({
+    this.recoveryDirectory,
+    this.lowDiskBlocked = false,
+  });
 
   /// The crashed capture directory offered for recovery, or `null` when
   /// there is nothing to recover.
   final String? recoveryDirectory;
 
+  /// An arm was refused because the export volume is already below the
+  /// free-space floor (#640).
+  ///
+  /// Set on the idle state the refused arm lands back on, so the UI can say
+  /// why nothing happened — a refusal the operator cannot see is
+  /// indistinguishable from a dead control.
+  final bool lowDiskBlocked;
+
   @override
-  List<Object?> get props => [recoveryDirectory];
+  List<Object?> get props => [recoveryDirectory, lowDiskBlocked];
 }
 
 /// Armed: the engine's capture taps are running. [elapsed] and [overrun]
