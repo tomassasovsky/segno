@@ -78,6 +78,13 @@ le_loopback_kind le_classify_capture_device(const char* name);
  * loopback. */
 int le_label_is_loopback(const char* label);
 
+/* Sightings an entry of the channel-count memo is trusted for before it is read
+ * again (engine_devices.c, where the rationale for a per-entry countdown lives).
+ * Exposed so the stability test can run enumeration PAST the TTL and cover the
+ * re-read branch, rather than hardcoding a pass count that a retune would leave
+ * short without failing anything. Not part of the FFI surface. */
+#define LE_CHANNEL_CACHE_TTL 32
+
 /* YIN pitch detector for the PSOLA octaver (mode >= 0.5). Runs the cumulative-
  * mean-normalized difference function over `n` contiguous samples of `x` at `sr`
  * Hz, searching the vocal band (~60-1000 Hz), and returns a sub-sample period
