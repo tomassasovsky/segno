@@ -226,7 +226,7 @@ struct le_perf_drain {
   int layer_count;
 };
 
-int le_perf_drain_self_stopped_for_test(struct le_perf_drain* drain) {
+int le_perf_drain_self_stopped(struct le_perf_drain* drain) {
   if (drain == NULL) return 0;
   return atomic_load_explicit(&drain->disk_full, memory_order_acquire);
 }
@@ -652,7 +652,7 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
   if (ok && !le_pd_flush(d->events_file)) ok = 0;
 
   /* Write the sidecar (with the disk_full marker, if this cycle just failed)
-   * BEFORE publishing d->disk_full — le_perf_drain_self_stopped_for_test
+   * BEFORE publishing d->disk_full — le_perf_drain_self_stopped
    * lets a caller observe that flag while the thread is still alive (unlike
    * device_changed, only ever checked after a full join), so the store must
    * happen strictly after the marker it implies is already durably on disk,

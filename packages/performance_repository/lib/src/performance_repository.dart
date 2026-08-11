@@ -112,7 +112,7 @@ class PerformanceRepository {
   /// those fields' own at-rest defaults. Poll-on-demand, the same convention
   /// [renderProgress] uses, so a UI driving an elapsed-time readout ticks
   /// this itself rather than this repository owning a second internal timer.
-  ({Duration elapsed, bool overrun}) get captureProgress {
+  ({Duration elapsed, bool overrun, bool selfStopped}) get captureProgress {
     final snapshot = _engine.snapshot();
     final sampleRate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 48000;
     return (
@@ -120,6 +120,10 @@ class PerformanceRepository {
         microseconds: snapshot.perfFrames * 1000000 ~/ sampleRate,
       ),
       overrun: snapshot.perfOverruns > 0,
+      // The drain thread died on a failed write. Carried alongside the
+      // progress the UI already polls rather than on a second channel, so the
+      // app learns about it at tick rate instead of not at all (#652).
+      selfStopped: snapshot.perfStopped,
     );
   }
 

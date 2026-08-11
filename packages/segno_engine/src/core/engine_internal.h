@@ -241,7 +241,15 @@ struct le_perf_drain; /* opaque; full definition in perf_drain.c */
  * up until the corresponding le_perf_drain_stop — that call frees `drain`, so
  * a `drain` pointer retained past it is a use-after-free. Not part of the FFI
  * surface. */
-int le_perf_drain_self_stopped_for_test(struct le_perf_drain* drain);
+/* Whether the capture drain thread stopped ITSELF because a write failed
+ * (disk full, quota, read-only remount, I/O error).
+ *
+ * No longer test-only: this is published on the engine snapshot as
+ * `perf_stopped` so the app can react. Without that the thread stopped
+ * silently -- the capture stayed "armed", its handles stayed open, and finalize
+ * never ran, which is how a runaway capture left 105GB of unfinalized .pcm
+ * (#640, #652). */
+int le_perf_drain_self_stopped(struct le_perf_drain* drain);
 
 /* Forces every subsequent PCM/sidecar write attempt (across every drain
  * thread in the process) to fail, deterministically simulating a full disk

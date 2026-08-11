@@ -6117,10 +6117,10 @@ static size_t read_file_for_test(const char* path, char* out, size_t cap) {
 static int poll_drain_self_stopped_for_test(struct le_perf_drain* drain,
                                             int timeout_ms) {
   for (int waited = 0; waited < timeout_ms; waited += 10) {
-    if (le_perf_drain_self_stopped_for_test(drain)) return 1;
+    if (le_perf_drain_self_stopped(drain)) return 1;
     test_sleep_ms(10);
   }
-  return le_perf_drain_self_stopped_for_test(drain);
+  return le_perf_drain_self_stopped(drain);
 }
 
 static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
@@ -6781,11 +6781,16 @@ static void test_perf_drain_disk_full_stops_cleanly(void) {
   le_perf_drain_force_write_failure_for_test(0); /* reset before other tests run */
 
   CHECK(stopped);
-  CHECK(le_perf_drain_self_stopped_for_test(e->perf.drain) == 1);
+  CHECK(le_perf_drain_self_stopped(e->perf.drain) == 1);
 
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_armed == 1); /* the engine itself is unaffected; still "armed" */
+  /* ...and THAT is exactly why the stop has to be published separately: an app
+   * polling perf_armed alone sees a healthy capture while the drain is dead.
+   * Reading the flag off the snapshot is the whole point of #652 -- before it,
+   * this state was reachable only through a test-only accessor. */
+  CHECK(s.perf_stopped == 1);
 
   char json[4096];
   char sidecar_path[600];
