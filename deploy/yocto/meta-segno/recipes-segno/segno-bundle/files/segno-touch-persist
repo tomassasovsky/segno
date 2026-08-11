@@ -1,0 +1,38 @@
+#!/bin/sh
+# Re-derive the touchscreen calibration udev rule from /data at boot, and make
+# the matrix directory writable by the compositor.
+#
+# Two jobs, both of which have to happen before weston starts:
+#
+#   1. The matrix lives on the shared /data partition so it survives a RAUC A/B
+#      update; the udev rule that carries it into libinput lives in /etc, which
+#      the update replaces. Rebuild the rule from /data on every boot so a
+#      freshly-flashed or freshly-updated slot comes up already calibrated.
+#
+#   2. weston runs as User=weston and invokes the calibration helper as itself,
+#      so the directory it writes the matrix into has to be owned by that user.
+#      Creating it here (ordered Before=weston.service) means the helper never
+#      has to create anything as an unprivileged user.
+#
+# Same shape as segno-nm-persist / segno-bt-persist / segno-ssh-persist.
+#
+# See https://github.com/tomassasovsky/segno/issues/659
+set -eu
+
+DATA_DIR="${SEGNO_TOUCH_DIR:-/data/touch}"
+# Must match User=/Group= in weston.service.
+WESTON_USER="${SEGNO_WESTON_USER:-weston}"
+
+mkdir -p "$DATA_DIR"
+
+# Non-fatal: on an image where the compositor runs as someone else, the rule is
+# still rebuilt below — only the write-back from weston stops working, and
+# segno-touch-ctl says so when it cannot write.
+if id "$WESTON_USER" >/dev/null 2>&1; then
+    chown "$WESTON_USER:$WESTON_USER" "$DATA_DIR" || \
+        echo "segno-touch-persist: could not chown $DATA_DIR to $WESTON_USER" >&2
+else
+    echo "segno-touch-persist: user '$WESTON_USER' not found; weston will not be able to save a calibration" >&2
+fi
+
+exec /usr/bin/segno-touch-ctl apply

@@ -48,6 +48,7 @@ these tiles talk to host helpers (same pattern as OTA's `segno-update-ctl`):
 | `/usr/bin/segno-wifi-ctl` | scan / join / disconnect / forget (`nmcli` / NetworkManager) |
 | `/usr/bin/segno-bt-ctl` | scan + discoverable / advertise (`bluetoothctl`) |
 | `/usr/bin/segno-brightness-ctl` | DDC/CI brightness via `ddcutil` VCP 0x10 |
+| `/usr/bin/segno-touch-ctl` | touchscreen calibration matrix (`status` / `get` / `set` / `reset`) |
 
 WiFi is owned by **NetworkManager** (eth0 + wlan*). `systemd-networkd` is
 masked on the appliance image so the two managers do not fight.
@@ -79,6 +80,49 @@ In the app: open the tray → WiFi (join a network) → Bluetooth (toggle
 discoverable / broadcast, run a scan) → drag brightness and confirm the panel
 dims. If `supported` is false for brightness, the slider still persists but
 does not change the panel — note that for a gamma follow-up.
+
+## Touchscreen calibration
+
+Weston does the measuring (`weston-touch-calibrator`, from `weston-examples`);
+Segno persists the result. The protocol is gated behind
+`[libinput] touchscreen_calibrator=true` in `weston.ini` — without it the
+calibrator starts and immediately fails to bind.
+
+```bash
+# What weston thinks it has, and whether a matrix is applied.
+segno-touch-ctl status
+
+# List calibratable devices (each is reported with the output it is bound to).
+export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1
+weston-touch-calibrator -v
+
+# Calibrate: draws crosshairs on the panel, tap each one.
+weston-touch-calibrator -v '<device sys path from the list above>'
+```
+
+Weston applies the matrix to the live session and hands it to
+`segno-touch-calibration-helper` (its `calibration_helper`), which stores it at
+**`/data/touch/calibration`** — on the persistent partition, because a RAUC A/B
+update replaces the whole rootfs and a matrix written into `/etc` is lost on the
+next OTA.
+
+Note the privilege split: `weston.service` runs `User=weston`, so the helper it
+invokes cannot write udev rules. It writes only the matrix file;
+`segno-touch-apply.path` notices that write and runs the root-side
+`segno-touch-ctl apply`, which regenerates
+`/etc/udev/rules.d/98-segno-touch-calibration.rules` and re-triggers input
+devices. `segno-touch-persist` replays the same thing at boot, ordered
+`Before=weston.service`.
+
+The touchscreen → output binding is separate, in
+`/etc/udev/rules.d/97-segno-touch-output.rules` (`WL_OUTPUT`). It matters on a
+two-panel unit: weston must know which output owns the touchscreen, and with no
+hint it picks a default — so taps can be scaled into the *other* panel's
+coordinate space, which looks like a dead touchscreen rather than a mapping bug.
+Change the connector name there if a unit is wired with the main panel on the
+other port.
+
+To undo a bad calibration: `segno-touch-ctl reset`.
 
 ## Decision 1 — Kiosk rendering target: **GTK-on-Wayland** (the Flutter Linux runner)
 
