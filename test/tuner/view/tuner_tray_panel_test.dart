@@ -96,7 +96,7 @@ void main() {
               BlocProvider<TunerCubit>.value(value: tuner),
               BlocProvider<InputsCubit>.value(value: inputs),
             ],
-            child: Scaffold(body: TunerTrayPanel(onBack: () {})),
+            child: const Scaffold(body: TunerTrayPanel()),
           ),
         ),
       ),
