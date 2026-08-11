@@ -43,6 +43,7 @@ class ControlContext {
     required this.looper,
     required this.overlay,
     required this.frame,
+    this.boundChains = const {},
   });
 
   /// Engine truth (the polled snapshot projection).
@@ -53,6 +54,11 @@ class ControlContext {
 
   /// The projected LED frame (what the hardware pedal renders).
   final PedalStateFrame frame;
+
+  /// The resolved `enabled` of every track switch that carries an FX binding,
+  /// by channel. Absent means unbound; a present null means the binding no
+  /// longer resolves. See `projectTrackLed`.
+  final Map<int, bool?> boundChains;
 }
 
 /// One named rule whose check returns `null` when satisfied, or a description
@@ -238,16 +244,22 @@ final List<ControlInvariant> controlInvariants = [
   // FX mode's LED rule: every track LED reads the Track-stage chain flag and
   // nothing else — blue engaged, dark bypassed (R8: the meaning changes per
   // mode, the wire does not). A channel the engine does not expose reads dark.
-  ControlInvariant('fx-led-mirrors-chain', (c) {
+  // Named for the unbound case, which is still most of them: a switch with no
+  // binding stomps its own channel's Track-stage chain, so its LED mirrors
+  // that flag. A BOUND switch drives something else entirely — a chain on any
+  // stage, or one slot inside one — and mirroring the track chain there was
+  // the bug this rule was enforcing rather than catching (#631).
+  ControlInvariant('fx-led-mirrors-what-the-switch-drives', (c) {
     if (c.overlay.mode != InteractionMode.fx) return null;
     for (var ch = 0; ch < c.frame.trackLeds.length; ch++) {
-      final track = _trackAt(c.looper, ch);
-      final want = (track?.chainEnabled ?? false)
-          ? PedalTrackLed.blue
-          : PedalTrackLed.off;
+      final bound = c.boundChains.containsKey(ch);
+      final on = bound
+          ? c.boundChains[ch] ?? false
+          : _trackAt(c.looper, ch)?.chainEnabled ?? false;
+      final want = on ? PedalTrackLed.blue : PedalTrackLed.off;
       if (c.frame.trackLeds[ch] != want) {
-        return 'FX LED $ch is ${c.frame.trackLeds[ch]} but chain enabled is '
-            '${track?.chainEnabled}';
+        return 'FX LED $ch is ${c.frame.trackLeds[ch]} but the '
+            '${bound ? 'bound target' : 'track chain'} reads $on';
       }
     }
     return null;

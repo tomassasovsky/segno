@@ -324,16 +324,18 @@ void main() {
       expect(violation(ok, 'parked-preview-matches-resume'), isNull);
     });
 
-    test('fx-led-mirrors-chain: a dark LED over an engaged chain violates', () {
+    test('fx-led-mirrors-what-the-switch-drives: a dark LED over an engaged '
+        'chain violates', () {
       final c = ControlContext(
         looper: looper(),
         overlay: const ControlState(mode: InteractionMode.fx),
         frame: frame(mode: PedalMode.fx), // all dark, all chains engaged
       );
-      expect(violation(c, 'fx-led-mirrors-chain'), isNotNull);
+      expect(violation(c, 'fx-led-mirrors-what-the-switch-drives'), isNotNull);
     });
 
-    test('fx-led-mirrors-chain: a lit LED over a bypassed chain violates', () {
+    test('fx-led-mirrors-what-the-switch-drives: a lit LED over a bypassed '
+        'chain violates', () {
       final c = ControlContext(
         looper: looper(
           tracks: tracksWith(const Track(channel: 2, chainEnabled: false)),
@@ -344,10 +346,59 @@ void main() {
           leds: List.filled(PedalStateFrame.trackCount, PedalTrackLed.blue),
         ),
       );
-      expect(violation(c, 'fx-led-mirrors-chain'), isNotNull);
+      expect(violation(c, 'fx-led-mirrors-what-the-switch-drives'), isNotNull);
     });
 
-    test('fx-led-mirrors-chain: blue-for-engaged, dark-for-bypassed holds', () {
+    test(
+      'fx-led-mirrors-what-the-switch-drives: a BOUND switch is judged by its '
+      'own target, not by the channel it sits on',
+      () {
+        // Channel 0's own chain is engaged, and the LED is dark — a violation
+        // for an unbound switch. Bound to something that is OFF, dark is the
+        // only correct reading: the switch does not drive this channel.
+        final c = ControlContext(
+          looper: looper(),
+          overlay: const ControlState(mode: InteractionMode.fx),
+          frame: frame(
+            mode: PedalMode.fx,
+            // Only channel 0 is bound; the rest still mirror their own
+            // engaged chains, which is the half of the rule that stands.
+            leds: [
+              for (var i = 0; i < PedalStateFrame.trackCount; i++)
+                if (i == 0) PedalTrackLed.off else PedalTrackLed.blue,
+            ],
+          ),
+          boundChains: const {0: false},
+        );
+        expect(
+          violation(c, 'fx-led-mirrors-what-the-switch-drives'),
+          isNull,
+        );
+
+        // And a stale binding — present, unresolvable — must read dark too.
+        expect(
+          violation(
+            ControlContext(
+              looper: looper(),
+              overlay: const ControlState(mode: InteractionMode.fx),
+              frame: frame(
+                mode: PedalMode.fx,
+                leds: List.filled(
+                  PedalStateFrame.trackCount,
+                  PedalTrackLed.blue,
+                ),
+              ),
+              boundChains: const {0: null},
+            ),
+            'fx-led-mirrors-what-the-switch-drives',
+          ),
+          isNotNull,
+        );
+      },
+    );
+
+    test('fx-led-mirrors-what-the-switch-drives: blue-for-engaged, '
+        'dark-for-bypassed holds', () {
       final c = ControlContext(
         looper: looper(
           tracks: tracksWith(const Track(channel: 2, chainEnabled: false)),
@@ -361,7 +412,7 @@ void main() {
           ],
         ),
       );
-      expect(violation(c, 'fx-led-mirrors-chain'), isNull);
+      expect(violation(c, 'fx-led-mirrors-what-the-switch-drives'), isNull);
       // ...and empty-track-dark stands aside in FX mode (every track here is
       // empty, yet seven LEDs are lit).
       expect(violation(c, 'empty-track-dark'), isNull);

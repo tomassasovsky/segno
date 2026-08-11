@@ -52,6 +52,12 @@ Set<int> armedTracks(LooperState looper, ControlState overlay) {
 
 /// The pedal-track LED for [channel] under the current mode.
 ///
+/// [boundChains] carries the resolved `enabled` of every track button that
+/// carries an FX binding, keyed by channel — absent means unbound, and a
+/// present null means the binding no longer resolves. Handed in rather than
+/// read here, because a binding meets the live rig in `FxBindingResolver` and
+/// this function stays pure.
+///
 /// Mute mode: green = armed AND audible (a muted or excluded track reads
 /// off; while parked, the parked-resume members show what Rec/Play brings
 /// back). Record mode: the cursor and any capturing track read red. FX mode:
@@ -66,8 +72,9 @@ Set<int> armedTracks(LooperState looper, ControlState overlay) {
 PedalTrackLed projectTrackLed(
   LooperState looper,
   ControlState overlay,
-  int channel,
-) {
+  int channel, {
+  Map<int, bool?> boundChains = const {},
+}) {
   final track = channel >= 0 && channel < looper.tracks.length
       ? looper.tracks[channel]
       : null;
@@ -82,6 +89,17 @@ PedalTrackLed projectTrackLed(
       if (track?.isCapturing ?? false) return PedalTrackLed.red;
       return PedalTrackLed.off;
     case InteractionMode.fx:
+      // A BOUND switch reports its own target, not this channel's track chain.
+      // The two are different flags — a binding can name a chain on any stage
+      // or a single slot inside one — so a switch bound to an input's reverb
+      // used to light from track N's chain and stay lit when you stomped it
+      // off. Present-but-null is a stale binding: R25 says it lights nothing,
+      // which the old reading could not honour either.
+      if (boundChains.containsKey(channel)) {
+        return (boundChains[channel] ?? false)
+            ? PedalTrackLed.blue
+            : PedalTrackLed.off;
+      }
       // A channel the engine does not expose reads dark — there is no chain
       // behind it to stomp.
       if (track == null) return PedalTrackLed.off;
@@ -98,10 +116,11 @@ PedalStateFrame projectFrame(
   bool clearFadeActive = false,
   bool performanceArmed = false,
   double masterGain = 1.0,
+  Map<int, bool?> boundChains = const {},
 }) {
   final leds = <PedalTrackLed>[
     for (var channel = 0; channel < PedalStateFrame.trackCount; channel++)
-      projectTrackLed(looper, overlay, channel),
+      projectTrackLed(looper, overlay, channel, boundChains: boundChains),
   ];
   // global_color carries the ring's activity color: red while recording,
   // amber while overdubbing, green while a loop plays, off when idle. (The
@@ -161,7 +180,12 @@ PedalStateFrame projectFrame(
   // zero release-mode cost.
   assert(
     debugControlInvariantsHold(
-      ControlContext(looper: looper, overlay: overlay, frame: frame),
+      ControlContext(
+        looper: looper,
+        overlay: overlay,
+        frame: frame,
+        boundChains: boundChains,
+      ),
     ),
     'control-surface invariants must hold at projection time',
   );
