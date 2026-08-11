@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/theme/theme.dart';
@@ -17,13 +18,14 @@ import 'package:segno/theme/theme.dart';
 /// The extra tap is affordable *here specifically* because this is a looper
 /// with a foot pedal: live mid-take control belongs to the pedal, so the
 /// screen's job is setup and overview rather than performance.
-class FxParamEditSheet extends StatefulWidget {
-  /// Creates an [FxParamEditSheet].
-  const FxParamEditSheet({
+class FxParamEditor extends StatefulWidget {
+  /// Creates an [FxParamEditor].
+  const FxParamEditor({
     required this.spec,
     required this.value,
     required this.source,
     required this.onChanged,
+    required this.onClose,
     this.formatValue,
     this.isGone,
     super.key,
@@ -50,6 +52,10 @@ class FxParamEditSheet extends StatefulWidget {
   /// and cancels to nothing, which is worse than being closed.
   final bool Function()? isGone;
 
+  /// Closes the editor. The card owns whether it is showing, so the editor
+  /// asks rather than popping — there is no route to pop.
+  final VoidCallback onClose;
+
   /// Opens the sheet for [spec] and resolves once it closes.
   ///
   /// Returns the committed plain value, or null if the sheet closed without
@@ -59,36 +65,11 @@ class FxParamEditSheet extends StatefulWidget {
   /// last wrote, because every drag has already written it. That is the
   /// behaviour a live parameter wants — the sound you are hearing when you
   /// dismiss is the sound you keep — and Cancel is the way back.
-  static Future<double?> show(
-    BuildContext context, {
-    required PluginParamInfo spec,
-    required double value,
-    required String source,
-    required ValueChanged<double> onChanged,
-    String? Function(double value)? formatValue,
-    bool Function()? isGone,
-  }) {
-    return showModalBottomSheet<double>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: context.surface.scrim,
-      builder: (_) => FxParamEditSheet(
-        spec: spec,
-        value: value,
-        source: source,
-        onChanged: onChanged,
-        formatValue: formatValue,
-        isGone: isGone,
-      ),
-    );
-  }
-
   @override
-  State<FxParamEditSheet> createState() => _FxParamEditSheetState();
+  State<FxParamEditor> createState() => _FxParamEditorState();
 }
 
-class _FxParamEditSheetState extends State<FxParamEditSheet> {
+class _FxParamEditorState extends State<FxParamEditor> {
   /// The value the sheet opened with — what Cancel restores.
   late final double _opening = widget.value;
   late double _value = widget.value;
@@ -112,7 +93,7 @@ class _FxParamEditSheetState extends State<FxParamEditSheet> {
 
   void _setFromFraction(double fraction) {
     if (widget.isGone?.call() ?? false) {
-      Navigator.of(context).pop();
+      widget.onClose();
       return;
     }
     final next = _plainAt(fraction);
@@ -121,9 +102,69 @@ class _FxParamEditSheetState extends State<FxParamEditSheet> {
     widget.onChanged(next);
   }
 
+  /// Whether the plugin names every step, few enough to list.
+  bool get _named =>
+      widget.spec.valueTexts.length == widget.spec.stepCount + 1 &&
+      widget.spec.stepCount >= 1;
+
+  double _plainForStep(int step) =>
+      widget.spec.min + _span * step / widget.spec.stepCount;
+
+  int get _step {
+    if (_span == 0) return 0;
+    final norm = ((_value - widget.spec.min) / _span).clamp(0.0, 1.0);
+    return (norm * widget.spec.stepCount).round();
+  }
+
+  void _pick(int step) {
+    if (widget.isGone?.call() ?? false) {
+      widget.onClose();
+      return;
+    }
+    final next = _plainForStep(step);
+    if (next == _value) return;
+    setState(() => _value = next);
+    widget.onChanged(next);
+  }
+
+  /// The control the parameter actually wants.
+  ///
+  /// A bar is right for something continuous and wrong for everything else.
+  /// Dragging a two-position switch along a slider, or hunting a named mode
+  /// by fraction, is worse than the switch and the menu this editor replaced
+  /// — moving them into the card was meant to change WHERE they live, not to
+  /// flatten three kinds of control into one.
+  Widget _control() {
+    if (_named && widget.spec.stepCount <= 24) {
+      return _StepList(
+        key: const Key('fxParamEditor_steps'),
+        labels: widget.spec.valueTexts,
+        selected: _step,
+        onPick: _pick,
+      );
+    }
+    if (widget.spec.stepCount == 1) {
+      return _StepList(
+        key: const Key('fxParamEditor_steps'),
+        labels: const ['Off', 'On'],
+        selected: _step,
+        onPick: _pick,
+      );
+    }
+    return _FxParamTrack(
+      key: const Key('fxParamEditor_track'),
+      fraction: _fraction,
+      onMoved: _setFromFraction,
+      semanticLabel: widget.spec.name,
+      step: widget.spec.stepCount > 0 ? 1 / widget.spec.stepCount : 0.05,
+    );
+  }
+
+  /// Puts the value back where it was and closes. Inline there is nothing to
+  /// dismiss, so Cancel means REVERT — the only thing it can usefully mean.
   void _cancel() {
     widget.onChanged(_opening);
-    Navigator.of(context).pop();
+    widget.onClose();
   }
 
   @override
@@ -135,20 +176,19 @@ class _FxParamEditSheetState extends State<FxParamEditSheet> {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: surface.card,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(17)),
+        color: surface.cardHigh,
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
+      child: Builder(
+        builder: (context) => Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
+              AppText(
                 widget.spec.name,
-                key: const Key('fxParamSheet_name'),
+                key: const Key('fxParamEditor_name'),
                 style: signalLabel(
                   color: surface.textPrimary,
                   size: 20,
@@ -156,7 +196,7 @@ class _FxParamEditSheetState extends State<FxParamEditSheet> {
                 ),
               ),
               const SizedBox(height: 4),
-              Text(
+              AppText(
                 widget.source,
                 style: signalLabel(color: surface.textMuted, size: 14),
               ),
@@ -165,60 +205,50 @@ class _FxParamEditSheetState extends State<FxParamEditSheet> {
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  Text(
+                  AppText(
                     hasText
                         ? fromPlugin
                         : _value.toStringAsFixed(
                             widget.spec.stepCount > 0 ? 0 : 2,
                           ),
-                    key: const Key('fxParamSheet_value'),
+                    key: const Key('fxParamEditor_value'),
                     style: signalMono(color: surface.textPrimary, size: 34),
                   ),
                   if (!hasText && widget.spec.unit.isNotEmpty) ...[
                     const SizedBox(width: 8),
-                    Text(
+                    AppText(
                       widget.spec.unit,
                       style: signalMono(color: surface.textMuted, size: 16),
                     ),
                   ],
                   const Spacer(),
                   TextButton(
-                    key: const Key('fxParamSheet_reset'),
+                    key: const Key('fxParamEditor_reset'),
                     onPressed: () => _setFromFraction(
                       _span == 0
                           ? 0
                           : (widget.spec.def - widget.spec.min) / _span,
                     ),
-                    child: Text(l10n.fxParamResetLabel),
+                    child: AppText(l10n.fxParamResetLabel),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-              _FxParamTrack(
-                key: const Key('fxParamSheet_track'),
-                fraction: _fraction,
-                onMoved: _setFromFraction,
-                semanticLabel: widget.spec.name,
-                // A step where the parameter has them, 5% where it does
-                // not — the grain a keyboard gets on every other bar here.
-                step: widget.spec.stepCount > 0
-                    ? 1 / widget.spec.stepCount
-                    : 0.05,
-              ),
+              _control(),
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    key: const Key('fxParamSheet_cancel'),
+                    key: const Key('fxParamEditor_cancel'),
                     onPressed: _cancel,
-                    child: Text(l10n.cancel),
+                    child: AppText(l10n.cancel),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    key: const Key('fxParamSheet_set'),
-                    onPressed: () => Navigator.of(context).pop(_value),
-                    child: Text(l10n.fxParamSetLabel),
+                    key: const Key('fxParamEditor_set'),
+                    onPressed: widget.onClose,
+                    child: AppText(l10n.fxParamSetLabel),
                   ),
                 ],
               ),
@@ -262,7 +292,7 @@ class _FxParamTrack extends StatelessWidget {
           // Its own node, so a reader lands on the bar rather than on the
           // whole sheet — without this the nearest node above it is the
           // Dialog, which is also what a test finds when it asks for it.
-          key: const Key('fxParamSheet_slider'),
+          key: const Key('fxParamEditor_slider'),
           container: true,
           slider: true,
           label: semanticLabel,
@@ -304,6 +334,47 @@ class _FxParamTrack extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// The named steps of a parameter, one row each.
+///
+/// A list rather than a dropdown: the dropdown was stock Material and read as
+/// borrowed next to the rest of the console, and it hid the choices until you
+/// opened it. There are at most 25 by the time this is used, and they are the
+/// whole reason the editor is open.
+class _StepList extends StatelessWidget {
+  const _StepList({
+    required this.labels,
+    required this.selected,
+    required this.onPick,
+    super.key,
+  });
+
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final (step, label) in labels.indexed)
+          ConsoleRow(
+            key: Key('fxParamEditor_step_$step'),
+            title: label,
+            showDisclosure: false,
+            showDivider: step != labels.length - 1,
+            mark: step == selected
+                ? Icon(Icons.check, size: 16, color: surface.accent)
+                : null,
+            onTap: () => onPick(step),
+          ),
+      ],
     );
   }
 }

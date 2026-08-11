@@ -18,7 +18,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
-import 'package:segno/looper/view/signal/fx_param_edit_sheet.dart';
+import 'package:segno/looper/view/signal/fx_param_editor.dart';
 import 'package:segno/looper/view/signal/signal_detail_panel.dart';
 import 'package:segno/looper/view/signal/signal_tray_panel.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
@@ -1077,7 +1077,7 @@ void main() {
       expect(find.text(l10n.signalPanelLevel), findsOneWidget);
     });
 
-    testWidgets('a tile per parameter, and the sheet drives the chain', (
+    testWidgets('a tile per parameter, and the editor drives the chain', (
       tester,
     ) async {
       await openEditor(tester);
@@ -1092,7 +1092,7 @@ void main() {
         () => bloc.add(any(that: isA<LooperBusEffectParamChanged>())),
       );
 
-      final track = find.byKey(const Key('fxParamSheet_track'));
+      final track = find.byKey(const Key('fxParamEditor_track'));
       await tester.tapAt(
         tester.getTopLeft(track) +
             Offset(tester.getSize(track).width * 0.75, 12),
@@ -1523,13 +1523,12 @@ void main() {
       await tester.tap(find.byKey(const Key('signal_fx_param_0')));
       await tester.pumpAndSettle();
 
-      // And the sheet's own breadcrumb says it in writing, because the
-      // console behind it is dimmed out. Scoped to the sheet: the block chip
-      // and the panel title are still mounted behind the scrim, so an
-      // unscoped finder passes with no breadcrumb at all.
+      // And the editor's own breadcrumb says it in writing. Scoped to the
+      // editor: the block chip and the panel title are still on screen above
+      // it, so an unscoped finder passes with no breadcrumb at all.
       expect(
         find.descendant(
-          of: find.byType(FxParamEditSheet),
+          of: find.byType(FxParamEditor),
           matching: find.textContaining(l10n.effectReverb),
         ),
         findsOneWidget,

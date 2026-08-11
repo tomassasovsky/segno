@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/fx_editor/fx_scope.dart';
-import 'package:segno/looper/view/signal/fx_param_edit_sheet.dart';
+import 'package:segno/looper/view/signal/fx_param_editor.dart';
 import 'package:segno/looper/view/signal/fx_param_tile.dart';
 import 'package:segno/looper/view/signal/signal_fx_editor.dart';
 import 'package:segno/theme/theme.dart';
@@ -107,32 +106,6 @@ const _mode = PluginParamInfo(
   valueTexts: ['Lowpass', 'Bandpass', 'Highpass'],
 );
 
-/// [_mode], but automatable — `_mode` is a read-only list, which lands on the
-/// tile rather than the menu.
-const _modeLive = PluginParamInfo(
-  id: 12,
-  name: 'Mode',
-  unit: '',
-  min: 0,
-  max: 2,
-  def: 0,
-  stepCount: 2,
-  flags: 0x01 | 0x10,
-  valueTexts: ['Lowpass', 'Bandpass', 'Highpass'],
-);
-
-/// A plain two-state parameter — no bypass flag, so it reaches the grid.
-const _twoState = PluginParamInfo(
-  id: 11,
-  name: 'Vintage',
-  unit: '',
-  min: 0,
-  max: 1,
-  def: 0,
-  stepCount: 1,
-  flags: 0x01,
-);
-
 /// The octaver's Shift: 48 divisions, past the menu's 24-step ceiling, so it
 /// routes to the tile and its sheet.
 const _shift = PluginParamInfo(
@@ -170,7 +143,10 @@ Future<AppLocalizations> _l10n(WidgetTester tester) async =>
 void main() {
   Future<void> pump(WidgetTester tester, _FakeScope scope) async {
     tester.view
-      ..physicalSize = const Size(1920, 400)
+      // Tall enough for the grid AND an open editor under it — the editor
+      // lives in the card now, so a 400px harness overflows the moment a
+      // parameter opens. The real panel scrolls; this has no reason to.
+      ..physicalSize = const Size(1920, 900)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -229,7 +205,7 @@ void main() {
       // THE rule the grid exists for: the console lies on the floor under
       // someone playing, so a touch on the surface cannot be audible.
       expect(scope.pluginWrites, isEmpty);
-      expect(find.byType(FxParamEditSheet), findsOneWidget);
+      expect(find.byType(FxParamEditor), findsOneWidget);
     });
 
     testWidgets("the sheet writes back in the plugin's own units", (
@@ -242,7 +218,7 @@ void main() {
       await tester.tap(find.byKey(const Key('signal_fx_param_0')));
       await tester.pumpAndSettle();
 
-      final bar = find.byKey(const Key('fxParamSheet_track'));
+      final bar = find.byKey(const Key('fxParamEditor_track'));
       final left = tester.getTopLeft(bar);
       final size = tester.getSize(bar);
       // A quarter along, measured — so this pins the MAPPING and not merely
@@ -298,41 +274,6 @@ void main() {
       expect(find.text('440 Hz'), findsOneWidget);
       expect(find.text('A4'), findsNothing);
     });
-  });
-
-  testWidgets('an unnamed two-state parameter is a switch, not a menu', (
-    tester,
-  ) async {
-    const vintage = PluginParamInfo(
-      id: 12,
-      name: 'Vintage',
-      unit: '',
-      min: 0,
-      max: 1,
-      def: 0,
-      // One step: two states, and no names for them. Its position is its
-      // value, which is the one case a switch says everything about.
-      stepCount: 1,
-      flags: 0x01,
-    );
-    final scope = _FakeScope([
-      const PluginEffect(
-        ref: PluginRef(format: PluginFormat.vst3, id: 'test.comp'),
-        params: [vintage],
-      ),
-    ]);
-    await pump(tester, scope);
-
-    expect(find.byType(FxParamSwitchCell), findsOneWidget);
-    expect(find.byType(FxParamEnumCell), findsNothing);
-
-    await tester.tap(find.byType(ConsoleSwitch));
-    await tester.pumpAndSettle();
-
-    // Straight to the value: a switch is the one control whose position IS
-    // the value, so it has no sheet to open and nothing to confirm.
-    expect(scope.pluginWrites, isNotEmpty);
-    expect(scope.pluginWrites.last.$3, 1);
   });
 
   testWidgets('a tile says whose parameter it is, and a meter says it reads', (
@@ -423,86 +364,6 @@ void main() {
     );
   });
 
-  testWidgets('a switch and a menu say which effect they belong to', (
-    tester,
-  ) async {
-    final scope = _FakeScope([
-      const PluginEffect(
-        ref: PluginRef(format: PluginFormat.vst3, id: 'test.oct'),
-        name: 'Octaver',
-        params: [_twoState, _modeLive],
-        paramValues: {11: 1, 12: 0},
-      ),
-    ]);
-    await pump(tester, scope);
-
-    // Not "Bypass" and "Mode": a grid of four effects has four of each, and a
-    // screen reader hears the same word four times with nothing to tell it
-    // which effect answers to it.
-    // By label rather than by node shape: `ConsoleSwitch` puts the toggle
-    // state on its own Semantics and the tap action on the
-    // `FocusableTapTarget` beneath it, so no single node carries both.
-    expect(find.bySemanticsLabel('Vintage of Octaver'), findsWidgets);
-    expect(
-      tester.getSemantics(find.byType(ConsoleSwitch)),
-      matchesSemantics(
-        label: 'Vintage of Octaver',
-        hasToggledState: true,
-        isToggled: true,
-      ),
-    );
-
-    // And it is the control it announces itself as.
-    await tester.tap(find.byType(ConsoleSwitch));
-    await tester.pump();
-    expect(scope.pluginWrites.last.$3, 0);
-    // Name and step, and nothing else: the box's own text and its "▾" are
-    // excluded, or the reader announces the glyph. The tooltip is set
-    // empty rather than left off, which would fall back to Flutter's
-    // own "Show menu".
-    // The tooltip explicitly: `matchesSemantics` does not look at it, so the
-    // guard for "no Show menu" passed with the fix removed.
-    expect(
-      tester
-          .getSemantics(find.byType(PopupMenuButton<int>))
-          .getSemanticsData()
-          .tooltip,
-      isEmpty,
-    );
-    expect(
-      tester.getSemantics(find.byType(PopupMenuButton<int>)),
-      matchesSemantics(
-        label: 'Mode of Octaver',
-        value: 'Lowpass',
-        isButton: true,
-        hasTapAction: true,
-        hasFocusAction: true,
-        hasExpandedState: true,
-        isFocusable: true,
-      ),
-    );
-  });
-
-  testWidgets("the switch cell wears the pen's small toggle", (tester) async {
-    final scope = _FakeScope([
-      const PluginEffect(
-        ref: PluginRef(format: PluginFormat.vst3, id: 'test.oct'),
-        name: 'Octaver',
-        params: [_twoState],
-        paramValues: {11: 1},
-      ),
-    ]);
-    await pump(tester, scope);
-
-    // `ToggleSm`, 37x22 — not `Toggle`, and emphatically not Material's
-    // `Switch`, which measured 60x36 here and painted a near-white track
-    // over an accent-blue indicator. A 78px tile cannot hold either.
-    expect(
-      tester.getSize(find.byType(ConsoleSwitch)),
-      ConsoleSwitch.smallTrackSize,
-    );
-  });
-
   testWidgets('the sheet track can be adjusted, not just announced', (
     tester,
   ) async {
@@ -520,7 +381,7 @@ void main() {
     // actions with `increasedValue` equal to `value`, which announces a
     // nudge that goes nowhere.
     expect(
-      tester.getSemantics(find.byKey(const Key('fxParamSheet_slider'))),
+      tester.getSemantics(find.byKey(const Key('fxParamEditor_slider'))),
       matchesSemantics(
         isSlider: true,
         label: 'Freq',
@@ -556,7 +417,7 @@ void main() {
     // divisions and lives past the menu's 24-step ceiling, so the sheet is
     // the ONLY thing keeping a pitch shift on a semitone. Every value it
     // writes has to be one.
-    final track = find.byKey(const Key('fxParamSheet_track'));
+    final track = find.byKey(const Key('fxParamEditor_track'));
     final box = tester.getRect(track);
     final drag = await tester.startGesture(box.centerLeft);
     for (var i = 1; i <= 12; i++) {
@@ -592,10 +453,10 @@ void main() {
     await pump(tester, scope);
     await tester.tap(find.byKey(const Key('signal_fx_param_0')));
     await tester.pumpAndSettle();
-    expect(find.byType(FxParamEditSheet), findsOneWidget);
+    expect(find.byType(FxParamEditor), findsOneWidget);
 
     scope.chain = [];
-    final track = find.byKey(const Key('fxParamSheet_track'));
+    final track = find.byKey(const Key('fxParamEditor_track'));
     await tester.tapAt(
       tester.getTopLeft(track) + Offset(tester.getSize(track).width * 0.25, 12),
     );
@@ -604,7 +465,7 @@ void main() {
     // The panel behind it has already collapsed to nothing. A sheet left over
     // an entry that no longer exists takes drags that go nowhere and cancels
     // to nothing — closing says so, swallowing them does not.
-    expect(find.byType(FxParamEditSheet), findsNothing);
+    expect(find.byType(FxParamEditor), findsNothing);
     expect(scope.pluginWrites, isEmpty);
   });
 
@@ -639,7 +500,7 @@ void main() {
       ..formattedPerEntry[0] = 'WRONG'
       ..formattedPerEntry[1] = 'RIGHT';
 
-    final track = find.byKey(const Key('fxParamSheet_track'));
+    final track = find.byKey(const Key('fxParamEditor_track'));
     await tester.tapAt(
       tester.getTopLeft(track) + Offset(tester.getSize(track).width * 0.25, 12),
     );
@@ -667,7 +528,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('signal_fx_param_0')));
       await tester.pumpAndSettle();
-      final track = find.byKey(const Key('fxParamSheet_track'));
+      final track = find.byKey(const Key('fxParamEditor_track'));
       await tester.tapAt(
         tester.getTopLeft(track) +
             Offset(tester.getSize(track).width * 0.25, 12),
@@ -691,11 +552,24 @@ void main() {
       await pump(tester, scope);
       final l10n = await _l10n(tester);
 
-      // Two states with NAMES — the one built-in shaped like that. Drawn as a
-      // bare switch it would say neither, and nothing on screen would tell a
-      // player which algorithm is running.
-      expect(find.byType(FxParamEnumCell), findsOneWidget);
-      expect(find.text(l10n.octaverModeLabel(0)), findsOneWidget);
+      // Two states with NAMES — the one built-in shaped like that. The tile
+      // shows which one is running; opening it lists both by name. A bare
+      // switch would say neither, and a bar would ask a player to find a
+      // named mode by fraction.
+      expect(find.text(l10n.octaverModeLabel(0)), findsWidgets);
+
+      // Mode is the octaver's FOURTH parameter — Shift, Tone, Mix, Mode.
+      // Tapping param 1 opened Tone, which is continuous and correctly gets a
+      // track; the test was reading the editor's answer to a different
+      // question.
+      await tester.tap(find.byKey(const Key('signal_fx_param_3')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('fxParamEditor_steps')), findsOneWidget);
+      expect(find.byKey(const Key('fxParamEditor_track')), findsNothing);
+      for (final step in [0.0, 1.0]) {
+        expect(find.text(l10n.octaverModeLabel(step)), findsWidgets);
+      }
     });
 
     testWidgets('reset puts back the effect default, not zero', (tester) async {
@@ -708,13 +582,13 @@ void main() {
       await tester.pumpAndSettle();
       // Moved off the default first: reset from the default is a no-op, and a
       // no-op cannot tell a right default from a wrong one.
-      final track = find.byKey(const Key('fxParamSheet_track'));
+      final track = find.byKey(const Key('fxParamEditor_track'));
       await tester.tapAt(
         tester.getTopLeft(track) +
             Offset(tester.getSize(track).width * 0.9, 12),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('fxParamSheet_reset')));
+      await tester.tap(find.byKey(const Key('fxParamEditor_reset')));
       await tester.pumpAndSettle();
 
       // Zero is silence for most built-ins: a reset that switches the effect
@@ -759,42 +633,11 @@ void main() {
     // reading `440 Hz` that says `440` has dropped the unit on the way.
     expect(
       find.descendant(
-        of: find.byType(FxParamEditSheet),
+        of: find.byType(FxParamEditor),
         matching: find.text('440 Hz'),
       ),
       findsOneWidget,
     );
-  });
-
-  testWidgets('a two-state parameter with NAMED states is a menu', (
-    tester,
-  ) async {
-    const mode = PluginParamInfo(
-      id: 13,
-      name: 'Mode',
-      unit: '',
-      min: 0,
-      max: 1,
-      def: 0,
-      stepCount: 1,
-      flags: 0x01,
-      // The octaver's own shape: two states that are not on and off.
-      valueTexts: ['Phase vocoder', 'PSOLA'],
-    );
-    final scope = _FakeScope([
-      const PluginEffect(
-        ref: PluginRef(format: PluginFormat.vst3, id: 'test.oct'),
-        params: [mode],
-      ),
-    ]);
-    await pump(tester, scope);
-
-    // A switch is 36px with no room for a caption, so a named pair drawn as
-    // one would say neither name — the parameter would lose the only thing
-    // that said what it does.
-    expect(find.byType(FxParamSwitchCell), findsNothing);
-    expect(find.byType(FxParamEnumCell), findsOneWidget);
-    expect(find.text('Phase vocoder'), findsOneWidget);
   });
 
   testWidgets('a stepped parameter lands on a step', (tester) async {
@@ -817,11 +660,14 @@ void main() {
     ]);
     await pump(tester, scope);
 
-    // Two steps is a menu, not a bar: the taxonomy sends 2..24 to the enum
-    // cell, where every value it can write IS a step by construction.
-    expect(find.byType(FxParamEnumCell), findsOneWidget);
-    await tester.tap(find.byType(FxParamEnumCell));
+    // A named few is a LIST, not a bar and not a dropdown: the grid is one
+    // uniform tile per parameter, and the editor under it shows the steps by
+    // name. The menu this replaces put a `PopupMenuButton` inside a 78px tile
+    // — a control that opened over the face it belonged to.
+    await tester.tap(find.byKey(const Key('signal_fx_param_0')));
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('fxParamEditor_steps')), findsOneWidget);
+
     await tester.tap(find.text('Highpass').last);
     await tester.pumpAndSettle();
 
@@ -847,10 +693,7 @@ void main() {
       ('signal_fx_move_down', 'signal_fx_points_right'),
     ]) {
       expect(
-        find.descendant(
-          of: find.byKey(Key(key)),
-          matching: find.byType(AppText),
-        ),
+        find.descendant(of: find.byKey(Key(key)), matching: find.byType(Text)),
         findsNothing,
       );
       expect(
