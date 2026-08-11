@@ -217100,7 +217100,29 @@
                   "name": "Signal",
                   "descendants": {
                     "tbxzR": {
-                      "icon": "activity"
+                      "type": "frame",
+                      "id": "mVdRn",
+                      "name": "Icon",
+                      "context": "svg",
+                      "clip": true,
+                      "width": 22,
+                      "height": 22,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "path",
+                          "id": "l2hzX",
+                          "x": 2.75,
+                          "y": 7.333333333333333,
+                          "geometry": "M0 8c3 0 3-8 6-8 3 0 3 8 6 8 3 0 3-8 6-8",
+                          "width": 16.5,
+                          "height": 7.333333333333333,
+                          "stroke": "$text-secondary",
+                          "strokeWidth": 1.65,
+                          "strokeLinejoin": "round",
+                          "strokeLinecap": "round"
+                        }
+                      ]
                     },
                     "rW02i": {
                       "content": "Signal"
@@ -217114,7 +217136,53 @@
                   "name": "Control",
                   "descendants": {
                     "tbxzR": {
-                      "icon": "gamepad-2"
+                      "type": "frame",
+                      "id": "zYftH",
+                      "name": "Icon",
+                      "context": "svg",
+                      "clip": true,
+                      "width": 22,
+                      "height": 22,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "cornerRadius": 2.75,
+                          "id": "Okvra",
+                          "x": 2.75,
+                          "y": 5.5,
+                          "width": 16.5,
+                          "height": 11,
+                          "stroke": "$text-secondary",
+                          "strokeWidth": 1.65,
+                          "strokeLinejoin": "round",
+                          "strokeLinecap": "round"
+                        },
+                        {
+                          "type": "ellipse",
+                          "id": "iMWHC",
+                          "x": 6.416666666666666,
+                          "y": 9.625,
+                          "width": 2.75,
+                          "height": 2.75,
+                          "stroke": "$text-secondary",
+                          "strokeWidth": 1.65,
+                          "strokeLinejoin": "round",
+                          "strokeLinecap": "round"
+                        },
+                        {
+                          "type": "ellipse",
+                          "id": "T1Jmqk",
+                          "x": 12.833333333333332,
+                          "y": 9.625,
+                          "width": 2.75,
+                          "height": 2.75,
+                          "stroke": "$text-secondary",
+                          "strokeWidth": 1.65,
+                          "strokeLinejoin": "round",
+                          "strokeLinecap": "round"
+                        }
+                      ]
                     },
                     "rW02i": {
                       "content": "Control"
@@ -217142,7 +217210,55 @@
                   "name": "Tracks",
                   "descendants": {
                     "tbxzR": {
-                      "icon": "align-justify"
+                      "type": "frame",
+                      "id": "MTihR",
+                      "name": "Icon",
+                      "context": "svg",
+                      "clip": true,
+                      "width": 22,
+                      "height": 22,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "cornerRadius": 1.375,
+                          "id": "coWB0",
+                          "x": 2.75,
+                          "y": 3.6666666666666665,
+                          "width": 3.6666666666666665,
+                          "height": 14.666666666666666,
+                          "stroke": "$text-secondary",
+                          "strokeWidth": 1.65,
+                          "strokeLinejoin": "round",
+                          "strokeLinecap": "round"
+                        },
+                        {
+                          "type": "rectangle",
+                          "cornerRadius": 1.375,
+                          "id": "g0j82",
+                          "x": 9.166666666666666,
+                          "y": 3.6666666666666665,
+                          "width": 3.6666666666666665,
+                          "height": 14.666666666666666,
+                          "stroke": "$text-secondary",
+                          "strokeWidth": 1.65,
+                          "strokeLinejoin": "round",
+                          "strokeLinecap": "round"
+                        },
+                        {
+                          "type": "rectangle",
+                          "cornerRadius": 1.375,
+                          "id": "lIPpk",
+                          "x": 15.583333333333332,
+                          "y": 3.6666666666666665,
+                          "width": 3.6666666666666665,
+                          "height": 14.666666666666666,
+                          "stroke": "$text-secondary",
+                          "strokeWidth": 1.65,
+                          "strokeLinejoin": "round",
+                          "strokeLinecap": "round"
+                        }
+                      ]
                     },
                     "rW02i": {
                       "content": "Tracks"
@@ -217156,7 +217272,7 @@
                   "name": "Audio",
                   "descendants": {
                     "tbxzR": {
-                      "icon": "speaker"
+                      "icon": "volume-2"
                     },
                     "rW02i": {
                       "content": "Audio"
@@ -217170,7 +217286,29 @@
                   "name": "Tuner",
                   "descendants": {
                     "tbxzR": {
-                      "icon": "target"
+                      "type": "frame",
+                      "id": "vm3Er",
+                      "name": "Icon",
+                      "context": "svg",
+                      "clip": true,
+                      "width": 22,
+                      "height": 22,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "path",
+                          "id": "b9FzWL",
+                          "x": 3.6666666666666665,
+                          "y": 5,
+                          "geometry": "M0 4.5l0 4m4.5-8.5l0 13m4.5-10.5l0 8m4.5-5.5l0 3",
+                          "width": 12.375,
+                          "height": 11.916666666666666,
+                          "stroke": "$text-secondary",
+                          "strokeWidth": 1.65,
+                          "strokeLinejoin": "round",
+                          "strokeLinecap": "round"
+                        }
+                      ]
                     },
                     "rW02i": {
                       "content": "Tuner"
@@ -217184,7 +217322,7 @@
                   "name": "Network",
                   "descendants": {
                     "tbxzR": {
-                      "icon": "wifi"
+                      "icon": "wifi-high"
                     },
                     "rW02i": {
                       "content": "Network"
@@ -217198,7 +217336,7 @@
                   "name": "System",
                   "descendants": {
                     "tbxzR": {
-                      "icon": "settings"
+                      "icon": "cpu"
                     },
                     "rW02i": {
                       "content": "System"
