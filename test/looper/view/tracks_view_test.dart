@@ -36,6 +36,12 @@ class _MockSessionCubit extends MockCubit<SessionState>
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit {}
 
+/// The rebuild probe for the `rebuild scope` group: a widget `TracksView.build`
+/// creates unconditionally, in console and desktop layouts alike.
+final Finder _chromeProbe = find.byKey(
+  const Key('tracks_settings_secondaryTap'),
+);
+
 void main() {
   late LooperBloc bloc;
   late TracksCubit tracks;
@@ -829,6 +835,44 @@ void main() {
       controller.add(stopped);
       await tester.pump();
       expect(fillOf(tester, 0), live);
+    });
+
+    testWidgets('a rising level moves the bar', (tester) async {
+      // The companion to the freeze test above, and the guard #646 needs: that
+      // one asserts the fill STAYS PUT, so it passes whether or not updates
+      // reach the column. Since the track now arrives through a selector in
+      // `_TrackSlot` rather than being handed down directly, a selector that
+      // stopped yielding new values would freeze every meter on the console
+      // with the rest of the suite still green.
+      const low = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.2),
+        ],
+      );
+      const high = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.9),
+        ],
+      );
+      final controller = StreamController<LooperState>();
+      addTearDown(controller.close);
+      var current = low;
+      when(() => bloc.state).thenAnswer((_) => current);
+      whenListen(bloc, controller.stream, initialState: low);
+      await pump(tester);
+
+      final before = fillOf(tester, 0);
+      current = high;
+      controller.add(high);
+      await tester.pump();
+
+      expect(
+        fillOf(tester, 0),
+        greaterThan(before),
+        reason:
+            'a level change no longer reaches TrackColumn -- the '
+            '_TrackSlot selector has stopped yielding new tracks (see #646)',
+      );
     });
 
     testWidgets('a track with nothing recorded has no bar (height 0)', (
@@ -2098,11 +2142,17 @@ void main() {
 
   group('rebuild scope', () {
     // The whole point of #646: a level tick must not rebuild the console.
-    // `TracksToolbar` and `AudioNotRunningBanner` are built fresh (they carry
-    // closures, so they are never const-canonicalised) every time
-    // `TracksView.build` runs -- which makes widget identity an honest
-    // rebuild detector. Same instance across a pump => that subtree was not
-    // rebuilt.
+    // `TracksView.build` creates this GestureDetector fresh every run (it
+    // carries closures, so it is never const-canonicalised), which makes widget
+    // identity an honest rebuild detector: the same instance across a pump
+    // means the method did not re-run.
+    //
+    // The probe is the keyed detector rather than `TracksToolbar` because the
+    // toolbar is compiled out when `kConsoleMode` is true -- and the console is
+    // the build whose frame budget prompted this. Probing something both
+    // layouts contain keeps the guard meaningful under
+    // `--dart-define=SEGNO_CONSOLE=true` instead of throwing on a missing
+    // widget.
     late StreamController<LooperState> states;
 
     setUp(() => states = StreamController<LooperState>.broadcast());
@@ -2124,7 +2174,7 @@ void main() {
       seedStream(quiet);
       await pump(tester);
 
-      final before = tester.widget<TracksToolbar>(find.byType(TracksToolbar));
+      final before = tester.widget<GestureDetector>(_chromeProbe);
 
       // Exactly what a moving meter emits: same structure, new levels and a
       // new playhead. Nothing the chrome renders depends on any of it.
@@ -2140,14 +2190,7 @@ void main() {
       await tester.pump();
 
       expect(
-        identical(
-          before,
-          tester.widget<TracksToolbar>(
-            find.byType(
-              TracksToolbar,
-            ),
-          ),
-        ),
+        identical(before, tester.widget<GestureDetector>(_chromeProbe)),
         isTrue,
         reason:
             'a meter tick rebuilt TracksView -- the selector is leaking '
@@ -2165,7 +2208,7 @@ void main() {
       seedStream(connected);
       await pump(tester);
 
-      final before = tester.widget<TracksToolbar>(find.byType(TracksToolbar));
+      final before = tester.widget<GestureDetector>(_chromeProbe);
 
       // Losing the engine is exactly the kind of change the chrome exists to
       // show: it must get through the selector.
@@ -2175,14 +2218,7 @@ void main() {
       await tester.pump();
 
       expect(
-        identical(
-          before,
-          tester.widget<TracksToolbar>(
-            find.byType(
-              TracksToolbar,
-            ),
-          ),
-        ),
+        identical(before, tester.widget<GestureDetector>(_chromeProbe)),
         isFalse,
         reason: 'the selector swallowed a structural change',
       );

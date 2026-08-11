@@ -170,35 +170,27 @@ class _TracksViewState extends State<TracksView> {
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,
                                   children: [
+                                    // _TrackSlot supplies its own Expanded, so
+                                    // a slot with no track takes no flex and
+                                    // its siblings widen -- matching what the
+                                    // old `for (track in state.tracks)` did by
+                                    // simply emitting fewer children.
                                     for (final channel in chrome.channels)
                                       if (overlay.bankContains(channel))
-                                        Expanded(
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                            ),
-                                            child: Align(
-                                              alignment: Alignment.bottomCenter,
-                                              child: _TrackSlot(
-                                                channel: channel,
-                                                name: l10n.displayTrackName(
-                                                  tracksState.nameOf(channel),
-                                                  channel,
-                                                ),
-                                                selected:
-                                                    channel == overlay.cursor,
-                                                mode: mode,
-                                                onUndo: commands.undo,
-                                                onRedo: commands.redo,
-                                                looperMode: chrome.looperMode,
-                                                isPrimary:
-                                                    channel ==
-                                                    chrome.primaryTrack,
-                                                onCrownPrimary:
-                                                    commands.crownPrimary,
-                                              ),
-                                            ),
+                                        _TrackSlot(
+                                          channel: channel,
+                                          name: l10n.displayTrackName(
+                                            tracksState.nameOf(channel),
+                                            channel,
                                           ),
+                                          selected: channel == overlay.cursor,
+                                          mode: mode,
+                                          onUndo: commands.undo,
+                                          onRedo: commands.redo,
+                                          looperMode: chrome.looperMode,
+                                          isPrimary:
+                                              channel == chrome.primaryTrack,
+                                          onCrownPrimary: commands.crownPrimary,
                                         ),
                                   ],
                                 ),
@@ -320,20 +312,33 @@ class _TrackSlot extends StatelessWidget {
         orElse: () => null,
       ),
     );
-    // A channel with no track is not a real state -- `channels` is built from
-    // the same list -- but the bank can outlive a shrunken track list for one
-    // frame during a device change, and an empty slot beats a range error.
+    // Defence only: `channels` is derived from the same `tracks` list, and any
+    // change to it changes [_ChromeState], so the row rebuilds in the same
+    // frame and this should be unreachable. Returning a bare SizedBox rather
+    // than an Expanded matters if it ever is reached -- an empty Expanded would
+    // hold its flex share and leave a gap instead of letting the surviving
+    // columns widen.
     if (track == null) return const SizedBox.shrink();
-    return TrackColumn(
-      track: track,
-      name: name,
-      selected: selected,
-      mode: mode,
-      onUndo: onUndo,
-      onRedo: onRedo,
-      looperMode: looperMode,
-      isPrimary: isPrimary,
-      onCrownPrimary: onCrownPrimary,
+    // The Expanded lives here, not at the call site, so the null case above can
+    // opt out of the row's flex entirely.
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: TrackColumn(
+            track: track,
+            name: name,
+            selected: selected,
+            mode: mode,
+            onUndo: onUndo,
+            onRedo: onRedo,
+            looperMode: looperMode,
+            isPrimary: isPrimary,
+            onCrownPrimary: onCrownPrimary,
+          ),
+        ),
+      ),
     );
   }
 }
