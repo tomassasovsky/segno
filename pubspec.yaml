@@ -27,7 +27,7 @@ dependencies:
   flutter_bloc: ^9.1.1
   flutter_localizations:
     sdk: flutter
-  intl: ^0.20.2
+  intl: ^0.20.3
   looper_repository:
     path: packages/looper_repository
   lucide_icons_flutter: ^3.1.15
