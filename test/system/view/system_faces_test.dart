@@ -371,7 +371,10 @@ void main() {
       await tester.tap(find.byKey(const Key('system_shortcuts_row')));
       await tester.pumpAndSettle();
 
-      expect(find.byType(Dialog), findsOneWidget);
+      // By its own key rather than `Dialog`: the legend is the console's
+      // dialog now, not Material's, so a type finder was really asserting
+      // which framework drew it.
+      expect(find.byKey(const Key('shortcutsHelp_dialog')), findsOneWidget);
     });
 
     testWidgets('a window that did not open says so where the setting is, '
