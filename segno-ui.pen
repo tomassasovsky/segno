@@ -240461,6 +240461,56 @@
                       ]
                     }
                   ]
+                },
+                {
+                  "type": "text",
+                  "id": "DI9jp",
+                  "name": "mode switch caption",
+                  "fill": "$text-muted",
+                  "content": "MODE SWITCH",
+                  "fontFamily": "$font-ui",
+                  "fontSize": 13,
+                  "fontWeight": "normal",
+                  "letterSpacing": 1.2
+                },
+                {
+                  "type": "frame",
+                  "id": "EpEbJ",
+                  "name": "mode switch group",
+                  "width": "fill_container",
+                  "fill": "$bg-base",
+                  "cornerRadius": "$radius-10",
+                  "stroke": "$border-default",
+                  "strokeWidth": 1,
+                  "strokeAlignment": "inner",
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "id": "E1C0Nv",
+                      "type": "ref",
+                      "ref": "zOTBp",
+                      "name": "hold for fx row",
+                      "width": "fill_container",
+                      "stroke": "#00000000",
+                      "descendants": {
+                        "ULO3i": {
+                          "content": "Hold for FX"
+                        },
+                        "SYRcK": {
+                          "content": "The pedal's Mode switch only: a press cycles Record and Mute; holding enters and leaves FX. Off, a press cycles all three modes and holding arms performance recording."
+                        },
+                        "rsPCw": {
+                          "enabled": false
+                        },
+                        "D2UEk": {
+                          "enabled": true
+                        },
+                        "wed8Y": {
+                          "enabled": false
+                        }
+                      }
+                    }
+                  ]
                 }
               ]
             },
@@ -286405,6 +286455,20 @@
       "content": "Tapping a tile raises this over a scrim; the tile itself changed nothing. That is the rule the grid exists for — the console lies on the floor under someone playing, and a knee or a cable against a draggable fader is audible and lands in the take. Mid-song adjustment belongs to the foot pedal; this screen is for between takes. The bar spans the sheet, which is far more travel than a 78px tile could offer, and the dialpad swaps it for the keypad when the value is one you know rather than one you feel for. The tile that opened it stays lit behind the scrim.",
       "fontFamily": "Inter",
       "fontSize": 13,
+      "fontWeight": "normal"
+    },
+    {
+      "type": "text",
+      "id": "nKocr",
+      "x": 0,
+      "y": 4292,
+      "name": "c/pedal-mode-switch",
+      "fill": "$text-muted",
+      "textGrowth": "fixed-width",
+      "width": 640,
+      "content": "MODE SWITCH group (shipped #632, written back): the Hold-for-FX toggle governs the pedal's Mode switch only. Off (default) a press cycles Record → Mute → FX and holding arms performance recording. On, a press cycles Record ↔ Mute, holding enters FX at the long-press threshold and a second hold (or a tap) returns to the mode FX was entered from; the hold-to-arm gesture yields, so performance recording stays on the toolbar and keyboard. Keyboard M and the on-screen mode chip always cycle all three modes regardless of the toggle.",
+      "fontFamily": "$font-ui",
+      "fontSize": 14,
       "fontWeight": "normal"
     }
   ],
