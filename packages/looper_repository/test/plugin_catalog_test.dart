@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy_engine/loopy_engine.dart' as engine;
+import 'package:segno_engine/segno_engine.dart' as engine;
 
 import 'helpers/fake_audio_engine.dart';
 
@@ -40,6 +41,19 @@ void main() {
 
     setUp(() {
       fake = FakeAudioEngine()..pluginScanResults = const [vst3, clap];
+    });
+
+    test('a cancelled scan is not a complete cache', () async {
+      final catalog = buildCatalog();
+      addTearDown(catalog.dispose);
+      unawaited(catalog.scan());
+      catalog.cancel();
+
+      // The descriptors found so far are kept, but the CACHE is not written:
+      // a cancelled scan did not see the whole filesystem, and every reader
+      // that treats a written cache as "this machine has been looked at"
+      // would otherwise never look again.
+      expect(catalog.cache.appVersion, isEmpty);
     });
 
     test('scan maps engine descriptors into domain descriptors', () async {

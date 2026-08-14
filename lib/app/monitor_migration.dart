@@ -1,9 +1,9 @@
 import 'package:looper_repository/looper_repository.dart'
-    show decodeFxChain, kMaxInputs, kMaxLanes;
+    show MonitorMode, decodeFxChain, kMaxLanes, kMaxMonitoredInputs;
 import 'package:settings_repository/settings_repository.dart';
 
 /// One-time courtesy + structural migrations of the persisted monitor settings,
-/// run from `runLoopy` at bootstrap (so a first launch and the mock path run
+/// run from `runSegno` at bootstrap (so a first launch and the mock path run
 /// them too, not only when a saved config exists).
 ///
 /// Two ordered steps, each guarded by its own done-flag so they run once and
@@ -53,11 +53,11 @@ Future<void> _runMonitorMigrationV1(SettingsRepository settings) async {
 }
 
 /// Whether any hardware input already has an enabled, audible legacy monitor
-/// route saved. Scans the same `[0, kMaxInputs)` range the `MonitorCubit`
-/// restores. A route enabled but routed to no output (`outputMask == 0`) is
-/// inaudible and so does not count.
+/// route saved. Scans the same `[0, kMaxMonitoredInputs)` range the
+/// `MonitorCubit` restores. A route enabled but routed to no output
+/// (`outputMask == 0`) is inaudible and so does not count.
 Future<bool> _hasEnabledRoute(SettingsRepository settings) async {
-  for (var input = 0; input < kMaxInputs; input++) {
+  for (var input = 0; input < kMaxMonitoredInputs; input++) {
     final routing = await settings.loadMonitorInput(input);
     if (routing != null && routing.$1 && routing.$2 != 0) return true;
   }
@@ -70,7 +70,7 @@ Future<bool> _hasEnabledRoute(SettingsRepository settings) async {
 Future<void> _runMonitorMigrationV2(SettingsRepository settings) async {
   if (await settings.loadMonitorMigratedV2()) return;
 
-  for (var input = 0; input < kMaxInputs; input++) {
+  for (var input = 0; input < kMaxMonitoredInputs; input++) {
     await _migrateInputToLanes(settings, input);
   }
 
@@ -103,7 +103,12 @@ Future<void> _migrateInputToLanes(
   final gain = volume ?? 1.0;
 
   // lane 0 = the wet/effected route (clean when there are no effects).
-  await settings.saveMonitorInputEnabled(input, enabled: enabled);
+  // The legacy per-input pair only ever meant on or off, so it migrates to
+  // the two ends of the tri-state and never to `auto`.
+  await settings.saveMonitorInputMode(
+    input,
+    mode: enabled ? MonitorMode.on.name : MonitorMode.off.name,
+  );
   await settings.saveMonitorLaneOutput(input, 0, wetMask);
   await settings.saveMonitorLaneVolume(input, 0, gain);
   if (effects != null) {
@@ -128,7 +133,7 @@ Future<void> _migrateInputToLanes(
 Future<void> _runMonitorMigrationV3(SettingsRepository settings) async {
   if (await settings.loadMonitorMigratedV3()) return;
 
-  for (var input = 0; input < kMaxInputs; input++) {
+  for (var input = 0; input < kMaxMonitoredInputs; input++) {
     await _foldInputToSingleChain(settings, input);
   }
 

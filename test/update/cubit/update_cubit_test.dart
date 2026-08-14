@@ -1,7 +1,7 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/update/cubit/update_cubit.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
 
@@ -13,7 +13,7 @@ final _v1 = Version.parse('0.1.0');
 final _v2Number = Version.parse('0.2.0');
 final _v2 = UpdateManifest(
   version: _v2Number,
-  bundle: 'loopy-appliance-0.2.0.raucb',
+  bundle: 'segno-appliance-0.2.0.raucb',
   sha256: 's',
   channel: 'experimental',
 );
@@ -31,6 +31,7 @@ void main() {
     when(() => updates.isSupported).thenReturn(true);
     when(() => updates.channel).thenReturn('experimental');
     when(() => updates.currentVersion()).thenAnswer((_) async => _v1);
+    when(() => updates.stagedVersion()).thenAnswer((_) async => Version.none);
     when(() => updates.checkForUpdate()).thenAnswer((_) async => null);
     when(() => settings.loadUpdateAutoCheck()).thenAnswer((_) async => true);
     when(() => settings.loadUpdateChannel()).thenAnswer((_) async => null);
@@ -103,7 +104,9 @@ void main() {
       final cubit = build();
       await cubit.load();
       await cubit.load();
-      verify(() => updates.currentVersion()).called(1);
+      // load() once + check()'s currentVersion() once; second load is a no-op.
+      verify(() => updates.currentVersion()).called(2);
+      verify(() => updates.checkForUpdate()).called(1);
     });
   });
 
@@ -123,6 +126,26 @@ void main() {
           'phase',
           UpdatePhase.upToDate,
         ),
+      ],
+    );
+
+    blocTest<UpdateCubit, UpdateState>(
+      'emits staged when a prior stage is still ahead of current',
+      setUp: () {
+        when(() => updates.checkForUpdate()).thenAnswer((_) async => null);
+        when(() => updates.stagedVersion()).thenAnswer((_) async => _v2Number);
+      },
+      build: build,
+      act: (cubit) => cubit.check(),
+      expect: () => [
+        isA<UpdateState>().having(
+          (s) => s.phase,
+          'phase',
+          UpdatePhase.checking,
+        ),
+        isA<UpdateState>()
+            .having((s) => s.phase, 'phase', UpdatePhase.staged)
+            .having((s) => s.available?.version, 'available', _v2Number),
       ],
     );
 

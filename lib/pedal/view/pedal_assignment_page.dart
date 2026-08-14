@@ -1,27 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/pedal/view/pedal_plate.dart';
-import 'package:loopy/theme/page_transitions.dart';
-import 'package:loopy/theme/theme.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/common/pill_tabs.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/pedal/view/pedal_plate.dart';
+import 'package:segno/theme/page_transitions.dart';
+import 'package:segno/theme/theme.dart';
 
 /// Opens the pedal-assignment surface as a full-screen page.
 ///
 /// Re-provides what the page drives into the pushed route — [ControlCubit]
 /// (the binding owner) and the [LooperRepository] the target picker enumerates
-/// from — the same way `showSignalPage` re-provides its own, since a pushed
-/// route does not inherit the caller's providers.
+/// from, since a pushed route does not inherit the caller's providers.
 Future<void> showPedalAssignmentPage(BuildContext context) {
   final control = context.read<ControlCubit>();
   final looper = context.read<LooperRepository>();
+  // Re-provided across the route: this page names its targets by the rig's
+  // track names now (#526), and a pushed route inherits nothing.
+  final tracks = context.read<TracksCubit>();
   return Navigator.of(context).push(
     desktopPageRoute<void>(
       (_) => MultiBlocProvider(
-        providers: [BlocProvider.value(value: control)],
+        providers: [
+          BlocProvider.value(value: control),
+          BlocProvider.value(value: tracks),
+        ],
         child: RepositoryProvider<LooperRepository>.value(
           value: looper,
           child: const PedalAssignmentPage(),
@@ -31,22 +38,48 @@ Future<void> showPedalAssignmentPage(BuildContext context) {
   );
 }
 
-/// The screen where footswitches are remapped onto FX targets (part 6b).
+/// The full-screen route where footswitches are remapped onto FX targets
+/// (part 6b). Thin chrome around [PedalAssignmentView].
 ///
 /// Composes part 6a's presentational `PedalPlate`: tapping a footswitch on the
 /// plate selects it (the widget's injected `selected` set draws the
 /// highlight), and the editor below edits that switch's binding. MODE and Bank
 /// are selectable — so the user gets an explanation rather than an inert
 /// switch — but never offered a target (B12).
-class PedalAssignmentPage extends StatefulWidget {
+class PedalAssignmentPage extends StatelessWidget {
   /// Creates a [PedalAssignmentPage].
   const PedalAssignmentPage({super.key});
 
   @override
-  State<PedalAssignmentPage> createState() => _PedalAssignmentPageState();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: context.surface.background,
+      appBar: AppBar(title: AppText(context.l10n.pedalAssignTitle)),
+      body: const PedalAssignmentView(),
+    );
+  }
 }
 
-class _PedalAssignmentPageState extends State<PedalAssignmentPage> {
+/// The assignment surface itself, without route chrome.
+///
+/// Split out of [PedalAssignmentPage] so the console's settings tray can mount
+/// it as a rail destination (#440) while Settings -> Audio -> Pedal keeps
+/// pushing it as a full-screen route. Both render this same widget; neither is
+/// a copy of the other.
+///
+/// Provides nothing: it reads [ControlCubit] and `LooperRepository` from
+/// context. The pushed route re-provides them because a route does not inherit
+/// the caller's providers; the tray does not need to, since it mounts below
+/// them already.
+class PedalAssignmentView extends StatefulWidget {
+  /// Creates a [PedalAssignmentView].
+  const PedalAssignmentView({super.key});
+
+  @override
+  State<PedalAssignmentView> createState() => _PedalAssignmentViewState();
+}
+
+class _PedalAssignmentViewState extends State<PedalAssignmentView> {
   PedalButton? _selected;
 
   /// Which bank the selected TRACK button is being assigned for (A3);
@@ -71,37 +104,33 @@ class _PedalAssignmentPageState extends State<PedalAssignmentPage> {
     // editor below both read the live set.
     final cubit = context.watch<ControlCubit>();
 
-    return Scaffold(
-      backgroundColor: surface.background,
-      appBar: AppBar(title: Text(l10n.pedalAssignTitle)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(
-            l10n.pedalAssignIntro,
-            style: TextStyle(color: surface.textSecondary),
-          ),
-          const SizedBox(height: 16),
-          _PlatePicker(
-            selected: _selected,
-            onSelect: (button) => setState(() {
-              _selected = button;
-              if (PedalBindingKey.isBankKeyed(button)) {
-                // Follow the plate's own bank so the row being edited is the
-                // one the highlighted switch would act on.
-                _bank = cubit.state.activeBank;
-              }
-            }),
-          ),
-          const SizedBox(height: 16),
-          _Editor(
-            selected: _selected,
-            bindingKey: _key,
-            bank: _bank,
-            onBank: (bank) => setState(() => _bank = bank),
-          ),
-        ],
-      ),
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        AppText(
+          l10n.pedalAssignIntro,
+          style: TextStyle(color: surface.textSecondary),
+        ),
+        const SizedBox(height: 16),
+        _PlatePicker(
+          selected: _selected,
+          onSelect: (button) => setState(() {
+            _selected = button;
+            if (PedalBindingKey.isBankKeyed(button)) {
+              // Follow the plate's own bank so the row being edited is the
+              // one the highlighted switch would act on.
+              _bank = cubit.state.activeBank;
+            }
+          }),
+        ),
+        const SizedBox(height: 16),
+        _Editor(
+          selected: _selected,
+          bindingKey: _key,
+          bank: _bank,
+          onBank: (bank) => setState(() => _bank = bank),
+        ),
+      ],
     );
   }
 }
@@ -131,6 +160,7 @@ class _PlatePicker extends StatelessWidget {
           // hardware, and mirroring the running rig's LEDs here would read as
           // state the user can edit from this screen.
           frame: PedalStateFrame.blank(),
+          trackNames: context.watch<TracksCubit>().state.names,
           // Select on the PRESS edge and swallow the release: a picker, not a
           // control surface — nothing here may reach the engine.
           onPress: (button, {required down}) {
@@ -217,7 +247,7 @@ class _Editor extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        AppText(
           button.name.toUpperCase(),
           style: TextStyle(
             color: surface.textPrimary,
@@ -230,19 +260,17 @@ class _Editor extends StatelessWidget {
           // Track buttons hold one binding PER BANK (A3) — the same switch in
           // the other bank already acts on a different channel, so it is a
           // separate assignment rather than a second reading of this one.
-          SegmentedButton<int>(
+          PillTabs<int>(
             key: const Key('assign_bank'),
-            segments: [
+            tabs: [
               for (var b = 0; b < PedalBindingKey.bankCount; b++)
-                ButtonSegment(
+                PillTab(
                   value: b,
-                  label: Text(
-                    l10n.pedalAssignBankLabel(String.fromCharCode(65 + b)),
-                  ),
+                  label: l10n.pedalAssignBankLabel(String.fromCharCode(65 + b)),
                 ),
             ],
-            selected: {bank},
-            onSelectionChanged: (s) => onBank(s.first),
+            selected: bank,
+            onChanged: onBank,
           ),
         ],
         const SizedBox(height: 12),
@@ -294,7 +322,7 @@ class _UnassignedRow extends StatelessWidget {
     }
     return Row(
       children: [
-        Text(
+        AppText(
           l10n.pedalAssignUnassigned,
           style: TextStyle(color: surface.textTertiary),
         ),
@@ -334,7 +362,11 @@ class _BindingRow extends StatelessWidget {
     final target = binding.decodeTarget();
     final label = !resolves || target == null
         ? l10n.pedalAssignStale
-        : bindingTargetLabel(l10n, target);
+        : bindingTargetLabel(
+            l10n,
+            context.watch<TracksCubit>().state.names,
+            target,
+          );
 
     return Semantics(
       label: l10n.a11yPedalAssignRow(binding.key.button.name, label),
@@ -368,7 +400,7 @@ class _BindingRow extends StatelessWidget {
                   const SizedBox(width: 6),
                 ],
                 Expanded(
-                  child: Text(
+                  child: AppText(
                     label,
                     style: TextStyle(
                       color: resolves
@@ -387,40 +419,40 @@ class _BindingRow extends StatelessWidget {
                 TextButton(
                   key: const Key('assign_clear'),
                   onPressed: onClear,
-                  child: Text(l10n.pedalAssignClear),
+                  child: AppText(l10n.pedalAssignClear),
                 ),
               ],
             ),
             if (!resolves) ...[
               const SizedBox(height: 6),
-              Text(
+              AppText(
                 l10n.pedalAssignStaleDetail,
                 key: const Key('assign_stale_detail'),
                 style: TextStyle(color: surface.textTertiary, fontSize: 12),
               ),
             ],
             const SizedBox(height: 10),
-            Text(
+            AppText(
               l10n.pedalAssignBehavior,
               style: TextStyle(color: surface.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 4),
-            SegmentedButton<BindingBehavior>(
+            PillTabs<BindingBehavior>(
               key: const Key('assign_behavior'),
-              segments: [
-                ButtonSegment(
+              tabs: [
+                PillTab(
                   value: BindingBehavior.toggle,
-                  label: Text(l10n.pedalAssignToggle),
+                  label: l10n.pedalAssignToggle,
                   tooltip: l10n.pedalAssignToggleHint,
                 ),
-                ButtonSegment(
+                PillTab(
                   value: BindingBehavior.momentary,
-                  label: Text(l10n.pedalAssignMomentary),
+                  label: l10n.pedalAssignMomentary,
                   tooltip: l10n.pedalAssignMomentaryHint,
                 ),
               ],
-              selected: {binding.behavior},
-              onSelectionChanged: (s) => onBehavior(s.first),
+              selected: binding.behavior,
+              onChanged: onBehavior,
             ),
           ],
         ),
@@ -447,6 +479,9 @@ class _TargetPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    // Read HERE, not inside `itemBuilder`: a popup's items are built outside
+    // the build phase, and `watch` from there is an error.
+    final trackNames = context.watch<TracksCubit>().state.names;
     return PopupMenuButton<FxBindingTarget>(
       key: const Key('assign_target_picker'),
       tooltip: l10n.pedalAssignTarget,
@@ -455,10 +490,10 @@ class _TargetPicker extends StatelessWidget {
         for (final target in targets)
           PopupMenuItem(
             value: target,
-            child: Text(bindingTargetLabel(l10n, target)),
+            child: AppText(bindingTargetLabel(l10n, trackNames, target)),
           ),
       ],
-      child: Text(label ?? l10n.pedalAssignTarget),
+      child: AppText(label ?? l10n.pedalAssignTarget),
     );
   }
 }
@@ -492,7 +527,10 @@ class _Notice extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           Expanded(
-            child: Text(text, style: TextStyle(color: surface.textSecondary)),
+            child: AppText(
+              text,
+              style: TextStyle(color: surface.textSecondary),
+            ),
           ),
         ],
       ),

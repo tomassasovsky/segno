@@ -1,30 +1,44 @@
 import 'dart:async';
 
+import 'package:bluetooth_repository/bluetooth_repository.dart';
+import 'package:brightness_client/brightness_client.dart';
+import 'package:console_facts_client/console_facts_client.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/app/audio_bootstrap.dart';
-import 'package:loopy/app/loopy_navigator.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/looper.dart';
-import 'package:loopy/pedal/pedal.dart';
-import 'package:loopy/performance/performance.dart';
-import 'package:loopy/session/session_mapping.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/update/cubit/update_cubit.dart';
-import 'package:loopy/visualizer/visualizer.dart';
-import 'package:loopy/window/window_chrome.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/app/app_toasts.dart';
+import 'package:segno/app/audio_bootstrap.dart';
+import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/appliance/display_brightness_cubit.dart';
+import 'package:segno/appliance/software_brightness.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
+import 'package:segno/common/pedal_device.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno/pedal/flashed_firmware.dart';
+import 'package:segno/pedal/pedal.dart';
+import 'package:segno/performance/performance.dart';
+import 'package:segno/system/cubit/console_facts_cubit.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/tuner/cubit/tuner_cubit.dart';
+import 'package:segno/update/cubit/pedal_firmware_cubit.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
+import 'package:segno/update/view/pedal_firmware_gate.dart';
+import 'package:segno/visualizer/visualizer.dart';
+import 'package:segno/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:toastification/toastification.dart';
 import 'package:update_repository/update_repository.dart';
+import 'package:wifi_repository/wifi_repository.dart';
 
 /// How often the main window pushes a waveform frame to the second window.
 const _waveformFrame = Duration(milliseconds: 33); // ~30 fps
@@ -54,6 +68,12 @@ class App extends StatelessWidget {
     this.updates = const UpdateRepository(
       backend: UnsupportedPlatformBackend(),
     ),
+    this.wifi = const WifiRepository(client: UnsupportedWifiClient()),
+    this.bluetooth = const BluetoothRepository(
+      client: UnsupportedBluetoothClient(),
+    ),
+    this.brightness = const UnsupportedBrightnessClient(),
+    this.consoleFacts = const UnsupportedConsoleFactsClient(),
     super.key,
   });
 
@@ -61,6 +81,20 @@ class App extends StatelessWidget {
   /// (unsupported-platform) instance so the update UI stays hidden; the app
   /// entrypoint injects the platform-appropriate one.
   final UpdateRepository updates;
+
+  /// Appliance WiFi repository (Control Center). Defaults unsupported.
+  final WifiRepository wifi;
+
+  /// Appliance Bluetooth repository (Control Center). Defaults unsupported.
+  final BluetoothRepository bluetooth;
+
+  /// Appliance brightness client (Control Center slider). Defaults unsupported.
+  final BrightnessClient brightness;
+
+  /// Reads what the appliance knows about itself — the disk, the box, and
+  /// where it can export to. Defaults to the client that answers "unknown",
+  /// which is what every non-appliance build gets.
+  final ConsoleFactsClient consoleFacts;
 
   /// The shared looper repository (owns the audio engine).
   final LooperRepository repository;
@@ -136,6 +170,10 @@ class App extends StatelessWidget {
         RepositoryProvider.value(value: performanceRepository),
         RepositoryProvider.value(value: pedalSim),
         RepositoryProvider.value(value: updates),
+        RepositoryProvider.value(value: wifi),
+        RepositoryProvider.value(value: bluetooth),
+        RepositoryProvider.value(value: brightness),
+        RepositoryProvider.value(value: consoleFacts),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -148,6 +186,32 @@ class App extends StatelessWidget {
               final cubit = UpdateCubit(
                 updates: context.read<UpdateRepository>(),
                 settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          // Runs the pedal flash an OS update left pending, and holds the
+          // looper closed while it does. lazy:false so it starts with the app
+          // rather than when something first reads it.
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = PedalFirmwareCubit(
+                updates: context.read<UpdateRepository>(),
+              );
+              unawaited(cubit.run());
+              return cubit;
+            },
+          ),
+          // App-wide brightness: software dim in [MaterialApp.builder] + DDC
+          // when the host helper supports it (LG TVs often do not).
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = DisplayBrightnessCubit(
+                settings: context.read<SettingsRepository>(),
+                client: context.read<BrightnessClient>(),
               );
               unawaited(cubit.load());
               return cubit;
@@ -182,9 +246,53 @@ class App extends StatelessWidget {
               return cubit;
             },
           ),
+          // Beside the track names and for the same reason: an input is called
+          // what the player calls it on every surface that shows one — the
+          // Audio face's input list, the Tracks routing summary, and the
+          // per-track lane list — so the names load once, here.
+          // Eager: the names key off the OPEN DEVICE, so the cubit has to be
+          // listening before the engine reports one — created lazily it would
+          // miss the boot device entirely and show ordinals until the next
+          // reopen.
+          BlocProvider(
+            lazy: false,
+            create: (context) => InputsCubit(
+              settings: context.read<SettingsRepository>(),
+              repository: context.read<LooperRepository>(),
+            ),
+          ),
+          // The tuner is lazy on purpose, unlike its neighbours: it subscribes
+          // to the looper stream and arms the engine, and a console that never
+          // opens the Tuner face should pay for neither.
+          BlocProvider(
+            create: (context) =>
+                TunerCubit(repository: context.read<LooperRepository>()),
+          ),
           BlocProvider(
             create: (context) {
               final cubit = HighContrastCubit(
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          // App-wide, not the face's: the facts are about the BOX, and the
+          // About tab must not be the only thing that can ask. Loads on
+          // create; the Storage face re-reads on open, because a USB stick may
+          // have arrived since.
+          //
+          // Eager, and that is what makes those two separate reads. Both faces
+          // that read this cubit also call `load()` from their own `initState`,
+          // so created LAZILY it would be constructed by that very read — the
+          // create-load and the face's re-read firing in the same instant, two
+          // concurrent disk walks answering one question instead of a boot
+          // read the face later refreshes.
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = ConsoleFactsCubit(
+                client: context.read<ConsoleFactsClient>(),
                 settings: context.read<SettingsRepository>(),
               );
               unawaited(cubit.load());
@@ -292,18 +400,17 @@ class App extends StatelessWidget {
                 pedal: pedalRepo,
                 settings: context.read<SettingsRepository>(),
                 performance: context.read<PerformanceRepository>(),
-                // External MIDI (part 7): the same interpreter takes the
-                // controller's resolved bindings, and watches MIDI
-                // connectivity so a held momentary releases when the device
-                // it was held from unplugs (B1).
+                // Both of these were missing, and external MIDI mapping had
+                // therefore never worked in a shipped build: without
+                // `controller` nothing subscribes to the binding events and
+                // `learnControllerBinding` returns on its first line, so Add
+                // sweep / Add switch picked a target and then did nothing at
+                // all; without `midiDevices` a controller coming back re-armed
+                // nothing. Both repositories were already built and provided
+                // app-wide — they were simply never handed to the one cubit
+                // that owns controller intent.
                 controller: context.read<ControllerRepository>(),
                 midiDevices: context.read<MidiDeviceRepository>(),
-                // The live rig a pedal-triggered arm snapshots, read fresh at
-                // each arm — same source the toolbar path below is wired to,
-                // so both gestures record identical chains.
-                currentChains: () => performanceChainsFromLooper(
-                  context.read<LooperRepository>(),
-                ),
               );
               unawaited(cubit.load()); // boot-default mode restore
               return cubit;
@@ -319,6 +426,13 @@ class App extends StatelessWidget {
               final cubit = PedalCubit(
                 pedal: pedalRepo,
                 settings: context.read<SettingsRepository>(),
+                // Redundant only on a desktop analysis run — see run_segno.
+                // ignore: avoid_redundant_argument_values
+                autoBindProductNames: kPedalAutoBindProductNames,
+                // Console only; null on desktop, where the manual setting
+                // stays in charge.
+                // ignore: avoid_redundant_argument_values
+                flashedProtocolVersion: kFlashedPedalProtocolVersionReader,
               );
               unawaited(cubit.load());
               return cubit;
@@ -355,13 +469,6 @@ class App extends StatelessWidget {
                 // falls through to daw_export's own 120 BPM fallback.
                 currentTempoBpm: () =>
                     context.read<LooperRepository>().state.transport.tempoBpm,
-                // The live lane/monitor chains + limiter state to stamp into
-                // the arm snapshot, read fresh at each arm — without this the
-                // capture records an empty rig, so exported wet stems come out
-                // identical to the dry ones.
-                currentChains: () => performanceChainsFromLooper(
-                  context.read<LooperRepository>(),
-                ),
               );
               unawaited(cubit.load());
               return cubit;
@@ -420,14 +527,10 @@ class _AppView extends StatefulWidget {
 class _AppViewState extends State<_AppView> {
   Timer? _pushTimer;
 
-  /// Drives the app-level device connect/disconnect banner. Held at the shell
-  /// (above the pages) so the banner survives navigation between layouts.
-  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
-
   /// Resolves localized strings from inside [MaterialApp] when this state
   /// sits above it in the tree.
   AppLocalizations get _l10n {
-    final localizedContext = loopyNavigatorKey.currentContext;
+    final localizedContext = segnoNavigatorKey.currentContext;
     if (localizedContext != null) {
       return localizedContext.l10n;
     }
@@ -466,8 +569,8 @@ class _AppViewState extends State<_AppView> {
   /// otherwise.
   Future<void> _syncWindow() async {
     if (!mounted) return;
-    final shouldOpen = context.read<WaveformWindowCubit>().state;
-    if (shouldOpen) {
+    final waveform = context.read<WaveformWindowCubit>();
+    if (waveform.state.enabled) {
       // On a single-display console the waveform has nowhere to land: skip the
       // second window and show a notice rather than a half-blank setup.
       if (_isSingleDisplay) {
@@ -482,6 +585,12 @@ class _AppViewState extends State<_AppView> {
         // The window never readied: surface it and don't stream frames to a
         // dead window (the real service has already set its controller, so
         // pushWaveform would otherwise not no-op).
+        //
+        // Recorded on the cubit as well as toasted, because the toast is the
+        // wrong surface once the tray is open: `SYSTEM / display` puts the
+        // failure at the top of the list the setting lives in, with a retry.
+        // Both read the one flag, so the two can never disagree.
+        waveform.reportOpenFailed();
         _showWaveformWindowFailedBanner();
         return;
       }
@@ -489,11 +598,19 @@ class _AppViewState extends State<_AppView> {
         if (!mounted) return;
         final looper = context.read<LooperRepository>();
         final tracks = context.read<TracksCubit>();
-        final cursor = context.read<ControlCubit>().state.cursor;
+        final control = context.read<ControlCubit>().state;
+        final cursor = control.cursor;
         widget.waveformWindow.pushWaveform(
           looper.readWaveform(),
           looper.state.transport.progress,
           tracks.state.nameOf(cursor),
+        );
+        // Same timer, different discipline: the waveform changes every frame,
+        // the readout does not, so `pushReadout` drops anything equal to what
+        // it last sent rather than re-serialising eight track records at frame
+        // rate across an engine boundary.
+        widget.waveformWindow.pushReadout(
+          _readoutOf(looper.state, tracks.state, control.mode, cursor),
         );
       });
     } else {
@@ -503,219 +620,271 @@ class _AppViewState extends State<_AppView> {
     }
   }
 
-  /// Shows a persistent "disconnected — trying to reconnect" banner when a
-  /// pinned device is lost, and replaces it with a transient "reconnected"
-  /// snackbar when it returns. Driven from [AudioSetupCubit] connectivity
-  /// transitions; mounted on the shell messenger so it persists across layouts.
+  /// Projects engine + control state onto the 7" readout's value type.
+  ///
+  /// Pure and static so it can be tested without a window: what the second
+  /// screen shows is a function of state, never of when the timer fired.
+  static PerformanceReadout _readoutOf(
+    LooperState looper,
+    TracksState tracks,
+    InteractionMode mode,
+    int cursor,
+  ) {
+    final transport = looper.transport;
+    return PerformanceReadout(
+      tracks: [
+        for (final track in looper.tracks)
+          ReadoutTrack(
+            name: tracks.nameOf(track.channel),
+            state: track.state.name,
+            muted: track.muted,
+            pending: track.pending,
+            selected: track.channel == cursor,
+          ),
+      ],
+      tempoBpm: transport.tempoBpm,
+      tsNum: transport.tsNum,
+      tsDen: transport.tsDen,
+      loopBars: transport.loopBars,
+      isRunning: transport.isRunning,
+      mode: mode.token,
+    );
+  }
+
+  /// Persistent "disconnected — trying to reconnect" toast when a pinned
+  /// device is lost; replaced by a short "reconnected" toast when it returns.
   void _showConnectivityBanner(AudioSetupState state) {
-    final messenger = _messengerKey.currentState;
-    if (messenger == null) return;
     final l10n = _l10n;
-    messenger.clearMaterialBanners();
+    dismissAppToast(AppToastId.deviceLost);
     final name = state.connectivityDeviceName.isEmpty
         ? l10n.audioDeviceFallbackName
         : state.connectivityDeviceName;
     switch (state.deviceConnectivity) {
       case DeviceConnectivity.lost:
-        messenger.showMaterialBanner(
-          MaterialBanner(
-            key: const Key('app_deviceLost_banner'),
-            content: Text(l10n.deviceDisconnectedBanner(name)),
-            leading: const Icon(Icons.warning_amber_rounded),
-            actions: [
-              TextButton(
-                onPressed: messenger.clearMaterialBanners,
-                child: Text(l10n.dismiss),
-              ),
-            ],
-          ),
+        showAppToast(
+          id: AppToastId.deviceLost,
+          type: ToastificationType.warning,
+          title: AppText(l10n.deviceDisconnectedBanner(name)),
+          icon: const Icon(Icons.warning_amber_rounded),
         );
       case DeviceConnectivity.restored:
-        messenger
-          ..clearSnackBars()
-          ..showSnackBar(
-            SnackBar(
-              key: const Key('app_deviceRestored_snackbar'),
-              content: Text(l10n.deviceReconnectedSnackbar(name)),
-              duration: const Duration(seconds: 3),
-            ),
-          );
+        showAppSnackToast(
+          id: AppToastId.deviceRestored,
+          title: AppText(l10n.deviceReconnectedSnackbar(name)),
+          icon: const Icon(Icons.check_circle_outline),
+        );
       case DeviceConnectivity.none:
         break;
     }
   }
 
-  /// The MIDI analog of [_showConnectivityBanner]: a persistent disconnect
-  /// banner when the pinned foot controller is unplugged, replaced by a
-  /// transient "reconnected" snackbar when it returns. Independent of the audio
-  /// device banner above (a separate messenger entry).
+  /// MIDI analog of [_showConnectivityBanner].
   void _showMidiConnectivityBanner(MidiSetupState state) {
-    final messenger = _messengerKey.currentState;
-    if (messenger == null) return;
     final l10n = _l10n;
+    dismissAppToast(AppToastId.midiLost);
     final connection = state.connection;
     final name = connection.connectivityDeviceName.isEmpty
         ? connection.selectedName
         : connection.connectivityDeviceName;
     switch (connection.connectivity) {
       case MidiConnectivity.lost:
-        messenger.showMaterialBanner(
-          MaterialBanner(
-            key: const Key('app_midiLost_banner'),
-            content: Text(l10n.midiDisconnectedBanner(name)),
-            leading: const Icon(Icons.piano_off_outlined),
-            actions: [
-              TextButton(
-                onPressed: messenger.clearMaterialBanners,
-                child: Text(l10n.dismiss),
-              ),
-            ],
-          ),
+        showAppToast(
+          id: AppToastId.midiLost,
+          type: ToastificationType.warning,
+          title: AppText(l10n.midiDisconnectedBanner(name)),
+          icon: const Icon(Icons.piano_off_outlined),
         );
       case MidiConnectivity.restored:
-        messenger
-          ..clearMaterialBanners()
-          ..showSnackBar(
-            SnackBar(
-              key: const Key('app_midiRestored_snackbar'),
-              content: Text(l10n.midiReconnectedSnackbar(name)),
-              duration: const Duration(seconds: 3),
-            ),
-          );
+        showAppSnackToast(
+          id: AppToastId.midiRestored,
+          title: AppText(l10n.midiReconnectedSnackbar(name)),
+          icon: const Icon(Icons.check_circle_outline),
+        );
       case MidiConnectivity.none:
         break;
     }
   }
 
-  /// Non-pointer signal that the console is waiting for its pinned audio
-  /// interface to (re)appear at boot, after which it auto-starts the engine.
-  /// The banner clears itself when recovery finishes (status returns to idle).
+  /// Waiting for the pinned audio interface at boot; clears when recovery
+  /// finishes (status returns to idle).
   void _showAudioRecoveryBanner(AudioRecoveryState state) {
-    final messenger = _messengerKey.currentState;
-    if (messenger == null) return;
     final l10n = _l10n;
     if (state.status != AudioRecoveryStatus.waitingForDevice) {
-      messenger.clearMaterialBanners();
+      dismissAppToast(AppToastId.audioRecovery);
       return;
     }
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        key: const Key('app_audioRecovery_banner'),
-        content: Text(l10n.audioRecoveryWaitingBanner),
-        leading: const Icon(Icons.usb_off_outlined),
-        actions: [
-          TextButton(
-            onPressed: () => unawaited(openLoopySettings()),
-            child: Text(l10n.settingsMenuItem),
-          ),
-        ],
-      ),
+    showAppToast(
+      id: AppToastId.audioRecovery,
+      type: ToastificationType.warning,
+      title: AppText(l10n.audioRecoveryWaitingBanner),
+      icon: const Icon(Icons.usb_off_outlined),
+      actions: [
+        TextButton(
+          onPressed: () => unawaited(openSegnoSettings()),
+          child: AppText(l10n.settingsMenuItem),
+        ),
+      ],
     );
   }
 
-  /// Startup notification that a newer build is available. Dismissible per
-  /// version: "Not now" records the version so it never nags again for it (a
-  /// later version re-notifies). "Update…" opens the Settings Updates section,
-  /// where downloading/installing is an explicit, opt-in action.
+  /// Startup notice that a newer build is available. Skipped when Settings →
+  /// Updates is already open. "Not now" dismisses that version; "Update…"
+  /// opens the Updates section.
   void _showUpdateBanner(BuildContext context, UpdateState state) {
-    final messenger = _messengerKey.currentState;
-    if (messenger == null) return;
     final manifest = state.available;
     if (!state.shouldNotify || manifest == null) {
-      messenger.clearMaterialBanners();
+      dismissAppToast(AppToastId.update);
+      return;
+    }
+    if (isSegnoUpdatesSettingsOpen) {
+      dismissAppToast(AppToastId.update);
       return;
     }
     final l10n = _l10n;
     final cubit = context.read<UpdateCubit>();
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        key: const Key('app_update_banner'),
-        content: Text(l10n.updateBannerTitle('${manifest.version}')),
-        leading: const Icon(Icons.system_update_outlined),
-        actions: [
-          TextButton(
-            key: const Key('app_update_banner_dismiss'),
-            onPressed: () {
-              messenger.clearMaterialBanners();
-              unawaited(cubit.dismiss(manifest.version));
-            },
-            child: Text(l10n.updateBannerDismissAction),
-          ),
-          TextButton(
-            key: const Key('app_update_banner_update'),
-            onPressed: () {
-              messenger.clearMaterialBanners();
-              unawaited(openLoopySettings());
-            },
-            child: Text(l10n.updateBannerUpdateAction),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Operator-visible banner when the secondary waveform window failed to come
-  /// up (the open path would otherwise degrade silently to a dark screen).
-  void _showWaveformWindowFailedBanner() {
-    final messenger = _messengerKey.currentState;
-    if (messenger == null) return;
-    final l10n = _l10n;
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        key: const Key('app_waveformWindowFailed_banner'),
-        content: Text(l10n.waveformWindowFailedBanner),
-        leading: const Icon(Icons.desktop_access_disabled_outlined),
-        actions: [
-          TextButton(
-            onPressed: messenger.clearMaterialBanners,
-            child: Text(l10n.dismiss),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Notice when only one display is connected on the dual-display console, so
-  /// a missing second panel is obvious rather than a half-blank setup.
-  void _showSingleDisplayNotice() {
-    final messenger = _messengerKey.currentState;
-    if (messenger == null) return;
-    final l10n = _l10n;
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        key: const Key('app_singleDisplay_banner'),
-        content: Text(l10n.singleDisplayNotice),
-        leading: const Icon(Icons.monitor_outlined),
-        actions: [
-          TextButton(
-            onPressed: messenger.clearMaterialBanners,
-            child: Text(l10n.dismiss),
-          ),
-        ],
-      ),
-    );
-  }
-
-  List<PlatformMenuItem> _menus(BuildContext context) => [
-    PlatformMenu(
-      label: context.l10n.appMenuLabel,
-      menus: [
-        PlatformMenuItem(
-          label: context.l10n.settingsMenuItem,
-          shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
-          onSelected: openLoopySettings,
+    showAppToast(
+      id: AppToastId.update,
+      title: AppText(l10n.updateBannerTitle('${manifest.version}')),
+      icon: const Icon(Icons.system_update_outlined),
+      actions: [
+        TextButton(
+          key: const Key(AppToastId.updateDismiss),
+          onPressed: () {
+            dismissAppToast(AppToastId.update);
+            unawaited(cubit.dismiss(manifest.version));
+          },
+          child: AppText(l10n.updateBannerDismissAction),
         ),
-        const PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.quit),
+        TextButton(
+          key: const Key(AppToastId.updateAction),
+          onPressed: () {
+            dismissAppToast(AppToastId.update);
+            unawaited(openSegnoSettings(section: SettingsSection.updates));
+          },
+          child: AppText(l10n.updateBannerUpdateAction),
+        ),
       ],
-    ),
-  ];
+    );
+  }
+
+  /// Secondary waveform window failed to open.
+  void _showWaveformWindowFailedBanner() {
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.waveformFailed,
+      type: ToastificationType.error,
+      title: AppText(l10n.waveformWindowFailedBanner),
+      icon: const Icon(Icons.desktop_access_disabled_outlined),
+    );
+  }
+
+  /// Only one display on the dual-display console.
+  void _showSingleDisplayNotice() {
+    final l10n = _l10n;
+    showAppToast(
+      id: AppToastId.singleDisplay,
+      type: ToastificationType.warning,
+      title: AppText(l10n.singleDisplayNotice),
+      icon: const Icon(Icons.monitor_outlined),
+    );
+  }
+
+  /// Labels come from [_l10n] (above [MaterialApp]), not a builder context —
+  /// the menu bar must not live under [MaterialApp] or DevTools / theme
+  /// rebuilds remount it and trip the single-delegate lock assertion.
+  List<PlatformMenuItem> get _menus {
+    final l10n = _l10n;
+    return [
+      PlatformMenu(
+        label: l10n.appMenuLabel,
+        menus: [
+          PlatformMenuItem(
+            label: l10n.settingsMenuItem,
+            shortcut: const SingleActivator(
+              LogicalKeyboardKey.comma,
+              meta: true,
+            ),
+            onSelected: openSegnoSettings,
+          ),
+          const PlatformProvidedMenuItem(
+            type: PlatformProvidedMenuItemType.quit,
+          ),
+        ],
+      ),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
+    final materialApp = MaterialApp(
+      navigatorKey: segnoNavigatorKey,
+      // Manual toggle forces high-contrast on every platform;
+      // highContrastTheme also honors the OS flag (iOS).
+      theme: context.watch<HighContrastCubit>().state
+          ? AppTheme.highContrast
+          : AppTheme.neon,
+      highContrastTheme: AppTheme.highContrast,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Builder(
+        builder: (context) {
+          final Widget page = PedalFirmwareGate(
+            child: LooperPage(exportDirectory: widget.exportDirectory),
+          );
+          if (!segnoUsesFlutterTitleBar && !segnoUsesCursorAutoHide) {
+            return page;
+          }
+          return SegnoWindowChromeShell(
+            title: context.l10n.appMenuLabel,
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+            body: page,
+          );
+        },
+      ),
+      debugShowCheckedModeBanner: false,
+      builder: (context, child) {
+        // Console only: weston's kiosk-shell spawns no input panel and the
+        // image ships no IME, so without this every TextField on the
+        // appliance is dead — including this branch's own Wi-Fi password
+        // field. Inside the brightness wrapper so the keys dim with
+        // everything else.
+        final typed = OnScreenKeyboardHost(
+          child: AppTextDefaults(child: child ?? const SizedBox.shrink()),
+        );
+        return BlocBuilder<DisplayBrightnessCubit, double>(
+          buildWhen: (previous, current) => previous != current,
+          builder: (context, brightness) => SoftwareBrightness(
+            brightness: brightness,
+            child: typed,
+          ),
+        );
+      },
+    );
+
+    // Above MaterialApp so WidgetsApp's inspector wrap / theme animation
+    // cannot remount the macOS menu delegate (single-lock assertion).
+    final rooted = defaultTargetPlatform == TargetPlatform.macOS
+        ? PlatformMenuBar(
+            key: const ValueKey<String>('segno_platform_menu'),
+            menus: _menus,
+            child: materialApp,
+          )
+        : materialApp;
+
     return MultiBlocListener(
       listeners: [
-        BlocListener<WaveformWindowCubit, bool>(
-          listenWhen: (previous, current) => previous != current,
+        BlocListener<WaveformWindowCubit, WaveformWindowState>(
+          // Two changes re-sync, and deliberately not a third. The preference
+          // flipping opens or closes the window; the failure being CLEARED is
+          // the Display face's "Try again", which is why that button needs no
+          // second control the shell would have to know about.
+          //
+          // The failure being RAISED must not, and that is not a nicety:
+          // `_syncWindow` is what raises it, so re-entering on it would make
+          // every failed open cost two attempts and two toasts.
+          listenWhen: (previous, current) =>
+              previous.enabled != current.enabled ||
+              (previous.openFailed && !current.openFailed),
           listener: (_, _) => unawaited(_syncWindow()),
         ),
         BlocListener<AudioSetupCubit, AudioSetupState>(
@@ -740,39 +909,13 @@ class _AppViewState extends State<_AppView> {
           listener: _showUpdateBanner,
         ),
       ],
-      child: MaterialApp(
-        scaffoldMessengerKey: _messengerKey,
-        navigatorKey: loopyNavigatorKey,
-        // The manual toggle forces the high-contrast palette on every platform;
-        // highContrastTheme additionally honors the OS flag where Flutter
-        // delivers it (iOS only).
-        theme: context.watch<HighContrastCubit>().state
-            ? AppTheme.highContrast
-            : AppTheme.neon,
-        highContrastTheme: AppTheme.highContrast,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: Builder(
-          builder: (context) {
-            final page = LooperPage(exportDirectory: widget.exportDirectory);
-            if (!loopyUsesFlutterTitleBar && !loopyUsesCursorAutoHide) {
-              return page;
-            }
-            return LoopyWindowChromeShell(
-              title: context.l10n.appMenuLabel,
-              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-              body: page,
-            );
-          },
+      child: ToastificationWrapper(
+        config: const ToastificationConfig(
+          alignment: Alignment.topCenter,
+          itemWidth: 520,
+          animationDuration: Duration(milliseconds: 280),
         ),
-        debugShowCheckedModeBanner: false,
-        builder: (context, child) {
-          var app = child ?? const SizedBox.shrink();
-          if (defaultTargetPlatform == TargetPlatform.macOS) {
-            app = PlatformMenuBar(menus: _menus(context), child: app);
-          }
-          return app;
-        },
+        child: rooted,
       ),
     );
   }

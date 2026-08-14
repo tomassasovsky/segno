@@ -140,6 +140,24 @@ final class LooperOneShotToggled extends LooperChannelEvent {
   List<Object?> get props => [channel, oneShot];
 }
 
+/// Every track's one-shot flag was set to [oneShot] at once — the rig-wide
+/// switch on the console's Mode face.
+///
+/// One event rather than the UI fanning out a [LooperOneShotToggled] per
+/// track: the rig-wide rule is then written down once, where it can be tested
+/// without a widget, and a half-applied sweep cannot be observed between two
+/// dispatches.
+final class LooperAllOneShotToggled extends LooperEvent {
+  /// Creates a [LooperAllOneShotToggled].
+  const LooperAllOneShotToggled({required this.oneShot});
+
+  /// The new flag, applied to every track.
+  final bool oneShot;
+
+  @override
+  List<Object?> get props => [oneShot];
+}
+
 /// [channel] was crowned the primary track (Sync/Band, D18;
 /// `crownPrimary` — D20). No "un-crown" event exists — the only way to move
 /// the crown is to crown a different channel.
@@ -743,4 +761,14 @@ final class LooperOutputEnabledToggled extends LooperEvent {
 
   @override
   List<Object?> get props => [output, enabled];
+}
+
+/// A session load landed, so the bloc must write its chains back to the
+/// boot-restore keys — see `_resyncSessionChains`.
+///
+/// Named for the trigger rather than the work, like every other event here: a
+/// load is what HAPPENED; re-persisting is this bloc's response to it.
+final class LooperSessionLoaded extends LooperEvent {
+  /// Creates a [LooperSessionLoaded].
+  const LooperSessionLoaded();
 }

@@ -1,4 +1,4 @@
-/// Repository layer for the Loopy looper: owns the audio engine and projects
+/// Repository layer for the Segno looper: owns the audio engine and projects
 /// its snapshots into looper domain models.
 library;
 
@@ -10,7 +10,7 @@ library;
 // through `TransportState` (A4b). `LooperMode` joins them (B2a), also
 // surfaced through `TransportState`. The audio-config cluster
 // (AudioBackend/AudioDevice/EngineConfig/…) is wrapped in Part 2b.
-export 'package:loopy_engine/loopy_engine.dart'
+export 'package:segno_engine/segno_engine.dart'
     show
         ClickMode,
         EngineResult,
@@ -20,8 +20,8 @@ export 'package:loopy_engine/loopy_engine.dart'
         PluginScanProgress,
         TempoSource,
         TrackState,
-        kMaxInputs,
         kMaxLanes,
+        kMaxMonitoredInputs,
         kTrackEffectMax,
         kTrackEffectParams;
 
@@ -76,18 +76,22 @@ export 'src/models/track_effect.dart'
         fxChainFingerprint,
         trackEffectsToEngine;
 export 'src/models/transport_state.dart';
+export 'src/models/tuner_reading.dart';
 // Plugin discovery: the async scan driver + its cache. PluginDescriptor itself
 // is exported above with the other domain models.
 export 'src/plugin_catalog.dart'
     show PluginCacheKey, PluginCatalog, PluginCatalogCache, PluginFileStat;
 
 /// The iteration ceiling for the structural output gate's bootstrap reapply
-/// scan, engine-aligned with `kMaxInputs` (`LE_MAX_INPUTS == 8`).
+/// scan.
 ///
 /// The output count is device-dependent and unknown at bootstrap, and the gate
 /// is default-on (only explicitly-disabled outputs are persisted), so no exact
 /// bound is needed for correctness. This is only how far the bootstrap reapply
 /// scans the `output_enabled.$out` keys — matching how the monitor reapply
-/// scans `[0, kMaxInputs)`. A stored off-state for an output beyond the current
-/// device's channel count is ignored by the engine and never corrupts routing.
+/// scans `[0, kMaxMonitoredInputs)` — a scan of the same LENGTH, not the same
+/// ceiling: outputs have nothing to do with what the monitor path covers, and
+/// the two numbers merely coincide. A stored off-state for an output beyond
+/// the current device's channel count is ignored by the engine and never
+/// corrupts routing.
 const int kMaxOutputs = 8;

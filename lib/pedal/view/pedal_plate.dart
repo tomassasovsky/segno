@@ -4,14 +4,15 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/theme/theme.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/control/binding/pedal_button_legend.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/theme/theme.dart';
 
 // ---------------------------------------------------------------------------
-// Faceplate geometry (millimetres), taken verbatim from the VAMP top plate in
-// hardware/enclosure/vamp_enclosure.py so the on-screen replica matches the 3D
+// Faceplate geometry (millimetres), taken verbatim from the Segno top plate in
+// hardware/enclosure/segno_enclosure.py so the on-screen replica matches the 3D
 // model. u = player left->right (0..fpW); v = front->rear (0..fpV).
 // ---------------------------------------------------------------------------
 const _fpW = 846.0; // faceplate width
@@ -39,7 +40,7 @@ const _smallH = 88.0; // 7" aperture height
 /// The u of front-row pedal [i] (`0..7`), evenly spaced inside the edge margin.
 double _pedalU(int i) => 69.0 + (777.0 - 69.0) * i / 7.0;
 
-/// Renders the VAMP top plate to scale from injected state alone — the two
+/// Renders the Segno top plate to scale from injected state alone — the two
 /// screen apertures (a 7" waveform on the left, the main looper screen on the
 /// right), the encoder + activity ring, and the footswitches. Pure
 /// presentation: no transport, cubit, or bloc dependency, so it pumps from a
@@ -55,6 +56,7 @@ class PedalPlate extends StatelessWidget {
     required this.onTurn,
     required this.mode,
     required this.l10n,
+    required this.trackNames,
     required this.mainScreen,
     required this.waveformScreen,
     required this.onClose,
@@ -64,6 +66,11 @@ class PedalPlate extends StatelessWidget {
 
   /// LEDs, ring, bank — everything the plate renders from the wire frame.
   final PedalStateFrame frame;
+
+  /// The rig's track names, so a track pad ANNOUNCES what it is (#526). The
+  /// visible legend stays positional: it names the switch under your foot,
+  /// whose track depends on the bank.
+  final List<String> trackNames;
 
   /// Fires on footswitch press and release, with the same signature the
   /// simulator transport dispatches today.
@@ -131,6 +138,7 @@ class PedalPlate extends StatelessWidget {
             label: label,
             onPress: onPress,
             l10n: l10n,
+            trackNames: trackNames,
             mode: mode,
             led: channel == null ? null : frame.trackLeds[channel],
             channel: channel,
@@ -163,7 +171,7 @@ class PedalPlate extends StatelessWidget {
           );
         }
 
-        // Silk legend line — bottom edge at faceplate v (vamp_enclosure
+        // Silk legend line — bottom edge at faceplate v (segno_enclosure
         // layout).
         Widget silkLine(_SilkLine spec) => box(
           spec.align == TextAlign.center ? spec.u : spec.u + spec.blockW / 2,
@@ -226,7 +234,7 @@ class PedalPlate extends StatelessWidget {
                 // CLEAR / BANK pair (upper centre).
                 footswitch(
                   PedalButton.clear,
-                  'CLEAR',
+                  _silk(PedalButton.clear),
                   _pedalU(2),
                   _row2V,
                   statusLed: _Led(
@@ -239,7 +247,7 @@ class PedalPlate extends StatelessWidget {
                 ),
                 footswitch(
                   PedalButton.bank,
-                  'BANK',
+                  _silk(PedalButton.bank),
                   _pedalU(3),
                   _row2V,
                   statusLed: _Led(
@@ -250,15 +258,30 @@ class PedalPlate extends StatelessWidget {
                     glow: frame.activeBank == 1,
                   ),
                 ),
-                ...silkLabels('CLEAR', _pedalU(2), _row2V),
-                ...silkLabels('BANK', _pedalU(3), _row2V),
+                ...silkLabels(_silk(PedalButton.clear), _pedalU(2), _row2V),
+                ...silkLabels(_silk(PedalButton.bank), _pedalU(3), _row2V),
                 // Front row: transport switches then the four track switches.
-                footswitch(PedalButton.recPlay, 'REC/PLAY', _pedalU(0), _row1V),
-                footswitch(PedalButton.stop, 'STOP', _pedalU(1), _row1V),
-                footswitch(PedalButton.undo, 'UNDO', _pedalU(2), _row1V),
+                footswitch(
+                  PedalButton.recPlay,
+                  _silk(PedalButton.recPlay),
+                  _pedalU(0),
+                  _row1V,
+                ),
+                footswitch(
+                  PedalButton.stop,
+                  _silk(PedalButton.stop),
+                  _pedalU(1),
+                  _row1V,
+                ),
+                footswitch(
+                  PedalButton.undo,
+                  _silk(PedalButton.undo),
+                  _pedalU(2),
+                  _row1V,
+                ),
                 footswitch(
                   PedalButton.mode,
-                  'MODE',
+                  _silk(PedalButton.mode),
                   _pedalU(3),
                   _row1V,
                   // The tri-state mode indicator (A1), mirroring the firmware
@@ -279,10 +302,10 @@ class PedalPlate extends StatelessWidget {
                           glow: !frame.isGoodbye,
                         ),
                 ),
-                ...silkLabels('REC/PLAY', _pedalU(0), _row1V),
-                ...silkLabels('STOP', _pedalU(1), _row1V),
-                ...silkLabels('UNDO', _pedalU(2), _row1V),
-                ...silkLabels('MODE', _pedalU(3), _row1V),
+                ...silkLabels(_silk(PedalButton.recPlay), _pedalU(0), _row1V),
+                ...silkLabels(_silk(PedalButton.stop), _pedalU(1), _row1V),
+                ...silkLabels(_silk(PedalButton.undo), _pedalU(2), _row1V),
+                ...silkLabels(_silk(PedalButton.mode), _pedalU(3), _row1V),
                 for (var t = 0; t < _trackButtons.length; t++)
                   footswitch(
                     _trackButtons[t],
@@ -321,7 +344,7 @@ class PedalPlate extends StatelessWidget {
   }
 }
 
-/// One silk legend line from vamp_enclosure faceplate_holes / silk_text.
+/// One silk legend line from segno_enclosure faceplate_holes / silk_text.
 class _SilkLine {
   const _SilkLine({
     required this.text,
@@ -338,7 +361,16 @@ class _SilkLine {
   final TextAlign align;
 }
 
-/// Mirrors vamp_enclosure._silk_lines.
+/// The silkscreen form of a footswitch's shared legend.
+///
+/// The legend itself lives beside the binding model, so this diagram and the
+/// Control face can never call one switch two things. Only the SETTING differs:
+/// a 22mm cap has no room for the spaces a list row can afford, so `REC / PLAY`
+/// is printed `REC/PLAY` here — and split across two lines by [_silkLines].
+String _silk(PedalButton button) =>
+    pedalButtonLegend(button).replaceAll(' / ', '/');
+
+/// Mirrors segno_enclosure._silk_lines.
 List<String> _silkLines(String label) {
   if (label == 'REC/PLAY') return const ['REC/', 'PLAY'];
   if (label.startsWith('TRACK')) return const [];
@@ -348,7 +380,7 @@ List<String> _silkLines(String label) {
 bool _silkHasLed(String label) =>
     label == 'CLEAR' || label == 'BANK' || label.startsWith('TRACK');
 
-/// Mirrors vamp_enclosure.faceplate_holes engraving layout.
+/// Mirrors segno_enclosure.faceplate_holes engraving layout.
 List<_SilkLine> _silkLabelLines(String label, double pedalU, double pedalV) {
   final lines = _silkLines(label);
   if (lines.isEmpty) return const [];
@@ -505,6 +537,7 @@ class _Footswitch extends StatefulWidget {
     required this.label,
     required this.onPress,
     required this.l10n,
+    required this.trackNames,
     required this.mode,
     required this.selected,
     this.led,
@@ -515,6 +548,9 @@ class _Footswitch extends StatefulWidget {
   final String label;
   final void Function(PedalButton button, {required bool down}) onPress;
   final AppLocalizations l10n;
+
+  /// The rig's track names, for a track pad's announced label.
+  final List<String> trackNames;
 
   /// The LIVE interaction mode — what this switch does, and how its LED
   /// reads, both depend on it. Deliberately not the frame's wire mode: below
@@ -587,7 +623,7 @@ class _FootswitchState extends State<_Footswitch> {
     final surface = context.surface;
     final label = switch (widget.channel) {
       final int channel => widget.l10n.pedalSimTrackSemantics(
-        channel + 1,
+        widget.l10n.trackName(widget.trackNames, channel),
         _ledStateLabel(
           widget.l10n,
           widget.led ?? PedalTrackLed.off,

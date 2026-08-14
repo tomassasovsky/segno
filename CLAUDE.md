@@ -2,6 +2,11 @@
 
 Guidance for any agent session in this repo. Keep it lean — it loads into every session.
 
+## Engineering principles
+
+How to make design and implementation calls in this repo lives in
+**`AGENTS.md`** at the repo root — read it before designing anything.
+
 ## Build / test / environment
 
 Canonical build, test, and environment gotchas live in **`docs/PROGRESS.md`** —
@@ -13,11 +18,15 @@ plugin, macOS dylib loading, flavor schemes). They will bite otherwise.
 - Dart/Flutter tests: `/Users/Tomas/development/flutter/bin/flutter test`
   (bare `flutter test`/`dart test` are hook-blocked; the very_good MCP test
   tool is broken in this env)
-- Native engine tests: `bash packages/loopy_engine/src/test/run_native_tests.sh`
+- Native engine tests: `bash packages/segno_engine/src/test/run_native_tests.sh`
 - Pedal firmware contract + protocol-copy drift gate (required when anything
   under `firmware/` or `hardware/firmware/` or the pedal codec changes):
   `bash firmware/test/run_tests.sh`
 - Static analysis: `dart analyze` must come back clean
+- Bloc lint: `bloc lint lib test packages` must come back clean. CI runs this
+  as the `Bloc Lint` step of the reusable `flutter_package.yml`, and it carries
+  rules `dart analyze` does **not** — a cubit method returning anything but
+  void fails here and passes there
 - Formatting is automatic — a PostToolUse hook runs `dart format` on every
   edited `.dart` file, so never hand-format or commit format-only churn
 

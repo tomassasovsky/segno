@@ -1,0 +1,107 @@
+import 'package:equatable/equatable.dart';
+import 'package:meta/meta.dart';
+
+/// Live WiFi association status from `segno-wifi-ctl status`.
+@immutable
+class WifiStatus extends Equatable {
+  /// Creates a [WifiStatus].
+  const WifiStatus({
+    required this.supported,
+    required this.enabled,
+    required this.connected,
+    this.ssid = '',
+    this.ip = '',
+    this.signal = 0,
+  });
+
+  /// Parses the helper's JSON status object.
+  factory WifiStatus.fromJson(Map<String, dynamic> json) => WifiStatus(
+    supported: json['supported'] == true,
+    enabled: json['enabled'] == true,
+    connected: json['connected'] == true,
+    ssid: '${json['ssid'] ?? ''}',
+    ip: '${json['ip'] ?? ''}',
+    signal: _asInt(json['signal']),
+  );
+
+  /// Unsupported / unavailable placeholder.
+  static const unsupported = WifiStatus(
+    supported: false,
+    enabled: false,
+    connected: false,
+  );
+
+  /// Whether the appliance WiFi stack is present.
+  final bool supported;
+
+  /// Whether the radio/iface is administratively up (Control Center toggle).
+  final bool enabled;
+
+  /// Whether associated (wpa_state COMPLETED).
+  final bool connected;
+
+  /// Associated SSID (empty when disconnected).
+  final String ssid;
+
+  /// IPv4 address when leased (may be empty briefly after connect).
+  final String ip;
+
+  /// RSSI / signal hint from wpa (more negative = weaker).
+  final int signal;
+
+  @override
+  List<Object?> get props => [supported, enabled, connected, ssid, ip, signal];
+}
+
+/// One scanned network from `segno-wifi-ctl scan`.
+@immutable
+class WifiNetwork extends Equatable {
+  /// Creates a [WifiNetwork].
+  const WifiNetwork({
+    required this.ssid,
+    required this.signal,
+    required this.secured,
+    this.saved = false,
+    this.inRange = true,
+  });
+
+  /// Parses one scan-result object.
+  factory WifiNetwork.fromJson(Map<String, dynamic> json) => WifiNetwork(
+    ssid: '${json['ssid'] ?? ''}',
+    signal: _asInt(json['signal']),
+    secured: json['secured'] == true,
+    saved: json['saved'] == true,
+    inRange: json['inRange'] != false,
+  );
+
+  /// Network name.
+  final String ssid;
+
+  /// Signal level from scan_results (dBm-ish).
+  final int signal;
+
+  /// Whether the network requires a password.
+  final bool secured;
+
+  /// Whether a profile for this network is already stored, so joining needs no
+  /// password and forgetting is possible. A saved network can appear here while
+  /// out of range — see [inRange].
+  final bool saved;
+
+  /// Whether the last scan actually saw this network.
+  ///
+  /// Saved networks are listed even when they are not in range, so a profile
+  /// that refuses to connect can still be forgotten. Carried explicitly rather
+  /// than inferred from [signal]: signal is reported in dBm in some paths and
+  /// as a 0-100 quality in others, so no sentinel value is safe.
+  final bool inRange;
+
+  @override
+  List<Object?> get props => [ssid, signal, secured, saved, inRange];
+}
+
+int _asInt(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse('$value') ?? 0;
+}

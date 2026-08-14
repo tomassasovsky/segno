@@ -15,8 +15,9 @@ import 'package:looper_repository/src/models/session_rig.dart';
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
+import 'package:looper_repository/src/models/tuner_reading.dart';
 import 'package:looper_repository/src/plugin_catalog.dart';
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno_engine/segno_engine.dart'
     hide
         AudioBackend,
         AudioDevice,
@@ -34,7 +35,7 @@ import 'package:loopy_engine/loopy_engine.dart'
         TrackEffectParam,
         TrackEffectType;
 
-/// Builds the production [AudioEngine] backed by the native loopy engine.
+/// Builds the production [AudioEngine] backed by the native segno engine.
 ///
 /// Lets the composition root obtain an engine without naming or importing the
 /// engine package's concrete types: the returned value is held as the
@@ -118,6 +119,10 @@ class LooperRepository {
   final Stream<void>? _reconnectTicker;
   final Duration _reconnectInterval;
   late final StreamController<LooperState> _controller;
+
+  /// Broadcasts the input whose monitor-owned state a caller just changed.
+  final StreamController<int> _monitorChanges =
+      StreamController<int>.broadcast();
   StreamSubscription<void>? _tickerSub;
   Timer? _pollTimer;
   LooperState? _last;
@@ -128,9 +133,14 @@ class LooperRepository {
   /// recovers a device the user did not deliberately stop.
   bool _intendRunning = false;
 
-  /// Single-flight scan backing [_recoverUnavailablePlugins]: started the first
-  /// time a restored chain surfaces an unavailable plugin, then reused so the
-  /// plugin dirs are scanned at most once per session.
+  /// Single-flight scan behind both recoveries: started the first time a
+  /// restored chain surfaces a plugin that cannot be resolved — unavailable
+  /// on a lane or a monitor ([_recoverUnavailablePlugins]), unnamed on a bus
+  /// ([_recoverUnnamedBusPlugins]) — then reused so the plugin dirs are
+  /// scanned at most once per session.
+  ///
+  /// The bus recovery runs whether or not the engine is running, so this can
+  /// first be set with it stopped. Scanning does not touch the device.
   Future<List<PluginDescriptor>>? _restoredPluginScan;
 
   /// The desired quantize-recording state, re-applied to the engine on every
@@ -167,6 +177,12 @@ class LooperRepository {
   /// — a fresh start resets the engine's offset to 0. Zero (no compensation)
   /// until set or measured.
   int _recordOffset = 0;
+
+  /// The tuner's armed input, or `-1` when disarmed. Re-applied on every
+  /// (re)start so an arm survives a reconnect under an open Tuner face; `-1`
+  /// is the resting value, since the face disarms on its way out, so nothing
+  /// resumes analysing behind a face nobody is looking at.
+  int _tunerInput = -1;
 
   /// The tempo grid (A1) + click/count-in (A2) desired state, re-applied to
   /// the engine on every successful (re)start. Unlike [_quantize] above, this
@@ -287,11 +303,20 @@ class LooperRepository {
   >
   _clearRestore = {};
 
-  /// Per-hardware-input live monitor enable flag (absent => disabled). The
+  /// Per-hardware-input live monitor mode (absent => [MonitorMode.off]). The
   /// input-level gate; per-lane routing / mix / effects live in the maps below.
   /// All re-applied on every successful (re)start so they survive device
   /// changes / reconnects.
-  final Map<int, bool> _monitorInputEnabled = {};
+  ///
+  /// This holds **intent**. What the engine is told is [monitorResolved],
+  /// which collapses [MonitorMode.auto] against the current record arm.
+  final Map<int, MonitorMode> _monitorInputMode = {};
+
+  /// The resolved gate last pushed to the engine, per input. Only inputs whose
+  /// resolved value has actually moved are re-pushed on a poll, so a session
+  /// sitting idle in [MonitorMode.auto] costs one map read per tick and no FFI
+  /// call at all.
+  final Map<int, bool> _monitorResolvedPushed = {};
 
   /// Per-input monitor output mask, volume, mute, and a single effect chain —
   /// each remembered and re-applied on every successful (re)start. An empty
@@ -329,6 +354,35 @@ class LooperRepository {
   String? _lastAttemptSignature;
 
   bool get _isReconnecting => _reconnectSub != null || _reconnectTimer != null;
+
+  /// The input of every monitor change, as it happens.
+  ///
+  /// Monitor state is the one part of the rig that is NOT in [looperState]:
+  /// the projection carries tracks and buses, and a monitor lives only in
+  /// these maps. So a writer that goes straight to the repository — a pedal
+  /// binding resolving an `FxStage.input` target, a session apply — is
+  /// invisible to anything holding its own copy, and `MonitorCubit` holds
+  /// exactly that. Without this, a footswitch that bypasses an input chain
+  /// leaves the console still drawing it as running.
+  ///
+  /// Carries the input, not the new state: a listener re-reads what it needs
+  /// from the getters, which is what makes this correct for every writer
+  /// rather than for the ones that remembered to describe their change.
+  ///
+  /// Every STRUCTURAL write announces — the chain, its power, an entry's
+  /// power, the mode, mask, volume, mute, a relink, and a rebind that
+  /// rewrote the chain. A parameter write does not: those arrive at
+  /// controller rate from a mapped CC, and a listener that persists what it
+  /// reads would write settings on every frame of a sweep. Following a
+  /// swept param needs the ≤10 Hz cadence the editor poll already uses
+  /// (#605).
+  Stream<int> get monitorChanges => _monitorChanges.stream;
+
+  /// Announces a change to monitor [input]. Every monitor setter ends here.
+  void _monitorChanged(int input) {
+    if (_monitorChanges.isClosed) return;
+    _monitorChanges.add(input);
+  }
 
   /// Distinct stream of looper states.
   ///
@@ -468,6 +522,10 @@ class LooperRepository {
     final next = _project(snapshot);
     if (next == _last) return;
     _last = next;
+    // Before listeners see it: `auto` monitors resolve against the arm state
+    // this projection just moved, and the gate should open on the same frame
+    // the track arms rather than one behind it.
+    _reconcileAutoMonitors();
     _controller.add(next);
   }
 
@@ -479,6 +537,7 @@ class LooperRepository {
     final next = _project(_engine.snapshot());
     if (next == _last) return;
     _last = next;
+    _reconcileAutoMonitors();
     _controller.add(next);
   }
 
@@ -571,6 +630,11 @@ class LooperRepository {
   }
 
   LooperState _project(EngineSnapshot s) => LooperState(
+    tuner: TunerReading(
+      hz: s.tunerHz,
+      confidence: s.tunerConfidence,
+      input: s.tunerInput,
+    ),
     transport: TransportState(
       isRunning: s.isRunning,
       masterLengthFrames: s.masterLengthFrames,
@@ -619,6 +683,7 @@ class LooperRepository {
           layerInFlight: s.tracks[i].layerInFlight,
           pending: s.tracks[i].pending,
           lengthPresetBars: s.tracks[i].lengthPresetBars,
+          quantizeOverride: _trackQuantize[i],
           oneShot: s.tracks[i].oneShot,
           multiple: s.tracks[i].multiple,
           inputMask: s.tracks[i].inputMask,
@@ -664,8 +729,25 @@ class LooperRepository {
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
       activeBackend: audioBackendFromEngine(s.activeBackend),
     ),
-    outputEnabledMask: s.outputEnabledMask,
+    // From the repository's own re-apply CACHE, not `s.outputEnabledMask`, on
+    // the same reasoning as the quantize override above: the gate is re-applied
+    // at every start, so while the engine is STOPPED its snapshot still reports
+    // every output on. A session that loaded with outputs gated would then read
+    // as audible until the device opened — and the Audio face's silence banner
+    // is drawn straight off this mask.
+    outputEnabledMask: _outputEnabledMask,
   );
+
+  /// The gate as a mask: default-on, with a bit cleared per remembered off
+  /// entry. Bits past the mask's own width stay set — a stored off-state for
+  /// an output this rig has not got gates nothing.
+  int get _outputEnabledMask {
+    var mask = 0xFFFFFFFF;
+    _outputEnabled.forEach((output, enabled) {
+      if (!enabled && output >= 0 && output < 32) mask &= ~(1 << output);
+    });
+    return mask;
+  }
 
   /// Enumerates the host's audio devices (playback + capture) for the picker.
   List<AudioDevice> devices() =>
@@ -708,6 +790,11 @@ class LooperRepository {
       // instead of restoring). A device change / reconnect with a real offset
       // still gets it back.
       if (_recordOffset > 0) _engine.setRecordOffset(_recordOffset);
+      // Re-arm the tuner only if it is armed RIGHT NOW — see [_tunerInput].
+      // Without this a device reconnect under an open Tuner face leaves the
+      // engine disarmed, and the face has no way to notice: it armed once, on
+      // the way in, and will not do so again until it is closed and reopened.
+      if (_tunerInput >= 0) _engine.setTunerInput(input: _tunerInput);
       // Re-apply the tempo grid + click/count-in state (A1/A2), plus the
       // looper mode (B2a): a fresh start resets all of it to the tempo-free/
       // Multi defaults, same as quantize/gain above. Only an explicitly-set
@@ -782,10 +869,11 @@ class LooperRepository {
       );
       // Re-apply per-input live monitors: enable first, then the single chain's
       // routing / mix / effects.
-      _monitorInputEnabled.forEach(
-        (input, enabled) =>
-            _engine.setMonitorInputEnabled(input: input, enabled: enabled),
-      );
+      _monitorInputMode.forEach((input, _) {
+        final resolved = monitorResolved(input);
+        _monitorResolvedPushed[input] = resolved;
+        _engine.setMonitorInputEnabled(input: input, enabled: resolved);
+      });
       _monitorOutput.forEach(
         (input, mask) =>
             _engine.setMonitorInputOutput(input: input, mask: mask),
@@ -838,6 +926,14 @@ class LooperRepository {
   static bool _hasUnavailablePlugin(Iterable<TrackEffect> effects) =>
       effects.any((e) => e is PluginEffect && e.unavailable);
 
+  /// Whether [effects] holds a hosted plugin with no display name.
+  ///
+  /// The bus twin of [_hasUnavailablePlugin]: every bus plugin is unavailable
+  /// by construction, so that test would say "needs a scan" forever. What a
+  /// bus entry can be missing is its NAME, and only a scan can supply one.
+  static bool _hasUnnamedPlugin(Iterable<TrackEffect> effects) =>
+      effects.any((e) => e is PluginEffect && e.name.isEmpty);
+
   /// Recovers plugins that failed to load because the engine's in-process scan
   /// cache was empty when their chain was applied.
   ///
@@ -878,6 +974,54 @@ class LooperRepository {
           _applyLaneEffects(key.$1, key.$2);
         }
         monitorKeys.forEach(_applyMonitorEffects);
+      }),
+    );
+  }
+
+  /// Names the bus chains that have a plugin with no display name, scanning
+  /// once if nothing has scanned yet.
+  ///
+  /// The bus twin of [_recoverUnavailablePlugins], deliberately separate: what
+  /// a bus entry can be missing is its NAME, and the two recoveries share
+  /// neither their test nor their repair. Every bus plugin is unavailable by
+  /// construction, so the lane test would ask for a scan forever; and a bus
+  /// entry has no engine slot to rebind or to show as loading, so the repair
+  /// is a re-mark and a projection rather than a re-apply.
+  ///
+  /// The resolved name lives in memory until the chain is next written — a
+  /// write persists it, but this does not write. So a chain named only here,
+  /// whose plugin is then uninstalled, is nameless again on the next boot.
+  /// Rare, and the alternative is a repository that persists behind its
+  /// caller's back.
+  void _recoverUnnamedBusPlugins() {
+    final trackKeys = [
+      for (final e in _trackEffects.entries)
+        if (_hasUnnamedPlugin(e.value)) e.key,
+    ];
+    final masterUnnamed = _hasUnnamedPlugin(_masterEffects);
+    if (trackKeys.isEmpty && !masterUnnamed) return;
+    // A populated catalog means a scan already ran this session, so a name
+    // still missing is a plugin the catalog does not have — same argument as
+    // [_recoverUnavailablePlugins].
+    if (pluginCatalog.descriptors.isNotEmpty) return;
+    final scan = _restoredPluginScan ??= pluginCatalog.scan();
+    unawaited(
+      scan.then((_) {
+        // Not gated on the engine running: naming writes no engine slot, so a
+        // chain that lost its device while the scan ran still ends up named.
+        // It IS gated on being alive — the scan outlives a disposed
+        // repository, and projecting into a closed stream throws.
+        if (_controller.isClosed) return;
+        for (final channel in trackKeys) {
+          final effects = _trackEffects[channel];
+          if (effects != null) {
+            _trackEffects[channel] = _markBusUnsupportedPlugins(effects);
+          }
+        }
+        if (masterUnnamed) {
+          _masterEffects = _markBusUnsupportedPlugins(_masterEffects);
+        }
+        _reproject();
       }),
     );
   }
@@ -1069,7 +1213,7 @@ class LooperRepository {
   /// chain-DISABLED one — D2/D-CHAINDIS, R18).
   List<TrackEffect>? _inheritableChain(int channel, int lane) {
     final input = _laneInput[(channel, lane)] ?? lane;
-    if (input < 0 || input >= kMaxInputs) return null;
+    if (input < 0 || input >= kMaxMonitoredInputs) return null;
     final chain = _monitorEffects[input];
     if (chain == null || chain.isEmpty) return null;
     return monitorChainEnabled(input) ? chain : null;
@@ -1262,6 +1406,14 @@ class LooperRepository {
   /// the ONE session-apply path (F2). Every write lands in the remembered
   /// caches as well as the engine, so a device restart / reconnect replays the
   /// LOADED session by construction, never a pre-load cache.
+  ///
+  /// **The caller owns writing settings back.** This method updates the engine
+  /// and the caches only; it never touches the boot-restore keys. A session
+  /// load is therefore not complete until whichever layer owns settings
+  /// persistence re-writes them from the enumerations below ([allLaneChains] /
+  /// [allTrackChains] / [masterChainEnvelope] / [allMonitors]). Left silent,
+  /// that asymmetry shipped twice — a cold boot restored the pre-load rig — so
+  /// state it here rather than leaving the caller to discover it.
   ///
   /// Order: clear every track via [clear] (which forgets remembered lane
   /// mutes), await the engine settling to empty, reset every per-track
@@ -1595,7 +1747,7 @@ class LooperRepository {
     final rememberedMonitors = allMonitors().keys.toList();
     for (final input in rememberedMonitors) {
       if (definedMonitors.contains(input)) continue;
-      setMonitorInputEnabled(input: input, enabled: false);
+      setMonitorInputMode(input: input, mode: MonitorMode.off);
       setMonitorOutput(input: input, mask: _defaultMonitorOutputMask);
       setMonitorVolume(input: input, volume: 1);
       setMonitorMute(input: input, muted: false);
@@ -1603,7 +1755,7 @@ class LooperRepository {
       setMonitorChainEnabled(input: input, enabled: true);
     }
     for (final monitor in rig.monitors) {
-      setMonitorInputEnabled(input: monitor.input, enabled: monitor.enabled);
+      setMonitorInputMode(input: monitor.input, mode: monitor.mode);
       setMonitorOutput(input: monitor.input, mask: monitor.outputMask);
       setMonitorVolume(input: monitor.input, volume: monitor.volume);
       setMonitorMute(input: monitor.input, muted: monitor.muted);
@@ -1706,7 +1858,7 @@ class LooperRepository {
   /// its keys.
   Map<int, InputMonitor> allMonitors() {
     final inputs = <int>{
-      ..._monitorInputEnabled.keys,
+      ..._monitorInputMode.keys,
       ..._monitorOutput.keys,
       ..._monitorVolume.keys,
       ..._monitorMute.keys,
@@ -1717,7 +1869,7 @@ class LooperRepository {
     for (final input in inputs) {
       final monitor = InputMonitor(
         input: input,
-        enabled: monitorEnabled(input),
+        mode: monitorMode(input),
         outputMask: monitorOutput(input),
         volume: monitorVolume(input),
         muted: monitorMuted(input),
@@ -1730,8 +1882,63 @@ class LooperRepository {
     return result;
   }
 
-  /// Whether hardware [input]'s live monitor is enabled (remembered intent).
-  bool monitorEnabled(int input) => _monitorInputEnabled[input] ?? false;
+  /// What hardware [input]'s live monitor is asked to do (remembered intent).
+  MonitorMode monitorMode(int input) =>
+      _monitorInputMode[input] ?? MonitorMode.off;
+
+  /// Whether hardware [input] is monitoring **right now** — intent resolved
+  /// against the record arm. This is the boolean the engine is given.
+  ///
+  /// [MonitorMode.auto] is a **fan-in**, not a 1:1: there is no "the input's
+  /// track". A lane records one [Lane.inputChannel], and one input can feed
+  /// lanes on several tracks, so the rule is *any* of them being armed.
+  bool monitorResolved(int input) => switch (monitorMode(input)) {
+    MonitorMode.off => false,
+    MonitorMode.on => true,
+    MonitorMode.auto => _autoArms(input),
+  };
+
+  /// Whether any lane fed by [input] sits on a track that is armed or
+  /// capturing. `pending` is the waiting quantized arm; `isCapturing` is
+  /// recording or overdubbing.
+  ///
+  /// Walks the PROJECTED lanes rather than [_laneInput]. Two reasons: the
+  /// projection has already applied the `?? lane` default, so a lane that was
+  /// never explicitly routed still counts (over half of them, in a default
+  /// rig); and arm state and routing then come off the same object instead of
+  /// being joined across an intent map and a snapshot that could disagree.
+  ///
+  /// No projection yet means nothing can be armed, so `auto` reads closed —
+  /// which is also the right answer while the engine is stopped.
+  bool _autoArms(int input) {
+    final state = _last;
+    if (state == null) return false;
+    for (final track in state.tracks) {
+      if (!track.pending && !track.isCapturing) continue;
+      for (final lane in track.lanes) {
+        if (lane.inputChannel == input) return true;
+      }
+    }
+    return false;
+  }
+
+  /// Re-pushes the resolved gate for every [MonitorMode.auto] input whose
+  /// answer has changed since the last push.
+  ///
+  /// Called where the repository already recomputes on a state change, so
+  /// `auto` needs no subscription and no lifecycle of its own. Only `auto`
+  /// inputs are walked: `off` and `on` do not depend on the arm state, and
+  /// their pushes stay where every other monitor write already is.
+  void _reconcileAutoMonitors() {
+    if (!_intendRunning) return;
+    for (final entry in _monitorInputMode.entries) {
+      if (entry.value != MonitorMode.auto) continue;
+      final resolved = monitorResolved(entry.key);
+      if (_monitorResolvedPushed[entry.key] == resolved) continue;
+      _monitorResolvedPushed[entry.key] = resolved;
+      _engine.setMonitorInputEnabled(input: entry.key, enabled: resolved);
+    }
+  }
 
   /// Monitor [input]'s remembered output mask (the default stereo pair if
   /// never set).
@@ -1791,7 +1998,7 @@ class LooperRepository {
   /// compare by sound fingerprint.
   bool laneChainDivergesFromInput(int channel, int lane) {
     final input = _laneInput[(channel, lane)] ?? lane;
-    if (input < 0 || input >= kMaxInputs) return false;
+    if (input < 0 || input >= kMaxMonitoredInputs) return false;
     final laneDry = _chainAudiblyDry(
       _laneEffects[(channel, lane)] ?? const [],
       chainEnabled: laneChainEnabled(channel, lane),
@@ -1922,17 +2129,34 @@ class LooperRepository {
     return _engine.setLaneMute(muted: muted, channel: channel, lane: lane);
   }
 
-  /// Enables or disables live monitoring of hardware [input]. The input-level
+  /// Arms the chromatic tuner on hardware [input], or disarms it with `-1`.
+  ///
+  /// Remembered and re-applied on every (re)start, like the rest of this class
+  /// — which does NOT mean a rig resumes analysing behind a closed face. The
+  /// face disarms on its way out, so `-1` IS the remembered value whenever
+  /// nobody is looking; the cache only carries an arm across a restart that
+  /// happens WHILE the tuner is open (a reconnect, a device change), which is
+  /// the one case where dropping it strands the face on a dead engine.
+  EngineResult setTunerInput({required int input}) {
+    _tunerInput = input;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTunerInput(input: input);
+  }
+
+  /// Sets what hardware [input]'s live monitor is asked to do. The input-level
   /// gate; per-lane routing / mix / effects drive each lane. The monitored
   /// signal is never recorded. Remembered and re-applied on every (re)start;
   /// takes effect immediately only while running.
-  EngineResult setMonitorInputEnabled({
+  EngineResult setMonitorInputMode({
     required int input,
-    required bool enabled,
+    required MonitorMode mode,
   }) {
-    _monitorInputEnabled[input] = enabled;
+    _monitorInputMode[input] = mode;
+    final resolved = monitorResolved(input);
+    _monitorResolvedPushed[input] = resolved;
+    _monitorChanged(input);
     if (!_intendRunning) return EngineResult.ok;
-    return _engine.setMonitorInputEnabled(input: input, enabled: enabled);
+    return _engine.setMonitorInputEnabled(input: input, enabled: resolved);
   }
 
   /// Routes monitor [input]'s chain to the output channels in [mask].
@@ -1940,6 +2164,7 @@ class LooperRepository {
   /// only while running.
   EngineResult setMonitorOutput({required int input, required int mask}) {
     _monitorOutput[input] = mask;
+    _monitorChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMonitorInputOutput(input: input, mask: mask);
   }
@@ -1949,6 +2174,7 @@ class LooperRepository {
   /// (re)start; takes effect immediately while running.
   EngineResult setMonitorVolume({required int input, required double volume}) {
     _monitorVolume[input] = volume;
+    _monitorChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMonitorInputVolume(input: input, volume: volume);
   }
@@ -1957,6 +2183,7 @@ class LooperRepository {
   /// (re)start; takes effect immediately only while running.
   EngineResult setMonitorMute({required int input, required bool muted}) {
     _monitorMute[input] = muted;
+    _monitorChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMonitorInputMute(input: input, muted: muted);
   }
@@ -1965,12 +2192,18 @@ class LooperRepository {
   /// gate). A disabled output is removed from the mix while its lane/monitor
   /// route masks are preserved — re-enabling restores them. Default-on: only
   /// off entries are remembered, and they are re-applied on every (re)start.
+  ///
+  /// Re-projects, for the reason [setTrackQuantize] does: the gate lives in the
+  /// map below and a stopped engine's snapshot cannot report it, so nothing
+  /// else would tell a surface it had changed. A session load writes these with
+  /// no user gesture to hang a re-read off.
   EngineResult setOutputEnabled({required int output, required bool enabled}) {
     if (enabled) {
       _outputEnabled.remove(output); // absence == enabled (default-on)
     } else {
       _outputEnabled[output] = false;
     }
+    _reproject();
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setOutputEnabled(output: output, enabled: enabled);
   }
@@ -1999,6 +2232,12 @@ class LooperRepository {
   /// Overrides quantize for track [channel]: `null` inherits the global
   /// default, `false` forces it off, `true` forces it on. Remembered and
   /// re-applied on every (re)start.
+  ///
+  /// Re-projects, because the override is in no engine snapshot: it lives only
+  /// in the map below, so nothing else would tell a surface that it had
+  /// changed. That matters beyond the tap that sets it — a session load writes
+  /// these with no user gesture to hang a re-read off, and the console's Tracks
+  /// face would otherwise go on showing the outgoing session's overrides.
   EngineResult setTrackQuantize({
     required int channel,
     required bool? enabled,
@@ -2008,6 +2247,7 @@ class LooperRepository {
     } else {
       _trackQuantize[channel] = enabled;
     }
+    _reproject();
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setTrackQuantize(channel: channel, enabled: enabled);
   }
@@ -2151,8 +2391,30 @@ class LooperRepository {
     return _engine.pluginParamSet(handle, paramId, value);
   }
 
+  /// [fx] pointed at [ref], keeping what still belongs to it.
+  ///
+  /// The captured state blob travels either way: a plugin that does not
+  /// recognise a blob rejects it, and the alternative is losing the settings
+  /// of an entry whose plugin merely moved.
+  ///
+  /// The parameter capture does NOT travel to a different plugin. A parameter
+  /// id means whatever the plugin behind it says it means, so replaying one
+  /// sets an unrelated parameter to a number out of another plugin's range —
+  /// a `-40` read from a gain-reduction meter written into a `0..1` mix. The
+  /// console can reach this: its relink browses every installed plugin, not
+  /// only the one that went missing.
+  static PluginEffect _relinked(PluginEffect fx, PluginRef ref) =>
+      fx.ref.id == ref.id
+      ? fx.copyWith(ref: ref, unavailable: false)
+      : PluginEffect(
+          ref: ref,
+          enabled: fx.enabled,
+          slotId: fx.slotId,
+          state: fx.state,
+        );
+
   /// Relinks lane [lane]'s chain entry [index] to plugin [ref] (umbrella
-  /// D-MISS), keeping the captured [PluginEffect.state] + paramValues and
+  /// D-MISS), keeping what still belongs to it — see [_relinked] — and
   /// clearing the unavailable flag, then reloads it. Use to resolve a
   /// placeholder (uninstalled/moved) or accept a version change. Returns
   /// [EngineResult.invalid] when the entry is not a plugin.
@@ -2169,7 +2431,7 @@ class LooperRepository {
     final fx = effects[index];
     if (fx is! PluginEffect) return EngineResult.invalid;
     _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
-      ..[index] = fx.copyWith(ref: ref, unavailable: false);
+      ..[index] = _relinked(fx, ref);
     _reproject();
     if (!_intendRunning) return EngineResult.ok;
     // Re-applying reloads the new plugin and restores the preserved state blob.
@@ -2191,7 +2453,8 @@ class LooperRepository {
     final fx = effects[index];
     if (fx is! PluginEffect) return EngineResult.invalid;
     _monitorEffects[input] = List<TrackEffect>.of(effects)
-      ..[index] = fx.copyWith(ref: ref, unavailable: false);
+      ..[index] = _relinked(fx, ref);
+    _monitorChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     return _applyMonitorEffects(input);
   }
@@ -2259,9 +2522,16 @@ class LooperRepository {
     return true;
   }
 
-  /// Reads every user-visible param of [fx] from its loaded [handle]; returns a
-  /// copy with the changed values, or null if nothing moved. Shared by the lane
-  /// and monitor read-back paths.
+  /// Reads every param of [fx] the user can SEE from its loaded [handle];
+  /// returns a copy with the changed values, or null if nothing moved. Shared
+  /// by the lane and monitor read-back paths.
+  ///
+  /// Not `isUserVisible` — that is `isAutomatable && !isHidden`, and a
+  /// parameter can be shown without being automatable: a mode selector, a
+  /// gain-reduction meter. The console draws those (read-only), and a drawn
+  /// value that is never read back is frozen at the plugin's default forever
+  /// — a live-looking number guaranteed to be wrong, including right after
+  /// the user has changed it in the plugin's own window.
   ///
   /// The plugin is the source of truth (D-SYNC), so a value the plugin reports
   /// overwrites the model. One known transient: an in-app knob set is RT-queued
@@ -2272,8 +2542,11 @@ class LooperRepository {
     final values = Map<int, double>.of(fx.paramValues);
     var changed = false;
     for (final p in fx.params) {
-      if (!p.isUserVisible) continue;
+      if (p.isHidden) continue;
       final live = _engine.pluginParamGet(handle, p.id);
+      // See [_bindPluginSlot]: a non-finite reading cannot be persisted, and
+      // taking one poisons every later write of this chain.
+      if (!live.isFinite) continue;
       if (values[p.id] != live) {
         values[p.id] = live;
         changed = true;
@@ -2401,8 +2674,49 @@ class LooperRepository {
       handle,
       _engine.pluginParamInfos(handle).map(pluginParamInfoFromEngine).toList(),
     );
+    // Everything except what the plugin SAYS the host may not set.
+    // `paramValues` holds every parameter the console reads back, and
+    // replaying one the host does not own writes a stale reading into the
+    // plugin's own storage, or overrides with a captured value what the state
+    // blob just restored.
+    //
+    // Stated as what to SKIP rather than what to keep: a plugin can enumerate
+    // no parameters at all — a VST3 whose edit controller failed to
+    // instantiate, a CLAP with no params extension — and a keep-list built
+    // from that is empty, which would silently discard every saved value on
+    // each engine start. No flags is no evidence, and no evidence is not a
+    // refusal.
+    final unwritable = {
+      for (final info in infos)
+        if (!info.isAutomatable || info.isReadOnly) info.id,
+    };
     for (final entry in fx.paramValues.entries) {
+      if (unwritable.contains(entry.key)) continue;
       _engine.pluginParamSet(handle, entry.key, entry.value);
+    }
+    // And read back the drawn parameters the replay did NOT write, so a value
+    // the console shows is true as of load. The refresh polls run only while
+    // the plugin's own window is open — on the appliance, never — so without
+    // this a drawn setting is whatever was last persisted, which is not what
+    // the plugin is at once its state blob has been restored on top.
+    //
+    // ONLY the ones not just written. A param set is RT-queued and drained at
+    // the next process block, while this read is synchronous and immediate:
+    // read one back here and it still answers with its pre-replay value,
+    // which would then overwrite the user's saved setting with the plugin's
+    // default — and permanently on VST3, whose controller is never told what
+    // the host set.
+    final values = Map<int, double>.of(fx.paramValues);
+    for (final info in infos) {
+      if (info.isHidden || !unwritable.contains(info.id)) continue;
+      final live = _engine.pluginParamGet(handle, info.id);
+      // Finite only. A dB meter reads `-inf` at silence, which is ordinary
+      // plugin behaviour and which the hosts pass through unclamped — and
+      // `jsonEncode` throws on it, so a chain carrying one could never be
+      // persisted again. That throw escapes from inside the bloc's own push,
+      // so the failure is not this value: it is every later edit of the chain
+      // going unsaved.
+      if (live.isFinite) values[info.id] = live;
     }
     final descriptor = _descriptorFor(fx.ref.id);
     // The installed version differs from what the take saved (same id, new
@@ -2416,6 +2730,7 @@ class LooperRepository {
         descriptor.version != fx.ref.version;
     return fx.copyWith(
       params: infos,
+      paramValues: values,
       name: descriptor?.name ?? fx.name,
       unavailable: false,
       unsupported: false,
@@ -2427,6 +2742,10 @@ class LooperRepository {
   /// The scanned descriptor for plugin [id], or null when the catalog hasn't
   /// seen it (not yet scanned, or uninstalled).
   PluginDescriptor? _descriptorFor(String id) {
+    // A failed-to-scan descriptor carries an EMPTY id and the offending
+    // FILE's name, so an entry whose id decoded to nothing would match one
+    // and take a broken bundle's filename as its display name.
+    if (id.isEmpty) return null;
     for (final d in pluginCatalog.descriptors) {
       if (d.id == id) return d;
     }
@@ -2517,6 +2836,9 @@ class LooperRepository {
       _trackEffects[channel] = clamped;
     }
     _reproject();
+    // A restored bus chain whose plugin was not yet scanned lands with no
+    // name, and nothing else will ever fill one in.
+    _recoverUnnamedBusPlugins();
     if (!_intendRunning) return EngineResult.ok;
     return _applyTrackEffects(channel);
   }
@@ -2532,6 +2854,7 @@ class LooperRepository {
   EngineResult setMasterEffects({required List<TrackEffect> effects}) {
     _masterEffects = _markBusUnsupportedPlugins(_clampAndMint(effects));
     _reproject();
+    _recoverUnnamedBusPlugins();
     if (!_intendRunning) return EngineResult.ok;
     return _applyMasterEffects();
   }
@@ -2712,6 +3035,7 @@ class LooperRepository {
     }
     _monitorEffects[input] = List<TrackEffect>.of(effects)
       ..[index] = _withEnabled(effects[index], enabled);
+    _monitorChanged(input);
     return _engine.setMonitorInputFxEnabled(
       input: input,
       index: index,
@@ -2790,6 +3114,7 @@ class LooperRepository {
     } else {
       _monitorChainEnabled[input] = false;
     }
+    _monitorChanged(input);
     return _engine.setMonitorInputFxChainEnabled(
       input: input,
       enabled: enabled,
@@ -2873,12 +3198,34 @@ class LooperRepository {
   /// (see the section comment above the bus setters), so the entry is kept
   /// but must not read as an active slot: the UI gets the "installed but not
   /// loadable here" placeholder instead of an active-looking silent effect.
-  static List<TrackEffect> _markBusUnsupportedPlugins(
-    List<TrackEffect> effects,
-  ) => [
+  ///
+  /// The enumerated params go with the flags, exactly as [_bindPluginSlot]'s
+  /// null-handle branch does it. They describe a LOADED instance, and there
+  /// is none: an entry that keeps them while being marked unhostable draws a
+  /// row per parameter in the Signal editor — working-looking faders over a
+  /// plugin that is not running — and the placeholder line that explains the
+  /// situation never appears, because a chain with rows to draw is not empty.
+  /// Nothing copies a bound chain onto a bus today, so this bites the moment
+  /// something does: racks (#535), or a lane-to-bus paste.
+  ///
+  /// The name comes from the catalog, and at these stages the catalog is its
+  /// ONLY source: a bus entry never loads, so [_bindPluginSlot] — which is
+  /// what names a lane's or a monitor's plugin — never runs on one. Left to
+  /// the entry, an inserted plugin keeps the empty name the insert built it
+  /// with and reads as a 32-character TUID forever, and one that was relinked
+  /// onto a different plugin keeps the name of the plugin it replaced. An id
+  /// the catalog has never seen keeps whatever the entry carried, so an
+  /// uninstalled plugin still says which one it was.
+  List<TrackEffect> _markBusUnsupportedPlugins(List<TrackEffect> effects) => [
     for (final fx in effects)
       if (fx is PluginEffect)
-        fx.copyWith(unavailable: true, unsupported: true, loading: false)
+        fx.copyWith(
+          name: _descriptorFor(fx.ref.id)?.name ?? fx.name,
+          unavailable: true,
+          unsupported: true,
+          loading: false,
+          params: const [],
+        )
       else
         fx,
   ];
@@ -2900,6 +3247,7 @@ class LooperRepository {
     } else {
       _monitorEffects[input] = clamped;
     }
+    _monitorChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     final result = _applyMonitorEffects(input);
     // Same cold-start recovery as setLaneEffects: a restored monitor chain
@@ -3062,7 +3410,14 @@ class LooperRepository {
     // Monitor chains are not part of the projected `LooperState` (the
     // MonitorCubit owns and emits them), so we only refresh the remembered
     // chain with the live param metadata — no `_reproject()`.
-    if (mutated) _monitorEffects[input] = next;
+    if (mutated) {
+      _monitorEffects[input] = next;
+      // The projection's job for every other stage: an entry that just
+      // rebound (loading -> loaded, its name resolved, its params
+      // enumerated) is a change to what the console draws, and a reconnect
+      // reaches here without anyone having called a setter.
+      _monitorChanged(input);
+    }
     final result = _engine.setMonitorInputFxCount(
       input: input,
       count: effects.length,
@@ -3291,6 +3646,7 @@ class LooperRepository {
   Future<void> _stopPollingAndClose() async {
     _stopPolling();
     _stopReconnectPolling();
+    await _monitorChanges.close();
     await _controller.close();
   }
 }

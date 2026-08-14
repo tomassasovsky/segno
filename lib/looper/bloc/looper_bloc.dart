@@ -4,7 +4,7 @@ import 'package:bloc/bloc.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/common/fx_chain_persistence.dart';
+import 'package:segno/common/fx_chain_persistence.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'looper_event.dart';
@@ -313,11 +313,24 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       // everything the user owns: the persisted state blob, their parameter
       // tweaks, the power decision, and the slot id. A bus plugin's Relink is
       // its ONLY action, so dropping those would destroy them irrecoverably.
+      //
+      // Deliberately unlike the repository, which drops the parameter capture
+      // when a relink points at a DIFFERENT plugin, because ids are not
+      // portable between plugins. A bus-stage entry never loads — the
+      // repository marks every one of them unsupported — so nothing here is
+      // ever replayed into anything, and what is kept is kept against the day
+      // this stage can host.
       _pushBusChain(
         event.address,
         [...chain]
           ..[event.index] = old.copyWith(
             ref: event.ref,
+            // …except the name, when this points at a DIFFERENT plugin: the
+            // repository re-resolves it from the catalog, and if the catalog
+            // cannot (cold, uninstalled) an empty name falls back to the id.
+            // Keeping the old one would leave the card naming the plugin that
+            // was just replaced, which is worse than naming none.
+            name: old.ref.id == event.ref.id ? old.name : '',
             unavailable: false,
             unsupported: false,
             versionChanged: false,
@@ -444,6 +457,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         oneShot: event.oneShot,
       ),
     );
+    on<LooperAllOneShotToggled>((event, _) {
+      for (final track in _repository.state.tracks) {
+        _repository.setOneShot(channel: track.channel, oneShot: event.oneShot);
+      }
+    });
     on<LooperCrownPrimaryPressed>(
       (event, _) => _repository.crownPrimary(channel: event.channel),
     );
@@ -470,6 +488,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveOutputEnabled(event.output, enabled: event.enabled),
       );
     });
+    on<LooperSessionLoaded>((_, _) => _resyncSessionChains());
 
     _subscription = _repository.looperState.listen(
       (s) => add(LooperStateUpdated(s)),
@@ -609,6 +628,59 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     looper: _repository,
     channel: channel,
   );
+
+  /// Writes a loaded session's Loop / Track / Master chains back to the
+  /// boot-restore keys — the settings half of
+  /// [LooperRepository.applySession], which updates the engine and the
+  /// re-apply caches but leaves persistence to its caller (see its doc, and
+  /// `SessionPersistenceSyncListener` for the full argument).
+  ///
+  /// Reads the repository's chain enumerations — the same truth a session SAVE
+  /// captures — and writes through the same helpers the edit paths use, so a
+  /// written-back envelope is byte-identical to an edited one.
+  ///
+  /// Also re-persists the lane COUNT, which is not decoration: the boot
+  /// restore walks lanes `0..lane_count`, so without it every chain written
+  /// for a lane above the PRE-LOAD count is stored and never read back, and a
+  /// multi-lane session still restores wrong.
+  ///
+  /// Sweeps the whole key space (every engine track × [kMaxLanes]) rather than
+  /// just the applied keys. A key above the live lane count is unreachable
+  /// today but not forever — growing the lane count later would read it — so
+  /// bounding the sweep by the live count would let a dropped chain resurrect
+  /// on the next boot after a lane is added. That correctness is worth the
+  /// bounded burst of removals per load: a load is a deliberate, infrequent
+  /// action that already clears every track and re-imports its stems.
+  void _resyncSessionChains() {
+    final settings = _settings;
+    if (settings == null) return;
+    final lanes = _repository.allLaneChains();
+    final tracks = _repository.allTrackChains();
+    // The engine's track count, read fresh rather than from this bloc's
+    // state (only as current as the last poll tick) — same reasoning as
+    // [_cancelPendingArms].
+    final channels = _repository.state.tracks.length;
+    for (var channel = 0; channel < channels; channel++) {
+      unawaited(
+        settings.saveLaneCount(channel, _repository.laneCount(channel)),
+      );
+      for (var lane = 0; lane < kMaxLanes; lane++) {
+        if (lanes.containsKey((channel, lane))) {
+          _persistLaneChain(channel, lane);
+        } else {
+          unawaited(settings.clearLaneEffects(channel, lane));
+        }
+      }
+      if (tracks.containsKey(channel)) {
+        _persistTrackChain(channel);
+      } else {
+        unawaited(settings.clearTrackFxChain(channel));
+      }
+    }
+    // Unconditional: there is exactly one Master envelope and it always has a
+    // value, so it is overwritten rather than cleared.
+    _persistMasterChain();
+  }
 
   /// Persists the Master insert chain envelope.
   void _persistMasterChain() {

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/theme/theme.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/theme.dart';
 
 extension PumpApp on WidgetTester {
   Future<void> pumpApp(Widget widget) {
@@ -12,6 +12,8 @@ extension PumpApp on WidgetTester {
         theme: AppTheme.neon,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
+        builder: (context, child) =>
+            AppTextDefaults(child: child ?? const SizedBox.shrink()),
         home: widget,
       ),
     );

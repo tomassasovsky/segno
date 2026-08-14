@@ -1,5 +1,5 @@
-import 'package:loopy_engine/loopy_engine.dart';
 import 'package:meta/meta.dart';
+import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/src/session_exception.dart';
 
 /// One captured audio buffer within a [SessionLane]: a single overdub layer,
@@ -394,6 +394,7 @@ class SessionMonitor {
     required this.volume,
     required this.muted,
     required this.encoded,
+    this.mode = '',
   });
 
   /// Projects a [SessionMonitor] from a decoded JSON map.
@@ -404,12 +405,21 @@ class SessionMonitor {
     volume: (json['volume'] as num).toDouble(),
     muted: json['muted'] as bool,
     encoded: json['encoded'] as String,
+    mode: json['mode'] as String? ?? '',
   );
 
   /// Hardware input index.
   final int input;
 
   /// Whether live monitoring of the input is enabled.
+  ///
+  /// The coarse gate every manifest has carried, and the one this build's own
+  /// fallback reads when a bundle predates [mode]. True for any monitor that
+  /// is not off; [mode] is what says WHICH of the two non-off states it was.
+  ///
+  /// Not for older builds — a v6 reader rejects a v7 manifest on the version
+  /// gate and never reaches this field. It is written because every manifest
+  /// has it and because the fallback is real.
   final bool enabled;
 
   /// Bitmask of output channels the monitor plays to.
@@ -425,6 +435,18 @@ class SessionMonitor {
   /// The monitor chain as an opaque `encodeTrackEffects` string.
   final String encoded;
 
+  /// The monitor's gate as its own name (manifest v7), or `''` for a manifest
+  /// written before this field existed.
+  ///
+  /// A NAME, not the looper domain's enum: this package does not know that
+  /// domain and must not learn it to carry one field. The app maps it, the
+  /// same way the settings keys already store a mode by name.
+  ///
+  /// Empty is not a state — it means "this manifest did not say", and the
+  /// reader falls back to [enabled]. That is the same presence-keyed rung
+  /// every version before it used.
+  final String mode;
+
   /// Serializes this monitor to a JSON map.
   Map<String, dynamic> toJson() => {
     'input': input,
@@ -433,6 +455,7 @@ class SessionMonitor {
     'volume': volume,
     'muted': muted,
     'encoded': encoded,
+    if (mode.isNotEmpty) 'mode': mode,
   };
 
   @override
@@ -445,16 +468,17 @@ class SessionMonitor {
           outputMask == other.outputMask &&
           volume == other.volume &&
           muted == other.muted &&
-          encoded == other.encoded;
+          encoded == other.encoded &&
+          mode == other.mode;
 
   @override
   int get hashCode =>
-      Object.hash(input, enabled, outputMask, volume, muted, encoded);
+      Object.hash(input, enabled, outputMask, volume, muted, encoded, mode);
 }
 
-/// A saved Loopy session: the transport/tempo settings, the tracks, and (schema
+/// A saved Segno session: the transport/tempo settings, the tracks, and (schema
 /// v2+) the lane + monitor effect chains. Paired with per-lane, per-layer WAV
-/// files (schema v3) in a `.loopy` bundle directory.
+/// files (schema v3) in a `.segno` bundle directory.
 ///
 /// Schema v4 (`2026-07-22-feat-tempo-aware-looper-modes-plan.md`, decision
 /// D12) adds the Phase-A tempo grid + click + count-in fields below. Every
@@ -506,6 +530,13 @@ class SessionMonitor {
 /// as the chains: the model lives app-side, this package only stores the blob.
 /// Presence-keyed like every rung before it, so a v5 manifest loads with `''`
 /// and the global remap applies.
+///
+/// Schema v7 (#575) adds [SessionMonitor.mode] — the monitor's gate by name,
+/// beside the boolean the manifest has always carried. The gate grew a third
+/// state (`auto`: follow the record arm), and a boolean cannot tell it from
+/// `on`, so a session saved with an input on `auto` reloaded monitoring
+/// unconditionally. Presence-keyed like the rest: a v6 manifest lacks the key
+/// and restores exactly what its boolean used to say.
 @immutable
 class Session {
   /// Creates a [Session].
@@ -595,7 +626,12 @@ class Session {
     );
   }
 
-  /// The manifest schema version this code writes and accepts. v6 adds the
+  /// The manifest schema version this code writes and accepts. v7 adds each
+  /// monitor's gate by NAME ([SessionMonitor.mode]) beside the boolean it has
+  /// always carried, because the gate grew a third state: a monitor left on
+  /// `auto` — follow the record arm — saved and reloaded as `on`, monitoring
+  /// unconditionally. Presence-keyed like every rung before it, so a v6 bundle
+  /// loads with the boolean's answer and nothing else changes. v6 adds the
   /// opaque [pedalBindings] blob — presence-keyed like every rung before it,
   /// so a v5 bundle loads with `''` (no session remap, globals apply). v5 adds
   /// the Track-stage + Master FX chains and moves every chain string to the
@@ -608,7 +644,7 @@ class Session {
   /// audio layers); v2 added the lane + monitor effect chains. v1 through v5
   /// bundles all still load — a legacy track migrates to one lane-0 live
   /// layer, and a v1 bundle loads with empty chains.
-  static const int formatVersion = 6;
+  static const int formatVersion = 7;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -715,7 +751,7 @@ class Session {
   final String pedalBindings;
 
   /// Serializes this session manifest to a JSON map. Always writes the
-  /// current [formatVersion] (v6 — this code never writes an older schema).
+  /// current [formatVersion] (v7 — this code never writes an older schema).
   Map<String, dynamic> toJson() => {
     'version': formatVersion,
     'sampleRate': sampleRate,

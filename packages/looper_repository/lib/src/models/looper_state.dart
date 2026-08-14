@@ -3,6 +3,7 @@ import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
+import 'package:looper_repository/src/models/tuner_reading.dart';
 
 /// The single source of looper truth: transport, the tracks, and engine status,
 /// projected from one engine snapshot.
@@ -15,6 +16,7 @@ class LooperState extends Equatable {
     this.outputEnabledMask = 0xFFFFFFFF,
     this.masterEffects = const [],
     this.masterChainEnabled = true,
+    this.tuner = const TunerReading(),
   });
 
   /// Master loop transport.
@@ -39,6 +41,10 @@ class LooperState extends Equatable {
   /// Whether the Master insert chain is engaged (R15).
   final bool masterChainEnabled;
 
+  /// What the chromatic tuner hears on its armed input. Disarmed by default,
+  /// and disarmed costs nothing — the engine gates detection on the arm.
+  final TunerReading tuner;
+
   /// Whether hardware output [output] is currently enabled (a routing target).
   bool isOutputEnabled(int output) =>
       output < 0 || (outputEnabledMask & (1 << output)) != 0;
@@ -49,6 +55,14 @@ class LooperState extends Equatable {
   /// Whether any track holds recorded audio.
   bool get hasContent => tracks.any((t) => t.hasContent);
 
+  /// Whether EVERY track is one-shot — the rig-wide answer the console's
+  /// one-shot switch shows.
+  ///
+  /// Guarded on non-empty deliberately: `every` on an empty list is vacuously
+  /// true, so a stopped engine reporting no tracks would otherwise answer
+  /// "yes, all of them", which is never what the question means.
+  bool get allOneShot => tracks.isNotEmpty && tracks.every((t) => t.oneShot);
+
   @override
   List<Object?> get props => [
     transport,
@@ -57,5 +71,6 @@ class LooperState extends Equatable {
     outputEnabledMask,
     masterEffects,
     masterChainEnabled,
+    tuner,
   ];
 }

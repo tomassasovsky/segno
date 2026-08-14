@@ -3,11 +3,12 @@ import 'package:daw_export/daw_export.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/performance/cubit/performance_recorder_cubit.dart';
-import 'package:loopy/performance/view/performance_completion_sheet.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
+import 'package:segno/performance/view/performance_completion_sheet.dart';
+import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -132,9 +133,9 @@ void main() {
     // rather than pinning the exact macOS/Windows/other string.
     final labelFinder = find.descendant(
       of: find.byKey(const Key('perfCompletion_reveal')),
-      matching: find.byType(Text),
+      matching: find.byType(AppText),
     );
-    final label = tester.widget<Text>(labelFinder).data;
+    final label = tester.widget<AppText>(labelFinder).data;
     expect(label, isNotNull);
     expect(label, isNotEmpty);
   });

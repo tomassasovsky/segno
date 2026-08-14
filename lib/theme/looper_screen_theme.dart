@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/theme/surface_theme.dart';
+import 'package:segno/theme/surface_theme.dart';
+import 'package:segno/theme/text_metrics.dart';
 
-/// Applies the VAMP overlay legend face to the main looper screen.
+/// Applies the Segno overlay legend face to the main looper screen.
 class LooperScreenTheme extends StatelessWidget {
   /// Creates a [LooperScreenTheme].
   const LooperScreenTheme({required this.child, super.key});
@@ -15,13 +16,17 @@ class LooperScreenTheme extends StatelessWidget {
     const fallback = SurfaceTheme.legendFontFallback;
     return Theme(
       data: theme.copyWith(
-        textTheme: theme.textTheme.apply(
-          fontFamily: family,
-          fontFamilyFallback: fallback,
+        textTheme: withAppTextMetrics(
+          theme.textTheme.apply(
+            fontFamily: family,
+            fontFamilyFallback: fallback,
+          ),
         ),
-        primaryTextTheme: theme.primaryTextTheme.apply(
-          fontFamily: family,
-          fontFamilyFallback: fallback,
+        primaryTextTheme: withAppTextMetrics(
+          theme.primaryTextTheme.apply(
+            fontFamily: family,
+            fontFamilyFallback: fallback,
+          ),
         ),
       ),
       child: child,

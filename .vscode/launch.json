@@ -13,7 +13,8 @@
         "--flavor",
         "development",
         "--target",
-        "lib/main_development.dart"
+        "lib/main_development.dart",
+        "--dart-define=SEGNO_FAKE_RADIOS=true"
       ]
     },
     {
@@ -33,9 +34,9 @@
     {
       "type": "chrome",
       "request": "launch",
-      "name": "vamp-viewer",
+      "name": "segno-viewer",
       "url": "http://localhost:8765/viewer.html",
-      "preLaunchTask": "vamp-viewer-server"
+      "preLaunchTask": "segno-viewer-server"
     }
   ]
 }

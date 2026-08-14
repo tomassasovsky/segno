@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:segno_engine/segno_engine.dart';
 
 class _FakeLane {
   int inputChannel = -1;
@@ -41,7 +41,7 @@ class FakeSessionEngine implements AudioEngine {
   final int channels;
   final int sampleRate;
 
-  // 8 tracks, matching the real engine's LE_MAX_TRACKS (loopy_engine_api.h) —
+  // 8 tracks, matching the real engine's LE_MAX_TRACKS (segno_engine_api.h) —
   // needed to exercise B5c's Free-mode 8-independent-lengths round trip.
   final List<_FakeTrack> _tracks = List.generate(8, (_) => _FakeTrack());
   int masterLength = 0;
@@ -517,6 +517,16 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult setMasterFxChainEnabled({required bool enabled}) =>
       EngineResult.ok;
+
+  /// The input the tuner is armed on, or `-1`. Mirrors the native gate, so a
+  /// test can assert that a closed face leaves nothing running.
+  int tunerInput = -1;
+
+  @override
+  EngineResult setTunerInput({required int input}) {
+    tunerInput = input;
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult setMonitorInputEnabled({

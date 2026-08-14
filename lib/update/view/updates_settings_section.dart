@@ -2,9 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/update/cubit/update_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
 
 /// The "Updates" section of the settings surface: installed version + channel,
 /// an auto-check toggle (governs only the read-only check), a persistent
@@ -25,7 +26,7 @@ class UpdatesSettingsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(l10n.updatesIntro, style: setupBody),
+        AppText(l10n.updatesIntro, style: context.setupBody),
         const SizedBox(height: 28),
         SetupInfoTable(
           rows: [
@@ -58,7 +59,7 @@ class UpdatesSettingsSection extends StatelessWidget {
         _CheckNowRow(state: state, onTap: cubit.check),
         if (state.phase == UpdatePhase.error && state.errorMessage != null) ...[
           const SizedBox(height: 8),
-          Text(state.errorMessage!, style: setupBody),
+          AppText(state.errorMessage!, style: context.setupBody),
         ],
         if (state.available != null) ...[
           const SizedBox(height: 20),
@@ -77,17 +78,17 @@ class UpdatesSettingsSection extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(l10n.updatesStagedTitle),
-        content: Text(l10n.updatesRestartBusySubtitle),
+        title: AppText(l10n.updatesStagedTitle),
+        content: AppText(l10n.updatesRestartBusySubtitle),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: Text(l10n.cancel),
+            child: AppText(l10n.cancel),
           ),
           TextButton(
             key: const Key('settings_updates_restart_confirm'),
             onPressed: () => Navigator.of(context).pop(true),
-            child: Text(l10n.updatesStagedTitle),
+            child: AppText(l10n.updatesStagedTitle),
           ),
         ],
       ),
@@ -200,10 +201,13 @@ class _UpdateActionRow extends StatelessWidget {
       children: [
         SetupGroupLabel(l10n.updatesAvailableTitle(version)),
         const SizedBox(height: 8),
-        Text(notes, style: setupBody),
+        AppText(notes, style: context.setupBody),
         if (manifest.size > 0) ...[
           const SizedBox(height: 4),
-          Text(l10n.updatesSizeMb(_mb(manifest.size)), style: setupBody),
+          AppText(
+            l10n.updatesSizeMb(_mb(manifest.size)),
+            style: context.setupBody,
+          ),
         ],
         const SizedBox(height: 12),
         SetupNavRow(

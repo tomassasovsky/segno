@@ -7,14 +7,15 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/fake_audio_engine.dart';
@@ -59,6 +60,7 @@ void main() {
   const chain = FxChainTarget(FxAddress(stage: FxStage.track, index: 3));
 
   late _MockLooperRepository looper;
+  late TracksCubit tracks;
   late StreamController<LooperState> looperStates;
   late Map<int, List<TrackEffect>> trackChains;
   late Map<(int, int), List<TrackEffect>> laneChains;
@@ -68,6 +70,9 @@ void main() {
   late _FakeSource source;
 
   setUp(() {
+    tracks = TracksCubit(
+      settings: SettingsRepository(store: FakeKeyValueStore()),
+    );
     looper = _MockLooperRepository();
     looperStates = StreamController<LooperState>.broadcast();
     trackChains = {
@@ -163,6 +168,7 @@ void main() {
           providers: [
             BlocProvider.value(value: control),
             BlocProvider<MidiSetupCubit>.value(value: midi),
+            BlocProvider.value(value: tracks),
           ],
           child: RepositoryProvider<LooperRepository>.value(
             value: looper,
@@ -206,7 +212,7 @@ void main() {
 
       expect(find.byKey(const Key('midiLearn_row')), findsOneWidget);
       expect(find.text(l10n.midiLearnCcControl(11, 1)), findsOneWidget);
-      expect(find.text(l10n.midiLearnTargetVolume(0)), findsOneWidget);
+      expect(find.text(l10n.midiLearnTargetVolume('TRACK 1')), findsOneWidget);
       // A continuous mapping shows its travel, not a threshold.
       expect(find.byKey(const Key('midiLearn_lo')), findsOneWidget);
       expect(find.byKey(const Key('midiLearn_hi')), findsOneWidget);
@@ -424,7 +430,10 @@ void main() {
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
 
       await tapVisible(tester, find.byKey(const Key('midiLearn_addSwitch')));
-      await tapVisible(tester, find.text(bindingTargetLabel(l10n, chain)).last);
+      await tapVisible(
+        tester,
+        find.text(bindingTargetLabel(l10n, const [], chain)).last,
+      );
       source.cc(21, 127);
       await tester.pumpAndSettle();
 
@@ -473,7 +482,7 @@ void main() {
             RegExp.escape(
               l10n.a11yMidiLearnRow(
                 l10n.midiLearnCcControl(11, 1),
-                l10n.midiLearnTargetVolume(0),
+                l10n.midiLearnTargetVolume('TRACK 1'),
               ),
             ),
           ),

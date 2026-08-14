@@ -99,17 +99,49 @@ jobs:
 
       - name: Build the aarch64 app bundle
         run: |
-          docker build -t loopy-arm64-build deploy/rpi/build
-          docker run --rm -v "$PWD":/workspace loopy-arm64-build --dart-define=LOOPY_CONSOLE=true
+          docker build -t segno-arm64-build deploy/rpi/build
+          docker run --rm -v "$PWD":/workspace segno-arm64-build --dart-define=SEGNO_CONSOLE=true
 
       - uses: actions/upload-artifact@v7
         with:
-          name: loopy-app-bundle
+          name: segno-app-bundle
           path: build/linux/arm64/release/bundle
           retention-days: 1
 
+  # The paired Pro Micro firmware, published as a sibling of the .raucb so the
+  # appliance can flash it with the same update action (#331 part C). Plain
+  # ubuntu-latest: arduino-cli cross-compiles for AVR in well under a minute, so
+  # this never needs the arm64 or Yocto runners and never gates them.
+  build-pedal-firmware:
+    needs: determine-meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install arduino-cli + the AVR core
+        run: |
+          set -eu
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 0.35.3
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+
+      - name: Compile segno_pedal_32u4
+        env:
+          VERSION: ${{ needs.determine-meta.outputs.version }}
+        run: |
+          set -eu
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+          # One shared recipe with the PR gate in main.yaml — see build.sh.
+          hardware/firmware/segno_pedal_32u4/build.sh pedal-firmware "$VERSION"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: segno-pedal-firmware
+          path: pedal-firmware
+          retention-days: 1
+
   build-image:
-    needs: [determine-meta, build-app]
+    needs: [determine-meta, build-app, build-pedal-firmware]
     # Opt-in self-hosted (#323): a workflow_dispatch explicitly asking for it.
     # Push-triggered runs have no `inputs` context, so this always resolves to
     # the free GitHub-hosted runner for them.
@@ -119,17 +151,22 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: loopy-app-bundle
+          name: segno-app-bundle
           path: deploy/yocto/prebuilt/bundle
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: segno-pedal-firmware
+          path: pedal-firmware
+
       - name: Restore the app binary's executable bit
-        # loopy-bundle.bb's do_install checks `[ -x "${bundle}/loopy" ]`; the
+        # segno-bundle.bb's do_install checks `[ -x "${bundle}/segno" ]`; the
         # upload/download-artifact round-trip doesn't reliably preserve it.
-        run: chmod +x deploy/yocto/prebuilt/bundle/loopy
+        run: chmod +x deploy/yocto/prebuilt/bundle/segno
 
       - name: Stage RAUC signing material
         run: |
-          kd=deploy/yocto/meta-loopy/.rauc-keys
+          kd=deploy/yocto/meta-segno/.rauc-keys
           mkdir -p "$kd"
           printf '%s' "${{ secrets.RAUC_SIGNING_KEY }}"  > "$kd/development-1.key.pem"
           printf '%s' "${{ secrets.RAUC_SIGNING_CERT }}" > "$kd/development-1.cert.pem"
@@ -142,9 +179,9 @@ jobs:
             # via socket mount needs an identical path on both sides for
             # kas-container's own nested `docker run` bind mounts to resolve;
             # see homelab-gh-runner's README). Path is keyed by this
-            # deployment's RUNNER_NAME (proxmox-loopy-yocto); persists across
+            # deployment's RUNNER_NAME (proxmox-segno-yocto); persists across
             # builds without touching the GitHub Actions cache at all.
-            echo "YOCTO_WORK_DIR=/opt/gh-runner-cache/proxmox-loopy-yocto/build-cache/yocto" >> "$GITHUB_ENV"
+            echo "YOCTO_WORK_DIR=/opt/gh-runner-cache/proxmox-segno-yocto/build-cache/yocto" >> "$GITHUB_ENV"
           else
             echo "YOCTO_WORK_DIR=$HOME/yocto-build" >> "$GITHUB_ENV"
           fi
@@ -172,27 +209,50 @@ jobs:
           chmod +x kas-container
           mkdir -p "$YOCTO_WORK_DIR"
           KAS_WORK_DIR="$YOCTO_WORK_DIR" KAS_CONTAINER_ENGINE=docker \
-            ./kas-container shell deploy/yocto/kas-loopy-rpi4.yml \
-            -c "LOOPY_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} LOOPY_UPDATE_CHANNEL=${{ needs.determine-meta.outputs.channel }} bitbake loopy-update-bundle"
+            ./kas-container shell deploy/yocto/kas-segno-rpi4.yml \
+            -c "SEGNO_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} SEGNO_UPDATE_CHANNEL=${{ needs.determine-meta.outputs.channel }} bitbake segno-update-bundle"
 
       - name: Collect bundle + write manifest
         id: artifacts
         run: |
           set -eu
           out=release-artifacts; mkdir -p "$out"
-          raucb=$(readlink -f "$YOCTO_WORK_DIR"/*/tmp/deploy/images/raspberrypi4-64/loopy-update-bundle-raspberrypi4-64.raucb 2>/dev/null \
-                  || find "$YOCTO_WORK_DIR" -name 'loopy-update-bundle-raspberrypi4-64-*.raucb' | sort | tail -1)
-          bundle="loopy-appliance-${{ needs.determine-meta.outputs.version }}.raucb"
+          raucb=$(readlink -f "$YOCTO_WORK_DIR"/*/tmp/deploy/images/raspberrypi4-64/segno-update-bundle-raspberrypi4-64.raucb 2>/dev/null \
+                  || find "$YOCTO_WORK_DIR" -name 'segno-update-bundle-raspberrypi4-64-*.raucb' | sort | tail -1)
+          bundle="segno-appliance-${{ needs.determine-meta.outputs.version }}.raucb"
           cp "$raucb" "$out/$bundle"
           sha=$(sha256sum "$out/$bundle" | cut -d' ' -f1)
           # version is a semver string (e.g. "0.2.0" / "0.2.0-experimental.9")
           # — must be JSON-quoted. The int-era unquoted form is no longer valid.
           version='${{ needs.determine-meta.outputs.version }}'
           channel='${{ needs.determine-meta.outputs.channel }}'
+
+          # The pedal firmware rides along as a sibling of the bundle, not
+          # inside it: RAUC bundles are OS A/B slot images, and the pedal is a
+          # USB-attached MCU flashed with avrdude. A missing .hex degrades to a
+          # manifest with no pedalFirmware block — an OS-only update — rather
+          # than failing the release.
+          hex="segno-pedal-${version}.hex"
+          pedal_block=""
+          if [ -f "pedal-firmware/$hex" ]; then
+            cp "pedal-firmware/$hex" "$out/$hex"
+            hex_sha=$(sha256sum "$out/$hex" | cut -d' ' -f1)
+            proto=$(tr -d '[:space:]' < pedal-firmware/protocol-version || echo "")
+            # Interpolated as a bare JSON number, so an empty or non-numeric
+            # read would publish a manifest no client can parse. 0 is the
+            # schema's own "unknown" and degrades safely.
+            case "$proto" in ''|*[!0-9]*) proto=0 ;; esac
+            pedal_block=", \"pedalFirmware\": { \"version\": \"$version\", \"hex\": \"$hex\", \"protocolVersion\": $proto, \"sha256\": \"$hex_sha\" }"
+          else
+            echo "::warning::no pedal firmware .hex found; publishing an OS-only manifest"
+          fi
+
           cat > "$out/manifest.json" <<EOF
-          { "version": "$version", "bundle": "$bundle", "sha256": "$sha", "channel": "$channel" }
+          { "version": "$version", "bundle": "$bundle", "sha256": "$sha", "channel": "$channel"$pedal_block }
           EOF
-          cat "$out/manifest.json"
+          # Pretty-print if jq is on the runner; never fail the release over a
+          # log nicety, two hours into the build.
+          jq . "$out/manifest.json" || cat "$out/manifest.json"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
@@ -202,31 +262,71 @@ jobs:
           prerelease: ${{ needs.determine-meta.outputs.channel == 'experimental' }}
           files: |
             release-artifacts/*.raucb
+            release-artifacts/*.hex
             release-artifacts/manifest.json
 
       # Devices read from segno.aquiles.dev, not GitHub. Nudge the mirror now so
       # Check Now does not wait for the poll interval (default 300s). Soft-fail:
       # a missed trigger still gets picked up by the next poll.
+      #
+      # Important: a 200 from /hooks/sync is not enough — GitHub's Releases API
+      # can lag a few seconds after publish, so the mirror may honestly report
+      # the previous tag as "up to date". Retry until the channel manifest
+      # actually carries EXPECTED_VERSION.
       - name: Trigger segno mirror sync
         env:
           SEGNO_SYNC_TOKEN: ${{ secrets.SEGNO_SYNC_TOKEN }}
           SEGNO_SYNC_URL: https://segno.aquiles.dev/hooks/sync
+          EXPECTED_VERSION: ${{ needs.determine-meta.outputs.version }}
+          CHANNEL: ${{ needs.determine-meta.outputs.channel }}
         run: |
           set -eu
           if [ -z "${SEGNO_SYNC_TOKEN:-}" ]; then
             echo "::warning::SEGNO_SYNC_TOKEN unset; segno will catch up on next poll"
             exit 0
           fi
-          # Brief retries: GitHub's Releases API can lag a few seconds after publish.
-          for i in 1 2 3 4 5 6; do
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
             echo "segno sync attempt $i…"
-            if out=$(curl -fsS -X POST \
+            out=$(curl -fsS -X POST \
                 -H "Authorization: Bearer ${SEGNO_SYNC_TOKEN}" \
                 --max-time 300 \
-                "$SEGNO_SYNC_URL"); then
-              printf '%s\n' "$out"
-              exit 0
+                "$SEGNO_SYNC_URL" || true)
+            printf '%s\n' "$out"
+            base="https://segno.aquiles.dev/updates/appliance/${CHANNEL}"
+            manifest=$(curl -fsS --max-time 30 "$base/manifest.json" || true)
+            mirrored=$(printf '%s' "$manifest" | jq -r '.version // empty' || true)
+            if [ "$mirrored" = "$EXPECTED_VERSION" ]; then
+              # The manifest is what tells a console an update exists, so it
+              # arriving is NOT the same as the release being usable. On .63 an
+              # artifact fetch failed, the mirror carried on and published the
+              # manifest anyway, and this check called it green (#478) — the
+              # same shape as #435, which shipped a manifest advertising a .hex
+              # that 404'd and hung the appliance mid-update.
+              #
+              # So verify what the manifest actually points at, by the
+              # checksums the manifest itself carries. No guessing, and it
+              # catches a stale file as well as a missing one.
+              ok=yes
+              for pair in \
+                "$(printf '%s' "$manifest" | jq -r '"\(.bundle) \(.sha256)"')" \
+                "$(printf '%s' "$manifest" | jq -r 'if .pedalFirmware then "\(.pedalFirmware.hex) \(.pedalFirmware.sha256)" else empty end')"
+              do
+                [ -n "$pair" ] || continue
+                name=${pair%% *}; want=${pair##* }
+                [ -n "$name" ] && [ "$name" != "null" ] || continue
+                got=$(curl -fsS --max-time 300 "$base/$name" | sha256sum | cut -d' ' -f1 || true)
+                if [ "$got" != "$want" ]; then
+                  echo "segno $name mismatched (want ${want:-?}, got ${got:-missing})"
+                  ok=no
+                fi
+              done
+              if [ "$ok" = yes ]; then
+                echo "segno manifest and every artifact it references match $EXPECTED_VERSION"
+                exit 0
+              fi
+              echo "segno published the manifest before its artifacts; retrying"
             fi
+            echo "segno still at '${mirrored:-unknown}', want $EXPECTED_VERSION"
             sleep 10
           done
-          echo "::warning::segno sync trigger failed after retries; poll will catch up"
+          echo "::warning::segno did not reach $EXPECTED_VERSION after retries; poll will catch up"

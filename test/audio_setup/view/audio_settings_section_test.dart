@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/looper/looper.dart';
-import 'package:loopy/pedal/pedal.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno/pedal/pedal.dart';
 import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
 
 import '../../helpers/helpers.dart';
@@ -35,9 +35,14 @@ void main() {
   // The MIDI-learn section (part 7) reads the mapping set off ControlCubit and
   // enumerates its targets from the looper repository.
   late ControlCubit control;
+  late TracksCubit tracks;
   late LooperRepository looper;
 
+  setUpAll(() => registerFallbackValue(MonitorMode.off));
   setUp(() {
+    tracks = TracksCubit(
+      settings: SettingsRepository(store: FakeKeyValueStore()),
+    );
     cubit = _MockAudioSetupCubit();
     midi = _MockMidiSetupCubit();
     when(() => midi.state).thenReturn(const MidiSetupState());
@@ -56,9 +61,9 @@ void main() {
     final repository = _MockLooperRepository();
     looper = repository;
     when(
-      () => repository.setMonitorInputEnabled(
+      () => repository.setMonitorInputMode(
         input: any(named: 'input'),
-        enabled: any(named: 'enabled'),
+        mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
     when(
@@ -79,6 +84,9 @@ void main() {
       control,
       const Stream<ControlState>.empty(),
       initialState: const ControlState(),
+    );
+    when(() => repository.monitorChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
     );
     when(repository.allMonitors).thenReturn(const {});
     when(repository.allLaneChains).thenReturn(const {});
@@ -117,6 +125,7 @@ void main() {
         BlocProvider<QuantizeCubit>.value(value: quantize),
         BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
         BlocProvider<ControlCubit>.value(value: control),
+        BlocProvider<TracksCubit>.value(value: tracks),
       ],
       child: RepositoryProvider<LooperRepository>.value(
         value: looper,
@@ -479,12 +488,32 @@ void main() {
   });
 
   group('console mode', () {
-    testWidgets('hides MIDI and pedal pickers', (tester) async {
+    testWidgets('hides the MIDI input picker', (tester) async {
+      // Auto-detect binds the fixed Pro Micro by product name (#421), so a
+      // chooser would only ever offer the one answer.
       seed(runningState);
       await pumpSection(tester, consoleMode: true);
 
       expect(find.byKey(const Key('midiSettings_section')), findsNothing);
-      expect(find.byKey(const Key('pedalSettings_section')), findsNothing);
+    });
+
+    testWidgets('keeps the pedal section reachable', (tester) async {
+      // Hiding the pedal CONFIG alongside the pedal PICKER left the console
+      // with no route to the assignment surface at all — the build most
+      // likely to need a footswitch remapped, and the only one with no
+      // alternative way in. The section stays; it drops its own picker.
+      seed(runningState);
+      await pumpSection(tester, consoleMode: true);
+
+      expect(find.byKey(const Key('pedalSettings_section')), findsOneWidget);
+      expect(
+        find.byKey(const Key('pedalSettings_openAssignments')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('pedalSettings_device_picker')),
+        findsNothing,
+      );
       expect(
         find.byKey(const Key('audioSettings_playbackDevice_picker')),
         findsOneWidget,

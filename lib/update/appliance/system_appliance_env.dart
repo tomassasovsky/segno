@@ -1,18 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:loopy/update/appliance/appliance_env.dart';
+import 'package:segno/update/appliance/appliance_env.dart';
 
 /// The production [ApplianceEnv]: real files, HTTP, and the privileged helper.
 ///
-/// The helper (`loopy-update-ctl`, shipped by the appliance image) does the
+/// The helper (`segno-update-ctl`, shipped by the appliance image) does the
 /// RAUC work. On the single-purpose appliance the kiosk app runs as root, so
 /// the helper is invoked directly — no pkexec/polkit/setuid. This class is the
 /// I/O boundary and is excluded from coverage; the testable logic lives in
 /// `AppliancePlatformBackend` over a fake [ApplianceEnv].
 class SystemApplianceEnv implements ApplianceEnv {
   /// Creates a [SystemApplianceEnv]. [helperPath] is the update helper.
-  const SystemApplianceEnv({this.helperPath = '/usr/bin/loopy-update-ctl'});
+  const SystemApplianceEnv({this.helperPath = '/usr/bin/segno-update-ctl'});
 
   /// Path to the update helper (run directly; the appliance app is root).
   final String helperPath;
@@ -52,8 +52,28 @@ class SystemApplianceEnv implements ApplianceEnv {
   }
 
   @override
-  Stream<double> stage(String version) async* {
-    final args = ['install', version];
+  Stream<double> stage(String version) => _runHelper(['install', version]);
+
+  @override
+  Stream<double> flashPedal() => _runHelper(['flash-pedal']);
+
+  @override
+  Future<String?> pedalPending() async {
+    try {
+      final result = await Process.run(helperPath, const ['pedal-pending']);
+      if (result.exitCode != 0) return null;
+      final version = '${result.stdout}'.trim();
+      return version.isEmpty ? null : version;
+    } on Exception {
+      // Helper missing / old image: no gate, rather than no app.
+      return null;
+    }
+  }
+
+  /// Runs the privileged helper with [args], republishing its
+  /// `PROGRESS <0-100>` lines as `[0, 1]` and throwing with the collected
+  /// stderr on a non-zero exit.
+  Stream<double> _runHelper(List<String> args) async* {
     final process = await Process.start(helperPath, args);
     final stderrLines = <String>[];
     final stderrDone = process.stderr
@@ -91,6 +111,15 @@ class SystemApplianceEnv implements ApplianceEnv {
         '${result.stderr}',
         result.exitCode,
       );
+    }
+  }
+
+  @override
+  Future<void> reconcileStaged() async {
+    try {
+      await Process.run(helperPath, const ['reconcile-staged']);
+    } on Exception {
+      // Helper missing / old image — leave the marker alone.
     }
   }
 }

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/update/appliance/appliance_env.dart';
-import 'package:loopy/update/appliance/appliance_platform_backend.dart';
+import 'package:segno/update/appliance/appliance_env.dart';
+import 'package:segno/update/appliance/appliance_platform_backend.dart';
 import 'package:update_repository/update_repository.dart';
 
 class _FakeEnv implements ApplianceEnv {
@@ -39,6 +39,18 @@ class _FakeEnv implements ApplianceEnv {
     return body;
   }
 
+  String? pendingVersion;
+  int flashCalls = 0;
+
+  @override
+  Future<String?> pedalPending() async => pendingVersion;
+
+  @override
+  Stream<double> flashPedal() {
+    flashCalls++;
+    return Stream.fromIterable(const [0.5, 1.0]);
+  }
+
   @override
   Stream<double> stage(String version) {
     stagedVersionArg = version;
@@ -51,13 +63,20 @@ class _FakeEnv implements ApplianceEnv {
     rebootCalls++;
     if (rebootError != null) throw rebootError!;
   }
+
+  int reconcileCalls = 0;
+
+  @override
+  Future<void> reconcileStaged() async {
+    reconcileCalls++;
+  }
 }
 
-const _version = '/etc/loopy/build-version';
-const _channel = '/etc/loopy/update-channel';
-const _channelOverride = '/data/loopy/update-channel';
+const _version = '/etc/segno/build-version';
+const _channel = '/etc/segno/update-channel';
+const _channelOverride = '/data/segno/update-channel';
 const _staged = '/data/.ota-staged-version';
-const _helper = '/usr/bin/loopy-update-ctl';
+const _helper = '/usr/bin/segno-update-ctl';
 
 AppliancePlatformBackend backend(ApplianceEnv env) =>
     AppliancePlatformBackend(env: env);
@@ -126,13 +145,19 @@ void main() {
     test(
       'parses the marker files as semver, defaulting to Version.none',
       () async {
-        final b = backend(
-          _FakeEnv(files: {_version: '0.2.0\n', _staged: '0.3.0'}),
-        );
+        final env = _FakeEnv(files: {_version: '0.2.0\n', _staged: '0.3.0'});
+        final b = backend(env);
         expect(await b.currentVersion(), Version.parse('0.2.0'));
         expect(await b.stagedVersion(), Version.parse('0.3.0'));
+        expect(env.reconcileCalls, 1);
       },
     );
+
+    test('stagedVersion reconciles before reading the marker', () async {
+      final env = _FakeEnv(files: {_staged: '0.3.0'});
+      await backend(env).stagedVersion();
+      expect(env.reconcileCalls, 1);
+    });
 
     test('parses a prerelease (experimental) semver', () async {
       final b = backend(_FakeEnv(files: {_version: '0.2.0-experimental.7'}));
@@ -213,6 +238,59 @@ void main() {
     test('applyAndRestart surfaces a reboot failure', () {
       final env = _FakeEnv(rebootError: Exception('reboot denied'));
       expect(backend(env).applyAndRestart(), throwsA(isA<Exception>()));
+    });
+  });
+
+  _pedalFirmwareStagingTests();
+}
+
+void _pedalFirmwareStagingTests() {
+  const version = '/etc/segno/build-version';
+  const helper = '/usr/bin/segno-update-ctl';
+
+  UpdateManifest manifest({PedalFirmwareManifest? firmware}) => UpdateManifest(
+    version: Version.parse('0.3.0'),
+    bundle: 'b.raucb',
+    pedalFirmware: firmware,
+  );
+
+  PedalFirmwareManifest firmware() => PedalFirmwareManifest(
+    version: Version.parse('0.3.0'),
+    hex: 'segno-pedal-0.3.0.hex',
+  );
+
+  group('downloadAndStage with pedal firmware', () {
+    // Staging runs inside the image being replaced, so a flash started here
+    // would run the OUTGOING flasher — which is why a flash-pedal fix could
+    // never apply on the update carrying it (#444). The published firmware is
+    // now flashed after the reboot by segno-pedal-flash.service, so a manifest
+    // that advertises firmware must stage exactly like one that does not.
+    test('stages identically whether or not firmware is published', () async {
+      final withFirmware = _FakeEnv(files: {version: '0.2.0\n', helper: ''});
+      final without = _FakeEnv(files: {version: '0.2.0\n', helper: ''});
+
+      final a = await AppliancePlatformBackend(
+        env: withFirmware,
+      ).downloadAndStage(manifest(firmware: firmware())).toList();
+      final b = await AppliancePlatformBackend(
+        env: without,
+      ).downloadAndStage(manifest()).toList();
+
+      expect(a, b);
+      expect(withFirmware.stagedVersionArg, '0.3.0');
+    });
+
+    test('a staging failure surfaces', () async {
+      final env = _FakeEnv(
+        files: {version: '0.2.0\n', helper: ''},
+        stageError: Exception('rauc failed'),
+      );
+      final backend = AppliancePlatformBackend(env: env);
+
+      expect(
+        backend.downloadAndStage(manifest(firmware: firmware())).toList(),
+        throwsException,
+      );
     });
   });
 }

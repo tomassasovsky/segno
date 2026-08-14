@@ -4,9 +4,10 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -279,7 +280,7 @@ void main() {
       await pumpPicker(tester);
 
       final statusFinder = find.byKey(const Key('midiSettings_status'));
-      final text = tester.widget<Text>(statusFinder);
+      final text = tester.widget<AppText>(statusFinder);
       expect(
         text.data,
         'Could not open FCB1010 (in use by another app?).',

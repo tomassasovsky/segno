@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
-import 'package:loopy/visualizer/waveform_window_args.dart';
-import 'package:loopy/visualizer/waveform_window_channel.dart';
+import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/waveform_window_args.dart';
+import 'package:segno/visualizer/waveform_window_channel.dart';
 
 /// Manages the secondary output-waveform window: opening/closing it and pushing
 /// waveform frames to it. Injected into the app so tests use a no-op.
@@ -17,7 +18,7 @@ abstract interface class WaveformWindowService {
   /// Returns `true` once the window is ready, or `false` if it failed to signal
   /// readiness within the timeout — so the caller can surface the failure
   /// instead of degrading silently.
-  Future<bool> open({String title = 'Loopy — Output'});
+  Future<bool> open({String title = 'Segno — Output'});
 
   /// Closes the waveform window (idempotent).
   Future<void> close();
@@ -25,6 +26,15 @@ abstract interface class WaveformWindowService {
   /// Sends a waveform frame (loop peaks + playhead [progress] in `0..1`) to the
   /// open window; no-op if closed.
   void pushWaveform(Float32List samples, double progress, String selectedTrack);
+
+  /// Pushes the performance readout, but ONLY when it differs from the last
+  /// one pushed.
+  ///
+  /// The waveform rides a per-frame timer because its samples change every
+  /// frame; the readout does not. Diffing here is what keeps a playing loop
+  /// from re-serialising eight track records sixty times a second across an
+  /// engine boundary.
+  void pushReadout(PerformanceReadout readout);
 }
 
 /// Opens a real second OS window via `desktop_multi_window` and streams
@@ -32,6 +42,11 @@ abstract interface class WaveformWindowService {
 class DesktopMultiWindowWaveformService implements WaveformWindowService {
   WindowController? _controller;
   static Completer<void>? _readyCompleter;
+
+  /// Last readout actually sent — the diff that keeps the channel quiet.
+  /// Cleared on close so a re-opened window is re-seeded from scratch.
+  /// Static to match [_readyCompleter]: the channel itself is process-wide.
+  static PerformanceReadout? _lastReadout;
   static var _mainChannelRegistered = false;
 
   /// Closes sub-windows left over from a hot restart. Dart state is reset but
@@ -64,7 +79,7 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   }
 
   @override
-  Future<bool> open({String title = 'Loopy — Output'}) async {
+  Future<bool> open({String title = 'Segno — Output'}) async {
     if (_controller != null) return true;
     await closeOrphanWindows();
     await _ensureMainChannelRegistered();
@@ -93,6 +108,7 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   Future<void> close() async {
     _controller = null;
     _readyCompleter = null;
+    _lastReadout = null;
     await waveformWindowChannel
         .invokeMethod('window_close')
         .catchError((Object _) => null);
@@ -116,6 +132,18 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
           .catchError((Object _) => null),
     );
   }
+
+  @override
+  void pushReadout(PerformanceReadout readout) {
+    if (_controller == null) return;
+    if (readout == _lastReadout) return;
+    _lastReadout = readout;
+    unawaited(
+      waveformWindowChannel
+          .invokeMethod('readout', readout.toMap())
+          .catchError((Object _) => null),
+    );
+  }
 }
 
 /// A no-op service for tests and platforms without multi-window support.
@@ -124,10 +152,13 @@ class NoopWaveformWindowService implements WaveformWindowService {
   bool get isOpen => false;
 
   @override
-  Future<bool> open({String title = 'Loopy — Output'}) async => true;
+  Future<bool> open({String title = 'Segno — Output'}) async => true;
 
   @override
   Future<void> close() async {}
+
+  @override
+  void pushReadout(PerformanceReadout readout) {}
 
   @override
   void pushWaveform(

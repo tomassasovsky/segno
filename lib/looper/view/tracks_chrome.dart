@@ -3,18 +3,18 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/app/loopy_navigator.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/looper/view/shortcuts_help_sheet.dart';
-import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
-import 'package:loopy/performance/performance.dart';
-import 'package:loopy/session/session.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/window/window_chrome.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/shortcuts_help_sheet.dart';
+import 'package:segno/performance/performance.dart';
+import 'package:segno/session/session.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/window/window_chrome.dart';
 
 /// The Tracks top bar: mode + bank controls on the left, and the global
 /// transport / navigation actions on the right. Presentational — the enabled
@@ -95,7 +95,7 @@ class TracksToolbar extends StatelessWidget {
           onPressed: transportEnabled ? onClearAll : null,
         ),
         // Fullscreen — desktop only, mirroring `F`.
-        if (loopySupportsDesktopWindowing)
+        if (segnoSupportsDesktopWindowing)
           IconButton(
             key: const Key('tracks_fullscreen'),
             tooltip: l10n.fullscreenTooltip,
@@ -103,7 +103,7 @@ class TracksToolbar extends StatelessWidget {
             iconSize: 20,
             color: toolbarIconColor,
             icon: const Icon(Icons.fullscreen),
-            onPressed: () => unawaited(toggleLoopyFullScreen()),
+            onPressed: () => unawaited(toggleSegnoFullScreen()),
           ),
         IconButton(
           key: const Key('tracks_openSignal'),
@@ -112,7 +112,7 @@ class TracksToolbar extends StatelessWidget {
           iconSize: 20,
           color: toolbarIconColor,
           icon: const Icon(Icons.account_tree_outlined),
-          onPressed: () => unawaited(showSignalPage(context)),
+          onPressed: () => context.read<SettingsTrayCubit>().openSignal(),
         ),
         // Settings is also reachable by `S` or right-click; this surfaces it
         // for pointer/touch users.
@@ -123,7 +123,7 @@ class TracksToolbar extends StatelessWidget {
           iconSize: 20,
           color: toolbarIconColor,
           icon: const Icon(Icons.settings_outlined),
-          onPressed: () => unawaited(openLoopySettings()),
+          onPressed: () => unawaited(openSegnoSettings()),
         ),
         // Opens the keyboard-shortcut legend — the primary discoverability
         // affordance for the surface's ~15 shortcuts, also reachable by `?`.
@@ -159,14 +159,14 @@ class AudioNotRunningBanner extends StatelessWidget {
       child: InkWell(
         key: const Key('tracks_audioNotRunning'),
         borderRadius: BorderRadius.circular(10),
-        onTap: () => unawaited(openLoopySettings()),
+        onTap: () => unawaited(openSegnoSettings()),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
               const Icon(Icons.warning_amber_rounded, size: 18),
               const SizedBox(width: 10),
-              Expanded(child: Text(context.l10n.engineStoppedBanner)),
+              Expanded(child: AppText(context.l10n.engineStoppedBanner)),
               const Icon(Icons.settings, size: 18),
             ],
           ),
@@ -178,7 +178,7 @@ class AudioNotRunningBanner extends StatelessWidget {
 
 /// The session area in the top bar: the current session name (or "Unsaved")
 /// beside a folder button that opens the **Sessions** popup — the single place
-/// to save / load / manage sessions and export (Loopy-Pro-style). The popup
+/// to save / load / manage sessions and export (Segno-Pro-style). The popup
 /// surfaces its own actions; save/load/export outcomes still flow through the
 /// view's [BlocListener] (a live-region SnackBar).
 class SessionMenu extends StatelessWidget {
@@ -198,11 +198,11 @@ class SessionMenu extends StatelessWidget {
         // document-model indicator a quick Save writes back to.
         BlocBuilder<SessionCubit, SessionState>(
           buildWhen: (a, b) => a.currentSessionName != b.currentSessionName,
-          builder: (context, state) => Text(
+          builder: (context, state) => AppText(
             state.currentSessionName ?? l10n.sessionUnsaved,
             key: const Key('tracks_session_name'),
             style: TextStyle(
-              color: Colors.white70,
+              color: context.surface.textSecondary,
               fontStyle: state.currentSessionName == null
                   ? FontStyle.italic
                   : FontStyle.normal,
@@ -278,7 +278,7 @@ class ModeIndicator extends StatelessWidget {
           children: [
             Icon(icon, size: 16, color: color),
             const SizedBox(width: 6),
-            Text(
+            AppText(
               modeName,
               style: theme.textTheme.labelLarge?.copyWith(
                 color: color,
@@ -339,10 +339,12 @@ class BankSwitch extends StatelessWidget {
                   color: i == active ? accent : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
+                child: AppText(
                   String.fromCharCode(0x41 + i),
                   style: theme.textTheme.titleMedium?.copyWith(
-                    color: i == active ? Colors.black : Colors.white70,
+                    color: i == active
+                        ? context.surface.onAccent
+                        : context.surface.textSecondary,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -413,7 +415,7 @@ class TransportTempoDisplay extends StatelessWidget {
               spacing: 8,
               children: [
                 Flexible(
-                  child: Text(
+                  child: AppText(
                     transport.countingIn
                         ? l10n.countingInLabel(transport.countInBeatsLeft)
                         : l10n.currentTempoLabel(
@@ -422,7 +424,7 @@ class TransportTempoDisplay extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
                     style: theme.textTheme.labelLarge?.copyWith(
-                      color: Colors.white70,
+                      color: context.surface.textSecondary,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -470,7 +472,7 @@ class _BeatIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (count > _maxDots) {
-      return Text(
+      return AppText(
         context.l10n.beatPositionLabel(current + 1, count),
         overflow: TextOverflow.ellipsis,
         maxLines: 1,
@@ -489,7 +491,8 @@ class _BeatIndicator extends StatelessWidget {
         for (var i = 0; i < count; i++)
           DecoratedBox(
             decoration: BoxDecoration(
-              color: i == current ? color : Colors.white24,
+              // An unlit page dot is a dim solid, not a text tone.
+              color: i == current ? color : context.surface.borderStrong,
               shape: BoxShape.circle,
             ),
             child: const SizedBox.square(dimension: 6),

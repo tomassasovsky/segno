@@ -1,7 +1,7 @@
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
 
 /// A scope-agnostic adapter over one editable FX chain, at any of the four FX
 /// stages (R21): a hardware input's live-monitor chain ([InputFxScope]), a
@@ -389,7 +389,11 @@ class StageFxScope extends FxScope {
   /// `address.stage`, which is not a potentially-constant expression — and the
   /// guard THROWS rather than asserts, so an input/loop address cannot slip
   /// through a release build and silently edit a track's chain instead.
-  StageFxScope({required this.looper, required this.address}) {
+  StageFxScope({
+    required this.looper,
+    required this.address,
+    required this.trackNames,
+  }) {
     if (address.stage != FxStage.track && address.stage != FxStage.master) {
       throw ArgumentError.value(
         address.stage,
@@ -401,6 +405,14 @@ class StageFxScope extends FxScope {
 
   /// The looper state + edit surface for the bus chains.
   final LooperBloc looper;
+
+  /// The rig's track names, so a track's bus is titled by what the track is
+  /// called rather than by its ordinal (#526).
+  ///
+  /// Required rather than defaulted: an empty list still RENDERS — as the
+  /// ordinal this was added to stop showing — so a default would let a caller
+  /// silently regress the very thing the parameter exists for.
+  final List<String> trackNames;
 
   @override
   final FxAddress address;
@@ -414,7 +426,7 @@ class StageFxScope extends FxScope {
   @override
   String label(AppLocalizations l10n) => _isMaster
       ? l10n.fxEditorMasterTitle
-      : l10n.fxEditorTrackTitle(_channel + 1);
+      : l10n.fxEditorTrackTitle(l10n.trackName(trackNames, _channel));
 
   @override
   String consequence(AppLocalizations l10n) => _isMaster

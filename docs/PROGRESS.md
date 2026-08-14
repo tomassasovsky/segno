@@ -1,10 +1,10 @@
-# Loopy — Progress & Roadmap
+# Segno — Progress & Roadmap
 
 Living status doc for the Flutter desktop loopstation. Pairs with the original
 plan in `docs/plan/2026-06-08-feat-flutter-desktop-loopstation-plan.md`.
 Update this as work lands so any session (human or agent) can resume cold.
 
-Repo: https://github.com/tomassasovsky/loopy · branch `master`.
+Repo: https://github.com/tomassasovsky/segno · branch `master`.
 
 ---
 
@@ -16,9 +16,9 @@ Repo: https://github.com/tomassasovsky/loopy · branch `master`.
   doesn't match: `/Users/Tomas/development/flutter/bin/flutter test`.
 - **Scaffolding:** `flutter create` is hook-blocked in favour of the very_good
   MCP `create` tool — but that only makes federated method-channel plugins. The
-  FFI plugin (`loopy_engine`) is **hand-authored** (`ffiPlugin: true` + CMake +
+  FFI plugin (`segno_engine`) is **hand-authored** (`ffiPlugin: true` + CMake +
   podspec). Native engine lives **inside** the plugin at
-  `packages/loopy_engine/src/` (Flutter symlinks plugins at build time, so
+  `packages/segno_engine/src/` (Flutter symlinks plugins at build time, so
   out-of-package native paths dangle).
 - **macOS FFI loading:** the podspec sets `MACH_O_TYPE => mh_dylib` and uses
   `Classes/` forwarder TUs that `#include` `../src`; `DynamicLibrary.process()`
@@ -26,7 +26,7 @@ Repo: https://github.com/tomassasovsky/loopy · branch `master`.
 - **Native engine tests** (deterministic, no device — the real safety net since
   the audio thread can't be runtime-tested here):
   ```sh
-  bash packages/loopy_engine/src/test/run_native_tests.sh
+  bash packages/segno_engine/src/test/run_native_tests.sh
   ```
   The script self-locates (no preceding `cd` needed) and builds/runs the
   engine core test suite and the MIDI test suite on every desktop OS
@@ -34,11 +34,11 @@ Repo: https://github.com/tomassasovsky/loopy · branch `master`.
   scan/slot native tests against the vendored VST3/CLAP SDKs. Each suite
   prints "ALL PASSED"; the script exits non-zero on any compile or test
   failure.
-- **Regenerate FFI bindings** after touching `src/loopy_engine_api.h`:
+- **Regenerate FFI bindings** after touching `src/segno_engine_api.h`:
   ```sh
-  cd packages/loopy_engine
+  cd packages/segno_engine
   dart run ffigen --config ffigen.yaml
-  dart format lib/src/generated/loopy_engine_bindings.dart
+  dart format lib/src/generated/segno_engine_bindings.dart
   ```
   The `dart format` step is required: ffigen emits legacy short-style code,
   but the committed bindings are canonical `dart format` (tall) style. Without
@@ -60,6 +60,30 @@ Repo: https://github.com/tomassasovsky/loopy · branch `master`.
 - **macOS app run/build:** flavor schemes required.
   `flutter build macos --debug --flavor development -t lib/main_development.dart`
   Run: `flutter run -d macos --flavor development -t lib/main_development.dart`
+- **Driving the Network domain off the appliance:** both radios are Linux-only
+  helpers (`segno-wifi-ctl`, `segno-bt-ctl`), so on macOS every path past "no
+  WiFi on this build" is unreachable — including the ones with the most
+  behaviour in them. Add `--dart-define=SEGNO_FAKE_RADIOS=true` to swap in
+  in-memory stacks:
+  ```sh
+  flutter run -d macos --flavor development -t lib/main_development.dart \
+    --dart-define=SEGNO_FAKE_RADIOS=true
+  ```
+  The define is read inside `createWifiClient` / `createBluetoothClient`
+  **before** their platform test, so every entry point picks it up with no app
+  wiring change. The fakes are opinionated rather than empty — they exist to
+  reach the states the mockups draw, with deliberate delays so in-flight
+  spinners and banners are visible. Failure is reachable on purpose:
+  `segno123` is the only passphrase that joins, and one Bluetooth device
+  always refuses to pair. **Off by default**, so a shipped build can never
+  present invented networks as real ones; the factory tests assert the flag
+  from both sides, so the branch is covered by the ordinary CI run.
+- **Appliance helper suites** (shell, no device):
+  ```sh
+  bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_ctl_tests.sh
+  ```
+  Pins the ordering inside `segno-bt-ctl`'s device verbs against a stubbed
+  `bluetoothctl`. What bluez does with those commands still needs hardware.
 
 ---
 
@@ -67,12 +91,12 @@ Repo: https://github.com/tomassasovsky/loopy · branch `master`.
 
 ```
 packages/
-  loopy_engine/        DATA  — FFI plugin over a hand-written miniaudio engine (C)
+  segno_engine/        DATA  — FFI plugin over a hand-written miniaudio engine (C)
   controller_repository/ REPO — hardware-agnostic MIDI → looper actions
   looper_repository/   REPO  — owns the engine; EngineSnapshot → LooperState
   settings_repository/ REPO  — per-device latency calibration persistence
   local_storage_client/ DATA — KeyValueStore (shared_preferences)
-  session_repository/  REPO  — save/restore .loopy session bundles (manifest + WAV stems)
+  session_repository/  REPO  — save/restore .segno session bundles (manifest + WAV stems)
   performance_repository/ REPO — performance-recording capture lifecycle (arm/finalize/recover)
   wav_codec/           DATA  — 32-bit-float WAV encode/decode (pure Dart, no Flutter dep)
   daw_export/          DATA  — pure-Dart Ableton Live 12 (.als) exporter for a performance capture
@@ -89,14 +113,14 @@ lib/
 Strict layering: presentation → bloc → repository → data. The engine's typed
 `AudioEngine` interface is the test seam (fakes everywhere).
 
-### Native engine model (`packages/loopy_engine/src/engine.c`)
+### Native engine model (`packages/segno_engine/src/engine.c`)
 - One **master loop clock** (`le_loop_clock`: length + position). First finalized
   track sets the length; all tracks index the same `position` → phase-locked.
 - **Multi-lane tracks** (PR 1 of the multi-lane/dual-route rework). A `le_track`
   is a container that owns the **transport** (state / multiple / pending-arm),
   one **shared latency-compensated write head** (`record_pos`), and **one undo
   span** (`undo_stack`/`redo_stack`, the same slot index in every lane). Each
-  `le_lane` (`lanes[LE_MAX_LANES]`, `LE_MAX_LANES == LE_MAX_INPUTS == 8`) records
+  `le_lane` (`lanes[LE_MAX_LANES]`, `LE_MAX_LANES == 8`) records
   **one** hardware input (`a_input_channel`, -1 = none) into its **own clean mono
   buffer** — sibling lanes are **never merged/averaged** — with per-lane output
   mask / volume / mute / effects. Recording is **track-addressed** and fans out
@@ -154,6 +178,14 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
   with hysteresis; both resolve to the same typed targets the pedal uses.
 - **Live monitoring is per hardware input** (`le_monitor_input monitors[LE_MAX_INPUTS]`,
   one slot per input, ≤ `LE_MAX_INPUTS`=8): each enabled input is summed live
+- **Effects are per-lane** (one **stageless**, non-destructive chain on each
+  lane's own `fx` state — the pre/post `stage` and the per-lane `mon_fx` are
+  gone): `le_engine_set_lane_fx(channel,lane,index,type)` / `…_fx_count` /
+  `…_fx_param`. Track-addressed FX setters map to **lane 0** for back-compat.
+- **Live monitoring is per hardware input**
+  (`le_monitor_input monitors[LE_MAX_MONITORED_INPUTS]`, one slot per input,
+  ≤ `LE_MAX_MONITORED_INPUTS`=8; a higher-numbered channel is still recordable,
+  just not monitorable): each enabled input is summed live
   through **its own** stageless chain into its output mask, **never recorded**,
   independent of all track state — replacing the old global monitor-FX bus,
   monitor-follow-track, and monitor masks. `le_engine_set_monitor_input(input,
@@ -299,7 +331,7 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   clear all, `⌘/Ctrl+Z` undo, `⌘/Ctrl+Y`/`Shift+Z` redo. `PerformanceMode` +
   `toggleMode` on `BigPictureCubit`; new `LooperClearAllPressed` event.
 - **Code-review pass** — removed a debug `settings.clear()`; app composes the
-  engine via `LooperRepository.withNativeEngine()` (no `loopy_engine` import in
+  engine via `LooperRepository.withNativeEngine()` (no `segno_engine` import in
   `lib/`); deleted dead Big-Picture waveform polling and made the level meter a
   stateless widget (no per-tile timers); extracted a shared rename dialog;
   `AudioSetupPage` reads its repositories from context; added the missing test
@@ -351,7 +383,7 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   hosting is the one remaining gap**, deferred to on-platform work.
 - **Windows + Linux native — portable foundation (PR1).** Generated the Linux GTK
   app scaffold (`linux/`); `flutter build linux --debug -t lib/main_development.dart`
-  compiles + bundles `libloopy_engine.so` (miniaudio dlopen()s the audio backend at
+  compiles + bundles `libsegno_engine.so` (miniaudio dlopen()s the audio backend at
   runtime). Desktop flavors are **entrypoint-only** (`--target lib/main_<flavor>.dart`;
   `--flavor` only namespaces build output). CI now fires on PRs (trigger fixed
   **`main` → `master`**) and adds compile-only `windows-latest` / `ubuntu-latest`
@@ -373,9 +405,9 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
     was broken. Fixed behind the platform seam (`le_platform_device_id_to_str`):
     Windows converts wchar→UTF-8, macOS/Linux keep the verbatim copy. Regression
     test `test_device_id_to_str`.
-- **Windows per-channel labels — ASIO scaffolding (PR2).** `LOOPY_ENABLE_ASIO`
+- **Windows per-channel labels — ASIO scaffolding (PR2).** `SEGNO_ENABLE_ASIO`
   CMake option. _(The Steinberg ASIO SDK was later **vendored** under
-  `packages/loopy_engine/third_party/asiosdk` and the repo relicensed to GPLv3,
+  `packages/segno_engine/third_party/asiosdk` and the repo relicensed to GPLv3,
   so ASIO now builds **on by default on Windows** — see docs/WINDOWS_ASIO.md.)_
   `win_asio_labels.cpp` probe reads `ASIOGetChannelInfo().name`
   and reuses the portable, unit-tested `le_excluded_mask_from_names` /
@@ -407,7 +439,7 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   snapshot, and the looper/lane/FX DSP stay in `engine.c` and are reused
   unchanged. `le_select_backend(backend)` returns `&le_miniaudio_backend` for
   every choice in this build — the default build links **no** ASIO symbol
-  (link-time guarantee; the `#if LOOPY_ENABLE_ASIO` branch lands in Part 2).
+  (link-time guarantee; the `#if SEGNO_ENABLE_ASIO` branch lands in Part 2).
   This is **distinct from** the per-OS `engine_platform.h` seam (capabilities
   over one shared device, not swappable backends). The FFI structs grew their
   final Part-2 shape, **inert** today: `le_config.backend`/`asio_driver`,
@@ -423,7 +455,7 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 - **ASIO duplex backend (ASIO Part 2 — opt-in, off by default).** The real ASIO
   capture/playback backend behind Part 1's seam, so a pro interface runs at its
   **full channel count** (e.g. 18 in / 20 out) that WASAPI never exposes. New
-  **`win_asio_device.cpp`** (`#if LOOPY_ENABLE_ASIO`) exposes
+  **`win_asio_device.cpp`** (`#if SEGNO_ENABLE_ASIO`) exposes
   `le_asio_backend`: load the driver → negotiate rate/buffer → run its real-time
   `bufferSwitch` feeding the **unchanged** `le_engine_process`. ASIO's
   per-channel native-format buffers are bridged to the engine's interleaved f32
@@ -448,7 +480,7 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   widget selector/driver-swap/fallback. **Hardware spike still required before
   merge** (real Focusrite: full count, audio integrity, fallback, persistence).
 - **Sessions + WAV export** (Phase 4 slice): `session_repository` saves/restores
-  `.loopy` bundles (a JSON manifest + 32-bit-float stem WAVs + a mixdown) and
+  `.segno` bundles (a JSON manifest + 32-bit-float stem WAVs + a mixdown) and
   exports mixdown / per-track stems. Native `le_engine_export_track` /
   `import_track` / `commit_session` move loop PCM in and out (control-thread copy
   into EMPTY tracks; a ring command flips them to PLAYING at their multiple, so
@@ -522,8 +554,8 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   `docs/plan/2026-06-22-feat-unified-signal-surface-plan.md`, brainstorm +
   mockup in `docs/{brainstorm,design}/`). Replaced the three old node-and-wire
   surfaces (Audio Setup monitor graph, Big Picture settings Routing tab,
-  per-track lane dialog) with ONE full-screen **Signal** canvas
-  (`lib/looper/view/signal_graph/`): hardware **inputs** on the left (rich node =
+  per-track lane dialog) with ONE full-screen **Signal** canvas: hardware
+  **inputs** on the left (rich node =
   on/off gate + the single live FX chain that records + level, reusing the kit's
   `EffectChainCard`s), every track's **lanes** in the middle (FX-snapshot badge
   per recorded lane), hardware **outputs** on the right (structural on/off gate,
@@ -538,13 +570,17 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   performance view by a visible chrome button **and** the `G` shortcut;
   `showSignalPage` re-provides `LooperBloc` + `MonitorCubit` + `AudioSetupCubit`
   into the pushed route. Audio Setup keeps only device/SR/buffer/latency; the
-  `LaneNode` moved into `signal_graph/`. Built in 3 stacked phases (scaffold →
+  `LaneNode` moved into `signal_graph/`.
+  **Superseded (#533):** Signal is a tray rail destination now — cards, a
+  detail panel, an FX editor and an add dialog under
+  `lib/looper/view/signal/`. `signal_graph/` and the FX dock were deleted
+  whole; the chrome button and `G` open the tray at Signal. Built in 3 stacked phases (scaffold →
   rich node + dock → deletions); ~1.3k lines of old-surface tests removed with
   their load-bearing coverage migrated onto the `signal_*` tests.
-- **Loopy FX plugins** — Loopy's own built-in effects, shipped *as* real,
+- **Segno FX plugins** — Segno's own built-in effects, shipped *as* real,
   installable VST3 plugins for third-party DAWs (distinct from the plugin
-  *host* above — this ships Loopy's own DSP as third-party VST3 plugins).
-  Seven native plugins share one `packages/loopy_engine/vst3/` build —
+  *host* above — this ships Segno's own DSP as third-party VST3 plugins).
+  Seven native plugins share one `packages/segno_engine/vst3/` build —
   **Delay, Reverb, Echo, Drive, Filter, Tremolo, Octaver** — each wrapping
   the same engine DSP core the looper uses, so behavior can't drift from the
   in-app effect, checked by a **golden-parity audio-diff harness**. **macOS,
@@ -568,7 +604,7 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   stem, arrangement-view clips at capture start, session-view loop clips per
   lane, and volume/mute **automation envelopes** thinned from the event log.
   Its newest piece (device-chain export) resolves a channel's per-lane
-  effects into a single **real Loopy VST3 device chain** embedded in the
+  effects into a single **real Segno VST3 device chain** embedded in the
   `.als` when every lane agrees on one representable chain, falling back to
   the wet-bounce stem export otherwise (mixed lanes, a third-party plugin, or
   an unrepresented effect type). **Known gap:** `PerformanceRepository.arm()`
@@ -689,7 +725,7 @@ multi-track, loop multiples, loop-viz, per-track effects DSP, session
 export/import roundtrip, **single-chain monitor + record-FX snapshot +
 RT-safety + structural output gate**) · VST3 CTest gate (16 wired: 7
 plugin-id + 7 parity + 2 wrapper, plus a per-plugin load-smoke check) ·
-loopy_engine (dart, the FFI/plugin layer — was labeled "plugin") 138 (~7
+segno_engine (dart, the FFI/plugin layer — was labeled "plugin") 138 (~7
 skipped) · controller_repository 18 · looper_repository 184 (~6 skipped) ·
 settings_repository 65 · session_repository 57 · local_storage_client 1 ·
 performance_repository 56 · pedal_repository 116 · midi_device_repository 22 ·

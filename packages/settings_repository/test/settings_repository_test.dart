@@ -116,6 +116,51 @@ void main() {
     });
   });
 
+  group('input names', () {
+    test('round-trips a saved name', () async {
+      await repository.saveInputName(device: 'Scarlett', input: 1, name: 'mic');
+      expect(
+        await repository.loadInputName(device: 'Scarlett', input: 1),
+        'mic',
+      );
+      expect(
+        await repository.loadInputName(device: 'Scarlett', input: 0),
+        isNull,
+      );
+      // A different interface's socket 1 is a different jack.
+      expect(
+        await repository.loadInputName(device: 'Built-in', input: 1),
+        isNull,
+      );
+    });
+
+    test('clearing REMOVES the key, never stores an empty name', () async {
+      // An input's fallback is not a name it was given, so a stored `''` would
+      // be a name every later reader has to know to ignore. A track has no
+      // equivalent — its fallback IS a name.
+      await repository.saveInputName(
+        device: 'Scarlett',
+        input: 2,
+        name: 'guitar',
+      );
+      await repository.clearInputName(device: 'Scarlett', input: 2);
+      expect(
+        await repository.loadInputName(device: 'Scarlett', input: 2),
+        isNull,
+      );
+    });
+
+    test('a name is kept per SOCKET, independent of the track keys', () async {
+      await repository.saveInputName(device: 'Scarlett', input: 0, name: 'mic');
+      await repository.saveTrackName(0, 'DRUMS');
+      expect(
+        await repository.loadInputName(device: 'Scarlett', input: 0),
+        'mic',
+      );
+      expect(await repository.loadTrackName(0), 'DRUMS');
+    });
+  });
+
   group('lane routing', () {
     test('returns sensible defaults when nothing is stored', () async {
       expect(await repository.loadLaneCount(0), 1);
@@ -156,6 +201,25 @@ void main() {
       expect(await repository.loadLaneEffects(1, 1), isNull);
       expect(await repository.loadLaneEffects(0, 0), isNull);
     });
+
+    test(
+      'removing a chain reads back as unset, not as the old value',
+      () async {
+        await repository.saveLaneEffects(1, 0, '[{"type":3}]');
+        await repository.saveLaneEffects(1, 1, '[{"type":4}]');
+
+        await repository.clearLaneEffects(1, 0);
+
+        expect(await repository.loadLaneEffects(1, 0), isNull);
+        // Only the named lane is cleared.
+        expect(await repository.loadLaneEffects(1, 1), '[{"type":4}]');
+      },
+    );
+
+    test('clearing a lane that was never stored is a no-op', () async {
+      await repository.clearLaneEffects(3, 2);
+      expect(await repository.loadLaneEffects(3, 2), isNull);
+    });
   });
 
   group('track/master fx chains (FX v3)', () {
@@ -174,14 +238,36 @@ void main() {
       await repository.saveMasterFxChain('{"chainEnabled":true}');
       expect(await repository.loadMasterFxChain(), '{"chainEnabled":true}');
     });
+
+    test('clearing a track chain reads back as unset, not as the old '
+        'value', () async {
+      await repository.saveTrackFxChain(0, '{"chainEnabled":true}');
+      await repository.saveTrackFxChain(1, '{"chainEnabled":false}');
+
+      await repository.clearTrackFxChain(0);
+
+      expect(await repository.loadTrackFxChain(0), isNull);
+      // Only the named channel is cleared.
+      expect(await repository.loadTrackFxChain(1), '{"chainEnabled":false}');
+    });
+
+    test('clearing a track chain that was never stored is a no-op', () async {
+      await repository.clearTrackFxChain(2);
+      expect(await repository.loadTrackFxChain(2), isNull);
+    });
   });
 
   group('monitor (single chain)', () {
-    test('per-input enable flag defaults to null and round-trips', () async {
-      expect(await repository.loadMonitorInputEnabled(0), isNull);
-      await repository.saveMonitorInputEnabled(0, enabled: true);
-      expect(await repository.loadMonitorInputEnabled(0), isTrue);
-      expect(await repository.loadMonitorInputEnabled(1), isNull);
+    test('per-input mode defaults to null and round-trips', () async {
+      expect(await repository.loadMonitorInputMode(0), isNull);
+      await repository.saveMonitorInputMode(0, mode: 'on');
+      expect(await repository.loadMonitorInputMode(0), 'on');
+      expect(await repository.loadMonitorInputMode(1), isNull);
+    });
+
+    test('the middle mode round-trips by name, not by truthiness', () async {
+      await repository.saveMonitorInputMode(3, mode: 'auto');
+      expect(await repository.loadMonitorInputMode(3), 'auto');
     });
 
     test('output mask defaults to null and round-trips per input', () async {
@@ -460,10 +546,10 @@ void main() {
     });
 
     test('round-trips a saved id + name', () async {
-      await repository.savePedalOutputDevice(id: 'out-7', name: 'Loopy Pedal');
+      await repository.savePedalOutputDevice(id: 'out-7', name: 'Segno Pedal');
       final loaded = await repository.loadPedalOutputDevice();
       expect(loaded?.id, 'out-7');
-      expect(loaded?.name, 'Loopy Pedal');
+      expect(loaded?.name, 'Segno Pedal');
     });
 
     test('treats an empty saved id as no selection', () async {
@@ -472,7 +558,7 @@ void main() {
     });
 
     test('clearPedalOutputDevice removes both keys', () async {
-      await repository.savePedalOutputDevice(id: 'out-7', name: 'Loopy Pedal');
+      await repository.savePedalOutputDevice(id: 'out-7', name: 'Segno Pedal');
       await repository.clearPedalOutputDevice();
       expect(await repository.loadPedalOutputDevice(), isNull);
       expect(store.values.containsKey('pedal.output_device_id'), isFalse);
@@ -548,6 +634,19 @@ void main() {
     test('round-trips a saved preference', () async {
       await repository.saveHighContrast(value: true);
       expect(await repository.loadHighContrast(), isTrue);
+    });
+  });
+
+  group('brightness', () {
+    test('defaults to 0.8 when unset', () async {
+      expect(await repository.loadBrightness(), 0.8);
+    });
+
+    test('round-trips a saved preference and clamps', () async {
+      await repository.saveBrightness(0.42);
+      expect(await repository.loadBrightness(), 0.42);
+      await repository.saveBrightness(2);
+      expect(await repository.loadBrightness(), 1);
     });
   });
 

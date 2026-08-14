@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart';
-import 'package:loopy_engine/loopy_engine.dart' as engine;
+import 'package:segno_engine/segno_engine.dart' as engine;
 
 /// How a parameter's `0..1` value is read out in the UI, in its own units, when
 /// the bare number isn't meaningful on its own. Domain mirror of the engine's
@@ -237,8 +237,14 @@ class PluginEffect extends TrackEffect {
   final List<PluginParamInfo> params;
 
   /// The plugin's user-visible display name, resolved from the scan catalog
-  /// when loaded. Transient (never persisted — re-resolved from [ref]); empty
-  /// when unresolved, in which case the UI falls back to the stable id.
+  /// when the plugin loads — or, at a bus stage where nothing loads, when the
+  /// chain is written. Empty when unresolved, in which case the UI falls back
+  /// to the stable id.
+  ///
+  /// PERSISTED whenever a chain carrying it is written (the wire format
+  /// carries any non-empty name), so a plugin uninstalled after that write
+  /// still says which one it was — which is what tells the player what to
+  /// relink to.
   final String name;
 
   /// Whether the plugin failed to resolve/load on the running engine

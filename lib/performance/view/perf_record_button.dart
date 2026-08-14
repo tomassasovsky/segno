@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/performance/cubit/performance_recorder_cubit.dart';
-import 'package:loopy/theme/theme.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
+import 'package:segno/theme/theme.dart';
 
 /// Toggles performance-recording arm/disarm from `TracksToolbar`.
 /// Self-contained — reads [PerformanceRecorderCubit] directly rather than
@@ -38,7 +38,9 @@ class PerfRecordButton extends StatelessWidget {
       tooltip: tooltip,
       visualDensity: VisualDensity.compact,
       iconSize: 20,
-      color: armed ? looper.recordColor : looper.toolbarIconColor,
+      // `rec` (UI chrome red), not `recordColor` (the stage red): this button
+      // reports that the *app* is capturing, not what a track is doing.
+      color: armed ? context.surface.rec : looper.toolbarIconColor,
       icon: Icon(
         armed ? Icons.fiber_manual_record : Icons.fiber_manual_record_outlined,
       ),

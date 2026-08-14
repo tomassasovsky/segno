@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -12,16 +13,35 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
+  late PluginCatalog catalog;
 
-  setUpAll(() => registerFallbackValue(<TrackEffect>[]));
+  setUpAll(() {
+    registerFallbackValue(<TrackEffect>[]);
+    registerFallbackValue(MonitorMode.off);
+  });
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
+    // The cubit follows the scan: the repository's answer about whether a
+    // plugin loaded changes when one lands.
+    catalog = PluginCatalog(
+      engine: FakeAudioEngine(),
+      appVersion: 'test',
+      pollInterval: const Duration(milliseconds: 1),
+      statFile: (path) => (mtimeMs: 1, sizeBytes: 1),
+    );
+    addTearDown(catalog.dispose);
+    when(() => repository.pluginCatalog).thenReturn(catalog);
+    // And it follows the repository's own monitor writes, so a change that
+    // did not come through this cubit still reaches the console.
     when(
-      () => repository.setMonitorInputEnabled(
+      () => repository.monitorChanges,
+    ).thenAnswer((_) => const Stream<int>.empty());
+    when(
+      () => repository.setMonitorInputMode(
         input: any(named: 'input'),
-        enabled: any(named: 'enabled'),
+        mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
     when(
@@ -92,32 +112,298 @@ void main() {
   MonitorCubit build() =>
       MonitorCubit(repository: repository, settings: settings);
 
+  group('following the repository', () {
+    late StreamController<int> changes;
+
+    setUp(() {
+      changes = StreamController<int>.broadcast();
+      addTearDown(changes.close);
+      when(() => repository.monitorChanges).thenAnswer((_) => changes.stream);
+      // Answers that REMEMBER what was written to them, the way the real
+      // repository does — the cubit's restore pushes the saved monitors in,
+      // and a follow that read a fixture frozen at the defaults would report
+      // a clobbering that only the fixture was doing. Everything starts where
+      // the cubit's own defaults are, so a test only sees what it changes.
+      final modes = <int, MonitorMode>{};
+      final volumes = <int, double>{};
+      final masks = <int, int>{};
+      final mutes = <int, bool>{};
+      when(() => repository.monitorMode(any())).thenAnswer(
+        (call) => modes[call.positionalArguments.first] ?? MonitorMode.off,
+      );
+      when(() => repository.monitorOutput(any())).thenAnswer(
+        (call) => masks[call.positionalArguments.first] ?? 0x3,
+      );
+      when(() => repository.monitorVolume(any())).thenAnswer(
+        (call) => volumes[call.positionalArguments.first] ?? 1.0,
+      );
+      when(() => repository.monitorMuted(any())).thenAnswer(
+        (call) => mutes[call.positionalArguments.first] ?? false,
+      );
+      when(() => repository.monitorChainEnabled(any())).thenReturn(true);
+      when(
+        () => repository.setMonitorInputMode(
+          input: any(named: 'input'),
+          mode: any(named: 'mode'),
+        ),
+      ).thenAnswer((call) {
+        modes[call.namedArguments[#input] as int] =
+            call.namedArguments[#mode] as MonitorMode;
+        return EngineResult.ok;
+      });
+      when(
+        () => repository.setMonitorVolume(
+          input: any(named: 'input'),
+          volume: any(named: 'volume'),
+        ),
+      ).thenAnswer((call) {
+        volumes[call.namedArguments[#input] as int] =
+            call.namedArguments[#volume] as double;
+        return EngineResult.ok;
+      });
+      when(
+        () => repository.setMonitorOutput(
+          input: any(named: 'input'),
+          mask: any(named: 'mask'),
+        ),
+      ).thenAnswer((call) {
+        masks[call.namedArguments[#input] as int] =
+            call.namedArguments[#mask] as int;
+        return EngineResult.ok;
+      });
+      when(
+        () => repository.setMonitorMute(
+          input: any(named: 'input'),
+          muted: any(named: 'muted'),
+        ),
+      ).thenAnswer((call) {
+        mutes[call.namedArguments[#input] as int] =
+            call.namedArguments[#muted] as bool;
+        return EngineResult.ok;
+      });
+    });
+
+    test(
+      'an announce before the restore does not save over saved state',
+      () async {
+        // What the player set, last session.
+        await settings.saveMonitorInputMode(1, mode: MonitorMode.on.name);
+        await settings.saveMonitorVolume(1, 0.5);
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        // Announced while the restore is still in flight: the repository does
+        // not hold the saved monitors yet — this cubit is what puts them there
+        // — so reading it now would take its defaults as truth and SAVE them
+        // over the settings that have not been read yet. Silent, permanent, and
+        // only visible on the next boot.
+        // A session applied in the first frames: the repository now differs
+        // from this cubit's defaults, which is what makes the read do
+        // anything at all.
+        when(() => repository.monitorChainEnabled(1)).thenReturn(false);
+        changes.add(1);
+        // Long enough for the read's own five-key save to land: what it
+        // WRITES is the damage, and a restore racing ahead of that would read
+        // the good settings by luck rather than by design.
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.load();
+
+        expect(cubit.state.forInput(1).mode, MonitorMode.on);
+        expect(cubit.state.forInput(1).volume, 0.5);
+        expect(await settings.loadMonitorInputMode(1), MonitorMode.on.name);
+        expect(await settings.loadMonitorVolume(1), 0.5);
+      },
+    );
+
+    test(
+      'an input announced during the restore is read once it lands',
+      () async {
+        final cubit = build();
+        addTearDown(cubit.close);
+        when(() => repository.monitorChainEnabled(2)).thenReturn(false);
+
+        // Held, not dropped: a session applied in the first frames is a real
+        // change, and the console has to end up showing it.
+        changes.add(2);
+        await Future<void>.delayed(Duration.zero);
+        await cubit.load();
+        await Future<void>.delayed(Duration.zero);
+
+        expect(cubit.state.forInput(2).chainEnabled, isFalse);
+      },
+    );
+
+    test('a closed cubit stops listening', () async {
+      final cubit = build();
+      await cubit.load();
+      await cubit.close();
+
+      changes.add(0);
+      await Future<void>.delayed(Duration.zero);
+
+      // Not just silent — off the stream. A closed cubit that is still a
+      // listener keeps its whole object graph alive for as long as the
+      // repository lives, and this cubit outlives nothing.
+      expect(changes.hasListener, isFalse);
+    });
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a chain switched off elsewhere reaches the console',
+      build: build,
+      // The state `load` emits on the way in; every test here is about what
+      // comes AFTER it.
+      skip: 1,
+      act: (cubit) async {
+        await cubit.load();
+        // What a footswitch bound to an `FxStage.input` chain does: it writes
+        // straight to the repository, past this cubit, and a monitor is not
+        // in the projection that corrects every other stage.
+        when(() => repository.monitorChainEnabled(0)).thenReturn(false);
+        changes.add(0);
+        await Future<void>.delayed(Duration.zero);
+      },
+      expect: () => [
+        isA<MonitorState>().having(
+          (s) => s.forInput(0).chainEnabled,
+          'chainEnabled',
+          isFalse,
+        ),
+      ],
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'every monitor fact is re-read, not just the chain',
+      build: build,
+      skip: 1,
+      act: (cubit) async {
+        await cubit.load();
+        when(() => repository.monitorMuted(1)).thenReturn(true);
+        when(() => repository.monitorVolume(1)).thenReturn(0.25);
+        when(() => repository.monitorOutput(1)).thenReturn(0x2);
+        when(() => repository.monitorMode(1)).thenReturn(MonitorMode.auto);
+        when(
+          () => repository.monitorEffects(1),
+        ).thenReturn([BuiltInEffect(type: TrackEffectType.drive)]);
+        changes.add(1);
+        await Future<void>.delayed(Duration.zero);
+      },
+      expect: () => [
+        isA<MonitorState>()
+            .having((s) => s.forInput(1).muted, 'muted', isTrue)
+            .having((s) => s.forInput(1).volume, 'volume', 0.25)
+            .having((s) => s.forInput(1).outputMask, 'outputMask', 0x2)
+            .having((s) => s.forInput(1).mode, 'mode', MonitorMode.auto)
+            .having((s) => s.forInput(1).effects, 'effects', hasLength(1)),
+      ],
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a change that changes nothing does not rebuild the console',
+      build: build,
+      skip: 1,
+      act: (cubit) async {
+        await cubit.load();
+        // Every write from this cubit comes back through the same stream, so
+        // an unconditional emit would double every edit the surface makes.
+        changes
+          ..add(0)
+          ..add(0);
+        await Future<void>.delayed(Duration.zero);
+      },
+      expect: () => <MonitorState>[],
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'what it reads is saved, and never pushed back',
+      build: build,
+      act: (cubit) async {
+        await cubit.load();
+        when(() => repository.monitorChainEnabled(0)).thenReturn(false);
+        changes.add(0);
+        await Future<void>.delayed(Duration.zero);
+      },
+      verify: (_) async {
+        // Never back to the engine: the repository is where this came from,
+        // and pushing it back is this cubit re-applying the state the
+        // engine's owner just set.
+        verifyNever(
+          () => repository.setMonitorChainEnabled(
+            input: any(named: 'input'),
+            enabled: any(named: 'enabled'),
+          ),
+        );
+        // But saved — because the persisted envelope is built from this
+        // state. Read and NOT saved, the flag would still ride into settings
+        // on the next unrelated edit of that chain, so a footswitch bypass
+        // would survive a restart if and only if the player happened to touch
+        // the chain afterwards.
+        final saved = decodeFxChain(await settings.loadMonitorEffects(0));
+        expect(saved.chainEnabled, isFalse);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a chain that changed shape drops the editor polls keyed to the old one',
+      build: build,
+      act: (cubit) async {
+        await cubit.load();
+        when(() => repository.monitorEffects(0)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'p'),
+            slotId: 'a',
+          ),
+        ]);
+        changes.add(0);
+        await Future<void>.delayed(Duration.zero);
+        cubit.openPluginEditor(0, 0);
+        // A different entry in the same slot index: a poll still keyed to it
+        // would start syncing a plugin the player never opened.
+        when(() => repository.monitorEffects(0)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'q'),
+            slotId: 'b',
+          ),
+        ]);
+        changes.add(0);
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      },
+      verify: (_) async {
+        verifyNever(
+          () => repository.refreshMonitorPluginParams(
+            input: any(named: 'input'),
+            index: any(named: 'index'),
+          ),
+        );
+      },
+    );
+  });
+
   group('MonitorCubit', () {
     test('defaults to no configured inputs (disabled, clean chain)', () {
       final cubit = build();
       expect(cubit.state.inputs, isEmpty);
-      expect(cubit.state.forInput(0).enabled, isFalse);
+      expect(cubit.state.forInput(0).mode, MonitorMode.off);
       expect(cubit.state.forInput(0).outputMask, 0x3);
       expect(cubit.state.forInput(0).volume, 1.0);
       expect(cubit.state.forInput(0).effects, isEmpty);
     });
 
     blocTest<MonitorCubit, MonitorState>(
-      'setEnabled enables an input, applies it, and persists',
+      'setMode opens an input, applies it, and persists',
       build: build,
-      act: (cubit) => cubit.setEnabled(0, enabled: true),
+      act: (cubit) => cubit.setMode(0, MonitorMode.on),
       expect: () => [
         isA<MonitorState>().having(
-          (s) => s.forInput(0).enabled,
-          'enabled',
-          isTrue,
+          (s) => s.forInput(0).mode,
+          'mode',
+          MonitorMode.on,
         ),
       ],
       verify: (_) async {
         verify(
-          () => repository.setMonitorInputEnabled(input: 0, enabled: true),
+          () => repository.setMonitorInputMode(input: 0, mode: MonitorMode.on),
         ).called(1);
-        expect(await settings.loadMonitorInputEnabled(0), isTrue);
+        expect(await settings.loadMonitorInputMode(0), 'on');
       },
     );
 
@@ -125,7 +411,7 @@ void main() {
       'setOutputMask updates, applies, and persists the chain output mask',
       build: build,
       act: (cubit) async {
-        await cubit.setEnabled(1, enabled: true);
+        await cubit.setMode(1, MonitorMode.on);
         await cubit.setOutputMask(1, 0x2);
       },
       verify: (cubit) async {
@@ -141,7 +427,7 @@ void main() {
       'setVolume updates, applies, and persists the gain',
       build: build,
       act: (cubit) async {
-        await cubit.setEnabled(0, enabled: true);
+        await cubit.setMode(0, MonitorMode.on);
         await cubit.setVolume(0, 0.5);
       },
       verify: (cubit) async {
@@ -157,7 +443,7 @@ void main() {
       'setMute mutes the input chain',
       build: build,
       act: (cubit) async {
-        await cubit.setEnabled(0, enabled: true);
+        await cubit.setMode(0, MonitorMode.on);
         await cubit.setMute(0, muted: true);
       },
       verify: (cubit) async {
@@ -173,13 +459,13 @@ void main() {
       'inputs are independent of one another',
       build: build,
       act: (cubit) async {
-        await cubit.setEnabled(0, enabled: true);
-        await cubit.setEnabled(1, enabled: true);
-        await cubit.setEnabled(0, enabled: false);
+        await cubit.setMode(0, MonitorMode.on);
+        await cubit.setMode(1, MonitorMode.on);
+        await cubit.setMode(0, MonitorMode.off);
       },
       verify: (cubit) {
-        expect(cubit.state.forInput(0).enabled, isFalse);
-        expect(cubit.state.forInput(1).enabled, isTrue);
+        expect(cubit.state.forInput(0).mode, MonitorMode.off);
+        expect(cubit.state.forInput(1).mode, MonitorMode.on);
       },
     );
 
@@ -261,7 +547,7 @@ void main() {
     blocTest<MonitorCubit, MonitorState>(
       'load restores single-chain state from the keys, applying it',
       setUp: () async {
-        await settings.saveMonitorInputEnabled(0, enabled: true);
+        await settings.saveMonitorInputMode(0, mode: 'on');
         await settings.saveMonitorOutput(0, 0x2);
         await settings.saveMonitorVolume(0, 0.4);
         await settings.saveMonitorMute(0, muted: true);
@@ -274,7 +560,7 @@ void main() {
       act: (cubit) => cubit.load(),
       verify: (cubit) {
         final monitor = cubit.state.forInput(0);
-        expect(monitor.enabled, isTrue);
+        expect(monitor.mode, MonitorMode.on);
         expect(monitor.outputMask, 0x2);
         expect(monitor.volume, 0.4);
         expect(monitor.muted, isTrue);
@@ -283,7 +569,7 @@ void main() {
           TrackEffectType.delay,
         );
         verify(
-          () => repository.setMonitorInputEnabled(input: 0, enabled: true),
+          () => repository.setMonitorInputMode(input: 0, mode: MonitorMode.on),
         ).called(1);
         verify(
           () => repository.setMonitorOutput(input: 0, mask: 0x2),
@@ -310,7 +596,7 @@ void main() {
           when(repository.allMonitors).thenReturn({
             2: InputMonitor(
               input: 2,
-              enabled: true,
+              mode: MonitorMode.on,
               outputMask: 0x2,
               volume: 0.4,
               muted: true,
@@ -322,7 +608,7 @@ void main() {
         act: (cubit) => cubit.syncFromRepository(),
         verify: (cubit) async {
           final monitor = cubit.state.forInput(2);
-          expect(monitor.enabled, isTrue);
+          expect(monitor.mode, MonitorMode.on);
           expect(monitor.outputMask, 0x2);
           expect(monitor.volume, 0.4);
           expect(monitor.muted, isTrue);
@@ -331,7 +617,7 @@ void main() {
             TrackEffectType.delay,
           );
           // All five fields are persisted, so the next boot restores THIS set.
-          expect(await settings.loadMonitorInputEnabled(2), isTrue);
+          expect(await settings.loadMonitorInputMode(2), 'on');
           expect(await settings.loadMonitorOutput(2), 0x2);
           expect(await settings.loadMonitorVolume(2), 0.4);
           expect(await settings.loadMonitorMute(2), isTrue);
@@ -339,9 +625,9 @@ void main() {
           // The load already applied to the engine; the re-sync only READS the
           // repository — it must never push back, or it could desync the two.
           verifyNever(
-            () => repository.setMonitorInputEnabled(
+            () => repository.setMonitorInputMode(
               input: any(named: 'input'),
-              enabled: any(named: 'enabled'),
+              mode: any(named: 'mode'),
             ),
           );
           verifyNever(
@@ -376,7 +662,7 @@ void main() {
         setUp: () async {
           // A prior session left input 5 configured (enabled + non-default
           // routing / volume / mute) in settings AND cubit state.
-          await settings.saveMonitorInputEnabled(5, enabled: true);
+          await settings.saveMonitorInputMode(5, mode: 'on');
           await settings.saveMonitorOutput(5, 0x2);
           await settings.saveMonitorVolume(5, 0.3);
           await settings.saveMonitorMute(5, muted: true);
@@ -390,14 +676,14 @@ void main() {
         build: build,
         // Seed input 5 into state so it counts as "previously present".
         act: (cubit) async {
-          await cubit.setEnabled(5, enabled: true);
+          await cubit.setMode(5, MonitorMode.on);
           await cubit.syncFromRepository();
         },
         verify: (cubit) async {
           expect(cubit.state.inputs, isEmpty);
           // Every field is reset to the disabled default — no lingering
           // outputMask / volume / mute to resurrect the monitor on next boot.
-          expect(await settings.loadMonitorInputEnabled(5), isFalse);
+          expect(await settings.loadMonitorInputMode(5), 'off');
           expect(await settings.loadMonitorOutput(5), 0x3);
           expect(await settings.loadMonitorVolume(5), 1.0);
           expect(await settings.loadMonitorMute(5), isFalse);
@@ -408,6 +694,108 @@ void main() {
         },
       );
     });
+
+    blocTest<MonitorCubit, MonitorState>(
+      "a restored chain takes the repository's answer, not the saved one",
+      setUp: () async {
+        await settings.saveMonitorEffects(
+          0,
+          encodeFxChain(
+            const FxChainEnvelope(
+              entries: [
+                PluginEffect(
+                  ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+                  slotId: 'slot-gone',
+                ),
+              ],
+            ),
+          ),
+        );
+        // What the repository made of it while applying: the plugin is not
+        // installed any more.
+        when(() => repository.monitorEffects(0)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+            slotId: 'slot-gone',
+            unavailable: true,
+          ),
+        ]);
+      },
+      build: build,
+      act: (cubit) => cubit.load(),
+      verify: (cubit) {
+        // Decoded settings say nothing about whether a plugin LOADED. Left at
+        // the saved answer, the console offers to open the window of a plugin
+        // that is not there and never offers to relink the one that is
+        // missing — on the one stage where hosting actually happens.
+        final entry = cubit.state.forInput(0).effects.single as PluginEffect;
+        expect(entry.unavailable, isTrue);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a chain still loading at boot picks up what the scan resolves',
+      setUp: () async {
+        await settings.saveMonitorEffects(
+          0,
+          encodeFxChain(
+            const FxChainEnvelope(
+              entries: [
+                PluginEffect(
+                  ref: PluginRef(format: PluginFormat.vst3, id: 'late'),
+                  slotId: 'slot-late',
+                ),
+              ],
+            ),
+          ),
+        );
+        // The engine starts before the app with a cold plugin cache, so at
+        // restore time every hosted entry has just failed to load and is
+        // waiting on the repository's own recovery scan.
+        when(() => repository.monitorEffects(0)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'late'),
+            slotId: 'slot-late',
+            loading: true,
+          ),
+        ]);
+      },
+      build: build,
+      act: (cubit) async {
+        await cubit.load();
+        expect(
+          (cubit.state.forInput(0).effects.single as PluginEffect).loading,
+          isTrue,
+        );
+        // The repository re-applies the chains from the SCAN FUTURE, and the
+        // catalog publishes its last progress event before completing that
+        // future — so a read hung straight off the event runs a microtask too
+        // early and sees the chain still loading, with no later event coming.
+        // Modelled here the way the repository does it: a `then` registered
+        // before the cubit's own join.
+        unawaited(
+          catalog.scan().then((_) {
+            when(() => repository.monitorEffects(0)).thenReturn(const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.vst3, id: 'late'),
+                slotId: 'slot-late',
+                name: 'Late',
+              ),
+            ]);
+          }),
+        );
+        await catalog.scan();
+        await pumpEventQueue();
+      },
+      verify: (cubit) {
+        // Nothing tells this cubit that on its own, so a plugin that resolves
+        // perfectly well sat in the console reading "loading…" — no
+        // parameters, no window, no relink — until somebody edited the chain.
+        final entry = cubit.state.forInput(0).effects.single as PluginEffect;
+        expect(entry.loading, isFalse);
+        expect(entry.name, 'Late');
+      },
+    );
 
     group('monitor power controls (D-POWER)', () {
       blocTest<MonitorCubit, MonitorState>(

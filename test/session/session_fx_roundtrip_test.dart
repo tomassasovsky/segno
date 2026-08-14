@@ -6,8 +6,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/session/session_mapping.dart';
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno/session/session_mapping.dart';
+import 'package:segno_engine/segno_engine.dart'
     show FxFingerprint, PumpedNativeEngine;
 import 'package:session_repository/session_repository.dart';
 
@@ -17,12 +17,12 @@ import 'package:session_repository/session_repository.dart';
 /// engine's published chains match the repository cache (fingerprint-verified).
 /// This is acceptance criterion #1 of the FX-state-robustness plan.
 ///
-/// Self-skips when `LOOPY_ENGINE_LIB` is unset:
-///   export LOOPY_ENGINE_LIB="$(bash packages/loopy_engine/tool/build_test_lib.sh)"
+/// Self-skips when `SEGNO_ENGINE_LIB` is unset:
+///   export SEGNO_ENGINE_LIB="$(bash packages/segno_engine/tool/build_test_lib.sh)"
 void main() {
-  final lib = Platform.environment['LOOPY_ENGINE_LIB'];
+  final lib = Platform.environment['SEGNO_ENGINE_LIB'];
   final skip = lib == null || lib.isEmpty
-      ? 'LOOPY_ENGINE_LIB not set — run packages/loopy_engine/tool/build_test_lib.sh'
+      ? 'SEGNO_ENGINE_LIB not set — run packages/segno_engine/tool/build_test_lib.sh'
       : null;
 
   late PumpedNativeEngine engine;
@@ -43,7 +43,7 @@ void main() {
         ),
       );
     session = SessionRepository(engine: engine);
-    tempDir = Directory.systemTemp.createTempSync('loopy_fx_session');
+    tempDir = Directory.systemTemp.createTempSync('segno_fx_session');
     // The pump engine only advances (and drains ring commands) when pumped;
     // a background driver lets the repositories' async clear/settle waits make
     // progress the way a live audio device would.
@@ -93,7 +93,7 @@ void main() {
       // A DRY monitor: enabled + routed, NO FX chain. It carries no entry in
       // the effects map, so it was historically dropped on save (the bug) —
       // assert it survives the round-trip.
-      ..setMonitorInputEnabled(input: 1, enabled: true)
+      ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
       ..setMonitorOutput(input: 1, mask: 0x1);
     engine.pump(frames: 0);
 
@@ -112,7 +112,7 @@ void main() {
     engine.pump(frames: 0);
     expect(looper.laneEffects(0, 0), isEmpty);
     expect(looper.monitorEffects(0), isEmpty);
-    expect(looper.monitorEnabled(1), isFalse); // dry monitor cleared too
+    expect(looper.monitorMode(1), MonitorMode.off); // dry monitor cleared too
 
     // Load the saved bundle back through the one apply path.
     final bundle = await session.read(dir);
@@ -135,7 +135,7 @@ void main() {
     );
     // The dry monitor is restored: enabled + routed, still no FX — the fix for
     // "some inputs stop monitoring after a session change".
-    expect(looper.monitorEnabled(1), isTrue);
+    expect(looper.monitorMode(1), MonitorMode.on);
     expect(looper.monitorOutput(1), 0x1);
     expect(looper.monitorEffects(1), isEmpty);
 
