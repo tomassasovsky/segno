@@ -406,12 +406,15 @@ class _TrackHistoryDots extends StatelessWidget {
       return surface.borderSubtle;
     }
 
-    // On the console the history dots (undo/redo indicators) scale up to match
-    // the larger track name; desktop keeps the compact sizes.
-    const dotSize = kConsoleMode ? 18.0 : 8.0;
-    const rowHeight = kConsoleMode ? 26.0 : 12.0;
-    const gutterSize = kConsoleMode ? 24.0 : 12.0;
-    const gapSize = kConsoleMode ? 8.0 : 4.0;
+    // The console's are the pen's: `STAGE / stage` draws ten 10px dots 5 apart
+    // in a 14-tall strip. They had been scaled up to 18 on the argument that
+    // they should match the larger track name — but they are a history
+    // READOUT, not a control, and at 18 with an 8 gap the row was half again
+    // as wide as the column the pen gives it. Desktop keeps its compact sizes.
+    const dotSize = kConsoleMode ? 10.0 : 8.0;
+    const rowHeight = kConsoleMode ? 14.0 : 12.0;
+    const gutterSize = kConsoleMode ? 14.0 : 12.0;
+    const gapSize = kConsoleMode ? 5.0 : 4.0;
 
     Widget gutter(IconData icon, {required bool visible}) => Visibility(
       visible: visible,
