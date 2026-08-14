@@ -5,10 +5,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/performance/view/performance_completion_sheet.dart';
-import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -62,7 +62,9 @@ void main() {
     );
 
     expect(find.byKey(const Key('perfCompletion_sheet')), findsOneWidget);
-    expect(find.text('perf-1'), findsOneWidget);
+    // The name rides inside the pen's subtitle sentence now, not on a bare
+    // path line.
+    expect(find.textContaining('perf-1'), findsOneWidget);
   });
 
   testWidgets('a Partial result shows the partial-failure message', (
@@ -124,20 +126,14 @@ void main() {
       ),
     );
 
-    final reveal = tester.widget<TextButton>(
+    final reveal = tester.widget<ConsoleSmallButton>(
       find.byKey(const Key('perfCompletion_reveal')),
     );
     expect(find.byKey(const Key('perfCompletion_reveal')), findsOneWidget);
     expect(reveal.onPressed, isNotNull);
     // Portable across host platforms: assert SOME localized label renders
     // rather than pinning the exact macOS/Windows/other string.
-    final labelFinder = find.descendant(
-      of: find.byKey(const Key('perfCompletion_reveal')),
-      matching: find.byType(AppText),
-    );
-    final label = tester.widget<AppText>(labelFinder).data;
-    expect(label, isNotNull);
-    expect(label, isNotEmpty);
+    expect(reveal.label, isNotEmpty);
   });
 
   testWidgets('the rename button opens the rename dialog', (tester) async {
@@ -324,7 +320,7 @@ void main() {
         ),
       );
 
-      final button = tester.widget<TextButton>(
+      final button = tester.widget<ConsoleSmallButton>(
         find.byKey(const Key('perfCompletion_reExport')),
       );
       expect(button.onPressed, isNull);

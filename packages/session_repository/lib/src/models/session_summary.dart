@@ -11,10 +11,19 @@ import 'package:meta/meta.dart';
 @immutable
 class SessionSummary {
   /// Creates a [SessionSummary].
-  const SessionSummary({required this.name});
+  const SessionSummary({required this.name, this.modifiedAt});
 
   /// The session's name — also its folder slug under the sessions root.
   final String name;
+
+  /// When the session's manifest was last written, or null when unknown (a
+  /// stat failure, or a summary built without one). The sessions dialog's
+  /// date column reads this — "today 14:02", "yesterday", "3 Aug".
+  ///
+  /// Deliberately NOT part of [==]/[hashCode]: identity is the name, and a
+  /// list that compared timestamps would report "changed" after every save
+  /// even when the set of sessions did not.
+  final DateTime? modifiedAt;
 
   @override
   bool operator ==(Object other) =>

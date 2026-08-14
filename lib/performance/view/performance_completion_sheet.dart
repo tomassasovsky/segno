@@ -4,21 +4,41 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/common/console_rename_sheet.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/performance/view/export_device_chain_summary.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Shows the [PerformanceCompletionSheet] for the live
-/// [PerformanceRecorderCubit] (read from [context]), handed down through the
-/// sheet route the same way `showSessionsManager` hands `SessionCubit` to
-/// its dialog.
+/// Shows the capture dialog for the live [PerformanceRecorderCubit] (read
+/// from [context]) — the rendering face while the offline render runs, the
+/// completion face once it settles.
+///
+/// A centred dialog, not a bottom sheet: `SESSION & CAPTURE / capture-saved`
+/// draws this as a 744 panel in the console's own `Dialog` idiom, over the
+/// stage. The sheet this replaces rose from the bottom edge in Material's
+/// idiom, which nothing else on the console uses.
 Future<void> showPerformanceCompletionSheet(BuildContext context) async {
+  // One at a time. The listener fires on entering Rendering AND on entering
+  // Completed; when the render outlives the operator's patience they Hide the
+  // first and the second call reopens it, but when the dialog is still up it
+  // simply morphs — a second route on top of it would stack two copies of the
+  // same capture.
+  if (PerformanceCompletionSheet._open) return;
+  // Set here, not in the widget's initState: the route's first build is a
+  // frame away, and a second listener firing inside that gap would stack a
+  // copy. CLEARED by the widget's dispose rather than a `finally` — a torn
+  // down tree (a test, a window close) never completes `showDialog`'s future,
+  // and a finally that never runs would wedge the flag true for the life of
+  // the process.
+  PerformanceCompletionSheet._open = true;
   final cubit = context.read<PerformanceRecorderCubit>();
-  await showModalBottomSheet<void>(
+  await showDialog<void>(
     context: context,
-    isScrollControlled: true,
+    barrierColor: context.surface.scrim,
     builder: (_) => BlocProvider<PerformanceRecorderCubit>.value(
       value: cubit,
       child: const PerformanceCompletionSheet(),
@@ -26,14 +46,36 @@ Future<void> showPerformanceCompletionSheet(BuildContext context) async {
   );
 }
 
-/// A finished capture's outcome (done / partial / stopped-early) plus
-/// platform-aware reveal and rename actions. Watches
-/// [PerformanceRecorderCubit] directly (rather than taking the result as a
-/// constructor param) so a rename mid-sheet updates the displayed path
-/// immediately.
-class PerformanceCompletionSheet extends StatelessWidget {
+/// A capture's outcome, drawn to `SESSION & CAPTURE / capture-saved` and its
+/// state variants: the title and where it went, a banner when something went
+/// wrong on the way (stopped early / dropped frames / partial render), the
+/// per-track EXPORT card, and the action row.
+///
+/// Watches [PerformanceRecorderCubit] directly (rather than taking the result
+/// as a constructor param) so a rename mid-dialog updates the displayed name
+/// immediately — and so the `capture-rendering` face morphs into
+/// `capture-saved` in place when the render lands, exactly the transition the
+/// pen draws as two frames of one dialog.
+class PerformanceCompletionSheet extends StatefulWidget {
   /// Creates a [PerformanceCompletionSheet].
   const PerformanceCompletionSheet({super.key});
+
+  /// Whether the dialog route is currently up — see
+  /// [showPerformanceCompletionSheet]'s double-open refusal.
+  static bool _open = false;
+
+  @override
+  State<PerformanceCompletionSheet> createState() =>
+      _PerformanceCompletionSheetState();
+}
+
+class _PerformanceCompletionSheetState
+    extends State<PerformanceCompletionSheet> {
+  @override
+  void dispose() {
+    PerformanceCompletionSheet._open = false;
+    super.dispose();
+  }
 
   static String _basename(String path) =>
       path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;
@@ -44,21 +86,46 @@ class PerformanceCompletionSheet extends StatelessWidget {
     return l10n.perfRevealOther;
   }
 
+  /// `2:14` for the pen's subtitle — minutes unpadded, seconds padded.
+  static String _mmss(Duration d) {
+    final m = d.inMinutes;
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
   Future<void> _reveal(String path) => launchUrl(Uri.directory(path));
 
   Future<void> _rename(BuildContext context, String path) async {
     final cubit = context.read<PerformanceRecorderCubit>();
     final l10n = context.l10n;
-    final to = await showDialog<String>(
-      context: context,
-      builder: (_) => _RenameCaptureDialog(initial: _basename(path)),
-    );
+    // The console has no physical keyboard, so its rename is the full-width
+    // sheet with the on-screen keys — the same surface every other rename on
+    // the appliance uses. The desktop keeps the compact dialog its hardware
+    // keyboard is already pointed at (#668).
+    final to = kConsoleMode
+        ? await showConsoleRenameSheet(
+            context,
+            title: l10n.perfRenameTitle,
+            subtitle: _basename(path),
+            current: _basename(path),
+            fieldLabel: l10n.perfRenameTitle,
+          )
+        : await showDialog<String>(
+            context: context,
+            builder: (_) => _RenameCaptureDialog(initial: _basename(path)),
+          );
     if (to == null) return;
-    // Only the collision is catchable here: `_RenameCaptureDialogState._submit`
-    // pre-validates with the same `performanceCaptureSlug` the repository
-    // itself folds `to` through, so the other failure mode
-    // (`renameCapture`'s `ArgumentError` for a name that folds to nothing) is
-    // structurally unreachable from this call site.
+    // The desktop dialog pre-validates inline; the console sheet has no
+    // validator hook, so the same `performanceCaptureSlug` check runs here —
+    // BEFORE the cubit call, because `renameCapture` rejects an unfoldable
+    // name with an `ArgumentError`, which is not for catching.
+    if (performanceCaptureSlug(to) == null) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: AppText(l10n.perfRenameInvalid)));
+      return;
+    }
     try {
       await cubit.renameCompletedCapture(to);
     } on PerformanceNameCollision catch (e) {
@@ -74,6 +141,13 @@ class PerformanceCompletionSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<PerformanceRecorderCubit>().state;
+    // The rendering face: percent in the title, Hide as the only action.
+    // Hiding is safe — the render carries on, the completion listener reopens
+    // this dialog when it lands, and arming again is refused by the cubit
+    // until then (`c/capture-rendering`).
+    if (state is PerformanceRecorderRendering) {
+      return _RenderingDialog(state: state);
+    }
     if (state is! PerformanceRecorderCompleted || state.result == null) {
       return const SizedBox.shrink();
     }
@@ -84,93 +158,180 @@ class PerformanceCompletionSheet extends StatelessWidget {
       PerformanceRecordStoppedEarly(:final path) => path,
     };
     final l10n = context.l10n;
-    final theme = Theme.of(context);
-    final message = switch (result) {
-      PerformanceRecordDone() => null,
-      PerformanceRecordPartial() => l10n.perfPartial,
-      PerformanceRecordStoppedEarly(:final reason) => switch (reason) {
-        PerformanceStopReason.diskFull => l10n.perfStoppedDiskFull,
-        PerformanceStopReason.deviceChanged => l10n.perfStoppedDeviceChange,
-      },
+    final surface = context.surface;
+    final name = _basename(path);
+    final subtitle = state.duration == null || state.tracks.isEmpty
+        ? l10n.perfSavedSubtitlePlain(name)
+        : l10n.perfSavedSubtitle(
+            name,
+            state.tracks.length,
+            _mmss(state.duration!),
+          );
+    // What went wrong on the way, if anything — the pen draws each as a
+    // banner between the subtitle and the EXPORT card. Stopped-early outranks
+    // a glitch: a capture that ended early with dropped frames has the
+    // earlier, larger problem first.
+    final (banner, tone) = switch (result) {
+      PerformanceRecordStoppedEarly(:final reason) => (
+        switch (reason) {
+          PerformanceStopReason.diskFull => l10n.perfStoppedDiskFull,
+          PerformanceStopReason.deviceChanged => l10n.perfStoppedDeviceChange,
+        },
+        ConsoleBannerTone.failure,
+      ),
+      PerformanceRecordPartial() => (
+        l10n.perfPartial,
+        ConsoleBannerTone.failure,
+      ),
+      PerformanceRecordDone() when state.hadGlitch => (
+        l10n.perfCaptureGlitch,
+        ConsoleBannerTone.pending,
+      ),
+      PerformanceRecordDone() => (null, ConsoleBannerTone.steady),
     };
 
-    return SafeArea(
-      child: Padding(
-        key: const Key('perfCompletion_sheet'),
-        padding: const EdgeInsets.all(20),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return ConsoleDialogShell(
+      key: const Key('perfCompletion_sheet'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _DialogTitle(l10n.perfDone),
+          const SizedBox(height: 10),
+          AppText(
+            subtitle,
+            key: const Key('perfCompletion_subtitle'),
+            style: TextStyle(
+              color: surface.textSecondary,
+              fontSize: 16,
+              height: 1.25,
+              leadingDistribution: TextLeadingDistribution.even,
+            ),
+          ),
+          if (banner != null) ...[
+            const SizedBox(height: 14),
+            ConsoleBanner(
+              key: const Key('perfCompletion_banner'),
+              message: banner,
+              tone: tone,
+            ),
+          ],
+          if (state.reExportFailed) ...[
+            const SizedBox(height: 14),
+            ConsoleBanner(
+              key: const Key('perfCompletion_reExportFailed'),
+              message: l10n.perfExportReExportFailed,
+              tone: ConsoleBannerTone.failure,
+            ),
+          ],
+          if (state.tracks.isNotEmpty) ...[
+            const SizedBox(height: 19),
+            ExportDeviceChainSummary(tracks: state.tracks),
+          ],
+          const SizedBox(height: 19),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            spacing: 10,
             children: [
-              AppText(l10n.perfDone, style: theme.textTheme.titleMedium),
-              if (message != null) ...[
-                const SizedBox(height: 8),
-                AppText(message),
-              ],
-              const SizedBox(height: 4),
-              AppText(_basename(path), style: theme.textTheme.bodySmall),
-              if (state.tracks.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                ExportDeviceChainSummary(tracks: state.tracks),
-              ],
-              if (state.reExportFailed) ...[
-                const SizedBox(height: 8),
-                AppText(
-                  l10n.perfExportReExportFailed,
-                  style: TextStyle(color: theme.colorScheme.error),
-                ),
-              ],
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  key: const Key('perfCompletion_reExport'),
-                  onPressed: state.isReExporting
-                      ? null
-                      : () => unawaited(
-                          context.read<PerformanceRecorderCubit>().reExport(),
-                        ),
-                  icon: state.isReExporting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.refresh),
-                  label: AppText(l10n.perfExportReExport),
-                ),
+              ConsoleSmallButton(
+                key: const Key('perfCompletion_reveal'),
+                label: _revealLabel(l10n),
+                onPressed: () => unawaited(_reveal(path)),
               ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  TextButton.icon(
-                    key: const Key('perfCompletion_reveal'),
-                    onPressed: () => unawaited(_reveal(path)),
-                    icon: const Icon(Icons.folder_open),
-                    label: AppText(_revealLabel(l10n)),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    key: const Key('perfCompletion_rename'),
-                    onPressed: () => unawaited(_rename(context, path)),
-                    icon: const Icon(Icons.drive_file_rename_outline),
-                    label: AppText(l10n.perfRenameButton),
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    key: const Key('perfCompletion_close'),
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: AppText(l10n.done),
-                  ),
-                ],
+              ConsoleSmallButton(
+                key: const Key('perfCompletion_reExport'),
+                label: l10n.perfExportReExport,
+                onPressed: state.isReExporting
+                    ? null
+                    : () => unawaited(
+                        context.read<PerformanceRecorderCubit>().reExport(),
+                      ),
+              ),
+              ConsoleSmallButton(
+                key: const Key('perfCompletion_rename'),
+                label: l10n.perfRenameButton,
+                onPressed: () => unawaited(_rename(context, path)),
+              ),
+              ConsoleDialogButton(
+                key: const Key('perfCompletion_close'),
+                label: l10n.done,
+                tone: ConsoleDialogTone.accent,
+                onPressed: () => Navigator.of(context).pop(),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
   }
+}
+
+/// `SESSION & CAPTURE / capture-rendering`: the percent, what is being
+/// written, and Hide.
+class _RenderingDialog extends StatelessWidget {
+  const _RenderingDialog({required this.state});
+
+  final PerformanceRecorderRendering state;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final name = state.name;
+    return ConsoleDialogShell(
+      key: const Key('perfRendering_dialog'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _DialogTitle(l10n.perfRenderingTitle(state.percent)),
+          const SizedBox(height: 10),
+          AppText(
+            name == null
+                ? l10n.perfRenderingSubtitle
+                : l10n.perfRenderingSubtitleNamed(name),
+            style: TextStyle(
+              color: surface.textSecondary,
+              fontSize: 16,
+              height: 1.25,
+              leadingDistribution: TextLeadingDistribution.even,
+            ),
+          ),
+          const SizedBox(height: 19),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              ConsoleDialogButton(
+                key: const Key('perfRendering_hide'),
+                label: l10n.perfHide,
+                tone: ConsoleDialogTone.accent,
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The 19/650 dialog title both faces share.
+class _DialogTitle extends StatelessWidget {
+  const _DialogTitle(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => AppText(
+    text,
+    style: TextStyle(
+      color: context.surface.textPrimary,
+      fontSize: 19,
+      height: 1.15,
+      fontWeight: FontWeight.w600,
+      leadingDistribution: TextLeadingDistribution.even,
+    ),
+  );
 }
 
 class _RenameCaptureDialog extends StatefulWidget {
