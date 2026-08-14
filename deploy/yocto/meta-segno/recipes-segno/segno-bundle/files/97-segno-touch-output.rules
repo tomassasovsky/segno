@@ -1,19 +1,30 @@
-# Bind the touchscreen to the main-UI output.
+# Bind each touchscreen to the output its panel lives on.
 #
-# The console is a two-output unit: the main UI on HDMI-A-1 and the 7" waveform
-# on HDMI-A-2 (the same split weston.ini and deploy/rpi/pin-displays.sh use).
-# Weston has to associate a touchscreen with one output; with no hint it picks a
-# default, so on a two-panel unit the taps can be scaled into the wrong output's
-# coordinate space — which looks exactly like the touchscreen being dead on the
-# main panel rather than like a mapping bug.
+# The console is a two-output unit: the main UI on HDMI-A-1 (TV / main panel —
+# no touch today) and the 7" waveform/readout panel on HDMI-A-2. The 7" is the
+# only touchscreen on the current rig, and its controller is a wch.cn
+# "USB2IIC_CTP_CONTROL" (USB 1a86:e5e3, verified on the bench unit). Weston has
+# to associate a touchscreen with one output; with no hint it picks a default,
+# so taps get scaled into the wrong output's coordinate space — which looks
+# exactly like the touchscreen being dead rather than like a mapping bug.
+#
+# The match is per-device (VID/PID on the input device's USB ancestor), not the
+# generic ID_INPUT_TOUCHSCREEN class: the final rig adds a second touchscreen
+# (the 15.6" main panel) that must NOT inherit the 7"'s HDMI-A-2 binding.
 #
 # WL_OUTPUT is the udev property weston reads for that association. It names a
-# DRM connector, so it must match the [output] name in weston.ini. Change it here
-# if a unit is wired with the main panel on the other connector.
+# DRM connector, so it must match the [output] name in weston.ini. Change it
+# here if a unit is wired with the 7" on the other connector.
 #
 # The calibration matrix is deliberately NOT here: it is runtime state, lives on
 # /data, and is written into 98-segno-touch-calibration.rules by segno-touch-ctl.
 #
-# See https://github.com/tomassasovsky/segno/issues/659
+# See https://github.com/tomassasovsky/segno/issues/659 and
+# https://github.com/tomassasovsky/segno/issues/689
 ACTION=="add|change", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}=="1", \
-  ENV{WL_OUTPUT}="HDMI-A-1"
+  ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="e5e3", ENV{WL_OUTPUT}="HDMI-A-2"
+
+# Template for the future 15.6" main-panel touchscreen (controller VID/PID
+# unknown until the panel is on the bench) — it binds to the main output:
+# ACTION=="add|change", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}=="1", \
+#   ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", ENV{WL_OUTPUT}="HDMI-A-1"

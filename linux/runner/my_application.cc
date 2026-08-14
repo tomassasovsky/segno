@@ -12,9 +12,75 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  // Set once the main window has been added; every window added after it is a
+  // desktop_multi_window sub-window (the waveform window).
+  gboolean main_window_added;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
+
+// --- Wayland app-ids ---------------------------------------------------------
+// GTK3's Wayland backend derives every xdg_toplevel's app_id from
+// g_get_prgname() when the toplevel is created — which happens at *map* time,
+// not realize (gdk_wayland_window_create_xdg_toplevel in gtk-3-24
+// gdk/wayland/gdkwindow-wayland.c). With the single prgname set in
+// my_application_new() both windows would share one app_id, and weston's
+// kiosk-shell — which places surfaces per output by app_id
+// (`[output] app-ids=` in deploy/yocto's weston.ini) — could not tell the
+// waveform window apart from the main UI: both landed on the first output and
+// the 7" stayed black (issue #689).
+//
+// The fix is a scoped prgname swap: from the moment a sub-window is added to
+// the GtkApplication (window-added fires synchronously inside
+// gtk_application_window_new, before the desktop_multi_window plugin realizes
+// or shows it) until it is mapped, prgname is the waveform id, so the map-time
+// app_id derivation reads it; the sub-window's own "map" handler (which GTK
+// runs *after* the class handler that created the xdg_toplevel) restores it.
+// A "hide" re-arms the waveform id, because GTK destroys the xdg_toplevel on
+// unmap and re-creates it — re-reading prgname — on the next map. This is
+// plain GTK3 and works on any 3.24 (the per-window
+// gdk_wayland_window_set_application_id() API only exists since 3.24.22 and
+// only applies to an already-created toplevel, i.e. too late for placement).
+//
+// The app-ids, which deploy/yocto/.../weston-init/files/weston.ini must match:
+//   main window:     APPLICATION_ID              ("dev.aquiles.segno")
+//   waveform window: APPLICATION_ID ".waveform"  ("dev.aquiles.segno.waveform")
+#define WAVEFORM_APPLICATION_ID APPLICATION_ID ".waveform"
+
+// The sub-window just mapped: its xdg_toplevel now exists and carries
+// WAVEFORM_APPLICATION_ID. Restore prgname so any toplevel the *main* window
+// spawns later (dialogs) keeps the application's own id.
+static void sub_window_map_cb(GtkWidget* widget, gpointer user_data) {
+  g_set_prgname(APPLICATION_ID);
+}
+
+// The sub-window was hidden: its next map re-creates the xdg_toplevel from
+// prgname, so arm the waveform id again.
+static void sub_window_hide_cb(GtkWidget* widget, gpointer user_data) {
+  g_set_prgname(WAVEFORM_APPLICATION_ID);
+}
+
+// Implements GtkApplication::window_added.
+static void my_application_window_added(GtkApplication* application,
+                                        GtkWindow* window) {
+  GTK_APPLICATION_CLASS(my_application_parent_class)
+      ->window_added(application, window);
+
+  MyApplication* self = MY_APPLICATION(application);
+  if (!self->main_window_added) {
+    // The first window is the main window created in activate; it keeps
+    // APPLICATION_ID.
+    self->main_window_added = TRUE;
+    return;
+  }
+
+  // A desktop_multi_window sub-window — the waveform window. It is created
+  // hidden (hiddenAtLaunch) and mapped later on `window_show`, so prgname must
+  // hold the waveform id from now until that map.
+  g_set_prgname(WAVEFORM_APPLICATION_ID);
+  g_signal_connect(window, "map", G_CALLBACK(sub_window_map_cb), nullptr);
+  g_signal_connect(window, "hide", G_CALLBACK(sub_window_hide_cb), nullptr);
+}
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
@@ -138,6 +204,7 @@ static void my_application_dispose(GObject* object) {
 }
 
 static void my_application_class_init(MyApplicationClass* klass) {
+  GTK_APPLICATION_CLASS(klass)->window_added = my_application_window_added;
   G_APPLICATION_CLASS(klass)->activate = my_application_activate;
   G_APPLICATION_CLASS(klass)->local_command_line =
       my_application_local_command_line;
