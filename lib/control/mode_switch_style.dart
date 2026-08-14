@@ -13,8 +13,10 @@ enum ModeSwitchStyle {
 
   /// A tap cycles Record ↔ Mute only; a MODE hold enters FX, and a second
   /// hold (or a tap) returns to the mode FX was entered from. The MODE hold
-  /// is re-purposed as the FX door, so performance recording keeps only its
-  /// other surfaces (the toolbar and the keyboard's `A`).
+  /// is re-purposed as the FX door, and the recording hold moves to BANK
+  /// (#677): a BANK hold arms/disarms performance recording, a BANK tap
+  /// still toggles the bank — so the foot keeps a path to the arm alongside
+  /// the toolbar and the keyboard's `A`.
   holdFx;
 
   /// The persisted token for this style. Derived from the member name, so a

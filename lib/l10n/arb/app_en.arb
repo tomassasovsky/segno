@@ -2324,9 +2324,9 @@
     "@controlFxHoldRow": {
         "description": "Row that switches the Mode footswitch to a Record/Mute tap cycle with FX behind a hold."
     },
-    "controlFxHoldSub": "The pedal's Mode switch only: a press cycles Record and Mute; holding enters and leaves FX. Off, a press cycles all three modes and holding arms performance recording.",
+    "controlFxHoldSub": "Pedal only: a Mode press cycles Record and Mute, holding Mode enters and leaves FX, and holding Bank arms performance recording. Off, a Mode press cycles all three modes and holding Mode arms recording.",
     "@controlFxHoldSub": {
-        "description": "One-liner under the Hold-for-FX row: scoped to the pedal alone (keyboard and on-screen controls keep the three-way cycle either way), what the hold gains, and what it stops doing."
+        "description": "One-liner under the Hold-for-FX row: scoped to the pedal alone (keyboard and on-screen controls keep the three-way cycle either way), what the Mode hold gains, and where the recording hold moves (the Bank switch, #677)."
     },
     "midiDeviceGroup": "MIDI FOOT CONTROLLER",
     "@midiDeviceGroup": {
