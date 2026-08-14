@@ -3608,7 +3608,8 @@ static inline void mix_tracks_frame(
     int32_t trk_fx_enabled[][LE_FX_MAX],
     const le_wet_entry* cache_ent[][LE_MAX_LANES],
     float lane_sumsq[][LE_MAX_LANES], float lane_peak[][LE_MAX_LANES],
-    int32_t* st, float* frame_trk_peak, uint64_t perf_frame_base) {
+    int32_t* st, float* frame_trk_peak, float* trk_sumsq, float* trk_peak,
+    uint64_t perf_frame_base) {
   /* Snapshot per-lane playback state once per frame. The track state can flip
    * only between blocks; re-reading per frame is cheap and keeps undo's
    * control-thread a_live swap visible at frame granularity. */
@@ -3766,6 +3767,9 @@ static inline void mix_tracks_frame(
     float bus_l = 0.0f;
     float bus_r = 0.0f;
     uint32_t bus_mask = 0u;
+    /* This track's lanes summed for THIS frame -- folded into the block
+     * accumulators after the lane loop (#655). */
+    float trk_mix = 0.0f;
 
     for (int l = 0; l < lane_n[t]; ++l) {
       /* Clean single-input capture: a lane records exactly its assigned hardware
@@ -3901,6 +3905,21 @@ static inline void mix_tracks_frame(
       if (la > lane_peak[t][l]) lane_peak[t][l] = la;
       if (la > frame_trk_peak[t]) frame_trk_peak[t] = la;
       lane_sumsq[t][l] += loopsample * loopsample;
+      /* The track's own level is the SUM of its lanes, not lane 0's (#655).
+       * frame_trk_peak above is a max, which the visualizer wants; a meter
+       * wants what the lanes add up to, because that is what a listener
+       * hears when several layers play together.
+       *
+       * Sums the same dry `loopsample` the per-lane meters read, rather than
+       * the audible/routed value: that keeps this a pure "all lanes instead
+       * of lane 0" fix and does not quietly introduce a new mute semantic
+       * that nobody asked for. */
+      trk_mix += loopsample;
+    }
+    {
+      const float ma = fabsf(trk_mix);
+      if (ma > trk_peak[t]) trk_peak[t] = ma;
+      trk_sumsq[t] += trk_mix * trk_mix;
     }
 
     /* Track-stage chain (D-TRACKROUTE): runs ONCE per track per frame,
@@ -4024,6 +4043,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   /* Per-lane metering accumulators (each track's snapshot mirrors lane 0). */
   float lane_sumsq[LE_MAX_TRACKS][LE_MAX_LANES] = {{0}};
   float lane_peak[LE_MAX_TRACKS][LE_MAX_LANES] = {{0}};
+  /* The TRACK's own level: its lanes summed per frame, then accumulated over
+   * the block the same way the per-lane figures are (#655). */
+  float trk_sumsq[LE_MAX_TRACKS] = {0};
+  float trk_peak[LE_MAX_TRACKS] = {0};
 
   /* Active lane count per track (control-thread plain int; clamped once). */
   int32_t lane_n[LE_MAX_TRACKS];
@@ -4135,7 +4158,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                      lane_n, has_fx, fx_count, fx_type, fx_params, fx_enabled,
                      trk_has_fx, trk_fx_count, trk_fx_type, trk_fx_params,
                      trk_fx_enabled, cache_ent, lane_sumsq, lane_peak, st,
-                     frame_trk_peak, perf_frame_base);
+                     frame_trk_peak, trk_sumsq, trk_peak, perf_frame_base);
 
     /* Master insert (part 1b, D-MASTER): colors the track mix only — BEFORE
      * the monitors sum in below, and before master gain/limiter. Empty chain
@@ -4208,6 +4231,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       store_f32(&ln->a_peak_bits, lane_peak[t][l]);
       if (recording) store_i32(&ln->a_len, rp > 0 ? rp : 0);
     }
+    store_f32(&e->tracks[t].a_trk_rms_bits,
+              frames ? sqrtf(trk_sumsq[t] / (float)frames) : 0.0f);
+    store_f32(&e->tracks[t].a_trk_peak_bits, trk_peak[t]);
   }
   store_i32(&e->a_master_pos, e->clock.position);
   atomic_fetch_add_explicit(&e->a_frames, (uint64_t)frames,
