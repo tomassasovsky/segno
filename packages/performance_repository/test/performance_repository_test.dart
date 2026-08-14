@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -9,6 +10,42 @@ import 'package:wav_codec/wav_codec.dart';
 
 import 'helpers/fake_performance_engine.dart';
 import 'helpers/native_capture_fixture.dart';
+
+/// A [File] whose [readAsString] parks on [_gate] before delegating — an
+/// `IOOverrides` hook that holds a finalize provably mid-flight so a test
+/// can interleave a second finalize underneath it deterministically. Only
+/// the members the finalize path touches on the manifest file are
+/// implemented; anything else is a test bug and throws.
+class _GatedReadFile implements File {
+  _GatedReadFile(this._inner, this._gate);
+
+  final File _inner;
+  final Future<void> _gate;
+
+  @override
+  Future<String> readAsString({Encoding encoding = utf8}) async {
+    await _gate;
+    return _inner.readAsString(encoding: encoding);
+  }
+
+  @override
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) => _inner.writeAsString(
+    contents,
+    mode: mode,
+    encoding: encoding,
+    flush: flush,
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
+    'not reached by _finalize on the manifest file: $invocation',
+  );
+}
 
 void main() {
   late Directory tempDir;
@@ -345,6 +382,200 @@ void main() {
         PerformanceCaptureStatus.armed,
       ]);
     });
+
+    test(
+      'is refused while an offline render is in flight, and works again '
+      'once it completes (#671)',
+      () async {
+        engine.renderProgress = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 40,
+        );
+
+        final result = await repo.arm();
+
+        // The refusal is a silent no-op success — the same shape as the
+        // already-armed path and disarm's guard window; the observable is
+        // the state that never changed, not the return value.
+        expect(result, EngineResult.ok);
+        expect(repo.armedDirectory, isNull);
+        expect(engine.perfArmCalls, 0);
+        expect(Directory('${tempDir.path}/exports').existsSync(), isFalse);
+
+        engine.renderProgress = PerformanceRenderProgress.empty;
+        await repo.arm();
+        expect(repo.armedDirectory, isNotNull);
+        expect(engine.perfArmed, isTrue);
+      },
+    );
+
+    test(
+      'is refused while a boot-salvage finalize (recoverCapture) is in '
+      'flight — the window where no armed directory exists to no-op on '
+      '(#671)',
+      () async {
+        final dir = '${tempDir.path}/exports/perf-crashed';
+        Directory(dir).createSync(recursive: true);
+        writeNativeSidecar(dir);
+        writeRawPcm('$dir/master.pcm', Float32List.fromList([0.1, 0.2]));
+
+        final recovery = repo.recoverCapture(dir);
+        final result = await repo.arm();
+
+        expect(result, EngineResult.ok);
+        expect(repo.armedDirectory, isNull);
+        expect(engine.perfArmCalls, 0);
+
+        await recovery;
+        await repo.arm();
+        expect(repo.armedDirectory, isNotNull);
+      },
+    );
+
+    test(
+      'is still refused when the salvage starts only after arm has already '
+      'passed its entry gate — the gate is re-checked after arm suspends '
+      'across its awaits (#671)',
+      () async {
+        final crashed = '${tempDir.path}/exports/perf-crashed';
+        Directory(crashed).createSync(recursive: true);
+        writeNativeSidecar(crashed);
+        writeRawPcm('$crashed/master.pcm', Float32List.fromList([0.1, 0.2]));
+
+        // The salvage's finalize hands straight over to its render (exactly
+        // the production handover), so the refusal window stays covered at
+        // arm's re-check no matter which async chain the event loop finishes
+        // first.
+        engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 10,
+        );
+
+        // Park arm on its very first await (the exports-root lookup) so the
+        // salvage provably enters the window AFTER arm's entry gate passed.
+        final rootGate = Completer<String>();
+        final gatedRepo = PerformanceRepository(
+          engine: engine,
+          exportsRoot: () => rootGate.future,
+          now: () => clock,
+        );
+        addTearDown(gatedRepo.dispose);
+
+        final statuses = <PerformanceCaptureStatus>[];
+        final sub = gatedRepo.captureStatus.listen(statuses.add);
+
+        final arming = gatedRepo.arm(); // entry gate passes, parks on root
+        final recovery = gatedRepo.recoverCapture(crashed); // enters window
+        rootGate.complete('${tempDir.path}/exports');
+
+        final result = await arming;
+        expect(result, EngineResult.ok, reason: 'same silent-ok shape');
+        expect(gatedRepo.armedDirectory, isNull);
+        expect(engine.perfArmCalls, 0);
+
+        await recovery;
+        await pumpEventQueue();
+        unawaited(sub.cancel());
+        expect(
+          statuses,
+          everyElement(isNot(PerformanceCaptureStatus.armed)),
+          reason: 'the resumed arm must not clobber the in-flight salvage',
+        );
+      },
+    );
+
+    test(
+      'a second arm overlapping one still in flight is refused, and never '
+      "deletes the winning arm's live capture directory (#671)",
+      () async {
+        // Park arm1 on its first await (the exports-root lookup) so arm2
+        // provably overlaps it: without the in-flight gate both would pass
+        // the entry gate, resolve the SAME slug (the collision loop is
+        // synchronous, the create is not), and the loser's re-check cleanup
+        // would delete the winner's just-armed directory out from under the
+        // engine's drain thread.
+        final rootGate = Completer<String>();
+        final gatedRepo = PerformanceRepository(
+          engine: engine,
+          exportsRoot: () => rootGate.future,
+          now: () => clock,
+        );
+        addTearDown(gatedRepo.dispose);
+
+        final arm1 = gatedRepo.arm(); // entry gate passes, parks on root
+        final arm2 = gatedRepo.arm(); // overlaps arm1's suspended window
+        rootGate.complete('${tempDir.path}/exports');
+
+        expect(await arm1, EngineResult.ok);
+        expect(await arm2, EngineResult.ok, reason: 'same silent-ok shape');
+
+        expect(gatedRepo.armedDirectory, isNotNull);
+        expect(
+          Directory(gatedRepo.armedDirectory!).existsSync(),
+          isTrue,
+          reason:
+              "the overlapping arm must not delete the winner's live "
+              'capture directory',
+        );
+        expect(engine.perfArmCalls, 1);
+        expect(engine.perfArmed, isTrue);
+      },
+    );
+
+    test(
+      'stays refused while a parked salvage finalize outlives a second '
+      'finalize that finishes first — the in-flight gate counts overlapping '
+      'finalizes instead of resetting on the first finisher (#671)',
+      () async {
+        // dirA: the salvage target, parked mid-finalize on a gated manifest
+        // read (an IOOverrides fs hook — no production seam needed).
+        final dirA = '${tempDir.path}/exports/perf-crashed';
+        Directory(dirA).createSync(recursive: true);
+        writeNativeSidecar(dirA);
+        writeRawPcm('$dirA/master.pcm', Float32List.fromList([0.1, 0.2]));
+
+        // dirB: armed live, then disarmed with NO sidecar on disk — the
+        // documented early-return finalize, the fastest possible finisher.
+        await repo.arm();
+        clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+
+        final readGate = Completer<void>();
+        final testZone = Zone.current;
+        final salvage = IOOverrides.runZoned(
+          () => repo.recoverCapture(dirA),
+          createFile: (path) {
+            // Real files must be constructed outside the override zone, or
+            // the File() factory would re-enter this callback forever.
+            final real = testZone.run(() => File(path));
+            return path == '$dirA/${PerformanceRepository.manifestName}'
+                ? _GatedReadFile(real, readGate.future)
+                : real;
+          },
+        );
+
+        // The salvage is now provably parked mid-flight; dirB's finalize
+        // starts AND completes underneath it.
+        expect(await repo.disarm(), EngineResult.ok);
+        expect(repo.armedDirectory, isNull);
+
+        final result = await repo.arm();
+        expect(result, EngineResult.ok, reason: 'same silent-ok shape');
+        expect(
+          repo.armedDirectory,
+          isNull,
+          reason:
+              "dirB's completed finalize must not reopen arm's gate while "
+              "dirA's salvage is still mid-flight",
+        );
+        expect(engine.perfArmCalls, 1);
+
+        readGate.complete();
+        await salvage;
+        await repo.arm();
+        expect(repo.armedDirectory, isNotNull);
+        expect(engine.perfArmCalls, 2);
+      },
+    );
   });
 
   group('disarm', () {

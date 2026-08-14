@@ -262,7 +262,13 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
 
   /// Arms or disarms depending on the current state; a no-op while
   /// finalizing/rendering (no queue) or while a boot-recovery prompt is
-  /// still unresolved. A settled [PerformanceRecorderCompleted] (delivered or
+  /// still unresolved. The finalizing/rendering refusal is enforced
+  /// authoritatively by [PerformanceRepository.arm] itself (#671) — that gate
+  /// also covers the pedal's MODE long-press, which never passes through this
+  /// cubit — but the case here is not redundant: falling through to the arm
+  /// branch would run the free-space probe and could emit a `lowDiskBlocked`
+  /// idle state over the on-screen render progress, so refusing before it is
+  /// UX-load-bearing. A settled [PerformanceRecorderCompleted] (delivered or
   /// auto-discarded-short alike) arms a fresh capture exactly like
   /// [PerformanceRecorderIdle] does — [PerformanceRepository.arm] has no
   /// precondition beyond not already being armed, so there is no need to

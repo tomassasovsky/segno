@@ -363,17 +363,21 @@ void main() {
     );
 
     test('is refused (a no-op) while finalizing/rendering', () async {
-      // A render that never finishes on its own, so the cubit is
-      // deterministically caught mid-Rendering rather than racing a real
-      // disarm+render pipeline that might settle before the assertions run.
-      engine.renderProgress = const PerformanceRenderProgress(
-        done: false,
-        progressPercent: 50,
-      );
       final cubit = build();
       addTearDown(cubit.close);
       await cubit.toggleArm();
       await pumpEventQueue();
+
+      // A render that never finishes on its own, so the cubit is
+      // deterministically caught mid-Rendering rather than racing a real
+      // disarm+render pipeline that might settle before the assertions run.
+      // Installed only after the arm above: the repository's own gate (#671)
+      // now refuses arm while a render is in flight, so setting this first
+      // would refuse the very arm the test needs.
+      engine.renderProgress = const PerformanceRenderProgress(
+        done: false,
+        progressPercent: 50,
+      );
 
       // Kick off a disarm directly on the repository so the cubit is driven
       // into finalizing/rendering without going through toggleArm's own
@@ -387,6 +391,46 @@ void main() {
       await cubit.toggleArm(); // refused: not idle
       expect(engine.perfArmCalls, 1, reason: 'no second arm went through');
     });
+
+    test(
+      'a pedal-path repository arm mid-render is refused too, and the '
+      'Rendering state is not yanked (#671)',
+      () async {
+        final cubit = build();
+        addTearDown(cubit.close);
+        await armWithLog(performance);
+        await pumpEventQueue();
+        // Never-finishing render, installed after the arm above so the gate
+        // under test doesn't refuse the setup itself.
+        engine.renderProgress = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 30,
+        );
+        clock = clock.add(const Duration(seconds: 5));
+        unawaited(performance.disarmAndFinalize());
+        await cubit.stream
+            .firstWhere((s) => s is PerformanceRecorderRendering)
+            .timeout(const Duration(seconds: 5));
+
+        // The pedal's MODE long-press calls the repository directly,
+        // bypassing toggleArm — the repository's own gate must refuse it, or
+        // the armed status would clobber the render flow out from under the
+        // cubit (and its result dialog).
+        await performance.arm();
+        await pumpEventQueue();
+
+        expect(performance.armedDirectory, isNull);
+        expect(engine.perfArmCalls, 1, reason: 'only the initial arm');
+        expect(cubit.state, isA<PerformanceRecorderRendering>());
+
+        // Once the render completes the gate lifts and the pedal can arm a
+        // fresh capture again.
+        engine.renderProgress = PerformanceRenderProgress.empty;
+        await waitForCompleted(cubit);
+        await performance.arm();
+        expect(performance.armedDirectory, isNotNull);
+      },
+    );
 
     test(
       'is refused while a boot-recovery prompt is unresolved',
