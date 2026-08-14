@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
@@ -45,53 +46,82 @@ class _ShortcutsHelpDialog extends StatelessWidget {
     // On macOS the modifier abuts the key (⌘Z); elsewhere it joins with `+`.
     String combo(String key) => isMac ? '⌘$key' : 'Ctrl+$key';
 
-    return AlertDialog(
-      key: const Key('shortcutsHelp_dialog'),
+    // The console's own dialog, from the pen's `Dialog` — see
+    // `SESSION & CAPTURE / shortcuts`. Was a Material `AlertDialog`, which put
+    // Material's shape, padding and buttons on a console face.
+    return Semantics(
       // Names the route so assistive tech announces the legend as it opens.
-      semanticLabel: l10n.a11yShortcutsHelp,
-      title: AppText(l10n.a11yShortcutsHelp),
-      content: SizedBox(
-        width: 360,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _group(context, l10n.shortcutGroupTransport, [
-                _Shortcut('playStop', 'Space', l10n.shortcutPlayStopAll),
-                _Shortcut('clear', 'C', l10n.clearAllTooltip),
-                _Shortcut('mode', 'M', l10n.shortcutMode),
-                _Shortcut('arm', 'A', l10n.shortcutArm),
-              ]),
-              _group(context, l10n.shortcutGroupTracks, [
-                // One row, all three modes: the digit keys always select, and
-                // the mode decides what else they do (mute / FX chain).
-                _Shortcut('select', '1–8', l10n.shortcutSelectTrack),
-                _Shortcut('bank', 'B', l10n.shortcutBank),
-                _Shortcut('record', 'R', l10n.shortcutRecord),
-                _Shortcut('playPause', 'P', l10n.shortcutPlayPause),
-                _Shortcut('undoOverdub', 'U', l10n.shortcutUndoOverdub),
-                _Shortcut('undo', combo('Z'), l10n.shortcutUndo),
-                _Shortcut('redo', isMac ? '⌘⇧Z' : 'Ctrl+Y', l10n.shortcutRedo),
-              ]),
-              _group(context, l10n.shortcutGroupNavigation, [
-                _Shortcut('signal', 'G', l10n.signalTooltip),
-                _Shortcut('fullscreen', 'F', l10n.fullscreenTooltip),
-                _Shortcut('settings', 'S', l10n.settingsTooltip),
-                _Shortcut('save', combo('S'), l10n.shortcutSaveSession),
-                _Shortcut('focus', 'Tab', l10n.shortcutFocusTraverse),
-              ]),
-            ],
-          ),
+      label: l10n.a11yShortcutsHelp,
+      child: ConsoleDialogShell(
+        key: const Key('shortcutsHelp_dialog'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppText(
+              l10n.a11yShortcutsHelp,
+              style: TextStyle(
+                color: context.surface.textPrimary,
+                fontSize: 20,
+                height: 1.15,
+                fontWeight: FontWeight.w600,
+                leadingDistribution: TextLeadingDistribution.even,
+              ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _group(context, l10n.shortcutGroupTransport, [
+                      _Shortcut('playStop', 'Space', l10n.shortcutPlayStopAll),
+                      _Shortcut('clear', 'C', l10n.clearAllTooltip),
+                      _Shortcut('mode', 'M', l10n.shortcutMode),
+                      _Shortcut('arm', 'A', l10n.shortcutArm),
+                    ]),
+                    _group(context, l10n.shortcutGroupTracks, [
+                      // One row, all three modes: the digit keys always
+                      // select, and the mode decides what else they do
+                      // (mute / FX chain).
+                      _Shortcut('select', '1–8', l10n.shortcutSelectTrack),
+                      _Shortcut('bank', 'B', l10n.shortcutBank),
+                      _Shortcut('record', 'R', l10n.shortcutRecord),
+                      _Shortcut('playPause', 'P', l10n.shortcutPlayPause),
+                      _Shortcut('undoOverdub', 'U', l10n.shortcutUndoOverdub),
+                      _Shortcut('undo', combo('Z'), l10n.shortcutUndo),
+                      _Shortcut(
+                        'redo',
+                        isMac ? '⌘⇧Z' : 'Ctrl+Y',
+                        l10n.shortcutRedo,
+                      ),
+                    ]),
+                    _group(context, l10n.shortcutGroupNavigation, [
+                      _Shortcut('signal', 'G', l10n.signalTooltip),
+                      _Shortcut('fullscreen', 'F', l10n.fullscreenTooltip),
+                      _Shortcut('settings', 'S', l10n.settingsTooltip),
+                      _Shortcut('save', combo('S'), l10n.shortcutSaveSession),
+                      _Shortcut('focus', 'Tab', l10n.shortcutFocusTraverse),
+                    ]),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                ConsoleDialogButton(
+                  key: const Key('shortcutsHelp_close'),
+                  label: l10n.close,
+                  tone: ConsoleDialogTone.accent,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
-      actions: [
-        TextButton(
-          key: const Key('shortcutsHelp_close'),
-          onPressed: () => Navigator.of(context).pop(),
-          child: AppText(l10n.close),
-        ),
-      ],
     );
   }
 

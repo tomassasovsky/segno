@@ -3407,3 +3407,65 @@ class ConsoleDialogButton extends StatelessWidget {
     );
   }
 }
+
+/// The console's own dialog shell, from the pen's `Dialog` component: a 744
+/// panel inset from the scrim, 25 inside, radius 17, on the card tone with a
+/// strong border.
+///
+/// Extracted rather than hand-rolled per caller. `track_routing_dialog` had
+/// these numbers written out and every other dialog on a console surface was a
+/// Material `AlertDialog` — which brings Material's radius, Material's padding
+/// and Material's `TextButton`s onto a face where nothing else looks like that.
+///
+/// The scrim is the CALLER's: `showDialog` owns it, and a shell that tried to
+/// draw one would put a second scrim over the first.
+class ConsoleDialogShell extends StatelessWidget {
+  /// Creates a [ConsoleDialogShell].
+  const ConsoleDialogShell({
+    required this.child,
+    this.width = defaultWidth,
+    super.key,
+  });
+
+  /// The panel's contents, already laid out as rows.
+  final Widget child;
+
+  /// Panel width. The pen draws 744 for every dialog it holds.
+  final double width;
+
+  /// The pen's dialog width.
+  static const double defaultWidth = 744;
+
+  /// Gap between the panel and the screen edge, so a tall panel scrolls
+  /// rather than running off.
+  static const double scrimInset = 29;
+
+  /// Inside the panel, from the pen's `Dialog`.
+  static const double padding = 25;
+
+  /// The panel's corner.
+  static const double radius = 17;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Padding(
+      padding: const EdgeInsets.all(scrimInset),
+      child: Material(
+        color: Colors.transparent,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: width),
+          child: Container(
+            padding: const EdgeInsets.all(padding),
+            decoration: BoxDecoration(
+              color: surface.card,
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(color: surface.borderStrong),
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
