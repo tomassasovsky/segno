@@ -115,20 +115,34 @@ class PerformanceRepository {
   /// How long a salvaged capture lives under [recoveredDirName] before
   /// [runBootRecovery] prunes it at the next boot.
   ///
-  /// Measured from when the capture was *recovered* (its sidecar's mtime —
-  /// the finalize is the last writer of that file before the move), not from
-  /// when it was originally captured, so a bundle salvaged after the console
-  /// sat unpowered for weeks still gets its full window on disk.
+  /// Measured from when the bundle *landed* in the recovered area — read
+  /// from the [recoveredAtStampName] stamp the move writes — not from when
+  /// it was captured or finalized, so a bundle salvaged (or stranded, then
+  /// swept) after the console sat unpowered for weeks still gets its full
+  /// window on disk.
   static const Duration recoveredRetention = Duration(days: 30);
+
+  /// The provenance + retention-clock stamp inside every recovered bundle:
+  /// epoch milliseconds as text, written on the SOURCE bundle immediately
+  /// before the move's rename so the rename carries it atomically — a
+  /// bundle can never exist in the recovered area without its stamp, and a
+  /// crash before the rename just re-stamps on that boot's retry. The prune
+  /// ages ONLY stamped entries: the stamp is what proves the salvage moved
+  /// a bundle in (a finished take a user drags into the area by hand has a
+  /// sidecar but no stamp, and is never the prune's to delete), and its
+  /// contents — not any filesystem mtime, which copies and moves rewrite
+  /// freely — are the retention clock.
+  static const String recoveredAtStampName = '.recovered-at';
 
   /// Timestamps before this instant are treated as evidence of a wrong
   /// clock, and the prune never acts on them. An RTC-less appliance (the Pi
   /// console) boots at/near the epoch until its first NTP sync, so a capture
-  /// recovered before that sync carries a near-epoch mtime — comparing it
-  /// against the later-corrected clock computes decades of "age" and would
-  /// delete yesterday's recovery. Anything stamped before this project's own
-  /// era plainly wasn't recovered then; keep it and let a boot with a sane
-  /// clock (which re-stamps nothing) age it out only if it truly is old.
+  /// recovered before that sync carries a near-epoch [recoveredAtStampName]
+  /// stamp — comparing it against the later-corrected clock computes
+  /// decades of "age" and would delete yesterday's recovery. Anything
+  /// stamped before this project's own era plainly wasn't recovered then;
+  /// keep it and let a boot with a sane clock (which re-stamps nothing) age
+  /// it out only if it truly is old.
   static final DateTime pruneSanityFloor = DateTime.utc(2026);
 
   /// The marker file [runBootRecovery] drops inside a bundle before
@@ -619,7 +633,19 @@ class PerformanceRepository {
   /// (collision-suffixed, never overwriting a prior recovery) and removes
   /// its [recoveryMarkerName] — the marker's removal is what declares the
   /// salvage complete.
+  ///
+  /// Writes the [recoveredAtStampName] stamp on the SOURCE, before anything
+  /// else in the move: the rename then carries provenance and retention
+  /// clock atomically, so no crash window can land a bundle in the
+  /// recovered area unstamped (where the prune would otherwise have only a
+  /// stale finalize time to age it by — a bundle stranded through a month
+  /// unpowered would be pruned on the very next boot). A failure anywhere
+  /// mid-move merely leaves a stamp travelling with the bundle, which the
+  /// next boot's retry overwrites with its own fresh landing time.
   void _moveToRecovered(String root, String dir) {
+    File(
+      '$dir/$recoveredAtStampName',
+    ).writeAsStringSync(_now().millisecondsSinceEpoch.toString());
     final recoveredRoot = '$root/$recoveredDirName';
     Directory(recoveredRoot).createSync(recursive: true);
     final slug = _basename(dir);
@@ -632,12 +658,6 @@ class PerformanceRepository {
     Directory(dir).renameSync(target);
     final marker = File('$target/$recoveryMarkerName');
     if (marker.existsSync()) marker.deleteSync();
-    // Retention runs from when the bundle LANDED here, not from whenever its
-    // finalize happened to run: a bundle stranded through a month unpowered
-    // would otherwise be swept in and pruned on the very next boot,
-    // [recoveredRetention]'s full-window promise notwithstanding.
-    final sidecar = File('$target/$manifestName');
-    if (sidecar.existsSync()) sidecar.setLastModifiedSync(_now());
   }
 
   /// Bundles a previous boot finalized but never moved: still carrying
@@ -668,19 +688,20 @@ class PerformanceRepository {
     return out;
   }
 
-  /// Deletes recovered-area entries older than [recoveredRetention] — see
-  /// that constant for why age is the sidecar's mtime (stamped at the move,
-  /// so the window runs from landing in the recovered area). Only entries
-  /// carrying a [manifestName] sidecar are ever considered: a recovered
-  /// bundle always has one, so a sidecar-less directory is not something
-  /// this repository put here (belt to [performanceCaptureSlug]'s
-  /// reserved-name refusal: whatever squats the area, the prune never
-  /// deletes what the salvage didn't move in). An entry stamped before
-  /// [pruneSanityFloor] is never pruned — see that constant for the
-  /// RTC-less-boot clock hazard. An entry the filesystem refuses to stat or
-  /// delete is skipped — and an unreadable recovered area skips the prune
-  /// whole — the next boot retries; a prune must never be the thing that
-  /// takes boot recovery down.
+  /// Deletes recovered-area entries older than [recoveredRetention], aged
+  /// by — and ONLY by — the salvage's own [recoveredAtStampName] stamp.
+  /// The stamp is provenance, not just shape: a finished take a user drags
+  /// into the area by hand carries a sidecar but no stamp, so nothing the
+  /// salvage didn't move in is ever the prune's to delete (belt to
+  /// [performanceCaptureSlug]'s reserved-name refusal). Age is read from
+  /// the stamp's contents, never a filesystem mtime — mtimes are rewritten
+  /// by copies and moves, and were the fragility behind two review rounds
+  /// here. A stamp before [pruneSanityFloor] is never acted on — see that
+  /// constant for the RTC-less-boot clock hazard — and an unreadable stamp
+  /// means no age worth guessing at. An entry the filesystem refuses is
+  /// skipped — and an unreadable recovered area skips the prune whole — the
+  /// next boot retries; a prune must never be the thing that takes boot
+  /// recovery down.
   void _pruneRecovered(String root) {
     final recoveredRoot = Directory('$root/$recoveredDirName');
     if (!recoveredRoot.existsSync()) return;
@@ -693,9 +714,11 @@ class PerformanceRepository {
     for (final entity in entries) {
       if (entity is! Directory) continue;
       try {
-        final manifestFile = File('${entity.path}/$manifestName');
-        if (!manifestFile.existsSync()) continue; // not ours: never delete
-        final recoveredAt = manifestFile.lastModifiedSync();
+        final stampFile = File('${entity.path}/$recoveredAtStampName');
+        if (!stampFile.existsSync()) continue; // not ours: never delete
+        final millis = int.tryParse(stampFile.readAsStringSync().trim());
+        if (millis == null) continue; // unreadable stamp: no age to act on
+        final recoveredAt = DateTime.fromMillisecondsSinceEpoch(millis);
         if (recoveredAt.isBefore(pruneSanityFloor)) continue;
         if (_now().difference(recoveredAt) > recoveredRetention) {
           entity.deleteSync(recursive: true);

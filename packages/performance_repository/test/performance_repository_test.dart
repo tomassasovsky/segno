@@ -47,13 +47,13 @@ class _GatedReadFile implements File {
   );
 }
 
-/// A [File] whose [lastModifiedSync] throws — an `IOOverrides` hook modeling
-/// an entry the filesystem refuses to stat, so a test can drive the prune's
-/// skip-and-continue branch deterministically. Only the members the prune
-/// touches on the manifest file are implemented; anything else is a test bug
-/// and throws.
-class _ThrowingMtimeFile implements File {
-  _ThrowingMtimeFile(this._inner);
+/// A [File] whose [readAsStringSync] throws — an `IOOverrides` hook modeling
+/// a recovered-at stamp the filesystem refuses to read, so a test can drive
+/// the prune's skip-and-continue branch deterministically. Only the members
+/// the prune touches on the stamp file are implemented; anything else is a
+/// test bug and throws.
+class _ThrowingStampFile implements File {
+  _ThrowingStampFile(this._inner);
 
   final File _inner;
 
@@ -61,13 +61,21 @@ class _ThrowingMtimeFile implements File {
   bool existsSync() => _inner.existsSync();
 
   @override
-  DateTime lastModifiedSync() =>
-      throw const FileSystemException('mtime unreadable');
+  String readAsStringSync({Encoding encoding = utf8}) =>
+      throw const FileSystemException('stamp unreadable');
 
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
-    'not reached by _pruneRecovered on the manifest file: $invocation',
+    'not reached by _pruneRecovered on the stamp file: $invocation',
   );
+}
+
+/// Writes [dir]'s recovered-at stamp as the salvage itself would, dated
+/// [at] — the fixture for aging recovered entries deterministically.
+void writeRecoveredStamp(String dir, DateTime at) {
+  File(
+    '$dir/${PerformanceRepository.recoveredAtStampName}',
+  ).writeAsStringSync(at.millisecondsSinceEpoch.toString());
 }
 
 /// A [Directory] whose [listSync] throws — an `IOOverrides` hook modeling a
@@ -1133,16 +1141,16 @@ void main() {
         Directory(fresh).createSync(recursive: true);
         writeNativeSidecar(old, finalized: true);
         writeNativeSidecar(fresh, finalized: true);
-        // Age is the sidecar's mtime (recovery time); the injected clock is
-        // "now". One entry past the window, one comfortably inside it.
-        File('$old/performance.json').setLastModifiedSync(
+        // Age is the recovered-at stamp's contents (landing time); the
+        // injected clock is "now". One entry past the window, one
+        // comfortably inside it.
+        writeRecoveredStamp(
+          old,
           clock.subtract(
             PerformanceRepository.recoveredRetention + const Duration(days: 1),
           ),
         );
-        File('$fresh/performance.json').setLastModifiedSync(
-          clock.subtract(const Duration(days: 1)),
-        );
+        writeRecoveredStamp(fresh, clock.subtract(const Duration(days: 1)));
 
         await repo.runBootRecovery();
 
@@ -1638,24 +1646,30 @@ void main() {
     );
 
     test(
-      'prune never deletes an entry without a performance.json sidecar — a '
-      'squatter in the recovered area (in the worst case a user take an '
-      'older build let be renamed onto it) is not ours to age out '
-      '(#679 r5)',
+      'prune never deletes an entry without the recovered-at stamp — '
+      'neither a sidecar-less squatter nor a user-dragged finished take '
+      "(sidecar and all) is the salvage's to age out (#679 r5, r6)",
       () async {
         final recoveredRoot = '${tempDir.path}/exports/recovered';
         // A take's insides squatting the area: subdirectories with audio,
-        // no sidecar anywhere the prune looks. Age is irrelevant — there is
-        // no sidecar to stamp, so the entry must simply never be touched.
+        // no sidecar, no stamp.
         final squatter = '$recoveredRoot/loops';
         Directory(squatter).createSync(recursive: true);
         File('$squatter/track0-lane0.wav').writeAsStringSync('audio');
-        // An old genuine recovery alongside it, proving the prune itself
-        // still ran and the squatter was skipped, not the whole area.
+        // A finished take a user dragged in by hand: a full capture bundle,
+        // sidecar included — everything but the salvage's own stamp. Shape
+        // says "capture"; only provenance says "ours to prune".
+        final dragged = '$recoveredRoot/my-best-take';
+        Directory(dragged).createSync(recursive: true);
+        writeNativeSidecar(dragged, finalized: true);
+        // An old genuine recovery alongside them, proving the prune itself
+        // still ran and the unstamped entries were skipped, not the whole
+        // area.
         final old = '$recoveredRoot/perf-old';
         Directory(old).createSync(recursive: true);
         writeNativeSidecar(old, finalized: true);
-        File('$old/performance.json').setLastModifiedSync(
+        writeRecoveredStamp(
+          old,
           clock.subtract(
             PerformanceRepository.recoveredRetention + const Duration(days: 1),
           ),
@@ -1666,19 +1680,51 @@ void main() {
         expect(
           Directory(squatter).existsSync(),
           isTrue,
-          reason: 'no sidecar means the salvage never moved it here',
+          reason: 'no stamp means the salvage never moved it here',
         );
+        expect(File('$squatter/track0-lane0.wav').existsSync(), isTrue);
         expect(
-          File('$squatter/track0-lane0.wav').existsSync(),
+          Directory(dragged).existsSync(),
           isTrue,
+          reason:
+              'a sidecar proves "is a capture bundle", not provenance — '
+              'the dragged-in take survives pruning forever',
         );
         expect(Directory(old).existsSync(), isFalse);
       },
     );
 
     test(
-      'an entry the filesystem refuses to stat is skipped by the prune — '
-      'its prunable sibling still goes, and boot does not crash',
+      'an unparsable recovered-at stamp yields no age to act on — the '
+      'entry survives, its prunable sibling still goes (#679 r6)',
+      () async {
+        final recoveredRoot = '${tempDir.path}/exports/recovered';
+        final garbled = '$recoveredRoot/perf-garbled';
+        final old = '$recoveredRoot/perf-old';
+        Directory(garbled).createSync(recursive: true);
+        Directory(old).createSync(recursive: true);
+        writeNativeSidecar(garbled, finalized: true);
+        writeNativeSidecar(old, finalized: true);
+        File(
+          '$garbled/${PerformanceRepository.recoveredAtStampName}',
+        ).writeAsStringSync('not a number');
+        writeRecoveredStamp(
+          old,
+          clock.subtract(
+            PerformanceRepository.recoveredRetention + const Duration(days: 1),
+          ),
+        );
+
+        await repo.runBootRecovery();
+
+        expect(Directory(garbled).existsSync(), isTrue);
+        expect(Directory(old).existsSync(), isFalse);
+      },
+    );
+
+    test(
+      'an entry whose stamp the filesystem refuses to read is skipped by '
+      'the prune — its prunable sibling still goes, and boot does not crash',
       () async {
         final recoveredRoot = '${tempDir.path}/exports/recovered';
         final unreadable = '$recoveredRoot/perf-unreadable';
@@ -1692,8 +1738,8 @@ void main() {
         final oldStamp = clock.subtract(
           PerformanceRepository.recoveredRetention + const Duration(days: 1),
         );
-        File('$unreadable/performance.json').setLastModifiedSync(oldStamp);
-        File('$old/performance.json').setLastModifiedSync(oldStamp);
+        writeRecoveredStamp(unreadable, oldStamp);
+        writeRecoveredStamp(old, oldStamp);
 
         final testZone = Zone.current;
         await IOOverrides.runZoned(
@@ -1702,8 +1748,10 @@ void main() {
             // Real files must be constructed outside the override zone, or
             // the File() factory would re-enter this callback forever.
             final real = testZone.run(() => File(path));
-            return path == '$unreadable/${PerformanceRepository.manifestName}'
-                ? _ThrowingMtimeFile(real)
+            return path ==
+                    '$unreadable/'
+                        '${PerformanceRepository.recoveredAtStampName}'
+                ? _ThrowingStampFile(real)
                 : real;
           },
         );
@@ -1711,7 +1759,7 @@ void main() {
         expect(
           Directory(unreadable).existsSync(),
           isTrue,
-          reason: 'an unstatable entry is skipped, never guessed at',
+          reason: 'an unreadable stamp is skipped, never guessed at',
         );
         expect(
           Directory(old).existsSync(),
@@ -1828,16 +1876,14 @@ void main() {
     );
 
     test(
-      'never prunes an entry whose mtime predates the sanity floor — an '
-      'RTC-less boot stamps near-epoch mtimes that a later-corrected clock '
+      'never prunes an entry whose stamp predates the sanity floor — an '
+      'RTC-less boot writes near-epoch stamps that a later-corrected clock '
       'would misread as decades of age (#679 r2)',
       () async {
         final nearEpoch = '${tempDir.path}/exports/recovered/perf-preclock';
         Directory(nearEpoch).createSync(recursive: true);
         writeNativeSidecar(nearEpoch, finalized: true);
-        File(
-          '$nearEpoch/performance.json',
-        ).setLastModifiedSync(DateTime.utc(1970, 1, 2));
+        writeRecoveredStamp(nearEpoch, DateTime.utc(1970, 1, 2));
 
         await repo.runBootRecovery();
 
@@ -1846,6 +1892,73 @@ void main() {
           isTrue,
           reason: 'a clearly-wrong timestamp must never justify a delete',
         );
+      },
+    );
+
+    test(
+      'the recovered-at stamp is written on the SOURCE before the rename — '
+      'a move that dies mid-way leaves the stamp with the bundle, and the '
+      'retry re-stamps at ITS landing, so retention runs from arrival, '
+      'never from a month-old first attempt (#679 r6)',
+      () async {
+        // Boot 1: the move fails after the stamp (a file squatting where
+        // recovered/ must go) — the crash-window simulation.
+        final stranded = '${tempDir.path}/exports/perf-stranded';
+        Directory(stranded).createSync(recursive: true);
+        writeNativeSidecar(stranded, finalized: true);
+        File(
+          '$stranded/${PerformanceRepository.recoveryMarkerName}',
+        ).writeAsStringSync('');
+        File('${tempDir.path}/exports/recovered').createSync();
+        final boot1Clock = clock;
+
+        await repo.runBootRecovery();
+
+        final sourceStamp = File(
+          '$stranded/${PerformanceRepository.recoveredAtStampName}',
+        );
+        expect(
+          sourceStamp.readAsStringSync(),
+          boot1Clock.millisecondsSinceEpoch.toString(),
+          reason:
+              'stamped strictly before the rename: the failed move left '
+              'the stamp with the bundle, not in limbo',
+        );
+
+        // A month passes unpowered; boot 2 clears the squatter and the
+        // sweep finishes the move.
+        clock = clock.add(const Duration(days: 40));
+        final boot2Clock = clock;
+        File('${tempDir.path}/exports/recovered').deleteSync();
+
+        await repo.runBootRecovery();
+
+        final moved = '${tempDir.path}/exports/recovered/perf-stranded';
+        expect(Directory(moved).existsSync(), isTrue);
+        expect(
+          File(
+            '$moved/${PerformanceRepository.recoveredAtStampName}',
+          ).readAsStringSync(),
+          boot2Clock.millisecondsSinceEpoch.toString(),
+          reason: 'the landing re-stamps: retention runs from arrival',
+        );
+
+        // Boot 3, a day later: well inside the window measured from
+        // landing — 41 days from the first attempt must not count.
+        clock = clock.add(const Duration(days: 1));
+        await repo.runBootRecovery();
+        expect(
+          Directory(moved).existsSync(),
+          isTrue,
+          reason: 'full retention from landing, not from the first attempt',
+        );
+
+        // And once the window HAS elapsed from landing, it goes.
+        clock = boot2Clock.add(
+          PerformanceRepository.recoveredRetention + const Duration(days: 1),
+        );
+        await repo.runBootRecovery();
+        expect(Directory(moved).existsSync(), isFalse);
       },
     );
 
