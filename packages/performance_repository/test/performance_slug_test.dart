@@ -51,5 +51,22 @@ void main() {
       expect(performanceCaptureSlug('!!!'), isNull);
       expect(performanceCaptureSlug(r'/\:*'), isNull);
     });
+
+    test(
+      'rejects the reserved recovered-area name, case-insensitively and '
+      'after folding — a take named onto it would BE the salvage area '
+      '(#679 r5)',
+      () {
+        expect(performanceCaptureSlug(reservedRecoveredDirName), isNull);
+        expect(performanceCaptureSlug('recovered'), isNull);
+        expect(performanceCaptureSlug('Recovered'), isNull);
+        expect(performanceCaptureSlug('RECOVERED'), isNull);
+        expect(performanceCaptureSlug('  recovered  '), isNull);
+        expect(performanceCaptureSlug('recovered!'), isNull);
+        // Names merely CONTAINING the word stay perfectly nameable.
+        expect(performanceCaptureSlug('recovered take'), 'recovered take');
+        expect(performanceCaptureSlug('my recovered'), 'my recovered');
+      },
+    );
   });
 }

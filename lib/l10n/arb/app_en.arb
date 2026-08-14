@@ -1228,9 +1228,6 @@
     "@perfStoppedLowDisk": {
         "description": "Shown when a running capture stopped itself on the free-space floor and finalized what it had."
     },
-    "perfRecoveryFound": "A capture wasn't saved properly last time. Recover it?",
-    "perfRecoveryRecover": "Recover",
-    "perfRecoveryDiscard": "Discard",
     "perfArmDisabledRendering": "Can't arm while the previous capture is still rendering.",
     "perfRenameTitle": "Rename capture",
     "perfRenameHint": "Capture name",

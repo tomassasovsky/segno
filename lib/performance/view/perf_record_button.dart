@@ -21,12 +21,14 @@ class PerfRecordButton extends StatelessWidget {
     final looper = theme.extension<LooperTheme>()!;
     final state = context.watch<PerformanceRecorderCubit>().state;
     final armed = state is PerformanceRecorderArmed;
+    // The boot-time background salvage counts as busy too (#679): its
+    // finalize/render holds the repository's arm gates, and a button that
+    // looks alive while every press is silently refused reads as dead.
     final busy =
         state is PerformanceRecorderFinalizing ||
-        state is PerformanceRecorderRendering;
-    final recoveryPending =
-        state is PerformanceRecorderIdle && state.recoveryDirectory != null;
-    final enabled = !busy && !recoveryPending;
+        state is PerformanceRecorderRendering ||
+        (state is PerformanceRecorderIdle && state.recovering);
+    final enabled = !busy;
     final tooltip = armed
         ? l10n.perfDisarm
         : busy

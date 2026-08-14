@@ -31,6 +31,31 @@ A reader only ever needs to parse the file **once it is finalized**
 `finalized` absent or `false` is either still in progress or is exactly what
 `PerformanceRepository.findUnfinalized` flags for crash recovery (D-SALVAGE).
 
+## Salvage sibling files (`.boot-recovery`, `.recovered-at`)
+
+Boot-time crash salvage (D-SALVAGE, silent since #679) leaves two tiny
+sibling files beside `performance.json` at different points of a bundle's
+life. They exist because `finalized` alone cannot carry the whole salvage
+story: a finished take the user kept and a salvage output stranded mid-move
+are **byte-identical by sidecar**, and filesystem mtimes are too fragile to
+hang provenance or retention on (copies and moves rewrite them; an RTC-less
+console boots near the epoch until its first NTP sync).
+
+| File | Format | Written by | Removed by |
+|---|---|---|---|
+| `.boot-recovery` | empty file (its presence is the datum) | `PerformanceRepository.runBootRecovery`, immediately before a bundle's salvage begins | the move into `recovered/` completing — its deletion is what declares the salvage done |
+| `.recovered-at` | epoch milliseconds, UTF-8 text, nothing else | the same move, stamped on the **source** bundle strictly before the rename, so the rename carries it atomically | never — it stays with the bundle as its retention clock for as long as it lives under `recovered/` |
+
+What a standalone tool should conclude from each combination:
+
+| Observation | Meaning |
+|---|---|
+| `finalized` `false`/absent (exports root) | still armed, or crashed while armed — the salvage candidate `findUnfinalized` flags; `.boot-recovery` may also be present from an earlier attempt that could not finalize |
+| `finalized: true` + `.boot-recovery` (exports root) | **stranded salvage output**: finalize completed but the move to `recovered/` did not (a crash in that window, or a stem-render timeout); the next boot re-attempts the render and finishes the move |
+| `finalized: true`, no `.boot-recovery` (exports root) | a normal finished take — never touched by salvage or pruning |
+| `.recovered-at` present (under `recovered/`) | landed there via salvage at the stamped instant; pruned once `PerformanceRepository.recoveredRetention` (30 days) has elapsed **from that stamp** |
+| under `recovered/` without `.recovered-at` | not placed there by the salvage (e.g. dragged in by hand) — never pruned, no matter its age |
+
 ## Top-level fields
 
 ```jsonc
@@ -62,7 +87,7 @@ A reader only ever needs to parse the file **once it is finalized**
 | `stopped_early` | string? | `"disk_full"` or `"device_changed"` when capture stopped abnormally; absent for a normal disarm. |
 | `armSnapshot` | object? | See below. `null`/absent only if the app crashed before arm's own crash-survival file (`arm-snapshot.json`, deleted at finalize) could even be written. |
 | `disarmSnapshot` | object? | See below. Absent for a capture recovered from a crash — there is no live engine left for a second pass. |
-| `finalized` | bool | `true` once finalize completed. The sole crash-salvage marker (D-SALVAGE). |
+| `finalized` | bool | `true` once finalize completed. The salvage *trigger* (D-SALVAGE): `false`/absent is what routes a bundle to crash recovery — but since the silent boot salvage (#679) it is no longer the sole salvage marker; the `.boot-recovery` / `.recovered-at` sibling files carry the move-and-retention half of the story (see "Salvage sibling files" above). |
 
 ### `layers[]` entries (part 5, unchanged by part 6)
 
@@ -206,10 +231,14 @@ Because `performance.json` is atomically replaced (not appended), a crash
 mid-write leaves the **previous** cycle's complete, valid file on disk — there
 is no torn-file case for this format itself (the operating system's own
 atomic rename guarantees that, `perf_drain.c`'s `le_pd_atomic_rename`). The
-crash-detectable state is purely the `finalized` flag: absent/`false` means
-either "still armed" or "crashed before finalize ran," which
-`PerformanceRepository.findUnfinalized` cannot itself distinguish (nor needs
-to — both cases route to the same recovery path, `recoverCapture`).
+crash-detectable state **within this file** is the `finalized` flag:
+absent/`false` means either "still armed" or "crashed before finalize ran,"
+which `PerformanceRepository.findUnfinalized` cannot itself distinguish (nor
+needs to — both cases route to the same recovery path, `recoverCapture`). A
+crash in the salvage's own window — after finalize, before the move into
+`recovered/` — is detectable only via the `.boot-recovery` sibling marker
+("Salvage sibling files" above), since by then this file already reads
+`finalized: true` exactly like a kept take's.
 
 The one field genuinely at risk of being lost to a crash is `armSnapshot`
 itself, since the drain thread's own rewrites would otherwise clobber it if it

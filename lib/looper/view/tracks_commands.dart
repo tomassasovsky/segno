@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
-import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -384,21 +383,18 @@ void showSessionOutcome(BuildContext context, SessionState state) {
     );
 }
 
-/// Reacts to a settled [PerformanceRecorderCubit] transition: prompts for
-/// crash-recovery salvage (D-SALVAGE) once at boot, opens the completion
-/// sheet when a capture finishes, or — for the short-capture auto-discard,
-/// which has no result to show — surfaces a SnackBar notice instead (no
-/// ephemeral state; this reacts to an ordinary field on the settled
-/// [PerformanceRecorderCompleted] transition). Wired as the `TracksView`'s
-/// performance [BlocListener].
+/// Reacts to a settled [PerformanceRecorderCubit] transition: opens the
+/// completion sheet when a capture finishes, or — for the short-capture
+/// auto-discard, which has no result to show — surfaces a SnackBar notice
+/// instead (no ephemeral state; this reacts to an ordinary field on the
+/// settled [PerformanceRecorderCompleted] transition). Boot-time crash
+/// salvage never arrives here — it recovers silently in the repository
+/// (D-SALVAGE, #679), with no prompt and no state to listen for. Wired as
+/// the `TracksView`'s performance [BlocListener].
 void onPerformanceRecorderState(
   BuildContext context,
   PerformanceRecorderState state,
 ) {
-  if (state is PerformanceRecorderIdle && state.recoveryDirectory != null) {
-    unawaited(_promptPerformanceRecovery(context));
-    return;
-  }
   // A refused arm has to say so. Silently doing nothing is indistinguishable
   // from a dead control, and the operator would simply press again (#640).
   if (state is PerformanceRecorderIdle && state.lowDiskBlocked) {
@@ -420,68 +416,6 @@ void onPerformanceRecorderState(
       unawaited(showPerformanceCompletionSheet(context));
     }
   }
-}
-
-Future<void> _promptPerformanceRecovery(BuildContext context) async {
-  final l10n = context.l10n;
-  final cubit = context.read<PerformanceRecorderCubit>();
-  // Not dismissible (barrier tap / Esc / back) — the prompt only ever appears
-  // once per crashed capture (the listener's `listenWhen` guards against
-  // re-firing for the same state), so a silent dismiss would leave the cubit
-  // stuck in `recoveryDirectory != null` forever, permanently disabling arm.
-  final recover = await showDialog<bool>(
-    context: context,
-    barrierDismissible: false,
-    builder: (dialogContext) => PopScope(
-      canPop: false,
-      // The console's own dialog, not Material's: the pen draws
-      // `SESSION & CAPTURE / capture-recover` as a 744 panel at radius 17 on
-      // the card tone, and an `AlertDialog` brought Material's shape, padding
-      // and `TextButton`s onto a face where nothing else looks like that.
-      child: ConsoleDialogShell(
-        key: const Key('perfRecovery_dialog'),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppText(
-              l10n.perfRecoveryFound,
-              style: TextStyle(
-                color: dialogContext.surface.textPrimary,
-                fontSize: 20,
-                height: 1.15,
-                fontWeight: FontWeight.w600,
-                leadingDistribution: TextLeadingDistribution.even,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              spacing: 10,
-              children: [
-                ConsoleDialogButton(
-                  key: const Key('perfRecovery_discard'),
-                  label: l10n.perfRecoveryDiscard,
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                ),
-                // Accent, not destructive: recovering is the affirmative
-                // action and it destroys nothing — discarding is the one that
-                // does, and it is the quiet one by design.
-                ConsoleDialogButton(
-                  key: const Key('perfRecovery_recover'),
-                  label: l10n.perfRecoveryRecover,
-                  tone: ConsoleDialogTone.accent,
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-  if (recover == null) return;
-  await (recover ? cubit.recoverBootCapture() : cubit.discardBootCapture());
 }
 
 void _showPerformanceLowDiskBlocked(BuildContext context) {

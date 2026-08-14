@@ -149,7 +149,10 @@ void main() {
 
   group('load', () {
     blocTest<PerformanceRecorderCubit, PerformanceRecorderState>(
-      'finds an unfinalized capture at boot and surfaces recoveryDirectory',
+      'recovers an unfinalized capture at boot with no prompt and no '
+      'dialog-triggering state — only the honest busy flag while the '
+      'salvage actually runs — and the bundle lands finalized under '
+      'recovered/ (#679)',
       setUp: () {
         final dir = Directory('${tempDir.path}/exports/perf-crashed')
           ..createSync(recursive: true);
@@ -157,13 +160,28 @@ void main() {
       },
       build: build,
       act: (cubit) => cubit.load(),
-      expect: () => [
-        isA<PerformanceRecorderIdle>().having(
-          (s) => s.recoveryDirectory,
-          'recoveryDirectory',
-          '${tempDir.path}/exports/perf-crashed',
-        ),
+      expect: () => const [
+        // The record button reads this to disable — every press during the
+        // salvage is refused by the repository's gates, and a live-looking
+        // control that silently eats presses reads as dead (#679 r2).
+        PerformanceRecorderIdle(recovering: true),
+        PerformanceRecorderIdle(),
       ],
+      verify: (_) {
+        expect(
+          Directory('${tempDir.path}/exports/perf-crashed').existsSync(),
+          isFalse,
+        );
+        final manifest =
+            jsonDecode(
+                  File(
+                    '${tempDir.path}/exports/recovered/perf-crashed/'
+                    'performance.json',
+                  ).readAsStringSync(),
+                )
+                as Map<String, dynamic>;
+        expect(manifest['finalized'], isTrue);
+      },
     );
 
     blocTest<PerformanceRecorderCubit, PerformanceRecorderState>(
@@ -173,82 +191,133 @@ void main() {
       expect: () => <PerformanceRecorderState>[],
     );
 
-    test('is idempotent: a second call is a no-op', () async {
+    test(
+      'keeps the recovering flag up past load() while a timed-out salvage '
+      "render still holds arm's gate, and clears it once the render "
+      'settles (#679 r3)',
+      () async {
+        final dir = Directory('${tempDir.path}/exports/perf-crashed')
+          ..createSync(recursive: true);
+        writeManifest(dir.path, finalized: false);
+        // A render the engine still reports in flight when runBootRecovery
+        // returns (the repository's own timeout/slot handling is pinned in
+        // its package tests) — exactly the window where arm is refused with
+        // no Finalizing/Rendering state on screen to explain it.
+        engine.renderProgress = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 10,
+        );
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        await cubit.load();
+
+        expect(
+          cubit.state,
+          const PerformanceRecorderIdle(recovering: true),
+          reason:
+              "the live render still holds arm's render gate — clearing "
+              'now would re-enable a button whose every press is refused',
+        );
+
+        engine.renderProgress = PerformanceRenderProgress.empty;
+        await cubit.stream
+            .firstWhere((s) => s == const PerformanceRecorderIdle())
+            .timeout(const Duration(seconds: 5));
+      },
+    );
+
+    test(
+      'a stranded-only boot (finalized bundle awaiting its move, nothing '
+      'unfinalized) still shows the recovering flag until its re-attempted '
+      'render settles (#679 r4)',
+      () async {
+        // The case findUnfinalized alone cannot see: finalized + marker.
+        final stranded = Directory('${tempDir.path}/exports/perf-stranded')
+          ..createSync(recursive: true);
+        writeManifest(stranded.path);
+        File(
+          '${stranded.path}/${PerformanceRepository.recoveryMarkerName}',
+        ).writeAsStringSync('');
+        // The re-attempted stem render holds arm's gate past load().
+        engine.renderProgress = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 10,
+        );
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        await cubit.load();
+
+        expect(
+          cubit.state,
+          const PerformanceRecorderIdle(recovering: true),
+          reason:
+              'a probe blind to stranded bundles would leave the record '
+              'button enabled-looking while every press is refused',
+        );
+
+        engine.renderProgress = PerformanceRenderProgress.empty;
+        await cubit.stream
+            .firstWhere((s) => s == const PerformanceRecorderIdle())
+            .timeout(const Duration(seconds: 5));
+      },
+    );
+
+    test(
+      'a recovery that blows up cannot wedge the recovering flag — the '
+      'clearing emission runs in a finally (#679 r3)',
+      () async {
+        final dir = Directory('${tempDir.path}/exports/perf-crashed')
+          ..createSync(recursive: true);
+        writeManifest(dir.path, finalized: false);
+        var rootCalls = 0;
+        final blowingRepo = PerformanceRepository(
+          engine: engine,
+          exportsRoot: () async {
+            rootCalls++;
+            // The probe's scan resolves; recovery's own resolution throws
+            // an Error — the kind no runtime guard is meant to catch.
+            if (rootCalls > 1) throw StateError('bug');
+            return '${tempDir.path}/exports';
+          },
+          now: () => clock,
+        );
+        addTearDown(blowingRepo.dispose);
+        final cubit = PerformanceRecorderCubit(
+          performance: blowingRepo,
+          armedTickInterval: const Duration(milliseconds: 10),
+          renderPollInterval: const Duration(milliseconds: 10),
+          now: () => clock,
+          freeSpaceBytes: (_) async => null,
+        );
+        addTearDown(cubit.close);
+
+        await expectLater(cubit.load(), throwsStateError);
+
+        expect(
+          cubit.state,
+          const PerformanceRecorderIdle(),
+          reason:
+              'the bug is the bug — a record button dead until restart '
+              'must not be its second casualty',
+        );
+      },
+    );
+
+    test('is latched: a second call does not re-run recovery', () async {
+      final cubit = build();
+      addTearDown(cubit.close);
+      await cubit.load();
+
+      // A capture crashed AFTER boot recovery already ran: the latch means
+      // it stays put until the next boot's load().
       final dir = Directory('${tempDir.path}/exports/perf-crashed')
         ..createSync(recursive: true);
       writeManifest(dir.path, finalized: false);
-      final cubit = build();
-      addTearDown(cubit.close);
-
-      await cubit.load();
-      final afterFirst = cubit.state;
       await cubit.load();
 
-      expect(cubit.state, afterFirst);
-    });
-  });
-
-  group('recoverBootCapture / discardBootCapture', () {
-    test(
-      'recover finalizes the crashed capture then renders to completion',
-      () async {
-        final dir = Directory('${tempDir.path}/exports/perf-crashed')
-          ..createSync(recursive: true);
-        writeManifest(dir.path, finalized: false);
-        engine.renderStatuses = const [
-          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-        ];
-        final cubit = build();
-        addTearDown(cubit.close);
-        await cubit.load();
-
-        final states = <PerformanceRecorderState>[];
-        final sub = cubit.stream.listen(states.add);
-
-        await cubit.recoverBootCapture();
-        final completed = await waitForCompleted(cubit);
-        await sub.cancel();
-
-        expect(states.first, isA<PerformanceRecorderFinalizing>());
-        expect(completed.result, isA<PerformanceRecordDone>());
-
-        final manifest =
-            jsonDecode(File('${dir.path}/performance.json').readAsStringSync())
-                as Map<String, dynamic>;
-        expect(manifest['finalized'], isTrue);
-      },
-    );
-
-    test(
-      'discard removes the capture directory and returns to plain idle',
-      () async {
-        final dir = Directory('${tempDir.path}/exports/perf-crashed')
-          ..createSync(recursive: true);
-        writeManifest(dir.path, finalized: false);
-        final cubit = build();
-        addTearDown(cubit.close);
-        await cubit.load();
-        expect(
-          (cubit.state as PerformanceRecorderIdle).recoveryDirectory,
-          isNotNull,
-        );
-
-        await cubit.discardBootCapture();
-
-        expect(cubit.state, const PerformanceRecorderIdle());
-        expect(dir.existsSync(), isFalse);
-      },
-    );
-
-    test('both are a no-op when there is nothing pending recovery', () async {
-      final cubit = build();
-      addTearDown(cubit.close);
-      await cubit.load();
-
-      await cubit.recoverBootCapture();
-      expect(cubit.state, const PerformanceRecorderIdle());
-
-      await cubit.discardBootCapture();
+      expect(dir.existsSync(), isTrue);
       expect(cubit.state, const PerformanceRecorderIdle());
     });
   });
@@ -433,7 +502,8 @@ void main() {
     );
 
     test(
-      'is refused while a boot-recovery prompt is unresolved',
+      'arms normally once boot recovery has completed — no leftover prompt '
+      'state ever blocks the toolbar (#679)',
       () async {
         final dir = Directory('${tempDir.path}/exports/perf-crashed')
           ..createSync(recursive: true);
@@ -441,15 +511,25 @@ void main() {
         final cubit = build();
         addTearDown(cubit.close);
         await cubit.load();
-        expect(
-          (cubit.state as PerformanceRecorderIdle).recoveryDirectory,
-          isNotNull,
-        );
+        expect(cubit.state, const PerformanceRecorderIdle());
 
         await cubit.toggleArm();
+        await pumpEventQueue();
 
-        expect(engine.perfArmCalls, 0);
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
+        expect(engine.perfArmCalls, 1);
       },
+    );
+
+    blocTest<PerformanceRecorderCubit, PerformanceRecorderState>(
+      'is a no-op while the boot salvage is still running — refused before '
+      'the free-space probe, so no lowDiskBlocked emit can blind the '
+      'recovering flag (#679 r2)',
+      build: build,
+      seed: () => const PerformanceRecorderIdle(recovering: true),
+      act: (cubit) => cubit.toggleArm(),
+      expect: () => <PerformanceRecorderState>[],
+      verify: (_) => expect(engine.perfArmCalls, 0),
     );
 
     test(
@@ -1304,52 +1384,65 @@ void main() {
     );
   });
 
-  group('salvage boot (D-SALVAGE)', () {
+  group('salvage boot (D-SALVAGE, silent since #679)', () {
     test(
       'a capture dir left unfinalized on disk (performance.json without '
-      'finalized: true) surfaces as recoveryDirectory at boot, and '
-      'recoverBootCapture finalizes + renders it end-to-end',
+      'finalized: true) is recovered end-to-end at load: finalized, '
+      'stem-rendered, and moved under recovered/ — with no prompt state '
+      'and no dialog trigger ever emitted',
       () async {
         final dir = Directory('${tempDir.path}/exports/perf-20260706-140000')
           ..createSync(recursive: true);
         writeManifest(dir.path, finalized: false);
-        engine.renderStatuses = const [
-          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-        ];
 
         final cubit = build();
         addTearDown(cubit.close);
+        final states = <PerformanceRecorderState>[];
+        final sub = cubit.stream.listen(states.add);
+
         await cubit.load();
+        await pumpEventQueue();
+        await sub.cancel();
 
         expect(
-          (cubit.state as PerformanceRecorderIdle).recoveryDirectory,
-          dir.path,
+          states,
+          const [
+            PerformanceRecorderIdle(recovering: true),
+            PerformanceRecorderIdle(),
+          ],
+          reason:
+              'silent recovery surfaces only the honest busy flag — never '
+              'a Rendering/Completed state, which would open the completion '
+              'dialog at boot',
         );
-
-        await cubit.recoverBootCapture();
-        final completed = await waitForCompleted(cubit);
-        expect(completed.result, isA<PerformanceRecordDone>());
+        expect(dir.existsSync(), isFalse);
+        final recovered =
+            '${tempDir.path}/exports/recovered/perf-20260706-140000';
         final manifest =
-            jsonDecode(File('${dir.path}/performance.json').readAsStringSync())
+            jsonDecode(File('$recovered/performance.json').readAsStringSync())
                 as Map<String, dynamic>;
         expect(manifest['finalized'], isTrue);
+        expect(
+          engine.lastRenderCaptureDir,
+          dir.path,
+          reason: 'the stem render ran as part of the salvage',
+        );
       },
     );
 
     test(
-      'discardBootCapture removes the unfinalized dir instead of rendering',
+      'a crashed capture that cannot finalize (corrupt sidecar) is left in '
+      'place — never deleted, no crash, still no state emitted',
       () async {
         final dir = Directory('${tempDir.path}/exports/perf-20260706-140000')
           ..createSync(recursive: true);
-        writeManifest(dir.path, finalized: false);
+        File('${dir.path}/performance.json').writeAsStringSync('{not json');
 
         final cubit = build();
         addTearDown(cubit.close);
         await cubit.load();
 
-        await cubit.discardBootCapture();
-
-        expect(dir.existsSync(), isFalse);
+        expect(dir.existsSync(), isTrue);
         expect(engine.lastRenderCaptureDir, isNull);
         expect(cubit.state, const PerformanceRecorderIdle());
       },

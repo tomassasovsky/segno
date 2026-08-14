@@ -199,7 +199,10 @@ class _PerformanceCompletionSheetState
     final name = _basename(path);
     // Three subtitles, best fact first: count and length when both are
     // known, length alone when the export produced no DAW tracks, the bare
-    // name when the duration is unknowable (a recovered boot capture).
+    // name as the defensive fallback when the duration is unknowable
+    // (`duration` stays nullable on the state; since boot-salvaged captures
+    // stopped flowing through this sheet (#679) no live path produces null,
+    // but the sheet must not gamble on that).
     final duration = state.duration;
     final subtitle = duration == null
         ? l10n.perfSavedSubtitlePlain(name)

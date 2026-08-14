@@ -84,21 +84,16 @@ class _TracksViewState extends State<TracksView> {
           ),
           BlocListener<PerformanceRecorderCubit, PerformanceRecorderState>(
             // Fire once on entering `Rendering` (the capture dialog opens on
-            // its rendering face and morphs in place), once on entering
+            // its rendering face and morphs in place), and once on entering
             // `Completed` (a rename afterwards re-emits `Completed` with a
             // different result, which must not reopen the dialog — and the
-            // show function refuses to double-open while it is already up),
-            // and once on the boot-recovery prompt appearing. Percent ticks
-            // are Rendering-to-Rendering and do not re-fire.
+            // show function refuses to double-open while it is already up).
+            // Percent ticks are Rendering-to-Rendering and do not re-fire.
             listenWhen: (previous, current) =>
                 (current is PerformanceRecorderRendering &&
                     previous is! PerformanceRecorderRendering) ||
                 (current is PerformanceRecorderCompleted &&
-                    previous is! PerformanceRecorderCompleted) ||
-                (current is PerformanceRecorderIdle &&
-                    current.recoveryDirectory != null &&
-                    !(previous is PerformanceRecorderIdle &&
-                        previous.recoveryDirectory != null)),
+                    previous is! PerformanceRecorderCompleted),
             listener: onPerformanceRecorderState,
           ),
         ],
