@@ -156,6 +156,31 @@ class _PedalTrayBodyState extends State<PedalTrayBody> {
                   ? const SizedBox(width: double.infinity)
                   : _assignSection(context, cubit, selected, bank),
             ),
+            const SizedBox(height: _gap),
+            ConsoleGroupLabel(l10n.controlModeSwitchGroup),
+            const SizedBox(height: _gap),
+            ConsoleCard(
+              children: [
+                ConsoleRow(
+                  key: const Key('pedal_fx_hold_row'),
+                  title: l10n.controlFxHoldRow,
+                  subtitle: l10n.controlFxHoldSub,
+                  showDivider: false,
+                  trailing: ConsoleSwitch(
+                    key: const Key('pedal_fx_hold_switch'),
+                    value: state.modeSwitchStyle == ModeSwitchStyle.holdFx,
+                    semanticLabel: l10n.controlFxHoldRow,
+                    onChanged: (on) => unawaited(
+                      cubit.setModeSwitchStyle(
+                        on
+                            ? ModeSwitchStyle.holdFx
+                            : ModeSwitchStyle.cycleThree,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),

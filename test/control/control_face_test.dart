@@ -63,6 +63,7 @@ void main() {
   late ControlCubit control;
   late MidiSetupCubit midi;
   late SettingsTrayCubit tray;
+  late SettingsRepository settings;
   late _FakeControllerSource source;
   late List<TrackEffect> masterChain;
 
@@ -124,7 +125,7 @@ void main() {
 
     when(() => midiDevices.connection).thenReturn(connection);
 
-    final settings = SettingsRepository(store: FakeKeyValueStore());
+    settings = SettingsRepository(store: FakeKeyValueStore());
     final performance = PerformanceRepository(
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
@@ -445,6 +446,34 @@ void main() {
       expect(find.byKey(Key('pedal_target_$chain')), findsOneWidget);
       await tester.pumpAndSettle();
       expect(find.byKey(Key('pedal_target_$chain')), findsNothing);
+    });
+
+    testWidgets('the Hold-for-FX row toggles the mode-switch style and '
+        'persists it (#632)', (tester) async {
+      await pump(tester);
+      expect(control.state.modeSwitchStyle, ModeSwitchStyle.cycleThree);
+
+      final row = find.byKey(const Key('pedal_fx_hold_switch'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+
+      expect(control.state.modeSwitchStyle, ModeSwitchStyle.holdFx);
+      expect(
+        await settings.loadModeSwitchStyle(),
+        ModeSwitchStyle.holdFx.token,
+      );
+
+      // And back: the switch renders the live state, so a second tap lands
+      // on the original three-mode cycle.
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(control.state.modeSwitchStyle, ModeSwitchStyle.cycleThree);
+      expect(
+        await settings.loadModeSwitchStyle(),
+        ModeSwitchStyle.cycleThree.token,
+      );
     });
   });
 
