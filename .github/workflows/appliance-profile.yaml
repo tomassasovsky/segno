@@ -58,7 +58,7 @@ jobs:
       # The bundle is what deploy/rpi/profile-on-device.sh expects to be handed:
       # the whole directory, binary + data/ + lib/, not a tarball of the repo.
       - name: Upload bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: segno-linux-arm64-profile
           path: build/linux/arm64/profile/bundle/
