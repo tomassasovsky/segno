@@ -1638,21 +1638,41 @@ void main() {
     );
 
     test(
-      'prune ages an entry missing its sidecar by the directory mtime — a '
-      'freshly created sidecar-less entry stays',
+      'prune never deletes an entry without a performance.json sidecar — a '
+      'squatter in the recovered area (in the worst case a user take an '
+      'older build let be renamed onto it) is not ours to age out '
+      '(#679 r5)',
       () async {
-        final bare = '${tempDir.path}/exports/recovered/perf-bare';
-        Directory(bare).createSync(recursive: true);
+        final recoveredRoot = '${tempDir.path}/exports/recovered';
+        // A take's insides squatting the area: subdirectories with audio,
+        // no sidecar anywhere the prune looks. Age is irrelevant — there is
+        // no sidecar to stamp, so the entry must simply never be touched.
+        final squatter = '$recoveredRoot/loops';
+        Directory(squatter).createSync(recursive: true);
+        File('$squatter/track0-lane0.wav').writeAsStringSync('audio');
+        // An old genuine recovery alongside it, proving the prune itself
+        // still ran and the squatter was skipped, not the whole area.
+        final old = '$recoveredRoot/perf-old';
+        Directory(old).createSync(recursive: true);
+        writeNativeSidecar(old, finalized: true);
+        File('$old/performance.json').setLastModifiedSync(
+          clock.subtract(
+            PerformanceRepository.recoveredRetention + const Duration(days: 1),
+          ),
+        );
 
         await repo.runBootRecovery();
 
         expect(
-          Directory(bare).existsSync(),
+          Directory(squatter).existsSync(),
           isTrue,
-          reason:
-              'no sidecar to stamp recovery time: the fallback is the '
-              "directory's own (fresh) mtime, well inside retention",
+          reason: 'no sidecar means the salvage never moved it here',
         );
+        expect(
+          File('$squatter/track0-lane0.wav').existsSync(),
+          isTrue,
+        );
+        expect(Directory(old).existsSync(), isFalse);
       },
     );
 
@@ -1914,6 +1934,39 @@ void main() {
           repo.renameCapture(dir.path, '!!!'),
           throwsArgumentError,
         );
+      },
+    );
+
+    test(
+      'refuses the reserved name "recovered" — case-insensitively, since a '
+      'case-insensitive exports volume would make the renamed take BE the '
+      'salvage area, pruned by retention and adopted by future salvages '
+      '(#679 r5)',
+      () async {
+        final dir = Directory('${root.path}/perf-a')
+          ..createSync(recursive: true);
+        final marker = File('${dir.path}/master.wav')
+          ..writeAsStringSync('the take');
+
+        // The same refusal path as an unusable name — the UI pre-validates
+        // with performanceCaptureSlug, so both surfaces show the inline
+        // invalid-name error instead of a dead Save.
+        await expectLater(
+          repo.renameCapture(dir.path, 'recovered'),
+          throwsArgumentError,
+        );
+        await expectLater(
+          repo.renameCapture(dir.path, 'Recovered'),
+          throwsArgumentError,
+        );
+        await expectLater(
+          repo.renameCapture(dir.path, '  recovered  '),
+          throwsArgumentError,
+        );
+
+        expect(dir.existsSync(), isTrue);
+        expect(marker.readAsStringSync(), 'the take');
+        expect(Directory('${root.path}/recovered').existsSync(), isFalse);
       },
     );
 

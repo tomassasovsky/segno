@@ -106,7 +106,11 @@ class PerformanceRepository {
   /// silently salvaged captures into, each keeping its own timestamped slug
   /// (`recovered/perf-YYYYMMDD-HHMMSS/`) so the take stays discoverable by
   /// name until a browsing UI exists for it.
-  static const String recoveredDirName = 'recovered';
+  ///
+  /// The same constant as [reservedRecoveredDirName]: [renameCapture]'s slug
+  /// validation refuses the name, since a take renamed onto it would BE this
+  /// area — enumerated by the retention prune, adopted by future salvages.
+  static const String recoveredDirName = reservedRecoveredDirName;
 
   /// How long a salvaged capture lives under [recoveredDirName] before
   /// [runBootRecovery] prunes it at the next boot.
@@ -666,13 +670,17 @@ class PerformanceRepository {
 
   /// Deletes recovered-area entries older than [recoveredRetention] — see
   /// that constant for why age is the sidecar's mtime (stamped at the move,
-  /// so the window runs from landing in the recovered area), with the
-  /// directory's own mtime as the fallback for an entry missing its
-  /// sidecar. An entry stamped before [pruneSanityFloor] is never pruned —
-  /// see that constant for the RTC-less-boot clock hazard. An entry the
-  /// filesystem refuses to stat or delete is skipped — and an unreadable
-  /// recovered area skips the prune whole — the next boot retries; a prune
-  /// must never be the thing that takes boot recovery down.
+  /// so the window runs from landing in the recovered area). Only entries
+  /// carrying a [manifestName] sidecar are ever considered: a recovered
+  /// bundle always has one, so a sidecar-less directory is not something
+  /// this repository put here (belt to [performanceCaptureSlug]'s
+  /// reserved-name refusal: whatever squats the area, the prune never
+  /// deletes what the salvage didn't move in). An entry stamped before
+  /// [pruneSanityFloor] is never pruned — see that constant for the
+  /// RTC-less-boot clock hazard. An entry the filesystem refuses to stat or
+  /// delete is skipped — and an unreadable recovered area skips the prune
+  /// whole — the next boot retries; a prune must never be the thing that
+  /// takes boot recovery down.
   void _pruneRecovered(String root) {
     final recoveredRoot = Directory('$root/$recoveredDirName');
     if (!recoveredRoot.existsSync()) return;
@@ -686,9 +694,8 @@ class PerformanceRepository {
       if (entity is! Directory) continue;
       try {
         final manifestFile = File('${entity.path}/$manifestName');
-        final recoveredAt = manifestFile.existsSync()
-            ? manifestFile.lastModifiedSync()
-            : entity.statSync().modified;
+        if (!manifestFile.existsSync()) continue; // not ours: never delete
+        final recoveredAt = manifestFile.lastModifiedSync();
         if (recoveredAt.isBefore(pruneSanityFloor)) continue;
         if (_now().difference(recoveredAt) > recoveredRetention) {
           entity.deleteSync(recursive: true);

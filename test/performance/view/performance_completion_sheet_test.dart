@@ -180,6 +180,38 @@ void main() {
   );
 
   testWidgets(
+    'renaming to the reserved "recovered" name shows the inline '
+    'invalid-name error instead of a dead Save — the take would otherwise '
+    "BECOME the boot salvage's recovered/ area (#679 r5)",
+    (tester) async {
+      await pump(
+        tester,
+        const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-1'),
+        ),
+      );
+      final strings = await l10n();
+
+      await tester.tap(find.byKey(const Key('perfCompletion_rename')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('perfRename_field')),
+        'Recovered',
+      );
+      await tester.tap(find.byKey(const Key('perfRename_save')));
+      await tester.pumpAndSettle();
+
+      expect(find.text(strings.perfRenameInvalid), findsOneWidget);
+      expect(
+        find.byKey(const Key('perfRename_field')),
+        findsOneWidget,
+        reason: 'the dialog stays open for a corrected name',
+      );
+      verifyNever(() => cubit.renameCompletedCapture(any()));
+    },
+  );
+
+  testWidgets(
     'a PerformanceNameCollision thrown by the cubit shows a SnackBar with '
     'the duplicate message',
     (tester) async {
