@@ -201,8 +201,12 @@ class FakePerformanceEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Progress reported by [renderPoll] — set an in-flight value (`done:
+  /// false`) to exercise `arm()`'s render-window refusal.
+  PerformanceRenderProgress renderProgress = PerformanceRenderProgress.empty;
+
   @override
-  PerformanceRenderProgress renderPoll() => PerformanceRenderProgress.empty;
+  PerformanceRenderProgress renderPoll() => renderProgress;
 
   @override
   List<PerformanceRenderTrackStatus> renderTrackStatuses() =>

@@ -64,6 +64,13 @@ class PerformanceRepository {
   /// between two separately-tuned copies.
   DateTime? _armedAt;
 
+  /// Whether a finalize pass ([_finalize]) is currently in flight. Backs
+  /// [arm]'s finalize-window refusal: the live-disarm path is already covered
+  /// there by [_armedDir] staying set until [_finalizeArmed] completes, but
+  /// boot-salvage ([recoverCapture]) finalizes with no armed directory at
+  /// all, so [arm] needs this flag to see that window.
+  bool _finalizeInFlight = false;
+
   /// A disarm within this window of the matching arm is ignored — the arm
   /// and disarm gestures are easy to fat-finger back to back on the same
   /// control (a toolbar click, or a pedal long-press that fires again before
@@ -142,10 +149,20 @@ class PerformanceRepository {
   /// original session keeps draining into its original directory). [chains]
   /// supplies the lane/monitor effect chains and master-limiter state the
   /// engine snapshot alone cannot read back (see [PerformanceChains]).
+  ///
+  /// Refused — a no-op success, the same silent shape as the already-armed
+  /// path and [disarm]'s guard-window refusal — while a finalize or offline
+  /// render is still in flight (#671): arming then would yank the in-progress
+  /// capture flow out from under whoever is watching it (the render's result
+  /// dialog, the boot-recovery prompt), and the pedal's MODE long-press calls
+  /// this directly with no cubit-level gate in front of it. Callers observe
+  /// the refusal through [captureStatus] never reporting armed (and
+  /// [armedDirectory] staying null), not through the return value.
   Future<EngineResult> arm({
     PerformanceChains chains = const PerformanceChains(),
   }) async {
     if (_armedDir != null) return EngineResult.ok;
+    if (_finalizeInFlight || !renderProgress.done) return EngineResult.ok;
 
     final root = await _exportsRoot();
     final base = performanceSlug(_now());
@@ -376,82 +393,90 @@ class PerformanceRepository {
     required PerformanceArmSnapshot? armSnapshot,
     required PerformanceDisarmSnapshot? disarmSnapshot,
   }) async {
-    final manifestFile = File('$dir/$manifestName');
-    final Map<String, dynamic> native;
+    _finalizeInFlight = true;
     try {
-      native = PerformanceManifest.fromJson(
-        jsonDecode(await manifestFile.readAsString()) as Map<String, dynamic>,
-      ).native;
-    } on FormatException {
-      return; // corrupt sidecar: nothing recoverable to finalize
-    } on FileSystemException {
-      return; // no sidecar was ever written (e.g. disarmed within the drain
-      // thread's first ~250ms cycle): nothing to finalize
-    }
-    final layout =
-        native['channel_layout'] as Map<String, dynamic>? ?? const {};
-    final sampleRate = (native['sample_rate'] as num?)?.toInt() ?? 0;
-    final masterChannels = (layout['master_channels'] as num?)?.toInt() ?? 1;
-    final capturedInputs = [
-      for (final c in (layout['captured_inputs'] as List<dynamic>? ?? const []))
-        (c as num).toInt(),
-    ];
+      final manifestFile = File('$dir/$manifestName');
+      final Map<String, dynamic> native;
+      try {
+        native = PerformanceManifest.fromJson(
+          jsonDecode(await manifestFile.readAsString()) as Map<String, dynamic>,
+        ).native;
+      } on FormatException {
+        return; // corrupt sidecar: nothing recoverable to finalize
+      } on FileSystemException {
+        return; // no sidecar was ever written (e.g. disarmed within the drain
+        // thread's first ~250ms cycle): nothing to finalize
+      }
+      final layout =
+          native['channel_layout'] as Map<String, dynamic>? ?? const {};
+      final sampleRate = (native['sample_rate'] as num?)?.toInt() ?? 0;
+      final masterChannels = (layout['master_channels'] as num?)?.toInt() ?? 1;
+      final capturedInputs = [
+        for (final c
+            in (layout['captured_inputs'] as List<dynamic>? ?? const []))
+          (c as num).toInt(),
+      ];
 
-    final masterPcm = File('$dir/master.pcm');
-    if (masterPcm.existsSync()) {
-      final samples = _readRawPcm(masterPcm);
-      await File('$dir/master.wav').writeAsBytes(
-        WavCodec.encodeFloat32(
-          samples: samples,
-          sampleRate: sampleRate,
-          channels: masterChannels,
-        ),
+      final masterPcm = File('$dir/master.pcm');
+      if (masterPcm.existsSync()) {
+        final samples = _readRawPcm(masterPcm);
+        await File('$dir/master.wav').writeAsBytes(
+          WavCodec.encodeFloat32(
+            samples: samples,
+            sampleRate: sampleRate,
+            channels: masterChannels,
+          ),
+        );
+      }
+      for (final input in capturedInputs) {
+        final raw = File('$dir/input-$input.pcm');
+        if (!raw.existsSync()) continue;
+        final samples = _readRawPcm(raw);
+        await File('$dir/live-input-$input.wav').writeAsBytes(
+          WavCodec.encodeFloat32(
+            samples: samples,
+            sampleRate: sampleRate,
+            channels: 2,
+          ),
+        );
+      }
+
+      var resolvedArm = armSnapshot;
+      final armFile = File('$dir/$_armSnapshotFileName');
+      if (resolvedArm == null && armFile.existsSync()) {
+        resolvedArm = PerformanceArmSnapshot.fromJson(
+          jsonDecode(await armFile.readAsString()) as Map<String, dynamic>,
+        );
+      }
+
+      final manifest = PerformanceManifest(
+        slug: _basename(dir),
+        finalized: true,
+        native: native,
+        armSnapshot: resolvedArm,
+        disarmSnapshot: disarmSnapshot,
       );
-    }
-    for (final input in capturedInputs) {
-      final raw = File('$dir/input-$input.pcm');
-      if (!raw.existsSync()) continue;
-      final samples = _readRawPcm(raw);
-      await File('$dir/live-input-$input.wav').writeAsBytes(
-        WavCodec.encodeFloat32(
-          samples: samples,
-          sampleRate: sampleRate,
-          channels: 2,
-        ),
+      await manifestFile.writeAsString(
+        const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
       );
+      if (armFile.existsSync()) armFile.deleteSync();
+
+      // Kick off the offline render (dry stems, wet stems, master
+      // reconstruction — parts 7-8, one render session covers all three):
+      // fire-and-forget — the worker thread reads only from `dir` on disk from
+      // here on, with no further dependency on this finalize call, so its
+      // outcome is exposed purely via the poll-on-demand
+      // `renderProgress`/`renderTrackStatuses` getters above rather than
+      // awaited here. A failure to even START a
+      // render (e.g. one is already running) is silently accepted — the
+      // bundle itself is already complete and valid without its stems, which
+      // is exactly the umbrella's partial-success posture applied one level up.
+      _engine.renderBegin(dir);
+    } finally {
+      // Cleared only after renderBegin: the render poll takes over [arm]'s
+      // refusal from here with no uncovered gap between the two.
+      _finalizeInFlight = false;
     }
-
-    var resolvedArm = armSnapshot;
-    final armFile = File('$dir/$_armSnapshotFileName');
-    if (resolvedArm == null && armFile.existsSync()) {
-      resolvedArm = PerformanceArmSnapshot.fromJson(
-        jsonDecode(await armFile.readAsString()) as Map<String, dynamic>,
-      );
-    }
-
-    final manifest = PerformanceManifest(
-      slug: _basename(dir),
-      finalized: true,
-      native: native,
-      armSnapshot: resolvedArm,
-      disarmSnapshot: disarmSnapshot,
-    );
-    await manifestFile.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
-    );
-    if (armFile.existsSync()) armFile.deleteSync();
-
-    // Kick off the offline render (dry stems, wet stems, master
-    // reconstruction — parts 7-8, one render session covers all three):
-    // fire-and-forget — the worker thread reads only from `dir` on disk from
-    // here on, with no further dependency on this finalize call, so its
-    // outcome is exposed purely via the poll-on-demand
-    // `renderProgress`/`renderTrackStatuses` getters above rather than
-    // awaited here. A failure to even START a
-    // render (e.g. one is already running) is silently accepted — the
-    // bundle itself is already complete and valid without its stems, which
-    // is exactly the umbrella's partial-success posture applied one level up.
-    _engine.renderBegin(dir);
   }
 
   /// Exports every currently-settled lane's PCM as a WAV directly into

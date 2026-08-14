@@ -345,6 +345,55 @@ void main() {
         PerformanceCaptureStatus.armed,
       ]);
     });
+
+    test(
+      'is refused while an offline render is in flight, and works again '
+      'once it completes (#671)',
+      () async {
+        engine.renderProgress = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 40,
+        );
+
+        final result = await repo.arm();
+
+        // The refusal is a silent no-op success — the same shape as the
+        // already-armed path and disarm's guard window; the observable is
+        // the state that never changed, not the return value.
+        expect(result, EngineResult.ok);
+        expect(repo.armedDirectory, isNull);
+        expect(engine.perfArmCalls, 0);
+        expect(Directory('${tempDir.path}/exports').existsSync(), isFalse);
+
+        engine.renderProgress = PerformanceRenderProgress.empty;
+        await repo.arm();
+        expect(repo.armedDirectory, isNotNull);
+        expect(engine.perfArmed, isTrue);
+      },
+    );
+
+    test(
+      'is refused while a boot-salvage finalize (recoverCapture) is in '
+      'flight — the window where no armed directory exists to no-op on '
+      '(#671)',
+      () async {
+        final dir = '${tempDir.path}/exports/perf-crashed';
+        Directory(dir).createSync(recursive: true);
+        writeNativeSidecar(dir);
+        writeRawPcm('$dir/master.pcm', Float32List.fromList([0.1, 0.2]));
+
+        final recovery = repo.recoverCapture(dir);
+        final result = await repo.arm();
+
+        expect(result, EngineResult.ok);
+        expect(repo.armedDirectory, isNull);
+        expect(engine.perfArmCalls, 0);
+
+        await recovery;
+        await repo.arm();
+        expect(repo.armedDirectory, isNotNull);
+      },
+    );
   });
 
   group('disarm', () {
