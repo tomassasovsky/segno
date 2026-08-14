@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -423,21 +424,49 @@ Future<void> _promptPerformanceRecovery(BuildContext context) async {
     barrierDismissible: false,
     builder: (dialogContext) => PopScope(
       canPop: false,
-      child: AlertDialog(
+      // The console's own dialog, not Material's: the pen draws
+      // `SESSION & CAPTURE / capture-recover` as a 744 panel at radius 17 on
+      // the card tone, and an `AlertDialog` brought Material's shape, padding
+      // and `TextButton`s onto a face where nothing else looks like that.
+      child: ConsoleDialogShell(
         key: const Key('perfRecovery_dialog'),
-        title: AppText(l10n.perfRecoveryFound),
-        actions: [
-          TextButton(
-            key: const Key('perfRecovery_discard'),
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: AppText(l10n.perfRecoveryDiscard),
-          ),
-          TextButton(
-            key: const Key('perfRecovery_recover'),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: AppText(l10n.perfRecoveryRecover),
-          ),
-        ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppText(
+              l10n.perfRecoveryFound,
+              style: TextStyle(
+                color: dialogContext.surface.textPrimary,
+                fontSize: 20,
+                height: 1.15,
+                fontWeight: FontWeight.w600,
+                leadingDistribution: TextLeadingDistribution.even,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              spacing: 10,
+              children: [
+                ConsoleDialogButton(
+                  key: const Key('perfRecovery_discard'),
+                  label: l10n.perfRecoveryDiscard,
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                ),
+                // Accent, not destructive: recovering is the affirmative
+                // action and it destroys nothing — discarding is the one that
+                // does, and it is the quiet one by design.
+                ConsoleDialogButton(
+                  key: const Key('perfRecovery_recover'),
+                  label: l10n.perfRecoveryRecover,
+                  tone: ConsoleDialogTone.accent,
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     ),
   );
