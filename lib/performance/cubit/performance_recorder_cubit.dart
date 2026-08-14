@@ -11,16 +11,16 @@ part 'performance_recorder_state.dart';
 
 /// Drives performance-recording's full app-facing lifecycle: arming/disarming
 /// [PerformanceRepository], the offline render + `.als`/`fx-chains.txt`
-/// pipeline once a capture finalizes, and boot-time crash-recovery salvage
-/// (D-SALVAGE).
+/// pipeline once a capture finalizes, and kicking off boot-time silent
+/// crash-recovery salvage (D-SALVAGE, #679).
 ///
 /// State transitions for a *live* arm/disarm are driven reactively off
 /// [PerformanceRepository.captureStatus] rather than from [toggleArm]'s own
 /// call sites — `SessionCubit` also calls [PerformanceRepository.disarm]
 /// directly (auto-disarm-before-load), and this cubit must reflect that too.
-/// Boot-salvage ([recoverBootCapture]) is the one path the status stream
-/// never reports (`recoverCapture` has no live session to disarm), so it
-/// drives the same render pipeline directly instead.
+/// Boot-salvage ([load]) is the one path the status stream never reports
+/// (`recoverCapture` has no live session to disarm) — deliberately: it runs
+/// silently in the repository's background, emitting no state at all.
 ///
 /// The manifest → [DawProject] mapping stays inside `daw_export`
 /// ([DawManifestReader]) — this cubit only decides *when* to call it and
@@ -141,6 +141,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   late final StreamSubscription<PerformanceCaptureStatus> _statusSubscription;
   Timer? _armedTicker;
   Timer? _renderPoller;
+  Timer? _recoveringPoller;
   String? _captureDir;
   DateTime? _armedAt;
   bool _lowDiskAtArm = false;
@@ -184,45 +185,71 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     }
   }
 
-  /// Scans for a capture left unfinalized by a crash (D-SALVAGE) and, if
-  /// found, surfaces it via [PerformanceRecorderIdle.recoveryDirectory].
-  /// Idempotent — safe to call once at boot.
+  /// Silently salvages any capture a crash left unfinalized (D-SALVAGE,
+  /// #679): [PerformanceRepository.runBootRecovery] finalizes + renders each
+  /// one in the background into the repository's `recovered/` area (pruned
+  /// there after [PerformanceRepository.recoveredRetention]) — no prompt and
+  /// no dialog-triggering state. The one thing surfaced is the honest busy
+  /// fact: while there is actual salvage work, idle carries
+  /// [PerformanceRecorderIdle.recovering] so the record button can disable
+  /// instead of looking alive while the repository's in-flight gates
+  /// silently refuse every press. The composition root calls this unawaited
+  /// at boot; [PerformanceRepository.arm]'s own gates (#671) cover the
+  /// pedal for as long as the background finalize/render runs. Latched —
+  /// safe to call once at boot.
   Future<void> load() async {
     if (_loaded) return;
     _loaded = true;
-    final unfinalized = await _performance.findUnfinalized();
-    if (unfinalized.isEmpty) return;
-    final current = state;
-    if (current is PerformanceRecorderIdle) {
-      _emit(
-        PerformanceRecorderIdle(recoveryDirectory: unfinalized.first.directory),
-      );
+    // Probed first so a clean boot (the overwhelmingly common case) emits
+    // nothing at all — the recovering flag only ever shows for real work.
+    // The probe counts stranded bundles too, not just crashed captures: a
+    // stranded-only boot re-runs a stem render that holds arm's gates just
+    // as long (#679 r4).
+    bool hasWork;
+    try {
+      hasWork = await _performance.hasBootRecoveryWork();
+    } on Exception {
+      hasWork = false; // unreadable root: runBootRecovery no-ops on it too
+    }
+    if (hasWork) _emit(const PerformanceRecorderIdle(recovering: true));
+    try {
+      await _performance.runBootRecovery();
+    } finally {
+      // In a finally so the flag can never wedge true past this call: if
+      // recovery itself blew up (a genuine bug escaping its guards), a
+      // permanently-disabled record button must not be the second casualty.
+      _clearRecoveringWhenRenderSettles();
     }
   }
 
-  /// Salvages the crash-recovered capture [load] found: finalizes it, then
-  /// runs it through the same render/`.als` pipeline a normal disarm does.
-  Future<void> recoverBootCapture() async {
-    final dir = _pendingRecoveryDirectory();
-    if (dir == null) return;
-    _emit(const PerformanceRecorderFinalizing());
-    await _performance.recoverCapture(dir);
-    await _runRenderPipeline(dir);
-  }
-
-  /// Discards the crash-recovered capture [load] found, outright.
-  Future<void> discardBootCapture() async {
-    final dir = _pendingRecoveryDirectory();
-    if (dir == null) return;
-    await _performance.discardUnfinalized(dir);
-    _emit(const PerformanceRecorderIdle());
-  }
-
-  String? _pendingRecoveryDirectory() {
-    final current = state;
-    return current is PerformanceRecorderIdle
-        ? current.recoveryDirectory
-        : null;
+  /// Clears the [PerformanceRecorderIdle.recovering] flag this cubit's
+  /// [load] set — but only once [PerformanceRepository.renderProgress]
+  /// actually reads done. A timed-out salvage render outlives
+  /// `runBootRecovery` and keeps holding [PerformanceRepository.arm]'s
+  /// render gate, so clearing the flag on return would re-enable a button
+  /// whose every press is silently refused — the exact invisible refusal
+  /// the flag exists to prevent. While the render is still live this polls
+  /// at the same cadence as the post-disarm render poll, keeping the flag
+  /// (and the disabled button) up until arming genuinely works again.
+  /// Only ever clears the exact state [load] set — anything else on screen
+  /// is not this method's to stomp.
+  void _clearRecoveringWhenRenderSettles() {
+    const recovering = PerformanceRecorderIdle(recovering: true);
+    if (state != recovering) return;
+    if (_performance.renderProgress.done) {
+      _emit(const PerformanceRecorderIdle());
+      return;
+    }
+    _recoveringPoller?.cancel();
+    _recoveringPoller = Timer.periodic(_renderPollInterval, (timer) {
+      if (isClosed || state != recovering) {
+        timer.cancel();
+        return;
+      }
+      if (!_performance.renderProgress.done) return;
+      timer.cancel();
+      _emit(const PerformanceRecorderIdle());
+    });
   }
 
   /// Renames the just-delivered capture to [to] (D-NAME) — the completion
@@ -261,11 +288,12 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   }
 
   /// Arms or disarms depending on the current state; a no-op while
-  /// finalizing/rendering (no queue) or while a boot-recovery prompt is
-  /// still unresolved. The finalizing/rendering refusal is enforced
+  /// finalizing/rendering (no queue). That refusal is enforced
   /// authoritatively by [PerformanceRepository.arm] itself (#671) — that gate
   /// also covers the pedal's MODE long-press, which never passes through this
-  /// cubit — but the case here is not redundant: falling through to the arm
+  /// cubit, and the boot-time background salvage (which runs entirely inside
+  /// the repository with no state here to key a refusal off) — but the case
+  /// here is not redundant: falling through to the arm
   /// branch would run the free-space probe and could emit a `lowDiskBlocked`
   /// idle state over the on-screen render progress, so refusing before it is
   /// UX-load-bearing. A settled [PerformanceRecorderCompleted] (delivered or
@@ -280,7 +308,13 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// MODE-long-press path alike — rather than duplicated here.
   Future<void> toggleArm() async {
     switch (state) {
-      case PerformanceRecorderIdle(recoveryDirectory: null):
+      // Refused before the free-space probe, same reasoning as the
+      // finalizing/rendering case: the repository's gate would silently
+      // refuse the arm anyway, but falling through would let a probe emit
+      // `lowDiskBlocked` over the recovering flag, blinding the button.
+      case PerformanceRecorderIdle(recovering: true):
+        break;
+      case PerformanceRecorderIdle():
       case PerformanceRecorderCompleted():
         if (await _volumeTooFullToArm()) {
           _emit(const PerformanceRecorderIdle(lowDiskBlocked: true));
@@ -289,7 +323,6 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         await _performance.arm(chains: _currentChains());
       case PerformanceRecorderArmed():
         await _performance.disarm();
-      case PerformanceRecorderIdle():
       case PerformanceRecorderFinalizing():
       case PerformanceRecorderRendering():
         break;
@@ -644,6 +677,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   Future<void> close() {
     _armedTicker?.cancel();
     _renderPoller?.cancel();
+    _recoveringPoller?.cancel();
     unawaited(_statusSubscription.cancel());
     return super.close();
   }

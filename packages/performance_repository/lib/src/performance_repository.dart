@@ -27,18 +27,29 @@ class PerformanceRepository {
   /// [exportsRoot] resolves the `exports/` root directory new bundles are
   /// created under (mirrors `SessionRepository`'s `sessionsRoot`). [now]
   /// supplies the timestamp [arm] slugs from; injectable for deterministic
-  /// tests.
+  /// tests. [bootRecoveryPollInterval] paces [runBootRecovery]'s wait for
+  /// the salvage render to finish before it moves the bundle; injectable so
+  /// tests interleave against the wait without real 200ms sleeps.
+  /// [bootRecoveryRenderTimeout] bounds that wait (default
+  /// [defaultBootRecoveryRenderTimeout]) so a wedged render can never park
+  /// boot recovery — and [arm]'s render-poll refusal — forever.
   PerformanceRepository({
     required AudioEngine engine,
     required Future<String> Function() exportsRoot,
     DateTime Function() now = DateTime.now,
+    Duration bootRecoveryPollInterval = const Duration(milliseconds: 200),
+    Duration bootRecoveryRenderTimeout = defaultBootRecoveryRenderTimeout,
   }) : _engine = engine,
        _exportsRoot = exportsRoot,
-       _now = now;
+       _now = now,
+       _bootRecoveryPollInterval = bootRecoveryPollInterval,
+       _bootRecoveryRenderTimeout = bootRecoveryRenderTimeout;
 
   final AudioEngine _engine;
   final Future<String> Function() _exportsRoot;
   final DateTime Function() _now;
+  final Duration _bootRecoveryPollInterval;
+  final Duration _bootRecoveryRenderTimeout;
 
   /// The `exports/` root new bundles are created under.
   ///
@@ -90,6 +101,78 @@ class PerformanceRepository {
 
   /// The sidecar manifest filename within a capture directory.
   static const String manifestName = 'performance.json';
+
+  /// The directory under the exports root that [runBootRecovery] moves
+  /// silently salvaged captures into, each keeping its own timestamped slug
+  /// (`recovered/perf-YYYYMMDD-HHMMSS/`) so the take stays discoverable by
+  /// name until a browsing UI exists for it.
+  ///
+  /// The same constant as [reservedRecoveredDirName]: [renameCapture]'s slug
+  /// validation refuses the name, since a take renamed onto it would BE this
+  /// area — enumerated by the retention prune, adopted by future salvages.
+  static const String recoveredDirName = reservedRecoveredDirName;
+
+  /// How long a salvaged capture lives under [recoveredDirName] before
+  /// [runBootRecovery] prunes it at the next boot.
+  ///
+  /// Measured from when the bundle *landed* in the recovered area — read
+  /// from the [recoveredAtStampName] stamp the move writes — not from when
+  /// it was captured or finalized, so a bundle salvaged (or stranded, then
+  /// swept) after the console sat unpowered for weeks still gets its full
+  /// window on disk.
+  static const Duration recoveredRetention = Duration(days: 30);
+
+  /// The provenance + retention-clock stamp inside every recovered bundle:
+  /// epoch milliseconds as text, written on the SOURCE bundle immediately
+  /// before the move's rename so the rename carries it atomically — a
+  /// bundle can never exist in the recovered area without its stamp, and a
+  /// crash before the rename just re-stamps on that boot's retry. The prune
+  /// ages ONLY stamped entries: the stamp is what proves the salvage moved
+  /// a bundle in (a finished take a user drags into the area by hand has a
+  /// sidecar but no stamp, and is never the prune's to delete), and its
+  /// contents — not any filesystem mtime, which copies and moves rewrite
+  /// freely — are the retention clock.
+  static const String recoveredAtStampName = '.recovered-at';
+
+  /// Timestamps before this instant are treated as evidence of a wrong
+  /// clock, and the prune never acts on them. An RTC-less appliance (the Pi
+  /// console) boots at/near the epoch until its first NTP sync, so a capture
+  /// recovered before that sync carries a near-epoch [recoveredAtStampName]
+  /// stamp — comparing it against the later-corrected clock computes
+  /// decades of "age" and would delete yesterday's recovery. Anything
+  /// stamped before this project's own era plainly wasn't recovered then;
+  /// keep it and let a boot with a sane clock (which re-stamps nothing) age
+  /// it out only if it truly is old.
+  static final DateTime pruneSanityFloor = DateTime.utc(2026);
+
+  /// The marker file [runBootRecovery] drops inside a bundle before
+  /// salvaging it, and removes only after the bundle lands under
+  /// [recoveredDirName]. Finished takes ALSO live finalized in the exports
+  /// root (a capture's directory is its final bundle location), so a
+  /// finalized sidecar alone cannot distinguish "salvage output stranded by
+  /// a crash or render timeout before its move" from a take the user
+  /// deliberately kept — the marker is what makes the boot-time sweep safe
+  /// to run.
+  static const String recoveryMarkerName = '.boot-recovery';
+
+  /// Default for the ctor's `bootRecoveryRenderTimeout`: how long one
+  /// salvage's stem render may run before [runBootRecovery] gives up
+  /// waiting and keeps the bundle where it is (marker intact, for the next
+  /// boot's sweep). Generous — a real render is minutes at the very worst —
+  /// because expiring early merely defers the move, while a wedged render
+  /// with NO bound would park the boot-recovery call forever.
+  ///
+  /// This bounds only the salvage *loop*, not [arm]'s render-poll refusal:
+  /// after a timeout the engine may genuinely still be rendering, so [arm]
+  /// stays refused (and the app keeps its busy flag up) until
+  /// [renderProgress] actually reports done — anything else would re-enable
+  /// a control whose every press is silently eaten. The loop also stops
+  /// after a timeout rather than salvaging the next capture: the engine has
+  /// one global render slot, and a sibling finalized while it is squatted
+  /// would get no stems yet look fully recovered.
+  static const Duration defaultBootRecoveryRenderTimeout = Duration(
+    minutes: 10,
+  );
 
   /// The arm-time snapshot's own file, written immediately at [arm] so it
   /// survives a crash before [disarm]'s finalize ever merges it into
@@ -358,17 +441,8 @@ class PerformanceRepository {
     final out = <UnfinalizedCapture>[];
     for (final entity in root.listSync()) {
       if (entity is! Directory) continue;
-      final manifestFile = File('${entity.path}/$manifestName');
-      if (!manifestFile.existsSync()) continue;
-      var finalized = false;
-      try {
-        final json =
-            jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>;
-        finalized = json['finalized'] == true;
-      } on FormatException {
-        finalized = false;
-      }
-      if (!finalized) {
+      if (!File('${entity.path}/$manifestName').existsSync()) continue;
+      if (!_sidecarFinalized(entity.path)) {
         out.add(
           UnfinalizedCapture(
             directory: entity.path,
@@ -397,6 +471,280 @@ class PerformanceRepository {
   Future<void> discardUnfinalized(String directory) async {
     final dir = Directory(directory);
     if (dir.existsSync()) await dir.delete(recursive: true);
+  }
+
+  /// Boot-time crash salvage, run silently (D-SALVAGE, #679): prunes the
+  /// [recoveredDirName] area of entries older than [recoveredRetention],
+  /// then salvages — finalize, stem render, move — every capture a crash
+  /// left unfinalized, plus any bundle a previous boot finalized but never
+  /// moved ([_strandedSalvage]), each finished bundle landing in
+  /// `{exportsRoot}/`[recoveredDirName]`/<slug>/` — rendered, usable audio
+  /// under the capture's own timestamped name. No prompt and no
+  /// [captureStatus] emission: the only externally observable effects are
+  /// the recovered bundles appearing on disk, and [arm]'s existing
+  /// in-flight refusals (#671) holding for exactly as long as a salvage
+  /// finalize or its render is running.
+  ///
+  /// Failure honesty: a salvage that could not finalize — a corrupt or
+  /// missing sidecar, or a thrown write — leaves the raw bundle in place,
+  /// untouched, to be retried at the next boot; what could not be rendered
+  /// is never deleted. Retries are unbounded but cheap (the undecodable
+  /// -sidecar case is [_finalize]'s documented early return), and the prune
+  /// only ever touches bundles that DID recover, so a permanently
+  /// unrecoverable bundle stays on disk for the user rather than aging out
+  /// silently. A failed *stem render* on a finalized bundle still moves it —
+  /// the bundle is complete and valid without its stems, the same
+  /// partial-success posture [_finalize] itself takes. Each capture is
+  /// salvaged under its own guard: one bundle's failure never aborts its
+  /// siblings, and nothing escapes to the caller (the composition root runs
+  /// this unawaited — a throw here would be an unhandled zone error).
+  ///
+  /// Never runs against a live capture: if an [arm] landed in one of the
+  /// await gaps before a salvage takes its finalize guard (the exports-root
+  /// lookups here and inside [findUnfinalized] both suspend), the armed
+  /// session owns both the drain thread and the engine's single render slot
+  /// — salvaging then would finalize/rename the live directory out from
+  /// under the drain, and the salvage render would steal [renderProgress]
+  /// from the take's own later disarm. Armed state is re-checked before
+  /// every capture and again before each move; whatever is skipped waits
+  /// for the next boot.
+  Future<void> runBootRecovery() async {
+    final String root;
+    try {
+      root = await _exportsRoot();
+    } on Exception {
+      return; // cannot resolve the root: nothing to recover this boot
+    }
+    _pruneRecovered(root);
+    final List<UnfinalizedCapture> unfinalized;
+    try {
+      unfinalized = await findUnfinalized();
+    } on Exception {
+      return;
+    }
+    // Stranded bundles first (already finalized — the cheapest to finish),
+    // then the crashed captures. Both go through the same per-capture
+    // salvage, so a stranded bundle gets its stem render RE-attempted (the
+    // render never survives the reboot that stranded it) rather than being
+    // moved stemless.
+    final pending = [
+      ..._strandedSalvage(root),
+      for (final capture in unfinalized) capture.directory,
+    ];
+    for (final dir in pending) {
+      // Between-captures re-check, not just per-directory: a live arm owns
+      // the one global render slot, so salvaging ANY capture while armed
+      // would corrupt the take's own render/disarm flow, not only its
+      // directory. Deferring the remainder to the next boot is the honest
+      // outcome — recovery is a background nicety, the live take is not.
+      if (_armedDir != null || _armInFlight) return;
+      // A render still in flight — a prior capture's salvage timed out on
+      // it — squats the engine's one global render slot: the next salvage's
+      // renderBegin would be refused, its wait would watch the WRONG
+      // render, and the bundle would land in the recovered area stemless
+      // with its marker gone. Stop; the remainder waits for the next boot.
+      if (!renderProgress.done) return;
+      await _recoverSilently(root, dir);
+    }
+  }
+
+  /// Whether [runBootRecovery] would have real salvage work this boot:
+  /// captures a crash left unfinalized OR stranded finalized bundles still
+  /// awaiting their move ([_strandedSalvage]). The app's boot probe reads
+  /// this — not [findUnfinalized] alone — because a stranded-only boot
+  /// re-attempts a stem render that holds [arm]'s gates just as long as a
+  /// fresh salvage does, and a probe blind to it would leave the record
+  /// button enabled-looking while every press is silently refused
+  /// (#679 r4). `false` when the exports root cannot even be resolved,
+  /// mirroring [runBootRecovery]'s own no-op on that boot.
+  Future<bool> hasBootRecoveryWork() async {
+    final String root;
+    try {
+      root = await _exportsRoot();
+    } on Exception {
+      return false;
+    }
+    if (_strandedSalvage(root).isNotEmpty) return true;
+    return (await findUnfinalized()).isNotEmpty;
+  }
+
+  /// One capture's silent salvage: finalize + render in place, then — only
+  /// once the sidecar proves finalized — move the bundle into the recovered
+  /// area. The fire-and-forget stem render works on [dir]'s path on its own
+  /// worker thread, so the move waits (bounded) for [renderProgress] to
+  /// report done rather than renaming the directory out from under in-flight
+  /// writes. The whole body is guarded: any failure keeps the bundle for the
+  /// next boot's retry and lets the caller's loop continue to the next
+  /// capture rather than escaping as an unhandled error.
+  Future<void> _recoverSilently(String root, String dir) async {
+    try {
+      // Belt to the caller's armed bail: never, under any interleaving,
+      // touch the directory the drain thread is writing.
+      if (dir == _armedDir) return;
+      // Dropped before the finalize, removed only after the move lands (in
+      // [_moveToRecovered]): a crash or render timeout between those two
+      // points strands a finalized bundle in the exports root, where it is
+      // indistinguishable from a normal finished take by its sidecar alone —
+      // the marker is what lets the next boot's [_strandedSalvage] finish
+      // the move instead of the bundle falling outside retention forever.
+      File('$dir/$recoveryMarkerName').writeAsStringSync('');
+      if (_sidecarFinalized(dir)) {
+        // A stranded bundle: its finalize already completed on a previous
+        // boot, and re-running it would do real damage, not just waste work
+        // — [_finalize] resolves the arm snapshot only from the
+        // crash-survival file (deleted by that first finalize) and reads
+        // only the native fields back, so a second pass would rewrite the
+        // manifest with its armSnapshot (the chains/routing the export
+        // depends on) stripped. Only the stem render is re-attempted — a
+        // render never survives the reboot that stranded the bundle. Its
+        // result is deliberately unchecked, [_finalize]'s own
+        // partial-success posture: the bundle is complete without stems.
+        _engine.renderBegin(dir);
+      } else {
+        await recoverCapture(dir);
+      }
+      var waited = Duration.zero;
+      while (!renderProgress.done) {
+        if (waited >= _bootRecoveryRenderTimeout) {
+          // A wedged render must not park recovery forever. Keep the bundle
+          // where it is — marker intact — so the next boot re-salvages it,
+          // stem render and all; the caller's loop then stops on the very
+          // render this wait gave up on (see the render-slot check there).
+          return;
+        }
+        await Future<void>.delayed(_bootRecoveryPollInterval);
+        waited += _bootRecoveryPollInterval;
+      }
+      if (!_sidecarFinalized(dir)) return; // nothing recovered; retried later
+      // Re-checked at the last synchronous moment before the rename: the
+      // awaits above suspended this salvage, and the one directory that must
+      // never be renamed is the live capture's.
+      if (_armedDir != null || _armInFlight) return;
+      _moveToRecovered(root, dir);
+    } on Exception {
+      // One capture's failure neither aborts the loop for its siblings nor
+      // escapes the unawaited boot call as an unhandled zone error. The
+      // bundle (and its marker) stay for the next boot.
+      return;
+    }
+  }
+
+  /// Moves a finalized salvage bundle at [dir] under [recoveredDirName]
+  /// (collision-suffixed, never overwriting a prior recovery) and removes
+  /// its [recoveryMarkerName] — the marker's removal is what declares the
+  /// salvage complete.
+  ///
+  /// Writes the [recoveredAtStampName] stamp on the SOURCE, before anything
+  /// else in the move: the rename then carries provenance and retention
+  /// clock atomically, so no crash window can land a bundle in the
+  /// recovered area unstamped (where the prune would otherwise have only a
+  /// stale finalize time to age it by — a bundle stranded through a month
+  /// unpowered would be pruned on the very next boot). A failure anywhere
+  /// mid-move merely leaves a stamp travelling with the bundle, which the
+  /// next boot's retry overwrites with its own fresh landing time.
+  void _moveToRecovered(String root, String dir) {
+    File(
+      '$dir/$recoveredAtStampName',
+    ).writeAsStringSync(_now().millisecondsSinceEpoch.toString());
+    final recoveredRoot = '$root/$recoveredDirName';
+    Directory(recoveredRoot).createSync(recursive: true);
+    final slug = _basename(dir);
+    var target = '$recoveredRoot/$slug';
+    var suffix = 1;
+    while (Directory(target).existsSync()) {
+      target = '$recoveredRoot/$slug-$suffix';
+      suffix++;
+    }
+    Directory(dir).renameSync(target);
+    final marker = File('$target/$recoveryMarkerName');
+    if (marker.existsSync()) marker.deleteSync();
+  }
+
+  /// Bundles a previous boot finalized but never moved: still carrying
+  /// [recoveryMarkerName] AND finalized means salvage output stranded
+  /// between its finalize and its rename (a crash in that window, or a
+  /// render timeout). [runBootRecovery] routes these through the same
+  /// per-capture salvage as crashed captures, so their stem render — which
+  /// never survives the reboot that stranded them — is re-attempted before
+  /// the move. A marked bundle still *unfinalized* is left for the normal
+  /// [findUnfinalized] path, and unmarked finalized bundles are the user's
+  /// own finished takes, never touched. An unreadable root yields nothing —
+  /// this boot skips the sweep rather than crashing it.
+  List<String> _strandedSalvage(String root) {
+    final out = <String>[];
+    final List<FileSystemEntity> entries;
+    try {
+      entries = Directory(root).listSync();
+    } on FileSystemException {
+      return out; // missing or unreadable root: nothing stranded to see
+    }
+    for (final entity in entries) {
+      if (entity is! Directory) continue;
+      if (entity.path == _armedDir) continue; // never the live capture
+      if (!File('${entity.path}/$recoveryMarkerName').existsSync()) continue;
+      if (!_sidecarFinalized(entity.path)) continue;
+      out.add(entity.path);
+    }
+    return out;
+  }
+
+  /// Deletes recovered-area entries older than [recoveredRetention], aged
+  /// by — and ONLY by — the salvage's own [recoveredAtStampName] stamp.
+  /// The stamp is provenance, not just shape: a finished take a user drags
+  /// into the area by hand carries a sidecar but no stamp, so nothing the
+  /// salvage didn't move in is ever the prune's to delete (belt to
+  /// [performanceCaptureSlug]'s reserved-name refusal). Age is read from
+  /// the stamp's contents, never a filesystem mtime — mtimes are rewritten
+  /// by copies and moves, and were the fragility behind two review rounds
+  /// here. A stamp before [pruneSanityFloor] is never acted on — see that
+  /// constant for the RTC-less-boot clock hazard — and an unreadable stamp
+  /// means no age worth guessing at. An entry the filesystem refuses is
+  /// skipped — and an unreadable recovered area skips the prune whole — the
+  /// next boot retries; a prune must never be the thing that takes boot
+  /// recovery down.
+  void _pruneRecovered(String root) {
+    final recoveredRoot = Directory('$root/$recoveredDirName');
+    if (!recoveredRoot.existsSync()) return;
+    final List<FileSystemEntity> entries;
+    try {
+      entries = recoveredRoot.listSync();
+    } on FileSystemException {
+      return; // unreadable area: prune waits for a healthier boot
+    }
+    for (final entity in entries) {
+      if (entity is! Directory) continue;
+      try {
+        final stampFile = File('${entity.path}/$recoveredAtStampName');
+        if (!stampFile.existsSync()) continue; // not ours: never delete
+        final millis = int.tryParse(stampFile.readAsStringSync().trim());
+        if (millis == null) continue; // unreadable stamp: no age to act on
+        final recoveredAt = DateTime.fromMillisecondsSinceEpoch(millis);
+        if (recoveredAt.isBefore(pruneSanityFloor)) continue;
+        if (_now().difference(recoveredAt) > recoveredRetention) {
+          entity.deleteSync(recursive: true);
+        }
+      } on FileSystemException {
+        continue;
+      }
+    }
+  }
+
+  /// Whether [dir]'s sidecar provably reads back with `finalized: true` — a
+  /// checked read: absent, unreadable, undecodable, or wrong-shaped all
+  /// answer `false` rather than throwing (a sidecar written by a crashing
+  /// process can be malformed in ways that raise [Error]s from the decode
+  /// casts, not just [FormatException]). Shared by [findUnfinalized] and
+  /// [runBootRecovery]'s move-only-what-recovered check.
+  bool _sidecarFinalized(String dir) {
+    try {
+      final manifestFile = File('$dir/$manifestName');
+      if (!manifestFile.existsSync()) return false;
+      final json =
+          jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>;
+      return json['finalized'] == true;
+    } on Object {
+      return false;
+    }
   }
 
   /// Folds [to] into a folder-safe slug and renames the finished capture at
@@ -435,16 +783,25 @@ class PerformanceRepository {
     _finalizesInFlight++;
     try {
       final manifestFile = File('$dir/$manifestName');
-      final Map<String, dynamic> native;
+      final String rawManifest;
       try {
-        native = PerformanceManifest.fromJson(
-          jsonDecode(await manifestFile.readAsString()) as Map<String, dynamic>,
-        ).native;
-      } on FormatException {
-        return; // corrupt sidecar: nothing recoverable to finalize
+        rawManifest = await manifestFile.readAsString();
       } on FileSystemException {
         return; // no sidecar was ever written (e.g. disarmed within the drain
         // thread's first ~250ms cycle): nothing to finalize
+      }
+      final Map<String, dynamic> native;
+      try {
+        native = PerformanceManifest.fromJson(
+          jsonDecode(rawManifest) as Map<String, dynamic>,
+        ).native;
+      } on Object {
+        // Corrupt OR wrong-shaped sidecar: a crashing writer can leave
+        // well-formed JSON with wrong types, whose decode casts raise
+        // [Error]s rather than [FormatException] — this parse is the one
+        // step where catching everything is the honest contract (nothing
+        // recoverable to finalize), instead of upgrading every outer guard.
+        return;
       }
       final layout =
           native['channel_layout'] as Map<String, dynamic>? ?? const {};

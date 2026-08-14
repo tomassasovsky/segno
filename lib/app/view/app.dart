@@ -465,9 +465,10 @@ class App extends StatelessWidget {
               return cubit;
             },
           ),
-          // Eager (not lazy): must be watching at boot to find a capture a
-          // crash left unfinalized (D-SALVAGE) before the tracks view first
-          // builds, so the recovery prompt is ready the instant it mounts.
+          // Eager (not lazy): the boot-time silent salvage (D-SALVAGE, #679)
+          // must start the moment the app composes, not whenever a widget
+          // first reads this cubit — a crashed capture recovers in the
+          // background whether or not the tracks view ever mounts.
           BlocProvider(
             lazy: false,
             create: (context) {
