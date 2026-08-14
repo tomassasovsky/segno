@@ -289,6 +289,19 @@ class SettingsRepository {
   Future<void> savePedalLongPressMs(int ms) =>
       _store.setInt(_pedalLongPressMsKey, ms);
 
+  static const String _modeSwitchStyleKey = 'pedal.mode_switch_style';
+
+  /// Loads the persisted MODE-footswitch style token (an opaque token, e.g.
+  /// `'cycleThree'` / `'holdFx'`), or `null` if unset. The presentation layer
+  /// maps the token to its style enum; unset (and unknown) tokens resolve to
+  /// the original three-mode tap cycle, so existing rigs see no change.
+  Future<String?> loadModeSwitchStyle() =>
+      _store.getString(_modeSwitchStyleKey);
+
+  /// Saves the MODE-footswitch [style] token.
+  Future<void> saveModeSwitchStyle(String style) =>
+      _store.setString(_modeSwitchStyleKey, style);
+
   static const String _pedalClearFadeMsKey = 'pedal.clear_fade_ms';
 
   /// Loads the pedal clear-all fade/guard window in milliseconds (`0` disables

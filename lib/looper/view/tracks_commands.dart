@@ -101,8 +101,10 @@ class TracksCommands {
         tracks[channel].isCapturing;
   }
 
-  /// Cycles the system record → mute → FX mode (the same [ControlCubit]
-  /// method the pedal footswitch drives) and announces the mode it landed on.
+  /// Cycles the system record → mute → FX mode and announces the mode it
+  /// landed on. Always the full three-stop cycle: the #632 mode-switch style
+  /// governs the pedal's own tap/hold split only — this path has no hold, so
+  /// it keeps FX reachable whatever the style (and with no pedal at all).
   void toggleMode() {
     final overlay = context.read<ControlCubit>()..toggleMode();
     final l10n = context.l10n;

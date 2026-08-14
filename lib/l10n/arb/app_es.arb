@@ -188,7 +188,7 @@
     "trackIndicatorsTitle": "Indicadores de pista",
     "trackIndicatorsSubtitle": "Mostrar una luz de estado en cada pista",
     "looperGroupLabel": "LOOPER",
-    "defaultModeIntro": "Modo en el que inicia el looper: lo que hace una pulsación de pista, desde el pedal, el teclado o la pantalla. Las teclas numéricas seleccionan pistas; en modo Grabar R/P arman y reproducen la selección, en modo Silenciar silencian / activan sonido. El modo FX (la tercera parada del interruptor MODE, donde las pulsaciones de pista alternan las cadenas de FX) no se ofrece aquí: se llega ciclando, nunca al iniciar.",
+    "defaultModeIntro": "Modo en el que inicia el looper: lo que hace una pulsación de pista, desde el pedal, el teclado o la pantalla. Las teclas numéricas seleccionan pistas; en modo Grabar R/P arman y reproducen la selección, en modo Silenciar silencian / activan sonido. El modo FX (donde las pulsaciones de pista alternan las cadenas de FX) no se ofrece aquí: se entra en él en vivo, nunca al iniciar.",
     "recordModeLabel": "Grabar",
     "recordModeSub": "Armar y capturar",
     "muteModeLabel": "Silenciar",
@@ -1710,6 +1710,18 @@
                 "type": "String"
             }
         }
+    },
+    "controlModeSwitchGroup": "CONMUTADOR DE MODO",
+    "@controlModeSwitchGroup": {
+        "description": "Group caption over the Mode-footswitch behaviour row. Upper case, as every group caption on the console is."
+    },
+    "controlFxHoldRow": "Mantener para FX",
+    "@controlFxHoldRow": {
+        "description": "Row that switches the Mode footswitch to a Record/Mute tap cycle with FX behind a hold."
+    },
+    "controlFxHoldSub": "Solo el conmutador de modo del pedal: una pulsación alterna entre Grabar y Silenciar; mantener entra y sale de FX. Desactivado, una pulsación recorre los tres modos y mantener arma la grabación de actuación.",
+    "@controlFxHoldSub": {
+        "description": "One-liner under the Hold-for-FX row: scoped to the pedal alone (keyboard and on-screen controls keep the three-way cycle either way), what the hold gains, and what it stops doing."
     },
     "midiDeviceGroup": "CONTROLADOR MIDI DE PIE",
     "@midiDeviceGroup": {

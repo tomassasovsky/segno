@@ -598,6 +598,20 @@ void main() {
     });
   });
 
+  group('mode switch style', () {
+    test(
+      'defaults to null when unset (the original three-mode cycle)',
+      () async {
+        expect(await repository.loadModeSwitchStyle(), isNull);
+      },
+    );
+
+    test('round-trips a saved token', () async {
+      await repository.saveModeSwitchStyle('holdFx');
+      expect(await repository.loadModeSwitchStyle(), 'holdFx');
+    });
+  });
+
   group('pedal timing', () {
     test('long-press defaults to 500 ms and round-trips', () async {
       expect(await repository.loadPedalLongPressMs(), 500);

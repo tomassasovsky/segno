@@ -471,7 +471,7 @@
     "trackIndicatorsTitle": "Track indicators",
     "trackIndicatorsSubtitle": "Show a status light on each track",
     "looperGroupLabel": "LOOPER",
-    "defaultModeIntro": "Mode the looper starts in — what a track press does, from the pedal, keyboard, or screen. Number keys select tracks; in Record mode R/P arm and play the selection, in Mute mode they mute / unmute. FX mode (the third stop on the MODE switch, where track presses toggle FX chains) is not offered here — it is reached by cycling, never booted into.",
+    "defaultModeIntro": "Mode the looper starts in — what a track press does, from the pedal, keyboard, or screen. Number keys select tracks; in Record mode R/P arm and play the selection, in Mute mode they mute / unmute. FX mode (where track presses toggle FX chains) is not offered here — it is switched into live, never booted into.",
     "recordModeLabel": "Record",
     "recordModeSub": "Arm & capture",
     "muteModeLabel": "Mute",
@@ -2315,6 +2315,18 @@
                 "type": "String"
             }
         }
+    },
+    "controlModeSwitchGroup": "MODE SWITCH",
+    "@controlModeSwitchGroup": {
+        "description": "Group caption over the Mode-footswitch behaviour row. Upper case, as every group caption on the console is."
+    },
+    "controlFxHoldRow": "Hold for FX",
+    "@controlFxHoldRow": {
+        "description": "Row that switches the Mode footswitch to a Record/Mute tap cycle with FX behind a hold."
+    },
+    "controlFxHoldSub": "The pedal's Mode switch only: a press cycles Record and Mute; holding enters and leaves FX. Off, a press cycles all three modes and holding arms performance recording.",
+    "@controlFxHoldSub": {
+        "description": "One-liner under the Hold-for-FX row: scoped to the pedal alone (keyboard and on-screen controls keep the three-way cycle either way), what the hold gains, and what it stops doing."
     },
     "midiDeviceGroup": "MIDI FOOT CONTROLLER",
     "@midiDeviceGroup": {

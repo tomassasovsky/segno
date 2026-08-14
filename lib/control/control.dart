@@ -39,3 +39,4 @@ export 'binding/pedal_binding_set.dart';
 export 'control_projection.dart';
 export 'cubit/control_cubit.dart';
 export 'invariants.dart';
+export 'mode_switch_style.dart';

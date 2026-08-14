@@ -497,6 +497,195 @@ void main() {
       );
     });
 
+    // #632: the MODE switch's second style — a Record ↔ Mute tap cycle with
+    // FX behind the hold that arms performance recording under the default
+    // style. The default style's behaviour (three-stop cycle, MODE hold =
+    // performance record) stays pinned by the 'mode' and 'FX mode' groups
+    // above/below.
+    group('mode switch style (#632)', () {
+      /// Presses and releases [button] on the wire, letting the decoded event
+      /// reach the cubit.
+      Future<void> stomp(PedalButton button) async {
+        transport
+          ..emit(0x90, button.note, 127)
+          ..emit(0x80, button.note, 0);
+        await pumpEventQueue();
+      }
+
+      /// Holds [button] past the 500 ms long-press threshold, then releases.
+      /// Real delays (not fake_async) — the wire events reach the cubit
+      /// through the repository's stream, which a fake clock cannot pump.
+      Future<void> hold(PedalButton button) async {
+        transport.emit(0x90, button.note, 127);
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        transport.emit(0x80, button.note, 0);
+        await pumpEventQueue();
+      }
+
+      test('defaults to cycleThree — existing rigs see no change', () {
+        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.cycleThree);
+      });
+
+      test(
+        'holdFx: a pedal MODE tap cycles Record <-> Mute and never lands '
+        'on FX',
+        () async {
+          await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+          await stomp(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.mute);
+          await stomp(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.record);
+          await stomp(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.mute);
+        },
+      );
+
+      test(
+        'holdFx: toggleMode (keyboard M / on-screen chip) still cycles all '
+        'three modes — the setting governs the pedal only, so FX stays '
+        'reachable with no pedal plugged in',
+        () async {
+          await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+          cubit.toggleMode();
+          expect(cubit.state.mode, InteractionMode.mute);
+          cubit.toggleMode();
+          expect(cubit.state.mode, InteractionMode.fx);
+          cubit.toggleMode();
+          expect(cubit.state.mode, InteractionMode.record);
+        },
+      );
+
+      test('holdFx: a MODE hold enters FX and a second hold returns to '
+          'record', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        await hold(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.fx);
+        await hold(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.record);
+      });
+
+      test('holdFx: a second hold returns to MUTE when FX was entered from '
+          'mute — the return mode is wherever the foot was', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        await stomp(PedalButton.mode); // record -> mute
+        expect(cubit.state.mode, InteractionMode.mute);
+        await hold(PedalButton.mode); // mute -> fx
+        expect(cubit.state.mode, InteractionMode.fx);
+        await hold(PedalButton.mode); // fx -> back to mute, not record
+        expect(cubit.state.mode, InteractionMode.mute);
+      });
+
+      test('holdFx: a MODE tap while in FX also returns to the entered-from '
+          'mode — a stray tap can never strand the foot', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        await stomp(PedalButton.mode); // record -> mute
+        await hold(PedalButton.mode); // mute -> fx
+        await stomp(PedalButton.mode); // fx -> back to mute
+        expect(cubit.state.mode, InteractionMode.mute);
+      });
+
+      test('holdFx: the mode and its LED frame flip AT the hold threshold, '
+          'not at release', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        // v3 wire: below it the mode field has no FX bit and the frame
+        // degrades fx to play (B10), which would hide exactly the flip this
+        // test pins.
+        pedal
+          ..firmwareProtocolVersion = 3
+          ..bind('out');
+        await pumpEventQueue();
+
+        // Press and stay held: below the threshold nothing flips — the LEDs
+        // keep showing the mode the foot is still in.
+        transport.emit(0x90, PedalButton.mode.note, 127);
+        await pumpEventQueue();
+        expect(cubit.state.mode, InteractionMode.record);
+        expect(
+          PedalCodec.decodeFrame(transport.sent.last)?.mode,
+          PedalMode.rec,
+        );
+
+        // Past the threshold, foot STILL down: the mode has flipped and the
+        // pushed frame already carries FX.
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        expect(cubit.state.mode, InteractionMode.fx);
+        expect(
+          PedalCodec.decodeFrame(transport.sent.last)?.mode,
+          PedalMode.fx,
+        );
+
+        // The release is silent — the hold retired the tap action.
+        transport.emit(0x80, PedalButton.mode.note, 0);
+        await pumpEventQueue();
+        expect(cubit.state.mode, InteractionMode.fx);
+      });
+
+      test('holdFx: the MODE hold no longer arms performance recording — the '
+          'hold is the FX door instead', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        await hold(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.fx);
+        expect(performance.armedDirectory, isNull);
+      });
+
+      test('a style change clears the FX return latch — a mute latched under '
+          'an earlier holdFx spell is not read after a round-trip', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        await stomp(PedalButton.mode); // record -> mute
+        await hold(PedalButton.mode); // mute -> fx (latch = mute)
+        await hold(PedalButton.mode); // fx -> mute (latch still = mute)
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.cycleThree);
+        cubit.toggleMode(); // mute -> fx, the three-way cycle, no latch
+        expect(cubit.state.mode, InteractionMode.fx);
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        // The hold out of FX honours the record FALLBACK, not the mute the
+        // earlier holdFx spell latched: the style change dropped it.
+        await hold(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.record);
+      });
+
+      test('holdFx: FX entered from the keyboard/chip (toggleMode) still '
+          'exits to the mode it was entered from — the latch rides setMode, '
+          'the one entry point, not only the hold', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        await hold(PedalButton.mode); // record -> fx (an earlier hold session)
+        await hold(PedalButton.mode); // fx -> record
+        await stomp(PedalButton.mode); // record -> mute; perform here
+        cubit.toggleMode(); // keyboard M: mute -> fx
+        expect(cubit.state.mode, InteractionMode.fx);
+        // The pedal TAP out of FX lands in MUTE — the mode the M key left —
+        // not the record the earlier hold session latched.
+        await stomp(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.mute);
+        // And the pedal HOLD out honours the same latch.
+        cubit.toggleMode(); // mute -> fx again
+        await hold(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.mute);
+      });
+
+      test('setModeSwitchStyle persists the token', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.holdFx);
+        expect(
+          await settings.loadModeSwitchStyle(),
+          ModeSwitchStyle.holdFx.token,
+        );
+      });
+
+      test('load restores the persisted style', () async {
+        await settings.saveModeSwitchStyle(ModeSwitchStyle.holdFx.token);
+        await cubit.load();
+        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.holdFx);
+      });
+
+      test('an unknown stored token falls back to cycleThree', () async {
+        await settings.saveModeSwitchStyle('sideways');
+        await cubit.load();
+        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.cycleThree);
+      });
+    });
+
     // The FX-mode button matrix: every one of the ten controls is defined,
     // and the three inert ones are proven inert (A2/A4) — a stray stomp must
     // never erase the set.
