@@ -7,6 +7,7 @@ import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/transport_clock_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -341,21 +342,19 @@ class _RecordLight extends StatelessWidget {
   }
 }
 
-/// The narrow transport slice the clock renders. A record, so
-/// `context.select` compares it structurally: the position is held in whole
-/// seconds, which is what keeps a per-poll playhead tick from rebuilding
-/// anything until the displayed second actually changes.
-typedef _ClockState = ({
+/// The narrow tempo slice the readout renders. A record, so
+/// `context.select` compares it structurally and a per-poll engine tick
+/// rebuilds nothing until a drawn fact actually changes.
+typedef _TempoState = ({
   double bpm,
   bool hasTempo,
   int tsNum,
   int currentBeat,
   bool countingIn,
-  int positionSeconds,
 });
 
 /// The strip's trailing readout: the count-in word when one is running, the
-/// beat dots, the tempo, and the master-loop clock — the pen's
+/// beat dots, the tempo, and the transport clock — the pen's
 /// `count-in  ····  120.0 bpm  0:00:11` group, in the mono face.
 ///
 /// The tempo and the dots vanish on the tempo-free path
@@ -363,11 +362,10 @@ typedef _ClockState = ({
 /// draws a tempo, but drawing `0.0 bpm` over a grid that does not exist would
 /// state a wrong fact.
 ///
-/// The clock is the **master-loop playhead** — the engine's
-/// `masterPositionFrames` over the device rate. No wall-clock "time since
-/// transport started" exists in the engine or any cubit, so this shows the
-/// nearest live transport fact instead of faking one; it wraps at the loop
-/// boundary and reads 0:00:00 before the first loop closes.
+/// The clock is [TransportClockCubit]'s **elapsed transport time** — wall
+/// time while anything records or plays, holding across a stop and resetting
+/// only when the rig empties (#678). Whole seconds in the state, so the
+/// select slice fires once per displayed second.
 class _TempoClock extends StatelessWidget {
   const _TempoClock();
 
@@ -382,19 +380,19 @@ class _TempoClock extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final l10n = context.l10n;
-    final clock = context.select<LooperBloc, _ClockState>((bloc) {
-      final state = bloc.state;
-      final transport = state.transport;
-      final rate = state.status.sampleRate;
+    final clock = context.select<LooperBloc, _TempoState>((bloc) {
+      final transport = bloc.state.transport;
       return (
         bpm: transport.tempoBpm,
         hasTempo: transport.tempoSource != TempoSource.none,
         tsNum: transport.tsNum,
         currentBeat: transport.currentBeat,
         countingIn: transport.countingIn,
-        positionSeconds: rate > 0 ? transport.masterPositionFrames ~/ rate : 0,
       );
     });
+    final elapsedSeconds = context.select<TransportClockCubit, int>(
+      (cubit) => cubit.state.elapsed.inSeconds,
+    );
     // The pen's unlit beat dot is white at 18% — between the theme's border
     // tiers, with no token of its own — so it is derived from the lit dot's
     // colour rather than hardcoded.
@@ -444,7 +442,7 @@ class _TempoClock extends StatelessWidget {
           const SizedBox(width: 10),
         ],
         AppText(
-          _format(clock.positionSeconds),
+          _format(elapsedSeconds),
           key: const Key('stage_clock'),
           style: mono,
         ),
