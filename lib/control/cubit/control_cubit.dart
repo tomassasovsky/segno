@@ -205,12 +205,12 @@ class ControlCubit extends Cubit<ControlState> {
 
   // Where leaving FX under ModeSwitchStyle.holdFx returns to: the mode the
   // foot was in when the hold INTO FX committed (record or mute — never fx by
-  // construction). Read only while `state.mode == fx`, and re-latched by
-  // every hold entry, so a stale value from an earlier visit is never read.
+  // construction). Read only while `state.mode == fx`; re-latched by every
+  // hold entry, and RESET to the record fallback whenever the style changes
+  // (`setModeSwitchStyle`), so a latch captured under an earlier holdFx spell
+  // cannot resurface after a style round-trip that reached FX some other way.
   // A cubit field rather than ControlState, like the momentary restore
-  // values: a mid-gesture latch no surface renders, whose record fallback is
-  // also the right answer when FX was entered without one (a style flipped
-  // mid-FX).
+  // values: a mid-gesture latch no surface renders.
   InteractionMode _fxReturn = InteractionMode.record;
 
   // The FX-mode Stop long-press (restore every Track chain). The panic half
@@ -407,36 +407,34 @@ class ControlCubit extends Cubit<ControlState> {
   // Mode
   // ---------------------------------------------------------------------------
 
-  /// Cycles the interaction mode (identical from every surface).
+  /// Cycles Record -> Mute -> FX -> Record — the keyboard's `M` and the
+  /// on-screen mode chip, under EVERY [ModeSwitchStyle].
   ///
-  /// Under [ModeSwitchStyle.cycleThree] (the default): Record -> Mute -> FX
-  /// -> Record. A three-stop cycle, not a toggle: FX mode joins the same MODE
-  /// footswitch rather than claiming a switch the hardware does not have.
+  /// A three-stop cycle, not a toggle: FX mode joins the same MODE footswitch
+  /// rather than claiming a switch the hardware does not have. Side effects
+  /// fire for the LANDED mode only — cycling PAST a mode never runs its entry
+  /// work (A5), which falls out of [setMode] being the single entry point.
   ///
-  /// Under [ModeSwitchStyle.holdFx] (#632): Record <-> Mute only — FX is
-  /// entered and left by the MODE hold instead — except that a tap while IN
-  /// FX leaves to the mode FX was entered from, so a stray tap can never
-  /// strand the foot in a mode the tap cycle cannot exit.
-  ///
-  /// Side effects fire for the LANDED mode only — cycling PAST a mode never
-  /// runs its entry work (A5), which falls out of [setMode] being the single
-  /// entry point.
-  void toggleMode() {
-    final holdFx = state.modeSwitchStyle == ModeSwitchStyle.holdFx;
-    setMode(switch (state.mode) {
-      InteractionMode.record => InteractionMode.mute,
-      InteractionMode.mute =>
-        holdFx ? InteractionMode.record : InteractionMode.fx,
-      InteractionMode.fx => holdFx ? _fxReturn : InteractionMode.record,
-    });
-  }
+  /// Deliberately NOT style-gated: the #632 setting governs the PEDAL's MODE
+  /// switch ([_pedalModeTap]), whose hold is the surfaces' FX door under
+  /// [ModeSwitchStyle.holdFx]. The keyboard and the chip have no hold
+  /// equivalent, so a two-way cycle here would leave FX unreachable the
+  /// moment the pedal is unplugged.
+  void toggleMode() => setMode(switch (state.mode) {
+    InteractionMode.record => InteractionMode.mute,
+    InteractionMode.mute => InteractionMode.fx,
+    InteractionMode.fx => InteractionMode.record,
+  });
 
-  /// Sets and persists how the MODE footswitch reaches the three interaction
-  /// modes (#632), effective on the next press. Leaves the live mode where it
-  /// is: the style says how the switch MOVES between modes, never which one
-  /// the rig is in.
+  /// Sets and persists how the pedal's MODE footswitch reaches the three
+  /// interaction modes (#632), effective on the next press. Leaves the live
+  /// mode where it is — the style says how the switch MOVES between modes,
+  /// never which one the rig is in — but drops the FX return latch: whatever
+  /// [_fxReturn] held was captured under the OTHER style's rules, and the
+  /// record fallback is the only value a fresh style can honestly promise.
   Future<void> setModeSwitchStyle(ModeSwitchStyle style) async {
     if (style == state.modeSwitchStyle) return;
+    _fxReturn = InteractionMode.record;
     emit(state.copyWith(modeSwitchStyle: style));
     await _settings.saveModeSwitchStyle(style.token);
   }
@@ -1087,21 +1085,22 @@ class ControlCubit extends Cubit<ControlState> {
     _pushProjected();
   }
 
-  /// Arms the MODE press/hold gesture.
+  /// Arms the MODE press/hold gesture — the PEDAL's mode switch, the one
+  /// surface the #632 style governs.
   ///
   /// The hold rides the SAME `_longPress` threshold as undo/redo and the Stop
-  /// restore (see the field's doc), and its meaning follows the rig's
-  /// [ModeSwitchStyle], read at press time like the threshold itself:
+  /// restore (see the field's doc), and both halves of the gesture follow the
+  /// rig's [ModeSwitchStyle], read at press time like the threshold itself:
   ///
-  /// - [ModeSwitchStyle.cycleThree]: hold = arm/disarm performance recording
-  ///   (D-PEDAL), unchanged.
-  /// - [ModeSwitchStyle.holdFx] (#632): hold = the FX door
-  ///   ([_toggleFxHold]). One switch cannot carry both holds, so under this
-  ///   style performance recording keeps only its other surfaces (the
-  ///   toolbar and the keyboard's `A`) — a documented trade the setting
-  ///   opts into.
+  /// - [ModeSwitchStyle.cycleThree]: tap = the full [toggleMode] cycle; hold
+  ///   = arm/disarm performance recording (D-PEDAL), unchanged.
+  /// - [ModeSwitchStyle.holdFx] (#632): tap = [_pedalModeTap]'s Record ↔
+  ///   Mute cycle; hold = the FX door ([_toggleFxHold]). One switch cannot
+  ///   carry both holds, so under this style performance recording keeps
+  ///   only its other surfaces (the toolbar and the keyboard's `A`) — a
+  ///   documented trade the setting opts into.
   ///
-  /// Either way the action fires AT the threshold ([_HoldGesture] runs
+  /// Either way the hold fires AT the threshold ([_HoldGesture] runs
   /// `onHold` from its timer), so under holdFx the mode — and the LED frame
   /// the emit projects — flips the moment the hold commits, keeps showing
   /// the prior mode until then, and the release stays silent.
@@ -1120,10 +1119,27 @@ class ControlCubit extends Cubit<ControlState> {
       },
       onTap: () {
         _log('mode toggled (tap)');
-        toggleMode();
+        if (holdFx) {
+          _pedalModeTap();
+        } else {
+          toggleMode();
+        }
       },
     );
   }
+
+  /// The pedal MODE tap under [ModeSwitchStyle.holdFx]: Record <-> Mute, and
+  /// a tap while IN FX leaves to the mode FX was entered from — so a stray
+  /// tap can never strand the foot in a mode the tap cycle cannot exit.
+  ///
+  /// Pedal-only on purpose: every other surface keeps [toggleMode]'s
+  /// three-stop cycle, because only the pedal has the hold that makes FX
+  /// reachable without it.
+  void _pedalModeTap() => setMode(switch (state.mode) {
+    InteractionMode.record => InteractionMode.mute,
+    InteractionMode.mute => InteractionMode.record,
+    InteractionMode.fx => _fxReturn,
+  });
 
   /// The MODE hold under [ModeSwitchStyle.holdFx]: enters FX, latching the
   /// mode to return to; the next hold puts that mode back — not always

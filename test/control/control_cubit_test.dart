@@ -528,15 +528,31 @@ void main() {
       });
 
       test(
-        'holdFx: toggleMode cycles Record <-> Mute and never lands on FX',
+        'holdFx: a pedal MODE tap cycles Record <-> Mute and never lands '
+        'on FX',
+        () async {
+          await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+          await stomp(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.mute);
+          await stomp(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.record);
+          await stomp(PedalButton.mode);
+          expect(cubit.state.mode, InteractionMode.mute);
+        },
+      );
+
+      test(
+        'holdFx: toggleMode (keyboard M / on-screen chip) still cycles all '
+        'three modes — the setting governs the pedal only, so FX stays '
+        'reachable with no pedal plugged in',
         () async {
           await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
           cubit.toggleMode();
           expect(cubit.state.mode, InteractionMode.mute);
           cubit.toggleMode();
-          expect(cubit.state.mode, InteractionMode.record);
+          expect(cubit.state.mode, InteractionMode.fx);
           cubit.toggleMode();
-          expect(cubit.state.mode, InteractionMode.mute);
+          expect(cubit.state.mode, InteractionMode.record);
         },
       );
 
@@ -611,6 +627,22 @@ void main() {
         await hold(PedalButton.mode);
         expect(cubit.state.mode, InteractionMode.fx);
         expect(performance.armedDirectory, isNull);
+      });
+
+      test('a style change clears the FX return latch — a mute latched under '
+          'an earlier holdFx spell is not read after a round-trip', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        await stomp(PedalButton.mode); // record -> mute
+        await hold(PedalButton.mode); // mute -> fx (latch = mute)
+        await hold(PedalButton.mode); // fx -> mute (latch still = mute)
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.cycleThree);
+        cubit.toggleMode(); // mute -> fx, the three-way cycle, no latch
+        expect(cubit.state.mode, InteractionMode.fx);
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        // The hold out of FX honours the record FALLBACK, not the mute the
+        // earlier holdFx spell latched: the style change dropped it.
+        await hold(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.record);
       });
 
       test('setModeSwitchStyle persists the token', () async {
