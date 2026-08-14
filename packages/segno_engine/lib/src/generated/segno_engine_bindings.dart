@@ -4669,6 +4669,15 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Uint32()
   external int perf_overruns;
 
+  /// 0/1: the drain thread stopped ITSELF because a write failed -- disk full,
+  /// a quota, a read-only remount, an I/O error. Published here because the
+  /// stop was otherwise invisible to the app: the thread stopped, the capture
+  /// stayed "armed", its handles stayed open, and finalize never ran, leaving
+  /// raw .pcm that was not even recoverable (#640, #652). Latches for the life
+  /// of the capture; cleared by the next arm.
+  @ffi.Int32()
+  external int perf_stopped;
+
   /// detected fundamental; 0 = no pitch this frame
   @ffi.Float()
   external double tuner_hz;

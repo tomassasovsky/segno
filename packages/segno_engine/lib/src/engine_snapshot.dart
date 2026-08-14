@@ -566,6 +566,7 @@ class EngineSnapshot {
     this.isPerfArmed = false,
     this.perfFrames = 0,
     this.perfOverruns = 0,
+    this.perfStopped = false,
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
     this.tsNum = 4,
@@ -614,6 +615,7 @@ class EngineSnapshot {
       isPerfArmed = false,
       perfFrames = 0,
       perfOverruns = 0,
+      perfStopped = false,
       tempoBpm = 0,
       tempoSource = TempoSource.none,
       tsNum = 4,
@@ -668,6 +670,7 @@ class EngineSnapshot {
     isPerfArmed: native.perf_armed != 0,
     perfFrames: native.perf_frames,
     perfOverruns: native.perf_overruns,
+    perfStopped: native.perf_stopped != 0,
     tempoBpm: native.tempo_bpm,
     tempoSource: TempoSource.fromCode(native.tempo_source),
     tsNum: native.ts_num,
@@ -800,6 +803,14 @@ class EngineSnapshot {
   /// Capture frames dropped (a full ring) since the most recent
   /// `AudioEngine.perfArm`. `0` when never armed or nothing has overflowed.
   final int perfOverruns;
+
+  /// Whether the capture drain thread stopped ITSELF because a write failed —
+  /// disk full, a quota, a read-only remount, an I/O error.
+  ///
+  /// Distinct from a capture that is simply not armed: this says one WAS armed
+  /// and died. Without it the stop was invisible to the app — the capture
+  /// stayed armed, its handles stayed open, and finalize never ran (#652).
+  final bool perfStopped;
 
   // ---- tempo grid (A1) ----
 
@@ -936,6 +947,7 @@ class EngineSnapshot {
           isPerfArmed == other.isPerfArmed &&
           perfFrames == other.perfFrames &&
           perfOverruns == other.perfOverruns &&
+          perfStopped == other.perfStopped &&
           tempoBpm == other.tempoBpm &&
           tempoSource == other.tempoSource &&
           tsNum == other.tsNum &&
@@ -983,6 +995,7 @@ class EngineSnapshot {
     isPerfArmed,
     perfFrames,
     perfOverruns,
+    perfStopped,
     tempoBpm,
     tempoSource,
     tsNum,

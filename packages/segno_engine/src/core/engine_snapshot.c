@@ -13,6 +13,7 @@
 
 #include "engine_core.h"    /* le_lanes_active */
 #include "engine_fx.h"      /* le_octaver_latency */
+#include "engine_internal.h" /* le_perf_drain_self_stopped */
 #include "engine_private.h" /* le_engine, le_track, le_lane, load/store helpers */
 #include "segno_engine_api.h"
 
@@ -190,6 +191,10 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
       atomic_load_explicit(&engine->a_perf_frames, memory_order_relaxed);
   out->perf_overruns =
       atomic_load_explicit(&engine->a_perf_overruns, memory_order_relaxed);
+  /* No drain (never armed, or already disarmed) reads as "not stopped" -- the
+   * flag describes a live capture that died, not the absence of one. */
+  out->perf_stopped =
+      engine->perf.drain ? le_perf_drain_self_stopped(engine->perf.drain) : 0;
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_fill_track_snapshot(&engine->tracks[t], t < engine->track_count,

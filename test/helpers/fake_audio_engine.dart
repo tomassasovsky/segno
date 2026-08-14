@@ -18,6 +18,11 @@ class FakeAudioEngine implements AudioEngine {
   /// Snapshot returned by [snapshot].
   EngineSnapshot nextSnapshot = const EngineSnapshot.initial();
 
+  /// Whether the snapshot reports the capture drain self-stopped on a failed
+  /// write (#652). Overlaid onto [nextSnapshot] so a test can flip it mid-run
+  /// without rebuilding the whole snapshot.
+  bool perfStopped = false;
+
   /// The device name reported while running.
   String runningDeviceName = 'Fake Device';
 
@@ -71,7 +76,29 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineSnapshot snapshot() => nextSnapshot;
+  EngineSnapshot snapshot() => perfStopped
+      ? EngineSnapshot(
+          isRunning: nextSnapshot.isRunning,
+          sampleRate: nextSnapshot.sampleRate,
+          bufferFrames: nextSnapshot.bufferFrames,
+          framesProcessed: nextSnapshot.framesProcessed,
+          xrunCount: nextSnapshot.xrunCount,
+          inputRms: nextSnapshot.inputRms,
+          inputPeak: nextSnapshot.inputPeak,
+          outputRms: nextSnapshot.outputRms,
+          latencyState: nextSnapshot.latencyState,
+          measuredLatencyMs: nextSnapshot.measuredLatencyMs,
+          masterLengthFrames: nextSnapshot.masterLengthFrames,
+          masterPositionFrames: nextSnapshot.masterPositionFrames,
+          masterGain: nextSnapshot.masterGain,
+          recordOffsetFrames: nextSnapshot.recordOffsetFrames,
+          isPerfArmed: nextSnapshot.isPerfArmed,
+          perfFrames: nextSnapshot.perfFrames,
+          perfOverruns: nextSnapshot.perfOverruns,
+          perfStopped: true,
+          tracks: nextSnapshot.tracks,
+        )
+      : nextSnapshot;
 
   /// Loopback detection result returned by [detectLoopback].
   LoopbackInfo loopback = const LoopbackInfo.none();

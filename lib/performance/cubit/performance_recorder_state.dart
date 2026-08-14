@@ -3,8 +3,13 @@ part of 'performance_recorder_cubit.dart';
 /// Why a capture stopped before disarm (D-FAIL): reported inside
 /// [PerformanceRecordStoppedEarly].
 enum PerformanceStopReason {
-  /// The export volume ran out of space mid-capture (`perf_drain.c`'s
-  /// self-stop).
+  /// A write to the export volume could not be completed mid-capture — the
+  /// preventive free-space floor, or `perf_drain.c`'s own self-stop, which
+  /// fires on a full disk, a quota, a read-only remount or an I/O error.
+  ///
+  /// Named for the common case, but the message must not assert it: three of
+  /// the four self-stop causes leave the volume with space on it, and telling
+  /// the operator to free some sends them after the wrong thing.
   diskFull,
 
   /// The audio device changed mid-capture, forcing a reconfigure that can't

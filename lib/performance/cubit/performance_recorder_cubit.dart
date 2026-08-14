@@ -312,6 +312,15 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       unawaited(_checkLowDisk(_captureDir));
     }
     final progress = _performance.captureProgress;
+    // The engine stopped writing on its own — a failed write, which the
+    // free-space floor cannot predict: a quota, a read-only remount, an I/O
+    // error, or a volume filled by something else between two samples. Until
+    // this was published the thread died silently and the capture stayed
+    // "armed" forever with its handles open (#652).
+    if (progress.selfStopped) {
+      unawaited(_stopForLowDisk());
+      return;
+    }
     _emit(
       PerformanceRecorderArmed(
         elapsed: progress.elapsed,
@@ -380,8 +389,14 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     }
   }
 
-  /// Stops a running capture that has crossed [stopFloorFor] and finalizes
-  /// what it has, so the take is a playable bundle rather than orphaned `.pcm`.
+  /// Stops a running capture and finalizes what it has, so the take is a
+  /// playable bundle rather than orphaned `.pcm`.
+  ///
+  /// Two triggers, one path: the free-space floor ([stopFloorFor]) crossing
+  /// PREVENTIVELY, and the engine's own drain reporting it already died on a
+  /// failed write. The second is the case the floor cannot see coming, and the
+  /// reason is recorded here either way because the engine's sidecar marker is
+  /// only written on its own self-stop.
   ///
   /// Goes through [PerformanceRepository.disarmAndFinalize], not
   /// [PerformanceRepository.disarm]: this is not the operator's toggle
