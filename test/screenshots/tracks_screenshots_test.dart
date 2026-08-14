@@ -13,6 +13,8 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
+import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/common/console_mode.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -106,6 +108,13 @@ void main() {
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
     when(() => repository.state).thenReturn(const LooperState());
+    // The tray's Signal face reads these through `MonitorCubit`. A bare mock
+    // returns null for each and the cubit dies in its constructor.
+    when(() => repository.monitorChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
+    );
+    when(() => repository.allMonitors()).thenReturn(const {});
+    when(() => repository.monitorEffects(any())).thenReturn(const []);
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
@@ -168,6 +177,19 @@ void main() {
               BlocProvider<SessionCubit>.value(value: session),
               BlocProvider<PerformanceRecorderCubit>.value(
                 value: performanceRecorder,
+              ),
+              // Console mode mounts the tray in the main window, and the tray
+              // opens on Signal — whose input cards read both of these. Absent,
+              // this whole test throws `ProviderNotFound` before it can draw,
+              // which is how it rotted: it only runs under
+              // `--dart-define=SEGNO_CONSOLE=true`, so nothing was running it.
+              BlocProvider<InputsCubit>(
+                create: (_) =>
+                    InputsCubit(settings: settings, repository: repository),
+              ),
+              BlocProvider<MonitorCubit>(
+                create: (_) =>
+                    MonitorCubit(repository: repository, settings: settings),
               ),
             ],
             child: const TracksView(),

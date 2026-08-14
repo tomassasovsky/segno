@@ -571,6 +571,30 @@ void main() {
       expect(text.center.dx, closeTo(capsule.center.dx, 0.5));
     });
 
+    testWidgets('the rail is the size and shape the pen draws', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      // Read off `f1VwZ` and its `NavItem` in `segno-ui.pen`. Every one of
+      // these shipped wrong: a 165 rail, a 24 radius that made each 46px row a
+      // stadium, and 8px of horizontal margin per item on top of the rail's
+      // own inset, which took 16 off every pill.
+      final rail = tester.getRect(find.byType(TrayNavigationRail));
+      expect(rail.width, TrayNavigationRail.width);
+      expect(TrayNavigationRail.width, 180);
+
+      final item = tester.getRect(
+        find.byKey(const Key('settingsTrayRail_signal')),
+      );
+      // 180 less the pen's 10 left and 11 right.
+      expect(item.width, closeTo(159, 0.5));
+      expect(item.height, closeTo(46, 1));
+      expect(item.left - rail.left, closeTo(10, 0.5));
+    });
+
     testWidgets('brightness sits at the foot, not under the last domain', (
       tester,
     ) async {
@@ -589,7 +613,12 @@ void main() {
       // The pen puts a fill spacer between the domains and Bright. Without
       // it the entry lands directly under System with the whole lower rail
       // blank — which a golden will happily record as correct.
-      expect(bright.top, greaterThan(system.bottom + 100));
+      //
+      // Measured against the ITEM GAP rather than a round number: without the
+      // spacer the two are 5 apart, and a threshold that big cannot be reached
+      // by any change to padding. 100 was arbitrary and went red the moment
+      // the pen's own 12px item padding made the eight domains taller.
+      expect(bright.top, greaterThan(system.bottom + 40));
       expect(rail.bottom - bright.bottom, lessThan(kTrayHandleHeight + 24));
     });
 
