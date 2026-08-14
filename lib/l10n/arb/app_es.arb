@@ -991,6 +991,10 @@
     "countInBarsLabel1": "1 compás",
     "countInBarsLabel2": "2 compases",
     "countInBarsLabel4": "4 compases",
+    "stageTempoBpm": "{bpm} bpm",
+    "stageCountIn": "cuenta de entrada",
+    "a11yStageBank": "Banco {bank}",
+    "a11yStageRecordIdle": "Sin grabar",
     "countingInLabel": "Cuenta de entrada {beats}",
     "@countingInLabel": {
         "description": "Shown in the transport while a count-in is running, with the beat countdown.",
