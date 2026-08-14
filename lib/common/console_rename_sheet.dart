@@ -14,8 +14,10 @@ import 'package:segno/theme/theme.dart';
 /// real `TextField` would summon a second keyboard panel underneath a dialog
 /// that is itself trying to centre in what is left of the screen.
 ///
-/// The stage keeps its own `showRenameTrackDialog`: that surface has a
-/// physical keyboard behind it and no room for a full-width one.
+/// Every console rename comes through here — the stage's
+/// `showRenameTrackDialog` included, which the pen draws with this keyboard
+/// in `STAGE / track-rename` and which keeps its Material dialog only on
+/// desktop, where a physical keyboard makes a full-width sheet dead weight.
 ///
 /// Built for track names, generalised the moment a second thing needed naming.
 /// The parameters are exactly what the two callers actually differ on —
