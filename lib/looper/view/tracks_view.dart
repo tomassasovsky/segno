@@ -15,6 +15,7 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/stage_status_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
@@ -153,6 +154,15 @@ class _TracksViewState extends State<TracksView> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
+                              // The pen's `STAGE / stage` status bar: 16
+                              // under the 8 top inset puts the strip at 24,
+                              // and the run starts 10 below it — the pen's
+                              // own 24/64/74 verticals.
+                              if (kConsoleMode) ...[
+                                const SizedBox(height: 16),
+                                const StageStatusBar(),
+                                const SizedBox(height: 10),
+                              ],
                               if (!kConsoleMode) ...[
                                 TracksToolbar(
                                   mode: mode,

@@ -1335,6 +1335,32 @@
     "countInBarsLabel1": "1 bar",
     "countInBarsLabel2": "2 bars",
     "countInBarsLabel4": "4 bars",
+    "stageTempoBpm": "{bpm} bpm",
+    "@stageTempoBpm": {
+        "description": "The console status bar's tempo readout, in the pen's lower-case mono face.",
+        "placeholders": {
+            "bpm": {
+                "type": "String"
+            }
+        }
+    },
+    "stageCountIn": "count-in",
+    "@stageCountIn": {
+        "description": "The console status bar's count-in word, shown beside the beat dots while a count-in runs."
+    },
+    "a11yStageBank": "Bank {bank}",
+    "@a11yStageBank": {
+        "description": "Announced for the console status bar's bank readout — which bank the pedal is on.",
+        "placeholders": {
+            "bank": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yStageRecordIdle": "Not recording",
+    "@a11yStageRecordIdle": {
+        "description": "Announced for the console status bar's performance-record light while no capture is running."
+    },
     "countingInLabel": "Count-in {beats}",
     "@countingInLabel": {
         "description": "Shown in the transport while a count-in is running, with the beat countdown.",
