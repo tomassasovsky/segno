@@ -137,8 +137,12 @@ class _TracksViewState extends State<TracksView> {
                           // foot pedals drive transport/mode/clear) and tightens
                           // the layout for the fixed panel; desktop builds keep
                           // the full chrome.
+                          // Console: the pen's `STAGE / stage` insets the run
+                          // 10 from the left, right and bottom, under a status
+                          // bar that starts at 24. Desktop keeps its own
+                          // chrome and its own 18.
                           padding: kConsoleMode
-                              ? const EdgeInsets.symmetric(vertical: 8)
+                              ? const EdgeInsets.fromLTRB(10, 8, 10, 10)
                               : const EdgeInsets.all(18),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -169,6 +173,12 @@ class _TracksViewState extends State<TracksView> {
                                 child: Row(
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,
+                                  // The pen's four columns sit 10 apart, and
+                                  // the run's own inset holds it off the
+                                  // screen edges. Padding each column instead
+                                  // doubled the inner gap to 16 and put half
+                                  // of it outside the run as well.
+                                  spacing: kConsoleMode ? 10 : 16,
                                   children: [
                                     // _TrackSlot supplies its own Expanded, so
                                     // a slot with no track takes no flex and
@@ -322,21 +332,18 @@ class _TrackSlot extends StatelessWidget {
     // The Expanded lives here, not at the call site, so the null case above can
     // opt out of the row's flex entirely.
     return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: TrackColumn(
-            track: track,
-            name: name,
-            selected: selected,
-            mode: mode,
-            onUndo: onUndo,
-            onRedo: onRedo,
-            looperMode: looperMode,
-            isPrimary: isPrimary,
-            onCrownPrimary: onCrownPrimary,
-          ),
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: TrackColumn(
+          track: track,
+          name: name,
+          selected: selected,
+          mode: mode,
+          onUndo: onUndo,
+          onRedo: onRedo,
+          looperMode: looperMode,
+          isPrimary: isPrimary,
+          onCrownPrimary: onCrownPrimary,
         ),
       ),
     );
