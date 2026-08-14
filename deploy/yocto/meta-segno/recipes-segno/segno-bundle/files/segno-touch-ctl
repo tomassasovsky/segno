@@ -59,12 +59,19 @@ read_matrix() {
 
 # Reject anything that is not exactly six numbers — a malformed rule makes udev
 # drop the whole file, which would take the touchscreen out with it.
+#
+# A character-class test is not enough: `.`, `1.2.3`, `+-` and `e` are all
+# built from permitted characters and would sail through to the rule this
+# check exists to protect. Each value has to parse as a real decimal, so the
+# grammar is spelled out.
+is_number() {
+    echo "$1" | awk '{ exit ($0 ~ /^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?$/) ? 0 : 1 }'
+}
+
 validate_matrix() {
     n=0
     for v in $1; do
-        case "$v" in
-            ''|*[!0-9.eE+-]*) log "not a number: '$v'"; return 1 ;;
-        esac
+        is_number "$v" || { log "not a number: '$v'"; return 1; }
         n=$((n + 1))
     done
     [ "$n" -eq 6 ] || { log "need 6 values, got $n"; return 1; }
@@ -106,11 +113,16 @@ json_matrix() {
     fi
 }
 
+# Backslashes and quotes, so a vendor's free-text device name cannot break the
+# object this verb contracts to print. The matrix needs none of this — it is
+# validated down to digits before it is ever stored.
+json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
 do_status() {
     if dev=$(touch_device_name); then present=true; else present=false; dev=""; fi
     if m=$(read_matrix); then cal=true; else cal=false; m=""; fi
     printf '{"present":%s,"device":"%s","calibrated":%s,"matrix":"%s"}\n' \
-        "$present" "$dev" "$cal" "$m"
+        "$present" "$(json_escape "$dev")" "$cal" "$m"
 }
 
 do_set() {
@@ -131,7 +143,14 @@ do_set() {
 }
 
 do_reset() {
-    rm -f "$MATRIX_FILE"
+    # `-f` hides a missing file, not a permission error — and under `set -e` an
+    # EACCES here killed the verb before it printed anything. The matrix is
+    # root-owned once a root-side `set` has run, so an unprivileged reset hits
+    # exactly that. Say so, the way do_set does for its own non-root case.
+    if [ -e "$MATRIX_FILE" ] && ! rm -f "$MATRIX_FILE" 2>/dev/null; then
+        log "cannot remove $MATRIX_FILE — not root?"
+        return 1
+    fi
     apply
     json_matrix
 }
