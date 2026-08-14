@@ -26,6 +26,10 @@ on:
         description: "Build mode (profile or release)"
         required: false
         default: profile
+      console:
+        description: "Compile the console UI (SEGNO_CONSOLE)"
+        required: false
+        default: "false"
   push:
     branches:
       - "perf/**"
@@ -57,7 +61,8 @@ jobs:
       - name: Build profile bundle
         run: |
           flutter build linux --${{ inputs.mode || 'profile' }} \
-            --target "${{ inputs.target || 'lib/main_production.dart' }}"
+            --target "${{ inputs.target || 'lib/main_production.dart' }}" \
+            ${{ inputs.console == 'true' && '--dart-define=SEGNO_CONSOLE=true' || '' }}
 
       # The bundle is what deploy/rpi/profile-on-device.sh expects to be handed:
       # the whole directory, binary + data/ + lib/, not a tarball of the repo.
@@ -65,6 +70,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: segno-linux-arm64-profile
-          path: build/linux/arm64/profile/bundle/
+          path: build/linux/arm64/${{ inputs.mode || 'profile' }}/bundle/
           if-no-files-found: error
           retention-days: 14
