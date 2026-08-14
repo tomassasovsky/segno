@@ -204,13 +204,14 @@ class ControlCubit extends Cubit<ControlState> {
   final _modeGesture = _HoldGesture();
 
   // Where leaving FX under ModeSwitchStyle.holdFx returns to: the mode the
-  // foot was in when the hold INTO FX committed (record or mute — never fx by
-  // construction). Read only while `state.mode == fx`; re-latched by every
-  // hold entry, and RESET to the record fallback whenever the style changes
-  // (`setModeSwitchStyle`), so a latch captured under an earlier holdFx spell
-  // cannot resurface after a style round-trip that reached FX some other way.
-  // A cubit field rather than ControlState, like the momentary restore
-  // values: a mid-gesture latch no surface renders.
+  // rig was in when FX was entered (record or mute — never fx by
+  // construction). Read only while `state.mode == fx`; latched by
+  // `setMode`'s FX entry — the ONE entry point, so every door (the pedal
+  // hold, the keyboard's M, the on-screen chip) records where it came from —
+  // and RESET to the record fallback whenever the style changes
+  // (`setModeSwitchStyle`), so a latch captured under the other style's
+  // rules is never read. A cubit field rather than ControlState, like the
+  // momentary restore values: a mid-gesture latch no surface renders.
   InteractionMode _fxReturn = InteractionMode.record;
 
   // The FX-mode Stop long-press (restore every Track chain). The panic half
@@ -493,6 +494,12 @@ class ControlCubit extends Cubit<ControlState> {
           ),
         );
       case InteractionMode.fx:
+        // Latch the pre-entry mode at the ONE entry point, so EVERY FX door
+        // — the pedal hold, the keyboard's M, the on-screen chip — records
+        // where it came from and a later holdFx exit returns there. Never fx
+        // by construction: the no-op guard above already returned when the
+        // rig was in FX.
+        _fxReturn = state.mode;
         // Cancel arms BEFORE the emit so the projection that rides it already
         // describes the post-entry intent (the engine's own state follows one
         // poll later, as it does for every other command).
@@ -1141,17 +1148,14 @@ class ControlCubit extends Cubit<ControlState> {
     InteractionMode.fx => _fxReturn,
   });
 
-  /// The MODE hold under [ModeSwitchStyle.holdFx]: enters FX, latching the
-  /// mode to return to; the next hold puts that mode back — not always
-  /// record, but wherever the foot was when it entered.
-  void _toggleFxHold() {
-    if (state.mode == InteractionMode.fx) {
-      setMode(_fxReturn);
-      return;
-    }
-    _fxReturn = state.mode;
-    setMode(InteractionMode.fx);
-  }
+  /// The MODE hold under [ModeSwitchStyle.holdFx]: enters FX, and the next
+  /// hold puts back the mode FX was entered from — not always record, but
+  /// wherever the rig was when it entered. The latch itself is written by
+  /// [setMode]'s FX entry, so this holds no latching of its own and an entry
+  /// through any other door returns just as correctly.
+  void _toggleFxHold() => setMode(
+    state.mode == InteractionMode.fx ? _fxReturn : InteractionMode.fx,
+  );
 
   // ---------------------------------------------------------------------------
   // Pedal remap (part 6b): bindings, momentary hold, release-all

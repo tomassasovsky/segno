@@ -645,6 +645,25 @@ void main() {
         expect(cubit.state.mode, InteractionMode.record);
       });
 
+      test('holdFx: FX entered from the keyboard/chip (toggleMode) still '
+          'exits to the mode it was entered from — the latch rides setMode, '
+          'the one entry point, not only the hold', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        await hold(PedalButton.mode); // record -> fx (an earlier hold session)
+        await hold(PedalButton.mode); // fx -> record
+        await stomp(PedalButton.mode); // record -> mute; perform here
+        cubit.toggleMode(); // keyboard M: mute -> fx
+        expect(cubit.state.mode, InteractionMode.fx);
+        // The pedal TAP out of FX lands in MUTE — the mode the M key left —
+        // not the record the earlier hold session latched.
+        await stomp(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.mute);
+        // And the pedal HOLD out honours the same latch.
+        cubit.toggleMode(); // mute -> fx again
+        await hold(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.mute);
+      });
+
       test('setModeSwitchStyle persists the token', () async {
         await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
         expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.holdFx);
