@@ -177,8 +177,16 @@ static int32_t query_device_channels(ma_context* ctx, const ma_device_id* id,
  *
  * Control thread only, like everything else in this file (see the header
  * comment), so no lock. A full table is simply a miss, which costs exactly what
- * the uncached path always cost. */
-#define LE_CHANNEL_CACHE_MAX 64
+ * the uncached path always cost.
+ *
+ * Sized for BOTH directions at the caller's own capacity, not for one. The FFI
+ * caller (native_audio_engine.dart, _maxDevices) asks for up to 64 per
+ * direction, so a playback+capture pair can legitimately hand back 128 — and a
+ * table capped at 64 would stop memoising partway through the second direction
+ * on a big rig, silently putting that tail back on a blocking HAL query per
+ * device per second with no log and no counter to say so. Exactly the rigs with
+ * enough channels to care about the readout are the ones that would hit it. */
+#define LE_CHANNEL_CACHE_MAX 128
 
 /* How many sightings an entry is trusted for before it is read again.
  *
@@ -193,8 +201,11 @@ static int32_t query_device_channels(ma_context* ctx, const ma_device_id* id,
  *
  * At the 1 Hz enumeration poll this is a re-read roughly every half minute per
  * device — enough to heal a macOS aggregate that gained a member (its UID does
- * not change) without putting the query back on the hot path. */
-#define LE_CHANNEL_CACHE_TTL 32
+ * not change) without putting the query back on the hot path.
+ *
+ * The value itself lives in engine_internal.h so the test that walks entries
+ * past their TTL derives its pass count from this number instead of hardcoding
+ * one that a retune would quietly leave short. */
 
 typedef struct le_channel_cache_entry {
   char id[256];

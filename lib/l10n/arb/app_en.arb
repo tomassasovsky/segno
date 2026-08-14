@@ -1183,6 +1183,14 @@
     "perfCaptureGlitch": "Dropped audio frames detected during capture.",
     "perfDiscarded": "Capture was too short to keep — discarded.",
     "perfLowDisk": "Low disk space — the capture may run out of room.",
+    "perfLowDiskBlocked": "Not enough disk space to start a capture. Free some space and try again.",
+    "@perfLowDiskBlocked": {
+        "description": "Snackbar shown when arming a performance capture is refused because the export volume is already below the free-space floor."
+    },
+    "perfStoppedLowDisk": "Capture stopped — the disk was running out of space. What was recorded has been saved.",
+    "@perfStoppedLowDisk": {
+        "description": "Shown when a running capture stopped itself on the free-space floor and finalized what it had."
+    },
     "perfRecoveryFound": "A capture wasn't saved properly last time. Recover it?",
     "perfRecoveryRecover": "Recover",
     "perfRecoveryDiscard": "Discard",
