@@ -38,9 +38,14 @@ class TrayNavigationRail extends StatelessWidget {
   /// From the redesign mockups (#490); the earlier 84px stacked form was built
   /// without them, since the decision record carries no diagrams.
   /// Rail width. Public because the brightness popover hangs off its edge.
-  static const double width = 165;
+  static const double width = 180;
 
-  static const double _itemGap = 4;
+  /// Inside the rail, from the pen's `f1VwZ`: the bottom is deep because the
+  /// drag handle rides in it — 41 clears [kTrayHandleHeight] with room to
+  /// spare, so brightness does not sit on a control that closes the tray.
+  static const EdgeInsets _railPadding = EdgeInsets.fromLTRB(10, 19, 11, 41);
+
+  static const double _itemGap = 5;
 
   /// The rail's destinations, in the order the mockups stack them.
   ///
@@ -166,7 +171,7 @@ class TrayNavigationRail extends StatelessWidget {
                 // draw it at any height, and keeps it reachable when the
                 // domain list is taller than the rail.
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: _railPadding,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     spacing: _itemGap,
@@ -200,29 +205,23 @@ class TrayNavigationRail extends StatelessWidget {
                           ),
                         ),
                       ),
-                      // The drag handle rides at the open panel's bottom
-                      // edge — pad past it so this does not sit under a
-                      // control that closes the tray.
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          bottom: kTrayHandleHeight,
+                      // No extra bottom pad: the rail's own 41 already clears
+                      // the drag handle that rides at the panel's foot.
+                      _RailItem(
+                        key: const Key('settingsTrayRail_brightness'),
+                        // A sun, as the pen draws it — the one entry that
+                        // is about the screen rather than the rig.
+                        glyph: (color) => Icon(
+                          LucideIcons.sun,
+                          size: TrayNavigationRail.iconSize,
+                          color: color,
                         ),
-                        child: _RailItem(
-                          key: const Key('settingsTrayRail_brightness'),
-                          // A sun, as the pen draws it — the one entry that
-                          // is about the screen rather than the rig.
-                          glyph: (color) => Icon(
-                            LucideIcons.sun,
-                            size: TrayNavigationRail.iconSize,
-                            color: color,
-                          ),
-                          label: l10n.trayBrightLabel,
-                          // Never "selected": it does not replace the face
-                          // behind it, so a lit pill here would claim a
-                          // destination the rail has not moved to.
-                          selected: false,
-                          onTap: onBrightness,
-                        ),
+                        label: l10n.trayBrightLabel,
+                        // Never "selected": it does not replace the face
+                        // behind it, so a lit pill here would claim a
+                        // destination the rail has not moved to.
+                        selected: false,
+                        onTap: onBrightness,
                       ),
                     ],
                   ),
@@ -252,7 +251,9 @@ class _RailItem extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  static const double _radius = 24;
+  /// The pen's `NavItem` corner. 24 on a 46px row is a stadium; the pen draws
+  /// a rounded rectangle, and the rail is most of what the face shows.
+  static const double _radius = 11;
 
   @override
   Widget build(BuildContext context) {
@@ -266,8 +267,10 @@ class _RailItem extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 11),
-        margin: const EdgeInsets.symmetric(horizontal: 8),
+        // The pen's `NavItem` padding. No horizontal margin: the rail's own
+        // 10/11 inset is what holds the items off its edges, and adding 8 more
+        // per side narrowed every pill by 16.
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(_radius),
           color: selected
@@ -280,7 +283,7 @@ class _RailItem extends StatelessWidget {
         child: Row(
           children: [
             glyph(tint),
-            const SizedBox(width: 9),
+            const SizedBox(width: 12),
             Expanded(
               child: AppText(
                 label,
