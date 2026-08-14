@@ -141,6 +141,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   late final StreamSubscription<PerformanceCaptureStatus> _statusSubscription;
   Timer? _armedTicker;
   Timer? _renderPoller;
+  Timer? _recoveringPoller;
   String? _captureDir;
   DateTime? _armedAt;
   bool _lowDiskAtArm = false;
@@ -208,12 +209,44 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       hasWork = false; // unreadable root: runBootRecovery no-ops on it too
     }
     if (hasWork) _emit(const PerformanceRecorderIdle(recovering: true));
-    await _performance.runBootRecovery();
-    // Only clear a state this method itself set — a mid-recovery emission
-    // from elsewhere (nothing does today) must not be stomped back to idle.
-    if (state == const PerformanceRecorderIdle(recovering: true)) {
-      _emit(const PerformanceRecorderIdle());
+    try {
+      await _performance.runBootRecovery();
+    } finally {
+      // In a finally so the flag can never wedge true past this call: if
+      // recovery itself blew up (a genuine bug escaping its guards), a
+      // permanently-disabled record button must not be the second casualty.
+      _clearRecoveringWhenRenderSettles();
     }
+  }
+
+  /// Clears the [PerformanceRecorderIdle.recovering] flag this cubit's
+  /// [load] set — but only once [PerformanceRepository.renderProgress]
+  /// actually reads done. A timed-out salvage render outlives
+  /// `runBootRecovery` and keeps holding [PerformanceRepository.arm]'s
+  /// render gate, so clearing the flag on return would re-enable a button
+  /// whose every press is silently refused — the exact invisible refusal
+  /// the flag exists to prevent. While the render is still live this polls
+  /// at the same cadence as the post-disarm render poll, keeping the flag
+  /// (and the disabled button) up until arming genuinely works again.
+  /// Only ever clears the exact state [load] set — anything else on screen
+  /// is not this method's to stomp.
+  void _clearRecoveringWhenRenderSettles() {
+    const recovering = PerformanceRecorderIdle(recovering: true);
+    if (state != recovering) return;
+    if (_performance.renderProgress.done) {
+      _emit(const PerformanceRecorderIdle());
+      return;
+    }
+    _recoveringPoller?.cancel();
+    _recoveringPoller = Timer.periodic(_renderPollInterval, (timer) {
+      if (isClosed || state != recovering) {
+        timer.cancel();
+        return;
+      }
+      if (!_performance.renderProgress.done) return;
+      timer.cancel();
+      _emit(const PerformanceRecorderIdle());
+    });
   }
 
   /// Renames the just-delivered capture to [to] (D-NAME) — the completion
@@ -641,6 +674,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   Future<void> close() {
     _armedTicker?.cancel();
     _renderPoller?.cancel();
+    _recoveringPoller?.cancel();
     unawaited(_statusSubscription.cancel());
     return super.close();
   }

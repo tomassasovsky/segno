@@ -191,6 +191,83 @@ void main() {
       expect: () => <PerformanceRecorderState>[],
     );
 
+    test(
+      'keeps the recovering flag up past load() while a timed-out salvage '
+      "render still holds arm's gate, and clears it once the render "
+      'settles (#679 r3)',
+      () async {
+        final dir = Directory('${tempDir.path}/exports/perf-crashed')
+          ..createSync(recursive: true);
+        writeManifest(dir.path, finalized: false);
+        // A render the engine still reports in flight when runBootRecovery
+        // returns (the repository's own timeout/slot handling is pinned in
+        // its package tests) — exactly the window where arm is refused with
+        // no Finalizing/Rendering state on screen to explain it.
+        engine.renderProgress = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 10,
+        );
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        await cubit.load();
+
+        expect(
+          cubit.state,
+          const PerformanceRecorderIdle(recovering: true),
+          reason:
+              "the live render still holds arm's render gate — clearing "
+              'now would re-enable a button whose every press is refused',
+        );
+
+        engine.renderProgress = PerformanceRenderProgress.empty;
+        await cubit.stream
+            .firstWhere((s) => s == const PerformanceRecorderIdle())
+            .timeout(const Duration(seconds: 5));
+      },
+    );
+
+    test(
+      'a recovery that blows up cannot wedge the recovering flag — the '
+      'clearing emission runs in a finally (#679 r3)',
+      () async {
+        final dir = Directory('${tempDir.path}/exports/perf-crashed')
+          ..createSync(recursive: true);
+        writeManifest(dir.path, finalized: false);
+        var rootCalls = 0;
+        final blowingRepo = PerformanceRepository(
+          engine: engine,
+          exportsRoot: () async {
+            rootCalls++;
+            // The probe's scan resolves; recovery's own resolution throws
+            // an Error — the kind no runtime guard is meant to catch.
+            if (rootCalls > 1) throw StateError('bug');
+            return '${tempDir.path}/exports';
+          },
+          now: () => clock,
+        );
+        addTearDown(blowingRepo.dispose);
+        final cubit = PerformanceRecorderCubit(
+          performance: blowingRepo,
+          armedTickInterval: const Duration(milliseconds: 10),
+          renderPollInterval: const Duration(milliseconds: 10),
+          now: () => clock,
+          freeSpaceBytes: (_) async => null,
+        );
+        addTearDown(cubit.close);
+
+        await expectLater(cubit.load(), throwsStateError);
+
+        expect(
+          cubit.state,
+          const PerformanceRecorderIdle(),
+          reason:
+              'the bug is the bug — a record button dead until restart '
+              'must not be its second casualty',
+        );
+      },
+    );
+
     test('is latched: a second call does not re-run recovery', () async {
       final cubit = build();
       addTearDown(cubit.close);
