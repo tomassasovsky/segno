@@ -2290,6 +2290,18 @@
             }
         }
     },
+    "controlModeSwitchGroup": "MODE SWITCH",
+    "@controlModeSwitchGroup": {
+        "description": "Group caption over the Mode-footswitch behaviour row. Upper case, as every group caption on the console is."
+    },
+    "controlFxHoldRow": "Hold for FX",
+    "@controlFxHoldRow": {
+        "description": "Row that switches the Mode footswitch to a Record/Mute tap cycle with FX behind a hold."
+    },
+    "controlFxHoldSub": "A press cycles Record and Mute; holding enters and leaves FX. Off, a press cycles all three modes and holding arms performance recording.",
+    "@controlFxHoldSub": {
+        "description": "One-liner under the Hold-for-FX row, stating both what the hold gains and what it stops doing."
+    },
     "midiDeviceGroup": "MIDI FOOT CONTROLLER",
     "@midiDeviceGroup": {
         "description": "Group caption over the MIDI device row and its status card."

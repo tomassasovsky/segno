@@ -17,6 +17,7 @@ import 'package:segno/control/binding/fx_binding_target.dart';
 import 'package:segno/control/binding/pedal_binding.dart';
 import 'package:segno/control/binding/pedal_binding_set.dart';
 import 'package:segno/control/control_projection.dart';
+import 'package:segno/control/mode_switch_style.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -180,8 +181,13 @@ class ControlCubit extends Cubit<ControlState> {
   static const double _encoderStep = 1 / 64;
   double _masterGain = 1;
 
-  // The hold threshold every gesture below arms with, read at press time so a
-  // settings change lands on the next stomp.
+  // The ONE hold threshold every gesture below arms with — undo/redo, the
+  // MODE hold (performance record, or the FX door under
+  // ModeSwitchStyle.holdFx), and the Stop restore all share it — read at
+  // press time so a settings change lands on the next stomp. Persisted as
+  // `pedal.long_press_ms`; 500 ms until the user tunes it. The #632 FX hold
+  // deliberately introduces no second constant: one plate, one meaning of
+  // "held", whatever the hold does on that switch.
   Duration _longPress = const Duration(milliseconds: 500);
   Timer? _keepAliveTimer;
 
@@ -191,10 +197,21 @@ class ControlCubit extends Cubit<ControlState> {
   final _undoGesture = _HoldGesture();
 
   // MODE: tap = cycle the interaction mode, long-press = arm/disarm
-  // performance recording (D-PEDAL). No spare footswitch/pin exists on the
-  // physical pedal, so the gesture rides the existing MODE button rather than
-  // a new one — mirrors the undo/redo split above.
+  // performance recording (D-PEDAL) — or, under ModeSwitchStyle.holdFx, the
+  // FX door (#632). No spare footswitch/pin exists on the physical pedal, so
+  // the gesture rides the existing MODE button rather than a new one —
+  // mirrors the undo/redo split above.
   final _modeGesture = _HoldGesture();
+
+  // Where leaving FX under ModeSwitchStyle.holdFx returns to: the mode the
+  // foot was in when the hold INTO FX committed (record or mute — never fx by
+  // construction). Read only while `state.mode == fx`, and re-latched by
+  // every hold entry, so a stale value from an earlier visit is never read.
+  // A cubit field rather than ControlState, like the momentary restore
+  // values: a mid-gesture latch no surface renders, whose record fallback is
+  // also the right answer when FX was entered without one (a style flipped
+  // mid-FX).
+  InteractionMode _fxReturn = InteractionMode.record;
 
   // The FX-mode Stop long-press (restore every Track chain). The panic half
   // fires on the press, so this one arms no tap action — only the hold.
@@ -327,6 +344,9 @@ class ControlCubit extends Cubit<ControlState> {
     final defaultMode = InteractionMode.bootDefaultFromToken(
       await _settings.loadDefaultInteractionMode(),
     );
+    final modeSwitchStyle = ModeSwitchStyle.fromToken(
+      await _settings.loadModeSwitchStyle(),
+    );
     if (isClosed) return;
     // The repository resolves inputs against the set, so it has to learn the
     // restored mappings too — otherwise external control stays dead until the
@@ -336,6 +356,7 @@ class ControlCubit extends Cubit<ControlState> {
     emit(
       state.copyWith(
         defaultMode: defaultMode,
+        modeSwitchStyle: modeSwitchStyle,
         globalBindings: storedBindings,
         controllerBindings: storedControllerBindings,
       ),
@@ -386,17 +407,39 @@ class ControlCubit extends Cubit<ControlState> {
   // Mode
   // ---------------------------------------------------------------------------
 
-  /// Cycles Record -> Mute -> FX -> Record (identical from every surface).
+  /// Cycles the interaction mode (identical from every surface).
   ///
-  /// A three-stop cycle, not a toggle: FX mode joins the same MODE footswitch
-  /// rather than claiming a switch the hardware does not have. Side effects
-  /// fire for the LANDED mode only — cycling PAST a mode never runs its entry
-  /// work (A5), which falls out of [setMode] being the single entry point.
-  void toggleMode() => setMode(switch (state.mode) {
-    InteractionMode.record => InteractionMode.mute,
-    InteractionMode.mute => InteractionMode.fx,
-    InteractionMode.fx => InteractionMode.record,
-  });
+  /// Under [ModeSwitchStyle.cycleThree] (the default): Record -> Mute -> FX
+  /// -> Record. A three-stop cycle, not a toggle: FX mode joins the same MODE
+  /// footswitch rather than claiming a switch the hardware does not have.
+  ///
+  /// Under [ModeSwitchStyle.holdFx] (#632): Record <-> Mute only — FX is
+  /// entered and left by the MODE hold instead — except that a tap while IN
+  /// FX leaves to the mode FX was entered from, so a stray tap can never
+  /// strand the foot in a mode the tap cycle cannot exit.
+  ///
+  /// Side effects fire for the LANDED mode only — cycling PAST a mode never
+  /// runs its entry work (A5), which falls out of [setMode] being the single
+  /// entry point.
+  void toggleMode() {
+    final holdFx = state.modeSwitchStyle == ModeSwitchStyle.holdFx;
+    setMode(switch (state.mode) {
+      InteractionMode.record => InteractionMode.mute,
+      InteractionMode.mute =>
+        holdFx ? InteractionMode.record : InteractionMode.fx,
+      InteractionMode.fx => holdFx ? _fxReturn : InteractionMode.record,
+    });
+  }
+
+  /// Sets and persists how the MODE footswitch reaches the three interaction
+  /// modes (#632), effective on the next press. Leaves the live mode where it
+  /// is: the style says how the switch MOVES between modes, never which one
+  /// the rig is in.
+  Future<void> setModeSwitchStyle(ModeSwitchStyle style) async {
+    if (style == state.modeSwitchStyle) return;
+    emit(state.copyWith(modeSwitchStyle: style));
+    await _settings.saveModeSwitchStyle(style.token);
+  }
 
   /// Applies [next] with its entry side effects; a no-op when already there.
   ///
@@ -1044,18 +1087,54 @@ class ControlCubit extends Cubit<ControlState> {
     _pushProjected();
   }
 
+  /// Arms the MODE press/hold gesture.
+  ///
+  /// The hold rides the SAME `_longPress` threshold as undo/redo and the Stop
+  /// restore (see the field's doc), and its meaning follows the rig's
+  /// [ModeSwitchStyle], read at press time like the threshold itself:
+  ///
+  /// - [ModeSwitchStyle.cycleThree]: hold = arm/disarm performance recording
+  ///   (D-PEDAL), unchanged.
+  /// - [ModeSwitchStyle.holdFx] (#632): hold = the FX door
+  ///   ([_toggleFxHold]). One switch cannot carry both holds, so under this
+  ///   style performance recording keeps only its other surfaces (the
+  ///   toolbar and the keyboard's `A`) — a documented trade the setting
+  ///   opts into.
+  ///
+  /// Either way the action fires AT the threshold ([_HoldGesture] runs
+  /// `onHold` from its timer), so under holdFx the mode — and the LED frame
+  /// the emit projects — flips the moment the hold commits, keeps showing
+  /// the prior mode until then, and the release stays silent.
   void _armMode() {
+    final holdFx = state.modeSwitchStyle == ModeSwitchStyle.holdFx;
     _modeGesture.press(
       threshold: _longPress,
       onHold: () {
-        _log('performance record toggled (long-press)');
-        togglePerformanceRecord();
+        if (holdFx) {
+          _log('fx mode toggled (long-press)');
+          _toggleFxHold();
+        } else {
+          _log('performance record toggled (long-press)');
+          togglePerformanceRecord();
+        }
       },
       onTap: () {
         _log('mode toggled (tap)');
         toggleMode();
       },
     );
+  }
+
+  /// The MODE hold under [ModeSwitchStyle.holdFx]: enters FX, latching the
+  /// mode to return to; the next hold puts that mode back — not always
+  /// record, but wherever the foot was when it entered.
+  void _toggleFxHold() {
+    if (state.mode == InteractionMode.fx) {
+      setMode(_fxReturn);
+      return;
+    }
+    _fxReturn = state.mode;
+    setMode(InteractionMode.fx);
   }
 
   // ---------------------------------------------------------------------------

@@ -1707,6 +1707,18 @@
             }
         }
     },
+    "controlModeSwitchGroup": "CONMUTADOR DE MODO",
+    "@controlModeSwitchGroup": {
+        "description": "Group caption over the Mode-footswitch behaviour row. Upper case, as every group caption on the console is."
+    },
+    "controlFxHoldRow": "Mantener para FX",
+    "@controlFxHoldRow": {
+        "description": "Row that switches the Mode footswitch to a Record/Mute tap cycle with FX behind a hold."
+    },
+    "controlFxHoldSub": "Una pulsación alterna entre Grabar y Silenciar; mantener entra y sale de FX. Desactivado, una pulsación recorre los tres modos y mantener arma la grabación de actuación.",
+    "@controlFxHoldSub": {
+        "description": "One-liner under the Hold-for-FX row, stating both what the hold gains and what it stops doing."
+    },
     "midiDeviceGroup": "CONTROLADOR MIDI DE PIE",
     "@midiDeviceGroup": {
         "description": "Group caption over the MIDI device row and its status card."

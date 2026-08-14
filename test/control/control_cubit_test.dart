@@ -497,6 +497,144 @@ void main() {
       );
     });
 
+    // #632: the MODE switch's second style — a Record ↔ Mute tap cycle with
+    // FX behind the hold that arms performance recording under the default
+    // style. The default style's behaviour (three-stop cycle, MODE hold =
+    // performance record) stays pinned by the 'mode' and 'FX mode' groups
+    // above/below.
+    group('mode switch style (#632)', () {
+      /// Presses and releases [button] on the wire, letting the decoded event
+      /// reach the cubit.
+      Future<void> stomp(PedalButton button) async {
+        transport
+          ..emit(0x90, button.note, 127)
+          ..emit(0x80, button.note, 0);
+        await pumpEventQueue();
+      }
+
+      /// Holds [button] past the 500 ms long-press threshold, then releases.
+      /// Real delays (not fake_async) — the wire events reach the cubit
+      /// through the repository's stream, which a fake clock cannot pump.
+      Future<void> hold(PedalButton button) async {
+        transport.emit(0x90, button.note, 127);
+        await pumpEventQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        transport.emit(0x80, button.note, 0);
+        await pumpEventQueue();
+      }
+
+      test('defaults to cycleThree — existing rigs see no change', () {
+        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.cycleThree);
+      });
+
+      test(
+        'holdFx: toggleMode cycles Record <-> Mute and never lands on FX',
+        () async {
+          await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+          cubit.toggleMode();
+          expect(cubit.state.mode, InteractionMode.mute);
+          cubit.toggleMode();
+          expect(cubit.state.mode, InteractionMode.record);
+          cubit.toggleMode();
+          expect(cubit.state.mode, InteractionMode.mute);
+        },
+      );
+
+      test('holdFx: a MODE hold enters FX and a second hold returns to '
+          'record', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        await hold(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.fx);
+        await hold(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.record);
+      });
+
+      test('holdFx: a second hold returns to MUTE when FX was entered from '
+          'mute — the return mode is wherever the foot was', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        await stomp(PedalButton.mode); // record -> mute
+        expect(cubit.state.mode, InteractionMode.mute);
+        await hold(PedalButton.mode); // mute -> fx
+        expect(cubit.state.mode, InteractionMode.fx);
+        await hold(PedalButton.mode); // fx -> back to mute, not record
+        expect(cubit.state.mode, InteractionMode.mute);
+      });
+
+      test('holdFx: a MODE tap while in FX also returns to the entered-from '
+          'mode — a stray tap can never strand the foot', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        await stomp(PedalButton.mode); // record -> mute
+        await hold(PedalButton.mode); // mute -> fx
+        await stomp(PedalButton.mode); // fx -> back to mute
+        expect(cubit.state.mode, InteractionMode.mute);
+      });
+
+      test('holdFx: the mode and its LED frame flip AT the hold threshold, '
+          'not at release', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        // v3 wire: below it the mode field has no FX bit and the frame
+        // degrades fx to play (B10), which would hide exactly the flip this
+        // test pins.
+        pedal
+          ..firmwareProtocolVersion = 3
+          ..bind('out');
+        await pumpEventQueue();
+
+        // Press and stay held: below the threshold nothing flips — the LEDs
+        // keep showing the mode the foot is still in.
+        transport.emit(0x90, PedalButton.mode.note, 127);
+        await pumpEventQueue();
+        expect(cubit.state.mode, InteractionMode.record);
+        expect(
+          PedalCodec.decodeFrame(transport.sent.last)?.mode,
+          PedalMode.rec,
+        );
+
+        // Past the threshold, foot STILL down: the mode has flipped and the
+        // pushed frame already carries FX.
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        expect(cubit.state.mode, InteractionMode.fx);
+        expect(
+          PedalCodec.decodeFrame(transport.sent.last)?.mode,
+          PedalMode.fx,
+        );
+
+        // The release is silent — the hold retired the tap action.
+        transport.emit(0x80, PedalButton.mode.note, 0);
+        await pumpEventQueue();
+        expect(cubit.state.mode, InteractionMode.fx);
+      });
+
+      test('holdFx: the MODE hold no longer arms performance recording — the '
+          'hold is the FX door instead', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        await hold(PedalButton.mode);
+        expect(cubit.state.mode, InteractionMode.fx);
+        expect(performance.armedDirectory, isNull);
+      });
+
+      test('setModeSwitchStyle persists the token', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.holdFx);
+        expect(
+          await settings.loadModeSwitchStyle(),
+          ModeSwitchStyle.holdFx.token,
+        );
+      });
+
+      test('load restores the persisted style', () async {
+        await settings.saveModeSwitchStyle(ModeSwitchStyle.holdFx.token);
+        await cubit.load();
+        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.holdFx);
+      });
+
+      test('an unknown stored token falls back to cycleThree', () async {
+        await settings.saveModeSwitchStyle('sideways');
+        await cubit.load();
+        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.cycleThree);
+      });
+    });
+
     // The FX-mode button matrix: every one of the ten controls is defined,
     // and the three inert ones are proven inert (A2/A4) — a stray stomp must
     // never erase the set.
