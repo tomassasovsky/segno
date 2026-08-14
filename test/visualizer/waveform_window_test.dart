@@ -1,5 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/performance_readout_view.dart';
 import 'package:segno/visualizer/waveform_window.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
 
@@ -203,6 +207,40 @@ void main() {
       expect(placement.fullscreen, isFalse);
       expect(placement.position, const Offset(120, 120));
       expect(placement.size, const Size(960, 320));
+    });
+  });
+
+  group('WaveformWindowApp', () {
+    testWidgets('gives the readout a Material ancestor', (tester) async {
+      // SegnoWindowChromeShell only mounts its own Scaffold on the Windows
+      // title-bar path, so the sub-window must supply the Material ancestor
+      // itself — without it the readout renders in the unthemed fallback
+      // style (yellow double-underlined text), as seen live on the 7".
+      final frame = ValueNotifier<WaveformFrame>(
+        (samples: Float32List(0), progress: 0, selectedTrack: ''),
+      );
+      final readout = ValueNotifier<PerformanceReadout>(
+        const PerformanceReadout(),
+      );
+      addTearDown(frame.dispose);
+      addTearDown(readout.dispose);
+
+      await tester.pumpWidget(
+        WaveformWindowApp(
+          frame: frame,
+          readout: readout,
+          title: 'Segno — Output',
+        ),
+      );
+
+      expect(
+        find.ancestor(
+          of: find.byType(PerformanceReadoutView),
+          matching: find.byType(Material),
+        ),
+        findsWidgets,
+      );
+      expect(tester.takeException(), isNull);
     });
   });
 }

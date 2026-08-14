@@ -270,22 +270,29 @@ class WaveformWindowApp extends StatelessWidget {
       supportedLocales: AppLocalizations.supportedLocales,
       builder: (context, child) =>
           AppTextDefaults(child: child ?? const SizedBox.shrink()),
+      // The Scaffold supplies the Material ancestor (the same job TracksView's
+      // Scaffold does in the main window): SegnoWindowChromeShell only mounts
+      // its own Scaffold on the Windows title-bar path, so without this the
+      // readout renders bare on Linux/macOS — the unthemed fallback style
+      // (yellow double-underlined text) seen live on the appliance's 7".
       home: SegnoWindowChromeShell(
         title: title,
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: ValueListenableBuilder<PerformanceReadout>(
-            valueListenable: readout,
-            builder: (context, readoutData, _) => PerformanceReadoutView(
-              readout: readoutData,
-              waveform: ValueListenableBuilder<WaveformFrame>(
-                valueListenable: frame,
-                builder: (context, data, _) => WaveformView(
-                  selectedTrack: data.selectedTrack,
-                  samples: data.samples,
-                  progress: data.progress,
-                  state: waveformStateOf(readoutData),
-                  semanticLabel: context.l10n.a11yWaveform,
+        body: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(16),
+            child: ValueListenableBuilder<PerformanceReadout>(
+              valueListenable: readout,
+              builder: (context, readoutData, _) => PerformanceReadoutView(
+                readout: readoutData,
+                waveform: ValueListenableBuilder<WaveformFrame>(
+                  valueListenable: frame,
+                  builder: (context, data, _) => WaveformView(
+                    selectedTrack: data.selectedTrack,
+                    samples: data.samples,
+                    progress: data.progress,
+                    state: waveformStateOf(readoutData),
+                    semanticLabel: context.l10n.a11yWaveform,
+                  ),
                 ),
               ),
             ),
