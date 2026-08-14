@@ -46,7 +46,14 @@ class MonitorCubit extends Cubit<MonitorState> {
     required SettingsRepository settings,
   }) : _repository = repository,
        _settings = settings,
-       super(const MonitorState());
+       super(const MonitorState()) {
+    // Subscribed at construction, not in [load]: this cubit is a cache of
+    // state another writer can change from the first frame, and a session
+    // applied before the restore finished would already have gone past it.
+    // Announcements that arrive before the restore are held, not read — see
+    // [_readMonitor].
+    _monitorWatch = _repository.monitorChanges.listen(_readMonitor);
+  }
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
@@ -59,16 +66,39 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// close / [close] so a closed editor never leaves a ticking timer.
   final Map<(int, int), Timer> _editorTimers = {};
 
+  /// Follows the plugin scan, so the chains pick up what it resolves.
+  StreamSubscription<void>? _catalogWatch;
+
+  /// Follows monitor writes that did not come through here.
+  ///
+  /// This cubit is a write-through cache of state the repository owns, and it
+  /// is not the only writer: a pedal binding resolving an `FxStage.input`
+  /// target goes straight there (`FxBindingResolver`), as does a session
+  /// apply. The other stages are projected onto `LooperState` and so correct
+  /// themselves; a monitor lives only in the repository's own maps, so nothing
+  /// corrected this one — a footswitch could switch an input chain off and
+  /// leave the console drawing it as running, with the first tap writing the
+  /// state it was already in and looking inert.
+  late final StreamSubscription<int> _monitorWatch;
+
+  /// Whether [_restore] has pushed the saved monitors into the repository.
+  bool _restored = false;
+
+  /// Inputs announced before that, to be read once it has.
+  final Set<int> _heldReads = {};
+
   /// Restores the persisted per-input monitors and applies them to the
   /// repository. Reads the single-chain keys; the multi-lane → single-chain
   /// fold (v3) runs at bootstrap, before this.
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
-    // Scan the shared engine input ceiling ([kMaxInputs] == `LE_MAX_INPUTS`).
+    // Scan the monitor path's own ceiling ([kMaxMonitoredInputs] ==
+    // `LE_MAX_MONITORED_INPUTS`).
     // Only inputs with saved state populate the map.
     final loaded = await Future.wait([
-      for (var input = 0; input < kMaxInputs; input++) _restoreInput(input),
+      for (var input = 0; input < kMaxMonitoredInputs; input++)
+        _restoreInput(input),
     ]);
     if (isClosed) return;
     final restored = <int, InputMonitor>{};
@@ -77,30 +107,165 @@ class MonitorCubit extends Cubit<MonitorState> {
     }
     emit(MonitorState(inputs: restored));
     restored.values.forEach(_applyMonitor);
+    // Read the APPLIED chains back into state. What was decoded from settings
+    // says nothing about whether a plugin actually loaded: `unavailable`,
+    // `loading` and the enumerated params are the repository's answer, made
+    // while applying just above, and without this the console draws a stale
+    // one — offering to open the window of a plugin that is not there, and
+    // never offering to relink the one that is missing.
+    //
     // Mint-once for legacy payloads (A9): the repository minted stable slot
-    // ids for any id-less restored entries while the chains were applied
-    // above. Re-read the minted chains into state and persist them back, or
-    // every launch would re-mint DIFFERENT ids for the same legacy chain.
+    // ids for any id-less restored entries as it applied them, and those have
+    // to be persisted back or every launch re-mints DIFFERENT ids for the
+    // same legacy chain. Only that case writes; a chain that already had ids
+    // is read, not rewritten.
     for (final monitor in restored.values) {
       if (isClosed) return;
-      if (!monitor.effects.any((fx) => fx.slotId == null)) continue;
-      final minted = _repository.monitorEffects(monitor.input);
+      final applied = _repository.monitorEffects(monitor.input);
       // Nothing applied (engine not running / a unit-test fake): keep the
-      // un-minted state; the next real apply re-mints and persists.
-      if (minted.isEmpty) continue;
-      emit(state.withInput(monitor.copyWith(effects: minted)));
+      // restored state; the next real apply re-reads and re-mints.
+      if (applied.isEmpty) continue;
+      emit(state.withInput(monitor.copyWith(effects: applied)));
+      if (!monitor.effects.any((fx) => fx.slotId == null)) continue;
       await _settings.saveMonitorEffects(
         monitor.input,
-        _encodedChain(monitor.input, minted),
+        _encodedChain(monitor.input, applied),
       );
     }
+    // And keep reading it. The engine starts before the app, with a cold
+    // plugin cache, so by now every hosted entry has just failed to load and
+    // is `loading` while the repository's own recovery scan runs. That scan
+    // re-applies the chains when it lands, and nothing tells this cubit — so
+    // a plugin that resolves perfectly well would sit in the console reading
+    // "loading..." until somebody edited the chain, and a missing one would
+    // never offer the relink it needs.
+    _catalogWatch ??= _repository.pluginCatalog.progressStream.listen(
+      (_) => unawaited(_readAfterScan()),
+    );
+    _followRepository();
   }
+
+  /// Marks the repository authoritative and reads whatever was announced
+  /// before it was.
+  ///
+  /// Both the restore and a session re-projection end here: each is a moment
+  /// when the repository stops holding defaults this cubit has not filled in
+  /// yet and starts holding the rig.
+  void _followRepository() {
+    _restored = true;
+    final held = _heldReads.toList();
+    _heldReads.clear();
+    held.forEach(_readMonitor);
+  }
+
+  /// Re-reads everything this cubit caches about [input].
+  ///
+  /// Emits only on a real difference: every write from here comes back
+  /// through the same stream, and re-emitting an identical state would rebuild
+  /// the console on each one.
+  ///
+  /// Never writes to the ENGINE: the repository is where this came from, and
+  /// pushing it back would be this cubit re-applying, to the engine, the state
+  /// the engine's owner just set.
+  ///
+  /// It does persist, because the alternative is worse than either pole. The
+  /// persisted envelope is built from this state, so a bypass read here and
+  /// deliberately not saved would still ride into settings on the next
+  /// unrelated edit of that chain — the flag would survive a restart if and
+  /// only if the player happened to touch the chain afterwards. Saving it is
+  /// the answer that is the same every time.
+  void _readMonitor(int input) {
+    if (isClosed) return;
+    // Before the restore, the repository does not hold the player's saved
+    // monitors — [_restore] is what puts them there. Reading now would take
+    // the repository's DEFAULTS as truth and, worse, save them over good
+    // settings, which is silent, permanent, and only visible on the next
+    // boot. Held instead, and read once the restore has landed, when the
+    // repository really is the authority this treats it as.
+    if (!_restored) {
+      _heldReads.add(input);
+      return;
+    }
+    final current = state.forInput(input);
+    final applied = current.copyWith(
+      mode: _repository.monitorMode(input),
+      outputMask: _repository.monitorOutput(input),
+      volume: _repository.monitorVolume(input),
+      muted: _repository.monitorMuted(input),
+      // No `isNotEmpty` fallback, unlike every optimistic read here: those
+      // guard against reading back a write the repository may have refused.
+      // This one is not a read-back — the repository just said this input
+      // changed — so an empty chain is a real clear (a session apply), and
+      // refusing it would leave the console showing a rack that is gone.
+      effects: _repository.monitorEffects(input),
+      chainEnabled: _repository.monitorChainEnabled(input),
+    );
+    if (applied == current) return;
+    // A chain that changed SHAPE reseats the slots, so an editor-sync poll
+    // keyed to a chain index would start reading a different entry — the same
+    // reason [_pushEffects] cancels them on its own edits.
+    if (!_sameShape(current.effects, applied.effects)) {
+      _cancelEditorTimers(input);
+    }
+    emit(state.withInput(applied));
+    unawaited(_persistMonitor(applied));
+  }
+
+  /// Whether two chains hold the same entries in the same slots — what an
+  /// editor poll's `(input, index)` key depends on.
+  static bool _sameShape(List<TrackEffect> a, List<TrackEffect> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].slotId != b[i].slotId) return false;
+    }
+    return true;
+  }
+
+  /// Re-reads once the scan's own listeners have run.
+  ///
+  /// The catalog publishes its last progress event BEFORE it completes the
+  /// scan future, and the repository re-applies the chains from that future.
+  /// Read straight off the event and the chains are still `loading` — and no
+  /// later event is coming, because the poll timer stops in the same breath.
+  /// Nor can this join the scan and wait: `_finish` clears the running scan
+  /// before completing it, so by delivery time there is nothing left to join.
+  ///
+  /// Yielding to the event loop is what lands after: the repository's
+  /// callback is already queued when this one runs.
+  Future<void> _readAfterScan() async {
+    await Future<void>.delayed(Duration.zero);
+    _readApplied();
+  }
+
+  /// Re-reads every known input's applied chain.
+  ///
+  /// The repository is the one that knows whether a plugin loaded, and its
+  /// answer changes when a scan lands. Nothing HERE writes — this path exists
+  /// for the transient flags (`loading`, `unavailable`, the enumerated
+  /// params), none of which belong in settings and none of which the wire
+  /// format carries. What a scan resolves that IS worth saving — a plugin's
+  /// display name — reaches settings through [_readMonitor], because a rebind
+  /// that rewrote the chain announces and that path persists.
+  void _readApplied() {
+    if (isClosed) return;
+    for (final input in state.inputs.keys.toList()) {
+      final applied = _repository.monitorEffects(input);
+      if (applied.isEmpty) continue;
+      emit(state.withInput(state.forInput(input).copyWith(effects: applied)));
+    }
+  }
+
+  /// Maps a persisted mode name back to the enum. An unrecognised name reads
+  /// as `null` — "nothing saved" — rather than silently becoming `off`, so a
+  /// key written by a future build is not mistaken for a deliberate disable.
+  static MonitorMode? _modeFromName(String? name) =>
+      name == null ? null : monitorModeFromName(name);
 
   /// Reads hardware [input]'s persisted single-chain monitor, or null if none
   /// was saved. The chain key holds the envelope (R15) — the chain-enabled
   /// flag rides inside it; a legacy bare-array chain decodes chain-enabled.
   Future<InputMonitor?> _restoreInput(int input) async {
-    final enabled = await _settings.loadMonitorInputEnabled(input);
+    final mode = _modeFromName(await _settings.loadMonitorInputMode(input));
     final outputMask = await _settings.loadMonitorOutput(input);
     final volume = await _settings.loadMonitorVolume(input);
     final muted = await _settings.loadMonitorMute(input);
@@ -112,7 +277,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     // the flag to enabled on the next boot — the disable-survives-restart
     // guarantee R15 pins.
     final anySaved =
-        enabled != null ||
+        mode != null ||
         outputMask != null ||
         volume != null ||
         muted != null ||
@@ -121,7 +286,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     if (!anySaved) return null;
     return InputMonitor(
       input: input,
-      enabled: enabled ?? false,
+      mode: mode ?? MonitorMode.off,
       outputMask: outputMask ?? 0x3,
       volume: volume ?? 1.0,
       muted: muted ?? false,
@@ -150,6 +315,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     // Any open editor-sync poll is keyed to a chain index the load reseated.
     state.inputs.keys.forEach(_cancelEditorTimers);
     emit(MonitorState(inputs: applied));
+    _followRepository();
     await Future.wait([
       for (final monitor in applied.values) _persistMonitor(monitor),
       for (final input in dropped) _persistMonitor(InputMonitor(input: input)),
@@ -160,9 +326,9 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// by [syncFromRepository]'s apply + reset paths so they never diverge from
   /// the set of persisted fields.
   Future<void> _persistMonitor(InputMonitor monitor) async {
-    await _settings.saveMonitorInputEnabled(
+    await _settings.saveMonitorInputMode(
       monitor.input,
-      enabled: monitor.enabled,
+      mode: monitor.mode.name,
     );
     await _settings.saveMonitorOutput(monitor.input, monitor.outputMask);
     await _settings.saveMonitorVolume(monitor.input, monitor.volume);
@@ -180,11 +346,11 @@ class MonitorCubit extends Cubit<MonitorState> {
 
   /// Enables or disables monitoring of hardware [input], applying and
   /// persisting the change.
-  Future<void> setEnabled(int input, {required bool enabled}) async {
-    final monitor = state.forInput(input).copyWith(enabled: enabled);
+  Future<void> setMode(int input, MonitorMode mode) async {
+    final monitor = state.forInput(input).copyWith(mode: mode);
     emit(state.withInput(monitor));
-    _repository.setMonitorInputEnabled(input: input, enabled: enabled);
-    await _settings.saveMonitorInputEnabled(input, enabled: enabled);
+    _repository.setMonitorInputMode(input: input, mode: mode);
+    await _settings.saveMonitorInputMode(input, mode: mode.name);
   }
 
   /// Sets and persists monitor [input]'s output bitmask.
@@ -452,12 +618,12 @@ class MonitorCubit extends Cubit<MonitorState> {
     });
   }
 
-  /// Pushes the whole [monitor] to the repository: enable, then the chain's
+  /// Pushes the whole [monitor] to the repository: mode, then the chain's
   /// routing / mix / effects.
   void _applyMonitor(InputMonitor monitor) {
     final input = monitor.input;
     _repository
-      ..setMonitorInputEnabled(input: input, enabled: monitor.enabled)
+      ..setMonitorInputMode(input: input, mode: monitor.mode)
       ..setMonitorOutput(input: input, mask: monitor.outputMask)
       ..setMonitorVolume(input: input, volume: monitor.volume)
       ..setMonitorMute(input: input, muted: monitor.muted)
@@ -471,6 +637,8 @@ class MonitorCubit extends Cubit<MonitorState> {
       timer.cancel();
     }
     _editorTimers.clear();
+    unawaited(_catalogWatch?.cancel());
+    unawaited(_monitorWatch.cancel());
     return super.close();
   }
 }

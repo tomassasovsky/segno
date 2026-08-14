@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/pedal/pedal.dart';
 import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/pedal/pedal.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/fake_key_value_store.dart';
@@ -111,6 +111,193 @@ void main() {
 
       final frame = PedalCodec.decodeFrame(transport.sent.last);
       expect(frame?.isGoodbye, isTrue);
+    });
+
+    group('console auto-detect', () {
+      const pedalOut = MidiDevice(
+        id: 'out-p',
+        name: 'Segno Loopstation MIDI 1',
+      );
+      const otherOut = MidiDevice(id: 'out-x', name: 'Launchpad Mini');
+      const productNames = ['Segno Loopstation'];
+
+      PedalCubit buildAuto() => PedalCubit(
+        pedal: pedal,
+        settings: settings,
+        pollInterval: Duration.zero,
+        autoBindProductNames: productNames,
+      );
+
+      test('binds the matching output with nothing persisted', () async {
+        transport.outputs = const [otherOut, pedalOut];
+        final cubit = buildAuto();
+        await cubit.load();
+
+        expect(cubit.state.boundOutputId, 'out-p');
+        await cubit.close();
+      });
+
+      test('binds nothing when no output matches', () async {
+        transport.outputs = const [otherOut];
+        final cubit = buildAuto();
+        await cubit.load();
+
+        expect(cubit.state.boundOutputId, isNull);
+        await cubit.close();
+      });
+
+      test('never binds when auto-detect is off (desktop)', () async {
+        transport.outputs = const [pedalOut];
+        final cubit = buildCubit();
+        await cubit.load();
+
+        expect(cubit.state.boundOutputId, isNull);
+        await cubit.close();
+      });
+
+      test('binds the pedal when it appears after launch', () async {
+        transport.outputs = const [otherOut];
+        final cubit = buildAuto();
+        await cubit.load();
+        expect(cubit.state.boundOutputId, isNull);
+
+        transport.outputs = const [otherOut, pedalOut];
+        cubit.reconnect();
+
+        expect(cubit.state.boundOutputId, 'out-p');
+        await cubit.close();
+      });
+
+      test(
+        'a persisted device outranks auto-detect, even when absent',
+        () async {
+          await settings.savePedalOutputDevice(id: 'ghost', name: 'Ghost');
+          transport.outputs = const [pedalOut];
+          final cubit = buildAuto();
+          await cubit.load();
+
+          expect(cubit.state.boundOutputId, isNull);
+          await cubit.close();
+        },
+      );
+
+      test('a user pick outranks auto-detect and survives a vanish', () async {
+        transport.outputs = const [otherOut, pedalOut];
+        final cubit = buildAuto();
+        await cubit.load();
+
+        await cubit.selectOutput(
+          const PedalOutput(id: 'out-x', name: 'Launchpad Mini'),
+        );
+        transport.outputs = const [pedalOut]; // the picked device unplugs
+        cubit.reconnect();
+
+        // The pin stays on the user's device rather than jumping to the pedal.
+        expect(cubit.state.boundOutputId, isNull);
+        expect((await settings.loadPedalOutputDevice())?.id, 'out-x');
+        await cubit.close();
+      });
+
+      test(
+        're-resolves an auto-bound pin whose id changed on replug',
+        () async {
+          transport.outputs = const [pedalOut];
+          final cubit = buildAuto();
+          await cubit.load();
+          expect(cubit.state.boundOutputId, 'out-p');
+
+          // ALSA renumbers clients across a replug; a console has no picker to
+          // recover with, so the pin has to follow the name, not the id.
+          transport.outputs = const [
+            MidiDevice(
+              id: 'out-p-renumbered',
+              name: 'Segno Loopstation MIDI 1',
+            ),
+          ];
+          cubit.reconnect();
+
+          expect(cubit.state.boundOutputId, 'out-p-renumbered');
+          await cubit.close();
+        },
+      );
+
+      test('selecting None is not undone by the next poll', () async {
+        transport.outputs = const [pedalOut];
+        final cubit = buildAuto();
+        await cubit.load();
+        expect(cubit.state.boundOutputId, 'out-p');
+
+        await cubit.selectNone();
+        cubit.reconnect();
+
+        expect(cubit.state.boundOutputId, isNull);
+        await cubit.close();
+      });
+
+      test('an auto-bound pin is not persisted', () async {
+        transport.outputs = const [pedalOut];
+        final cubit = buildAuto();
+        await cubit.load();
+        expect(cubit.state.boundOutputId, 'out-p');
+
+        // Re-deriving every launch is what keeps a renumbered id from sticking.
+        expect(await settings.loadPedalOutputDevice(), isNull);
+        await cubit.close();
+      });
+    });
+
+    group('flashed firmware version (part B)', () {
+      PedalCubit buildWithFlashed(Future<int?> Function() reader) => PedalCubit(
+        pedal: pedal,
+        settings: settings,
+        pollInterval: Duration.zero,
+        flashedProtocolVersion: reader,
+      );
+
+      test('a flashed record outranks the manual setting', () async {
+        // The flasher wrote that pedal, so it knows what runs on it; the
+        // manual setting is a guess a firmware update silently invalidates.
+        await settings.savePedalFirmwareVersion(PedalCodec.protocolVersionV2);
+        final cubit = buildWithFlashed(
+          () async => PedalCodec.protocolVersionV3,
+        );
+
+        await cubit.load();
+
+        expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
+        expect(pedal.firmwareProtocolVersion, PedalCodec.protocolVersionV3);
+        await cubit.close();
+      });
+
+      test('falls back to the manual setting with no record', () async {
+        await settings.savePedalFirmwareVersion(PedalCodec.protocolVersionV3);
+        final cubit = buildWithFlashed(() async => null);
+
+        await cubit.load();
+
+        expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
+        await cubit.close();
+      });
+
+      test('no record and no setting keeps the unknown => v2 floor', () async {
+        final cubit = buildWithFlashed(() async => null);
+
+        await cubit.load();
+
+        expect(cubit.state.firmwareVersion, isNull);
+        expect(pedal.targetProtocolVersion, PedalCodec.protocolVersionV2);
+        await cubit.close();
+      });
+
+      test('desktop (no reader) is unaffected', () async {
+        await settings.savePedalFirmwareVersion(PedalCodec.protocolVersionV3);
+        final cubit = buildCubit();
+
+        await cubit.load();
+
+        expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
+        await cubit.close();
+      });
     });
 
     group('firmware version (R6 pre-#331 gate)', () {

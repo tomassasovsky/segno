@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 // The domain envelope codec, prefixed — this file's chain fixtures otherwise
 // use the engine-typed models + serializer directly.
 import 'package:looper_repository/looper_repository.dart' as looper;
-import 'package:loopy/app/monitor_migration.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:segno/app/monitor_migration.dart';
+import 'package:segno_engine/segno_engine.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -30,7 +30,7 @@ void main() {
 
           // v1 seeded input 0 → main out; v2 made it lane 0; v3 folded it to a
           // single clean chain and cleared the intermediate keys.
-          expect(await settings.loadMonitorInputEnabled(0), isTrue);
+          expect(await settings.loadMonitorInputMode(0), 'on');
           expect(await settings.loadMonitorOutput(0), 0x3);
           expect(await settings.loadMonitorEffects(0), isNull);
           expect(await settings.loadMonitorLaneCount(0), isNull); // cleared
@@ -46,14 +46,14 @@ void main() {
 
         await runMonitorMigration(settings);
 
-        expect(await settings.loadMonitorInputEnabled(0), isNull);
+        expect(await settings.loadMonitorInputMode(0), isNull);
         expect(await settings.loadMonitorMigratedV3(), isTrue);
       });
 
       test('a fresh install marks all three migrations done', () async {
         await runMonitorMigration(settings);
 
-        expect(await settings.loadMonitorInputEnabled(0), isNull);
+        expect(await settings.loadMonitorInputMode(0), isNull);
         expect(await settings.loadMonitorMigratedV1(), isTrue);
         expect(await settings.loadMonitorMigratedV2(), isTrue);
         expect(await settings.loadMonitorMigratedV3(), isTrue);
@@ -69,7 +69,7 @@ void main() {
 
         await runMonitorMigration(settings);
 
-        expect(await settings.loadMonitorInputEnabled(1), isTrue);
+        expect(await settings.loadMonitorInputMode(1), 'on');
         expect(await settings.loadMonitorOutput(1), 0x2);
         expect(await settings.loadMonitorVolume(1), 0.4);
         expect(
@@ -116,7 +116,7 @@ void main() {
 
           await runMonitorMigration(settings);
 
-          expect(await settings.loadMonitorInputEnabled(0), isTrue);
+          expect(await settings.loadMonitorInputMode(0), 'on');
           expect(await settings.loadMonitorOutput(0), 0x3); // 0x1 | 0x2
           expect(await settings.loadMonitorVolume(0), 0.6);
           expect(
@@ -130,18 +130,27 @@ void main() {
         },
       );
 
-      test('the highest scanned input (kMaxInputs-1) is migrated', () async {
-        await settings.saveMonitorInput(
-          kMaxInputs - 1,
-          enabled: true,
-          outputMask: 0x1,
-        );
+      test(
+        'the highest scanned input (kMaxMonitoredInputs-1) is migrated',
+        () async {
+          await settings.saveMonitorInput(
+            kMaxMonitoredInputs - 1,
+            enabled: true,
+            outputMask: 0x1,
+          );
 
-        await runMonitorMigration(settings);
+          await runMonitorMigration(settings);
 
-        expect(await settings.loadMonitorInputEnabled(kMaxInputs - 1), isTrue);
-        expect(await settings.loadMonitorOutput(kMaxInputs - 1), 0x1);
-      });
+          expect(
+            await settings.loadMonitorInputMode(kMaxMonitoredInputs - 1),
+            'on',
+          );
+          expect(
+            await settings.loadMonitorOutput(kMaxMonitoredInputs - 1),
+            0x1,
+          );
+        },
+      );
     });
 
     group('v3 (multi-lane → single chain)', () {

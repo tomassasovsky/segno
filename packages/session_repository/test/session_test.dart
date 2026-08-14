@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:segno_engine/segno_engine.dart';
 import 'package:session_repository/session_repository.dart';
 
 void main() {
@@ -108,11 +108,70 @@ void main() {
       expect(Session.fromJson(json as Map<String, dynamic>), session);
     });
 
-    test('serializes the manifest version (v6)', () {
+    test('serializes the manifest version (v7)', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['version'], 6);
+      expect(json['version'], 7);
       expect(json['baseLengthFrames'], 96000);
+    });
+
+    group('monitor gate (schema v7)', () {
+      test('a named gate round-trips', () {
+        const monitor = SessionMonitor(
+          input: 2,
+          enabled: true,
+          mode: 'auto',
+          outputMask: 0x3,
+          volume: 1,
+          muted: false,
+          encoded: '',
+        );
+
+        expect(monitor.toJson()['mode'], 'auto');
+        expect(SessionMonitor.fromJson(monitor.toJson()), monitor);
+      });
+
+      test('a v6 monitor keeps the key out of the manifest entirely', () {
+        const monitor = SessionMonitor(
+          input: 2,
+          enabled: true,
+          outputMask: 0x3,
+          volume: 1,
+          muted: false,
+          encoded: '',
+        );
+
+        // Presence-keyed, like every rung before it: absent means "this
+        // manifest did not say", which is a different thing from a monitor
+        // whose gate happens to be named the empty string.
+        expect(monitor.toJson().containsKey('mode'), isFalse);
+        expect(SessionMonitor.fromJson(monitor.toJson()).mode, isEmpty);
+      });
+
+      test('participates in equality — two monitors differing only in their '
+          'gate are different monitors', () {
+        const on = SessionMonitor(
+          input: 0,
+          enabled: true,
+          mode: 'on',
+          outputMask: 0x3,
+          volume: 1,
+          muted: false,
+          encoded: '',
+        );
+        const auto = SessionMonitor(
+          input: 0,
+          enabled: true,
+          mode: 'auto',
+          outputMask: 0x3,
+          volume: 1,
+          muted: false,
+          encoded: '',
+        );
+
+        expect(on, isNot(auto));
+        expect(on.hashCode, isNot(auto.hashCode));
+      });
     });
 
     group('pedal remap blob (schema v6)', () {
@@ -546,11 +605,11 @@ void main() {
     });
 
     test(
-      'rejects a hypothetical v7 manifest (an extra unknown field does not '
+      'rejects a hypothetical v8 manifest (an extra unknown field does not '
       'change the outcome) via the existing version-gate check',
       () {
         final json = session.toJson()
-          ..['version'] = 7
+          ..['version'] = 8
           // A field a hypothetical future schema might add — proves the
           // rejection is purely the version-number gate, not incidentally
           // triggered by an unparseable shape.
@@ -561,7 +620,7 @@ void main() {
           () => Session.fromJson(json),
           throwsA(
             isA<SessionUnsupportedVersion>()
-                .having((e) => e.version, 'version', 7)
+                .having((e) => e.version, 'version', 8)
                 .having((e) => e.supported, 'supported', Session.formatVersion),
           ),
         );

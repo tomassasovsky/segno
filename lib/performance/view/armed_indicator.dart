@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/performance/cubit/performance_recorder_cubit.dart';
-import 'package:loopy/theme/theme.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
+import 'package:segno/theme/theme.dart';
 
 /// A persistent elapsed-time readout shown while performance recording is
 /// armed — collapses to nothing otherwise. Self-contained (mirrors the
@@ -26,7 +26,11 @@ class ArmedIndicator extends StatelessWidget {
 
     final l10n = context.l10n;
     final theme = Theme.of(context);
-    final looper = theme.extension<LooperTheme>()!;
+    // The design system splits red in two: `signal-rec` is the stage — what a
+    // track is doing — and `rec` is UI chrome saying the app is capturing.
+    // This readout is chrome, so it takes `rec`, not the stage red the track
+    // meters and mode chip use.
+    final rec = context.surface.rec;
 
     return Padding(
       key: const Key('tracks_armedIndicator'),
@@ -34,12 +38,12 @@ class ArmedIndicator extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.fiber_manual_record, size: 12, color: looper.recordColor),
+          Icon(Icons.fiber_manual_record, size: 12, color: rec),
           const SizedBox(width: 6),
-          Text(
+          AppText(
             l10n.perfArmedElapsed(_format(state.elapsed)),
             style: theme.textTheme.labelLarge?.copyWith(
-              color: looper.recordColor,
+              color: rec,
               fontWeight: FontWeight.w700,
             ),
           ),

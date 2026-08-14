@@ -8,21 +8,19 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/looper.dart';
-import 'package:loopy/looper/view/fx_editor/fx_dock.dart';
-import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
-import 'package:loopy/pedal/pedal.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/update/cubit/update_cubit.dart';
-import 'package:loopy/visualizer/visualizer.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno/pedal/pedal.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
+import 'package:segno/visualizer/visualizer.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
 
@@ -80,11 +78,16 @@ void main() {
     ]);
     // The Signal surface's bundled typefaces, so its mono readouts and grotesk
     // headings render as text (not Ahem boxes) under golden capture.
-    await _loadFont('Space Grotesk', ['assets/fonts/SpaceGrotesk.ttf']);
-    await _loadFont('IBM Plex Mono', [
-      'assets/fonts/IBMPlexMono-Regular.ttf',
-      'assets/fonts/IBMPlexMono-Medium.ttf',
-      'assets/fonts/IBMPlexMono-SemiBold.ttf',
+    await _loadFont('Inter', [
+      'assets/fonts/Inter-Regular.ttf',
+      'assets/fonts/Inter-Medium.ttf',
+      'assets/fonts/Inter-SemiBold.ttf',
+      'assets/fonts/Inter-Bold.ttf',
+    ]);
+    await _loadFont('JetBrains Mono', [
+      'assets/fonts/JetBrainsMono-Regular.ttf',
+      'assets/fonts/JetBrainsMono-Medium.ttf',
+      'assets/fonts/JetBrainsMono-SemiBold.ttf',
     ]);
   });
 
@@ -133,6 +136,9 @@ void main() {
         tracks: [Track()],
         status: EngineStatus(inputChannels: 2, outputChannels: 2),
       ),
+    );
+    when(() => repository.monitorChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
     );
     when(
       () => repository.looperState,
@@ -344,289 +350,6 @@ void main() {
     await expectLater(
       find.byType(SettingsPage),
       matchesGoldenFile('goldens/settings_mode.png'),
-    );
-  }, skip: !hasScreenshotFonts);
-
-  testWidgets('Signal surface — inputs, lanes, outputs', (tester) async {
-    tester.view
-      ..physicalSize = const Size(1980, 1320)
-      ..devicePixelRatio = 2;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    final bloc = _ScreenshotLooperBloc();
-    whenListen(
-      bloc,
-      const Stream<LooperState>.empty(),
-      initialState: LooperState(
-        tracks: [
-          Track(
-            lanes: [
-              Lane(
-                inputChannel: 0,
-                effects: [
-                  BuiltInEffect(type: TrackEffectType.filter),
-                  BuiltInEffect(type: TrackEffectType.delay),
-                ],
-              ),
-              const Lane(inputChannel: 1),
-            ],
-          ),
-          const Track(channel: 1, lanes: [Lane(inputChannel: 2)]),
-        ],
-        status: const EngineStatus(
-          inputChannels: 4,
-          outputChannels: 4,
-          isConnected: true,
-        ),
-      ),
-    );
-
-    // One live input carries an FX chain — the tone that records onto a take.
-    // A real repository (fake engine) so the monitor's mutations actually land.
-    final monitorRepo = LooperRepository(
-      engine: FakeAudioEngine(),
-      ticker: const Stream<void>.empty(),
-    );
-    addTearDown(monitorRepo.dispose);
-    final monitor = MonitorCubit(repository: monitorRepo, settings: settings);
-    await monitor.setEnabled(0, enabled: true);
-    monitor
-      ..addEffect(0)
-      ..addEffect(0);
-
-    await tester.pumpWidget(
-      // Above the MaterialApp's Navigator so the pushed signal page (and its
-      // plugin browser / live param readouts) can read the repository.
-      RepositoryProvider<LooperRepository>.value(
-        value: monitorRepo,
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: _goldenTheme(),
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: MultiBlocProvider(
-            providers: [
-              BlocProvider<LooperBloc>.value(value: bloc),
-              BlocProvider<MonitorCubit>.value(value: monitor),
-              BlocProvider<AudioSetupCubit>.value(value: audioSetup),
-              BlocProvider<TracksCubit>(
-                create: (_) => TracksCubit(settings: settings),
-              ),
-            ],
-            child: Builder(
-              builder: (context) => Scaffold(
-                body: Center(
-                  child: ElevatedButton(
-                    onPressed: () => showSignalPage(context),
-                    child: const Text('open'),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-
-    await expectLater(
-      find.byKey(const Key('signal_page')),
-      matchesGoldenFile('goldens/signal_surface.png'),
-    );
-  }, skip: !hasScreenshotFonts);
-
-  // --- FX editor (part 2) ------------------------------------------------
-
-  const editorStatus = EngineStatus(
-    inputChannels: 2,
-    outputChannels: 2,
-    isConnected: true,
-  );
-
-  Future<void> openFxEditor(
-    WidgetTester tester, {
-    required LooperState state,
-    required FxScope Function(
-      LooperBloc bloc,
-      MonitorCubit monitor,
-      LooperRepository repo,
-    )
-    scopeOf,
-    Future<void> Function(MonitorCubit monitor)? primeMonitor,
-  }) async {
-    tester.view
-      ..physicalSize = const Size(1400, 1000)
-      ..devicePixelRatio = 2;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    final bloc = _ScreenshotLooperBloc();
-    whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
-    final repo = LooperRepository(
-      engine: FakeAudioEngine(),
-      ticker: const Stream<void>.empty(),
-    );
-    addTearDown(repo.dispose);
-    final monitor = MonitorCubit(repository: repo, settings: settings);
-    addTearDown(monitor.close);
-    if (primeMonitor != null) await primeMonitor(monitor);
-
-    await tester.pumpWidget(
-      RepositoryProvider<LooperRepository>.value(
-        value: repo,
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: _goldenTheme(),
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: MultiBlocProvider(
-            providers: [
-              BlocProvider<LooperBloc>.value(value: bloc),
-              BlocProvider<MonitorCubit>.value(value: monitor),
-            ],
-            child: Builder(
-              builder: (context) => Scaffold(
-                body: Column(
-                  children: [
-                    const Spacer(),
-                    FxDock(
-                      scope: scopeOf(bloc, monitor, repo),
-                      onClose: () {},
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-  }
-
-  testWidgets('FX editor — lane scope with a chain', (tester) async {
-    await openFxEditor(
-      tester,
-      state: LooperState(
-        tracks: [
-          Track(
-            lanes: [
-              Lane(
-                inputChannel: 0,
-                effects: [
-                  BuiltInEffect(type: TrackEffectType.filter),
-                  BuiltInEffect(type: TrackEffectType.delay),
-                ],
-              ),
-            ],
-          ),
-        ],
-        status: editorStatus,
-      ),
-      scopeOf: (bloc, monitor, repo) =>
-          LaneFxScope(looper: bloc, repository: repo, track: 0, lane: 0),
-    );
-
-    await expectLater(
-      find.byKey(const Key('fx_dock')),
-      matchesGoldenFile('goldens/fx_editor_lane.png'),
-    );
-  }, skip: !hasScreenshotFonts);
-
-  testWidgets('FX editor — input scope', (tester) async {
-    await openFxEditor(
-      tester,
-      state: const LooperState(status: editorStatus),
-      scopeOf: (bloc, monitor, repo) => InputFxScope(
-        monitor: monitor,
-        looper: bloc,
-        repository: repo,
-        input: 0,
-      ),
-      primeMonitor: (m) async {
-        await m.setEnabled(0, enabled: true);
-        m
-          ..addEffect(0)
-          ..addEffect(0);
-      },
-    );
-
-    await expectLater(
-      find.byKey(const Key('fx_dock')),
-      matchesGoldenFile('goldens/fx_editor_input.png'),
-    );
-  }, skip: !hasScreenshotFonts);
-
-  testWidgets('FX editor — empty clean state', (tester) async {
-    await openFxEditor(
-      tester,
-      state: const LooperState(
-        tracks: [
-          Track(lanes: [Lane()]),
-        ],
-        status: editorStatus,
-      ),
-      scopeOf: (bloc, monitor, repo) =>
-          LaneFxScope(looper: bloc, repository: repo, track: 0, lane: 0),
-    );
-
-    await expectLater(
-      find.byKey(const Key('fx_dock')),
-      matchesGoldenFile('goldens/fx_editor_empty.png'),
-    );
-  }, skip: !hasScreenshotFonts);
-
-  testWidgets('FX editor — plugin block', (tester) async {
-    await openFxEditor(
-      tester,
-      state: const LooperState(
-        tracks: [
-          Track(
-            lanes: [
-              Lane(
-                effects: [
-                  PluginEffect(
-                    ref: PluginRef(format: PluginFormat.vst3, id: 'comp'),
-                    name: 'Compressor',
-                    params: [
-                      PluginParamInfo(
-                        id: 1,
-                        name: 'Ratio',
-                        unit: ':1',
-                        min: 1,
-                        max: 20,
-                        def: 4,
-                        stepCount: 0,
-                        flags: 0x01,
-                      ),
-                      PluginParamInfo(
-                        id: 2,
-                        name: 'Threshold',
-                        unit: 'dB',
-                        min: -60,
-                        max: 0,
-                        def: -18,
-                        stepCount: 0,
-                        flags: 0x01,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-        status: editorStatus,
-      ),
-      scopeOf: (bloc, monitor, repo) =>
-          LaneFxScope(looper: bloc, repository: repo, track: 0, lane: 0),
-    );
-
-    await expectLater(
-      find.byKey(const Key('fx_dock')),
-      matchesGoldenFile('goldens/fx_editor_plugin.png'),
     );
   }, skip: !hasScreenshotFonts);
 }

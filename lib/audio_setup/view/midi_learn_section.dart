@@ -4,14 +4,15 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/cubit/midi_setup_cubit.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/view/signal_graph/signal_knob.dart';
-import 'package:loopy/looper/view/signal_graph/signal_style.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/view/signal_graph/signal_knob.dart';
+import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/theme.dart';
 
 /// The MIDI-learn block in the audio/I-O settings: every external-MIDI mapping
 /// as a row, each with the control it listens to, what it drives, its travel,
@@ -47,7 +48,7 @@ class MidiLearnSection extends StatelessWidget {
       children: [
         SetupGroupLabel(l10n.midiLearnGroup),
         const SizedBox(height: 12),
-        Text(l10n.midiLearnHint, style: setupBody),
+        AppText(l10n.midiLearnHint, style: context.setupBody),
         if (!connected) ...[
           const SizedBox(height: 12),
           _Notice(
@@ -101,6 +102,9 @@ class _AddRow extends StatelessWidget {
     // every rig), so there is no empty-picker state to render here.
     final valueTargets = looper.availableValueTargets();
     final switchTargets = looper.availableBindingTargets();
+    // Read HERE, not inside `itemBuilder`: a popup's items are built outside
+    // the build phase, and `watch` from there is an error.
+    final trackNames = context.watch<TracksCubit>().state.names;
     return Row(
       children: [
         PopupMenuButton<ControlValueTarget>(
@@ -113,10 +117,12 @@ class _AddRow extends StatelessWidget {
             for (final target in valueTargets)
               PopupMenuItem(
                 value: target,
-                child: Text(valueTargetLabel(l10n, looper, target)),
+                child: AppText(
+                  valueTargetLabel(l10n, trackNames, looper, target),
+                ),
               ),
           ],
-          child: Text(l10n.midiLearnAddSweep),
+          child: AppText(l10n.midiLearnAddSweep),
         ),
         const SizedBox(width: 16),
         PopupMenuButton<FxBindingTarget>(
@@ -130,10 +136,10 @@ class _AddRow extends StatelessWidget {
             for (final target in switchTargets)
               PopupMenuItem(
                 value: target,
-                child: Text(bindingTargetLabel(l10n, target)),
+                child: AppText(bindingTargetLabel(l10n, trackNames, target)),
               ),
           ],
-          child: Text(l10n.midiLearnAddSwitch),
+          child: AppText(l10n.midiLearnAddSwitch),
         ),
       ],
     );
@@ -165,7 +171,12 @@ class _MappingRow extends StatelessWidget {
     final cubit = context.read<ControlCubit>();
     final looper = context.read<LooperRepository>();
     final capture = learn;
-    final resolved = _resolve(l10n, looper, binding);
+    final resolved = _resolve(
+      l10n,
+      context.watch<TracksCubit>().state.names,
+      looper,
+      binding,
+    );
     final label = resolved ?? l10n.midiLearnStale;
     final control = controlLabel(l10n, binding.trigger);
 
@@ -200,7 +211,7 @@ class _MappingRow extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                 ],
-                Text(
+                AppText(
                   control,
                   style: signalMono(
                     color: connected
@@ -210,7 +221,7 @@ class _MappingRow extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
+                  child: AppText(
                     label,
                     style: TextStyle(
                       color: resolved != null && connected
@@ -231,7 +242,7 @@ class _MappingRow extends StatelessWidget {
                   // it re-points the mapping at whatever controller is plugged
                   // in now, which is the only repair the user can make without
                   // finding the original device.
-                  child: Text(
+                  child: AppText(
                     connected ? l10n.midiLearnLearn : l10n.midiLearnRelearn,
                   ),
                 ),
@@ -239,13 +250,13 @@ class _MappingRow extends StatelessWidget {
                   key: const Key('midiLearn_clear'),
                   onPressed: () =>
                       unawaited(cubit.removeControllerBinding(binding)),
-                  child: Text(l10n.midiLearnClear),
+                  child: AppText(l10n.midiLearnClear),
                 ),
               ],
             ),
             if (resolved == null) ...[
               const SizedBox(height: 6),
-              Text(
+              AppText(
                 l10n.midiLearnStaleDetail,
                 key: const Key('midiLearn_staleDetail'),
                 style: TextStyle(color: surface.textTertiary, fontSize: 12),
@@ -270,6 +281,7 @@ class _MappingRow extends StatelessWidget {
   /// longer resolves (or never decoded at all).
   String? _resolve(
     AppLocalizations l10n,
+    List<String> trackNames,
     LooperRepository looper,
     ControllerBinding binding,
   ) {
@@ -277,11 +289,11 @@ class _MappingRow extends StatelessWidget {
       case ContinuousBinding():
         final target = ControlValueTarget.tryParse(binding.target);
         if (target == null || !looper.valueTargetResolves(target)) return null;
-        return valueTargetLabel(l10n, looper, target);
+        return valueTargetLabel(l10n, trackNames, looper, target);
       case DiscreteBinding():
         final target = FxBindingTarget.tryParse(binding.target);
         if (target == null || !looper.bindingResolves(target)) return null;
-        return bindingTargetLabel(l10n, target);
+        return bindingTargetLabel(l10n, trackNames, target);
     }
   }
 }
@@ -368,7 +380,7 @@ class _SwitchControls extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            AppText(
               l10n.midiLearnBehavior,
               style: TextStyle(color: surface.textSecondary, fontSize: 12),
             ),
@@ -378,12 +390,12 @@ class _SwitchControls extends StatelessWidget {
               segments: [
                 ButtonSegment(
                   value: BindingBehavior.toggle,
-                  label: Text(l10n.pedalAssignToggle),
+                  label: AppText(l10n.pedalAssignToggle),
                   tooltip: l10n.pedalAssignToggleHint,
                 ),
                 ButtonSegment(
                   value: BindingBehavior.momentary,
-                  label: Text(l10n.pedalAssignMomentary),
+                  label: AppText(l10n.pedalAssignMomentary),
                   tooltip: l10n.pedalAssignMomentaryHint,
                 ),
               ],
@@ -419,7 +431,7 @@ class _LearnStatus extends StatelessWidget {
       key: const Key('midiLearn_status'),
       children: [
         Expanded(
-          child: Text(
+          child: AppText(
             captured == null
                 ? l10n.midiLearnListening
                 : l10n.midiLearnReplacePrompt(controlLabel(l10n, captured)),
@@ -430,12 +442,12 @@ class _LearnStatus extends StatelessWidget {
           TextButton(
             key: const Key('midiLearn_replace'),
             onPressed: () => unawaited(cubit.confirmControllerLearn()),
-            child: Text(l10n.midiLearnReplace),
+            child: AppText(l10n.midiLearnReplace),
           ),
         TextButton(
           key: const Key('midiLearn_cancel'),
           onPressed: cubit.cancelControllerLearn,
-          child: Text(
+          child: AppText(
             captured == null ? l10n.midiLearnCancel : l10n.midiLearnKeep,
           ),
         ),
@@ -473,7 +485,10 @@ class _Notice extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           Expanded(
-            child: Text(text, style: TextStyle(color: surface.textSecondary)),
+            child: AppText(
+              text,
+              style: TextStyle(color: surface.textSecondary),
+            ),
           ),
         ],
       ),

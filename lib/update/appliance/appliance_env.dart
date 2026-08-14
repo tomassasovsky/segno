@@ -27,4 +27,17 @@ abstract interface class ApplianceEnv {
   /// Runs the privileged helper to reboot into the staged slot. Throws on
   /// failure.
   Future<void> reboot();
+
+  /// Clears a staged-version marker that cannot be applied (failed tryboot /
+  /// already running). No-op when the helper is absent. Never throws.
+  Future<void> reconcileStaged();
+
+  /// Runs the helper's `pedal-pending` verb: the firmware version a flash is
+  /// about to write, or null when none is coming. Never throws — the helper
+  /// answers "nothing" for every uncertain case, including no network.
+  Future<String?> pedalPending();
+
+  /// Runs the helper's `flash-pedal` verb, emitting progress in `[0, 1]`.
+  /// Throws with the collected stderr if it fails.
+  Stream<double> flashPedal();
 }

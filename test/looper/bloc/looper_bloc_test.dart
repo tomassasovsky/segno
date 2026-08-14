@@ -4,8 +4,11 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/looper/looper.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno_engine/segno_engine.dart'
+    show EngineSnapshot, TrackSnapshot;
+import 'package:segno_engine/segno_engine.dart' as le show LatencyState;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -398,6 +401,72 @@ void main() {
     verify: (_) => verify(
       () => repository.setOneShot(channel: 1, oneShot: true),
     ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperAllOneShotToggled sweeps every track the repository is holding, '
+    'from the repository snapshot rather than the bloc state — the console '
+    "switch's whole point is that no half-applied sweep is observable",
+    build: () {
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          tracks: [
+            Track(oneShot: true),
+            Track(channel: 1),
+            Track(channel: 2, oneShot: true),
+          ],
+        ),
+      );
+      return buildBloc();
+    },
+    act: (bloc) => bloc.add(const LooperAllOneShotToggled(oneShot: true)),
+    verify: (_) {
+      for (final channel in [0, 1, 2]) {
+        verify(
+          () => repository.setOneShot(channel: channel, oneShot: true),
+        ).called(1);
+      }
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperAllOneShotToggled carries the flag it was given — clearing the '
+    'switch clears every track, it does not toggle each one',
+    build: () {
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          tracks: [Track(oneShot: true), Track(channel: 1, oneShot: true)],
+        ),
+      );
+      return buildBloc();
+    },
+    act: (bloc) => bloc.add(const LooperAllOneShotToggled(oneShot: false)),
+    verify: (_) {
+      verify(
+        () => repository.setOneShot(channel: 0, oneShot: false),
+      ).called(1);
+      verify(
+        () => repository.setOneShot(channel: 1, oneShot: false),
+      ).called(1);
+      verifyNever(
+        () => repository.setOneShot(
+          channel: any(named: 'channel'),
+          oneShot: true,
+        ),
+      );
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperAllOneShotToggled with no tracks writes nothing',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperAllOneShotToggled(oneShot: true)),
+    verify: (_) => verifyNever(
+      () => repository.setOneShot(
+        channel: any(named: 'channel'),
+        oneShot: any(named: 'oneShot'),
+      ),
+    ),
   );
 
   blocTest<LooperBloc, LooperState>(
@@ -1188,6 +1257,75 @@ void main() {
       );
 
       blocTest<LooperBloc, LooperState>(
+        'a bus relink onto another plugin drops the name it replaced',
+        setUp: () {
+          when(() => repository.masterEffects).thenReturn([
+            const PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'old'),
+              name: 'Ancient Chorus',
+              unavailable: true,
+              unsupported: true,
+            ),
+          ]);
+        },
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) => bloc.add(
+          const LooperBusPluginRelinked(
+            FxAddress(stage: FxStage.master),
+            0,
+            PluginRef(format: PluginFormat.vst3, id: 'new'),
+          ),
+        ),
+        verify: (_) {
+          final pushed =
+              verify(
+                    () => repository.setMasterEffects(
+                      effects: captureAny(named: 'effects'),
+                    ),
+                  ).captured.single
+                  as List<TrackEffect>;
+          // The repository re-resolves it from the catalog. Carrying the old
+          // name through leaves the card confidently naming the plugin that
+          // was replaced whenever the catalog cannot answer.
+          expect((pushed.single as PluginEffect).name, isEmpty);
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
+        'a bus relink onto the SAME plugin keeps its name',
+        setUp: () {
+          when(() => repository.masterEffects).thenReturn([
+            const PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'same'),
+              name: 'Ancient Chorus',
+              unavailable: true,
+              unsupported: true,
+            ),
+          ]);
+        },
+        build: () => LooperBloc(repository: repository, settings: settings),
+        act: (bloc) => bloc.add(
+          const LooperBusPluginRelinked(
+            FxAddress(stage: FxStage.master),
+            0,
+            // Accepting a version change: same plugin, so the name it is
+            // already showing is the right one whatever the catalog knows.
+            PluginRef(format: PluginFormat.vst3, id: 'same', version: 2),
+          ),
+        ),
+        verify: (_) {
+          final pushed =
+              verify(
+                    () => repository.setMasterEffects(
+                      effects: captureAny(named: 'effects'),
+                    ),
+                  ).captured.single
+                  as List<TrackEffect>;
+          expect((pushed.single as PluginEffect).name, 'Ancient Chorus');
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
         'a bus relink keeps the persisted state, tweaks and power flag',
         setUp: () {
           when(() => repository.masterEffects).thenReturn([
@@ -1795,6 +1933,181 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       verifyNever(() => repository.record(channel: any(named: 'channel')));
+    });
+  });
+
+  // A REAL repository over the fake engine, not the mock the rest of this file
+  // uses: the resync reads the repository's own chain enumerations and writes
+  // real envelopes, so stubbing them would assert the fixture instead of the
+  // encoding — and the shrink case is about a key the enumeration OMITS, which
+  // a stub cannot express honestly.
+  group('LooperSessionLoaded', () {
+    late FakeAudioEngine engine;
+    late LooperRepository looper;
+    late SettingsRepository settings;
+    late LooperBloc bloc;
+
+    setUp(() {
+      engine = FakeAudioEngine()
+        ..nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: le.LatencyState.idle,
+          measuredLatencyMs: -1,
+          tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+        );
+      looper = LooperRepository(
+        engine: engine,
+        ticker: const Stream<void>.empty(),
+      )..startEngine(const EngineConfig());
+      settings = SettingsRepository(store: FakeKeyValueStore());
+      bloc = LooperBloc(repository: looper, settings: settings);
+    });
+
+    tearDown(() async {
+      await bloc.close();
+      await looper.dispose();
+    });
+
+    /// Dispatches the resync and lets the bloc's event stream drain.
+    Future<void> resync() async {
+      bloc.add(const LooperSessionLoaded());
+      await pumpEventQueue();
+    }
+
+    test(
+      'persists the chains the repository holds, on all three stages',
+      () async {
+        looper
+          ..setLaneEffects(
+            channel: 0,
+            lane: 1,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          )
+          ..setTrackEffects(
+            channel: 1,
+            effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+          )
+          ..setMasterEffects(
+            effects: [BuiltInEffect(type: TrackEffectType.delay)],
+          );
+
+        await resync();
+
+        expect(
+          decodeFxChain(await settings.loadLaneEffects(0, 1)).entries.single,
+          isA<BuiltInEffect>().having(
+            (e) => e.type,
+            'type',
+            TrackEffectType.drive,
+          ),
+        );
+        expect(
+          decodeFxChain(await settings.loadTrackFxChain(1)).entries.single,
+          isA<BuiltInEffect>().having(
+            (e) => e.type,
+            'type',
+            TrackEffectType.reverb,
+          ),
+        );
+        expect(
+          decodeFxChain(await settings.loadMasterFxChain()).entries.single,
+          isA<BuiltInEffect>().having(
+            (e) => e.type,
+            'type',
+            TrackEffectType.delay,
+          ),
+        );
+      },
+    );
+
+    test('persists the chain-enabled flag inside the envelope, not just the '
+        'entries', () async {
+      looper
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setLaneChainEnabled(channel: 0, lane: 0, enabled: false)
+        ..setMasterChainEnabled(enabled: false);
+
+      await resync();
+
+      expect(
+        decodeFxChain(await settings.loadLaneEffects(0, 0)).chainEnabled,
+        isFalse,
+      );
+      expect(
+        decodeFxChain(await settings.loadMasterFxChain()).chainEnabled,
+        isFalse,
+      );
+    });
+
+    test('persists the slot ids the load minted, so a pedal binding stored '
+        'against one survives a restart', () async {
+      looper.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+      );
+      final live = looper.laneEffects(0, 0).single.slotId;
+
+      await resync();
+
+      expect(live, isNotNull);
+      expect(
+        decodeFxChain(
+          await settings.loadLaneEffects(0, 0),
+        ).entries.single.slotId,
+        live,
+      );
+    });
+
+    test('CLEARS the keys a shrinking load dropped, rather than leaving them '
+        'stale', () async {
+      // The pre-load rig, persisted through the edit paths.
+      bloc
+        ..add(const LooperLaneEffectAdded(0, 0, type: TrackEffectType.drive))
+        ..add(
+          LooperTrackEffectsChanged(0, [
+            BuiltInEffect(type: TrackEffectType.reverb),
+          ]),
+        );
+      await pumpEventQueue();
+      expect(await settings.loadLaneEffects(0, 0), isNotNull);
+      expect(await settings.loadTrackFxChain(0), isNotNull);
+
+      // The loaded session defines neither chain: the repository drops both,
+      // so the enumerations omit them and there is no envelope to overwrite
+      // the keys with.
+      looper
+        ..setLaneEffects(channel: 0, lane: 0, effects: const [])
+        ..setTrackEffects(channel: 0, effects: const []);
+
+      await resync();
+
+      expect(await settings.loadLaneEffects(0, 0), isNull);
+      expect(await settings.loadTrackFxChain(0), isNull);
+    });
+
+    test('is a no-op without a settings dependency', () async {
+      final blocWithoutSettings = LooperBloc(repository: looper);
+      addTearDown(blocWithoutSettings.close);
+      looper.setMasterEffects(
+        effects: [BuiltInEffect(type: TrackEffectType.delay)],
+      );
+
+      blocWithoutSettings.add(const LooperSessionLoaded());
+      await pumpEventQueue();
+
+      expect(await settings.loadMasterFxChain(), isNull);
     });
   });
 }

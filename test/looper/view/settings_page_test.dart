@@ -4,17 +4,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/looper.dart';
-import 'package:loopy/pedal/pedal.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/update/cubit/update_cubit.dart';
-import 'package:loopy/visualizer/visualizer.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno/pedal/pedal.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
+import 'package:segno/visualizer/visualizer.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
 
@@ -53,6 +53,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(GridDivision.off);
+    registerFallbackValue(MonitorMode.off);
     registerFallbackValue(ClickMode.off);
     registerFallbackValue(const LooperRecordPressed(0));
   });
@@ -81,6 +82,9 @@ void main() {
         tracks: [Track()],
         status: EngineStatus(inputChannels: 2, outputChannels: 2),
       ),
+    );
+    when(() => repository.monitorChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
     );
     when(
       () => repository.looperState,
@@ -124,9 +128,9 @@ void main() {
       () => repository.setQuantize(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setMonitorInputEnabled(
+      () => repository.setMonitorInputMode(
         input: any(named: 'input'),
-        enabled: any(named: 'enabled'),
+        mode: any(named: 'mode'),
       ),
     ).thenReturn(EngineResult.ok);
     when(
@@ -223,7 +227,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(waveformWindow.state, isFalse);
+    expect(waveformWindow.state.enabled, isFalse);
     expect(await settings.loadShowWaveformWindow(), isFalse);
   });
 
@@ -270,6 +274,17 @@ void main() {
 
     await tester.tap(find.byKey(const Key('settings_trackName_0')));
     await tester.pumpAndSettle();
+
+    // The dialog says WHAT it is about to rename, not just which ordinal
+    // (#526) — before this it read "Rename track 1" beside a stage that
+    // already called the track by name.
+    final l10n = AppLocalizations.of(
+      tester.element(find.byKey(const Key('renameTrack_field'))),
+    );
+    expect(
+      find.text(l10n.renameTrackTitle(l10n.defaultTrackName(1))),
+      findsOneWidget,
+    );
 
     await tester.enterText(
       find.byKey(const Key('renameTrack_field')),

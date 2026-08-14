@@ -5,12 +5,12 @@ import 'dart:io';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -31,9 +31,15 @@ class _RecordingPerformanceRepository extends PerformanceRepository {
 
   final List<String> log;
 
+  /// When set, holds [persistLiveLanes] open until completed — lets a test
+  /// close the cubit while the D-CLEAR persist is still in flight.
+  Completer<void>? persistGate;
+
   @override
   Future<void> persistLiveLanes() async {
     log.add('persistLiveLanes');
+    final gate = persistGate;
+    if (gate != null) await gate.future;
     await super.persistLiveLanes();
   }
 }
@@ -70,6 +76,36 @@ List<Track> _tracksWith(List<Track> overrides) => [
 /// intent invalidation reducer, and the pedal I/O it owns through
 /// [PedalRepository] — footswitch decode in, projected LED frames out.
 void main() {
+  /// Completes when [repository] reaches a status [matches] accepts.
+  ///
+  /// `ControlCubit` fires `arm()`/`disarm()` and forgets them, and both write
+  /// to the filesystem — so how many turns of the event queue they take is a
+  /// property of the machine, not of the code. Pumping the queue (or waiting
+  /// out a long-press and pumping) and then reading `armedDirectory` is a
+  /// race these tests lost under load and under a reordered run.
+  ///
+  /// Bounded, because `arm()` has two paths that return without emitting at
+  /// all — an idempotent re-arm, and the rollback when the engine refuses. An
+  /// unbounded wait there is a thirty-second stall pointing at a stream; this
+  /// is a prompt failure naming what never happened.
+  Future<void> awaitStatusWhere(
+    PerformanceRepository repository,
+    bool Function(PerformanceCaptureStatus) matches, {
+    String what = 'the expected status',
+  }) => repository.captureStatus
+      .firstWhere(matches)
+      .timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw StateError('never reached $what'),
+      );
+
+  /// Completes when [repository] reaches exactly [status].
+  Future<void> awaitStatus(
+    PerformanceRepository repository,
+    PerformanceCaptureStatus status,
+  ) =>
+      awaitStatusWhere(repository, (value) => value == status, what: '$status');
+
   group('ControlCubit', () {
     late _MockLooperRepository looper;
     late StreamController<LooperState> looperStates;
@@ -185,7 +221,7 @@ void main() {
         return EngineResult.ok;
       });
 
-      tempDir = Directory.systemTemp.createTempSync('loopy_control_cubit');
+      tempDir = Directory.systemTemp.createTempSync('segno_control_cubit');
       clock = DateTime(2026, 7, 6, 14, 30, 15);
       performance = PerformanceRepository(
         engine: FakeAudioEngine(),
@@ -668,7 +704,12 @@ void main() {
       test(
         'MODE long-press still arms performance recording (unchanged)',
         () async {
+          final armed = awaitStatus(
+            performance,
+            PerformanceCaptureStatus.armed,
+          );
           await hold(PedalButton.mode);
+          await armed;
           expect(performance.armedDirectory, isNotNull);
           expect(cubit.state.mode, InteractionMode.fx); // not a mode cycle
         },
@@ -1148,6 +1189,48 @@ void main() {
         expect(log, isEmpty);
         verify(() => looper.clear()).called(1);
       });
+
+      // The armed path is the only one that awaits, so it is the only one whose
+      // emit can land on a closed cubit. The engine clear still has to happen —
+      // it is what the user asked for, and the looper outlives the console.
+      test(
+        'while armed, clearAll survives the console closing mid-persist',
+        () async {
+          final log = <String>[];
+          final recordingPerformance = _RecordingPerformanceRepository(
+            log: log,
+            engine: FakeAudioEngine(),
+            exportsRoot: () async => tempDir.path,
+          );
+          addTearDown(recordingPerformance.dispose);
+          final armedCubit = ControlCubit(
+            looper: looper,
+            pedal: pedal,
+            settings: settings,
+            performance: recordingPerformance,
+            keepAliveInterval: Duration.zero,
+          );
+          addTearDown(armedCubit.close);
+
+          await recordingPerformance.arm();
+          await pumpEventQueue(); // deliver captureStatus.armed to the cubit
+
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+
+          recordingPerformance.persistGate = Completer<void>();
+          final pending = armedCubit.clearAll();
+          await pumpEventQueue();
+          await armedCubit.close();
+          recordingPerformance.persistGate!.complete();
+
+          await expectLater(pending, completes);
+          verify(() => looper.clear()).called(1);
+        },
+      );
     });
 
     group('performance recording (D-PEDAL)', () {
@@ -1157,20 +1240,27 @@ void main() {
         () async {
           expect(performance.armedDirectory, isNull);
 
-          cubit.togglePerformanceRecord();
-          await pumpEventQueue();
-          expect(performance.armedDirectory, isNotNull);
-          expect(
-            await performance.captureStatus.first,
+          final armed = awaitStatus(
+            performance,
             PerformanceCaptureStatus.armed,
           );
+          cubit.togglePerformanceRecord();
+          await armed;
+          expect(performance.armedDirectory, isNotNull);
 
           // Past disarm's double-press guard window (D-GUARD) — this test
           // proves the toggle mechanic, not the guard itself.
           clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
 
+          // `done`, not merely "no longer armed": disarm passes through
+          // `finalizing` and only clears the directory at the end of it, so a
+          // wait that stops at the first non-armed status reads it too early.
+          final disarmed = awaitStatus(
+            performance,
+            PerformanceCaptureStatus.done,
+          );
           cubit.togglePerformanceRecord();
-          await pumpEventQueue();
+          await disarmed;
           expect(performance.armedDirectory, isNull);
         },
       );
@@ -1204,9 +1294,12 @@ void main() {
           );
           addTearDown(wired.close);
 
+          final armed = awaitStatus(
+            performance,
+            PerformanceCaptureStatus.armed,
+          );
           wired.togglePerformanceRecord();
-
-          await pumpEventQueue();
+          await armed;
 
           final snapshot =
               jsonDecode(
@@ -1458,11 +1551,15 @@ void main() {
         test(
           'long-press arms performance recording and does NOT flip mode',
           () async {
+            final armed = awaitStatus(
+              performance,
+              PerformanceCaptureStatus.armed,
+            );
             transport.emit(0x90, PedalButton.mode.note, 100);
             // Default long-press threshold is 500 ms.
             await Future<void>.delayed(const Duration(milliseconds: 600));
             transport.emit(0x80, PedalButton.mode.note, 0);
-            await pumpEventQueue();
+            await armed;
 
             expect(cubit.state.mode, InteractionMode.record); // unchanged
             expect(performance.armedDirectory, isNotNull);
@@ -1470,10 +1567,14 @@ void main() {
         );
 
         test('a long-press then a second long-press disarms again', () async {
+          final armed = awaitStatus(
+            performance,
+            PerformanceCaptureStatus.armed,
+          );
           transport.emit(0x90, PedalButton.mode.note, 100);
           await Future<void>.delayed(const Duration(milliseconds: 600));
           transport.emit(0x80, PedalButton.mode.note, 0);
-          await pumpEventQueue();
+          await armed;
           expect(performance.armedDirectory, isNotNull);
 
           // Past disarm's double-press guard window (D-GUARD) — the fake
@@ -1482,10 +1583,16 @@ void main() {
           // to actually disarm rather than be guarded.
           clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
 
+          // `done`, not the first non-armed status: disarm passes through
+          // `finalizing` and only clears the directory at the end of it.
+          final disarmed = awaitStatus(
+            performance,
+            PerformanceCaptureStatus.done,
+          );
           transport.emit(0x90, PedalButton.mode.note, 100);
           await Future<void>.delayed(const Duration(milliseconds: 600));
           transport.emit(0x80, PedalButton.mode.note, 0);
-          await pumpEventQueue();
+          await disarmed;
 
           expect(performance.armedDirectory, isNull);
         });
@@ -1549,6 +1656,53 @@ void main() {
         ];
         setEngine(_emptyTracks());
         cubit.setMode(InteractionMode.fx);
+      });
+
+      group('what the LED reports', () {
+        test(
+          'a bound switch lights from its own target, not the track',
+          () async {
+            pedal.bind('out');
+            // track1 bound to channel 3's chain, so its LED must follow THAT
+            // chain — channel 0's is a different flag, and stomping the switch
+            // never touches it.
+            await cubit.setGlobalBindings(
+              PedalBindingSet([bind(PedalButton.track1, bank: 0)]),
+            );
+            cubit.setMode(InteractionMode.fx);
+            await pumpEventQueue();
+            transport.sent.clear();
+            await stomp(PedalButton.track1);
+            await pumpEventQueue();
+
+            expect(chainEnabled[3], isFalse, reason: 'the bound chain is off');
+            expect(
+              PedalCodec.decodeFrame(transport.sent.last)?.trackLeds[0],
+              PedalTrackLed.off,
+              reason: 'the LED follows the bound chain it just switched off',
+            );
+          },
+        );
+
+        test('a stale binding lights nothing', () async {
+          pedal.bind('out');
+          await cubit.setGlobalBindings(
+            PedalBindingSet([
+              bind(PedalButton.track1, bank: 0, rawTarget: 'not-a-target'),
+            ]),
+          );
+          transport.sent.clear();
+          cubit.setMode(InteractionMode.fx);
+          await pumpEventQueue();
+
+          // R25: a binding that names nothing writes nothing and lights
+          // nothing. Falling back to the channel's own chain would light for
+          // a chain the switch does not drive.
+          expect(
+            PedalCodec.decodeFrame(transport.sent.last)?.trackLeds[0],
+            PedalTrackLed.off,
+          );
+        });
       });
 
       group('dispatch', () {
@@ -1702,9 +1856,14 @@ void main() {
           await cubit.setGlobalBindings(
             PedalBindingSet([bind(PedalButton.mode)]),
           );
+          final armed = awaitStatus(
+            performance,
+            PerformanceCaptureStatus.armed,
+          );
           await press(PedalButton.mode);
           await Future<void>.delayed(const Duration(milliseconds: 600));
           await release(PedalButton.mode);
+          await armed;
 
           expect(performance.armedDirectory, isNotNull);
         });

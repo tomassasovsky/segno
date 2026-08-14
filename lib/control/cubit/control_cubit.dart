@@ -5,20 +5,20 @@ import 'package:bloc/bloc.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/common/fx_chain_persistence.dart';
-import 'package:loopy/control/binding/control_value_resolver.dart';
-import 'package:loopy/control/binding/control_value_target.dart';
-import 'package:loopy/control/binding/controller_learn.dart';
-import 'package:loopy/control/binding/fx_binding_resolver.dart';
-import 'package:loopy/control/binding/fx_binding_target.dart';
-import 'package:loopy/control/binding/pedal_binding.dart';
-import 'package:loopy/control/binding/pedal_binding_set.dart';
-import 'package:loopy/control/control_projection.dart';
-import 'package:loopy/logging/app_log.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/common/fx_chain_persistence.dart';
+import 'package:segno/control/binding/control_value_resolver.dart';
+import 'package:segno/control/binding/control_value_target.dart';
+import 'package:segno/control/binding/controller_learn.dart';
+import 'package:segno/control/binding/fx_binding_resolver.dart';
+import 'package:segno/control/binding/fx_binding_target.dart';
+import 'package:segno/control/binding/pedal_binding.dart';
+import 'package:segno/control/binding/pedal_binding_set.dart';
+import 'package:segno/control/control_projection.dart';
+import 'package:segno/logging/app_log.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'control_state.dart';
@@ -834,6 +834,11 @@ class ControlCubit extends Cubit<ControlState> {
         );
       }
     }
+    // The persist above is an await, so the surface may have been torn down
+    // while it ran. The engine clear still happens — it is what the user asked
+    // for and the looper outlives this cubit — but the overlay state and the
+    // LED frame belong to a console that is no longer there.
+    if (isClosed) return;
     emit(
       state.copyWith(
         mode: InteractionMode.record,
@@ -1557,6 +1562,36 @@ class ControlCubit extends Cubit<ControlState> {
     releaseAllControllerMomentary();
   }
 
+  /// What each BOUND track switch's own target currently reads, by channel.
+  ///
+  /// Only in FX mode, because that is the only mode a binding overrides — the
+  /// other two are transport surfaces a remap must never shadow, and their
+  /// LEDs mean something else entirely.
+  ///
+  /// A present null is a binding that no longer resolves. It stays in the map
+  /// rather than being dropped, so the LED can go dark: R25 says a stale
+  /// binding writes nothing and lights nothing, and dropping it here would
+  /// fall back to this channel's track chain — lighting for a chain the switch
+  /// does not drive.
+  Map<int, bool?> _boundChains() {
+    if (state.mode != InteractionMode.fx) return const {};
+    final bound = <int, bool?>{};
+    for (final button in const [
+      PedalButton.track1,
+      PedalButton.track2,
+      PedalButton.track3,
+      PedalButton.track4,
+    ]) {
+      final binding = state.bindings.lookup(button, bank: state.activeBank);
+      if (binding == null) continue;
+      final target = binding.decodeTarget();
+      bound[_trackIndex(button)] = target == null
+          ? null
+          : _looper.bindingEnabled(target);
+    }
+    return bound;
+  }
+
   int _trackIndex(PedalButton button) => switch (button) {
     PedalButton.track1 => 0,
     PedalButton.track2 => 1,
@@ -1618,6 +1653,7 @@ class ControlCubit extends Cubit<ControlState> {
       clearFadeActive: _clearHeld,
       performanceArmed: _performanceArmed,
       masterGain: _masterGain,
+      boundChains: _boundChains(),
     );
     if (!force && frame == _lastFrame) return; // diff: only push on change
     _lastFrame = frame;

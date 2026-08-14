@@ -1,9 +1,9 @@
 {
     "@@locale": "en",
-    "appMenuLabel": "Loopy",
+    "appMenuLabel": "Segno",
     "settingsMenuItem": "Settings…",
     "settingsSectionUpdates": "Updates",
-    "updatesIntro": "Keep Loopy current. Checking is read-only — downloading and installing an update is always your choice.",
+    "updatesIntro": "Keep Segno current. Checking is read-only — downloading and installing an update is always your choice.",
     "updatesInstalledVersionLabel": "Installed version",
     "updatesChannelLabel": "Channel",
     "updatesVersionValue": "v{version}",
@@ -102,6 +102,31 @@
             }
         }
     },
+    "pedalFirmwareGateTitle": "Finishing update",
+    "@pedalFirmwareGateTitle": {
+        "description": "Shown full-screen while the pedal's firmware is being flashed after an OS update."
+    },
+    "pedalFirmwareGateBody": "Updating your pedal to {version}. Its footswitches and lights are off until this finishes — don't unplug it.",
+    "@pedalFirmwareGateBody": {
+        "description": "Body of the pedal firmware gate. {version} is a semantic version.",
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalFirmwareGateFailedTitle": "Pedal update didn't finish",
+    "@pedalFirmwareGateFailedTitle": {
+        "description": "Shown when flashing the pedal firmware failed."
+    },
+    "pedalFirmwareGateFailedBody": "Your pedal still works on its previous firmware. Segno will try again next time it starts.",
+    "@pedalFirmwareGateFailedBody": {
+        "description": "Reassurance shown when the pedal firmware flash failed."
+    },
+    "pedalFirmwareGateContinue": "Continue",
+    "@pedalFirmwareGateContinue": {
+        "description": "Button that dismisses the failed pedal firmware gate and opens the looper."
+    },
     "dismiss": "Dismiss",
     "waveformWindowFailedBanner": "The waveform display didn't open — check the second screen.",
     "@waveformWindowFailedBanner": {
@@ -140,23 +165,39 @@
     "sessionNameInvalid": "Enter a valid session name.",
     "sessionNameDuplicate": "A session named “{name}” already exists.",
     "@sessionNameDuplicate": {
-        "placeholders": { "name": { "type": "String" } }
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
     },
     "sessionDeleteConfirmTitle": "Delete “{name}”?",
     "@sessionDeleteConfirmTitle": {
-        "placeholders": { "name": { "type": "String" } }
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
     },
     "sessionDeleteConfirmBody": "This permanently deletes the saved session. The current rig keeps playing.",
     "a11ySessionRename": "Rename session {name}",
     "@a11ySessionRename": {
-        "placeholders": { "name": { "type": "String" } }
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
     },
     "a11ySessionDelete": "Delete session {name}",
     "@a11ySessionDelete": {
-        "placeholders": { "name": { "type": "String" } }
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
     },
     "sessionErrorSampleRate": "Couldn't load the session — it was recorded at a different sample rate than the current device. Reopen the device at the session's sample rate, then try again.",
-    "sessionErrorUnsupportedVersion": "Couldn't load the session — it was saved by a newer version of Loopy. Update the app, then try again.",
+    "sessionErrorUnsupportedVersion": "Couldn't load the session — it was saved by a newer version of Segno. Update the app, then try again.",
     "sessionErrorGeneric": "Session action failed: {details}",
     "@sessionErrorGeneric": {
         "placeholders": {
@@ -166,14 +207,6 @@
         }
     },
     "engineStoppedBanner": "Audio engine stopped — open setup to start.",
-    "trackNumberLabel": "Track {trackNumber}",
-    "@trackNumberLabel": {
-        "placeholders": {
-            "trackNumber": {
-                "type": "int"
-            }
-        }
-    },
     "loopMultipleLabel": "×{multiple}",
     "@loopMultipleLabel": {
         "placeholders": {
@@ -367,15 +400,24 @@
             }
         }
     },
-    "renameTrackTitle": "Rename track {trackNumber}",
+    "renameTrackTitle": "Rename {trackName}",
     "@renameTrackTitle": {
+        "description": "Title of the stage's rename dialog. Names the track it is about to rename rather than numbering it (#526).",
         "placeholders": {
-            "trackNumber": {
-                "type": "int"
+            "trackName": {
+                "type": "String"
             }
         }
     },
     "cancel": "Cancel",
+    "fxParamResetLabel": "Reset",
+    "@fxParamResetLabel": {
+        "description": "Button in the FX parameter editor sheet that returns the parameter to the plugin's default value."
+    },
+    "fxParamSetLabel": "Set",
+    "@fxParamSetLabel": {
+        "description": "Commit button in the FX parameter editor sheet; closes the sheet keeping the edited value."
+    },
     "save": "Save",
     "trackRoutingTitle": "{trackName} routing",
     "@trackRoutingTitle": {
@@ -386,11 +428,12 @@
         }
     },
     "trackSettingsTooltip": "Track settings",
-    "trackSettingsDialogTitle": "Track {trackNumber} settings",
+    "trackSettingsDialogTitle": "{trackName} settings",
     "@trackSettingsDialogTitle": {
+        "description": "Title of the console's per-track routing dialog. The ordinal sits underneath it, where it says which pad on the pedal this is.",
         "placeholders": {
-            "trackNumber": {
-                "type": "int"
+            "trackName": {
+                "type": "String"
             }
         }
     },
@@ -412,7 +455,7 @@
     "settingsSectionAudio": "Audio",
     "settingsSectionTracks": "Tracks",
     "settingsKicker": "SETTINGS",
-    "settingsTitle": "Loopy",
+    "settingsTitle": "Segno",
     "settingsViewIntro": "Switch layouts, tune looper defaults, and toggle the secondary output-waveform window.",
     "viewGroupLabel": "VIEW",
     "waveformWindowTitle": "Output waveform window",
@@ -506,8 +549,12 @@
     "signalFieldTracks": "TRK",
     "signalTakesCount": "{count} takes",
     "@signalTakesCount": {
-      "description": "Badge on a multi-lane track header counting its takes.",
-      "placeholders": { "count": { "type": "int" } }
+        "description": "Badge on a multi-lane track header counting its takes.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
     },
     "signalLegendLive": "LIVE input is monitored",
     "signalLegendSnapshot": "FX snapshot taken at record",
@@ -515,25 +562,37 @@
     "signalCleanTake": "clean take",
     "signalRecInput": "rec In {inputNumber}",
     "@signalRecInput": {
-      "description": "Badge on a take naming the hardware input it recorded.",
-      "placeholders": { "inputNumber": { "type": "int" } }
+        "description": "Badge on a take naming the hardware input it recorded.",
+        "placeholders": {
+            "inputNumber": {
+                "type": "int"
+            }
+        }
     },
     "signalRouteTooltip": "Route to an output",
     "signalRouteToOutput": "Send to Out {outputNumber}",
     "@signalRouteToOutput": {
-      "description": "Menu item / a11y label to add a route to an output.",
-      "placeholders": { "outputNumber": { "type": "int" } }
+        "description": "Menu item / a11y label to add a route to an output.",
+        "placeholders": {
+            "outputNumber": {
+                "type": "int"
+            }
+        }
     },
     "signalUnrouteOutput": "Stop sending to Out {outputNumber}",
     "@signalUnrouteOutput": {
-      "description": "a11y label on a lit routing chip (tap removes the route).",
-      "placeholders": { "outputNumber": { "type": "int" } }
+        "description": "a11y label on a lit routing chip (tap removes the route).",
+        "placeholders": {
+            "outputNumber": {
+                "type": "int"
+            }
+        }
     },
     "signalInputNone": "None (clean)",
     "signalReassignInput": "Change recorded input",
     "signalTooltip": "Signal flow (G)",
     "@signalTooltip": {
-      "description": "Tooltip for the tracks-view button that opens the full-screen Signal surface."
+        "description": "Tooltip for the tracks-view button that opens the tray at Signal."
     },
     "settingsTooltip": "Settings (S)",
     "@settingsTooltip": {
@@ -599,6 +658,14 @@
     "signalPluginUnsupported": "Plugin unsupported",
     "signalPluginVersionChanged": "Version changed since saved",
     "signalPluginRelinkTooltip": "Relink to an installed plugin",
+    "fxOpenWindow": "Open window",
+    "@fxOpenWindow": {
+        "description": "Footer action: opens a hosted plugin's own editor window."
+    },
+    "fxRelink": "Relink",
+    "@fxRelink": {
+        "description": "Footer action: points a missing plugin entry at an installed plugin, keeping its saved state."
+    },
     "signalPluginBrowserTitle": "Plugins",
     "signalPluginBrowserSearchHint": "Search plugins",
     "signalPluginBrowserEmpty": "No plugins found",
@@ -606,8 +673,12 @@
     "signalPluginScanProgress": "Scanning… {scanned}/{total}",
     "@signalPluginScanProgress": {
         "placeholders": {
-            "scanned": { "type": "int" },
-            "total": { "type": "int" }
+            "scanned": {
+                "type": "int"
+            },
+            "total": {
+                "type": "int"
+            }
         }
     },
     "signalPluginCancelScan": "Cancel",
@@ -620,13 +691,28 @@
     "signalEditTrackFx": "Edit the track bus FX chain",
     "signalEditMasterFx": "Edit the master FX chain",
     "signalChainOff": "Chain off",
+    "signalCardChainOffRun": "Chain off · {run}",
+    "@signalCardChainOffRun": {
+        "description": "A Signal card's chain line while the chain is switched off: the entries, behind the word that says they are not running.",
+        "placeholders": {
+            "run": {
+                "type": "String"
+            }
+        }
+    },
+    "signalChainOn": "Chain on",
+    "@signalChainOn": {
+        "description": "The Signal panel's chain-power pill while the chain is running."
+    },
     "signalShowAllLanes": "All lanes",
     "signalShowRecordedLanes": "Recorded lanes",
     "signalInherited": "Inherited",
     "signalInheritedFrom": "Copied from {inputs} when this take was recorded",
     "@signalInheritedFrom": {
         "placeholders": {
-            "inputs": { "type": "String" }
+            "inputs": {
+                "type": "String"
+            }
         }
     },
     "fxEffectPowerOnTooltip": "Turn this effect on",
@@ -640,32 +726,38 @@
     "fxEditorInputTitle": "Input {number}",
     "@fxEditorInputTitle": {
         "placeholders": {
-            "number": { "type": "int" }
+            "number": {
+                "type": "int"
+            }
         }
     },
     "fxEditorInputConsequence": "prints into new takes",
     "fxEditorLaneConsequence": "shapes playback, non-destructive",
-    "fxEditorTrackTitle": "Track {number} bus",
+    "fxEditorTrackTitle": "{trackName} bus",
     "@fxEditorTrackTitle": {
         "placeholders": {
-            "number": { "type": "int" }
+            "trackName": {
+                "type": "String"
+            }
         }
     },
     "fxEditorMasterTitle": "Master",
     "fxEditorTrackConsequence": "shapes the whole track, after its lanes",
     "fxEditorMasterConsequence": "shapes the whole mix, before the limiter",
-    "fxChainOffInputConsequence": "chain off \u2014 this input monitors dry, and new takes print dry",
-    "fxChainOffLoopConsequence": "chain off \u2014 this take plays dry",
-    "fxChainOffTrackConsequence": "chain off \u2014 this track passes through its bus dry",
-    "fxChainOffMasterConsequence": "chain off \u2014 the whole mix passes through dry",
+    "fxChainOffInputConsequence": "chain off — this input monitors dry, and new takes print dry",
+    "fxChainOffLoopConsequence": "chain off — this take plays dry",
+    "fxChainOffTrackConsequence": "chain off — this track passes through its bus dry",
+    "fxChainOffMasterConsequence": "chain off — the whole mix passes through dry",
     "fxResyncFromInput": "Re-sync from input",
-    "fxResyncFromInputTooltip": "Copy the routed input\u2019s chain onto this take again. Other takes are untouched.",
-    "fxOverdubMismatchHint": "The input chain no longer matches this take \u2014 this overdub is captured dry and does not re-inherit.",
+    "fxResyncFromInputTooltip": "Copy the routed input’s chain onto this take again. Other takes are untouched.",
+    "fxOverdubMismatchHint": "The input chain no longer matches this take — this overdub is captured dry and does not re-inherit.",
     "fxEditorScopeGone": "This chain no longer exists.",
     "fxEditorEditBlock": "Edit {name}",
     "@fxEditorEditBlock": {
         "placeholders": {
-            "name": { "type": "String" }
+            "name": {
+                "type": "String"
+            }
         }
     },
     "startEngine": "Start engine",
@@ -684,7 +776,7 @@
         }
     },
     "noAsioDriverTitle": "No ASIO driver found",
-    "noAsioDriverMessage": "Loopy uses ASIO on Windows. Install your interface's ASIO driver, or get a generic one from ASIO4ALL, then reopen settings.",
+    "noAsioDriverMessage": "Segno uses ASIO on Windows. Install your interface's ASIO driver, or get a generic one from ASIO4ALL, then reopen settings.",
     "downloadAsio4all": "Get ASIO4ALL",
     "sampleRateLabel": "Sample rate",
     "bufferLabel": "Buffer",
@@ -784,9 +876,9 @@
     },
     "quantizeRecordingSubtitle": "Snap record start/stop to the loop grid. The default for all tracks; override per track from its routing dialog.",
     "overdubOnSecondPressTitle": "Overdub on second press",
-    "overdubOnSecondPressSubtitle": "A second record press keeps layering (rec/dub) instead of stopping and playing back",
+    "overdubOnSecondPressSubtitle": "A second record press keeps layering (rec/dub) instead of stopping and playing back.",
     "soundActivatedRecordingTitle": "Sound-activated recording",
-    "soundActivatedRecordingSubtitle": "After pressing record, capture starts when the input signal begins, instead of immediately",
+    "soundActivatedRecordingSubtitle": "After pressing record, capture starts when the input signal begins, instead of immediately.",
     "defaultLoopLengthIntro": "Default loop length for new recordings. Auto rounds up to whole base loops; a fixed length records exactly that many. Override it per track from its routing dialog.",
     "statusGroupLabel": "STATUS",
     "deviceLabel": "Device",
@@ -856,7 +948,7 @@
             }
         }
     },
-    "outputWaveformWindowTitle": "Loopy — Output",
+    "outputWaveformWindowTitle": "Segno — Output",
     "midiInputGroup": "MIDI FOOT CONTROLLER",
     "midiNoDevicesFound": "No MIDI input devices found",
     "midiNone": "None",
@@ -934,7 +1026,7 @@
             }
         }
     },
-    "pedalOutputHint": "Pick the pedal's MIDI output so loopy can drive its LEDs. Its footswitches use the MIDI input above.",
+    "pedalOutputHint": "Pick the pedal's MIDI output so segno can drive its LEDs. Its footswitches use the MIDI input above.",
     "pedalFirmwareGroup": "PEDAL FIRMWARE PROTOCOL",
     "pedalFirmwareUnknown": "Not set — send v{version} (default)",
     "@pedalFirmwareUnknown": {
@@ -954,7 +1046,7 @@
             }
         }
     },
-    "pedalFirmwareHint": "Match the protocol of the firmware flashed on your pedal. loopy never sends a newer protocol than this; the pedal FX mode needs v3.",
+    "pedalFirmwareHint": "Match the protocol of the firmware flashed on your pedal. segno never sends a newer protocol than this; the pedal FX mode needs v3.",
     "pedalFirmwareUpdateTitle": "Pedal firmware update available",
     "@pedalFirmwareUpdateTitle": {
         "description": "Heading of the banner shown while the bound pedal speaks a wire protocol older than the one FX mode needs."
@@ -971,7 +1063,7 @@
             }
         }
     },
-    "pedalFirmwareUpdateBodyUnknown": "This pedal's firmware protocol is not set, so loopy stays on the v{version} safety floor: FX mode shows its chain LEDs in green instead of blue and the pedal reads FX as mute. Flash the v{needed} firmware, then set the protocol above to v{needed}.",
+    "pedalFirmwareUpdateBodyUnknown": "This pedal's firmware protocol is not set, so segno stays on the v{version} safety floor: FX mode shows its chain LEDs in green instead of blue and the pedal reads FX as mute. Flash the v{needed} firmware, then set the protocol above to v{needed}.",
     "@pedalFirmwareUpdateBodyUnknown": {
         "description": "Body of the pedal firmware update banner when no firmware version has been set; {version} is the safety-floor protocol and {needed} the protocol FX mode needs.",
         "placeholders": {
@@ -1013,12 +1105,12 @@
             }
         }
     },
-    "pedalSimTrackSemantics": "Track {number}, {state}",
+    "pedalSimTrackSemantics": "{trackName}, {state}",
     "@pedalSimTrackSemantics": {
         "description": "Accessibility label for an on-screen pedal track LED and its lit state.",
         "placeholders": {
-            "number": {
-                "type": "int"
+            "trackName": {
+                "type": "String"
             },
             "state": {
                 "type": "String"
@@ -1091,6 +1183,14 @@
     "perfCaptureGlitch": "Dropped audio frames detected during capture.",
     "perfDiscarded": "Capture was too short to keep — discarded.",
     "perfLowDisk": "Low disk space — the capture may run out of room.",
+    "perfLowDiskBlocked": "Not enough disk space to start a capture. Free some space and try again.",
+    "@perfLowDiskBlocked": {
+        "description": "Snackbar shown when arming a performance capture is refused because the export volume is already below the free-space floor."
+    },
+    "perfStoppedLowDisk": "Capture stopped — the disk was running out of space. What was recorded has been saved.",
+    "@perfStoppedLowDisk": {
+        "description": "Shown when a running capture stopped itself on the free-space floor and finalized what it had."
+    },
     "perfRecoveryFound": "A capture wasn't saved properly last time. Recover it?",
     "perfRecoveryRecover": "Recover",
     "perfRecoveryDiscard": "Discard",
@@ -1113,7 +1213,7 @@
     },
     "perfExportTrackLive": "Live plugins",
     "@perfExportTrackLive": {
-        "description": "Per-track export summary label: this track exported with a live, editable Loopy VST3 device chain."
+        "description": "Per-track export summary label: this track exported with a live, editable Segno VST3 device chain."
     },
     "perfExportTrackBounced": "Bounced audio",
     "@perfExportTrackBounced": {
@@ -1129,7 +1229,7 @@
     },
     "perfExportReasonUnrepresented": "Exported as audio — this track uses an effect that can't be exported live yet.",
     "@perfExportReasonUnrepresented": {
-        "description": "Fallback reason shown under a bounced-audio track: its chain includes an effect type this Loopy version doesn't recognize as exportable."
+        "description": "Fallback reason shown under a bounced-audio track: its chain includes an effect type this Segno version doesn't recognize as exportable."
     },
     "perfExportReExport": "Re-export",
     "@perfExportReExport": {
@@ -1239,10 +1339,94 @@
     "modeChangeConfirmTitle": "Switch mode?",
     "modeChangeConfirmBody": "Changing mode clears every track — there's no way to keep the current loops. Clear all tracks and switch?",
     "modeChangeConfirmConfirm": "Clear & Switch",
-    "modeChangeConfirmCancel": "Cancel",
     "modeChangeTimedOut": "Mode switch timed out — the clear is still finishing. Try again in a moment.",
     "oneShotGroupLabel": "ONE SHOT",
     "oneShotIntro": "A one-shot track plays once and stops instead of looping (active in Free and Song modes).",
+    "trayLoopLabel": "Loop",
+    "@trayLoopLabel": {
+        "description": "Navigation-rail caption for the console's Loop domain."
+    },
+    "loopTempoTab": "Tempo",
+    "loopClickTab": "Click",
+    "loopModeTab": "Mode",
+    "loopTempoGroup": "TEMPO",
+    "loopClickGroup": "CLICK",
+    "loopModeGroup": "MODE",
+    "loopDefaultsGroup": "DEFAULTS",
+    "loopTempoRow": "Tempo",
+    "loopTempoHint": "tap or type",
+    "loopTempoReadout": "{bpm} bpm",
+    "@loopTempoReadout": {
+        "description": "The live tempo at a Loop row's trailing edge.",
+        "placeholders": {
+            "bpm": {
+                "type": "String"
+            }
+        }
+    },
+    "loopTempoUnset": "not set",
+    "@loopTempoUnset": {
+        "description": "Shown where the tempo would be when none has been established. The console never draws an unknown fact as a zero."
+    },
+    "loopLengthHint": "first take sets it",
+    "loopLengthAuto": "Auto",
+    "loopLengthMultiple": "x{multiple}",
+    "@loopLengthMultiple": {
+        "description": "A fixed loop length, as a multiple of the base loop the first take defines.",
+        "placeholders": {
+            "multiple": {
+                "type": "int"
+            }
+        }
+    },
+    "loopSignatureQuarterGroup": "QUARTER NOTE",
+    "@loopSignatureQuarterGroup": {
+        "description": "Caption over the time signatures whose denominator is 4."
+    },
+    "loopSignatureEighthGroup": "EIGHTH NOTE",
+    "@loopSignatureEighthGroup": {
+        "description": "Caption over the time signatures whose denominator is 8."
+    },
+    "loopQuantiseRow": "Quantise",
+    "loopQuantiseHint": "when a switch takes effect",
+    "loopCountInRow": "Count-in",
+    "loopClickWhenRow": "When it plays",
+    "loopClickOutputRow": "Output",
+    "loopClickOutputNone": "nowhere",
+    "@loopClickOutputNone": {
+        "description": "Click output readout when no hardware output is selected."
+    },
+    "loopClickOutputAll": "all outputs",
+    "loopClickOutputCount": "{count} outputs",
+    "@loopClickOutputCount": {
+        "description": "Click output readout once naming every chosen output would not fit.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "loopClickVolumeLabel": "CLICK VOLUME",
+    "loopClickVolumeReadout": "{percent}%",
+    "@loopClickVolumeReadout": {
+        "description": "Click volume as a percentage of unity gain; the bar reaches 200%.",
+        "placeholders": {
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "loopModeRow": "Looper mode",
+    "loopOneShotRow": "One-shot tracks",
+    "loopDefaultModeRow": "Default mode",
+    "loopDefaultModeRecord": "record",
+    "loopDefaultModeMute": "mute",
+    "loopTempoSheetUnit": "bpm",
+    "loopTempoSheetSet": "Set",
+    "loopTempoSheetBackspace": "Backspace",
+    "loopTempoSheetDecimal": "Decimal point",
+    "a11yLoopClickVolume": "Click volume",
+    "a11yLoopTempoSheet": "Tempo keypad",
     "a11yTrackPrimary": "Primary track",
     "@a11yTrackPrimary": {
         "description": "Accessible label for the crown badge on the currently-crowned Sync/Band primary track (D18); inert, no tap action."
@@ -1267,22 +1451,94 @@
     "@trayBluetoothLabel": {
         "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
     },
+    "trayBrightnessPercent": "{percent}%",
+    "@trayBrightnessPercent": {
+        "description": "The readout above the brightness capsule in its popover.",
+        "placeholders": { "percent": { "type": "int" } }
+    },
+    "trayBrightLabel": "Bright",
+    "@trayBrightLabel": {
+        "description": "Navigation rail entry for screen brightness, pinned below the eight domains as the mockups draw it."
+    },
+    "a11yTrayRail": "Tray destinations",
+    "@a11yTrayRail": {
+        "description": "Accessible label for the settings tray's vertical navigation rail, which selects which config face fills the open tray."
+    },
+    "readoutTempoLabel": "TEMPO",
+    "@readoutTempoLabel": {
+        "description": "Caption over the tempo figure on the 7-inch performance readout."
+    },
+    "readoutBarsLabel": "BARS",
+    "@readoutBarsLabel": {
+        "description": "Caption over the master loop length in bars on the 7-inch performance readout."
+    },
+    "readoutModeRecord": "REC",
+    "@readoutModeRecord": {
+        "description": "Mode chip on the 7-inch readout: a track press records. Short by design - read from stage distance."
+    },
+    "readoutModeMute": "MUTE",
+    "@readoutModeMute": {
+        "description": "Mode chip on the 7-inch readout: a track press mutes."
+    },
+    "readoutModeFx": "FX",
+    "@readoutModeFx": {
+        "description": "Mode chip on the 7-inch readout: a track press stomps its FX chain."
+    },
+    "readoutStateRecording": "REC",
+    "@readoutStateRecording": {
+        "description": "Track cell state on the 7-inch readout: capturing a first pass."
+    },
+    "readoutStateOverdubbing": "DUB",
+    "@readoutStateOverdubbing": {
+        "description": "Track cell state on the 7-inch readout: summing input into an existing loop."
+    },
+    "readoutStatePlaying": "PLAY",
+    "@readoutStatePlaying": {
+        "description": "Track cell state on the 7-inch readout: looping playback."
+    },
+    "readoutStateMuted": "MUTED",
+    "@readoutStateMuted": {
+        "description": "Track cell state on the 7-inch readout: muted."
+    },
+    "readoutStatePending": "ARMED",
+    "@readoutStatePending": {
+        "description": "Track cell state on the 7-inch readout: a quantized action is armed and waiting for the loop boundary."
+    },
+    "readoutStateStopped": "STOPPED",
+    "@readoutStateStopped": {
+        "description": "Track cell state on the 7-inch readout: playback halted but the loop buffer is retained. Distinct from empty - the track still holds audio."
+    },
+    "readoutStateEmpty": "EMPTY",
+    "@readoutStateEmpty": {
+        "description": "Track cell state on the 7-inch readout: nothing captured yet."
+    },
+    "tunerCentsAndHz": "{cents} cents · {hz} Hz",
+    "@tunerCentsAndHz": {
+      "description": "The tuner's readout under the note: how far off, and the measured frequency. The separator is a middle dot; the sign on cents is a real minus (U+2212), not a hyphen.",
+      "placeholders": {
+        "cents": { "type": "String" },
+        "hz": { "type": "String" }
+      }
+    },
+    "tunerListening": "Play a note",
+    "@tunerListening": {
+      "description": "Shown on the tuner face while it is armed but hearing nothing — distinct from the engine not running at all."
+    },
+    "tunerNoTunableInput": "No input to tune",
+    "@tunerNoTunableInput": {
+      "description": "Shown on the tuner face when a device IS open but every one of its captures is a loopback of the console's own output, so there is nothing an instrument could be plugged into."
+    },
+    "tunerNoDevice": "No audio device",
+    "@tunerNoDevice": {
+      "description": "Shown on the tuner face when no audio device is open, so there is no input to listen to."
+    },
     "trayTunerLabel": "Tuner",
     "@trayTunerLabel": {
-        "description": "Label for the settings tray's Tuner shortcut button (stub — no real functionality yet)."
+        "description": "Label for the settings tray's Tuner rail entry."
     },
     "trayBrightnessLabel": "Brightness",
     "@trayBrightnessLabel": {
         "description": "Label for the settings tray's brightness slider (UI-only this round — not persisted, no real display dimming)."
-    },
-    "trayComingSoonMessage": "{feature} — coming soon",
-    "@trayComingSoonMessage": {
-        "description": "Message shown in the settings tray's shared placeholder dialog for a stub feature (WiFi / Bluetooth / Tuner).",
-        "placeholders": {
-            "feature": {
-                "type": "String"
-            }
-        }
     },
     "pedalAssignTitle": "Pedal assignments",
     "@pedalAssignTitle": {
@@ -1290,14 +1546,18 @@
     },
     "pedalAssignIntro": "Pick a footswitch on the plate, then choose what it acts on in FX mode. Unassigned switches keep their normal FX behaviour.",
     "pedalAssignSelectPrompt": "Select a footswitch to assign it.",
-    "pedalAssignUnbindable": "MODE and BANK cannot be reassigned \u2014 they are the only way out of FX mode and to the other bank.",
+    "pedalAssignUnbindable": "MODE and BANK cannot be reassigned — they are the only way out of FX mode and to the other bank.",
     "@pedalAssignUnbindable": {
         "description": "Shown when the user selects the MODE or BANK footswitch, which are never remappable (B12)."
     },
     "pedalAssignBankLabel": "Bank {bank}",
     "@pedalAssignBankLabel": {
         "description": "Names which bank a track-button assignment applies to; track buttons are bound per bank (A3).",
-        "placeholders": { "bank": { "type": "String" } }
+        "placeholders": {
+            "bank": {
+                "type": "String"
+            }
+        }
     },
     "pedalAssignTarget": "Acts on",
     "pedalAssignBehavior": "Behaviour",
@@ -1317,29 +1577,60 @@
     "pedalAssignChainTarget": "{stage} chain",
     "@pedalAssignChainTarget": {
         "description": "Names a whole-chain target in the picker, e.g. \"Track 3 chain\".",
-        "placeholders": { "stage": { "type": "String" } }
+        "placeholders": {
+            "stage": {
+                "type": "String"
+            }
+        }
     },
     "pedalAssignStageInput": "Input {number}",
     "@pedalAssignStageInput": {
-        "placeholders": { "number": { "type": "int" } }
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
     },
-    "pedalAssignStageLoop": "Track {number} lane {lane}",
+    "pedalAssignStageLoop": "{trackName} lane {lane}",
     "@pedalAssignStageLoop": {
-        "placeholders": { "number": { "type": "int" }, "lane": { "type": "int" } }
+        "placeholders": {
+            "trackName": {
+                "type": "String"
+            },
+            "lane": {
+                "type": "int"
+            }
+        }
     },
-    "pedalAssignStageTrack": "Track {number}",
+    "pedalAssignStageTrack": "{trackName}",
     "@pedalAssignStageTrack": {
-        "placeholders": { "number": { "type": "int" } }
+        "description": "A whole track as a pedal-assignment target. Just the name — the surrounding list is already a list of targets.",
+        "placeholders": {
+            "trackName": {
+                "type": "String"
+            }
+        }
     },
     "pedalAssignStageMaster": "Master",
     "a11yPedalAssignRow": "{button}: {target}",
     "@a11yPedalAssignRow": {
         "description": "Semantics label for one assignment row.",
-        "placeholders": { "button": { "type": "String" }, "target": { "type": "String" } }
+        "placeholders": {
+            "button": {
+                "type": "String"
+            },
+            "target": {
+                "type": "String"
+            }
+        }
     },
     "a11yPedalAssignSelected": "{button} selected",
     "@a11yPedalAssignSelected": {
-        "placeholders": { "button": { "type": "String" } }
+        "placeholders": {
+            "button": {
+                "type": "String"
+            }
+        }
     },
     "fxStompBound": "Pedal",
     "@fxStompBound": {
@@ -1347,11 +1638,19 @@
     },
     "a11yFxStompBound": "Assigned to the {button} footswitch",
     "@a11yFxStompBound": {
-        "placeholders": { "button": { "type": "String" } }
+        "placeholders": {
+            "button": {
+                "type": "String"
+            }
+        }
     },
     "a11yFxStompBoundHeld": "Assigned to the {button} footswitch, held on",
     "@a11yFxStompBoundHeld": {
-        "placeholders": { "button": { "type": "String" } }
+        "placeholders": {
+            "button": {
+                "type": "String"
+            }
+        }
     },
     "midiLearnGroup": "EXTERNAL MIDI CONTROL",
     "@midiLearnGroup": {
@@ -1368,7 +1667,11 @@
     "midiLearnListening": "Listening… move the control you want to use.",
     "midiLearnReplacePrompt": "{control} already drives another mapping. Replace it?",
     "@midiLearnReplacePrompt": {
-        "placeholders": { "control": { "type": "String" } }
+        "placeholders": {
+            "control": {
+                "type": "String"
+            }
+        }
     },
     "midiLearnReplace": "Replace",
     "midiLearnKeep": "Keep",
@@ -1382,36 +1685,1353 @@
     "midiLearnCcControl": "CC {number} · ch {channel}",
     "@midiLearnCcControl": {
         "description": "How a learned Control Change is named in a mapping row.",
-        "placeholders": { "number": { "type": "int" }, "channel": { "type": "int" } }
+        "placeholders": {
+            "number": {
+                "type": "int"
+            },
+            "channel": {
+                "type": "int"
+            }
+        }
     },
     "midiLearnNoteControl": "Note {number} · ch {channel}",
     "@midiLearnNoteControl": {
-        "placeholders": { "number": { "type": "int" }, "channel": { "type": "int" } }
+        "placeholders": {
+            "number": {
+                "type": "int"
+            },
+            "channel": {
+                "type": "int"
+            }
+        }
     },
-    "midiLearnTargetVolume": "Track {number} volume",
+    "midiLearnTargetVolume": "{trackName} volume",
     "@midiLearnTargetVolume": {
-        "placeholders": { "number": { "type": "int" } }
+        "placeholders": {
+            "trackName": {
+                "type": "String"
+            }
+        }
     },
     "midiLearnTargetMaster": "Master gain",
     "midiLearnTargetParam": "{stage} · {slot} · {param}",
     "@midiLearnTargetParam": {
         "description": "An FX parameter target: its chain, its slot id, and the parameter name.",
-        "placeholders": { "stage": { "type": "String" }, "slot": { "type": "String" }, "param": { "type": "String" } }
+        "placeholders": {
+            "stage": {
+                "type": "String"
+            },
+            "slot": {
+                "type": "String"
+            },
+            "param": {
+                "type": "String"
+            }
+        }
     },
     "a11yMidiLearnRow": "{control} mapped to {target}",
     "@a11yMidiLearnRow": {
         "description": "Semantics label for one MIDI mapping row.",
-        "placeholders": { "control": { "type": "String" }, "target": { "type": "String" } }
+        "placeholders": {
+            "control": {
+                "type": "String"
+            },
+            "target": {
+                "type": "String"
+            }
+        }
     },
     "a11yMidiLearnLo": "Range low",
     "a11yMidiLearnHi": "Range high",
     "a11yMidiLearnThreshold": "On threshold",
-    "a11yCacheStateLive": "Wet cache: live",
-    "a11yCacheStateRendering": "Wet cache: rendering",
-    "a11yCacheStateCached": "Wet cache: cached",
-    "a11yCacheStateFailedRetrying": "Wet cache: render failed, retrying",
-    "a11yCacheStateGaveUp": "Wet cache: off, playing live",
-    "@a11yCacheStateGaveUp": {
-        "description": "Semantics label for the per-lane wet-cache debug glyph when the lane can never be cached (e.g. its chain hosts a plugin)."
+    "wifiRescan": "Rescan",
+    "@wifiRescan": {
+        "description": "Tooltip for the Wi-Fi picker's rescan button."
+    },
+    "wifiUnsupported": "Wi-Fi is managed by your computer on this build.",
+    "@wifiUnsupported": {
+        "description": "Shown on the Wi-Fi page for builds that do not manage the radio (desktop)."
+    },
+    "wifiNoNetworks": "No networks found.",
+    "@wifiNoNetworks": {
+        "description": "Empty state on the Wi-Fi picker when a scan returned nothing."
+    },
+    "wifiConnected": "Connected",
+    "@wifiConnected": {
+        "description": "Subtitle of the currently connected Wi-Fi network."
+    },
+    "wifiSecured": "Password required",
+    "@wifiSecured": {
+        "description": "Subtitle of a secured Wi-Fi network with no saved profile."
+    },
+    "wifiOpen": "Open",
+    "@wifiOpen": {
+        "description": "Subtitle of an unsecured Wi-Fi network."
+    },
+    "wifiForget": "Forget",
+    "@wifiForget": {
+        "description": "Tooltip for deleting a saved Wi-Fi network."
+    },
+    "wifiJoin": "Join",
+    "@wifiJoin": {
+        "description": "Confirm button on the Wi-Fi password dialog."
+    },
+    "wifiPassword": "Password",
+    "@wifiPassword": {
+        "description": "Label of the Wi-Fi password field."
+    },
+    "signalPluginBypassTooltip": "Bypass plugin",
+    "fxEditorChainIn": "IN",
+    "fxEditorChainOut": "OUT",
+    "fxEditorEmptySelection": "Select a block to edit its controls.",
+    "octaverLatencyHint": "Phase Vocoder adds ~{ms} ms — use PSOLA for live monitoring",
+    "@octaverLatencyHint": {
+        "placeholders": {
+            "ms": {
+                "type": "String"
+            }
+        }
+    },
+    "trayBackLabel": "Back",
+    "@trayBackLabel": {
+        "description": "Back control on an in-tray WiFi/Bluetooth expand panel — returns to the Control Center tiles without dismissing the tray."
+    },
+    "wifiUnsupportedBody": "WiFi is only available on the Segno console appliance.",
+    "@wifiUnsupportedBody": {
+        "description": "Shown on the WiFi page when segno-wifi-ctl is not present (desktop builds)."
+    },
+    "wifiStatusLabel": "Status",
+    "@wifiStatusLabel": {
+        "description": "WiFi status table label."
+    },
+    "wifiStatusConnected": "Connected",
+    "@wifiStatusConnected": {
+        "description": "WiFi connected status value."
+    },
+    "wifiStatusDisconnected": "Not connected",
+    "@wifiStatusDisconnected": {
+        "description": "WiFi disconnected status value."
+    },
+    "wifiStatusDisconnecting": "Disconnecting…",
+    "@wifiStatusDisconnecting": {
+        "description": "WiFi status while dropping the current association."
+    },
+    "wifiConnectingLabel": "Connecting…",
+    "@wifiConnectingLabel": {
+        "description": "Shown while joining a WiFi network (status strip and row)."
+    },
+    "wifiConnectFailedPassword": "Couldn’t join — check the password and try again.",
+    "@wifiConnectFailedPassword": {
+        "description": "Shown when WPA authentication fails while joining a network."
+    },
+    "wifiConnectFailedTimeout": "Couldn’t join — the network didn’t finish connecting.",
+    "@wifiConnectFailedTimeout": {
+        "description": "Shown when WiFi association times out before COMPLETED."
+    },
+    "wifiConnectFailedGeneric": "Couldn’t join that network.",
+    "@wifiConnectFailedGeneric": {
+        "description": "Fallback error when WiFi connect fails for an unknown reason."
+    },
+    "wifiSsidLabel": "Network",
+    "@wifiSsidLabel": {
+        "description": "WiFi SSID table label."
+    },
+    "wifiIpLabel": "IP address",
+    "@wifiIpLabel": {
+        "description": "WiFi IP address table label."
+    },
+    "wifiDisconnectTitle": "Disconnect",
+    "@wifiDisconnectTitle": {
+        "description": "WiFi disconnect action title."
+    },
+    "wifiDisconnectSubtitle": "Drop the current WiFi association",
+    "@wifiDisconnectSubtitle": {
+        "description": "WiFi disconnect action subtitle."
+    },
+    "wifiForgetTitle": "Forget network",
+    "@wifiForgetTitle": {
+        "description": "WiFi forget action title."
+    },
+    "wifiForgetSubtitle": "Remove saved credentials for {ssid}",
+    "@wifiForgetSubtitle": {
+        "description": "WiFi forget action subtitle.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiForgetConfirm": "Forget “{ssid}” and remove its saved password?",
+    "@wifiForgetConfirm": {
+        "description": "WiFi forget confirmation dialog body.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiScanTitle": "Scan for networks",
+    "@wifiScanTitle": {
+        "description": "WiFi scan action title."
+    },
+    "wifiScanSubtitle": "Refresh the list of nearby networks",
+    "@wifiScanSubtitle": {
+        "description": "WiFi scan action subtitle when idle."
+    },
+    "wifiScanningSubtitle": "Scanning…",
+    "@wifiScanningSubtitle": {
+        "description": "WiFi scan action subtitle while scanning."
+    },
+    "wifiNetworksGroup": "Networks",
+    "@wifiNetworksGroup": {
+        "description": "Group label above the WiFi scan results list."
+    },
+    "wifiEmptyNetworks": "No networks found. Tap scan to try again.",
+    "@wifiEmptyNetworks": {
+        "description": "Empty state when a WiFi scan returns no SSIDs."
+    },
+    "wifiSavedLabel": "Saved",
+    "@wifiSavedLabel": {
+        "description": "Marks a network whose password the console already has stored."
+    },
+    "wifiSavedOutOfRange": "Saved · not in range",
+    "@wifiSavedOutOfRange": {
+        "description": "Marks a saved network the last scan did not see."
+    },
+    "wifiSecuredLabel": "Secured",
+    "@wifiSecuredLabel": {
+        "description": "Subtitle fragment for a password-protected WiFi network."
+    },
+    "wifiOpenLabel": "Open",
+    "@wifiOpenLabel": {
+        "description": "Subtitle fragment for an open WiFi network."
+    },
+    "wifiPasswordTitle": "Password for {ssid}",
+    "@wifiPasswordTitle": {
+        "description": "WiFi password dialog title.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiPasswordHint": "Network password",
+    "@wifiPasswordHint": {
+        "description": "Hint for the WiFi password field."
+    },
+    "wifiJoinAction": "Join",
+    "@wifiJoinAction": {
+        "description": "Confirm button on the WiFi password dialog."
+    },
+    "bluetoothUnsupportedBody": "Bluetooth is only available on the Segno console appliance.",
+    "@bluetoothUnsupportedBody": {
+        "description": "Shown on the Bluetooth page when segno-bt-ctl is not present."
+    },
+    "bluetoothIntro": "Make this console discoverable so a phone or sidecar can find it. Pairing comes later.",
+    "@bluetoothIntro": {
+        "description": "Intro copy on the Bluetooth page (discovery/broadcast only)."
+    },
+    "bluetoothAliasLabel": "Name",
+    "@bluetoothAliasLabel": {
+        "description": "Bluetooth adapter alias table label."
+    },
+    "bluetoothPoweredLabel": "Adapter",
+    "@bluetoothPoweredLabel": {
+        "description": "Bluetooth powered table label."
+    },
+    "bluetoothOn": "On",
+    "@bluetoothOn": {
+        "description": "Bluetooth adapter on value."
+    },
+    "bluetoothOff": "Off",
+    "@bluetoothOff": {
+        "description": "Bluetooth adapter off value."
+    },
+    "bluetoothDiscoverableTitle": "Discoverable",
+    "@bluetoothDiscoverableTitle": {
+        "description": "Toggle title for classic Bluetooth discoverable."
+    },
+    "bluetoothDiscoverableSubtitle": "Other devices can see this console",
+    "@bluetoothDiscoverableSubtitle": {
+        "description": "Toggle subtitle for classic Bluetooth discoverable."
+    },
+    "bluetoothAdvertiseTitle": "Broadcast",
+    "@bluetoothAdvertiseTitle": {
+        "description": "Toggle title for BLE advertising."
+    },
+    "bluetoothAdvertiseSubtitle": "Advertise as Segno over Bluetooth LE",
+    "@bluetoothAdvertiseSubtitle": {
+        "description": "Toggle subtitle for BLE advertising."
+    },
+    "bluetoothScanTitle": "Scan for devices",
+    "@bluetoothScanTitle": {
+        "description": "Bluetooth scan action title."
+    },
+    "bluetoothScanSubtitle": "Find nearby Bluetooth devices",
+    "@bluetoothScanSubtitle": {
+        "description": "Bluetooth scan action subtitle when idle."
+    },
+    "bluetoothScanningSubtitle": "Scanning…",
+    "@bluetoothScanningSubtitle": {
+        "description": "Bluetooth scan action subtitle while scanning."
+    },
+    "bluetoothDevicesGroup": "Nearby devices",
+    "@bluetoothDevicesGroup": {
+        "description": "Group label above Bluetooth scan results."
+    },
+    "bluetoothEmptyDevices": "No devices found yet. Tap scan to search.",
+    "@bluetoothEmptyDevices": {
+        "description": "Empty state when a Bluetooth scan returns nothing."
+    },
+    "trayNetworkLabel": "Network",
+    "@trayNetworkLabel": {
+        "description": "Navigation rail entry for the Network domain — WiFi and Bluetooth as two tabs of one destination. One word, like every rail entry."
+    },
+    "networkStateConnected": "connected",
+    "@networkStateConnected": {
+        "description": "State word at the trailing edge of a Network row: a live association or link. Lower case — it is a machine readout about the row, not a sentence."
+    },
+    "networkStateSaved": "saved",
+    "@networkStateSaved": {
+        "description": "State word for a WiFi network whose credentials this console already holds."
+    },
+    "networkStateOpen": "open",
+    "@networkStateOpen": {
+        "description": "State word for a WiFi network that needs no passphrase."
+    },
+    "networkStatePaired": "paired",
+    "@networkStatePaired": {
+        "description": "State word for a Bluetooth device this console holds a pairing for."
+    },
+    "consoleKeepIt": "Keep it",
+    "@consoleKeepIt": {
+        "description": "The dismissive answer on any console confirm dialog — forgetting a network, switching looper mode. Leaves the thing alone."
+    },
+    "wifiNotInRange": "not in range",
+    "@wifiNotInRange": {
+        "description": "Row subtitle for a saved network the last scan did not see."
+    },
+    "wifiSecurityWpa2": "WPA2",
+    "@wifiSecurityWpa2": {
+        "description": "Security label for a secured network, shown in the row subtitle and beside the join sheet's title."
+    },
+    "wifiSignalDbm": "{signal} dBm",
+    "@wifiSignalDbm": {
+        "description": "Signal strength in a WiFi row subtitle.",
+        "placeholders": {
+            "signal": {
+                "type": "int"
+            }
+        }
+    },
+    "wifiJoiningShort": "joining {ssid}",
+    "@wifiJoiningShort": {
+        "description": "Live-state line beside the WiFi face's title while a join is in flight. Lower case — it continues the title rather than starting a sentence.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiJoinFailedShort": "could not join {ssid}",
+    "@wifiJoinFailedShort": {
+        "description": "Live-state line beside the WiFi face's title after a join failed.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiJoiningBanner": "Joining {ssid}…",
+    "@wifiJoiningBanner": {
+        "description": "In-flight banner at the top of the WiFi list while a join is running.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiJoinSheetTitle": "Join {ssid}",
+    "@wifiJoinSheetTitle": {
+        "description": "Title of the passphrase sheet.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiPassphraseTooShort": "A WPA2 passphrase is at least {count} characters.",
+    "@wifiPassphraseTooShort": {
+        "description": "Shown in the join sheet when the typed passphrase is below WPA2's floor. Checked here, where it can be corrected, rather than handed to the supplicant.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "wifiForgetTitleNamed": "Forget “{ssid}”?",
+    "@wifiForgetTitleNamed": {
+        "description": "Title of the forget-network confirmation.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiForgetBody": "The passphrase is deleted from this console. Joining again needs it typed in.",
+    "@wifiForgetBody": {
+        "description": "Body of the forget-network confirmation — says what is actually destroyed."
+    },
+    "wifiForgetConfirmAction": "Forget network",
+    "@wifiForgetConfirmAction": {
+        "description": "Destructive action on the forget-network confirmation."
+    },
+    "bluetoothNotInRange": "not in range",
+    "@bluetoothNotInRange": {
+        "description": "Row subtitle for a paired device the last discovery did not see."
+    },
+    "bluetoothDiscoverableState": "discoverable",
+    "@bluetoothDiscoverableState": {
+        "description": "Row subtitle for a device the scan can see but bluez reports no kind for."
+    },
+    "bluetoothKindHeadphones": "headphones",
+    "@bluetoothKindHeadphones": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindSpeaker": "speaker",
+    "@bluetoothKindSpeaker": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindPhone": "phone",
+    "@bluetoothKindPhone": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindComputer": "computer",
+    "@bluetoothKindComputer": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindKeyboard": "keyboard",
+    "@bluetoothKindKeyboard": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindMouse": "mouse",
+    "@bluetoothKindMouse": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothKindGamepad": "controller",
+    "@bluetoothKindGamepad": {
+        "description": "Bluetooth device kind, from bluez's Icon field."
+    },
+    "bluetoothConnectAction": "Connect",
+    "@bluetoothConnectAction": {
+        "description": "Action inside an opened Bluetooth row: links an already-paired device."
+    },
+    "bluetoothDisconnectAction": "Disconnect",
+    "@bluetoothDisconnectAction": {
+        "description": "Action inside an opened Bluetooth row: drops the link but keeps the pairing."
+    },
+    "bluetoothForgetAction": "Forget",
+    "@bluetoothForgetAction": {
+        "description": "Destructive action inside an opened Bluetooth row."
+    },
+    "bluetoothPairingShort": "pairing with {name}",
+    "@bluetoothPairingShort": {
+        "description": "Live-state line beside the Bluetooth face's title while a pairing is in flight.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothPairFailedShort": "could not pair with {name}",
+    "@bluetoothPairFailedShort": {
+        "description": "Live-state line beside the Bluetooth face's title after a pairing failed.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothPairingBanner": "Pairing with {name}… confirm on the device.",
+    "@bluetoothPairingBanner": {
+        "description": "In-flight banner while a pairing waits on a human at the far device.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothForgetTitleNamed": "Forget “{name}”?",
+    "@bluetoothForgetTitleNamed": {
+        "description": "Title of the forget-device confirmation.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "bluetoothForgetBody": "The pairing is removed from this console. The device has to be put back in pairing mode to reconnect.",
+    "@bluetoothForgetBody": {
+        "description": "Body of the forget-device confirmation — says what is actually destroyed."
+    },
+    "bluetoothForgetConfirmAction": "Forget device",
+    "@bluetoothForgetConfirmAction": {
+        "description": "Destructive action on the forget-device confirmation."
+    },
+    "trayControlLabel": "Control",
+    "@trayControlLabel": {
+        "description": "Navigation rail entry for the Control domain — the footswitch plate and the MIDI foot controller as two tabs of one destination."
+    },
+    "controlPedalTab": "Pedal",
+    "@controlPedalTab": {
+        "description": "Tab of the Control domain: the footswitch plate's assignable switches."
+    },
+    "controlMidiTab": "MIDI",
+    "@controlMidiTab": {
+        "description": "Tab of the Control domain: the MIDI foot controller and its mappings."
+    },
+    "controlTransportGroup": "TRANSPORT SWITCHES",
+    "@controlTransportGroup": {
+        "description": "Group caption over the four transport footswitch cards. Upper case, as every group caption on the console is."
+    },
+    "controlTrackGroup": "TRACK SWITCHES",
+    "@controlTrackGroup": {
+        "description": "Group caption over the four track footswitch rows."
+    },
+    "controlAssignGroup": "ASSIGN {name} · BANK {bank}",
+    "@controlAssignGroup": {
+        "description": "Group caption over the target list, naming the switch being assigned and the bank it applies to.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "bank": {
+                "type": "String"
+            }
+        }
+    },
+    "controlAssignGroupPlain": "ASSIGN {name}",
+    "@controlAssignGroupPlain": {
+        "description": "Group caption over the target list for a switch that holds one binding whatever the bank.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "controlUnassigned": "unassigned",
+    "@controlUnassigned": {
+        "description": "What a footswitch card or row says when nothing is bound to it. Lower case — a readout, not a sentence."
+    },
+    "controlTargetMissing": "Missing target",
+    "@controlTargetMissing": {
+        "description": "What a switch or mapping says when the chain or effect it pointed at is gone."
+    },
+    "controlShowEffects": "Show individual effects",
+    "@controlShowEffects": {
+        "description": "Footer of the assign list: reveals the individual effect slots under each chain."
+    },
+    "controlHideEffects": "Hide individual effects",
+    "@controlHideEffects": {
+        "description": "Footer of the assign list once the individual effect slots are showing."
+    },
+    "controlEffectIn": "in {chain}",
+    "@controlEffectIn": {
+        "description": "Trailing readout on an individual effect row, naming the chain it sits in.",
+        "placeholders": {
+            "chain": {
+                "type": "String"
+            }
+        }
+    },
+    "controlBankLabel": "{bank}",
+    "@controlBankLabel": {
+        "description": "The A/B bank selector's captions.",
+        "placeholders": {
+            "bank": {
+                "type": "String"
+            }
+        }
+    },
+    "midiDeviceGroup": "MIDI FOOT CONTROLLER",
+    "@midiDeviceGroup": {
+        "description": "Group caption over the MIDI device row and its status card."
+    },
+    "midiDeviceRow": "Device",
+    "@midiDeviceRow": {
+        "description": "Row that opens the MIDI input picker."
+    },
+    "midiDeviceNone": "None",
+    "@midiDeviceNone": {
+        "description": "Value of the MIDI device row when nothing is selected."
+    },
+    "midiStatusWaiting": "Waiting for MIDI input",
+    "@midiStatusWaiting": {
+        "description": "Traffic line on a live link that has not delivered a message yet."
+    },
+    "midiStatusReceiving": "Receiving MIDI",
+    "@midiStatusReceiving": {
+        "description": "Traffic line on a live link that is delivering messages."
+    },
+    "midiTransportMap": "CC {map}",
+    "@midiTransportMap": {
+        "description": "The fixed transport CC map, stated and not editable. The list is built from the rig's own default mapping so the two cannot drift.",
+        "placeholders": {
+            "map": {
+                "type": "String"
+            }
+        }
+    },
+    "midiActionRecord": "record",
+    "@midiActionRecord": {
+        "description": "Name of the record/overdub transport action in the fixed CC map."
+    },
+    "midiActionStop": "stop",
+    "@midiActionStop": {
+        "description": "Name of the stop transport action in the fixed CC map."
+    },
+    "midiActionPlay": "play",
+    "@midiActionPlay": {
+        "description": "Name of the play transport action in the fixed CC map."
+    },
+    "midiActionClear": "clear",
+    "@midiActionClear": {
+        "description": "Name of the clear transport action in the fixed CC map."
+    },
+    "midiActionUndo": "undo",
+    "@midiActionUndo": {
+        "description": "Name of the undo transport action in the fixed CC map."
+    },
+    "midiActionPlayAll": "play all",
+    "@midiActionPlayAll": {
+        "description": "Name of the play-all transport action in the fixed CC map."
+    },
+    "midiActionStopAll": "stop all",
+    "@midiActionStopAll": {
+        "description": "Name of the stop-all transport action in the fixed CC map."
+    },
+    "midiActionTapTempo": "tap tempo",
+    "@midiActionTapTempo": {
+        "description": "Name of the tap-tempo action in the fixed CC map."
+    },
+    "midiActionMetronome": "click",
+    "@midiActionMetronome": {
+        "description": "Name of the metronome-toggle action in the fixed CC map."
+    },
+    "midiActionCancelArm": "cancel arm",
+    "@midiActionCancelArm": {
+        "description": "Name of the cancel-arm action in the fixed CC map."
+    },
+    "midiStateSweep": "sweep",
+    "@midiStateSweep": {
+        "description": "State word on a continuous mapping row."
+    },
+    "midiStateSwitch": "switch",
+    "@midiStateSwitch": {
+        "description": "State word on a discrete mapping row."
+    },
+    "midiMappingsEmpty": "Nothing is mapped yet. Add a sweep or a switch, then move the control you want to use.",
+    "@midiMappingsEmpty": {
+        "description": "Empty state at the head of the mapping list."
+    },
+    "midiDeviceUnplugged": "unplugged",
+    "@midiDeviceUnplugged": {
+        "description": "Trailing readout on a MIDI device the enumeration has lost — it is still listed, because the selection is what survives the cable being found again."
+    },
+    "controlTrackSwitchName": "Track {number}",
+    "@controlTrackSwitchName": {
+        "description": "What a Control-face row calls a track footswitch: the CHANNEL that cap drives in the bank being shown — tracks 1-4 in bank A and 5-8 in bank B, which is what Bank is for.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "controlTrackSwitchLegend": "TRACK {number}",
+    "@controlTrackSwitchLegend": {
+        "description": "The upper-case form of controlTrackSwitchName, for the assign caption, which sits among other upper-case captions.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "trayTracksLabel": "Tracks",
+    "@trayTracksLabel": {
+        "description": "Navigation-rail caption for the console's Tracks domain — names, lengths and routing as three tabs of one destination."
+    },
+    "tracksNamesTab": "Names",
+    "tracksLengthsTab": "Lengths",
+    "tracksRoutingTab": "Routing",
+    "tracksOrdinal": "track {number}",
+    "@tracksOrdinal": {
+        "description": "The mono readout beside a track's name, and the line under the routing dialog's title: which pad on the pedal this track is. Lower case, like every other mono readout on this surface.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "tracksNamesFootnote": "Rename tracks. The name is what the stage, the pedal targets and the 7-inch readout all show.",
+    "tracksLengthsFootnote": "Auto takes its length from the first take; a preset records that many bars.",
+    "tracksRoutingFootnote": "A track records any set of inputs — one dry lane each, sharing the loop — and is sent to any set of outputs. Quantize follows the global setting unless a track overrides it.",
+    "tracksEmpty": "No tracks — the engine is not running.",
+    "tracksLengthAuto": "auto",
+    "tracksNoInputs": "None (clean)",
+    "@tracksNoInputs": {
+        "description": "A track whose lanes record nothing, and the row that puts it in that state."
+    },
+    "tracksQuantizeOn": "quantize on",
+    "tracksQuantizeOff": "quantize off",
+    "tracksNotRouted": "not routed",
+    "@tracksNotRouted": {
+        "description": "Routing-tab readout for a track no lane of which reaches any output. In the warning tone: it records and is never heard."
+    },
+    "tracksRenameSheetTitle": "Rename track",
+    "trackLanesGroup": "LANES",
+    "trackLaneOutputsGroup": "OUTPUTS FOR THIS LANE",
+    "trackLaneOutputsNone": "nothing",
+    "trackLaneFxNote": "Effects for this lane live in Signal.",
+    "trackLaneUnrouted": "Nothing routed here — this lane will not be heard.",
+    "trackQuantizeGroup": "QUANTIZE RECORDING",
+    "trackQuantizeFollow": "Follow the global setting",
+    "trackQuantizeAlways": "Always quantize",
+    "trackQuantizeNever": "Never quantize",
+    "trackQuantizeGlobalOn": "on",
+    "trackQuantizeGlobalOff": "off",
+    "a11yTrackLaneRecording": "{input}, recording into its own lane. Activate to show where the lane goes.",
+    "@a11yTrackLaneRecording": {
+        "description": "Announced label of a lane row. States the lane and what the row's own tap does — which is open the lane, NOT stop it: stopping is offered as a11yTrackLaneStopRecording, a custom action on the same node.",
+        "placeholders": {
+            "input": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yTrackLaneIdle": "{input}, not recorded. Activate to record it.",
+    "@a11yTrackLaneIdle": {
+        "placeholders": {
+            "input": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yTrackLaneNoLane": "{input}, not recorded. This track has no lane left for it.",
+    "@a11yTrackLaneNoLane": {
+        "description": "Announced label of a lane row the engine's lane cap has closed off. Says what the muted ink says to the eye: the row is listed, but the track has run out of lanes, so it offers no action.",
+        "placeholders": {
+            "input": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yTrackLaneStopRecording": "Stop recording this input",
+    "@a11yTrackLaneStopRecording": {
+        "description": "The lane row's custom action: what the check gutter does. Published on the row because the gutter's own semantics sit inside the row's ExcludeSemantics, and without it a screen reader can only reach `None (clean)`, which clears every lane on the track."
+    },
+    "a11yTracksRenameField": "Track name",
+    "trayAudioLabel": "Audio",
+    "audioDeviceTab": "Device",
+    "audioRecordingTab": "Recording",
+    "audioGroupLabel": "AUDIO",
+    "audioRateBufferRow": "Sample rate / buffer",
+    "audioRoundTripEstimate": "round-trip {milliseconds} ms",
+    "@audioRoundTripEstimate": {
+        "description": "Subtitle of the closed rate/buffer row: two buffer periods, so an ESTIMATE. The measured figure lives on the Status tab, where it is measured.",
+        "placeholders": {
+            "milliseconds": {
+                "type": "String"
+            }
+        }
+    },
+    "audioRateBufferValue": "{rate} · {buffer}",
+    "@audioRateBufferValue": {
+        "placeholders": {
+            "rate": {
+                "type": "String"
+            },
+            "buffer": {
+                "type": "int"
+            }
+        }
+    },
+    "audioInputsRow": "Inputs",
+    "audioInputsNamed": "{count, plural, =0{none named} =1{1 named} other{{count} named}}",
+    "@audioInputsNamed": {
+        "description": "Readout of the Inputs row: how many hardware sockets the player has given a name.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "audioDeviceChannels": "{inputs} in · {outputs} out",
+    "@audioDeviceChannels": {
+        "description": "A device's own channel counts. Never printed when either side is unknown — a device claiming no channels reads as one that cannot be used.",
+        "placeholders": {
+            "inputs": {
+                "type": "int"
+            },
+            "outputs": {
+                "type": "int"
+            }
+        }
+    },
+    "audioDeviceInputsOnly": "{inputs} in",
+    "@audioDeviceInputsOnly": {
+        "placeholders": {
+            "inputs": {
+                "type": "int"
+            }
+        }
+    },
+    "audioDeviceOutputsOnly": "{outputs} out",
+    "@audioDeviceOutputsOnly": {
+        "placeholders": {
+            "outputs": {
+                "type": "int"
+            }
+        }
+    },
+    "audioDeviceUnplugged": "unplugged",
+    "@audioDeviceUnplugged": {
+        "description": "A pinned device that is no longer connected. Still listed and still checked: dropping it would read as a device you never had."
+    },
+    "audioSampleRateGroup": "SAMPLE RATE",
+    "audioBufferGroup": "BUFFER",
+    "audioSampleRateCost96": "halves the buffer headroom",
+    "audioNoInputs": "This device has no inputs.",
+    "audioNoOutputsBanner": "No outputs are enabled — nothing will be heard. Tap a greyed output to turn it back on.",
+    "audioAsioDriverGroup": "ASIO DRIVER",
+    "audioNoAsioDriver": "No ASIO driver found. Segno uses ASIO on Windows. Install your interface's ASIO driver, or get a generic one from ASIO4ALL.",
+    "@audioNoAsioDriver": {
+        "description": "Windows with no ASIO driver installed. ASIO4ALL is LINKED and never bundled — its licence forbids redistribution."
+    },
+    "audioOpenAsio4all": "Open asio4all.org",
+    "audioMaxLoopTitle": "Maximum loop length",
+    "audioMaxLoopSubtitle": "A higher cap reserves more memory per track. Changing it reopens the device.",
+    "audioDefaultLoopLengthTitle": "Default loop length",
+    "audioDefaultLoopLengthSubtitle": "Auto rounds up to whole base loops; a fixed multiple records that many.",
+    "audioRenameInputTitle": "Rename input",
+    "inputOrdinal": "input {number}",
+    "@inputOrdinal": {
+        "description": "The mono readout beside an input's name: which socket on the interface it is. Lower case, like every other mono readout on this surface.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            }
+        }
+    },
+    "a11yInputRenameField": "Input name",
+    "a11yAudioMeasureLatency": "Measure round-trip latency. Refuses while a measurement is already running.",
+    "audioMeasure": "Measure",
+    "audioRecordOffsetSub": "record offset {frames} frames",
+    "@audioRecordOffsetSub": {
+        "description": "Subtitle of the round-trip latency row. The offset is a CONSEQUENCE of the measurement, not a setting, so it rides the row that measures it rather than taking one of its own.",
+        "placeholders": {
+            "frames": {
+                "type": "int"
+            }
+        }
+    },
+    "audioRefusedConfig": "The device could not open at {asked}. Running at {actual}.",
+    "@audioRefusedConfig": {
+        "description": "Failure banner when the device would not run the requested config. The selection has already snapped to what it did give, so the banner is the only place the request is still named.",
+        "placeholders": {
+            "asked": {
+                "type": "String"
+            },
+            "actual": {
+                "type": "String"
+            }
+        }
+    },
+    "traySystemLabel": "System",
+    "@traySystemLabel": {
+        "description": "Rail entry for the System domain — what this console is and how it behaves."
+    },
+    "systemDisplayTab": "Display",
+    "systemUpdatesTab": "Updates",
+    "systemStorageTab": "Storage",
+    "systemAboutTab": "About",
+    "systemPerformanceGroup": "PERFORMANCE",
+    "systemHelpGroup": "HELP",
+    "systemAutomaticGroup": "AUTOMATIC",
+    "systemThisConsoleGroup": "THIS CONSOLE",
+    "systemHousekeepingGroup": "HOUSEKEEPING",
+    "systemHardwareGroup": "HARDWARE",
+    "systemLegalGroup": "LEGAL",
+    "systemRefreshRateTitle": "UI refresh rate",
+    "systemRefreshRateSubtitle": "How often waveforms and meters update. Higher is smoother but uses more CPU.",
+    "consoleTryAgain": "Try again",
+    "@consoleTryAgain": {
+        "description": "Retry on any console banner. Was networkTryAgain until a second domain needed it — a primitive keeps no domain in its name."
+    },
+    "updatesUnsupportedBanner": "In-app updates are only available on the Segno console appliance.",
+    "@updatesUnsupportedBanner": {
+        "description": "Update banner on a platform with no update flow at all. No action: a dead check button is worse than none."
+    },
+    "updatesAvailableBanner": "v{version} is available.",
+    "@updatesAvailableBanner": {
+        "placeholders": {
+            "version": {
+                "type": "String"
+            }
+        }
+    },
+    "updatesStagingBanner": "Staging v{version} to the standby system — {percent}%",
+    "@updatesStagingBanner": {
+        "placeholders": {
+            "version": {
+                "type": "String"
+            },
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "updatesCheckFailedBanner": "Update check failed — {reason}",
+    "@updatesCheckFailedBanner": {
+        "placeholders": {
+            "reason": {
+                "type": "String"
+            }
+        }
+    },
+    "updatesCheckFailedReason": "could not reach the update server.",
+    "@updatesCheckFailedReason": {
+        "description": "Fallback reason when the failure carried no message of its own."
+    },
+    "updatesRestartNow": "Restart now",
+    "storageSessionsTitle": "Sessions and takes",
+    "storageCapturesTitle": "Captures",
+    "storageCapturesSubtitle": "exports and stems",
+    "storagePluginsTitle": "Plugins",
+    "storagePluginsSubtitle": "{count, plural, =1{1 installed} other{{count} installed}}",
+    "@storagePluginsSubtitle": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "storageSystemTitle": "System and updates",
+    "storageSystemSubtitle": "includes the standby system",
+    "storageFreeTitle": "Free",
+    "storageGigabytes": "{value} GB",
+    "@storageGigabytes": {
+        "description": "One figure of the disk breakdown. Formatted rather than pre-printed, so the decimal separator is the locale's — the sample rate beside it in About already is.",
+        "placeholders": {
+            "value": {
+                "type": "double",
+                "format": "decimalPatternDigits",
+                "optionalParameters": {
+                    "decimalDigits": 1
+                }
+            }
+        }
+    },
+    "storageUnknown": "This build can't read the console's disk.",
+    "@storageUnknown": {
+        "description": "Replaces the whole breakdown when the disk cannot be read. Zeroes drawn as facts would be worse than saying nothing."
+    },
+    "storageDeleteCapturesTitle": "Delete old captures",
+    "storageDeleteCapturesSubtitle": "Captures older than {days} days",
+    "@storageDeleteCapturesSubtitle": {
+        "placeholders": {
+            "days": {
+                "type": "int"
+            }
+        }
+    },
+    "storageDeleteCapturesConfirmBody": "Every capture older than {days} days is permanently deleted. Sessions and takes are untouched.",
+    "@storageDeleteCapturesConfirmBody": {
+        "placeholders": {
+            "days": {
+                "type": "int"
+            }
+        }
+    },
+    "storageDeleteCapturesConfirm": "Delete them",
+    "storageExportTitle": "Export everything to USB",
+    "storageNoUsb": "no USB volume",
+    "@storageNoUsb": {
+        "description": "Trailing readout when there is nowhere to export. A fact about the rig, not a failure — the row simply stops being tappable."
+    },
+    "aboutNameRow": "Name",
+    "aboutRenameTitle": "Rename console",
+    "aboutSerialRow": "Serial",
+    "aboutChannelSubtitle": "{channel} channel",
+    "@aboutChannelSubtitle": {
+        "placeholders": {
+            "channel": {
+                "type": "String"
+            }
+        }
+    },
+    "aboutSystemImageRow": "System image",
+    "aboutPedalFirmwareNone": "not found",
+    "@aboutPedalFirmwareNone": {
+        "description": "The pedal firmware readout on SYSTEM / about when no pedal is bound. The row is drawn anyway — no pedal is the case worth seeing."
+    },
+    "aboutPedalFirmwareError": "could not be reached",
+    "@aboutPedalFirmwareError": {
+        "description": "Bind status on the SYSTEM / about pedal row when binding failed."
+    },
+    "aboutPedalFirmwareUpdate": "update available",
+    "@aboutPedalFirmwareUpdate": {
+        "description": "Appended to the SYSTEM / about pedal row's subtitle when the pedal's firmware is behind the app's wire version."
+    },
+    "aboutPedalFirmwareRow": "Pedal firmware",
+    "aboutPedalFirmwareSubtitle": "4 switches · 2 banks",
+    "aboutProtocolVersion": "v{version}",
+    "@aboutProtocolVersion": {
+        "placeholders": {
+            "version": {
+                "type": "int"
+            }
+        }
+    },
+    "aboutAudioInterfaceRow": "Audio interface",
+    "aboutAudioInterfaceSubtitle": "{rate} kHz · {frames} frames",
+    "@aboutAudioInterfaceSubtitle": {
+        "placeholders": {
+            "rate": {
+                "type": "double",
+                "format": "decimalPattern"
+            },
+            "frames": {
+                "type": "int"
+            }
+        }
+    },
+    "aboutPanelRow": "Panel",
+    "aboutLicenceRow": "Licence",
+    "aboutLicenceValue": "GPLv3",
+    "aboutNoticesRow": "Open-source notices",
+    "aboutNoticesCount": "{count, plural, =1{1 component} other{{count} components}}",
+    "@aboutNoticesCount": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "storageActionFailed": "That didn't finish. Nothing on the disk was changed.",
+    "updatesDownloadFailedBanner": "Download failed — {reason}",
+    "@updatesDownloadFailedBanner": {
+        "placeholders": {
+            "reason": {
+                "type": "String"
+            }
+        }
+    },
+    "licencesReading": "Reading the licence registry…",
+    "licenceCount": "{count, plural, =1{1 licence} other{{count} licences}}",
+    "@licenceCount": {
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "traySignalLabel": "Signal",
+    "@traySignalLabel": {
+        "description": "Navigation-rail entry for the Signal domain — the four FX stages of the signal path."
+    },
+    "signalStageInput": "input",
+    "@signalStageInput": {
+        "description": "Signal tab: the hardware inputs' live-monitor chains. Lower case, as the mockups set the whole strip."
+    },
+    "signalStageLoop": "loop",
+    "@signalStageLoop": {
+        "description": "Signal tab: each recorded lane's playback chain. Lower case, like its siblings."
+    },
+    "signalStageTrack": "track",
+    "@signalStageTrack": {
+        "description": "Signal tab: each track's stereo-bus chain, downstream of its lanes. Lower case, like its siblings."
+    },
+    "signalStageMaster": "master",
+    "@signalStageMaster": {
+        "description": "Signal tab: the Master insert on the summed mix. Lower case, like its siblings."
+    },
+    "signalScopeMonitorOnly": "MONITOR ONLY",
+    "@signalScopeMonitorOnly": {
+        "description": "Scope chip on the loop, track and master tabs: editing here changes what you hear and never what is stored. The counterpart of signalScopePrinted."
+    },
+    "signalScopePrinted": "PRINTED INTO THE TAKE",
+    "@signalScopePrinted": {
+        "description": "Scope chip on the input tab, in the record tone: an input's chain is copied onto the lane at record, so editing it changes what NEW takes will store."
+    },
+    "signalCoordInput": "input {channel}",
+    "@signalCoordInput": {
+        "description": "An input card's coordinate line — which socket this chain sits on. Lower case and one-based.",
+        "placeholders": {
+            "channel": {
+                "type": "int"
+            }
+        }
+    },
+    "signalCoordTrack": "track {track}",
+    "@signalCoordTrack": {
+        "description": "A track-stage card's coordinate line. No lane: a track bus sits downstream of all of them.",
+        "placeholders": {
+            "track": {
+                "type": "int"
+            }
+        }
+    },
+    "signalCoordTrackLane": "track {track} · lane {lane}",
+    "@signalCoordTrackLane": {
+        "description": "A loop-stage card's coordinate line — which take this chain belongs to. The lane is a LETTER (A, B, C…), which is the Signal domain's own form; no other surface labels a lane at all.",
+        "placeholders": {
+            "track": {
+                "type": "int"
+            },
+            "lane": {
+                "type": "String"
+            }
+        }
+    },
+    "signalCoordMain": "main",
+    "@signalCoordMain": {
+        "description": "The master card's coordinate line. There is exactly one Master insert, so it has no ordinal to give."
+    },
+    "signalRouteMix": "mix",
+    "signalRouteRecorder": "recorder",
+    "signalRouteMaster": "master",
+    "signalRouteOutputs": "outputs",
+    "@signalRouteOutputs": {
+        "description": "The four card routing labels, each shown after an arrow: where this chain's audio goes next. A lane feeds the mix, an input feeds the recorder, a track bus feeds the master sum, and the master feeds the hardware outputs."
+    },
+    "signalNoRack": "no rack",
+    "@signalNoRack": {
+        "description": "A card with no saved rack loaded. Racks are #535; until they land every card says this, which is the mockups' own empty state."
+    },
+    "signalTapToLoadRack": "tap to load one",
+    "@signalTapToLoadRack": {
+        "description": "Stands where a loaded rack's chain summary goes, on a card with no rack."
+    },
+    "signalMonitorOn": "MONITOR: ON",
+    "signalMonitorAuto": "MONITOR: AUTO",
+    "signalMonitorOff": "MONITOR: OFF",
+    "@signalMonitorOff": {
+        "description": "A card's monitor line, one per MonitorMode. AUTO means monitor while a track fed by this input is armed or capturing."
+    },
+    "signalMasterCardName": "master out",
+    "@signalMasterCardName": {
+        "description": "The name on the master tab's single card — everything is summed into it."
+    },
+    "signalOutputsGroup": "OUTPUTS",
+    "@signalOutputsGroup": {
+        "description": "Caption over the master tab's hardware-output list."
+    },
+    "fxNoParameters": "This effect exposes no controls here.",
+    "@fxNoParameters": {
+        "description": "Editor block for an entry that genuinely exposes no controls. A plugin that failed, is unsupported here, or is still scanning says so through fxPluginPlaceholderReason instead."
+    },
+    "a11yFxParam": "{param} of {effect}",
+    "@a11yFxParam": {
+        "description": "Announced name for one parameter bar. The visible label is an upper-cased fragment (RATE, DEPTH) with no indication of whose it is.",
+        "placeholders": {
+            "param": {
+                "type": "String"
+            },
+            "effect": {
+                "type": "String"
+            }
+        }
+    },
+    "fxChainOffHere": "The whole chain is switched off, so this changes nothing you can hear yet.",
+    "@fxChainOffHere": {
+        "description": "Shown in the editor when the chain's own power is off (R15). Without it, un-bypassing an entry visibly does nothing and the surface never says why."
+    },
+    "fxAddChip": "+ effect",
+    "@fxAddChip": {
+        "description": "The last chip of a chain strip, which opens the add dialog. A chip rather than a button beside the strip: it sits where the effect it makes will, at the end of the chain."
+    },
+    "fxAddScanning": "Looking for plugins…",
+    "@fxAddScanning": {
+        "description": "Stands in for the browse row's count while the scan is still running — a count of zero mid-scan is not a fact about the machine."
+    },
+    "fxAddTitle": "Add an effect",
+    "@fxAddTitle": {
+        "description": "Title of the dialog that puts a new entry on the end of a chain."
+    },
+    "fxAddInto": "Into “{chain}”, at the end of the chain.",
+    "@fxAddInto": {
+        "description": "Says which chain is being added to and where the entry lands. The end, always — order is signal order and is changed by dragging, not by choosing an insertion point here.",
+        "placeholders": {
+            "chain": {
+                "type": "String"
+            }
+        }
+    },
+    "fxAddBuiltIn": "BUILT IN",
+    "@fxAddBuiltIn": {
+        "description": "Caption over the seven effects the app ships."
+    },
+    "fxAddRecentPlugins": "PLUGINS · RECENT",
+    "@fxAddRecentPlugins": {
+        "description": "Caption over the shelf of plugins most recently added. Omitted entirely when nothing has been added yet."
+    },
+    "fxAddBrowseAll": "{count, plural, =0{No plugins available} =1{Browse the 1 plugin…} other{Browse all {count} plugins…}}",
+    "@fxAddBrowseAll": {
+        "description": "Opens the search sheet over everything the scan found.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxBrowseTitle": "Add a plugin",
+    "@fxBrowseTitle": {
+        "description": "Header of the plugin search sheet."
+    },
+    "fxBrowseInstalled": "{count, plural, =0{none available} =1{1 installed} other{{count} installed}}",
+    "@fxBrowseInstalled": {
+        "description": "Beside the sheet's title: how many the scan found.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxBrowseSearchHint": "Search plugins",
+    "@fxBrowseSearchHint": {
+        "description": "Placeholder in the search field."
+    },
+    "fxBrowseMatches": "{count, plural, =1{1 match} other{{count} matches}}",
+    "@fxBrowseMatches": {
+        "description": "Under the results grid: how many of the installed plugins the query left.",
+        "placeholders": {
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "fxBrowseNoMatches": "Nothing matches that.",
+    "@fxBrowseNoMatches": {
+        "description": "Results grid with an empty result. A fact about the query, not about the rig."
+    },
+    "fxBrowseNoPlugins": "No plugins found on this machine.",
+    "@fxBrowseNoPlugins": {
+        "description": "The scan itself came back empty — distinct from a query that matched nothing."
+    },
+    "fxBypass": "bypass",
+    "@fxBypass": {
+        "description": "The editor's per-entry power, lower case like the panel's other controls. Bypass leaves the effect in the chain and stops it sounding — it is not a remove."
+    },
+    "fxMoveEarlier": "Move earlier in the chain",
+    "@fxMoveEarlier": {
+        "description": "Accessibility label for the editor's left arrow. Processing order IS signal order, so earlier means earlier in the sound rather than higher in a list."
+    },
+    "fxMoveLater": "Move later in the chain",
+    "@fxMoveLater": {
+        "description": "Accessibility label for the editor's right arrow."
+    },
+    "fxRemove": "Remove",
+    "@fxRemove": {
+        "description": "Takes the entry out of the chain entirely, unlike fxBypass which leaves it in place and silent."
+    },
+    "signalPanelSubtitle": "{coordinate} · {stage} stage",
+    "@signalPanelSubtitle": {
+        "description": "The open panel's second line: where this chain sits, then which stage it is. The title above it is the chain's own name.",
+        "placeholders": {
+            "coordinate": {
+                "type": "String"
+            },
+            "stage": {
+                "type": "String"
+            }
+        }
+    },
+    "signalPanelChain": "chain",
+    "@signalPanelChain": {
+        "description": "Caption over the panel's chain-of-effects strip. Sentence case, like its siblings — these read as questions about the chain rather than as group headings."
+    },
+    "signalPanelChainEmpty": "no effects on this chain",
+    "@signalPanelChainEmpty": {
+        "description": "Stands where the chain chips go when the chain is empty. An empty chain is the clean path, not a fault."
+    },
+    "signalPanelLevel": "level",
+    "@signalPanelLevel": {
+        "description": "Caption over the panel's gain row."
+    },
+    "signalPanelInMixExplain": "Whether this chain's sound reaches the mix at all. Muted still records and still plays; you just don't hear it.",
+    "@signalPanelInMixExplain": {
+        "description": "Explains the muted/heard pair on the Signal panel."
+    },
+    "signalPanelHearWhilePlayingExplain": "Whether you hear this input through your outputs while you play. Auto opens it only while a track fed by this input is armed or recording, so you hear yourself on the take and nothing between them. It never changes what gets recorded.",
+    "@signalPanelHearWhilePlayingExplain": {
+        "description": "Explains the monitor tri-state. The AUTO sentence is the load-bearing one — it is the state nobody guesses."
+    },
+    "signalPanelLevelExplain": "How loud this chain is in the mix. Double-tap the bar to put it back to unity — the level that changes nothing.",
+    "@signalPanelLevelExplain": {
+        "description": "Explains the gain row, and names the double-tap, which has no other affordance."
+    },
+    "signalPanelInMixInputExplain": "Whether you hear this input at all. It has no effect on recording: a take prints the signal itself, not what you monitor. The three below decide WHEN this opens — muted here and nothing below can bring it back.",
+    "@signalPanelInMixInputExplain": {
+        "description": "The muted/heard pair on the INPUT card, where the generic 'still records and still plays' is meaningless — the monitor path never records and never plays. Answers the question the input card actually raises: why two switches for hearing one input. Both gates must be open (engine_process.c: `!mon_on[c] || mon_mut[c]` silences)."
+    },
+    "signalPanelLevelInputExplain": "How loud this input is in what you hear. Like the switches under it, it never reaches a take: a recording prints the signal itself, at the level it arrived.",
+    "@signalPanelLevelInputExplain": {
+        "description": "The gain row on the INPUT card. The generic string says 'this chain in the mix', but an input's fader is the monitor's own volume — engine mon_vol, applied only in mix_monitors_frame and never recorded. Same argument as the in-mix and chain splits."
+    },
+    "signalPanelChainInputExplain": "The effects this input passes through, in order. Switching the chain off leaves the effects loaded, takes them out of what you hear — and prints new takes dry, since a take copies the chain that was on when it started.",
+    "@signalPanelChainInputExplain": {
+        "description": "The chain caption on the INPUT card. The generic string stops at 'out of the sound', which on an input is half the story: _snapshotMonitorChainsOntoLanes bails on a disabled chain, so the take is dry too. Saying so only after the fact — in fxChainOffInputConsequence — tells people once it is too late."
+    },
+    "signalPanelChainExplain": "The effects this signal passes through, in order. Switching the chain off leaves the effects loaded and takes them out of the sound.",
+    "@signalPanelChainExplain": {
+        "description": "Explains the chain strip and what its power switch does."
+    },
+    "a11yExplainControl": "What \"{group}\" does",
+    "@a11yExplainControl": {
+        "description": "Screen-reader label for the ? button beside a group caption.",
+        "placeholders": {
+            "group": {
+                "type": "String"
+            }
+        }
+    },
+    "signalPanelInMix": "in the mix",
+    "@signalPanelInMix": {
+        "description": "Caption over the muted/heard pair — whether this chain reaches the mix at all."
+    },
+    "signalPanelHearWhilePlaying": "hear while playing",
+    "@signalPanelHearWhilePlaying": {
+        "description": "Caption over the monitor tri-state. INPUT CARDS ONLY: an input is the only thing on this face that can be armed, and AUTO resolves against the arm."
+    },
+    "signalMixMuted": "muted",
+    "signalMixHeard": "heard",
+    "@signalMixHeard": {
+        "description": "The two halves of the in-the-mix pair. Lower case, as the mockups set the panel's controls."
+    },
+    "signalMonitorSegOff": "off",
+    "signalMonitorSegAuto": "auto",
+    "signalMonitorSegOn": "on",
+    "@signalMonitorSegOn": {
+        "description": "The three monitor modes as segment labels. Lower case here, unlike the card's MONITOR: ON line, which is a readout rather than a control."
+    },
+    "signalNoInputs": "No inputs — the engine is not running.",
+    "@signalNoInputs": {
+        "description": "Input tab with nothing to draw. Same shape as tracksEmpty, and for the same reason: every card on this face is an object the engine reports."
+    },
+    "signalOnlyLoopbackInputs": "Every input on this device is loopback — none can be monitored or recorded.",
+    "@signalOnlyLoopbackInputs": {
+        "description": "Input tab on a RUNNING engine whose sockets are all excluded. Distinct from signalNoInputs: the engine is up, so saying it is not would send the player after a problem they do not have."
+    },
+    "signalNoLanes": "No takes yet — record one and its chain shows up here.",
+    "@signalNoLanes": {
+        "description": "Loop tab with no lanes. Unlike the other empty states this is the normal state of a fresh session, so it says what fills it rather than what is wrong."
+    },
+    "signalNoTracks": "No tracks — the engine is not running.",
+    "@signalNoTracks": {
+        "description": "Track tab with no tracks."
+    },
+    "signalNoOutputs": "No outputs — the engine is not running.",
+    "@signalNoOutputs": {
+        "description": "Master tab with no hardware outputs to list."
     }
 }

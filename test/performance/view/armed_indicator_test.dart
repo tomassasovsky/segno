@@ -2,9 +2,10 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/performance/cubit/performance_recorder_cubit.dart';
-import 'package:loopy/performance/view/armed_indicator.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
+import 'package:segno/performance/view/armed_indicator.dart';
+import 'package:segno/theme/theme.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -125,5 +126,45 @@ void main() {
 
     expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
     expect(find.byIcon(Icons.sd_card_alert_outlined), findsOneWidget);
+  });
+
+  testWidgets('the armed readout takes the DS chrome red, not the stage red', (
+    tester,
+  ) async {
+    // #499 stage 3c. The design system splits red in two: `signal-rec` is the
+    // stage (what a *track* is doing) and `rec` is UI chrome (the *app* is
+    // capturing). This readout is chrome. Asserting the split rather than a
+    // hex keeps it true through a palette migration — and asserting it is
+    // *not* the stage red is the half that actually catches a regression,
+    // since the two were the same colour before this stage.
+    await pump(
+      tester,
+      const PerformanceRecorderArmed(
+        elapsed: Duration(seconds: 10),
+        overrun: false,
+      ),
+    );
+
+    final context = tester.element(find.byType(ArmedIndicator));
+    final surface = context.surface;
+    final looper = Theme.of(context).extension<LooperTheme>()!;
+
+    final icon = tester.widget<Icon>(
+      find.byIcon(Icons.fiber_manual_record),
+    );
+    expect(icon.color, surface.rec);
+    expect(
+      icon.color,
+      isNot(looper.recordColor),
+      reason: 'chrome red must not fall back to the stage red',
+    );
+
+    final text = tester.widget<AppText>(
+      find.descendant(
+        of: find.byKey(const Key('tracks_armedIndicator')),
+        matching: find.byType(AppText),
+      ),
+    );
+    expect(text.style?.color, surface.rec);
   });
 }

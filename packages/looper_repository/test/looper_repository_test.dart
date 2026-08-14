@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 // The audio-config + effect types are domain types here (from the barrel); the
 // engine-typed fixtures fed to the fake engine use the `le` prefix.
-import 'package:loopy_engine/loopy_engine.dart'
+import 'package:segno_engine/segno_engine.dart'
     hide
         AudioBackend,
         AudioDevice,
@@ -22,8 +22,9 @@ import 'package:loopy_engine/loopy_engine.dart'
         PluginRef,
         TrackEffect,
         TrackEffectParam,
-        TrackEffectType;
-import 'package:loopy_engine/loopy_engine.dart'
+        TrackEffectType,
+        encodeTrackEffects;
+import 'package:segno_engine/segno_engine.dart'
     as le
     show
         AudioDevice,
@@ -744,6 +745,52 @@ void main() {
       },
     );
 
+    test('a per-track override is projected onto the track it names', () async {
+      // The engine takes the override and never reports it back, so the
+      // repository's own map is the only thing that knows it — and a surface
+      // that draws the override has to be told when it changes, including on
+      // the session load that writes them with no user gesture at all.
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [
+          TrackSnapshot(
+            state: TrackState.empty,
+            volume: 1,
+            muted: false,
+            lengthFrames: 0,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+          ),
+        ],
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      expect(repo.state.tracks.first.quantizeOverride, isNull);
+
+      final emitted = repo.looperState.firstWhere(
+        (state) => state.tracks.first.quantizeOverride != null,
+      );
+      repo.setTrackQuantize(channel: 0, enabled: false);
+
+      expect((await emitted).tracks.first.quantizeOverride, isFalse);
+      expect(repo.state.tracks.first.quantizeOverride, isFalse);
+
+      repo.setTrackQuantize(channel: 0, enabled: true);
+      expect(repo.state.tracks.first.quantizeOverride, isTrue);
+
+      repo.setTrackQuantize(channel: 0, enabled: null);
+      expect(repo.state.tracks.first.quantizeOverride, isNull);
+    });
+
     test('rec/dub, auto-record and multiples re-apply on start', () {
       final repo = buildRepo()
         ..setRecDub(enabled: true)
@@ -853,6 +900,39 @@ void main() {
         ..stopEngine()
         ..startEngine(const EngineConfig());
       expect(engine.lastRecordOffset, 240);
+    });
+
+    test('setTunerInput re-arms on restart while armed, and stays disarmed '
+        'once the face has left', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTunerInput(input: 2);
+      expect(engine.tunerInput, 2);
+
+      // A reconnect under an open Tuner face: the engine comes back disarmed,
+      // and the face armed once on the way in and will not do so again.
+      engine.tunerInput = -1;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.tunerInput, 2);
+
+      // Once the face disarms, a restart leaves it disarmed — nothing resumes
+      // analysing behind a face nobody is looking at.
+      repo.setTunerInput(input: -1);
+      engine.tunerInput = 0;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.tunerInput, 0);
+    });
+
+    test('an arm issued while stopped lands on the next start', () {
+      final repo = buildRepo()..setTunerInput(input: 1);
+      expect(engine.tunerInput, -1);
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.tunerInput, 1);
     });
 
     test('setRecordOffset clamps a negative to zero', () {
@@ -1399,6 +1479,420 @@ void main() {
       );
     });
 
+    test('a parameter that is shown but not automatable is read back too', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain Reduction',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          // Visible and READ-ONLY, and not automatable — a meter. The console
+          // draws these, so a read-back that skips them leaves the drawn
+          // value frozen at the plugin's default for good: a live-looking
+          // number guaranteed to be wrong, including right after the user
+          // moved it in the plugin's own window.
+          flags: 0x02,
+        ),
+        le.PluginParamInfo(
+          id: 101,
+          name: 'Secret',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0,
+          stepCount: 0,
+          // Hidden: not drawn anywhere, so not read either.
+          flags: 0x08,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+
+      engine.nextParamValues[100] = -12;
+      engine.nextParamValues[101] = 0.9;
+      expect(
+        repo.refreshLanePluginParams(channel: 0, lane: 0, index: 0),
+        isTrue,
+      );
+      final values =
+          (repo.laneEffects(0, 0).single as PluginEffect).paramValues;
+      expect(values[100], -12);
+      expect(values.containsKey(101), isFalse);
+    });
+
+    test('what the plugin will not let the host set is never set', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain Reduction',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          // Read-only, and not automatable: the console draws it, so the
+          // read-back puts it in `paramValues` — but the host does not own
+          // it. Replaying it writes a stale meter reading into the plugin's
+          // own storage, and overrides with a captured value whatever the
+          // restored state blob had just put there.
+          flags: 0x02,
+        ),
+        le.PluginParamInfo(
+          id: 101,
+          name: 'Mix',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+        le.PluginParamInfo(
+          id: 102,
+          name: 'Output Level',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          // Automatable AND read-only — a meter the host may watch but not
+          // move. Either flag alone is enough to refuse the write.
+          flags: 0x01 | 0x02,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+      engine.nextParamValues[100] = -12;
+      engine.nextParamValues[101] = 0.7;
+      engine.nextParamValues[102] = -3;
+      expect(
+        repo.refreshLanePluginParams(channel: 0, lane: 0, index: 0),
+        isTrue,
+      );
+
+      // Re-apply the chain: every structural edit, engine restart and session
+      // reload comes back through here.
+      engine.pluginParamSets.clear();
+      repo.setLaneEffects(
+        lane: 0,
+        channel: 0,
+        effects: repo.laneEffects(0, 0),
+      );
+
+      // The exact set, not `everyElement` — which is true of an empty list,
+      // and an empty list is the failure where the replay is dropped
+      // altogether.
+      expect(engine.pluginParamSets.map((s) => s.paramId).toSet(), {101});
+    });
+
+    test('what the console will draw is read back at load', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 10,
+          name: 'Mode',
+          unit: '',
+          min: 0,
+          max: 2,
+          def: 0,
+          stepCount: 2,
+          // Visible and NOT automatable — a setting the console draws
+          // read-only. Nothing replays it, and the refresh polls only run
+          // while the plugin's own window is open, which on the appliance is
+          // never. Unread at load, the console would draw whatever was last
+          // persisted rather than what the plugin is at once its state blob
+          // has been restored on top.
+          flags: 0x10,
+        ),
+      ];
+      engine.nextParamValues[10] = 2;
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              paramValues: {10: 0},
+            ),
+          ],
+        );
+
+      expect(
+        (repo.laneEffects(0, 0).single as PluginEffect).paramValues[10],
+        2,
+      );
+    });
+
+    test('a saved value is not clobbered by the read it was written past', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      // The plugin is still at its default: a param set is RT-queued and
+      // drained at the next process block, while a get is immediate. Reading
+      // one back at bind time therefore answers with the PRE-replay value.
+      engine.nextParamValues[100] = 0;
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              paramValues: {100: -12},
+            ),
+          ],
+        );
+
+      // Capturing that would overwrite the user's setting with the plugin's
+      // default — on every structural edit, engine restart and relink, and
+      // permanently on VST3, whose controller is never told what the host
+      // set. What was just written is not read back.
+      expect(
+        (repo.laneEffects(0, 0).single as PluginEffect).paramValues[100],
+        -12,
+      );
+    });
+
+    test('a meter reading -inf never reaches the chain', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 10,
+          name: 'Mode',
+          unit: '',
+          min: 0,
+          max: 2,
+          def: 0,
+          stepCount: 2,
+          flags: 0x10,
+        ),
+      ];
+      // What a dB meter reads at silence. The hosts pass it through
+      // unclamped, and `jsonEncode` throws on it — from inside the bloc's own
+      // push, so the failure is not the value: it is every later edit of this
+      // chain going unsaved.
+      engine.nextParamValues[10] = double.negativeInfinity;
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              paramValues: {10: 1},
+            ),
+          ],
+        );
+
+      final chain = repo.laneEffects(0, 0);
+      expect((chain.single as PluginEffect).paramValues[10], 1);
+      // The repository's own encoder, which is what the bloc and the monitor
+      // cubit call on every push.
+      expect(() => encodeTrackEffects(chain), returnsNormally);
+    });
+
+    test(
+      "relinking to a DIFFERENT plugin does not carry the old one's values",
+      () {
+        engine.nextParamInfos = const [
+          le.PluginParamInfo(
+            id: 100,
+            name: 'Gain Reduction',
+            unit: 'dB',
+            min: -60,
+            max: 0,
+            def: 0,
+            stepCount: 0,
+            flags: 0x01 | 0x02,
+          ),
+        ];
+        engine.nextParamValues[100] = -40;
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneEffects(
+            lane: 0,
+            channel: 0,
+            effects: const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.clap, id: 'A'),
+                state: 'AAAA',
+              ),
+            ],
+          );
+
+        // Param 100 on the NEW plugin is an ordinary 0..1 mix.
+        engine
+          ..nextParamInfos = const [
+            le.PluginParamInfo(
+              id: 100,
+              name: 'Mix',
+              unit: '',
+              min: 0,
+              max: 1,
+              def: 0.5,
+              stepCount: 0,
+              flags: 0x01,
+            ),
+          ]
+          ..nextParamValues.clear()
+          ..pluginParamSets.clear();
+        repo.relinkLanePlugin(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          ref: const PluginRef(format: PluginFormat.clap, id: 'B'),
+        );
+
+        // Parameter ids mean whatever the new plugin says they mean. Carrying
+        // the old one's capture across sets an unrelated parameter to a number
+        // from another plugin's range — here a 0..1 mix to −40 — and hands it a
+        // state blob that is not even its format. Reachable from the console,
+        // whose relink browses every installed plugin.
+        final fx = repo.laneEffects(0, 0).single as PluginEffect;
+        expect(fx.paramValues, isEmpty);
+        expect(engine.pluginParamSets, isEmpty);
+        // The blob still travels: a plugin that does not recognise one
+        // rejects it, and the alternative is losing the settings of an entry
+        // whose plugin merely moved.
+        expect(fx.state, 'AAAA');
+      },
+    );
+
+    test('relinking to the SAME plugin keeps its state and tweaks', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Mix',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'A'),
+              state: 'AAAA',
+              paramValues: {100: 0.25},
+            ),
+          ],
+        )
+        ..relinkLanePlugin(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          // Same plugin, new version — the file moved, or the installed one
+          // drifted. This is what the capture exists for.
+          ref: const PluginRef(format: PluginFormat.clap, id: 'A', version: 2),
+        );
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.paramValues[100], 0.25);
+      expect(fx.state, 'AAAA');
+    });
+
+    test('a refresh drops a -inf reading too', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain Reduction',
+          unit: 'dB',
+          min: -60,
+          max: 0,
+          def: 0,
+          stepCount: 0,
+          flags: 0x01 | 0x02,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+
+      // The editor-sync poll reaches this on every tick while a plugin window
+      // is open, and once more on close. A `-inf` taken here cannot be
+      // encoded, and the throw comes out of the cubit's own push — so the
+      // damage is every later edit of the chain going unsaved.
+      engine.nextParamValues[100] = double.negativeInfinity;
+      repo.refreshLanePluginParams(channel: 0, lane: 0, index: 0);
+
+      // Left at what the bind-time read saw, rather than taking the -inf.
+      final chain = repo.laneEffects(0, 0);
+      expect((chain.single as PluginEffect).paramValues[100], 0);
+      expect(() => encodeTrackEffects(chain), returnsNormally);
+    });
+
+    test('a plugin that enumerates nothing still gets its saved values', () {
+      // A VST3 whose edit controller failed to instantiate, a CLAP with no
+      // params extension: the plugin loads and reports no parameters. A
+      // keep-list built from those flags is empty, and would discard every
+      // saved value on each engine start.
+      engine.nextParamInfos = const [];
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          lane: 0,
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              paramValues: {42: 0.75},
+            ),
+          ],
+        );
+
+      expect(
+        engine.pluginParamSets.map((s) => (s.paramId, s.value)),
+        contains((42, 0.75)),
+      );
+    });
+
     test('closeLanePluginEditor closes the slot and reads params back', () {
       engine.nextParamInfos = const [
         le.PluginParamInfo(
@@ -1618,6 +2112,336 @@ void main() {
       final fx = repo.laneEffects(0, 0).single as PluginEffect;
       expect(fx.unavailable, isTrue);
       expect(fx.unsupported, isTrue);
+    });
+
+    test(
+      'a bus-stage plugin is named from the catalog, not left a TUID',
+      () async {
+        engine.pluginScanResults = const [
+          le.PluginDescriptor(
+            id: 'aab1cc2200000000',
+            name: 'Valhalla Vintage Verb',
+            vendor: 'Valhalla DSP',
+            path: '/Library/Audio/Plug-Ins/VST3/verb.vst3',
+            format: le.PluginFormat.vst3,
+            version: 0,
+          ),
+          le.PluginDescriptor(
+            id: 'ddee4455ffff0000',
+            name: 'TAL Reverb 4',
+            vendor: 'TAL',
+            path: '/Library/Audio/Plug-Ins/VST3/tal.vst3',
+            format: le.PluginFormat.vst3,
+            version: 0,
+          ),
+        ];
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        await repo.pluginCatalog.scan();
+
+        // What the browse sheet builds: an identity, no name. On a lane the
+        // load resolves it; a bus entry never loads, so nothing else would.
+        repo.setMasterEffects(
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'aab1cc2200000000'),
+            ),
+          ],
+        );
+        expect(
+          (repo.masterEffects.single as PluginEffect).name,
+          'Valhalla Vintage Verb',
+        );
+
+        // And a relink onto a DIFFERENT plugin re-reads it: the surface keeps
+        // the entry's own name across the edit, which would leave the card
+        // naming the plugin that was replaced.
+        repo.setMasterEffects(
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'ddee4455ffff0000'),
+              name: 'Valhalla Vintage Verb',
+            ),
+          ],
+        );
+        expect(
+          (repo.masterEffects.single as PluginEffect).name,
+          'TAL Reverb 4',
+        );
+      },
+    );
+
+    test(
+      'a bus chain restored before any scan is named when the scan lands',
+      () async {
+        engine.pluginScanResults = const [
+          le.PluginDescriptor(
+            id: 'aab1cc2200000000',
+            name: 'Valhalla Vintage Verb',
+            vendor: 'Valhalla DSP',
+            path: '/Library/Audio/Plug-Ins/VST3/verb.vst3',
+            format: le.PluginFormat.vst3,
+            version: 0,
+          ),
+        ];
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        // Boot order: the saved chains are restored BEFORE anything scans, and
+        // every chain saved by a build that did not name bus entries has no
+        // name to fall back on. Nothing loads a bus plugin, so without the
+        // recovery this entry reads as a 32-character TUID for the whole
+        // session — and the next write persists the empty name again.
+        repo.setTrackEffects(
+          channel: 1,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'aab1cc2200000000'),
+            ),
+          ],
+        );
+        expect((repo.trackEffects(1).single as PluginEffect).name, isEmpty);
+
+        // The master is restored after it, out of its own field — and after
+        // the track's kick has already registered its continuation, so this
+        // chain is named only if the master write kicks the recovery too.
+        repo.setMasterEffects(
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'aab1cc2200000000'),
+            ),
+          ],
+        );
+        expect((repo.masterEffects.single as PluginEffect).name, isEmpty);
+
+        // On the STREAM, not just the getters: the cards read the projected
+        // state, so a recovery that names the cache without emitting leaves
+        // every one of them showing the id it was meant to replace.
+        final named = expectLater(
+          repo.looperState,
+          emitsThrough(
+            predicate<LooperState>(
+              (s) =>
+                  (s.masterEffects.singleOrNull as PluginEffect?)?.name ==
+                  'Valhalla Vintage Verb',
+              'the master chain named',
+            ),
+          ),
+        );
+        await repo.pluginCatalog.scan();
+        await Future<void>.delayed(Duration.zero);
+        await named;
+
+        expect(
+          (repo.masterEffects.single as PluginEffect).name,
+          'Valhalla Vintage Verb',
+        );
+        expect(
+          (repo.trackEffects(1).single as PluginEffect).name,
+          'Valhalla Vintage Verb',
+        );
+      },
+    );
+
+    test('a repository disposed mid-scan does not project into a closed '
+        'stream', () async {
+      engine.pluginScanResults = const [
+        le.PluginDescriptor(
+          id: 'aab1cc2200000000',
+          name: 'Valhalla Vintage Verb',
+          vendor: 'Valhalla DSP',
+          path: '/Library/Audio/Plug-Ins/VST3/verb.vst3',
+          format: le.PluginFormat.vst3,
+          version: 0,
+        ),
+      ];
+      // The scan outlives the repository: the recovery's continuation runs
+      // after the dispose below, and projecting into a closed controller
+      // throws an uncaught async error — in whichever test happens to be
+      // running when it lands, since the isolate is shared.
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMasterEffects(
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(
+                format: PluginFormat.vst3,
+                id: 'aab1cc2200000000',
+              ),
+            ),
+          ],
+        );
+      await repo.dispose();
+      await repo.pluginCatalog.scan();
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    test('a bus write does not disturb an unavailable LANE plugin', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      engine.nextSlotHandle = null; // nothing loads: the lane entry is D-MISS
+      repo.setLaneEffects(
+        channel: 0,
+        lane: 0,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+          ),
+        ],
+      );
+      await repo.pluginCatalog.scan(); // settle the lane's own recovery
+      final pushes = engine.calls.where((c) => c == 'setLanePlugin').length;
+      expect((repo.laneEffects(0, 0).single as PluginEffect).loading, isFalse);
+
+      // A knob on a bus chain, fired at drag rate. The lane recovery must not
+      // ride along: it flips every unavailable lane entry to "loading…" and
+      // re-applies the chain, so the card would strobe between a spinner and
+      // its relink offer for the length of the drag.
+      for (var i = 0; i < 3; i++) {
+        repo.setMasterEffects(
+          effects: [
+            BuiltInEffect(type: TrackEffectType.drive, params: [i / 3]),
+          ],
+        );
+      }
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.loading, isFalse);
+      expect(fx.unavailable, isTrue);
+      expect(engine.calls.where((c) => c == 'setLanePlugin').length, pushes);
+    });
+
+    test('a TRACK bus chain alone is named when the scan lands', () async {
+      engine.pluginScanResults = const [
+        le.PluginDescriptor(
+          id: 'aab1cc2200000000',
+          name: 'Valhalla Vintage Verb',
+          vendor: 'Valhalla DSP',
+          path: '/Library/Audio/Plug-Ins/VST3/verb.vst3',
+          format: le.PluginFormat.vst3,
+          version: 0,
+        ),
+      ];
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // No master chain: a rig whose only plugin is on a track bus has to be
+      // named by that setter's own kick, and nothing else will do it for it.
+      repo.setTrackEffects(
+        channel: 1,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'aab1cc2200000000'),
+          ),
+        ],
+      );
+      expect((repo.trackEffects(1).single as PluginEffect).name, isEmpty);
+
+      await repo.pluginCatalog.scan();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        (repo.trackEffects(1).single as PluginEffect).name,
+        'Valhalla Vintage Verb',
+      );
+    });
+
+    test('a bus plugin whose id decoded to nothing is not named after a '
+        'failed scan entry', () async {
+      engine.pluginScanResults = const [
+        // What a bundle that could not be scanned looks like: no id, and the
+        // offending FILE's name where a plugin's would be.
+        le.PluginDescriptor(
+          id: '',
+          name: 'broken.vst3',
+          vendor: '',
+          path: '/Library/Audio/Plug-Ins/VST3/broken.vst3',
+          format: le.PluginFormat.vst3,
+          version: 0,
+        ),
+      ];
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      await repo.pluginCatalog.scan();
+
+      repo.setMasterEffects(
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: ''),
+          ),
+        ],
+      );
+
+      expect((repo.masterEffects.single as PluginEffect).name, isEmpty);
+    });
+
+    test(
+      'a bus-stage plugin the catalog has never seen keeps its own name',
+      () {
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        // Uninstalled, or scanned on another machine: the saved name is all
+        // there is, and it is what tells the player which plugin to relink to.
+        repo.setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+              name: 'Ancient Chorus',
+            ),
+          ],
+        );
+
+        expect(
+          (repo.trackEffects(0).single as PluginEffect).name,
+          'Ancient Chorus',
+        );
+      },
+    );
+
+    test('a bus-stage plugin keeps no parameters to draw', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              state: 'AAAA',
+              paramValues: {1: 0.25},
+              // A chain copied from somewhere it DID load — a rack, or a
+              // lane-to-bus paste — arrives carrying the enumerated params of
+              // that instance.
+              params: [
+                PluginParamInfo(
+                  id: 1,
+                  name: 'Mix',
+                  unit: '',
+                  min: 0,
+                  max: 1,
+                  def: 0.5,
+                  stepCount: 0,
+                  flags: 0x01,
+                ),
+              ],
+            ),
+          ],
+        );
+
+      // The params describe a LOADED instance and there is none: the engine
+      // hosts no plugins at this stage. Kept, they draw a row per parameter
+      // in the editor — working-looking faders over a plugin that is not
+      // running — and the placeholder saying so never appears, because a
+      // chain with rows to draw is not empty.
+      final fx = repo.trackEffects(0).single as PluginEffect;
+      expect(fx.unsupported, isTrue);
+      expect(fx.params, isEmpty);
+      // And keeps everything it would need to become hostable later, which
+      // is the whole argument for keeping the entry at all.
+      expect(fx.paramValues, {1: 0.25});
+      expect(fx.state, 'AAAA');
+      expect(fx.slotId, isNotNull);
     });
 
     test('a loaded plugin whose installed version drifts is flagged', () async {
@@ -1926,9 +2750,13 @@ void main() {
       expect(engine.outputEnabled.containsKey(1), isFalse);
     });
 
-    test('_project surfaces the engine output-gate mask', () {
+    test('_project surfaces the output gate from the re-apply cache', () {
+      // The engine claims every output is on — which is what a STOPPED engine
+      // always claims, since the gate is only re-applied at start. The mask the
+      // app reads has to be the repository's own intent, or a session loaded
+      // with an output gated reads as audible until the device opens.
       engine.nextSnapshot = const EngineSnapshot(
-        isRunning: true,
+        isRunning: false,
         sampleRate: 48000,
         bufferFrames: 128,
         framesProcessed: 0,
@@ -1938,12 +2766,30 @@ void main() {
         outputRms: 0,
         latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
-        outputEnabledMask: 0x1, // only output 0 enabled
       );
-      final state = buildRepo().state;
-      expect(state.outputEnabledMask, 0x1);
+      final repo = buildRepo()..setOutputEnabled(output: 1, enabled: false);
+      final state = repo.state;
       expect(state.isOutputEnabled(0), isTrue);
       expect(state.isOutputEnabled(1), isFalse);
+
+      // And re-enabling puts the bit back.
+      repo.setOutputEnabled(output: 1, enabled: true);
+      expect(repo.state.isOutputEnabled(1), isTrue);
+    });
+
+    test('setOutputEnabled re-projects so a stopped rig reports it', () async {
+      // No user gesture on the face that draws this: a session load gates the
+      // output, and without the re-projection nothing on the stream would say
+      // so. Mirrors the setTrackQuantize case.
+      final repo = buildRepo();
+      final states = <LooperState>[];
+      final sub = repo.looperState.listen(states.add);
+      addTearDown(() => unawaited(sub.cancel()));
+
+      repo.setOutputEnabled(output: 2, enabled: false);
+      await Future<void>.delayed(Duration.zero);
+      expect(states, isNotEmpty);
+      expect(states.last.isOutputEnabled(2), isFalse);
     });
 
     test('record snapshots the input monitor chain onto the lane (G3/AC3)', () {
@@ -2679,7 +3525,7 @@ void main() {
       'a per-input monitor enable is deferred until running, then applied',
       () {
         final repo = buildRepo()
-          ..setMonitorInputEnabled(input: 1, enabled: true);
+          ..setMonitorInputMode(input: 1, mode: MonitorMode.on);
         expect(engine.monitorInputEnabled, isEmpty); // not running yet
 
         repo.startEngine(const EngineConfig());
@@ -2690,16 +3536,16 @@ void main() {
     test('per-input monitors are independent and survive a restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setMonitorInputEnabled(input: 0, enabled: true)
+        ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
         ..setMonitorOutput(input: 0, mask: 0x1)
-        ..setMonitorInputEnabled(input: 1, enabled: true)
+        ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
         ..setMonitorOutput(input: 1, mask: 0x2);
       expect(engine.monitorInputEnabled[0], isTrue);
       expect(engine.monitorOutput[0], 0x1);
       expect(engine.monitorOutput[1], 0x2);
 
       // Disabling one input leaves the other untouched.
-      repo.setMonitorInputEnabled(input: 0, enabled: false);
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.off);
       expect(engine.monitorInputEnabled[0], isFalse);
       expect(engine.monitorInputEnabled[1], isTrue);
 
@@ -3919,7 +4765,7 @@ void main() {
           monitors: const [
             SessionRigMonitor(
               input: 0,
-              enabled: true,
+              mode: MonitorMode.on,
               outputMask: 0x3,
               volume: 1,
               muted: false,
@@ -3948,7 +4794,7 @@ void main() {
       // Session A left input 1 enabled with custom routing / mix.
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setMonitorInputEnabled(input: 1, enabled: true)
+        ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
         ..setMonitorOutput(input: 1, mask: 0x4)
         ..setMonitorVolume(input: 1, volume: 0.3)
         ..setMonitorMute(input: 1, muted: true);
@@ -3962,7 +4808,7 @@ void main() {
 
       // The leftover monitor is fully reset to disabled defaults — an enabled
       // monitor from A can never keep sounding under B.
-      expect(repo.monitorEnabled(1), isFalse);
+      expect(repo.monitorMode(1), MonitorMode.off);
       expect(repo.monitorOutput(1), 0x3);
       expect(repo.monitorVolume(1), 1);
       expect(repo.monitorMuted(1), isFalse);
@@ -4015,7 +4861,7 @@ void main() {
             monitors: [
               SessionRigMonitor(
                 input: 0,
-                enabled: true,
+                mode: MonitorMode.on,
                 outputMask: 0x1,
                 volume: 0.7,
                 muted: false,
@@ -4301,13 +5147,13 @@ void main() {
       // an empty chain must still be enumerated so it round-trips through a
       // session save/load.
       final repo = buildRepo()
-        ..setMonitorInputEnabled(input: 2, enabled: true)
+        ..setMonitorInputMode(input: 2, mode: MonitorMode.on)
         ..setMonitorOutput(input: 2, mask: 0x2);
       addTearDown(repo.dispose);
 
       final monitors = repo.allMonitors();
       expect(monitors.keys, [2]);
-      expect(monitors[2]!.enabled, isTrue);
+      expect(monitors[2]!.mode, MonitorMode.on);
       expect(monitors[2]!.outputMask, 0x2);
       expect(monitors[2]!.effects, isEmpty);
     });
@@ -4316,8 +5162,8 @@ void main() {
       // Touching a monitor back to the default (or a no-op setter) leaves no
       // meaningful state, so it must not bloat the enumeration / bundle.
       final repo = buildRepo()
-        ..setMonitorInputEnabled(input: 1, enabled: true)
-        ..setMonitorInputEnabled(input: 1, enabled: false)
+        ..setMonitorInputMode(input: 1, mode: MonitorMode.on)
+        ..setMonitorInputMode(input: 1, mode: MonitorMode.off)
         ..setMonitorOutput(input: 1, mask: 0x3) // the default mask
         ..setMonitorVolume(input: 1, volume: 1) // unity (default)
         ..setMonitorMute(input: 1, muted: false); // default
@@ -4346,18 +5192,18 @@ void main() {
         final repo = buildRepo();
         addTearDown(repo.dispose);
 
-        expect(repo.monitorEnabled(0), isFalse);
+        expect(repo.monitorMode(0), MonitorMode.off);
         expect(repo.monitorOutput(0), 0x3);
         expect(repo.monitorVolume(0), 1);
         expect(repo.monitorMuted(0), isFalse);
 
         repo
-          ..setMonitorInputEnabled(input: 0, enabled: true)
+          ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
           ..setMonitorOutput(input: 0, mask: 0x1)
           ..setMonitorVolume(input: 0, volume: 0.4)
           ..setMonitorMute(input: 0, muted: true);
 
-        expect(repo.monitorEnabled(0), isTrue);
+        expect(repo.monitorMode(0), MonitorMode.on);
         expect(repo.monitorOutput(0), 0x1);
         expect(repo.monitorVolume(0), 0.4);
         expect(repo.monitorMuted(0), isTrue);
@@ -4452,7 +5298,7 @@ void main() {
         final repo = buildSupervised()
           ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'))
           // Stage some live rig state: a monitor enable + a lane routing.
-          ..setMonitorInputEnabled(input: 0, enabled: true)
+          ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
           ..setLaneOutput(channel: 0, lane: 0, mask: 0x2);
         final sub = repo.looperState.listen((_) {});
         addTearDown(sub.cancel);
@@ -5600,6 +6446,344 @@ void main() {
       expect(repo.laneEffects(0, 0), isEmpty);
       expect(repo.laneChainEnabled(0, 0), isTrue);
       expect(repo.laneChainInheritedFrom(0, 0), isEmpty);
+    });
+  });
+
+  group('monitorChanges', () {
+    test('every monitor write announces its input', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final seen = <int>[];
+      final sub = repo.monitorChanges.listen(seen.add);
+      addTearDown(sub.cancel);
+
+      // Monitor state is the one part of the rig that is not projected onto
+      // LooperState, so a cache of it (MonitorCubit) has no other way to
+      // notice a writer that went straight to the repository.
+      repo
+        ..setMonitorInputMode(input: 0, mode: MonitorMode.on)
+        ..setMonitorOutput(input: 1, mask: 0x2)
+        ..setMonitorVolume(input: 2, volume: 0.5)
+        ..setMonitorMute(input: 3, muted: true)
+        ..setMonitorEffects(
+          input: 4,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMonitorEffectEnabled(input: 4, index: 0, enabled: false)
+        ..setMonitorChainEnabled(input: 5, enabled: false);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, [0, 1, 2, 3, 4, 4, 5]);
+    });
+
+    test('a disposed repository announces nothing', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      final seen = <int>[];
+      final sub = repo.monitorChanges.listen(seen.add);
+      addTearDown(sub.cancel);
+      // A chain whose plugin cannot bind, which arms the cold-start recovery
+      // scan — the ordinary "quit while the plugin scan is running" path.
+      repo.setMonitorEffects(
+        input: 0,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'gone'),
+          ),
+        ],
+      );
+
+      await repo.dispose();
+      // The scan outlives the dispose, and `dispose` does not clear the
+      // running intent — only `stopEngine` does — so its continuation
+      // re-applies the chain and announces into a closed controller.
+      await repo.pluginCatalog.scan();
+      await Future<void>.delayed(Duration.zero);
+      // And a plain write after the close, which applySession and the
+      // reconnect path can both still make on the way down.
+      repo.setMonitorMute(input: 0, muted: true);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, [0]); // the one before the dispose, and nothing after
+    });
+
+    test('a parameter write does not announce', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      repo.setMonitorEffects(
+        input: 0,
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
+      );
+      final seen = <int>[];
+      final sub = repo.monitorChanges.listen(seen.add);
+      addTearDown(sub.cancel);
+
+      // Deliberate, and load-bearing: these arrive at controller rate from a
+      // mapped CC, and the listener persists what it reads — announcing would
+      // write five settings keys per frame of a sweep. #605 owns the cadence
+      // question; until then this stays quiet on purpose.
+      repo.setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.4);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, isEmpty);
+    });
+
+    test('a relink announces', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      repo.setMonitorEffects(
+        input: 0,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'old'),
+          ),
+        ],
+      );
+      final seen = <int>[];
+      final sub = repo.monitorChanges.listen(seen.add);
+      addTearDown(sub.cancel);
+
+      // Re-identifying an entry changes what the console draws as much as
+      // replacing it does — and this is the ONE action a placeholder offers.
+      repo.relinkMonitorPlugin(
+        input: 0,
+        index: 0,
+        ref: const PluginRef(format: PluginFormat.vst3, id: 'new'),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(seen, [0]);
+    });
+
+    test(
+      'a rebind that rewrites the chain announces, with no setter called',
+      () async {
+        engine.pluginScanResults = const [
+          le.PluginDescriptor(
+            id: 'verb',
+            name: 'Catalog Reverb',
+            vendor: 'Acme',
+            path: '/Library/Audio/Plug-Ins/VST3/verb.vst3',
+            format: le.PluginFormat.vst3,
+            version: 0,
+          ),
+        ];
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        await repo.pluginCatalog.scan();
+        final seen = <int>[];
+        final sub = repo.monitorChanges.listen(seen.add);
+        addTearDown(sub.cancel);
+
+        repo.setMonitorEffects(
+          input: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'verb'),
+            ),
+          ],
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        // TWO: the write itself, and the apply behind it rewriting the entry
+        // with what the bind resolved — here the display name. That second one
+        // is the only announce a device reconnect makes, since `_reapplyAll`
+        // rebinds every slot without anyone calling a setter, and a plugin that
+        // comes back fine would otherwise read "loading…" forever.
+        expect(seen, [0, 0]);
+        expect(
+          (repo.monitorEffects(0).single as PluginEffect).name,
+          'Catalog Reverb',
+        );
+      },
+    );
+  });
+
+  group('monitor mode (tri-state)', () {
+    EngineSnapshot snapshotWith({
+      required TrackState state,
+      required bool pending,
+      int laneInput = 0,
+    }) => EngineSnapshot(
+      isRunning: true,
+      sampleRate: 48000,
+      bufferFrames: 128,
+      framesProcessed: 0,
+      xrunCount: 0,
+      inputRms: 0,
+      inputPeak: 0,
+      outputRms: 0,
+      latencyState: le.LatencyState.idle,
+      measuredLatencyMs: -1,
+      tracks: [
+        TrackSnapshot(
+          state: state,
+          pending: pending,
+          volume: 1,
+          muted: false,
+          lengthFrames: 0,
+          undoDepth: 0,
+          rms: 0,
+          peak: 0,
+          lanes: [
+            LaneSnapshot(
+              inputChannel: laneInput,
+              outputMask: 0x3,
+              volume: 1,
+              muted: false,
+              lengthFrames: 0,
+              rms: 0,
+              peak: 0,
+            ),
+          ],
+        ),
+      ],
+    );
+
+    int monitorPushes() =>
+        engine.calls.where((c) => c == 'setMonitorInputEnabled').length;
+
+    test('off and on ignore the arm state entirely', () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.recording,
+        pending: false,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.off);
+      expect(repo.monitorResolved(0), isFalse);
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.on);
+      expect(repo.monitorResolved(0), isTrue);
+    });
+
+    test('auto is closed while nothing is armed', () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.playing,
+        pending: false,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.auto);
+      expect(repo.monitorMode(0), MonitorMode.auto);
+      expect(repo.monitorResolved(0), isFalse);
+    });
+
+    test('auto opens while a track fed by the input is capturing', () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.recording,
+        pending: false,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.auto);
+      expect(repo.monitorResolved(0), isTrue);
+    });
+
+    test('auto opens on a PENDING arm, not only once audio flows', () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.empty,
+        pending: true,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.auto);
+      expect(repo.monitorResolved(0), isTrue);
+    });
+
+    test("auto is a fan-in: another input's arm does not open it", () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.recording,
+        pending: false,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      // The armed track's lane records input 0, so input 1 stays closed.
+      repo.setMonitorInputMode(input: 1, mode: MonitorMode.auto);
+      expect(repo.monitorResolved(1), isFalse);
+    });
+
+    test('an arm that starts and stops opens then closes the gate', () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.playing,
+        pending: false,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.auto);
+      expect(repo.monitorResolved(0), isFalse);
+
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.recording,
+        pending: false,
+      );
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.monitorResolved(0), isTrue);
+
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.playing,
+        pending: false,
+      );
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.monitorResolved(0), isFalse);
+    });
+
+    test('an idle auto input costs no engine writes per tick', () async {
+      engine.nextSnapshot = snapshotWith(
+        state: TrackState.playing,
+        pending: false,
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      repo.setMonitorInputMode(input: 0, mode: MonitorMode.auto);
+      final after = monitorPushes();
+
+      // Several projections that do not move the arm state.
+      for (var i = 0; i < 3; i++) {
+        engine.nextSnapshot = snapshotWith(
+          state: TrackState.playing,
+          pending: false,
+        );
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(monitorPushes(), after);
     });
   });
 }

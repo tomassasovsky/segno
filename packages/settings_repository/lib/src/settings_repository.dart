@@ -346,6 +346,16 @@ class SettingsRepository {
   Future<void> saveHighContrast({required bool value}) =>
       _store.setBool(_highContrastKey, value: value);
 
+  static const String _brightnessKey = 'ui.brightness';
+
+  /// Console display brightness (`0..1`). Defaults to `0.8` when unset.
+  Future<double> loadBrightness() async =>
+      (await _store.getDouble(_brightnessKey) ?? 0.8).clamp(0.0, 1.0);
+
+  /// Saves console display brightness (`0..1`).
+  Future<void> saveBrightness(double value) =>
+      _store.setDouble(_brightnessKey, value.clamp(0.0, 1.0));
+
   static const String _showTrackIndicatorsKey = 'tracks.indicators';
 
   /// Whether per-track status indicators show on the Tracks-view tiles.
@@ -385,6 +395,29 @@ class SettingsRepository {
   /// Saves the global pedal remap as its [encoded] string.
   Future<void> savePedalBindings(String encoded) =>
       _store.setString(_pedalBindingsKey, encoded);
+
+  /// The key the recent-plugin order lives under.
+  ///
+  /// Visible so a test can fail THIS read specifically without copying the
+  /// string — a copy stops matching the day the key is renamed, and the test
+  /// then passes because nothing threw at all. The only key here that is not
+  /// private, and annotated so production code does not start depending on
+  /// one storage detail out of fifty.
+  @visibleForTesting
+  static const String recentPluginsKey = 'fx.recent_plugins';
+
+  /// The plugin ids most recently added to a chain, newest first.
+  ///
+  /// A convenience, not a source of truth: the add dialog offers a short
+  /// shelf so the four plugins someone actually uses are one tap away rather
+  /// than behind a search of a hundred. An id that no longer scans is simply
+  /// not drawn — the catalog decides what exists, this only remembers an
+  /// order.
+  Future<String?> loadRecentPlugins() => _store.getString(recentPluginsKey);
+
+  /// Saves the recent-plugin ids as a newline-separated list.
+  Future<void> saveRecentPlugins(String encoded) =>
+      _store.setString(recentPluginsKey, encoded);
 
   static const String _controllerMappingsKey = 'controller.mappings';
 
@@ -603,7 +636,7 @@ class SettingsRepository {
 
   // Per-input single-chain monitor keys (the model the live app uses after the
   // v3 fold). The enable flag is shared with the prior model.
-  String _monitorInputEnabledKey(int input) => 'monitor_input_enabled.$input';
+  String _monitorInputModeKey(int input) => 'monitor_input_mode.$input';
   String _monitorOutKey(int input) => 'monitor_out.$input';
   String _monitorVolKey(int input) => 'monitor_vol.$input';
   String _monitorMuteKey(int input) => 'monitor_mute.$input';
@@ -675,13 +708,18 @@ class SettingsRepository {
     await _store.remove(_monitorInputFxKey(input));
   }
 
-  /// Loads hardware [input]'s monitor enable flag, or `null` if never saved.
-  Future<bool?> loadMonitorInputEnabled(int input) =>
-      _store.getBool(_monitorInputEnabledKey(input));
+  /// Loads hardware [input]'s monitor mode name, or `null` if never saved.
+  ///
+  /// Stored as the enum's name rather than an index so the on-disk value stays
+  /// readable and survives any reordering of the enum. The caller maps an
+  /// absent or unrecognised value to `off`, which is the model's default
+  /// anyway — the same answer the old boolean key gave when it was missing.
+  Future<String?> loadMonitorInputMode(int input) =>
+      _store.getString(_monitorInputModeKey(input));
 
-  /// Saves hardware [input]'s monitor enable flag (the input-level gate).
-  Future<void> saveMonitorInputEnabled(int input, {required bool enabled}) =>
-      _store.setBool(_monitorInputEnabledKey(input), value: enabled);
+  /// Saves hardware [input]'s monitor mode (the input-level gate).
+  Future<void> saveMonitorInputMode(int input, {required String mode}) =>
+      _store.setString(_monitorInputModeKey(input), mode);
 
   // ---- single-chain monitor (the live model after the v3 fold) ----
 
@@ -797,6 +835,25 @@ class SettingsRepository {
     }
   }
 
+  /// Keyed per SERIAL, the same shape [saveInputName] and
+  /// [saveLatencyOffsetFrames] use. The name is a name for *this box*, and a
+  /// profile carried to a second console would otherwise arrive claiming to
+  /// be the first one.
+  String _consoleNameKey(String serial) => 'console_name.$serial';
+
+  /// Loads the name given to the console with [serial], or `null` when it
+  /// still answers to the name the appliance shipped with.
+  Future<String?> loadConsoleName(String serial) =>
+      _store.getString(_consoleNameKey(serial));
+
+  /// Saves the given [name] for the console with [serial].
+  Future<void> saveConsoleName(String serial, String name) =>
+      _store.setString(_consoleNameKey(serial), name);
+
+  /// Forgets the given name, handing the box back the one it shipped with.
+  Future<void> clearConsoleName(String serial) =>
+      _store.remove(_consoleNameKey(serial));
+
   String _trackNameKey(int channel) => 'track_name.$channel';
 
   /// Loads the custom display name for track [channel], or `null` if unset.
@@ -806,6 +863,36 @@ class SettingsRepository {
   /// Saves the custom display [name] for track [channel].
   Future<void> saveTrackName(int channel, String name) =>
       _store.setString(_trackNameKey(channel), name);
+
+  /// Keyed per DEVICE and socket, the same shape [saveLatencyOffsetFrames]
+  /// uses. Input 1 on a Scarlett and input 1 on the built-in pair are different
+  /// jacks with different things plugged into them; one name for both would
+  /// describe whichever rig was patched last.
+  String _inputNameKey(String device, int input) => 'input_name.$device.$input';
+
+  /// Loads the given name for [input] on [device], or `null` if it has none.
+  Future<String?> loadInputName({
+    required String device,
+    required int input,
+  }) => _store.getString(_inputNameKey(device, input));
+
+  /// Saves the given [name] for [input] on [device].
+  Future<void> saveInputName({
+    required String device,
+    required int input,
+    required String name,
+  }) => _store.setString(_inputNameKey(device, input), name);
+
+  /// Forgets [input]'s given name on [device], handing the socket back its
+  /// ordinal.
+  ///
+  /// Removed rather than stored as an empty string: an input's fallback is not
+  /// a name it was given, and a stored `''` would be a name the next reader has
+  /// to know to ignore. A track has no equivalent — its fallback IS a name.
+  Future<void> clearInputName({
+    required String device,
+    required int input,
+  }) => _store.remove(_inputNameKey(device, input));
 
   String _trackQuantizeKey(int channel) => 'track_quantize.$channel';
 
@@ -883,6 +970,17 @@ class SettingsRepository {
   Future<void> saveLaneEffects(int channel, int lane, String encoded) =>
       _store.setString(_laneEffectsKey(channel, lane), encoded);
 
+  /// Clears lane [lane] of track [channel]'s persisted chain, so the boot
+  /// restore reads it back as "no chain" rather than as the last value written.
+  ///
+  /// For a session load that leaves a lane with no chain: there is no envelope
+  /// to overwrite the key with, and the old string would otherwise be restored
+  /// on the next launch. Deletes rather than writing an empty envelope (which
+  /// the boot restore reads identically) so the key set self-cleans — the same
+  /// posture as [saveOutputEnabled]'s default-on removal.
+  Future<void> clearLaneEffects(int channel, int lane) =>
+      _store.remove(_laneEffectsKey(channel, lane));
+
   String _trackFxChainKey(int channel) => 'track_fx_chain.$channel';
   static const String _masterFxChainKey = 'master_fx_chain';
 
@@ -896,6 +994,16 @@ class SettingsRepository {
   /// Saves track [channel]'s [encoded] Track-stage chain envelope.
   Future<void> saveTrackFxChain(int channel, String encoded) =>
       _store.setString(_trackFxChainKey(channel), encoded);
+
+  /// Clears track [channel]'s persisted Track-stage chain envelope — the bus
+  /// twin of [clearLaneEffects], for a session load that drops a chain the
+  /// live rig carried.
+  ///
+  /// There is no Master equivalent: the Master envelope always has a value
+  /// (the empty enabled chain when none is configured), so a load overwrites
+  /// it rather than needing it cleared.
+  Future<void> clearTrackFxChain(int channel) =>
+      _store.remove(_trackFxChainKey(channel));
 
   /// Loads the persisted Master insert chain as an opaque encoded envelope
   /// string (see `encodeFxChain`), or `null` if none is saved.
@@ -920,7 +1028,7 @@ class SettingsRepository {
 
   /// Loads the user-selected update channel (`experimental` / `production`),
   /// or `null` when the user has never set one (fall back to the device's
-  /// baked `/etc/loopy/update-channel` marker).
+  /// baked `/etc/segno/update-channel` marker).
   Future<String?> loadUpdateChannel() async {
     final raw = await _store.getString(_updateChannelKey);
     if (raw == null || raw.trim().isEmpty) return null;

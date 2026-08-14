@@ -1,9 +1,14 @@
-/// Repository + protocol layer for the Loopy bidirectional MIDI looper pedal:
+/// Repository + protocol layer for the Segno bidirectional MIDI looper pedal:
 /// the state-frame models and SysEx codec shared with the firmware as one
 /// contract, the `PedalRepository` over a `PedalTransport`, and the native
 /// composition factory (`createNativePedalRepository`) that adapts a MIDI input
 /// source into the pedal's transport.
 library;
+
+// Re-exported so the pedal feature can name the pedal by product string
+// (console auto-detect) without taking a direct `midi_client` dependency —
+// the app depends on this package, not on the MIDI client.
+export 'package:midi_client/midi_client.dart' show midiDeviceNameMatches;
 
 export 'src/models/pedal_output.dart';
 export 'src/native_pedal_repository.dart';

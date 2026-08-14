@@ -1,13 +1,16 @@
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/theme/theme.dart';
-import 'package:loopy/visualizer/waveform_window_args.dart';
-import 'package:loopy/visualizer/waveform_window_channel.dart';
-import 'package:loopy/visualizer/widgets/waveform_view.dart';
-import 'package:loopy/window/window_chrome.dart';
+import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:screen_retriever/screen_retriever.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/performance_readout_view.dart';
+import 'package:segno/visualizer/waveform_window_args.dart';
+import 'package:segno/visualizer/waveform_window_channel.dart';
+import 'package:segno/visualizer/widgets/waveform_view.dart';
+import 'package:segno/window/window_chrome.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// Where the output-waveform window should sit: **full-bleed on a secondary
@@ -95,9 +98,12 @@ Future<void> runWaveformWindow(WindowController controller) async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final args = WaveformWindowArgs.parse(controller.arguments);
-  final title = args.title ?? 'Loopy — Output';
+  final title = args.title ?? 'Segno — Output';
   final frame = ValueNotifier<WaveformFrame>(
     (samples: Float32List(0), progress: 0, selectedTrack: ''),
+  );
+  final readout = ValueNotifier<PerformanceReadout>(
+    const PerformanceReadout(),
   );
 
   // Register the shared channel before any slow init so the main window can
@@ -115,6 +121,13 @@ Future<void> runWaveformWindow(WindowController controller) async {
           );
         }
         return null;
+      case 'readout':
+        if (call.arguments is Map) {
+          readout.value = PerformanceReadout.fromMap(
+            call.arguments as Map<Object?, Object?>,
+          );
+        }
+        return null;
       case 'window_close':
         await windowManager.close();
         return null;
@@ -129,7 +142,7 @@ Future<void> runWaveformWindow(WindowController controller) async {
       .catchError((Object _) => null);
 
   await windowManager.ensureInitialized();
-  await configureLoopyDesktopWindow(title: title);
+  await configureSegnoDesktopWindow(title: title);
 
   // Full-bleed on a second monitor when there is one; otherwise the windowed
   // fallback. Two ordering rules make this land on the *second* display:
@@ -145,7 +158,10 @@ Future<void> runWaveformWindow(WindowController controller) async {
     WindowOptions(
       size: placement.size,
       title: title,
-      backgroundColor: const Color(0xFF06060A),
+      // The OS window's pre-paint colour. Matches AppTheme.neon's scaffold
+      // background so opening the window does not flash a different dark —
+      // it cannot read the theme, since it is set before runApp.
+      backgroundColor: const Color(0xFF060607),
     ),
     () async {
       await windowManager.show();
@@ -160,8 +176,34 @@ Future<void> runWaveformWindow(WindowController controller) async {
     },
   );
 
-  runApp(WaveformWindowApp(frame: frame, title: title));
+  runApp(WaveformWindowApp(frame: frame, readout: readout, title: title));
 }
+
+/// The waveform's colour state for [readout]: the cursor track's transport
+/// state, with muted overlaying it — the same legend the meters use, keyed off
+/// the same track whose name the waveform already labels itself with.
+///
+/// Pure so the second screen's colouring can be tested without a window. Falls
+/// back to [LooperMeterState.empty] when no track is selected, or when the
+/// state token is one this build does not know: the readout crosses an engine
+/// boundary as strings, and an unrecognised one must degrade to the quiet
+/// "nothing to show" tone rather than throw on a render.
+@visibleForTesting
+LooperMeterState waveformStateOf(PerformanceReadout readout) {
+  for (final track in readout.tracks) {
+    if (!track.selected) continue;
+    final state = _trackStatesByName[track.state];
+    if (state == null) return LooperMeterState.empty;
+    return LooperMeterState.of(state, muted: track.muted);
+  }
+  return LooperMeterState.empty;
+}
+
+/// [TrackState] by its wire token. Hoisted out of [waveformStateOf] because
+/// that runs once per pushed frame — rebuilding the map there would allocate at
+/// frame rate to answer a five-entry lookup.
+final Map<String, TrackState> _trackStatesByName = TrackState.values
+    .asNameMap();
 
 /// Coerces a method-channel payload (a [Float32List], or a `List` of numbers
 /// after the plugin re-serializes across engines) into a [Float32List].
@@ -184,6 +226,7 @@ class WaveformWindowApp extends StatelessWidget {
   /// Creates a [WaveformWindowApp] rendering [frame].
   const WaveformWindowApp({
     required this.frame,
+    required this.readout,
     required this.title,
     super.key,
   });
@@ -191,29 +234,42 @@ class WaveformWindowApp extends StatelessWidget {
   /// The latest waveform frame, updated as the main window pushes new data.
   final ValueListenable<WaveformFrame> frame;
 
+  /// The latest performance readout, pushed only when it changes.
+  final ValueListenable<PerformanceReadout> readout;
+
   /// OS window title.
   final String title;
 
   @override
   Widget build(BuildContext context) {
+    // Real localization delegates, not a one-off `lookupAppLocalizations`
+    // against the platform locale: the readout has real copy in it now, and a
+    // second engine is still an app.
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: AppTheme.neon,
-      home: LoopyWindowChromeShell(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      builder: (context, child) =>
+          AppTextDefaults(child: child ?? const SizedBox.shrink()),
+      home: SegnoWindowChromeShell(
         title: title,
         body: Padding(
-          padding: const EdgeInsets.all(24),
-          child: ValueListenableBuilder<WaveformFrame>(
-            valueListenable: frame,
-            builder: (context, data, _) => WaveformView(
-              selectedTrack: data.selectedTrack,
-              samples: data.samples,
-              progress: data.progress,
-              // This window has no Localizations ancestor, so resolve the label
-              // from the platform locale directly.
-              semanticLabel: lookupAppLocalizations(
-                PlatformDispatcher.instance.locale,
-              ).a11yWaveform,
+          padding: const EdgeInsets.all(16),
+          child: ValueListenableBuilder<PerformanceReadout>(
+            valueListenable: readout,
+            builder: (context, readoutData, _) => PerformanceReadoutView(
+              readout: readoutData,
+              waveform: ValueListenableBuilder<WaveformFrame>(
+                valueListenable: frame,
+                builder: (context, data, _) => WaveformView(
+                  selectedTrack: data.selectedTrack,
+                  samples: data.samples,
+                  progress: data.progress,
+                  state: waveformStateOf(readoutData),
+                  semanticLabel: context.l10n.a11yWaveform,
+                ),
+              ),
             ),
           ),
         ),

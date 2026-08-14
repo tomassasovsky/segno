@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart';
-import 'package:loopy_engine/loopy_engine.dart' as engine;
+import 'package:segno_engine/segno_engine.dart' as engine;
 
 /// A file's identity for cache keying: its path plus last-modified time and
 /// size. A reinstalled or updated plugin changes its mtime/size, invalidating
@@ -167,12 +167,17 @@ class PluginCatalog {
   }
 
   /// Cancels an in-progress scan, keeping whatever was found so far.
+  ///
+  /// The descriptors found up to here are kept, but the CACHE is not written:
+  /// a cancelled scan did not see the whole filesystem, so calling it a
+  /// complete catalog would tell every later reader that the machine has been
+  /// looked at when it has only been half looked at.
   void cancel() {
     if (_scan == null) return;
     _engine.scanCancel();
     final completer = _scan!;
     _publish(_engine.scanPoll(), forceDone: true);
-    _harvest();
+    _harvest(complete: false);
     _finish(completer, _descriptors);
   }
 
@@ -184,12 +189,14 @@ class PluginCatalog {
     _finish(completer, _descriptors);
   }
 
-  /// Reads the finished descriptors and rebuilds the cache from their files.
-  void _harvest() {
+  /// Reads the descriptors found so far, and — when the scan ran to
+  /// [complete]ion — rebuilds the cache from their files.
+  void _harvest({bool complete = true}) {
     _descriptors = _engine
         .scanResults()
         .map(pluginDescriptorFromEngine)
         .toList();
+    if (!complete) return;
     final paths = <String>{for (final d in _descriptors) d.path};
     _cache = PluginCatalogCache(
       appVersion: _appVersion,

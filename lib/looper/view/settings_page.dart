@@ -3,25 +3,43 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/high_contrast_cubit.dart';
-import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/looper/view/looper_mode_section.dart';
-import 'package:loopy/looper/view/rename_track_dialog.dart';
-import 'package:loopy/looper/view/tempo_settings_section.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/surface_theme.dart';
-import 'package:loopy/update/cubit/update_cubit.dart';
-import 'package:loopy/update/view/updates_settings_section.dart';
-import 'package:loopy/visualizer/visualizer.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/high_contrast_cubit.dart';
+import 'package:segno/looper/cubit/refresh_rate_cubit.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/looper_mode_section.dart';
+import 'package:segno/looper/view/rename_track_dialog.dart';
+import 'package:segno/looper/view/tempo_settings_section.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/theme.dart';
+import 'package:segno/update/cubit/update_cubit.dart';
+import 'package:segno/update/view/updates_settings_section.dart';
+import 'package:segno/visualizer/visualizer.dart';
 
 /// A settings section, shown one at a time and selected from the left rail.
-enum _Section { view, audio, tempo, mode, tracks, updates }
+enum SettingsSection {
+  /// Appearance / view preferences.
+  view,
+
+  /// Audio device and engine settings.
+  audio,
+
+  /// Tempo, click, and count-in.
+  tempo,
+
+  /// Looper interaction mode defaults.
+  mode,
+
+  /// Per-track names and length presets.
+  tracks,
+
+  /// Appliance / desktop in-app updates.
+  updates,
+}
 
 /// The app settings page, reachable from the Tracks view via right-click or
 /// the `S` key, and from the system menu bar on macOS.
@@ -31,16 +49,38 @@ enum _Section { view, audio, tempo, mode, tracks, updates }
 /// selected section's controls. `Esc` closes the page.
 class SettingsPage extends StatefulWidget {
   /// Creates a [SettingsPage].
-  const SettingsPage({super.key});
+  const SettingsPage({
+    super.key,
+    this.initialSection = SettingsSection.view,
+    this.onSectionChanged,
+  });
+
+  /// Section shown when the page first opens (e.g. Updates from the toast).
+  final SettingsSection initialSection;
+
+  /// Notifies when the left-rail selection changes (and once for the initial
+  /// section). Used so the shell can suppress the update toast while Updates
+  /// is already visible.
+  final ValueChanged<SettingsSection>? onSectionChanged;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  _Section _section = _Section.view;
+  late SettingsSection _section = widget.initialSection;
 
-  void _select(_Section section) => setState(() => _section = section);
+  @override
+  void initState() {
+    super.initState();
+    widget.onSectionChanged?.call(_section);
+  }
+
+  void _select(SettingsSection section) {
+    if (section == _section) return;
+    setState(() => _section = section);
+    widget.onSectionChanged?.call(section);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -113,17 +153,17 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   List<Widget> _sectionChildren(BuildContext context) => switch (_section) {
-    _Section.view => _viewSection(context),
-    _Section.audio => _audioSection(context),
-    _Section.tempo => _tempoSection(context),
-    _Section.mode => _modeSection(context),
-    _Section.tracks => _tracksSection(context),
-    _Section.updates => const [UpdatesSettingsSection()],
+    SettingsSection.view => _viewSection(context),
+    SettingsSection.audio => _audioSection(context),
+    SettingsSection.tempo => _tempoSection(context),
+    SettingsSection.mode => _modeSection(context),
+    SettingsSection.tracks => _tracksSection(context),
+    SettingsSection.updates => const [UpdatesSettingsSection()],
   };
 
   List<Widget> _viewSection(BuildContext context) {
     final l10n = context.l10n;
-    final waveformEnabled = context.watch<WaveformWindowCubit>().state;
+    final waveformEnabled = context.watch<WaveformWindowCubit>().state.enabled;
     final highContrast = context.watch<HighContrastCubit>().state;
     final tracks = context.watch<TracksCubit>().state;
     final showIndicators = tracks.showIndicators;
@@ -132,7 +172,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final defaultMode = context.watch<ControlCubit>().state.defaultMode;
     final refreshHz = context.watch<RefreshRateCubit>().state;
     return [
-      Text(l10n.settingsViewIntro, style: setupBody),
+      AppText(l10n.settingsViewIntro, style: context.setupBody),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.viewGroupLabel),
       const SizedBox(height: 12),
@@ -166,7 +206,7 @@ class _SettingsPageState extends State<SettingsPage> {
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.looperGroupLabel),
       const SizedBox(height: 12),
-      Text(l10n.defaultModeIntro, style: setupBody),
+      AppText(l10n.defaultModeIntro, style: context.setupBody),
       const SizedBox(height: 12),
       SetupOptionRow<InteractionMode>(
         selected: defaultMode,
@@ -187,7 +227,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
       const SizedBox(height: 20),
-      Text(l10n.refreshRateIntro, style: setupBody),
+      AppText(l10n.refreshRateIntro, style: context.setupBody),
       const SizedBox(height: 12),
       SetupOptionRow<int>(
         selected: refreshHz,
@@ -227,7 +267,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final tracks = context.watch<TracksCubit>();
     final looperTracks = context.watch<LooperBloc>().state.tracks;
     return [
-      Text(l10n.tracksIntro, style: setupBody),
+      AppText(l10n.tracksIntro, style: context.setupBody),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.tracksGroupLabel),
       const SizedBox(height: 12),
@@ -235,7 +275,7 @@ class _SettingsPageState extends State<SettingsPage> {
         SetupTrackNameRow(
           rowKey: Key('settings_trackName_$i'),
           channel: i,
-          name: l10n.displayTrackName(tracks.state.names[i], i),
+          name: l10n.trackName(tracks.state.names, i),
           onTap: () => showRenameTrackDialog(
             context: context,
             cubit: context.read<TracksCubit>(),
@@ -253,10 +293,7 @@ class _SettingsPageState extends State<SettingsPage> {
           rowKey: Key('settings_trackLengthPreset_$i'),
           channel: i,
           bars: looperTracks[i].lengthPresetBars,
-          label: l10n.displayTrackName(
-            i < tracks.state.names.length ? tracks.state.names[i] : '',
-            i,
-          ),
+          label: l10n.trackName(tracks.state.names, i),
           autoLabel: l10n.lengthPresetAuto,
           barsLabel: l10n.lengthPresetBars,
           onChanged: (bars) => context.read<LooperBloc>().add(
@@ -268,17 +305,14 @@ class _SettingsPageState extends State<SettingsPage> {
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.oneShotGroupLabel),
       const SizedBox(height: 12),
-      Text(l10n.oneShotIntro, style: setupBody),
+      AppText(l10n.oneShotIntro, style: context.setupBody),
       const SizedBox(height: 12),
       for (var i = 0; i < looperTracks.length; i++) ...[
         SetupTrackOneShotRow(
           rowKey: Key('settings_trackOneShot_$i'),
           channel: i,
           oneShot: looperTracks[i].oneShot,
-          label: l10n.displayTrackName(
-            i < tracks.state.names.length ? tracks.state.names[i] : '',
-            i,
-          ),
+          label: l10n.trackName(tracks.state.names, i),
           onChanged: (oneShot) => context.read<LooperBloc>().add(
             LooperOneShotToggled(i, oneShot: oneShot),
           ),
@@ -292,8 +326,8 @@ class _SettingsPageState extends State<SettingsPage> {
 class _SettingsRail extends StatelessWidget {
   const _SettingsRail({required this.current, required this.onSelect});
 
-  final _Section current;
-  final ValueChanged<_Section> onSelect;
+  final SettingsSection current;
+  final ValueChanged<SettingsSection> onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -314,21 +348,16 @@ class _SettingsRail extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 9),
-              Text(
-                l10n.settingsKicker,
-                style: setupKicker.copyWith(
-                  color: context.surface.textSecondary,
-                ),
-              ),
+              AppText(l10n.settingsKicker, style: context.setupKicker),
             ],
           ),
           const SizedBox(height: 28),
-          Text(l10n.settingsTitle, style: setupTitle),
+          AppText(l10n.settingsTitle, style: context.setupTitle),
           const SizedBox(height: 20),
-          for (final section in _Section.values)
+          for (final section in SettingsSection.values)
             // The Updates tab appears only where in-app updates are supported
             // (appliance / desktop); it stays hidden on unsupported builds.
-            if (section != _Section.updates ||
+            if (section != SettingsSection.updates ||
                 context.watch<UpdateCubit>().state.supported)
               _SectionTab(
                 section: section,
@@ -348,7 +377,7 @@ class _SectionTab extends StatelessWidget {
     required this.onTap,
   });
 
-  final _Section section;
+  final SettingsSection section;
   final bool selected;
   final VoidCallback onTap;
 
@@ -356,12 +385,12 @@ class _SectionTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final label = switch (section) {
-      _Section.view => l10n.settingsSectionView,
-      _Section.audio => l10n.settingsSectionAudio,
-      _Section.tempo => l10n.settingsSectionTempo,
-      _Section.mode => l10n.settingsSectionMode,
-      _Section.tracks => l10n.settingsSectionTracks,
-      _Section.updates => l10n.settingsSectionUpdates,
+      SettingsSection.view => l10n.settingsSectionView,
+      SettingsSection.audio => l10n.settingsSectionAudio,
+      SettingsSection.tempo => l10n.settingsSectionTempo,
+      SettingsSection.mode => l10n.settingsSectionMode,
+      SettingsSection.tracks => l10n.settingsSectionTracks,
+      SettingsSection.updates => l10n.settingsSectionUpdates,
     };
     return SizedBox(
       width: double.infinity,
@@ -376,7 +405,7 @@ class _SectionTab extends StatelessWidget {
             onTap: onTap,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-              child: Text(
+              child: AppText(
                 label,
                 style: TextStyle(
                   color: selected

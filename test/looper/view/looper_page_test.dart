@@ -3,13 +3,15 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/looper/looper.dart';
-import 'package:loopy/pedal/pedal.dart';
-import 'package:loopy/performance/performance.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
+import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno/pedal/pedal.dart';
+import 'package:segno/performance/performance.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -74,6 +76,18 @@ void main() {
                 ),
               ),
               BlocProvider<PedalCubit>.value(value: pedal),
+              // App-wide in the real shell, above this page. The tray now
+              // opens on Signal — the pen's rail has no "Controls" landing
+              // face — and the tray builds its face whether or not it is
+              // open, so the page's own test carries them too.
+              BlocProvider<InputsCubit>(
+                create: (_) =>
+                    InputsCubit(settings: settings, repository: repository),
+              ),
+              BlocProvider<MonitorCubit>(
+                create: (_) =>
+                    MonitorCubit(repository: repository, settings: settings),
+              ),
               BlocProvider<PerformanceRecorderCubit>(
                 create: (_) => PerformanceRecorderCubit(
                   performance: performanceRepository,

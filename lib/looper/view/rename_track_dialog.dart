@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/theme/theme.dart';
 
 /// Shows a dialog to rename track [channel] (current name [current]) and
 /// persists the result through [cubit]. Shared by the Tracks grid and the
@@ -16,7 +17,9 @@ Future<void> showRenameTrackDialog({
   final result = await showDialog<String>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: Text(l10n.renameTrackTitle(channel + 1)),
+      title: AppText(
+        l10n.renameTrackTitle(l10n.displayTrackName(current, channel)),
+      ),
       content: TextField(
         key: const Key('renameTrack_field'),
         controller: controller,
@@ -27,12 +30,12 @@ Future<void> showRenameTrackDialog({
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
-          child: Text(l10n.cancel),
+          child: AppText(l10n.cancel),
         ),
         TextButton(
           key: const Key('renameTrack_save'),
           onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-          child: Text(l10n.save),
+          child: AppText(l10n.save),
         ),
       ],
     ),

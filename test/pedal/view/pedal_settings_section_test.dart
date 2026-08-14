@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/pedal/pedal.dart';
 import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:segno/pedal/pedal.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/fake_key_value_store.dart';
@@ -36,13 +36,16 @@ void main() {
       );
     }
 
-    Future<void> pumpSection(WidgetTester tester, PedalCubit cubit) =>
-        tester.pumpApp(
-          BlocProvider.value(
-            value: cubit,
-            child: const Scaffold(body: PedalSettingsSection()),
-          ),
-        );
+    Future<void> pumpSection(
+      WidgetTester tester,
+      PedalCubit cubit, {
+      bool consoleMode = false,
+    }) => tester.pumpApp(
+      BlocProvider.value(
+        value: cubit,
+        child: Scaffold(body: PedalSettingsSection(consoleMode: consoleMode)),
+      ),
+    );
 
     testWidgets('shows the empty state when no output ports exist', (
       tester,
@@ -64,7 +67,7 @@ void main() {
     ) async {
       final cubit = cubitWith(
         FakePedalTransport(
-          outputs: const [MidiDevice(id: 'out', name: 'Loopy Pedal')],
+          outputs: const [MidiDevice(id: 'out', name: 'Segno Pedal')],
         ),
       );
       addTearDown(cubit.close);
@@ -84,7 +87,7 @@ void main() {
       final handle = tester.ensureSemantics();
       final cubit = cubitWith(
         FakePedalTransport(
-          outputs: const [MidiDevice(id: 'out', name: 'Loopy Pedal')],
+          outputs: const [MidiDevice(id: 'out', name: 'Segno Pedal')],
         ),
       );
       addTearDown(cubit.close);
@@ -128,19 +131,19 @@ void main() {
     ) async {
       final cubit = cubitWith(
         FakePedalTransport(
-          outputs: const [MidiDevice(id: 'out', name: 'Loopy Pedal')],
+          outputs: const [MidiDevice(id: 'out', name: 'Segno Pedal')],
         ),
       );
       addTearDown(cubit.close);
 
       await pumpSection(tester, cubit);
       await cubit.selectOutput(
-        const PedalOutput(id: 'out', name: 'Loopy Pedal'),
+        const PedalOutput(id: 'out', name: 'Segno Pedal'),
       );
       await tester.pump();
 
       expect(cubit.state.bindStatus, PedalBindStatus.bound);
-      expect(find.textContaining('Loopy Pedal'), findsWidgets);
+      expect(find.textContaining('Segno Pedal'), findsWidgets);
     });
 
     testWidgets(
@@ -216,10 +219,10 @@ void main() {
       Future<PedalCubit> boundCubit(String device) async {
         final cubit = cubitWith(
           FakePedalTransport(
-            outputs: [MidiDevice(id: device, name: 'Loopy Pedal')],
+            outputs: [MidiDevice(id: device, name: 'Segno Pedal')],
           ),
         );
-        await cubit.selectOutput(PedalOutput(id: device, name: 'Loopy Pedal'));
+        await cubit.selectOutput(PedalOutput(id: device, name: 'Segno Pedal'));
         return cubit;
       }
 
@@ -276,6 +279,65 @@ void main() {
         await pumpSection(tester, cubit);
 
         expect(find.byKey(bannerKey), findsNothing);
+      });
+    });
+
+    group('console build', () {
+      // The console hides what CHOOSES hardware, never what CONFIGURES it.
+      // Hiding both together is how the assignment surface became unreachable
+      // on the one build that has no other route to it.
+      testWidgets('keeps the assignment route reachable', (tester) async {
+        final cubit = cubitWith(FakePedalTransport());
+        addTearDown(cubit.close);
+
+        await pumpSection(tester, cubit, consoleMode: true);
+
+        expect(
+          find.byKey(const Key('pedalSettings_openAssignments')),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('keeps the bind-status line', (tester) async {
+        // With no picker, this is the only way to see whether auto-detect
+        // actually found the pedal.
+        final cubit = cubitWith(FakePedalTransport());
+        addTearDown(cubit.close);
+
+        await pumpSection(tester, cubit, consoleMode: true);
+
+        expect(find.byType(PedalSettingsSection), findsOneWidget);
+        expect(find.byKey(const Key('pedalSettings_empty')), findsNothing);
+      });
+
+      testWidgets('drops the device picker and the empty state', (
+        tester,
+      ) async {
+        // Auto-detect binds the pedal by product name; a chooser would only
+        // ever offer the one answer.
+        final cubit = cubitWith(FakePedalTransport());
+        addTearDown(cubit.close);
+
+        await pumpSection(tester, cubit, consoleMode: true);
+
+        expect(
+          find.byKey(const Key('pedalSettings_device_picker')),
+          findsNothing,
+        );
+        expect(find.byKey(const Key('pedalSettings_empty')), findsNothing);
+      });
+
+      testWidgets('desktop still shows the picker', (tester) async {
+        final cubit = cubitWith(FakePedalTransport());
+        addTearDown(cubit.close);
+
+        await pumpSection(tester, cubit);
+
+        expect(find.byKey(const Key('pedalSettings_empty')), findsOneWidget);
+        expect(
+          find.byKey(const Key('pedalSettings_openAssignments')),
+          findsOneWidget,
+        );
       });
     });
   });

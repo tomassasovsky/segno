@@ -2,12 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/session/session.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/session/session.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
 
 /// Opens the **Sessions** popup — the single place to handle sessions (like
-/// Loopy Pro's projects browser): the current session with Save / Save As, a
+/// Segno Pro's projects browser): the current session with Save / Save As, a
 /// grid of saved-session cards (load-on-tap; per-card rename / duplicate /
 /// delete), and the mixdown / stems exports. Refreshes the catalog first, then
 /// hands the live [SessionCubit] down through the dialog route (which sits
@@ -86,7 +87,7 @@ class _SessionsManagerDialog extends StatelessWidget {
                           child: Padding(
                             key: const Key('sessions_empty'),
                             padding: const EdgeInsets.all(24),
-                            child: Text(
+                            child: AppText(
                               l10n.sessionsEmpty,
                               textAlign: TextAlign.center,
                             ),
@@ -145,12 +146,12 @@ class _Header extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
+                AppText(
                   l10n.sessionsManagerTitle,
                   style: theme.textTheme.titleMedium,
                 ),
                 const SizedBox(height: 2),
-                Text(
+                AppText(
                   current ?? l10n.sessionUnsaved,
                   key: const Key('sessions_currentName'),
                   overflow: TextOverflow.ellipsis,
@@ -171,14 +172,14 @@ class _Header extends StatelessWidget {
                 ? unawaited(promptSaveAs(context))
                 : unawaited(cubit.save()),
             icon: const Icon(Icons.save_outlined, size: 18),
-            label: Text(l10n.sessionSave),
+            label: AppText(l10n.sessionSave),
           ),
           const SizedBox(width: 4),
           FilledButton.icon(
             key: const Key('sessions_saveAs'),
             onPressed: () => unawaited(promptSaveAs(context)),
             icon: const Icon(Icons.add, size: 18),
-            label: Text(l10n.sessionSaveAs),
+            label: AppText(l10n.sessionSaveAs),
           ),
           const SizedBox(width: 4),
           IconButton(
@@ -238,7 +239,7 @@ class _SessionCard extends StatelessWidget {
                 ],
               ),
               const Spacer(),
-              Text(
+              AppText(
                 summary.name,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -286,17 +287,17 @@ class _CardMenu extends StatelessWidget {
         PopupMenuItem(
           key: Key('sessions_rename_${summary.name}'),
           value: 'rename',
-          child: Text(l10n.sessionRename),
+          child: AppText(l10n.sessionRename),
         ),
         PopupMenuItem(
           key: Key('sessions_duplicate_${summary.name}'),
           value: 'duplicate',
-          child: Text(l10n.sessionDuplicate),
+          child: AppText(l10n.sessionDuplicate),
         ),
         PopupMenuItem(
           key: Key('sessions_delete_${summary.name}'),
           value: 'delete',
-          child: Text(l10n.sessionDelete),
+          child: AppText(l10n.sessionDelete),
         ),
       ],
     );
@@ -342,14 +343,14 @@ class _ExportsBar extends StatelessWidget {
             key: const Key('sessions_exportMixdown'),
             onPressed: () => unawaited(cubit.exportMixdown()),
             icon: const Icon(Icons.download_outlined, size: 18),
-            label: Text(l10n.exportMixdown),
+            label: AppText(l10n.exportMixdown),
           ),
           const SizedBox(width: 8),
           TextButton.icon(
             key: const Key('sessions_exportStems'),
             onPressed: () => unawaited(cubit.exportStems()),
             icon: const Icon(Icons.download_outlined, size: 18),
-            label: Text(l10n.exportStems),
+            label: AppText(l10n.exportStems),
           ),
         ],
       ),
@@ -424,7 +425,7 @@ class _SessionNameDialogState extends State<_SessionNameDialog> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return AlertDialog(
-      title: Text(widget.title),
+      title: AppText(widget.title),
       content: TextField(
         key: const Key('sessionName_field'),
         controller: _controller,
@@ -441,12 +442,12 @@ class _SessionNameDialogState extends State<_SessionNameDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: Text(l10n.cancel),
+          child: AppText(l10n.cancel),
         ),
         TextButton(
           key: const Key('sessionName_save'),
           onPressed: _submit,
-          child: Text(l10n.save),
+          child: AppText(l10n.save),
         ),
       ],
     );
@@ -460,17 +461,17 @@ Future<bool> _confirmDelete(BuildContext context, String name) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: Text(l10n.sessionDeleteConfirmTitle(name)),
-      content: Text(l10n.sessionDeleteConfirmBody),
+      title: AppText(l10n.sessionDeleteConfirmTitle(name)),
+      content: AppText(l10n.sessionDeleteConfirmBody),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: Text(l10n.cancel),
+          child: AppText(l10n.cancel),
         ),
         TextButton(
           key: const Key('sessionDelete_confirm'),
           onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: Text(l10n.sessionDelete),
+          child: AppText(l10n.sessionDelete),
         ),
       ],
     ),

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/model/interaction_mode.dart';
-import 'package:loopy/theme/theme.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/theme/theme.dart';
 
 /// A chromeless row of the active-bank track level meters — the bars-only
 /// tracks surface embedded in the on-screen pedal's screen.
@@ -90,11 +90,11 @@ class _TrackMeter extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
+          AppText(
             '${track.channel + 1}',
             textAlign: TextAlign.center,
             style: theme.textTheme.headlineSmall?.copyWith(
-              color: Colors.white70,
+              color: context.surface.textSecondary,
             ),
           ),
           const SizedBox(height: 4),
@@ -109,14 +109,14 @@ class _TrackMeter extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
+          AppText(
             name,
             key: Key('pedalScreen_name_${track.channel}'),
             textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.headlineSmall?.copyWith(
-              color: Colors.white,
+              color: context.surface.textPrimary,
               fontWeight: FontWeight.w700,
             ),
           ),

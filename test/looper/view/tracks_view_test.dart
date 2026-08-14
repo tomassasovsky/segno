@@ -7,16 +7,20 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/looper.dart';
-import 'package:loopy/performance/performance.dart';
-import 'package:loopy/session/session.dart';
-import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/control/control.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/settings_tray_cubit.dart';
+import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/tracks_chrome.dart';
+import 'package:segno/performance/performance.dart';
+import 'package:segno/session/session.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -31,6 +35,12 @@ class _MockSessionCubit extends MockCubit<SessionState>
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit {}
+
+/// The rebuild probe for the `rebuild scope` group: a widget `TracksView.build`
+/// creates unconditionally, in console and desktop layouts alike.
+final Finder _chromeProbe = find.byKey(
+  const Key('tracks_settings_secondaryTap'),
+);
 
 void main() {
   late LooperBloc bloc;
@@ -52,6 +62,9 @@ void main() {
     // The FX-chain announcement reads the repository's remembered intent —
     // the same value the bloc's toggle handler negates.
     when(() => repository.trackChainEnabled(any())).thenReturn(true);
+    when(() => repository.monitorChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
+    );
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
@@ -121,6 +134,7 @@ void main() {
         providers: [
           RepositoryProvider<LooperRepository>.value(value: repository),
           RepositoryProvider<PerformanceRepository>.value(value: performance),
+          RepositoryProvider<SettingsRepository>.value(value: settings),
         ],
         child: MultiBlocProvider(
           providers: [
@@ -130,6 +144,16 @@ void main() {
             BlocProvider<SessionCubit>.value(value: session),
             BlocProvider<PerformanceRecorderCubit>.value(
               value: performanceRecorder,
+            ),
+            // The tray's Signal domain draws input cards, so opening it needs
+            // the same cubits the app provides around it.
+            BlocProvider<InputsCubit>(
+              create: (_) =>
+                  InputsCubit(settings: settings, repository: repository),
+            ),
+            BlocProvider<MonitorCubit>(
+              create: (_) =>
+                  MonitorCubit(repository: repository, settings: settings),
             ),
           ],
           child: const TracksView(),
@@ -172,13 +196,39 @@ void main() {
     expect(find.byKey(const Key('settingsTray_handle')), findsOneWidget);
   });
 
-  testWidgets('exposes a visible entry to the Signal surface', (tester) async {
+  /// The tray's own state, read from inside the provider it lives under.
+  SettingsTrayState trayState(WidgetTester tester) =>
+      BlocProvider.of<SettingsTrayCubit>(
+        tester.element(find.byType(SettingsTray)),
+      ).state;
+
+  testWidgets('the Signal button opens the tray at Signal', (tester) async {
     seed(const LooperState(tracks: [Track()]));
     await pump(tester);
 
-    // The chrome carries one global affordance opening the Signal surface
-    // (the per-track routing dialog is gone — wiring lives on Signal now).
     expect(find.byKey(const Key('tracks_openSignal')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('tracks_openSignal')));
+    await tester.pumpAndSettle();
+
+    // Signal used to be a pushed page of its own. Asserting the button EXISTS
+    // is what let it keep existing while leading nowhere.
+    expect(trayState(tester).destination, SettingsTrayDestination.signal);
+    expect(trayState(tester).dragProgress, 1);
+  });
+
+  testWidgets('G opens the tray at Signal too', (tester) async {
+    seed(const LooperState(tracks: [Track()]));
+    await pump(tester);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+    await tester.pumpAndSettle();
+
+    // The key handler is built from a context ABOVE the tray's own provider
+    // unless something puts it below: reading the cubit from the wrong one
+    // throws `ProviderNotFoundException` out of the key callback, and on a
+    // console build — where the toolbar is hidden — `G` is the only way in.
+    expect(tester.takeException(), isNull);
+    expect(trayState(tester).destination, SettingsTrayDestination.signal);
   });
 
   testWidgets('exposes a visible Settings button', (tester) async {
@@ -787,6 +837,44 @@ void main() {
       expect(fillOf(tester, 0), live);
     });
 
+    testWidgets('a rising level moves the bar', (tester) async {
+      // The companion to the freeze test above, and the guard #646 needs: that
+      // one asserts the fill STAYS PUT, so it passes whether or not updates
+      // reach the column. Since the track now arrives through a selector in
+      // `_TrackSlot` rather than being handed down directly, a selector that
+      // stopped yielding new values would freeze every meter on the console
+      // with the rest of the suite still green.
+      const low = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.2),
+        ],
+      );
+      const high = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.9),
+        ],
+      );
+      final controller = StreamController<LooperState>();
+      addTearDown(controller.close);
+      var current = low;
+      when(() => bloc.state).thenAnswer((_) => current);
+      whenListen(bloc, controller.stream, initialState: low);
+      await pump(tester);
+
+      final before = fillOf(tester, 0);
+      current = high;
+      controller.add(high);
+      await tester.pump();
+
+      expect(
+        fillOf(tester, 0),
+        greaterThan(before),
+        reason:
+            'a level change no longer reaches TrackColumn -- the '
+            '_TrackSlot selector has stopped yielding new tracks (see #646)',
+      );
+    });
+
     testWidgets('a track with nothing recorded has no bar (height 0)', (
       tester,
     ) async {
@@ -1355,7 +1443,7 @@ void main() {
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
-      final label = tester.widget<Text>(
+      final label = tester.widget<AppText>(
         find.byKey(const Key('tracks_session_name')),
       );
       expect(label.data, l10n.sessionUnsaved);
@@ -1368,7 +1456,9 @@ void main() {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
       expect(
-        tester.widget<Text>(find.byKey(const Key('tracks_session_name'))).data,
+        tester
+            .widget<AppText>(find.byKey(const Key('tracks_session_name')))
+            .data,
         'Verse',
       );
     });
@@ -2047,6 +2137,92 @@ void main() {
       verify(() => bloc.add(const LooperRedoPressed(0))).called(1);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    });
+  });
+
+  group('rebuild scope', () {
+    // The whole point of #646: a level tick must not rebuild the console.
+    // `TracksView.build` creates this GestureDetector fresh every run (it
+    // carries closures, so it is never const-canonicalised), which makes widget
+    // identity an honest rebuild detector: the same instance across a pump
+    // means the method did not re-run.
+    //
+    // The probe is the keyed detector rather than `TracksToolbar` because the
+    // toolbar is compiled out when `kConsoleMode` is true -- and the console is
+    // the build whose frame budget prompted this. Probing something both
+    // layouts contain keeps the guard meaningful under
+    // `--dart-define=SEGNO_CONSOLE=true` instead of throwing on a missing
+    // widget.
+    late StreamController<LooperState> states;
+
+    setUp(() => states = StreamController<LooperState>.broadcast());
+    tearDown(() => states.close());
+
+    void seedStream(LooperState initial) {
+      when(() => bloc.state).thenReturn(initial);
+      when(() => repository.state).thenReturn(initial);
+      whenListen(bloc, states.stream, initialState: initial);
+    }
+
+    testWidgets('a level-only change does not rebuild the chrome', (
+      tester,
+    ) async {
+      const quiet = LooperState(
+        tracks: [Track(), Track(channel: 1)],
+        status: EngineStatus(isConnected: true),
+      );
+      seedStream(quiet);
+      await pump(tester);
+
+      final before = tester.widget<GestureDetector>(_chromeProbe);
+
+      // Exactly what a moving meter emits: same structure, new levels and a
+      // new playhead. Nothing the chrome renders depends on any of it.
+      const loud = LooperState(
+        tracks: [
+          Track(rms: 0.8, peak: 0.9, playheadFrames: 4410),
+          Track(channel: 1, rms: 0.5, peak: 0.6, playheadFrames: 4410),
+        ],
+        status: EngineStatus(isConnected: true),
+      );
+      when(() => bloc.state).thenReturn(loud);
+      states.add(loud);
+      await tester.pump();
+
+      expect(
+        identical(before, tester.widget<GestureDetector>(_chromeProbe)),
+        isTrue,
+        reason:
+            'a meter tick rebuilt TracksView -- the selector is leaking '
+            'live audio fields (see #646)',
+      );
+    });
+
+    testWidgets('a structural change still rebuilds the chrome', (
+      tester,
+    ) async {
+      const connected = LooperState(
+        tracks: [Track()],
+        status: EngineStatus(isConnected: true),
+      );
+      seedStream(connected);
+      await pump(tester);
+
+      final before = tester.widget<GestureDetector>(_chromeProbe);
+
+      // Losing the engine is exactly the kind of change the chrome exists to
+      // show: it must get through the selector.
+      const lost = LooperState(tracks: [Track()]);
+      when(() => bloc.state).thenReturn(lost);
+      states.add(lost);
+      await tester.pump();
+
+      expect(
+        identical(before, tester.widget<GestureDetector>(_chromeProbe)),
+        isFalse,
+        reason: 'the selector swallowed a structural change',
+      );
+      expect(find.byType(AudioNotRunningBanner), findsOneWidget);
     });
   });
 }

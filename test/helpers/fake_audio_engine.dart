@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:segno_engine/segno_engine.dart';
 
 /// A controllable in-memory [AudioEngine] for tests.
 ///
@@ -620,6 +620,16 @@ class FakeAudioEngine implements AudioEngine {
   /// Per-input enabled flag passed to [setMonitorInputEnabled].
   final Map<int, bool> monitorInputEnabled = {};
 
+  /// The input the tuner is armed on, or `-1`. Mirrors the native gate, so a
+  /// test can assert that a closed face leaves nothing running.
+  int tunerInput = -1;
+
+  @override
+  EngineResult setTunerInput({required int input}) {
+    tunerInput = input;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setMonitorInputEnabled({
     required int input,
@@ -856,13 +866,35 @@ class FakeAudioEngine implements AudioEngine {
   // --- Plugin hosting (scan: part 2; slots: part 3) ---
 
   @override
-  EngineResult scanBegin({bool rescan = false}) => EngineResult.ok;
+  EngineResult scanBegin({bool rescan = false}) {
+    pluginScanCount++;
+    return EngineResult.ok;
+  }
 
   @override
-  PluginScanProgress scanPoll() => PluginScanProgress.empty;
+  PluginScanProgress scanPoll() => PluginScanProgress(
+    done: !pluginScanPending,
+    found: pluginScanPending ? 0 : pluginScanResults.length,
+    scanned: pluginScanPending ? 0 : pluginScanResults.length,
+    total: pluginScanResults.length,
+  );
+
+  /// What a scan finds. Seed it to stand a plugin catalog up in a widget
+  /// test without a real host.
+  List<PluginDescriptor> pluginScanResults = const [];
+
+  /// Holds a scan open, so a test can observe the state DURING one.
+  ///
+  /// Without this every poll reports `done: true` and no test can render a
+  /// mid-scan surface — which is how "Looking for plugins…" and the browse
+  /// row it disables went untested.
+  bool pluginScanPending = false;
+
+  /// How many scans were started, for asserting a rescan did not happen.
+  int pluginScanCount = 0;
 
   @override
-  List<PluginDescriptor> scanResults() => const [];
+  List<PluginDescriptor> scanResults() => pluginScanResults;
 
   @override
   EngineResult scanCancel() => EngineResult.ok;

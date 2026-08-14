@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/pedal/cubit/pedal_cubit.dart';
-import 'package:loopy/pedal/view/pedal_assignment_page.dart';
-import 'package:loopy/setup/setup_surface.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:pedal_repository/pedal_repository.dart'
     show PedalBindStatus, PedalCodec, PedalOutput;
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
+import 'package:segno/pedal/view/pedal_assignment_page.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/theme.dart';
 
 /// Dropdown value for the "None" item — not a real device id (hosts may expose
 /// ports whose id is empty, which would duplicate `''` and trip
 /// DropdownButton).
-const _kPedalNoneValue = '__loopy_pedal_none__';
+const _kPedalNoneValue = '__segno_pedal_none__';
 
 /// Dropdown value for the "not set" firmware-version item — protocol
 /// versions start at 1, so 0 is never a real version.
@@ -23,11 +24,24 @@ const _kPedalVersionUnknownValue = 0;
 /// engine, so it renders even in Windows ASIO-only mode.
 ///
 /// The pedal's *input* (footswitches) shares the MIDI input device selected in
-/// the MIDI input section; this only binds the output destination loopy pushes
+/// the MIDI input section; this only binds the output destination segno pushes
 /// state frames to.
 class PedalSettingsSection extends StatelessWidget {
   /// Creates a [PedalSettingsSection].
-  const PedalSettingsSection({super.key});
+  const PedalSettingsSection({this.consoleMode = kConsoleMode, super.key});
+
+  /// Whether this is the floor-console build. Defaults to [kConsoleMode].
+  ///
+  /// Console hides the parts that CHOOSE hardware — the output picker and the
+  /// manual firmware-version gate — because auto-detect binds the pedal by
+  /// product name (#421) and the flasher records what it wrote (#427), so both
+  /// controls would be stale hand-cranks for values the appliance already
+  /// knows.
+  ///
+  /// It does NOT hide the parts that CONFIGURE it. Bind assignments and the
+  /// bind-status line stay: the console is the build most likely to need a
+  /// footswitch remapped, and it is the only one with no other way in.
+  final bool consoleMode;
 
   @override
   Widget build(BuildContext context) {
@@ -42,43 +56,56 @@ class PedalSettingsSection extends StatelessWidget {
       children: [
         SetupGroupLabel(l10n.pedalOutputGroup),
         const SizedBox(height: 12),
-        if (outputs.isEmpty && boundId == null)
-          const _PedalEmptyState()
-        else
-          _PedalDropdown(
-            outputs: outputs,
-            boundId: boundId,
-            onSelectNone: cubit.selectNone,
-            onSelected: cubit.selectOutput,
-          ),
-        const SizedBox(height: 12),
+        if (!consoleMode) ...[
+          if (outputs.isEmpty && boundId == null)
+            const _PedalEmptyState()
+          else
+            _PedalDropdown(
+              outputs: outputs,
+              boundId: boundId,
+              onSelectNone: cubit.selectNone,
+              onSelected: cubit.selectOutput,
+            ),
+          const SizedBox(height: 12),
+        ],
+        // Kept on console: with no picker there, this line is the ONLY way to
+        // see whether auto-detect actually found the pedal.
         _PedalStatusLine(
           status: cubit.state.bindStatus,
           deviceName: _boundName(outputs, boundId),
         ),
         const SizedBox(height: 12),
-        Text(l10n.pedalOutputHint, style: setupBody),
-        const SizedBox(height: 24),
+        if (!consoleMode) ...[
+          AppText(l10n.pedalOutputHint, style: context.setupBody),
+          const SizedBox(height: 24),
+        ],
         // No hint line under this one: the assignment page opens with the
         // same sentence, so repeating it here only costs height.
+        //
+        // Kept alongside the tray's own pedal rail destination (#440) on
+        // purpose — this is where you already are when configuring the pedal.
+        // Both mount the same `PedalAssignmentView`, so this is a second
+        // entry point, not a second implementation.
         Align(
           alignment: Alignment.centerLeft,
           child: OutlinedButton.icon(
             key: const Key('pedalSettings_openAssignments'),
             onPressed: () => showPedalAssignmentPage(context),
             icon: const Icon(Icons.piano_outlined, size: 16),
-            label: Text(l10n.pedalAssignTitle),
+            label: AppText(l10n.pedalAssignTitle),
           ),
         ),
         const SizedBox(height: 24),
         SetupGroupLabel(l10n.pedalFirmwareGroup),
         const SizedBox(height: 12),
-        _PedalFirmwareVersionDropdown(
-          firmwareVersion: cubit.state.firmwareVersion,
-          onSelected: cubit.selectFirmwareVersion,
-        ),
-        const SizedBox(height: 12),
-        Text(l10n.pedalFirmwareHint, style: setupBody),
+        if (!consoleMode) ...[
+          _PedalFirmwareVersionDropdown(
+            firmwareVersion: cubit.state.firmwareVersion,
+            onSelected: cubit.selectFirmwareVersion,
+          ),
+          const SizedBox(height: 12),
+          AppText(l10n.pedalFirmwareHint, style: context.setupBody),
+        ],
         // The condition itself is the cubit's (it reads the repository's
         // resolved wire version) — this only renders the answer.
         if (cubit.state.firmwareUpdateAvailable) ...[
@@ -115,7 +142,7 @@ class _PedalEmptyState extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: context.surface.line),
       ),
-      child: Text(context.l10n.pedalNoOutputs, style: setupBody),
+      child: AppText(context.l10n.pedalNoOutputs, style: context.setupBody),
     );
   }
 }
@@ -163,15 +190,15 @@ class _PedalFirmwareUpdateBanner extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
+            AppText(
               l10n.pedalFirmwareUpdateTitle,
-              style: setupBody.copyWith(
+              style: context.setupBody.copyWith(
                 color: theme.colorScheme.primary,
                 fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 4),
-            Text(body, style: setupBody),
+            AppText(body, style: context.setupBody),
           ],
         ),
       ),
@@ -207,7 +234,7 @@ class _PedalDropdown extends StatelessWidget {
       items: [
         DropdownMenuItem(
           value: _kPedalNoneValue,
-          child: Text(
+          child: AppText(
             l10n.pedalNone,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -217,7 +244,7 @@ class _PedalDropdown extends StatelessWidget {
           if (seenIds.add(device.id))
             DropdownMenuItem(
               value: device.id,
-              child: Text(
+              child: AppText(
                 device.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -288,7 +315,7 @@ class _PedalStyledDropdown<T> extends StatelessWidget {
 
 /// The manual pedal firmware wire-protocol version picker — the pre-#331
 /// version-discovery gate (R6). "Not set" keeps outbound frames at the v2
-/// safety floor; picking the flashed firmware's version lets loopy encode up
+/// safety floor; picking the flashed firmware's version lets segno encode up
 /// to it (pedal FX mode needs v3). Options span v1 through the newest
 /// protocol the codec speaks, so a future bump appears here without a UI
 /// change.
@@ -326,7 +353,7 @@ class _PedalFirmwareVersionDropdown extends StatelessWidget {
       items: [
         DropdownMenuItem(
           value: _kPedalVersionUnknownValue,
-          child: Text(
+          child: AppText(
             l10n.pedalFirmwareUnknown(PedalCodec.protocolVersion),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -339,7 +366,7 @@ class _PedalFirmwareVersionDropdown extends StatelessWidget {
         )
           DropdownMenuItem(
             value: version,
-            child: Text(
+            child: AppText(
               l10n.pedalFirmwareVersion(version),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -375,10 +402,10 @@ class _PedalStatusLine extends StatelessWidget {
     // they happen, not only on navigation (WCAG 4.1.3).
     return Semantics(
       liveRegion: true,
-      child: Text(
+      child: AppText(
         message,
         key: const Key('pedalSettings_status'),
-        style: setupBody.copyWith(
+        style: context.setupBody.copyWith(
           color: isError ? Theme.of(context).colorScheme.error : null,
         ),
       ),

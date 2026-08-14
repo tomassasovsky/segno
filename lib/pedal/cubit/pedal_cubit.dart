@@ -17,12 +17,28 @@ part 'pedal_state.dart';
 /// binding for this one) and know nothing about each other.
 class PedalCubit extends Cubit<PedalState> {
   /// Creates a [PedalCubit].
+  ///
+  /// [autoBindProductNames] enables console auto-detect for the LED output:
+  /// with no persisted device the cubit adopts the output whose name matches
+  /// any of those USB product strings. `null` (the default, and every desktop
+  /// build) leaves binding entirely manual. Mirrors `MidiDeviceRepository`'s
+  /// input-side flag — the pedal is one device on two links, so both have to
+  /// resolve.
+  ///
+  /// [flashedProtocolVersion] reads what wire version the firmware currently on
+  /// the pedal speaks, when something on this platform knows (the console
+  /// records it when it flashes). It outranks the manual setting, and `null`
+  /// (every desktop build) leaves the manual setting in charge.
   PedalCubit({
     required PedalRepository pedal,
     required SettingsRepository settings,
     Duration pollInterval = const Duration(seconds: 2),
+    List<String>? autoBindProductNames,
+    Future<int?> Function()? flashedProtocolVersion,
   }) : _pedal = pedal,
        _settings = settings,
+       _autoBindProductNames = autoBindProductNames,
+       _flashedProtocolVersion = flashedProtocolVersion,
        super(const PedalState()) {
     _statusSub = _pedal.statusChanges.listen(_onBindStatus);
     // Seed the output set so the settings picker has it before the first
@@ -37,6 +53,8 @@ class PedalCubit extends Cubit<PedalState> {
 
   final PedalRepository _pedal;
   final SettingsRepository _settings;
+  final List<String>? _autoBindProductNames;
+  final Future<int?> Function()? _flashedProtocolVersion;
 
   late final StreamSubscription<PedalBindStatus> _statusSub;
 
@@ -45,6 +63,14 @@ class PedalCubit extends Cubit<PedalState> {
   // live in PedalState (see _syncOutputs); Equatable dedups no-op refreshes.
   Timer? _pollTimer;
   String? _savedOutputId;
+
+  /// Whether [_savedOutputId] came from auto-detect rather than from the
+  /// persisted device or a user pick. Only an auto-bound pin is re-resolved.
+  bool _autoBound = false;
+
+  /// Set once the user has explicitly chosen "None", which auto-detect must not
+  /// undo for the rest of the session.
+  bool _autoBindSuppressed = false;
 
   Future<void>? _loadFuture;
 
@@ -63,10 +89,22 @@ class PedalCubit extends Cubit<PedalState> {
     // The firmware version gates what pushState encodes, so apply it before
     // any bind can start streaming frames. Unset (null) keeps the
     // repository's unknown ⇒ v2 floor.
-    _applyFirmwareVersion(await firmwareVersionFuture);
+    //
+    // What the console actually FLASHED outranks the manual setting: the
+    // flasher wrote that pedal, so it knows what runs on it, while the manual
+    // setting is a human's guess that a firmware update silently invalidates.
+    // Falling back the other way would leave a freshly-flashed console pinned
+    // to whatever someone once picked.
+    final flashed = await _flashedProtocolVersion?.call();
+    _applyFirmwareVersion(flashed ?? await firmwareVersionFuture);
 
     final saved = await savedFuture;
-    if (saved == null) return;
+    if (saved == null) {
+      // Nothing persisted: let auto-detect adopt the pedal and bind it, reusing
+      // [reconnect]'s reconcile rather than repeating the bind here.
+      if (_autoBindProductNames != null) reconnect();
+      return;
+    }
     // Pin the saved output so the poll can reconnect it; bind now if present,
     // otherwise the poll binds it as soon as it appears.
     _savedOutputId = saved.id;
@@ -90,7 +128,7 @@ class PedalCubit extends Cubit<PedalState> {
     );
   }
 
-  /// Whether a REAL pedal is bound and the codec is downgrading what loopy
+  /// Whether a REAL pedal is bound and the codec is downgrading what segno
   /// sends it (flow err-4). Reads the repository's own resolved wire version
   /// rather than re-deriving the floor, so the banner follows whatever
   /// decides the version — the manual setting today, #331's identity reply
@@ -116,6 +154,8 @@ class PedalCubit extends Cubit<PedalState> {
     final replacingDevice =
         _savedOutputId != null && _savedOutputId != device.id;
     _savedOutputId = device.id;
+    // An explicit pick takes the pin away from auto-detect.
+    _autoBound = false;
     _pedal.bind(device.id);
     if (replacingDevice && state.firmwareVersion != null) {
       await selectFirmwareVersion(null);
@@ -133,6 +173,11 @@ class PedalCubit extends Cubit<PedalState> {
   /// catch that, since by then it has no previous device to compare against.
   Future<void> selectNone() async {
     _savedOutputId = null;
+    // "None" outranks auto-detect, or the next poll would re-adopt the pedal
+    // the user just unbound. Session-scoped: the cleared device is what
+    // persists, so a relaunch starts auto-detect over.
+    _autoBound = false;
+    _autoBindSuppressed = true;
     _pedal.unbind();
     if (state.firmwareVersion != null) await selectFirmwareVersion(null);
     _syncOutputs();
@@ -176,12 +221,13 @@ class PedalCubit extends Cubit<PedalState> {
   /// Hotplug poll: re-enumerates the host's MIDI outputs and reconciles the
   /// pinned pedal output — (re)binds it when it appears (launch, replug, or a
   /// retry after a failed open) and drops the stale handle when it vanishes,
-  /// so the LED-feedback link survives unplugs without relaunching loopy.
+  /// so the LED-feedback link survives unplugs without relaunching segno.
   /// Mirrors `MidiSetupCubit.refresh`; runs on the poll timer and is callable
   /// directly.
   void reconnect() {
     if (isClosed) return;
     final outputs = _pedal.availableOutputs();
+    _maybeAutoPin(outputs);
     final saved = _savedOutputId;
     if (saved != null) {
       final present = outputs.any((d) => d.id == saved);
@@ -194,6 +240,39 @@ class PedalCubit extends Cubit<PedalState> {
     // Reflect the (possibly changed) output set + bound id into state; the
     // settings picker re-renders only when one of them actually changed.
     _syncOutputs();
+  }
+
+  /// Console auto-detect: pins the output whose name matches the configured USB
+  /// product string, so [reconnect]'s existing reconcile binds it on the same
+  /// tick. Sets the pin only — never persists it.
+  ///
+  /// Not persisted for the same reason the input side isn't: the per-OS id is
+  /// not stable across a replug, and a saved stale id would leave the pedal
+  /// permanently unbound on a console that has no picker to fix it with. An
+  /// auto-bound pin that has vanished is therefore re-resolved by name rather
+  /// than waited on.
+  ///
+  /// A persisted or user-picked device always wins.
+  void _maybeAutoPin(List<PedalOutput> outputs) {
+    final productNames = _autoBindProductNames;
+    if (productNames == null || _autoBindSuppressed) return;
+    final pinned = _savedOutputId;
+    if (pinned != null) {
+      if (!_autoBound) return;
+      if (outputs.any((o) => o.id == pinned)) return;
+    }
+
+    PedalOutput? match;
+    for (final output in outputs) {
+      if (midiDeviceNameMatches(output.name, productNames)) {
+        match = output;
+        break;
+      }
+    }
+    if (match == null || match.id == pinned) return;
+
+    _autoBound = true;
+    _savedOutputId = match.id;
   }
 
   void _onBindStatus(PedalBindStatus status) {

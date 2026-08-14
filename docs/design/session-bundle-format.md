@@ -1,8 +1,8 @@
-# Session bundle format (`.loopy`)
+# Session bundle format (`.segno`)
 
-A saved session is a directory (a `.loopy` **bundle**) holding a JSON manifest,
+A saved session is a directory (a `.segno` **bundle**) holding a JSON manifest,
 one WAV per audio layer, and a flattened mixdown. This document describes the
-**v5** schema and how legacy bundles migrate.
+**v7** schema and how legacy bundles migrate.
 
 Related: the performance-capture path stores retiring layers with its own
 numbered files + sidecar (see [performance-manifest-format](performance-manifest-format.md)
@@ -109,11 +109,11 @@ Note what is *not* here: there are no per-flag manifest fields, and no per-flag
 settings keys either. Every enable bit and every slot id lives inside the one
 string per chain.
 
-## Manifest schema (v5)
+## Manifest schema (v7)
 
 ```jsonc
 {
-  "version": 5,
+  "version": 7,
   "sampleRate": 48000,
   "channels": 1,
   "baseLengthFrames": 96000,
@@ -145,7 +145,10 @@ string per chain.
 
   // --- FX: the four stages, each an opaque envelope string ---
   "monitors": [                     // Input stage (+ routing/mix), v2+
-    { "input": 0, "enabled": true, "outputMask": 3, "volume": 1.0, "muted": false, "encoded": "{…}" }
+    // `mode` is the gate by name (v7+): off | auto | on. `enabled` is the
+    // coarse boolean every rung has carried, and what a v6-or-earlier bundle
+    // is read by.
+    { "input": 0, "enabled": true, "mode": "auto", "outputMask": 3, "volume": 1.0, "muted": false, "encoded": "{…}" }
   ],
   "laneChains": [                   // Loop stage, v2+
     { "channel": 0, "lane": 0, "encoded": "{…}" }
@@ -154,6 +157,9 @@ string per chain.
     { "channel": 0, "encoded": "{…}" }
   ],
   "masterChain": "{…}",             // Master insert, v5; "" = none
+
+  // --- this session's pedal remap (v6) ---
+  "pedalBindings": "{…}",           // opaque, app-side model; "" = use the global remap
 
   // --- tempo grid / click / count-in (v4) ---
   "tempoBpm": 0.0,
@@ -193,15 +199,19 @@ on a version `switch`), the way every rung since v1→v2 was handled:
 | **v3** | `lanes` per track | full multi-lane, multi-layer |
 | **v4** | tempo-grid / click / count-in / B5c fields present | + tempo grid, mode, crown, One Shot |
 | **v5** | `trackChains` / `masterChain` present, envelope chain strings | + the two bus stages, per-chain + per-slot enable, slot ids, inheritance provenance |
-| **> v5** | `version` greater than supported | `SessionUnsupportedVersion` |
+| **v6** | `pedalBindings` present | + this session's pedal remap |
+| **v7** | `monitors[].mode` present | + the monitor gate's third state (`auto`) survives a reload |
+| **> v7** | `version` greater than supported | `SessionUnsupportedVersion` |
 
 A legacy `stem` migrates to a single `SessionLane`(lane 0) holding one live
 `SessionLayer`, with the old track-level `volume`/`muted` mapped onto lane 0 and
 `inputChannel = -1` (unbound). Every field a newer rung added defaults to the
 value that reproduces the older behavior exactly: grid-off for the tempo
-fields, `multi`/no-crown for B5c, and — for v5 — **both bus stages empty and
-every enable flag true**. Writing is always the current version (v5); this code
-never writes an older schema.
+fields, `multi`/no-crown for B5c, for v5 **both bus stages empty and every
+enable flag true**, for v6 an empty remap (the global one applies), and for v7
+the gate the boolean already said — `on` when it was true, never `auto`, since
+`on` is what the bundle was heard as. Writing is always the current version
+(v7); this code never writes an older schema.
 
 ### Migration invariants
 
@@ -246,3 +256,12 @@ silent:
   per-chain `chainEnabled`, per-entry `enabled`, stable `slotId`s, and Loop-stage
   inheritance provenance. A v4 bundle loads with both bus stages empty and
   everything enabled.
+- **v6** — this session's pedal remap (`pedalBindings`), one opaque string on
+  the same rule as the chains: the model lives app-side, the manifest only
+  carries the blob. A v5 bundle loads with `""`, and the global remap applies.
+- **v7** — the monitor gate by name (`monitors[].mode`), beside the boolean
+  every rung has carried. The gate has three states — `off`, `auto` (follow
+  the record arm) and `on` — and a boolean cannot tell the last two apart, so
+  a session saved with an input on `auto` used to reload monitoring
+  unconditionally. A v6 bundle loads with what its boolean said: `on` when it
+  was true, never `auto`, since `on` is what that bundle was heard as.

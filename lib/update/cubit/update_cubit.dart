@@ -57,14 +57,47 @@ class UpdateCubit extends Cubit<UpdateState> {
     try {
       final manifest = await _updates.checkForUpdate();
       if (isClosed) return;
+      if (manifest != null) {
+        emit(
+          state.copyWith(phase: UpdatePhase.available, available: manifest),
+        );
+        return;
+      }
+      // Nothing newer to download — but a prior stage may still be waiting for
+      // "Restart to apply" (staged > current after reconcile clears rollbacks).
+      final current = await _updates.currentVersion();
+      final staged = await _updates.stagedVersion();
+      if (isClosed) return;
+      if (staged > current) {
+        emit(
+          state.copyWith(
+            phase: UpdatePhase.staged,
+            available: UpdateManifest(
+              version: staged,
+              bundle: '',
+              channel: _updates.channel,
+            ),
+            currentVersion: current,
+          ),
+        );
+        return;
+      }
       emit(
-        manifest == null
-            ? state.copyWith(phase: UpdatePhase.upToDate, clearAvailable: true)
-            : state.copyWith(phase: UpdatePhase.available, available: manifest),
+        state.copyWith(
+          phase: UpdatePhase.upToDate,
+          clearAvailable: true,
+          currentVersion: current,
+        ),
       );
     } on Object catch (error) {
       if (!isClosed) {
-        emit(state.copyWith(phase: UpdatePhase.error, errorMessage: '$error'));
+        emit(
+          state.copyWith(
+            phase: UpdatePhase.error,
+            errorMessage: '$error',
+            failure: UpdateFailure.check,
+          ),
+        );
       }
     }
   }
@@ -92,7 +125,13 @@ class UpdateCubit extends Cubit<UpdateState> {
       }
     } on Object catch (error) {
       if (!isClosed) {
-        emit(state.copyWith(phase: UpdatePhase.error, errorMessage: '$error'));
+        emit(
+          state.copyWith(
+            phase: UpdatePhase.error,
+            errorMessage: '$error',
+            failure: UpdateFailure.download,
+          ),
+        );
       }
     }
   }

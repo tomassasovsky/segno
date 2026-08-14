@@ -3,16 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
-import 'package:loopy/audio_setup/view/audio_device_picker.dart';
-import 'package:loopy/audio_setup/view/midi_device_picker.dart';
-import 'package:loopy/audio_setup/view/midi_learn_section.dart';
-import 'package:loopy/common/console_mode.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/quantize_cubit.dart';
-import 'package:loopy/looper/cubit/record_options_cubit.dart';
-import 'package:loopy/pedal/pedal.dart';
-import 'package:loopy/setup/setup_surface.dart';
+import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
+import 'package:segno/audio_setup/view/audio_device_picker.dart';
+import 'package:segno/audio_setup/view/midi_device_picker.dart';
+import 'package:segno/audio_setup/view/midi_learn_section.dart';
+import 'package:segno/common/console_mode.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/cubit/quantize_cubit.dart';
+import 'package:segno/looper/cubit/record_options_cubit.dart';
+import 'package:segno/pedal/pedal.dart';
+import 'package:segno/setup/setup_surface.dart';
+import 'package:segno/theme/theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// The audio controls embedded in the Tracks settings "Audio" section,
@@ -45,7 +46,7 @@ class AudioSettingsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(l10n.audioSettingsIntro, style: setupBody),
+        AppText(l10n.audioSettingsIntro, style: context.setupBody),
         const SizedBox(height: 28),
         // Engine errors are surfaced here (the only audio surface now that the
         // wizard is gone): a failed open/start from a setting change shows its
@@ -96,19 +97,24 @@ class AudioSettingsSection extends StatelessWidget {
             includeSystemDefault: !consoleMode,
           ),
         ],
-        // MIDI foot-controller + pedal LED pickers are desktop-only. On the
-        // console the Pro Micro is fixed hardware (#331) — no chooser UI.
+        // The MIDI foot-controller PICKER is desktop-only: on the console the
+        // Pro Micro is fixed hardware that auto-detect binds by product name
+        // (#421), so a chooser would only offer the one answer.
         if (!consoleMode) ...[
           const SizedBox(height: 28),
           const MidiDevicePicker(),
-          const SizedBox(height: 28),
-          const PedalSettingsSection(),
-          const SizedBox(height: 28),
-          // External MIDI mappings (part 7) sit under the MIDI input picker
-          // they listen through: the device chosen above is the one a learn
-          // captures from, and a row goes inert when it disconnects.
-          const MidiLearnSection(),
         ],
+        // CONFIGURING the pedal is not the same as choosing it, and hiding
+        // both together left the console — the build most likely to need a
+        // footswitch remapped — with no route to the assignment surface at
+        // all. These stay on every build; the sections drop their own
+        // device-chooser bits on console.
+        const SizedBox(height: 28),
+        const PedalSettingsSection(),
+        const SizedBox(height: 28),
+        // External MIDI mappings (part 7) listen through the bound input —
+        // chosen above on desktop, auto-detected on console.
+        const MidiLearnSection(),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.sampleRateGroup),
         const SizedBox(height: 12),
@@ -146,7 +152,7 @@ class AudioSettingsSection extends StatelessWidget {
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.recordingGroupLabel),
         const SizedBox(height: 12),
-        Text(l10n.maxLoopLengthIntro, style: setupBody),
+        AppText(l10n.maxLoopLengthIntro, style: context.setupBody),
         const SizedBox(height: 12),
         SetupOptionRow<int>(
           selected: state.maxLoopMinutes,
@@ -190,7 +196,7 @@ class AudioSettingsSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
-        Text(l10n.defaultLoopLengthIntro, style: setupBody),
+        AppText(l10n.defaultLoopLengthIntro, style: context.setupBody),
         const SizedBox(height: 12),
         SetupOptionRow<int>(
           selected: context.watch<RecordOptionsCubit>().state.defaultMultiple,
@@ -349,7 +355,7 @@ class _ErrorBanner extends StatelessWidget {
             Icon(Icons.error_outline, size: 18, color: scheme.onErrorContainer),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
+              child: AppText(
                 message,
                 style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
               ),
@@ -380,13 +386,13 @@ class _Asio4AllLink extends StatelessWidget {
           launchUrl(_asio4allUri, mode: LaunchMode.externalApplication),
         ),
         icon: const Icon(Icons.open_in_new, size: 16),
-        label: Text(context.l10n.downloadAsio4all),
+        label: AppText(context.l10n.downloadAsio4all),
       ),
     );
   }
 }
 
-/// Shown on Windows when no ASIO driver is installed: explains that Loopy needs
+/// Shown on Windows when no ASIO driver is installed: explains that Segno needs
 /// ASIO and offers the ASIO4ALL link (the engine cannot start with no driver).
 class _NoAsioDriverMessage extends StatelessWidget {
   const _NoAsioDriverMessage();
@@ -410,12 +416,12 @@ class _NoAsioDriverMessage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              AppText(
                 l10n.noAsioDriverTitle,
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 6),
-              Text(l10n.noAsioDriverMessage, style: setupBody),
+              AppText(l10n.noAsioDriverMessage, style: context.setupBody),
               const SizedBox(height: 6),
               const _Asio4AllLink(),
             ],
@@ -500,7 +506,7 @@ class _RecordOffsetFieldState extends State<_RecordOffsetField> {
         FilledButton(
           key: const Key('audioSettings_recordOffset_apply'),
           onPressed: _apply,
-          child: Text(l10n.applyLabel),
+          child: AppText(l10n.applyLabel),
         ),
       ],
     );

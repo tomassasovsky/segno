@@ -33,7 +33,11 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
     for (final monitor in looper.allMonitors().values)
       SessionMonitor(
         input: monitor.input,
-        enabled: monitor.enabled,
+        // Both: the boolean is the gate every manifest has carried, and the
+        // name is which of the two non-off states it was. `auto` follows the
+        // record arm, `on` does not, and a boolean cannot tell them apart.
+        enabled: monitor.mode != MonitorMode.off,
+        mode: monitor.mode.name,
         outputMask: monitor.outputMask,
         volume: monitor.volume,
         muted: monitor.muted,
@@ -98,7 +102,7 @@ PerformanceChains performanceChainsFromLooper(LooperRepository looper) {
       for (final monitor in looper.allMonitors().values)
         PerformanceMonitorState(
           input: monitor.input,
-          enabled: monitor.enabled,
+          enabled: monitor.mode != MonitorMode.off,
           outputMask: monitor.outputMask,
           volume: monitor.volume,
           muted: monitor.muted,
@@ -165,13 +169,27 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
 SessionRigMonitor _rigMonitor(SessionMonitor monitor, FxChainEnvelope chain) =>
     SessionRigMonitor(
       input: monitor.input,
-      enabled: monitor.enabled,
+      mode: _monitorMode(monitor),
       outputMask: monitor.outputMask,
       volume: monitor.volume,
       muted: monitor.muted,
       effects: chain.entries,
       chainEnabled: chain.chainEnabled,
     );
+
+/// The gate a manifest monitor restores to.
+///
+/// A v7 manifest says which one by name. Anything older only says whether the
+/// monitor was on at all, and the honest reading of that is `on`: it is what
+/// the bundle was heard as, and the alternative — guessing `auto` — would make
+/// a monitor that used to play unconditionally start following the arm.
+///
+/// A name this build does not know reads as "the manifest did not say" rather
+/// than as `off`, for the same reason the settings restore does: a gate
+/// written by a future build is not a deliberate disable.
+MonitorMode _monitorMode(SessionMonitor monitor) =>
+    monitorModeFromName(monitor.mode) ??
+    (monitor.enabled ? MonitorMode.on : MonitorMode.off);
 
 /// Builds the rig's tracks from [bundle], zipping each manifest lane with its
 /// decoded PCM. A lane with no decoded audio is dropped; a track left with no

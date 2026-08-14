@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:routing_graph/src/theme/routing_graph_theme.dart';
 
@@ -20,7 +21,9 @@ class FocusableTapTarget extends StatefulWidget {
   const FocusableTapTarget({
     required this.onTap,
     required this.child,
+    this.onLongPress,
     this.semanticLabel,
+    this.customSemanticsActions,
     this.selected,
     this.button = true,
     this.borderRadius = 6,
@@ -33,12 +36,26 @@ class FocusableTapTarget extends StatefulWidget {
   /// What activating the target does. Null makes it inert (disabled).
   final VoidCallback? onTap;
 
+  /// Optional long-press action (e.g. open config while tap toggles).
+  final VoidCallback? onLongPress;
+
   /// The widget the target wraps (the visual presentation).
   final Widget child;
 
   /// The accessible name announced by screen readers. When set, the child's own
   /// semantics are excluded so the target reads as one labelled control.
   final String? semanticLabel;
+
+  /// Extra actions published on THIS target's node, for a control the target
+  /// contains but cannot expose on its own.
+  ///
+  /// [semanticLabel] excludes the child's semantics, which is right for the
+  /// text it wraps and wrong for an interactive slot inside it — a row whose
+  /// leading glyph is its own tap target loses that target entirely. Naming
+  /// the inner action here puts it back on the node the reader focuses, which
+  /// wrapping the whole target in a `Semantics` cannot do: the target is a
+  /// merge boundary, so an outer annotation lands on a parent node instead.
+  final Map<CustomSemanticsAction, VoidCallback>? customSemanticsActions;
 
   /// Toggle/selected state exposed to assistive tech (e.g. a wired port).
   final bool? selected;
@@ -74,7 +91,10 @@ class _FocusableTapTargetState extends State<FocusableTapTarget> {
 
   @override
   Widget build(BuildContext context) {
-    final enabled = widget.onTap != null;
+    // Interactive when either gesture is wired — long-press alone is valid
+    // (e.g. Control Center radio tiles: tap toggles when supported, hold opens
+    // config even when the radio stack is absent).
+    final enabled = widget.onTap != null || widget.onLongPress != null;
     final ring = widget.focusColor ?? context.routingGraph.textPrimary;
     // The visual child's own text would otherwise duplicate (or replace) the
     // supplied accessible name, so it is hidden from semantics — but ONLY the
@@ -99,6 +119,7 @@ class _FocusableTapTargetState extends State<FocusableTapTarget> {
         enabled: widget.button ? enabled : null,
         selected: widget.selected,
         label: widget.semanticLabel,
+        customSemanticsActions: widget.customSemanticsActions,
         child: FocusableActionDetector(
           enabled: enabled,
           focusNode: widget.focusNode,
@@ -108,7 +129,7 @@ class _FocusableTapTargetState extends State<FocusableTapTarget> {
           actions: <Type, Action<Intent>>{
             ActivateIntent: CallbackAction<ActivateIntent>(
               onInvoke: (_) {
-                widget.onTap?.call();
+                (widget.onTap ?? widget.onLongPress)?.call();
                 return null;
               },
             ),
@@ -118,6 +139,7 @@ class _FocusableTapTargetState extends State<FocusableTapTarget> {
           },
           child: GestureDetector(
             onTap: widget.onTap,
+            onLongPress: widget.onLongPress,
             behavior: HitTestBehavior.opaque,
             child: visual,
           ),

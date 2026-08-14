@@ -2,11 +2,11 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
-import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/l10n/l10n.dart';
+import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/view/fx_editor/fx_scope.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../../helpers/helpers.dart';
@@ -231,11 +231,13 @@ void main() {
   group('StageFxScope', () {
     StageFxScope trackScope(int channel) => StageFxScope(
       looper: bloc,
+      trackNames: const ['drums', 'bass', 'rhythm', 'lead'],
       address: FxAddress(stage: FxStage.track, index: channel),
     );
 
     StageFxScope masterScope() => StageFxScope(
       looper: bloc,
+      trackNames: const [],
       address: const FxAddress(stage: FxStage.master),
     );
 
@@ -260,7 +262,7 @@ void main() {
       expect(scope.address.stage, FxStage.track);
       expect(scope.effects, hasLength(1));
       expect(scope.chainEnabled, isFalse);
-      expect(scope.label(l10n), l10n.fxEditorTrackTitle(2));
+      expect(scope.label(l10n), l10n.fxEditorTrackTitle('bass'));
       expect(scope.consequence(l10n), l10n.fxEditorTrackConsequence);
       expect(
         scope.chainDisabledConsequence(l10n),
@@ -312,6 +314,7 @@ void main() {
       expect(
         () => StageFxScope(
           looper: bloc,
+          trackNames: const [],
           address: const FxAddress(stage: FxStage.input),
         ),
         throwsArgumentError,
@@ -319,6 +322,7 @@ void main() {
       expect(
         () => StageFxScope(
           looper: bloc,
+          trackNames: const [],
           address: const FxAddress(stage: FxStage.loop, lane: 0),
         ),
         throwsArgumentError,
