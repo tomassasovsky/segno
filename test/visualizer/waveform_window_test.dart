@@ -22,7 +22,6 @@ void main() {
           ),
         ],
         primaryId: 'primary',
-        primaryPosition: Offset.zero,
         primaryScale: 1,
         args: args,
       );
@@ -49,7 +48,6 @@ void main() {
           ),
         ],
         primaryId: 'primary',
-        primaryPosition: Offset.zero,
         primaryScale: 1,
         args: args,
       );
@@ -67,7 +65,6 @@ void main() {
           (id: 'c', position: Offset(3200, 0), size: Size(1280, 720), scale: 1),
         ],
         primaryId: 'b',
-        primaryPosition: const Offset(1920, 0),
         primaryScale: 1,
         args: args,
       );
@@ -103,7 +100,6 @@ void main() {
             ),
           ],
           primaryId: 'primary',
-          primaryPosition: Offset.zero,
           primaryScale: 1,
           args: args,
         );
@@ -136,7 +132,6 @@ void main() {
           ),
         ],
         primaryId: 'primary',
-        primaryPosition: Offset.zero,
         primaryScale: 1.5,
         args: args,
       );
@@ -146,11 +141,15 @@ void main() {
       expect(placement.size, const Size(1280, 720));
     });
 
-    test('all-empty ids (Linux): the secondary is found by its origin', () {
+    test('all-empty ids (Linux) → the windowed fallback, deliberately', () {
       // screen_retriever_linux hardcodes every display's id to "", so the
-      // id-difference match can never fire on the appliance. The compositor
-      // lays the outputs side by side, so the display whose origin is not the
-      // primary's (the 7" at x:1920) is the second output — full-bleed there.
+      // id-difference match can never fire on Linux — and it must not be
+      // "fixed" by guessing from geometry. On the appliance weston's
+      // kiosk-shell fullscreens the window and routes it to the output pinned
+      // to its app-id (weston.ini `app-ids=`), overriding this placement
+      // entirely; on a non-kiosk desktop GDK's "primary" is just monitor 0
+      // (arbitrary under Wayland), so a geometry guess could full-bleed the
+      // readout over the main display. Windowed is the safe answer both ways.
       final placement = waveformWindowPlacement(
         screens: const [
           (id: '', position: Offset.zero, size: Size(1920, 1080), scale: 1),
@@ -162,44 +161,6 @@ void main() {
           ),
         ],
         primaryId: '',
-        primaryPosition: Offset.zero,
-        primaryScale: 1,
-        args: args,
-      );
-
-      expect(placement.fullscreen, isTrue);
-      expect(placement.position, const Offset(1920, 0));
-      expect(placement.size, const Size(1024, 600));
-    });
-
-    test('all-empty ids with a single display → the windowed fallback', () {
-      // Genuinely single-display: the only screen has the primary's (empty)
-      // id AND the primary's origin, so neither match fires.
-      final placement = waveformWindowPlacement(
-        screens: const [
-          (id: '', position: Offset.zero, size: Size(1920, 1080), scale: 1),
-        ],
-        primaryId: '',
-        primaryPosition: Offset.zero,
-        primaryScale: 1,
-        args: args,
-      );
-
-      expect(placement.fullscreen, isFalse);
-      expect(placement.position, const Offset(120, 120));
-      expect(placement.size, const Size(960, 320));
-    });
-
-    test('all-empty ids, mirrored at the same origin → windowed fallback', () {
-      // Two outputs cloned to the same origin are one logical surface — a
-      // full-bleed second window would just cover the main UI.
-      final placement = waveformWindowPlacement(
-        screens: const [
-          (id: '', position: Offset.zero, size: Size(1920, 1080), scale: 1),
-          (id: '', position: Offset.zero, size: Size(1920, 1080), scale: 1),
-        ],
-        primaryId: '',
-        primaryPosition: Offset.zero,
         primaryScale: 1,
         args: args,
       );
