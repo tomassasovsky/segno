@@ -37,6 +37,9 @@ class _MockSessionCubit extends MockCubit<SessionState>
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit {}
 
+class _MockTransportClockCubit extends MockCubit<TransportClockState>
+    implements TransportClockCubit {}
+
 Future<void> _loadFont(String family, List<String> paths) async {
   final loader = FontLoader(family);
   for (final p in paths) {
@@ -100,6 +103,7 @@ void main() {
   late SessionCubit session;
   late PerformanceRepository performance;
   late PerformanceRecorderCubit performanceRecorder;
+  late TransportClockCubit transportClock;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -138,6 +142,17 @@ void main() {
     when(
       () => performanceRecorder.state,
     ).thenReturn(const PerformanceRecorderIdle());
+    // The status bar's clock reads elapsed transport time (#678); the pen's
+    // own 0:00:11 figure, so the decal matches the design literally.
+    transportClock = _MockTransportClockCubit();
+    whenListen(
+      transportClock,
+      const Stream<TransportClockState>.empty(),
+      initialState: const TransportClockState(
+        elapsed: Duration(seconds: 11),
+        running: true,
+      ),
+    );
   });
 
   void seed(LooperState state) {
@@ -178,6 +193,7 @@ void main() {
               BlocProvider<PerformanceRecorderCubit>.value(
                 value: performanceRecorder,
               ),
+              BlocProvider<TransportClockCubit>.value(value: transportClock),
               // Console mode mounts the tray in the main window, and the tray
               // opens on Signal — whose input cards read both of these. Absent,
               // this whole test throws `ProviderNotFound` before it can draw,

@@ -9,6 +9,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
+import 'package:segno/looper/cubit/transport_clock_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/stage_status_bar.dart';
 import 'package:segno/performance/performance.dart';
@@ -29,11 +30,15 @@ class _MockSessionCubit extends MockCubit<SessionState>
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit {}
 
+class _MockTransportClockCubit extends MockCubit<TransportClockState>
+    implements TransportClockCubit {}
+
 void main() {
   late _MockLooperBloc bloc;
   late _MockControlCubit control;
   late _MockSessionCubit session;
   late _MockPerformanceRecorderCubit recorder;
+  late _MockTransportClockCubit clock;
   late AppLocalizations l10n;
 
   setUpAll(() async {
@@ -46,10 +51,16 @@ void main() {
     control = _MockControlCubit();
     session = _MockSessionCubit();
     recorder = _MockPerformanceRecorderCubit();
+    clock = _MockTransportClockCubit();
     whenListen(
       bloc,
       const Stream<LooperState>.empty(),
       initialState: const LooperState(),
+    );
+    whenListen(
+      clock,
+      const Stream<TransportClockState>.empty(),
+      initialState: const TransportClockState(),
     );
     whenListen(
       control,
@@ -83,6 +94,7 @@ void main() {
           BlocProvider<ControlCubit>.value(value: control),
           BlocProvider<SessionCubit>.value(value: session),
           BlocProvider<PerformanceRecorderCubit>.value(value: recorder),
+          BlocProvider<TransportClockCubit>.value(value: clock),
         ],
         child: const Scaffold(body: Align(child: StageStatusBar())),
       ),
@@ -247,7 +259,7 @@ void main() {
       expect(find.text('0:00:00'), findsOneWidget);
     });
 
-    testWidgets('shows bpm, beat dots and the master-loop clock', (
+    testWidgets('shows bpm, beat dots and the elapsed transport clock', (
       tester,
     ) async {
       whenListen(
@@ -259,9 +271,15 @@ void main() {
             isRunning: true,
             tempoBpm: 120,
             tempoSource: TempoSource.manual,
-            masterLengthFrames: 48000 * 16,
-            masterPositionFrames: 48000 * 11,
           ),
+        ),
+      );
+      whenListen(
+        clock,
+        const Stream<TransportClockState>.empty(),
+        initialState: const TransportClockState(
+          elapsed: Duration(seconds: 11),
+          running: true,
         ),
       );
       await pump(tester);
@@ -269,6 +287,20 @@ void main() {
       expect(find.text(l10n.stageTempoBpm('120.0')), findsOneWidget);
       expect(find.text('0:00:11'), findsOneWidget);
       expect(find.byKey(const Key('stage_count_in')), findsNothing);
+    });
+
+    testWidgets('reads the unpadded hour past the hour mark', (tester) async {
+      whenListen(
+        clock,
+        const Stream<TransportClockState>.empty(),
+        initialState: const TransportClockState(
+          elapsed: Duration(hours: 1, minutes: 2, seconds: 3),
+          running: true,
+        ),
+      );
+      await pump(tester);
+
+      expect(find.text('1:02:03'), findsOneWidget);
     });
 
     testWidgets('shows the count-in word while counting in', (tester) async {
@@ -408,32 +440,39 @@ void main() {
     testWidgets('the clock ticks and the count-in word arrives live', (
       tester,
     ) async {
-      const base = LooperState(
-        status: EngineStatus(isConnected: true, sampleRate: 48000),
-        transport: TransportState(
-          isRunning: true,
-          tempoBpm: 120,
-          tempoSource: TempoSource.manual,
-          masterLengthFrames: 48000 * 16,
-          masterPositionFrames: 48000 * 11,
-        ),
-      );
-      final states = StreamController<LooperState>.broadcast();
-      addTearDown(states.close);
-      whenListen(bloc, states.stream, initialState: base);
-      await pump(tester);
-      expect(find.text('0:00:11'), findsOneWidget);
-
-      states.add(
-        const LooperState(
+      final looperStates = StreamController<LooperState>.broadcast();
+      addTearDown(looperStates.close);
+      whenListen(
+        bloc,
+        looperStates.stream,
+        initialState: const LooperState(
           status: EngineStatus(isConnected: true, sampleRate: 48000),
           transport: TransportState(
             isRunning: true,
             tempoBpm: 120,
             tempoSource: TempoSource.manual,
-            masterLengthFrames: 48000 * 16,
-            masterPositionFrames: 48000 * 12,
           ),
+        ),
+      );
+      final clockStates = StreamController<TransportClockState>.broadcast();
+      addTearDown(clockStates.close);
+      whenListen(
+        clock,
+        clockStates.stream,
+        initialState: const TransportClockState(
+          elapsed: Duration(seconds: 11),
+          running: true,
+        ),
+      );
+      await pump(tester);
+      expect(find.text('0:00:11'), findsOneWidget);
+
+      // The next second of elapsed transport time — the cubit's ticker
+      // emitting, nothing changing on the engine stream at all.
+      clockStates.add(
+        const TransportClockState(
+          elapsed: Duration(seconds: 12),
+          running: true,
         ),
       );
       await tester.pump();
@@ -441,7 +480,7 @@ void main() {
       expect(find.text('0:00:12'), findsOneWidget);
       expect(find.text('0:00:11'), findsNothing);
 
-      states.add(
+      looperStates.add(
         const LooperState(
           status: EngineStatus(isConnected: true, sampleRate: 48000),
           transport: TransportState(

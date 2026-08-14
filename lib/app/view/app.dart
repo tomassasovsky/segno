@@ -246,6 +246,18 @@ class App extends StatelessWidget {
               return cubit;
             },
           ),
+          // The stage status bar's wall-clock transport timer (#678). Eager:
+          // its epoch is the transport's FIRST run, not the strip's first
+          // build — created lazily it would start counting only when the
+          // console face first reads it, missing a run a footswitch started
+          // before then. Passive (subscribes, arms nothing), so eager costs
+          // one stream listener.
+          BlocProvider(
+            lazy: false,
+            create: (context) => TransportClockCubit(
+              repository: context.read<LooperRepository>(),
+            ),
+          ),
           // Beside the track names and for the same reason: an input is called
           // what the player calls it on every surface that shows one — the
           // Audio face's input list, the Tracks routing summary, and the

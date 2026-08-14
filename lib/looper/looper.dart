@@ -10,6 +10,7 @@ export 'cubit/record_options_cubit.dart';
 export 'cubit/refresh_rate_cubit.dart';
 export 'cubit/tempo_cubit.dart';
 export 'cubit/tracks_cubit.dart';
+export 'cubit/transport_clock_cubit.dart';
 export 'model/interaction_mode.dart';
 export 'view/looper_mode_section.dart';
 export 'view/looper_page.dart';

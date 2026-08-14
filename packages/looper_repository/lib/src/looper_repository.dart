@@ -384,6 +384,25 @@ class LooperRepository {
     _monitorChanges.add(input);
   }
 
+  /// Fires once per completed [applySession]: the rig that was on the engine
+  /// has been replaced wholesale by a loaded session's.
+  ///
+  /// This exists because the replacement is NOT reliably visible in
+  /// [looperState]: the load's cleared window is a few milliseconds of mostly
+  /// synchronous FFI import, so the poll-driven projection frequently never
+  /// emits the empty rig in between — anything watching the stream for "the
+  /// old rig is gone" (the stage's transport clock resetting its elapsed
+  /// time, #678) sees the old session flow seamlessly into the new one.
+  /// An explicit event is the honest seam; sampling a transient is not.
+  ///
+  /// Fires only on success. A failed apply leaves the rig destructively
+  /// cleared, and an empty rig is a STABLE projection every stream listener
+  /// does see.
+  Stream<void> get rigReplaced => _rigReplaced.stream;
+
+  final StreamController<void> _rigReplaced =
+      StreamController<void>.broadcast();
+
   /// Distinct stream of looper states.
   ///
   /// A new subscriber immediately receives the most recent state before live
@@ -1700,6 +1719,10 @@ class LooperRepository {
         enabled: monitor.chainEnabled,
       );
     }
+
+    // Last, after every import/commit that could throw: [rigReplaced]'s
+    // contract is "a NEW rig is on the engine", not "a load was attempted".
+    if (!_rigReplaced.isClosed) _rigReplaced.add(null);
   }
 
   /// The default monitor output routing (the first stereo pair) an undefined
@@ -3579,6 +3602,7 @@ class LooperRepository {
     _stopPolling();
     _stopReconnectPolling();
     await _monitorChanges.close();
+    await _rigReplaced.close();
     await _controller.close();
   }
 }
