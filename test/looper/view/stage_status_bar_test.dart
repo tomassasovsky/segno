@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -287,6 +289,172 @@ void main() {
 
       expect(find.byKey(const Key('stage_count_in')), findsOneWidget);
       expect(find.text(l10n.stageCountIn), findsOneWidget);
+    });
+  });
+
+  // The bar is a set of live readouts, so every feed's UPDATE wiring is
+  // pinned here: each test drives its cubit's stream after the first frame
+  // and asserts the strip follows. Boot-state rendering alone would stay
+  // green with a `buildWhen` or select slice that never fires again — the
+  // frozen-at-boot console these tests exist to prevent.
+  //
+  // Every emit is followed by TWO pumps: the first flushes the microtask that
+  // delivers the stream event to the provider's listener (which only marks
+  // the element dirty), the second builds the frame that renders it.
+  group('transitions', () {
+    testWidgets('the session name follows a load and a rename', (
+      tester,
+    ) async {
+      final states = StreamController<SessionState>.broadcast();
+      addTearDown(states.close);
+      whenListen(
+        session,
+        states.stream,
+        initialState: const SessionState(),
+      );
+      await pump(tester);
+      expect(find.text(l10n.sessionUnsaved), findsOneWidget);
+
+      states.add(const SessionState(currentSessionName: 'Bridge idea 3'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Bridge idea 3'), findsOneWidget);
+      expect(find.text(l10n.sessionUnsaved), findsNothing);
+
+      states.add(const SessionState(currentSessionName: 'Chorus 9'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Chorus 9'), findsOneWidget);
+      expect(find.text('Bridge idea 3'), findsNothing);
+    });
+
+    testWidgets('the mode pill follows a mode change to FX', (tester) async {
+      final states = StreamController<ControlState>.broadcast();
+      addTearDown(states.close);
+      whenListen(
+        control,
+        states.stream,
+        initialState: const ControlState(),
+      );
+      await pump(tester);
+      expect(find.text(l10n.interactionModeRec), findsOneWidget);
+
+      states.add(const ControlState(mode: InteractionMode.fx));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text(l10n.interactionModeFx), findsOneWidget);
+      expect(find.text(l10n.interactionModeRec), findsNothing);
+    });
+
+    testWidgets('the bank pair follows the BANK footswitch to B', (
+      tester,
+    ) async {
+      final states = StreamController<ControlState>.broadcast();
+      addTearDown(states.close);
+      whenListen(
+        control,
+        states.stream,
+        initialState: const ControlState(),
+      );
+      await pump(tester);
+      expect(
+        tester.widget<Container>(find.byKey(const Key('stage_bank_0'))).color,
+        surface(tester).control,
+      );
+
+      states.add(const ControlState(activeBank: 1, cursor: 4));
+      await tester.pump();
+      await tester.pump();
+      expect(
+        tester.widget<Container>(find.byKey(const Key('stage_bank_1'))).color,
+        surface(tester).control,
+      );
+      expect(
+        tester.widget<Container>(find.byKey(const Key('stage_bank_0'))).color,
+        isNull,
+      );
+    });
+
+    testWidgets('the record light arms mid-set and disarms again', (
+      tester,
+    ) async {
+      final states = StreamController<PerformanceRecorderState>.broadcast();
+      addTearDown(states.close);
+      whenListen(
+        recorder,
+        states.stream,
+        initialState: const PerformanceRecorderIdle(),
+      );
+      await pump(tester);
+      expect(find.byKey(const Key('stage_record_elapsed')), findsNothing);
+
+      states.add(
+        const PerformanceRecorderArmed(
+          elapsed: Duration(minutes: 2, seconds: 14),
+          overrun: false,
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('02:14'), findsOneWidget);
+
+      states.add(const PerformanceRecorderIdle());
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('stage_record_elapsed')), findsNothing);
+      expect(find.text('02:14'), findsNothing);
+    });
+
+    testWidgets('the clock ticks and the count-in word arrives live', (
+      tester,
+    ) async {
+      const base = LooperState(
+        status: EngineStatus(isConnected: true, sampleRate: 48000),
+        transport: TransportState(
+          isRunning: true,
+          tempoBpm: 120,
+          tempoSource: TempoSource.manual,
+          masterLengthFrames: 48000 * 16,
+          masterPositionFrames: 48000 * 11,
+        ),
+      );
+      final states = StreamController<LooperState>.broadcast();
+      addTearDown(states.close);
+      whenListen(bloc, states.stream, initialState: base);
+      await pump(tester);
+      expect(find.text('0:00:11'), findsOneWidget);
+
+      states.add(
+        const LooperState(
+          status: EngineStatus(isConnected: true, sampleRate: 48000),
+          transport: TransportState(
+            isRunning: true,
+            tempoBpm: 120,
+            tempoSource: TempoSource.manual,
+            masterLengthFrames: 48000 * 16,
+            masterPositionFrames: 48000 * 12,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('0:00:12'), findsOneWidget);
+      expect(find.text('0:00:11'), findsNothing);
+
+      states.add(
+        const LooperState(
+          status: EngineStatus(isConnected: true, sampleRate: 48000),
+          transport: TransportState(
+            tempoBpm: 120,
+            tempoSource: TempoSource.manual,
+            countingIn: true,
+            countInBeatsLeft: 4,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const Key('stage_count_in')), findsOneWidget);
     });
   });
 }
