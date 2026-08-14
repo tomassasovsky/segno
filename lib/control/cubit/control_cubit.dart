@@ -183,7 +183,8 @@ class ControlCubit extends Cubit<ControlState> {
 
   // The ONE hold threshold every gesture below arms with — undo/redo, the
   // MODE hold (performance record, or the FX door under
-  // ModeSwitchStyle.holdFx), and the Stop restore all share it — read at
+  // ModeSwitchStyle.holdFx), the BANK hold that style adds (#677), and the
+  // Stop restore all share it — read at
   // press time so a settings change lands on the next stomp. Persisted as
   // `pedal.long_press_ms`; 500 ms until the user tunes it. The #632 FX hold
   // deliberately introduces no second constant: one plate, one meaning of
@@ -202,6 +203,14 @@ class ControlCubit extends Cubit<ControlState> {
   // the gesture rides the existing MODE button rather than a new one —
   // mirrors the undo/redo split above.
   final _modeGesture = _HoldGesture();
+
+  // BANK: armed only under ModeSwitchStyle.holdFx, where tap = toggle the
+  // visible bank (moved to the release, as every tap sharing a switch with a
+  // hold) and long-press = arm/disarm performance recording (D-PEDAL) — the
+  // pedal path the MODE hold gives up to the FX door (#677). Under
+  // cycleThree this gesture is never armed: BANK stays the plain press-time
+  // toggle it has always been.
+  final _bankGesture = _HoldGesture();
 
   // Where leaving FX under ModeSwitchStyle.holdFx returns to: the mode the
   // rig was in when FX was entered (record or mute — never fx by
@@ -930,6 +939,7 @@ class ControlCubit extends Cubit<ControlState> {
         if (button == PedalButton.undo) _undoGesture.release();
         if (button == PedalButton.clear) _onClearRelease();
         if (button == PedalButton.mode) _modeGesture.release();
+        if (button == PedalButton.bank) _bankGesture.release();
         if (button == PedalButton.stop) _stopGesture.release();
         // Unconditional: a momentary is keyed to the button, so this finds
         // the held one (if any) whatever else that button's release did.
@@ -982,7 +992,7 @@ class ControlCubit extends Cubit<ControlState> {
       case PedalButton.mode:
         _armMode();
       case PedalButton.bank:
-        toggleBankWithCursor();
+        _armBank();
       case PedalButton.clear:
         // INERT in FX mode, LED included (A2): clear is the one irreversible
         // stomp on the plate, and a stray one must never erase the set.
@@ -1103,9 +1113,9 @@ class ControlCubit extends Cubit<ControlState> {
   ///   = arm/disarm performance recording (D-PEDAL), unchanged.
   /// - [ModeSwitchStyle.holdFx] (#632): tap = [_pedalModeTap]'s Record ↔
   ///   Mute cycle; hold = the FX door ([_toggleFxHold]). One switch cannot
-  ///   carry both holds, so under this style performance recording keeps
-  ///   only its other surfaces (the toolbar and the keyboard's `A`) — a
-  ///   documented trade the setting opts into.
+  ///   carry both holds, so under this style the recording hold moves to
+  ///   BANK ([_armBank], #677) — the foot keeps a path to the arm, on top
+  ///   of the other surfaces (the toolbar and the keyboard's `A`).
   ///
   /// Either way the hold fires AT the threshold ([_HoldGesture] runs
   /// `onHold` from its timer), so under holdFx the mode — and the LED frame
@@ -1156,6 +1166,38 @@ class ControlCubit extends Cubit<ControlState> {
   void _toggleFxHold() => setMode(
     state.mode == InteractionMode.fx ? _fxReturn : InteractionMode.fx,
   );
+
+  /// The BANK press — a gesture only under [ModeSwitchStyle.holdFx] (#677).
+  ///
+  /// Under [ModeSwitchStyle.cycleThree] BANK stays exactly what it has
+  /// always been: [toggleBankWithCursor] fires on the press itself, the hold
+  /// means nothing, and the release is inert — no gesture is armed at all.
+  ///
+  /// Under holdFx the MODE hold is the FX door, which left performance
+  /// recording with no pedal path — so the hold moves here, to the one
+  /// transport switch with a free hold. Same `_longPress` threshold as every
+  /// other gesture, style read at press time like [_armMode]'s: hold =
+  /// [togglePerformanceRecord] (all the repository arm/disarm gates apply
+  /// unchanged), tap = the bank toggle, which this style moves to the
+  /// release — the price of telling a tap from a hold. The hold fires AT the
+  /// threshold and retires the tap, so the release after it stays silent.
+  void _armBank() {
+    if (state.modeSwitchStyle != ModeSwitchStyle.holdFx) {
+      toggleBankWithCursor();
+      return;
+    }
+    _bankGesture.press(
+      threshold: _longPress,
+      onHold: () {
+        _log('performance record toggled (bank long-press)');
+        togglePerformanceRecord();
+      },
+      onTap: () {
+        _log('bank toggled (tap)');
+        toggleBankWithCursor();
+      },
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Pedal remap (part 6b): bindings, momentary hold, release-all
@@ -1824,6 +1866,7 @@ class ControlCubit extends Cubit<ControlState> {
     _flushMappingsWrite();
     _undoGesture.cancel();
     _modeGesture.cancel();
+    _bankGesture.cancel();
     _stopGesture.cancel();
     await _looperSub.cancel();
     await _eventsSub.cancel();
