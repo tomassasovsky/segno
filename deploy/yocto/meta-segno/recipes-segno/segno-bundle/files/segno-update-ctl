@@ -42,7 +42,12 @@ PENDING_FLAG="/run/segno-update-pending"  # tmpfs marker: "reboot to activate"
 # hardware, not the image.
 PEDAL_STATE_FILE="${SEGNO_PEDAL_STATE_FILE:-/data/segno/pedal-firmware-version}"
 # Written when a flash fails, so the UI can say so instead of silently leaving
-# a pedal that may be sitting in its bootloader.
+# a pedal that may be sitting in its bootloader. Format: "<class> <version>",
+# where class is `not-started` (the write never began; the pedal still runs
+# whatever it ran before) or `interrupted` (avrdude was handed the bootloader
+# port; the pedal may be parked in Caterina with a half-written app section).
+# The app branches its failed dialog on the class — the comforting "still on
+# its previous firmware" copy is only true for `not-started`.
 PEDAL_FAIL_FILE="${SEGNO_PEDAL_FAIL_FILE:-/data/segno/pedal-firmware-failed}"
 # Overridable so the test harness can point at stubs and fixtures.
 PEDAL_SERIAL_DIR="${SEGNO_PEDAL_SERIAL_DIR:-/dev/serial/by-id}"
@@ -264,6 +269,36 @@ pedal_touch_reset() {
     sleep 2
 }
 
+# The class recorded in the failure marker, or nothing.
+pedal_fail_class() {
+    [ -f "$PEDAL_FAIL_FILE" ] || return 0
+    cut -d' ' -f1 "$PEDAL_FAIL_FILE" 2>/dev/null || true
+}
+
+# write_pedal_fail CLASS [VERSION] — records why a flash failed, for the UI.
+#
+# Never downgrades: an existing `interrupted` marker means a write began and no
+# flash has completed since — the pedal is (or may be) holding a half-written
+# app section. A LATER attempt that fails before touching the pedal (no
+# manifest, no port — the parked pedal presents no sketch port at all) does not
+# change what the pedal is left holding, so `not-started` must not overwrite
+# `interrupted`. Only a successful flash clears the marker.
+write_pedal_fail() {
+    class=$1
+    version=${2:-}
+    if [ "$class" = "not-started" ] && \
+       [ "$(pedal_fail_class)" = "interrupted" ]; then
+        log "keeping earlier 'interrupted' failure marker (a write had begun)"
+        return 0
+    fi
+    mkdir -p "$(dirname "$PEDAL_FAIL_FILE")" 2>/dev/null || true
+    if [ -n "$version" ]; then
+        printf '%s %s\n' "$class" "$version" > "$PEDAL_FAIL_FILE" 2>/dev/null || true
+    else
+        printf '%s\n' "$class" > "$PEDAL_FAIL_FILE" 2>/dev/null || true
+    fi
+}
+
 # What the pedal is running, as recorded by the last successful flash.
 # 0.0.0 stands for "never flashed by us", which always looks out of date.
 pedal_current_version() {
@@ -306,7 +341,11 @@ do_pedal_pending() {
 }
 
 do_flash_pedal() {
-    command -v "$AVRDUDE" >/dev/null 2>&1 || { log "avrdude not installed"; return 1; }
+    command -v "$AVRDUDE" >/dev/null 2>&1 || {
+        log "avrdude not installed"
+        write_pedal_fail not-started
+        return 1
+    }
     channel=$(resolve_channel)
 
     work=$(mktemp -d /tmp/segno-pedal.XXXXXX)
@@ -315,7 +354,9 @@ do_flash_pedal() {
 
     if ! curl -fsSL --max-time 30 -o "$work/manifest.json" \
          "$BASE_URL/$channel/manifest.json"; then
-        log "manifest fetch failed ($channel)"; return 1
+        log "manifest fetch failed ($channel)"
+        write_pedal_fail not-started
+        return 1
     fi
 
     hex=$(jq -r '.pedalFirmware.hex // empty' "$work/manifest.json" 2>/dev/null || echo "")
@@ -343,13 +384,16 @@ do_flash_pedal() {
     # worse, write this image to whatever else answers to the port.
     if ! port=$(pedal_port); then
         log "no pedal attached; refusing to flash"
+        write_pedal_fail not-started "$fw_version"
         return 1
     fi
     log "pedal at $port; publishing $fw_version (current $current)"
 
     progress 10
     if ! curl -fsSL --max-time 300 -o "$work/$hex" "$BASE_URL/$channel/$hex"; then
-        log "firmware download failed"; return 1
+        log "firmware download failed"
+        write_pedal_fail not-started "$fw_version"
+        return 1
     fi
     progress 30
 
@@ -360,17 +404,21 @@ do_flash_pedal() {
     # because RAUC verifies the bundle signature independently).
     if [ -z "$fw_sha" ]; then
         log "manifest publishes no sha256 for $hex; refusing to flash unverified firmware"
+        write_pedal_fail not-started "$fw_version"
         return 1
     fi
     actual=$(sha256sum "$work/$hex" | cut -d' ' -f1)
     if [ "$actual" != "$fw_sha" ]; then
-        log "sha256 mismatch (want $fw_sha got $actual) — refusing"; return 1
+        log "sha256 mismatch (want $fw_sha got $actual) — refusing"
+        write_pedal_fail not-started "$fw_version"
+        return 1
     fi
     progress 40
 
     # GATE 3 — still attached after the download (which can take a while).
     if ! pedal_port >/dev/null; then
         log "pedal disappeared during download; refusing to flash"
+        write_pedal_fail not-started "$fw_version"
         return 1
     fi
 
@@ -381,6 +429,9 @@ do_flash_pedal() {
     pedal_touch_reset "$port"
     if ! boot_port=$(wait_for_bootloader "$ports_before"); then
         log "bootloader never appeared after the touch reset; pedal left untouched"
+        # Caterina jumps back to the sketch after its ~8s window, so nothing
+        # was written — the previous firmware still runs.
+        write_pedal_fail not-started "$fw_version"
         return 1
     fi
     log "bootloader at $boot_port"
@@ -402,8 +453,7 @@ do_flash_pedal() {
     if [ "$rc" -ne 0 ]; then
         [ "$rc" = 124 ] && log "avrdude timed out after ${AVRDUDE_TIMEOUT}s"
         log "avrdude failed; pedal may be sitting in its bootloader"
-        mkdir -p "$(dirname "$PEDAL_FAIL_FILE")" 2>/dev/null || true
-        echo "$fw_version" > "$PEDAL_FAIL_FILE" 2>/dev/null || true
+        write_pedal_fail interrupted "$fw_version"
         return 1
     fi
     progress 90
@@ -413,8 +463,7 @@ do_flash_pedal() {
     # say so rather than recording a version that is not actually running.
     if ! wait_for_pedal_port >/dev/null; then
         log "pedal did not re-enumerate after flashing"
-        mkdir -p "$(dirname "$PEDAL_FAIL_FILE")" 2>/dev/null || true
-        echo "$fw_version" > "$PEDAL_FAIL_FILE" 2>/dev/null || true
+        write_pedal_fail interrupted "$fw_version"
         return 1
     fi
 

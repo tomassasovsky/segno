@@ -102,6 +102,9 @@ check() {
 
 flashed() { [ -f "$work/avrdude-args" ] && echo yes || echo no; }
 
+# The failure marker's content ("<class> <version>" / "<class>"), or nothing.
+fail_marker() { cat "$work/state/pedal-firmware-failed" 2>/dev/null; }
+
 # --- "nothing to do" is success, not failure -------------------------------
 
 echo "manifest with no pedalFirmware block"
@@ -142,6 +145,7 @@ detach_pedal
 run_flash; rc=$?
 check "refuses (exit 1)" 1 "$rc"
 check "does not flash" no "$(flashed)"
+check "classifies the failure as not-started" "not-started 9.9.9" "$(fail_marker)"
 teardown
 
 echo "manifest publishes no sha256"
@@ -155,6 +159,7 @@ attach_pedal
 run_flash; rc=$?
 check "refuses unverified firmware" 1 "$rc"
 check "does not flash" no "$(flashed)"
+check "classifies the failure as not-started" "not-started 9.9.9" "$(fail_marker)"
 teardown
 
 echo "sha256 mismatch (corrupted download)"
@@ -168,6 +173,7 @@ attach_pedal
 run_flash; rc=$?
 check "refuses on checksum mismatch" 1 "$rc"
 check "does not flash" no "$(flashed)"
+check "classifies the failure as not-started" "not-started 9.9.9" "$(fail_marker)"
 teardown
 
 echo "published .hex missing from the channel"
@@ -181,6 +187,7 @@ attach_pedal
 run_flash; rc=$?
 check "refuses when the download fails" 1 "$rc"
 check "does not flash" no "$(flashed)"
+check "classifies the failure as not-started" "not-started 9.9.9" "$(fail_marker)"
 teardown
 
 # --- the happy path ---------------------------------------------------------
@@ -193,6 +200,8 @@ write_manifest <<JSON
                      "protocolVersion": 3, "sha256": "$hex_sha" } }
 JSON
 attach_pedal
+# A stale marker from an earlier failed attempt: only success may clear it.
+echo "interrupted 9.9.9" > "$work/state/pedal-firmware-failed"
 run_flash; rc=$?
 check "exits 0" 0 "$rc"
 check "runs avrdude" yes "$(flashed)"
@@ -210,7 +219,7 @@ check "never targets the sketch port" yes \
     "$(grep -q 'Segno_Loopstation' "$work/avrdude-args" && echo no || echo yes)"
 check "records the flashed version + protocol" "9.9.9 3" \
     "$(cat "$work/state/pedal-firmware-version" 2>/dev/null)"
-check "leaves no failure marker" no \
+check "clears the stale failure marker" no \
     "$([ -f "$work/state/pedal-firmware-failed" ] && echo yes || echo no)"
 teardown
 
@@ -263,10 +272,60 @@ STUB
 chmod +x "$work/bin/avrdude"
 run_flash; rc=$?
 check "reports failure" 1 "$rc"
-check "writes the failure marker for the UI" yes \
-    "$([ -f "$work/state/pedal-firmware-failed" ] && echo yes || echo no)"
+# The bootloader port was handed to avrdude, so a write may have begun — the
+# app must NOT promise "still on its previous firmware" here.
+check "classifies the failure as interrupted" "interrupted 9.9.9" "$(fail_marker)"
 check "does not record a version it did not flash" no \
     "$([ -f "$work/state/pedal-firmware-version" ] && echo yes || echo no)"
+teardown
+
+echo "avrdude verifies but the sketch never re-enumerates (GATE 4)"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "segno-pedal-9.9.9.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+attach_pedal
+# avrdude exits 0 but the board never comes back as the sketch.
+cat > "$work/bin/avrdude" <<STUB
+#!/bin/sh
+echo "\$@" > "$work/avrdude-args"
+exit 0
+STUB
+chmod +x "$work/bin/avrdude"
+run_flash; rc=$?
+check "reports failure" 1 "$rc"
+check "classifies the failure as interrupted" "interrupted 9.9.9" "$(fail_marker)"
+check "does not record a version that is not running" no \
+    "$([ -f "$work/state/pedal-firmware-version" ] && echo yes || echo no)"
+teardown
+
+echo "manifest unreachable mid-flash"
+setup
+attach_pedal
+# No manifest written at all — the network dropped between pedal-pending and
+# flash-pedal. Nothing was downloaded, nothing was touched.
+run_flash; rc=$?
+check "reports failure" 1 "$rc"
+check "classifies the failure as not-started" "not-started" "$(fail_marker)"
+teardown
+
+echo "a later not-started failure must not erase an interrupted record"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "segno-pedal-9.9.9.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+# The pedal is parked in Caterina after an interrupted write: no sketch port
+# presents, so the retry fails at GATE 1. The dialog's honesty rides on this —
+# downgrading to not-started would falsely re-promise the previous firmware.
+echo "interrupted 9.9.9" > "$work/state/pedal-firmware-failed"
+detach_pedal
+run_flash; rc=$?
+check "still refuses" 1 "$rc"
+check "keeps the interrupted class" "interrupted 9.9.9" "$(fail_marker)"
 teardown
 
 # --- the two failure modes the on-device run actually hit ----------------------
@@ -288,6 +347,8 @@ chmod +x "$work/bin/stty"
 run_flash; rc=$?
 check "refuses rather than flashing the sketch" 1 "$rc"
 check "does not run avrdude at all" no "$(flashed)"
+# Caterina jumped back to the sketch untouched — the comforting copy is true.
+check "classifies the failure as not-started" "not-started 9.9.9" "$(fail_marker)"
 teardown
 
 echo "avrdude hangs on an unresponsive port"
@@ -309,8 +370,7 @@ AVRDUDE_TIMEOUT_OVERRIDE=1 run_flash; rc=$?
 check "gives up instead of hanging" 1 "$rc"
 check "reports the timeout" yes \
     "$(grep -q 'timed out' "$work/stderr" && echo yes || echo no)"
-check "writes the failure marker" yes \
-    "$([ -f "$work/state/pedal-firmware-failed" ] && echo yes || echo no)"
+check "classifies the failure as interrupted" "interrupted 9.9.9" "$(fail_marker)"
 teardown
 
 # --- pedal-pending: what the app gates the UI on ---------------------------

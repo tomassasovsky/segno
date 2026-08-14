@@ -293,4 +293,48 @@ void _pedalFirmwareStagingTests() {
       );
     });
   });
+
+  group('lastPedalFlashFailure', () {
+    const failFile = '/data/segno/pedal-firmware-failed';
+
+    AppliancePlatformBackend backendWith(Map<String, String> files) =>
+        AppliancePlatformBackend(env: _FakeEnv(files: files));
+
+    test('reads the class the flasher recorded', () async {
+      expect(
+        await backendWith({
+          failFile: 'not-started 0.4.0\n',
+        }).lastPedalFlashFailure(),
+        PedalFlashFailureClass.notStarted,
+      );
+      expect(
+        await backendWith({
+          failFile: 'interrupted 0.4.0\n',
+        }).lastPedalFlashFailure(),
+        PedalFlashFailureClass.interrupted,
+      );
+    });
+
+    test('a version-less marker still carries its class', () async {
+      // Written when the flash failed before the manifest revealed a version.
+      expect(
+        await backendWith({failFile: 'not-started\n'}).lastPedalFlashFailure(),
+        PedalFlashFailureClass.notStarted,
+      );
+    });
+
+    test('no marker, or an illegible one, is null', () async {
+      expect(await backendWith({}).lastPedalFlashFailure(), isNull);
+      expect(
+        await backendWith({failFile: '\n'}).lastPedalFlashFailure(),
+        isNull,
+      );
+      // The pre-#670 format was a bare version with no class token; the
+      // caller treats null as interrupted rather than inventing comfort.
+      expect(
+        await backendWith({failFile: '0.4.0\n'}).lastPedalFlashFailure(),
+        isNull,
+      );
+    });
+  });
 }

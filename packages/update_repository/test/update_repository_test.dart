@@ -53,6 +53,7 @@ class _FakeBackend implements PlatformUpdateBackend {
 
   String? pending;
   int flashCount = 0;
+  PedalFlashFailureClass? failureClass;
 
   @override
   Future<String?> pendingPedalFirmware() async => pending;
@@ -62,6 +63,9 @@ class _FakeBackend implements PlatformUpdateBackend {
     flashCount++;
     return Stream.fromIterable(const [0.5, 1.0]);
   }
+
+  @override
+  Future<PedalFlashFailureClass?> lastPedalFlashFailure() async => failureClass;
 }
 
 /// Builds a manifest with minor component [minor] (e.g. `_manifest(2)` ==
@@ -185,6 +189,30 @@ void main() {
       await UpdateRepository(backend: backend).flashPedalFirmware().toList();
 
       expect(backend.flashCount, 1);
+    });
+
+    test('lastPedalFlashFailure forwards to the backend', () async {
+      final backend = _FakeBackend()
+        ..failureClass = PedalFlashFailureClass.interrupted;
+
+      expect(
+        await UpdateRepository(backend: backend).lastPedalFlashFailure(),
+        PedalFlashFailureClass.interrupted,
+      );
+    });
+
+    test('PedalFlashFailureClass.tryParse reads the marker tokens', () {
+      expect(
+        PedalFlashFailureClass.tryParse('not-started'),
+        PedalFlashFailureClass.notStarted,
+      );
+      expect(
+        PedalFlashFailureClass.tryParse('interrupted'),
+        PedalFlashFailureClass.interrupted,
+      );
+      // The pre-#670 marker format was a bare version — not a class.
+      expect(PedalFlashFailureClass.tryParse('0.4.0'), isNull);
+      expect(PedalFlashFailureClass.tryParse(null), isNull);
     });
 
     test('applyAndRestart forwards to the backend', () async {

@@ -1,19 +1,38 @@
 import 'dart:async';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/update/cubit/pedal_firmware_cubit.dart';
 import 'package:update_repository/update_repository.dart';
 
 class _FakeBackend implements PlatformUpdateBackend {
-  _FakeBackend({this.supported = true, this.pending, this.flashError});
+  _FakeBackend({
+    this.supported = true,
+    this.pending,
+    this.pendingSequence,
+    this.flashErrors = const [],
+    this.failureClass,
+  });
 
   final bool supported;
+
+  /// Constant `pedal-pending` answer, used once [pendingSequence] runs out.
   final String? pending;
-  final Object? flashError;
+
+  /// Consumed one per `pedal-pending` call, ahead of [pending].
+  final List<String?>? pendingSequence;
+
+  /// Errors for the first N flash calls; further calls get a fresh
+  /// [controller] whose completion means success.
+  final List<Object> flashErrors;
+
+  /// What the failure marker says, or null for "no legible record".
+  final PedalFlashFailureClass? failureClass;
 
   int pendingCalls = 0;
   int flashCalls = 0;
-  final controller = StreamController<double>();
+  int failureReads = 0;
+  StreamController<double>? controller;
 
   @override
   bool get isSupported => supported;
@@ -21,14 +40,25 @@ class _FakeBackend implements PlatformUpdateBackend {
   @override
   Future<String?> pendingPedalFirmware() async {
     pendingCalls++;
+    final sequence = pendingSequence;
+    if (sequence != null && sequence.isNotEmpty) return sequence.removeAt(0);
     return pending;
   }
 
   @override
   Stream<double> flashPedalFirmware() {
     flashCalls++;
-    if (flashError != null) return Stream.error(flashError!);
-    return controller.stream;
+    if (flashCalls <= flashErrors.length) {
+      return Stream.error(flashErrors[flashCalls - 1]);
+    }
+    controller = StreamController<double>();
+    return controller!.stream;
+  }
+
+  @override
+  Future<PedalFlashFailureClass?> lastPedalFlashFailure() async {
+    failureReads++;
+    return failureClass;
   }
 
   @override
@@ -55,14 +85,15 @@ class _FakeBackend implements PlatformUpdateBackend {
 }
 
 void main() {
+  PedalFirmwareCubit cubitOver(_FakeBackend backend) =>
+      PedalFirmwareCubit(updates: UpdateRepository(backend: backend));
+
   group('PedalFirmwareCubit', () {
     test('goes idle without asking when updates are unsupported', () async {
       // Desktop and dev runs must not pay a process launch, and must never
       // draw the gate.
       final backend = _FakeBackend(supported: false, pending: '0.4.0');
-      final cubit = PedalFirmwareCubit(
-        updates: UpdateRepository(backend: backend),
-      );
+      final cubit = cubitOver(backend);
       addTearDown(cubit.close);
 
       await cubit.run();
@@ -74,9 +105,7 @@ void main() {
 
     test('goes idle when nothing is pending', () async {
       final backend = _FakeBackend();
-      final cubit = PedalFirmwareCubit(
-        updates: UpdateRepository(backend: backend),
-      );
+      final cubit = cubitOver(backend);
       addTearDown(cubit.close);
 
       await cubit.run();
@@ -89,9 +118,7 @@ void main() {
       'blocks the looper for the whole flash and releases it after',
       () async {
         final backend = _FakeBackend(pending: '0.4.0');
-        final cubit = PedalFirmwareCubit(
-          updates: UpdateRepository(backend: backend),
-        );
+        final cubit = cubitOver(backend);
         addTearDown(cubit.close);
 
         final done = cubit.run();
@@ -105,12 +132,12 @@ void main() {
         expect(cubit.state.version, '0.4.0');
         expect(cubit.state.progress, 0);
 
-        backend.controller.add(0.5);
+        backend.controller!.add(0.5);
         await pumpEventQueue();
         expect(cubit.state.progress, 0.5);
         expect(cubit.state.blocksLooper, isTrue);
 
-        await backend.controller.close();
+        await backend.controller!.close();
         await done;
 
         expect(cubit.state.stage, PedalFirmwareStage.idle);
@@ -118,22 +145,58 @@ void main() {
       },
     );
 
-    test('a failed flash is reported but not fatal', () async {
+    test('a not-started failure retries silently, then succeeds', () async {
+      // A dropped manifest fetch or a missed bootloader window self-heals on
+      // the next try; the user never needs to hear about it.
       final backend = _FakeBackend(
         pending: '0.4.0',
-        flashError: Exception('avrdude failed'),
+        flashErrors: [Exception('manifest fetch failed')],
+        failureClass: PedalFlashFailureClass.notStarted,
       );
-      final cubit = PedalFirmwareCubit(
-        updates: UpdateRepository(backend: backend),
+      final cubit = cubitOver(backend);
+      addTearDown(cubit.close);
+
+      final failedStages = <PedalFirmwareStage>[];
+      final sub = cubit.stream.listen((s) => failedStages.add(s.stage));
+      addTearDown(sub.cancel);
+
+      final done = cubit.run();
+      await pumpEventQueue();
+
+      // Second attempt underway: still the flashing face, progress back at 0.
+      expect(backend.flashCalls, 2);
+      expect(cubit.state.stage, PedalFirmwareStage.flashing);
+      expect(cubit.state.progress, 0);
+
+      await backend.controller!.close();
+      await done;
+
+      expect(cubit.state.stage, PedalFirmwareStage.idle);
+      // The retry was silent: failed was never shown.
+      expect(failedStages, isNot(contains(PedalFirmwareStage.failed)));
+    });
+
+    test('a not-started failure surfaces after every attempt fails', () async {
+      final backend = _FakeBackend(
+        pending: '0.4.0',
+        flashErrors: [
+          Exception('fail 1'),
+          Exception('fail 2'),
+          Exception('fail 3'),
+          Exception('fail 4'),
+        ],
+        failureClass: PedalFlashFailureClass.notStarted,
       );
+      final cubit = cubitOver(backend);
       addTearDown(cubit.close);
 
       await cubit.run();
 
+      // Bounded: exactly maxAttempts, not one per error on offer.
+      expect(backend.flashCalls, PedalFirmwareCubit.maxAttempts);
       expect(cubit.state.stage, PedalFirmwareStage.failed);
-      expect(cubit.state.error, contains('avrdude failed'));
-      // Still blocking: the user is told, rather than dropped into a looper
-      // whose pedal just stopped responding.
+      expect(cubit.state.failureClass, PedalFlashFailureClass.notStarted);
+      expect(cubit.state.error, contains('fail 3'));
       expect(cubit.state.blocksLooper, isTrue);
 
       cubit.dismiss();
@@ -141,20 +204,109 @@ void main() {
       expect(cubit.state.blocksLooper, isFalse);
     });
 
+    test(
+      'an interrupted failure fails fast when the pedal does not re-present',
+      () async {
+        // The pedal is parked in its bootloader: pedal-pending sees no sketch
+        // port and answers nothing. Re-touching a parked pedal cannot help
+        // (recovery is slice 3), so the honest dialog appears immediately.
+        final backend = _FakeBackend(
+          pendingSequence: ['0.4.0'],
+          flashErrors: [Exception('avrdude failed')],
+          failureClass: PedalFlashFailureClass.interrupted,
+        );
+        final cubit = cubitOver(backend);
+        addTearDown(cubit.close);
+
+        await cubit.run();
+
+        expect(backend.flashCalls, 1);
+        expect(cubit.state.stage, PedalFirmwareStage.failed);
+        expect(cubit.state.failureClass, PedalFlashFailureClass.interrupted);
+      },
+    );
+
+    test(
+      'an interrupted failure retries while the pedal re-presents',
+      () async {
+        // avrdude died early enough that the sketch survived and came back —
+        // the flash is worth another quiet try.
+        final backend = _FakeBackend(
+          pending: '0.4.0',
+          flashErrors: [
+            Exception('fail 1'),
+            Exception('fail 2'),
+            Exception('fail 3'),
+          ],
+          failureClass: PedalFlashFailureClass.interrupted,
+        );
+        final cubit = cubitOver(backend);
+        addTearDown(cubit.close);
+
+        await cubit.run();
+
+        expect(backend.flashCalls, PedalFirmwareCubit.maxAttempts);
+        expect(cubit.state.stage, PedalFirmwareStage.failed);
+        expect(cubit.state.failureClass, PedalFlashFailureClass.interrupted);
+      },
+    );
+
+    test('an illegible failure marker counts as interrupted', () async {
+      // Comfort that cannot be proven must not be offered: with no legible
+      // record of how far the flash got, the dialog must not promise the
+      // previous firmware still runs.
+      final backend = _FakeBackend(
+        pendingSequence: ['0.4.0'],
+        flashErrors: [Exception('helper died')],
+      );
+      final cubit = cubitOver(backend);
+      addTearDown(cubit.close);
+
+      await cubit.run();
+
+      expect(backend.failureReads, greaterThan(0));
+      expect(cubit.state.stage, PedalFirmwareStage.failed);
+      expect(cubit.state.failureClass, PedalFlashFailureClass.interrupted);
+    });
+
+    test('a helper that stops answering entirely is timed out', () {
+      // Belt and braces over the helper's own budgets: a wedged process that
+      // emits nothing must not hold the console hostage forever.
+      fakeAsync((async) {
+        final backend = _FakeBackend(pending: '0.4.0');
+        final cubit = cubitOver(backend);
+
+        var done = false;
+        unawaited(cubit.run().whenComplete(() => done = true));
+        async.flushMicrotasks();
+        expect(cubit.state.stage, PedalFirmwareStage.flashing);
+
+        // Every attempt gets the stall budget; all of them together must
+        // still resolve.
+        async.elapse(
+          PedalFirmwareCubit.stallTimeout * PedalFirmwareCubit.maxAttempts +
+              const Duration(seconds: 1),
+        );
+
+        expect(done, isTrue);
+        expect(cubit.state.stage, PedalFirmwareStage.failed);
+        expect(cubit.state.failureClass, PedalFlashFailureClass.interrupted);
+        unawaited(cubit.close());
+      });
+    });
+
     test('a flash still running when the cubit closes emits nothing', () async {
       // The window is real: closing a window during the flash disposes the
       // provider while avrdude is mid-write.
       final backend = _FakeBackend(pending: '0.4.0');
-      final cubit = PedalFirmwareCubit(
-        updates: UpdateRepository(backend: backend),
-      );
+      final cubit = cubitOver(backend);
 
       final done = cubit.run();
       await pumpEventQueue();
       await cubit.close();
 
-      backend.controller.add(0.7);
-      await backend.controller.close();
+      backend.controller!.add(0.7);
+      await backend.controller!.close();
 
       await expectLater(done, completes);
     });

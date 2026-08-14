@@ -28,6 +28,7 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
     this.channelOverrideFile = '/data/segno/update-channel',
     this.stagedFile = '/data/.ota-staged-version',
     this.helperPath = '/usr/bin/segno-update-ctl',
+    this.pedalFailFile = '/data/segno/pedal-firmware-failed',
   }) : _env = env ?? const SystemApplianceEnv();
 
   final ApplianceEnv _env;
@@ -49,6 +50,10 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
 
   /// Path to the privileged update helper; its presence gates [isSupported].
   final String helperPath;
+
+  /// Path (on `/data`) to the failure marker `flash-pedal` leaves behind:
+  /// `"<class> <version>"`, where class is `not-started` or `interrupted`.
+  final String pedalFailFile;
 
   @override
   bool get isSupported =>
@@ -125,6 +130,13 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
 
   @override
   Stream<double> flashPedalFirmware() => _env.flashPedal();
+
+  @override
+  Future<PedalFlashFailureClass?> lastPedalFlashFailure() async {
+    final marker = _env.readTextSync(pedalFailFile)?.trim();
+    if (marker == null || marker.isEmpty) return null;
+    return PedalFlashFailureClass.tryParse(marker.split(' ').first);
+  }
 
   @override
   Future<void> applyAndRestart() => _env.reboot();

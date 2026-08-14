@@ -13,10 +13,11 @@ import 'package:update_repository/update_repository.dart';
 /// Drives the real cubit rather than a stand-in, so these assertions are about
 /// what a user would actually see for a given helper response.
 class _FakeBackend implements PlatformUpdateBackend {
-  _FakeBackend({this.pending, this.flashError});
+  _FakeBackend({this.pending, this.flashError, this.failureClass});
 
   final String? pending;
   final Object? flashError;
+  final PedalFlashFailureClass? failureClass;
   final progress = StreamController<double>();
 
   @override
@@ -30,6 +31,9 @@ class _FakeBackend implements PlatformUpdateBackend {
     if (flashError != null) return Stream.error(flashError!);
     return progress.stream;
   }
+
+  @override
+  Future<PedalFlashFailureClass?> lastPedalFlashFailure() async => failureClass;
 
   @override
   String get channel => 'experimental';
@@ -172,7 +176,12 @@ void main() {
   ) async {
     final cubit = await pumpGate(
       tester,
-      _FakeBackend(pending: '0.4.0', flashError: Exception('avrdude failed')),
+      _FakeBackend(
+        pending: '0.4.0',
+        flashError: Exception('avrdude failed'),
+        // The write never began, so the comforting body is the true one.
+        failureClass: PedalFlashFailureClass.notStarted,
+      ),
     );
 
     await cubit.run();
@@ -191,6 +200,42 @@ void main() {
     expect(continueButton.tone, ConsoleDialogTone.accent);
     expect(continueButton.label, l10n.pedalFirmwareGateContinue);
 
+    await tester.tap(find.byKey(const Key('pedal_firmware_gate_continue')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('pedal_firmware_gate')), findsNothing);
+    expect(find.byKey(const Key('looper')), findsOneWidget);
+  });
+
+  testWidgets('an interrupted flash gets the honest copy, not comfort', (
+    tester,
+  ) async {
+    // Once a write began, "your pedal still works on its previous firmware"
+    // is false in exactly the worst case — the pedal may be parked in its
+    // bootloader with the old firmware already erased. The body must say what
+    // actually happened.
+    final cubit = await pumpGate(
+      tester,
+      _FakeBackend(
+        pending: '0.4.0',
+        flashError: Exception('avrdude failed'),
+        failureClass: PedalFlashFailureClass.interrupted,
+      ),
+    );
+
+    await cubit.run();
+    await tester.pump();
+
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    expect(find.text(l10n.pedalFirmwareGateFailedTitle), findsOneWidget);
+    expect(
+      find.text(l10n.pedalFirmwareGateFailedInterruptedBody),
+      findsOneWidget,
+    );
+    expect(find.text(l10n.pedalFirmwareGateFailedBody), findsNothing);
+
+    // Continue still lets the user through — the gate informs, it does not
+    // imprison.
     await tester.tap(find.byKey(const Key('pedal_firmware_gate_continue')));
     await tester.pumpAndSettle();
 

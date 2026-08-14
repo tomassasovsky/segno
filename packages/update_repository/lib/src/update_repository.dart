@@ -1,4 +1,5 @@
 import 'package:pub_semver/pub_semver.dart';
+import 'package:update_repository/src/pedal_flash_failure.dart';
 import 'package:update_repository/src/platform_update_backend.dart';
 import 'package:update_repository/src/update_manifest.dart';
 
@@ -58,4 +59,9 @@ class UpdateRepository {
 
   /// Flashes the published pedal firmware, emitting progress in `[0, 1]`.
   Stream<double> flashPedalFirmware() => _backend.flashPedalFirmware();
+
+  /// How far the last failed flash got, or `null` when there is no legible
+  /// record. See [PlatformUpdateBackend.lastPedalFlashFailure].
+  Future<PedalFlashFailureClass?> lastPedalFlashFailure() =>
+      _backend.lastPedalFlashFailure();
 }

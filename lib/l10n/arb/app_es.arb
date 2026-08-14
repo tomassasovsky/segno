@@ -36,6 +36,7 @@
     "pedalFirmwareGateBody": "Actualizando tu pedal a {version}. Sus interruptores y luces están apagados hasta que termine — no lo desconectes.",
     "pedalFirmwareGateFailedTitle": "La actualización del pedal no terminó",
     "pedalFirmwareGateFailedBody": "Tu pedal sigue funcionando con su firmware anterior. Segno volverá a intentarlo la próxima vez que se inicie.",
+    "pedalFirmwareGateFailedInterruptedBody": "La actualización se detuvo a mitad de camino, así que los interruptores y las luces de tu pedal quedan apagados hasta que se complete. Deja el pedal conectado — Segno terminará la actualización la próxima vez que se inicie.",
     "pedalFirmwareGateContinue": "Continuar",
     "dismiss": "Descartar",
     "waveformWindowFailedBanner": "La pantalla de forma de onda no se abrió: comprueba la segunda pantalla.",

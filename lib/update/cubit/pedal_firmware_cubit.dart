@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:update_repository/update_repository.dart';
@@ -15,7 +17,8 @@ enum PedalFirmwareStage {
   /// Programming. The pedal is in its bootloader for the duration.
   flashing,
 
-  /// The flash did not complete. The user is let through anyway.
+  /// The flash did not complete, after every retry. The user is let through
+  /// anyway.
   failed,
 }
 
@@ -27,6 +30,7 @@ class PedalFirmwareState extends Equatable {
     this.version,
     this.progress = 0,
     this.error,
+    this.failureClass,
   });
 
   /// Where the flash has got to.
@@ -41,13 +45,19 @@ class PedalFirmwareState extends Equatable {
   /// Why the flash failed, when it did.
   final String? error;
 
+  /// How far the failed flash got, when [stage] is
+  /// [PedalFirmwareStage.failed]. Decides what the failed dialog may honestly
+  /// claim: only [PedalFlashFailureClass.notStarted] permits "your pedal still
+  /// works on its previous firmware".
+  final PedalFlashFailureClass? failureClass;
+
   /// Whether the looper should be covered.
   bool get blocksLooper =>
       stage == PedalFirmwareStage.flashing ||
       stage == PedalFirmwareStage.failed;
 
   @override
-  List<Object?> get props => [stage, version, progress, error];
+  List<Object?> get props => [stage, version, progress, error, failureClass];
 }
 
 /// Runs the pedal firmware flash that an OS update left pending, and holds the
@@ -70,6 +80,27 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
 
   final UpdateRepository _updates;
 
+  /// Total flash attempts before the failed dialog is shown (#670). The
+  /// retries are silent — the gate keeps its "Finishing update" face — because
+  /// most transient failures (a dropped manifest fetch, a missed bootloader
+  /// window) self-heal on the next try, and a dialog about a problem that is
+  /// about to fix itself would only alarm.
+  ///
+  /// The retry lives HERE, not in the helper: each `flash-pedal` invocation is
+  /// deliberately stateless — one complete gated attempt with a legible exit —
+  /// and the "try again" policy (like the original "next start will offer the
+  /// flash again") has always been the cubit's. Re-invoking the verb re-runs
+  /// every gate from the manifest down, which is exactly what a retry should
+  /// mean.
+  static const int maxAttempts = 3;
+
+  /// Belt and braces over the helper's own budgets (`AVRDUDE_TIMEOUT`,
+  /// `PEDAL_PORT_TIMEOUT`): if the helper process wedges and stops emitting
+  /// progress entirely, the console must not be held hostage forever. Longer
+  /// than the helper's longest silent stretch (the 300 s hex download cap), so
+  /// it can only fire on a genuinely stuck helper.
+  static const Duration stallTimeout = Duration(minutes: 6);
+
   /// Flashes the pending firmware, if any. Safe to call once per app start.
   Future<void> run() async {
     if (!_updates.isSupported) {
@@ -84,36 +115,74 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
       return;
     }
 
-    emit(
-      PedalFirmwareState(stage: PedalFirmwareStage.flashing, version: version),
-    );
-    try {
-      await for (final progress in _updates.flashPedalFirmware()) {
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Progress restarts from zero on a retry — an honest bar that starts
+      // over beats one frozen where the last attempt died.
+      emit(
+        PedalFirmwareState(
+          stage: PedalFirmwareStage.flashing,
+          version: version,
+        ),
+      );
+      try {
+        final progress = _updates.flashPedalFirmware().timeout(stallTimeout);
+        await for (final value in progress) {
+          if (isClosed) return;
+          emit(
+            PedalFirmwareState(
+              stage: PedalFirmwareStage.flashing,
+              version: version,
+              progress: value.clamp(0.0, 1.0),
+            ),
+          );
+        }
+        if (isClosed) return;
+        emit(const PedalFirmwareState(stage: PedalFirmwareStage.idle));
+        return;
+      } on Exception catch (error) {
+        if (isClosed) return;
+        // Unknown counts as interrupted: comfort that cannot be proven must
+        // not be offered.
+        final failureClass =
+            await _updates.lastPedalFlashFailure() ??
+            PedalFlashFailureClass.interrupted;
+        if (isClosed) return;
+
+        if (attempt < maxAttempts && await _worthRetrying(failureClass)) {
+          if (isClosed) return;
+          continue;
+        }
         if (isClosed) return;
         emit(
           PedalFirmwareState(
-            stage: PedalFirmwareStage.flashing,
+            stage: PedalFirmwareStage.failed,
             version: version,
-            progress: progress.clamp(0.0, 1.0),
+            error: '$error',
+            failureClass: failureClass,
           ),
         );
+        return;
       }
-      if (isClosed) return;
-      emit(const PedalFirmwareState(stage: PedalFirmwareStage.idle));
-    } on Exception catch (error) {
-      if (isClosed) return;
-      emit(
-        PedalFirmwareState(
-          stage: PedalFirmwareStage.failed,
-          version: version,
-          error: '$error',
-        ),
-      );
     }
   }
 
-  /// Dismisses a failure and lets the user into the looper. The pedal keeps its
-  /// old firmware and the next start will offer the flash again.
+  /// Whether another silent attempt can help.
+  ///
+  /// `not-started` always can: nothing was written, so the pedal is intact and
+  /// the failure was environmental (network, a missed bootloader window).
+  /// `interrupted` can only help if the pedal re-presents its sketch port —
+  /// asked via `pedal-pending`, which requires one. A pedal parked in its
+  /// bootloader answers nothing, and re-touching it is pointless: fail fast to
+  /// the honest dialog instead. (Flashing a parked pedal's bootloader port
+  /// directly is slice 3 of #670, not a retry.)
+  Future<bool> _worthRetrying(PedalFlashFailureClass failureClass) async {
+    if (failureClass == PedalFlashFailureClass.notStarted) return true;
+    return await _updates.pendingPedalFirmware() != null;
+  }
+
+  /// Dismisses a failure and lets the user into the looper. The pedal keeps
+  /// whatever the flash left it with, and the next start will offer the flash
+  /// again.
   void dismiss() =>
       emit(const PedalFirmwareState(stage: PedalFirmwareStage.idle));
 }
