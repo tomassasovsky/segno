@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:daw_export/daw_export.dart';
 import 'package:flutter/material.dart';
@@ -340,5 +342,220 @@ void main() {
     final strings = await l10n();
 
     expect(find.text(strings.perfExportReExportFailed), findsOneWidget);
+  });
+
+  testWidgets('a glitched Done capture shows the dropped-frames banner', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      const PerformanceRecorderCompleted(
+        PerformanceRecordDone('/exports/perf-1'),
+        hadGlitch: true,
+      ),
+    );
+    expect(find.text((await l10n()).perfCaptureGlitch), findsOneWidget);
+  });
+
+  testWidgets('a clean Done capture shows no banner', (tester) async {
+    await pump(
+      tester,
+      const PerformanceRecorderCompleted(
+        PerformanceRecordDone('/exports/perf-1'),
+      ),
+    );
+    expect(find.byKey(const Key('perfCompletion_banner')), findsNothing);
+  });
+
+  testWidgets('the subtitle carries the track count and length', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      const PerformanceRecorderCompleted(
+        PerformanceRecordDone('/exports/perf-1'),
+        tracks: [DawTrack(name: 'Track 0', deviceChain: [])],
+        duration: Duration(minutes: 2, seconds: 14),
+      ),
+    );
+    expect(
+      find.text((await l10n()).perfSavedSubtitle('perf-1', 1, '2:14')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+    'a trackless capture keeps its length, and a long one grows hours',
+    (tester) async {
+      // Finding: `tracks.isEmpty` used to throw the known duration away, and
+      // a 75-minute set printed as `75:04`.
+      await pump(
+        tester,
+        const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-9'),
+          duration: Duration(hours: 1, minutes: 15, seconds: 4),
+        ),
+      );
+      expect(
+        find.text((await l10n()).perfSavedSubtitleTimed('perf-9', '1:15:04')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  group('the dialog route', () {
+    late StreamController<PerformanceRecorderState> states;
+
+    setUp(() {
+      states = StreamController<PerformanceRecorderState>.broadcast();
+    });
+
+    tearDown(() => states.close());
+
+    // A host page whose context can open the dialog, with a cubit whose
+    // state the test drives through [states].
+    Future<BuildContext> host(
+      WidgetTester tester,
+      PerformanceRecorderState initial,
+    ) async {
+      whenListen(cubit, states.stream, initialState: initial);
+      late BuildContext hostContext;
+      await tester.pumpApp(
+        BlocProvider<PerformanceRecorderCubit>.value(
+          value: cubit,
+          child: Scaffold(
+            body: Builder(
+              builder: (context) {
+                hostContext = context;
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+      return hostContext;
+    }
+
+    testWidgets('a render in progress draws the rendering face', (
+      tester,
+    ) async {
+      final strings = await l10n();
+      final context = await host(
+        tester,
+        const PerformanceRecorderRendering(percent: 62, name: 'perf-1'),
+      );
+      unawaited(showPerformanceCompletionSheet(context));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('perfRendering_dialog')), findsOneWidget);
+      expect(find.text(strings.perfRenderingTitle(62)), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('perfRendering_hide')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('perfRendering_dialog')), findsNothing);
+    });
+
+    testWidgets('the rendering face morphs into the saved face in place', (
+      tester,
+    ) async {
+      final context = await host(
+        tester,
+        const PerformanceRecorderRendering(percent: 10),
+      );
+      unawaited(showPerformanceCompletionSheet(context));
+      await tester.pumpAndSettle();
+
+      states.add(
+        const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-1'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('perfRendering_dialog')), findsNothing);
+      expect(find.byKey(const Key('perfCompletion_sheet')), findsOneWidget);
+    });
+
+    testWidgets('a second open while the dialog is up is refused', (
+      tester,
+    ) async {
+      final context = await host(
+        tester,
+        const PerformanceRecorderRendering(percent: 10),
+      );
+      unawaited(showPerformanceCompletionSheet(context));
+      await tester.pumpAndSettle();
+      unawaited(showPerformanceCompletionSheet(context));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('perfRendering_dialog')), findsOneWidget);
+    });
+
+    testWidgets('the dialog can reopen while its exit animation runs', (
+      tester,
+    ) async {
+      // Regression: the double-open flag must clear at pop INITIATION, not
+      // after the exit transition — a Completed landing during Hide's
+      // animation reopens the result, and nothing else ever would.
+      final context = await host(
+        tester,
+        const PerformanceRecorderRendering(percent: 90),
+      );
+      unawaited(showPerformanceCompletionSheet(context));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('perfRendering_hide')));
+      await tester.pump(const Duration(milliseconds: 20)); // mid-exit
+      unawaited(showPerformanceCompletionSheet(context));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('perfRendering_dialog')), findsOneWidget);
+    });
+
+    testWidgets('a foreign state pops the dialog instead of lingering', (
+      tester,
+    ) async {
+      // Regression: the pedal can arm straight through the repository while
+      // a render is up; a dialog that only stopped drawing would leave the
+      // barrier dimming a dead stage.
+      final context = await host(
+        tester,
+        const PerformanceRecorderRendering(percent: 40),
+      );
+      // The page route owns a barrier of its own; the dialog's is the extra.
+      final barriers = find.byType(ModalBarrier).evaluate().length;
+      unawaited(showPerformanceCompletionSheet(context));
+      await tester.pumpAndSettle();
+
+      states.add(const PerformanceRecorderIdle());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('perfRendering_dialog')), findsNothing);
+      expect(find.byKey(const Key('perfCompletion_sheet')), findsNothing);
+      expect(find.byType(ModalBarrier).evaluate().length, barriers);
+    });
+
+    testWidgets('teardown without a pop still releases the double-open flag', (
+      tester,
+    ) async {
+      // Regression: the future-side clear never runs when the tree dies
+      // without a pop; dispose must release the flag or no capture dialog
+      // ever opens again this process.
+      final context = await host(
+        tester,
+        const PerformanceRecorderRendering(percent: 40),
+      );
+      unawaited(showPerformanceCompletionSheet(context));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink()); // die, no pop
+
+      final again = await host(
+        tester,
+        const PerformanceRecorderRendering(percent: 41),
+      );
+      unawaited(showPerformanceCompletionSheet(again));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('perfRendering_dialog')), findsOneWidget);
+    });
   });
 }

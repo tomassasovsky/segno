@@ -867,6 +867,7 @@
     },
     "perfDone": "Captura guardada",
     "perfSavedSubtitle": "{name} — {count, plural, =1{1 pista} other{{count} pistas}}, {duration}. Guardada en la carpeta de la sesión.",
+    "perfSavedSubtitleTimed": "{name} — {duration}. Guardada en la carpeta de la sesión.",
     "perfSavedSubtitlePlain": "{name} — guardada en la carpeta de la sesión.",
     "perfRenderingTitle": "Renderizando… {percent}%",
     "perfRenderingSubtitleNamed": "{name} — escribiendo la mezcla y los stems por pista. Podés seguir tocando; armar otra captura espera a que esto termine.",

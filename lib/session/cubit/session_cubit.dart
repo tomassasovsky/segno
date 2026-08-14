@@ -137,7 +137,13 @@ class SessionCubit extends Cubit<SessionState> {
         chains: chainsFromLooper(_looper),
         pedalBindings: _currentPedalBindings(),
       );
-      return const _ActionResult(SessionOutcome.saved);
+      // Re-list, like every other mutation: the sessions dialog stays open by
+      // design, and its date column reads the catalog — without this a
+      // just-saved session goes on saying "yesterday".
+      return _ActionResult(
+        SessionOutcome.saved,
+        sessions: await _repository.listSessions(),
+      );
     });
   }
 

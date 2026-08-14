@@ -20,9 +20,10 @@ class SessionSummary {
   /// stat failure, or a summary built without one). The sessions dialog's
   /// date column reads this — "today 14:02", "yesterday", "3 Aug".
   ///
-  /// Deliberately NOT part of [==]/[hashCode]: identity is the name, and a
-  /// list that compared timestamps would report "changed" after every save
-  /// even when the set of sessions did not.
+  /// Deliberately NOT part of [==]/[hashCode]: a summary's identity is its
+  /// name. (List rebuilds do not hinge on this either way — a re-listed
+  /// catalog is a new `List`, and `buildWhen`'s `a.sessions != b.sessions`
+  /// compares list identity, not elements.)
   final DateTime? modifiedAt;
 
   @override

@@ -1189,6 +1189,11 @@
             "duration": {"type": "String"}
         }
     },
+    "perfSavedSubtitleTimed": "{name} — {duration}. Written to the session folder.",
+    "@perfSavedSubtitleTimed": {
+        "description": "Completion dialog subtitle when the length is known but the export produced no DAW tracks.",
+        "placeholders": {"name": {"type": "String"}, "duration": {"type": "String"}}
+    },
     "perfSavedSubtitlePlain": "{name} — written to the session folder.",
     "@perfSavedSubtitlePlain": {
         "description": "Completion dialog subtitle when the track count or length is unknown (a recovered boot capture).",

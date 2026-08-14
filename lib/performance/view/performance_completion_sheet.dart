@@ -30,20 +30,31 @@ Future<void> showPerformanceCompletionSheet(BuildContext context) async {
   if (PerformanceCompletionSheet._open) return;
   // Set here, not in the widget's initState: the route's first build is a
   // frame away, and a second listener firing inside that gap would stack a
-  // copy. CLEARED by the widget's dispose rather than a `finally` — a torn
-  // down tree (a test, a window close) never completes `showDialog`'s future,
-  // and a finally that never runs would wedge the flag true for the life of
-  // the process.
+  // copy.
+  //
+  // Cleared TWICE, deliberately, because each clear covers the other's blind
+  // spot. The `finally` runs when `showDialog`'s future resolves — at pop
+  // INITIATION, before the ~150ms exit transition — so a `Completed` that
+  // lands while Hide's animation is still running can reopen the dialog
+  // instead of being refused against a corpse (the capture's own result
+  // dialog would otherwise be gone for good: nothing else ever reopens it).
+  // The dispose clear covers the tree being torn down WITHOUT a pop (a test,
+  // a window close), where the future never resolves and a finally alone
+  // would wedge the flag true for the life of the process.
   PerformanceCompletionSheet._open = true;
-  final cubit = context.read<PerformanceRecorderCubit>();
-  await showDialog<void>(
-    context: context,
-    barrierColor: context.surface.scrim,
-    builder: (_) => BlocProvider<PerformanceRecorderCubit>.value(
-      value: cubit,
-      child: const PerformanceCompletionSheet(),
-    ),
-  );
+  try {
+    final cubit = context.read<PerformanceRecorderCubit>();
+    await showDialog<void>(
+      context: context,
+      barrierColor: context.surface.scrim,
+      builder: (_) => BlocProvider<PerformanceRecorderCubit>.value(
+        value: cubit,
+        child: const PerformanceCompletionSheet(),
+      ),
+    );
+  } finally {
+    PerformanceCompletionSheet._open = false;
+  }
 }
 
 /// A capture's outcome, drawn to `SESSION & CAPTURE / capture-saved` and its
@@ -86,11 +97,15 @@ class _PerformanceCompletionSheetState
     return l10n.perfRevealOther;
   }
 
-  /// `2:14` for the pen's subtitle — minutes unpadded, seconds padded.
+  /// `2:14` for the pen's subtitle — minutes unpadded, seconds padded — and
+  /// `1:15:04` past the hour, so a long set does not read as 75 minutes.
   static String _mmss(Duration d) {
-    final m = d.inMinutes;
     final s = (d.inSeconds % 60).toString().padLeft(2, '0');
-    return '$m:$s';
+    if (d.inHours > 0) {
+      final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+      return '${d.inHours}:$m:$s';
+    }
+    return '${d.inMinutes}:$s';
   }
 
   Future<void> _reveal(String path) => launchUrl(Uri.directory(path));
@@ -138,13 +153,35 @@ class _PerformanceCompletionSheetState
     }
   }
 
+  /// Pops the dialog when [state] is one this dialog cannot draw.
+  ///
+  /// Without this the route stayed pushed drawing `SizedBox.shrink` under its
+  /// own modal barrier — a dimmed, empty, untouchable stage. Reachable: the
+  /// pedal's MODE long-press arms through the repository, which has no
+  /// render-in-progress gate, so the state can leave Rendering for Armed
+  /// while this dialog is up.
+  void _popIfForeign(BuildContext context, PerformanceRecorderState state) {
+    final ours =
+        state is PerformanceRecorderRendering ||
+        (state is PerformanceRecorderCompleted && state.result != null);
+    if (!ours) Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<PerformanceRecorderCubit>().state;
+    return BlocListener<PerformanceRecorderCubit, PerformanceRecorderState>(
+      listener: _popIfForeign,
+      child: _face(context, state),
+    );
+  }
+
+  Widget _face(BuildContext context, PerformanceRecorderState state) {
     // The rendering face: percent in the title, Hide as the only action.
     // Hiding is safe — the render carries on, the completion listener reopens
-    // this dialog when it lands, and arming again is refused by the cubit
-    // until then (`c/capture-rendering`).
+    // this dialog when it lands, and arming another capture is refused by the
+    // CUBIT until then (`c/capture-rendering`). The pedal does not go through
+    // the cubit — see [_popIfForeign].
     if (state is PerformanceRecorderRendering) {
       return _RenderingDialog(state: state);
     }
@@ -160,12 +197,18 @@ class _PerformanceCompletionSheetState
     final l10n = context.l10n;
     final surface = context.surface;
     final name = _basename(path);
-    final subtitle = state.duration == null || state.tracks.isEmpty
+    // Three subtitles, best fact first: count and length when both are
+    // known, length alone when the export produced no DAW tracks, the bare
+    // name when the duration is unknowable (a recovered boot capture).
+    final duration = state.duration;
+    final subtitle = duration == null
         ? l10n.perfSavedSubtitlePlain(name)
+        : state.tracks.isEmpty
+        ? l10n.perfSavedSubtitleTimed(name, _mmss(duration))
         : l10n.perfSavedSubtitle(
             name,
             state.tracks.length,
-            _mmss(state.duration!),
+            _mmss(duration),
           );
     // What went wrong on the way, if anything — the pen draws each as a
     // banner between the subtitle and the EXPORT card. Stopped-early outranks
