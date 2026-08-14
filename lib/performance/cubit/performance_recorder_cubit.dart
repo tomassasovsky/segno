@@ -187,16 +187,33 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// Silently salvages any capture a crash left unfinalized (D-SALVAGE,
   /// #679): [PerformanceRepository.runBootRecovery] finalizes + renders each
   /// one in the background into the repository's `recovered/` area (pruned
-  /// there after [PerformanceRepository.recoveredRetention]) — no prompt, no
-  /// state emission, nothing for a listener to react to. The composition
-  /// root calls this unawaited at boot;
-  /// [PerformanceRepository.arm]'s own in-flight gates (#671) cover the
+  /// there after [PerformanceRepository.recoveredRetention]) — no prompt and
+  /// no dialog-triggering state. The one thing surfaced is the honest busy
+  /// fact: while there is actual salvage work, idle carries
+  /// [PerformanceRecorderIdle.recovering] so the record button can disable
+  /// instead of looking alive while the repository's in-flight gates
+  /// silently refuse every press. The composition root calls this unawaited
+  /// at boot; [PerformanceRepository.arm]'s own gates (#671) cover the
   /// pedal for as long as the background finalize/render runs. Latched —
   /// safe to call once at boot.
   Future<void> load() async {
     if (_loaded) return;
     _loaded = true;
+    // Probed first so a clean boot (the overwhelmingly common case) emits
+    // nothing at all — the recovering flag only ever shows for real work.
+    bool hasWork;
+    try {
+      hasWork = (await _performance.findUnfinalized()).isNotEmpty;
+    } on Exception {
+      hasWork = false; // unreadable root: runBootRecovery no-ops on it too
+    }
+    if (hasWork) _emit(const PerformanceRecorderIdle(recovering: true));
     await _performance.runBootRecovery();
+    // Only clear a state this method itself set — a mid-recovery emission
+    // from elsewhere (nothing does today) must not be stomped back to idle.
+    if (state == const PerformanceRecorderIdle(recovering: true)) {
+      _emit(const PerformanceRecorderIdle());
+    }
   }
 
   /// Renames the just-delivered capture to [to] (D-NAME) — the completion
@@ -255,6 +272,12 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// MODE-long-press path alike — rather than duplicated here.
   Future<void> toggleArm() async {
     switch (state) {
+      // Refused before the free-space probe, same reasoning as the
+      // finalizing/rendering case: the repository's gate would silently
+      // refuse the arm anyway, but falling through would let a probe emit
+      // `lowDiskBlocked` over the recovering flag, blinding the button.
+      case PerformanceRecorderIdle(recovering: true):
+        break;
       case PerformanceRecorderIdle():
       case PerformanceRecorderCompleted():
         if (await _volumeTooFullToArm()) {

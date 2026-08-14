@@ -1549,12 +1549,16 @@ void main() {
     });
 
     testWidgets(
-      'a boot-time idle emission opens no dialog — crash salvage recovers '
-      'silently in the repository, with no prompt UI left to trigger (#679)',
+      'a boot-time salvage emission opens no dialog — crash recovery runs '
+      'silently in the repository, and even its busy flag is not a prompt '
+      '(#679)',
       (tester) async {
         whenListen(
           performanceRecorder,
-          Stream.fromIterable(const [PerformanceRecorderIdle()]),
+          Stream.fromIterable(const [
+            PerformanceRecorderIdle(recovering: true),
+            PerformanceRecorderIdle(),
+          ]),
           initialState: const PerformanceRecorderIdle(),
         );
         seed(const LooperState(tracks: [Track()]));

@@ -1031,6 +1031,13 @@ void main() {
           crashed,
           reason: 'the stem render ran against the bundle before the move',
         );
+        expect(
+          File(
+            '$recovered/${PerformanceRepository.recoveryMarkerName}',
+          ).existsSync(),
+          isFalse,
+          reason: 'a completed salvage removes its own marker',
+        );
       },
     );
 
@@ -1166,6 +1173,233 @@ void main() {
         );
         await pollingRepo.arm();
         expect(pollingRepo.armedDirectory, isNotNull);
+      },
+    );
+
+    test(
+      'defers salvage entirely while a capture is armed — the armed session '
+      'owns the drain thread and the single render slot (#679 r2)',
+      () async {
+        await repo.arm();
+        final armedDir = repo.armedDirectory!;
+        // The drain thread keeps the live capture's sidecar at
+        // finalized: false the whole session — exactly what makes it look
+        // salvageable to a scan that does not exclude it.
+        writeNativeSidecar(armedDir);
+        final crashed = seedCrashed('perf-crashed');
+
+        await repo.runBootRecovery();
+
+        expect(repo.armedDirectory, armedDir);
+        expect(Directory(armedDir).existsSync(), isTrue);
+        expect(
+          File(
+            '$armedDir/${PerformanceRepository.recoveryMarkerName}',
+          ).existsSync(),
+          isFalse,
+          reason: 'the live capture was never even marked for salvage',
+        );
+        expect(
+          Directory(crashed).existsSync(),
+          isTrue,
+          reason:
+              'the sibling defers to the next boot too — its salvage render '
+              "would steal the armed take's one global render slot",
+        );
+        expect(engine.renderBeginCalls, 0);
+        expect(
+          Directory('${tempDir.path}/exports/recovered').existsSync(),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      "an arm landing in the boot scan's await gap wins: the resumed "
+      'recovery finds the armed session and defers everything, leaving the '
+      'live directory untouched (#679 r2)',
+      () async {
+        final crashed = seedCrashed('perf-crashed');
+        // Park runBootRecovery on its very first await (the exports-root
+        // lookup) so the arm provably lands AFTER recovery started but
+        // BEFORE any salvage took its finalize guard.
+        final rootGate = Completer<String>();
+        var rootCalls = 0;
+        final gatedRepo = PerformanceRepository(
+          engine: engine,
+          exportsRoot: () {
+            rootCalls++;
+            return rootCalls == 1
+                ? rootGate.future
+                : Future.value('${tempDir.path}/exports');
+          },
+          now: () => clock,
+        );
+        addTearDown(gatedRepo.dispose);
+
+        final recovery = gatedRepo.runBootRecovery(); // parks on the root
+        await gatedRepo.arm(); // lands in the gap, owns the engine
+        final armedDir = gatedRepo.armedDirectory!;
+        writeNativeSidecar(armedDir); // the drain's finalized: false sidecar
+        rootGate.complete('${tempDir.path}/exports');
+        await recovery;
+
+        expect(gatedRepo.armedDirectory, armedDir);
+        expect(
+          Directory(armedDir).existsSync(),
+          isTrue,
+          reason:
+              'the salvage must never finalize/rename the live capture '
+              'out from under the drain thread',
+        );
+        expect(
+          File(
+            '$armedDir/${PerformanceRepository.recoveryMarkerName}',
+          ).existsSync(),
+          isFalse,
+        );
+        expect(Directory(crashed).existsSync(), isTrue);
+        expect(
+          engine.renderBeginCalls,
+          0,
+          reason: "no salvage render may squat on the armed take's slot",
+        );
+      },
+    );
+
+    test(
+      "one capture's failing salvage neither aborts its siblings nor "
+      'escapes as an unhandled error (#679 r2)',
+      () async {
+        final bad = seedCrashed('perf-a-bad');
+        // A directory squatting on the finalize's WAV target: this
+        // capture's salvage throws mid-finalize.
+        Directory('$bad/master.wav').createSync();
+        seedCrashed('perf-b-good');
+
+        // Deterministic regardless of listSync order: an unguarded loop
+        // would either propagate the throw out of this await (bad first)
+        // or strand the sibling unrecovered (good first) — both outcomes
+        // below can only hold together under the per-capture guard.
+        await repo.runBootRecovery();
+
+        expect(Directory(bad).existsSync(), isTrue);
+        expect(
+          Directory(
+            '${tempDir.path}/exports/recovered/perf-b-good',
+          ).existsSync(),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'a wedged stem render times out instead of parking recovery forever; '
+      "the finalized bundle keeps its marker and the next boot's sweep "
+      'finishes the move (#679 r2)',
+      () async {
+        engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 10,
+        );
+        final timingRepo = PerformanceRepository(
+          engine: engine,
+          exportsRoot: () async => '${tempDir.path}/exports',
+          now: () => clock,
+          bootRecoveryPollInterval: const Duration(milliseconds: 2),
+          bootRecoveryRenderTimeout: const Duration(milliseconds: 10),
+        );
+        addTearDown(timingRepo.dispose);
+        final dir = seedCrashed('perf-crashed');
+
+        await timingRepo.runBootRecovery(); // returns: the wait is bounded
+
+        expect(Directory(dir).existsSync(), isTrue);
+        expect(
+          File(
+            '$dir/${PerformanceRepository.recoveryMarkerName}',
+          ).existsSync(),
+          isTrue,
+          reason: 'the marker stays until the move actually lands',
+        );
+        expect(
+          Directory('${tempDir.path}/exports/recovered').existsSync(),
+          isFalse,
+        );
+
+        // Next boot: the wedged render is gone; the sweep completes the
+        // move without re-finalizing anything.
+        engine.renderProgress = PerformanceRenderProgress.empty;
+        await timingRepo.runBootRecovery();
+        final moved = '${tempDir.path}/exports/recovered/perf-crashed';
+        expect(Directory(moved).existsSync(), isTrue);
+        expect(
+          File(
+            '$moved/${PerformanceRepository.recoveryMarkerName}',
+          ).existsSync(),
+          isFalse,
+        );
+        expect(Directory(dir).existsSync(), isFalse);
+      },
+    );
+
+    test(
+      'sweeps a finalized bundle stranded with its recovery marker into '
+      'recovered/, and never touches an unmarked finished take (#679 r2)',
+      () async {
+        // Stranded: finalized AND still marked — a crash landed between a
+        // previous boot's finalize and its rename.
+        final stranded = '${tempDir.path}/exports/perf-stranded';
+        Directory(stranded).createSync(recursive: true);
+        writeNativeSidecar(stranded, finalized: true);
+        File(
+          '$stranded/${PerformanceRepository.recoveryMarkerName}',
+        ).writeAsStringSync('');
+        // A normal finished take: finalized, no marker — the user's data.
+        final take = '${tempDir.path}/exports/perf-finished-take';
+        Directory(take).createSync(recursive: true);
+        writeNativeSidecar(take, finalized: true);
+
+        await repo.runBootRecovery();
+
+        final moved = '${tempDir.path}/exports/recovered/perf-stranded';
+        expect(Directory(moved).existsSync(), isTrue);
+        expect(
+          File(
+            '$moved/${PerformanceRepository.recoveryMarkerName}',
+          ).existsSync(),
+          isFalse,
+        );
+        expect(Directory(stranded).existsSync(), isFalse);
+        expect(
+          Directory(take).existsSync(),
+          isTrue,
+          reason:
+              'finished takes also live finalized in the exports root — '
+              'only the marker distinguishes stranded salvage output',
+        );
+      },
+    );
+
+    test(
+      'never prunes an entry whose mtime predates the sanity floor — an '
+      'RTC-less boot stamps near-epoch mtimes that a later-corrected clock '
+      'would misread as decades of age (#679 r2)',
+      () async {
+        final nearEpoch = '${tempDir.path}/exports/recovered/perf-preclock';
+        Directory(nearEpoch).createSync(recursive: true);
+        writeNativeSidecar(nearEpoch, finalized: true);
+        File(
+          '$nearEpoch/performance.json',
+        ).setLastModifiedSync(DateTime.utc(1970, 1, 2));
+
+        await repo.runBootRecovery();
+
+        expect(
+          Directory(nearEpoch).existsSync(),
+          isTrue,
+          reason: 'a clearly-wrong timestamp must never justify a delete',
+        );
       },
     );
 

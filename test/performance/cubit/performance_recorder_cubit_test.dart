@@ -149,8 +149,10 @@ void main() {
 
   group('load', () {
     blocTest<PerformanceRecorderCubit, PerformanceRecorderState>(
-      'silently recovers an unfinalized capture at boot: no state is ever '
-      'emitted, and the bundle lands finalized under recovered/ (#679)',
+      'recovers an unfinalized capture at boot with no prompt and no '
+      'dialog-triggering state — only the honest busy flag while the '
+      'salvage actually runs — and the bundle lands finalized under '
+      'recovered/ (#679)',
       setUp: () {
         final dir = Directory('${tempDir.path}/exports/perf-crashed')
           ..createSync(recursive: true);
@@ -158,7 +160,13 @@ void main() {
       },
       build: build,
       act: (cubit) => cubit.load(),
-      expect: () => <PerformanceRecorderState>[],
+      expect: () => const [
+        // The record button reads this to disable — every press during the
+        // salvage is refused by the repository's gates, and a live-looking
+        // control that silently eats presses reads as dead (#679 r2).
+        PerformanceRecorderIdle(recovering: true),
+        PerformanceRecorderIdle(),
+      ],
       verify: (_) {
         expect(
           Directory('${tempDir.path}/exports/perf-crashed').existsSync(),
@@ -397,6 +405,17 @@ void main() {
         expect(cubit.state, isA<PerformanceRecorderArmed>());
         expect(engine.perfArmCalls, 1);
       },
+    );
+
+    blocTest<PerformanceRecorderCubit, PerformanceRecorderState>(
+      'is a no-op while the boot salvage is still running — refused before '
+      'the free-space probe, so no lowDiskBlocked emit can blind the '
+      'recovering flag (#679 r2)',
+      build: build,
+      seed: () => const PerformanceRecorderIdle(recovering: true),
+      act: (cubit) => cubit.toggleArm(),
+      expect: () => <PerformanceRecorderState>[],
+      verify: (_) => expect(engine.perfArmCalls, 0),
     );
 
     test(
@@ -1273,10 +1292,14 @@ void main() {
 
         expect(
           states,
-          isEmpty,
+          const [
+            PerformanceRecorderIdle(recovering: true),
+            PerformanceRecorderIdle(),
+          ],
           reason:
-              'silent recovery must never emit — any state here would '
-              're-trigger boot UI that no longer exists',
+              'silent recovery surfaces only the honest busy flag — never '
+              'a Rendering/Completed state, which would open the completion '
+              'dialog at boot',
         );
         expect(dir.existsSync(), isFalse);
         final recovered =

@@ -76,12 +76,15 @@ sealed class PerformanceRecorderState extends Equatable {
   const PerformanceRecorderState();
 }
 
-/// Not armed. Boot-time crash salvage never surfaces here — it runs silently
-/// inside [PerformanceRepository.runBootRecovery] (D-SALVAGE, #679), so idle
-/// carries no recovery state at all.
+/// Not armed. Boot-time crash salvage asks no questions here — it runs
+/// silently inside [PerformanceRepository.runBootRecovery] (D-SALVAGE,
+/// #679); [recovering] is the one honest fact idle carries about it.
 class PerformanceRecorderIdle extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderIdle].
-  const PerformanceRecorderIdle({this.lowDiskBlocked = false});
+  const PerformanceRecorderIdle({
+    this.lowDiskBlocked = false,
+    this.recovering = false,
+  });
 
   /// An arm was refused because the export volume is already below the
   /// free-space floor (#640).
@@ -91,8 +94,17 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   /// indistinguishable from a dead control.
   final bool lowDiskBlocked;
 
+  /// The boot-time background salvage is still finalizing/rendering a
+  /// crashed capture. Not a prompt (there is no question to answer, and no
+  /// dialog keys off this) — it exists so the record button can disable and
+  /// say why, instead of looking alive while
+  /// [PerformanceRepository.arm]'s in-flight gates silently refuse every
+  /// press: a refusal the operator cannot see is indistinguishable from a
+  /// dead control.
+  final bool recovering;
+
   @override
-  List<Object?> get props => [lowDiskBlocked];
+  List<Object?> get props => [lowDiskBlocked, recovering];
 }
 
 /// Armed: the engine's capture taps are running. [elapsed] and [overrun]
