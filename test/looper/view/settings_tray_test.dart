@@ -595,6 +595,47 @@ void main() {
       expect(item.left - rail.left, closeTo(10, 0.5));
     });
 
+    testWidgets('the rail label wears the pen type, and its pill the token', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+
+      // Read off the pen's rail (`NETWORK / wifi`'s items and the `NavItem`
+      // component agree): 17/normal in the secondary tint, and the selected
+      // item 17/600 in the accent on a pill filled with the flat
+      // `accent-surface` token — not a translucent accent tint, which reads
+      // as a different colour on each background it sits over.
+      final surface = tester.element(find.byType(TrayNavigationRail)).surface;
+
+      AppText labelIn(String key) => tester.widget<AppText>(
+        find.descendant(
+          of: find.byKey(Key(key)),
+          matching: find.byType(AppText),
+        ),
+      );
+
+      // Signal is the tray's opening destination, so it is the lit one.
+      final selected = labelIn('settingsTrayRail_signal');
+      expect(selected.style?.fontSize, 17);
+      expect(selected.style?.fontWeight, FontWeight.w600);
+      expect(selected.style?.color, surface.accent);
+
+      final pill = tester.widget<AnimatedContainer>(
+        find.descendant(
+          of: find.byKey(const Key('settingsTrayRail_signal')),
+          matching: find.byType(AnimatedContainer),
+        ),
+      );
+      expect((pill.decoration as BoxDecoration?)?.color, surface.accentSurface);
+
+      final unselected = labelIn('settingsTrayRail_network');
+      expect(unselected.style?.fontSize, 17);
+      expect(unselected.style?.fontWeight, FontWeight.normal);
+      expect(unselected.style?.color, surface.textSecondary);
+    });
+
     testWidgets('brightness sits at the foot, not under the last domain', (
       tester,
     ) async {
