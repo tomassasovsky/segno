@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/pedal_firmware_cubit.dart';
@@ -115,14 +116,23 @@ void main() {
     final l10n = await AppLocalizations.delegate.load(const Locale('en'));
     expect(find.text(l10n.pedalFirmwareGateTitle), findsOneWidget);
     expect(find.textContaining('0.4.0'), findsOneWidget);
+    // The pen's `firmware-gate` draws a 31px progress ring, determinate — the
+    // helper reports PROGRESS from 0, and a ring that sits still is more
+    // honest than a spinner.
     expect(
       tester
-          .widget<LinearProgressIndicator>(
+          .widget<CircularProgressIndicator>(
             find.byKey(const Key('pedal_firmware_gate_progress')),
           )
           .value,
       0.4,
     );
+    // The face is the console's dialog shell at the pen's 552 width, not a
+    // hand-rolled card.
+    final shell = tester.widget<ConsoleDialogShell>(
+      find.byKey(const Key('pedal_firmware_gate')),
+    );
+    expect(shell.width, 552);
     // A non-dismissible barrier, not just a panel drawn on top: a stray tap on
     // a transport control while the pedal is in its bootloader must not reach
     // the looper.
@@ -170,7 +180,16 @@ void main() {
 
     final l10n = await AppLocalizations.delegate.load(const Locale('en'));
     expect(find.text(l10n.pedalFirmwareGateFailedTitle), findsOneWidget);
+    expect(find.text(l10n.pedalFirmwareGateFailedBody), findsOneWidget);
     expect(find.byKey(const Key('pedal_firmware_gate_progress')), findsNothing);
+
+    // Continue is the pen's accent action — outlined and lettered in the
+    // accent, not solid: it commits nothing, it only lets the user through.
+    final continueButton = tester.widget<ConsoleDialogButton>(
+      find.byKey(const Key('pedal_firmware_gate_continue')),
+    );
+    expect(continueButton.tone, ConsoleDialogTone.accent);
+    expect(continueButton.label, l10n.pedalFirmwareGateContinue);
 
     await tester.tap(find.byKey(const Key('pedal_firmware_gate_continue')));
     await tester.pumpAndSettle();

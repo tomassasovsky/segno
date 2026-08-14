@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/pedal_firmware_cubit.dart';
@@ -21,6 +22,13 @@ class PedalFirmwareGate extends StatelessWidget {
   /// The looper, shown once no flash is pending.
   final Widget child;
 
+  /// The pen's scrim for these two screens (`firmware-gate` /
+  /// `firmware-failed`): `#08080adb`, deliberately denser than
+  /// [SurfaceTheme.scrim] — an ordinary dialog leaves the console readable
+  /// behind it, but here the console is *blocked*, and the mockups darken it
+  /// to say so.
+  static const Color barrierColor = Color(0xDB08080A);
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<PedalFirmwareCubit, PedalFirmwareState>(
@@ -33,7 +41,7 @@ class PedalFirmwareGate extends StatelessWidget {
               child: ModalBarrier(
                 key: Key('pedal_firmware_gate_barrier'),
                 dismissible: false,
-                color: Colors.black87,
+                color: barrierColor,
               ),
             ),
             // The gate wraps the looper from `home:`, so it sits ABOVE the
@@ -53,10 +61,21 @@ class PedalFirmwareGate extends StatelessWidget {
   }
 }
 
+/// The two faces of the gate, from the pen's `SESSION & CAPTURE` drawings:
+/// `firmware-gate` (progress ring, title, body) and `firmware-failed`
+/// (title, body, Continue in the accent). Both sit in the console's dialog
+/// shell at the pen's 552 width, all copy centred.
 class _GateBody extends StatelessWidget {
   const _GateBody({required this.state});
 
   final PedalFirmwareState state;
+
+  /// Panel width, as both pen drawings set it.
+  static const double _width = 552;
+
+  /// The pen's progress ring: 31px across, 2px of stroke.
+  static const double _ringSize = 31;
+  static const double _ringStroke = 2;
 
   @override
   Widget build(BuildContext context) {
@@ -64,60 +83,75 @@ class _GateBody extends StatelessWidget {
     final surface = context.surface;
     final failed = state.stage == PedalFirmwareStage.failed;
 
+    final titleStyle = TextStyle(
+      color: surface.textPrimary,
+      fontSize: 20,
+      height: 1.15,
+      fontWeight: FontWeight.w600,
+      leadingDistribution: TextLeadingDistribution.even,
+    );
+    final bodyStyle = TextStyle(
+      color: surface.textSecondary,
+      fontSize: 16,
+      height: 1.55,
+      leadingDistribution: TextLeadingDistribution.even,
+    );
+
     return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: Container(
+      child: SingleChildScrollView(
+        child: ConsoleDialogShell(
           key: const Key('pedal_firmware_gate'),
-          margin: const EdgeInsets.all(24),
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: surface.card,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: surface.line),
-          ),
+          width: _width,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (!failed) ...[
+                Center(
+                  child: SizedBox(
+                    width: _ringSize,
+                    height: _ringSize,
+                    child: CircularProgressIndicator(
+                      key: const Key('pedal_firmware_gate_progress'),
+                      // Determinate from the first frame: the helper reports
+                      // PROGRESS from 0, and a ring that sits still is more
+                      // honest than a spinner about a flash that takes
+                      // seconds, not milliseconds.
+                      value: state.progress,
+                      strokeWidth: _ringStroke,
+                      backgroundColor: surface.borderStrong,
+                      color: surface.accent,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 17),
+              ],
               AppText(
                 failed
                     ? l10n.pedalFirmwareGateFailedTitle
                     : l10n.pedalFirmwareGateTitle,
-                style: TextStyle(
-                  color: surface.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
+                textAlign: TextAlign.center,
+                style: titleStyle,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               AppText(
                 failed
                     ? l10n.pedalFirmwareGateFailedBody
                     : l10n.pedalFirmwareGateBody(state.version ?? ''),
-                style: TextStyle(color: surface.textSecondary, fontSize: 13),
+                textAlign: TextAlign.center,
+                style: bodyStyle,
               ),
-              const SizedBox(height: 20),
-              if (failed)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
+              if (failed) ...[
+                const SizedBox(height: 19),
+                Center(
+                  child: ConsoleDialogButton(
                     key: const Key('pedal_firmware_gate_continue'),
+                    label: l10n.pedalFirmwareGateContinue,
+                    tone: ConsoleDialogTone.accent,
                     onPressed: context.read<PedalFirmwareCubit>().dismiss,
-                    child: AppText(l10n.pedalFirmwareGateContinue),
                   ),
-                )
-              else
-                LinearProgressIndicator(
-                  key: const Key('pedal_firmware_gate_progress'),
-                  // Determinate from the first frame: the helper reports
-                  // PROGRESS from 0, and a bar that sits still is more honest
-                  // than a spinner about a flash that takes seconds, not
-                  // milliseconds.
-                  value: state.progress,
-                  backgroundColor: surface.line,
-                  color: surface.accent,
                 ),
+              ],
             ],
           ),
         ),
