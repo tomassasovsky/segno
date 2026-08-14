@@ -447,6 +447,44 @@ void main() {
         );
       },
     );
+
+    test(
+      'a second arm overlapping one still in flight is refused, and never '
+      "deletes the winning arm's live capture directory (#671)",
+      () async {
+        // Park arm1 on its first await (the exports-root lookup) so arm2
+        // provably overlaps it: without the in-flight gate both would pass
+        // the entry gate, resolve the SAME slug (the collision loop is
+        // synchronous, the create is not), and the loser's re-check cleanup
+        // would delete the winner's just-armed directory out from under the
+        // engine's drain thread.
+        final rootGate = Completer<String>();
+        final gatedRepo = PerformanceRepository(
+          engine: engine,
+          exportsRoot: () => rootGate.future,
+          now: () => clock,
+        );
+        addTearDown(gatedRepo.dispose);
+
+        final arm1 = gatedRepo.arm(); // entry gate passes, parks on root
+        final arm2 = gatedRepo.arm(); // overlaps arm1's suspended window
+        rootGate.complete('${tempDir.path}/exports');
+
+        expect(await arm1, EngineResult.ok);
+        expect(await arm2, EngineResult.ok, reason: 'same silent-ok shape');
+
+        expect(gatedRepo.armedDirectory, isNotNull);
+        expect(
+          Directory(gatedRepo.armedDirectory!).existsSync(),
+          isTrue,
+          reason:
+              "the overlapping arm must not delete the winner's live "
+              'capture directory',
+        );
+        expect(engine.perfArmCalls, 1);
+        expect(engine.perfArmed, isTrue);
+      },
+    );
   });
 
   group('disarm', () {

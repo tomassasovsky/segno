@@ -64,6 +64,14 @@ class PerformanceRepository {
   /// between two separately-tuned copies.
   DateTime? _armedAt;
 
+  /// Whether an [arm] call is currently in flight (past its entry gate but
+  /// not yet resolved either way). Backs [arm]'s overlapping-arm refusal:
+  /// two arms passing the entry gate together can resolve the SAME slugged
+  /// directory (the collision loop is synchronous, the create is not), after
+  /// which the loser's re-check cleanup would delete the winner's just-armed
+  /// live capture directory out from under the engine's drain thread.
+  bool _armInFlight = false;
+
   /// Whether a finalize pass ([_finalize]) is currently in flight. Backs
   /// [arm]'s finalize-window refusal: the live-disarm path is already covered
   /// there by [_armedDir] staying set until [_finalizeArmed] completes, but
@@ -146,7 +154,9 @@ class PerformanceRepository {
   ///
   /// Idempotent — calling this while already armed is a no-op success,
   /// mirroring `EnginePerformanceCapture.perfArm`'s own idempotency (the
-  /// original session keeps draining into its original directory). [chains]
+  /// original session keeps draining into its original directory). A second
+  /// arm overlapping one still in flight is refused the same way (silent
+  /// ok), preserving that same observable shape. [chains]
   /// supplies the lane/monitor effect chains and master-limiter state the
   /// engine snapshot alone cannot read back (see [PerformanceChains]).
   ///
@@ -161,9 +171,18 @@ class PerformanceRepository {
   Future<EngineResult> arm({
     PerformanceChains chains = const PerformanceChains(),
   }) async {
-    if (_armedDir != null) return EngineResult.ok;
+    if (_armedDir != null || _armInFlight) return EngineResult.ok;
     if (_finalizeInFlight || !renderProgress.done) return EngineResult.ok;
+    _armInFlight = true;
+    try {
+      return await _armGated(chains);
+    } finally {
+      _armInFlight = false;
+    }
+  }
 
+  /// The body of [arm] past its entry gate; runs with [_armInFlight] held.
+  Future<EngineResult> _armGated(PerformanceChains chains) async {
     final root = await _exportsRoot();
     final base = performanceSlug(_now());
     var slug = base;
@@ -204,8 +223,13 @@ class PerformanceRepository {
     // shape; the just-created directory is discarded, exactly like the
     // failed-perfArm path below (#671).
     if (_armedDir != null || _finalizeInFlight || !renderProgress.done) {
-      final created = Directory(dir);
-      if (created.existsSync()) created.deleteSync(recursive: true);
+      // Ownership-checked belt to [_armInFlight]'s braces: never delete the
+      // live armed capture directory (the drain thread is writing into it) —
+      // only this call's own still-unclaimed one.
+      if (dir != _armedDir) {
+        final created = Directory(dir);
+        if (created.existsSync()) created.deleteSync(recursive: true);
+      }
       return EngineResult.ok;
     }
 
