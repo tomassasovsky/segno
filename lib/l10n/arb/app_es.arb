@@ -868,7 +868,7 @@
     "perfRevealWindows": "Mostrar en el Explorador de archivos",
     "perfRevealOther": "Mostrar en el gestor de archivos",
     "perfPartial": "Algunas pistas no se pudieron renderizar, pero el resto de la captura está intacto.",
-    "perfStoppedDiskFull": "La captura se detuvo antes de tiempo — el disco se quedó sin espacio.",
+    "perfStoppedDiskFull": "La captura se detuvo antes de tiempo — no se pudo escribir en el disco.",
     "perfStoppedDeviceChange": "La captura se detuvo antes de tiempo — cambió el dispositivo de audio.",
     "perfCaptureGlitch": "Se detectaron cuadros de audio perdidos durante la captura.",
     "perfDiscarded": "La captura era demasiado corta para conservarla — descartada.",
