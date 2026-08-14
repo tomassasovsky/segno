@@ -22,12 +22,14 @@ Future<void> showRenameTrackDialog({
   final l10n = context.l10n;
   final display = l10n.displayTrackName(current, channel);
   final result = kConsoleMode
+      // Constant title, name in the subtitle — the sheet's header does not
+      // wrap its title, and the track name is unbounded.
       ? await showConsoleRenameSheet(
           context,
-          title: l10n.renameTrackTitle(display),
+          title: l10n.tracksRenameSheetTitle,
           subtitle: display,
           current: current,
-          fieldLabel: l10n.renameTrackTitle(display),
+          fieldLabel: l10n.tracksRenameSheetTitle,
         )
       : await _showRenameDialog(context, l10n, display, current);
   if (result != null) {
