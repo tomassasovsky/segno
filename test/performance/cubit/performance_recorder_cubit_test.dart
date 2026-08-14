@@ -1209,6 +1209,37 @@ void main() {
       },
     );
 
+    test('an engine self-stop finalizes the capture (#652)', () async {
+      // The case the free-space floor cannot see coming: the write failed for
+      // a reason free space does not predict -- a quota, a read-only remount,
+      // an I/O error. The engine already stopped its drain thread; before the
+      // flag was published the app never found out, so the capture stayed
+      // armed with its handles open and finalize never ran.
+      engine.renderStatuses = const [
+        PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+      ];
+      // Plenty of room -- this must NOT be the floor doing the work.
+      final cubit = build(
+        freeSpaceBytes: (_) async =>
+            PerformanceRecorderCubit.lowDiskThresholdBytes * 100,
+      );
+      addTearDown(cubit.close);
+
+      await armWithLog(performance);
+      await pumpEventQueue();
+      expect(cubit.state, isA<PerformanceRecorderArmed>());
+
+      engine.perfStopped = true;
+      final completed = await waitForCompleted(cubit);
+
+      expect(completed.result, isA<PerformanceRecordStoppedEarly>());
+      expect(
+        (completed.result! as PerformanceRecordStoppedEarly).reason,
+        PerformanceStopReason.diskFull,
+      );
+      expect(performance.armedDirectory, isNull);
+    });
+
     test(
       'an unanswerable volume neither blocks arming nor stops a capture',
       () async {

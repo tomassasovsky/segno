@@ -767,7 +767,10 @@ void main() {
 
   group('captureProgress', () {
     test('reads zero/false when not armed', () {
-      expect(repo.captureProgress, (elapsed: Duration.zero, overrun: false));
+      expect(
+        repo.captureProgress,
+        (elapsed: Duration.zero, overrun: false, selfStopped: false),
+      );
     });
 
     test('reads elapsed time and overrun from the engine snapshot', () {

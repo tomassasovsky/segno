@@ -694,6 +694,13 @@ typedef struct le_snapshot {
   int32_t perf_armed;      /* 0/1: the RT taps are live */
   uint64_t perf_frames;    /* frames processed since the most recent arm */
   uint32_t perf_overruns;  /* dropped capture frames (ring full) since arm */
+  /* 0/1: the drain thread stopped ITSELF because a write failed -- disk full,
+   * a quota, a read-only remount, an I/O error. Published here because the
+   * stop was otherwise invisible to the app: the thread stopped, the capture
+   * stayed "armed", its handles stayed open, and finalize never ran, leaving
+   * raw .pcm that was not even recoverable (#640, #652). Latches for the life
+   * of the capture; cleared by the next arm. */
+  int32_t perf_stopped;
 
   /* ---- Chromatic tuner (le_engine_set_tuner_input) ----
    *

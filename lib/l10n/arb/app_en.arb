@@ -1178,7 +1178,7 @@
     "perfRevealWindows": "Show in File Explorer",
     "perfRevealOther": "Show in file manager",
     "perfPartial": "Some tracks failed to render, but the rest of the capture is intact.",
-    "perfStoppedDiskFull": "Capture stopped early — the disk ran out of space.",
+    "perfStoppedDiskFull": "Capture stopped early — the disk could not be written.",
     "perfStoppedDeviceChange": "Capture stopped early — the audio device changed.",
     "perfCaptureGlitch": "Dropped audio frames detected during capture.",
     "perfDiscarded": "Capture was too short to keep — discarded.",
