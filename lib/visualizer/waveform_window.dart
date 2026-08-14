@@ -26,23 +26,40 @@ import 'package:window_manager/window_manager.dart';
 /// different DPI than the primary onto the wrong place: e.g. a 4K@175% display
 /// whose physical origin is x=2560 is reported at own-logical x=1463, a point
 /// *inside* a 100%-scaled primary, so the window lands mid-primary.
+///
+/// The secondary is found by id first (macOS/Windows report distinct display
+/// ids), then by geometry: `screen_retriever_linux` hardcodes every display's
+/// id to `""` (its plugin.cc), so on Linux the id comparison can never single
+/// out the secondary — but the compositor lays outputs out side by side, so a
+/// display whose origin differs from [primaryPosition] is a real second
+/// output. A genuinely single display matches neither test (its id *is* the
+/// primary id and its origin *is* the primary origin) and keeps the windowed
+/// fallback, as do mirrored outputs sharing the primary's origin.
 @visibleForTesting
 ({Offset position, Size size, bool fullscreen}) waveformWindowPlacement({
   required List<({String id, Offset position, Size size, double scale})>
   screens,
   required String primaryId,
+  required Offset primaryPosition,
   required double primaryScale,
   required WaveformWindowArgs args,
 }) {
+  ({Offset position, Size size, bool fullscreen}) fullBleedOn(
+    ({String id, Offset position, Size size, double scale}) screen,
+  ) {
+    final k = screen.scale / primaryScale;
+    return (
+      position: screen.position * k,
+      size: screen.size * k,
+      fullscreen: true,
+    );
+  }
+
   for (final screen in screens) {
-    if (screen.id != primaryId) {
-      final k = screen.scale / primaryScale;
-      return (
-        position: screen.position * k,
-        size: screen.size * k,
-        fullscreen: true,
-      );
-    }
+    if (screen.id != primaryId) return fullBleedOn(screen);
+  }
+  for (final screen in screens) {
+    if (screen.position != primaryPosition) return fullBleedOn(screen);
   }
   return (
     position: Offset(args.x, args.y),
@@ -71,6 +88,7 @@ Future<({Offset position, Size size, bool fullscreen})> _resolvePlacement(
           ),
       ],
       primaryId: primary.id,
+      primaryPosition: primary.visiblePosition ?? Offset.zero,
       primaryScale: primary.scaleFactor?.toDouble() ?? 1.0,
       args: args,
     );
