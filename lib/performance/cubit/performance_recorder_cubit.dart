@@ -202,9 +202,12 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     _loaded = true;
     // Probed first so a clean boot (the overwhelmingly common case) emits
     // nothing at all — the recovering flag only ever shows for real work.
+    // The probe counts stranded bundles too, not just crashed captures: a
+    // stranded-only boot re-runs a stem render that holds arm's gates just
+    // as long (#679 r4).
     bool hasWork;
     try {
-      hasWork = (await _performance.findUnfinalized()).isNotEmpty;
+      hasWork = await _performance.hasBootRecoveryWork();
     } on Exception {
       hasWork = false; // unreadable root: runBootRecovery no-ops on it too
     }

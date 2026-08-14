@@ -228,6 +228,43 @@ void main() {
     );
 
     test(
+      'a stranded-only boot (finalized bundle awaiting its move, nothing '
+      'unfinalized) still shows the recovering flag until its re-attempted '
+      'render settles (#679 r4)',
+      () async {
+        // The case findUnfinalized alone cannot see: finalized + marker.
+        final stranded = Directory('${tempDir.path}/exports/perf-stranded')
+          ..createSync(recursive: true);
+        writeManifest(stranded.path);
+        File(
+          '${stranded.path}/${PerformanceRepository.recoveryMarkerName}',
+        ).writeAsStringSync('');
+        // The re-attempted stem render holds arm's gate past load().
+        engine.renderProgress = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 10,
+        );
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        await cubit.load();
+
+        expect(
+          cubit.state,
+          const PerformanceRecorderIdle(recovering: true),
+          reason:
+              'a probe blind to stranded bundles would leave the record '
+              'button enabled-looking while every press is refused',
+        );
+
+        engine.renderProgress = PerformanceRenderProgress.empty;
+        await cubit.stream
+            .firstWhere((s) => s == const PerformanceRecorderIdle())
+            .timeout(const Duration(seconds: 5));
+      },
+    );
+
+    test(
       'a recovery that blows up cannot wedge the recovering flag — the '
       'clearing emission runs in a finally (#679 r3)',
       () async {

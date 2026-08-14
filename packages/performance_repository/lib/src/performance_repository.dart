@@ -530,6 +530,26 @@ class PerformanceRepository {
     }
   }
 
+  /// Whether [runBootRecovery] would have real salvage work this boot:
+  /// captures a crash left unfinalized OR stranded finalized bundles still
+  /// awaiting their move ([_strandedSalvage]). The app's boot probe reads
+  /// this — not [findUnfinalized] alone — because a stranded-only boot
+  /// re-attempts a stem render that holds [arm]'s gates just as long as a
+  /// fresh salvage does, and a probe blind to it would leave the record
+  /// button enabled-looking while every press is silently refused
+  /// (#679 r4). `false` when the exports root cannot even be resolved,
+  /// mirroring [runBootRecovery]'s own no-op on that boot.
+  Future<bool> hasBootRecoveryWork() async {
+    final String root;
+    try {
+      root = await _exportsRoot();
+    } on Exception {
+      return false;
+    }
+    if (_strandedSalvage(root).isNotEmpty) return true;
+    return (await findUnfinalized()).isNotEmpty;
+  }
+
   /// One capture's silent salvage: finalize + render in place, then — only
   /// once the sidecar proves finalized — move the bundle into the recovered
   /// area. The fire-and-forget stem render works on [dir]'s path on its own
@@ -547,10 +567,24 @@ class PerformanceRepository {
       // [_moveToRecovered]): a crash or render timeout between those two
       // points strands a finalized bundle in the exports root, where it is
       // indistinguishable from a normal finished take by its sidecar alone —
-      // the marker is what lets the next boot's [_sweepStranded] finish the
-      // move instead of the bundle falling outside retention forever.
+      // the marker is what lets the next boot's [_strandedSalvage] finish
+      // the move instead of the bundle falling outside retention forever.
       File('$dir/$recoveryMarkerName').writeAsStringSync('');
-      await recoverCapture(dir);
+      if (_sidecarFinalized(dir)) {
+        // A stranded bundle: its finalize already completed on a previous
+        // boot, and re-running it would do real damage, not just waste work
+        // — [_finalize] resolves the arm snapshot only from the
+        // crash-survival file (deleted by that first finalize) and reads
+        // only the native fields back, so a second pass would rewrite the
+        // manifest with its armSnapshot (the chains/routing the export
+        // depends on) stripped. Only the stem render is re-attempted — a
+        // render never survives the reboot that stranded the bundle. Its
+        // result is deliberately unchecked, [_finalize]'s own
+        // partial-success posture: the bundle is complete without stems.
+        _engine.renderBegin(dir);
+      } else {
+        await recoverCapture(dir);
+      }
       var waited = Duration.zero;
       while (!renderProgress.done) {
         if (waited >= _bootRecoveryRenderTimeout) {

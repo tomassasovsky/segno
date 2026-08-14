@@ -1702,6 +1702,112 @@ void main() {
     );
 
     test(
+      'hasBootRecoveryWork counts a stranded finalized bundle as work, not '
+      'only crashed captures — the app probe keys the busy flag off it, and '
+      "a stranded-only boot's re-render holds arm just as long (#679 r4)",
+      () async {
+        expect(await repo.hasBootRecoveryWork(), isFalse);
+
+        // Stranded only: finalized + marker, nothing unfinalized anywhere —
+        // exactly the boot findUnfinalized alone reports as "no work".
+        final stranded = '${tempDir.path}/exports/perf-stranded';
+        Directory(stranded).createSync(recursive: true);
+        writeNativeSidecar(stranded, finalized: true);
+        File(
+          '$stranded/${PerformanceRepository.recoveryMarkerName}',
+        ).writeAsStringSync('');
+        expect(await repo.hasBootRecoveryWork(), isTrue);
+
+        // Crashed only.
+        Directory(stranded).deleteSync(recursive: true);
+        seedCrashed('perf-crashed');
+        expect(await repo.hasBootRecoveryWork(), isTrue);
+      },
+    );
+
+    test(
+      'hasBootRecoveryWork is false when the exports root cannot be '
+      "resolved, mirroring runBootRecovery's own no-op on that boot",
+      () async {
+        final brokenRepo = PerformanceRepository(
+          engine: engine,
+          exportsRoot: () async => throw const FileSystemException('gone'),
+          now: () => clock,
+        );
+        addTearDown(brokenRepo.dispose);
+
+        expect(await brokenRepo.hasBootRecoveryWork(), isFalse);
+      },
+    );
+
+    test(
+      "boot-2 re-salvage of a stranded bundle preserves the manifest's "
+      'armSnapshot byte-for-byte — no second finalize runs to strip it '
+      '(#679 r4)',
+      () async {
+        // A real crashed capture WITH an arm snapshot: armed by a first
+        // repository "session" (which writes arm-snapshot.json), then the
+        // process dies — a fresh repository per boot stands in for the
+        // restarts, since arm() latches _armedDir for the process lifetime.
+        engine.seedLane(0, 0, Float32List.fromList([1, 1]));
+        final sessionRepo = PerformanceRepository(
+          engine: engine,
+          exportsRoot: () async => '${tempDir.path}/exports',
+          now: () => clock,
+        );
+        await sessionRepo.arm();
+        final dir = sessionRepo.armedDirectory!;
+        writeNativeSidecar(dir); // the drain's finalized: false sidecar
+        sessionRepo.dispose(); // crash: no disarm ever runs
+
+        // Boot 1: the salvage finalizes — folding arm-snapshot.json into
+        // the manifest and deleting that file — but its render times out,
+        // stranding the bundle.
+        engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 10,
+        );
+        final boot1 = PerformanceRepository(
+          engine: engine,
+          exportsRoot: () async => '${tempDir.path}/exports',
+          now: () => clock,
+          bootRecoveryPollInterval: const Duration(milliseconds: 2),
+          bootRecoveryRenderTimeout: const Duration(milliseconds: 10),
+        );
+        addTearDown(boot1.dispose);
+        await boot1.runBootRecovery();
+        final manifestAfterBoot1 = File(
+          '$dir/performance.json',
+        ).readAsStringSync();
+        expect(
+          manifestAfterBoot1,
+          contains('armSnapshot'),
+          reason: 'the first finalize folded the crash-survival file in',
+        );
+        expect(File('$dir/arm-snapshot.json').existsSync(), isFalse);
+
+        // Boot 2: the render can run; the stranded path must go straight
+        // to render + move — a second finalize would resolve the arm
+        // snapshot only from the now-deleted crash-survival file and
+        // rewrite the manifest without it.
+        engine
+          ..renderProgressAfterBegin = null
+          ..renderProgress = PerformanceRenderProgress.empty;
+        await repo.runBootRecovery();
+
+        final moved =
+            '${tempDir.path}/exports/recovered/${dir.split('/').last}';
+        expect(
+          File('$moved/performance.json').readAsStringSync(),
+          manifestAfterBoot1,
+          reason:
+              'the manifest — armSnapshot, chains, routing — must survive '
+              'the re-salvage byte-for-byte',
+        );
+      },
+    );
+
+    test(
       'never prunes an entry whose mtime predates the sanity floor — an '
       'RTC-less boot stamps near-epoch mtimes that a later-corrected clock '
       'would misread as decades of age (#679 r2)',
