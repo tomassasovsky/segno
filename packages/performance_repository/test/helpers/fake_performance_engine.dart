@@ -198,8 +198,16 @@ class FakePerformanceEngine implements AudioEngine {
     lastRenderCaptureDir = captureDir;
     if (!renderBeginResult.isOk) return renderBeginResult;
     _renderStarted = true;
+    final after = renderProgressAfterBegin;
+    if (after != null) renderProgress = after;
     return EngineResult.ok;
   }
+
+  /// When set, a successful [renderBegin] swaps [renderProgress] to this
+  /// value — modeling the real engine, where a render that just began
+  /// immediately reports in-flight progress. Left `null`, [renderProgress]
+  /// stays whatever the test seeded (the pre-existing behavior).
+  PerformanceRenderProgress? renderProgressAfterBegin;
 
   /// Progress reported by [renderPoll] — set an in-flight value (`done:
   /// false`) to exercise `arm()`'s render-window refusal.

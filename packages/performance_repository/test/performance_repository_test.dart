@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -392,6 +393,58 @@ void main() {
         await recovery;
         await repo.arm();
         expect(repo.armedDirectory, isNotNull);
+      },
+    );
+
+    test(
+      'is still refused when the salvage starts only after arm has already '
+      'passed its entry gate — the gate is re-checked after arm suspends '
+      'across its awaits (#671)',
+      () async {
+        final crashed = '${tempDir.path}/exports/perf-crashed';
+        Directory(crashed).createSync(recursive: true);
+        writeNativeSidecar(crashed);
+        writeRawPcm('$crashed/master.pcm', Float32List.fromList([0.1, 0.2]));
+
+        // The salvage's finalize hands straight over to its render (exactly
+        // the production handover), so the refusal window stays covered at
+        // arm's re-check no matter which async chain the event loop finishes
+        // first.
+        engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 10,
+        );
+
+        // Park arm on its very first await (the exports-root lookup) so the
+        // salvage provably enters the window AFTER arm's entry gate passed.
+        final rootGate = Completer<String>();
+        final gatedRepo = PerformanceRepository(
+          engine: engine,
+          exportsRoot: () => rootGate.future,
+          now: () => clock,
+        );
+        addTearDown(gatedRepo.dispose);
+
+        final statuses = <PerformanceCaptureStatus>[];
+        final sub = gatedRepo.captureStatus.listen(statuses.add);
+
+        final arming = gatedRepo.arm(); // entry gate passes, parks on root
+        final recovery = gatedRepo.recoverCapture(crashed); // enters window
+        rootGate.complete('${tempDir.path}/exports');
+
+        final result = await arming;
+        expect(result, EngineResult.ok, reason: 'same silent-ok shape');
+        expect(gatedRepo.armedDirectory, isNull);
+        expect(engine.perfArmCalls, 0);
+
+        await recovery;
+        await pumpEventQueue();
+        unawaited(sub.cancel());
+        expect(
+          statuses,
+          everyElement(isNot(PerformanceCaptureStatus.armed)),
+          reason: 'the resumed arm must not clobber the in-flight salvage',
+        );
       },
     );
   });

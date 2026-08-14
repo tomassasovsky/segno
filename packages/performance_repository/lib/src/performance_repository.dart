@@ -151,11 +151,11 @@ class PerformanceRepository {
   /// engine snapshot alone cannot read back (see [PerformanceChains]).
   ///
   /// Refused — a no-op success, the same silent shape as the already-armed
-  /// path and [disarm]'s guard-window refusal — while a finalize or offline
-  /// render is still in flight (#671): arming then would yank the in-progress
-  /// capture flow out from under whoever is watching it (the render's result
-  /// dialog, the boot-recovery prompt), and the pedal's MODE long-press calls
-  /// this directly with no cubit-level gate in front of it. Callers observe
+  /// path and [disarm]'s guard-window refusal — while a salvage finalize or
+  /// offline render is still in flight (#671): arming then would yank that
+  /// in-progress finalize/render out from under whoever is watching it (the
+  /// render's result dialog), and the pedal's MODE long-press calls this
+  /// directly with no cubit-level gate in front of it. Callers observe
   /// the refusal through [captureStatus] never reporting armed (and
   /// [armedDirectory] staying null), not through the return value.
   Future<EngineResult> arm({
@@ -196,6 +196,18 @@ class PerformanceRepository {
     await File(
       '$dir/$_armSnapshotFileName',
     ).writeAsString(jsonEncode(armSnapshot.toJson()));
+
+    // Re-checked here, not just at entry: the awaits above suspend this arm,
+    // and a boot-salvage ([recoverCapture]) starting inside that window sets
+    // [_finalizeInFlight] too late for the entry gate to see — the resumed
+    // arm would clobber the in-progress salvage. Same silent-ok refusal
+    // shape; the just-created directory is discarded, exactly like the
+    // failed-perfArm path below (#671).
+    if (_armedDir != null || _finalizeInFlight || !renderProgress.done) {
+      final created = Directory(dir);
+      if (created.existsSync()) created.deleteSync(recursive: true);
+      return EngineResult.ok;
+    }
 
     final result = _engine.perfArm(dir);
     if (!result.isOk) {
