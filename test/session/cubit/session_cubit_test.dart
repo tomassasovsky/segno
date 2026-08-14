@@ -462,11 +462,15 @@ void main() {
         when(
           () => repository.save(any(), chains: any(named: 'chains')),
         ).thenAnswer((_) async => _session);
+        // A write-back re-lists so an open Sessions dialog's date column
+        // shows the save it just made.
+        when(repository.listSessions).thenAnswer((_) async => summaries);
       },
       seed: () =>
           const SessionState(currentSessionName: 'Open', sessions: summaries),
       build: build,
       act: (cubit) => cubit.save(), // write-back to the open session
+      verify: (_) => verify(repository.listSessions).called(1),
       expect: () => [
         isA<SessionState>()
             .having((s) => s.status, 'st', SessionStatus.working)

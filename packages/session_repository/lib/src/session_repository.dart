@@ -130,8 +130,24 @@ class SessionRepository {
       for (final entity in root.listSync())
         if (entity is Directory &&
             File('${entity.path}/${Session.manifestName}').existsSync())
-          SessionSummary(name: _basename(entity.path)),
+          SessionSummary(
+            name: _basename(entity.path),
+            modifiedAt: _manifestModifiedAt(
+              File('${entity.path}/${Session.manifestName}'),
+            ),
+          ),
     ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  }
+
+  /// The manifest's mtime — the moment the session was last SAVED, which is
+  /// what the dialog's date column claims. Null on a stat failure rather than
+  /// epoch: a wrong "1 Jan 1970" is worse than no date.
+  static DateTime? _manifestModifiedAt(File manifest) {
+    try {
+      return manifest.lastModifiedSync();
+    } on FileSystemException {
+      return null;
+    }
   }
 
   /// Renames the bundle folder for session [from] to [to]. Throws
