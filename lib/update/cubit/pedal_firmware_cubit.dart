@@ -125,17 +125,7 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
         ),
       );
       try {
-        final progress = _updates.flashPedalFirmware().timeout(stallTimeout);
-        await for (final value in progress) {
-          if (isClosed) return;
-          emit(
-            PedalFirmwareState(
-              stage: PedalFirmwareStage.flashing,
-              version: version,
-              progress: value.clamp(0.0, 1.0),
-            ),
-          );
-        }
+        await _flashOnce(version);
         if (isClosed) return;
         emit(const PedalFirmwareState(stage: PedalFirmwareStage.idle));
         return;
@@ -163,6 +153,60 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
         );
         return;
       }
+    }
+  }
+
+  /// One complete flash attempt: drains the helper's progress stream into
+  /// [PedalFirmwareStage.flashing] states, completing on success and throwing
+  /// on failure or on a stall.
+  ///
+  /// The stall guard is a hand-armed [Timer] re-armed on every progress event
+  /// rather than `Stream.timeout`, which never resolves under the fake-async
+  /// zones the tests run in (its events escape the zone's clock).
+  Future<void> _flashOnce(String version) async {
+    final done = Completer<void>();
+    Timer? stall;
+
+    void arm() {
+      stall?.cancel();
+      stall = Timer(stallTimeout, () {
+        if (!done.isCompleted) {
+          done.completeError(
+            TimeoutException('update helper stopped responding', stallTimeout),
+          );
+        }
+      });
+    }
+
+    arm();
+    final sub = _updates.flashPedalFirmware().listen(
+      (value) {
+        arm();
+        if (isClosed) return;
+        emit(
+          PedalFirmwareState(
+            stage: PedalFirmwareStage.flashing,
+            version: version,
+            progress: value.clamp(0.0, 1.0),
+          ),
+        );
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!done.isCompleted) done.completeError(error, stackTrace);
+      },
+      onDone: () {
+        if (!done.isCompleted) done.complete();
+      },
+      cancelOnError: true,
+    );
+    try {
+      await done.future;
+    } finally {
+      stall?.cancel();
+      // Not awaited: awaiting a stream cancel inline can hang under the
+      // widget-test fake clock (dart-lang/sdk#49353 shape; see the repo's
+      // testWidgets stream-cancel note).
+      unawaited(sub.cancel());
     }
   }
 
