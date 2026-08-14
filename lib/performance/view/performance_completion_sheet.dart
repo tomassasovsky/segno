@@ -229,9 +229,17 @@ class _PerformanceCompletionSheetState
             ExportDeviceChainSummary(tracks: state.tracks),
           ],
           const SizedBox(height: 19),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          // A Wrap, not a Row: the reveal label is platform text ("Show in
+          // Finder" on macOS, "Show in file manager" on Linux — six
+          // characters longer), and on the harness font the Linux one
+          // overflowed the 694 by 20px. One line when it fits, which is
+          // every real case; a second line instead of a clipped button when
+          // it does not.
+          Wrap(
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
             spacing: 10,
+            runSpacing: 10,
             children: [
               ConsoleSmallButton(
                 key: const Key('perfCompletion_reveal'),

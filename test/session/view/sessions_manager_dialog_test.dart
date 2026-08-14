@@ -226,6 +226,78 @@ void main() {
       verifyNever(() => session.renameSession(any(), any()));
     });
 
+    testWidgets('older saves read as yesterday, then as a short date', (
+      tester,
+    ) async {
+      final strings = await l10n();
+      final yesterday = DateTime.now().subtract(const Duration(days: 1));
+      final older = DateTime(2026, 3, 7, 9, 30);
+      await openManager(
+        tester,
+        state: SessionState(
+          sessions: [
+            SessionSummary(name: 'A', modifiedAt: yesterday),
+            SessionSummary(name: 'B', modifiedAt: older),
+          ],
+        ),
+      );
+      expect(find.text(strings.sessionDateYesterday), findsOneWidget);
+      // The short-date branch, without pinning one locale's ordering.
+      final bRow = tester.widget<ConsoleRow>(
+        find.byKey(const Key('sessions_card_B')),
+      );
+      expect(bRow.state, isNotEmpty);
+      expect(bRow.state, isNot(strings.sessionDateYesterday));
+    });
+
+    testWidgets('a newer-version refusal shows its own banner', (
+      tester,
+    ) async {
+      final strings = await l10n();
+      await openManager(
+        tester,
+        state: const SessionState(
+          sessions: two,
+          error: SessionError.unsupportedVersion,
+        ),
+      );
+      expect(
+        find.text(strings.sessionErrorUnsupportedVersion),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an unsanitizable name shows the inline error', (
+      tester,
+    ) async {
+      await openManager(
+        tester,
+        state: const SessionState(currentSessionName: 'A', sessions: two),
+      );
+      await tester.tap(find.byKey(const Key('sessions_rename')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('sessionName_field')),
+        '///',
+      );
+      await tester.tap(find.byKey(const Key('sessionName_save')));
+      await tester.pumpAndSettle();
+      expect(find.text((await l10n()).sessionNameInvalid), findsOneWidget);
+      verifyNever(() => session.renameSession(any(), any()));
+    });
+
+    testWidgets('cancelling the name prompt renames nothing', (tester) async {
+      await openManager(
+        tester,
+        state: const SessionState(currentSessionName: 'A', sessions: two),
+      );
+      await tester.tap(find.byKey(const Key('sessions_rename')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text((await l10n()).cancel));
+      await tester.pumpAndSettle();
+      verifyNever(() => session.renameSession(any(), any()));
+    });
+
     testWidgets('a refused load shows the banner the pen draws', (
       tester,
     ) async {
