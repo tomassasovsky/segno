@@ -11,6 +11,42 @@ import 'package:wav_codec/wav_codec.dart';
 import 'helpers/fake_performance_engine.dart';
 import 'helpers/native_capture_fixture.dart';
 
+/// A [File] whose [readAsString] parks on [_gate] before delegating — an
+/// `IOOverrides` hook that holds a finalize provably mid-flight so a test
+/// can interleave a second finalize underneath it deterministically. Only
+/// the members the finalize path touches on the manifest file are
+/// implemented; anything else is a test bug and throws.
+class _GatedReadFile implements File {
+  _GatedReadFile(this._inner, this._gate);
+
+  final File _inner;
+  final Future<void> _gate;
+
+  @override
+  Future<String> readAsString({Encoding encoding = utf8}) async {
+    await _gate;
+    return _inner.readAsString(encoding: encoding);
+  }
+
+  @override
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) => _inner.writeAsString(
+    contents,
+    mode: mode,
+    encoding: encoding,
+    flush: flush,
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnsupportedError(
+    'not reached by _finalize on the manifest file: $invocation',
+  );
+}
+
 void main() {
   late Directory tempDir;
   late FakePerformanceEngine engine;
@@ -483,6 +519,61 @@ void main() {
         );
         expect(engine.perfArmCalls, 1);
         expect(engine.perfArmed, isTrue);
+      },
+    );
+
+    test(
+      'stays refused while a parked salvage finalize outlives a second '
+      'finalize that finishes first — the in-flight gate counts overlapping '
+      'finalizes instead of resetting on the first finisher (#671)',
+      () async {
+        // dirA: the salvage target, parked mid-finalize on a gated manifest
+        // read (an IOOverrides fs hook — no production seam needed).
+        final dirA = '${tempDir.path}/exports/perf-crashed';
+        Directory(dirA).createSync(recursive: true);
+        writeNativeSidecar(dirA);
+        writeRawPcm('$dirA/master.pcm', Float32List.fromList([0.1, 0.2]));
+
+        // dirB: armed live, then disarmed with NO sidecar on disk — the
+        // documented early-return finalize, the fastest possible finisher.
+        await repo.arm();
+        clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+
+        final readGate = Completer<void>();
+        final testZone = Zone.current;
+        final salvage = IOOverrides.runZoned(
+          () => repo.recoverCapture(dirA),
+          createFile: (path) {
+            // Real files must be constructed outside the override zone, or
+            // the File() factory would re-enter this callback forever.
+            final real = testZone.run(() => File(path));
+            return path == '$dirA/${PerformanceRepository.manifestName}'
+                ? _GatedReadFile(real, readGate.future)
+                : real;
+          },
+        );
+
+        // The salvage is now provably parked mid-flight; dirB's finalize
+        // starts AND completes underneath it.
+        expect(await repo.disarm(), EngineResult.ok);
+        expect(repo.armedDirectory, isNull);
+
+        final result = await repo.arm();
+        expect(result, EngineResult.ok, reason: 'same silent-ok shape');
+        expect(
+          repo.armedDirectory,
+          isNull,
+          reason:
+              "dirB's completed finalize must not reopen arm's gate while "
+              "dirA's salvage is still mid-flight",
+        );
+        expect(engine.perfArmCalls, 1);
+
+        readGate.complete();
+        await salvage;
+        await repo.arm();
+        expect(repo.armedDirectory, isNotNull);
+        expect(engine.perfArmCalls, 2);
       },
     );
   });

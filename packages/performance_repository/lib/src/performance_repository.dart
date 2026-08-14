@@ -72,12 +72,15 @@ class PerformanceRepository {
   /// live capture directory out from under the engine's drain thread.
   bool _armInFlight = false;
 
-  /// Whether a finalize pass ([_finalize]) is currently in flight. Backs
-  /// [arm]'s finalize-window refusal: the live-disarm path is already covered
-  /// there by [_armedDir] staying set until [_finalizeArmed] completes, but
-  /// boot-salvage ([recoverCapture]) finalizes with no armed directory at
-  /// all, so [arm] needs this flag to see that window.
-  bool _finalizeInFlight = false;
+  /// The number of finalize passes ([_finalize]) currently in flight; [arm]
+  /// refuses while it is above zero. A count, not a flag: finalizes can
+  /// overlap entirely within the documented API (a boot-salvage
+  /// [recoverCapture] mid-conversion while a live [disarm] finalizes its own
+  /// directory), and a bool would let whichever finishes first reopen
+  /// [arm]'s gate while the other is still mid-flight. Boot-salvage also
+  /// finalizes with no armed directory at all, which is why [_armedDir]
+  /// alone cannot cover this window.
+  int _finalizesInFlight = 0;
 
   /// A disarm within this window of the matching arm is ignored — the arm
   /// and disarm gestures are easy to fat-finger back to back on the same
@@ -172,7 +175,7 @@ class PerformanceRepository {
     PerformanceChains chains = const PerformanceChains(),
   }) async {
     if (_armedDir != null || _armInFlight) return EngineResult.ok;
-    if (_finalizeInFlight || !renderProgress.done) return EngineResult.ok;
+    if (_finalizesInFlight > 0 || !renderProgress.done) return EngineResult.ok;
     _armInFlight = true;
     try {
       return await _armGated(chains);
@@ -217,12 +220,12 @@ class PerformanceRepository {
     ).writeAsString(jsonEncode(armSnapshot.toJson()));
 
     // Re-checked here, not just at entry: the awaits above suspend this arm,
-    // and a boot-salvage ([recoverCapture]) starting inside that window sets
-    // [_finalizeInFlight] too late for the entry gate to see — the resumed
-    // arm would clobber the in-progress salvage. Same silent-ok refusal
-    // shape; the just-created directory is discarded, exactly like the
-    // failed-perfArm path below (#671).
-    if (_armedDir != null || _finalizeInFlight || !renderProgress.done) {
+    // and a boot-salvage ([recoverCapture]) starting inside that window
+    // raises [_finalizesInFlight] too late for the entry gate to see — the
+    // resumed arm would clobber the in-progress salvage. Same silent-ok
+    // refusal shape; the just-created directory is discarded, exactly like
+    // the failed-perfArm path below (#671).
+    if (_armedDir != null || _finalizesInFlight > 0 || !renderProgress.done) {
       // Ownership-checked belt to [_armInFlight]'s braces: never delete the
       // live armed capture directory (the drain thread is writing into it) —
       // only this call's own still-unclaimed one.
@@ -429,7 +432,7 @@ class PerformanceRepository {
     required PerformanceArmSnapshot? armSnapshot,
     required PerformanceDisarmSnapshot? disarmSnapshot,
   }) async {
-    _finalizeInFlight = true;
+    _finalizesInFlight++;
     try {
       final manifestFile = File('$dir/$manifestName');
       final Map<String, dynamic> native;
@@ -509,9 +512,9 @@ class PerformanceRepository {
       // is exactly the umbrella's partial-success posture applied one level up.
       _engine.renderBegin(dir);
     } finally {
-      // Cleared only after renderBegin: the render poll takes over [arm]'s
-      // refusal from here with no uncovered gap between the two.
-      _finalizeInFlight = false;
+      // Decremented only after renderBegin: the render poll takes over
+      // [arm]'s refusal from here with no uncovered gap between the two.
+      _finalizesInFlight--;
     }
   }
 
