@@ -1,0 +1,16 @@
+[Unit]
+Description=Segno: watch for a new touchscreen calibration matrix
+Requires=data.mount
+After=data.mount
+
+[Path]
+# weston runs as User=weston and invokes the calibration helper as itself, so it
+# can write the matrix but cannot build the udev rule from it. This is the
+# privilege hand-off: the unprivileged write lands here, the root-side unit does
+# the rest. Without it a calibration applies to the live session, prints its
+# values, and is silently gone at the next replug.
+PathChanged=/data/touch/calibration
+Unit=segno-touch-apply.service
+
+[Install]
+WantedBy=multi-user.target

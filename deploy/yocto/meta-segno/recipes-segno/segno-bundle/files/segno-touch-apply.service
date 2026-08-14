@@ -1,0 +1,11 @@
+[Unit]
+Description=Segno: rebuild the touchscreen calibration udev rule
+Requires=data.mount
+After=data.mount
+
+[Service]
+Type=oneshot
+# Idempotent: regenerates 98-segno-touch-calibration.rules from /data and
+# re-triggers input devices. Triggered by segno-touch-apply.path after weston
+# writes a fresh matrix, and run directly by segno-touch-persist at boot.
+ExecStart=/usr/bin/segno-touch-ctl apply

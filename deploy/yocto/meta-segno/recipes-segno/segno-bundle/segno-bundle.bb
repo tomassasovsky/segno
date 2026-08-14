@@ -47,6 +47,13 @@ SRC_URI = "file://segno.service \
            file://dropbear-segno.conf \
            file://segno-bt-ctl \
            file://segno-brightness-ctl \
+           file://segno-touch-ctl \
+           file://segno-touch-calibration-helper \
+           file://segno-touch-persist \
+           file://segno-touch-persist.service \
+           file://segno-touch-apply.path \
+           file://segno-touch-apply.service \
+           file://97-segno-touch-output.rules \
            file://99-segno-wifi.conf \
            file://segno-wifi-regdom \
            file://segno-wifi-regdom.service \
@@ -84,6 +91,10 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # is answered on device: segno-wifi-regdom warns when the latter is missing.
 # networkmanager-nmcli: segno-wifi-ctl (NM owns wpa_supplicant via -wifi plugin).
 # bluez5: segno-bt-ctl. ddcutil: segno-brightness-ctl.
+# weston-examples: ships weston-touch-calibrator, which is what actually measures
+# the touchscreen (segno-touch-ctl only persists the result). core-image-weston
+# happens to pull it in today via packagegroup-core-weston — named here so a
+# future image trim can't silently remove the console's only way to recalibrate.
 RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   fontconfig freetype glib-2.0 mesa alsa-lib libstdc++ \
                   curl jq ca-certificates rauc \
@@ -91,6 +102,7 @@ RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   networkmanager-nmcli networkmanager-wifi \
                   bluez5 ddcutil \
                   iw \
+                  weston-examples \
                   avrdude coreutils"
 
 inherit systemd
@@ -100,7 +112,7 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via segno-update-ctl).
 # So segno-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-mark-good.service boot.mount data.mount"
+SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service boot.mount data.mount"
 
 FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${bindir}/segno-data-grow \
@@ -114,6 +126,10 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${bindir}/segno-mark-good \
                 ${bindir}/segno-bt-ctl \
                 ${bindir}/segno-brightness-ctl \
+                ${bindir}/segno-touch-ctl \
+                ${bindir}/segno-touch-calibration-helper \
+                ${bindir}/segno-touch-persist \
+                ${sysconfdir}/udev/rules.d/97-segno-touch-output.rules \
                 ${sysconfdir}/NetworkManager/conf.d/99-segno-wifi.conf \
                 ${sysconfdir}/systemd/system/dropbear@.service.d/segno.conf \
                 ${sysconfdir}/systemd/system/dropbearkey.service.d/segno.conf \
@@ -127,6 +143,9 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${systemd_system_unitdir}/segno-wifi-regdom.service \
                 ${systemd_system_unitdir}/segno-ssh-persist.service \
                 ${systemd_system_unitdir}/segno-bt-persist.service \
+                ${systemd_system_unitdir}/segno-touch-persist.service \
+                ${systemd_system_unitdir}/segno-touch-apply.path \
+                ${systemd_system_unitdir}/segno-touch-apply.service \
                 ${systemd_system_unitdir}/segno-mark-good.service \
                 ${systemd_system_unitdir}/boot.mount \
                 ${systemd_system_unitdir}/data.mount \
@@ -192,6 +211,24 @@ do_install() {
     install -m 0755 ${UNPACKDIR}/segno-wifi-ctl ${D}${bindir}/segno-wifi-ctl
     install -m 0755 ${UNPACKDIR}/segno-bt-ctl ${D}${bindir}/segno-bt-ctl
     install -m 0755 ${UNPACKDIR}/segno-brightness-ctl ${D}${bindir}/segno-brightness-ctl
+
+    # Touchscreen calibration. weston-touch-calibrator does the measuring;
+    # weston hands the result to segno-touch-calibration-helper (wired up as
+    # `calibration_helper` in weston.ini), which forwards it to segno-touch-ctl.
+    # The matrix is stored on /data and replayed into a udev rule by
+    # segno-touch-persist at boot, so it survives an A/B rootfs update.
+    install -m 0755 ${UNPACKDIR}/segno-touch-ctl ${D}${bindir}/segno-touch-ctl
+    install -m 0755 ${UNPACKDIR}/segno-touch-calibration-helper ${D}${bindir}/segno-touch-calibration-helper
+    install -m 0755 ${UNPACKDIR}/segno-touch-persist ${D}${bindir}/segno-touch-persist
+    install -m 0644 ${UNPACKDIR}/segno-touch-persist.service ${D}${systemd_system_unitdir}/segno-touch-persist.service
+    install -m 0644 ${UNPACKDIR}/segno-touch-apply.path ${D}${systemd_system_unitdir}/segno-touch-apply.path
+    install -m 0644 ${UNPACKDIR}/segno-touch-apply.service ${D}${systemd_system_unitdir}/segno-touch-apply.service
+
+    # Static touchscreen -> output binding (WL_OUTPUT). Separate from the
+    # generated calibration rule, which is runtime state sourced from /data.
+    install -d ${D}${sysconfdir}/udev/rules.d
+    install -m 0644 ${UNPACKDIR}/97-segno-touch-output.rules \
+        ${D}${sysconfdir}/udev/rules.d/97-segno-touch-output.rules
 
     # NetworkManager appliance tweaks (WiFi join reliability on brcmfmac).
     # segno-nm-persist: mkdir /data/NetworkManager/system-connections before NM
