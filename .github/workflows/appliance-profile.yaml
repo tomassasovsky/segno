@@ -22,6 +22,10 @@ on:
         description: "Entrypoint to build"
         required: false
         default: lib/main_production.dart
+      mode:
+        description: "Build mode (profile or release)"
+        required: false
+        default: profile
   push:
     branches:
       - "perf/**"
@@ -52,7 +56,7 @@ jobs:
 
       - name: Build profile bundle
         run: |
-          flutter build linux --profile \
+          flutter build linux --${{ inputs.mode || 'profile' }} \
             --target "${{ inputs.target || 'lib/main_production.dart' }}"
 
       # The bundle is what deploy/rpi/profile-on-device.sh expects to be handed:
