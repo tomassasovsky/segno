@@ -1,0 +1,19 @@
+# Bind the touchscreen to the main-UI output.
+#
+# The console is a two-output unit: the main UI on HDMI-A-1 and the 7" waveform
+# on HDMI-A-2 (the same split weston.ini and deploy/rpi/pin-displays.sh use).
+# Weston has to associate a touchscreen with one output; with no hint it picks a
+# default, so on a two-panel unit the taps can be scaled into the wrong output's
+# coordinate space — which looks exactly like the touchscreen being dead on the
+# main panel rather than like a mapping bug.
+#
+# WL_OUTPUT is the udev property weston reads for that association. It names a
+# DRM connector, so it must match the [output] name in weston.ini. Change it here
+# if a unit is wired with the main panel on the other connector.
+#
+# The calibration matrix is deliberately NOT here: it is runtime state, lives on
+# /data, and is written into 98-segno-touch-calibration.rules by segno-touch-ctl.
+#
+# See https://github.com/tomassasovsky/segno/issues/659
+ACTION=="add|change", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}=="1", \
+  ENV{WL_OUTPUT}="HDMI-A-1"

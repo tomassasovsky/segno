@@ -1,0 +1,27 @@
+#!/bin/sh
+# segno-touch-calibration-helper — what weston hands a fresh calibration to.
+#
+# Wired up as `calibration_helper` in weston.ini's [libinput] section. When
+# weston-touch-calibrator finishes, weston invokes this as:
+#
+#   segno-touch-calibration-helper <device-syspath> <m1> <m2> <m3> <m4> <m5> <m6>
+#
+# Weston applies the matrix to the live session itself; persisting it is the
+# helper's job, and without one the calibration is gone at the next replug.
+# Drop the syspath and hand the six values to segno-touch-ctl, which writes them
+# to /data and regenerates the udev rule.
+#
+# See https://github.com/tomassasovsky/segno/issues/659
+set -eu
+
+if [ $# -lt 7 ]; then
+    echo "segno-touch-calibration-helper: expected syspath + 6 values, got $#" >&2
+    exit 2
+fi
+
+# $1 is the device syspath. The rule segno-touch-ctl writes matches on
+# ID_INPUT_TOUCHSCREEN rather than a syspath, which survives the device landing
+# on a different USB port.
+shift
+
+exec /usr/bin/segno-touch-ctl set "$@"

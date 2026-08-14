@@ -1,0 +1,16 @@
+[Unit]
+Description=Segno: touchscreen calibration on /data (survives OTA)
+DefaultDependencies=no
+Requires=data.mount
+After=data.mount systemd-udevd.service
+# The rule has to exist before weston opens input devices, or the first session
+# after a reboot runs uncalibrated until something re-triggers udev.
+Before=weston.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/segno-touch-persist
+
+[Install]
+WantedBy=multi-user.target
