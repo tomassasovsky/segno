@@ -9,9 +9,10 @@ class TransportClockState extends Equatable {
     this.running = false,
   });
 
-  /// Wall time the transport has spent running, truncated to whole seconds
-  /// (the displayed granularity — see [TransportClockCubit]'s tick
-  /// discipline). Holds across a stop; zero only while the rig is empty.
+  /// Time the transport has spent running (monotonic — see
+  /// [TransportClockCubit]'s stopwatch rationale), truncated to whole seconds
+  /// (the displayed granularity). Holds across a stop; zeroed when a session
+  /// load replaces the rig or the rig empties.
   final Duration elapsed;
 
   /// Whether the clock is counting — any track capturing or sounding, or a

@@ -4046,6 +4046,56 @@ void main() {
       },
     );
 
+    test('fires rigReplaced once on a successful apply — the explicit seam '
+        '(the cleared window is transient, so the projection alone cannot '
+        'announce the replacement)', () async {
+      engine.nextSnapshot = clearedSnapshot(2);
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      final replacements = <void>[];
+      final sub = repo.rigReplaced.listen(replacements.add);
+      addTearDown(sub.cancel);
+
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          tracks: [
+            rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+          ],
+        ),
+        clearPollInterval: Duration.zero,
+      );
+      // The listen microtask.
+      await Future<void>.delayed(Duration.zero);
+
+      expect(replacements, hasLength(1));
+    });
+
+    test('does not fire rigReplaced on a failed apply — a failed load leaves '
+        'a stably empty rig the projection does announce', () async {
+      // Never settles empty, so the apply's clear wait throws.
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      final replacements = <void>[];
+      final sub = repo.rigReplaced.listen(replacements.add);
+      addTearDown(sub.cancel);
+
+      await expectLater(
+        repo.applySession(
+          const SessionRig(),
+          clearPollInterval: Duration.zero,
+          clearPollAttempts: 1,
+        ),
+        throwsStateError,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(replacements, isEmpty);
+    });
+
     test('an empty rig imports nothing and establishes no master', () async {
       engine.nextSnapshot = clearedSnapshot(2);
       final repo = buildRepo()..startEngine(const EngineConfig());
