@@ -27,39 +27,34 @@ import 'package:window_manager/window_manager.dart';
 /// whose physical origin is x=2560 is reported at own-logical x=1463, a point
 /// *inside* a 100%-scaled primary, so the window lands mid-primary.
 ///
-/// The secondary is found by id first (macOS/Windows report distinct display
-/// ids), then by geometry: `screen_retriever_linux` hardcodes every display's
-/// id to `""` (its plugin.cc), so on Linux the id comparison can never single
-/// out the secondary — but the compositor lays outputs out side by side, so a
-/// display whose origin differs from [primaryPosition] is a real second
-/// output. A genuinely single display matches neither test (its id *is* the
-/// primary id and its origin *is* the primary origin) and keeps the windowed
-/// fallback, as do mirrored outputs sharing the primary's origin.
+/// The secondary is found by id — macOS/Windows report distinct display ids.
+/// On Linux `screen_retriever_linux` hardcodes every display's id to `""`
+/// (its plugin.cc), so the loop never matches and the window opens with the
+/// windowed fallback — **deliberately**. On the appliance that is correct:
+/// weston's kiosk-shell fullscreens every surface and routes it to the output
+/// whose `app-ids` list names it (the embedder tags this window
+/// `<APPLICATION_ID>.waveform`, weston.ini pins that to HDMI-A-2), overriding
+/// whatever geometry the window asks for. And on a non-kiosk Linux desktop
+/// there is no trustworthy signal to place by: GDK's "primary" is just
+/// monitor 0, arbitrary under Wayland, so guessing a secondary from geometry
+/// can full-bleed the readout over the *main* display.
 @visibleForTesting
 ({Offset position, Size size, bool fullscreen}) waveformWindowPlacement({
   required List<({String id, Offset position, Size size, double scale})>
   screens,
   required String primaryId,
-  required Offset primaryPosition,
   required double primaryScale,
   required WaveformWindowArgs args,
 }) {
-  ({Offset position, Size size, bool fullscreen}) fullBleedOn(
-    ({String id, Offset position, Size size, double scale}) screen,
-  ) {
-    final k = screen.scale / primaryScale;
-    return (
-      position: screen.position * k,
-      size: screen.size * k,
-      fullscreen: true,
-    );
-  }
-
   for (final screen in screens) {
-    if (screen.id != primaryId) return fullBleedOn(screen);
-  }
-  for (final screen in screens) {
-    if (screen.position != primaryPosition) return fullBleedOn(screen);
+    if (screen.id != primaryId) {
+      final k = screen.scale / primaryScale;
+      return (
+        position: screen.position * k,
+        size: screen.size * k,
+        fullscreen: true,
+      );
+    }
   }
   return (
     position: Offset(args.x, args.y),
@@ -88,7 +83,6 @@ Future<({Offset position, Size size, bool fullscreen})> _resolvePlacement(
           ),
       ],
       primaryId: primary.id,
-      primaryPosition: primary.visiblePosition ?? Offset.zero,
       primaryScale: primary.scaleFactor?.toDouble() ?? 1.0,
       args: args,
     );

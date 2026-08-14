@@ -8,11 +8,21 @@
 # so taps get scaled into the wrong output's coordinate space — which looks
 # exactly like the touchscreen being dead rather than like a mapping bug.
 #
-# The match is per-device (VID/PID on the input device's USB ancestor), not the
-# generic ID_INPUT_TOUCHSCREEN class: the final rig adds a second touchscreen
-# (the 15.6" main panel) that must NOT inherit the 7"'s HDMI-A-2 binding.
+# Rule ordering: the SPECIFIC per-device match comes first, then a GENERIC
+# catch-all. The catch-all is guarded with ENV{WL_OUTPUT}=="" (unset compares
+# as empty in udev), so it only fires for touchscreens no earlier rule bound —
+# without the guard a later plain assignment would clobber the 7"'s binding,
+# since udev evaluates every matching rule in order.
 #
-# WL_OUTPUT is the udev property weston reads for that association. It names a
+# Why both: the specific rule keeps the future 15.6" main-panel touchscreen
+# (VID/PID unknown until it is on the bench) from inheriting the 7"'s
+# HDMI-A-2 binding; the catch-all sends any unrecognized touchscreen — e.g. a
+# clone-variance replacement 7" panel with a different controller — to the
+# MAIN screen (HDMI-A-1), where its mis-binding is visible and debuggable
+# instead of the panel appearing silently dead. HDMI-A-1 is also the right
+# home for the 15.6" once it exists.
+#
+# WL_OUTPUT is the udev property weston reads for the association. It names a
 # DRM connector, so it must match the [output] name in weston.ini. Change it
 # here if a unit is wired with the 7" on the other connector.
 #
@@ -24,7 +34,6 @@
 ACTION=="add|change", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}=="1", \
   ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="e5e3", ENV{WL_OUTPUT}="HDMI-A-2"
 
-# Template for the future 15.6" main-panel touchscreen (controller VID/PID
-# unknown until the panel is on the bench) — it binds to the main output:
-# ACTION=="add|change", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}=="1", \
-#   ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="XXXX", ENV{WL_OUTPUT}="HDMI-A-1"
+# Generic fallback: any touchscreen not bound above lands on the main screen.
+ACTION=="add|change", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}=="1", \
+  ENV{WL_OUTPUT}=="", ENV{WL_OUTPUT}="HDMI-A-1"
