@@ -403,6 +403,14 @@ void onPerformanceRecorderState(
     _showPerformanceLowDiskBlocked(context);
     return;
   }
+  // Entering Rendering opens the dialog on its rendering face; entering
+  // Completed opens it for a capture the operator hid (or one whose render
+  // was instant). While it is already up it morphs in place — the show
+  // function refuses to stack a second copy.
+  if (state is PerformanceRecorderRendering) {
+    unawaited(showPerformanceCompletionSheet(context));
+    return;
+  }
   if (state is PerformanceRecorderCompleted) {
     if (state.discarded) {
       _showPerformanceDiscarded(context);

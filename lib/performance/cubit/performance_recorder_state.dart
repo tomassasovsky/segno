@@ -149,13 +149,18 @@ class PerformanceRecorderFinalizing extends PerformanceRecorderState {
 /// while in this state (umbrella — no render queue).
 class PerformanceRecorderRendering extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderRendering].
-  const PerformanceRecorderRendering({required this.percent});
+  const PerformanceRecorderRendering({required this.percent, this.name});
 
   /// Render completion, `0..100`.
   final int percent;
 
+  /// The capture's folder name, so the rendering dialog can say WHICH capture
+  /// is being written (`SESSION & CAPTURE / capture-rendering` opens with it).
+  /// Null when the cubit does not know it — the dialog drops the prefix.
+  final String? name;
+
   @override
-  List<Object?> get props => [percent];
+  List<Object?> get props => [percent, name];
 }
 
 /// The capture is fully finished: bundle finalized, render (and `.als`
@@ -173,6 +178,8 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
     this.tracks = const [],
     this.isReExporting = false,
     this.reExportFailed = false,
+    this.duration,
+    this.hadGlitch = false,
   }) : discarded = false;
 
   /// Creates a [PerformanceRecorderCompleted] for a capture too short to
@@ -182,7 +189,9 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
       discarded = true,
       tracks = const [],
       isReExporting = false,
-      reExportFailed = false;
+      reExportFailed = false,
+      duration = null,
+      hadGlitch = false;
 
   /// The capture's outcome, or `null` when [discarded].
   final PerformanceRecordResult? result;
@@ -211,6 +220,17 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
   /// case, never partially updated.
   final bool reExportFailed;
 
+  /// How long the capture ran, wall clock, or null when unknown (a recovered
+  /// boot capture has no armed-at to measure from). The completion dialog's
+  /// subtitle prints it beside the track count, as the pen draws it.
+  final Duration? duration;
+
+  /// Whether the engine reported dropped capture frames (ring overruns) at
+  /// any point while armed. Latched by the cubit's armed tick: the overrun
+  /// counter lives on the live snapshot, which is gone by the time the
+  /// capture completes — so the fact has to be carried, not re-read.
+  final bool hadGlitch;
+
   @override
   List<Object?> get props => [
     result,
@@ -218,5 +238,7 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
     tracks,
     isReExporting,
     reExportFailed,
+    duration,
+    hadGlitch,
   ];
 }

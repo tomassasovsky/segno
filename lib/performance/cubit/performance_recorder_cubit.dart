@@ -147,6 +147,19 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   int _ticksSinceDiskCheck = 0;
   bool _stoppingForDisk = false;
 
+  /// Whether any armed tick saw dropped capture frames — see
+  /// [PerformanceRecorderCompleted.hadGlitch]. Reset on every arm.
+  bool _sawOverrun = false;
+
+  /// How long the finished capture ran, measured in [_afterFinalized] —
+  /// `Completed` is emitted later, from [_finishRender], by which point
+  /// `_armedAt` is already gone.
+  Duration? _completedDuration;
+
+  /// The last path segment — captures live in a folder named after the take.
+  static String _basename(String path) =>
+      path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;
+
   /// Why this capture stopped, when the cubit itself stopped it. Preferred
   /// over the manifest's marker, which only the engine's own self-stop writes.
   PerformanceStopReason? _stopReason;
@@ -237,7 +250,14 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
           reason,
         ),
     };
-    _emit(PerformanceRecorderCompleted(renamed, tracks: current.tracks));
+    _emit(
+      PerformanceRecorderCompleted(
+        renamed,
+        tracks: current.tracks,
+        duration: current.duration,
+        hadGlitch: current.hadGlitch,
+      ),
+    );
   }
 
   /// Arms or disarms depending on the current state; a no-op while
@@ -277,6 +297,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       case PerformanceCaptureStatus.armed:
         _captureDir = _performance.armedDirectory;
         _armedAt = _now();
+        _sawOverrun = false;
         _lowDiskAtArm = false;
         _ticksSinceDiskCheck = 0;
         _stoppingForDisk = false;
@@ -321,6 +342,10 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       unawaited(_stopForLowDisk());
       return;
     }
+    // Latched, not just displayed: the overrun counter lives on the live
+    // snapshot, which is gone by the time the capture completes — the
+    // completion dialog's glitch banner needs the fact carried across.
+    if (progress.overrun) _sawOverrun = true;
     _emit(
       PerformanceRecorderArmed(
         elapsed: progress.elapsed,
@@ -423,6 +448,10 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     final elapsed = armedAt == null
         ? Duration.zero
         : _now().difference(armedAt);
+    // Null rather than zero when there was no armed-at to measure from (a
+    // recovered boot capture): the dialog drops the figure instead of
+    // printing 0:00 for a take that plainly ran longer.
+    _completedDuration = armedAt == null ? null : elapsed;
     if (_isShortEmptyCapture(dir, elapsed)) {
       // The offline render already started in the background (disarm's own
       // fire-and-forget) — deleting the directory here only wastes its
@@ -443,7 +472,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   }
 
   Future<void> _runRenderPipeline(String dir) async {
-    _emit(const PerformanceRecorderRendering(percent: 0));
+    _emit(PerformanceRecorderRendering(percent: 0, name: _basename(dir)));
     final completer = Completer<void>();
     _renderPoller?.cancel();
     _renderPoller = Timer.periodic(_renderPollInterval, (_) {
@@ -456,7 +485,12 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   void _pollRender(String dir, Completer<void> completer) {
     if (completer.isCompleted) return;
     final progress = _performance.renderProgress;
-    _emit(PerformanceRecorderRendering(percent: progress.progressPercent));
+    _emit(
+      PerformanceRecorderRendering(
+        percent: progress.progressPercent,
+        name: _basename(dir),
+      ),
+    );
     if (!progress.done) return;
     _renderPoller?.cancel();
     unawaited(_finishRender(dir).whenComplete(completer.complete));
@@ -493,7 +527,14 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     } else {
       result = PerformanceRecordDone(dir);
     }
-    _emit(PerformanceRecorderCompleted(result, tracks: tracks));
+    _emit(
+      PerformanceRecorderCompleted(
+        result,
+        tracks: tracks,
+        duration: _completedDuration,
+        hadGlitch: _sawOverrun,
+      ),
+    );
   }
 
   /// Re-runs `.als`/`fx-chains.txt` generation from the capture directory's
@@ -525,17 +566,28 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         result,
         tracks: current.tracks,
         isReExporting: true,
+        duration: current.duration,
+        hadGlitch: current.hadGlitch,
       ),
     );
     try {
       final tracks = await _writeDawExports(dir);
-      _emit(PerformanceRecorderCompleted(result, tracks: tracks));
+      _emit(
+        PerformanceRecorderCompleted(
+          result,
+          tracks: tracks,
+          duration: current.duration,
+          hadGlitch: current.hadGlitch,
+        ),
+      );
     } on Object {
       _emit(
         PerformanceRecorderCompleted(
           result,
           tracks: current.tracks,
           reExportFailed: true,
+          duration: current.duration,
+          hadGlitch: current.hadGlitch,
         ),
       );
     }

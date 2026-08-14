@@ -158,6 +158,12 @@
     "sessionDuplicateTitle": "Duplicate as…",
     "sessionUnsaved": "Unsaved",
     "sessionsManagerTitle": "Sessions",
+    "sessionDateToday": "today {time}",
+    "@sessionDateToday": {
+        "description": "Sessions list date column for a session saved today; {time} is HH:MM.",
+        "placeholders": {"time": {"type": "String"}}
+    },
+    "sessionDateYesterday": "yesterday",
     "sessionsEmpty": "No saved sessions yet. Use “Save as…” to create one.",
     "sessionNewTitle": "Save as new session",
     "sessionRenameTitle": "Rename session",
@@ -1174,6 +1180,37 @@
         }
     },
     "perfDone": "Capture saved",
+    "perfSavedSubtitle": "{name} — {count, plural, =1{1 track} other{{count} tracks}}, {duration}. Written to the session folder.",
+    "@perfSavedSubtitle": {
+        "description": "Completion dialog subtitle: capture name, exported track count, wall-clock length (M:SS).",
+        "placeholders": {
+            "name": {"type": "String"},
+            "count": {"type": "int"},
+            "duration": {"type": "String"}
+        }
+    },
+    "perfSavedSubtitleTimed": "{name} — {duration}. Written to the session folder.",
+    "@perfSavedSubtitleTimed": {
+        "description": "Completion dialog subtitle when the length is known but the export produced no DAW tracks.",
+        "placeholders": {"name": {"type": "String"}, "duration": {"type": "String"}}
+    },
+    "perfSavedSubtitlePlain": "{name} — written to the session folder.",
+    "@perfSavedSubtitlePlain": {
+        "description": "Completion dialog subtitle when the track count or length is unknown (a recovered boot capture).",
+        "placeholders": {"name": {"type": "String"}}
+    },
+    "perfRenderingTitle": "Rendering… {percent}%",
+    "@perfRenderingTitle": {
+        "description": "Title of the rendering dialog while the offline mixdown/stems render runs.",
+        "placeholders": {"percent": {"type": "int"}}
+    },
+    "perfRenderingSubtitleNamed": "{name} — writing the mixdown and the per-track stems. You can keep playing; arming another capture waits until this finishes.",
+    "@perfRenderingSubtitleNamed": {
+        "description": "Rendering dialog subtitle when the capture name is known.",
+        "placeholders": {"name": {"type": "String"}}
+    },
+    "perfRenderingSubtitle": "Writing the mixdown and the per-track stems. You can keep playing; arming another capture waits until this finishes.",
+    "perfHide": "Hide",
     "perfRevealMacos": "Show in Finder",
     "perfRevealWindows": "Show in File Explorer",
     "perfRevealOther": "Show in file manager",
