@@ -12,6 +12,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:segno/audio_setup/audio_setup.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -110,8 +111,6 @@ void main() {
       () => performanceRecorder.state,
     ).thenReturn(const PerformanceRecorderIdle());
     when(performanceRecorder.toggleArm).thenAnswer((_) async {});
-    when(performanceRecorder.recoverBootCapture).thenAnswer((_) async {});
-    when(performanceRecorder.discardBootCapture).thenAnswer((_) async {});
     when(
       () => performanceRecorder.renameCompletedCapture(any()),
     ).thenAnswer((_) async {});
@@ -1550,84 +1549,21 @@ void main() {
     });
 
     testWidgets(
-      'a boot-recovery prompt appears when a crashed capture is found',
+      'a boot-time idle emission opens no dialog — crash salvage recovers '
+      'silently in the repository, with no prompt UI left to trigger (#679)',
       (tester) async {
         whenListen(
           performanceRecorder,
-          Stream.fromIterable(const [
-            PerformanceRecorderIdle(recoveryDirectory: '/tmp/perf-crashed'),
-          ]),
+          Stream.fromIterable(const [PerformanceRecorderIdle()]),
           initialState: const PerformanceRecorderIdle(),
         );
         seed(const LooperState(tracks: [Track()]));
         await pump(tester);
         await tester.pump();
 
-        expect(find.byKey(const Key('perfRecovery_dialog')), findsOneWidget);
+        expect(find.byType(ConsoleDialogShell), findsNothing);
       },
     );
-
-    testWidgets('the boot-recovery prompt cannot be dismissed via the '
-        'barrier (D-SALVAGE must not soft-lock arming)', (tester) async {
-      whenListen(
-        performanceRecorder,
-        Stream.fromIterable(const [
-          PerformanceRecorderIdle(recoveryDirectory: '/tmp/perf-crashed'),
-        ]),
-        initialState: const PerformanceRecorderIdle(),
-      );
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      await tester.pump();
-
-      // Tap far outside the dialog's content — the modal barrier.
-      await tester.tapAt(const Offset(5, 5));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('perfRecovery_dialog')), findsOneWidget);
-    });
-
-    testWidgets('Recover calls recoverBootCapture and dismisses the prompt', (
-      tester,
-    ) async {
-      whenListen(
-        performanceRecorder,
-        Stream.fromIterable(const [
-          PerformanceRecorderIdle(recoveryDirectory: '/tmp/perf-crashed'),
-        ]),
-        initialState: const PerformanceRecorderIdle(),
-      );
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      await tester.pump();
-
-      await tester.tap(find.byKey(const Key('perfRecovery_recover')));
-      await tester.pumpAndSettle();
-
-      verify(performanceRecorder.recoverBootCapture).called(1);
-      expect(find.byKey(const Key('perfRecovery_dialog')), findsNothing);
-    });
-
-    testWidgets('Discard calls discardBootCapture and dismisses the prompt', (
-      tester,
-    ) async {
-      whenListen(
-        performanceRecorder,
-        Stream.fromIterable(const [
-          PerformanceRecorderIdle(recoveryDirectory: '/tmp/perf-crashed'),
-        ]),
-        initialState: const PerformanceRecorderIdle(),
-      );
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      await tester.pump();
-
-      await tester.tap(find.byKey(const Key('perfRecovery_discard')));
-      await tester.pumpAndSettle();
-
-      verify(performanceRecorder.discardBootCapture).called(1);
-      expect(find.byKey(const Key('perfRecovery_dialog')), findsNothing);
-    });
 
     testWidgets('a completed capture opens the completion sheet', (
       tester,

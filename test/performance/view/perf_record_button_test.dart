@@ -99,21 +99,6 @@ void main() {
     },
   );
 
-  testWidgets(
-    'disabled while a boot-recovery prompt is unresolved',
-    (tester) async {
-      await pump(
-        tester,
-        const PerformanceRecorderIdle(recoveryDirectory: '/exports/perf-x'),
-      );
-
-      final button = tester.widget<IconButton>(
-        find.byKey(const Key('tracks_perfRecord')),
-      );
-      expect(button.onPressed, isNull);
-    },
-  );
-
   testWidgets('tapping the enabled button dispatches toggleArm', (
     tester,
   ) async {

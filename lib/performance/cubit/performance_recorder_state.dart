@@ -76,20 +76,12 @@ sealed class PerformanceRecorderState extends Equatable {
   const PerformanceRecorderState();
 }
 
-/// Not armed. [recoveryDirectory] is non-null only at boot, when a crashed
-/// (unfinalized) capture was found and is offered for recovery/discard — it
-/// clears once the user (or [PerformanceRecorderCubit.recoverBootCapture]/
-/// [PerformanceRecorderCubit.discardBootCapture]) resolves it.
+/// Not armed. Boot-time crash salvage never surfaces here — it runs silently
+/// inside [PerformanceRepository.runBootRecovery] (D-SALVAGE, #679), so idle
+/// carries no recovery state at all.
 class PerformanceRecorderIdle extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderIdle].
-  const PerformanceRecorderIdle({
-    this.recoveryDirectory,
-    this.lowDiskBlocked = false,
-  });
-
-  /// The crashed capture directory offered for recovery, or `null` when
-  /// there is nothing to recover.
-  final String? recoveryDirectory;
+  const PerformanceRecorderIdle({this.lowDiskBlocked = false});
 
   /// An arm was refused because the export volume is already below the
   /// free-space floor (#640).
@@ -100,7 +92,7 @@ class PerformanceRecorderIdle extends PerformanceRecorderState {
   final bool lowDiskBlocked;
 
   @override
-  List<Object?> get props => [recoveryDirectory, lowDiskBlocked];
+  List<Object?> get props => [lowDiskBlocked];
 }
 
 /// Armed: the engine's capture taps are running. [elapsed] and [overrun]

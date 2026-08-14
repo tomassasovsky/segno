@@ -24,9 +24,7 @@ class PerfRecordButton extends StatelessWidget {
     final busy =
         state is PerformanceRecorderFinalizing ||
         state is PerformanceRecorderRendering;
-    final recoveryPending =
-        state is PerformanceRecorderIdle && state.recoveryDirectory != null;
-    final enabled = !busy && !recoveryPending;
+    final enabled = !busy;
     final tooltip = armed
         ? l10n.perfDisarm
         : busy

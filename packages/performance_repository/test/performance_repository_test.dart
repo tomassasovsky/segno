@@ -996,6 +996,203 @@ void main() {
     );
   });
 
+  group('runBootRecovery (silent boot salvage, #679)', () {
+    /// A crashed capture: unfinalized sidecar plus raw master PCM, the same
+    /// fixture shape the recoverCapture tests use.
+    String seedCrashed(String slug) {
+      final dir = '${tempDir.path}/exports/$slug';
+      Directory(dir).createSync(recursive: true);
+      writeNativeSidecar(dir);
+      writeRawPcm('$dir/master.pcm', Float32List.fromList([0.1, 0.2]));
+      return dir;
+    }
+
+    test(
+      'finalizes + renders an unfinalized capture into recovered/ under its '
+      'own slug, and the original bundle is gone',
+      () async {
+        final crashed = seedCrashed('perf-crashed');
+
+        await repo.runBootRecovery();
+
+        final recovered = '${tempDir.path}/exports/recovered/perf-crashed';
+        expect(Directory(crashed).existsSync(), isFalse);
+        expect(
+          File('$recovered/master.wav').existsSync(),
+          isTrue,
+          reason: 'the salvage converts the raw PCM to usable audio',
+        );
+        final manifest =
+            jsonDecode(File('$recovered/performance.json').readAsStringSync())
+                as Map<String, dynamic>;
+        expect(manifest['finalized'], isTrue);
+        expect(
+          engine.lastRenderCaptureDir,
+          crashed,
+          reason: 'the stem render ran against the bundle before the move',
+        );
+      },
+    );
+
+    test('recovers silently: no captureStatus emission at any point', () async {
+      seedCrashed('perf-crashed');
+      final statuses = <PerformanceCaptureStatus>[];
+      final sub = repo.captureStatus.listen(statuses.add);
+
+      await repo.runBootRecovery();
+      await pumpEventQueue();
+      unawaited(sub.cancel());
+
+      expect(statuses, [PerformanceCaptureStatus.idle]);
+    });
+
+    test('is a quiet no-op when there is nothing to recover', () async {
+      await repo.runBootRecovery();
+      expect(
+        Directory('${tempDir.path}/exports/recovered').existsSync(),
+        isFalse,
+        reason: 'no recovered/ area is created for nothing',
+      );
+    });
+
+    test(
+      'prunes recovered entries older than recoveredRetention and keeps '
+      'fresh ones',
+      () async {
+        final recoveredRoot = '${tempDir.path}/exports/recovered';
+        final old = '$recoveredRoot/perf-old';
+        final fresh = '$recoveredRoot/perf-fresh';
+        Directory(old).createSync(recursive: true);
+        Directory(fresh).createSync(recursive: true);
+        writeNativeSidecar(old, finalized: true);
+        writeNativeSidecar(fresh, finalized: true);
+        // Age is the sidecar's mtime (recovery time); the injected clock is
+        // "now". One entry past the window, one comfortably inside it.
+        File('$old/performance.json').setLastModifiedSync(
+          clock.subtract(
+            PerformanceRepository.recoveredRetention + const Duration(days: 1),
+          ),
+        );
+        File('$fresh/performance.json').setLastModifiedSync(
+          clock.subtract(const Duration(days: 1)),
+        );
+
+        await repo.runBootRecovery();
+
+        expect(Directory(old).existsSync(), isFalse);
+        expect(Directory(fresh).existsSync(), isTrue);
+      },
+    );
+
+    test(
+      'a salvage that cannot finalize (corrupt sidecar) keeps the raw '
+      'bundle in place for the next boot, without crashing',
+      () async {
+        final dir = '${tempDir.path}/exports/perf-corrupt';
+        Directory(dir).createSync(recursive: true);
+        File('$dir/performance.json').writeAsStringSync('{not json');
+
+        await repo.runBootRecovery();
+
+        expect(
+          Directory(dir).existsSync(),
+          isTrue,
+          reason: 'never delete what could not be rendered',
+        );
+        expect(
+          Directory(
+            '${tempDir.path}/exports/recovered/perf-corrupt',
+          ).existsSync(),
+          isFalse,
+        );
+        expect(engine.renderBeginCalls, 0);
+      },
+    );
+
+    test(
+      'a salvage whose finalize THROWS keeps the raw bundle in place for '
+      'the next boot, without crashing',
+      () async {
+        final dir = seedCrashed('perf-crashed');
+        // A directory squatting on the finalize's WAV target: the PCM
+        // conversion's writeAsBytes fails on it.
+        Directory('$dir/master.wav').createSync();
+
+        await repo.runBootRecovery();
+
+        expect(Directory(dir).existsSync(), isTrue);
+        expect(
+          Directory('${tempDir.path}/exports/recovered').existsSync(),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'arm is refused for the whole background salvage (#671 gates), and '
+      'works again once the render completes and the bundle has moved',
+      () async {
+        seedCrashed('perf-crashed');
+        // The salvage's finalize hands straight over to an in-flight render
+        // (the production handover), so runBootRecovery parks waiting on the
+        // render poll.
+        engine.renderProgressAfterBegin = const PerformanceRenderProgress(
+          done: false,
+          progressPercent: 10,
+        );
+        final pollingRepo = PerformanceRepository(
+          engine: engine,
+          exportsRoot: () async => '${tempDir.path}/exports',
+          now: () => clock,
+          bootRecoveryPollInterval: const Duration(milliseconds: 5),
+        );
+        addTearDown(pollingRepo.dispose);
+
+        final recovery = pollingRepo.runBootRecovery();
+        await pumpEventQueue();
+
+        final result = await pollingRepo.arm();
+        expect(result, EngineResult.ok, reason: 'same silent-ok shape');
+        expect(pollingRepo.armedDirectory, isNull);
+        expect(engine.perfArmCalls, 0);
+
+        engine.renderProgress = PerformanceRenderProgress.empty;
+        await recovery;
+        expect(
+          Directory(
+            '${tempDir.path}/exports/recovered/perf-crashed',
+          ).existsSync(),
+          isTrue,
+        );
+        await pollingRepo.arm();
+        expect(pollingRepo.armedDirectory, isNotNull);
+      },
+    );
+
+    test(
+      'a recovered-slug collision lands the second salvage under a suffixed '
+      'name instead of overwriting the first',
+      () async {
+        final crashed = seedCrashed('perf-crashed');
+        final prior = '${tempDir.path}/exports/recovered/perf-crashed';
+        Directory(prior).createSync(recursive: true);
+        writeNativeSidecar(prior, finalized: true);
+        final marker = File('$prior/master.wav')
+          ..writeAsStringSync('prior recovery');
+
+        await repo.runBootRecovery();
+
+        expect(Directory(crashed).existsSync(), isFalse);
+        expect(
+          Directory('$prior-1').existsSync(),
+          isTrue,
+          reason: 'the new salvage takes the suffixed slot',
+        );
+        expect(marker.readAsStringSync(), 'prior recovery');
+      },
+    );
+  });
+
   group('captureProgress', () {
     test('reads zero/false when not armed', () {
       expect(

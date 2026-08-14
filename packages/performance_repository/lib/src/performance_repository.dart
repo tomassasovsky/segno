@@ -27,18 +27,23 @@ class PerformanceRepository {
   /// [exportsRoot] resolves the `exports/` root directory new bundles are
   /// created under (mirrors `SessionRepository`'s `sessionsRoot`). [now]
   /// supplies the timestamp [arm] slugs from; injectable for deterministic
-  /// tests.
+  /// tests. [bootRecoveryPollInterval] paces [runBootRecovery]'s wait for
+  /// the salvage render to finish before it moves the bundle; injectable so
+  /// tests interleave against the wait without real 200ms sleeps.
   PerformanceRepository({
     required AudioEngine engine,
     required Future<String> Function() exportsRoot,
     DateTime Function() now = DateTime.now,
+    Duration bootRecoveryPollInterval = const Duration(milliseconds: 200),
   }) : _engine = engine,
        _exportsRoot = exportsRoot,
-       _now = now;
+       _now = now,
+       _bootRecoveryPollInterval = bootRecoveryPollInterval;
 
   final AudioEngine _engine;
   final Future<String> Function() _exportsRoot;
   final DateTime Function() _now;
+  final Duration _bootRecoveryPollInterval;
 
   /// The `exports/` root new bundles are created under.
   ///
@@ -90,6 +95,21 @@ class PerformanceRepository {
 
   /// The sidecar manifest filename within a capture directory.
   static const String manifestName = 'performance.json';
+
+  /// The directory under the exports root that [runBootRecovery] moves
+  /// silently salvaged captures into, each keeping its own timestamped slug
+  /// (`recovered/perf-YYYYMMDD-HHMMSS/`) so the take stays discoverable by
+  /// name until a browsing UI exists for it.
+  static const String recoveredDirName = 'recovered';
+
+  /// How long a salvaged capture lives under [recoveredDirName] before
+  /// [runBootRecovery] prunes it at the next boot.
+  ///
+  /// Measured from when the capture was *recovered* (its sidecar's mtime —
+  /// the finalize is the last writer of that file before the move), not from
+  /// when it was originally captured, so a bundle salvaged after the console
+  /// sat unpowered for weeks still gets its full window on disk.
+  static const Duration recoveredRetention = Duration(days: 30);
 
   /// The arm-time snapshot's own file, written immediately at [arm] so it
   /// survives a crash before [disarm]'s finalize ever merges it into
@@ -358,17 +378,8 @@ class PerformanceRepository {
     final out = <UnfinalizedCapture>[];
     for (final entity in root.listSync()) {
       if (entity is! Directory) continue;
-      final manifestFile = File('${entity.path}/$manifestName');
-      if (!manifestFile.existsSync()) continue;
-      var finalized = false;
-      try {
-        final json =
-            jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>;
-        finalized = json['finalized'] == true;
-      } on FormatException {
-        finalized = false;
-      }
-      if (!finalized) {
+      if (!File('${entity.path}/$manifestName').existsSync()) continue;
+      if (!_sidecarFinalized(entity.path)) {
         out.add(
           UnfinalizedCapture(
             directory: entity.path,
@@ -397,6 +408,101 @@ class PerformanceRepository {
   Future<void> discardUnfinalized(String directory) async {
     final dir = Directory(directory);
     if (dir.existsSync()) await dir.delete(recursive: true);
+  }
+
+  /// Boot-time crash salvage, run silently (D-SALVAGE, #679): prunes the
+  /// [recoveredDirName] area of entries older than [recoveredRetention],
+  /// then finalizes + renders every capture a crash left unfinalized and
+  /// moves each finished bundle to
+  /// `{exportsRoot}/`[recoveredDirName]`/<slug>/` — rendered, usable audio
+  /// under the capture's own timestamped name. No prompt and no
+  /// [captureStatus] emission: the only externally observable effects are
+  /// the recovered bundles appearing on disk, and [arm]'s existing
+  /// in-flight refusals (#671) holding for exactly as long as a salvage
+  /// finalize or its render is running.
+  ///
+  /// Failure honesty: a salvage that could not finalize — a corrupt or
+  /// missing sidecar, or a thrown write — leaves the raw bundle in place,
+  /// untouched, to be retried at the next boot; what could not be rendered
+  /// is never deleted. Retries are unbounded but cheap (the undecodable
+  /// -sidecar case is [_finalize]'s documented early return), and the prune
+  /// only ever touches bundles that DID recover, so a permanently
+  /// unrecoverable bundle stays on disk for the user rather than aging out
+  /// silently. A failed *stem render* on a finalized bundle still moves it —
+  /// the bundle is complete and valid without its stems, the same
+  /// partial-success posture [_finalize] itself takes.
+  Future<void> runBootRecovery() async {
+    final root = await _exportsRoot();
+    _pruneRecovered(root);
+    for (final capture in await findUnfinalized()) {
+      await _recoverSilently(root, capture.directory);
+    }
+  }
+
+  /// One capture's silent salvage: finalize + render in place, then — only
+  /// once the sidecar proves finalized — move the bundle into the recovered
+  /// area. The fire-and-forget stem render works on [dir]'s path on its own
+  /// worker thread, so the move waits for [renderProgress] to report done
+  /// rather than renaming the directory out from under in-flight writes.
+  Future<void> _recoverSilently(String root, String dir) async {
+    try {
+      await recoverCapture(dir);
+    } on Exception {
+      return; // keep the raw bundle; retried next boot
+    }
+    while (!renderProgress.done) {
+      await Future<void>.delayed(_bootRecoveryPollInterval);
+    }
+    if (!_sidecarFinalized(dir)) return; // ditto: nothing was recovered
+    final recoveredRoot = '$root/$recoveredDirName';
+    Directory(recoveredRoot).createSync(recursive: true);
+    final slug = _basename(dir);
+    var target = '$recoveredRoot/$slug';
+    var suffix = 1;
+    while (Directory(target).existsSync()) {
+      target = '$recoveredRoot/$slug-$suffix';
+      suffix++;
+    }
+    Directory(dir).renameSync(target);
+  }
+
+  /// Deletes recovered-area entries older than [recoveredRetention] — see
+  /// that constant for why age is the sidecar's mtime (recovery time), with
+  /// the directory's own mtime as the fallback for an entry missing its
+  /// sidecar. An entry the filesystem refuses to stat or delete is skipped;
+  /// the next boot's prune is its retry.
+  void _pruneRecovered(String root) {
+    final recoveredRoot = Directory('$root/$recoveredDirName');
+    if (!recoveredRoot.existsSync()) return;
+    for (final entity in recoveredRoot.listSync()) {
+      if (entity is! Directory) continue;
+      try {
+        final manifestFile = File('${entity.path}/$manifestName');
+        final recoveredAt = manifestFile.existsSync()
+            ? manifestFile.lastModifiedSync()
+            : entity.statSync().modified;
+        if (_now().difference(recoveredAt) > recoveredRetention) {
+          entity.deleteSync(recursive: true);
+        }
+      } on FileSystemException {
+        continue;
+      }
+    }
+  }
+
+  /// Whether [dir]'s sidecar reads back with `finalized: true`; an absent or
+  /// undecodable sidecar reads as not finalized (shared by [findUnfinalized]
+  /// and [runBootRecovery]'s move-only-what-recovered check).
+  bool _sidecarFinalized(String dir) {
+    final manifestFile = File('$dir/$manifestName');
+    if (!manifestFile.existsSync()) return false;
+    try {
+      final json =
+          jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>;
+      return json['finalized'] == true;
+    } on FormatException {
+      return false;
+    }
   }
 
   /// Folds [to] into a folder-safe slug and renames the finished capture at
