@@ -68,6 +68,23 @@ static void le_cond_notch_coeffs(le_cond_biquad* q, float fc, float sr) {
   q->a2 = (1.0f - alpha) / a0;
 }
 
+/* D-RT twin of engine_fx.c's fx_sanitize, applied at the STAGE BOUNDARY: a
+ * single non-finite device sample (a hot-plug glitch, a broken driver) would
+ * otherwise latch into the biquad s1/s2 and envelope states permanently —
+ * state only resets on enable edges / param changes / reconfigure — turning
+ * every subsequent conditioned sample on that input into NaN (monitors, lane
+ * recordings, tuner, trigger all dead while raw metering still looks fine).
+ * Mapping the input to 0 BEFORE any state update keeps the states finite by
+ * construction (finite coefficients x finite inputs stay finite), and makes
+ * the poisoned run bit-identical to one that was fed a 0 at that sample —
+ * instant recovery, no downstream cleanup. Denormals flush like fx_sanitize
+ * (belt to le_flush_denormals's per-callback suspenders). */
+static inline float le_cond_sanitize(float x) {
+  if (!isfinite(x)) return 0.0f;
+  if (x < 1e-30f && x > -1e-30f) return 0.0f;
+  return x;
+}
+
 static inline float le_cond_biquad_run(le_cond_biquad* q, float x) {
   const float y = q->b0 * x + q->s1;
   q->s1 = q->b1 * x - q->a1 * y + q->s2;
@@ -210,7 +227,7 @@ void le_cond_process_block(le_input_cond* c, float* buf, uint32_t frames,
   const int hum_n = c->hum_n;
   const int exp_on = c->exp_on;
   for (uint32_t f = 0; f < frames; ++f) {
-    float x = buf[(size_t)f * (size_t)stride];
+    float x = le_cond_sanitize(buf[(size_t)f * (size_t)stride]);
     if (hpf_on) x = le_cond_biquad_run(&c->hpf, x);
     for (int k = 0; k < hum_n; ++k) x = le_cond_biquad_run(&c->hum[k], x);
     if (exp_on) {

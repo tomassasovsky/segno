@@ -19760,6 +19760,86 @@ static void test_cond_enable_edge_resets_state(void) {
   le_engine_destroy(e);
 }
 
+/* NaN/Inf containment (the fx_sanitize twin at the stage boundary): a
+ * non-finite device sample maps to 0 BEFORE any state update, so it can
+ * never latch into the biquad/envelope states — every conditioned output
+ * stays finite, and the poisoned run is BIT-EXACT the run that was fed a
+ * literal 0 at those samples (instant recovery, nothing to flush). */
+static void test_cond_nan_input_contained(void) {
+  printf("test_cond_nan_input_contained\n");
+  le_engine* a = cond_engine();
+  le_engine* b = cond_engine();
+  CHECK(le_engine_set_input_conditioning(a, 0, 1) == LE_OK);
+  CHECK(le_engine_set_input_conditioning(b, 0, 1) == LE_OK);
+  drain(a); /* full default stage: HPF 40 + hum x4 + expander */
+  drain(b);
+
+  float in_a[64];
+  float in_b[64];
+  float out_a[64];
+  float out_b[64];
+  for (int blk = 0; blk < 16; ++blk) {
+    for (int i = 0; i < 64; ++i) {
+      const float s = 0.3f * sinf(2.0f * 3.14159265f * 220.0f *
+                                  (float)(blk * 64 + i) / 48000.0f);
+      in_a[i] = s;
+      in_b[i] = s;
+    }
+    if (blk == 1) {
+      in_a[10] = NAN;
+      in_b[10] = 0.0f;
+      in_a[20] = INFINITY;
+      in_b[20] = 0.0f;
+      in_a[30] = -INFINITY;
+      in_b[30] = 0.0f;
+    }
+    le_engine_process(a, out_a, in_a, 64);
+    le_engine_process(b, out_b, in_b, 64);
+    for (int i = 0; i < 64; ++i) {
+      CHECK(isfinite(out_a[i]));
+      CHECK(out_a[i] == out_b[i]);
+    }
+  }
+  le_engine_destroy(a);
+  le_engine_destroy(b);
+}
+
+/* The oversized-block raw fallback is COUNTED, not silent: a block larger
+ * than the conditioned-copy scratch passes through raw (bit-exact) and bumps
+ * a_cond_fallback_blocks once; a normal block conditions and leaves the
+ * counter alone — the telemetry that proves real backends never hit this. */
+static void test_cond_scratch_fallback_counted(void) {
+  printf("test_cond_scratch_fallback_counted\n");
+  enum { BIG = LE_COND_SCRATCH_FRAMES + 808 };
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  drain(e); /* default stage: HPF 40 on — conditioning WOULD color this */
+  CHECK(atomic_load_explicit(&e->a_cond_fallback_blocks,
+                             memory_order_relaxed) == 0u);
+
+  static float big_in[BIG];
+  static float big_out[BIG];
+  for (int i = 0; i < BIG; ++i) {
+    big_in[i] = 0.3f * sinf(2.0f * 3.14159265f * 220.0f * (float)i / 48000.0f);
+  }
+  le_engine_process(e, big_out, big_in, BIG);
+  /* Fallback: raw passthrough (the monitor's dry path), counted exactly once. */
+  CHECK(atomic_load_explicit(&e->a_cond_fallback_blocks,
+                             memory_order_relaxed) == 1u);
+  int exact = 1;
+  for (int i = 0; i < BIG; ++i) {
+    if (big_out[i] != big_in[i]) exact = 0;
+  }
+  CHECK(exact);
+
+  /* A normal-sized block conditions again and does NOT bump the counter. */
+  float out[64];
+  le_engine_process(e, out, big_in, 64);
+  CHECK(atomic_load_explicit(&e->a_cond_fallback_blocks,
+                             memory_order_relaxed) == 1u);
+  le_engine_destroy(e);
+}
+
 /* Not a gate — an informational CPU smoke: ns/sample for one fully-engaged
  * stage (HPF + 4 notches + expander), printed for the PR body / the S3
  * on-Pi bench to compare against. */
@@ -20261,6 +20341,8 @@ int main(void) {
   test_cond_latency_harness_unaffected();
   test_cond_auto_trigger_reads_conditioned();
   test_cond_enable_edge_resets_state();
+  test_cond_nan_input_contained();
+  test_cond_scratch_fallback_counted();
   test_cond_cpu_smoke();
 
   if (g_failures == 0) {

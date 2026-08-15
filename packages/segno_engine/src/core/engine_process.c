@@ -4094,7 +4094,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * scratch (only the native tests' synthetic mega-blocks) falls back to the
    * raw path for that block rather than allocating on the audio thread. */
   const float* in_c = in;
-  if (in != NULL && e->cond_buf != NULL) {
+  if (in != NULL) {
     uint32_t cond_mask = 0u;
     const int cond_ch =
         ch_in < LE_MAX_MONITORED_INPUTS ? ch_in : LE_MAX_MONITORED_INPUTS;
@@ -4103,15 +4103,27 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         cond_mask |= 1u << c;
       }
     }
-    if (cond_mask != 0u &&
-        (int64_t)frames * (int64_t)ch_in <= e->cond_buf_cap) {
-      memcpy(e->cond_buf, in, sizeof(float) * (size_t)frames * (size_t)ch_in);
-      for (int c = 0; c < cond_ch; ++c) {
-        if (cond_mask & (1u << c)) {
-          le_cond_process_block(&e->cond[c], e->cond_buf + c, frames, ch_in);
+    if (cond_mask != 0u) {
+      if (e->cond_buf != NULL &&
+          (int64_t)frames * (int64_t)ch_in <= e->cond_buf_cap) {
+        memcpy(e->cond_buf, in,
+               sizeof(float) * (size_t)frames * (size_t)ch_in);
+        for (int c = 0; c < cond_ch; ++c) {
+          if (cond_mask & (1u << c)) {
+            le_cond_process_block(&e->cond[c], e->cond_buf + c, frames, ch_in);
+          }
         }
+        in_c = e->cond_buf;
+      } else if (frames > 0) {
+        /* Conditioning WANTED but impossible this block (oversized period or
+         * a failed scratch allocation): raw fallback, COUNTED — silent
+         * per-block alternation between conditioned and raw would click
+         * (stale filter states across the gaps), so the counter is how a
+         * bench/test proves this path never fires on a real backend. No RT
+         * assert: the audio callback must never abort. */
+        atomic_fetch_add_explicit(&e->a_cond_fallback_blocks, 1u,
+                                  memory_order_relaxed);
       }
-      in_c = e->cond_buf;
     }
   }
 

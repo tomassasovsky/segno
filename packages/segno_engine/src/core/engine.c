@@ -542,6 +542,9 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->cond_buf =
       (float*)calloc((size_t)engine->cond_buf_cap, sizeof(float));
   if (engine->cond_buf == NULL) engine->cond_buf_cap = 0;
+  /* Raw-fallback telemetry: per session, like a_xruns above. */
+  atomic_store_explicit(&engine->a_cond_fallback_blocks, 0u,
+                        memory_order_relaxed);
 
   /* Master insert chain (part 1b): defaults empty/enabled, same rationale as
    * the per-track bus resets above. */

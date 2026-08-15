@@ -1011,6 +1011,18 @@ struct le_engine {
   le_input_cond cond[LE_MAX_MONITORED_INPUTS];
   float* cond_buf;
   int64_t cond_buf_cap; /* capacity in floats (frames * channels) */
+  /* Bumped once per block in which conditioning was WANTED (>= 1 input
+   * enabled) but fell back to the raw path — the block exceeded the scratch
+   * (LE_COND_SCRATCH_FRAMES) or the scratch failed to allocate. The fallback
+   * is per-block, so a backend that ever delivers oversized periods would
+   * alternate conditioned/raw across gaps (stale filter states -> clicks);
+   * this counter is the telemetry that turns "only synthetic tests hit this"
+   * from aspiration into an observable fact. Same idiom as
+   * a_midi_clock_overruns / a_perf_log_overruns: not surfaced via
+   * le_snapshot yet (no RT assert either — the callback must never abort);
+   * native tests read the atomic directly, and a snapshot field can be added
+   * the day a real consumer needs it. */
+  _Atomic uint32_t a_cond_fallback_blocks;
 
   /* Master insert chain (FX v3 part 1b): runs on the summed track mix between
    * mix_tracks_frame and mix_monitors_frame — see le_fx_bus's doc for the
