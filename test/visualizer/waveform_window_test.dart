@@ -1,5 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/performance_readout_view.dart';
 import 'package:segno/visualizer/waveform_window.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
 
@@ -135,6 +139,69 @@ void main() {
       expect(placement.fullscreen, isTrue);
       expect(placement.position, const Offset(1280, 0));
       expect(placement.size, const Size(1280, 720));
+    });
+
+    test('all-empty ids (Linux) → the windowed fallback, deliberately', () {
+      // screen_retriever_linux hardcodes every display's id to "", so the
+      // id-difference match can never fire on Linux — and it must not be
+      // "fixed" by guessing from geometry. On the appliance weston's
+      // kiosk-shell fullscreens the window and routes it to the output pinned
+      // to its app-id (weston.ini `app-ids=`), overriding this placement
+      // entirely; on a non-kiosk desktop GDK's "primary" is just monitor 0
+      // (arbitrary under Wayland), so a geometry guess could full-bleed the
+      // readout over the main display. Windowed is the safe answer both ways.
+      final placement = waveformWindowPlacement(
+        screens: const [
+          (id: '', position: Offset.zero, size: Size(1920, 1080), scale: 1),
+          (
+            id: '',
+            position: Offset(1920, 0),
+            size: Size(1024, 600),
+            scale: 1,
+          ),
+        ],
+        primaryId: '',
+        primaryScale: 1,
+        args: args,
+      );
+
+      expect(placement.fullscreen, isFalse);
+      expect(placement.position, const Offset(120, 120));
+      expect(placement.size, const Size(960, 320));
+    });
+  });
+
+  group('WaveformWindowApp', () {
+    testWidgets('gives the readout a Material ancestor', (tester) async {
+      // SegnoWindowChromeShell only mounts its own Scaffold on the Windows
+      // title-bar path, so the sub-window must supply the Material ancestor
+      // itself — without it the readout renders in the unthemed fallback
+      // style (yellow double-underlined text), as seen live on the 7".
+      final frame = ValueNotifier<WaveformFrame>(
+        (samples: Float32List(0), progress: 0, selectedTrack: ''),
+      );
+      final readout = ValueNotifier<PerformanceReadout>(
+        const PerformanceReadout(),
+      );
+      addTearDown(frame.dispose);
+      addTearDown(readout.dispose);
+
+      await tester.pumpWidget(
+        WaveformWindowApp(
+          frame: frame,
+          readout: readout,
+          title: 'Segno — Output',
+        ),
+      );
+
+      expect(
+        find.ancestor(
+          of: find.byType(PerformanceReadoutView),
+          matching: find.byType(Material),
+        ),
+        findsWidgets,
+      );
+      expect(tester.takeException(), isNull);
     });
   });
 }
