@@ -196,6 +196,46 @@ if(APPLE)
     "-framework CoreFoundation")
 endif()
 
+# --- RNNoise (vendored, BSD-3-Clause) ---------------------------------------
+#
+# Xiph RNNoise v0.2, vendored under third_party/rnnoise (see
+# third_party/README.md for version/license/patch provenance). It backs the
+# offline loop-close restoration pass (issue #697): the restore worker (S9)
+# denoises finalized takes through rnnoise_process_frame. Compiled
+# unconditionally — it is small, portable C with no OS dependency, and unlike
+# the ASIO/plugin SDKs it has no per-platform reason to be optional.
+#
+# Source list = upstream Makefile.am's RNNOISE_SOURCES *without* the
+# RNN_ENABLE_X86_RTCD block (src/x86/*.c): the run-time SSE4.1/AVX2 dispatch
+# needs configure-style compiler probing this build does not do, and the
+# consumer is an offline (non-RT) pass, so the portable C paths are fast
+# enough. NEON on ARM comes for free via vec_neon.h (compile-time detected).
+# Keep run_native_tests.sh's rnnoise list in sync with this one.
+get_filename_component(SEGNO_RNNOISE_DIR
+  "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/rnnoise" ABSOLUTE)
+if(NOT EXISTS "${SEGNO_RNNOISE_DIR}")
+  message(FATAL_ERROR
+    "The vendored RNNoise sources are missing at ${SEGNO_RNNOISE_DIR} "
+    "(a broken or partial checkout?). Restore them. See third_party/README.md.")
+endif()
+target_sources(segno_engine PRIVATE
+  "${SEGNO_RNNOISE_DIR}/src/denoise.c"
+  "${SEGNO_RNNOISE_DIR}/src/rnn.c"
+  "${SEGNO_RNNOISE_DIR}/src/pitch.c"
+  "${SEGNO_RNNOISE_DIR}/src/kiss_fft.c"
+  "${SEGNO_RNNOISE_DIR}/src/celt_lpc.c"
+  "${SEGNO_RNNOISE_DIR}/src/nnet.c"
+  "${SEGNO_RNNOISE_DIR}/src/nnet_default.c"
+  "${SEGNO_RNNOISE_DIR}/src/parse_lpcnet_weights.c"
+  "${SEGNO_RNNOISE_DIR}/src/rnnoise_data.c"
+  "${SEGNO_RNNOISE_DIR}/src/rnnoise_tables.c"
+)
+# Only the public header dir goes on the include path; the rnnoise TUs resolve
+# their internal headers relative to their own directory (quote-includes).
+target_include_directories(segno_engine PRIVATE
+  "${SEGNO_RNNOISE_DIR}/include"
+)
+
 # --- Windows ASIO (duplex backend + per-channel label probe) ---------------
 #
 # ON by default on Windows: the engine opens ASIO for full-channel-count duplex
