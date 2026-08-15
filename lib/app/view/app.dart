@@ -599,9 +599,16 @@ class _AppViewState extends State<_AppView> {
         // Same timer, different discipline: the waveform changes every frame,
         // the readout does not, so `pushReadout` drops anything equal to what
         // it last sent rather than re-serialising eight track records at frame
-        // rate across an engine boundary.
+        // rate across an engine boundary. The clock and recorder facts are
+        // whole seconds, so their churn is once a second, not once a frame.
         widget.waveformWindow.pushReadout(
-          _readoutOf(looper.state, tracks.state, control.mode, cursor),
+          _readoutOf(
+            looper.state,
+            tracks.state,
+            control,
+            context.read<TransportClockCubit>().state,
+            context.read<PerformanceRecorderCubit>().state,
+          ),
         );
       });
     } else {
@@ -611,17 +618,20 @@ class _AppViewState extends State<_AppView> {
     }
   }
 
-  /// Projects engine + control state onto the 7" readout's value type.
+  /// Projects engine + control state onto the 7" readout's value type — the
+  /// same facts the stage status bar draws, composed once for the channel.
   ///
   /// Pure and static so it can be tested without a window: what the second
   /// screen shows is a function of state, never of when the timer fired.
   static PerformanceReadout _readoutOf(
     LooperState looper,
     TracksState tracks,
-    InteractionMode mode,
-    int cursor,
+    ControlState control,
+    TransportClockState clock,
+    PerformanceRecorderState recorder,
   ) {
     final transport = looper.transport;
+    final armed = recorder is PerformanceRecorderArmed ? recorder : null;
     return PerformanceReadout(
       tracks: [
         for (final track in looper.tracks)
@@ -630,15 +640,22 @@ class _AppViewState extends State<_AppView> {
             state: track.state.name,
             muted: track.muted,
             pending: track.pending,
-            selected: track.channel == cursor,
+            selected: track.channel == control.cursor,
           ),
       ],
       tempoBpm: transport.tempoBpm,
+      hasTempo: transport.tempoSource != TempoSource.none,
       tsNum: transport.tsNum,
       tsDen: transport.tsDen,
+      currentBeat: transport.currentBeat,
+      countingIn: transport.countingIn,
       loopBars: transport.loopBars,
       isRunning: transport.isRunning,
-      mode: mode.token,
+      mode: control.mode.token,
+      activeBank: control.activeBank,
+      elapsedSeconds: clock.elapsed.inSeconds,
+      recordArmed: armed != null,
+      recordSeconds: armed?.elapsed.inSeconds ?? 0,
     );
   }
 
