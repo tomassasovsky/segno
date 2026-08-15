@@ -121,33 +121,51 @@ class _ReadoutHeader extends StatelessWidget {
         : '--';
     return Row(
       children: [
-        _BigStat(
-          key: const Key('console_readout_tempo'),
-          label: l10n.readoutTempoLabel,
-          value: tempo,
-          s: s,
+        // The figures-and-dots cluster takes whatever the pills leave and
+        // scales DOWN only when it does not fit: in the pen's nominal case
+        // the FittedBox is a no-op and every dimension stays the drawn one,
+        // but a worst case the pen never draws (a long localized count-in
+        // word, a high-numerator signature's fifteen dots, an hour-plus
+        // clock, all at once) shrinks the cluster gracefully instead of
+        // clipping the mode word and the record light off the panel.
+        Expanded(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _BigStat(
+                  key: const Key('console_readout_tempo'),
+                  label: l10n.readoutTempoLabel,
+                  value: tempo,
+                  s: s,
+                ),
+                SizedBox(width: 48 * s),
+                if (readout.loopBars > 0) ...[
+                  _BigStat(
+                    key: const Key('console_readout_bars'),
+                    label: l10n.readoutBarsLabel,
+                    value: '${readout.loopBars}',
+                    s: s,
+                  ),
+                  SizedBox(width: 48 * s),
+                ],
+                _BigStat(
+                  key: const Key('console_readout_clock'),
+                  label: l10n.readoutClockLabel,
+                  value: _clock(readout.elapsedSeconds),
+                  s: s,
+                ),
+                if (readout.hasTempo) ...[
+                  SizedBox(width: 48 * s),
+                  _BeatDots(readout: readout, s: s),
+                ],
+              ],
+            ),
+          ),
         ),
         SizedBox(width: 48 * s),
-        if (readout.loopBars > 0) ...[
-          _BigStat(
-            key: const Key('console_readout_bars'),
-            label: l10n.readoutBarsLabel,
-            value: '${readout.loopBars}',
-            s: s,
-          ),
-          SizedBox(width: 48 * s),
-        ],
-        _BigStat(
-          key: const Key('console_readout_clock'),
-          label: l10n.readoutClockLabel,
-          value: _clock(readout.elapsedSeconds),
-          s: s,
-        ),
-        if (readout.hasTempo) ...[
-          SizedBox(width: 48 * s),
-          _BeatDots(readout: readout, s: s),
-        ],
-        const Spacer(),
         _ModeWord(mode: readout.mode, s: s),
         SizedBox(width: 22 * s),
         _RecordLight(readout: readout, s: s),

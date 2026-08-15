@@ -533,7 +533,6 @@ void main() {
       await tester.pump(const Duration(milliseconds: 40));
       expect(windowService.readouts, isNotEmpty);
       expect(windowService.readouts.last.mode, 'record');
-      expect(windowService.readouts.last.activeBank, 0);
 
       // A mode change must reach the second screen on the next tick: the
       // snapshot is recomposed from cubit state every tick, and the real

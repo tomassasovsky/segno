@@ -652,7 +652,6 @@ class _AppViewState extends State<_AppView> {
       loopBars: transport.loopBars,
       isRunning: transport.isRunning,
       mode: control.mode.token,
-      activeBank: control.activeBank,
       elapsedSeconds: clock.elapsed.inSeconds,
       recordArmed: armed != null,
       recordSeconds: armed?.elapsed.inSeconds ?? 0,

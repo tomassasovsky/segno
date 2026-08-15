@@ -20,20 +20,24 @@ void main() {
       elapsedSeconds: 11,
     );
 
-    Future<void> pump(WidgetTester tester, PerformanceReadout data) =>
-        tester.pumpWidget(
-          MaterialApp(
-            theme: AppTheme.neon,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            home: Scaffold(
-              body: ConsoleReadoutView(
-                readout: data,
-                waveform: const SizedBox(key: Key('waveform_region')),
-              ),
-            ),
+    Future<void> pump(
+      WidgetTester tester,
+      PerformanceReadout data, {
+      Locale? locale,
+    }) => tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.neon,
+        locale: locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: ConsoleReadoutView(
+            readout: data,
+            waveform: const SizedBox(key: Key('waveform_region')),
           ),
-        );
+        ),
+      ),
+    );
 
     testWidgets('shows tempo, bars, clock, mode word and the beat dots', (
       tester,
@@ -162,6 +166,38 @@ void main() {
       expect(find.text('CUSTOM'), findsOneWidget);
     });
 
+    testWidgets('survives the worst legal header without overflowing', (
+      tester,
+    ) async {
+      // Everything the header can carry, at once, in the wordier locale: the
+      // Spanish count-in phrase, a 15-beat signature's dot run, an hour-plus
+      // clock, and an armed capture. The pen never draws this state — the
+      // figures-and-dots cluster must scale down gracefully rather than
+      // clip the mode word and record light off the panel.
+      await pump(
+        tester,
+        const PerformanceReadout(
+          tempoBpm: 120.5,
+          hasTempo: true,
+          tsNum: 15,
+          currentBeat: 14,
+          countingIn: true,
+          loopBars: 12,
+          elapsedSeconds: 3671,
+          recordArmed: true,
+          recordSeconds: 3599,
+        ),
+        locale: const Locale('es'),
+      );
+      expect(tester.takeException(), isNull);
+      // Both right-side pills are still on the panel.
+      expect(find.byKey(const Key('console_readout_mode')), findsOneWidget);
+      expect(
+        find.byKey(const Key('console_readout_record_elapsed')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('scales the type with the window height, not absolutely', (
       tester,
     ) async {
@@ -199,7 +235,6 @@ extension on PerformanceReadout {
     loopBars: loopBars,
     isRunning: isRunning,
     mode: mode,
-    activeBank: activeBank,
     elapsedSeconds: elapsedSeconds,
     recordArmed: recordArmed,
     recordSeconds: recordSeconds,

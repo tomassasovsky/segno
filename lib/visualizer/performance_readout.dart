@@ -78,7 +78,6 @@ class PerformanceReadout extends Equatable {
     this.loopBars = 0,
     this.isRunning = false,
     this.mode = 'record',
-    this.activeBank = 0,
     this.elapsedSeconds = 0,
     this.recordArmed = false,
     this.recordSeconds = 0,
@@ -105,7 +104,6 @@ class PerformanceReadout extends Equatable {
       loopBars: map['loopBars'] as int? ?? 0,
       isRunning: map['isRunning'] as bool? ?? false,
       mode: map['mode'] as String? ?? 'record',
-      activeBank: map['activeBank'] as int? ?? 0,
       elapsedSeconds: map['elapsedSeconds'] as int? ?? 0,
       recordArmed: map['recordArmed'] as bool? ?? false,
       recordSeconds: map['recordSeconds'] as int? ?? 0,
@@ -142,10 +140,13 @@ class PerformanceReadout extends Equatable {
   final bool isRunning;
 
   /// `InteractionMode.token` — what a track press means right now.
+  ///
+  /// The pedal bank is deliberately NOT carried: no second-screen face draws
+  /// it (the plate and the 16" status bar do), and a dead wire field's only
+  /// runtime effect would be defeating the `==` push-diff on every BANK
+  /// press. The tolerant decode means it can be added back later without any
+  /// protocol ceremony.
   final String mode;
-
-  /// Which pedal bank the footswitches address, `0`-based.
-  final int activeBank;
 
   /// The transport clock (`TransportClockCubit`): elapsed transport time in
   /// whole seconds — wall time while anything records or plays, holding
@@ -171,7 +172,6 @@ class PerformanceReadout extends Equatable {
     'loopBars': loopBars,
     'isRunning': isRunning,
     'mode': mode,
-    'activeBank': activeBank,
     'elapsedSeconds': elapsedSeconds,
     'recordArmed': recordArmed,
     'recordSeconds': recordSeconds,
@@ -189,7 +189,6 @@ class PerformanceReadout extends Equatable {
     loopBars,
     isRunning,
     mode,
-    activeBank,
     elapsedSeconds,
     recordArmed,
     recordSeconds,
