@@ -416,6 +416,67 @@ typedef struct le_monitor_input {
   le_fx_state fx;
 } le_monitor_input;
 
+/* ---- Per-input conditioning stage (input conditioning, S1) ---- */
+
+/* Hum-notch bank width: notches at k*base for k = 1..harmonics. */
+#define LE_COND_HUM_MAX 8
+
+/* Conditioned-copy scratch capacity in FRAMES. The audio thread copies the
+ * interleaved input block into the preallocated scratch once per block (only
+ * when at least one input's stage is enabled), so the scratch must hold one
+ * device callback's worth of frames. 8192 comfortably exceeds any real
+ * device/backend period (64-4096 typical); a larger block — only the native
+ * tests' synthetic mega-blocks ever exceed this — falls back to the raw
+ * buffer for that block (documented, RT-safe, no allocation). */
+#define LE_COND_SCRATCH_FRAMES 8192
+
+/* Expander attack: fixed ~5 ms one-pole, no lookahead (zero added latency). */
+#define LE_COND_ATTACK_MS 5.0f
+
+/* Conditioning parameter defaults (le_cond_param order). */
+#define LE_COND_DEF_HPF_HZ 40.0f
+#define LE_COND_DEF_HUM_HZ 50.0f
+#define LE_COND_DEF_HUM_HARMONICS 4
+#define LE_COND_DEF_EXP_THRESHOLD_DB (-55.0f)
+#define LE_COND_DEF_EXP_RATIO 2.0f
+#define LE_COND_DEF_EXP_RELEASE_MS 150.0f
+
+/* One biquad section, transposed direct-form II (5 MAC/sample). */
+typedef struct le_cond_biquad {
+  float b0, b1, b2, a1, a2; /* a0-normalized coefficients */
+  float s1, s2;             /* state */
+} le_cond_biquad;
+
+/* One hardware input's conditioning stage (engine-level, one slot per input,
+ * bounded by LE_MAX_MONITORED_INPUTS like the monitor slots). Published config
+ * atomics are the control-visible truth (seeded to defaults at configure);
+ * everything below them is AUDIO-THREAD-LOCAL DSP state, recomputed by
+ * apply_command in lockstep with the ring commands (le_cond_prepare /
+ * le_cond_update_param, engine_cond.c) and reset on configure and on enable
+ * edges so a re-engaged stage never rings with stale history. */
+typedef struct le_input_cond {
+  _Atomic int32_t a_enabled;                /* 0/1, default 0 */
+  _Atomic uint32_t a_hpf_hz_bits;           /* float Hz; 0 = section off */
+  _Atomic uint32_t a_hum_hz_bits;           /* float Hz; 0 = section off */
+  _Atomic int32_t a_hum_harmonics;          /* 1..LE_COND_HUM_MAX */
+  _Atomic uint32_t a_exp_threshold_db_bits; /* float dB */
+  _Atomic uint32_t a_exp_ratio_bits;        /* float; 1.0 = section off */
+  _Atomic uint32_t a_exp_release_ms_bits;   /* float ms */
+  /* Audio-thread-local derived state (never read by the control thread). */
+  int hpf_on;
+  le_cond_biquad hpf;
+  int hum_n; /* active notch sections (0 = section off) */
+  le_cond_biquad hum[LE_COND_HUM_MAX];
+  int exp_on;
+  float env;          /* envelope follower state */
+  float atk_coef;     /* one-pole attack coefficient */
+  float rel_coef;     /* one-pole release coefficient */
+  float thr_lin;      /* threshold as linear amplitude */
+  float thr_inv;      /* 1 / thr_lin */
+  int exp_pow;        /* integer part of (ratio - 1): whole u-powers */
+  float exp_frac;     /* fractional part of (ratio - 1): linear blend */
+} le_input_cond;
+
 /* A bus-stage effect chain owner (FX v3 part 1b): the exact chain block shape
  * of le_lane / le_monitor_input — published config atomics, the two-level
  * enable pair, the control-thread pushed shadows, and the chain's own DSP
@@ -937,6 +998,19 @@ struct le_engine {
    * sounds iff its a_enabled is set (a loopback measurement clears them all to
    * break the cable feedback loop; a fresh start restores defaults). */
   le_monitor_input monitors[LE_MAX_MONITORED_INPUTS];
+
+  /* Per-input conditioning stages (input conditioning, S1): HPF + hum notches
+   * + downward expander, run once per block into cond_buf — the preallocated
+   * conditioned copy of the interleaved input — upstream of BOTH the lane
+   * fan-out and the monitor split. Metering / clip / latency keep reading the
+   * raw device buffer. cond_buf is control-thread allocated at configure
+   * (LE_COND_SCRATCH_FRAMES * in_channels floats) and freed at destroy /
+   * reallocated at configure; the audio thread only ever reads the pointer
+   * (set before the device runs). NULL (allocation failure) simply keeps the
+   * raw path — conditioning silently off, never a crash. */
+  le_input_cond cond[LE_MAX_MONITORED_INPUTS];
+  float* cond_buf;
+  int64_t cond_buf_cap; /* capacity in floats (frames * channels) */
 
   /* Master insert chain (FX v3 part 1b): runs on the summed track mix between
    * mix_tracks_frame and mix_monitors_frame — see le_fx_bus's doc for the

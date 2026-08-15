@@ -528,6 +528,21 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     le_monitor_input_reset(&engine->monitors[c]);
   }
 
+  /* Per-input conditioning stages (input conditioning, S1): defaults (all
+   * disabled) + the conditioned-copy scratch for the new channel count. The
+   * device is closed during configure, so both the seed and the realloc are
+   * race-free. A failed allocation leaves cond_buf NULL — the audio thread
+   * then simply keeps the raw path (conditioning silently off). */
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    le_cond_seed_defaults(&engine->cond[c], sample_rate);
+  }
+  free(engine->cond_buf);
+  engine->cond_buf_cap =
+      (int64_t)LE_COND_SCRATCH_FRAMES * (int64_t)input_channels;
+  engine->cond_buf =
+      (float*)calloc((size_t)engine->cond_buf_cap, sizeof(float));
+  if (engine->cond_buf == NULL) engine->cond_buf_cap = 0;
+
   /* Master insert chain (part 1b): defaults empty/enabled, same rationale as
    * the per-track bus resets above. */
   le_fx_bus_reset(&engine->master_fx);
@@ -774,6 +789,7 @@ void le_engine_destroy(le_engine* engine) {
         &engine->master_fx.fx.plugin[s], memory_order_relaxed));
   }
   free(engine->lat_buf);
+  free(engine->cond_buf); /* conditioned-copy scratch (input conditioning) */
   /* The device is already closed (no audio thread), so the performance-capture
    * rings — including any left retracted-but-allocated by a disarm that could
    * not confirm quiescence — can be freed directly, without the handshake. The
