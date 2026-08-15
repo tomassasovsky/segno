@@ -3,8 +3,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:screen_retriever/screen_retriever.dart';
+import 'package:segno/common/console_mode.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/performance_readout_view.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
@@ -234,12 +236,19 @@ Float32List _toFloat32List(Object? raw) {
 
 /// The root widget of the waveform window: a full-screen [WaveformView] driven
 /// by frames pushed from the main window.
+///
+/// What surrounds the waveform depends on the build: the desktop keeps the
+/// windowed [PerformanceReadoutView]; the console ([kConsoleMode]) fills the
+/// fixed 7" panel with the pen's `STAGE / readout` ([ConsoleReadoutView]) —
+/// stage-sized type legible from the floor, full-bleed because the panel is a
+/// panel, not a window.
 class WaveformWindowApp extends StatelessWidget {
   /// Creates a [WaveformWindowApp] rendering [frame].
   const WaveformWindowApp({
     required this.frame,
     required this.readout,
     required this.title,
+    this.consoleMode = kConsoleMode,
     super.key,
   });
 
@@ -251,6 +260,10 @@ class WaveformWindowApp extends StatelessWidget {
 
   /// OS window title.
   final String title;
+
+  /// Whether this build is the floor console. A parameter (defaulting to the
+  /// compile-time flag) so tests can drive both faces without the define.
+  final bool consoleMode;
 
   @override
   Widget build(BuildContext context) {
@@ -272,24 +285,34 @@ class WaveformWindowApp extends StatelessWidget {
       home: SegnoWindowChromeShell(
         title: title,
         body: Scaffold(
-          body: Padding(
-            padding: const EdgeInsets.all(16),
-            child: ValueListenableBuilder<PerformanceReadout>(
-              valueListenable: readout,
-              builder: (context, readoutData, _) => PerformanceReadoutView(
-                readout: readoutData,
-                waveform: ValueListenableBuilder<WaveformFrame>(
-                  valueListenable: frame,
-                  builder: (context, data, _) => WaveformView(
-                    selectedTrack: data.selectedTrack,
-                    samples: data.samples,
-                    progress: data.progress,
-                    state: waveformStateOf(readoutData),
-                    semanticLabel: context.l10n.a11yWaveform,
-                  ),
+          body: ValueListenableBuilder<PerformanceReadout>(
+            valueListenable: readout,
+            builder: (context, readoutData, _) {
+              final waveform = ValueListenableBuilder<WaveformFrame>(
+                valueListenable: frame,
+                builder: (context, data, _) => WaveformView(
+                  selectedTrack: data.selectedTrack,
+                  samples: data.samples,
+                  progress: data.progress,
+                  state: waveformStateOf(readoutData),
+                  semanticLabel: context.l10n.a11yWaveform,
                 ),
-              ),
-            ),
+              );
+              if (consoleMode) {
+                // Full-bleed: the console view carries the pen's own inset.
+                return ConsoleReadoutView(
+                  readout: readoutData,
+                  waveform: waveform,
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: PerformanceReadoutView(
+                  readout: readoutData,
+                  waveform: waveform,
+                ),
+              );
+            },
           ),
         ),
       ),

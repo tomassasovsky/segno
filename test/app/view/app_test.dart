@@ -13,6 +13,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app.dart';
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
+import 'package:segno/control/control.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:segno/visualizer/visualizer.dart';
@@ -521,6 +522,28 @@ void main() {
       // the persistent-surface work — see #453.
       skip: true,
     );
+
+    testWidgets('pushes a fresh readout snapshot when control state changes', (
+      tester,
+    ) async {
+      final windowService = _RecordingWindowService();
+      await pumpApp(tester, windowService);
+
+      // The first tick composes the boot snapshot from the live cubits.
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts, isNotEmpty);
+      expect(windowService.readouts.last.mode, 'record');
+
+      // A mode change must reach the second screen on the next tick: the
+      // snapshot is recomposed from cubit state every tick, and the real
+      // service's `==` diff then forwards exactly the changed ones.
+      tester
+          .element(find.byType(LooperPage))
+          .read<ControlCubit>()
+          .setMode(InteractionMode.fx);
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.mode, 'fx');
+    });
 
     testWidgets(
       'shows the audio-recovery banner when booted with the pinned '
