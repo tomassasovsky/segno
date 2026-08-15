@@ -15,9 +15,15 @@ void main() {
       ReadoutTrack(name: 'Gtr', state: 'empty', pending: true),
     ],
     tempoBpm: 128,
+    hasTempo: true,
+    currentBeat: 2,
+    countingIn: true,
     loopBars: 8,
     isRunning: true,
     mode: 'fx',
+    elapsedSeconds: 71,
+    recordArmed: true,
+    recordSeconds: 12,
   );
 
   group('PerformanceReadout wire format', () {
@@ -29,6 +35,33 @@ void main() {
 
     test('a decoded empty payload is the default readout', () {
       expect(PerformanceReadout.fromMap(const {}), const PerformanceReadout());
+    });
+
+    test('ignores unknown fields, so a newer sender is readable', () {
+      // A newer main window may grow the payload; an older sub-window must
+      // read the fields it knows and drop the rest, never throw.
+      final map = readout.toMap()..['someFutureFact'] = 42;
+      expect(PerformanceReadout.fromMap(map), readout);
+    });
+
+    test('defaults the console facts on a pre-console payload', () {
+      // A v1 (pre-console-readout) sender never wrote these keys: the decode
+      // must fall back to quiet defaults, and hasTempo must fall back to the
+      // old "tempo > 0" reading rather than hiding the dots.
+      final decoded = PerformanceReadout.fromMap(const {
+        'tempoBpm': 120.0,
+        'mode': 'mute',
+      });
+      expect(decoded.hasTempo, isTrue);
+      expect(decoded.currentBeat, 0);
+      expect(decoded.countingIn, isFalse);
+      expect(decoded.elapsedSeconds, 0);
+      expect(decoded.recordArmed, isFalse);
+      expect(decoded.recordSeconds, 0);
+      expect(
+        PerformanceReadout.fromMap(const {'tempoBpm': 0.0}).hasTempo,
+        isFalse,
+      );
     });
 
     test('equality is by value, which is what makes the push diff work', () {

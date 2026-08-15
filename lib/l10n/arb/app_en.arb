@@ -1532,6 +1532,18 @@
     "@readoutBarsLabel": {
         "description": "Caption over the master loop length in bars on the 7-inch performance readout."
     },
+    "readoutClockLabel": "TIME",
+    "@readoutClockLabel": {
+        "description": "Caption over the elapsed transport clock on the 7-inch console readout."
+    },
+    "readoutRecordLabel": "REC",
+    "@readoutRecordLabel": {
+        "description": "The performance-record light's word on the 7-inch console readout; the armed elapsed time renders beside it."
+    },
+    "readoutCountIn": "count-in",
+    "@readoutCountIn": {
+        "description": "Shown beside the beat dots on the 7-inch console readout while a count-in is sounding."
+    },
     "readoutModeRecord": "REC",
     "@readoutModeRecord": {
         "description": "Mode chip on the 7-inch readout: a track press records. Short by design - read from stage distance."
