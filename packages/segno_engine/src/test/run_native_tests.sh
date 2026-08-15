@@ -24,7 +24,10 @@ EXTRA_CFLAGS="${EXTRA_CFLAGS:-}"
 # (clock_gettime / CLOCK_MONOTONIC; strict c11 also triggers ALSA's struct
 # timespec redefinition). Include path mirrors src/CMakeLists.txt: every src
 # subdir holding headers, so the sources' flat `#include "x.h"` resolves.
-STD="-std=gnu11 -I src/core -I src/midi -I src/asio -I src/miniaudio"
+# third_party/rnnoise/include carries only the public rnnoise.h (the vendored
+# TUs resolve their internal headers relative to their own directory).
+STD="-std=gnu11 -I src/core -I src/midi -I src/asio -I src/miniaudio \
+  -I third_party/rnnoise/include"
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ENGINE_LIBS="-lole32 -lwinmm -lm"; MIDI_LIBS="-lwinmm -lm" ;;
@@ -52,6 +55,21 @@ ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
   src/core/audio_ring.c src/core/perf_drain.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c"
+
+# Vendored RNNoise (third_party/rnnoise, BSD-3-Clause — offline loop-close
+# denoise, #697). Listed explicitly, NOT globbed: the vendored src/ dir also
+# holds tool/example TUs with their own main() (dump_features.c,
+# write_weights.c) that must not link into the test binary. Mirrors the
+# rnnoise list in src/CMakeLists.txt — keep them in sync (same portable
+# subset; the x86 RTCD/SSE4.1/AVX2 TUs are deliberately not compiled).
+ENGINE_SRC="$ENGINE_SRC \
+  third_party/rnnoise/src/denoise.c third_party/rnnoise/src/rnn.c \
+  third_party/rnnoise/src/pitch.c third_party/rnnoise/src/kiss_fft.c \
+  third_party/rnnoise/src/celt_lpc.c third_party/rnnoise/src/nnet.c \
+  third_party/rnnoise/src/nnet_default.c \
+  third_party/rnnoise/src/parse_lpcnet_weights.c \
+  third_party/rnnoise/src/rnnoise_data.c \
+  third_party/rnnoise/src/rnnoise_tables.c"
 
 echo "== building engine tests =="
 # shellcheck disable=SC2086

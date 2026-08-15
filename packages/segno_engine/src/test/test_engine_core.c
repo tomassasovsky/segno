@@ -34,6 +34,7 @@
 #include "json_read.h"        /* le_json_parse (part 7 offline renderer) */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
+#include "rnnoise.h" /* vendored third_party/rnnoise (#697 S7 smoke test) */
 #include "segno_engine_api.h"
 #include "tempo_grid.h" /* le_tempo_grid, le_grid_* (pure grid math) */
 
@@ -19362,6 +19363,55 @@ static void test_cache_audio_rev_bump_sites(void) {
   le_engine_destroy(a);
 }
 
+/* --- Vendored RNNoise smoke test (#697 S7) -------------------------------
+ *
+ * Proves the vendored third_party/rnnoise TUs compile, link, and run: init a
+ * denoiser state, push frames of deterministic pseudo-noise, and assert the
+ * output is finite everywhere and actually differs from the input. The
+ * restore pipeline that consumes this (engine_restore.c) is a later slice —
+ * this guards only the vendor drop + build wiring.
+ */
+static void test_rnnoise_vendor_smoke(void) {
+  printf("test_rnnoise_vendor_smoke\n");
+
+  /* The half-band 96k<->48k resample plan in #697 hard-assumes RNNoise's
+   * fixed 48 kHz / 480-sample frame contract; fail loudly if an upgrade of
+   * the vendored copy ever changes it. */
+  CHECK(rnnoise_get_frame_size() == 480);
+  CHECK(rnnoise_get_size() > 0);
+
+  DenoiseState* st = rnnoise_create(NULL); /* NULL = built-in model weights */
+  CHECK(st != NULL);
+  if (st == NULL) return;
+
+  enum { kFrame = 480, kFrames = 8 };
+  float in[kFrame];
+  float out[kFrame];
+  uint32_t seed = 0x5EED5u;
+  int finite = 1;
+  int differs = 0;
+  float vad = -1.0f;
+  for (int f = 0; f < kFrames; ++f) {
+    for (int i = 0; i < kFrame; ++i) {
+      /* LCG white noise at a plausible 16-bit-scaled input level (RNNoise
+       * expects short-range floats, not +/-1.0). */
+      seed = seed * 1664525u + 1013904223u;
+      in[i] = ((float)(seed >> 8) / 8388608.0f - 1.0f) * 4096.0f;
+      out[i] = in[i];
+    }
+    vad = rnnoise_process_frame(st, out, in);
+    for (int i = 0; i < kFrame; ++i) {
+      if (!isfinite(out[i])) finite = 0;
+      if (out[i] != in[i]) differs = 1;
+    }
+  }
+  CHECK(finite == 1);   /* no NaN/inf anywhere in the denoised output */
+  CHECK(differs == 1);  /* the denoiser actually touched the signal */
+  CHECK(vad >= 0.0f && vad <= 1.0f); /* VAD probability stays in range */
+
+  rnnoise_destroy(st);
+}
+
 int main(void) {
   printf("== segno_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -19826,6 +19876,8 @@ int main(void) {
   test_cache_job_queue_full_degrades_then_retries();
   test_cache_destroy_during_active_render();
   test_cache_audio_rev_bump_sites();
+
+  test_rnnoise_vendor_smoke();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");
