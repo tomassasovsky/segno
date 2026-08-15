@@ -1,19 +1,39 @@
-# Bind the touchscreen to the main-UI output.
+# Bind each touchscreen to the output its panel lives on.
 #
-# The console is a two-output unit: the main UI on HDMI-A-1 and the 7" waveform
-# on HDMI-A-2 (the same split weston.ini and deploy/rpi/pin-displays.sh use).
-# Weston has to associate a touchscreen with one output; with no hint it picks a
-# default, so on a two-panel unit the taps can be scaled into the wrong output's
-# coordinate space — which looks exactly like the touchscreen being dead on the
-# main panel rather than like a mapping bug.
+# The console is a two-output unit: the main UI on HDMI-A-1 (TV / main panel —
+# no touch today) and the 7" waveform/readout panel on HDMI-A-2. The 7" is the
+# only touchscreen on the current rig, and its controller is a wch.cn
+# "USB2IIC_CTP_CONTROL" (USB 1a86:e5e3, verified on the bench unit). Weston has
+# to associate a touchscreen with one output; with no hint it picks a default,
+# so taps get scaled into the wrong output's coordinate space — which looks
+# exactly like the touchscreen being dead rather than like a mapping bug.
 #
-# WL_OUTPUT is the udev property weston reads for that association. It names a
-# DRM connector, so it must match the [output] name in weston.ini. Change it here
-# if a unit is wired with the main panel on the other connector.
+# Rule ordering: the SPECIFIC per-device match comes first, then a GENERIC
+# catch-all. The catch-all is guarded with ENV{WL_OUTPUT}=="" (unset compares
+# as empty in udev), so it only fires for touchscreens no earlier rule bound —
+# without the guard a later plain assignment would clobber the 7"'s binding,
+# since udev evaluates every matching rule in order.
+#
+# Why both: the specific rule keeps the future 15.6" main-panel touchscreen
+# (VID/PID unknown until it is on the bench) from inheriting the 7"'s
+# HDMI-A-2 binding; the catch-all sends any unrecognized touchscreen — e.g. a
+# clone-variance replacement 7" panel with a different controller — to the
+# MAIN screen (HDMI-A-1), where its mis-binding is visible and debuggable
+# instead of the panel appearing silently dead. HDMI-A-1 is also the right
+# home for the 15.6" once it exists.
+#
+# WL_OUTPUT is the udev property weston reads for the association. It names a
+# DRM connector, so it must match the [output] name in weston.ini. Change it
+# here if a unit is wired with the 7" on the other connector.
 #
 # The calibration matrix is deliberately NOT here: it is runtime state, lives on
 # /data, and is written into 98-segno-touch-calibration.rules by segno-touch-ctl.
 #
-# See https://github.com/tomassasovsky/segno/issues/659
+# See https://github.com/tomassasovsky/segno/issues/659 and
+# https://github.com/tomassasovsky/segno/issues/689
 ACTION=="add|change", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}=="1", \
-  ENV{WL_OUTPUT}="HDMI-A-1"
+  ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="e5e3", ENV{WL_OUTPUT}="HDMI-A-2"
+
+# Generic fallback: any touchscreen not bound above lands on the main screen.
+ACTION=="add|change", SUBSYSTEM=="input", ENV{ID_INPUT_TOUCHSCREEN}=="1", \
+  ENV{WL_OUTPUT}=="", ENV{WL_OUTPUT}="HDMI-A-1"

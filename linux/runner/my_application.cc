@@ -2,6 +2,9 @@
 
 #include <desktop_multi_window/desktop_multi_window_plugin.h>
 #include <flutter_linux/flutter_linux.h>
+#ifdef GDK_WINDOWING_WAYLAND
+#include <gdk/gdkwayland.h>
+#endif
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
 #endif
@@ -12,9 +15,85 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  // Set once the main window has been added; every window added after it is a
+  // desktop_multi_window sub-window (the waveform window).
+  gboolean main_window_added;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
+
+// --- Wayland app-ids ---------------------------------------------------------
+// GTK3's Wayland backend derives every xdg_toplevel's app_id from
+// g_get_prgname() when the toplevel is created — which happens at *map* time
+// (gdk_wayland_window_create_xdg_toplevel in gtk-3-24
+// gdk/wayland/gdkwindow-wayland.c). With the single prgname set in
+// my_application_new() both windows share one app_id, and weston's
+// kiosk-shell — which places surfaces per output by app_id
+// (`[output] app-ids=` in deploy/yocto's weston.ini) — could not tell the
+// waveform window apart from the main UI: both landed on the first output and
+// the 7" stayed black (issue #689).
+//
+// The fix is per-window and touches no global state: a "map" handler on each
+// desktop_multi_window sub-window overrides its freshly-created toplevel's
+// app_id via gdk_wayland_window_set_application_id(). The ordering works out
+// on all three sides, verified in the sources:
+//   - "map" is G_SIGNAL_RUN_FIRST, so GTK's class handler — which creates the
+//     xdg_toplevel and sends the prgname-derived app_id — runs before this
+//     handler; by the time it fires the toplevel exists and the override
+//     replaces the id.
+//   - The initial map-time wl_surface_commit is buffer-less (xdg-shell forbids
+//     a buffer before the first configure); the first commit *with* a buffer
+//     happens on the frame clock after the configure round-trip, so the
+//     override is serialized to the compositor before it.
+//   - weston kiosk-shell ignores buffer-less commits (surface->width == 0)
+//     and assigns the output on the first committed buffer
+//     (desktop_surface_committed) — which sees the overridden app_id.
+// The handler stays connected, so every re-map (GTK destroys and re-creates
+// the toplevel across hide/show) re-applies the override. prgname is never
+// touched, so the main window — whose first map can race the sub-window's
+// creation on a cold boot — always keeps APPLICATION_ID, as does any later
+// toplevel (dialogs) of the main process.
+//
+// gdk_wayland_window_set_application_id() exists since GTK 3.24.22; every
+// build target is newer (Yocto walnascar ships 3.24.43, CI's Ubuntu runners
+// 3.24.33+), and on an older GTK or a non-Wayland build the override compiles
+// out / no-ops (X11 keeps the prgname-derived WM_CLASS — harmless on a
+// desktop, and the kiosk is Wayland-only).
+//
+// The app-ids, which deploy/yocto/.../weston-init/files/weston.ini must match:
+//   main window:     APPLICATION_ID              ("dev.aquiles.segno")
+//   waveform window: APPLICATION_ID ".waveform"  ("dev.aquiles.segno.waveform")
+#define WAVEFORM_APPLICATION_ID APPLICATION_ID ".waveform"
+
+// Overrides the sub-window's just-created xdg_toplevel app_id (see above).
+static void sub_window_map_cb(GtkWidget* widget, gpointer user_data) {
+#if defined(GDK_WINDOWING_WAYLAND) && GTK_CHECK_VERSION(3, 24, 22)
+  GdkWindow* gdk_window = gtk_widget_get_window(widget);
+  if (gdk_window != nullptr && GDK_IS_WAYLAND_WINDOW(gdk_window)) {
+    gdk_wayland_window_set_application_id(gdk_window, WAVEFORM_APPLICATION_ID);
+  }
+#endif
+}
+
+// Implements GtkApplication::window_added.
+static void my_application_window_added(GtkApplication* application,
+                                        GtkWindow* window) {
+  GTK_APPLICATION_CLASS(my_application_parent_class)
+      ->window_added(application, window);
+
+  MyApplication* self = MY_APPLICATION(application);
+  if (!self->main_window_added) {
+    // The first window is the main window created in activate; it keeps
+    // APPLICATION_ID.
+    self->main_window_added = TRUE;
+    return;
+  }
+
+  // A desktop_multi_window sub-window — the waveform window. window-added
+  // fires synchronously inside gtk_application_window_new, before the plugin
+  // realizes or shows it, so the handler is in place for its first map.
+  g_signal_connect(window, "map", G_CALLBACK(sub_window_map_cb), nullptr);
+}
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
@@ -138,6 +217,7 @@ static void my_application_dispose(GObject* object) {
 }
 
 static void my_application_class_init(MyApplicationClass* klass) {
+  GTK_APPLICATION_CLASS(klass)->window_added = my_application_window_added;
   G_APPLICATION_CLASS(klass)->activate = my_application_activate;
   G_APPLICATION_CLASS(klass)->local_command_line =
       my_application_local_command_line;

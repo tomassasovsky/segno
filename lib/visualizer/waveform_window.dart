@@ -26,6 +26,18 @@ import 'package:window_manager/window_manager.dart';
 /// different DPI than the primary onto the wrong place: e.g. a 4K@175% display
 /// whose physical origin is x=2560 is reported at own-logical x=1463, a point
 /// *inside* a 100%-scaled primary, so the window lands mid-primary.
+///
+/// The secondary is found by id — macOS/Windows report distinct display ids.
+/// On Linux `screen_retriever_linux` hardcodes every display's id to `""`
+/// (its plugin.cc), so the loop never matches and the window opens with the
+/// windowed fallback — **deliberately**. On the appliance that is correct:
+/// weston's kiosk-shell fullscreens every surface and routes it to the output
+/// whose `app-ids` list names it (the embedder tags this window
+/// `<APPLICATION_ID>.waveform`, weston.ini pins that to HDMI-A-2), overriding
+/// whatever geometry the window asks for. And on a non-kiosk Linux desktop
+/// there is no trustworthy signal to place by: GDK's "primary" is just
+/// monitor 0, arbitrary under Wayland, so guessing a secondary from geometry
+/// can full-bleed the readout over the *main* display.
 @visibleForTesting
 ({Offset position, Size size, bool fullscreen}) waveformWindowPlacement({
   required List<({String id, Offset position, Size size, double scale})>
@@ -252,22 +264,29 @@ class WaveformWindowApp extends StatelessWidget {
       supportedLocales: AppLocalizations.supportedLocales,
       builder: (context, child) =>
           AppTextDefaults(child: child ?? const SizedBox.shrink()),
+      // The Scaffold supplies the Material ancestor (the same job TracksView's
+      // Scaffold does in the main window): SegnoWindowChromeShell only mounts
+      // its own Scaffold on the Windows title-bar path, so without this the
+      // readout renders bare on Linux/macOS — the unthemed fallback style
+      // (yellow double-underlined text) seen live on the appliance's 7".
       home: SegnoWindowChromeShell(
         title: title,
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: ValueListenableBuilder<PerformanceReadout>(
-            valueListenable: readout,
-            builder: (context, readoutData, _) => PerformanceReadoutView(
-              readout: readoutData,
-              waveform: ValueListenableBuilder<WaveformFrame>(
-                valueListenable: frame,
-                builder: (context, data, _) => WaveformView(
-                  selectedTrack: data.selectedTrack,
-                  samples: data.samples,
-                  progress: data.progress,
-                  state: waveformStateOf(readoutData),
-                  semanticLabel: context.l10n.a11yWaveform,
+        body: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.all(16),
+            child: ValueListenableBuilder<PerformanceReadout>(
+              valueListenable: readout,
+              builder: (context, readoutData, _) => PerformanceReadoutView(
+                readout: readoutData,
+                waveform: ValueListenableBuilder<WaveformFrame>(
+                  valueListenable: frame,
+                  builder: (context, data, _) => WaveformView(
+                    selectedTrack: data.selectedTrack,
+                    samples: data.samples,
+                    progress: data.progress,
+                    state: waveformStateOf(readoutData),
+                    semanticLabel: context.l10n.a11yWaveform,
+                  ),
                 ),
               ),
             ),
