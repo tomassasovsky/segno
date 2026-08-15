@@ -324,6 +324,7 @@
     "libgpiod",
     "libinput",
     "libjack",
+    "librnnoise",
     "libm",
     "libpango",
     "libpipewire",
