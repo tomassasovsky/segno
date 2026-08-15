@@ -71,7 +71,13 @@ replace the folder with a newer SDK release and update the version above.
   (upstream `Makefile.am`'s `RNNOISE_SOURCES` minus the `RNN_ENABLE_X86_RTCD`
   block — the x86 SSE4.1/AVX2 run-time-dispatch TUs need configure-style
   compiler probing and the consumer is an offline pass, so the portable paths
-  suffice; ARM NEON is compile-time detected and needs no extra TU).
+  suffice; ARM NEON is compile-time detected and needs no extra TU). The TUs
+  are compiled with `-fvisibility=hidden` (as upstream builds them): rnnoise's
+  internals are generic unprefixed symbols (`parse_weights`, `linear_init`,
+  ...), and exporting them from the shared engine would let a dlopen'd
+  VST3/CLAP plugin that dynamically links its own librnnoise (Debian ships
+  one) have them interposed — mismatched weight structs, wrong audio, or a
+  crash inside the plugin.
   `src/test/run_native_tests.sh` links the same list into the engine test
   suite for the vendor smoke test. The macOS SPM/CocoaPods forwarder TUs land
   with the restore worker (#697 S9), the first macOS consumer.

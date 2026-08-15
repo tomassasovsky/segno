@@ -235,6 +235,29 @@ target_sources(segno_engine PRIVATE
 target_include_directories(segno_engine PRIVATE
   "${SEGNO_RNNOISE_DIR}/include"
 )
+# Compile the vendored TUs with hidden visibility (upstream builds with
+# -fvisibility=hidden too): with default visibility the shared segno_engine
+# would export rnnoise's generic unprefixed internals (parse_weights,
+# linear_init, compute_glu, ...), and a dlopen'd VST3/CLAP plugin dynamically
+# linked against its own librnnoise (Debian ships one) could have them
+# interposed — mismatched weight structs, wrong audio, or a crash inside the
+# plugin. Scoped to these sources only, so the FFI-visible le_* API keeps its
+# LE_EXPORT default visibility. MSVC is exempt: it does not know the flag, and
+# Windows DLLs hide everything not __declspec(dllexport)ed anyway.
+if(NOT MSVC)
+  set_source_files_properties(
+    "${SEGNO_RNNOISE_DIR}/src/denoise.c"
+    "${SEGNO_RNNOISE_DIR}/src/rnn.c"
+    "${SEGNO_RNNOISE_DIR}/src/pitch.c"
+    "${SEGNO_RNNOISE_DIR}/src/kiss_fft.c"
+    "${SEGNO_RNNOISE_DIR}/src/celt_lpc.c"
+    "${SEGNO_RNNOISE_DIR}/src/nnet.c"
+    "${SEGNO_RNNOISE_DIR}/src/nnet_default.c"
+    "${SEGNO_RNNOISE_DIR}/src/parse_lpcnet_weights.c"
+    "${SEGNO_RNNOISE_DIR}/src/rnnoise_data.c"
+    "${SEGNO_RNNOISE_DIR}/src/rnnoise_tables.c"
+    PROPERTIES COMPILE_OPTIONS "-fvisibility=hidden")
+endif()
 
 # --- Windows ASIO (duplex backend + per-channel label probe) ---------------
 #
