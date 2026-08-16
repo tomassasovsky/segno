@@ -25,6 +25,7 @@ class ConsoleReadoutView extends StatelessWidget {
   const ConsoleReadoutView({
     required this.readout,
     required this.waveform,
+    this.onMix,
     super.key,
   });
 
@@ -34,6 +35,12 @@ class ConsoleReadoutView extends StatelessWidget {
   /// The whole-loop waveform region, injected so this widget stays pure
   /// presentation (the window wires the frame stream into it).
   final Widget waveform;
+
+  /// Opens the volume overlay — wired to the MIX pill, the readout's ONLY
+  /// touch affordance (`c/readout`, #707): the old tap-anywhere gesture is
+  /// dead, and every other element stays inert so its surface remains
+  /// available for future interactivity.
+  final VoidCallback? onMix;
 
   /// The pen frame's size — the reference every dimension is drawn against.
   static const Size _penSize = Size(1920, 1080);
@@ -70,6 +77,8 @@ class ConsoleReadoutView extends StatelessWidget {
               SizedBox(height: 28 * s),
               // The strip takes all remaining height — the pen's 766, 71% of
               // the frame — on the waveform's own dark, the pen's radius.
+              // The MIX pill rides absolutely over the bars in the strip's
+              // bottom-right corner, per the pen.
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(14 * s),
@@ -78,12 +87,22 @@ class ConsoleReadoutView extends StatelessWidget {
                     color: Theme.of(
                       context,
                     ).extension<LooperTheme>()!.waveformBackground,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        vertical: 24 * s,
-                        horizontal: 16 * s,
-                      ),
-                      child: waveform,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Padding(
+                          padding: EdgeInsets.symmetric(
+                            vertical: 24 * s,
+                            horizontal: 16 * s,
+                          ),
+                          child: waveform,
+                        ),
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: _MixPill(s: s, onTap: onMix),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -92,6 +111,55 @@ class ConsoleReadoutView extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// The MIX pill (`c/readout`, #707): the BACK-chip idiom drawn inside the
+/// strip's bottom-right corner — 180×72 inset 24 from the strip's edges, on
+/// the stage background because a near-full-height bar can run behind the
+/// label. The ONLY affordance that opens the volume overlay.
+///
+/// The tap target is generous but bounded: the pill plus its 24-inset
+/// margin on every side (out to the strip's corner) — a finger pad, NOT the
+/// whole strip, which would resurrect tap-anywhere by the back door.
+class _MixPill extends StatelessWidget {
+  const _MixPill({required this.s, required this.onTap});
+
+  final double s;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return GestureDetector(
+      key: const Key('console_readout_mix'),
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: EdgeInsets.all(24 * s),
+        child: Container(
+          width: 180 * s,
+          height: 72 * s,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: surface.background,
+            borderRadius: BorderRadius.circular(24 * s),
+            border: Border.all(color: surface.borderStrong, width: 2 * s),
+          ),
+          child: AppText(
+            context.l10n.readoutMix,
+            style: TextStyle(
+              color: surface.textPrimary,
+              fontSize: 36 * s,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 2.52 * s,
+              height: 1,
+              leadingDistribution: TextLeadingDistribution.even,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

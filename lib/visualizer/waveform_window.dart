@@ -327,15 +327,16 @@ class WaveformWindowApp extends StatelessWidget {
               );
               if (consoleMode) {
                 // Full-bleed: the console view carries the pen's own inset.
-                // The overlay owns the glass: any tap on the readout face
-                // opens the volume list (#698); the desktop face below is
-                // untouched.
+                // The overlay owns the pages; the readout face's MIX pill
+                // is the only way into it (#698, entry reworked in #707);
+                // the desktop face below is untouched.
                 return ConsoleVolumeOverlay(
                   readout: readoutData,
                   onControl: onControl,
-                  child: ConsoleReadoutView(
+                  builder: (context, openMixer) => ConsoleReadoutView(
                     readout: readoutData,
                     waveform: waveform,
+                    onMix: openMixer,
                   ),
                 );
               }

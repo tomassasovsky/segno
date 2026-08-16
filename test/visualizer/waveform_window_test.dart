@@ -221,7 +221,7 @@ void main() {
     });
 
     testWidgets(
-      'the console glass opens the volume overlay and its commands reach '
+      'the MIX pill opens the volume overlay and its commands reach '
       'onControl',
       (tester) async {
         final frame = ValueNotifier<WaveformFrame>(
@@ -246,8 +246,15 @@ void main() {
         );
         addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
 
-        // The whole glass is the touch target.
-        await tester.tap(find.byType(ConsoleReadoutView));
+        // The MIX pill is the only way in (#707): a tap on the readout's
+        // dead glass does nothing...
+        await tester.tapAt(tester.getCenter(find.byType(ConsoleReadoutView)));
+        await tester.pump();
+        expect(find.byKey(const Key('volume_overlay_list')), findsNothing);
+        expect(find.byType(ConsoleReadoutView), findsOneWidget);
+
+        // ...the pill opens the overlay.
+        await tester.tap(find.byKey(const Key('console_readout_mix')));
         await tester.pump();
         expect(find.byKey(const Key('volume_overlay_list')), findsOneWidget);
 

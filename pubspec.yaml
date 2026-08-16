@@ -14,6 +14,10 @@ dependencies:
     path: packages/bluetooth_repository
   brightness_client:
     path: packages/brightness_client
+  # Already resolved (transitive); declared direct so the volume overlay's
+  # double-tap detector reads time through the fake-clock seam widget tests
+  # drive (test pointer events carry no usable timestamps).
+  clock: ^1.1.2
   console_facts_client:
     path: packages/console_facts_client
   controller_repository:

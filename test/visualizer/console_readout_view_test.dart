@@ -54,6 +54,7 @@ void main() {
       WidgetTester tester,
       PerformanceReadout data, {
       Locale? locale,
+      VoidCallback? onMix,
     }) => tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.neon,
@@ -64,6 +65,7 @@ void main() {
           body: ConsoleReadoutView(
             readout: data,
             waveform: const SizedBox(key: Key('waveform_region')),
+            onMix: onMix,
           ),
         ),
       ),
@@ -100,6 +102,61 @@ void main() {
       await pump(tester, readout);
       expect(find.byKey(const Key('console_readout_waveform')), findsOneWidget);
       expect(find.byKey(const Key('waveform_region')), findsOneWidget);
+    });
+
+    testWidgets('the MIX pill fires onMix; the rest of the glass is inert', (
+      tester,
+    ) async {
+      var mixTaps = 0;
+      await pump(tester, readout, onMix: () => mixTaps++);
+
+      expect(find.text('MIX'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('console_readout_mix')));
+      expect(mixTaps, 1);
+
+      // The old tap-anywhere gesture is dead (#707): the strip's glass and
+      // the header figures do nothing — their surfaces stay reserved for
+      // future interactivity.
+      await tester.tapAt(
+        tester.getCenter(find.byKey(const Key('console_readout_waveform'))),
+      );
+      await tester.tap(
+        find.byKey(const Key('console_readout_tempo')),
+        warnIfMissed: false,
+      );
+      expect(mixTaps, 1);
+    });
+
+    testWidgets('the MIX pill hugs the strip corner at the pen geometry', (
+      tester,
+    ) async {
+      await pump(tester, readout);
+      // The default 800x600 surface is width-limited against the pen's
+      // 1920x1080 — the same scale the view derives.
+      const s = 800 / 1920;
+
+      final strip = tester.getRect(
+        find.byKey(const Key('console_readout_waveform')),
+      );
+      final target = tester.getRect(
+        find.byKey(const Key('console_readout_mix')),
+      );
+      // The tap target (pill + its 24-inset margin) reaches exactly the
+      // strip's corner — generous for a finger, nothing like the strip.
+      expect(target.right, moreOrLessEquals(strip.right));
+      expect(target.bottom, moreOrLessEquals(strip.bottom));
+
+      // The drawn pill is the pen's 180x72, inset 24 from the corner.
+      final pill = tester.getRect(
+        find.descendant(
+          of: find.byKey(const Key('console_readout_mix')),
+          matching: find.byType(Container),
+        ),
+      );
+      expect(pill.width, moreOrLessEquals(180 * s));
+      expect(pill.height, moreOrLessEquals(72 * s));
+      expect(pill.right, moreOrLessEquals(strip.right - 24 * s));
+      expect(pill.bottom, moreOrLessEquals(strip.bottom - 24 * s));
     });
 
     testWidgets('drops the decimal on an integer tempo, keeps one otherwise', (
