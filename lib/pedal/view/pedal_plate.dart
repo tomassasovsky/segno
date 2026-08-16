@@ -285,22 +285,23 @@ class PedalPlate extends StatelessWidget {
                   _pedalU(3),
                   _row1V,
                   // The tri-state mode indicator (A1), mirroring the firmware
-                  // verbatim: rec red, mute green, FX blue (#693) — with the
-                  // performance-armed blink keeping precedence, and the
-                  // goodbye frame darkening it, exactly as both sketches
-                  // render it (`goodbye ? Black : modeColor(...)`).
-                  statusLed: frame.performanceArmed
-                      ? _BlinkingLed(
-                          ledKey: const Key('pedalFaceplate_led_mode'),
-                          color: surface.ledRed,
-                        )
-                      : _Led(
-                          ledKey: const Key('pedalFaceplate_led_mode'),
-                          color: frame.isGoodbye
-                              ? surface.ledOff
-                              : _modeColor(surface, frame.mode),
-                          glow: !frame.isGoodbye,
-                        ),
+                  // verbatim: rec red, mute green, FX blue (#693), SOLID —
+                  // with the goodbye frame darkening it, exactly as both
+                  // sketches render it (`goodbye ? Black : modeColor(...)`).
+                  //
+                  // `frame.performanceArmed` is deliberately NOT read here.
+                  // This LED used to blink red while armed; #693 removed that
+                  // reading, because armed already shows on the screens (the
+                  // 7" readout's REC block with running elapsed, and the
+                  // stage status bar) and the duplicate cost this dot its
+                  // one unambiguous meaning. It now says the mode, only.
+                  statusLed: _Led(
+                    ledKey: const Key('pedalFaceplate_led_mode'),
+                    color: frame.isGoodbye
+                        ? surface.ledOff
+                        : _modeColor(surface, frame.mode),
+                    glow: !frame.isGoodbye,
+                  ),
                 ),
                 ...silkLabels(_silk(PedalButton.recPlay), _pedalU(0), _row1V),
                 ...silkLabels(_silk(PedalButton.stop), _pedalU(1), _row1V),
@@ -701,51 +702,6 @@ class _Led extends StatelessWidget {
   }
 }
 
-/// A [_Led] that toggles lit/dark on a fixed period — the performance-armed
-/// indication (D-PEDAL): **blinking** [color], distinct eyes-free from any
-/// solid-lit status LED (e.g. the looper's own solid record red).
-class _BlinkingLed extends StatefulWidget {
-  const _BlinkingLed({required this.ledKey, required this.color});
-
-  final Key ledKey;
-  final Color color;
-
-  /// On/off half-period — distinguishable at a glance from a steady light
-  /// without being distracting.
-  static const _period = Duration(milliseconds: 400);
-
-  @override
-  State<_BlinkingLed> createState() => _BlinkingLedState();
-}
-
-class _BlinkingLedState extends State<_BlinkingLed> {
-  Timer? _timer;
-  bool _lit = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(_BlinkingLed._period, (_) {
-      setState(() => _lit = !_lit);
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _Led(
-      ledKey: widget.ledKey,
-      color: _lit ? widget.color : Colors.transparent,
-      glow: _lit,
-    );
-  }
-}
-
 /// The rotary encoder + its 12-LED activity ring. Drag or scroll turns it; the
 /// ring's color is the global activity color, and a bright pixel sweeps around
 /// the twelve LEDs once per loop (like the firmware advancing the ring on each
@@ -1009,8 +965,16 @@ Color _ledColor(SurfaceTheme surface, PedalTrackLed led) => switch (led) {
 ///
 /// The wire is untouched: the frame carries the 2-bit mode, never a colour,
 /// so this is a rendering change on both sides. Keep it in lockstep with the
-/// firmware's `modeColor` — the same function also tints the ring's idle
-/// glow, so a drift here shows up across the whole plate, not one LED.
+/// firmware's `modeColor`.
+///
+/// The two are NOT equivalent in reach, and the difference matters when you
+/// are deciding what a screenshot proves. Here `_modeColor` has exactly one
+/// call site: the MODE LED. On hardware, `modeColor()` ALSO tints the ring's
+/// idle sweep (`kRingModeIdleLevel`) when segno sends no activity colour —
+/// this plate has no such reading, because its ring renders straight from
+/// `_ringColor(frame.globalColor)`. So the mute-green and rec-red idle ring
+/// exist only on the physical pedal and cannot be eyeballed on this widget or
+/// in any golden; that reading is device-gated and unverified here.
 Color _modeColor(SurfaceTheme surface, PedalMode mode) => switch (mode) {
   PedalMode.rec => surface.ledRed,
   PedalMode.play => surface.ledGreen,

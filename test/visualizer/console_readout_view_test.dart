@@ -327,13 +327,30 @@ void main() {
       await pump(tester, const PerformanceReadout(mode: 'mute'));
       expect(styleOf().color, surface.ledGreen);
 
-      // FX keeps the neutral reading; only mute moved.
+      // FX has its OWN arm. It used to fall through to the neutral `_` case,
+      // which made "FX" and "a token this build cannot parse" the same colour
+      // on the largest mode reading in the rig.
       await pump(tester, const PerformanceReadout(mode: 'fx'));
-      expect(styleOf().color, surface.textPrimary);
+      expect(styleOf().color, surface.ledBlue);
 
-      // An unknown token from an older main window still reads neutral.
-      await pump(tester, const PerformanceReadout(mode: 'custom'));
-      expect(styleOf().color, surface.textPrimary);
+      // ...so neutral now means exactly one thing: an unknown token from a
+      // newer main window (or the pre-rename legacy `'play'`).
+      for (final token in ['custom', 'play']) {
+        await pump(tester, PerformanceReadout(mode: token));
+        expect(
+          styleOf().color,
+          surface.textPrimary,
+          reason: 'unknown token $token must read neutral',
+        );
+      }
+
+      // All three known modes are distinct from each other and from neutral.
+      expect({
+        surface.ledRed,
+        surface.ledGreen,
+        surface.ledBlue,
+        surface.textPrimary,
+      }, hasLength(4));
     });
 
     testWidgets('renders an unknown mode token verbatim rather than guessing', (

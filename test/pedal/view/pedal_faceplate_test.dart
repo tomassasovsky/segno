@@ -416,28 +416,68 @@ void main() {
         },
       );
 
-      testWidgets('the armed blink takes precedence over the mode color', (
+      testWidgets('performance-armed does NOT change the mode indicator', (
         tester,
       ) async {
+        // THE regression guard for #693. This LED used to blink red while
+        // armed, which cost it its one meaning: once rec mode went solid red,
+        // "blinking red" vs "solid red" was all that separated armed from rec
+        // mode on one dot at stage distance. Armed now lives on the screens
+        // (the 7" REC block with running elapsed, and the stage status bar)
+        // and this LED reports the interaction mode, only.
         final (_, sim) = await pumpFaceplate(tester);
 
-        // FX mode (blue indicator) + armed: the blink wins, exactly as both
-        // firmware sketches render it.
+        for (final mode in PedalMode.values) {
+          sim.send(
+            PedalCodec.encodeFrame(
+              _frame(mode: mode),
+              targetVersion: PedalCodec.protocolVersionV3,
+            ),
+          );
+          await tester.pump();
+          final unarmed = modeLedColor(tester);
+
+          sim.send(
+            PedalCodec.encodeFrame(
+              _frame(mode: mode, performanceArmed: true),
+              targetVersion: PedalCodec.protocolVersionV3,
+            ),
+          );
+          await tester.pump();
+          expect(
+            modeLedColor(tester),
+            unarmed,
+            reason: 'arming must not repaint the ${mode.name} indicator',
+          );
+        }
+      });
+
+      testWidgets('the mode indicator never blinks, armed or not', (
+        tester,
+      ) async {
+        // The blink was a periodic Timer. Pump well past several of its old
+        // 400ms half-periods and require the colour to sit still — if the
+        // timer ever comes back, this catches it (and a leaked Timer would
+        // fail the test binding at teardown besides).
+        final (_, sim) = await pumpFaceplate(tester);
+
         sim.send(
           PedalCodec.encodeFrame(
-            _frame(mode: PedalMode.fx, performanceArmed: true),
+            _frame(performanceArmed: true),
             targetVersion: PedalCodec.protocolVersionV3,
           ),
         );
         await tester.pump();
-        expect(find.byKey(modeLedKey), findsOneWidget);
+        expect(modeLedColor(tester), SurfaceTheme.dark.ledRed);
 
-        // _BlinkingLed starts lit, then alternates lit/dark every 400ms.
-        expect(modeLedColor(tester), SurfaceTheme.dark.ledRed);
-        await tester.pump(const Duration(milliseconds: 400));
-        expect(modeLedColor(tester), Colors.transparent);
-        await tester.pump(const Duration(milliseconds: 400));
-        expect(modeLedColor(tester), SurfaceTheme.dark.ledRed);
+        for (var i = 0; i < 4; i++) {
+          await tester.pump(const Duration(milliseconds: 400));
+          expect(
+            modeLedColor(tester),
+            SurfaceTheme.dark.ledRed,
+            reason: 'the indicator must stay solid at +${(i + 1) * 400}ms',
+          );
+        }
       });
 
       testWidgets('darkens on the goodbye frame, like both firmware sketches', (
@@ -456,24 +496,20 @@ void main() {
         expect(modeLedColor(tester), SurfaceTheme.dark.ledOff);
       });
 
-      testWidgets('falls back to the mode color once disarmed', (tester) async {
+      testWidgets('an armed MUTE frame still reads green, not red', (
+        tester,
+      ) async {
+        // The sharpest version of the rule: mute + armed used to paint this
+        // LED red (the blink). Green is the only correct reading now — the
+        // foot is in mute mode and that is all this dot reports.
         final (_, sim) = await pumpFaceplate(tester);
 
-        // Driven in MUTE, not rec: since #693 the rec mode colour is the same
-        // red as the armed blink, so a rec frame here would pass whether or
-        // not the fallback actually happened. Mute's green makes the handover
-        // observable.
         sim.send(
           PedalCodec.encodeFrame(
             _frame(mode: PedalMode.play, performanceArmed: true),
           ),
         );
         await tester.pump();
-        expect(modeLedColor(tester), SurfaceTheme.dark.ledRed);
-
-        sim.send(PedalCodec.encodeFrame(_frame(mode: PedalMode.play)));
-        await tester.pump();
-        // Still present — it is the mode indicator now, not the armed blink.
         expect(modeLedColor(tester), SurfaceTheme.dark.ledGreen);
       });
     });
