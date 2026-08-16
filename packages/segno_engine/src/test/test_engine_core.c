@@ -19867,6 +19867,221 @@ static void test_cond_cpu_smoke(void) {
   CHECK(ns_per_sample >= 0.0); /* informational, not a budget gate */
 }
 
+/* ---- input clip ("HOT") detector + snapshot masks (input clip, S2) ----
+ *
+ * Always on, no params, RAW path: LE_CLIP_RUN (4) consecutive samples at
+ * |s| >= LE_CLIP_LEVEL (0.999) latch le_snapshot.input_clip_mask's bit for
+ * that input, held LE_CLIP_HOLD_MS (1500) of engine time past the last run.
+ * These tests pin the run threshold, the cross-block run carry, the hold
+ * decay, per-input independence, the raw-vs-conditioned split (a clipped
+ * input the stage reshapes below the rail still flags HOT), the loopback
+ * exclusion, and input_cond_mask as the stage-actually-runs truth. */
+
+/* Feeds one block of `frames` mono frames, all zero except a run of `runlen`
+ * samples at `level` starting at `at`. */
+static void clip_feed_run(le_engine* e, float level, int at, int runlen,
+                          int frames) {
+  static float in[256];
+  static float out[256];
+  for (int i = 0; i < frames; ++i) {
+    in[i] = (i >= at && i < at + runlen) ? level : 0.0f;
+  }
+  le_engine_process(e, out, in, (uint32_t)frames);
+}
+
+/* The run threshold: 3 consecutive rail samples never latch (a full-scale
+ * transient is music), 4 do — and a long run BELOW LE_CLIP_LEVEL never
+ * latches however sustained (loud is not HOT). */
+static void test_clip_rail_run_latches(void) {
+  printf("test_clip_rail_run_latches\n");
+  le_snapshot s;
+  le_engine* e = cond_engine();
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0u); /* untouched engine: nothing HOT */
+
+  /* 64 frames of sustained 0.99 — under the rail, no latch. */
+  clip_feed_run(e, 0.99f, 0, 64, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0u);
+
+  /* LE_CLIP_RUN - 1 at the rail: still music. */
+  clip_feed_run(e, 0.9995f, 8, LE_CLIP_RUN - 1, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0u);
+
+  /* LE_CLIP_RUN at the rail (negative — the detector reads |s|): HOT. */
+  clip_feed_run(e, -0.9995f, 8, LE_CLIP_RUN, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x1u);
+  le_engine_destroy(e);
+}
+
+/* The run counter carries across block boundaries: 2 rail samples at the end
+ * of one block plus 2 at the start of the next latch, exactly like an
+ * unsplit run of 4 (a clip does not care where the period boundary fell). */
+static void test_clip_run_spans_blocks(void) {
+  printf("test_clip_run_spans_blocks\n");
+  le_snapshot s;
+  le_engine* e = cond_engine();
+  clip_feed_run(e, 0.9995f, 62, 2, 64); /* run tail ends the block */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0u); /* only 2 so far */
+  clip_feed_run(e, 0.9995f, 0, 2, 64); /* 2 more open the next */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x1u);
+
+  /* An interrupted pair does NOT carry: 2 + gap + 2 in one block stays 0
+   * on a fresh engine (any sub-rail sample resets the run). */
+  le_engine* e2 = cond_engine();
+  static float in[64];
+  static float out[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.0f;
+  in[10] = in[11] = 0.9995f;
+  in[13] = in[14] = 0.9995f; /* in[12] == 0 breaks the run */
+  le_engine_process(e2, out, in, 64);
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.input_clip_mask == 0u);
+  le_engine_destroy(e);
+  le_engine_destroy(e2);
+}
+
+/* The hold: a latched bit survives ~1.47 s of following silence and is gone
+ * past ~1.51 s — LE_CLIP_HOLD_MS (1500) at block granularity. */
+static void test_clip_hold_decay(void) {
+  printf("test_clip_hold_decay\n");
+  le_snapshot s;
+  le_engine* e = cond_engine();
+  clip_feed_run(e, 0.9995f, 0, LE_CLIP_RUN, 64); /* latch near block start */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x1u);
+
+  /* 1100 silent blocks: 70400 frames ≈ 1.467 s < 1.5 s — still HOT. */
+  for (int b = 0; b < 1100; ++b) clip_feed_run(e, 0.0f, 0, 0, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x1u);
+
+  /* 30 more: 72320 frames ≈ 1.507 s > the hold — decayed. */
+  for (int b = 0; b < 30; ++b) clip_feed_run(e, 0.0f, 0, 0, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0u);
+
+  /* A fresh rail-run latches again (nothing is sticky beyond the hold). */
+  clip_feed_run(e, 0.9995f, 0, LE_CLIP_RUN, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x1u);
+  le_engine_destroy(e);
+}
+
+/* Per-input independence: on a stereo engine a rail-run on channel 1 flags
+ * ONLY bit 1 while channel 0 (a healthy sine sharing every block) stays
+ * clear; railing channel 0 afterwards ORs bit 0 in alongside. */
+static void test_clip_mask_per_input_independent(void) {
+  printf("test_clip_mask_per_input_independent\n");
+  le_snapshot s;
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 96000);
+  drain(e);
+  static float in[128]; /* 64 frames x 2 ch, interleaved */
+  static float out[128];
+  for (int f = 0; f < 64; ++f) {
+    in[f * 2 + 0] = 0.5f * sinf(2.0f * 3.14159265f * 997.0f * (float)f /
+                                48000.0f);
+    in[f * 2 + 1] = (f >= 8 && f < 8 + LE_CLIP_RUN) ? 0.9995f : 0.0f;
+  }
+  le_engine_process(e, out, in, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x2u); /* ch1 HOT, ch0 clear */
+
+  for (int f = 0; f < 64; ++f) {
+    in[f * 2 + 0] = (f >= 8 && f < 8 + LE_CLIP_RUN) ? 0.9995f : 0.0f;
+    in[f * 2 + 1] = 0.0f;
+  }
+  le_engine_process(e, out, in, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x3u); /* ch0 joins; ch1 still held */
+  le_engine_destroy(e);
+}
+
+/* THE raw-path pin: with the conditioning stage reshaping the signal below
+ * the rail (a 40 Hz HPF flattens a DC rail to ~0 in the conditioned copy
+ * every consumer records/hears), the detector still flags HOT — it reads the
+ * RAW device buffer, so the ADC's clip cannot hide behind its own repair. */
+static void test_clip_detects_raw_under_conditioning(void) {
+  printf("test_clip_detects_raw_under_conditioning\n");
+  le_snapshot s;
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 40.0f, 0.0f, 1.0f); /* HPF only */
+
+  /* One second of a +1.0 DC rail — every raw sample is at the clip level. */
+  static float in[64];
+  static float out[64];
+  for (int i = 0; i < 64; ++i) in[i] = 1.0f;
+  float settled = 1.0f;
+  for (int b = 0; b < 750; ++b) {
+    le_engine_process(e, out, in, 64);
+    settled = out[63];
+  }
+  /* The conditioned monitor path has HPF'd the rail to (numerically)
+   * nothing — what records/sounds is nowhere near the clip level... */
+  CHECK(fabsf(settled) < 0.01f);
+  /* ...and HOT flags anyway, off the raw buffer. */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x1u);
+  le_engine_destroy(e);
+}
+
+/* Loopback-excluded channels never flag: they carry our own output back, so
+ * a hot master must not read as a hot input. */
+static void test_clip_excluded_input_ignored(void) {
+  printf("test_clip_excluded_input_ignored\n");
+  le_snapshot s;
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 96000);
+  le_engine_set_excluded_input_mask_for_test(e, 0x2u); /* ch1 = loopback */
+  drain(e);
+  static float in[128];
+  static float out[128];
+  for (int f = 0; f < 64; ++f) {
+    in[f * 2 + 0] = 0.0f;
+    in[f * 2 + 1] = 0.9995f; /* a sustained rail on the loopback channel */
+  }
+  le_engine_process(e, out, in, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0u);
+  le_engine_destroy(e);
+}
+
+/* input_cond_mask is the stage-actually-runs truth: 0 by default, bit c on
+ * enable, off again on disable — and an enabled stage on a loopback-excluded
+ * input reads 0 (it never runs; the latency harness owns those channels). */
+static void test_cond_mask_snapshot(void) {
+  printf("test_cond_mask_snapshot\n");
+  le_snapshot s;
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 96000);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_cond_mask == 0u); /* untouched engine: nothing conditioned */
+
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_input_conditioning(e, 1, 1) == LE_OK);
+  drain(e); /* the enable publishes via the ring (audio-thread commit) */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_cond_mask == 0x3u);
+
+  CHECK(le_engine_set_input_conditioning(e, 0, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_cond_mask == 0x2u);
+
+  /* Excluding ch1 removes its bit even though its enable stays set. */
+  le_engine_set_excluded_input_mask_for_test(e, 0x2u);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_cond_mask == 0u);
+  le_engine_destroy(e);
+}
+
 /* --- Vendored RNNoise smoke test (#697 S7) -------------------------------
  *
  * Proves the vendored third_party/rnnoise TUs compile, link, and run: init a
@@ -20394,6 +20609,13 @@ int main(void) {
   test_cond_nan_input_contained();
   test_cond_scratch_fallback_counted();
   test_cond_cpu_smoke();
+  test_clip_rail_run_latches();
+  test_clip_run_spans_blocks();
+  test_clip_hold_decay();
+  test_clip_mask_per_input_independent();
+  test_clip_detects_raw_under_conditioning();
+  test_clip_excluded_input_ignored();
+  test_cond_mask_snapshot();
   test_rnnoise_vendor_smoke();
 
   if (g_failures == 0) {

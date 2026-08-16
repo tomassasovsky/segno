@@ -4856,6 +4856,25 @@ final class le_snapshot extends ffi.Struct {
   /// untouched engine emits no clock bytes. See le_engine_set_clock_mode.
   @ffi.Int32()
   external int clock_mode;
+
+  /// ---- input clip detector + conditioning activity (input clip, S2;
+  /// trailing for the same offset-stability reason as the blocks above).
+  /// Both default to 0 — an untouched engine reports no HOT input and no
+  /// active conditioning. */
+  /// /* Bit c: HOT — a rail-run (LE_CLIP_RUN consecutive raw samples at
+  /// |s| >= LE_CLIP_LEVEL) was seen on input c within the last
+  /// LE_CLIP_HOLD_MS of processed audio. Detected on the RAW device buffer,
+  /// so the flag reflects the ADC even when the conditioning stage has ducked
+  /// or notched what records. Loopback-excluded inputs never flag.
+  @ffi.Uint32()
+  external int input_clip_mask;
+
+  /// Bit c: input c's conditioning stage is currently ACTIVE — enabled AND
+  /// not loopback-excluded, i.e. the stage actually runs on the audio path
+  /// (the UI truth for a "conditioning on" badge; a stage enabled on an
+  /// excluded channel reads 0 here because it never runs).
+  @ffi.Uint32()
+  external int input_cond_mask;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -5100,6 +5119,12 @@ const int LE_MAX_TRACKS = 8;
 const int LE_MAX_LANES = 8;
 
 const int LE_MAX_MONITORED_INPUTS = 8;
+
+const double LE_CLIP_LEVEL = 0.9990000128746033;
+
+const int LE_CLIP_RUN = 4;
+
+const int LE_CLIP_HOLD_MS = 1500;
 
 const double LE_MAX_GAIN = 2.0;
 

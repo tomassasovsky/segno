@@ -4127,6 +4127,54 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     }
   }
 
+  /* ---- Input clip ("HOT") detector (input clip, S2) ----
+   * Always on, no params, and deliberately on the RAW `in` — never `in_c` —
+   * so a clipped input flags HOT even when the conditioning stage has ducked
+   * or notched what records (HOT reflects the ADC; see the LE_CLIP_* doc).
+   * LE_CLIP_RUN consecutive samples at |s| >= LE_CLIP_LEVEL latch the input's
+   * bit for LE_CLIP_HOLD_MS of engine time (the a_frames timeline), refreshed
+   * while the rail persists; the run counter carries across blocks so a run
+   * split by a block boundary still latches. Loopback-excluded channels never
+   * flag (they carry our own output — a hot master would read as a hot
+   * input). Holds decay with processed frames, so the mask is recomputed and
+   * published once per non-empty block whether or not input flows. */
+  if (frames > 0) {
+    const uint64_t clip_now =
+        atomic_load_explicit(&e->a_frames, memory_order_relaxed);
+    const uint64_t clip_hold = (uint64_t)sr * LE_CLIP_HOLD_MS / 1000u;
+    const int clip_ch =
+        ch_in < LE_MAX_MONITORED_INPUTS ? ch_in : LE_MAX_MONITORED_INPUTS;
+    uint32_t clip_mask = 0u;
+    for (int c = 0; c < clip_ch; ++c) {
+      if (excluded & (1u << c)) {
+        e->clip_run[c] = 0;
+        e->clip_hold_until[c] = 0;
+        continue;
+      }
+      if (in != NULL) {
+        int32_t run = e->clip_run[c];
+        for (uint32_t f = 0; f < frames; ++f) {
+          if (fabsf(in[f * (uint32_t)ch_in + (uint32_t)c]) >= LE_CLIP_LEVEL) {
+            if (++run >= LE_CLIP_RUN) {
+              /* Latched (or refreshed): hold from THIS sample. Cap the run so
+               * a sustained rail cannot overflow the counter. */
+              e->clip_hold_until[c] = clip_now + f + 1u + clip_hold;
+              run = LE_CLIP_RUN;
+            }
+          } else {
+            run = 0;
+          }
+        }
+        e->clip_run[c] = run;
+      }
+      /* HOT while the hold outlives this block's end (clip_now is the frame
+       * count BEFORE this block; a_frames is bumped below). */
+      if (e->clip_hold_until[c] > clip_now + frames) clip_mask |= 1u << c;
+    }
+    atomic_store_explicit(&e->a_input_clip_mask, clip_mask,
+                          memory_order_relaxed);
+  }
+
   float in_sumsq = 0.0f;
   float in_peak = 0.0f;
   float out_sumsq = 0.0f;
