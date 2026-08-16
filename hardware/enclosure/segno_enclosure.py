@@ -117,6 +117,18 @@ PEDAL_SCREW_SPAN   = 83.25    # overall width across both screw heads
 PEDAL_PAD_W          = 64.61  # bottom pad width
 PEDAL_PAD_D          = 90.0   # bottom pad length
 PEDAL_PAD_BACK_INSET = 16.43  # pad rear edge inset from the case back edge
+# Four BASE screw holes on the underside, in two rows across the case
+# (user-measured 2026-08-16, issue #716). They sit UNDER the anti-slip pad, so
+# both rows are dimensioned off the SIDE screw axis -- the only datum you can
+# find on the case without pulling the pad. Bolting through these replaces the
+# pedestal's provisional gravity+pocket retention.
+PEDAL_BASE_ROW_BACK_OFF = 4.0    # rear row, rearward of the side-screw axis
+PEDAL_BASE_ROW_PITCH    = 80.0   # rear row to front row, toe-ward
+PEDAL_BASE_SPAN_REAR    = 55.75  # centre-to-centre across the rear pair
+PEDAL_BASE_SPAN_FRONT   = 53.0   # ...and the front pair (the case tapers toe-ward)
+PEDAL_BASE_HOLE_D       = 3.2    # M3-ish (user call 2026-08-16)
+PEDAL_BASE_REAR_BACK  = PEDAL_SCREW_BACK - PEDAL_BASE_ROW_BACK_OFF   # 19.24 from the back edge
+PEDAL_BASE_FRONT_BACK = PEDAL_BASE_REAR_BACK + PEDAL_BASE_ROW_PITCH  # 99.24 from the back edge
 FSW_SLOT_W = PEDAL_W + 2.0    # slot width (u) = 78.35, 1.0mm/side. The side screws DON'T
                               # drive this: their bosses duck ~6.6mm under the faceplate
                               # beside the slot (checked in 3b). The case governs, and its
@@ -454,6 +466,15 @@ def _silk_lines(label):
         return []                 # tracks are identified by the meter screen, no silk text
     return [label]
 
+def pedal_base_holes():
+    """The four base screw holes in the PEDESTAL frame: X = depth with +X toward
+    the case BACK (cable end), Y = width, origin at the pedal centre. Rear pair
+    first. Anything that bolts a pedal down from below reads this."""
+    return [(PEDAL_D/2.0 - back, side * span/2.0)
+            for back, span in ((PEDAL_BASE_REAR_BACK, PEDAL_BASE_SPAN_REAR),
+                               (PEDAL_BASE_FRONT_BACK, PEDAL_BASE_SPAN_FRONT))
+            for side in (-1, 1)]
+
 def platform_h(v):
     """Platform shelf height that lands the pedal's BODY TOP (case top, under the
     top pad) FLUSH with the faceplate surface at the slot's UPPER (rear) rim --
@@ -753,6 +774,22 @@ def _check():
         # flush-at-rim seating (#373) eats the old margin: real clearance is now
         # ~1.0 row 1 / ~0.95 row 2 (doc-probed). Static parts, no relative motion.
         assert clr >= 0.8, f"SCREW_BOSS: only {clr:.1f} mm under the faceplate at v={v_screw:.0f}"
+
+    # 3b'. base screw holes: both rows land on the case underside, inboard of
+    # the walls, and under the anti-slip pad (which is why they need a datum
+    # that is NOT the pad -- see the PEDAL_BASE_* block). Issue #716.
+    pad_x0 = PEDAL_D/2.0 - (PEDAL_PAD_BACK_INSET + PEDAL_PAD_D)   # toe end of the pad
+    pad_x1 = PEDAL_D/2.0 - PEDAL_PAD_BACK_INSET                   # back end of the pad
+    for hx, hy in pedal_base_holes():
+        r = PEDAL_BASE_HOLE_D/2.0
+        assert abs(hx) + r <= PEDAL_D/2.0 - 1.0, \
+            f"PEDAL_BASE: hole at x={hx:.2f} runs off the case underside (depth)"
+        assert abs(hy) + r <= PEDAL_W/2.0 - 1.0, \
+            f"PEDAL_BASE: hole at y={hy:.2f} runs into the case side wall"
+        assert pad_x0 + r <= hx <= pad_x1 - r, \
+            f"PEDAL_BASE: hole at x={hx:.2f} is not under the anti-slip pad"
+        assert abs(hy) + r <= PEDAL_PAD_W/2.0, \
+            f"PEDAL_BASE: hole at y={hy:.2f} is not under the anti-slip pad"
 
     # 3c. the front gap absorbed the deeper Cherub slot; keep it usable
     assert FRONT_GAP >= 40.0, f"FRONT_GAP: {FRONT_GAP:.1f} mm < 40 -- pedals crowd the screen block"

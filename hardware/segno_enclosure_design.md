@@ -99,6 +99,15 @@ fully internal.
 > (2026-07-28, issues #358/#360) — unlike the earlier ASP-1 placeholder they are
 > no longer provisional. Pedestal **retention** is the remaining PROVISIONAL
 > piece (pocket + gravity; no fastener engages the pedal).
+>
+> **Base screw holes (issue #716).** The underside does carry four M3-ish holes
+> after all, in two rows — the `PEDAL_BASE_*` constants. They sit *under* the
+> anti-slip pad, so both rows are dimensioned off the **side screw axis**, the
+> only datum findable without pulling the pad: rear row = axis **+4.0 toward the
+> back**, front row = rear row **+80.0 toward the toe**, spans **55.75** (rear)
+> and **53.00** (front), symmetric about the centre-line. Bolting through these
+> is what will retire the PROVISIONAL retention above — but not before the
+> **fit-test jig** proves the pattern on a print (§8).
 
 ---
 
@@ -194,7 +203,20 @@ python3.12 -m venv .venv && .venv/bin/pip install ezdxf cadquery matplotlib  # o
 .venv/bin/python segno_enclosure.py            # check + STEP + DXF + PDF -> out/
 .venv/bin/python segno_enclosure.py --report   # report + assertions only
 .venv/bin/python segno_enclosure.py --no-step   # DXF + PDF only
+.venv/bin/python _pedal_base_fit_test.py       # base-hole fit-test jig -> out/
+.venv/bin/python _print_check.py out/segno_pedal_base_fit_test.stl   # FDM check
 ```
+
+**Base-hole fit-test jig** (`_pedal_base_fit_test.py`, issue #716) — a
+throwaway print that carries *only* four locating pins on the `PEDAL_BASE_*`
+pattern plus the two side columns that capture the horizontal screw bosses
+(same `SKIRT_BOSS_CH_*` idiom as the tray tubs). Print it, drop a pedal on it:
+all four pins in, both bosses in their channels, case sitting flat = the
+pattern is right and the pedestal decks can be bored for heat-set inserts. Its
+`SEAT` assertion intersects the jig with a seated pedal stand-in, so a jig that
+cannot accept the pedal fails in CAD instead of on the bed. Pins engage only
+3.0 mm past the pad — the hole *depth* is unmeasured, and a pin that bottoms
+out would hold the pedal proud and read exactly like a placement error.
 
 Before any output the generator runs `_check()` — **the real acceptance gate**.
 It raises (build fails) unless every geometry rule holds:
