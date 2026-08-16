@@ -4619,6 +4619,77 @@ final class le_track_snapshot extends ffi.Struct {
   external int one_shot;
 }
 
+/// Dropout classes counted per window. The three ALSA ones come from the direct
+/// ALSA duplex path (miniaudio's -EPIPE recoveries and the playback-slip resync);
+/// OVERLOAD is the Windows ASIO driver's kAsioOverload notification.
+enum le_xrun_kind {
+  /// writei() -EPIPE: the card ran out of audio
+  LE_XRUN_PLAYBACK_UNDERRUN(0),
+
+  /// readi()  -EPIPE: we did not read in time
+  LE_XRUN_CAPTURE_OVERRUN(1),
+
+  /// the slipped-playback drop+prepare resync
+  LE_XRUN_PLAYBACK_RESYNC(2),
+
+  /// ASIO kAsioOverload
+  LE_XRUN_BACKEND_OVERLOAD(3);
+
+  final int value;
+  const le_xrun_kind(this.value);
+
+  static le_xrun_kind fromValue(int value) => switch (value) {
+    0 => LE_XRUN_PLAYBACK_UNDERRUN,
+    1 => LE_XRUN_CAPTURE_OVERRUN,
+    2 => LE_XRUN_PLAYBACK_RESYNC,
+    3 => LE_XRUN_BACKEND_OVERLOAD,
+    _ => throw ArgumentError('Unknown value for le_xrun_kind: $value'),
+  };
+}
+
+/// One accumulation window of callback telemetry. Every counter is monotonic
+/// within its window and is only ever cleared by the event that owns the window
+/// (a fresh configure/start for the session window; le_perf_arm for the armed
+/// one). Durations are microseconds: a nanosecond figure would overflow uint32
+/// after 4.3 s and nothing here is finer than a microsecond anyway.
+final class le_cb_window_snapshot extends ffi.Struct {
+  /// device callbacks observed in this window
+  @ffi.Uint64()
+  external int calls;
+
+  /// of those, ones whose duration exceeded the budget
+  @ffi.Uint64()
+  external int late_calls;
+
+  /// Entry-to-entry gaps longer than 1.5 periods: the DERIVED starvation signal.
+  /// The device handing us a period more than half a period late means it
+  /// starved, whether or not the backend admitted an xrun — this is what works
+  /// on CoreAudio, where miniaudio exposes no xrun signal at all.
+  @ffi.Uint64()
+  external int gap_events;
+
+  /// worst callback duration seen
+  @ffi.Uint32()
+  external int max_us;
+
+  /// mean callback duration over `calls`
+  @ffi.Uint32()
+  external int mean_us;
+
+  /// worst entry-to-entry gap (0 when none exceeded)
+  @ffi.Uint32()
+  external int max_gap_us;
+
+  /// duration histogram; see LE_CB_BUCKETS
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Uint32> buckets;
+
+  /// Real backend dropouts, indexed by le_xrun_kind. Their sum over the session
+  /// window is exactly what xrun_count reports.
+  @ffi.Array.multi([4])
+  external ffi.Array<ffi.Uint32> xruns;
+}
+
 /// Lock-free snapshot of engine state, published by the audio thread and read by
 /// Dart on a render-rate timer. Fields are individually atomic; readers may see
 /// a one-frame-stale mix across fields, which is fine for metering/UI.
@@ -4888,6 +4959,18 @@ final class le_snapshot extends ffi.Struct {
   /// excluded channel reads 0 here because it never runs).
   @ffi.Uint32()
   external int input_cond_mask;
+
+  /// The period deadline every duration below is judged against, in
+  /// microseconds: buffer_frames / sample_rate. 0 = no device has been opened,
+  /// which is also the "telemetry inert" state (nothing is accumulated).
+  @ffi.Uint32()
+  external int cb_budget_us;
+
+  /// since the device started
+  external le_cb_window_snapshot cb_session;
+
+  /// since the most recent le_perf_arm
+  external le_cb_window_snapshot cb_armed;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -5142,5 +5225,9 @@ const int LE_CLIP_HOLD_MS = 1500;
 const double LE_MAX_GAIN = 2.0;
 
 const int LE_VIZ_POINTS = 512;
+
+const int LE_CB_BUCKETS = 8;
+
+const int LE_XRUN_KINDS = 4;
 
 const int LE_CACHE_DEFAULT_CAP_BYTES = 67108864;

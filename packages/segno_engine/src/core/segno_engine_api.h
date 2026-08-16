@@ -657,6 +657,72 @@ typedef struct le_track_snapshot {
   int32_t one_shot;
 } le_track_snapshot;
 
+/* ===================== Audio-callback telemetry (#722) =====================
+ *
+ * The audio callback measuring its OWN lateness. Until this existed nothing on
+ * the miniaudio backends (Linux/macOS) counted a missed deadline: xrun_count was
+ * fed only by the Windows ASIO overload notification, so the appliance could not
+ * tell a callback that ran long from one that ran fine. Observation only — no
+ * audio behaviour depends on any of it.
+ *
+ * WHAT IS MEASURED, and where: the device backend's data callback wraps
+ * le_engine_process between two monotonic clock reads (engine_miniaudio.c), so a
+ * duration here is what the DEVICE's callback thread actually spent, and an
+ * entry-to-entry gap is what the DEVICE actually experienced between periods.
+ * The deadline it is compared against is the period budget — buffer_frames /
+ * sample_rate — reported as cb_budget_us.
+ *
+ * TWO WINDOWS, because the bug being hunted (#722: clicks ONLY while a
+ * performance capture is armed) is a comparison, not an absolute: `cb_session`
+ * accumulates for the whole device session (reset per configure/start, exactly
+ * like xrun_count), `cb_armed` is reset by every le_perf_arm and so covers only
+ * the armed window. "Unarmed" is read as the difference of the counts; the two
+ * maxima are reported separately because a maximum cannot be subtracted. */
+
+/* Duration-histogram resolution. Bucket i counts callbacks whose duration fell
+ * in [i/8, (i+1)/8) of the period budget; the last bucket is the open-ended
+ * ">= 7/8 of budget" danger zone and therefore also holds every over-budget call
+ * (which `late_calls` counts exactly). A histogram distinguishes "one huge
+ * stall" from "many marginal ones" — the two have completely different causes. */
+#define LE_CB_BUCKETS 8
+
+/* Dropout classes counted per window. The three ALSA ones come from the direct
+ * ALSA duplex path (miniaudio's -EPIPE recoveries and the playback-slip resync);
+ * OVERLOAD is the Windows ASIO driver's kAsioOverload notification. */
+typedef enum le_xrun_kind {
+  LE_XRUN_PLAYBACK_UNDERRUN = 0, /* writei() -EPIPE: the card ran out of audio */
+  LE_XRUN_CAPTURE_OVERRUN = 1,   /* readi()  -EPIPE: we did not read in time */
+  LE_XRUN_PLAYBACK_RESYNC = 2,   /* the slipped-playback drop+prepare resync */
+  LE_XRUN_BACKEND_OVERLOAD = 3,  /* ASIO kAsioOverload */
+} le_xrun_kind;
+
+/* How many le_xrun_kind values there are — the per-window tally array width.
+ * A macro rather than a trailing enum member so the enum stays free of a
+ * sentinel that is not a kind (it crosses the FFI boundary as a Dart enum). */
+#define LE_XRUN_KINDS 4
+
+/* One accumulation window of callback telemetry. Every counter is monotonic
+ * within its window and is only ever cleared by the event that owns the window
+ * (a fresh configure/start for the session window; le_perf_arm for the armed
+ * one). Durations are microseconds: a nanosecond figure would overflow uint32
+ * after 4.3 s and nothing here is finer than a microsecond anyway. */
+typedef struct le_cb_window_snapshot {
+  uint64_t calls;      /* device callbacks observed in this window */
+  uint64_t late_calls; /* of those, ones whose duration exceeded the budget */
+  /* Entry-to-entry gaps longer than 1.5 periods: the DERIVED starvation signal.
+   * The device handing us a period more than half a period late means it
+   * starved, whether or not the backend admitted an xrun — this is what works
+   * on CoreAudio, where miniaudio exposes no xrun signal at all. */
+  uint64_t gap_events;
+  uint32_t max_us;     /* worst callback duration seen */
+  uint32_t mean_us;    /* mean callback duration over `calls` */
+  uint32_t max_gap_us; /* worst entry-to-entry gap (0 when none exceeded) */
+  uint32_t buckets[LE_CB_BUCKETS]; /* duration histogram; see LE_CB_BUCKETS */
+  /* Real backend dropouts, indexed by le_xrun_kind. Their sum over the session
+   * window is exactly what xrun_count reports. */
+  uint32_t xruns[LE_XRUN_KINDS];
+} le_cb_window_snapshot;
+
 /* Lock-free snapshot of engine state, published by the audio thread and read by
  * Dart on a render-rate timer. Fields are individually atomic; readers may see
  * a one-frame-stale mix across fields, which is fine for metering/UI. */
@@ -837,6 +903,19 @@ typedef struct le_snapshot {
    * (the UI truth for a "conditioning on" badge; a stage enabled on an
    * excluded channel reads 0 here because it never runs). */
   uint32_t input_cond_mask;
+
+  /* ---- audio-callback telemetry (#722; trailing for the same offset-
+   * stability reason as the blocks above). See le_cb_window_snapshot for what
+   * each field means and why there are two windows. Everything here reads 0 on
+   * an engine whose device never ran — the native test pump processes blocks
+   * without a device and therefore has no deadline to miss. */
+
+  /* The period deadline every duration below is judged against, in
+   * microseconds: buffer_frames / sample_rate. 0 = no device has been opened,
+   * which is also the "telemetry inert" state (nothing is accumulated). */
+  uint32_t cb_budget_us;
+  le_cb_window_snapshot cb_session; /* since the device started */
+  le_cb_window_snapshot cb_armed;   /* since the most recent le_perf_arm */
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================

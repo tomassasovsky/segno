@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/audio_config.dart';
+import 'package:segno_engine/segno_engine.dart' show CallbackWindowStats;
 
 /// Device + engine health, projected from the engine snapshot.
 class EngineStatus extends Equatable {
@@ -21,6 +22,9 @@ class EngineStatus extends Equatable {
     this.recordOffsetFrames = 0,
     this.fxAddedLatencyFrames = 0,
     this.activeBackend = AudioBackend.miniaudio,
+    this.callbackBudgetUs = 0,
+    this.callbackSession = CallbackWindowStats.empty,
+    this.callbackArmed = CallbackWindowStats.empty,
   });
 
   /// Active device name, or empty when stopped.
@@ -45,7 +49,14 @@ class EngineStatus extends Equatable {
   /// [LatencyState.done].
   final double measuredLatencyMs;
 
-  /// Device xruns since the device started (reserved; currently `0`).
+  /// Real device dropouts since the device started, every class summed.
+  ///
+  /// No longer "reserved": the ALSA backend now reports its `-EPIPE`
+  /// underrun/overrun recoveries and its slipped-playback resyncs through this
+  /// (native #722), alongside the Windows ASIO overload notification that used
+  /// to be its only producer. Still `0` on CoreAudio, which exposes no xrun
+  /// signal — read [callbackSession]'s gap detector there instead. See
+  /// [CallbackWindowStats.xruns] for the per-class breakdown.
   final int xrunCount;
 
   /// Whether the audio device is open and running.
@@ -105,6 +116,24 @@ class EngineStatus extends Equatable {
   /// [AudioBackend.asio]; on macOS/Linux it is [AudioBackend.miniaudio].
   final AudioBackend activeBackend;
 
+  /// The period deadline the audio callback is judged against, in microseconds
+  /// — `bufferFrames / sampleRate`. `0` when no device has been opened, which
+  /// is also the "nothing is being measured" state.
+  final int callbackBudgetUs;
+
+  /// Audio-callback telemetry for the whole device session: duration vs the
+  /// deadline, the entry-to-entry gap detector, and real backend dropouts.
+  ///
+  /// Reset on every fresh start, like [xrunCount].
+  final CallbackWindowStats callbackSession;
+
+  /// The same telemetry, but only since the most recent performance arm.
+  ///
+  /// The armed-vs-unarmed comparison #722 exists to make: the count fields
+  /// subtract from [callbackSession] to give the unarmed control, while each
+  /// window reports its own maxima (a maximum cannot be subtracted).
+  final CallbackWindowStats callbackArmed;
+
   /// Whether a latency measurement has completed.
   bool get hasMeasuredLatency => latencyState == LatencyState.done;
 
@@ -126,5 +155,8 @@ class EngineStatus extends Equatable {
     recordOffsetFrames,
     fxAddedLatencyFrames,
     activeBackend,
+    callbackBudgetUs,
+    callbackSession,
+    callbackArmed,
   ];
 }

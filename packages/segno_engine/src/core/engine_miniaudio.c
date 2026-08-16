@@ -19,20 +19,55 @@
 #include <stdlib.h> /* getenv — appliance exclusive-mode check */
 #include <string.h>
 
-#include "engine_internal.h"  /* le_engine_process */
+#include "engine_internal.h"  /* le_engine_process, le_engine_note_callback_span */
 #include "engine_miniaudio.h" /* le_miniaudio_backend */
 #include "engine_platform.h"  /* le_platform_backends / _before_context_init */
 #include "engine_private.h"   /* struct le_engine, le_find_loopback, le_resolve_device_id */
+#include "engine_telemetry.h" /* le_now_ns, LE_CALLBACK_TELEMETRY (#722) */
 #include "le_device_backend.h"
 #include "segno_engine_api.h"
 #include "miniaudio.h"
 
 /* The miniaudio data callback: forwards one interleaved block straight into the
- * portable real-time core. No allocation, locking, or I/O (see engine.c). */
+ * portable real-time core. No allocation, locking, or I/O (see engine.c).
+ *
+ * THIS is the layer the callback telemetry (#722) measures, deliberately, not
+ * the inside of le_engine_process: the span taken here is the whole of what the
+ * device's callback thread spends between being handed a period and giving it
+ * back, and the entry stamps form the timeline the DEVICE actually ran on. A
+ * clock read inside le_engine_process would also be pumped by the native test
+ * harness and by the ASIO bridge's own conversion wrapper, mixing three
+ * different timelines into one gap detector. The cost added to the RT path is
+ * two monotonic clock reads (vDSO/commpage, no kernel entry) and ~10 relaxed
+ * atomic adds — well under a microsecond against a 667 us period at 64 frames /
+ * 96 kHz — and -DLE_CALLBACK_TELEMETRY=0 removes even that. */
 static void data_callback(ma_device* device, void* output, const void* input,
                           ma_uint32 frame_count) {
-  le_engine_process((le_engine*)device->pUserData, (float*)output,
-                    (const float*)input, frame_count);
+  le_engine* e = (le_engine*)device->pUserData;
+#if LE_CALLBACK_TELEMETRY
+  const uint64_t entry_ns = le_now_ns();
+  le_engine_process(e, (float*)output, (const float*)input, frame_count);
+  le_engine_note_callback_span(e, entry_ns, le_now_ns());
+#else
+  le_engine_process(e, (float*)output, (const float*)input, frame_count);
+#endif
+}
+
+/* The backend-dropout hook miniaudio's ALSA data loop calls on every -EPIPE
+ * recovery and on the slipped-playback resync (the SEGNO PATCH sites in
+ * miniaudio.h). `pUserData` is ma_device.pUserData, i.e. our engine, and `kind`
+ * is an le_xrun_kind — the enum values are pinned to the integers miniaudio
+ * passes (see the hook's declaration there).
+ *
+ * This runs ON the ALSA data-loop thread, in the middle of a recovery, so it
+ * does exactly one thing: two relaxed atomic adds. It is the answer to "does
+ * miniaudio expose underruns?" — it does not, in its public API, so the
+ * vendored copy was patched to call out rather than only ma_log a DEBUG line
+ * that nothing was listening to. */
+static void le_miniaudio_xrun_hook(void* pUserData, int kind) {
+  le_engine* e = (le_engine*)pUserData;
+  if (e == NULL) return;
+  le_engine_note_backend_xrun(e, (int32_t)kind);
 }
 
 /* Device-state notifications from miniaudio. RT-adjacent: stores the presence
@@ -83,6 +118,10 @@ static void le_miniaudio_close(le_engine* engine) {
     ma_device_uninit(&engine->device);
     engine->device_initialised = 0;
   }
+  /* Retract the dropout hook only AFTER the device is fully stopped and
+   * uninited, so the ALSA data-loop thread — the only caller — is already
+   * joined and cannot observe the store. */
+  ma_segno_xrun_callback = NULL;
   le_uninit_context(engine);
 }
 
@@ -132,6 +171,12 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
   cfg.dataCallback = data_callback;
   cfg.notificationCallback = notification_callback;
   cfg.pUserData = engine;
+  /* Install the backend-dropout hook (#722) before the device can exist, so no
+   * -EPIPE recovery is missed. Process-global by design: it takes the device's
+   * pUserData, so it stays correct even if several engines ever coexist, and
+   * miniaudio has no per-device seam to hang it on without widening
+   * ma_device_config. Cleared in le_miniaudio_close. */
+  ma_segno_xrun_callback = le_miniaudio_xrun_hook;
   /* Force plain readi/writei on ALSA (no MMAP). Only the ALSA backend reads this
    * field (ignored by JACK/CoreAudio/WASAPI). On the direct-ALSA appliance,
    * miniaudio's MMAP *duplex* read/write loop stalls in poll() — the device runs

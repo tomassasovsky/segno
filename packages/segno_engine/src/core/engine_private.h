@@ -59,6 +59,7 @@
 #include "layer_staging_ring.h" /* le_layer_staging_ring (retired-layer persistence) */
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
 #include "le_midi_clock.h"     /* le_midi_clock_gen (C1 24-PPQN clock-send emitter) */
+#include "engine_telemetry.h"  /* le_cb_timing (audio-callback telemetry, #722) */
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
 #include "segno_engine_api.h"  /* le_engine typedef, le_config, le_device_info,
@@ -958,7 +959,18 @@ struct le_engine {
    * published in the snapshot. All bits set on a fresh configure (default-on). */
   _Atomic uint32_t a_output_enabled_mask;
   _Atomic uint64_t a_frames;
+  /* Every backend dropout this session, all le_xrun_kind classes summed --
+   * published as le_snapshot.xrun_count. Fed by le_engine_note_backend_xrun;
+   * cb_timing below carries the same events broken out per kind and per
+   * window. Until #722 the ONLY producer was the Windows ASIO overload
+   * notification, so this read a flat 0 on the appliance. */
   _Atomic uint32_t a_xruns;
+  /* Audio-callback telemetry (#722): per-callback duration vs the period
+   * deadline, the entry-to-entry gap detector, and the per-kind dropout
+   * tallies -- each in a session window and an armed window. Written from the
+   * device callback (relaxed atomics, no allocation/lock/syscall beyond the
+   * clock read); read by le_engine_get_snapshot. See engine_telemetry.h. */
+  le_cb_timing cb_timing;
   _Atomic uint32_t a_in_rms_bits;
   _Atomic uint32_t a_in_peak_bits;
   _Atomic uint32_t a_out_rms_bits;

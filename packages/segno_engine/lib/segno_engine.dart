@@ -26,6 +26,7 @@ export 'src/audio_engine.dart'
 export 'src/engine_config.dart' show AudioBackend, EngineConfig;
 export 'src/engine_snapshot.dart'
     show
+        CallbackWindowStats,
         ClickMode,
         EngineSnapshot,
         GridDivision,
@@ -35,6 +36,7 @@ export 'src/engine_snapshot.dart'
         TempoSource,
         TrackSnapshot,
         TrackState,
+        XrunKind,
         kMaxLanes,
         kMaxMonitoredInputs;
 export 'src/fx_fingerprint.dart' show FxFingerprint;

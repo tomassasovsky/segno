@@ -1,3 +1,8 @@
+// The `Array<Uint32>` index operator the fixed-width telemetry arrays
+// (`le_cb_window_snapshot.buckets` / `.xruns`) are read through is a dart:ffi
+// extension, so the library has to be imported for it to be in scope.
+import 'dart:ffi';
+
 import 'package:meta/meta.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
@@ -531,6 +536,147 @@ class TrackSnapshot {
   );
 }
 
+/// A class of real device dropout, as counted by [CallbackWindowStats.xruns].
+///
+/// Mirrors the native `le_xrun_kind`; the ordinals are the array indices the
+/// engine tallies into, so the order is load-bearing.
+enum XrunKind {
+  /// `snd_pcm_writei` returned `-EPIPE`: the card ran out of audio to play.
+  playbackUnderrun,
+
+  /// `snd_pcm_readi` returned `-EPIPE`: we did not read capture in time.
+  captureOverrun,
+
+  /// The slipped-playback drop+prepare resync — a stream that fell behind the
+  /// hardware pointer with no XRUN raised, resynced by the ALSA backend.
+  playbackResync,
+
+  /// The Windows ASIO driver's `kAsioOverload` notification.
+  backendOverload,
+}
+
+/// One accumulation window of audio-callback telemetry (native issue #722).
+///
+/// The audio callback measuring its own lateness: how long each device callback
+/// took against the period budget, how far apart consecutive callbacks arrived,
+/// and how many real backend dropouts happened. The pure-Dart projection of
+/// `le_cb_window_snapshot`.
+///
+/// Two windows are published side by side on [EngineSnapshot] — one for the
+/// whole device session and one reset by every performance arm — because the
+/// question this instrument exists to answer is comparative: is the callback
+/// worse *while a capture is armed*? Counts subtract ([calls], [lateCalls],
+/// [gapEvents], [xruns]); maxima do not, which is why both windows report their
+/// own.
+@immutable
+class CallbackWindowStats {
+  /// Creates a [CallbackWindowStats].
+  const CallbackWindowStats({
+    this.calls = 0,
+    this.lateCalls = 0,
+    this.gapEvents = 0,
+    this.maxUs = 0,
+    this.meanUs = 0,
+    this.maxGapUs = 0,
+    this.buckets = const [0, 0, 0, 0, 0, 0, 0, 0],
+    this.xruns = const [0, 0, 0, 0],
+  });
+
+  /// Projects a native `le_cb_window_snapshot`.
+  factory CallbackWindowStats.fromNative(le_cb_window_snapshot native) =>
+      CallbackWindowStats(
+        calls: native.calls,
+        lateCalls: native.late_calls,
+        gapEvents: native.gap_events,
+        maxUs: native.max_us,
+        meanUs: native.mean_us,
+        maxGapUs: native.max_gap_us,
+        buckets: [
+          for (var i = 0; i < LE_CB_BUCKETS; i++) native.buckets[i],
+        ],
+        xruns: [for (var i = 0; i < LE_XRUN_KINDS; i++) native.xruns[i]],
+      );
+
+  /// The all-zero window: no device has run, so nothing was measured.
+  static const CallbackWindowStats empty = CallbackWindowStats();
+
+  /// Device callbacks observed in this window.
+  final int calls;
+
+  /// Of those, the ones whose duration exceeded the period budget — a missed
+  /// deadline, which is what a click sounds like at a 64-frame period.
+  final int lateCalls;
+
+  /// Consecutive callback *entries* more than 1.5 periods apart: the device
+  /// did not come back on time. The derived starvation signal, and the only
+  /// one available on CoreAudio, where the backend reports no xruns at all.
+  final int gapEvents;
+
+  /// Worst callback duration in this window, in microseconds.
+  final int maxUs;
+
+  /// Mean callback duration in this window, in microseconds.
+  final int meanUs;
+
+  /// Worst entry-to-entry gap in this window, in microseconds; `0` when none
+  /// exceeded the 1.5-period threshold.
+  final int maxGapUs;
+
+  /// Duration histogram, `LE_CB_BUCKETS` (8) wide. Bucket `i` counts callbacks
+  /// whose duration fell in `[i/8, (i+1)/8)` of the period budget; the last
+  /// bucket is open-ended and so also holds every over-budget call.
+  ///
+  /// This is what separates "one huge stall" from "many marginal ones" — the
+  /// same [lateCalls] with completely different causes.
+  final List<int> buckets;
+
+  /// Real backend dropouts, indexed by [XrunKind.index].
+  final List<int> xruns;
+
+  /// Dropouts of [kind] in this window.
+  int xrunsOf(XrunKind kind) =>
+      kind.index < xruns.length ? xruns[kind.index] : 0;
+
+  /// Every dropout class summed.
+  int get xrunTotal => xruns.fold(0, (a, b) => a + b);
+
+  /// Whether anything at all went wrong in this window: a missed deadline, a
+  /// starved device, or a backend dropout.
+  bool get hasTrouble => lateCalls > 0 || gapEvents > 0 || xrunTotal > 0;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CallbackWindowStats &&
+          runtimeType == other.runtimeType &&
+          calls == other.calls &&
+          lateCalls == other.lateCalls &&
+          gapEvents == other.gapEvents &&
+          maxUs == other.maxUs &&
+          meanUs == other.meanUs &&
+          maxGapUs == other.maxGapUs &&
+          _listEquals(buckets, other.buckets) &&
+          _listEquals(xruns, other.xruns);
+
+  @override
+  int get hashCode => Object.hash(
+    calls,
+    lateCalls,
+    gapEvents,
+    maxUs,
+    meanUs,
+    maxGapUs,
+    Object.hashAll(buckets),
+    Object.hashAll(xruns),
+  );
+
+  @override
+  String toString() =>
+      'CallbackWindowStats(calls: $calls, late: $lateCalls, '
+      'gaps: $gapEvents, max: ${maxUs}us, mean: ${meanUs}us, '
+      'xruns: $xrunTotal)';
+}
+
 /// An immutable, lock-free snapshot of the native audio engine's state.
 ///
 /// Published by the engine's audio thread and read by Dart on a render-rate
@@ -586,6 +732,9 @@ class EngineSnapshot {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.callbackBudgetUs = 0,
+    this.callbackSession = CallbackWindowStats.empty,
+    this.callbackArmed = CallbackWindowStats.empty,
     this.tracks = const [],
   });
 
@@ -638,6 +787,9 @@ class EngineSnapshot {
       countInBeatsLeft = 0,
       looperMode = LooperMode.multi,
       primaryTrack = -1,
+      callbackBudgetUs = 0,
+      callbackSession = CallbackWindowStats.empty,
+      callbackArmed = CallbackWindowStats.empty,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -696,6 +848,9 @@ class EngineSnapshot {
     countInBeatsLeft: native.count_in_beats_left,
     looperMode: LooperMode.fromCode(native.looper_mode),
     primaryTrack: native.primary_track,
+    callbackBudgetUs: native.cb_budget_us,
+    callbackSession: CallbackWindowStats.fromNative(native.cb_session),
+    callbackArmed: CallbackWindowStats.fromNative(native.cb_armed),
     tracks: tracks,
   );
 
@@ -920,6 +1075,24 @@ class EngineSnapshot {
   /// in-range channel, never back to `-1`, once first crowned.
   final int primaryTrack;
 
+  // ---- audio-callback telemetry (#722) ----
+
+  /// The period deadline every callback duration is judged against, in
+  /// microseconds — `bufferFrames / sampleRate`. `0` when no device has been
+  /// opened, which is also the "telemetry inert" state: nothing is measured.
+  final int callbackBudgetUs;
+
+  /// Callback telemetry for the whole device session (reset on every fresh
+  /// configure/start, exactly like [xrunCount]).
+  final CallbackWindowStats callbackSession;
+
+  /// Callback telemetry since the most recent performance arm.
+  ///
+  /// Compare against [callbackSession] to answer #722's question — the
+  /// difference of the two count fields is the unarmed control. Not cleared by
+  /// a disarm, so the numbers survive for a summary read after the fact.
+  final CallbackWindowStats callbackArmed;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -1002,6 +1175,9 @@ class EngineSnapshot {
           countInBeatsLeft == other.countInBeatsLeft &&
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
+          callbackBudgetUs == other.callbackBudgetUs &&
+          callbackSession == other.callbackSession &&
+          callbackArmed == other.callbackArmed &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -1053,6 +1229,9 @@ class EngineSnapshot {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
+    callbackBudgetUs,
+    callbackSession,
+    callbackArmed,
     ...tracks,
   ]);
 

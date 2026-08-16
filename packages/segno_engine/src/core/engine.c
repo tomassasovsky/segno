@@ -501,6 +501,13 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * in le_engine_create like a_looper_mode/a_primary_track. */
   le_midi_clock_reset(&engine->midi_clock);
   atomic_store_explicit(&engine->a_xruns, 0u, memory_order_relaxed); /* per session */
+  /* Callback telemetry (#722): per session, like a_xruns above. The device
+   * period is not negotiated yet at configure time — le_engine_start reseeds
+   * this from le_device_open_result — and a 0 period deliberately leaves the
+   * whole thing inert: an engine driven by the native test pump has no device
+   * deadline to miss and must not manufacture one. */
+  le_cb_timing_configure(&engine->cb_timing, load_i32(&engine->a_buffer_frames),
+                         sample_rate);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity on every fresh start */
   /* Limiter off by default (the app enables it); ceiling just below full scale.
    * Overdub feedback unity by default == classic additive overdub. */
@@ -661,13 +668,41 @@ void le_engine_mark_started(le_engine* engine) {
 }
 
 void le_engine_note_xrun(le_engine* engine) {
+  le_engine_note_backend_xrun(engine, LE_XRUN_BACKEND_OVERLOAD);
+}
+
+void le_engine_note_backend_xrun(le_engine* engine, int32_t kind) {
   if (engine == NULL) return;
-  /* Relaxed: a monotonically-increasing dropout tally read by the snapshot
-   * poller — no other state is ordered against it. Called from the device
-   * backend's overload notification (e.g. the ASIO message thread), never from
+  /* Relaxed throughout: a monotonically-increasing dropout tally read by the
+   * snapshot poller — no other state is ordered against it. Called from a
+   * device backend's own thread (the ASIO message thread for an overload; the
+   * ALSA data-loop thread for an -EPIPE recovery), never from inside
    * le_engine_process; exists as a C helper so a C++ backend TU need not touch
-   * the _Atomic field directly (mirrors le_engine_mark_started). */
+   * the _Atomic fields directly (mirrors le_engine_mark_started).
+   *
+   * The armed flag comes from the PUBLISHED atomic, not engine->perf.armed:
+   * that mirror is audio-thread-local and these callers do not own it. Reading
+   * it here — at the moment of the dropout — is what makes the armed-window
+   * attribution exact rather than "whenever the control thread next polled". */
   atomic_fetch_add_explicit(&engine->a_xruns, 1u, memory_order_relaxed);
+  le_cb_timing_note_xrun(
+      &engine->cb_timing, kind,
+      atomic_load_explicit(&engine->a_perf_armed, memory_order_relaxed) != 0);
+}
+
+void le_engine_note_callback_span(le_engine* engine, uint64_t entry_ns,
+                                  uint64_t exit_ns) {
+  if (engine == NULL) return;
+  le_cb_timing_note(
+      &engine->cb_timing, entry_ns, exit_ns,
+      atomic_load_explicit(&engine->a_perf_armed, memory_order_relaxed) != 0);
+}
+
+void le_engine_configure_callback_budget(le_engine* engine,
+                                         int32_t period_frames,
+                                         int32_t sample_rate) {
+  if (engine == NULL) return;
+  le_cb_timing_configure(&engine->cb_timing, period_frames, sample_rate);
 }
 
 void le_engine_mark_device_lost(le_engine* engine) {
@@ -868,6 +903,13 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   /* Publish the negotiated parameters (configure() reset them above). */
   store_i32(&engine->a_active_backend, info.active_backend);
   store_i32(&engine->a_buffer_frames, info.buffer_frames);
+  /* Callback telemetry (#722): NOW the period deadline is real — le_engine_
+   * configure above ran before info.buffer_frames was published and therefore
+   * seeded a 0 (inert) budget. Reseeding here also clears both windows, so the
+   * numbers a bench reads always belong to the device session in front of it.
+   * Still before start(), so the callback cannot be running yet. */
+  le_engine_configure_callback_budget(engine, info.buffer_frames,
+                                      info.sample_rate);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   engine->lat_active = 0;
   engine->lat_emit_remaining = 0;

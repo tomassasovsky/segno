@@ -2359,6 +2359,12 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
      * so applying it is just flipping the audio-thread-local mirror plus the
      * atomic the snapshot reads. */
     case LE_CMD_PERF_ARM:
+      /* Callback telemetry (#722): the armed window starts HERE, on the audio
+       * thread, at the exact callback the taps go live on — not at whatever
+       * later moment the control thread would have got to it. Cleared before
+       * the flag flips so this callback's own span (recorded at the end of
+       * le_engine_process, after this drain) already lands inside it. */
+      le_cb_timing_reset_armed(&e->cb_timing);
       e->perf.armed = 1;
       atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
       break;

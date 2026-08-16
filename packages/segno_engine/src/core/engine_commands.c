@@ -22,6 +22,7 @@
  * engine_process.c.
  */
 #include <stdint.h>
+#include <stdio.h> /* fprintf — the disarm callback-telemetry summary (#722) */
 #include <stdlib.h>
 #include <string.h>
 
@@ -2262,6 +2263,55 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   return LE_OK;
 }
 
+/* One-line callback-telemetry summary, written to stderr when a capture
+ * disarms (#722). The appliance runs under systemd, so stderr IS the journal
+ * (`journalctl -u segno.service`) — the place a bench operator is already
+ * looking. Emitted from the CONTROL thread, after the quiescent handshake and
+ * the frees: no formatting, no I/O, and no allocation ever happens on the audio
+ * thread, which only ever bumps relaxed atomics.
+ *
+ * Silent unless a real device drove callbacks in the armed window, so the
+ * device-free native test pump (and any never-started engine) prints nothing.
+ * Both windows are printed on one line: the armed window is the suspect, and
+ * the session window is the control it has to be read against — "unarmed" is
+ * their difference. */
+static void le_perf_log_callback_telemetry(le_engine* engine) {
+  le_cb_window_snapshot armed;
+  le_cb_window_snapshot session;
+  const uint32_t budget_us = (uint32_t)(engine->cb_timing.budget_ns / 1000u);
+  le_cb_window_read(&engine->cb_timing.armed, &armed);
+  if (armed.calls == 0) return;
+  le_cb_window_read(&engine->cb_timing.session, &session);
+  fprintf(stderr,
+          "segno/cbtel perf-disarm budget=%uus"
+          " armed{calls=%llu late=%llu gaps=%llu max=%uus mean=%uus"
+          " maxgap=%uus xrun=%u/%u/%u/%u"
+          " hist=%u,%u,%u,%u,%u,%u,%u,%u}"
+          " session{calls=%llu late=%llu gaps=%llu max=%uus mean=%uus"
+          " maxgap=%uus xrun=%u/%u/%u/%u"
+          " hist=%u,%u,%u,%u,%u,%u,%u,%u}\n",
+          budget_us, (unsigned long long)armed.calls,
+          (unsigned long long)armed.late_calls,
+          (unsigned long long)armed.gap_events, armed.max_us, armed.mean_us,
+          armed.max_gap_us, armed.xruns[LE_XRUN_PLAYBACK_UNDERRUN],
+          armed.xruns[LE_XRUN_CAPTURE_OVERRUN],
+          armed.xruns[LE_XRUN_PLAYBACK_RESYNC],
+          armed.xruns[LE_XRUN_BACKEND_OVERLOAD], armed.buckets[0],
+          armed.buckets[1], armed.buckets[2], armed.buckets[3],
+          armed.buckets[4], armed.buckets[5], armed.buckets[6],
+          armed.buckets[7], (unsigned long long)session.calls,
+          (unsigned long long)session.late_calls,
+          (unsigned long long)session.gap_events, session.max_us,
+          session.mean_us, session.max_gap_us,
+          session.xruns[LE_XRUN_PLAYBACK_UNDERRUN],
+          session.xruns[LE_XRUN_CAPTURE_OVERRUN],
+          session.xruns[LE_XRUN_PLAYBACK_RESYNC],
+          session.xruns[LE_XRUN_BACKEND_OVERLOAD], session.buckets[0],
+          session.buckets[1], session.buckets[2], session.buckets[3],
+          session.buckets[4], session.buckets[5], session.buckets[6],
+          session.buckets[7]);
+}
+
 int32_t le_perf_disarm(le_engine* engine) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
@@ -2318,6 +2368,7 @@ int32_t le_perf_disarm(le_engine* engine) {
     }
   }
   engine->perf.input_mask = 0;
+  le_perf_log_callback_telemetry(engine);
   return LE_OK;
 }
 

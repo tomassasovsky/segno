@@ -29,12 +29,38 @@ const le_device_backend* le_select_backend(int32_t backend);
  * engine_private.h, keeping all atomic access in C. Not part of the FFI surface. */
 void le_engine_mark_started(le_engine* engine);
 
-/* Increments the published xrun (dropout) tally by one. Called from a device
- * backend's overload notification — e.g. the ASIO driver's kAsioOverload message
- * — so the snapshot's xrun_count reflects real device starvation. A C helper for
- * the same reason as le_engine_mark_started (C++ backend TUs avoid the _Atomic
+/* Increments the published xrun (dropout) tally by one, as an
+ * LE_XRUN_BACKEND_OVERLOAD. Called from a device backend's overload
+ * notification — the ASIO driver's kAsioOverload message. A C helper for the
+ * same reason as le_engine_mark_started (C++ backend TUs avoid the _Atomic
  * field). Relaxed atomic; safe off any thread. Not part of the FFI surface. */
 void le_engine_note_xrun(le_engine* engine);
+
+/* The general form of the above: records one backend dropout of `kind` (an
+ * le_xrun_kind) into xrun_count AND into the per-kind telemetry windows (#722).
+ * The ALSA data loop calls this through the miniaudio backend's hook for its
+ * -EPIPE recoveries and slipped-playback resyncs, which is what finally makes
+ * xrun_count non-zero on Linux. Relaxed atomics only — safe to call from the
+ * device's data-loop thread. Not part of the FFI surface. */
+void le_engine_note_backend_xrun(le_engine* engine, int32_t kind);
+
+/* Records one device-callback span, [entry_ns, exit_ns), taken with le_now_ns
+ * around the backend's call into le_engine_process (#722). Called ON the audio
+ * thread from the backend's data callback and RT-safe by construction — see
+ * engine_telemetry.h. Exposed here (rather than poking engine->cb_timing) so a
+ * backend TU need not touch the _Atomic struct, and so native tests can feed
+ * synthetic spans. Not part of the FFI surface. */
+void le_engine_note_callback_span(le_engine* engine, uint64_t entry_ns,
+                                  uint64_t exit_ns);
+
+/* Seeds the callback-telemetry deadline from a negotiated device period and
+ * clears both windows. Called by le_engine_start once the backend reports its
+ * negotiated period/rate, and by le_engine_configure (which usually seeds a 0
+ * period — an engine with no device has no deadline, so telemetry stays inert).
+ * Control thread only, while the device is shut. Not part of the FFI surface. */
+void le_engine_configure_callback_budget(le_engine* engine,
+                                         int32_t period_frames,
+                                         int32_t sample_rate);
 
 /* Publishes "device lost" (a_device_present = 0, a_running untouched) so the
  * control layer drives reconnection. Mirrors the miniaudio device-notification

@@ -681,6 +681,9 @@ class LooperRepository {
       recordOffsetFrames: s.recordOffsetFrames,
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
       activeBackend: audioBackendFromEngine(s.activeBackend),
+      callbackBudgetUs: s.callbackBudgetUs,
+      callbackSession: s.callbackSession,
+      callbackArmed: s.callbackArmed,
     ),
     // From the repository's own re-apply CACHE, not `s.outputEnabledMask`, on
     // the same reasoning as the quantize override above: the gate is re-applied

@@ -365,6 +365,88 @@ void main() {
       expect(status.fxAddedLatencyFrames, 1024);
       expect(status.fxAddedLatencyMs, closeTo(1024 * 1000 / 48000, 1e-9));
     });
+
+    test('projects the audio-callback telemetry onto EngineStatus', () {
+      // A 64-frame period at 96 kHz — the appliance's real configuration, and
+      // the one #722's clicks were characterised on. The armed window is worse
+      // than the session as a whole: exactly the reading this is here to make
+      // legible.
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 96000,
+        bufferFrames: 64,
+        inputChannels: 2,
+        outputChannels: 2,
+        framesProcessed: 0,
+        xrunCount: 5,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        callbackBudgetUs: 666,
+        callbackSession: CallbackWindowStats(
+          calls: 90000,
+          lateCalls: 12,
+          gapEvents: 4,
+          maxUs: 1900,
+          meanUs: 140,
+          maxGapUs: 4100,
+          buckets: [80000, 9000, 800, 100, 50, 30, 8, 12],
+          xruns: [4, 1, 0, 0],
+        ),
+        callbackArmed: CallbackWindowStats(
+          calls: 30000,
+          lateCalls: 11,
+          gapEvents: 4,
+          maxUs: 1900,
+          meanUs: 210,
+          maxGapUs: 4100,
+          buckets: [20000, 8000, 900, 50, 20, 10, 9, 11],
+          xruns: [4, 1, 0, 0],
+        ),
+      );
+      final status = buildRepo().state.status;
+
+      expect(status.callbackBudgetUs, 666);
+      expect(status.xrunCount, 5);
+      expect(status.callbackSession.lateCalls, 12);
+      expect(status.callbackSession.xrunsOf(XrunKind.playbackUnderrun), 4);
+      expect(status.callbackSession.xrunsOf(XrunKind.captureOverrun), 1);
+      expect(status.callbackSession.xrunTotal, 5);
+      expect(status.callbackArmed.meanUs, 210);
+      expect(status.callbackArmed.hasTrouble, isTrue);
+      // Armed vs unarmed: 11 of the 12 missed deadlines, and every dropout,
+      // happened inside the armed window.
+      expect(
+        status.callbackSession.lateCalls - status.callbackArmed.lateCalls,
+        1,
+      );
+      expect(
+        status.callbackSession.xrunTotal - status.callbackArmed.xrunTotal,
+        0,
+      );
+    });
+
+    test('EngineStatus telemetry defaults to nothing measured', () {
+      const status = EngineStatus();
+      expect(status.callbackBudgetUs, 0);
+      expect(status.callbackSession, CallbackWindowStats.empty);
+      expect(status.callbackArmed, CallbackWindowStats.empty);
+      expect(status.callbackSession.hasTrouble, isFalse);
+      // ...and the telemetry participates in EngineStatus equality.
+      expect(
+        status,
+        isNot(
+          equals(
+            const EngineStatus(
+              callbackArmed: CallbackWindowStats(lateCalls: 1),
+            ),
+          ),
+        ),
+      );
+      expect(status, isNot(equals(const EngineStatus(callbackBudgetUs: 666))));
+    });
   });
 
   group('looperState stream', () {

@@ -244,6 +244,13 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     }
   }
   out->input_cond_mask = cond_mask;
+  /* Audio-callback telemetry (#722). budget_ns is written by the control
+   * thread while the device is shut, so this plain read never races the audio
+   * thread; the window counters are relaxed atomics, read field-wise like
+   * every other metering value above. */
+  out->cb_budget_us = (uint32_t)(engine->cb_timing.budget_ns / 1000u);
+  le_cb_window_read(&engine->cb_timing.session, &out->cb_session);
+  le_cb_window_read(&engine->cb_timing.armed, &out->cb_armed);
 }
 
 void le_engine_get_track(le_engine* engine, int32_t channel,

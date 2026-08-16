@@ -814,4 +814,201 @@ void main() {
       expect(snapshot.toString(), contains('backend: miniaudio'));
     });
   });
+
+  group('CallbackWindowStats', () {
+    test('empty reads as an unmeasured window', () {
+      const stats = CallbackWindowStats.empty;
+      expect(stats.calls, 0);
+      expect(stats.lateCalls, 0);
+      expect(stats.gapEvents, 0);
+      expect(stats.maxUs, 0);
+      expect(stats.meanUs, 0);
+      expect(stats.maxGapUs, 0);
+      expect(stats.buckets, hasLength(LE_CB_BUCKETS));
+      expect(stats.xruns, hasLength(LE_XRUN_KINDS));
+      expect(stats.xrunTotal, 0);
+      expect(stats.hasTrouble, isFalse);
+    });
+
+    test('xrunsOf reads each kind by its native ordinal', () {
+      const stats = CallbackWindowStats(xruns: [1, 2, 3, 4]);
+      expect(stats.xrunsOf(XrunKind.playbackUnderrun), 1);
+      expect(stats.xrunsOf(XrunKind.captureOverrun), 2);
+      expect(stats.xrunsOf(XrunKind.playbackResync), 3);
+      expect(stats.xrunsOf(XrunKind.backendOverload), 4);
+      expect(stats.xrunTotal, 10);
+      expect(stats.hasTrouble, isTrue);
+    });
+
+    test('xrunsOf tolerates a short list rather than throwing', () {
+      // Defensive: a hand-built stub (a fake engine in another package's
+      // tests) must not blow up the readers.
+      const stats = CallbackWindowStats(xruns: [5]);
+      expect(stats.xrunsOf(XrunKind.playbackUnderrun), 5);
+      expect(stats.xrunsOf(XrunKind.backendOverload), 0);
+    });
+
+    test('hasTrouble catches a missed deadline and a starved device', () {
+      expect(const CallbackWindowStats(calls: 100).hasTrouble, isFalse);
+      expect(
+        const CallbackWindowStats(calls: 100, lateCalls: 1).hasTrouble,
+        isTrue,
+      );
+      expect(
+        const CallbackWindowStats(calls: 100, gapEvents: 1).hasTrouble,
+        isTrue,
+      );
+    });
+
+    test('equality covers every counter, including the arrays', () {
+      const base = CallbackWindowStats(
+        calls: 10,
+        lateCalls: 1,
+        gapEvents: 2,
+        maxUs: 900,
+        meanUs: 120,
+        maxGapUs: 2000,
+        buckets: [1, 2, 3, 4, 5, 6, 7, 8],
+        xruns: [1, 0, 0, 0],
+      );
+      expect(base, equals(base));
+      expect(base.hashCode, base.hashCode);
+      expect(
+        base,
+        isNot(equals(const CallbackWindowStats(calls: 11, lateCalls: 1))),
+      );
+      expect(
+        const CallbackWindowStats(buckets: [1, 0, 0, 0, 0, 0, 0, 0]),
+        isNot(equals(CallbackWindowStats.empty)),
+      );
+      expect(
+        const CallbackWindowStats(xruns: [0, 1, 0, 0]),
+        isNot(equals(CallbackWindowStats.empty)),
+      );
+      expect(base.toString(), contains('late: 1'));
+    });
+  });
+
+  group('EngineSnapshot callback telemetry (#722)', () {
+    test('projects both windows and the budget off the native struct', () {
+      final ptr = calloc<le_snapshot>();
+      try {
+        ptr.ref.cb_budget_us = 666;
+        ptr.ref.cb_session
+          ..calls = 90000
+          ..late_calls = 12
+          ..gap_events = 3
+          ..max_us = 1900
+          ..mean_us = 140
+          ..max_gap_us = 4100;
+        for (var i = 0; i < LE_CB_BUCKETS; i++) {
+          ptr.ref.cb_session.buckets[i] = i + 1;
+        }
+        for (var i = 0; i < LE_XRUN_KINDS; i++) {
+          ptr.ref.cb_session.xruns[i] = i;
+        }
+        ptr.ref.cb_armed
+          ..calls = 30000
+          ..late_calls = 11
+          ..gap_events = 3
+          ..max_us = 1900
+          ..mean_us = 210
+          ..max_gap_us = 4100;
+        ptr.ref.cb_armed.xruns[XrunKind.playbackUnderrun.index] = 9;
+
+        final snapshot = EngineSnapshot.fromNative(ptr.ref, const []);
+
+        expect(snapshot.callbackBudgetUs, 666);
+        expect(snapshot.callbackSession.calls, 90000);
+        expect(snapshot.callbackSession.lateCalls, 12);
+        expect(snapshot.callbackSession.gapEvents, 3);
+        expect(snapshot.callbackSession.maxUs, 1900);
+        expect(snapshot.callbackSession.meanUs, 140);
+        expect(snapshot.callbackSession.maxGapUs, 4100);
+        expect(
+          snapshot.callbackSession.buckets,
+          [1, 2, 3, 4, 5, 6, 7, 8],
+        );
+        expect(snapshot.callbackSession.xruns, [0, 1, 2, 3]);
+
+        // The armed window is the suspect; the session window is its control.
+        expect(snapshot.callbackArmed.calls, 30000);
+        expect(snapshot.callbackArmed.lateCalls, 11);
+        expect(
+          snapshot.callbackArmed.xrunsOf(XrunKind.playbackUnderrun),
+          9,
+        );
+        // "Unarmed" is the difference of the counts: 60000 calls, 1 of them
+        // late — the comparison the whole instrument exists for.
+        expect(
+          snapshot.callbackSession.calls - snapshot.callbackArmed.calls,
+          60000,
+        );
+        expect(
+          snapshot.callbackSession.lateCalls - snapshot.callbackArmed.lateCalls,
+          1,
+        );
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('an engine that never opened a device reports nothing measured', () {
+      final ptr = calloc<le_snapshot>();
+      try {
+        final snapshot = EngineSnapshot.fromNative(ptr.ref, const []);
+        expect(snapshot.callbackBudgetUs, 0);
+        expect(snapshot.callbackSession, CallbackWindowStats.empty);
+        expect(snapshot.callbackArmed, CallbackWindowStats.empty);
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('the telemetry fields participate in equality', () {
+      const base = EngineSnapshot.initial();
+      expect(
+        base,
+        isNot(
+          equals(
+            const EngineSnapshot(
+              isRunning: false,
+              sampleRate: 0,
+              bufferFrames: 0,
+              framesProcessed: 0,
+              xrunCount: 0,
+              inputRms: 0,
+              inputPeak: 0,
+              outputRms: 0,
+              latencyState: LatencyState.idle,
+              measuredLatencyMs: -1,
+
+              callbackBudgetUs: 666,
+            ),
+          ),
+        ),
+      );
+      expect(
+        base,
+        isNot(
+          equals(
+            const EngineSnapshot(
+              isRunning: false,
+              sampleRate: 0,
+              bufferFrames: 0,
+              framesProcessed: 0,
+              xrunCount: 0,
+              inputRms: 0,
+              inputPeak: 0,
+              outputRms: 0,
+              latencyState: LatencyState.idle,
+              measuredLatencyMs: -1,
+
+              callbackArmed: CallbackWindowStats(lateCalls: 1),
+            ),
+          ),
+        ),
+      );
+    });
+  });
 }

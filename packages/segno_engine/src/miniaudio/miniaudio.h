@@ -6789,6 +6789,35 @@ typedef void (* ma_device_notification_proc)(const ma_device_notification* pNoti
 
 
 /*
+SEGNO PATCH: backend-dropout hook (segno issue #722).
+
+miniaudio's public API exposes NO underrun/overrun signal. The ALSA data loop
+knows about them precisely — it recovers from every -EPIPE itself — but the only
+trace it leaves is an ma_log DEBUG line ("EPIPE (read)" / "EPIPE (write)"), and
+matching log strings is not an instrument. This hook is called at those exact
+recovery points, plus at the SEGNO-PATCH slipped-playback resync, so the host can
+count real device dropouts instead of guessing.
+
+Called ON the ALSA data-loop (real-time) thread, in the middle of a recovery: an
+implementation must do no more than bump a counter. `pUserData` is the device's
+ma_device_config.pUserData. `kind` is:
+
+    0 = playback underrun  (snd_pcm_writei returned -EPIPE)
+    1 = capture overrun    (snd_pcm_readi  returned -EPIPE)
+    2 = playback resync    (the slipped-playback drop+prepare below)
+
+These integers are pinned: segno's le_xrun_kind mirrors them one-for-one.
+
+Global rather than per-device so it needs no ma_device_config field (keeping the
+patch to a declaration, a definition, and three call sites). NULL = no hook, the
+stock behaviour. Set it before ma_device_init and clear it after the device is
+uninited — the data-loop thread is the only reader and only exists in between.
+*/
+typedef void (* ma_segno_xrun_proc)(void* pUserData, int kind);
+extern ma_segno_xrun_proc ma_segno_xrun_callback;
+
+
+/*
 The callback for processing audio data from the device.
 
 The data callback is fired by miniaudio whenever the device needs to have more data delivered to a playback device, or when a capture device has some data
@@ -11437,6 +11466,11 @@ IMPLEMENTATION
 #if defined(MINIAUDIO_IMPLEMENTATION) || defined(MA_IMPLEMENTATION)
 #ifndef miniaudio_c
 #define miniaudio_c
+
+/* SEGNO PATCH: the backend-dropout hook declared near ma_device_notification_proc
+ * above. Defined here — outside every backend guard — so it links on platforms
+ * that have no ALSA (macOS/Windows), where it simply stays NULL. */
+ma_segno_xrun_proc ma_segno_xrun_callback = NULL;
 
 #include <assert.h>
 #include <limits.h>         /* For INT_MAX */
@@ -28312,6 +28346,11 @@ static ma_result ma_device_read__alsa(ma_device* pDevice, void* pFramesOut, ma_u
             } else if (resultALSA == -EPIPE) {
                 ma_log_postf(ma_device_get_log(pDevice), MA_LOG_LEVEL_DEBUG, "EPIPE (read)\n");
 
+                /* SEGNO PATCH (#722): a real capture overrun — tell the host. */
+                if (ma_segno_xrun_callback != NULL) {
+                    ma_segno_xrun_callback(pDevice->pUserData, 1);
+                }
+
                 /* Overrun. Recover + restart, then try again. SEGNO PATCH: on a
                  * failure here we CONTINUE (retry) rather than returning an error.
                  * Returning would exit miniaudio's data loop and leave the device
@@ -28376,6 +28415,13 @@ static ma_result ma_device_write__alsa(ma_device* pDevice, const void* pFrames, 
         if (st == MA_SND_PCM_STATE_RUNNING && bufFrames > 0) {
             ma_snd_pcm_sframes_t a = ((ma_snd_pcm_avail_proc)pDevice->pContext->alsa.snd_pcm_avail)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback);
             if (a > (ma_snd_pcm_sframes_t)bufFrames) {
+                /* SEGNO PATCH (#722): the slip itself is a dropout the stock
+                 * stream never raises an XRUN for, and the drop+prepare below is
+                 * audible. Count it as its own kind so a bench can tell it apart
+                 * from an ordinary underrun. */
+                if (ma_segno_xrun_callback != NULL) {
+                    ma_segno_xrun_callback(pDevice->pUserData, 2);
+                }
                 ((ma_snd_pcm_drop_proc)pDevice->pContext->alsa.snd_pcm_drop)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback);
                 ((ma_snd_pcm_prepare_proc)pDevice->pContext->alsa.snd_pcm_prepare)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback);
             }
@@ -28400,6 +28446,11 @@ static ma_result ma_device_write__alsa(ma_device* pDevice, const void* pFrames, 
                 continue;   /* Try again. */
             } else if (resultALSA == -EPIPE) {
                 ma_log_postf(ma_device_get_log(pDevice), MA_LOG_LEVEL_DEBUG, "EPIPE (write)\n");
+
+                /* SEGNO PATCH (#722): a real playback underrun — tell the host. */
+                if (ma_segno_xrun_callback != NULL) {
+                    ma_segno_xrun_callback(pDevice->pUserData, 0);
+                }
 
                 /* Underrun. Recover and try again. SEGNO PATCH: retry (continue)
                  * on failure instead of returning an error, so a startup underrun
