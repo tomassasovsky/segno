@@ -60,7 +60,10 @@ extern "C" {
  * sample it replaces, which sits at ~clip_level). The floor is physics — a
  * sample was clipped precisely because the true signal was beyond the rail
  * for the whole run — and the +6 dB ceiling means AR divergence on
- * pathological input can never exceed twice full scale. */
+ * pathological input can never exceed twice full scale. The ceiling binds
+ * reconstructed values only: where the original sample already exceeds it
+ * (clip_level set well below the material's true peaks), the ceiling lifts
+ * to the original — a repair never attenuates the sample it replaces. */
 #define LE_DECLIP_CLAMP_X 2.0f
 
 /* Caller-allocated scratch (~33 KB): the only working memory the algorithm

@@ -47,15 +47,23 @@
 /* Floor-and-cap for one repaired sample (header: CONSERVATIVE BOUND). `orig`
  * is the rail-flattened sample being replaced. A non-finite model value
  * (impossible for the spline, defense-in-depth for AR) collapses to `orig` —
- * i.e. that sample passes through. */
+ * i.e. that sample passes through.
+ *
+ * The cap binds RECONSTRUCTED values only: when `orig` itself already
+ * exceeds it (a clip_level passed well below the material's true peaks
+ * sweeps healthy loud samples into a run), the ceiling lifts to `orig` — a
+ * repair may never attenuate the sample it replaces. Floor first would then
+ * fight cap; ordering is settled by making the ceiling max(cap, |orig|). */
 static float le_declip_bound(float v, float orig, int positive,
                              float clip_level) {
-  const float cap = LE_DECLIP_CLAMP_X * clip_level;
+  float cap = LE_DECLIP_CLAMP_X * clip_level;
   if (!isfinite(v)) return orig;
   if (positive) {
+    if (cap < orig) cap = orig;
     if (v < orig) v = orig;
     if (v > cap) v = cap;
   } else {
+    if (orig < -cap) cap = -orig;
     if (v > orig) v = orig;
     if (v < -cap) v = -cap;
   }

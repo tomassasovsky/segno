@@ -31,12 +31,15 @@ extern "C" {
 #define LE_HALFBAND_HALF 29
 
 /* 2:1 decimate: y[i] = lowpass(x)[2i]. y must hold (n + 1) / 2 samples and
- * must not overlap x. Returns the output length, or -1 on invalid args. */
+ * must not overlap x. Returns the output length, or -1 on invalid args —
+ * NULL pointers, n == 0, or an output length that would not fit the int32
+ * return (n such that (n + 1) / 2 > INT32_MAX). */
 int32_t le_halfband_decimate(const float* x, uint32_t n, float* y);
 
 /* 2:1 interpolate: y = lowpass(zero-stuffed x) * 2. y must hold 2 * n
  * samples and must not overlap x. Returns the output length (2 * n), or -1
- * on invalid args. */
+ * on invalid args — NULL pointers, n == 0, or n > INT32_MAX / 2 (the output
+ * length 2 * n must fit the int32 return; rejected before y is touched). */
 int32_t le_halfband_interpolate(const float* x, uint32_t n, float* y);
 
 #ifdef __cplusplus

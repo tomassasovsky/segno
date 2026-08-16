@@ -43,7 +43,10 @@ int32_t le_halfband_decimate(const float* x, uint32_t n, float* y) {
   uint32_t out_len;
   uint32_t i;
   if (x == NULL || y == NULL || n == 0) return -1;
-  out_len = (n + 1) / 2;
+  /* (n + 1) / 2 without the n == UINT32_MAX wrap; reject lengths whose
+   * output count cannot ride the int32 return (header contract). */
+  out_len = n / 2 + (n & 1u);
+  if (out_len > (uint32_t)INT32_MAX) return -1;
   for (i = 0; i < out_len; ++i) {
     const int64_t t = 2 * (int64_t)i;
     double acc = (double)le_hb_center * (double)le_hb_at(x, n, t);
@@ -60,7 +63,12 @@ int32_t le_halfband_decimate(const float* x, uint32_t n, float* y) {
 
 int32_t le_halfband_interpolate(const float* x, uint32_t n, float* y) {
   uint32_t i;
-  if (x == NULL || y == NULL || n == 0) return -1;
+  /* 2 * n must fit the int32 return (header contract) — and the guard also
+   * keeps the uint32 loop bound below from wrapping. Rejected before y is
+   * written. */
+  if (x == NULL || y == NULL || n == 0 || n > (uint32_t)INT32_MAX / 2u) {
+    return -1;
+  }
   for (i = 0; i < 2 * n; ++i) {
     const int64_t t = (int64_t)i;
     double acc = (double)le_hb_center * (double)le_hb_up_at(x, n, t);

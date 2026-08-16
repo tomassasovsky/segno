@@ -20430,6 +20430,42 @@ static void test_declip_deterministic_and_arg_guards(void) {
                           &g_declip_scratch) == -1);
 }
 
+/* A clip_level passed well below the material's true peaks (0.4 on a clean
+ * 0.9 sine) sweeps healthy loud samples into detected runs. The repair may
+ * reshape inside those runs, but the documented posture holds sample by
+ * sample: a positive sample never decreases, a negative one never increases
+ * (the +6 dB cap binds reconstructed values only — where the original
+ * already exceeds it, the ceiling lifts to the original). Regression: the
+ * old floor-then-cap order pulled the true 0.9 peaks down to 0.8. */
+static void test_declip_low_clip_level_never_attenuates(void) {
+  int32_t reps;
+  int i;
+  float peak = 0.0f;
+  printf("test_declip_low_clip_level_never_attenuates\n");
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clipped[i] =
+        (float)(0.9 * sin(2.0 * M_PI * 500.0 * (double)i / 96000.0));
+  }
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.4f, &g_declip_scratch);
+  CHECK(reps > 0); /* the low level detects "runs" all over the sine */
+  CHECK(declip_all_finite(g_declip_work, kDeclipN) == 1);
+  for (i = 0; i < kDeclipN; ++i) {
+    if (g_declip_clipped[i] >= 0.0f) {
+      CHECK(g_declip_work[i] >= g_declip_clipped[i]);
+    } else {
+      CHECK(g_declip_work[i] <= g_declip_clipped[i]);
+    }
+    /* Per-sample ceiling: max(2 * clip_level, |original|). */
+    CHECK(fabsf(g_declip_work[i]) <=
+          (fabsf(g_declip_clipped[i]) > 0.8f ? fabsf(g_declip_clipped[i])
+                                             : 0.8f) +
+              1e-6f);
+    if (fabsf(g_declip_work[i]) > peak) peak = fabsf(g_declip_work[i]);
+  }
+  CHECK(peak >= 0.89f); /* the true 0.9 peaks survived the cap */
+}
+
 static float g_hb_half[kDeclipN / 2 + 1];
 static float g_hb_back[kDeclipN];
 
@@ -20491,7 +20527,10 @@ static void test_halfband_rejects_out_of_band(void) {
 
 /* Length contracts and argument guards: odd input length rounds the
  * decimated length up ((n + 1) / 2), interpolate always returns 2n, NULL /
- * zero-length arguments are rejected. */
+ * zero-length arguments are rejected, and lengths whose OUTPUT count would
+ * not fit the int32 return are rejected up front (before any buffer access —
+ * the small buffers passed with the huge n below are never touched, or these
+ * calls would crash). */
 static void test_halfband_lengths_and_arg_guards(void) {
   float in7[7] = {0.0f, 1.0f, 0.0f, -1.0f, 0.0f, 1.0f, 0.0f};
   float dec[4];
@@ -20506,6 +20545,17 @@ static void test_halfband_lengths_and_arg_guards(void) {
   CHECK(le_halfband_interpolate(NULL, 4, interp) == -1);
   CHECK(le_halfband_interpolate(dec, 0, interp) == -1);
   CHECK(le_halfband_interpolate(dec, 4, NULL) == -1);
+  /* int32 return-width guards: 2n (interpolate) and (n + 1) / 2 (decimate,
+   * incl. the n + 1 wrap at UINT32_MAX) must fit; the old code returned a
+   * wrapped/negative length after writing the whole output. */
+  CHECK(le_halfband_interpolate(dec, (uint32_t)INT32_MAX / 2u + 1u, interp) ==
+        -1);
+  CHECK(le_halfband_interpolate(dec, UINT32_MAX, interp) == -1);
+  CHECK(le_halfband_decimate(in7, UINT32_MAX, dec) == -1);
+  /* Largest accepted interpolate length is exactly INT32_MAX / 2 — guard is
+   * a contract line, not a fuzzy margin (rejected before y is touched, so
+   * no giant buffer is needed to probe it... but an accepted call WOULD
+   * write, so only the reject side is probed here). */
 }
 
 int main(void) {
@@ -21002,6 +21052,7 @@ int main(void) {
   test_declip_sustained_rail_pass_through();
   test_declip_pathological_stable_and_deterministic();
   test_declip_deterministic_and_arg_guards();
+  test_declip_low_clip_level_never_attenuates();
   test_halfband_roundtrip_transparent_and_aligned();
   test_halfband_rejects_out_of_band();
   test_halfband_lengths_and_arg_guards();
