@@ -500,14 +500,16 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * into the next session. The SETTING (a_clock_mode) persists, seeded once
    * in le_engine_create like a_looper_mode/a_primary_track. */
   le_midi_clock_reset(&engine->midi_clock);
-  atomic_store_explicit(&engine->a_xruns, 0u, memory_order_relaxed); /* per session */
-  /* Callback telemetry (#722): per session, like a_xruns above. The device
-   * period is not negotiated yet at configure time — le_engine_start reseeds
-   * this from le_device_open_result — and a 0 period deliberately leaves the
-   * whole thing inert: an engine driven by the native test pump has no device
-   * deadline to miss and must not manufacture one. */
-  le_cb_timing_configure(&engine->cb_timing, load_i32(&engine->a_buffer_frames),
-                         sample_rate);
+  /* Callback telemetry + the flat dropout tally (#722), cleared together and
+   * per session. Rate 0 = INERT on purpose: the device is not open yet at
+   * configure time (le_engine_start calls le_engine_configure_callback_budget
+   * with the negotiated rate once it is), and an engine driven by the native
+   * test pump has no device deadline to miss and must not manufacture one.
+   * Deliberately NOT seeded from a_buffer_frames here — on a restart that
+   * atomic still holds the PREVIOUS session's period until le_engine_start
+   * republishes it, so reading it would arm the instrument against a stale
+   * deadline for the length of the open. */
+  le_engine_configure_callback_budget(engine, 0);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity on every fresh start */
   /* Limiter off by default (the app enables it); ceiling just below full scale.
    * Overdub feedback unity by default == classic additive overdub. */
@@ -691,18 +693,22 @@ void le_engine_note_backend_xrun(le_engine* engine, int32_t kind) {
 }
 
 void le_engine_note_callback_span(le_engine* engine, uint64_t entry_ns,
-                                  uint64_t exit_ns) {
+                                  uint64_t exit_ns, uint32_t frames) {
   if (engine == NULL) return;
   le_cb_timing_note(
-      &engine->cb_timing, entry_ns, exit_ns,
+      &engine->cb_timing, entry_ns, exit_ns, frames,
       atomic_load_explicit(&engine->a_perf_armed, memory_order_relaxed) != 0);
 }
 
 void le_engine_configure_callback_budget(le_engine* engine,
-                                         int32_t period_frames,
                                          int32_t sample_rate) {
   if (engine == NULL) return;
-  le_cb_timing_configure(&engine->cb_timing, period_frames, sample_rate);
+  /* The flat tally and the per-kind windows are two views of the same events,
+   * so they are cleared TOGETHER and nowhere else. Clearing only the windows
+   * here would leave xrun_count carrying dropouts the breakdown no longer
+   * shows — a reading that looks like a bug in the instrument. */
+  atomic_store_explicit(&engine->a_xruns, 0u, memory_order_relaxed);
+  le_cb_timing_configure(&engine->cb_timing, sample_rate);
 }
 
 void le_engine_mark_device_lost(le_engine* engine) {
@@ -903,13 +909,13 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   /* Publish the negotiated parameters (configure() reset them above). */
   store_i32(&engine->a_active_backend, info.active_backend);
   store_i32(&engine->a_buffer_frames, info.buffer_frames);
-  /* Callback telemetry (#722): NOW the period deadline is real — le_engine_
-   * configure above ran before info.buffer_frames was published and therefore
-   * seeded a 0 (inert) budget. Reseeding here also clears both windows, so the
-   * numbers a bench reads always belong to the device session in front of it.
-   * Still before start(), so the callback cannot be running yet. */
-  le_engine_configure_callback_budget(engine, info.buffer_frames,
-                                      info.sample_rate);
+  /* Callback telemetry (#722): arm the instrument at the negotiated rate.
+   * le_engine_configure above deliberately left it inert, so this is the single
+   * point where a device session's measurement begins; it clears both windows
+   * and a_xruns together, so the numbers a bench reads always belong to the
+   * device session in front of it. Still before start(), so the callback cannot
+   * be running yet — nothing races this write. */
+  le_engine_configure_callback_budget(engine, info.sample_rate);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   engine->lat_active = 0;
   engine->lat_emit_remaining = 0;

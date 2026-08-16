@@ -418,6 +418,19 @@ class LooperRepository {
   /// The current state, read synchronously from the engine.
   LooperState get state => _project(_engine.snapshot());
 
+  /// The audio callback's self-measurement (native issue #722), read
+  /// synchronously from the engine: per-callback duration against its
+  /// deadline, the entry-to-entry starvation detector, and real backend
+  /// dropouts — in a whole-session window and a since-the-last-arm window.
+  ///
+  /// A **pull**, never part of [state] or the [looperState] stream. Every
+  /// counter here changes on every audio callback, so putting them in the
+  /// projected state would make it unequal to the previous one on every tick,
+  /// defeat [looperState]'s dedupe, and rebuild the whole UI 60 times a second
+  /// on an idle rig. Read it when something asks — a bench readout, a
+  /// diagnostics screen — not on a frame timer.
+  CallbackTelemetry get callbackTelemetry => _engine.callbackTelemetry();
+
   /// The most recent config passed to [startEngine], or `null` before the first
   /// successful start.
   EngineConfig? get lastEngineConfig => _lastEngineConfig;
@@ -681,9 +694,6 @@ class LooperRepository {
       recordOffsetFrames: s.recordOffsetFrames,
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
       activeBackend: audioBackendFromEngine(s.activeBackend),
-      callbackBudgetUs: s.callbackBudgetUs,
-      callbackSession: s.callbackSession,
-      callbackArmed: s.callbackArmed,
     ),
     // From the repository's own re-apply CACHE, not `s.outputEnabledMask`, on
     // the same reasoning as the quantize override above: the gate is re-applied

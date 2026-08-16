@@ -244,11 +244,14 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     }
   }
   out->input_cond_mask = cond_mask;
-  /* Audio-callback telemetry (#722). budget_ns is written by the control
-   * thread while the device is shut, so this plain read never races the audio
-   * thread; the window counters are relaxed atomics, read field-wise like
-   * every other metering value above. */
-  out->cb_budget_us = (uint32_t)(engine->cb_timing.budget_ns / 1000u);
+  /* Audio-callback telemetry (#722). Every field is a relaxed atomic — the
+   * budget is published per callback (it tracks the block size the duplex loop
+   * actually delivered, not the device period) — read field-wise like every
+   * other metering value above. */
+  out->cb_budget_us = (uint32_t)(atomic_load_explicit(
+                                     &engine->cb_timing.a_budget_ns,
+                                     memory_order_relaxed) /
+                                 1000u);
   le_cb_window_read(&engine->cb_timing.session, &out->cb_session);
   le_cb_window_read(&engine->cb_timing.armed, &out->cb_armed);
 }

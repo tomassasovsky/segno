@@ -2263,53 +2263,65 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   return LE_OK;
 }
 
+/* One window, formatted as `{calls=… late=… …}` into `buf`. Split out so the
+ * summary below prints both windows through one definition instead of a
+ * forty-argument fprintf whose two halves could drift apart. */
+static void le_cbtel_format_window(const le_cb_window_snapshot* w, char* buf,
+                                   size_t cap) {
+  snprintf(buf, cap,
+           "{calls=%llu late=%llu gaps=%llu max=%uus mean=%uus maxgap=%uus"
+           " xrun=%llu/%llu/%llu/%llu hist=%llu,%llu,%llu,%llu,%llu,%llu,%llu,"
+           "%llu}",
+           (unsigned long long)w->calls, (unsigned long long)w->late_calls,
+           (unsigned long long)w->gap_events, w->max_us, w->mean_us,
+           w->max_gap_us,
+           (unsigned long long)w->xruns[LE_XRUN_PLAYBACK_UNDERRUN],
+           (unsigned long long)w->xruns[LE_XRUN_CAPTURE_OVERRUN],
+           (unsigned long long)w->xruns[LE_XRUN_PLAYBACK_RESYNC],
+           (unsigned long long)w->xruns[LE_XRUN_BACKEND_OVERLOAD],
+           (unsigned long long)w->buckets[0], (unsigned long long)w->buckets[1],
+           (unsigned long long)w->buckets[2], (unsigned long long)w->buckets[3],
+           (unsigned long long)w->buckets[4], (unsigned long long)w->buckets[5],
+           (unsigned long long)w->buckets[6], (unsigned long long)w->buckets[7]);
+}
+
 /* One-line callback-telemetry summary, written to stderr when a capture
  * disarms (#722). The appliance runs under systemd, so stderr IS the journal
  * (`journalctl -u segno.service`) — the place a bench operator is already
- * looking. Emitted from the CONTROL thread, after the quiescent handshake and
- * the frees: no formatting, no I/O, and no allocation ever happens on the audio
- * thread, which only ever bumps relaxed atomics.
+ * looking. Emitted from the CONTROL thread: no formatting, no I/O, and no
+ * allocation ever happens on the audio thread, which only bumps relaxed
+ * atomics.
+ *
+ * Emitted on BOTH disarm outcomes. `stalled=1` marks the path where the
+ * quiescent handshake timed out and le_perf_disarm bails with LE_ERR_DEVICE —
+ * i.e. the device callback has stopped coming back, which is precisely when
+ * these numbers matter most and precisely when a summary printed only on the
+ * happy path would be missing.
  *
  * Silent unless a real device drove callbacks in the armed window, so the
  * device-free native test pump (and any never-started engine) prints nothing.
- * Both windows are printed on one line: the armed window is the suspect, and
- * the session window is the control it has to be read against — "unarmed" is
- * their difference. */
-static void le_perf_log_callback_telemetry(le_engine* engine) {
+ * Both windows go on one line: the armed window is the suspect, the session
+ * window is the control it has to be read against — "unarmed" is their
+ * difference. */
+static void le_perf_log_callback_telemetry(le_engine* engine, int stalled) {
   le_cb_window_snapshot armed;
   le_cb_window_snapshot session;
-  const uint32_t budget_us = (uint32_t)(engine->cb_timing.budget_ns / 1000u);
+  /* Sized for the pathological case — every 64-bit counter at 20 digits — so
+   * the line is never silently truncated on a long-lived appliance. */
+  char armed_buf[640];
+  char session_buf[640];
   le_cb_window_read(&engine->cb_timing.armed, &armed);
   if (armed.calls == 0) return;
   le_cb_window_read(&engine->cb_timing.session, &session);
+  le_cbtel_format_window(&armed, armed_buf, sizeof(armed_buf));
+  le_cbtel_format_window(&session, session_buf, sizeof(session_buf));
   fprintf(stderr,
-          "segno/cbtel perf-disarm budget=%uus"
-          " armed{calls=%llu late=%llu gaps=%llu max=%uus mean=%uus"
-          " maxgap=%uus xrun=%u/%u/%u/%u"
-          " hist=%u,%u,%u,%u,%u,%u,%u,%u}"
-          " session{calls=%llu late=%llu gaps=%llu max=%uus mean=%uus"
-          " maxgap=%uus xrun=%u/%u/%u/%u"
-          " hist=%u,%u,%u,%u,%u,%u,%u,%u}\n",
-          budget_us, (unsigned long long)armed.calls,
-          (unsigned long long)armed.late_calls,
-          (unsigned long long)armed.gap_events, armed.max_us, armed.mean_us,
-          armed.max_gap_us, armed.xruns[LE_XRUN_PLAYBACK_UNDERRUN],
-          armed.xruns[LE_XRUN_CAPTURE_OVERRUN],
-          armed.xruns[LE_XRUN_PLAYBACK_RESYNC],
-          armed.xruns[LE_XRUN_BACKEND_OVERLOAD], armed.buckets[0],
-          armed.buckets[1], armed.buckets[2], armed.buckets[3],
-          armed.buckets[4], armed.buckets[5], armed.buckets[6],
-          armed.buckets[7], (unsigned long long)session.calls,
-          (unsigned long long)session.late_calls,
-          (unsigned long long)session.gap_events, session.max_us,
-          session.mean_us, session.max_gap_us,
-          session.xruns[LE_XRUN_PLAYBACK_UNDERRUN],
-          session.xruns[LE_XRUN_CAPTURE_OVERRUN],
-          session.xruns[LE_XRUN_PLAYBACK_RESYNC],
-          session.xruns[LE_XRUN_BACKEND_OVERLOAD], session.buckets[0],
-          session.buckets[1], session.buckets[2], session.buckets[3],
-          session.buckets[4], session.buckets[5], session.buckets[6],
-          session.buckets[7]);
+          "segno/cbtel perf-disarm stalled=%d budget=%uus armed%s session%s\n",
+          stalled ? 1 : 0,
+          (uint32_t)(atomic_load_explicit(&engine->cb_timing.a_budget_ns,
+                                          memory_order_relaxed) /
+                     1000u),
+          armed_buf, session_buf);
 }
 
 int32_t le_perf_disarm(le_engine* engine) {
@@ -2347,6 +2359,12 @@ int32_t le_perf_disarm(le_engine* engine) {
        * nothing dispatches to them again) and allocated; a later successful
        * disarm (once the callback recovers) or le_engine_destroy reclaims
        * them. */
+      /* Print the telemetry BEFORE bailing (#722). A stalled callback is the
+       * single most interesting thing this instrument can catch, and this is
+       * the one exit that would otherwise never reach the summary at the end
+       * of the function — the numbers would go missing exactly when they are
+       * worth the most. */
+      le_perf_log_callback_telemetry(engine, /*stalled=*/1);
       return LE_ERR_DEVICE;
     }
   }
@@ -2368,7 +2386,7 @@ int32_t le_perf_disarm(le_engine* engine) {
     }
   }
   engine->perf.input_mask = 0;
-  le_perf_log_callback_telemetry(engine);
+  le_perf_log_callback_telemetry(engine, /*stalled=*/0);
   return LE_OK;
 }
 

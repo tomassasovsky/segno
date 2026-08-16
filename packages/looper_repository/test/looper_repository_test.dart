@@ -366,26 +366,14 @@ void main() {
       expect(status.fxAddedLatencyMs, closeTo(1024 * 1000 / 48000, 1e-9));
     });
 
-    test('projects the audio-callback telemetry onto EngineStatus', () {
+    test('exposes the callback telemetry as a pull, not on the state', () {
       // A 64-frame period at 96 kHz — the appliance's real configuration, and
       // the one #722's clicks were characterised on. The armed window is worse
       // than the session as a whole: exactly the reading this is here to make
       // legible.
-      engine.nextSnapshot = const EngineSnapshot(
-        isRunning: true,
-        sampleRate: 96000,
-        bufferFrames: 64,
-        inputChannels: 2,
-        outputChannels: 2,
-        framesProcessed: 0,
-        xrunCount: 5,
-        inputRms: 0,
-        inputPeak: 0,
-        outputRms: 0,
-        latencyState: le.LatencyState.idle,
-        measuredLatencyMs: -1,
-        callbackBudgetUs: 666,
-        callbackSession: CallbackWindowStats(
+      engine.nextCallbackTelemetry = const CallbackTelemetry(
+        budgetUs: 666,
+        session: CallbackWindowStats(
           calls: 90000,
           lateCalls: 12,
           gapEvents: 4,
@@ -395,7 +383,7 @@ void main() {
           buckets: [80000, 9000, 800, 100, 50, 30, 8, 12],
           xruns: [4, 1, 0, 0],
         ),
-        callbackArmed: CallbackWindowStats(
+        armed: CallbackWindowStats(
           calls: 30000,
           lateCalls: 11,
           gapEvents: 4,
@@ -406,46 +394,48 @@ void main() {
           xruns: [4, 1, 0, 0],
         ),
       );
-      final status = buildRepo().state.status;
+      final telemetry = buildRepo().callbackTelemetry;
 
-      expect(status.callbackBudgetUs, 666);
-      expect(status.xrunCount, 5);
-      expect(status.callbackSession.lateCalls, 12);
-      expect(status.callbackSession.xrunsOf(XrunKind.playbackUnderrun), 4);
-      expect(status.callbackSession.xrunsOf(XrunKind.captureOverrun), 1);
-      expect(status.callbackSession.xrunTotal, 5);
-      expect(status.callbackArmed.meanUs, 210);
-      expect(status.callbackArmed.hasTrouble, isTrue);
+      expect(telemetry.budgetUs, 666);
+      expect(telemetry.session.lateCalls, 12);
+      expect(telemetry.session.xrunsOf(XrunKind.playbackUnderrun), 4);
+      expect(telemetry.session.xrunsOf(XrunKind.captureOverrun), 1);
+      expect(telemetry.session.xrunTotal, 5);
+      expect(telemetry.armed.meanUs, 210);
+      expect(telemetry.armed.hasTrouble, isTrue);
       // Armed vs unarmed: 11 of the 12 missed deadlines, and every dropout,
       // happened inside the armed window.
-      expect(
-        status.callbackSession.lateCalls - status.callbackArmed.lateCalls,
-        1,
-      );
-      expect(
-        status.callbackSession.xrunTotal - status.callbackArmed.xrunTotal,
-        0,
-      );
+      expect(telemetry.session.lateCalls - telemetry.armed.lateCalls, 1);
+      expect(telemetry.session.xrunTotal - telemetry.armed.xrunTotal, 0);
     });
 
-    test('EngineStatus telemetry defaults to nothing measured', () {
-      const status = EngineStatus();
-      expect(status.callbackBudgetUs, 0);
-      expect(status.callbackSession, CallbackWindowStats.empty);
-      expect(status.callbackArmed, CallbackWindowStats.empty);
-      expect(status.callbackSession.hasTrouble, isFalse);
-      // ...and the telemetry participates in EngineStatus equality.
-      expect(
-        status,
-        isNot(
-          equals(
-            const EngineStatus(
-              callbackArmed: CallbackWindowStats(lateCalls: 1),
-            ),
-          ),
-        ),
+    test('telemetry never reaches LooperState, so the dedupe still holds', () {
+      // The regression this guards: these counters tick on every audio
+      // callback, so if they rode EngineStatus no two projections could ever
+      // compare equal — `looperState`'s `next == _last` gate would be
+      // permanently defeated and an IDLE rig would re-broadcast its whole
+      // state (every track, lane and effect) on every poll tick. That is CPU
+      // pressure invented by the instrument that exists to find CPU pressure.
+      final repo = buildRepo();
+      final before = repo.state;
+      engine.nextCallbackTelemetry = const CallbackTelemetry(
+        budgetUs: 666,
+        session: CallbackWindowStats(calls: 1000000, lateCalls: 99),
+        armed: CallbackWindowStats(calls: 999, lateCalls: 42),
       );
-      expect(status, isNot(equals(const EngineStatus(callbackBudgetUs: 666))));
+      expect(repo.state, equals(before));
+      expect(repo.state.status, equals(before.status));
+      // ...while the pull still reports the fresh numbers.
+      expect(repo.callbackTelemetry.session.lateCalls, 99);
+    });
+
+    test('telemetry defaults to nothing measured', () {
+      const telemetry = CallbackTelemetry.empty;
+      expect(telemetry.budgetUs, 0);
+      expect(telemetry.session, CallbackWindowStats.empty);
+      expect(telemetry.armed, CallbackWindowStats.empty);
+      expect(telemetry.session.hasTrouble, isFalse);
+      expect(buildRepo().callbackTelemetry, CallbackTelemetry.empty);
     });
   });
 

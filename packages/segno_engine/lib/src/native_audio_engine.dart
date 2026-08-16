@@ -147,6 +147,17 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  CallbackTelemetry callbackTelemetry() {
+    _checkAlive();
+    // Its own `le_engine_get_snapshot` rather than a field on [snapshot]: this
+    // is a pull-when-asked diagnostic, and the whole point is that it stays off
+    // the render-rate path (see [CallbackTelemetry]). No track/lane reads —
+    // only the telemetry block is projected.
+    _bindings.le_engine_get_snapshot(_engine, _snapshotPtr);
+    return CallbackTelemetry.fromNative(_snapshotPtr.ref);
+  }
+
+  @override
   LoopbackInfo detectLoopback() {
     final ptr = calloc<le_loopback_info>();
     try {

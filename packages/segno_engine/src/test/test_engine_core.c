@@ -1852,30 +1852,34 @@ static void test_xrun_count_tallies_and_resets(void) {
 }
 
 /* ---- audio-callback telemetry (#722) ---- *
- * The instrument itself is pure math over synthetic timestamps, so it is tested
- * that way: no device, no clock, no timing flake. LE_CB_TEST_* pin one 64-frame
- * period at 96 kHz — the appliance's real configuration and exactly the
- * 666 us budget the bug is being hunted against. */
-#define LE_CB_TEST_FRAMES 64
+ * The instrument is pure math over synthetic timestamps, so it is tested that
+ * way: no device, no clock, no timing flake. LE_CB_TEST_* pin the appliance's
+ * real configuration — 64 frames at 96 kHz, a 666 us deadline, which is exactly
+ * the budget the bug is being hunted against. */
+#define LE_CB_TEST_FRAMES 64u
 #define LE_CB_TEST_RATE 96000
 #define LE_CB_TEST_BUDGET_NS 666666ull /* 64 * 1e9 / 96000, truncated */
+#define LE_CB_TEST_BUCKET_NS (LE_CB_TEST_BUDGET_NS / LE_CB_BUCKETS)
 
-/* The budget/bucket/gap thresholds derive from the negotiated period, and a
- * period the engine never negotiated leaves the whole instrument inert. */
+/* The rate is what arms the instrument; a rate it never got leaves it inert. */
 static void test_cb_timing_configure_derives_budget(void) {
   printf("test_cb_timing_configure_derives_budget\n");
   le_cb_timing t;
   memset(&t, 0, sizeof(t));
 
-  le_cb_timing_configure(&t, LE_CB_TEST_FRAMES, LE_CB_TEST_RATE);
-  CHECK(t.budget_ns == LE_CB_TEST_BUDGET_NS);
-  CHECK(t.bucket_ns == LE_CB_TEST_BUDGET_NS / LE_CB_BUCKETS);
-  CHECK(t.gap_limit_ns == LE_CB_TEST_BUDGET_NS + LE_CB_TEST_BUDGET_NS / 2);
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE);
+  CHECK(t.sample_rate == LE_CB_TEST_RATE);
 
-  /* No device => no deadline => nothing is measured, whatever it is fed. */
-  le_cb_timing_configure(&t, 0, LE_CB_TEST_RATE);
-  CHECK(t.budget_ns == 0);
-  le_cb_timing_note(&t, 0, 10 * LE_CB_TEST_BUDGET_NS, /*armed=*/0);
+  /* The deadline is derived per callback from ITS OWN frame count, and is
+   * published for the snapshot. */
+  le_cb_timing_note(&t, 1000, 1100, LE_CB_TEST_FRAMES, /*armed=*/0);
+  CHECK(atomic_load_explicit(&t.a_budget_ns, memory_order_relaxed) ==
+        LE_CB_TEST_BUDGET_NS);
+
+  /* No device => no rate => nothing is measured, whatever it is fed. */
+  le_cb_timing_configure(&t, 0);
+  CHECK(t.sample_rate == 0);
+  le_cb_timing_note(&t, 0, 10 * LE_CB_TEST_BUDGET_NS, LE_CB_TEST_FRAMES, 0);
   {
     le_cb_window_snapshot w;
     le_cb_window_read(&t.session, &w);
@@ -1883,7 +1887,18 @@ static void test_cb_timing_configure_derives_budget(void) {
     CHECK(w.late_calls == 0);
   }
 
-  le_cb_timing_note(NULL, 0, 1, 0); /* must not crash */
+  /* A zero-frame callback has no deadline either. */
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE);
+  le_cb_timing_note(&t, 0, 10 * LE_CB_TEST_BUDGET_NS, 0u, 0);
+  {
+    le_cb_window_snapshot w;
+    le_cb_window_read(&t.session, &w);
+    CHECK(w.calls == 0);
+  }
+
+  le_cb_timing_note(NULL, 0, 1, LE_CB_TEST_FRAMES, 0); /* must not crash */
+  le_cb_timing_configure(NULL, LE_CB_TEST_RATE);       /* ditto */
+  le_cb_timing_reset_armed(NULL);                      /* ditto */
 }
 
 /* Running max, over-budget tally, mean, and the histogram bucket each span
@@ -1893,20 +1908,21 @@ static void test_cb_timing_durations_max_late_and_buckets(void) {
   printf("test_cb_timing_durations_max_late_and_buckets\n");
   le_cb_timing t;
   memset(&t, 0, sizeof(t));
-  le_cb_timing_configure(&t, LE_CB_TEST_FRAMES, LE_CB_TEST_RATE);
-  const uint64_t eighth = t.bucket_ns;
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE);
+  const uint64_t eighth = LE_CB_TEST_BUCKET_NS;
 
   /* Entry stamps a full period apart so nothing trips the gap detector; the
    * durations are what is under test. */
   const uint64_t spans[] = {
-      eighth / 2,      /* bucket 0 */
-      eighth * 2 + 1,  /* bucket 2 */
-      eighth * 4 + 1,  /* bucket 4 */
-      eighth * 9,      /* 9/8 of budget: LATE, clamped into the last bucket */
+      eighth / 2,     /* bucket 0 */
+      eighth * 2 + 1, /* bucket 2 */
+      eighth * 4 + 1, /* bucket 4 */
+      eighth * 9,     /* 9/8 of budget: LATE, clamped into the last bucket */
   };
   uint64_t entry = 1000;
   for (size_t i = 0; i < sizeof(spans) / sizeof(spans[0]); ++i) {
-    le_cb_timing_note(&t, entry, entry + spans[i], /*armed=*/0);
+    le_cb_timing_note(&t, entry, entry + spans[i], LE_CB_TEST_FRAMES,
+                      /*armed=*/0);
     entry += LE_CB_TEST_BUDGET_NS;
   }
 
@@ -1935,10 +1951,11 @@ static void test_cb_timing_durations_max_late_and_buckets(void) {
    * marginal ones": the same late_calls with a completely different shape. */
   le_cb_timing t2;
   memset(&t2, 0, sizeof(t2));
-  le_cb_timing_configure(&t2, LE_CB_TEST_FRAMES, LE_CB_TEST_RATE);
+  le_cb_timing_configure(&t2, LE_CB_TEST_RATE);
   entry = 1000;
   for (int i = 0; i < 4; ++i) {
-    le_cb_timing_note(&t2, entry, entry + eighth * 7 + 1, /*armed=*/0);
+    le_cb_timing_note(&t2, entry, entry + eighth * 7 + 1, LE_CB_TEST_FRAMES,
+                      /*armed=*/0);
     entry += LE_CB_TEST_BUDGET_NS;
   }
   le_cb_window_snapshot w2;
@@ -1947,24 +1964,62 @@ static void test_cb_timing_durations_max_late_and_buckets(void) {
   CHECK(w2.buckets[LE_CB_BUCKETS - 1] == 4);
 }
 
-/* The derived starvation signal: consecutive callback ENTRIES more than 1.5
- * periods apart mean the device did not come back on time, whether or not the
- * backend admitted an xrun. The first callback after a start reports no gap. */
+/* The deadline tracks the ACTUAL block size, not the device's period. The
+ * duplex loop delivers min(capture, playback) chunks and short reads, so a
+ * callback that handles a quarter period and takes a third of a period is LATE
+ * — and judging it against a whole period (the bug this pins) would have
+ * reported it comfortably inside budget, in bucket 2 of 8. */
+static void test_cb_timing_budget_follows_the_block_size(void) {
+  printf("test_cb_timing_budget_follows_the_block_size\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE);
+
+  const uint32_t quarter_frames = LE_CB_TEST_FRAMES / 4u; /* 16 frames */
+  const uint64_t quarter_budget_ns =
+      ((uint64_t)quarter_frames * 1000000000ull) / (uint64_t)LE_CB_TEST_RATE;
+  const uint64_t span_ns = LE_CB_TEST_BUDGET_NS / 3u; /* a third of a PERIOD */
+  CHECK(span_ns > quarter_budget_ns);   /* over its own deadline ... */
+  CHECK(span_ns < LE_CB_TEST_BUDGET_NS); /* ... but under a full period */
+
+  le_cb_timing_note(&t, 1000, 1000 + span_ns, quarter_frames, /*armed=*/0);
+  le_cb_window_snapshot w;
+  le_cb_window_read(&t.session, &w);
+  CHECK(w.calls == 1);
+  CHECK(w.late_calls == 1);
+  CHECK(w.buckets[LE_CB_BUCKETS - 1] == 1);
+  CHECK(atomic_load_explicit(&t.a_budget_ns, memory_order_relaxed) ==
+        quarter_budget_ns);
+
+  /* And the gap threshold follows the PREVIOUS callback's budget, so a device
+   * running quarter blocks starves at a quarter-block scale: 1.5 quarter
+   * budgets is the line, which a full period sails past. */
+  le_cb_timing_note(&t, 1000 + LE_CB_TEST_BUDGET_NS,
+                    1000 + LE_CB_TEST_BUDGET_NS + 100, quarter_frames, 0);
+  le_cb_window_read(&t.session, &w);
+  CHECK(w.gap_events == 1);
+}
+
+/* The derived starvation signal: consecutive callback ENTRIES more than 1.5 of
+ * the previous callback's budget apart mean the device did not come back on
+ * time, whether or not the backend admitted an xrun. The first callback after a
+ * start reports no gap. */
 static void test_cb_timing_gap_detector(void) {
   printf("test_cb_timing_gap_detector\n");
   le_cb_timing t;
   memset(&t, 0, sizeof(t));
-  le_cb_timing_configure(&t, LE_CB_TEST_FRAMES, LE_CB_TEST_RATE);
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE);
   const uint64_t period = LE_CB_TEST_BUDGET_NS;
 
   uint64_t entry = 5000;
-  le_cb_timing_note(&t, entry, entry + 100, 0); /* first: no previous entry */
-  entry += period;                              /* on time */
-  le_cb_timing_note(&t, entry, entry + 100, 0);
-  entry += period + period / 2;                 /* exactly 1.5: NOT a gap */
-  le_cb_timing_note(&t, entry, entry + 100, 0);
-  entry += period * 3;                          /* the device starved */
-  le_cb_timing_note(&t, entry, entry + 100, 0);
+  /* first: no previous entry */
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+  entry += period; /* on time */
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+  entry += period + period / 2; /* exactly 1.5: NOT a gap */
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+  entry += period * 3; /* the device starved */
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
 
   le_cb_window_snapshot w;
   le_cb_window_read(&t.session, &w);
@@ -1974,6 +2029,41 @@ static void test_cb_timing_gap_detector(void) {
   CHECK(w.late_calls == 0); /* a starved DEVICE is not a slow callback */
 }
 
+/* One physical dropout is counted ONCE. An ALSA -EPIPE recovery also stalls the
+ * loop, so without suppression the very same event would land as an xrun AND as
+ * a gap_event, and would pin max_gap_us for the rest of the session. The
+ * suppression is one-shot: the next unexplained gap still counts. */
+static void test_cb_timing_recovery_gap_is_not_double_counted(void) {
+  printf("test_cb_timing_recovery_gap_is_not_double_counted\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE);
+  const uint64_t period = LE_CB_TEST_BUDGET_NS;
+
+  uint64_t entry = 1000;
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+  entry += period;
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+
+  /* The backend recovers from an underrun, then hands us a very late block. */
+  le_cb_timing_note_xrun(&t, LE_XRUN_PLAYBACK_UNDERRUN, /*armed=*/0);
+  entry += period * 20;
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+
+  le_cb_window_snapshot w;
+  le_cb_window_read(&t.session, &w);
+  CHECK(w.xruns[LE_XRUN_PLAYBACK_UNDERRUN] == 1);
+  CHECK(w.gap_events == 0); /* explained by the xrun, not counted twice */
+  CHECK(w.max_gap_us == 0); /* and it did not pin the worst-gap figure */
+
+  /* One-shot: an unexplained stall right after still registers. */
+  entry += period * 4;
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+  le_cb_window_read(&t.session, &w);
+  CHECK(w.gap_events == 1);
+  CHECK(w.max_gap_us == (uint32_t)(period * 4 / 1000));
+}
+
 /* The two windows: the session one accumulates everything, the armed one only
  * what happened while armed and only since the most recent arm. "Unarmed" is
  * read as the difference. */
@@ -1981,22 +2071,24 @@ static void test_cb_timing_armed_window(void) {
   printf("test_cb_timing_armed_window\n");
   le_cb_timing t;
   memset(&t, 0, sizeof(t));
-  le_cb_timing_configure(&t, LE_CB_TEST_FRAMES, LE_CB_TEST_RATE);
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE);
   const uint64_t period = LE_CB_TEST_BUDGET_NS;
+  const uint64_t quick = LE_CB_TEST_BUCKET_NS / 2;
 
   uint64_t entry = 1000;
   /* Two calm unarmed callbacks. */
   for (int i = 0; i < 2; ++i) {
-    le_cb_timing_note(&t, entry, entry + t.bucket_ns / 2, /*armed=*/0);
+    le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, /*armed=*/0);
     entry += period;
   }
   le_cb_timing_reset_armed(&t); /* what LE_CMD_PERF_ARM does */
   /* Three armed callbacks, one of them late. */
-  le_cb_timing_note(&t, entry, entry + t.bucket_ns / 2, /*armed=*/1);
+  le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, /*armed=*/1);
   entry += period;
-  le_cb_timing_note(&t, entry, entry + period * 2, /*armed=*/1);
+  le_cb_timing_note(&t, entry, entry + period * 2, LE_CB_TEST_FRAMES,
+                    /*armed=*/1);
   entry += period;
-  le_cb_timing_note(&t, entry, entry + t.bucket_ns / 2, /*armed=*/1);
+  le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, /*armed=*/1);
 
   le_cb_window_snapshot armed;
   le_cb_window_snapshot session;
@@ -2012,18 +2104,18 @@ static void test_cb_timing_armed_window(void) {
   /* A second arm starts the armed window over; the session window does not. */
   le_cb_timing_reset_armed(&t);
   entry += period;
-  le_cb_timing_note(&t, entry, entry + t.bucket_ns / 2, /*armed=*/1);
+  le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, /*armed=*/1);
   le_cb_window_read(&t.armed, &armed);
   le_cb_window_read(&t.session, &session);
   CHECK(armed.calls == 1);
   CHECK(armed.late_calls == 0);
-  CHECK(armed.max_us == (uint32_t)(t.bucket_ns / 2 / 1000));
+  CHECK(armed.max_us == (uint32_t)(quick / 1000));
   CHECK(session.calls == 6);
 }
 
 /* le_engine_note_backend_xrun (the ALSA -EPIPE / resync hook and the ASIO
  * overload hook) tallies per kind into both windows, sums into xrun_count, and
- * — like a_xruns — is per device session. */
+ * — like a_xruns always has — is per device session. */
 static void test_backend_xrun_kinds_tally_and_reset(void) {
   printf("test_backend_xrun_kinds_tally_and_reset\n");
   le_engine* e = make_configured_engine();
@@ -2061,7 +2153,8 @@ static void test_backend_xrun_kinds_tally_and_reset(void) {
   CHECK(s.cb_session.xruns[LE_XRUN_PLAYBACK_UNDERRUN] == 3);
 
   /* A fresh configure (a new device session) clears every window, exactly the
-   * way it clears a_xruns. */
+   * way it clears a_xruns — and clears the two IN LOCKSTEP, so the flat tally
+   * can never disagree with the per-kind breakdown it summarises. */
   le_engine_configure(e, 48000, 1, 1, 1000);
   le_engine_get_snapshot(e, &s);
   CHECK(s.xrun_count == 0);
@@ -2070,32 +2163,45 @@ static void test_backend_xrun_kinds_tally_and_reset(void) {
     CHECK(s.cb_armed.xruns[k] == 0);
   }
 
+  /* Opening the telemetry for a device session clears both together too. */
+  le_engine_note_backend_xrun(e, LE_XRUN_CAPTURE_OVERRUN);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.xrun_count == 1);
+  le_engine_configure_callback_budget(e, LE_CB_TEST_RATE);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.xrun_count == 0);
+  CHECK(s.cb_session.xruns[LE_XRUN_CAPTURE_OVERRUN] == 0);
+
   le_engine_destroy(e);
 }
 
-/* End-to-end through the engine: a configured budget, spans fed the way the
- * device backend feeds them, and the numbers arriving on the snapshot. */
+/* End-to-end through the engine: an armed rate, spans fed the way the device
+ * backend feeds them, and the numbers arriving on the snapshot. */
 static void test_callback_span_reaches_the_snapshot(void) {
   printf("test_callback_span_reaches_the_snapshot\n");
   le_engine* e = make_configured_engine();
   le_snapshot s;
 
-  /* No device has been opened, so there is no deadline and nothing is
-   * measured — the native pump must not manufacture lateness. */
-  le_engine_note_callback_span(e, 0, 10 * LE_CB_TEST_BUDGET_NS);
+  /* No device has been opened, so there is no rate and nothing is measured —
+   * the native pump must not manufacture lateness. le_engine_configure seeds
+   * an INERT instrument on purpose (it must not read the previous session's
+   * a_buffer_frames, which is still published at that point). */
+  le_engine_note_callback_span(e, 0, 10 * LE_CB_TEST_BUDGET_NS,
+                               LE_CB_TEST_FRAMES);
   le_engine_get_snapshot(e, &s);
   CHECK(s.cb_budget_us == 0);
   CHECK(s.cb_session.calls == 0);
 
-  /* What le_engine_start does once the backend reports its negotiated period. */
-  le_engine_configure_callback_budget(e, LE_CB_TEST_FRAMES, LE_CB_TEST_RATE);
-  le_engine_configure_callback_budget(NULL, 64, 48000); /* must not crash */
-  le_engine_note_callback_span(NULL, 0, 1);             /* must not crash */
+  /* What le_engine_start does once the backend reports its negotiated rate. */
+  le_engine_configure_callback_budget(e, LE_CB_TEST_RATE);
+  le_engine_configure_callback_budget(NULL, 48000);       /* must not crash */
+  le_engine_note_callback_span(NULL, 0, 1, LE_CB_TEST_FRAMES); /* ditto */
 
   uint64_t entry = 1000;
-  le_engine_note_callback_span(e, entry, entry + 100000);
+  le_engine_note_callback_span(e, entry, entry + 100000, LE_CB_TEST_FRAMES);
   entry += LE_CB_TEST_BUDGET_NS;
-  le_engine_note_callback_span(e, entry, entry + LE_CB_TEST_BUDGET_NS * 2);
+  le_engine_note_callback_span(e, entry, entry + LE_CB_TEST_BUDGET_NS * 2,
+                               LE_CB_TEST_FRAMES);
 
   le_engine_get_snapshot(e, &s);
   CHECK(s.cb_budget_us == (uint32_t)(LE_CB_TEST_BUDGET_NS / 1000));
@@ -2104,11 +2210,12 @@ static void test_callback_span_reaches_the_snapshot(void) {
   CHECK(s.cb_session.max_us == (uint32_t)(LE_CB_TEST_BUDGET_NS * 2 / 1000));
   CHECK(s.cb_armed.calls == 0); /* never armed */
 
-  /* Reconfiguring the budget is a new device session: both windows clear. */
-  le_engine_configure_callback_budget(e, LE_CB_TEST_FRAMES, LE_CB_TEST_RATE);
+  /* Re-opening the telemetry is a new device session: both windows clear. */
+  le_engine_configure_callback_budget(e, LE_CB_TEST_RATE);
   le_engine_get_snapshot(e, &s);
   CHECK(s.cb_session.calls == 0);
   CHECK(s.cb_session.max_us == 0);
+  CHECK(s.cb_budget_us == 0); /* no callback has landed yet */
 
   le_engine_destroy(e);
 }
@@ -2120,11 +2227,12 @@ static void test_perf_arm_command_resets_armed_window(void) {
   printf("test_perf_arm_command_resets_armed_window\n");
   le_engine* e = make_configured_engine();
   le_snapshot s;
-  le_engine_configure_callback_budget(e, LE_CB_TEST_FRAMES, LE_CB_TEST_RATE);
+  le_engine_configure_callback_budget(e, LE_CB_TEST_RATE);
 
   /* Pretend a previous armed window left counts behind. */
   atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
-  le_engine_note_callback_span(e, 1000, 1000 + LE_CB_TEST_BUDGET_NS * 2);
+  le_engine_note_callback_span(e, 1000, 1000 + LE_CB_TEST_BUDGET_NS * 2,
+                               LE_CB_TEST_FRAMES);
   atomic_store_explicit(&e->a_perf_armed, 0, memory_order_release);
   le_engine_get_snapshot(e, &s);
   CHECK(s.cb_armed.calls == 1);
@@ -21249,7 +21357,9 @@ int main(void) {
   test_xrun_count_tallies_and_resets();
   test_cb_timing_configure_derives_budget();
   test_cb_timing_durations_max_late_and_buckets();
+  test_cb_timing_budget_follows_the_block_size();
   test_cb_timing_gap_detector();
+  test_cb_timing_recovery_gap_is_not_double_counted();
   test_cb_timing_armed_window();
   test_backend_xrun_kinds_tally_and_reset();
   test_callback_span_reaches_the_snapshot();

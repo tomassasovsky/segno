@@ -669,8 +669,13 @@ typedef struct le_track_snapshot {
  * le_engine_process between two monotonic clock reads (engine_miniaudio.c), so a
  * duration here is what the DEVICE's callback thread actually spent, and an
  * entry-to-entry gap is what the DEVICE actually experienced between periods.
- * The deadline it is compared against is the period budget — buffer_frames /
- * sample_rate — reported as cb_budget_us.
+ * The deadline it is compared against is that callback's OWN budget — its frame
+ * count over the sample rate — NOT buffer_frames / sample_rate. The two differ
+ * on exactly the path this exists to measure: miniaudio's duplex loop drives the
+ * callback in min(capture, playback) chunks, split further by the converter and
+ * by short readi() returns, so a callback routinely handles a fraction of a
+ * playback period and judging it against a whole one would report "all clear" on
+ * a struggling device. cb_budget_us reports the most recent callback's budget.
  *
  * TWO WINDOWS, because the bug being hunted (#722: clicks ONLY while a
  * performance capture is armed) is a comparison, not an absolute: `cb_session`
@@ -704,23 +709,32 @@ typedef enum le_xrun_kind {
 /* One accumulation window of callback telemetry. Every counter is monotonic
  * within its window and is only ever cleared by the event that owns the window
  * (a fresh configure/start for the session window; le_perf_arm for the armed
- * one). Durations are microseconds: a nanosecond figure would overflow uint32
- * after 4.3 s and nothing here is finer than a microsecond anyway. */
+ * one). Counts are 64-bit throughout — a 32-bit histogram bucket at ~1500
+ * callbacks/second wraps inside a month, and this has to stay readable on an
+ * appliance that has been up since the last OTA. Durations are microseconds: a
+ * nanosecond figure would overflow uint32 after 4.3 s and nothing here is finer
+ * than a microsecond anyway. */
 typedef struct le_cb_window_snapshot {
   uint64_t calls;      /* device callbacks observed in this window */
   uint64_t late_calls; /* of those, ones whose duration exceeded the budget */
-  /* Entry-to-entry gaps longer than 1.5 periods: the DERIVED starvation signal.
-   * The device handing us a period more than half a period late means it
+  /* Entry-to-entry gaps longer than 1.5 of the previous callback's budget: the
+   * DERIVED starvation signal. The device coming back that late means it
    * starved, whether or not the backend admitted an xrun — this is what works
-   * on CoreAudio, where miniaudio exposes no xrun signal at all. */
+   * on CoreAudio, where miniaudio exposes no xrun signal at all.
+   *
+   * INDEPENDENT OF `xruns` by construction: an ALSA -EPIPE recovery also
+   * produces a long gap, so the callback that follows a counted recovery has
+   * its gap suppressed. One physical dropout is counted once, under one name,
+   * and max_gap_us is never pinned by a recovery stall. A non-zero gap_events
+   * therefore means starvation the backend never reported. */
   uint64_t gap_events;
   uint32_t max_us;     /* worst callback duration seen */
   uint32_t mean_us;    /* mean callback duration over `calls` */
-  uint32_t max_gap_us; /* worst entry-to-entry gap (0 when none exceeded) */
-  uint32_t buckets[LE_CB_BUCKETS]; /* duration histogram; see LE_CB_BUCKETS */
+  uint32_t max_gap_us; /* worst counted gap (0 when none exceeded) */
+  uint64_t buckets[LE_CB_BUCKETS]; /* duration histogram; see LE_CB_BUCKETS */
   /* Real backend dropouts, indexed by le_xrun_kind. Their sum over the session
    * window is exactly what xrun_count reports. */
-  uint32_t xruns[LE_XRUN_KINDS];
+  uint64_t xruns[LE_XRUN_KINDS];
 } le_cb_window_snapshot;
 
 /* Lock-free snapshot of engine state, published by the audio thread and read by
@@ -910,9 +924,12 @@ typedef struct le_snapshot {
    * an engine whose device never ran — the native test pump processes blocks
    * without a device and therefore has no deadline to miss. */
 
-  /* The period deadline every duration below is judged against, in
-   * microseconds: buffer_frames / sample_rate. 0 = no device has been opened,
-   * which is also the "telemetry inert" state (nothing is accumulated). */
+  /* The deadline the MOST RECENT callback was judged against, in microseconds:
+   * that callback's frame count over the sample rate. Usually constant, but it
+   * tracks a duplex loop that varies the block size rather than pretending
+   * buffer_frames is the answer (see the note above). 0 = no device has been
+   * opened, or none of its callbacks has landed yet — which is also the
+   * "telemetry inert" state, in which nothing is accumulated at all. */
   uint32_t cb_budget_us;
   le_cb_window_snapshot cb_session; /* since the device started */
   le_cb_window_snapshot cb_armed;   /* since the most recent le_perf_arm */

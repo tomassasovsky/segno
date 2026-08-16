@@ -26,6 +26,7 @@ export 'src/audio_engine.dart'
 export 'src/engine_config.dart' show AudioBackend, EngineConfig;
 export 'src/engine_snapshot.dart'
     show
+        CallbackTelemetry,
         CallbackWindowStats,
         ClickMode,
         EngineSnapshot,

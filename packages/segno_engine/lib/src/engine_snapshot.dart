@@ -677,10 +677,81 @@ class CallbackWindowStats {
       'xruns: $xrunTotal)';
 }
 
+/// Both telemetry windows plus the deadline they were judged against — the
+/// whole of the audio callback's self-measurement (native issue #722).
+///
+/// Read by `AudioEngine.callbackTelemetry()`, **on demand**, and deliberately
+/// NOT carried on [EngineSnapshot]. That object is rebuilt at render rate and
+/// feeds `LooperState`'s equality gate; a counter that ticks on every audio
+/// callback can never compare equal, so shipping it there would defeat the
+/// dedupe, re-materialize and re-broadcast the entire looper state 60 times a
+/// second on an idle rig, and allocate the histogram lists on every tick — CPU
+/// pressure manufactured by the very instrument that exists to find CPU
+/// pressure. A diagnostic is pulled when someone asks, not pushed into the
+/// render loop.
+@immutable
+class CallbackTelemetry {
+  /// Creates a [CallbackTelemetry].
+  const CallbackTelemetry({
+    this.budgetUs = 0,
+    this.session = CallbackWindowStats.empty,
+    this.armed = CallbackWindowStats.empty,
+  });
+
+  /// Projects a native `le_snapshot`'s telemetry block.
+  factory CallbackTelemetry.fromNative(le_snapshot native) => CallbackTelemetry(
+    budgetUs: native.cb_budget_us,
+    session: CallbackWindowStats.fromNative(native.cb_session),
+    armed: CallbackWindowStats.fromNative(native.cb_armed),
+  );
+
+  /// Nothing measured: no device has run.
+  static const CallbackTelemetry empty = CallbackTelemetry();
+
+  /// The deadline the most recent callback was judged against, in microseconds
+  /// — that callback's own frame count over the sample rate, *not*
+  /// `bufferFrames / sampleRate` (a duplex loop splits periods). `0` when no
+  /// device has been opened or none of its callbacks has landed yet, which is
+  /// also the "nothing is being measured" state.
+  final int budgetUs;
+
+  /// Telemetry for the whole device session, cleared on every fresh start —
+  /// like `EngineStatus.xrunCount`, which is its `xruns` total.
+  final CallbackWindowStats session;
+
+  /// The same telemetry since the most recent performance arm.
+  ///
+  /// The armed-vs-unarmed comparison #722 exists to make: the count fields
+  /// subtract from [session] to give the unarmed control, while each window
+  /// reports its own maxima (a maximum cannot be subtracted). Not cleared by a
+  /// disarm, so the numbers survive to be read after the fact.
+  final CallbackWindowStats armed;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CallbackTelemetry &&
+          runtimeType == other.runtimeType &&
+          budgetUs == other.budgetUs &&
+          session == other.session &&
+          armed == other.armed;
+
+  @override
+  int get hashCode => Object.hash(budgetUs, session, armed);
+
+  @override
+  String toString() =>
+      'CallbackTelemetry(budget: ${budgetUs}us, session: $session, '
+      'armed: $armed)';
+}
+
 /// An immutable, lock-free snapshot of the native audio engine's state.
 ///
 /// Published by the engine's audio thread and read by Dart on a render-rate
-/// timer. The pure-Dart projection of the native `le_snapshot` struct.
+/// timer. The pure-Dart projection of the native `le_snapshot` struct — with
+/// one deliberate omission: the audio-callback telemetry block, which is pulled
+/// separately through `AudioEngine.callbackTelemetry()` so it never rides this
+/// object's render-rate equality. See [CallbackTelemetry].
 @immutable
 class EngineSnapshot {
   /// Creates an [EngineSnapshot] with explicit values.
@@ -732,9 +803,6 @@ class EngineSnapshot {
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
-    this.callbackBudgetUs = 0,
-    this.callbackSession = CallbackWindowStats.empty,
-    this.callbackArmed = CallbackWindowStats.empty,
     this.tracks = const [],
   });
 
@@ -787,9 +855,6 @@ class EngineSnapshot {
       countInBeatsLeft = 0,
       looperMode = LooperMode.multi,
       primaryTrack = -1,
-      callbackBudgetUs = 0,
-      callbackSession = CallbackWindowStats.empty,
-      callbackArmed = CallbackWindowStats.empty,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -848,9 +913,6 @@ class EngineSnapshot {
     countInBeatsLeft: native.count_in_beats_left,
     looperMode: LooperMode.fromCode(native.looper_mode),
     primaryTrack: native.primary_track,
-    callbackBudgetUs: native.cb_budget_us,
-    callbackSession: CallbackWindowStats.fromNative(native.cb_session),
-    callbackArmed: CallbackWindowStats.fromNative(native.cb_armed),
     tracks: tracks,
   );
 
@@ -1075,24 +1137,6 @@ class EngineSnapshot {
   /// in-range channel, never back to `-1`, once first crowned.
   final int primaryTrack;
 
-  // ---- audio-callback telemetry (#722) ----
-
-  /// The period deadline every callback duration is judged against, in
-  /// microseconds — `bufferFrames / sampleRate`. `0` when no device has been
-  /// opened, which is also the "telemetry inert" state: nothing is measured.
-  final int callbackBudgetUs;
-
-  /// Callback telemetry for the whole device session (reset on every fresh
-  /// configure/start, exactly like [xrunCount]).
-  final CallbackWindowStats callbackSession;
-
-  /// Callback telemetry since the most recent performance arm.
-  ///
-  /// Compare against [callbackSession] to answer #722's question — the
-  /// difference of the two count fields is the unarmed control. Not cleared by
-  /// a disarm, so the numbers survive for a summary read after the fact.
-  final CallbackWindowStats callbackArmed;
-
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -1175,9 +1219,6 @@ class EngineSnapshot {
           countInBeatsLeft == other.countInBeatsLeft &&
           looperMode == other.looperMode &&
           primaryTrack == other.primaryTrack &&
-          callbackBudgetUs == other.callbackBudgetUs &&
-          callbackSession == other.callbackSession &&
-          callbackArmed == other.callbackArmed &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -1229,9 +1270,6 @@ class EngineSnapshot {
     countInBeatsLeft,
     looperMode,
     primaryTrack,
-    callbackBudgetUs,
-    callbackSession,
-    callbackArmed,
     ...tracks,
   ]);
 

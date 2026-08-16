@@ -4650,8 +4650,11 @@ enum le_xrun_kind {
 /// One accumulation window of callback telemetry. Every counter is monotonic
 /// within its window and is only ever cleared by the event that owns the window
 /// (a fresh configure/start for the session window; le_perf_arm for the armed
-/// one). Durations are microseconds: a nanosecond figure would overflow uint32
-/// after 4.3 s and nothing here is finer than a microsecond anyway.
+/// one). Counts are 64-bit throughout — a 32-bit histogram bucket at ~1500
+/// callbacks/second wraps inside a month, and this has to stay readable on an
+/// appliance that has been up since the last OTA. Durations are microseconds: a
+/// nanosecond figure would overflow uint32 after 4.3 s and nothing here is finer
+/// than a microsecond anyway.
 final class le_cb_window_snapshot extends ffi.Struct {
   /// device callbacks observed in this window
   @ffi.Uint64()
@@ -4661,10 +4664,16 @@ final class le_cb_window_snapshot extends ffi.Struct {
   @ffi.Uint64()
   external int late_calls;
 
-  /// Entry-to-entry gaps longer than 1.5 periods: the DERIVED starvation signal.
-  /// The device handing us a period more than half a period late means it
+  /// Entry-to-entry gaps longer than 1.5 of the previous callback's budget: the
+  /// DERIVED starvation signal. The device coming back that late means it
   /// starved, whether or not the backend admitted an xrun — this is what works
   /// on CoreAudio, where miniaudio exposes no xrun signal at all.
+  ///
+  /// INDEPENDENT OF `xruns` by construction: an ALSA -EPIPE recovery also
+  /// produces a long gap, so the callback that follows a counted recovery has
+  /// its gap suppressed. One physical dropout is counted once, under one name,
+  /// and max_gap_us is never pinned by a recovery stall. A non-zero gap_events
+  /// therefore means starvation the backend never reported.
   @ffi.Uint64()
   external int gap_events;
 
@@ -4676,18 +4685,18 @@ final class le_cb_window_snapshot extends ffi.Struct {
   @ffi.Uint32()
   external int mean_us;
 
-  /// worst entry-to-entry gap (0 when none exceeded)
+  /// worst counted gap (0 when none exceeded)
   @ffi.Uint32()
   external int max_gap_us;
 
   /// duration histogram; see LE_CB_BUCKETS
   @ffi.Array.multi([8])
-  external ffi.Array<ffi.Uint32> buckets;
+  external ffi.Array<ffi.Uint64> buckets;
 
   /// Real backend dropouts, indexed by le_xrun_kind. Their sum over the session
   /// window is exactly what xrun_count reports.
   @ffi.Array.multi([4])
-  external ffi.Array<ffi.Uint32> xruns;
+  external ffi.Array<ffi.Uint64> xruns;
 }
 
 /// Lock-free snapshot of engine state, published by the audio thread and read by
@@ -4960,9 +4969,12 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Uint32()
   external int input_cond_mask;
 
-  /// The period deadline every duration below is judged against, in
-  /// microseconds: buffer_frames / sample_rate. 0 = no device has been opened,
-  /// which is also the "telemetry inert" state (nothing is accumulated).
+  /// The deadline the MOST RECENT callback was judged against, in microseconds:
+  /// that callback's frame count over the sample rate. Usually constant, but it
+  /// tracks a duplex loop that varies the block size rather than pretending
+  /// buffer_frames is the answer (see the note above). 0 = no device has been
+  /// opened, or none of its callbacks has landed yet — which is also the
+  /// "telemetry inert" state, in which nothing is accumulated at all.
   @ffi.Uint32()
   external int cb_budget_us;
 

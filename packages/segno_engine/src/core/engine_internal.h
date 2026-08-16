@@ -44,22 +44,25 @@ void le_engine_note_xrun(le_engine* engine);
  * device's data-loop thread. Not part of the FFI surface. */
 void le_engine_note_backend_xrun(le_engine* engine, int32_t kind);
 
-/* Records one device-callback span, [entry_ns, exit_ns), taken with le_now_ns
- * around the backend's call into le_engine_process (#722). Called ON the audio
- * thread from the backend's data callback and RT-safe by construction — see
- * engine_telemetry.h. Exposed here (rather than poking engine->cb_timing) so a
- * backend TU need not touch the _Atomic struct, and so native tests can feed
- * synthetic spans. Not part of the FFI surface. */
+/* Records one device-callback span, [entry_ns, exit_ns) over `frames`, taken
+ * with le_now_ns around the backend's call into le_engine_process (#722).
+ * `frames` is this callback's own block size, which is what its deadline is
+ * derived from — see le_cb_timing_note for why the device's period is the wrong
+ * number. Called ON the audio thread from the backend's data callback and
+ * RT-safe by construction (engine_telemetry.h). Exposed here (rather than
+ * poking engine->cb_timing) so a backend TU need not touch the _Atomic struct,
+ * and so native tests can feed synthetic spans. Not part of the FFI surface. */
 void le_engine_note_callback_span(le_engine* engine, uint64_t entry_ns,
-                                  uint64_t exit_ns);
+                                  uint64_t exit_ns, uint32_t frames);
 
-/* Seeds the callback-telemetry deadline from a negotiated device period and
- * clears both windows. Called by le_engine_start once the backend reports its
- * negotiated period/rate, and by le_engine_configure (which usually seeds a 0
- * period — an engine with no device has no deadline, so telemetry stays inert).
- * Control thread only, while the device is shut. Not part of the FFI surface. */
+/* Opens a fresh callback-telemetry session at the negotiated `sample_rate`:
+ * clears both windows AND the flat a_xruns tally (they are two views of the
+ * same events and must never disagree), then arms the instrument. Called by
+ * le_engine_start once the backend reports its negotiated rate — deliberately
+ * NOT by le_engine_configure, which seeds an inert 0 instead, so an engine that
+ * never opened a device (the native test pump) measures nothing. Control thread
+ * only, while the device is shut. Not part of the FFI surface. */
 void le_engine_configure_callback_budget(le_engine* engine,
-                                         int32_t period_frames,
                                          int32_t sample_rate);
 
 /* Publishes "device lost" (a_device_present = 0, a_running untouched) so the

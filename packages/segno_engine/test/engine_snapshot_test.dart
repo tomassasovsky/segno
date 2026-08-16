@@ -889,7 +889,7 @@ void main() {
     });
   });
 
-  group('EngineSnapshot callback telemetry (#722)', () {
+  group('CallbackTelemetry (#722)', () {
     test('projects both windows and the budget off the native struct', () {
       final ptr = calloc<le_snapshot>();
       try {
@@ -916,38 +916,26 @@ void main() {
           ..max_gap_us = 4100;
         ptr.ref.cb_armed.xruns[XrunKind.playbackUnderrun.index] = 9;
 
-        final snapshot = EngineSnapshot.fromNative(ptr.ref, const []);
+        final telemetry = CallbackTelemetry.fromNative(ptr.ref);
 
-        expect(snapshot.callbackBudgetUs, 666);
-        expect(snapshot.callbackSession.calls, 90000);
-        expect(snapshot.callbackSession.lateCalls, 12);
-        expect(snapshot.callbackSession.gapEvents, 3);
-        expect(snapshot.callbackSession.maxUs, 1900);
-        expect(snapshot.callbackSession.meanUs, 140);
-        expect(snapshot.callbackSession.maxGapUs, 4100);
-        expect(
-          snapshot.callbackSession.buckets,
-          [1, 2, 3, 4, 5, 6, 7, 8],
-        );
-        expect(snapshot.callbackSession.xruns, [0, 1, 2, 3]);
+        expect(telemetry.budgetUs, 666);
+        expect(telemetry.session.calls, 90000);
+        expect(telemetry.session.lateCalls, 12);
+        expect(telemetry.session.gapEvents, 3);
+        expect(telemetry.session.maxUs, 1900);
+        expect(telemetry.session.meanUs, 140);
+        expect(telemetry.session.maxGapUs, 4100);
+        expect(telemetry.session.buckets, [1, 2, 3, 4, 5, 6, 7, 8]);
+        expect(telemetry.session.xruns, [0, 1, 2, 3]);
 
         // The armed window is the suspect; the session window is its control.
-        expect(snapshot.callbackArmed.calls, 30000);
-        expect(snapshot.callbackArmed.lateCalls, 11);
-        expect(
-          snapshot.callbackArmed.xrunsOf(XrunKind.playbackUnderrun),
-          9,
-        );
+        expect(telemetry.armed.calls, 30000);
+        expect(telemetry.armed.lateCalls, 11);
+        expect(telemetry.armed.xrunsOf(XrunKind.playbackUnderrun), 9);
         // "Unarmed" is the difference of the counts: 60000 calls, 1 of them
         // late — the comparison the whole instrument exists for.
-        expect(
-          snapshot.callbackSession.calls - snapshot.callbackArmed.calls,
-          60000,
-        );
-        expect(
-          snapshot.callbackSession.lateCalls - snapshot.callbackArmed.lateCalls,
-          1,
-        );
+        expect(telemetry.session.calls - telemetry.armed.calls, 60000);
+        expect(telemetry.session.lateCalls - telemetry.armed.lateCalls, 1);
       } finally {
         calloc.free(ptr);
       }
@@ -956,59 +944,72 @@ void main() {
     test('an engine that never opened a device reports nothing measured', () {
       final ptr = calloc<le_snapshot>();
       try {
-        final snapshot = EngineSnapshot.fromNative(ptr.ref, const []);
-        expect(snapshot.callbackBudgetUs, 0);
-        expect(snapshot.callbackSession, CallbackWindowStats.empty);
-        expect(snapshot.callbackArmed, CallbackWindowStats.empty);
+        expect(CallbackTelemetry.fromNative(ptr.ref), CallbackTelemetry.empty);
       } finally {
         calloc.free(ptr);
       }
     });
 
-    test('the telemetry fields participate in equality', () {
-      const base = EngineSnapshot.initial();
+    test('counts survive past a 32-bit bucket', () {
+      // A month of uptime at ~1500 callbacks/s overflows a uint32 bucket; the
+      // ABI is 64-bit throughout so a long-running appliance does not report a
+      // histogram that silently restarted.
+      final ptr = calloc<le_snapshot>();
+      try {
+        const beyond32 = 0x1_0000_0000 + 7;
+        ptr.ref.cb_session.buckets[3] = beyond32;
+        ptr.ref.cb_session.xruns[XrunKind.captureOverrun.index] = beyond32;
+        final telemetry = CallbackTelemetry.fromNative(ptr.ref);
+        expect(telemetry.session.buckets[3], beyond32);
+        expect(telemetry.session.xrunsOf(XrunKind.captureOverrun), beyond32);
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('value semantics', () {
+      const base = CallbackTelemetry(
+        budgetUs: 666,
+        session: CallbackWindowStats(calls: 10),
+        armed: CallbackWindowStats(calls: 4),
+      );
+      expect(base, equals(base));
+      expect(base.hashCode, base.hashCode);
+      expect(base, isNot(equals(CallbackTelemetry.empty)));
       expect(
         base,
         isNot(
           equals(
-            const EngineSnapshot(
-              isRunning: false,
-              sampleRate: 0,
-              bufferFrames: 0,
-              framesProcessed: 0,
-              xrunCount: 0,
-              inputRms: 0,
-              inputPeak: 0,
-              outputRms: 0,
-              latencyState: LatencyState.idle,
-              measuredLatencyMs: -1,
-
-              callbackBudgetUs: 666,
+            const CallbackTelemetry(
+              budgetUs: 667,
+              session: CallbackWindowStats(calls: 10),
+              armed: CallbackWindowStats(calls: 4),
             ),
           ),
         ),
       );
-      expect(
-        base,
-        isNot(
-          equals(
-            const EngineSnapshot(
-              isRunning: false,
-              sampleRate: 0,
-              bufferFrames: 0,
-              framesProcessed: 0,
-              xrunCount: 0,
-              inputRms: 0,
-              inputPeak: 0,
-              outputRms: 0,
-              latencyState: LatencyState.idle,
-              measuredLatencyMs: -1,
+      expect(base.toString(), contains('budget: 666us'));
+    });
 
-              callbackArmed: CallbackWindowStats(lateCalls: 1),
-            ),
-          ),
-        ),
-      );
+    test('is NOT on EngineSnapshot, so it cannot defeat the dedupe', () {
+      // The regression this guards: a counter that ticks on every audio
+      // callback riding a render-rate snapshot would make every projected
+      // state unequal to the last, rebuilding an idle rig continuously. Two
+      // snapshots read from the same engine state must compare equal, whatever
+      // the telemetry underneath is doing.
+      final ptr = calloc<le_snapshot>();
+      try {
+        ptr.ref.sample_rate = 48000;
+        final first = EngineSnapshot.fromNative(ptr.ref, const []);
+        ptr.ref.cb_budget_us = 666;
+        ptr.ref.cb_session.calls = 1000000;
+        ptr.ref.cb_armed.calls = 999;
+        final second = EngineSnapshot.fromNative(ptr.ref, const []);
+        expect(second, equals(first));
+        expect(second.hashCode, first.hashCode);
+      } finally {
+        calloc.free(ptr);
+      }
     });
   });
 }
