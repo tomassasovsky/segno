@@ -100,7 +100,11 @@ LID_SIDE_LIP = 16.0  # inward lip at the bottom of each lid side wall (screws to
 # Fusion doc. The pedal is a WEDGE: wider + taller at the back (cable end),
 # mounted toe toward the player (back = rear/high v). Box model uses the MAX
 # cross-section; the taper only ever adds clearance.
-PEDAL_W      = 76.35          # case width at the back (tapers to 73.08 at the toe)
+PEDAL_W      = 76.35          # case width at the back (tapers to PEDAL_TOE_W at the toe)
+PEDAL_TOE_W  = 73.08          # ...and at the toe: the case is a WEDGE IN PLAN too, not
+                              # just in height. Anything that has to sit CLOSE to a side
+                              # wall must ask pedal_half_width() where along the case it
+                              # is; PEDAL_W alone is only honest at the back edge.
 PEDAL_D      = 109.87         # case length, back to front
 PEDAL_BODY_H = 24.9           # case height at the back (slopes to 22.1 at the toe)
 PEDAL_PAD_T  = 2.2            # anti-slip pad thickness, bottom AND top
@@ -124,7 +128,7 @@ PEDAL_PAD_BACK_INSET = 16.43  # pad rear edge inset from the case back edge
 # pedestal's provisional gravity+pocket retention.
 PEDAL_BASE_ROW_BACK_OFF = 4.0    # rear row, rearward of the side-screw axis
 PEDAL_BASE_ROW_PITCH    = 80.0   # rear row to front row, toe-ward
-PEDAL_BASE_SPAN_REAR    = 55.75  # centre-to-centre across the rear pair
+PEDAL_BASE_SPAN_REAR    = 54.05  # centre-to-centre across the rear pair (re-measured 2026-08-16)
 PEDAL_BASE_SPAN_FRONT   = 53.0   # ...and the front pair (the case tapers toe-ward)
 PEDAL_BASE_HOLE_D       = 3.2    # M3-ish (user call 2026-08-16)
 PEDAL_BASE_REAR_BACK  = PEDAL_SCREW_BACK - PEDAL_BASE_ROW_BACK_OFF   # 19.24 from the back edge
@@ -466,6 +470,14 @@ def _silk_lines(label):
         return []                 # tracks are identified by the meter screen, no silk text
     return [label]
 
+def pedal_half_width(x):
+    """Half the case width at depth x in the PEDESTAL frame (+X toward the case
+    BACK). The WTB-006 tapers in PLAN as well as in height -- PEDAL_W at the back
+    edge down to PEDAL_TOE_W at the toe -- so a clearance quoted off PEDAL_W is
+    understated everywhere except the back edge."""
+    t = (PEDAL_D/2.0 - x) / PEDAL_D          # 0 at the back edge, 1 at the toe
+    return (PEDAL_W - t * (PEDAL_W - PEDAL_TOE_W)) / 2.0
+
 def pedal_base_holes():
     """The four base screw holes in the PEDESTAL frame: X = depth with +X toward
     the case BACK (cable end), Y = width, origin at the pedal centre. Rear pair
@@ -784,8 +796,9 @@ def _check():
         r = PEDAL_BASE_HOLE_D/2.0
         assert abs(hx) + r <= PEDAL_D/2.0 - 1.0, \
             f"PEDAL_BASE: hole at x={hx:.2f} runs off the case underside (depth)"
-        assert abs(hy) + r <= PEDAL_W/2.0 - 1.0, \
-            f"PEDAL_BASE: hole at y={hy:.2f} runs into the case side wall"
+        assert abs(hy) + r <= pedal_half_width(hx) - 1.0, \
+            f"PEDAL_BASE: hole at y={hy:.2f} runs into the case side wall " \
+            f"(the wall is at {pedal_half_width(hx):.2f} there, not {PEDAL_W/2.0:.2f} -- the case tapers)"
         assert pad_x0 + r <= hx <= pad_x1 - r, \
             f"PEDAL_BASE: hole at x={hx:.2f} is not under the anti-slip pad"
         assert abs(hy) + r <= PEDAL_PAD_W/2.0, \

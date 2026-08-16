@@ -6,21 +6,25 @@ heat-set insert bores, this proves them on a throwaway print. The jig carries
 nothing but the two features that have to agree with the pedal:
 
   PINS     four Ø2.7 locating pins on the PEDAL_BASE_* pattern. They stand
-           6.5 mm proud, which is the 2.2 mm anti-slip pad plus ~4.3 mm of
+           5.2 mm proud, which is the 2.2 mm anti-slip pad plus 3.0 mm of
            engagement in the hole -- the pad stays ON, exactly as it does on
            the real pedestal.
   COLUMNS  one per side at the horizontal shell screw, each split by a
-           full-depth vertical channel the 10 mm boss drops into. Same idiom
-           (and the same SKIRT_BOSS_CH_* numbers) as the tub side walls in
+           vertical channel the 10 mm boss drops into. Same idiom (and the same
+           SKIRT_BOSS_CH_* numbers) as the tub side walls in
            build_mini_console; here they stand alone so they can be judged.
 
 Pass = the pedal drops onto all four pins and both bosses land in their
 channels with the case sitting flat. Fail = it rocks, sits proud, or a boss
 lands on a prong instead of in the slot.
 
-The scribed rectangle is the case footprint (76.35 x 109.87, the widest
-section -- the case tapers toe-ward), so a seated pedal can also be eyeballed
-against where it is supposed to be. The engraved arrow points to the TOE.
+The scribed outline is the case footprint, and it is a TRAPEZOID: the WTB-006
+is a wedge in plan as well as in height, 76.35 wide at the back tapering to
+73.08 at the toe over its 109.87 length. Scribing the widest section as a
+rectangle would leave a correctly-placed pedal looking inset at the toe --
+which is exactly the misreading the line is there to prevent. Every clearance
+in this file is likewise taken from pedal_half_width() at the station it
+applies to, never from PEDAL_W. The engraved arrow points to the TOE.
 
     python _pedal_base_fit_test.py
     python _print_check.py out/segno_pedal_base_fit_test.stl
@@ -46,11 +50,13 @@ from segno_enclosure import (
     PEDAL_SCREW_BOSS_D,
     PEDAL_SCREW_SPAN,
     PEDAL_SCREW_Z,
+    PEDAL_TOE_W,
     PEDAL_W,
     SKIRT_BOSS_CH_HALF,
     SKIRT_BOSS_CH_W,
     SKIRT_BOSS_CH_X,
     pedal_base_holes,
+    pedal_half_width,
 )
 
 # --- jig parameters -----------------------------------------------------------
@@ -75,7 +81,12 @@ PIN_ENGAGE     = 3.0
 PIN_H          = PEDAL_PAD_T + PIN_ENGAGE        # 5.2: through the pad, then in
 
 COL_H         = 20.0  # column top, above the plate face
-COL_SIDE_CLR  = 0.6   # inner face off the case side wall
+COL_SIDE_CLR  = 1.0   # inner face off the case side wall AT THE COLUMN STATION.
+                      # Measured against pedal_half_width, not PEDAL_W/2: the case
+                      # is a wedge in plan, so a clearance quoted off the back-edge
+                      # width flatters itself by ~0.35 mm here and by ~1.6 at the
+                      # toe. Nothing on this jig stands near the toe, but the
+                      # number should still mean what it says.
 COL_PRONG     = 7.0   # material fore and aft of the boss channel
 COL_WEB       = 3.5   # outer wall joining the two prongs behind the channel
 COL_CH_Z0     = 5.0   # channel floor: the boss never comes below 7.3, so the
@@ -88,7 +99,7 @@ COL_GUSSET    = 3.0   # 45deg ramp, outer face only (the inner face is the
 SCRIBE_W = 1.0        # engraved line width
 SCRIBE_D = 0.5        # ...and depth
 
-COL_Y_IN  = PEDAL_W/2.0 + COL_SIDE_CLR           # 38.775
+COL_Y_IN  = pedal_half_width(SKIRT_BOSS_CH_X) + COL_SIDE_CLR   # 38.829
 COL_Y_OUT = SKIRT_BOSS_CH_HALF + COL_WEB         # 45.825
 COL_X_LEN = SKIRT_BOSS_CH_W + 2*COL_PRONG        # 28.0
 PLATE_HW  = COL_Y_OUT + COL_GUSSET + PLATE_MARGIN
@@ -109,7 +120,7 @@ def _check():
         f"COLUMN: boss bottom {BOSS_Z - PEDAL_SCREW_BOSS_D/2.0:.2f} sits on the channel floor"
     assert BOSS_Z + PEDAL_SCREW_BOSS_D/2.0 <= COL_H - 1.0, \
         "COLUMN: too short to capture the boss"
-    assert COL_Y_IN > PEDAL_W/2.0, "COLUMN: inner face pinches the case"
+    assert COL_Y_IN > pedal_half_width(SKIRT_BOSS_CH_X), "COLUMN: inner face pinches the case"
     assert SKIRT_BOSS_CH_HALF > PEDAL_SCREW_SPAN/2.0, "COLUMN: channel too shallow for the boss tip"
     assert COL_Y_OUT + COL_GUSSET <= PLATE_HW - 1.0, "PLATE: gusset runs off the edge"
     assert PIN_ENGAGE >= 2.0, "PINS: too little engagement past the anti-slip pad to prove entry"
@@ -119,16 +130,23 @@ def _check():
 
 
 def _pedal_stand_in():
-    """The pedal as the jig has to see it, SEATED: bottom pad, case at its max
-    section, the two side screw bosses, and the four base holes bored out. Same
-    frame as pedal_base_holes(), z=0 at the plate face. The taper only ever adds
-    clearance, so the max section is the honest stand-in."""
+    """The pedal as the jig has to see it, SEATED: bottom pad, case, the two side
+    screw bosses, and the four base holes bored out. Same frame as
+    pedal_base_holes(), z=0 at the plate face.
+
+    The case is the real PLAN TRAPEZOID (PEDAL_W at the back, PEDAL_TOE_W at the
+    toe), so the gate reports the clearance that actually exists rather than a
+    conservative box. Height stays prismatic at PEDAL_BODY_H, the back (tall)
+    figure: the case also slopes down toward the toe, but nothing on this jig
+    reaches anywhere near the top, so the extra is free margin."""
     ped = (cq.Workplane("XY")
            .box(PEDAL_PAD_D, PEDAL_PAD_W, PEDAL_PAD_T, centered=(True, True, False))
            .translate((PEDAL_D/2.0 - PEDAL_PAD_BACK_INSET - PEDAL_PAD_D/2.0, 0, 0)))
+    xb, xt = PEDAL_D/2.0, -PEDAL_D/2.0
+    yb, yt = pedal_half_width(xb), pedal_half_width(xt)
     ped = ped.union(cq.Workplane("XY")
-                    .box(PEDAL_D, PEDAL_W, PEDAL_BODY_H, centered=(True, True, False))
-                    .translate((0, 0, PEDAL_PAD_T)))
+                    .polyline([(xb, yb), (xb, -yb), (xt, -yt), (xt, yt)]).close()
+                    .extrude(PEDAL_BODY_H).translate((0, 0, PEDAL_PAD_T)))
     for s in (-1, 1):                       # side screw bosses, out to the head
         ped = ped.union(cq.Workplane("XZ").circle(PEDAL_SCREW_BOSS_D/2.0)
                         .extrude(s*PEDAL_SCREW_SPAN/2.0)
@@ -162,9 +180,18 @@ def build():
            .faces("<Z").chamfer(BOT_CHAM))
 
     # --- case footprint scribe + toe arrow -----------------------------------
+    # A TRAPEZOID, not a rectangle. The scribe exists to be eyeballed against a
+    # seated pedal, so drawing the case 3.27 mm wider at the toe than it really
+    # is would make a correctly-placed pedal look inset down there -- the one
+    # misreading this line is supposed to prevent.
+    def _case_outline(inset):
+        xb, xt = PEDAL_D/2.0 - inset, -(PEDAL_D/2.0 - inset)
+        yb, yt = pedal_half_width(xb) - inset, pedal_half_width(xt) - inset
+        return [(xb, yb), (xb, -yb), (xt, -yt), (xt, yt)]
+
     ring = (cq.Workplane("XY")
-            .rect(PEDAL_D, PEDAL_W)
-            .rect(PEDAL_D - 2*SCRIBE_W, PEDAL_W - 2*SCRIBE_W)
+            .polyline(_case_outline(0.0)).close()
+            .polyline(_case_outline(SCRIBE_W)).close()
             .extrude(SCRIBE_D).translate((0, 0, PLATE_T - SCRIBE_D)))
     arrow = (cq.Workplane("XY")
              .polyline([(-52.0, 0.0), (-46.0, 5.0), (-46.0, -5.0)]).close()
@@ -223,6 +250,10 @@ def main():
           f"y {COL_Y_IN:.3f}..{COL_Y_OUT:.3f}, {COL_H:.1f} tall")
     print(f"  boss centre      {BOSS_Z:.2f} above the plate face "
           f"(channel floor {COL_CH_Z0:.1f}, Ø{PEDAL_SCREW_BOSS_D:.1f} boss)")
+    print(f"  case taper       {PEDAL_W:.2f} at the back edge -> {PEDAL_TOE_W:.2f} at the toe; "
+          f"half-width {pedal_half_width(SKIRT_BOSS_CH_X):.3f} at the column")
+    print(f"                   -> column clearance {COL_Y_IN - pedal_half_width(SKIRT_BOSS_CH_X):.2f}/side "
+          f"(it would read {COL_Y_IN - PEDAL_W/2.0:.2f} against the back-edge width)")
     print(f"\n  out/{os.path.basename(base)}.step (+ .stl)")
 
 

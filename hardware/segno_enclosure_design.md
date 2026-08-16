@@ -104,10 +104,18 @@ fully internal.
 > after all, in two rows — the `PEDAL_BASE_*` constants. They sit *under* the
 > anti-slip pad, so both rows are dimensioned off the **side screw axis**, the
 > only datum findable without pulling the pad: rear row = axis **+4.0 toward the
-> back**, front row = rear row **+80.0 toward the toe**, spans **55.75** (rear)
+> back**, front row = rear row **+80.0 toward the toe**, spans **54.05** (rear)
 > and **53.00** (front), symmetric about the centre-line. Bolting through these
 > is what will retire the PROVISIONAL retention above — but not before the
 > **fit-test jig** proves the pattern on a print (§8).
+>
+> **The case is a wedge in plan, not only in height.** `PEDAL_W` 76.35 is the
+> width at the **back edge**; it tapers to `PEDAL_TOE_W` 73.08 at the toe, so a
+> clearance quoted off `PEDAL_W/2` is understated by up to 1.63 mm per side.
+> Anything sitting close to a side wall must ask **`pedal_half_width(x)`** where
+> along the case it actually stands — the faceplate slot already reasons this way
+> (its real per-side clearance is ≥1.15, not 1.0), and the fit-test jig's columns,
+> scribed outline and clash stand-in all do now too.
 
 ---
 
