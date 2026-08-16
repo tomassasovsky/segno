@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 """1:1 PAPER GAUGE for the pedal's base screw holes (issue #716).
 
-The fit-test jig is internally consistent with its own assumptions -- rows
-80.000 apart, spans 54.050/53.000, rear row 4.000 off the boss axis, all
-verified against the exported STEP. So when the jig still does not agree with
+The fit-test jig is internally consistent with its own assumptions -- the rows
+sit exactly 80 apart, the spans are exactly what PEDAL_BASE_SPAN_* say, and the
+rear row is exactly 4 off the boss axis, all verified against the exported
+STEP by _pedal_base_fit_test. So when the jig still does not agree with
 the pedal, no amount of CAD iteration will find it: the error is in the
 SPEC -> PEDAL mapping, and closing that loop needs a measurement that does not
 route through any of my assumptions.
@@ -38,6 +39,8 @@ import os
 from segno_enclosure import (
     OUT,
     PEDAL_BASE_HOLE_D,
+    PEDAL_BASE_SPAN_FRONT,
+    PEDAL_BASE_SPAN_REAR,
     PEDAL_D,
     PEDAL_SCREW_BACK,
     PEDAL_SCREW_BOSS_D,
@@ -286,7 +289,11 @@ def main():
           f"over {PEDAL_D:.2f}")
     print("  rulers           longitudinal 0..110 from the back edge;")
     print(f"                   transverse +/-{RULER_REACH:.0f} from the centre-line at each row")
-    print("  hypothesis shown rows at 19.24 / 99.24, spans 54.05 / 53.00 c/c")
+    holes = pedal_base_holes()
+    backs = sorted({PEDAL_D/2.0 - hx for hx, _ in holes})
+    print(f"  hypothesis shown rows at {backs[0]:.2f} / {backs[1]:.2f} from the back edge,")
+    print(f"                   spans {PEDAL_BASE_SPAN_REAR:.2f} / {PEDAL_BASE_SPAN_FRONT:.2f} c/c, "
+          f"holes Ø{PEDAL_BASE_HOLE_D:.1f}")
     print(f"\n  out/{os.path.basename(base)}.pdf (+ .dxf)")
 
 

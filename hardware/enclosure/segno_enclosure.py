@@ -128,9 +128,16 @@ PEDAL_PAD_BACK_INSET = 16.43  # pad rear edge inset from the case back edge
 # pedestal's provisional gravity+pocket retention.
 PEDAL_BASE_ROW_BACK_OFF = 4.0    # rear row, rearward of the side-screw axis
 PEDAL_BASE_ROW_PITCH    = 80.0   # rear row to front row, toe-ward
-PEDAL_BASE_SPAN_REAR    = 54.05  # centre-to-centre across the rear pair (re-measured 2026-08-16)
+PEDAL_BASE_SPAN_REAR    = 54.5   # centre-to-centre across the rear pair. Third reading
+                                 # (55.75 -> 54.05 -> 54.5, all 2026-08-16); the spread is
+                                 # 1.7 mm, so treat this as settled only once the paper
+                                 # gauge (_pedal_base_gauge.py) confirms it.
 PEDAL_BASE_SPAN_FRONT   = 53.0   # ...and the front pair (the case tapers toe-ward)
-PEDAL_BASE_HOLE_D       = 3.2    # M3-ish (user call 2026-08-16)
+PEDAL_BASE_HOLE_D       = 4.0    # INFERRED, not measured. First called M3-ish (3.0-3.4),
+                                 # but the Ø3.5 pin later asked for cannot enter a 3.2 hole,
+                                 # so the pin call supersedes it and the hole reads M4-ish.
+                                 # Confirm with a drill shank or pin gauge before this
+                                 # number reaches the pedestal decks.
 PEDAL_BASE_REAR_BACK  = PEDAL_SCREW_BACK - PEDAL_BASE_ROW_BACK_OFF   # 19.24 from the back edge
 PEDAL_BASE_FRONT_BACK = PEDAL_BASE_REAR_BACK + PEDAL_BASE_ROW_PITCH  # 99.24 from the back edge
 FSW_SLOT_W = PEDAL_W + 2.0    # slot width (u) = 78.35, 1.0mm/side. The side screws DON'T

@@ -104,7 +104,7 @@ fully internal.
 > after all, in two rows — the `PEDAL_BASE_*` constants. They sit *under* the
 > anti-slip pad, so both rows are dimensioned off the **side screw axis**, the
 > only datum findable without pulling the pad: rear row = axis **+4.0 toward the
-> back**, front row = rear row **+80.0 toward the toe**, spans **54.05** (rear)
+> back**, front row = rear row **+80.0 toward the toe**, spans **54.5** (rear)
 > and **53.00** (front), symmetric about the centre-line. Bolting through these
 > is what will retire the PROVISIONAL retention above — but not before the
 > **fit-test jig** proves the pattern on a print (§8).

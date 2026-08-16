@@ -9,8 +9,9 @@ nothing but the two features that have to agree with the pedal:
            5.2 mm proud, which is the 2.2 mm anti-slip pad plus 3.0 mm of
            engagement in the hole -- the pad stays ON, exactly as it does on
            the real pedestal.
-  COLUMNS  one per side at the horizontal shell screw, each split by a
-           vertical channel the 10 mm boss drops into. Same idiom (and the same
+  COLUMNS  one per side at the horizontal shell screw, each split by a vertical
+           channel the 10 mm boss drops into, cut ALL THE WAY DOWN to the plate
+           so nothing can stop the boss short. Same idiom (and the same
            SKIRT_BOSS_CH_* numbers) as the tub side walls in
            build_mini_console; here they stand alone so they can be judged.
 
@@ -60,17 +61,25 @@ from segno_enclosure import (
 )
 
 # --- jig parameters -----------------------------------------------------------
-PLATE_T      = 4.0    # solid, prints flat-down: full bed contact, no feet, no
+PLATE_T      = 2.4    # solid, prints flat-down: full bed contact, no feet, no
                       # bridging. The failure that killed the first mini tray
                       # (#539) was a floor standing on pads; this has none.
+                      # 12 layers at 0.2 -- 40% off the old 4.0 and most of the
+                      # print time, since the plate is nearly all of the volume.
+                      # Not thinner: this plate is the measurement DATUM, and a
+                      # gauge that curls reports a placement error that is
+                      # really its own. _print_check.py is the arbiter.
 PLATE_MARGIN = 5.0    # plate edge past the outermost feature
 CORNER_R     = 4.0    # square corners peel first
 BOT_CHAM     = 0.6    # kills elephant foot
 
 PIN_CLR   = 0.5       # pin Ø under the hole Ø -- drops in by hand, no play worth
                       # reading as a placement error
-PIN_D     = PEDAL_BASE_HOLE_D - PIN_CLR          # 2.7
-PIN_LEAD  = 0.5       # top chamfer -> Ø1.7 tip, so a near-miss still starts
+PIN_D     = 3.5       # user's call 2026-08-16, and it is what fixes the hole Ø:
+                      # a 3.5 pin cannot enter the 3.2 hole first described, so
+                      # PEDAL_BASE_HOLE_D is now the INFERRED 4.0. The assert
+                      # below keeps the two from drifting apart again.
+PIN_LEAD  = 0.5       # top chamfer -> Ø2.5 tip, so a near-miss still starts
 # The hole DEPTH is the one number nobody has measured. A pin longer than the
 # hole is deep bottoms out and holds the pedal proud -- which reads exactly like
 # a placement error, i.e. it would poison the very result this jig exists to
@@ -89,10 +98,13 @@ COL_SIDE_CLR  = 1.0   # inner face off the case side wall AT THE COLUMN STATION.
                       # number should still mean what it says.
 COL_PRONG     = 7.0   # material fore and aft of the boss channel
 COL_WEB       = 3.5   # outer wall joining the two prongs behind the channel
-COL_CH_Z0     = 5.0   # channel floor: the boss never comes below 7.3, so the
-                      # prongs keep a solid plinth instead of splitting to the
-                      # plate (the tray can cut full height -- it has a tub
-                      # wall to lean on, this does not)
+COL_CH_Z0     = 0.0   # channel runs ALL THE WAY DOWN to the plate face, same as
+                      # the tray's tub walls. A plinth under the boss (this was
+                      # 5.0) buys stiffness the outer web and the gusset already
+                      # provide, and it puts a floor under the one feature whose
+                      # free travel the test depends on -- if the pattern is off
+                      # and the pedal sits down-and-forward, a plinth stops the
+                      # boss early and the jig reports its own obstruction.
 COL_GUSSET    = 3.0   # 45deg ramp, outer face only (the inner face is the
                       # pedal's clearance and must stay flat)
 
@@ -127,6 +139,9 @@ def _check():
     assert PIN_ENGAGE <= HOLE_DEPTH_MIN - 0.5, \
         "PINS: pin can bottom out in the hole and hold the pedal proud"
     assert max(abs(hx) for hx, _ in holes) + PIN_D/2.0 < PLATE_HD, "PINS: a pin runs off the plate"
+    assert PIN_D <= PEDAL_BASE_HOLE_D - 0.3, (
+        f"PINS: Ø{PIN_D} pin cannot enter a Ø{PEDAL_BASE_HOLE_D} hole -- the pin "
+        "diameter and the hole diameter have drifted apart, fix the measurement")
 
 
 def _pedal_stand_in():
