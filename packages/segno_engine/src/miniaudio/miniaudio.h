@@ -29713,10 +29713,25 @@ static ma_result ma_init_pa_mainloop_and_pa_context__pulse(ma_context* pContext,
         return MA_FAILED_TO_INIT_BACKEND;
     }
 
+    /*
+    SEGNO PATCH: both failure paths below free the mainloop but upstream never
+    unref'd pPulseContext, so a FAILED connection attempt leaks the whole
+    pa_context. That object owns a pa_mempool, and libpulse backs a mempool with
+    an anonymous memfd_create("pulseaudio", ...) segment — so each leaked context
+    is a permanently held file descriptor named "/memfd:pulseaudio (deleted)".
+    On a host with no PulseAudio server every attempt takes one of these paths,
+    and anything that probes on a timer walks the process into its RLIMIT_NOFILE
+    (#721: 991 of 1024 FDs on the appliance, after which no surface or socket can
+    be created). pa_context_unref drops the last reference and frees the mempool
+    with it. The success teardown in ma_context_uninit__pulse already does
+    disconnect + unref + mainloop_free; these paths now match it, disconnecting
+    only where a connect was actually issued.
+    */
     /* Now we need to connect to the context. Everything is asynchronous so we need to wait for it to connect before returning. */
     result = ma_result_from_pulse(((ma_pa_context_connect_proc)pContext->pulse.pa_context_connect)((ma_pa_context*)pPulseContext, pServerName, (tryAutoSpawn) ? 0 : MA_PA_CONTEXT_NOAUTOSPAWN, NULL));
     if (result != MA_SUCCESS) {
         ma_log_postf(ma_context_get_log(pContext), MA_LOG_LEVEL_ERROR, "[PulseAudio] Failed to connect PulseAudio context.");
+        ((ma_pa_context_unref_proc)pContext->pulse.pa_context_unref)((ma_pa_context*)pPulseContext);   /* SEGNO PATCH */
         ((ma_pa_mainloop_free_proc)pContext->pulse.pa_mainloop_free)((ma_pa_mainloop*)(pMainLoop));
         return result;
     }
@@ -29725,6 +29740,8 @@ static ma_result ma_init_pa_mainloop_and_pa_context__pulse(ma_context* pContext,
     result = ma_wait_for_pa_context_to_connect__pulse(pContext, pMainLoop, pPulseContext);
     if (result != MA_SUCCESS) {
         ma_log_postf(ma_context_get_log(pContext), MA_LOG_LEVEL_ERROR, "[PulseAudio] Waiting for connection failed.");
+        ((ma_pa_context_disconnect_proc)pContext->pulse.pa_context_disconnect)((ma_pa_context*)pPulseContext);   /* SEGNO PATCH */
+        ((ma_pa_context_unref_proc)pContext->pulse.pa_context_unref)((ma_pa_context*)pPulseContext);             /* SEGNO PATCH */
         ((ma_pa_mainloop_free_proc)pContext->pulse.pa_mainloop_free)((ma_pa_mainloop*)(pMainLoop));
         return result;
     }

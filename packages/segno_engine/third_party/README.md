@@ -117,3 +117,14 @@ Do not edit the vendored sources in place — they are upstream drops (plus, for
 `rnnoise/`, the one documented patch above). To upgrade, replace the folder(s)
 with a newer release, re-apply any still-needed documented patches, and update
 the version(s) above.
+
+## Vendored code that does **not** live here: `src/miniaudio/`
+
+miniaudio predates this directory and still sits at
+[`../src/miniaudio/`](../src/miniaudio/). It is vendored the same way, but it is
+**not a verbatim drop** — it carries local patches marked `SEGNO PATCH`, most of
+which no test can catch if an upgrade reverts them. Its version, license, and
+full patch index (including which patches ARE gated by a test, and under what
+conditions) are recorded in
+[`../src/miniaudio/README.md`](../src/miniaudio/README.md). Read that before
+taking a newer miniaudio.

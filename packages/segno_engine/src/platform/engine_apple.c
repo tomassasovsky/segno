@@ -101,6 +101,18 @@ void le_platform_backends(const ma_backend** out_list, ma_uint32* out_count) {
   *out_count = 0;
 }
 
+void le_platform_probe_backends(const ma_backend** out_list,
+                                ma_uint32* out_count) {
+  /* macOS has no backend to exclude from a probe — Core Audio is the only one. */
+  *out_list = NULL;
+  *out_count = 0;
+}
+
+void le_platform_set_alsa_only_for_test(int state) {
+  /* No ALSA-only pin on macOS; the probe list is unconditional. */
+  (void)state;
+}
+
 int le_platform_enumerate_devices(le_device_info* out, int32_t max,
                                   int32_t* count, int capture) {
   /* Defer to miniaudio's Core Audio enumeration (already the right list). */
