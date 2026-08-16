@@ -43,6 +43,22 @@ void le_platform_backends(const ma_backend** out_list, ma_uint32* out_count);
 void le_platform_probe_backends(const ma_backend** out_list,
                                 ma_uint32* out_count);
 
+/* TEST SEAM. Forces the appliance ALSA-only pin on (1) or off (0), or restores
+ * reading it from SEGNO_ALSA_ONLY (any negative value — the default, and the
+ * state of every shipping process). No-op on macOS/Windows, which have no pin.
+ *
+ * It exists because the pin is otherwise unaskable twice: Linux reads the
+ * variable once into a function-static and caches it for the process, so a test
+ * that wants the other value cannot get it by setting the environment (too
+ * late) or by fork()ing (the child inherits the primed cache). Both approaches
+ * fail SILENTLY — the assertion still runs, against whichever value happened to
+ * be frozen first — which is exactly the kind of green-but-vacuous test this
+ * seam replaces.
+ *
+ * Control thread only, and never called by the engine itself. A test that sets
+ * it must restore it. */
+void le_platform_set_alsa_only_for_test(int state);
+
 /* Called immediately before ma_context_init. Linux sets PIPEWIRE_QUANTUM and
  * forces the graph quantum via pw-metadata. No-op elsewhere. */
 void le_platform_before_context_init(const le_config* config);

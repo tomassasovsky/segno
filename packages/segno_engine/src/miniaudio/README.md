@@ -31,12 +31,17 @@ where they are, this tells you why they must survive an upgrade.
 **On upgrade: re-apply every cluster below, or prove upstream fixed it.** A
 plain drop-in replacement silently reverts all of them.
 
-### 1. ALSA duplex data-loop hardening (appliance)
+The 13 markers split 9 / 4 between the two clusters below. If you are auditing
+by hand, that split is the number to check against — a cluster that comes up
+short is a patch that did not survive.
 
-Nine sites across `ma_device_start__alsa`, `ma_device_wait__alsa`,
-`ma_device_read__alsa`, `ma_device_write__alsa`, plus one `ma_bool8` state field
-(`segnoCaptureFlushPending`) added to the ALSA device struct. Together they make
-the direct-ALSA appliance path survive a real USB interface:
+### 1. ALSA duplex data-loop hardening (appliance) — 9 markers
+
+One `ma_bool8` state field (`segnoCaptureFlushPending`) added to the ALSA device
+struct, plus eight code sites across `ma_device_start__alsa`,
+`ma_device_wait__alsa`, `ma_device_read__alsa` and `ma_device_write__alsa` (two
+markers each in `read`/`write`, for the arm/flush and the two xrun retries).
+Together they make the direct-ALSA appliance path survive a real USB interface:
 
 - a one-shot flush of the startup capture backlog on the first read;
 - waiting on ALSA's own `snd_pcm_wait()` rather than the cached poll descriptors;
@@ -48,32 +53,45 @@ the direct-ALSA appliance path survive a real USB interface:
 **Covered by tests?** Not directly — this is device-loop behaviour that needs
 real hardware. It is bench-verified on the appliance.
 
-### 2. PulseAudio failure-path `pa_context` leak (#721)
+### 2. PulseAudio failure-path `pa_context` leak (#721) — 4 markers
 
-`ma_init_pa_mainloop_and_pa_context__pulse` — both post-creation failure paths
-freed the mainloop but never `pa_context_unref`'d the context. libpulse backs a
-`pa_context`'s mempool with a `memfd_create("pulseaudio", …)` segment, so each
-failed connection attempt permanently held one descriptor
+One explanatory block plus three calls, all in
+`ma_init_pa_mainloop_and_pa_context__pulse`. That function has **two** failure
+paths once the `pa_context` exists, and upstream freed the mainloop on both
+while never `pa_context_unref`'ing the context. libpulse backs a `pa_context`'s
+mempool with a `memfd_create("pulseaudio", …)` segment, so each failed
+connection attempt permanently held one descriptor
 (`/memfd:pulseaudio (deleted)`). On a host with no PulseAudio server, anything
-probing on a timer walks the process into its `RLIMIT_NOFILE`. The patch adds
-the missing `pa_context_unref` (and `pa_context_disconnect` where a connect was
-actually issued), matching the success teardown in `ma_context_uninit__pulse`.
+probing on a timer walks the process into its `RLIMIT_NOFILE`.
 
-**Covered by tests?** Yes — `test_probing_leaks_no_fds` in
-`src/test/test_engine_core.c` counts `/proc/self/fd` across 64 rounds of
-probing and fails if it grows. It runs **unpinned** for exactly this reason: the
-appliance's ALSA-only pin means PulseAudio is never reached, so a pinned test
-would stay green with this patch reverted. The `native-tests` jobs install
-`libpulse0` and run no PulseAudio server, which is the leaking condition.
+The two paths are mutually exclusive on any given host, and each carries its own
+patch line — so **check for both**, not just the first:
 
-Two limits worth knowing, because they decide whether the gate is real on a
-given machine:
+| path | condition | patch |
+|---|---|---|
+| `pa_context_connect` returns an error | nothing listening at all | `pa_context_unref` |
+| the wait for the connection fails | a server answered, then failed | `pa_context_disconnect` + `pa_context_unref` |
 
-- on a host with **no libpulse installed**, miniaudio skips the backend and the
-  test cannot fail — this is why CI installs it explicitly;
-- on a host with a **running** PulseAudio/PipeWire-pulse server the connect
-  succeeds, no failure path is taken, and the test again cannot fail. A
-  developer's desktop is usually in this state; CI is not.
+The second needs the disconnect because a connect *was* issued; together they
+match the success teardown in `ma_context_uninit__pulse`.
+
+**Covered by tests?** Yes, both paths, in `src/test/test_engine_core.c`:
+
+- `test_probing_leaks_no_fds` counts `/proc/self/fd` across 64 rounds of probing
+  with no server present — the synchronous-connect-error path;
+- `test_probing_leaks_no_fds_when_the_server_fails_mid_connect` stands up a fake
+  PulseAudio server (a unix socket that accepts and immediately closes) and
+  points `PULSE_SERVER` at it — the wait-failed path. Removing only that path's
+  `pa_context_unref` grows the table by exactly one descriptor per round.
+
+Both run **unpinned** for the same reason: the appliance's ALSA-only pin means
+PulseAudio is never reached, so a pinned test would stay green with this whole
+cluster reverted. The `native-tests` jobs install `libpulse0`, which is what
+makes the first one able to fail at all.
+
+One limit worth knowing: on a host with **no libpulse installed** miniaudio
+never loads the backend and both tests skip (loudly). CI installs it explicitly
+so that cannot happen there.
 
 After any upgrade, check by hand as well:
 
@@ -81,5 +99,4 @@ After any upgrade, check by hand as well:
 grep -c "SEGNO PATCH" packages/segno_engine/src/miniaudio/miniaudio.h   # expect 13
 ```
 
-and confirm `pa_context_unref` appears on both failure paths of
-`ma_init_pa_mainloop_and_pa_context__pulse`.
+with 9 in the ALSA cluster and 4 in the Pulse one.

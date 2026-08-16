@@ -27,17 +27,32 @@
                                * le_config / le_device_info / LE_MAX_CHANNELS /
                                * LE_OK + ma_backend arrive transitively */
 
+/* Test-only override of the pin below: <0 means "read the environment" (the
+ * shipping behaviour, and the value in every non-test process). See
+ * le_platform_set_alsa_only_for_test. */
+static int g_alsa_only_override = -1;
+
 /* The appliance sets SEGNO_ALSA_ONLY (via the kiosk launcher): a single app owns
  * the card with no PipeWire/JACK/Pulse in the image, so we drive ALSA directly
  * for the lowest latency and zero IPC, and skip all the PipeWire quantum plumbing.
  * Read once and cache — the env does not change over a process's life. */
 static int le_alsa_only(void) {
+  /* Checked BEFORE the cache, deliberately. The cache is a function-static
+   * primed on the first call anywhere in the process, so by the time a test
+   * wants the other value it is already frozen — putenv/setenv at that point is
+   * a silent no-op, and so is setenv in a fork()ed child, which inherits the
+   * primed cache. The override is the only way to ask this question twice. */
+  if (g_alsa_only_override >= 0) return g_alsa_only_override;
   static int cached = -1;
   if (cached < 0) {
     const char* v = getenv("SEGNO_ALSA_ONLY");
     cached = (v != NULL && v[0] != '\0' && v[0] != '0') ? 1 : 0;
   }
   return cached;
+}
+
+void le_platform_set_alsa_only_for_test(int state) {
+  g_alsa_only_override = state;
 }
 
 /* Force PipeWire's global graph quantum to `frames` (0 restores the dynamic

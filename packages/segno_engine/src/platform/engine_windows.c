@@ -44,6 +44,11 @@ void le_platform_probe_backends(const ma_backend** out_list,
   *out_count = 0;
 }
 
+void le_platform_set_alsa_only_for_test(int state) {
+  /* No ALSA-only pin on Windows; the probe list is unconditional. */
+  (void)state;
+}
+
 int le_platform_enumerate_devices(le_device_info* out, int32_t max,
                                   int32_t* count, int capture) {
   /* Defer to miniaudio's WASAPI enumeration (already the right list). */
