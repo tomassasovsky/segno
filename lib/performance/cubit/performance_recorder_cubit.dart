@@ -358,6 +358,15 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         _armedTicker = null;
         _emit(const PerformanceRecorderFinalizing());
       case PerformanceCaptureStatus.done:
+        // One last read, and the only one that can see the whole capture.
+        // The armed ticker stopped at `finalizing`, but the drain thread's
+        // FINAL cycle — the one disarm joins, which flushes everything still
+        // buffered — runs after that, so it can silence-fill frames no armed
+        // tick ever sampled. `done` is emitted strictly after that join, and
+        // the counters survive disarm (they reset on the next arm), so this
+        // reads the complete total. Without it a glitch in the closing
+        // quarter-second finalized as a clean take (#710).
+        if (_performance.captureProgress.overrun) _sawOverrun = true;
         unawaited(_afterFinalized());
     }
   }

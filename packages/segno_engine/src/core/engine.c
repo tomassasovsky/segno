@@ -304,6 +304,8 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_perf_armed, 0);
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_zero_filled_frames, 0u,
+                        memory_order_relaxed);
 
   if (input_channels <= 0) input_channels = 2;
   if (input_channels > LE_MAX_CHANNELS) input_channels = LE_MAX_CHANNELS;

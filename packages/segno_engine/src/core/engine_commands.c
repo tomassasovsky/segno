@@ -2192,6 +2192,8 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
 
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_zero_filled_frames, 0u,
+                        memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_log_overruns, 0u, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_log_ctrl_overruns, 0u,
                         memory_order_relaxed);

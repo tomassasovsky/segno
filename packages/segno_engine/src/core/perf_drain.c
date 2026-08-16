@@ -173,6 +173,18 @@ void le_perf_drain_force_write_failure_for_test(int enabled) {
                         memory_order_relaxed);
 }
 
+/* Test-only global: see le_perf_drain_set_mid_cycle_hook_for_test
+ * (engine_internal.h). Same discipline as the write-failure switch above — a
+ * test sets it before driving a drain thread and clears it after; it is never
+ * raced against a concurrently-running hook. */
+static void (*g_pd_mid_cycle_hook)(void*) = NULL;
+static void* g_pd_mid_cycle_ctx = NULL;
+
+void le_perf_drain_set_mid_cycle_hook_for_test(void (*fn)(void*), void* ctx) {
+  g_pd_mid_cycle_hook = fn;
+  g_pd_mid_cycle_ctx = ctx;
+}
+
 typedef struct le_pd_gap {
   uint64_t frame;
   uint64_t duration_frames;
@@ -385,14 +397,29 @@ static int le_pd_drain_ring(le_pd_file* pf, le_audio_ring* ring, int channels,
   }
 }
 
-/* Tops `pf` up to `elapsed` frames with silence when the ring dropped frames
- * (an overrun) and it has fallen behind, so the file stays sample-consistent
- * with wall-clock time. Records a gap entry {frame, duration_frames} — the
- * position it started falling behind, and how many frames were padded. */
+/* THE ZERO-FILL (#710). Tops `pf` up to `elapsed` frames with digital silence
+ * when the audio that should have filled them never reached the drain — a ring
+ * overrun being the designed cause — so the file stays sample-consistent with
+ * the engine's frame clock rather than time-compressing around the hole.
+ *
+ * This is the ONLY place the capture path substitutes silence, so it is also
+ * the only honest place to count it: whatever the cause, every frame padded
+ * here is a frame of the take the performer did not play, and #710's bench
+ * captures found period-exact runs of it in takes whose `overrun_count` read a
+ * clean zero (a_perf_overruns only sees frames the AUDIO thread failed to
+ * enqueue). a_perf_zero_filled_frames therefore counts the silence itself, is
+ * published on le_snapshot, and is what the app latches into the capture's
+ * glitch flag. Also records a gap entry {frame, duration_frames} — where the
+ * file started falling behind, and how many frames were padded — capped at
+ * LE_PD_MAX_GAPS, which is why the total lives in the atomic and not in
+ * `gap_count`. */
 static int le_pd_catch_up(le_perf_drain* d, le_pd_file* pf, int channels,
                           uint64_t elapsed) {
   if (pf->written >= elapsed || channels <= 0) return 1;
   const uint64_t gap = elapsed - pf->written;
+
+  atomic_fetch_add_explicit(&d->engine->a_perf_zero_filled_frames, gap,
+                            memory_order_relaxed);
 
   if (d->gap_count < LE_PD_MAX_GAPS) {
     d->gaps[d->gap_count].frame = pf->written;
@@ -473,6 +500,12 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full) {
                                                 memory_order_relaxed);
   const uint32_t overruns = atomic_load_explicit(&d->engine->a_perf_overruns,
                                                  memory_order_relaxed);
+  /* #710: `overrun_count` alone let a take look clean while carrying audible
+   * silence — it counts frames the audio thread could not enqueue, not the
+   * silence this thread actually wrote. Report both, so a reader never has to
+   * infer the second from the (capped) `overrun_gaps` list. */
+  const uint64_t zero_filled = atomic_load_explicit(
+      &d->engine->a_perf_zero_filled_frames, memory_order_relaxed);
 
   /* Heap-allocated, not a local array: LE_PD_JSON_BUF scales with
    * LE_PD_MAX_LAYERS (in turn LE_MAX_TRACKS * LE_POOL_SLOTS), and this
@@ -505,8 +538,10 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full) {
                  "]},\n"
                  "  \"capture_frames\": %llu,\n"
                  "  \"overrun_count\": %u,\n"
+                 "  \"zero_filled_frames\": %llu,\n"
                  "  \"overrun_gaps\": [",
-                 (unsigned long long)elapsed, overruns);
+                 (unsigned long long)elapsed, overruns,
+                 (unsigned long long)zero_filled);
 
   /* Loop guard re-checks `off` before every snprintf: once `off` reaches
    * LE_PD_JSON_BUF, `LE_PD_JSON_BUF - off` would otherwise underflow
@@ -593,6 +628,36 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
   float scratch[LE_PD_SCRATCH_SAMPLES];
   int ok = 1;
 
+  /* ORDER IS LOAD-BEARING (#710): sample the elapsed frame count BEFORE
+   * touching a single ring, never after.
+   *
+   * The audio thread publishes in this order — push every frame of the block
+   * into the rings, THEN add the block to a_perf_frames (engine_process.c's
+   * tail) — so at any instant the rings hold at least `a_perf_frames` worth
+   * of audio. Reading elapsed first therefore makes the catch-up test
+   * `written < elapsed` mean exactly what it claims: audio the taps could not
+   * enqueue. Anything the audio thread produces WHILE this cycle is draining
+   * simply lands past the snapshot and is written next cycle.
+   *
+   * Reading it afterwards — as this did until #710 — makes the same test also
+   * fire for audio that is merely still in flight: the drain empties the
+   * master ring, spends milliseconds writing the monitor stems to disk, then
+   * asks the audio thread how far it has got and pads the difference with
+   * silence even though those frames are sitting in the ring, unread. The
+   * padding then displaces the real audio, which arrives next cycle and is
+   * written after the hole. That is the deterministic zero-fill every bench
+   * take showed ~0.25 s in (LE_PD_FLUSH_MS — the FIRST cycle, whose writes
+   * are the slowest of the session: freshly created files, cold stdio
+   * buffers, unallocated extents), and the same mechanism at a lower rate for
+   * the rest of the take, worse on slow storage because the window is exactly
+   * "how long this cycle's writes take". No overrun is involved, which is why
+   * a_perf_overruns stayed at zero through all of it.
+   *
+   * A genuine ring overrun still zero-fills: the frames it dropped were
+   * counted into a_perf_frames before this load and never enqueued at all. */
+  const uint64_t elapsed =
+      atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+
   if (!le_pd_drain_ring(&d->master_file, &e->perf.master_ring,
                        e->perf.master_channels, scratch,
                        LE_PD_SCRATCH_SAMPLES)) {
@@ -606,9 +671,13 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
     }
   }
 
+  /* Test seam (engine_internal.h): stands in for the audio thread producing
+   * while this cycle was busy writing. Compiled in unconditionally — one NULL
+   * check per 250 ms cycle on a background thread — because the ordering it
+   * pins is the whole #710 fix. */
+  if (g_pd_mid_cycle_hook != NULL) g_pd_mid_cycle_hook(g_pd_mid_cycle_ctx);
+
   if (ok) {
-    const uint64_t elapsed =
-        atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
     if (!le_pd_catch_up(d, &d->master_file, e->perf.master_channels, elapsed)) {
       ok = 0;
     }

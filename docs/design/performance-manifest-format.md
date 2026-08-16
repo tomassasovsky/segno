@@ -81,8 +81,9 @@ What a standalone tool should conclude from each combination:
 | `channel_layout.master_channels` | int | Channel count of `master.pcm`/`master.wav` (D-MASTER: stereo, or mono on a mono device). |
 | `channel_layout.captured_inputs` | int[] | Hardware input indices monitored at arm time (frozen for the session, D-INPUT); each has an `input-<n>.pcm` / `live-input-<n>.wav`. |
 | `capture_frames` | int | Total frames elapsed since arm, regardless of any ring drop. |
-| `overrun_count` | int | Capture-ring overruns (frames dropped, then silence-filled) since arm. |
-| `overrun_gaps` | array | Up to 128 individually-logged `{frame, duration_frames}` gaps (beyond that, frames are still silence-filled, just not itemized here). |
+| `overrun_count` | int | Capture-ring overruns (frames the audio thread could not enqueue) since arm. Not the whole story — see `zero_filled_frames`. |
+| `zero_filled_frames` | int | Frames of digital silence the drain actually substituted into the capture files since arm, summed over every file it writes. A superset of `overrun_count`'s consequences: every dropped frame is silence-filled, but a file can also fall behind for reasons no overrun explains, which is how #710's takes carried audible silence while `overrun_count` read `0`. Absent from any sidecar written before #710. |
+| `overrun_gaps` | array | Up to 128 individually-logged `{frame, duration_frames}` gaps (beyond that, frames are still silence-filled, just not itemized here — `zero_filled_frames` stays exact). |
 | `layers` | array | Every retired overdub layer's raw PCM, persisted before pool eviction/clear/redo could destroy it (part 5, D-LAYER) — see below. |
 | `stopped_early` | string? | `"disk_full"` or `"device_changed"` when capture stopped abnormally; absent for a normal disarm. |
 | `armSnapshot` | object? | See below. `null`/absent only if the app crashed before arm's own crash-survival file (`arm-snapshot.json`, deleted at finalize) could even be written. |

@@ -1131,6 +1131,25 @@ struct le_engine {
   _Atomic int32_t a_perf_armed;
   _Atomic uint64_t a_perf_frames;
   _Atomic uint32_t a_perf_overruns;
+  /* Frames of pure silence the drain thread SUBSTITUTED into the capture
+   * files because the audio it should have written never arrived
+   * (perf_drain.c's le_pd_catch_up). Distinct from a_perf_overruns, which
+   * counts frames the AUDIO thread failed to enqueue on a full ring: a ring
+   * overrun always produces a zero-fill, but a zero-fill does not imply a
+   * ring overrun — anything that leaves a capture file short of
+   * a_perf_frames lands here (a frame the taps never pushed, a drain cycle
+   * that read the elapsed count out of step). Those non-overrun zero-fills
+   * were the silent half of #710: period-exact runs of digital silence in a
+   * take that reported a clean overrun_count. Counted in FRAMES rather than
+   * events because that is what a listener hears, and SUMMED OVER THE
+   * CAPTURE'S FILES (master + every monitored input) rather than over the
+   * timeline — one drain cycle can leave several stems short by different
+   * amounts, and there is no single "the gap" to report. Its only load-
+   * bearing reading is therefore zero vs non-zero; the sidecar's
+   * `overrun_gaps` keeps per-file positions (capped at LE_PD_MAX_GAPS) while
+   * this total never saturates. Written by the drain thread, read by the
+   * snapshot — hence atomic. */
+  _Atomic uint64_t a_perf_zero_filled_frames;
   /* Perf-log ring drops (part 3), tracked separately from a_perf_overruns
    * (the PCM-ring overrun count from part 1) — a dropped log entry and a
    * dropped audio sample are different failure modes worth telling apart in

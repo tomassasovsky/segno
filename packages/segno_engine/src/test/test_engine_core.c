@@ -6751,6 +6751,117 @@ static void test_perf_drain_silence_fills_overrun_gap(void) {
   CHECK(strstr(json, "\"frame\": 7") != NULL);
   CHECK(strstr(json, "\"duration_frames\": 25") != NULL);
   CHECK(strstr(json, "\"finalized\": false") != NULL);
+  /* #710: the silence itself is counted and reported, not just implied by
+   * the gap list — 25 frames padded into the one file this capture writes. */
+  CHECK(strstr(json, "\"zero_filled_frames\": 25") != NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_zero_filled_frames == 25);
+
+  le_engine_destroy(e);
+}
+
+/* #710, honesty half: the zero-fill counter reaches the SNAPSHOT while the
+ * capture is still armed — the app latches its glitch flag from the armed
+ * poll, so a counter that only surfaced in the sidecar (which the app reads
+ * once, at finalize) would still let the completion dialog claim a clean
+ * take. Same tiny-ring overrun as above; the assertion is the timing, not the
+ * arithmetic.
+ *
+ * Waits for the drain thread's OWN background cycle (poll, not sleep) rather
+ * than disarming first: disarm is exactly the boundary this test must not
+ * rely on. */
+static void test_perf_zero_fill_counter_visible_while_armed(void) {
+  printf("test_perf_zero_fill_counter_visible_while_armed\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 4, 1, 1, 1000); /* tiny rate -> 7 usable ring frames */
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  float big_out[32];
+  process_const(e, 0.0f, 32, big_out); /* 7 pushes succeed, 25 drop */
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 1);
+  CHECK(s.perf_zero_filled_frames == 0); /* no cycle has run yet */
+
+  /* 32 frames of mono float = 128 bytes once the gap is padded. */
+  char master_path[600];
+  snprintf(master_path, sizeof(master_path), "%s/master.pcm", perf_test_dir());
+  CHECK(poll_file_reaches_size_for_test(master_path, 32 * 4, 3000));
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 1); /* still armed: this is a live reading */
+  CHECK(s.perf_zero_filled_frames == 25);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_engine_destroy(e);
+}
+
+/* #710, the deterministic arm transient. Every bench capture carried a 2-3
+ * period zero-fill ~0.25 s in — LE_PD_FLUSH_MS, i.e. the drain thread's FIRST
+ * cycle — with no overrun to explain it. The cause was the cycle sampling
+ * a_perf_frames AFTER draining the rings: audio produced while the cycle was
+ * writing counted as "elapsed" but had not been popped yet, so catch-up padded
+ * silence over frames that were sitting in the ring, unread. le_pd_drain_cycle
+ * now samples elapsed FIRST, and this pins that ordering.
+ *
+ * The mid-cycle hook stands in for the audio thread: it fires on the drain
+ * thread after the rings are drained and before catch-up, and publishes frames
+ * in the audio thread's own order (push into the ring, THEN add to
+ * a_perf_frames). With the sample taken first, those frames are simply past
+ * the snapshot and land next cycle; taken last, they would be zero-filled. */
+typedef struct {
+  le_engine* e;
+  int fired;
+} perf_mid_cycle_ctx;
+
+static void perf_mid_cycle_produce(void* raw) {
+  perf_mid_cycle_ctx* ctx = (perf_mid_cycle_ctx*)raw;
+  if (ctx->fired) return; /* once, so the assertion has one exact expectation */
+  ctx->fired = 1;
+  const float frame[1] = {1.0f};
+  uint64_t pushed = 0;
+  for (int i = 0; i < 8; ++i) {
+    if (!le_audio_ring_push_frame(&ctx->e->perf.master_ring, frame, 1)) break;
+    pushed++;
+  }
+  atomic_fetch_add_explicit(&ctx->e->a_perf_frames, pushed,
+                            memory_order_relaxed);
+}
+
+static void test_perf_drain_samples_elapsed_before_draining(void) {
+  printf("test_perf_drain_samples_elapsed_before_draining\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000); /* real ring: nothing may drop */
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  float out[LOOP_N];
+  process_const(e, 0.5f, LOOP_N, out);
+
+  perf_mid_cycle_ctx ctx = {e, 0};
+  le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_produce, &ctx);
+  /* Disarm runs a final cycle synchronously, so the hook is guaranteed to
+   * have fired by the time this returns. */
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL); /* before other tests */
+
+  CHECK(ctx.fired == 1);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_overruns == 0);          /* the ring never overflowed */
+  CHECK(s.perf_zero_filled_frames == 0); /* ...so nothing may be padded */
+
+  char json[4096];
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+  CHECK(strstr(json, "\"overrun_gaps\": []") != NULL);
+  CHECK(strstr(json, "\"zero_filled_frames\": 0") != NULL);
 
   le_engine_destroy(e);
 }
@@ -20650,6 +20761,8 @@ int main(void) {
   test_perf_monitor_tap_pads_silence_when_disabled();
   test_perf_drain_writes_master_pcm_byte_identical();
   test_perf_drain_silence_fills_overrun_gap();
+  test_perf_zero_fill_counter_visible_while_armed();
+  test_perf_drain_samples_elapsed_before_draining();
   test_perf_drain_disk_full_stops_cleanly();
   test_perf_drain_files_are_crash_consistent_mid_capture();
   test_perf_reconfigure_while_armed_marks_sidecar_device_changed();
