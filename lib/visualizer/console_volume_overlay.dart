@@ -108,10 +108,11 @@ class _ConsoleVolumeOverlayState extends State<ConsoleVolumeOverlay> {
           now.difference(entry.at) > ConsoleVolumeOverlay.localHold;
     });
     // A config page whose subject vanished from the snapshot (a shrunk
-    // roster after a device change) transitions to the list FOR REAL — a
-    // build-side fallback alone would draw the list while [_page] stayed on
-    // the panel, so dead-space taps would no-op and the revert chain would
-    // take two steps from what looks like the list.
+    // roster after a device change) transitions to the list FOR REAL — the
+    // build-side guard alone would only borrow the list's DRAWING while
+    // [_page] stayed on the panel: the revert would then spend a whole
+    // extra 8 s cycle stepping panel → list first, and a roster that later
+    // regrew past [_configIndex] would resurrect the dead panel as a ghost.
     final page = _page;
     final vanished = switch (page) {
       _OverlayPage.input => _inputOf(widget.readout, _configIndex) == null,

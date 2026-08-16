@@ -374,11 +374,28 @@ void main() {
       );
       expect(find.byKey(const Key('volume_overlay_list')), findsOneWidget);
 
-      // The transition is REAL state, not a drawing fallback: one dead-space
-      // tap dismisses to the readout (list behaviour), and does not need the
-      // panel's extra step.
-      await tester.tapAt(const Offset(5, 595));
+      // No ghost resurrection: the roster later regrows past the old
+      // subject index — a page state stuck on the panel would draw the dead
+      // config page again the moment its guard passed.
+      await pump(
+        tester,
+        PerformanceReadout(
+          tracks: readout.tracks,
+          inputs: readout.inputs,
+          tempoBpm: 60,
+        ),
+      );
       await tester.pump();
+      expect(
+        find.byKey(const Key('volume_overlay_input_config')),
+        findsNothing,
+      );
+      expect(find.byKey(const Key('volume_overlay_list')), findsOneWidget);
+
+      // And the transition is REAL state, not a drawing fallback: ONE 8 s
+      // cycle returns to the readout. A stuck panel page would spend the
+      // first cycle stepping panel → list and need a second to get home.
+      await tester.pump(const Duration(seconds: 9));
       expect(find.byKey(const Key('readout_face')), findsOneWidget);
     });
 
