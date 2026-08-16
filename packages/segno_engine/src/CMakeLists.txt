@@ -237,10 +237,16 @@ target_sources(segno_engine PRIVATE
   "${SEGNO_RNNOISE_DIR}/src/rnnoise_data.c"
   "${SEGNO_RNNOISE_DIR}/src/rnnoise_tables.c"
 )
-# Only the public header dir goes on the include path; the rnnoise TUs resolve
-# their internal headers relative to their own directory (quote-includes).
+# The public header dir plus the vendored src dir: on x86 hosts vec.h pulls
+# vec_avx.h, which includes src/x86/x86cpu.h, whose `#include "common.h"`
+# resolves against src/x86/ and misses the header one level up (upstream
+# builds with src/ on the path for the same reason). Listed after the
+# engine's own dirs so engine headers win any future clash.
+# Otherwise the rnnoise TUs resolve their internal headers relative to their
+# own directory (quote-includes).
 target_include_directories(segno_engine PRIVATE
   "${SEGNO_RNNOISE_DIR}/include"
+  "${SEGNO_RNNOISE_DIR}/src"
 )
 # Compile the vendored TUs with hidden visibility (upstream builds with
 # -fvisibility=hidden too): with default visibility the shared segno_engine
