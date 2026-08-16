@@ -1803,6 +1803,35 @@ int32_t le_engine_set_monitor_input_fx_chain_enabled(le_engine* engine,
   return LE_OK;
 }
 
+/* ---- Per-input conditioning stage (input conditioning, S1) ----
+ * Both setters ride the ring (the per-input monitor command shape: the input
+ * index in the addressed field, bounds vs LE_MAX_MONITORED_INPUTS) so the
+ * audio thread — sole owner of the stage's biquad/envelope state — resets or
+ * recomputes it in lockstep with the config change (an enable edge resets
+ * state; a param change recomputes only its own section's coefficients).
+ * Values are clamped by the audio thread on apply (le_cond_update_param);
+ * the control side validates only addressing. NOT perf-logged: conditioning
+ * is upstream of capture, so recorded PCM already embodies it. */
+
+int32_t le_engine_set_input_conditioning(le_engine* engine, int32_t input,
+                                         int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_INPUT_COND, input, enabled ? 1.0f : 0.0f);
+}
+
+int32_t le_engine_set_input_conditioning_param(le_engine* engine, int32_t input,
+                                               int32_t param, float value) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
+  if (param < LE_COND_HPF_HZ || param > LE_COND_EXP_RELEASE_MS) {
+    return LE_ERR_INVALID;
+  }
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_SET_INPUT_COND_PARAM,
+                                  .lanef = {input, param, value}});
+}
+
 /* ---- Track-stage + Master insert chains (FX v3 part 1b) ----
  * The bus twins of the lane/monitor setter families above, on the two
  * le_fx_bus owners (le_track.bus / le_engine.master_fx): type/count via the
