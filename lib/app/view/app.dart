@@ -23,6 +23,8 @@ import 'package:segno/common/pedal_device.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/looper/view/tracks/routing_tracks_tab.dart';
 import 'package:segno/pedal/flashed_firmware.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
@@ -531,6 +533,10 @@ class _AppViewState extends State<_AppView> {
   @override
   void initState() {
     super.initState();
+    // The sub-window's volume overlay sends control commands back over the
+    // window channel (#698); they are applied here, through the same blocs
+    // the main UI's own controls dispatch to.
+    widget.waveformWindow.onControl = _applyReadoutControl;
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => unawaited(_bootstrapWindow()),
     );
@@ -548,8 +554,45 @@ class _AppViewState extends State<_AppView> {
   @override
   void dispose() {
     _pushTimer?.cancel();
+    widget.waveformWindow.onControl = null;
     unawaited(widget.waveformWindow.close());
     super.dispose();
+  }
+
+  /// Applies a volume-overlay command from the sub-window through the same
+  /// blocs the main UI's own controls dispatch to — mute and FX chain as
+  /// TOGGLES resolved against repository intent (the overlay's snapshot is a
+  /// frame stale by construction), volumes clamped to the mix ceiling here
+  /// because the wire is not trusted. Unknown actions from a newer overlay
+  /// are dropped, per the channel's tolerant-decode discipline.
+  void _applyReadoutControl(ReadoutControl control) {
+    if (!mounted) return;
+    switch (control.action) {
+      case ReadoutControl.trackVolume:
+        context.read<LooperBloc>().add(
+          LooperVolumeChanged(
+            control.index,
+            control.value.clamp(0.0, kSignalMaxGain),
+          ),
+        );
+      case ReadoutControl.trackMuteToggle:
+        context.read<LooperBloc>().add(LooperMuteToggled(control.index));
+      case ReadoutControl.trackChainToggle:
+        context.read<LooperBloc>().add(LooperTrackChainToggled(control.index));
+      case ReadoutControl.inputVolume:
+        // Only configured monitors reach the overlay's INPUTS group, but the
+        // guard re-checks: writing through the cubit for an input it does not
+        // hold would materialize (and persist) a monitor the user never
+        // created.
+        final monitors = context.read<MonitorCubit>();
+        if (!monitors.state.hasInput(control.index)) return;
+        unawaited(
+          monitors.setVolume(
+            control.index,
+            control.value.clamp(0.0, kSignalMaxGain),
+          ),
+        );
+    }
   }
 
   /// Whether only one display is connected (the console expects two). `null`
@@ -608,6 +651,9 @@ class _AppViewState extends State<_AppView> {
             control,
             context.read<TransportClockCubit>().state,
             context.read<PerformanceRecorderCubit>().state,
+            context.read<MonitorCubit>().state,
+            context.read<InputsCubit>().state,
+            _l10n,
           ),
         );
       });
@@ -623,12 +669,21 @@ class _AppViewState extends State<_AppView> {
   ///
   /// Pure and static so it can be tested without a window: what the second
   /// screen shows is a function of state, never of when the timer fired.
+  ///
+  /// [l10n] resolves the display names carried on the wire (input names and
+  /// the routing pills' track names): both engines run the same locale on
+  /// the appliance, and resolving here keeps the sub-window free of routing
+  /// knowledge. Track names stay the STORED ones with a `defaultName` flag,
+  /// so the overlay can localize a default identity itself.
   static PerformanceReadout _readoutOf(
     LooperState looper,
     TracksState tracks,
     ControlState control,
     TransportClockState clock,
     PerformanceRecorderState recorder,
+    MonitorState monitors,
+    InputsState inputs,
+    AppLocalizations l10n,
   ) {
     final transport = looper.transport;
     final armed = recorder is PerformanceRecorderArmed ? recorder : null;
@@ -641,6 +696,30 @@ class _AppViewState extends State<_AppView> {
             muted: track.muted,
             pending: track.pending,
             selected: track.channel == control.cursor,
+            volume: track.volume,
+            chainEnabled: track.chainEnabled,
+            defaultName:
+                tracks.nameOf(track.channel) ==
+                storedDefaultTrackName(track.channel),
+            inputNames: [
+              for (final input in recordedInputs(track))
+                l10n.inputName(inputs.names, input),
+            ],
+          ),
+      ],
+      inputs: [
+        // Only configured monitors: an unmonitored input has no gain that
+        // does anything, and the overlay must not draw a fader that lies.
+        for (final index in monitors.inputs.keys.toList()..sort())
+          ReadoutInput(
+            index: index,
+            name: l10n.inputName(inputs.names, index),
+            volume: monitors.forInput(index).volume,
+            listeningTracks: [
+              for (final track in looper.tracks)
+                if (recordedInputs(track).contains(index))
+                  l10n.trackName(tracks.names, track.channel),
+            ],
           ),
       ],
       tempoBpm: transport.tempoBpm,

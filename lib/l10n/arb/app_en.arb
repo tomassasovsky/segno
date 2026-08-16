@@ -1556,6 +1556,66 @@
     "@readoutModeFx": {
         "description": "Mode chip on the 7-inch readout: a track press stomps its FX chain."
     },
+    "readoutVolumesInputs": "INPUTS",
+    "@readoutVolumesInputs": {
+        "description": "Pinned header caption over the input rows on the 7-inch volume overlay."
+    },
+    "readoutVolumesTracks": "TRACKS",
+    "@readoutVolumesTracks": {
+        "description": "Caption over the track rows on the 7-inch volume overlay."
+    },
+    "readoutVolumesBackToStage": "BACK TO STAGE",
+    "@readoutVolumesBackToStage": {
+        "description": "Chip on the 7-inch volume overlay that dismisses it back to the readout."
+    },
+    "readoutVolumesBack": "BACK",
+    "@readoutVolumesBack": {
+        "description": "Chip on a 7-inch volume config panel that returns to the volume list."
+    },
+    "readoutVolumesVolume": "VOLUME",
+    "@readoutVolumesVolume": {
+        "description": "Caption over the fader on a 7-inch volume config panel."
+    },
+    "readoutVolumesInputKind": "INPUT",
+    "@readoutVolumesInputKind": {
+        "description": "Kind caption on the input config panel, and the caption over a track's read-only input-source pills."
+    },
+    "readoutVolumesTrackKind": "TRACK",
+    "@readoutVolumesTrackKind": {
+        "description": "Kind caption over the title on a track's 7-inch config panel."
+    },
+    "readoutVolumesMute": "MUTE",
+    "@readoutVolumesMute": {
+        "description": "The mute toggle on a track's 7-inch config panel."
+    },
+    "readoutVolumesFxChain": "FX CHAIN",
+    "@readoutVolumesFxChain": {
+        "description": "The FX-chain engage toggle on a track's 7-inch config panel."
+    },
+    "readoutVolumesListeningTracks": "LISTENING TRACKS",
+    "@readoutVolumesListeningTracks": {
+        "description": "Caption over the read-only pills naming the tracks that record an input, on its 7-inch config panel."
+    },
+    "readoutVolumesConditioning": "CONDITIONING",
+    "@readoutVolumesConditioning": {
+        "description": "Caption over the input-conditioning toggles on the 7-inch input config panel (arrives with #697)."
+    },
+    "readoutVolumesHpf": "HPF",
+    "@readoutVolumesHpf": {
+        "description": "High-pass filter conditioning toggle on the 7-inch input config panel."
+    },
+    "readoutVolumesHum": "HUM",
+    "@readoutVolumesHum": {
+        "description": "Hum-removal conditioning toggle on the 7-inch input config panel."
+    },
+    "readoutVolumesExpander": "EXPANDER",
+    "@readoutVolumesExpander": {
+        "description": "Expander conditioning toggle on the 7-inch input config panel."
+    },
+    "readoutVolumesRestore": "RESTORE",
+    "@readoutVolumesRestore": {
+        "description": "Restoration conditioning toggle on the 7-inch input config panel."
+    },
     "readoutStateRecording": "REC",
     "@readoutStateRecording": {
         "description": "Track cell state on the 7-inch readout: capturing a first pass."

@@ -9,6 +9,10 @@ class ReadoutTrack extends Equatable {
     this.muted = false,
     this.pending = false,
     this.selected = false,
+    this.volume = 1,
+    this.chainEnabled = true,
+    this.defaultName = false,
+    this.inputNames = const [],
   });
 
   /// Rebuilds a track from [map] as pushed across the window channel.
@@ -18,6 +22,10 @@ class ReadoutTrack extends Equatable {
     muted: map['muted'] as bool? ?? false,
     pending: map['pending'] as bool? ?? false,
     selected: map['selected'] as bool? ?? false,
+    volume: (map['volume'] as num? ?? 1).toDouble(),
+    chainEnabled: map['chainEnabled'] as bool? ?? true,
+    defaultName: map['defaultName'] as bool? ?? false,
+    inputNames: _stringList(map['inputNames']),
   );
 
   /// Display name.
@@ -37,6 +45,22 @@ class ReadoutTrack extends Equatable {
   /// The cursor's track.
   final bool selected;
 
+  /// Linear output gain, `0..LE_MAX_GAIN` (2.0 = +6 dB). Defaults to unity so
+  /// a pre-volume-overlay sender reads as an unmoved fader, not silence.
+  final double volume;
+
+  /// The track's FX chain is engaged (not bypassed).
+  final bool chainEnabled;
+
+  /// [name] is the track's default identity, nobody having renamed it. The
+  /// volume overlay renders default names in the secondary tone — the same
+  /// tone the tracks screen uses for a track's default identity.
+  final bool defaultName;
+
+  /// Display names of the inputs this track's lanes record — the read-only
+  /// source pill(s) on the track's config panel.
+  final List<String> inputNames;
+
   /// Channel-encodable form.
   Map<String, Object?> toMap() => {
     'name': name,
@@ -44,11 +68,82 @@ class ReadoutTrack extends Equatable {
     'muted': muted,
     'pending': pending,
     'selected': selected,
+    'volume': volume,
+    'chainEnabled': chainEnabled,
+    'defaultName': defaultName,
+    'inputNames': inputNames,
   };
 
   @override
-  List<Object?> get props => [name, state, muted, pending, selected];
+  List<Object?> get props => [
+    name,
+    state,
+    muted,
+    pending,
+    selected,
+    volume,
+    chainEnabled,
+    defaultName,
+    inputNames,
+  ];
 }
+
+/// One configured input's line on the volume overlay (#698).
+///
+/// "Volume" here is the input's **live-monitor output gain** — the engine has
+/// no capture trim, so the recorded signal is always unity; this is the gain
+/// of what the player hears through the monitor path. Only inputs with a
+/// configured monitor are carried: an unmonitored input has no gain that does
+/// anything, and a slider that does nothing is a lie.
+class ReadoutInput extends Equatable {
+  /// Creates a [ReadoutInput].
+  const ReadoutInput({
+    required this.index,
+    required this.name,
+    this.volume = 1,
+    this.listeningTracks = const [],
+  });
+
+  /// Rebuilds an input from [map] as pushed across the window channel.
+  factory ReadoutInput.fromMap(Map<Object?, Object?> map) => ReadoutInput(
+    index: map['index'] as int? ?? 0,
+    name: map['name'] as String? ?? '',
+    volume: (map['volume'] as num? ?? 1).toDouble(),
+    listeningTracks: _stringList(map['listeningTracks']),
+  );
+
+  /// Hardware input channel — the key volume commands address it by.
+  final int index;
+
+  /// Display name.
+  final String name;
+
+  /// Linear monitor output gain, `0..LE_MAX_GAIN` (2.0 = +6 dB).
+  final double volume;
+
+  /// Display names of the tracks whose lanes record this input — the
+  /// read-only "listening tracks" pills on the input's config panel.
+  final List<String> listeningTracks;
+
+  /// Channel-encodable form.
+  Map<String, Object?> toMap() => {
+    'index': index,
+    'name': name,
+    'volume': volume,
+    'listeningTracks': listeningTracks,
+  };
+
+  @override
+  List<Object?> get props => [index, name, volume, listeningTracks];
+}
+
+/// Coerces a channel payload into a string list, dropping non-strings — the
+/// plugin re-serializes typed lists into `List<Object?>` across engines.
+List<String> _stringList(Object? raw) => [
+  if (raw is List)
+    for (final item in raw)
+      if (item is String) item,
+];
 
 /// Everything the 7" screen shows besides the waveform.
 ///
@@ -69,6 +164,7 @@ class PerformanceReadout extends Equatable {
   /// Creates a [PerformanceReadout].
   const PerformanceReadout({
     this.tracks = const [],
+    this.inputs = const [],
     this.tempoBpm = 0,
     this.hasTempo = false,
     this.tsNum = 4,
@@ -87,12 +183,18 @@ class PerformanceReadout extends Equatable {
   /// Rebuilds a readout from [map] as pushed across the window channel.
   factory PerformanceReadout.fromMap(Map<Object?, Object?> map) {
     final tracks = map['tracks'];
+    final inputs = map['inputs'];
     final tempoBpm = (map['tempoBpm'] as num? ?? 0).toDouble();
     return PerformanceReadout(
       tracks: [
         if (tracks is List)
           for (final track in tracks)
             if (track is Map<Object?, Object?>) ReadoutTrack.fromMap(track),
+      ],
+      inputs: [
+        if (inputs is List)
+          for (final input in inputs)
+            if (input is Map<Object?, Object?>) ReadoutInput.fromMap(input),
       ],
       tempoBpm: tempoBpm,
       // An older main window never sends `hasTempo`; its own readout treated
@@ -114,6 +216,10 @@ class PerformanceReadout extends Equatable {
 
   /// One entry per track, in channel order.
   final List<ReadoutTrack> tracks;
+
+  /// One entry per configured (monitored) input, in socket order — the
+  /// volume overlay's INPUTS group. Empty on a pre-overlay sender.
+  final List<ReadoutInput> inputs;
 
   /// Live tempo.
   final double tempoBpm;
@@ -166,6 +272,7 @@ class PerformanceReadout extends Equatable {
   /// Channel-encodable form.
   Map<String, Object?> toMap() => {
     'tracks': [for (final track in tracks) track.toMap()],
+    'inputs': [for (final input in inputs) input.toMap()],
     'tempoBpm': tempoBpm,
     'hasTempo': hasTempo,
     'tsNum': tsNum,
@@ -184,6 +291,7 @@ class PerformanceReadout extends Equatable {
   @override
   List<Object?> get props => [
     tracks,
+    inputs,
     tempoBpm,
     hasTempo,
     tsNum,
