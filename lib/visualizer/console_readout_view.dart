@@ -3,24 +3,23 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 
-/// The console's 7" second screen, drawn to the pen's `STAGE / readout`:
-/// glance facts in stage-sized type — tempo dominant, bars, the transport
-/// clock, the beat dots, the mode word, the record light — over the
-/// whole-loop output waveform with its moving playhead.
+/// The console's 7" second screen, drawn to the pen's revised
+/// `STAGE / readout` (the `c/readout` contract, #701): glance facts in
+/// two-metre type over the whole-loop output waveform.
 ///
-/// **Owner-directed revision of the drawn screen (#695):** the pen's readout
-/// draws a per-track grid (name + state word per column); at two metres those
-/// words are noise the main screen already carries, so this view renders NO
-/// track-level content and reflows the freed area into the waveform strip.
-/// The pen still governs everything else: the type scale, the weights, the
-/// letter-spacing, the colours, and the header's arrangement are the drawn
-/// ones.
+/// The header is a single row whose height is set by the figure pairs —
+/// TEMPO, TIME, then BARS with its beat dots stacked beneath the figure —
+/// and a flat right column: the mode word with the A/B bank pair and the
+/// armed-capture pill side by side beneath it. Everything else (track
+/// names, rows, per-track state words) lives on the main screen; the strip
+/// takes all remaining height.
 ///
-/// **Proportional, not absolute.** The pen draws the screen at 1920×1080, but
-/// the device window's logical size depends on the compositor scale (640×360
-/// today at scale=3). Every dimension here is the pen's figure times the
-/// limiting-axis scale against that reference, so the layout is the pen's at
-/// any logical size — the pen's proportions are the contract, not its pixels.
+/// **Proportional, not absolute.** The pen draws the screen at 1920×1080,
+/// but the device window's logical size depends on the compositor scale
+/// (640×360 today at scale=3). Every dimension here is the pen's figure
+/// times the limiting-axis scale against that reference, so the layout is
+/// the pen's at any logical size — the pen's proportions are the contract,
+/// not its pixels.
 class ConsoleReadoutView extends StatelessWidget {
   /// Creates a [ConsoleReadoutView].
   const ConsoleReadoutView({
@@ -56,33 +55,34 @@ class ConsoleReadoutView extends StatelessWidget {
         final s = (width / _penSize.width < height / _penSize.height)
             ? width / _penSize.width
             : height / _penSize.height;
-        final surface = context.surface;
         return Padding(
-          // The pen insets the whole screen 29 and separates header from
-          // body by 22.
-          padding: EdgeInsets.all(29 * s),
+          // The pen insets the whole screen 32 and separates the header from
+          // the strip by 28.
+          padding: EdgeInsets.all(32 * s),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // The pen's 96-tall header, sized by its own type (14-over-77
+              // The pen's 220-tall header, sized by its own type (36-over-180
               // plus the caption gap) rather than a fixed box: real font
               // metrics run fractions of a pixel past the drawn figure, and
               // a clipped descender is a worse fidelity loss than one.
               _ReadoutHeader(readout, s),
-              SizedBox(height: 22 * s),
-              // The area the pen's track grid occupied, reflowed wholesale
-              // into the loop strip: full width, the pen's cell border.
+              SizedBox(height: 28 * s),
+              // The strip takes all remaining height — the pen's 766, 71% of
+              // the frame — on the waveform's own dark, the pen's radius.
               Expanded(
-                child: DecoratedBox(
-                  key: const Key('console_readout_waveform'),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14 * s),
-                    border: Border.all(color: surface.line),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14 * s),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14 * s),
+                  child: ColoredBox(
+                    key: const Key('console_readout_waveform'),
+                    color: Theme.of(
+                      context,
+                    ).extension<LooperTheme>()!.waveformBackground,
                     child: Padding(
-                      padding: EdgeInsets.all(18 * s),
+                      padding: EdgeInsets.symmetric(
+                        vertical: 24 * s,
+                        horizontal: 16 * s,
+                      ),
                       child: waveform,
                     ),
                   ),
@@ -96,44 +96,37 @@ class ConsoleReadoutView extends StatelessWidget {
   }
 }
 
-/// The header row: TEMPO, BARS, TIME, the beat dots (with the count-in word
-/// while one sounds), then the mode word and the record light on the right —
-/// the pen's header with the stage bar's two right-side facts drawn in the
-/// pen's REC-block idiom.
+/// The single header row: the TEMPO / TIME / BARS figure pairs (beat dots
+/// stacked beneath the BARS figure), then the right column — the mode word
+/// over the bank pair and the record pill side by side.
 class _ReadoutHeader extends StatelessWidget {
   const _ReadoutHeader(this.readout, this.s);
 
   final PerformanceReadout readout;
   final double s;
 
-  static String _clock(int totalSeconds) {
-    final hours = totalSeconds ~/ 3600;
-    final minutes = ((totalSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
-    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
-    return '$hours:$minutes:$seconds';
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tempo = readout.tempoBpm > 0
-        ? readout.tempoBpm.toStringAsFixed(readout.tempoBpm % 1 == 0 ? 0 : 1)
-        : '--';
+    final tempo = readout.tempoBpm > 0 ? readoutTempo(readout.tempoBpm) : '--';
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // The figures-and-dots cluster takes whatever the pills leave and
-        // scales DOWN only when it does not fit: in the pen's nominal case
-        // the FittedBox is a no-op and every dimension stays the drawn one,
-        // but a worst case the pen never draws (a long localized count-in
-        // word, a high-numerator signature's fifteen dots, an hour-plus
-        // clock, all at once) shrinks the cluster gracefully instead of
-        // clipping the mode word and the record light off the panel.
+        // The figures-and-dots cluster takes whatever the right column
+        // leaves and scales DOWN only when it does not fit: in the pen's
+        // nominal case the FittedBox is a no-op and every dimension stays
+        // the drawn one (the pen proves the h:mm:ss worst case with ~110 px
+        // of slack), but a worst case the pen never draws (a long localized
+        // count-in word, a high-numerator signature's fifteen dots, an
+        // hour-plus clock, all at once) shrinks the cluster gracefully
+        // instead of clipping the mode word and the lights off the panel.
         Expanded(
           child: FittedBox(
             fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
+            alignment: Alignment.topLeft,
             child: Row(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _BigStat(
                   key: const Key('console_readout_tempo'),
@@ -141,41 +134,67 @@ class _ReadoutHeader extends StatelessWidget {
                   value: tempo,
                   s: s,
                 ),
-                SizedBox(width: 48 * s),
-                if (readout.loopBars > 0) ...[
-                  _BigStat(
-                    key: const Key('console_readout_bars'),
-                    label: l10n.readoutBarsLabel,
-                    value: '${readout.loopBars}',
-                    s: s,
-                  ),
-                  SizedBox(width: 48 * s),
-                ],
+                SizedBox(width: 96 * s),
                 _BigStat(
                   key: const Key('console_readout_clock'),
                   label: l10n.readoutClockLabel,
-                  value: _clock(readout.elapsedSeconds),
+                  value: readoutClock(readout.elapsedSeconds),
                   s: s,
                 ),
-                if (readout.hasTempo) ...[
-                  SizedBox(width: 48 * s),
-                  _BeatDots(readout: readout, s: s),
-                ],
+                if (readout.loopBars > 0 || readout.hasTempo)
+                  SizedBox(width: 96 * s),
+                _BarsAndBeats(readout: readout, s: s),
               ],
             ),
           ),
         ),
-        SizedBox(width: 48 * s),
-        _ModeWord(mode: readout.mode, s: s),
-        SizedBox(width: 22 * s),
-        _RecordLight(readout: readout, s: s),
+        SizedBox(width: 64 * s),
+        _ModeColumn(readout: readout, s: s),
       ],
     );
   }
 }
 
-/// One labelled stage-sized figure: the pen's 14-over-77 caption/value pair
-/// in the mono face.
+/// The tempo rule (`c/readout`): the decimal appears only when the tempo
+/// actually carries one. The check is on the RENDERED string, not the
+/// double: 119.98 rounds to "120.0", and a value-level `% 1` test would
+/// keep that phantom ".0" on screen. Format first, then strip. Shared with
+/// the 16" readout so the two faces can never disagree on a tempo.
+String readoutTempo(double tempoBpm) {
+  final rendered = tempoBpm.toStringAsFixed(1);
+  return rendered.endsWith('.0')
+      ? rendered.substring(0, rendered.length - 2)
+      : rendered;
+}
+
+/// The clock rule (`c/readout`): `m:ss` below ten minutes, `mm:ss` below an
+/// hour, and hours appear only at ≥ 1 h (`h:mm:ss`) — never a phantom
+/// leading `0:`.
+@visibleForTesting
+String readoutClock(int totalSeconds) {
+  final hours = totalSeconds ~/ 3600;
+  final minutes = (totalSeconds % 3600) ~/ 60;
+  final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
+  if (hours > 0) {
+    final paddedMinutes = minutes.toString().padLeft(2, '0');
+    return '$hours:$paddedMinutes:$seconds';
+  }
+  return '$minutes:$seconds';
+}
+
+/// The figure face: Inter — the owner rejected the mono face's dotted
+/// zeros — with tabular numerals so the ticking clock doesn't jitter.
+TextStyle _figureStyle(Color color, double fontSize, double s) => TextStyle(
+  color: color,
+  fontSize: fontSize * s,
+  // The pen's −1% tracking on the figures.
+  letterSpacing: -0.01 * fontSize * s,
+  height: 1,
+  leadingDistribution: TextLeadingDistribution.even,
+  fontFeatures: const [FontFeature.tabularFigures()],
+);
+
+/// One labelled stage-sized figure: the pen's 36-over-180 caption/value pair.
 class _BigStat extends StatelessWidget {
   const _BigStat({
     required this.label,
@@ -195,35 +214,78 @@ class _BigStat extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        AppText(
-          label,
-          style: TextStyle(
-            color: surface.textMuted,
-            fontSize: 14 * s,
-            letterSpacing: 1.68 * s,
-            height: 1.2,
-            leadingDistribution: TextLeadingDistribution.even,
-          ),
-        ),
-        SizedBox(height: 5 * s),
-        AppText(
-          value,
-          style: TextStyle(
-            color: surface.textPrimary,
-            fontFamily: SurfaceTheme.monoFont,
-            fontSize: 77 * s,
-            letterSpacing: -1.54 * s,
-            height: 1,
-            leadingDistribution: TextLeadingDistribution.even,
-          ),
-        ),
+        _Caption(label, s: s),
+        SizedBox(height: 4 * s),
+        AppText(value, style: _figureStyle(surface.textPrimary, 180, s)),
       ],
     );
   }
 }
 
-/// The bar-position dots — one per beat, the current one lit — with the
-/// count-in word before them while the click is counting a bar in.
+/// A figure pair's caption: the pen's 36 at the SectionCaption tracking
+/// ratio (0.07 em).
+class _Caption extends StatelessWidget {
+  const _Caption(this.label, {required this.s});
+
+  final String label;
+  final double s;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppText(
+      label,
+      style: TextStyle(
+        color: context.surface.textMuted,
+        fontSize: 36 * s,
+        letterSpacing: 2.52 * s,
+        height: 1,
+        leadingDistribution: TextLeadingDistribution.even,
+      ),
+    );
+  }
+}
+
+/// The BARS pair with the beat dots stacked directly beneath the figure —
+/// the dots read as the subdivision of the bar. Either half stands alone:
+/// no loop yet keeps the dots, no tempo grid keeps the bar count.
+class _BarsAndBeats extends StatelessWidget {
+  const _BarsAndBeats({required this.readout, required this.s});
+
+  final PerformanceReadout readout;
+  final double s;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (readout.loopBars > 0)
+          Column(
+            key: const Key('console_readout_bars'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _Caption(context.l10n.readoutBarsLabel, s: s),
+              SizedBox(height: 4 * s),
+              AppText(
+                '${readout.loopBars}',
+                style: _figureStyle(surface.textPrimary, 120, s),
+              ),
+            ],
+          ),
+        if (readout.hasTempo) ...[
+          if (readout.loopBars > 0) SizedBox(height: 8 * s),
+          _BeatDots(readout: readout, s: s),
+        ],
+      ],
+    );
+  }
+}
+
+/// The bar-position dots — one per beat, 44⌀, the current one lit — with
+/// the count-in word before them while the click is counting a bar in.
 class _BeatDots extends StatelessWidget {
   const _BeatDots({required this.readout, required this.s});
 
@@ -246,18 +308,17 @@ class _BeatDots extends StatelessWidget {
             key: const Key('console_readout_count_in'),
             style: TextStyle(
               color: surface.textSecondary,
-              fontFamily: SurfaceTheme.monoFont,
-              fontSize: 29 * s,
+              fontSize: 36 * s,
               height: 1,
               leadingDistribution: TextLeadingDistribution.even,
             ),
           ),
-          SizedBox(width: 22 * s),
+          SizedBox(width: 28 * s),
         ],
         Row(
           key: const Key('console_readout_beats'),
           mainAxisSize: MainAxisSize.min,
-          spacing: 12 * s,
+          spacing: 28 * s,
           children: [
             for (var beat = 0; beat < readout.tsNum; beat++)
               DecoratedBox(
@@ -267,7 +328,7 @@ class _BeatDots extends StatelessWidget {
                       : unlit,
                   shape: BoxShape.circle,
                 ),
-                child: SizedBox.square(dimension: 19 * s),
+                child: SizedBox.square(dimension: 44 * s),
               ),
           ],
         ),
@@ -276,9 +337,53 @@ class _BeatDots extends StatelessWidget {
   }
 }
 
-/// The mode word — what a footswitch press does right now — in the pen's
-/// REC-block idiom (bordered, stage-sized) with the stage status bar's
-/// colour mapping, so the plate and both screens never disagree.
+/// The header's flat right column: the mode word, then the bank pair and
+/// the record pill side by side beneath it — the whole cluster tucked
+/// under the figures' height.
+class _ModeColumn extends StatelessWidget {
+  const _ModeColumn({required this.readout, required this.s});
+
+  final PerformanceReadout readout;
+  final double s;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // The FittedBox guard on the left cluster does not cover this
+        // column, and the unknown-mode fallback renders a raw token from a
+        // possibly-newer main window at full stage size — the exact
+        // version-skew path the fallback exists to survive. Cap the word at
+        // the pen's right-column width (553) and scale it down past that,
+        // so a long token shrinks instead of RenderFlex-overflowing; every
+        // known word sits far under the cap and renders at the drawn size.
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 553 * s),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerRight,
+            child: _ModeWord(mode: readout.mode, s: s),
+          ),
+        ),
+        SizedBox(height: 18 * s),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _BankPair(activeBank: readout.activeBank, s: s),
+            SizedBox(width: 18 * s),
+            _RecordPill(readout: readout, s: s),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// The mode word — what a footswitch press does right now — bare and
+/// stage-sized per the pen: red only while a press records, the primary
+/// text colour otherwise.
 class _ModeWord extends StatelessWidget {
   const _ModeWord({required this.mode, required this.s});
 
@@ -292,121 +397,144 @@ class _ModeWord extends StatelessWidget {
     // An unknown token renders verbatim rather than guessing: a newer main
     // window paired with an older sub-window degrades to showing the raw
     // mode instead of lying about it.
-    final (color, fill, label) = switch (mode) {
-      'record' => (surface.rec, surface.recSurface, l10n.readoutModeRecord),
-      'mute' => (
-        Theme.of(context).colorScheme.primary,
-        Theme.of(context).colorScheme.primary.withValues(alpha: 0.14),
-        l10n.readoutModeMute,
-      ),
-      'fx' => (surface.accent, surface.accentSurface, l10n.readoutModeFx),
-      _ => (surface.textSecondary, null, mode.toUpperCase()),
+    final label = switch (mode) {
+      'record' => l10n.readoutModeRecord,
+      'mute' => l10n.readoutModeMute,
+      'fx' => l10n.readoutModeFx,
+      _ => mode.toUpperCase(),
     };
-    return _HeaderPill(
+    return AppText(
+      label,
       key: const Key('console_readout_mode'),
-      color: color,
-      fill: fill,
-      s: s,
-      child: _HeaderPill.word(label, color, s),
+      style: TextStyle(
+        color: mode == 'record' ? surface.rec : surface.textPrimary,
+        fontSize: 84 * s,
+        // The pen draws weight 750; the bundled Inter tops out at the 700
+        // cut, which is the nearest face.
+        fontWeight: FontWeight.w700,
+        letterSpacing: 8.4 * s,
+        height: 1.21,
+        leadingDistribution: TextLeadingDistribution.even,
+      ),
     );
   }
 }
 
-/// The record light: the pen's outlined REC block, lit red with the armed
-/// elapsed beside the word while a capture runs, dimmed to an idle outline
-/// otherwise — the stage status bar's record light at readout scale.
-class _RecordLight extends StatelessWidget {
-  const _RecordLight({required this.readout, required this.s});
+/// The A/B bank pair: the stage status bar's bordered capsule idiom scaled
+/// to the pen's 224×93, active half filled — which bank the foot is on,
+/// readable from the floor.
+class _BankPair extends StatelessWidget {
+  const _BankPair({required this.activeBank, required this.s});
 
-  final PerformanceReadout readout;
+  final int activeBank;
   final double s;
 
-  static String _format(int totalSeconds) {
-    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
-    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
+  /// Two halves, like the plate's BANK light: the wire carries an index so
+  /// the pair keeps rendering even if the main window grows more banks.
+  static const int _banks = 2;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final armed = readout.recordArmed;
-    final color = armed ? surface.rec : surface.borderStrong;
-    return _HeaderPill(
-      key: const Key('console_readout_record'),
-      color: color,
-      fill: armed ? surface.recSurface : null,
-      s: s,
+    return Container(
+      key: const Key('console_readout_bank'),
+      height: 93 * s,
+      padding: EdgeInsets.all(2 * s),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24 * s),
+        border: Border.all(color: surface.line, width: 2 * s),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _HeaderPill.word(
-            context.l10n.readoutRecordLabel,
-            armed ? surface.rec : surface.textMuted,
-            s,
-          ),
-          if (armed) ...[
-            SizedBox(width: 18 * s),
-            AppText(
-              _format(readout.recordSeconds),
-              key: const Key('console_readout_record_elapsed'),
-              style: TextStyle(
-                color: surface.rec,
-                fontFamily: SurfaceTheme.monoFont,
-                fontSize: 29 * s,
-                height: 1,
-                leadingDistribution: TextLeadingDistribution.even,
+          for (var bank = 0; bank < _banks; bank++)
+            Container(
+              key: Key('console_readout_bank_$bank'),
+              width: 110 * s,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: bank == activeBank ? surface.control : null,
+                borderRadius: BorderRadius.circular(22 * s),
+              ),
+              child: AppText(
+                String.fromCharCode(0x41 + bank),
+                style: TextStyle(
+                  color: bank == activeBank
+                      ? surface.textPrimary
+                      : surface.textMuted,
+                  fontSize: 44 * s,
+                  height: 1.21,
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
               ),
             ),
-          ],
         ],
       ),
     );
   }
 }
 
-/// The pen's REC-block shell: a 62-tall outline, radius 12, stroke 2,
-/// holding one stage-sized word — shared by the mode word and the record
-/// light so the header's right side reads as one family.
-class _HeaderPill extends StatelessWidget {
-  const _HeaderPill({
-    required this.color,
-    required this.fill,
-    required this.s,
-    required this.child,
-    super.key,
-  });
+/// The record light: the pen's RecPill scaled ~2.8× — dot, REC, and the
+/// capture elapsed in the red outline while a capture runs; dimmed to an
+/// idle outline otherwise.
+class _RecordPill extends StatelessWidget {
+  const _RecordPill({required this.readout, required this.s});
 
-  final Color color;
-  final Color? fill;
+  final PerformanceReadout readout;
   final double s;
-  final Widget child;
-
-  /// The pill's word in the pen's face: Inter-weight 29 at +10% tracking.
-  static Widget word(String label, Color color, double s) => AppText(
-    label,
-    style: TextStyle(
-      color: color,
-      fontSize: 29 * s,
-      fontWeight: FontWeight.w700,
-      letterSpacing: 2.9 * s,
-      height: 1,
-      leadingDistribution: TextLeadingDistribution.even,
-    ),
-  );
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
+    final armed = readout.recordArmed;
+    final color = armed ? surface.rec : surface.borderStrong;
     return Container(
-      height: 62 * s,
-      padding: EdgeInsets.symmetric(horizontal: 26 * s),
+      key: const Key('console_readout_record'),
+      height: 88 * s,
+      padding: EdgeInsets.symmetric(horizontal: 40 * s),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(12 * s),
+        color: armed ? surface.recSurface : null,
+        borderRadius: BorderRadius.circular(24 * s),
         border: Border.all(color: color, width: 2 * s),
       ),
-      child: child,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            child: SizedBox.square(dimension: 30 * s),
+          ),
+          SizedBox(width: 18 * s),
+          AppText(
+            context.l10n.readoutRecordLabel,
+            style: TextStyle(
+              color: armed ? surface.rec : surface.textMuted,
+              fontSize: 40 * s,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 3.2 * s,
+              height: 1.21,
+              leadingDistribution: TextLeadingDistribution.even,
+            ),
+          ),
+          if (armed) ...[
+            SizedBox(width: 18 * s),
+            AppText(
+              readoutClock(readout.recordSeconds),
+              key: const Key('console_readout_record_elapsed'),
+              // The pen draws the elapsed untracked; tabular numerals keep
+              // the ticking seconds from wobbling the pill's width.
+              style: TextStyle(
+                color: surface.rec,
+                fontSize: 40 * s,
+                height: 1.21,
+                leadingDistribution: TextLeadingDistribution.even,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

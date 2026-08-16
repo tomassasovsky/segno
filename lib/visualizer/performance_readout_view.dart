@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/visualizer/console_readout_view.dart' show readoutTempo;
 import 'package:segno/visualizer/performance_readout.dart';
 
 /// The 7" screen's permanent performance surface: what every track is doing,
@@ -53,9 +54,9 @@ class _ReadoutHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final tempo = readout.tempoBpm > 0
-        ? readout.tempoBpm.toStringAsFixed(readout.tempoBpm % 1 == 0 ? 0 : 1)
-        : '--';
+    // Same rendered-string rule as the console readout: 119.98 must read
+    // "120", never the phantom "120.0" a value-level integer check keeps.
+    final tempo = readout.tempoBpm > 0 ? readoutTempo(readout.tempoBpm) : '--';
 
     return Row(
       children: [
