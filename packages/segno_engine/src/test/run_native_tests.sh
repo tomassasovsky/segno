@@ -51,8 +51,12 @@ esac
 # src/midi/le_midi_clock.c (C1, D15), which IS an engine dependency
 # (engine_process.c calls le_midi_clock_advance every block) despite living in
 # midi/ per the plan's file placement; keep it in sync with CMakeLists.txt.
+# src/core/restore_*.c (offline loop-close restoration DSP, #697 S8) sit
+# outside the engine*.c glob on purpose (pure DSP TUs, not engine state) and
+# are listed explicitly — keep in sync with CMakeLists.txt.
 ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
+  src/core/restore_declip.c src/core/restore_halfband.c \
   src/core/audio_ring.c src/core/perf_drain.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c"
 
