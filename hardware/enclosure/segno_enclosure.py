@@ -174,6 +174,24 @@ PLAT_WALL       = 3.0         # printed perimeter wall (cavity hollowing)
 PLAT_DECK       = 8.0         # printed top deck (full insert engagement)
 POCKET_DEPTH    = 1.2         # bottom-pad locating pocket depth (< PEDAL_PAD_T)
 POCKET_CLR      = 0.6         # pocket clearance over the pad footprint (total)
+# --- pedal SLED (issue #719): the pedestal split in two -----------------------
+# The pedal is retained by M3s driven DOWN through its four base holes, so the
+# screw head lands INSIDE the pedal and the pedal must be open to be fastened.
+# But the shell halves are held by one ~83 mm through-pin, which needs ~91 mm of
+# clear axial run to insert -- and the widest gap beside a seated pedal is
+# 12.4 mm, in either enclosure. So the pedal can only be closed on the bench,
+# which means it must be screwed down on the bench too. The deck therefore has
+# to come OUT: a flat sled the pedal bolts to, dropped into the tub as one unit.
+# Walls are not the blocker and no wall shape fixes this -- the neighbouring
+# pedal is.
+SLED_T       = 7.0            # >= INSERT_DEPTH 6.0 plus a 1.0 floor under it
+SLED_CLR     = 0.5            # slip fit per side inside the tub bore
+# The BOTTOM anti-slip pad comes off (it has to -- the base holes are under it),
+# so the metal base clamps straight onto the sled instead of through 2.2 mm of
+# rubber. The tub deck drops by exactly enough to put the metal base back where
+# the pad-on design had it, so EVERYTHING above the base -- case top, top pad,
+# faceplate slot, the flush-at-rim rule of #373 -- is untouched.
+SLED_DECK_DROP = SLED_T - (PEDAL_PAD_T - POCKET_DEPTH)   # 6.0
 # Light-baffle TUB around the pedal: the pedestal's walls rise from the deck to
 # ~1mm under the sloped faceplate with their INNER faces set back SKIRT_SETBACK
 # behind the slot cut line -- from above you see ONLY faceplate, and the reveal
@@ -1331,7 +1349,37 @@ def _transition_face(cq):
            * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), TRANS_ANGLE))
     return box.val().moved(loc)
 
-def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None):
+def pedal_sled(cq):
+    """The removable deck the pedal bolts to (issue #719). Flat plate, a slip fit
+    in the tub bore, carrying four M3 heat-set inserts pressed from ABOVE -- the
+    screw comes down through the pedal's base, so insert and screw share a side
+    and the knurl works in the direction it is loaded.
+
+    ONE retention insert goes in from BELOW, dead centre, for a screw driven up
+    through the tub deck. Centre because the nearest pedal hole is 44.9 mm away
+    and nothing crowds it; ONE because the tub walls already take rotation, and
+    because two placed near the ends put a Ø4.5 bore 4.0 mm from the front pedal
+    hole -- the bores overlapped.
+
+    That same central bore is the extraction route: back the screw out, push a
+    3 mm rod up it, and the sled lifts. The sled cannot carry a finger relief of
+    its own -- the pedal overhangs it to within 0.9 mm per side, so any notch in
+    its edge would be covered by the pedal.
+
+    Origin: pedal centre, z=0 at the sled's underside. Same frame as
+    pedal_base_holes()."""
+    sd = SKIRT_IN_D - 2*SLED_CLR
+    sw = SKIRT_IN_W - 2*SLED_CLR
+    s = (cq.Workplane("XY").box(sd, sw, SLED_T, centered=(True, True, False))
+         .edges("|Z").fillet(3.0))
+    for hx, hy in pedal_base_holes():                 # pedal inserts, from above
+        s = s.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2.0)
+                  .extrude(-INSERT_DEPTH).translate((hx, hy, SLED_T)))
+    s = s.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2.0)   # retention, from below
+              .extrude(INSERT_DEPTH))
+    return s
+
+def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None, sled=False):
     """3D-printed pedal pedestal: solid deck + perimeter wall, hollowed below
     (tall MID parts) with boss columns at the insert stations. M3 heat-set
     inserts press in from BELOW at the base PLAT_SCR pattern; the deck top gets
@@ -1352,6 +1400,13 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None):
     ring_od = sd if baffle_t is None else max(sd, SKIRT_IN_D + 2*baffle_t)
     sd = ring_od
     h = ph - T
+    # SLED MODE (#719): the deck drops so the sled's top face lands where the
+    # pad-on deck used to put the pedal's metal base. Nothing above the base
+    # moves, so the faceplate, the slot and the flush-at-rim rule are untouched.
+    # The ring is unchanged -- its top still follows the same sloped plane, it
+    # just starts SLED_DECK_DROP lower and is that much taller.
+    if sled:
+        h -= SLED_DECK_DROP
     # cap the pilot depth in the LOW front pedestal (keeps a solid mid web and
     # clears the pad pocket above) and fit SHORT inserts (M3 x 3) instead of 5.7s
     pil = min(INSERT_DEPTH, (h - 1.0) / 2.0)
@@ -1383,9 +1438,17 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None):
     # back edge, so its centre sits forward (toe-ward, -X) of the pedal centre:
     # pad centre from back = INSET + PAD_D/2; pedal centre from back = PEDAL_D/2.
     pocket_dx = (PEDAL_PAD_BACK_INSET + PEDAL_PAD_D/2.0) - PEDAL_D/2.0   # +X = rearward
-    body = body.cut(cq.Workplane("XY").box(
-        PEDAL_PAD_D + POCKET_CLR, PEDAL_PAD_W + POCKET_CLR, POCKET_DEPTH,
-        centered=(True, True, False)).translate((-pocket_dx, 0, h - POCKET_DEPTH)))
+    if sled:
+        # no pad pocket: the pad is OFF and the SLED lands on this deck, flat.
+        # Instead, the retention bore + its head pocket, driven up from below.
+        body = body.cut(cq.Workplane("XY").circle(D_M3/2.0 + 0.15).extrude(h + 1.0))
+        if standalone:          # its own part -> its own head pocket. Built into
+            body = body.cut(    # a tray, the pocket belongs under the tray FLOOR,
+                cq.Workplane("XY").circle(3.4).extrude(3.0))   # so the caller cuts it
+    else:
+        body = body.cut(cq.Workplane("XY").box(
+            PEDAL_PAD_D + POCKET_CLR, PEDAL_PAD_W + POCKET_CLR, POCKET_DEPTH,
+            centered=(True, True, False)).translate((-pocket_dx, 0, h - POCKET_DEPTH)))
     # light-baffle skirt: perimeter ring above the deck, top following the
     # sloped faceplate underside at SKIRT_GAP. Local +X = rearward = up-slope.
     # The ring's DEPTH walls are only (SKIRT_OUT_D - SKIRT_IN_D)/2 = 0.85 mm --
@@ -1577,10 +1640,20 @@ def build_mini_console():
     yc = PEDAL_ROW1_V * cs
     for u in PEDS:
         ped = (_platform_printed(cq, platform_h(PEDAL_ROW1_V), PEDAL_ROW1_V,
-                                 standalone=False, baffle_t=MINI_BAFFLE_T)
+                                 standalone=False, baffle_t=MINI_BAFFLE_T, sled=True)
                .rotate((0, 0, 0), (0, 0, 1), 90)
                .translate((u - U0, yc, FLOOR_T)))
         tray = tray.union(ped)
+        # SLED retention (#719): carry the pedestal's central bore on down
+        # through the tray floor and seat the head UNDER it -- same idiom as the
+        # lid anchors, so nothing has to lift the case off the table. Backing
+        # this screw out and pushing a 3 mm rod up the same hole is also how the
+        # sled comes back out; it has no finger relief of its own, because the
+        # pedal overhangs its edge to within 0.9 mm.
+        tray = tray.cut(cq.Workplane("XY").circle(D_M3/2.0 + 0.15)
+                        .extrude(FLOOR_T + 6.0).translate((u - U0, yc, -3.0)))
+        tray = tray.cut(cq.Workplane("XY").circle(4.25).extrude(40.0)
+                        .translate((u - U0, yc, FLOOR_T + 1.5 - 40.0)))
     # BRACING. The tall thin side walls have to lean on something, and the bare
     # floor between and behind the tubs is where the warp map peaked.
     tub_x = [(u - U0 - SKIRT_OUT_W/2.0, u - U0 + SKIRT_OUT_W/2.0) for u in PEDS]
@@ -1708,8 +1781,48 @@ def build_mini_console():
     bb = lid_print.val().BoundingBox()
     lid_print = lid_print.translate((0, -bb.ymin, -bb.zmin))
 
+    # SLED GATE (#719). The sled has to clear the tub bore it drops into, and it
+    # has to put the pedal's metal base back exactly where the pad-on deck did --
+    # that equality is the whole reason the faceplate above did not have to move.
+    sled = pedal_sled(cq)
+    sbb = sled.val().BoundingBox()
+    assert SKIRT_IN_D - (sbb.xmax - sbb.xmin) >= 2*SLED_CLR - 1e-6 and \
+           SKIRT_IN_W - (sbb.ymax - sbb.ymin) >= 2*SLED_CLR - 1e-6, \
+        "MINI_SLED: sled fouls the tub bore"
+    deck_pad_on = FLOOR_T + (platform_h(PEDAL_ROW1_V) - T)
+    base_pad_on = deck_pad_on + PEDAL_PAD_T - POCKET_DEPTH
+    base_sled = (deck_pad_on - SLED_DECK_DROP) + SLED_T
+    assert abs(base_sled - base_pad_on) < 1e-6, (
+        f"MINI_SLED: metal base moved {base_sled - base_pad_on:+.3f} mm -- the "
+        "faceplate, the slot and the flush-at-rim rule all assume it did not")
+    # the four pedal inserts must not break out of the sled's underside, and the
+    # central retention insert must not run into them
+    assert INSERT_DEPTH <= SLED_T - 0.8, "MINI_SLED: pedal inserts break through"
+    # A thicker sled is legal -- the deck drop compensates and the base stays put
+    # -- right up until the deck it stands on is too thin to be a deck. The
+    # retention screw pulls through this section, and it also has to bridge the
+    # head pocket beneath it.
+    tub_deck = platform_h(PEDAL_ROW1_V) - T - SLED_DECK_DROP
+    assert tub_deck >= 5.0, (
+        f"MINI_SLED: sled {SLED_T:.1f} leaves only {tub_deck:.1f} mm of tub deck "
+        "under it -- too little to carry the retention screw")
+    assert min(math.hypot(hx, hy) for hx, hy in pedal_base_holes()) \
+        >= INSERT_PILOT_D + 1.0, "MINI_SLED: retention insert crowds a pedal insert"
+    # ...and the real question, which bounding boxes cannot answer: does the sled
+    # actually DROP IN? Seat one at each tub and intersect with the finished
+    # tray -- ribs, fillets, the cable notch and the boss channels all included.
+    sled_z = FLOOR_T + (platform_h(PEDAL_ROW1_V) - T - SLED_DECK_DROP)
+    for u in PEDS:
+        seat = (sled.rotate((0, 0, 0), (0, 0, 1), 90)
+                    .translate((u - U0, yc, sled_z)))
+        c = tray.val().intersect(seat.val())
+        cv = sum(s.Volume() for s in c.Solids()) if c is not None else 0.0
+        assert cv < 0.5, (
+            f"MINI_SLED: sled fouls the tray by {cv:.1f} mm3 at u={u - U0:.1f} "
+            "-- it cannot be dropped in, which is the one thing it exists to do")
+
     outp = []
-    for tag, sol in (("tray", tray), ("lid", lid_print)):
+    for tag, sol in (("tray", tray), ("lid", lid_print), ("sled", sled)):
         base = os.path.join(OUT, f"segno_mini_console_{tag}")
         cq.exporters.export(sol.val(), base + ".step")
         cq.exporters.export(sol, base + ".stl", tolerance=0.05)

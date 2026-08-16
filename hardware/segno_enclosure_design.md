@@ -109,6 +109,21 @@ fully internal.
 > is what will retire the PROVISIONAL retention above — but not before the
 > **fit-test jig** proves the pattern on a print (§8).
 >
+> **The sled (issue #719, shipped on the mini console).** Those screws go DOWN
+> through the base, so the head lands *inside* the pedal and the pedal must be
+> open to be fastened. But the shell halves are held by one ~83 mm through-pin
+> needing ~91 mm of clear axial run, and the widest gap beside a seated pedal is
+> **12.4 mm** in either enclosure — so no wall shape fixes this; the neighbouring
+> pedal is the blocker, not the tub. The pedal can therefore only be closed on
+> the bench, which means it must be screwed down on the bench too. The deck comes
+> out as a separate **sled** (`SLED_T` 7.0) the pedal bolts to, dropped into the
+> tub as one unit and retained by a single M3 up through the tub deck. The tub
+> deck drops by `SLED_DECK_DROP` = 6.0 so the pedal's metal base lands exactly
+> where the pad-on design put it — **nothing above the base moves**, so the
+> faceplate, the slot and the flush-at-rim rule are untouched. The bottom
+> anti-slip pad comes off (it has to; the base holes are under it), which also
+> means the joint clamps metal-to-plastic instead of through 2.2 mm of rubber.
+>
 > **The case is a wedge in plan, not only in height.** `PEDAL_W` 76.35 is the
 > width at the **back edge**; it tapers to `PEDAL_TOE_W` 73.08 at the toe, so a
 > clearance quoted off `PEDAL_W/2` is understated by up to 1.63 mm per side.
