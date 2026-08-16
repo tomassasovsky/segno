@@ -95,6 +95,7 @@ class FakeAudioEngine implements AudioEngine {
           isPerfArmed: nextSnapshot.isPerfArmed,
           perfFrames: nextSnapshot.perfFrames,
           perfOverruns: nextSnapshot.perfOverruns,
+          perfZeroFilledFrames: nextSnapshot.perfZeroFilledFrames,
           perfStopped: true,
           tracks: nextSnapshot.tracks,
         )

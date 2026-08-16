@@ -40,6 +40,7 @@ void writeManifest(
   String dir, {
   String? stoppedEarly,
   bool finalized = true,
+  int zeroFilledFrames = 0,
 }) {
   final json = {
     'slug': dir.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last,
@@ -47,6 +48,7 @@ void writeManifest(
     'channel_layout': {'master_channels': 2, 'captured_inputs': <int>[]},
     'capture_frames': 4800,
     'overrun_count': 0,
+    'zero_filled_frames': zeroFilledFrames,
     'overrun_gaps': <Map<String, dynamic>>[],
     'layers': <Map<String, dynamic>>[],
     'stopped_early': ?stoppedEarly,
@@ -100,9 +102,10 @@ void main() {
     Future<int?> Function(String path)? freeSpaceBytes,
     double Function()? currentTempoBpm,
     PerformanceChains Function()? currentChains,
+    Duration armedTickInterval = const Duration(milliseconds: 10),
   }) => PerformanceRecorderCubit(
     performance: performance,
-    armedTickInterval: const Duration(milliseconds: 10),
+    armedTickInterval: armedTickInterval,
     renderPollInterval: const Duration(milliseconds: 10),
     now: now ?? (() => clock),
     freeSpaceBytes: freeSpaceBytes ?? (_) async => null,
@@ -117,6 +120,7 @@ void main() {
   Future<String> armWithLog(
     PerformanceRepository repo, {
     int entries = 1,
+    int zeroFilledFrames = 0,
   }) async {
     await repo.arm();
     final dir = repo.armedDirectory!;
@@ -125,7 +129,11 @@ void main() {
       bytes.add(_eventLogEntry(frame: i * 100));
     }
     File('$dir/events.log').writeAsBytesSync(bytes.toBytes());
-    writeManifest(dir, finalized: false);
+    writeManifest(
+      dir,
+      finalized: false,
+      zeroFilledFrames: zeroFilledFrames,
+    );
     return dir;
   }
 
@@ -610,6 +618,78 @@ void main() {
         expect(states.last, isA<PerformanceRecorderCompleted>());
       },
     );
+  });
+
+  group('glitch flag (#710)', () {
+    test(
+      'a capture whose only silence-fill lands after the last armed tick '
+      'still finalizes with hadGlitch set',
+      () async {
+        // The drain thread's FINAL cycle — the one disarm joins — flushes
+        // whatever was still buffered, so it can silence-fill after the
+        // armed ticker is already cancelled. A tick interval far longer than
+        // this test's runtime guarantees the ONLY reading that can see the
+        // counter is the one taken at the Finalizing transition.
+        engine.renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+        final cubit = build(armedTickInterval: const Duration(minutes: 1));
+        addTearDown(cubit.close);
+        await armWithLog(performance);
+        await pumpEventQueue();
+        clock = clock.add(const Duration(seconds: 5));
+
+        // No ring overrun: exactly #710's signature — the take carries
+        // silence while the overrun counter reads clean.
+        engine.nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 256,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: LatencyState.idle,
+          measuredLatencyMs: 0,
+          perfZeroFilledFrames: 128,
+        );
+
+        await cubit.toggleArm();
+        final completed = await waitForCompleted(cubit);
+
+        expect(completed.hadGlitch, isTrue);
+      },
+    );
+
+    test(
+      'the manifest carries the glitch when the engine counters are already '
+      'gone',
+      () async {
+        // Belt-and-braces path: the sidecar is the durable record of what the
+        // drain wrote, so a reconfigure between the final cycle and finalize
+        // (a device change, say) cannot launder a glitched take into a clean
+        // one. The engine snapshot here reads perfectly clean.
+        engine.renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+        final cubit = build(armedTickInterval: const Duration(minutes: 1));
+        addTearDown(cubit.close);
+        await armWithLog(performance, zeroFilledFrames: 192);
+        await pumpEventQueue();
+        clock = clock.add(const Duration(seconds: 5));
+
+        await cubit.toggleArm();
+        final completed = await waitForCompleted(cubit);
+
+        expect(completed.hadGlitch, isTrue);
+      },
+    );
+
+    test('a clean capture still finalizes with hadGlitch clear', () async {
+      final cubit = await completedCubit();
+      expect((cubit.state as PerformanceRecorderCompleted).hadGlitch, isFalse);
+    });
   });
 
   group('render polling outcomes', () {

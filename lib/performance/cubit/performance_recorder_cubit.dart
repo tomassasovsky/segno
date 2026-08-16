@@ -358,6 +358,15 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         _armedTicker = null;
         _emit(const PerformanceRecorderFinalizing());
       case PerformanceCaptureStatus.done:
+        // One last read, and the only one that can see the whole capture.
+        // The armed ticker stopped at `finalizing`, but the drain thread's
+        // FINAL cycle — the one disarm joins, which flushes everything still
+        // buffered — runs after that, so it can silence-fill frames no armed
+        // tick ever sampled. `done` is emitted strictly after that join, and
+        // the counters survive disarm (they reset on the next arm), so this
+        // reads the complete total. Without it a glitch in the closing
+        // quarter-second finalized as a clean take (#710).
+        if (_performance.captureProgress.overrun) _sawOverrun = true;
         unawaited(_afterFinalized());
     }
   }
@@ -556,8 +565,15 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     }
     _captureDir = null;
     final anyFailed = _performance.renderTrackStatuses.any((s) => !s.succeeded);
-    final stoppedEarly = _stopReason ?? _readStoppedEarly(dir);
+    final manifest = _readManifest(dir);
+    final stoppedEarly = _stopReason ?? _stopReasonOf(manifest);
     _stopReason = null;
+    // Belt to the `done`-time snapshot read's braces (#710). The engine's
+    // counters are live state: a device change reconfigures the engine on the
+    // way to finalize, and any future teardown ordering could do the same.
+    // The sidecar is the durable record of what the drain actually wrote, so
+    // a take whose silence only survives there still finalizes honestly.
+    if ((manifest?.zeroFilledFrames ?? 0) > 0) _sawOverrun = true;
     final PerformanceRecordResult result;
     if (stoppedEarly != null) {
       result = PerformanceRecordStoppedEarly(dir, stoppedEarly);
@@ -651,22 +667,27 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     return project?.tracks ?? const [];
   }
 
-  PerformanceStopReason? _readStoppedEarly(String dir) {
+  /// The finalized capture's own sidecar, or `null` when it is missing or
+  /// unparseable. The durable record of what the drain thread actually did —
+  /// unlike the engine's live counters, it survives a reconfigure.
+  PerformanceManifest? _readManifest(String dir) {
     final manifestFile = File('$dir/${PerformanceRepository.manifestName}');
     if (!manifestFile.existsSync()) return null;
     try {
-      final manifest = PerformanceManifest.fromJson(
+      return PerformanceManifest.fromJson(
         jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>,
       );
-      return switch (manifest.stoppedEarly) {
-        'disk_full' => PerformanceStopReason.diskFull,
-        'device_changed' => PerformanceStopReason.deviceChanged,
-        _ => null,
-      };
     } on FormatException {
       return null;
     }
   }
+
+  PerformanceStopReason? _stopReasonOf(PerformanceManifest? manifest) =>
+      switch (manifest?.stoppedEarly) {
+        'disk_full' => PerformanceStopReason.diskFull,
+        'device_changed' => PerformanceStopReason.deviceChanged,
+        _ => null,
+      };
 
   void _emit(PerformanceRecorderState next) {
     if (isClosed) return;
