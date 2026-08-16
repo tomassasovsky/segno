@@ -403,6 +403,34 @@ typedef enum le_command_code {
    * pays one atomic load per block. */
   LE_CMD_SET_TUNER_INPUT = 53,
 
+  /* ---- per-input conditioning stage (input conditioning, S1) ----
+   * A fixed utility stage per hardware input — HPF + mains-hum notches +
+   * downward expander — applied ONCE per block into a conditioned copy of the
+   * input buffer, upstream of BOTH the lane fan-out and the monitor split
+   * (WYSIWYG: what you monitor is what records). Deliberately NOT an
+   * le_fx_type chain entry: it cannot be reordered or removed per-chain, it
+   * does not enter chain fingerprints, and its params are real units (Hz, dB,
+   * ms), not normalized 0..1. Metering, the clip detector, and the latency
+   * harness keep reading the RAW device buffer; the sound-activated record
+   * trigger deliberately reads the CONDITIONED magnitude so mains hum cannot
+   * false-arm a threshold recording. Zero added buffering latency by design
+   * (IIR biquads + a no-lookahead envelope follower — no FIR, no lookahead),
+   * so record_offset semantics are untouched. Loopback-excluded inputs are
+   * never conditioned. Both commands ride the ring (like the monitor-input
+   * commands, `channel` = input index, bounds vs LE_MAX_MONITORED_INPUTS) so
+   * the audio thread resets/recomputes its thread-local DSP state in lockstep
+   * with the config change. Neither is perf-logged: conditioning is upstream
+   * of capture, so recorded PCM already embodies it (nothing replays it). */
+  LE_CMD_SET_INPUT_COND = 54,       /* enable/disable input conditioning.
+                                     * arg_i = input, arg_f = enabled (0/1).
+                                     * An enable EDGE resets the stage's DSP
+                                     * state (no stale filter ring). */
+  LE_CMD_SET_INPUT_COND_PARAM = 55, /* set one conditioning parameter.
+                                     * lanef arm: channel = input,
+                                     * lane = le_cond_param, value = real-unit
+                                     * value (clamped by the audio thread on
+                                     * apply). */
+
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
   LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
@@ -1648,6 +1676,61 @@ LE_EXPORT int32_t le_engine_set_monitor_input_fx_enabled(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_monitor_input_fx_chain_enabled(le_engine* engine,
                                                                int32_t input,
                                                                int32_t enabled);
+
+/* ---- Per-input conditioning stage (input conditioning, S1) ---- *
+ * One fixed, non-reorderable utility stage per hardware input, upstream of
+ * BOTH the lane fan-out and the monitor split — see LE_CMD_SET_INPUT_COND's
+ * doc for the full placement contract. Three sections, in processing order:
+ *
+ *   1. High-pass filter — 2nd-order Butterworth biquad. Kills DC / sub-sonic
+ *      rumble before it stacks across overdub layers.
+ *   2. Mains-hum notch bank — up to 8 fixed-Q (~30) notch biquads at integer
+ *      multiples of the mains base frequency (50/100/150/200 Hz by default).
+ *   3. Downward expander — abs -> one-pole envelope (fixed ~5 ms attack, no
+ *      lookahead) -> polynomial under-threshold gain law: for ratio 1:R the
+ *      settled output level below threshold is thr * (env/thr)^R (quadratic
+ *      under threshold at the default 2.0), evaluated with integer powers +
+ *      a linear blend for fractional ratios — no log/exp per sample. Stops
+ *      idle noise floor accumulating in the recording across stacked lanes.
+ *
+ * Parameters are REAL UNITS (Hz / dB / ms), deliberately unlike the
+ * normalized 0..1 le_fx_type params. Values are clamped by the audio thread
+ * on apply (mirrors LE_CMD_SET_LENGTH_PRESET). */
+typedef enum le_cond_param {
+  LE_COND_HPF_HZ = 0,           /* high-pass cutoff Hz; 0 = section off.
+                                 * Default 40. Clamped to 0..2000. */
+  LE_COND_HUM_HZ = 1,           /* mains base Hz (50/60); 0 = section off.
+                                 * Default 50. Clamped to 0..500. */
+  LE_COND_HUM_HARMONICS = 2,    /* notches incl. base, 1..8. Default 4
+                                 * (50/100/150/200 at the 50 Hz base). */
+  LE_COND_EXP_THRESHOLD_DB = 3, /* downward expander threshold. Default -55.
+                                 * Clamped to -120..0. */
+  LE_COND_EXP_RATIO = 4,        /* 1:N downward. Default 2.0. Clamped to
+                                 * 1..10; 1.0 = section off (unity). */
+  LE_COND_EXP_RELEASE_MS = 5,   /* Default 150. Clamped to 1..5000. Attack
+                                 * fixed ~5 ms; no lookahead. */
+} le_cond_param;
+
+/* Enables or disables the conditioning stage on hardware input [input]
+ * (0..LE_MAX_MONITORED_INPUTS-1). Disabled by default — the untouched engine
+ * is bit-identical to the conditioning-free build. An enable EDGE resets the
+ * stage's filter/envelope state so a re-engaged stage never rings with stale
+ * history. A loopback-excluded input's stage never runs regardless of this
+ * flag (the latency harness owns those channels). */
+LE_EXPORT int32_t le_engine_set_input_conditioning(le_engine* engine,
+                                                   int32_t input,
+                                                   int32_t enabled);
+
+/* Sets conditioning parameter [param] (le_cond_param) of hardware input
+ * [input] to [value] in that parameter's REAL unit (Hz / dB / ms / ratio —
+ * see le_cond_param). The audio thread clamps on apply and recomputes the
+ * affected section's coefficients in lockstep (resetting only that section's
+ * filter state, so a live tweak never rings with coefficients it was not
+ * filtered by). */
+LE_EXPORT int32_t le_engine_set_input_conditioning_param(le_engine* engine,
+                                                         int32_t input,
+                                                         int32_t param,
+                                                         float value);
 
 /* ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ---- *
  * Each track owns ONE Track-stage chain, downstream of its per-lane chains.

@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h> /* clock (conditioning CPU smoke) */
 #include <wchar.h>
 
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
@@ -19363,6 +19364,509 @@ static void test_cache_audio_rev_bump_sites(void) {
   le_engine_destroy(a);
 }
 
+/* ---- per-input conditioning stage (input conditioning, S1) ----
+ *
+ * The stage (HPF + hum notches + downward expander, engine_cond.c) runs once
+ * per block into the conditioned input copy, upstream of BOTH the lane
+ * fan-out and the monitor split; metering and the latency harness read raw.
+ * These tests pin the DSP (filter response, expander static curve, bit-exact
+ * bypass) and the placement contract (lane buffer == monitor output ==
+ * conditioned; snapshot metering == raw; loopback/latency untouched; the
+ * sound-activated trigger reads conditioned). */
+
+/* Feeds `frames` mono frames of amp*sin(2*pi*freq*t) in <= 64-frame chunks,
+ * with phase continuous across calls via *idx (absolute frame counter).
+ * Captures contiguous output into `out` when non-NULL (caller sizes it). */
+static void cond_feed_sine(le_engine* e, float freq, float amp, int frames,
+                           long* idx, float* out) {
+  float in[64];
+  float scratch[64];
+  int done = 0;
+  while (done < frames) {
+    int n = frames - done;
+    if (n > 64) n = 64;
+    for (int i = 0; i < n; ++i) {
+      const double t = (double)(*idx + i) / 48000.0;
+      in[i] = amp * (float)sin(2.0 * 3.14159265358979323846 * freq * t);
+    }
+    le_engine_process(e, out != NULL ? out + done : scratch, in, (uint32_t)n);
+    *idx += n;
+    done += n;
+  }
+}
+
+static float cond_rms(const float* buf, int n) {
+  double acc = 0.0;
+  for (int i = 0; i < n; ++i) acc += (double)buf[i] * (double)buf[i];
+  return n > 0 ? (float)sqrt(acc / (double)n) : 0.0f;
+}
+
+/* Mono engine with input 0's clean monitor routed to output 0 — the probe
+ * path every DSP test below listens through. */
+static le_engine* cond_engine(void) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 96000);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_input_output(e, 0, 0x1);
+  drain(e);
+  return e;
+}
+
+/* Turns off the sections named so a test can probe one in isolation. */
+static void cond_sections(le_engine* e, float hpf_hz, float hum_hz,
+                          float ratio) {
+  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_HPF_HZ, hpf_hz) ==
+        LE_OK);
+  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_HUM_HZ, hum_hz) ==
+        LE_OK);
+  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_RATIO,
+                                               ratio) == LE_OK);
+  drain(e);
+}
+
+static void test_cond_setters_validate(void) {
+  printf("test_cond_setters_validate\n");
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(NULL, 0, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning(e, -1, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning(e, LE_MAX_MONITORED_INPUTS, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_input_conditioning_param(NULL, 0, LE_COND_HPF_HZ, 40) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning_param(e, -1, LE_COND_HPF_HZ, 40) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning_param(e, LE_MAX_MONITORED_INPUTS,
+                                               LE_COND_HPF_HZ, 40) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning_param(e, 0, -1, 40) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning_param(
+            e, 0, LE_COND_EXP_RELEASE_MS + 1, 40) == LE_ERR_INVALID);
+  for (int p = LE_COND_HPF_HZ; p <= LE_COND_EXP_RELEASE_MS; ++p) {
+    CHECK(le_engine_set_input_conditioning_param(e, 0, p, 1.0f) == LE_OK);
+  }
+  drain(e); /* all of the above apply cleanly */
+  le_engine_destroy(e);
+}
+
+/* Bypass contract: a disabled stage is bit-exact passthrough (the raw pointer
+ * path), and an ENABLED stage with every section off is bit-exact too (the
+ * copy path itself colors nothing). */
+static void test_cond_bypass_bitexact(void) {
+  printf("test_cond_bypass_bitexact\n");
+  le_engine* e = cond_engine();
+  float in[64];
+  float out[64];
+  for (int i = 0; i < 64; ++i) {
+    in[i] = 0.4f * sinf(2.0f * 3.14159265f * 997.0f * (float)i / 48000.0f);
+  }
+
+  /* Disabled (the default): monitor output == input, bit-exact. */
+  le_engine_process(e, out, in, 64);
+  for (int i = 0; i < 64; ++i) CHECK(out[i] == in[i]);
+
+  /* Enabled with all sections off: still bit-exact. */
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 0.0f, 0.0f, 1.0f);
+  le_engine_process(e, out, in, 64);
+  for (int i = 0; i < 64; ++i) CHECK(out[i] == in[i]);
+
+  /* Disabled again: back to the raw path, bit-exact. */
+  CHECK(le_engine_set_input_conditioning(e, 0, 0) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, 64);
+  for (int i = 0; i < 64; ++i) CHECK(out[i] == in[i]);
+  le_engine_destroy(e);
+}
+
+/* HPF response: DC is rejected (default 40 Hz cutoff) while the raw meter
+ * keeps seeing the full DC level. */
+static void test_cond_hpf_rejects_dc(void) {
+  printf("test_cond_hpf_rejects_dc\n");
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 40.0f, 0.0f, 1.0f); /* HPF only */
+
+  static float out[48000];
+  float in[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.5f;
+  for (int done = 0; done < 48000; done += 64) {
+    le_engine_process(e, out + done, in, 64);
+  }
+  /* One second in, the DC has been filtered to (numerically) nothing. */
+  CHECK(fabsf(out[47999]) < 1e-3f);
+  /* Raw metering: the snapshot peak reflects the ADC, not the post-HPF path. */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_peak > 0.45f);
+  le_engine_destroy(e);
+}
+
+/* Hum notch bank: 50 Hz (base) and 150 Hz (3rd harmonic, default 4 notch
+ * sections) are notched > 20 dB once settled; 1 kHz passes essentially
+ * untouched. */
+static void test_cond_hum_notch_response(void) {
+  printf("test_cond_hum_notch_response\n");
+  static float out[9600];
+  const float freqs[3] = {50.0f, 150.0f, 1000.0f};
+  for (int k = 0; k < 3; ++k) {
+    le_engine* e = cond_engine();
+    CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+    cond_sections(e, 0.0f, 50.0f, 1.0f); /* notch bank only (default x4) */
+    long idx = 0;
+    cond_feed_sine(e, freqs[k], 0.5f, 2 * 48000 - 9600, &idx, NULL);
+    cond_feed_sine(e, freqs[k], 0.5f, 9600, &idx, out);
+    const float in_rms = 0.5f * 0.70710678f;
+    const float out_rms = cond_rms(out + 4800, 4800);
+    if (k < 3 - 1) {
+      CHECK(out_rms < in_rms * 0.1f); /* > 20 dB down at 50 / 150 Hz */
+    } else {
+      CHECK(out_rms > in_rms * 0.9f); /* < ~1 dB at 1 kHz */
+    }
+    le_engine_destroy(e);
+  }
+}
+
+/* Expander static curve: with a constant-magnitude probe (|x| == A each
+ * sample, so the envelope settles exactly to A), the settled gain IS the
+ * documented law — unity at/above threshold, u^(R-1) below it (u = A/thr):
+ * exact at the default 1:2 and at integer ratios. */
+static void test_cond_expander_static_curve(void) {
+  printf("test_cond_expander_static_curve\n");
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 0.0f, 0.0f, 2.0f); /* expander only, ratio 2 */
+  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_THRESHOLD_DB,
+                                               -40.0f) == LE_OK);
+  /* Fast release so the envelope settles DOWN between the probe levels too
+   * (the 150 ms default would need ~1 s per case to converge within 2%). */
+  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_RELEASE_MS,
+                                               5.0f) == LE_OK);
+  drain(e); /* thr_lin = 0.01 */
+
+  float in[64];
+  float out[64];
+  /* (A, ratio, expected settled gain) triples. */
+  const float cases[4][3] = {
+      {0.1f, 2.0f, 1.0f},      /* 20 dB above thr: unity */
+      {0.005f, 2.0f, 0.5f},    /* u = 0.5, R = 2: g = u */
+      {0.0025f, 2.0f, 0.25f},  /* u = 0.25, R = 2: g = u */
+      {0.005f, 4.0f, 0.125f},  /* u = 0.5, R = 4: g = u^3 */
+  };
+  for (int k = 0; k < 4; ++k) {
+    const float amp = cases[k][0];
+    CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_RATIO,
+                                                 cases[k][1]) == LE_OK);
+    drain(e);
+    /* Alternating +-A: |x| is A every sample, the envelope converges to
+     * exactly A (attack 5 ms << the 9600-frame settle). */
+    for (int i = 0; i < 64; ++i) in[i] = (i & 1) ? -amp : amp;
+    for (int blocks = 0; blocks < 150; ++blocks) {
+      le_engine_process(e, out, in, 64);
+    }
+    const float expect = amp * cases[k][2];
+    CHECK(fabsf(fabsf(out[63]) - expect) < expect * 0.02f + 1e-9f);
+  }
+  le_engine_destroy(e);
+}
+
+/* THE placement pin (WYSIWYG): with a hum notch engaged, the lane buffer a
+ * recording captures is BIT-EXACT the monitored output — one conditioning
+ * run upstream of both consumers — and both are attenuated while the
+ * snapshot's input metering still reads the raw level. */
+static void test_cond_lane_monitor_wysiwyg_metering_raw(void) {
+  printf("test_cond_lane_monitor_wysiwyg_metering_raw\n");
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 0.0f, 50.0f, 1.0f); /* notch bank only */
+
+  long idx = 0;
+  cond_feed_sine(e, 50.0f, 0.5f, 2 * 48000, &idx, NULL); /* settle the notch */
+
+  static float out[4800];
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  cond_feed_sine(e, 50.0f, 0.5f, 4800, &idx, out); /* the recorded pass */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize -> PLAYING, len 4800 */
+  drain(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_frames == 4800);
+
+  /* The lane's live buffer holds the CONDITIONED samples — and is bit-exact
+   * the monitor output captured over the same frames (the WYSIWYG pin: both
+   * consumers read the one conditioned copy). Checked BEFORE any further
+   * processing: the finalize may continue into overdub (rec/dub), and more
+   * fed frames would then layer onto the buffer under comparison. */
+  le_lane* ln = &e->tracks[0].lanes[0];
+  const float* lane = ln->pool[load_i32(&ln->a_live)];
+  CHECK(lane != NULL);
+  if (lane != NULL) {
+    int exact = 1;
+    for (int i = 0; i < 4800; ++i) {
+      if (lane[i] != out[i]) exact = 0;
+    }
+    CHECK(exact);
+    /* And conditioned means ATTENUATED: > 20 dB below the raw input. */
+    CHECK(cond_rms(lane, 4800) < (0.5f * 0.70710678f) * 0.1f);
+  }
+
+  /* Raw metering: process one FULL 50 Hz cycle in a single block (so the
+   * block is guaranteed to contain the waveform's peak whatever the phase)
+   * and snapshot immediately — the published input peak is the RAW level,
+   * not the notched one. */
+  {
+    static float mout[960];
+    static float min_[960];
+    for (int i = 0; i < 960; ++i) {
+      min_[i] = 0.5f * (float)sin(2.0 * 3.14159265358979323846 * 50.0 *
+                                  (double)i / 48000.0);
+    }
+    le_engine_process(e, mout, min_, 960);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.input_peak > 0.45f);
+  }
+  le_engine_destroy(e);
+}
+
+/* Zero added latency: the stage is IIR + a no-lookahead envelope, so its
+ * response to an impulse begins on the SAME frame — nothing is buffered. */
+static void test_cond_zero_added_latency(void) {
+  printf("test_cond_zero_added_latency\n");
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  drain(e); /* full default stage: HPF 40 + hum x4 + expander */
+
+  float in[64] = {0};
+  float out[64];
+  in[0] = 1.0f;
+  le_engine_process(e, out, in, 64);
+  /* The impulse lands on frame 0 of the monitor output (the biquads' b0
+   * terms pass most of it; the first-sample envelope is already above the
+   * -55 dB default threshold, so the expander does not eat it either). */
+  CHECK(fabsf(out[0]) > 0.5f);
+  le_engine_destroy(e);
+}
+
+/* The latency harness is unaffected: the loopback channel is excluded from
+ * conditioning by construction and the harness reads raw magnitudes, so a
+ * measurement with a hostile stage enabled resolves to the SAME offset as
+ * one with no conditioning at all. */
+static void test_cond_latency_harness_unaffected(void) {
+  printf("test_cond_latency_harness_unaffected\n");
+  enum { SR = 48000, RET = 150, PULSE = SR / 100, CAP = SR / 10 };
+  int32_t offsets[2] = {0, 0};
+  for (int pass = 0; pass < 2; ++pass) {
+    le_engine* e = le_engine_create();
+    le_engine_configure(e, SR, 2, 2, 100000);
+    le_engine_set_excluded_input_mask_for_test(e, 0x2u); /* ch1 = loopback */
+    if (pass == 1) {
+      /* A stage that would demolish the pulse if it ever touched the
+       * harness path: 2 kHz HPF + deep 10:1 expander at -20 dB. */
+      CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+      CHECK(le_engine_set_input_conditioning(e, 1, 1) == LE_OK);
+      CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_HPF_HZ,
+                                                   2000.0f) == LE_OK);
+      CHECK(le_engine_set_input_conditioning_param(
+                e, 0, LE_COND_EXP_THRESHOLD_DB, -20.0f) == LE_OK);
+      CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_RATIO,
+                                                   10.0f) == LE_OK);
+      CHECK(le_engine_set_input_conditioning_param(e, 1, LE_COND_HPF_HZ,
+                                                   2000.0f) == LE_OK);
+    }
+    CHECK(le_engine_begin_latency_for_test(e) == LE_OK);
+    drain(e);
+    float* out = calloc((size_t)CAP * 2, sizeof(float));
+    float* in = calloc((size_t)CAP * 2, sizeof(float));
+    CHECK(out != NULL && in != NULL);
+    for (int i = 0; i < CAP; ++i) {
+      in[i * 2 + 0] = 0.0f;
+      in[i * 2 + 1] = (i >= RET && i < RET + PULSE) ? 0.5f : 0.0f;
+    }
+    le_engine_process(e, out, in, CAP);
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.latency_state == LE_LATENCY_DONE);
+    offsets[pass] = s.record_offset_frames;
+    free(out);
+    free(in);
+    le_engine_destroy(e);
+  }
+  CHECK(offsets[0] == offsets[1]);
+  CHECK(offsets[0] > 0);
+}
+
+/* The sound-activated record trigger reads the CONDITIONED magnitude: mains
+ * hum loud enough to false-arm the raw path no longer fires once notched,
+ * while a real signal still does — and the raw path (stage disabled) still
+ * fires on that same hum, pinning that the change is the conditioning. */
+static void test_cond_auto_trigger_reads_conditioned(void) {
+  printf("test_cond_auto_trigger_reads_conditioned\n");
+  le_snapshot s;
+
+  /* Conditioned: 50 Hz at 0.3 (15x the 0.02 threshold raw) must NOT fire. */
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 0.0f, 50.0f, 1.0f); /* notch bank only */
+  long idx = 0;
+  cond_feed_sine(e, 50.0f, 0.3f, 2 * 48000, &idx, NULL); /* settle notch */
+  CHECK(le_engine_record(e, 0) == LE_OK);                /* arm */
+  drain(e);
+  cond_feed_sine(e, 50.0f, 0.3f, 24000, &idx, NULL); /* pure hum: no fire */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  cond_feed_sine(e, 1000.0f, 0.3f, 4800, &idx, NULL); /* real signal: fires */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  le_engine_destroy(e);
+
+  /* Raw (stage disabled): the same hum DOES fire — the trigger change is the
+   * conditioning, not a threshold move. */
+  le_engine* e2 = cond_engine();
+  CHECK(le_engine_set_auto_record(e2, 1) == LE_OK);
+  CHECK(le_engine_record(e2, 0) == LE_OK);
+  drain(e2);
+  long idx2 = 0;
+  cond_feed_sine(e2, 50.0f, 0.3f, 4800, &idx2, NULL);
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  le_engine_destroy(e2);
+}
+
+/* An enable EDGE resets the stage's filter/envelope state: charge the HPF
+ * with DC, disable, re-enable, feed silence — a stale state would ring;
+ * a reset one is exactly silent. */
+static void test_cond_enable_edge_resets_state(void) {
+  printf("test_cond_enable_edge_resets_state\n");
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 40.0f, 0.0f, 1.0f); /* HPF only */
+
+  float in[64];
+  float out[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.5f;
+  for (int b = 0; b < 8; ++b) le_engine_process(e, out, in, 64); /* charge */
+
+  CHECK(le_engine_set_input_conditioning(e, 0, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  drain(e);
+
+  float silence[64] = {0};
+  le_engine_process(e, out, silence, 64);
+  for (int i = 0; i < 64; ++i) CHECK(out[i] == 0.0f);
+  le_engine_destroy(e);
+}
+
+/* NaN/Inf containment (the fx_sanitize twin at the stage boundary): a
+ * non-finite device sample maps to 0 BEFORE any state update, so it can
+ * never latch into the biquad/envelope states — every conditioned output
+ * stays finite, and the poisoned run is BIT-EXACT the run that was fed a
+ * literal 0 at those samples (instant recovery, nothing to flush). */
+static void test_cond_nan_input_contained(void) {
+  printf("test_cond_nan_input_contained\n");
+  le_engine* a = cond_engine();
+  le_engine* b = cond_engine();
+  CHECK(le_engine_set_input_conditioning(a, 0, 1) == LE_OK);
+  CHECK(le_engine_set_input_conditioning(b, 0, 1) == LE_OK);
+  drain(a); /* full default stage: HPF 40 + hum x4 + expander */
+  drain(b);
+
+  float in_a[64];
+  float in_b[64];
+  float out_a[64];
+  float out_b[64];
+  for (int blk = 0; blk < 16; ++blk) {
+    for (int i = 0; i < 64; ++i) {
+      const float s = 0.3f * sinf(2.0f * 3.14159265f * 220.0f *
+                                  (float)(blk * 64 + i) / 48000.0f);
+      in_a[i] = s;
+      in_b[i] = s;
+    }
+    if (blk == 1) {
+      in_a[10] = NAN;
+      in_b[10] = 0.0f;
+      in_a[20] = INFINITY;
+      in_b[20] = 0.0f;
+      in_a[30] = -INFINITY;
+      in_b[30] = 0.0f;
+    }
+    le_engine_process(a, out_a, in_a, 64);
+    le_engine_process(b, out_b, in_b, 64);
+    for (int i = 0; i < 64; ++i) {
+      CHECK(isfinite(out_a[i]));
+      CHECK(out_a[i] == out_b[i]);
+    }
+  }
+  le_engine_destroy(a);
+  le_engine_destroy(b);
+}
+
+/* The oversized-block raw fallback is COUNTED, not silent: a block larger
+ * than the conditioned-copy scratch passes through raw (bit-exact) and bumps
+ * a_cond_fallback_blocks once; a normal block conditions and leaves the
+ * counter alone — the telemetry that proves real backends never hit this. */
+static void test_cond_scratch_fallback_counted(void) {
+  printf("test_cond_scratch_fallback_counted\n");
+  enum { BIG = LE_COND_SCRATCH_FRAMES + 808 };
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  drain(e); /* default stage: HPF 40 on — conditioning WOULD color this */
+  CHECK(atomic_load_explicit(&e->a_cond_fallback_blocks,
+                             memory_order_relaxed) == 0u);
+
+  static float big_in[BIG];
+  static float big_out[BIG];
+  for (int i = 0; i < BIG; ++i) {
+    big_in[i] = 0.3f * sinf(2.0f * 3.14159265f * 220.0f * (float)i / 48000.0f);
+  }
+  le_engine_process(e, big_out, big_in, BIG);
+  /* Fallback: raw passthrough (the monitor's dry path), counted exactly once. */
+  CHECK(atomic_load_explicit(&e->a_cond_fallback_blocks,
+                             memory_order_relaxed) == 1u);
+  int exact = 1;
+  for (int i = 0; i < BIG; ++i) {
+    if (big_out[i] != big_in[i]) exact = 0;
+  }
+  CHECK(exact);
+
+  /* A normal-sized block conditions again and does NOT bump the counter. */
+  float out[64];
+  le_engine_process(e, out, big_in, 64);
+  CHECK(atomic_load_explicit(&e->a_cond_fallback_blocks,
+                             memory_order_relaxed) == 1u);
+  le_engine_destroy(e);
+}
+
+/* Not a gate — an informational CPU smoke: ns/sample for one fully-engaged
+ * stage (HPF + 4 notches + expander), printed for the PR body / the S3
+ * on-Pi bench to compare against. */
+static void test_cond_cpu_smoke(void) {
+  printf("test_cond_cpu_smoke\n");
+  le_input_cond c;
+  memset(&c, 0, sizeof(c));
+  le_cond_seed_defaults(&c, 48000);
+  static float buf[4096];
+  for (int i = 0; i < 4096; ++i) {
+    buf[i] = 0.1f * sinf(2.0f * 3.14159265f * 220.0f * (float)i / 48000.0f);
+  }
+  const long total = 10L * 1000L * 1000L;
+  const long reps = total / 4096;
+  const clock_t t0 = clock();
+  for (long r = 0; r < reps; ++r) {
+    le_cond_process_block(&c, buf, 4096, 1);
+  }
+  const clock_t t1 = clock();
+  const double ns_per_sample = (double)(t1 - t0) / CLOCKS_PER_SEC * 1e9 /
+                               ((double)reps * 4096.0);
+  printf("  cond stage (HPF + 4 notches + expander): %.1f ns/sample\n",
+         ns_per_sample);
+  CHECK(ns_per_sample >= 0.0); /* informational, not a budget gate */
+}
+
 /* --- Vendored RNNoise smoke test (#697 S7) -------------------------------
  *
  * Proves the vendored third_party/rnnoise TUs compile, link, and run: init a
@@ -19877,6 +20381,19 @@ int main(void) {
   test_cache_destroy_during_active_render();
   test_cache_audio_rev_bump_sites();
 
+  test_cond_setters_validate();
+  test_cond_bypass_bitexact();
+  test_cond_hpf_rejects_dc();
+  test_cond_hum_notch_response();
+  test_cond_expander_static_curve();
+  test_cond_lane_monitor_wysiwyg_metering_raw();
+  test_cond_zero_added_latency();
+  test_cond_latency_harness_unaffected();
+  test_cond_auto_trigger_reads_conditioned();
+  test_cond_enable_edge_resets_state();
+  test_cond_nan_input_contained();
+  test_cond_scratch_fallback_counted();
+  test_cond_cpu_smoke();
   test_rnnoise_vendor_smoke();
 
   if (g_failures == 0) {
