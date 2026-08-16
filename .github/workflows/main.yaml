@@ -180,7 +180,12 @@ jobs:
       - name: Install C build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libasound2-dev
+          # libpulse0 (no PulseAudio server running) is not a build dep — it is
+          # the CONDITION test_probing_leaks_no_fds needs: miniaudio dlopen()s
+          # the Pulse backend, the connect fails with no server, and that is the
+          # failure path that leaked a memfd per probe (#721). Without libpulse
+          # present the backend is skipped and the test cannot fail.
+          sudo apt-get install -y build-essential libasound2-dev libpulse0
       - name: Build + run native engine/MIDI tests
         run: bash packages/segno_engine/src/test/run_native_tests.sh
       - name: Build + run firmware/Dart protocol contract tests (both trees)
@@ -231,7 +236,12 @@ jobs:
       - name: Install C build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libasound2-dev
+          # libpulse0 (no PulseAudio server running) is not a build dep — it is
+          # the CONDITION test_probing_leaks_no_fds needs: miniaudio dlopen()s
+          # the Pulse backend, the connect fails with no server, and that is the
+          # failure path that leaked a memfd per probe (#721). Without libpulse
+          # present the backend is skipped and the test cannot fail.
+          sudo apt-get install -y build-essential libasound2-dev libpulse0
       - name: Build + run native tests under AddressSanitizer
         run: >
           EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g"

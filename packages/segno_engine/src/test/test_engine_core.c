@@ -22,6 +22,15 @@
 #include <string.h>
 #include <time.h> /* clock (conditioning CPU smoke) */
 #include <wchar.h>
+#if defined(__linux__)
+#include <dirent.h>     /* /proc/self/fd walk (probe FD leak, #721) */
+#include <dlfcn.h>      /* dlopen — is libpulse even here? */
+#include <poll.h>       /* the fake server's shutdown-safe accept loop */
+#include <pthread.h>    /* the fake PulseAudio server's accept loop */
+#include <sys/socket.h> /* socket/bind/listen/accept */
+#include <sys/un.h>     /* struct sockaddr_un */
+#include <unistd.h>     /* close, unlink, getpid */
+#endif
 
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
 #include "engine_core.h"      /* le_push (raw ring pushes for the tempo tests) */
@@ -5042,6 +5051,333 @@ static void test_select_backend_defaults_to_miniaudio(void) {
   CHECK(le_miniaudio_backend.start != NULL);
   CHECK(le_miniaudio_backend.stop != NULL);
   CHECK(le_miniaudio_backend.close != NULL);
+}
+
+/* ---- probe-context backends (#721) ---- */
+
+/* Both probe-backend cases, asserted DETERMINISTICALLY and in-process.
+ *
+ * The pin is injected through le_platform_set_alsa_only_for_test rather than
+ * exported into the environment, because the environment cannot express it
+ * twice: the Linux seam reads SEGNO_ALSA_ONLY once into a function-static and
+ * caches it for the process, so by the time a test runs it is already frozen —
+ * setenv is a silent no-op, and so is setenv in a fork()ed child, which
+ * inherits the primed cache. Either approach still RUNS the assertion, against
+ * whichever value happened to be frozen first: green on a host where the wrong
+ * backend wins by accident, and a hard failure against correct code on a host
+ * where it does not. Injection makes both cases exact on any host, leaves no
+ * state behind (the override is restored), and imposes no ordering on the rest
+ * of the binary.
+ *
+ * DESKTOP (pin off) is the load-bearing half. The probe seam is deliberately
+ * NOT the streaming preference: miniaudio takes the first backend that
+ * INITIALISES, so handing a probe the desktop-Linux list
+ * {jack, pulseaudio, alsa} would make it land on JACK wherever a PipeWire/JACK
+ * server is running. A JACK probe context enumerates one synthetic "Default
+ * Playback Device" + one "Default Capture Device" instead of the host's real
+ * cards, and le_find_loopback's "monitor of" match is a PulseAudio-only string
+ * a JACK context can never produce — so the device picker and desktop loopback
+ * detection would both silently regress. (NULL, 0) is byte-for-byte the call
+ * the probe sites made before #721.
+ *
+ * APPLIANCE (pin on) must be exactly {ma_backend_alsa} on Linux, and unchanged
+ * on the platforms that have no pin at all. */
+static void test_probe_backends_follow_the_pin(void) {
+  printf("test_probe_backends_follow_the_pin\n");
+  const ma_backend* list = NULL;
+  ma_uint32 count = 0;
+
+  le_platform_set_alsa_only_for_test(0);
+  list = (const ma_backend*)&list; /* poison — the seam must overwrite both */
+  count = 12345;
+  le_platform_probe_backends(&list, &count);
+  CHECK(list == NULL);
+  CHECK(count == 0);
+
+  le_platform_set_alsa_only_for_test(1);
+  list = (const ma_backend*)&list;
+  count = 12345;
+  le_platform_probe_backends(&list, &count);
+#if defined(__linux__)
+  CHECK(count == 1);
+  CHECK(list != NULL);
+  if (list != NULL && count == 1) CHECK(list[0] == ma_backend_alsa);
+#else
+  /* No ALSA-only pin off Linux — the probe list is unconditional. */
+  CHECK(list == NULL);
+  CHECK(count == 0);
+#endif
+
+  le_platform_set_alsa_only_for_test(-1); /* restore: follow the environment */
+}
+
+/* Under the appliance pin, the backend a probe context ACTUALLY lands on —
+ * ctx.backend, not the list it asked for — must be exactly ALSA, and in
+ * particular never PulseAudio. Asserting the chosen backend is what makes this
+ * behavioural rather than a restatement of the seam above: it fails on any host
+ * where an excluded backend would have won the race to initialise, which is
+ * precisely the desktop machine (PipeWire-pulse running) that the previous
+ * fork-based version of this test could not describe correctly.
+ *
+ * Restores the override on every exit path, including the skip. */
+static void test_pinned_probe_never_reaches_pulseaudio(void) {
+  printf("test_pinned_probe_never_reaches_pulseaudio\n");
+#if !defined(__linux__)
+  printf("  (skipped: the appliance pin only exists on Linux)\n");
+#else
+  le_platform_set_alsa_only_for_test(1);
+  ma_context ctx;
+  if (le_probe_context_init(&ctx) != MA_SUCCESS) {
+    /* No ALSA on this host: there is no context to make an assertion about.
+     * Said out loud rather than passing silently. */
+    printf("  (skipped: no probe backend available on this host)\n");
+  } else {
+    if (ctx.backend != ma_backend_alsa) {
+      printf("  probe landed on backend %d, want ma_backend_alsa (%d)\n",
+             (int)ctx.backend, (int)ma_backend_alsa);
+    }
+    CHECK(ctx.backend != ma_backend_pulseaudio);
+    CHECK(ctx.backend == ma_backend_alsa);
+    ma_context_uninit(&ctx);
+  }
+  le_platform_set_alsa_only_for_test(-1);
+#endif
+}
+
+#if defined(__linux__)
+/* Open descriptors held by this process, or -1 if /proc is unavailable. The
+ * directory handle itself is open during the walk, so it is counted identically
+ * in every sample and cancels out of a before/after comparison. */
+static int open_fd_count(void) {
+  DIR* d = opendir("/proc/self/fd");
+  if (d == NULL) return -1;
+  int n = 0;
+  const struct dirent* e;
+  while ((e = readdir(d)) != NULL) {
+    if (e->d_name[0] != '.') ++n;
+  }
+  closedir(d);
+  return n;
+}
+
+#endif
+
+/* Repeated probing must not grow the process's descriptor table.
+ *
+ * This is the shape of the appliance failure in #721. AudioSetupCubit
+ * re-enumerates on a 1 Hz timer, in both directions, for the life of the app;
+ * every probe that reached PulseAudio with no server listening leaked one
+ * `memfd:pulseaudio` — 991 of the process's 1024 descriptors on the bench unit,
+ * after which no window surface or socket could be created any more.
+ *
+ * Runs UNPINNED, in this process, on purpose:
+ *
+ *  - unpinned is the condition under which PulseAudio is actually reached, so
+ *    this is what exercises the missing `pa_context_unref` in the vendored
+ *    miniaudio (see src/miniaudio/README.md). Under the appliance pin Pulse is
+ *    never touched and a revert of that patch would go unnoticed;
+ *  - in-process, because a forked child does NOT reproduce it: once libpulse has
+ *    been loaded, `pa_context_new` fails early in a child, so the failure path
+ *    that leaks is never taken there and the test would pass vacuously;
+ *  - it therefore mutates nothing — no environment, no cached pin — and imposes
+ *    no ordering on the rest of the binary.
+ *
+ * Each round drives all three probe sites. `le_probe_context_init` is called
+ * DIRECTLY as well as through the two enumeration entry points, deliberately: on
+ * a host with a sound card the platform seam answers enumeration from its own
+ * source and never opens a probe context, which would leave the leaking path
+ * untested on exactly the machines that have audio hardware.
+ *
+ * WHICH failure path this covers: with no server listening at all,
+ * `pa_context_connect` fails SYNCHRONOUSLY, so this drives the first of
+ * miniaudio's two leaking paths and never the second. Measured, not assumed —
+ * instrumenting both paths in a container showed 358 connect-error takes and
+ * zero wait-failed. The test after it covers the other one.
+ *
+ * LINUX ONLY (reads /proc/self/fd). The `native-tests` jobs install `libpulse0`
+ * with no PulseAudio server running, which is precisely the leaking condition —
+ * without libpulse present, miniaudio skips the backend and this cannot fail. */
+static void test_probing_leaks_no_fds(void) {
+  printf("test_probing_leaks_no_fds\n");
+#if defined(__linux__)
+  enum { WARMUP = 4, ITERS = 64 };
+  le_device_info devices[8];
+  int32_t count = 0;
+  le_loopback_info loopback;
+
+  /* A probe context must actually open, or this test asserts nothing: with no
+   * context ever created, before == after holds trivially. Checked up front so
+   * a host that cannot run it says so instead of passing vacuously. */
+  ma_context probe;
+  if (le_probe_context_init(&probe) != MA_SUCCESS) {
+    printf("  (skipped: no probe backend available on this host)\n");
+    return;
+  }
+  ma_context_uninit(&probe);
+
+  /* Warm up first: the first passes legitimately open process-lifetime handles
+   * (the dlopen'd backend, the ALSA symbol table), and those are setup, not a
+   * leak. Only steady-state growth is the bug. */
+  for (int i = 0; i < WARMUP; ++i) {
+    le_enumerate_playback_devices(devices, 8, &count);
+    le_enumerate_capture_devices(devices, 8, &count);
+    le_detect_loopback(&loopback);
+    if (le_probe_context_init(&probe) == MA_SUCCESS) ma_context_uninit(&probe);
+  }
+
+  const int before = open_fd_count();
+  if (before < 0) {
+    printf("  (skipped: /proc/self/fd unavailable)\n");
+    return;
+  }
+  for (int i = 0; i < ITERS; ++i) {
+    le_enumerate_playback_devices(devices, 8, &count);
+    le_enumerate_capture_devices(devices, 8, &count);
+    le_detect_loopback(&loopback);
+    if (le_probe_context_init(&probe) == MA_SUCCESS) ma_context_uninit(&probe);
+  }
+  const int after = open_fd_count();
+  /* Exact, not a tolerance: a transient probe context owns nothing once it is
+   * uninitialised, so 64 rounds of it must land on the same number it started
+   * on. A tolerance here would hide exactly the slow drip that took ~40 minutes
+   * to kill the appliance. */
+  if (after != before) {
+    printf("  fd count grew across %d probe rounds: %d -> %d\n", ITERS, before,
+           after);
+  }
+  CHECK(after == before);
+#else
+  printf("  (skipped: needs /proc/self/fd — Linux only)\n");
+#endif
+}
+
+#if defined(__linux__)
+/* A fake PulseAudio server that accepts a connection and immediately closes it,
+ * so libpulse sees EOF mid-handshake. Exists to reach miniaudio's SECOND
+ * failure path (see the test below).
+ *
+ * Shutdown is a poll() loop against a stop flag, NOT a blocking accept() that
+ * the main thread interrupts by closing the socket: on Linux, close() does not
+ * wake an accept() already blocked in another thread, so that arrangement
+ * deadlocks the join — measured, in this very test, before it was rewritten.
+ * The listener is closed only after the thread has joined, so the loop can
+ * never race a closed (or worse, reused) descriptor. */
+static int g_fake_pulse_listener = -1;
+static atomic_int g_fake_pulse_stop;  /* cross-thread stop flag */
+
+static void* fake_pulse_accept_loop(void* arg) {
+  (void)arg;
+  while (atomic_load(&g_fake_pulse_stop) == 0) {
+    struct pollfd p;
+    p.fd = g_fake_pulse_listener;
+    p.events = POLLIN;
+    p.revents = 0;
+    if (poll(&p, 1, /*timeout_ms=*/50) <= 0) continue; /* recheck the flag */
+    const int c = accept(g_fake_pulse_listener, NULL, NULL);
+    if (c >= 0) close(c); /* immediate EOF */
+  }
+  return NULL;
+}
+#endif
+
+/* The OTHER PulseAudio failure path must not leak either.
+ *
+ * miniaudio's `ma_init_pa_mainloop_and_pa_context__pulse` has two failure paths
+ * after the `pa_context` exists, and they are mutually exclusive on any given
+ * host: `pa_context_connect` failing synchronously (no socket to connect to —
+ * the test above, and what CI hits naturally), versus the connect succeeding and
+ * the connection then failing while miniaudio waits for it to become ready. Both
+ * leaked the context before #721, and each needs its own patch line — the second
+ * also needs `pa_context_disconnect`, because a connect WAS issued. Without this
+ * test an upgrade could restore one and drop the other, and the suite would stay
+ * green with the leak back.
+ *
+ * Reaching the second path takes a server that answers and then fails, so this
+ * stands one up: a unix socket that accepts and immediately closes, pointed at
+ * by PULSE_SERVER. Verified to work, and to be exact — removing ONLY the second
+ * path's `pa_context_unref` grows the table by precisely one descriptor per
+ * round. libpulse re-reads PULSE_SERVER per context, so the variable is set for
+ * the duration and unset again; nothing else in the binary reads it.
+ *
+ * Skips loudly (never silently) when libpulse is absent — then miniaudio never
+ * loads the backend and there is no path to drive. LINUX ONLY. */
+static void test_probing_leaks_no_fds_when_the_server_fails_mid_connect(void) {
+  printf("test_probing_leaks_no_fds_when_the_server_fails_mid_connect\n");
+#if !defined(__linux__)
+  printf("  (skipped: needs /proc/self/fd — Linux only)\n");
+#else
+  enum { WARMUP = 4, ITERS = 32 };
+  void* pulse_so = dlopen("libpulse.so.0", RTLD_NOW | RTLD_LOCAL);
+  if (pulse_so == NULL) {
+    printf("  (skipped: libpulse not installed — no Pulse path to drive)\n");
+    return;
+  }
+  dlclose(pulse_so);
+
+  char path[96];
+  snprintf(path, sizeof(path), "/tmp/segno-fake-pulse-%ld", (long)getpid());
+  unlink(path);
+  g_fake_pulse_listener = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (g_fake_pulse_listener < 0) {
+    printf("  (skipped: cannot create a unix socket here)\n");
+    return;
+  }
+  struct sockaddr_un addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+  if (bind(g_fake_pulse_listener, (struct sockaddr*)&addr, sizeof(addr)) < 0 ||
+      listen(g_fake_pulse_listener, 16) < 0) {
+    printf("  (skipped: cannot bind/listen at %s)\n", path);
+    close(g_fake_pulse_listener);
+    unlink(path);
+    return;
+  }
+  pthread_t accepter;
+  if (pthread_create(&accepter, NULL, fake_pulse_accept_loop, NULL) != 0) {
+    printf("  (skipped: cannot start the fake-server thread)\n");
+    close(g_fake_pulse_listener);
+    unlink(path);
+    return;
+  }
+
+  char server[128];
+  snprintf(server, sizeof(server), "unix:%s", path);
+  setenv("PULSE_SERVER", server, /*overwrite=*/1);
+  le_platform_set_alsa_only_for_test(0); /* unpinned: Pulse must be reachable */
+
+  ma_context probe;
+  for (int i = 0; i < WARMUP; ++i) {
+    if (le_probe_context_init(&probe) == MA_SUCCESS) ma_context_uninit(&probe);
+  }
+  const int before = open_fd_count();
+  for (int i = 0; i < ITERS; ++i) {
+    if (le_probe_context_init(&probe) == MA_SUCCESS) ma_context_uninit(&probe);
+  }
+  const int after = open_fd_count();
+
+  le_platform_set_alsa_only_for_test(-1);
+  unsetenv("PULSE_SERVER");
+  /* Flag, join, THEN close — see the note on the accept loop. Closing first
+   * would not wake a blocked accept() and would leave the loop polling a
+   * descriptor this thread had already handed back. */
+  atomic_store(&g_fake_pulse_stop, 1);
+  pthread_join(accepter, NULL);
+  close(g_fake_pulse_listener);
+  g_fake_pulse_listener = -1;
+  atomic_store(&g_fake_pulse_stop, 0);
+  unlink(path);
+
+  if (before < 0 || after < 0) {
+    printf("  (skipped: /proc/self/fd unavailable)\n");
+    return;
+  }
+  if (after != before) {
+    printf("  fd count grew across %d failing-server probes: %d -> %d\n", ITERS,
+           before, after);
+  }
+  CHECK(after == before);
+#endif
 }
 
 /* The grown FFI structs default to the miniaudio path when zero-initialized
@@ -21039,6 +21375,13 @@ int main(void) {
   test_enumerate_devices_counts_are_stable();
   test_device_id_to_str();
   test_select_backend_defaults_to_miniaudio();
+  /* Order-independent by construction: the pin is injected through the
+   * platform seam's test override and restored afterwards, so this process's
+   * environment — and the seam's one-shot cache of it — is never touched. */
+  test_probe_backends_follow_the_pin();
+  test_pinned_probe_never_reaches_pulseaudio();
+  test_probing_leaks_no_fds();
+  test_probing_leaks_no_fds_when_the_server_fails_mid_connect();
   test_backend_struct_defaults();
   test_bridge_roundtrip_f32();
   test_bridge_convert_int32();
