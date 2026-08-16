@@ -187,7 +187,20 @@ POCKET_CLR      = 0.6         # pocket clearance over the pad footprint (total)
 # Walls are not the blocker and no wall shape fixes this -- the neighbouring
 # pedal is.
 SLED_T       = 7.0            # >= INSERT_DEPTH 6.0 plus a 1.0 floor under it
-SLED_CLR     = 0.5            # slip fit per side inside the tub bore
+SLED_CLR     = 0.2            # slip fit per side in the tub bore. 0.5 printed and
+                              # seated but WIGGLED (2026-08-16) -- 1.0 mm of total
+                              # play, and since the retention screw only clamps
+                              # (its Ø3.5 bore adds +/-0.25 of its own), the bore
+                              # fit is the ONLY thing locating the pedal.
+                              # Deliberately on the sled, not the bore: the sled
+                              # derives from SKIRT_IN_*, so tightening reprints a
+                              # 19 g part instead of the tray. If 0.2 binds on a
+                              # given printer, open it up -- that is another 19 g,
+                              # whereas a too-tight BORE would be a tray reprint.
+SLED_BOT_CHAM = 0.6           # bottom-edge lead-in. Elephant foot on the first
+                              # layers is what makes a tight printed fit bind at
+                              # the very bottom, exactly where it has to seat --
+                              # chamfering it is what buys the tighter nominal.
 # The BOTTOM anti-slip pad comes off (it has to -- the base holes are under it),
 # so the metal base clamps straight onto the sled instead of through 2.2 mm of
 # rubber. The tub deck drops by exactly enough to put the metal base back where
@@ -1373,7 +1386,8 @@ def pedal_sled(cq):
     sd = SKIRT_IN_D - 2*SLED_CLR
     sw = SKIRT_IN_W - 2*SLED_CLR
     s = (cq.Workplane("XY").box(sd, sw, SLED_T, centered=(True, True, False))
-         .edges("|Z").fillet(3.0))
+         .edges("|Z").fillet(3.0)
+         .faces("<Z").chamfer(SLED_BOT_CHAM))
     for hx, hy in pedal_base_holes():                 # pedal inserts, from above
         s = s.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2.0)
                   .extrude(-INSERT_DEPTH).translate((hx, hy, SLED_T)))
@@ -1902,6 +1916,14 @@ def build_mini_console():
     # the four pedal inserts must not break out of the sled's underside, and the
     # central retention insert must not run into them
     assert INSERT_DEPTH <= SLED_T - 0.8, "MINI_SLED: pedal inserts break through"
+    # the bore fit is the ONLY thing locating the pedal, so it has a floor and a
+    # ceiling: too loose and the pedal wanders, too tight and a printed sled will
+    # not drop into a printed bore at all
+    assert 0.1 <= SLED_CLR <= 0.4, (
+        f"MINI_SLED: {SLED_CLR:.2f} mm/side is outside the printable locating "
+        "band -- below 0.1 a printed pair will not assemble, above 0.4 it wiggles")
+    assert SLED_BOT_CHAM < SLED_T - INSERT_DEPTH + 0.5, \
+        "MINI_SLED: bottom chamfer eats the floor under the pedal inserts"
     # A thicker sled is legal -- the deck drop compensates and the base stays put
     # -- right up until the deck it stands on is too thin to be a deck. The
     # retention screw pulls through this section, and it also has to bridge the

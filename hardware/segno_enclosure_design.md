@@ -117,7 +117,12 @@ fully internal.
 > pedal is the blocker, not the tub. The pedal can therefore only be closed on
 > the bench, which means it must be screwed down on the bench too. The deck comes
 > out as a separate **sled** (`SLED_T` 7.0) the pedal bolts to, dropped into the
-> tub as one unit and retained by a single M3 up through the tub deck. The tub
+> tub as one unit and retained by a single M3 up through the tub deck. It is a
+> `SLED_CLR` 0.2 mm/side slip fit with a 0.6 mm bottom lead-in chamfer — 0.5/side
+> printed and seated but wiggled, and since the retention screw only clamps, the
+> bore fit is the **only** thing locating the pedal. The clearance lives on the
+> SLED (it derives from `SKIRT_IN_*`), so re-tuning it reprints a 19 g part
+> rather than the tray. The tub
 > deck drops by `SLED_DECK_DROP` = 6.0 so the pedal's metal base lands exactly
 > where the pad-on design put it — **nothing above the base moves**, so the
 > faceplate, the slot and the flush-at-rim rule are untouched. The bottom
