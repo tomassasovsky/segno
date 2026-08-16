@@ -454,14 +454,36 @@ class _ModeColumn extends StatelessWidget {
 /// mutes (#693), the primary text colour otherwise (which is what an unknown
 /// token from an older main window reads as).
 ///
-/// The mute green here is `ledGreen` (#34D399), NOT the `success` (#30A46C)
-/// the desktop chrome and the stage pill use. This is the two-metre panel and
-/// the word is 84px: on this background (#0B0B0C) `success` measures 6.2:1
-/// where the white it replaced measured 17.9:1, and the owner reads this
-/// screen from across the room. `ledGreen` holds 10.2:1 and is the same green
-/// the pedal's own mute LED throws, so the panel and the plate agree at a
-/// glance.
-/// Legibility at distance beats token tidiness on this one surface.
+/// This surface reads its colours from the **LED palette**, not from the
+/// chrome tokens the desktop uses — `ledGreen`/`ledRed` rather than
+/// `success`/`rec`. Two reasons, both about the two-metre panel: contrast at
+/// 84px, and the fact that these are the exact colours the pedal's own MODE
+/// LED throws, so the panel and the plate say the same thing in the same hue.
+/// The stage pill and the desktop indicator sit close to the eye and keep the
+/// chrome tokens.
+///
+/// Measured against this background (#0B0B0C):
+///
+/// | reading | token      | hex     | ratio   |
+/// | ------- | ---------- | ------- | ------- |
+/// | (was)   | textPrimary| #F3F4F7 | 17.9:1  |
+/// | mute    | success    | #30A46C |  6.2:1  |
+/// | mute    | `ledGreen` | #34D399 | 10.2:1  |
+/// | record  | rec        | #E5484D |  5.0:1  |
+/// | record  | `ledRed`   | #EF4444 |  5.2:1  |
+///
+/// Note what the red column says: **no red in [SurfaceTheme] clears 9:1, and
+/// none can.** Red contributes only 0.2126 of relative luminance, so a red
+/// saturated enough to still read as "record" tops out near 5:1 against
+/// near-black — the only tokens above 9:1 are the greens and the ambers, and
+/// an amber REC would be a lie. `ledRed` is the brightest red available and is
+/// taken on that basis (a real but small gain over `rec`, 5.0 → 5.2), NOT
+/// because it clears a threshold. Making REC genuinely brighter needs a new
+/// token that trades saturation for luminance — a design-system call, not a
+/// call to make here.
+///
+/// In the high-contrast flavor `rec` and `ledRed` are the same value
+/// (#FF6B6B, 7.6:1 on that flavor's black), so this choice is a no-op there.
 class _ModeWord extends StatelessWidget {
   const _ModeWord({required this.mode, required this.s});
 
@@ -486,7 +508,7 @@ class _ModeWord extends StatelessWidget {
       key: const Key('console_readout_mode'),
       style: TextStyle(
         color: switch (mode) {
-          'record' => surface.rec,
+          'record' => surface.ledRed,
           'mute' => surface.ledGreen,
           _ => surface.textPrimary,
         },

@@ -314,17 +314,16 @@ void main() {
           )
           .style!;
 
+      // Both readings come from the LED palette, not the chrome tokens the
+      // desktop surfaces use — this is the two-metre panel, and these are the
+      // colours the pedal's own MODE LED throws. See _ModeWord's doc for the
+      // measured ratios; these assertions are what stop a well-meaning token
+      // unification from quietly dimming the panel.
       await pump(tester, const PerformanceReadout());
-      expect(styleOf().color, surface.rec);
+      expect(styleOf().color, surface.ledRed);
 
       // #693 — the owner's call from the bench: the mute reading is green on
       // every surface, so this word may not fall back to plain white.
-      //
-      // `ledGreen`, not the `success` the desktop surfaces use: this word is
-      // 84px on the two-metre panel, where `success` drops to 6.2:1 against
-      // the background. See _ModeWord's doc for the full reasoning — this
-      // assertion is what stops a well-meaning token unification from
-      // quietly dimming the panel.
       await pump(tester, const PerformanceReadout(mode: 'mute'));
       expect(styleOf().color, surface.ledGreen);
 
