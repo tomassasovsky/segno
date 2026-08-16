@@ -2175,10 +2175,24 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   /* The monitor capture set is frozen at arm: whichever inputs are enabled
    * right now, and no others — an input enabled later is logged, not tapped
    * (umbrella scope for this part). Every captured monitor ring is stereo
-   * (the monitor's own chain, e.g. a reverb, may decorrelate l/r). */
+   * (the monitor's own chain, e.g. a reverb, may decorrelate l/r).
+   *
+   * Clamped to the DEVICE's input count, not just LE_MAX_MONITORED_INPUTS
+   * (#710). le_engine_set_monitor_input validates only against the array
+   * bound, so a session saved on an 8-in interface and reloaded on a 2-in one
+   * leaves monitors 2..7 enabled. Capturing them would open a stem the audio
+   * thread can never fill — mix_monitors_frame taps only c < ch_in — so the
+   * drain would silence-fill that file for the entire take. Harmless while
+   * nothing counted the padding; now that a zero-fill raises the capture's
+   * glitch flag, it would light the warning on every single capture and drown
+   * the real signal. An input that does not exist is not a captured input. */
   uint32_t input_mask = 0;
+  const int32_t monitor_ch_limit =
+      (engine->in_channels > 0 && engine->in_channels < LE_MAX_MONITORED_INPUTS)
+          ? engine->in_channels
+          : LE_MAX_MONITORED_INPUTS;
   const size_t monitor_cap = le_perf_ring_capacity(2, sr);
-  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+  for (int32_t c = 0; c < monitor_ch_limit; ++c) {
     if (!load_i32(&engine->monitors[c].a_enabled)) continue;
     float* buf = (float*)malloc(monitor_cap * sizeof(float));
     if (buf == NULL) {

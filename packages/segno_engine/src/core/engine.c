@@ -304,8 +304,14 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_perf_armed, 0);
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
-  atomic_store_explicit(&engine->a_perf_zero_filled_frames, 0u,
-                        memory_order_relaxed);
+  /* a_perf_zero_filled_frames is deliberately NOT cleared here (#710).
+   * le_perf_arm resets it, so a fresh capture always starts at zero — this
+   * store would be redundant, and worse than redundant: a device change
+   * reconfigures the engine between the drain thread's final cycle and the
+   * app's finalize, and the app reads this counter at `done` precisely to
+   * catch a glitch from that last cycle. Clearing it here would erase the one
+   * reading the app came for, on exactly the abnormal stop most likely to
+   * have glitched. */
 
   if (input_channels <= 0) input_channels = 2;
   if (input_channels > LE_MAX_CHANNELS) input_channels = LE_MAX_CHANNELS;

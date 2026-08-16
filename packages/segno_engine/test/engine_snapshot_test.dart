@@ -34,6 +34,7 @@ void main() {
       expect(snapshot.isPerfArmed, isFalse);
       expect(snapshot.perfFrames, 0);
       expect(snapshot.perfOverruns, 0);
+      expect(snapshot.perfZeroFilledFrames, 0);
       // Input clip + conditioning (S2) defaults: nothing HOT, nothing active.
       expect(snapshot.inputClipMask, 0);
       expect(snapshot.inputCondMask, 0);
@@ -612,6 +613,7 @@ void main() {
       bool isPerfArmed = false,
       int perfFrames = 0,
       int perfOverruns = 0,
+      int perfZeroFilledFrames = 0,
       double tempoBpm = 0,
       TempoSource tempoSource = TempoSource.none,
       int tsNum = 4,
@@ -648,6 +650,7 @@ void main() {
       isPerfArmed: isPerfArmed,
       perfFrames: perfFrames,
       perfOverruns: perfOverruns,
+      perfZeroFilledFrames: perfZeroFilledFrames,
       tempoBpm: tempoBpm,
       tempoSource: tempoSource,
       tsNum: tsNum,
@@ -705,6 +708,10 @@ void main() {
 
     test('perfOverruns participates in equality', () {
       expect(build(), isNot(equals(build(perfOverruns: 3))));
+    });
+
+    test('perfZeroFilledFrames participates in equality', () {
+      expect(build(), isNot(equals(build(perfZeroFilledFrames: 128))));
     });
 
     test('tempoBpm participates in equality', () {

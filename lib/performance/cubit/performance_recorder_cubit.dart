@@ -565,8 +565,15 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     }
     _captureDir = null;
     final anyFailed = _performance.renderTrackStatuses.any((s) => !s.succeeded);
-    final stoppedEarly = _stopReason ?? _readStoppedEarly(dir);
+    final manifest = _readManifest(dir);
+    final stoppedEarly = _stopReason ?? _stopReasonOf(manifest);
     _stopReason = null;
+    // Belt to the `done`-time snapshot read's braces (#710). The engine's
+    // counters are live state: a device change reconfigures the engine on the
+    // way to finalize, and any future teardown ordering could do the same.
+    // The sidecar is the durable record of what the drain actually wrote, so
+    // a take whose silence only survives there still finalizes honestly.
+    if ((manifest?.zeroFilledFrames ?? 0) > 0) _sawOverrun = true;
     final PerformanceRecordResult result;
     if (stoppedEarly != null) {
       result = PerformanceRecordStoppedEarly(dir, stoppedEarly);
@@ -660,22 +667,27 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     return project?.tracks ?? const [];
   }
 
-  PerformanceStopReason? _readStoppedEarly(String dir) {
+  /// The finalized capture's own sidecar, or `null` when it is missing or
+  /// unparseable. The durable record of what the drain thread actually did —
+  /// unlike the engine's live counters, it survives a reconfigure.
+  PerformanceManifest? _readManifest(String dir) {
     final manifestFile = File('$dir/${PerformanceRepository.manifestName}');
     if (!manifestFile.existsSync()) return null;
     try {
-      final manifest = PerformanceManifest.fromJson(
+      return PerformanceManifest.fromJson(
         jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>,
       );
-      return switch (manifest.stoppedEarly) {
-        'disk_full' => PerformanceStopReason.diskFull,
-        'device_changed' => PerformanceStopReason.deviceChanged,
-        _ => null,
-      };
     } on FormatException {
       return null;
     }
   }
+
+  PerformanceStopReason? _stopReasonOf(PerformanceManifest? manifest) =>
+      switch (manifest?.stoppedEarly) {
+        'disk_full' => PerformanceStopReason.diskFull,
+        'device_changed' => PerformanceStopReason.deviceChanged,
+        _ => null,
+      };
 
   void _emit(PerformanceRecorderState next) {
     if (isClosed) return;

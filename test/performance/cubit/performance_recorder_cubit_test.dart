@@ -40,6 +40,7 @@ void writeManifest(
   String dir, {
   String? stoppedEarly,
   bool finalized = true,
+  int zeroFilledFrames = 0,
 }) {
   final json = {
     'slug': dir.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last,
@@ -47,6 +48,7 @@ void writeManifest(
     'channel_layout': {'master_channels': 2, 'captured_inputs': <int>[]},
     'capture_frames': 4800,
     'overrun_count': 0,
+    'zero_filled_frames': zeroFilledFrames,
     'overrun_gaps': <Map<String, dynamic>>[],
     'layers': <Map<String, dynamic>>[],
     'stopped_early': ?stoppedEarly,
@@ -118,6 +120,7 @@ void main() {
   Future<String> armWithLog(
     PerformanceRepository repo, {
     int entries = 1,
+    int zeroFilledFrames = 0,
   }) async {
     await repo.arm();
     final dir = repo.armedDirectory!;
@@ -126,7 +129,11 @@ void main() {
       bytes.add(_eventLogEntry(frame: i * 100));
     }
     File('$dir/events.log').writeAsBytesSync(bytes.toBytes());
-    writeManifest(dir, finalized: false);
+    writeManifest(
+      dir,
+      finalized: false,
+      zeroFilledFrames: zeroFilledFrames,
+    );
     return dir;
   }
 
@@ -647,6 +654,30 @@ void main() {
           measuredLatencyMs: 0,
           perfZeroFilledFrames: 128,
         );
+
+        await cubit.toggleArm();
+        final completed = await waitForCompleted(cubit);
+
+        expect(completed.hadGlitch, isTrue);
+      },
+    );
+
+    test(
+      'the manifest carries the glitch when the engine counters are already '
+      'gone',
+      () async {
+        // Belt-and-braces path: the sidecar is the durable record of what the
+        // drain wrote, so a reconfigure between the final cycle and finalize
+        // (a device change, say) cannot launder a glitched take into a clean
+        // one. The engine snapshot here reads perfectly clean.
+        engine.renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+        final cubit = build(armedTickInterval: const Duration(minutes: 1));
+        addTearDown(cubit.close);
+        await armWithLog(performance, zeroFilledFrames: 192);
+        await pumpEventQueue();
+        clock = clock.add(const Duration(seconds: 5));
 
         await cubit.toggleArm();
         final completed = await waitForCompleted(cubit);
