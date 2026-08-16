@@ -35,6 +35,8 @@
 #include "json_read.h"        /* le_json_parse (part 7 offline renderer) */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
+#include "restore_declip.h"   /* offline de-clip DSP (#697 S8) */
+#include "restore_halfband.h" /* 2:1 half-band resampler (#697 S8) */
 #include "rnnoise.h" /* vendored third_party/rnnoise (#697 S7 smoke test) */
 #include "segno_engine_api.h"
 #include "tempo_grid.h" /* le_tempo_grid, le_grid_* (pure grid math) */
@@ -20131,6 +20133,381 @@ static void test_rnnoise_vendor_smoke(void) {
   rnnoise_destroy(st);
 }
 
+/* --- Restore de-clip + half-band DSP (#697 S8) ---------------------------
+ *
+ * Pure-DSP tests for the offline loop-close restoration pieces: the de-clip
+ * repair (restore_declip.c — flat-run detection, Hermite spline for short
+ * runs, two-sided Burg AR for long ones) and the 2:1 half-band resampler
+ * (restore_halfband.c). Synthetic clipped sines with SNR assertions: the
+ * clean sine is the ground truth the repair is measured against. The SNR
+ * bounds sit ~5 dB below measured values (macOS clang -O2) to absorb libm /
+ * compiler variation without letting a real regression slip through. */
+
+static le_declip_scratch g_declip_scratch;
+
+/* SNR of sig against ref over [skip, n - skip), in dB. */
+static double declip_snr_db(const float* ref, const float* sig, uint32_t n,
+                            uint32_t skip) {
+  double se = 0.0;
+  double re = 0.0;
+  uint32_t i;
+  for (i = skip; i < n - skip; ++i) {
+    const double e = (double)sig[i] - (double)ref[i];
+    se += e * e;
+    re += (double)ref[i] * (double)ref[i];
+  }
+  if (se <= 0.0) return 999.0;
+  return 10.0 * log10(re / se);
+}
+
+static double declip_max_abs_diff(const float* x, uint32_t n) {
+  double mx = 0.0;
+  uint32_t i;
+  for (i = 1; i < n; ++i) {
+    const double d = fabs((double)x[i] - (double)x[i - 1]);
+    if (d > mx) mx = d;
+  }
+  return mx;
+}
+
+static int declip_all_finite(const float* x, uint32_t n) {
+  uint32_t i;
+  for (i = 0; i < n; ++i) {
+    if (!isfinite(x[i])) return 0;
+  }
+  return 1;
+}
+
+enum { kDeclipN = 9600 };
+static float g_declip_clean[kDeclipN];
+static float g_declip_clipped[kDeclipN];
+static float g_declip_work[kDeclipN];
+
+/* Synthesize amp * sin(2 pi freq / sr) into clean[] and its hard-clipped
+ * (+/-0.999) twin into clipped[]; returns the longest at-rail run. */
+static int declip_make_clipped_sine(double freq, double amp, double sr) {
+  int run = 0;
+  int longest = 0;
+  int i;
+  for (i = 0; i < kDeclipN; ++i) {
+    float c = (float)(amp * sin(2.0 * M_PI * freq * (double)i / sr));
+    g_declip_clean[i] = c;
+    if (c > 0.999f) c = 0.999f;
+    if (c < -0.999f) c = -0.999f;
+    g_declip_clipped[i] = c;
+    if (c >= 0.999f || c <= -0.999f) {
+      ++run;
+      if (run > longest) longest = run;
+    } else {
+      run = 0;
+    }
+  }
+  return longest;
+}
+
+/* Short runs (1 kHz at 96 k clips ~10 samples per peak): the Hermite spline
+ * path. The reconstruction must recover most of the lost peak (SNR jumps
+ * well past the clipped signal's), actually reach back above the rail, and
+ * stay seam-continuous — the largest sample-to-sample step of the repaired
+ * signal must stay in the same league as the clean sine's own steepest step
+ * (a bad seam is a step-discontinuity an order of magnitude above it). */
+static void test_declip_short_run_spline_reconstructs(void) {
+  int longest;
+  int32_t reps;
+  double snr_in;
+  double snr_out;
+  float peak = 0.0f;
+  int i;
+  printf("test_declip_short_run_spline_reconstructs\n");
+  longest = declip_make_clipped_sine(1000.0, 1.05, 96000.0);
+  CHECK(longest > 0 && longest <= 16); /* geometry: spline path exercised */
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps > 0);
+  snr_in = declip_snr_db(g_declip_clean, g_declip_clipped, kDeclipN, 0);
+  snr_out = declip_snr_db(g_declip_clean, g_declip_work, kDeclipN, 0);
+  CHECK(snr_out > snr_in + 12.0); /* measured: 33.0 -> 50.9 dB */
+  CHECK(snr_out > 45.0);
+  for (i = 0; i < kDeclipN; ++i) {
+    if (g_declip_work[i] > peak) peak = g_declip_work[i];
+  }
+  CHECK(peak > 1.01f);  /* the repair went back above the rail */
+  CHECK(peak <= 1.998f); /* ... but stayed inside the documented clamp */
+  CHECK(declip_max_abs_diff(g_declip_work, kDeclipN) <
+        2.0 * declip_max_abs_diff(g_declip_clean, kDeclipN));
+}
+
+/* Long runs (100 Hz at 96 k clips ~180 samples per peak): the two-sided
+ * Burg AR path with spline-pre-filled context. Same assertion shape as the
+ * spline test, plus the amplitude bound. */
+static void test_declip_long_run_ar_reconstructs(void) {
+  int longest;
+  int32_t reps;
+  double snr_in;
+  double snr_out;
+  float peak = 0.0f;
+  int i;
+  printf("test_declip_long_run_ar_reconstructs\n");
+  longest = declip_make_clipped_sine(100.0, 1.2, 96000.0);
+  CHECK(longest > 16 && longest <= 512); /* geometry: AR path exercised */
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps > 0);
+  snr_in = declip_snr_db(g_declip_clean, g_declip_clipped, kDeclipN, 0);
+  snr_out = declip_snr_db(g_declip_clean, g_declip_work, kDeclipN, 0);
+  CHECK(snr_out > snr_in + 8.0); /* measured: 19.5 -> 30.3 dB */
+  CHECK(snr_out > 25.0);
+  for (i = 0; i < kDeclipN; ++i) {
+    if (g_declip_work[i] > peak) peak = g_declip_work[i];
+  }
+  CHECK(peak > 1.1f);   /* recovered most of the true 1.2 peak */
+  CHECK(peak <= 1.998f);
+  CHECK(declip_max_abs_diff(g_declip_work, kDeclipN) <
+        2.0 * declip_max_abs_diff(g_declip_clean, kDeclipN));
+  /* Every repaired sample respects the floor: never back under the rail
+   * the original sat at. */
+  for (i = 0; i < kDeclipN; ++i) {
+    if (g_declip_clipped[i] >= 0.999f) CHECK(g_declip_work[i] >= 0.999f);
+    if (g_declip_clipped[i] <= -0.999f) CHECK(g_declip_work[i] <= -0.999f);
+  }
+}
+
+/* Dense clipping (440 Hz at 1.5: runs a half-period apart) still improves —
+ * the AR context pre-fill keeps neighboring rails out of the fit. And the
+ * algorithm is sample-rate agnostic: the same signal at 48 k repairs too. */
+static void test_declip_dense_and_rate_agnostic(void) {
+  double snr_in;
+  double snr_out;
+  int32_t reps;
+  printf("test_declip_dense_and_rate_agnostic\n");
+  (void)declip_make_clipped_sine(440.0, 1.5, 96000.0);
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps > 0);
+  snr_in = declip_snr_db(g_declip_clean, g_declip_clipped, kDeclipN, 0);
+  snr_out = declip_snr_db(g_declip_clean, g_declip_work, kDeclipN, 0);
+  CHECK(snr_out > snr_in + 15.0); /* measured: 12.0 -> 37.3 dB */
+
+  (void)declip_make_clipped_sine(440.0, 1.3, 48000.0);
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps > 0);
+  snr_in = declip_snr_db(g_declip_clean, g_declip_clipped, kDeclipN, 0);
+  snr_out = declip_snr_db(g_declip_clean, g_declip_work, kDeclipN, 0);
+  CHECK(snr_out > snr_in + 15.0); /* measured: 16.0 -> 46.5 dB */
+}
+
+/* A signal that never reaches the rail comes back bit-exact — the repair
+ * must be a no-op on healthy audio, not a subtle resmoothing. */
+static void test_declip_no_clip_passthrough_bit_exact(void) {
+  int32_t reps;
+  int i;
+  printf("test_declip_no_clip_passthrough_bit_exact\n");
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clipped[i] =
+        (float)(0.99 * sin(2.0 * M_PI * 997.0 * (double)i / 96000.0));
+  }
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps == 0);
+  CHECK(memcmp(g_declip_work, g_declip_clipped, sizeof(g_declip_work)) == 0);
+}
+
+/* Runs touching the buffer edges have no context on one side and pass
+ * through untouched (documented conservative behavior); interior runs in
+ * the same buffer still repair. */
+static void test_declip_edge_runs_pass_through(void) {
+  int32_t reps;
+  int i;
+  int start_untouched = 1;
+  int end_untouched = 1;
+  int interior_touched = 0;
+  printf("test_declip_edge_runs_pass_through\n");
+  /* cos starts AT the peak -> the first run touches sample 0; force the
+   * tail to rail so the last run touches the final sample. */
+  for (i = 0; i < kDeclipN; ++i) {
+    float c = (float)(1.2 * cos(2.0 * M_PI * 100.0 * (double)i / 96000.0));
+    if (c > 0.999f) c = 0.999f;
+    if (c < -0.999f) c = -0.999f;
+    g_declip_clipped[i] = c;
+  }
+  for (i = kDeclipN - 40; i < kDeclipN; ++i) g_declip_clipped[i] = 0.999f;
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps > 0);
+  for (i = 0; i < 100; ++i) {
+    if (g_declip_work[i] != g_declip_clipped[i]) start_untouched = 0;
+  }
+  for (i = kDeclipN - 40; i < kDeclipN; ++i) {
+    if (g_declip_work[i] != g_declip_clipped[i]) end_untouched = 0;
+  }
+  for (i = 100; i < kDeclipN - 40; ++i) {
+    if (g_declip_work[i] != g_declip_clipped[i]) interior_touched = 1;
+  }
+  CHECK(start_untouched == 1);
+  CHECK(end_untouched == 1);
+  CHECK(interior_touched == 1);
+  CHECK(declip_all_finite(g_declip_work, kDeclipN) == 1);
+}
+
+/* Sustained clipping is not a transient peak: an embedded rail stretch
+ * longer than LE_DECLIP_MAX_RUN passes through untouched, and a buffer that
+ * is ALL rail comes back bit-exact. */
+static void test_declip_sustained_rail_pass_through(void) {
+  int32_t reps;
+  int i;
+  int untouched = 1;
+  printf("test_declip_sustained_rail_pass_through\n");
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clipped[i] =
+        (float)(0.5 * sin(2.0 * M_PI * 500.0 * (double)i / 96000.0));
+  }
+  for (i = 1000; i < 1000 + 600; ++i) g_declip_clipped[i] = 0.999f;
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps == 0); /* 600 > LE_DECLIP_MAX_RUN (512): nothing to repair */
+  for (i = 1000; i < 1600; ++i) {
+    if (g_declip_work[i] != g_declip_clipped[i]) untouched = 0;
+  }
+  CHECK(untouched == 1);
+
+  for (i = 0; i < kDeclipN; ++i) g_declip_clipped[i] = 0.999f;
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps == 0);
+  CHECK(memcmp(g_declip_work, g_declip_clipped, sizeof(g_declip_work)) == 0);
+}
+
+/* Pathological inputs stay bounded and deterministic: alternating +/- rail
+ * (every sample its own length-1 run) must produce finite output inside the
+ * documented clamp, bit-identical across two runs. */
+static void test_declip_pathological_stable_and_deterministic(void) {
+  int32_t reps;
+  int i;
+  float mx = 0.0f;
+  printf("test_declip_pathological_stable_and_deterministic\n");
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clipped[i] = (i & 1) ? 0.999f : -0.999f;
+  }
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps >= 0);
+  CHECK(declip_all_finite(g_declip_work, kDeclipN) == 1);
+  for (i = 0; i < kDeclipN; ++i) {
+    if (fabsf(g_declip_work[i]) > mx) mx = fabsf(g_declip_work[i]);
+  }
+  CHECK(mx <= 2.0f * 0.999f + 1e-6f);
+  memcpy(g_declip_clean, g_declip_clipped, sizeof(g_declip_clean));
+  le_declip_process(g_declip_clean, kDeclipN, 0.999f, &g_declip_scratch);
+  CHECK(memcmp(g_declip_work, g_declip_clean, sizeof(g_declip_work)) == 0);
+}
+
+/* Two runs over the same REAL clipped signal are bit-identical (the scratch
+ * carries no state between calls), and invalid arguments are rejected. */
+static void test_declip_deterministic_and_arg_guards(void) {
+  printf("test_declip_deterministic_and_arg_guards\n");
+  (void)declip_make_clipped_sine(313.0, 1.4, 96000.0);
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  le_declip_process(g_declip_work, kDeclipN, 0.999f, &g_declip_scratch);
+  le_declip_process(g_declip_clipped, kDeclipN, 0.999f, &g_declip_scratch);
+  CHECK(memcmp(g_declip_work, g_declip_clipped, sizeof(g_declip_work)) == 0);
+
+  CHECK(le_declip_process(NULL, kDeclipN, 0.999f, &g_declip_scratch) == -1);
+  CHECK(le_declip_process(g_declip_work, kDeclipN, 0.999f, NULL) == -1);
+  CHECK(le_declip_process(g_declip_work, 0, 0.999f, &g_declip_scratch) == -1);
+  CHECK(le_declip_process(g_declip_work, kDeclipN, 0.0f,
+                          &g_declip_scratch) == -1);
+  CHECK(le_declip_process(g_declip_work, kDeclipN, -1.0f,
+                          &g_declip_scratch) == -1);
+}
+
+static float g_hb_half[kDeclipN / 2 + 1];
+static float g_hb_back[kDeclipN];
+
+/* The half-band pair is transparent in the passband AND delay-compensated:
+ * a 96 k -> 48 k -> 96 k round trip lines up sample-for-sample with the
+ * input (no group-delay shift for the caller to undo), at both a low and a
+ * high in-band frequency. Edges excluded: the zero-padded boundary is the
+ * one place the filter sees signal that does not exist. */
+static void test_halfband_roundtrip_transparent_and_aligned(void) {
+  int32_t dl;
+  int32_t il;
+  int i;
+  printf("test_halfband_roundtrip_transparent_and_aligned\n");
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clean[i] =
+        (float)(0.8 * sin(2.0 * M_PI * 1000.0 * (double)i / 96000.0));
+  }
+  dl = le_halfband_decimate(g_declip_clean, kDeclipN, g_hb_half);
+  CHECK(dl == kDeclipN / 2);
+  il = le_halfband_interpolate(g_hb_half, (uint32_t)dl, g_hb_back);
+  CHECK(il == kDeclipN);
+  /* Sample-aligned comparison IS the delay test: any residual group delay
+   * would collapse this SNR to single digits. */
+  CHECK(declip_snr_db(g_declip_clean, g_hb_back, kDeclipN, 128) > 60.0);
+
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clean[i] =
+        (float)(0.8 * sin(2.0 * M_PI * 8000.0 * (double)i / 96000.0));
+  }
+  dl = le_halfband_decimate(g_declip_clean, kDeclipN, g_hb_half);
+  il = le_halfband_interpolate(g_hb_half, (uint32_t)dl, g_hb_back);
+  CHECK(il == kDeclipN);
+  CHECK(declip_snr_db(g_declip_clean, g_hb_back, kDeclipN, 128) > 60.0);
+}
+
+/* Decimation must actually reject what would alias: a 30 kHz tone at 96 k
+ * (above the 24 k target Nyquist) has to come out of the decimator at least
+ * 40 dB down (measured: ~-76 dB). */
+static void test_halfband_rejects_out_of_band(void) {
+  int32_t dl;
+  double in_rms = 0.0;
+  double out_rms = 0.0;
+  int i;
+  printf("test_halfband_rejects_out_of_band\n");
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clean[i] =
+        (float)(0.8 * sin(2.0 * M_PI * 30000.0 * (double)i / 96000.0));
+    in_rms += (double)g_declip_clean[i] * (double)g_declip_clean[i];
+  }
+  in_rms = sqrt(in_rms / kDeclipN);
+  dl = le_halfband_decimate(g_declip_clean, kDeclipN, g_hb_half);
+  CHECK(dl == kDeclipN / 2);
+  for (i = 128; i < dl - 128; ++i) {
+    out_rms += (double)g_hb_half[i] * (double)g_hb_half[i];
+  }
+  out_rms = sqrt(out_rms / (double)(dl - 256));
+  CHECK(out_rms < in_rms * 0.01);
+}
+
+/* Length contracts and argument guards: odd input length rounds the
+ * decimated length up ((n + 1) / 2), interpolate always returns 2n, NULL /
+ * zero-length arguments are rejected. */
+static void test_halfband_lengths_and_arg_guards(void) {
+  float in7[7] = {0.0f, 1.0f, 0.0f, -1.0f, 0.0f, 1.0f, 0.0f};
+  float dec[4];
+  float interp[14];
+  printf("test_halfband_lengths_and_arg_guards\n");
+  CHECK(le_halfband_decimate(in7, 7, dec) == 4);
+  CHECK(le_halfband_interpolate(dec, 4, interp) == 8);
+  CHECK(declip_all_finite(interp, 8) == 1);
+  CHECK(le_halfband_decimate(NULL, 7, dec) == -1);
+  CHECK(le_halfband_decimate(in7, 0, dec) == -1);
+  CHECK(le_halfband_decimate(in7, 7, NULL) == -1);
+  CHECK(le_halfband_interpolate(NULL, 4, interp) == -1);
+  CHECK(le_halfband_interpolate(dec, 0, interp) == -1);
+  CHECK(le_halfband_interpolate(dec, 4, NULL) == -1);
+}
+
 int main(void) {
   printf("== segno_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -20617,6 +20994,17 @@ int main(void) {
   test_clip_excluded_input_ignored();
   test_cond_mask_snapshot();
   test_rnnoise_vendor_smoke();
+  test_declip_short_run_spline_reconstructs();
+  test_declip_long_run_ar_reconstructs();
+  test_declip_dense_and_rate_agnostic();
+  test_declip_no_clip_passthrough_bit_exact();
+  test_declip_edge_runs_pass_through();
+  test_declip_sustained_rail_pass_through();
+  test_declip_pathological_stable_and_deterministic();
+  test_declip_deterministic_and_arg_guards();
+  test_halfband_roundtrip_transparent_and_aligned();
+  test_halfband_rejects_out_of_band();
+  test_halfband_lengths_and_arg_guards();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");
