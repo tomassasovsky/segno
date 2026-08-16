@@ -684,6 +684,29 @@ void le_platform_backends(const ma_backend** out_list, ma_uint32* out_count) {
   }
 }
 
+void le_platform_probe_backends(const ma_backend** out_list,
+                                ma_uint32* out_count) {
+  /* Appliance only. The image has no PulseAudio server, and miniaudio's DEFAULT
+   * order tries ma_backend_pulseaudio before ma_backend_alsa, so every probe
+   * attempted a connection that could only fail — and each failure leaked a
+   * memfd (#721). Excluding Pulse here is the whole fix.
+   *
+   * Desktop Linux deliberately gets (NULL, 0), NOT the streaming preference: a
+   * probe context opened on JACK enumerates one synthetic default device per
+   * direction instead of the real cards, and le_find_loopback's "monitor of"
+   * match is a PulseAudio-only string that a JACK context can never produce.
+   * The streaming path still prefers JACK — that is a different question, asked
+   * of a device that is about to be opened, not of a list being read. */
+  static const ma_backend k_alsa_only[] = {ma_backend_alsa};
+  if (le_alsa_only()) {
+    *out_list = k_alsa_only;
+    *out_count = 1;
+  } else {
+    *out_list = NULL;
+    *out_count = 0;
+  }
+}
+
 void le_platform_before_context_init(const le_config* config) {
   /* ALSA takes its period directly from ma_device_config (periodSizeInFrames),
    * so the appliance needs none of the PipeWire quantum plumbing. */

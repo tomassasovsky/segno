@@ -117,15 +117,21 @@ void le_find_loopback(ma_context* ctx, le_loopback_info* out,
 }
 
 /* Every transient probe context in the engine opens through here — see the
- * contract on the declaration in engine_private.h. The list is the platform
- * seam's, i.e. exactly what le_engine_start hands ma_context_init, so a probe
- * can never reach a backend the streaming path is pinned away from. macOS and
- * Windows return (NULL, 0), which is miniaudio's default and what this call
- * site passed before. */
+ * contract on the declaration in engine_private.h.
+ *
+ * The list comes from le_platform_probe_backends, NOT le_platform_backends. The
+ * streaming list is an ordered PREFERENCE and miniaudio takes the first backend
+ * that initialises, so handing it to a probe would change which backend the
+ * probe LANDS on, not just which ones it may reach — on desktop Linux a probe
+ * would open on JACK and enumerate one synthetic default device per direction
+ * instead of the host's cards. The probe seam pins only where a backend must be
+ * positively excluded (Linux + SEGNO_ALSA_ONLY) and otherwise hands back
+ * (NULL, 0), which is byte-for-byte the ma_context_init call these sites made
+ * before. */
 ma_result le_probe_context_init(ma_context* ctx) {
   const ma_backend* backends = NULL;
   ma_uint32 backend_count = 0;
-  le_platform_backends(&backends, &backend_count);
+  le_platform_probe_backends(&backends, &backend_count);
   return ma_context_init(backends, backend_count, NULL, ctx);
 }
 

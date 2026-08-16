@@ -23,6 +23,8 @@
 #include <time.h> /* clock (conditioning CPU smoke) */
 #include <wchar.h>
 #if defined(__linux__)
+#include <sys/wait.h> /* waitpid — the pinned probe tests run in a forked child */
+#include <unistd.h>   /* fork, _exit */
 #include <dirent.h> /* /proc/self/fd walk (probe-context descriptor leak, #721) */
 #endif
 
@@ -5047,50 +5049,121 @@ static void test_select_backend_defaults_to_miniaudio(void) {
   CHECK(le_miniaudio_backend.close != NULL);
 }
 
-/* ---- probe-context backend pin (#721) ---- */
+/* ---- probe-context backends (#721) ---- */
 
-/* Pins SEGNO_ALSA_ONLY for this process, the way the appliance's kiosk launcher
- * does. The platform seam reads the variable ONCE and caches it, so both tests
- * below must run before anything else in the binary can consult it — main()
- * calls them first for that reason. Windows has no such pin (engine_windows.c
- * ignores the variable), so nothing is set there. */
-static void set_alsa_only_pin(void) {
-#if !defined(_WIN32)
-  setenv("SEGNO_ALSA_ONLY", "1", /*overwrite=*/1);
-#endif
-}
-
-/* A transient probe context — the throwaway ma_context enumeration and loopback
- * detection run on — must open on the SAME backend the streaming path is pinned
- * to, never on one the pin excludes.
+/* DESKTOP INVARIANT, asserted on every OS: with no appliance pin in the
+ * environment, a probe context must be opened with miniaudio's own default
+ * backend order — (NULL, 0) — and nothing else.
  *
- * The regression: enumeration used to call ma_context_init(NULL, 0, ...), which
- * walks miniaudio's default backend list in ma_backend enum order, and that
- * order puts ma_backend_pulseaudio ahead of ma_backend_alsa. On desktop Linux
- * that silently opened the probe on PulseAudio; on the appliance it attempted a
- * PulseAudio connection that could only fail (no server in the image), and each
- * failed attempt leaked a memfd. Asserting the CHOSEN backend rather than the
- * requested list is what makes this a behavioural test: it fails on any host
- * where an excluded backend would have won. */
-static void test_probe_context_honors_backend_pin(void) {
-  printf("test_probe_context_honors_backend_pin\n");
-  set_alsa_only_pin();
-  ma_context ctx;
-  if (le_probe_context_init(&ctx) != MA_SUCCESS) {
-    /* No usable audio stack on this host (headless CI without ALSA): there is
-     * no context to make an assertion about. Not a failure — the FD test below
-     * still covers the path that matters. */
-    printf("  (skipped: no audio backend available on this host)\n");
+ * This is not a formality. The probe seam is deliberately NOT the streaming
+ * preference: miniaudio takes the first backend that INITIALISES, so handing a
+ * probe the desktop-Linux list {jack, pulseaudio, alsa} would make it land on
+ * JACK wherever a PipeWire/JACK server is running. A JACK probe context
+ * enumerates one synthetic "Default Playback Device" + one "Default Capture
+ * Device" instead of the host's real cards, and le_find_loopback's "monitor of"
+ * match is a PulseAudio-only string a JACK context can never produce — so the
+ * device picker and desktop loopback detection would both silently regress.
+ * (NULL, 0) is byte-for-byte the call the probe sites made before #721.
+ *
+ * Reads the environment rather than mutating it, so it leaves no state behind
+ * and imposes no ordering on the rest of the binary. */
+static void test_probe_backends_unpinned_is_miniaudio_default(void) {
+  printf("test_probe_backends_unpinned_is_miniaudio_default\n");
+  const char* pin = getenv("SEGNO_ALSA_ONLY");
+  if (pin != NULL && pin[0] != '\0' && pin[0] != '0') {
+    /* Someone ran the suite with the appliance pin already exported; the
+     * desktop invariant is not the one in force here. Say so rather than
+     * asserting the wrong contract. */
+    printf("  (skipped: SEGNO_ALSA_ONLY is set in this environment)\n");
     return;
   }
-  /* Nothing may route a probe through PulseAudio while the ALSA-only pin is on,
-   * on any OS. */
-  CHECK(ctx.backend != ma_backend_pulseaudio);
+  const ma_backend* list = (const ma_backend*)&list; /* poison, must be cleared */
+  ma_uint32 count = 12345;
+  le_platform_probe_backends(&list, &count);
+  CHECK(list == NULL);
+  CHECK(count == 0);
+}
+
 #if defined(__linux__)
-  /* The appliance pin is exact: ALSA and nothing else. */
-  CHECK(ctx.backend == ma_backend_alsa);
-#endif
+/* The appliance-pinned assertions below run in a FORKED CHILD.
+ *
+ * The pin lives in the environment and the platform seam caches it on its first
+ * read, so setting it in this process would silently switch every later test in
+ * the binary onto the appliance path — including the pre-existing enumeration
+ * tests, which were written against the desktop one. A child gets its own
+ * environment and its own descriptor table, so the pinned world is created and
+ * destroyed inside it and NO ordering constraint is placed on main().
+ *
+ * A child is the right tool here because this assertion only reads which backend
+ * the context landed on. The descriptor-leak test below deliberately does NOT
+ * fork — see the note on it.
+ *
+ * Runs the child body, returns its exit status, or -1 if it could not be run.
+ * Child statuses: 0 pass, 1 fail, 2 "cannot run here" (no probe backend). */
+static int run_pinned_child(void (*body)(void)) {
+  fflush(stdout);
+  const pid_t pid = fork();
+  if (pid < 0) return -1;
+  if (pid == 0) {
+    setenv("SEGNO_ALSA_ONLY", "1", /*overwrite=*/1);
+    body();
+    fflush(stdout);
+    _exit(0); /* body() _exit()s on any non-pass outcome */
+  }
+  int status = 0;
+  if (waitpid(pid, &status, 0) < 0) return -1;
+  return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+}
+
+/* Reports a forked child's status against the parent's CHECK tally, so a child
+ * failure fails the suite and a child that could not run says why instead of
+ * passing silently. */
+static void report_pinned_child(int status, const char* what) {
+  switch (status) {
+    case 0: break;
+    case 2:
+      printf("  (skipped: no probe backend available on this host — %s)\n",
+             what);
+      break;
+    case -1: printf("  FAIL: could not fork for %s\n", what); g_failures++; break;
+    default: printf("  FAIL: %s (in forked child)\n", what); g_failures++; break;
+  }
+}
+
+/* Child body: under the appliance pin, the backend a probe context ACTUALLY
+ * lands on — ctx.backend, not the list it asked for — must never be PulseAudio,
+ * and on Linux must be exactly ALSA. Asserting the chosen backend is what makes
+ * this behavioural: it fails on any host where an excluded backend would have
+ * won the race to initialise. */
+static void pinned_probe_backend_body(void) {
+  ma_context ctx;
+  if (le_probe_context_init(&ctx) != MA_SUCCESS) _exit(2);
+  int bad = 0;
+  if (ctx.backend == ma_backend_pulseaudio) {
+    printf("  probe landed on PulseAudio under the ALSA-only pin\n");
+    bad = 1;
+  }
+  if (ctx.backend != ma_backend_alsa) {
+    printf("  probe landed on backend %d, want ma_backend_alsa (%d)\n",
+           (int)ctx.backend, (int)ma_backend_alsa);
+    bad = 1;
+  }
   ma_context_uninit(&ctx);
+  if (bad) _exit(1);
+}
+#endif
+
+static void test_pinned_probe_never_reaches_pulseaudio(void) {
+  printf("test_pinned_probe_never_reaches_pulseaudio\n");
+#if !defined(__linux__)
+  /* SEGNO_ALSA_ONLY is a Linux-only pin: le_platform_probe_backends on
+   * macOS/Windows returns (NULL, 0) unconditionally, which the unpinned test
+   * above already asserts on every OS. */
+  printf("  (skipped: the appliance pin only exists on Linux)\n");
+#else
+  report_pinned_child(run_pinned_child(pinned_probe_backend_body),
+                      "pinned probe backend");
+#endif
 }
 
 #if defined(__linux__)
@@ -5108,36 +5181,64 @@ static int open_fd_count(void) {
   closedir(d);
   return n;
 }
+
 #endif
 
-/* Repeated enumeration must not grow the process's descriptor table.
+/* Repeated probing must not grow the process's descriptor table.
  *
- * This is the shape of the appliance failure in #721: AudioSetupCubit
- * re-enumerates on a 1 Hz timer, in both directions, for the life of the app.
- * Each direction that the platform seam declines (no card with a PCM that way)
- * falls through to the miniaudio probe context, and while that probe was
- * unpinned each fall-through leaked one `memfd:pulseaudio` — 991 of the
- * process's 1024 descriptors on the bench unit, after which no window surface
- * or socket could be created any more.
+ * This is the shape of the appliance failure in #721. AudioSetupCubit
+ * re-enumerates on a 1 Hz timer, in both directions, for the life of the app;
+ * every probe that reached PulseAudio with no server listening leaked one
+ * `memfd:pulseaudio` — 991 of the process's 1024 descriptors on the bench unit,
+ * after which no window surface or socket could be created any more.
  *
- * LINUX ONLY: it reads /proc/self/fd, which macOS and Windows do not have, so
- * it no-ops there and the CI Linux job is what actually runs it. */
-static void test_enumeration_leaks_no_fds(void) {
-  printf("test_enumeration_leaks_no_fds\n");
+ * Runs UNPINNED, in this process, on purpose:
+ *
+ *  - unpinned is the condition under which PulseAudio is actually reached, so
+ *    this is the only test that exercises the missing `pa_context_unref` in the
+ *    vendored miniaudio (see src/miniaudio/README.md). Under the appliance pin
+ *    Pulse is never touched and a revert of that patch would go unnoticed;
+ *  - in-process, because a forked child does NOT reproduce it: once libpulse has
+ *    been loaded, `pa_context_new` fails early in a child, so the failure path
+ *    that leaks is never taken there and the test would pass vacuously;
+ *  - it therefore mutates nothing — no environment, no cached pin — and imposes
+ *    no ordering on the rest of the binary.
+ *
+ * Each round drives all three probe sites. `le_probe_context_init` is called
+ * DIRECTLY as well as through the two enumeration entry points, deliberately: on
+ * a host with a sound card the platform seam answers enumeration from its own
+ * source and never opens a probe context, which would leave the leaking path
+ * untested on exactly the machines that have audio hardware.
+ *
+ * LINUX ONLY (reads /proc/self/fd). The `native-tests` jobs install `libpulse0`
+ * with no PulseAudio server running, which is precisely the leaking condition —
+ * without libpulse present, miniaudio skips the backend and this cannot fail. */
+static void test_probing_leaks_no_fds(void) {
+  printf("test_probing_leaks_no_fds\n");
 #if defined(__linux__)
-  set_alsa_only_pin();
   enum { WARMUP = 4, ITERS = 64 };
   le_device_info devices[8];
   int32_t count = 0;
   le_loopback_info loopback;
 
-  /* Warm up first: the first pass legitimately opens process-lifetime handles
+  /* A probe context must actually open, or this test asserts nothing: with no
+   * context ever created, before == after holds trivially. Checked up front so
+   * a host that cannot run it says so instead of passing vacuously. */
+  ma_context probe;
+  if (le_probe_context_init(&probe) != MA_SUCCESS) {
+    printf("  (skipped: no probe backend available on this host)\n");
+    return;
+  }
+  ma_context_uninit(&probe);
+
+  /* Warm up first: the first passes legitimately open process-lifetime handles
    * (the dlopen'd backend, the ALSA symbol table), and those are setup, not a
    * leak. Only steady-state growth is the bug. */
   for (int i = 0; i < WARMUP; ++i) {
     le_enumerate_playback_devices(devices, 8, &count);
     le_enumerate_capture_devices(devices, 8, &count);
     le_detect_loopback(&loopback);
+    if (le_probe_context_init(&probe) == MA_SUCCESS) ma_context_uninit(&probe);
   }
 
   const int before = open_fd_count();
@@ -5149,6 +5250,7 @@ static void test_enumeration_leaks_no_fds(void) {
     le_enumerate_playback_devices(devices, 8, &count);
     le_enumerate_capture_devices(devices, 8, &count);
     le_detect_loopback(&loopback);
+    if (le_probe_context_init(&probe) == MA_SUCCESS) ma_context_uninit(&probe);
   }
   const int after = open_fd_count();
   /* Exact, not a tolerance: a transient probe context owns nothing once it is
@@ -5156,7 +5258,7 @@ static void test_enumeration_leaks_no_fds(void) {
    * on. A tolerance here would hide exactly the slow drip that took ~40 minutes
    * to kill the appliance. */
   if (after != before) {
-    printf("  fd count grew across %d enumerations: %d -> %d\n", ITERS, before,
+    printf("  fd count grew across %d probe rounds: %d -> %d\n", ITERS, before,
            after);
   }
   CHECK(after == before);
@@ -20897,12 +20999,6 @@ static void test_halfband_lengths_and_arg_guards(void) {
 
 int main(void) {
   printf("== segno_engine_core native tests ==\n");
-  /* FIRST: both set the SEGNO_ALSA_ONLY pin, and the platform seam caches that
-   * variable on its first read for the rest of the process. Anything that
-   * consulted it earlier would freeze the unpinned value and make these two
-   * assert nothing. */
-  test_probe_context_honors_backend_pin();
-  test_enumeration_leaks_no_fds();
   test_lane_setters_reject_invalid_args();
   test_two_lanes_unmerged_both_play();
   test_lane_fx_colors_only_its_lane();
@@ -21166,6 +21262,12 @@ int main(void) {
   test_enumerate_devices_counts_are_stable();
   test_device_id_to_str();
   test_select_backend_defaults_to_miniaudio();
+  /* Order-independent by construction: the desktop test only READS the
+   * environment, and the pinned ones set SEGNO_ALSA_ONLY inside a forked child
+   * so this process's env (and the seam's cache of it) is never touched. */
+  test_probe_backends_unpinned_is_miniaudio_default();
+  test_pinned_probe_never_reaches_pulseaudio();
+  test_probing_leaks_no_fds();
   test_backend_struct_defaults();
   test_bridge_roundtrip_f32();
   test_bridge_convert_int32();

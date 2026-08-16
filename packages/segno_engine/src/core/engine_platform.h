@@ -26,6 +26,23 @@ extern "C" {
  * {jack, pulseaudio, alsa}; macOS/Windows return (NULL, 0) = miniaudio default. */
 void le_platform_backends(const ma_backend** out_list, ma_uint32* out_count);
 
+/* Backend list for a TRANSIENT PROBE context (enumeration / loopback detection).
+ *
+ * NOT the same question as le_platform_backends, and deliberately a separate
+ * seam. The streaming list is a PREFERENCE — miniaudio takes the first backend
+ * that initialises, so ordering it {jack, pulseaudio, alsa} changes which
+ * backend a probe lands on, and a probe on JACK reports one synthetic "Default
+ * Playback Device" instead of the host's real cards. A probe must therefore
+ * pin only when a backend has to be positively EXCLUDED, never merely preferred.
+ *
+ * Returns (NULL, 0) — miniaudio's own default backend order, exactly what the
+ * probe call sites passed before #721 — everywhere except the one case that
+ * needs an exclusion: Linux under SEGNO_ALSA_ONLY, where the appliance ships no
+ * PulseAudio server and every attempted Pulse connection leaked a memfd. There
+ * it returns {alsa}. macOS/Windows always return (NULL, 0). */
+void le_platform_probe_backends(const ma_backend** out_list,
+                                ma_uint32* out_count);
+
 /* Called immediately before ma_context_init. Linux sets PIPEWIRE_QUANTUM and
  * forces the graph quantum via pw-metadata. No-op elsewhere. */
 void le_platform_before_context_init(const le_config* config);
