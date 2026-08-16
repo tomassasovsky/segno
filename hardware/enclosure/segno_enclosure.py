@@ -207,6 +207,23 @@ SLED_BOT_CHAM = 0.6           # bottom-edge lead-in. Elephant foot on the first
 # the pad-on design had it, so EVERYTHING above the base -- case top, top pad,
 # faceplate slot, the flush-at-rim rule of #373 -- is untouched.
 SLED_DECK_DROP = SLED_T - (PEDAL_PAD_T - POCKET_DEPTH)   # 6.0
+# --- the SAME idea on the 10-pedal console, with the ring SANDWICHED ----------
+# The mini's tub is part of the tray, so it needs no fixing of its own. A console
+# ring is a free part, and a ring held only by the faceplate has 0.30 mm of
+# vertical play -- the buzz the SKIRT_GAP comment already warns about. So the
+# ring gets a floor, the sled lands on it, and the FOUR EXISTING chassis screws
+# pass up through clearance holes in that floor and thread into the sled:
+# ring + sled + base plate clamped in one joint. No new fastener, and no new or
+# moved hole in segno_base.dxf -- the sled footprint swallows the pattern that
+# is already there.
+CONSOLE_SLED_T = 12.633   # thicker than the mini's, because this sled takes M3x5
+                          # from BOTH faces (pedal above, chassis below) where the
+                          # mini's only takes them from one. Derived as the FRONT
+                          # row's metal-base height less RING_FLOOR; _check() holds
+                          # that, so the three numbers cannot drift apart.
+RING_FLOOR = 1.6          # front-row ring floor. The mid row's "floor" is the tall
+                          # pedestal deck it already had -- same formula, and only
+                          # the front row is tight enough for this to bind.
 # Light-baffle TUB around the pedal: the pedestal's walls rise from the deck to
 # ~1mm under the sloped faceplate with their INNER faces set back SKIRT_SETBACK
 # behind the slot cut line -- from above you see ONLY faceplate, and the reveal
@@ -844,6 +861,40 @@ def _check():
         assert abs(hy) + r <= PEDAL_PAD_W/2.0, \
             f"PEDAL_BASE: hole at y={hy:.2f} is not under the anti-slip pad"
 
+    # 3b''. the console RING + SLED (issue #719). The pedal is bolted to the sled
+    # on the bench because the ~83 mm through-pin needs ~91 mm of clear axial run
+    # and no gap beside a seated pedal is close to that.
+    for tag, v in (("front", PEDAL_ROW1_V), ("mid", PEDAL_ROW2_V)):
+        deck = platform_h(v) - T - (CONSOLE_SLED_T - (PEDAL_PAD_T - POCKET_DEPTH))
+        base_z = deck + CONSOLE_SLED_T
+        want = (platform_h(v) - T) + PEDAL_PAD_T - POCKET_DEPTH
+        # the whole point: the pedal's metal base must not move, or the faceplate,
+        # the slot and the flush-at-rim rule of #373 all have to be re-derived
+        assert abs(base_z - want) < 1e-9, \
+            f"CONSOLE_SLED: {tag} metal base moves {base_z - want:+.3f} mm"
+        assert deck >= 1.2, \
+            f"CONSOLE_SLED: {tag} ring floor {deck:.2f} too thin to clamp against"
+        if tag == "front":
+            assert abs(deck - RING_FLOOR) < 1e-3, \
+                f"CONSOLE_SLED: front floor {deck:.3f} != RING_FLOOR {RING_FLOOR}"
+    # the sled takes M3x5 from BOTH faces -- that is what sets its thickness
+    assert CONSOLE_SLED_T >= 2*INSERT_DEPTH + 0.5, (
+        f"CONSOLE_SLED: {CONSOLE_SLED_T:.2f} cannot take {INSERT_DEPTH:.1f} mm "
+        "inserts from both faces")
+    # ...and every chassis station must land ON the sled, or the screws have
+    # nothing to thread into and the base plate would need new holes
+    shd = (SKIRT_IN_D - 2*SLED_CLR)/2.0
+    shw = (SKIRT_IN_W - 2*SLED_CLR)/2.0
+    for fx, fy in platform_foot_xy():
+        assert abs(fx) + INSERT_PILOT_D/2 <= shd - 1.5 and \
+               abs(fy) + INSERT_PILOT_D/2 <= shw - 1.5, (
+            f"CONSOLE_SLED: chassis station ({fx:.1f}, {fy:.1f}) falls off the "
+            "sled -- segno_base.dxf would need new holes")
+        clear = min(math.hypot(fx - hx, fy - hy) for hx, hy in pedal_base_holes())
+        assert clear >= INSERT_PILOT_D + 1.0, (
+            f"CONSOLE_SLED: chassis station ({fx:.1f}, {fy:.1f}) is {clear:.2f} mm "
+            "from a pedal insert -- the two bores crowd")
+
     # 3c. the front gap absorbed the deeper Cherub slot; keep it usable
     assert FRONT_GAP >= 40.0, f"FRONT_GAP: {FRONT_GAP:.1f} mm < 40 -- pedals crowd the screen block"
 
@@ -1265,17 +1316,19 @@ def platform_foot_u(sw):
     return (-sw*0.25, sw*0.25)
 
 def platform_foot_holes():
-    """M3 clearance holes in the bottom plate for the 10 printed platforms: bolts
-    pass UP through the floor into the heat-set inserts in each pedestal's
-    underside (4 per platform), projected from each pedal onto the flat bottom."""
+    """M3 clearance holes in the bottom plate, 4 per pedal, projected from each
+    pedal onto the flat bottom. Since #719 the bolt passes UP through the plate,
+    on through a clearance hole in the RING's floor, and threads into the SLED --
+    one joint clamping ring + sled + plate. Positions are unchanged, which is why
+    the sled arrived needing no sheet-metal work: it reads platform_foot_xy(),
+    the same source the ring drills and the sled takes its inserts from."""
     cs = math.cos(math.radians(SLOPE_ANGLE))
-    sw = SKIRT_OUT_W; sd = SKIRT_OUT_D; ff = PLATFORM_FOOT
     out = []
     for _label, u, v in PEDALS:
         vb = v * cs                                # pedal depth projected onto the flat bottom
-        for d in platform_foot_u(sw):
-            out.append({"kind": "circle", "u": u+d, "v": vb - sd/2 + ff/2, "d": D_M3, "ref": "PLAT_SCR"})
-            out.append({"kind": "circle", "u": u+d, "v": vb + sd/2 - ff/2, "d": D_M3, "ref": "PLAT_SCR"})
+        for fx, fy in platform_foot_xy():          # x = depth, y = width
+            out.append({"kind": "circle", "u": u + fy, "v": vb + fx,
+                        "d": D_M3, "ref": "PLAT_SCR"})
     return out
 
 def dxf_screen_bracket(path):
@@ -1364,6 +1417,40 @@ def _transition_face(cq):
            * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), TRANS_ANGLE))
     return box.val().moved(loc)
 
+def platform_foot_xy():
+    """The four chassis-screw stations, in the pedestal frame. ONE source: the
+    ring drills clearance here, the sled takes its inserts here, and
+    platform_foot_holes() punches the base plate here."""
+    sd, sw = SKIRT_OUT_D, SKIRT_OUT_W
+    # y-outer / x-inner deliberately: it reproduces the emission order
+    # platform_foot_holes() had before it read from here, so the base-plate DXF
+    # stays byte-identical and the diff shows what actually moved (nothing).
+    return [(x, y) for y in platform_foot_u(sw)
+            for x in (-(sd/2.0 - PLATFORM_FOOT/2.0), sd/2.0 - PLATFORM_FOOT/2.0)]
+
+def pedal_console_sled(cq):
+    """The 10-pedal console's sled (issue #719). Unlike the mini's it carries M3
+    heat-set inserts on BOTH faces: the pedal bolts down into the top, and the
+    four chassis screws come up from under the base plate -- through clearance
+    holes in the ring's floor -- into the bottom. That is what clamps the ring
+    down, so the ring itself needs no fastener and no hole of its own.
+
+    One part for all ten: every pedestal shares the tub bore, and the row height
+    is absorbed by the RING, not by this. Origin: pedal centre, z=0 at the sled's
+    underside (which sits on the ring floor)."""
+    sd = SKIRT_IN_D - 2*SLED_CLR
+    sw = SKIRT_IN_W - 2*SLED_CLR
+    s = (cq.Workplane("XY").box(sd, sw, CONSOLE_SLED_T, centered=(True, True, False))
+         .edges("|Z").fillet(3.0)
+         .faces("<Z").chamfer(SLED_BOT_CHAM))
+    for hx, hy in pedal_base_holes():                 # pedal, from above
+        s = s.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2.0)
+                  .extrude(-INSERT_DEPTH).translate((hx, hy, CONSOLE_SLED_T)))
+    for fx, fy in platform_foot_xy():                 # chassis, from below
+        s = s.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2.0)
+                  .extrude(INSERT_DEPTH).translate((fx, fy, 0)))
+    return s
+
 def pedal_sled(cq):
     """The removable deck the pedal bolts to (issue #719). Flat plate, a slip fit
     in the tub bore, carrying four M3 heat-set inserts pressed from ABOVE -- the
@@ -1422,7 +1509,7 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None, sled=False):
     # The ring is unchanged -- its top still follows the same sloped plane, it
     # just starts SLED_DECK_DROP lower and is that much taller.
     if sled:
-        h -= SLED_DECK_DROP
+        h -= sled - (PEDAL_PAD_T - POCKET_DEPTH)
     # cap the pilot depth in the LOW front pedestal (keeps a solid mid web and
     # clears the pad pocket above) and fit SHORT inserts (M3 x 3) instead of 5.7s
     pil = min(INSERT_DEPTH, (h - 1.0) / 2.0)
@@ -1444,7 +1531,7 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None, sled=False):
             for dy in platform_foot_u(sw):
                 body = body.union(cq.Workplane("XY").cylinder(
                     cav_h, 6.0, centered=(True, True, False)).translate((dx, dy, 0)))
-    if standalone:
+    if standalone and not sled:
         for dx in foot_x:                      # base inserts, from below
             for dy in platform_foot_u(sw):
                 body = body.cut(cq.Workplane("XY").cylinder(
@@ -1456,11 +1543,20 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None, sled=False):
     pocket_dx = (PEDAL_PAD_BACK_INSET + PEDAL_PAD_D/2.0) - PEDAL_D/2.0   # +X = rearward
     if sled:
         # no pad pocket: the pad is OFF and the SLED lands on this deck, flat.
-        # Instead, the retention bore + its head pocket, driven up from below.
-        body = body.cut(cq.Workplane("XY").circle(D_M3/2.0 + 0.15).extrude(h + 1.0))
-        if standalone:          # its own part -> its own head pocket. Built into
-            body = body.cut(    # a tray, the pocket belongs under the tray FLOOR,
-                cq.Workplane("XY").circle(3.4).extrude(3.0))   # so the caller cuts it
+        if standalone:
+            # CONSOLE RING -- SANDWICHED. The four chassis screws pass straight
+            # THROUGH this floor and thread into the sled above, so the one joint
+            # clamps ring + sled + base plate. The ring therefore carries no
+            # insert and no fastener of its own: clearance only.
+            for dx in foot_x:
+                for dy in platform_foot_u(sw):
+                    body = body.cut(cq.Workplane("XY").circle(D_M3/2.0 + 0.25)
+                                    .extrude(h + 1.0).translate((dx, dy, 0)))
+        else:
+            # MINI TUB -- part of the tray, so it needs no clamping of its own.
+            # A single central retention bore instead; the caller cuts the head
+            # pocket under the tray FLOOR, where it can be reached.
+            body = body.cut(cq.Workplane("XY").circle(D_M3/2.0 + 0.15).extrude(h + 1.0))
     else:
         body = body.cut(cq.Workplane("XY").box(
             PEDAL_PAD_D + POCKET_CLR, PEDAL_PAD_W + POCKET_CLR, POCKET_DEPTH,
@@ -1522,15 +1618,25 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None, sled=False):
     return body
 
 def build_platform_steps():
-    """Printed platform pedestals: FRONT x8 + MID x2 (STEP + STL for slicing)."""
+    """Printed pedestals, now RING + SLED (issue #719): rings FRONT x8 / MID x2,
+    and ONE sled design x10. The pedal bolts to the sled on the bench -- it has
+    to, because the shell's ~83 mm through-pin needs ~91 mm of clear axial run
+    and the widest gap beside a seated pedal is 12.4 mm -- then sled and pedal
+    drop into the ring as a unit and the four existing chassis screws clamp
+    ring + sled + base plate together."""
     import cadquery as cq
     outp = []
     for tag, v in (("front", PEDAL_ROW1_V), ("mid", PEDAL_ROW2_V)):
-        body = _platform_printed(cq, platform_h(v), v)
-        base = os.path.join(OUT, f"segno_platform_{tag}")
+        body = _platform_printed(cq, platform_h(v), v, sled=CONSOLE_SLED_T)
+        base = os.path.join(OUT, f"segno_platform_{tag}_ring")
         cq.exporters.export(body.val(), base + ".step")
         cq.exporters.export(body, base + ".stl", tolerance=0.05)
         outp.append(base + ".step")
+    sled = pedal_console_sled(cq)
+    base = os.path.join(OUT, "segno_platform_sled")
+    cq.exporters.export(sled.val(), base + ".step")
+    cq.exporters.export(sled, base + ".stl", tolerance=0.05)
+    outp.append(base + ".step")
     return outp
 
 def build_mini_console():
@@ -1669,7 +1775,7 @@ def build_mini_console():
     yc = PEDAL_ROW1_V * cs
     for u in PEDS:
         ped = (_platform_printed(cq, platform_h(PEDAL_ROW1_V), PEDAL_ROW1_V,
-                                 standalone=False, baffle_t=MINI_BAFFLE_T, sled=True)
+                                 standalone=False, baffle_t=MINI_BAFFLE_T, sled=SLED_T)
                .rotate((0, 0, 0), (0, 0, 1), 90)
                .translate((u, yc, FLOOR_T)))
         tray = tray.union(ped)

@@ -77,16 +77,23 @@ fully internal.
   envelope (76.35 × 109.87) + 3 mm clearance, with the slot depth divided by
   cos(slope) because the slot lives in the sloped faceplate while the pedal is
   horizontal. **No mounting holes** in the faceplate.
-- **Pedestal** (`segno_platform_front`/`_mid`, 8+2, 3D-printed): deck at
-  `platform_h(v)` (front ≈ 15.2, mid ≈ 59.3 mm) so the pedal's CASE TOP sits
-  **flush with the slot's upper (rear) rim** and only the pad stands above the
-  metal (issue #373 — the old +12 rule left the pedals reading sunken against
-  the rising slope). Perimeter strips outside the opening are relief-shaved to
-  ~0.3 under the real plate (drift-calibrated); side-screw bosses keep ~1 mm
-  under the faceplate. A 1.2 mm deck pocket locates the pedal's bottom pad
-  (the WTB-006 has no base screws — side through-screws only; retention
-  PROVISIONAL). The `PLATFORM_HEADROOM` assertion enforces this against the
-  local lid height.
+- **Pedestal = RING + SLED** since #719 (`segno_platform_front_ring` ×8,
+  `_mid_ring` ×2, and ONE `segno_platform_sled` ×10). The pedal bolts to the sled
+  on the bench, sled and pedal drop into the ring as a unit, and the **four
+  existing chassis screws** pass up through clearance holes in the ring's floor
+  and thread into the sled — clamping ring + sled + base plate in one joint, so
+  the ring needs no fastener of its own and `segno_base.dxf` does not change.
+  The ring's seat sits `CONSOLE_SLED_T − 1.0` below the old deck line, so once
+  the sled is on it the pedal's CASE TOP still lands **flush with the slot's
+  upper (rear) rim** exactly as `platform_h(v)` (front ≈ 15.2, mid ≈ 59.3 mm)
+  put it — issue #373's rule is untouched, and an assertion holds the metal base
+  to the same z to 1e-9 rather than trusting the arithmetic. Perimeter strips
+  outside the opening are relief-shaved to ~0.3 under the real plate
+  (drift-calibrated); side-screw bosses keep ~1 mm under the faceplate. The
+  bottom anti-slip pad now comes **off** (the base holes are under it), so the
+  1.2 mm pad pocket is gone and the joint clamps metal-to-plastic. The
+  `PLATFORM_HEADROOM` assertion still enforces headroom against the local lid
+  height.
 - **Layout (two rows, per the reference):** a front row of **8 evenly-spaced**
   pedals (REC/PLAY · STOP · UNDO · MODE · TRACK 1–4) and an upper pair **CLEAR /
   BANK aligned in `u` over UNDO and MODE**, placed so their **label tops align
@@ -97,8 +104,9 @@ fully internal.
 
 > The `PEDAL_*` constants are **caliper-measured from a real WTB-006**
 > (2026-07-28, issues #358/#360) — unlike the earlier ASP-1 placeholder they are
-> no longer provisional. Pedestal **retention** is the remaining PROVISIONAL
-> piece (pocket + gravity; no fastener engages the pedal).
+> no longer provisional. Pedestal **retention** was the last PROVISIONAL piece
+> (pocket + gravity; no fastener engaged the pedal) — **retired by #719**: the
+> pedal is now bolted to a sled with four M3s.
 >
 > **Base screw holes (issue #716).** The underside does carry four M3-ish holes
 > after all, in two rows — the `PEDAL_BASE_*` constants. They sit *under* the
@@ -109,7 +117,8 @@ fully internal.
 > is what will retire the PROVISIONAL retention above — but not before the
 > **fit-test jig** proves the pattern on a print (§8).
 >
-> **The sled (issue #719, shipped on the mini console).** Those screws go DOWN
+> **The sled (issue #719) — shipped on BOTH the mini console and the 10-pedal
+> console.** Those screws go DOWN
 > through the base, so the head lands *inside* the pedal and the pedal must be
 > open to be fastened. But the shell halves are held by one ~83 mm through-pin
 > needing ~91 mm of clear axial run, and the widest gap beside a seated pedal is
@@ -128,6 +137,18 @@ fully internal.
 > faceplate, the slot and the flush-at-rim rule are untouched. The bottom
 > anti-slip pad comes off (it has to; the base holes are under it), which also
 > means the joint clamps metal-to-plastic instead of through 2.2 mm of rubber.
+>
+> On the **10-pedal console** the ring is a free part, and a ring held only by
+> the faceplate keeps 0.30 mm of vertical play — the buzz `SKIRT_GAP` already
+> warns about. So it is **SANDWICHED**: the ring gets a floor, the sled lands on
+> it, and the four chassis screws pass up through clearance holes in that floor
+> into the sled. One joint clamps ring + sled + base plate; the ring carries no
+> insert and no fastener. `CONSOLE_SLED_T` 12.633 (thicker than the mini's 7.0,
+> because this sled takes M3×5 from **both** faces) leaves `RING_FLOOR` 1.6 on
+> the front row and a tall deck on the mid row — same formula, only the front is
+> tight. The four stations come from `platform_foot_xy()`, which the ring, the
+> sled and `platform_foot_holes()` all read, so **`segno_base.dxf` is unchanged**
+> — proven by diffing it to zero substantive lines after the refactor.
 >
 > **The mini tray is symmetric about `CX = Wt/2`.** It used to inherit the
 > pedals' absolute console `u` with its left edge at 0, which left the pair
@@ -284,8 +305,8 @@ It raises (build fails) unless every geometry rule holds:
 | `PEM` | flange wide enough for the clinch nut |
 
 Outputs in `enclosure/out/` (mm): **STEP** (`segno_assembly` + per-part incl.
-`segno_platform`, `segno_bottom`), **DXF** flat patterns, **PDF** drawing sheets
-(`segno_platform` is DXF-only). Verification renders
+`segno_platform_*_ring`, `segno_platform_sled`, `segno_bottom`), **DXF** flat patterns, **PDF** drawing sheets
+(the platform parts are print-only). Verification renders
 (`out/_hero.png`, `out/_fp_top.png`) confirm 7" left / 16" right.
 
 Everything is parameterised at the top of the script — change a value, re-run, and
