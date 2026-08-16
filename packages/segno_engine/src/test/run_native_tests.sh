@@ -24,10 +24,15 @@ EXTRA_CFLAGS="${EXTRA_CFLAGS:-}"
 # (clock_gettime / CLOCK_MONOTONIC; strict c11 also triggers ALSA's struct
 # timespec redefinition). Include path mirrors src/CMakeLists.txt: every src
 # subdir holding headers, so the sources' flat `#include "x.h"` resolves.
-# third_party/rnnoise/include carries only the public rnnoise.h (the vendored
-# TUs resolve their internal headers relative to their own directory).
+# third_party/rnnoise/include carries the public rnnoise.h; third_party/
+# rnnoise/src is needed too, and only on x86: vec.h pulls vec_avx.h on any
+# SSE2 host, which includes src/x86/x86cpu.h, whose own `#include "common.h"`
+# resolves against src/x86/ and misses the header one level up. Upstream
+# builds with src/ on the path for exactly this reason. It goes LAST so the
+# engine's own headers still win any future name clash (there are none today
+# — the two sets were compared).
 STD="-std=gnu11 -I src/core -I src/midi -I src/asio -I src/miniaudio \
-  -I third_party/rnnoise/include"
+  -I third_party/rnnoise/include -I third_party/rnnoise/src"
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ENGINE_LIBS="-lole32 -lwinmm -lm"; MIDI_LIBS="-lwinmm -lm" ;;

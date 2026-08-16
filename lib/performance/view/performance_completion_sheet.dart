@@ -160,11 +160,21 @@ class _PerformanceCompletionSheetState
   /// pedal's MODE long-press arms through the repository, which has no
   /// render-in-progress gate, so the state can leave Rendering for Armed
   /// while this dialog is up.
+  ///
+  /// It pops ONLY its own live route. During the exit transition the widget
+  /// is still in the tree and this listener still fires; an unconditional
+  /// `pop` there removed whatever sat on top — the HOME route (black stage,
+  /// #712) — and a second foreign state then popped an empty navigator. A
+  /// route that is no longer `isCurrent` is already leaving: the correct
+  /// response is nothing.
   void _popIfForeign(BuildContext context, PerformanceRecorderState state) {
     final ours =
         state is PerformanceRecorderRendering ||
         (state is PerformanceRecorderCompleted && state.result != null);
-    if (!ours) Navigator.of(context).pop();
+    if (ours || !mounted) return;
+    final route = ModalRoute.of(context);
+    if (route == null || !route.isCurrent) return;
+    Navigator.of(context).pop();
   }
 
   @override
