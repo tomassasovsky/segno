@@ -100,17 +100,17 @@ void main() {
   );
 
   testWidgets(
-    'disabled while a boot-recovery prompt is unresolved',
+    'disabled while the boot salvage is still recovering, with the busy '
+    'tooltip — the button must say why presses do nothing (#679 r2)',
     (tester) async {
-      await pump(
-        tester,
-        const PerformanceRecorderIdle(recoveryDirectory: '/exports/perf-x'),
-      );
+      await pump(tester, const PerformanceRecorderIdle(recovering: true));
+      final strings = await l10n();
 
       final button = tester.widget<IconButton>(
         find.byKey(const Key('tracks_perfRecord')),
       );
       expect(button.onPressed, isNull);
+      expect(button.tooltip, strings.perfArmDisabledRendering);
     },
   );
 

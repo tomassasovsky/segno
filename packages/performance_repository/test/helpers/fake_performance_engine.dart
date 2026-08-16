@@ -42,6 +42,10 @@ class FakePerformanceEngine implements AudioEngine {
   int perfFrames = 0;
   int perfOverruns = 0;
 
+  /// Frames of silence the drain substituted into the take (#710) — the
+  /// half of the glitch story a ring overrun does not explain.
+  int perfZeroFilledFrames = 0;
+
   /// Whether the drain thread reports it self-stopped on a failed write.
   bool perfStopped = false;
 
@@ -104,6 +108,7 @@ class FakePerformanceEngine implements AudioEngine {
     isPerfArmed: perfArmed,
     perfFrames: perfFrames,
     perfOverruns: perfOverruns,
+    perfZeroFilledFrames: perfZeroFilledFrames,
     perfStopped: perfStopped,
     tracks: [
       for (final t in _tracks)

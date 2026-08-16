@@ -1,12 +1,18 @@
+import 'dart:async';
+
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:screen_retriever/screen_retriever.dart';
+import 'package:segno/common/console_mode.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
+import 'package:segno/visualizer/console_readout_view.dart';
+import 'package:segno/visualizer/console_volume_overlay.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/performance_readout_view.dart';
+import 'package:segno/visualizer/readout_control.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
 import 'package:segno/visualizer/waveform_window_channel.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
@@ -26,6 +32,18 @@ import 'package:window_manager/window_manager.dart';
 /// different DPI than the primary onto the wrong place: e.g. a 4K@175% display
 /// whose physical origin is x=2560 is reported at own-logical x=1463, a point
 /// *inside* a 100%-scaled primary, so the window lands mid-primary.
+///
+/// The secondary is found by id — macOS/Windows report distinct display ids.
+/// On Linux `screen_retriever_linux` hardcodes every display's id to `""`
+/// (its plugin.cc), so the loop never matches and the window opens with the
+/// windowed fallback — **deliberately**. On the appliance that is correct:
+/// weston's kiosk-shell fullscreens every surface and routes it to the output
+/// whose `app-ids` list names it (the embedder tags this window
+/// `<APPLICATION_ID>.waveform`, weston.ini pins that to HDMI-A-2), overriding
+/// whatever geometry the window asks for. And on a non-kiosk Linux desktop
+/// there is no trustworthy signal to place by: GDK's "primary" is just
+/// monitor 0, arbitrary under Wayland, so guessing a secondary from geometry
+/// can full-bleed the readout over the *main* display.
 @visibleForTesting
 ({Offset position, Size size, bool fullscreen}) waveformWindowPlacement({
   required List<({String id, Offset position, Size size, double scale})>
@@ -176,7 +194,21 @@ Future<void> runWaveformWindow(WindowController controller) async {
     },
   );
 
-  runApp(WaveformWindowApp(frame: frame, readout: readout, title: title));
+  runApp(
+    WaveformWindowApp(
+      frame: frame,
+      readout: readout,
+      title: title,
+      // The overlay's commands go straight back over the shared channel —
+      // fire-and-forget like every push in the other direction, because a
+      // dropped fader move is corrected by the next one.
+      onControl: (control) => unawaited(
+        waveformWindowChannel
+            .invokeMethod(waveformWindowControlMethod, control.toMap())
+            .catchError((Object _) => null),
+      ),
+    ),
+  );
 }
 
 /// The waveform's colour state for [readout]: the cursor track's transport
@@ -222,14 +254,26 @@ Float32List _toFloat32List(Object? raw) {
 
 /// The root widget of the waveform window: a full-screen [WaveformView] driven
 /// by frames pushed from the main window.
+///
+/// What surrounds the waveform depends on the build: the desktop keeps the
+/// windowed [PerformanceReadoutView]; the console ([kConsoleMode]) fills the
+/// fixed 7" panel with the pen's `STAGE / readout` ([ConsoleReadoutView]) —
+/// stage-sized type legible from the floor, full-bleed because the panel is a
+/// panel, not a window.
 class WaveformWindowApp extends StatelessWidget {
   /// Creates a [WaveformWindowApp] rendering [frame].
   const WaveformWindowApp({
     required this.frame,
     required this.readout,
     required this.title,
+    this.consoleMode = kConsoleMode,
+    this.onControl = _dropControl,
     super.key,
   });
+
+  /// Default [onControl]: a windowed desktop build has no volume overlay, so
+  /// nothing sends.
+  static void _dropControl(ReadoutControl control) {}
 
   /// The latest waveform frame, updated as the main window pushes new data.
   final ValueListenable<WaveformFrame> frame;
@@ -239,6 +283,14 @@ class WaveformWindowApp extends StatelessWidget {
 
   /// OS window title.
   final String title;
+
+  /// Whether this build is the floor console. A parameter (defaulting to the
+  /// compile-time flag) so tests can drive both faces without the define.
+  final bool consoleMode;
+
+  /// Sends a volume-overlay control command back to the main window (#698).
+  /// The entrypoint wires this to the window channel; tests capture it.
+  final ValueChanged<ReadoutControl> onControl;
 
   @override
   Widget build(BuildContext context) {
@@ -252,15 +304,18 @@ class WaveformWindowApp extends StatelessWidget {
       supportedLocales: AppLocalizations.supportedLocales,
       builder: (context, child) =>
           AppTextDefaults(child: child ?? const SizedBox.shrink()),
+      // The Scaffold supplies the Material ancestor (the same job TracksView's
+      // Scaffold does in the main window): SegnoWindowChromeShell only mounts
+      // its own Scaffold on the Windows title-bar path, so without this the
+      // readout renders bare on Linux/macOS — the unthemed fallback style
+      // (yellow double-underlined text) seen live on the appliance's 7".
       home: SegnoWindowChromeShell(
         title: title,
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: ValueListenableBuilder<PerformanceReadout>(
+        body: Scaffold(
+          body: ValueListenableBuilder<PerformanceReadout>(
             valueListenable: readout,
-            builder: (context, readoutData, _) => PerformanceReadoutView(
-              readout: readoutData,
-              waveform: ValueListenableBuilder<WaveformFrame>(
+            builder: (context, readoutData, _) {
+              final waveform = ValueListenableBuilder<WaveformFrame>(
                 valueListenable: frame,
                 builder: (context, data, _) => WaveformView(
                   selectedTrack: data.selectedTrack,
@@ -269,8 +324,30 @@ class WaveformWindowApp extends StatelessWidget {
                   state: waveformStateOf(readoutData),
                   semanticLabel: context.l10n.a11yWaveform,
                 ),
-              ),
-            ),
+              );
+              if (consoleMode) {
+                // Full-bleed: the console view carries the pen's own inset.
+                // The overlay owns the pages; the readout face's MIX pill
+                // is the only way into it (#698, entry reworked in #707);
+                // the desktop face below is untouched.
+                return ConsoleVolumeOverlay(
+                  readout: readoutData,
+                  onControl: onControl,
+                  builder: (context, openMixer) => ConsoleReadoutView(
+                    readout: readoutData,
+                    waveform: waveform,
+                    onMix: openMixer,
+                  ),
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: PerformanceReadoutView(
+                  readout: readoutData,
+                  waveform: waveform,
+                ),
+              );
+            },
           ),
         ),
       ),

@@ -23,6 +23,8 @@ import 'package:segno/common/pedal_device.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/looper.dart';
+import 'package:segno/looper/view/signal_graph/signal_style.dart';
+import 'package:segno/looper/view/tracks/routing_tracks_tab.dart';
 import 'package:segno/pedal/flashed_firmware.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
@@ -246,6 +248,18 @@ class App extends StatelessWidget {
               return cubit;
             },
           ),
+          // The stage status bar's wall-clock transport timer (#678). Eager:
+          // its epoch is the transport's FIRST run, not the strip's first
+          // build — created lazily it would start counting only when the
+          // console face first reads it, missing a run a footswitch started
+          // before then. Passive (subscribes, arms nothing), so eager costs
+          // one stream listener.
+          BlocProvider(
+            lazy: false,
+            create: (context) => TransportClockCubit(
+              repository: context.read<LooperRepository>(),
+            ),
+          ),
           // Beside the track names and for the same reason: an input is called
           // what the player calls it on every surface that shows one — the
           // Audio face's input list, the Tracks routing summary, and the
@@ -453,9 +467,10 @@ class App extends StatelessWidget {
               return cubit;
             },
           ),
-          // Eager (not lazy): must be watching at boot to find a capture a
-          // crash left unfinalized (D-SALVAGE) before the tracks view first
-          // builds, so the recovery prompt is ready the instant it mounts.
+          // Eager (not lazy): the boot-time silent salvage (D-SALVAGE, #679)
+          // must start the moment the app composes, not whenever a widget
+          // first reads this cubit — a crashed capture recovers in the
+          // background whether or not the tracks view ever mounts.
           BlocProvider(
             lazy: false,
             create: (context) {
@@ -518,6 +533,10 @@ class _AppViewState extends State<_AppView> {
   @override
   void initState() {
     super.initState();
+    // The sub-window's volume overlay sends control commands back over the
+    // window channel (#698); they are applied here, through the same blocs
+    // the main UI's own controls dispatch to.
+    widget.waveformWindow.onControl = _applyReadoutControl;
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => unawaited(_bootstrapWindow()),
     );
@@ -535,8 +554,58 @@ class _AppViewState extends State<_AppView> {
   @override
   void dispose() {
     _pushTimer?.cancel();
+    widget.waveformWindow.onControl = null;
     unawaited(widget.waveformWindow.close());
     super.dispose();
+  }
+
+  /// Applies a volume-overlay command from the sub-window through the same
+  /// blocs the main UI's own controls dispatch to — mute and FX chain as
+  /// TOGGLES resolved against repository intent (the overlay's snapshot is a
+  /// frame stale by construction), volumes clamped to the mix ceiling here
+  /// because the wire is not trusted. Unknown actions from a newer overlay
+  /// are dropped, per the channel's tolerant-decode discipline — and so are
+  /// out-of-range indices: a garbled map decodes to index -1, and applying
+  /// it would write junk intent into repository maps (and persist it) before
+  /// the engine ever got a chance to reject the channel.
+  void _applyReadoutControl(ReadoutControl control) {
+    if (!mounted) return;
+    final index = control.index;
+    if (index < 0) return;
+    final isTrackAction =
+        control.action == ReadoutControl.trackVolume ||
+        control.action == ReadoutControl.trackMuteToggle ||
+        control.action == ReadoutControl.trackChainToggle;
+    if (isTrackAction &&
+        index >= TracksState.tracksPerBank * TracksState.bankCountMax) {
+      return;
+    }
+    switch (control.action) {
+      case ReadoutControl.trackVolume:
+        context.read<LooperBloc>().add(
+          LooperVolumeChanged(
+            control.index,
+            control.value.clamp(0.0, kSignalMaxGain),
+          ),
+        );
+      case ReadoutControl.trackMuteToggle:
+        context.read<LooperBloc>().add(LooperMuteToggled(control.index));
+      case ReadoutControl.trackChainToggle:
+        context.read<LooperBloc>().add(LooperTrackChainToggled(control.index));
+      case ReadoutControl.inputVolume:
+        // Only configured monitors reach the overlay's INPUTS group, but the
+        // guard re-checks: writing through the cubit for an input it does not
+        // hold would materialize (and persist) a monitor the user never
+        // created.
+        final monitors = context.read<MonitorCubit>();
+        if (!monitors.state.hasInput(control.index)) return;
+        unawaited(
+          monitors.setVolume(
+            control.index,
+            control.value.clamp(0.0, kSignalMaxGain),
+          ),
+        );
+    }
   }
 
   /// Whether only one display is connected (the console expects two). `null`
@@ -586,9 +655,19 @@ class _AppViewState extends State<_AppView> {
         // Same timer, different discipline: the waveform changes every frame,
         // the readout does not, so `pushReadout` drops anything equal to what
         // it last sent rather than re-serialising eight track records at frame
-        // rate across an engine boundary.
+        // rate across an engine boundary. The clock and recorder facts are
+        // whole seconds, so their churn is once a second, not once a frame.
         widget.waveformWindow.pushReadout(
-          _readoutOf(looper.state, tracks.state, control.mode, cursor),
+          _readoutOf(
+            looper.state,
+            tracks.state,
+            control,
+            context.read<TransportClockCubit>().state,
+            context.read<PerformanceRecorderCubit>().state,
+            context.read<MonitorCubit>().state,
+            context.read<InputsCubit>().state,
+            _l10n,
+          ),
         );
       });
     } else {
@@ -598,17 +677,29 @@ class _AppViewState extends State<_AppView> {
     }
   }
 
-  /// Projects engine + control state onto the 7" readout's value type.
+  /// Projects engine + control state onto the 7" readout's value type — the
+  /// same facts the stage status bar draws, composed once for the channel.
   ///
   /// Pure and static so it can be tested without a window: what the second
   /// screen shows is a function of state, never of when the timer fired.
+  ///
+  /// [l10n] resolves the display names carried on the wire (input names and
+  /// the routing pills' track names): both engines run the same locale on
+  /// the appliance, and resolving here keeps the sub-window free of routing
+  /// knowledge. Track names stay the STORED ones with a `defaultName` flag,
+  /// so the overlay can localize a default identity itself.
   static PerformanceReadout _readoutOf(
     LooperState looper,
     TracksState tracks,
-    InteractionMode mode,
-    int cursor,
+    ControlState control,
+    TransportClockState clock,
+    PerformanceRecorderState recorder,
+    MonitorState monitors,
+    InputsState inputs,
+    AppLocalizations l10n,
   ) {
     final transport = looper.transport;
+    final armed = recorder is PerformanceRecorderArmed ? recorder : null;
     return PerformanceReadout(
       tracks: [
         for (final track in looper.tracks)
@@ -617,15 +708,46 @@ class _AppViewState extends State<_AppView> {
             state: track.state.name,
             muted: track.muted,
             pending: track.pending,
-            selected: track.channel == cursor,
+            selected: track.channel == control.cursor,
+            volume: track.volume,
+            chainEnabled: track.chainEnabled,
+            defaultName:
+                tracks.nameOf(track.channel) ==
+                storedDefaultTrackName(track.channel),
+            inputNames: [
+              for (final input in recordedInputs(track))
+                l10n.inputName(inputs.names, input),
+            ],
+          ),
+      ],
+      inputs: [
+        // Only configured monitors: an unmonitored input has no gain that
+        // does anything, and the overlay must not draw a fader that lies.
+        for (final index in monitors.inputs.keys.toList()..sort())
+          ReadoutInput(
+            index: index,
+            name: l10n.inputName(inputs.names, index),
+            volume: monitors.forInput(index).volume,
+            listeningTracks: [
+              for (final track in looper.tracks)
+                if (recordedInputs(track).contains(index))
+                  l10n.trackName(tracks.names, track.channel),
+            ],
           ),
       ],
       tempoBpm: transport.tempoBpm,
+      hasTempo: transport.tempoSource != TempoSource.none,
       tsNum: transport.tsNum,
       tsDen: transport.tsDen,
+      currentBeat: transport.currentBeat,
+      countingIn: transport.countingIn,
       loopBars: transport.loopBars,
       isRunning: transport.isRunning,
-      mode: mode.token,
+      mode: control.mode.token,
+      activeBank: control.activeBank,
+      elapsedSeconds: clock.elapsed.inSeconds,
+      recordArmed: armed != null,
+      recordSeconds: armed?.elapsed.inSeconds ?? 0,
     );
   }
 

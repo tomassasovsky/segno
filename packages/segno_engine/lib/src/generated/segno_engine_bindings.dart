@@ -2635,6 +2635,69 @@ class SegnoEngineBindings {
       _le_engine_set_monitor_input_fx_chain_enabledPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Enables or disables the conditioning stage on hardware input [input]
+  /// (0..LE_MAX_MONITORED_INPUTS-1). Disabled by default — the untouched engine
+  /// is bit-identical to the conditioning-free build. An enable EDGE resets the
+  /// stage's filter/envelope state so a re-engaged stage never rings with stale
+  /// history. A loopback-excluded input's stage never runs regardless of this
+  /// flag (the latency harness owns those channels).
+  int le_engine_set_input_conditioning(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int enabled,
+  ) {
+    return _le_engine_set_input_conditioning(
+      engine,
+      input,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_input_conditioningPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_input_conditioning');
+  late final _le_engine_set_input_conditioning =
+      _le_engine_set_input_conditioningPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Sets conditioning parameter [param] (le_cond_param) of hardware input
+  /// [input] to [value] in that parameter's REAL unit (Hz / dB / ms / ratio —
+  /// see le_cond_param). The audio thread clamps on apply and recomputes the
+  /// affected section's coefficients in lockstep (resetting only that section's
+  /// filter state, so a live tweak never rings with coefficients it was not
+  /// filtered by).
+  int le_engine_set_input_conditioning_param(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int param,
+    double value,
+  ) {
+    return _le_engine_set_input_conditioning_param(
+      engine,
+      input,
+      param,
+      value,
+    );
+  }
+
+  late final _le_engine_set_input_conditioning_paramPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_input_conditioning_param');
+  late final _le_engine_set_input_conditioning_param =
+      _le_engine_set_input_conditioning_paramPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
+
   /// Sets Track-stage chain entry [index] (0..LE_FX_MAX-1) of track [channel] to
   /// [type]. Changing the type resets that entry's DSP state; delay-lined types
   /// lazily allocate their buffers on this calling thread and seed the type's
@@ -4244,6 +4307,19 @@ enum le_command_code {
   /// pays one atomic load per block.
   LE_CMD_SET_TUNER_INPUT(53),
 
+  /// enable/disable input conditioning.
+  /// arg_i = input, arg_f = enabled (0/1).
+  /// An enable EDGE resets the stage's DSP
+  /// state (no stale filter ring).
+  LE_CMD_SET_INPUT_COND(54),
+
+  /// set one conditioning parameter.
+  /// lanef arm: channel = input,
+  /// lane = le_cond_param, value = real-unit
+  /// value (clamped by the audio thread on
+  /// apply).
+  LE_CMD_SET_INPUT_COND_PARAM(55),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100);
@@ -4306,6 +4382,8 @@ enum le_command_code {
     51 => LE_CMD_SET_MASTER_FX,
     52 => LE_CMD_SET_MASTER_FX_COUNT,
     53 => LE_CMD_SET_TUNER_INPUT,
+    54 => LE_CMD_SET_INPUT_COND,
+    55 => LE_CMD_SET_INPUT_COND_PARAM,
     100 => LE_EVT_LAYER_RETIRED,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
@@ -4669,6 +4747,19 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Uint32()
   external int perf_overruns;
 
+  /// Frames of digital silence the drain thread SUBSTITUTED into the capture
+  /// files since arm, because the audio they should have held never reached
+  /// it, summed over every file it writes (master + each monitored input).
+  /// A superset of perf_overruns' consequences: every dropped frame is
+  /// zero-filled, but a zero-fill can also come from audio that was counted
+  /// (perf_frames) yet never tapped. Read it as zero vs non-zero: non-zero
+  /// means the take contains silence the performer did not play -- #710's
+  /// audible flickers -- so the app latches it into the capture's glitch
+  /// flag exactly like perf_overruns. The per-gap positions stay in the
+  /// sidecar's `overrun_gaps`; this is the never-saturating total.
+  @ffi.Uint64()
+  external int perf_zero_filled_frames;
+
   /// 0/1: the drain thread stopped ITSELF because a write failed -- disk full,
   /// a quota, a read-only remount, an I/O error. Published here because the
   /// stop was otherwise invisible to the app: the thread stopped, the capture
@@ -4778,6 +4869,25 @@ final class le_snapshot extends ffi.Struct {
   /// untouched engine emits no clock bytes. See le_engine_set_clock_mode.
   @ffi.Int32()
   external int clock_mode;
+
+  /// ---- input clip detector + conditioning activity (input clip, S2;
+  /// trailing for the same offset-stability reason as the blocks above).
+  /// Both default to 0 — an untouched engine reports no HOT input and no
+  /// active conditioning. */
+  /// /* Bit c: HOT — a rail-run (LE_CLIP_RUN consecutive raw samples at
+  /// |s| >= LE_CLIP_LEVEL) was seen on input c within the last
+  /// LE_CLIP_HOLD_MS of processed audio. Detected on the RAW device buffer,
+  /// so the flag reflects the ADC even when the conditioning stage has ducked
+  /// or notched what records. Loopback-excluded inputs never flag.
+  @ffi.Uint32()
+  external int input_clip_mask;
+
+  /// Bit c: input c's conditioning stage is currently ACTIVE — enabled AND
+  /// not loopback-excluded, i.e. the stage actually runs on the audio path
+  /// (the UI truth for a "conditioning on" badge; a stage enabled on an
+  /// excluded channel reads 0 here because it never runs).
+  @ffi.Uint32()
+  external int input_cond_mask;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -5022,6 +5132,12 @@ const int LE_MAX_TRACKS = 8;
 const int LE_MAX_LANES = 8;
 
 const int LE_MAX_MONITORED_INPUTS = 8;
+
+const double LE_CLIP_LEVEL = 0.9990000128746033;
+
+const int LE_CLIP_RUN = 4;
+
+const int LE_CLIP_HOLD_MS = 1500;
 
 const double LE_MAX_GAIN = 2.0;
 

@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h> /* clock (conditioning CPU smoke) */
 #include <wchar.h>
 
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
@@ -34,6 +35,9 @@
 #include "json_read.h"        /* le_json_parse (part 7 offline renderer) */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
+#include "restore_declip.h"   /* offline de-clip DSP (#697 S8) */
+#include "restore_halfband.h" /* 2:1 half-band resampler (#697 S8) */
+#include "rnnoise.h" /* vendored third_party/rnnoise (#697 S7 smoke test) */
 #include "segno_engine_api.h"
 #include "tempo_grid.h" /* le_tempo_grid, le_grid_* (pure grid math) */
 
@@ -6591,6 +6595,52 @@ static void test_perf_monitor_tap_pads_silence_when_disabled(void) {
   le_engine_destroy(e);
 }
 
+/* #710: arm captures only inputs the DEVICE actually has. A session saved on
+ * a wide interface and reloaded on a narrow one leaves high monitor slots
+ * enabled (le_engine_set_monitor_input validates against the array bound, not
+ * the channel count), and mix_monitors_frame taps only c < ch_in — so a stem
+ * opened for a nonexistent input can never be filled and the drain would
+ * silence-fill it for the entire take. That was harmless while nothing
+ * counted the padding; now it would raise the glitch flag on every capture.
+ * Arming must simply not capture it. */
+static void test_perf_arm_skips_inputs_the_device_does_not_have(void) {
+  printf("test_perf_arm_skips_inputs_the_device_does_not_have\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000); /* ONE input channel */
+
+  /* Accepted by the setter (in range of the array) but out of range of the
+   * device — exactly the restored-session shape. */
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input(e, 2, 1) == LE_OK);
+  drain(e);
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  CHECK(e->perf.input_mask == 0x1u); /* input 0 only; 2 is not a real input */
+
+  float in[LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) in[i] = 0.25f;
+  float out[LOOP_N];
+  le_engine_process(e, out, in, LOOP_N);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  /* The whole point: no phantom stem, so no take-long silence-fill and no
+   * glitch flag on a perfectly healthy capture. */
+  CHECK(s.perf_zero_filled_frames == 0);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/input-2.pcm", perf_test_dir());
+  FILE* f = fopen(path, "rb");
+  CHECK(f == NULL);
+  if (f != NULL) fclose(f);
+
+  le_engine_destroy(e);
+}
+
 /* On a full ring the audio thread drops the whole frame and increments the
  * shared overrun atomic; it never blocks. A tiny sample rate yields a tiny
  * (deterministic) ring capacity so the overflow is exactly reproducible: mono
@@ -6747,6 +6797,176 @@ static void test_perf_drain_silence_fills_overrun_gap(void) {
   CHECK(strstr(json, "\"frame\": 7") != NULL);
   CHECK(strstr(json, "\"duration_frames\": 25") != NULL);
   CHECK(strstr(json, "\"finalized\": false") != NULL);
+  /* #710: the silence itself is counted and reported, not just implied by
+   * the gap list — 25 frames padded into the one file this capture writes. */
+  CHECK(strstr(json, "\"zero_filled_frames\": 25") != NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_zero_filled_frames == 25);
+
+  le_engine_destroy(e);
+}
+
+/* #710, honesty half: the zero-fill counter reaches the SNAPSHOT while the
+ * capture is still armed — the app latches its glitch flag from the armed
+ * poll, so a counter that only surfaced in the sidecar (which the app reads
+ * once, at finalize) would still let the completion dialog claim a clean
+ * take. Same tiny-ring overrun as above; the assertion is the timing, not the
+ * arithmetic.
+ *
+ * Waits for the drain thread's OWN background cycle (poll, not sleep) rather
+ * than disarming first: disarm is exactly the boundary this test must not
+ * rely on. */
+static void test_perf_zero_fill_counter_visible_while_armed(void) {
+  printf("test_perf_zero_fill_counter_visible_while_armed\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 4, 1, 1, 1000); /* tiny rate -> 7 usable ring frames */
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  float big_out[32];
+  process_const(e, 0.0f, 32, big_out); /* 7 pushes succeed, 25 drop */
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 1);
+  CHECK(s.perf_zero_filled_frames == 0); /* no cycle has run yet */
+
+  /* 32 frames of mono float = 128 bytes once the gap is padded. */
+  char master_path[600];
+  snprintf(master_path, sizeof(master_path), "%s/master.pcm", perf_test_dir());
+  CHECK(poll_file_reaches_size_for_test(master_path, 32 * 4, 3000));
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 1); /* still armed: this is a live reading */
+  CHECK(s.perf_zero_filled_frames == 25);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_engine_destroy(e);
+}
+
+/* #710, the deterministic arm transient. Every bench capture carried a 2-3
+ * period zero-fill ~0.25 s in — LE_PD_FLUSH_MS, i.e. the drain thread's FIRST
+ * cycle — with no overrun to explain it. The cause was the cycle sampling
+ * a_perf_frames AFTER draining the rings: audio produced while the cycle was
+ * writing counted as "elapsed" but had not been popped yet, so catch-up padded
+ * silence over frames that were sitting in the ring, unread. le_pd_drain_cycle
+ * now samples elapsed FIRST, and this pins that ordering.
+ *
+ * The mid-cycle hook stands in for the audio thread: it fires on the drain
+ * thread after the rings are drained and before catch-up, and publishes frames
+ * in the audio thread's own order (push into the ring, THEN add to
+ * a_perf_frames). With the sample taken first, those frames are simply past
+ * the snapshot and land next cycle; taken last, they would be zero-filled. */
+typedef struct {
+  le_engine* e;
+  int fired;
+} perf_mid_cycle_ctx;
+
+static void perf_mid_cycle_produce(void* raw) {
+  perf_mid_cycle_ctx* ctx = (perf_mid_cycle_ctx*)raw;
+  if (ctx->fired) return; /* once, so the assertion has one exact expectation */
+  ctx->fired = 1;
+  const float frame[1] = {1.0f};
+  uint64_t pushed = 0;
+  for (int i = 0; i < 8; ++i) {
+    if (!le_audio_ring_push_frame(&ctx->e->perf.master_ring, frame, 1)) break;
+    pushed++;
+  }
+  /* RELEASE, exactly like the real producer (engine_process.c): the stand-in
+   * has to model the publishing edge too, not just the statement order. */
+  atomic_fetch_add_explicit(&ctx->e->a_perf_frames, pushed,
+                            memory_order_release);
+}
+
+/* Silence that the disk REFUSED is not silence in the take (#710). The
+ * counter is what raises the capture's glitch flag and what the manifest
+ * documents as the total actually written, so a pad whose write fails must
+ * add nothing — otherwise a disk-full stop reports silence that never
+ * reached the file, and the unconditional final cycle (which re-pads the
+ * same gap, `pf->written` never having advanced) charges for it twice.
+ *
+ * Reaching catch-up's failing write needs the ring drain to SUCCEED first —
+ * a failure there skips catch-up entirely — so the hook flips the forced
+ * failure on in between: after the rings are written, before the pad. */
+typedef struct {
+  int fired;
+} perf_pad_fail_ctx;
+
+static void perf_mid_cycle_fail_the_pad(void* raw) {
+  perf_pad_fail_ctx* ctx = (perf_pad_fail_ctx*)raw;
+  if (ctx->fired) return;
+  ctx->fired = 1;
+  le_perf_drain_force_write_failure_for_test(1);
+}
+
+static void test_perf_zero_fill_counts_only_silence_actually_written(void) {
+  printf("test_perf_zero_fill_counts_only_silence_actually_written\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 4, 1, 1, 1000); /* tiny rate -> 7 usable ring frames */
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  float big_out[32];
+  process_const(e, 0.0f, 32, big_out); /* 7 pushes succeed, 25 drop */
+
+  perf_pad_fail_ctx ctx = {0};
+  le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_fail_the_pad, &ctx);
+  CHECK(le_perf_disarm(e) == LE_OK); /* runs the final cycle synchronously */
+  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
+  le_perf_drain_force_write_failure_for_test(0); /* before other tests run */
+
+  CHECK(ctx.fired == 1);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_overruns == 32 - 7); /* the drop really did happen... */
+  CHECK(s.perf_zero_filled_frames == 0); /* ...but no silence reached disk */
+
+  char json[4096];
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+  CHECK(strstr(json, "\"zero_filled_frames\": 0") != NULL);
+  /* The gap LIST still names the span the disk refused — position is
+   * diagnostic, the total is a claim about bytes on disk. */
+  CHECK(strstr(json, "\"duration_frames\": 25") != NULL);
+
+  le_engine_destroy(e);
+}
+
+static void test_perf_drain_samples_elapsed_before_draining(void) {
+  printf("test_perf_drain_samples_elapsed_before_draining\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000); /* real ring: nothing may drop */
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  float out[LOOP_N];
+  process_const(e, 0.5f, LOOP_N, out);
+
+  perf_mid_cycle_ctx ctx = {e, 0};
+  le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_produce, &ctx);
+  /* Disarm runs a final cycle synchronously, so the hook is guaranteed to
+   * have fired by the time this returns. */
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL); /* before other tests */
+
+  CHECK(ctx.fired == 1);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_overruns == 0);          /* the ring never overflowed */
+  CHECK(s.perf_zero_filled_frames == 0); /* ...so nothing may be padded */
+
+  char json[4096];
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+  CHECK(strstr(json, "\"overrun_gaps\": []") != NULL);
+  CHECK(strstr(json, "\"zero_filled_frames\": 0") != NULL);
 
   le_engine_destroy(e);
 }
@@ -19362,6 +19582,1198 @@ static void test_cache_audio_rev_bump_sites(void) {
   le_engine_destroy(a);
 }
 
+/* ---- per-input conditioning stage (input conditioning, S1) ----
+ *
+ * The stage (HPF + hum notches + downward expander, engine_cond.c) runs once
+ * per block into the conditioned input copy, upstream of BOTH the lane
+ * fan-out and the monitor split; metering and the latency harness read raw.
+ * These tests pin the DSP (filter response, expander static curve, bit-exact
+ * bypass) and the placement contract (lane buffer == monitor output ==
+ * conditioned; snapshot metering == raw; loopback/latency untouched; the
+ * sound-activated trigger reads conditioned). */
+
+/* Feeds `frames` mono frames of amp*sin(2*pi*freq*t) in <= 64-frame chunks,
+ * with phase continuous across calls via *idx (absolute frame counter).
+ * Captures contiguous output into `out` when non-NULL (caller sizes it). */
+static void cond_feed_sine(le_engine* e, float freq, float amp, int frames,
+                           long* idx, float* out) {
+  float in[64];
+  float scratch[64];
+  int done = 0;
+  while (done < frames) {
+    int n = frames - done;
+    if (n > 64) n = 64;
+    for (int i = 0; i < n; ++i) {
+      const double t = (double)(*idx + i) / 48000.0;
+      in[i] = amp * (float)sin(2.0 * 3.14159265358979323846 * freq * t);
+    }
+    le_engine_process(e, out != NULL ? out + done : scratch, in, (uint32_t)n);
+    *idx += n;
+    done += n;
+  }
+}
+
+static float cond_rms(const float* buf, int n) {
+  double acc = 0.0;
+  for (int i = 0; i < n; ++i) acc += (double)buf[i] * (double)buf[i];
+  return n > 0 ? (float)sqrt(acc / (double)n) : 0.0f;
+}
+
+/* Mono engine with input 0's clean monitor routed to output 0 — the probe
+ * path every DSP test below listens through. */
+static le_engine* cond_engine(void) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 96000);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_input_output(e, 0, 0x1);
+  drain(e);
+  return e;
+}
+
+/* Turns off the sections named so a test can probe one in isolation. */
+static void cond_sections(le_engine* e, float hpf_hz, float hum_hz,
+                          float ratio) {
+  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_HPF_HZ, hpf_hz) ==
+        LE_OK);
+  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_HUM_HZ, hum_hz) ==
+        LE_OK);
+  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_RATIO,
+                                               ratio) == LE_OK);
+  drain(e);
+}
+
+static void test_cond_setters_validate(void) {
+  printf("test_cond_setters_validate\n");
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(NULL, 0, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning(e, -1, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning(e, LE_MAX_MONITORED_INPUTS, 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_input_conditioning_param(NULL, 0, LE_COND_HPF_HZ, 40) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning_param(e, -1, LE_COND_HPF_HZ, 40) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning_param(e, LE_MAX_MONITORED_INPUTS,
+                                               LE_COND_HPF_HZ, 40) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning_param(e, 0, -1, 40) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_input_conditioning_param(
+            e, 0, LE_COND_EXP_RELEASE_MS + 1, 40) == LE_ERR_INVALID);
+  for (int p = LE_COND_HPF_HZ; p <= LE_COND_EXP_RELEASE_MS; ++p) {
+    CHECK(le_engine_set_input_conditioning_param(e, 0, p, 1.0f) == LE_OK);
+  }
+  drain(e); /* all of the above apply cleanly */
+  le_engine_destroy(e);
+}
+
+/* Bypass contract: a disabled stage is bit-exact passthrough (the raw pointer
+ * path), and an ENABLED stage with every section off is bit-exact too (the
+ * copy path itself colors nothing). */
+static void test_cond_bypass_bitexact(void) {
+  printf("test_cond_bypass_bitexact\n");
+  le_engine* e = cond_engine();
+  float in[64];
+  float out[64];
+  for (int i = 0; i < 64; ++i) {
+    in[i] = 0.4f * sinf(2.0f * 3.14159265f * 997.0f * (float)i / 48000.0f);
+  }
+
+  /* Disabled (the default): monitor output == input, bit-exact. */
+  le_engine_process(e, out, in, 64);
+  for (int i = 0; i < 64; ++i) CHECK(out[i] == in[i]);
+
+  /* Enabled with all sections off: still bit-exact. */
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 0.0f, 0.0f, 1.0f);
+  le_engine_process(e, out, in, 64);
+  for (int i = 0; i < 64; ++i) CHECK(out[i] == in[i]);
+
+  /* Disabled again: back to the raw path, bit-exact. */
+  CHECK(le_engine_set_input_conditioning(e, 0, 0) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, in, 64);
+  for (int i = 0; i < 64; ++i) CHECK(out[i] == in[i]);
+  le_engine_destroy(e);
+}
+
+/* HPF response: DC is rejected (default 40 Hz cutoff) while the raw meter
+ * keeps seeing the full DC level. */
+static void test_cond_hpf_rejects_dc(void) {
+  printf("test_cond_hpf_rejects_dc\n");
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 40.0f, 0.0f, 1.0f); /* HPF only */
+
+  static float out[48000];
+  float in[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.5f;
+  for (int done = 0; done < 48000; done += 64) {
+    le_engine_process(e, out + done, in, 64);
+  }
+  /* One second in, the DC has been filtered to (numerically) nothing. */
+  CHECK(fabsf(out[47999]) < 1e-3f);
+  /* Raw metering: the snapshot peak reflects the ADC, not the post-HPF path. */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_peak > 0.45f);
+  le_engine_destroy(e);
+}
+
+/* Hum notch bank: 50 Hz (base) and 150 Hz (3rd harmonic, default 4 notch
+ * sections) are notched > 20 dB once settled; 1 kHz passes essentially
+ * untouched. */
+static void test_cond_hum_notch_response(void) {
+  printf("test_cond_hum_notch_response\n");
+  static float out[9600];
+  const float freqs[3] = {50.0f, 150.0f, 1000.0f};
+  for (int k = 0; k < 3; ++k) {
+    le_engine* e = cond_engine();
+    CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+    cond_sections(e, 0.0f, 50.0f, 1.0f); /* notch bank only (default x4) */
+    long idx = 0;
+    cond_feed_sine(e, freqs[k], 0.5f, 2 * 48000 - 9600, &idx, NULL);
+    cond_feed_sine(e, freqs[k], 0.5f, 9600, &idx, out);
+    const float in_rms = 0.5f * 0.70710678f;
+    const float out_rms = cond_rms(out + 4800, 4800);
+    if (k < 3 - 1) {
+      CHECK(out_rms < in_rms * 0.1f); /* > 20 dB down at 50 / 150 Hz */
+    } else {
+      CHECK(out_rms > in_rms * 0.9f); /* < ~1 dB at 1 kHz */
+    }
+    le_engine_destroy(e);
+  }
+}
+
+/* Expander static curve: with a constant-magnitude probe (|x| == A each
+ * sample, so the envelope settles exactly to A), the settled gain IS the
+ * documented law — unity at/above threshold, u^(R-1) below it (u = A/thr):
+ * exact at the default 1:2 and at integer ratios. */
+static void test_cond_expander_static_curve(void) {
+  printf("test_cond_expander_static_curve\n");
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 0.0f, 0.0f, 2.0f); /* expander only, ratio 2 */
+  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_THRESHOLD_DB,
+                                               -40.0f) == LE_OK);
+  /* Fast release so the envelope settles DOWN between the probe levels too
+   * (the 150 ms default would need ~1 s per case to converge within 2%). */
+  CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_RELEASE_MS,
+                                               5.0f) == LE_OK);
+  drain(e); /* thr_lin = 0.01 */
+
+  float in[64];
+  float out[64];
+  /* (A, ratio, expected settled gain) triples. */
+  const float cases[4][3] = {
+      {0.1f, 2.0f, 1.0f},      /* 20 dB above thr: unity */
+      {0.005f, 2.0f, 0.5f},    /* u = 0.5, R = 2: g = u */
+      {0.0025f, 2.0f, 0.25f},  /* u = 0.25, R = 2: g = u */
+      {0.005f, 4.0f, 0.125f},  /* u = 0.5, R = 4: g = u^3 */
+  };
+  for (int k = 0; k < 4; ++k) {
+    const float amp = cases[k][0];
+    CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_RATIO,
+                                                 cases[k][1]) == LE_OK);
+    drain(e);
+    /* Alternating +-A: |x| is A every sample, the envelope converges to
+     * exactly A (attack 5 ms << the 9600-frame settle). */
+    for (int i = 0; i < 64; ++i) in[i] = (i & 1) ? -amp : amp;
+    for (int blocks = 0; blocks < 150; ++blocks) {
+      le_engine_process(e, out, in, 64);
+    }
+    const float expect = amp * cases[k][2];
+    CHECK(fabsf(fabsf(out[63]) - expect) < expect * 0.02f + 1e-9f);
+  }
+  le_engine_destroy(e);
+}
+
+/* THE placement pin (WYSIWYG): with a hum notch engaged, the lane buffer a
+ * recording captures is BIT-EXACT the monitored output — one conditioning
+ * run upstream of both consumers — and both are attenuated while the
+ * snapshot's input metering still reads the raw level. */
+static void test_cond_lane_monitor_wysiwyg_metering_raw(void) {
+  printf("test_cond_lane_monitor_wysiwyg_metering_raw\n");
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 0.0f, 50.0f, 1.0f); /* notch bank only */
+
+  long idx = 0;
+  cond_feed_sine(e, 50.0f, 0.5f, 2 * 48000, &idx, NULL); /* settle the notch */
+
+  static float out[4800];
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  cond_feed_sine(e, 50.0f, 0.5f, 4800, &idx, out); /* the recorded pass */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize -> PLAYING, len 4800 */
+  drain(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_frames == 4800);
+
+  /* The lane's live buffer holds the CONDITIONED samples — and is bit-exact
+   * the monitor output captured over the same frames (the WYSIWYG pin: both
+   * consumers read the one conditioned copy). Checked BEFORE any further
+   * processing: the finalize may continue into overdub (rec/dub), and more
+   * fed frames would then layer onto the buffer under comparison. */
+  le_lane* ln = &e->tracks[0].lanes[0];
+  const float* lane = ln->pool[load_i32(&ln->a_live)];
+  CHECK(lane != NULL);
+  if (lane != NULL) {
+    int exact = 1;
+    for (int i = 0; i < 4800; ++i) {
+      if (lane[i] != out[i]) exact = 0;
+    }
+    CHECK(exact);
+    /* And conditioned means ATTENUATED: > 20 dB below the raw input. */
+    CHECK(cond_rms(lane, 4800) < (0.5f * 0.70710678f) * 0.1f);
+  }
+
+  /* Raw metering: process one FULL 50 Hz cycle in a single block (so the
+   * block is guaranteed to contain the waveform's peak whatever the phase)
+   * and snapshot immediately — the published input peak is the RAW level,
+   * not the notched one. */
+  {
+    static float mout[960];
+    static float min_[960];
+    for (int i = 0; i < 960; ++i) {
+      min_[i] = 0.5f * (float)sin(2.0 * 3.14159265358979323846 * 50.0 *
+                                  (double)i / 48000.0);
+    }
+    le_engine_process(e, mout, min_, 960);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.input_peak > 0.45f);
+  }
+  le_engine_destroy(e);
+}
+
+/* Zero added latency: the stage is IIR + a no-lookahead envelope, so its
+ * response to an impulse begins on the SAME frame — nothing is buffered. */
+static void test_cond_zero_added_latency(void) {
+  printf("test_cond_zero_added_latency\n");
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  drain(e); /* full default stage: HPF 40 + hum x4 + expander */
+
+  float in[64] = {0};
+  float out[64];
+  in[0] = 1.0f;
+  le_engine_process(e, out, in, 64);
+  /* The impulse lands on frame 0 of the monitor output (the biquads' b0
+   * terms pass most of it; the first-sample envelope is already above the
+   * -55 dB default threshold, so the expander does not eat it either). */
+  CHECK(fabsf(out[0]) > 0.5f);
+  le_engine_destroy(e);
+}
+
+/* The latency harness is unaffected: the loopback channel is excluded from
+ * conditioning by construction and the harness reads raw magnitudes, so a
+ * measurement with a hostile stage enabled resolves to the SAME offset as
+ * one with no conditioning at all. */
+static void test_cond_latency_harness_unaffected(void) {
+  printf("test_cond_latency_harness_unaffected\n");
+  enum { SR = 48000, RET = 150, PULSE = SR / 100, CAP = SR / 10 };
+  int32_t offsets[2] = {0, 0};
+  for (int pass = 0; pass < 2; ++pass) {
+    le_engine* e = le_engine_create();
+    le_engine_configure(e, SR, 2, 2, 100000);
+    le_engine_set_excluded_input_mask_for_test(e, 0x2u); /* ch1 = loopback */
+    if (pass == 1) {
+      /* A stage that would demolish the pulse if it ever touched the
+       * harness path: 2 kHz HPF + deep 10:1 expander at -20 dB. */
+      CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+      CHECK(le_engine_set_input_conditioning(e, 1, 1) == LE_OK);
+      CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_HPF_HZ,
+                                                   2000.0f) == LE_OK);
+      CHECK(le_engine_set_input_conditioning_param(
+                e, 0, LE_COND_EXP_THRESHOLD_DB, -20.0f) == LE_OK);
+      CHECK(le_engine_set_input_conditioning_param(e, 0, LE_COND_EXP_RATIO,
+                                                   10.0f) == LE_OK);
+      CHECK(le_engine_set_input_conditioning_param(e, 1, LE_COND_HPF_HZ,
+                                                   2000.0f) == LE_OK);
+    }
+    CHECK(le_engine_begin_latency_for_test(e) == LE_OK);
+    drain(e);
+    float* out = calloc((size_t)CAP * 2, sizeof(float));
+    float* in = calloc((size_t)CAP * 2, sizeof(float));
+    CHECK(out != NULL && in != NULL);
+    for (int i = 0; i < CAP; ++i) {
+      in[i * 2 + 0] = 0.0f;
+      in[i * 2 + 1] = (i >= RET && i < RET + PULSE) ? 0.5f : 0.0f;
+    }
+    le_engine_process(e, out, in, CAP);
+    le_snapshot s;
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.latency_state == LE_LATENCY_DONE);
+    offsets[pass] = s.record_offset_frames;
+    free(out);
+    free(in);
+    le_engine_destroy(e);
+  }
+  CHECK(offsets[0] == offsets[1]);
+  CHECK(offsets[0] > 0);
+}
+
+/* The sound-activated record trigger reads the CONDITIONED magnitude: mains
+ * hum loud enough to false-arm the raw path no longer fires once notched,
+ * while a real signal still does — and the raw path (stage disabled) still
+ * fires on that same hum, pinning that the change is the conditioning. */
+static void test_cond_auto_trigger_reads_conditioned(void) {
+  printf("test_cond_auto_trigger_reads_conditioned\n");
+  le_snapshot s;
+
+  /* Conditioned: 50 Hz at 0.3 (15x the 0.02 threshold raw) must NOT fire. */
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 0.0f, 50.0f, 1.0f); /* notch bank only */
+  long idx = 0;
+  cond_feed_sine(e, 50.0f, 0.3f, 2 * 48000, &idx, NULL); /* settle notch */
+  CHECK(le_engine_record(e, 0) == LE_OK);                /* arm */
+  drain(e);
+  cond_feed_sine(e, 50.0f, 0.3f, 24000, &idx, NULL); /* pure hum: no fire */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  cond_feed_sine(e, 1000.0f, 0.3f, 4800, &idx, NULL); /* real signal: fires */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  le_engine_destroy(e);
+
+  /* Raw (stage disabled): the same hum DOES fire — the trigger change is the
+   * conditioning, not a threshold move. */
+  le_engine* e2 = cond_engine();
+  CHECK(le_engine_set_auto_record(e2, 1) == LE_OK);
+  CHECK(le_engine_record(e2, 0) == LE_OK);
+  drain(e2);
+  long idx2 = 0;
+  cond_feed_sine(e2, 50.0f, 0.3f, 4800, &idx2, NULL);
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  le_engine_destroy(e2);
+}
+
+/* An enable EDGE resets the stage's filter/envelope state: charge the HPF
+ * with DC, disable, re-enable, feed silence — a stale state would ring;
+ * a reset one is exactly silent. */
+static void test_cond_enable_edge_resets_state(void) {
+  printf("test_cond_enable_edge_resets_state\n");
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 40.0f, 0.0f, 1.0f); /* HPF only */
+
+  float in[64];
+  float out[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.5f;
+  for (int b = 0; b < 8; ++b) le_engine_process(e, out, in, 64); /* charge */
+
+  CHECK(le_engine_set_input_conditioning(e, 0, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  drain(e);
+
+  float silence[64] = {0};
+  le_engine_process(e, out, silence, 64);
+  for (int i = 0; i < 64; ++i) CHECK(out[i] == 0.0f);
+  le_engine_destroy(e);
+}
+
+/* NaN/Inf containment (the fx_sanitize twin at the stage boundary): a
+ * non-finite device sample maps to 0 BEFORE any state update, so it can
+ * never latch into the biquad/envelope states — every conditioned output
+ * stays finite, and the poisoned run is BIT-EXACT the run that was fed a
+ * literal 0 at those samples (instant recovery, nothing to flush). */
+static void test_cond_nan_input_contained(void) {
+  printf("test_cond_nan_input_contained\n");
+  le_engine* a = cond_engine();
+  le_engine* b = cond_engine();
+  CHECK(le_engine_set_input_conditioning(a, 0, 1) == LE_OK);
+  CHECK(le_engine_set_input_conditioning(b, 0, 1) == LE_OK);
+  drain(a); /* full default stage: HPF 40 + hum x4 + expander */
+  drain(b);
+
+  float in_a[64];
+  float in_b[64];
+  float out_a[64];
+  float out_b[64];
+  for (int blk = 0; blk < 16; ++blk) {
+    for (int i = 0; i < 64; ++i) {
+      const float s = 0.3f * sinf(2.0f * 3.14159265f * 220.0f *
+                                  (float)(blk * 64 + i) / 48000.0f);
+      in_a[i] = s;
+      in_b[i] = s;
+    }
+    if (blk == 1) {
+      in_a[10] = NAN;
+      in_b[10] = 0.0f;
+      in_a[20] = INFINITY;
+      in_b[20] = 0.0f;
+      in_a[30] = -INFINITY;
+      in_b[30] = 0.0f;
+    }
+    le_engine_process(a, out_a, in_a, 64);
+    le_engine_process(b, out_b, in_b, 64);
+    for (int i = 0; i < 64; ++i) {
+      CHECK(isfinite(out_a[i]));
+      CHECK(out_a[i] == out_b[i]);
+    }
+  }
+  le_engine_destroy(a);
+  le_engine_destroy(b);
+}
+
+/* The oversized-block raw fallback is COUNTED, not silent: a block larger
+ * than the conditioned-copy scratch passes through raw (bit-exact) and bumps
+ * a_cond_fallback_blocks once; a normal block conditions and leaves the
+ * counter alone — the telemetry that proves real backends never hit this. */
+static void test_cond_scratch_fallback_counted(void) {
+  printf("test_cond_scratch_fallback_counted\n");
+  enum { BIG = LE_COND_SCRATCH_FRAMES + 808 };
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  drain(e); /* default stage: HPF 40 on — conditioning WOULD color this */
+  CHECK(atomic_load_explicit(&e->a_cond_fallback_blocks,
+                             memory_order_relaxed) == 0u);
+
+  static float big_in[BIG];
+  static float big_out[BIG];
+  for (int i = 0; i < BIG; ++i) {
+    big_in[i] = 0.3f * sinf(2.0f * 3.14159265f * 220.0f * (float)i / 48000.0f);
+  }
+  le_engine_process(e, big_out, big_in, BIG);
+  /* Fallback: raw passthrough (the monitor's dry path), counted exactly once. */
+  CHECK(atomic_load_explicit(&e->a_cond_fallback_blocks,
+                             memory_order_relaxed) == 1u);
+  int exact = 1;
+  for (int i = 0; i < BIG; ++i) {
+    if (big_out[i] != big_in[i]) exact = 0;
+  }
+  CHECK(exact);
+
+  /* A normal-sized block conditions again and does NOT bump the counter. */
+  float out[64];
+  le_engine_process(e, out, big_in, 64);
+  CHECK(atomic_load_explicit(&e->a_cond_fallback_blocks,
+                             memory_order_relaxed) == 1u);
+  le_engine_destroy(e);
+}
+
+/* Not a gate — an informational CPU smoke: ns/sample for one fully-engaged
+ * stage (HPF + 4 notches + expander), printed for the PR body / the S3
+ * on-Pi bench to compare against. */
+static void test_cond_cpu_smoke(void) {
+  printf("test_cond_cpu_smoke\n");
+  le_input_cond c;
+  memset(&c, 0, sizeof(c));
+  le_cond_seed_defaults(&c, 48000);
+  static float buf[4096];
+  for (int i = 0; i < 4096; ++i) {
+    buf[i] = 0.1f * sinf(2.0f * 3.14159265f * 220.0f * (float)i / 48000.0f);
+  }
+  const long total = 10L * 1000L * 1000L;
+  const long reps = total / 4096;
+  const clock_t t0 = clock();
+  for (long r = 0; r < reps; ++r) {
+    le_cond_process_block(&c, buf, 4096, 1);
+  }
+  const clock_t t1 = clock();
+  const double ns_per_sample = (double)(t1 - t0) / CLOCKS_PER_SEC * 1e9 /
+                               ((double)reps * 4096.0);
+  printf("  cond stage (HPF + 4 notches + expander): %.1f ns/sample\n",
+         ns_per_sample);
+  CHECK(ns_per_sample >= 0.0); /* informational, not a budget gate */
+}
+
+/* ---- input clip ("HOT") detector + snapshot masks (input clip, S2) ----
+ *
+ * Always on, no params, RAW path: LE_CLIP_RUN (4) consecutive samples at
+ * |s| >= LE_CLIP_LEVEL (0.999) latch le_snapshot.input_clip_mask's bit for
+ * that input, held LE_CLIP_HOLD_MS (1500) of engine time past the last run.
+ * These tests pin the run threshold, the cross-block run carry, the hold
+ * decay, per-input independence, the raw-vs-conditioned split (a clipped
+ * input the stage reshapes below the rail still flags HOT), the loopback
+ * exclusion, and input_cond_mask as the stage-actually-runs truth. */
+
+/* Feeds one block of `frames` mono frames, all zero except a run of `runlen`
+ * samples at `level` starting at `at`. */
+static void clip_feed_run(le_engine* e, float level, int at, int runlen,
+                          int frames) {
+  static float in[256];
+  static float out[256];
+  for (int i = 0; i < frames; ++i) {
+    in[i] = (i >= at && i < at + runlen) ? level : 0.0f;
+  }
+  le_engine_process(e, out, in, (uint32_t)frames);
+}
+
+/* The run threshold: 3 consecutive rail samples never latch (a full-scale
+ * transient is music), 4 do — and a long run BELOW LE_CLIP_LEVEL never
+ * latches however sustained (loud is not HOT). */
+static void test_clip_rail_run_latches(void) {
+  printf("test_clip_rail_run_latches\n");
+  le_snapshot s;
+  le_engine* e = cond_engine();
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0u); /* untouched engine: nothing HOT */
+
+  /* 64 frames of sustained 0.99 — under the rail, no latch. */
+  clip_feed_run(e, 0.99f, 0, 64, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0u);
+
+  /* LE_CLIP_RUN - 1 at the rail: still music. */
+  clip_feed_run(e, 0.9995f, 8, LE_CLIP_RUN - 1, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0u);
+
+  /* LE_CLIP_RUN at the rail (negative — the detector reads |s|): HOT. */
+  clip_feed_run(e, -0.9995f, 8, LE_CLIP_RUN, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x1u);
+  le_engine_destroy(e);
+}
+
+/* The run counter carries across block boundaries: 2 rail samples at the end
+ * of one block plus 2 at the start of the next latch, exactly like an
+ * unsplit run of 4 (a clip does not care where the period boundary fell). */
+static void test_clip_run_spans_blocks(void) {
+  printf("test_clip_run_spans_blocks\n");
+  le_snapshot s;
+  le_engine* e = cond_engine();
+  clip_feed_run(e, 0.9995f, 62, 2, 64); /* run tail ends the block */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0u); /* only 2 so far */
+  clip_feed_run(e, 0.9995f, 0, 2, 64); /* 2 more open the next */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x1u);
+
+  /* An interrupted pair does NOT carry: 2 + gap + 2 in one block stays 0
+   * on a fresh engine (any sub-rail sample resets the run). */
+  le_engine* e2 = cond_engine();
+  static float in[64];
+  static float out[64];
+  for (int i = 0; i < 64; ++i) in[i] = 0.0f;
+  in[10] = in[11] = 0.9995f;
+  in[13] = in[14] = 0.9995f; /* in[12] == 0 breaks the run */
+  le_engine_process(e2, out, in, 64);
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.input_clip_mask == 0u);
+  le_engine_destroy(e);
+  le_engine_destroy(e2);
+}
+
+/* The hold: a latched bit survives ~1.47 s of following silence and is gone
+ * past ~1.51 s — LE_CLIP_HOLD_MS (1500) at block granularity. */
+static void test_clip_hold_decay(void) {
+  printf("test_clip_hold_decay\n");
+  le_snapshot s;
+  le_engine* e = cond_engine();
+  clip_feed_run(e, 0.9995f, 0, LE_CLIP_RUN, 64); /* latch near block start */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x1u);
+
+  /* 1100 silent blocks: 70400 frames ≈ 1.467 s < 1.5 s — still HOT. */
+  for (int b = 0; b < 1100; ++b) clip_feed_run(e, 0.0f, 0, 0, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x1u);
+
+  /* 30 more: 72320 frames ≈ 1.507 s > the hold — decayed. */
+  for (int b = 0; b < 30; ++b) clip_feed_run(e, 0.0f, 0, 0, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0u);
+
+  /* A fresh rail-run latches again (nothing is sticky beyond the hold). */
+  clip_feed_run(e, 0.9995f, 0, LE_CLIP_RUN, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x1u);
+  le_engine_destroy(e);
+}
+
+/* Per-input independence: on a stereo engine a rail-run on channel 1 flags
+ * ONLY bit 1 while channel 0 (a healthy sine sharing every block) stays
+ * clear; railing channel 0 afterwards ORs bit 0 in alongside. */
+static void test_clip_mask_per_input_independent(void) {
+  printf("test_clip_mask_per_input_independent\n");
+  le_snapshot s;
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 96000);
+  drain(e);
+  static float in[128]; /* 64 frames x 2 ch, interleaved */
+  static float out[128];
+  for (int f = 0; f < 64; ++f) {
+    in[f * 2 + 0] = 0.5f * sinf(2.0f * 3.14159265f * 997.0f * (float)f /
+                                48000.0f);
+    in[f * 2 + 1] = (f >= 8 && f < 8 + LE_CLIP_RUN) ? 0.9995f : 0.0f;
+  }
+  le_engine_process(e, out, in, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x2u); /* ch1 HOT, ch0 clear */
+
+  for (int f = 0; f < 64; ++f) {
+    in[f * 2 + 0] = (f >= 8 && f < 8 + LE_CLIP_RUN) ? 0.9995f : 0.0f;
+    in[f * 2 + 1] = 0.0f;
+  }
+  le_engine_process(e, out, in, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x3u); /* ch0 joins; ch1 still held */
+  le_engine_destroy(e);
+}
+
+/* THE raw-path pin: with the conditioning stage reshaping the signal below
+ * the rail (a 40 Hz HPF flattens a DC rail to ~0 in the conditioned copy
+ * every consumer records/hears), the detector still flags HOT — it reads the
+ * RAW device buffer, so the ADC's clip cannot hide behind its own repair. */
+static void test_clip_detects_raw_under_conditioning(void) {
+  printf("test_clip_detects_raw_under_conditioning\n");
+  le_snapshot s;
+  le_engine* e = cond_engine();
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  cond_sections(e, 40.0f, 0.0f, 1.0f); /* HPF only */
+
+  /* One second of a +1.0 DC rail — every raw sample is at the clip level. */
+  static float in[64];
+  static float out[64];
+  for (int i = 0; i < 64; ++i) in[i] = 1.0f;
+  float settled = 1.0f;
+  for (int b = 0; b < 750; ++b) {
+    le_engine_process(e, out, in, 64);
+    settled = out[63];
+  }
+  /* The conditioned monitor path has HPF'd the rail to (numerically)
+   * nothing — what records/sounds is nowhere near the clip level... */
+  CHECK(fabsf(settled) < 0.01f);
+  /* ...and HOT flags anyway, off the raw buffer. */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0x1u);
+  le_engine_destroy(e);
+}
+
+/* Loopback-excluded channels never flag: they carry our own output back, so
+ * a hot master must not read as a hot input. */
+static void test_clip_excluded_input_ignored(void) {
+  printf("test_clip_excluded_input_ignored\n");
+  le_snapshot s;
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 96000);
+  le_engine_set_excluded_input_mask_for_test(e, 0x2u); /* ch1 = loopback */
+  drain(e);
+  static float in[128];
+  static float out[128];
+  for (int f = 0; f < 64; ++f) {
+    in[f * 2 + 0] = 0.0f;
+    in[f * 2 + 1] = 0.9995f; /* a sustained rail on the loopback channel */
+  }
+  le_engine_process(e, out, in, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_clip_mask == 0u);
+  le_engine_destroy(e);
+}
+
+/* input_cond_mask is the stage-actually-runs truth: 0 by default, bit c on
+ * enable, off again on disable — and an enabled stage on a loopback-excluded
+ * input reads 0 (it never runs; the latency harness owns those channels). */
+static void test_cond_mask_snapshot(void) {
+  printf("test_cond_mask_snapshot\n");
+  le_snapshot s;
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 96000);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_cond_mask == 0u); /* untouched engine: nothing conditioned */
+
+  CHECK(le_engine_set_input_conditioning(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_input_conditioning(e, 1, 1) == LE_OK);
+  drain(e); /* the enable publishes via the ring (audio-thread commit) */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_cond_mask == 0x3u);
+
+  CHECK(le_engine_set_input_conditioning(e, 0, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_cond_mask == 0x2u);
+
+  /* Excluding ch1 removes its bit even though its enable stays set. */
+  le_engine_set_excluded_input_mask_for_test(e, 0x2u);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_cond_mask == 0u);
+  le_engine_destroy(e);
+}
+
+/* --- Vendored RNNoise smoke test (#697 S7) -------------------------------
+ *
+ * Proves the vendored third_party/rnnoise TUs compile, link, and run: init a
+ * denoiser state, push frames of deterministic pseudo-noise, and assert the
+ * output is finite everywhere and actually differs from the input. The
+ * restore pipeline that consumes this (engine_restore.c) is a later slice —
+ * this guards only the vendor drop + build wiring.
+ */
+static void test_rnnoise_vendor_smoke(void) {
+  printf("test_rnnoise_vendor_smoke\n");
+
+  /* The half-band 96k<->48k resample plan in #697 hard-assumes RNNoise's
+   * fixed 48 kHz / 480-sample frame contract; fail loudly if an upgrade of
+   * the vendored copy ever changes it. */
+  CHECK(rnnoise_get_frame_size() == 480);
+  CHECK(rnnoise_get_size() > 0);
+
+  DenoiseState* st = rnnoise_create(NULL); /* NULL = built-in model weights */
+  CHECK(st != NULL);
+  if (st == NULL) return;
+
+  enum { kFrame = 480, kFrames = 8 };
+  float in[kFrame];
+  float out[kFrame];
+  uint32_t seed = 0x5EED5u;
+  int finite = 1;
+  int differs = 0;
+  float vad = -1.0f;
+  for (int f = 0; f < kFrames; ++f) {
+    for (int i = 0; i < kFrame; ++i) {
+      /* LCG white noise at a plausible 16-bit-scaled input level (RNNoise
+       * expects short-range floats, not +/-1.0). */
+      seed = seed * 1664525u + 1013904223u;
+      in[i] = ((float)(seed >> 8) / 8388608.0f - 1.0f) * 4096.0f;
+      out[i] = in[i];
+    }
+    vad = rnnoise_process_frame(st, out, in);
+    for (int i = 0; i < kFrame; ++i) {
+      if (!isfinite(out[i])) finite = 0;
+      if (out[i] != in[i]) differs = 1;
+    }
+  }
+  CHECK(finite == 1);   /* no NaN/inf anywhere in the denoised output */
+  CHECK(differs == 1);  /* the denoiser actually touched the signal */
+  CHECK(vad >= 0.0f && vad <= 1.0f); /* VAD probability stays in range */
+
+  rnnoise_destroy(st);
+}
+
+/* --- Restore de-clip + half-band DSP (#697 S8) ---------------------------
+ *
+ * Pure-DSP tests for the offline loop-close restoration pieces: the de-clip
+ * repair (restore_declip.c — flat-run detection, Hermite spline for short
+ * runs, two-sided Burg AR for long ones) and the 2:1 half-band resampler
+ * (restore_halfband.c). Synthetic clipped sines with SNR assertions: the
+ * clean sine is the ground truth the repair is measured against. The SNR
+ * bounds sit ~5 dB below measured values (macOS clang -O2) to absorb libm /
+ * compiler variation without letting a real regression slip through. */
+
+static le_declip_scratch g_declip_scratch;
+
+/* SNR of sig against ref over [skip, n - skip), in dB. */
+static double declip_snr_db(const float* ref, const float* sig, uint32_t n,
+                            uint32_t skip) {
+  double se = 0.0;
+  double re = 0.0;
+  uint32_t i;
+  for (i = skip; i < n - skip; ++i) {
+    const double e = (double)sig[i] - (double)ref[i];
+    se += e * e;
+    re += (double)ref[i] * (double)ref[i];
+  }
+  if (se <= 0.0) return 999.0;
+  return 10.0 * log10(re / se);
+}
+
+static double declip_max_abs_diff(const float* x, uint32_t n) {
+  double mx = 0.0;
+  uint32_t i;
+  for (i = 1; i < n; ++i) {
+    const double d = fabs((double)x[i] - (double)x[i - 1]);
+    if (d > mx) mx = d;
+  }
+  return mx;
+}
+
+static int declip_all_finite(const float* x, uint32_t n) {
+  uint32_t i;
+  for (i = 0; i < n; ++i) {
+    if (!isfinite(x[i])) return 0;
+  }
+  return 1;
+}
+
+enum { kDeclipN = 9600 };
+static float g_declip_clean[kDeclipN];
+static float g_declip_clipped[kDeclipN];
+static float g_declip_work[kDeclipN];
+
+/* Synthesize amp * sin(2 pi freq / sr) into clean[] and its hard-clipped
+ * (+/-0.999) twin into clipped[]; returns the longest at-rail run. */
+static int declip_make_clipped_sine(double freq, double amp, double sr) {
+  int run = 0;
+  int longest = 0;
+  int i;
+  for (i = 0; i < kDeclipN; ++i) {
+    float c = (float)(amp * sin(2.0 * M_PI * freq * (double)i / sr));
+    g_declip_clean[i] = c;
+    if (c > 0.999f) c = 0.999f;
+    if (c < -0.999f) c = -0.999f;
+    g_declip_clipped[i] = c;
+    if (c >= 0.999f || c <= -0.999f) {
+      ++run;
+      if (run > longest) longest = run;
+    } else {
+      run = 0;
+    }
+  }
+  return longest;
+}
+
+/* Short runs (1 kHz at 96 k clips ~10 samples per peak): the Hermite spline
+ * path. The reconstruction must recover most of the lost peak (SNR jumps
+ * well past the clipped signal's), actually reach back above the rail, and
+ * stay seam-continuous — the largest sample-to-sample step of the repaired
+ * signal must stay in the same league as the clean sine's own steepest step
+ * (a bad seam is a step-discontinuity an order of magnitude above it). */
+static void test_declip_short_run_spline_reconstructs(void) {
+  int longest;
+  int32_t reps;
+  double snr_in;
+  double snr_out;
+  float peak = 0.0f;
+  int i;
+  printf("test_declip_short_run_spline_reconstructs\n");
+  longest = declip_make_clipped_sine(1000.0, 1.05, 96000.0);
+  CHECK(longest > 0 && longest <= 16); /* geometry: spline path exercised */
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps > 0);
+  snr_in = declip_snr_db(g_declip_clean, g_declip_clipped, kDeclipN, 0);
+  snr_out = declip_snr_db(g_declip_clean, g_declip_work, kDeclipN, 0);
+  CHECK(snr_out > snr_in + 12.0); /* measured: 33.0 -> 50.9 dB */
+  CHECK(snr_out > 45.0);
+  for (i = 0; i < kDeclipN; ++i) {
+    if (g_declip_work[i] > peak) peak = g_declip_work[i];
+  }
+  CHECK(peak > 1.01f);  /* the repair went back above the rail */
+  CHECK(peak <= 1.998f); /* ... but stayed inside the documented clamp */
+  CHECK(declip_max_abs_diff(g_declip_work, kDeclipN) <
+        2.0 * declip_max_abs_diff(g_declip_clean, kDeclipN));
+}
+
+/* Long runs (100 Hz at 96 k clips ~180 samples per peak): the two-sided
+ * Burg AR path with spline-pre-filled context. Same assertion shape as the
+ * spline test, plus the amplitude bound. */
+static void test_declip_long_run_ar_reconstructs(void) {
+  int longest;
+  int32_t reps;
+  double snr_in;
+  double snr_out;
+  float peak = 0.0f;
+  int i;
+  printf("test_declip_long_run_ar_reconstructs\n");
+  longest = declip_make_clipped_sine(100.0, 1.2, 96000.0);
+  CHECK(longest > 16 && longest <= 512); /* geometry: AR path exercised */
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps > 0);
+  snr_in = declip_snr_db(g_declip_clean, g_declip_clipped, kDeclipN, 0);
+  snr_out = declip_snr_db(g_declip_clean, g_declip_work, kDeclipN, 0);
+  CHECK(snr_out > snr_in + 8.0); /* measured: 19.5 -> 30.3 dB */
+  CHECK(snr_out > 25.0);
+  for (i = 0; i < kDeclipN; ++i) {
+    if (g_declip_work[i] > peak) peak = g_declip_work[i];
+  }
+  CHECK(peak > 1.1f);   /* recovered most of the true 1.2 peak */
+  CHECK(peak <= 1.998f);
+  CHECK(declip_max_abs_diff(g_declip_work, kDeclipN) <
+        2.0 * declip_max_abs_diff(g_declip_clean, kDeclipN));
+  /* Every repaired sample respects the floor: never back under the rail
+   * the original sat at. */
+  for (i = 0; i < kDeclipN; ++i) {
+    if (g_declip_clipped[i] >= 0.999f) CHECK(g_declip_work[i] >= 0.999f);
+    if (g_declip_clipped[i] <= -0.999f) CHECK(g_declip_work[i] <= -0.999f);
+  }
+}
+
+/* Dense clipping (440 Hz at 1.5: runs a half-period apart) still improves —
+ * the AR context pre-fill keeps neighboring rails out of the fit. And the
+ * algorithm is sample-rate agnostic: the same signal at 48 k repairs too. */
+static void test_declip_dense_and_rate_agnostic(void) {
+  double snr_in;
+  double snr_out;
+  int32_t reps;
+  printf("test_declip_dense_and_rate_agnostic\n");
+  (void)declip_make_clipped_sine(440.0, 1.5, 96000.0);
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps > 0);
+  snr_in = declip_snr_db(g_declip_clean, g_declip_clipped, kDeclipN, 0);
+  snr_out = declip_snr_db(g_declip_clean, g_declip_work, kDeclipN, 0);
+  CHECK(snr_out > snr_in + 15.0); /* measured: 12.0 -> 37.3 dB */
+
+  (void)declip_make_clipped_sine(440.0, 1.3, 48000.0);
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps > 0);
+  snr_in = declip_snr_db(g_declip_clean, g_declip_clipped, kDeclipN, 0);
+  snr_out = declip_snr_db(g_declip_clean, g_declip_work, kDeclipN, 0);
+  CHECK(snr_out > snr_in + 15.0); /* measured: 16.0 -> 46.5 dB */
+}
+
+/* A signal that never reaches the rail comes back bit-exact — the repair
+ * must be a no-op on healthy audio, not a subtle resmoothing. */
+static void test_declip_no_clip_passthrough_bit_exact(void) {
+  int32_t reps;
+  int i;
+  printf("test_declip_no_clip_passthrough_bit_exact\n");
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clipped[i] =
+        (float)(0.99 * sin(2.0 * M_PI * 997.0 * (double)i / 96000.0));
+  }
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps == 0);
+  CHECK(memcmp(g_declip_work, g_declip_clipped, sizeof(g_declip_work)) == 0);
+}
+
+/* Runs touching the buffer edges have no context on one side and pass
+ * through untouched (documented conservative behavior); interior runs in
+ * the same buffer still repair. */
+static void test_declip_edge_runs_pass_through(void) {
+  int32_t reps;
+  int i;
+  int start_untouched = 1;
+  int end_untouched = 1;
+  int interior_touched = 0;
+  printf("test_declip_edge_runs_pass_through\n");
+  /* cos starts AT the peak -> the first run touches sample 0; force the
+   * tail to rail so the last run touches the final sample. */
+  for (i = 0; i < kDeclipN; ++i) {
+    float c = (float)(1.2 * cos(2.0 * M_PI * 100.0 * (double)i / 96000.0));
+    if (c > 0.999f) c = 0.999f;
+    if (c < -0.999f) c = -0.999f;
+    g_declip_clipped[i] = c;
+  }
+  for (i = kDeclipN - 40; i < kDeclipN; ++i) g_declip_clipped[i] = 0.999f;
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps > 0);
+  for (i = 0; i < 100; ++i) {
+    if (g_declip_work[i] != g_declip_clipped[i]) start_untouched = 0;
+  }
+  for (i = kDeclipN - 40; i < kDeclipN; ++i) {
+    if (g_declip_work[i] != g_declip_clipped[i]) end_untouched = 0;
+  }
+  for (i = 100; i < kDeclipN - 40; ++i) {
+    if (g_declip_work[i] != g_declip_clipped[i]) interior_touched = 1;
+  }
+  CHECK(start_untouched == 1);
+  CHECK(end_untouched == 1);
+  CHECK(interior_touched == 1);
+  CHECK(declip_all_finite(g_declip_work, kDeclipN) == 1);
+}
+
+/* Sustained clipping is not a transient peak: an embedded rail stretch
+ * longer than LE_DECLIP_MAX_RUN passes through untouched, and a buffer that
+ * is ALL rail comes back bit-exact. */
+static void test_declip_sustained_rail_pass_through(void) {
+  int32_t reps;
+  int i;
+  int untouched = 1;
+  printf("test_declip_sustained_rail_pass_through\n");
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clipped[i] =
+        (float)(0.5 * sin(2.0 * M_PI * 500.0 * (double)i / 96000.0));
+  }
+  for (i = 1000; i < 1000 + 600; ++i) g_declip_clipped[i] = 0.999f;
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps == 0); /* 600 > LE_DECLIP_MAX_RUN (512): nothing to repair */
+  for (i = 1000; i < 1600; ++i) {
+    if (g_declip_work[i] != g_declip_clipped[i]) untouched = 0;
+  }
+  CHECK(untouched == 1);
+
+  for (i = 0; i < kDeclipN; ++i) g_declip_clipped[i] = 0.999f;
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps == 0);
+  CHECK(memcmp(g_declip_work, g_declip_clipped, sizeof(g_declip_work)) == 0);
+}
+
+/* Pathological inputs stay bounded and deterministic: alternating +/- rail
+ * (every sample its own length-1 run) must produce finite output inside the
+ * documented clamp, bit-identical across two runs. */
+static void test_declip_pathological_stable_and_deterministic(void) {
+  int32_t reps;
+  int i;
+  float mx = 0.0f;
+  printf("test_declip_pathological_stable_and_deterministic\n");
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clipped[i] = (i & 1) ? 0.999f : -0.999f;
+  }
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.999f,
+                           &g_declip_scratch);
+  CHECK(reps >= 0);
+  CHECK(declip_all_finite(g_declip_work, kDeclipN) == 1);
+  for (i = 0; i < kDeclipN; ++i) {
+    if (fabsf(g_declip_work[i]) > mx) mx = fabsf(g_declip_work[i]);
+  }
+  CHECK(mx <= 2.0f * 0.999f + 1e-6f);
+  memcpy(g_declip_clean, g_declip_clipped, sizeof(g_declip_clean));
+  le_declip_process(g_declip_clean, kDeclipN, 0.999f, &g_declip_scratch);
+  CHECK(memcmp(g_declip_work, g_declip_clean, sizeof(g_declip_work)) == 0);
+}
+
+/* Two runs over the same REAL clipped signal are bit-identical (the scratch
+ * carries no state between calls), and invalid arguments are rejected. */
+static void test_declip_deterministic_and_arg_guards(void) {
+  printf("test_declip_deterministic_and_arg_guards\n");
+  (void)declip_make_clipped_sine(313.0, 1.4, 96000.0);
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  le_declip_process(g_declip_work, kDeclipN, 0.999f, &g_declip_scratch);
+  le_declip_process(g_declip_clipped, kDeclipN, 0.999f, &g_declip_scratch);
+  CHECK(memcmp(g_declip_work, g_declip_clipped, sizeof(g_declip_work)) == 0);
+
+  CHECK(le_declip_process(NULL, kDeclipN, 0.999f, &g_declip_scratch) == -1);
+  CHECK(le_declip_process(g_declip_work, kDeclipN, 0.999f, NULL) == -1);
+  CHECK(le_declip_process(g_declip_work, 0, 0.999f, &g_declip_scratch) == -1);
+  CHECK(le_declip_process(g_declip_work, kDeclipN, 0.0f,
+                          &g_declip_scratch) == -1);
+  CHECK(le_declip_process(g_declip_work, kDeclipN, -1.0f,
+                          &g_declip_scratch) == -1);
+}
+
+/* A clip_level passed well below the material's true peaks (0.4 on a clean
+ * 0.9 sine) sweeps healthy loud samples into detected runs. The repair may
+ * reshape inside those runs, but the documented posture holds sample by
+ * sample: a positive sample never decreases, a negative one never increases
+ * (the +6 dB cap binds reconstructed values only — where the original
+ * already exceeds it, the ceiling lifts to the original). Regression: the
+ * old floor-then-cap order pulled the true 0.9 peaks down to 0.8. */
+static void test_declip_low_clip_level_never_attenuates(void) {
+  int32_t reps;
+  int i;
+  float peak = 0.0f;
+  printf("test_declip_low_clip_level_never_attenuates\n");
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clipped[i] =
+        (float)(0.9 * sin(2.0 * M_PI * 500.0 * (double)i / 96000.0));
+  }
+  memcpy(g_declip_work, g_declip_clipped, sizeof(g_declip_work));
+  reps = le_declip_process(g_declip_work, kDeclipN, 0.4f, &g_declip_scratch);
+  CHECK(reps > 0); /* the low level detects "runs" all over the sine */
+  CHECK(declip_all_finite(g_declip_work, kDeclipN) == 1);
+  for (i = 0; i < kDeclipN; ++i) {
+    if (g_declip_clipped[i] >= 0.0f) {
+      CHECK(g_declip_work[i] >= g_declip_clipped[i]);
+    } else {
+      CHECK(g_declip_work[i] <= g_declip_clipped[i]);
+    }
+    /* Per-sample ceiling: max(2 * clip_level, |original|). */
+    CHECK(fabsf(g_declip_work[i]) <=
+          (fabsf(g_declip_clipped[i]) > 0.8f ? fabsf(g_declip_clipped[i])
+                                             : 0.8f) +
+              1e-6f);
+    if (fabsf(g_declip_work[i]) > peak) peak = fabsf(g_declip_work[i]);
+  }
+  CHECK(peak >= 0.89f); /* the true 0.9 peaks survived the cap */
+}
+
+static float g_hb_half[kDeclipN / 2 + 1];
+static float g_hb_back[kDeclipN];
+
+/* The half-band pair is transparent in the passband AND delay-compensated:
+ * a 96 k -> 48 k -> 96 k round trip lines up sample-for-sample with the
+ * input (no group-delay shift for the caller to undo), at both a low and a
+ * high in-band frequency. Edges excluded: the zero-padded boundary is the
+ * one place the filter sees signal that does not exist. */
+static void test_halfband_roundtrip_transparent_and_aligned(void) {
+  int32_t dl;
+  int32_t il;
+  int i;
+  printf("test_halfband_roundtrip_transparent_and_aligned\n");
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clean[i] =
+        (float)(0.8 * sin(2.0 * M_PI * 1000.0 * (double)i / 96000.0));
+  }
+  dl = le_halfband_decimate(g_declip_clean, kDeclipN, g_hb_half);
+  CHECK(dl == kDeclipN / 2);
+  il = le_halfband_interpolate(g_hb_half, (uint32_t)dl, g_hb_back);
+  CHECK(il == kDeclipN);
+  /* Sample-aligned comparison IS the delay test: any residual group delay
+   * would collapse this SNR to single digits. */
+  CHECK(declip_snr_db(g_declip_clean, g_hb_back, kDeclipN, 128) > 60.0);
+
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clean[i] =
+        (float)(0.8 * sin(2.0 * M_PI * 8000.0 * (double)i / 96000.0));
+  }
+  dl = le_halfband_decimate(g_declip_clean, kDeclipN, g_hb_half);
+  il = le_halfband_interpolate(g_hb_half, (uint32_t)dl, g_hb_back);
+  CHECK(il == kDeclipN);
+  CHECK(declip_snr_db(g_declip_clean, g_hb_back, kDeclipN, 128) > 60.0);
+}
+
+/* Decimation must actually reject what would alias: a 30 kHz tone at 96 k
+ * (above the 24 k target Nyquist) has to come out of the decimator at least
+ * 40 dB down (measured: ~-76 dB). */
+static void test_halfband_rejects_out_of_band(void) {
+  int32_t dl;
+  double in_rms = 0.0;
+  double out_rms = 0.0;
+  int i;
+  printf("test_halfband_rejects_out_of_band\n");
+  for (i = 0; i < kDeclipN; ++i) {
+    g_declip_clean[i] =
+        (float)(0.8 * sin(2.0 * M_PI * 30000.0 * (double)i / 96000.0));
+    in_rms += (double)g_declip_clean[i] * (double)g_declip_clean[i];
+  }
+  in_rms = sqrt(in_rms / kDeclipN);
+  dl = le_halfband_decimate(g_declip_clean, kDeclipN, g_hb_half);
+  CHECK(dl == kDeclipN / 2);
+  for (i = 128; i < dl - 128; ++i) {
+    out_rms += (double)g_hb_half[i] * (double)g_hb_half[i];
+  }
+  out_rms = sqrt(out_rms / (double)(dl - 256));
+  CHECK(out_rms < in_rms * 0.01);
+}
+
+/* Length contracts and argument guards: odd input length rounds the
+ * decimated length up ((n + 1) / 2), interpolate always returns 2n, NULL /
+ * zero-length arguments are rejected, and lengths whose OUTPUT count would
+ * not fit the int32 return are rejected up front (before any buffer access —
+ * the small buffers passed with the huge n below are never touched, or these
+ * calls would crash). */
+static void test_halfband_lengths_and_arg_guards(void) {
+  float in7[7] = {0.0f, 1.0f, 0.0f, -1.0f, 0.0f, 1.0f, 0.0f};
+  float dec[4];
+  float interp[14];
+  printf("test_halfband_lengths_and_arg_guards\n");
+  CHECK(le_halfband_decimate(in7, 7, dec) == 4);
+  CHECK(le_halfband_interpolate(dec, 4, interp) == 8);
+  CHECK(declip_all_finite(interp, 8) == 1);
+  CHECK(le_halfband_decimate(NULL, 7, dec) == -1);
+  CHECK(le_halfband_decimate(in7, 0, dec) == -1);
+  CHECK(le_halfband_decimate(in7, 7, NULL) == -1);
+  CHECK(le_halfband_interpolate(NULL, 4, interp) == -1);
+  CHECK(le_halfband_interpolate(dec, 0, interp) == -1);
+  CHECK(le_halfband_interpolate(dec, 4, NULL) == -1);
+  /* int32 return-width guards: 2n (interpolate) and (n + 1) / 2 (decimate,
+   * incl. the n + 1 wrap at UINT32_MAX) must fit; the old code returned a
+   * wrapped/negative length after writing the whole output. */
+  CHECK(le_halfband_interpolate(dec, (uint32_t)INT32_MAX / 2u + 1u, interp) ==
+        -1);
+  CHECK(le_halfband_interpolate(dec, UINT32_MAX, interp) == -1);
+  CHECK(le_halfband_decimate(in7, UINT32_MAX, dec) == -1);
+  /* Largest accepted interpolate length is exactly INT32_MAX / 2 — guard is
+   * a contract line, not a fuzzy margin (rejected before y is touched, so
+   * no giant buffer is needed to probe it... but an accepted call WOULD
+   * write, so only the reject side is probed here). */
+}
+
 int main(void) {
   printf("== segno_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -19452,8 +20864,12 @@ int main(void) {
   test_perf_overflow_counts_and_drops();
   test_perf_frames_advance_during_latency_measurement();
   test_perf_monitor_tap_pads_silence_when_disabled();
+  test_perf_arm_skips_inputs_the_device_does_not_have();
   test_perf_drain_writes_master_pcm_byte_identical();
   test_perf_drain_silence_fills_overrun_gap();
+  test_perf_zero_fill_counter_visible_while_armed();
+  test_perf_zero_fill_counts_only_silence_actually_written();
+  test_perf_drain_samples_elapsed_before_draining();
   test_perf_drain_disk_full_stops_cleanly();
   test_perf_drain_files_are_crash_consistent_mid_capture();
   test_perf_reconfigure_while_armed_marks_sidecar_device_changed();
@@ -19826,6 +21242,40 @@ int main(void) {
   test_cache_job_queue_full_degrades_then_retries();
   test_cache_destroy_during_active_render();
   test_cache_audio_rev_bump_sites();
+
+  test_cond_setters_validate();
+  test_cond_bypass_bitexact();
+  test_cond_hpf_rejects_dc();
+  test_cond_hum_notch_response();
+  test_cond_expander_static_curve();
+  test_cond_lane_monitor_wysiwyg_metering_raw();
+  test_cond_zero_added_latency();
+  test_cond_latency_harness_unaffected();
+  test_cond_auto_trigger_reads_conditioned();
+  test_cond_enable_edge_resets_state();
+  test_cond_nan_input_contained();
+  test_cond_scratch_fallback_counted();
+  test_cond_cpu_smoke();
+  test_clip_rail_run_latches();
+  test_clip_run_spans_blocks();
+  test_clip_hold_decay();
+  test_clip_mask_per_input_independent();
+  test_clip_detects_raw_under_conditioning();
+  test_clip_excluded_input_ignored();
+  test_cond_mask_snapshot();
+  test_rnnoise_vendor_smoke();
+  test_declip_short_run_spline_reconstructs();
+  test_declip_long_run_ar_reconstructs();
+  test_declip_dense_and_rate_agnostic();
+  test_declip_no_clip_passthrough_bit_exact();
+  test_declip_edge_runs_pass_through();
+  test_declip_sustained_rail_pass_through();
+  test_declip_pathological_stable_and_deterministic();
+  test_declip_deterministic_and_arg_guards();
+  test_declip_low_clip_level_never_attenuates();
+  test_halfband_roundtrip_transparent_and_aligned();
+  test_halfband_rejects_out_of_band();
+  test_halfband_lengths_and_arg_guards();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

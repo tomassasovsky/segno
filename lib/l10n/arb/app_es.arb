@@ -885,9 +885,6 @@
     "perfLowDisk": "Poco espacio en disco — la captura podría quedarse sin espacio.",
     "perfLowDiskBlocked": "No hay espacio suficiente en disco para iniciar una captura. Libera espacio e inténtalo de nuevo.",
     "perfStoppedLowDisk": "Captura detenida — el disco se estaba quedando sin espacio. Se ha guardado lo grabado.",
-    "perfRecoveryFound": "Una captura no se guardó correctamente la última vez. ¿Recuperarla?",
-    "perfRecoveryRecover": "Recuperar",
-    "perfRecoveryDiscard": "Descartar",
     "perfArmDisabledRendering": "No se puede armar mientras se renderiza la captura anterior.",
     "perfRenameTitle": "Renombrar captura",
     "perfRenameHint": "Nombre de la captura",
@@ -1119,6 +1116,18 @@
     "@readoutBarsLabel": {
         "description": "Caption over the master loop length in bars on the 7-inch performance readout."
     },
+    "readoutClockLabel": "Tiempo",
+    "@readoutClockLabel": {
+        "description": "Caption over the elapsed transport clock on the 7-inch console readout."
+    },
+    "readoutRecordLabel": "REC",
+    "@readoutRecordLabel": {
+        "description": "The performance-record light's word on the 7-inch console readout; the armed elapsed time renders beside it."
+    },
+    "readoutCountIn": "cuenta de entrada",
+    "@readoutCountIn": {
+        "description": "Shown beside the beat dots on the 7-inch console readout while a count-in is sounding."
+    },
     "readoutModeRecord": "REC",
     "@readoutModeRecord": {
         "description": "Mode chip on the 7-inch readout: a track press records. Short by design - read from stage distance."
@@ -1130,6 +1139,70 @@
     "readoutModeFx": "FX",
     "@readoutModeFx": {
         "description": "Mode chip on the 7-inch readout: a track press stomps its FX chain."
+    },
+    "readoutMix": "MIX",
+    "@readoutMix": {
+        "description": "The pill in the waveform strip's bottom-right corner on the 7-inch readout — the only touch affordance, opens the volume overlay. MIX is common usage for Spanish-speaking musicians and fits the drawn 180-wide pill; MEZCLA would not."
+    },
+    "readoutVolumesInputs": "ENTRADAS",
+    "@readoutVolumesInputs": {
+        "description": "Pinned header caption over the input rows on the 7-inch volume overlay."
+    },
+    "readoutVolumesTracks": "PISTAS",
+    "@readoutVolumesTracks": {
+        "description": "Caption over the track rows on the 7-inch volume overlay."
+    },
+    "readoutVolumesBackToStage": "VOLVER AL ESCENARIO",
+    "@readoutVolumesBackToStage": {
+        "description": "Chip on the 7-inch volume overlay that dismisses it back to the readout."
+    },
+    "readoutVolumesBack": "VOLVER",
+    "@readoutVolumesBack": {
+        "description": "Chip on a 7-inch volume config panel that returns to the volume list."
+    },
+    "readoutVolumesVolume": "VOLUMEN",
+    "@readoutVolumesVolume": {
+        "description": "Caption over the fader on a 7-inch volume config panel."
+    },
+    "readoutVolumesInputKind": "ENTRADA",
+    "@readoutVolumesInputKind": {
+        "description": "Kind caption on the input config panel, and the caption over a track's read-only input-source pills."
+    },
+    "readoutVolumesTrackKind": "PISTA",
+    "@readoutVolumesTrackKind": {
+        "description": "Kind caption over the title on a track's 7-inch config panel."
+    },
+    "readoutVolumesMute": "MUTE",
+    "@readoutVolumesMute": {
+        "description": "The mute toggle on a track's 7-inch config panel."
+    },
+    "readoutVolumesFxChain": "CADENA FX",
+    "@readoutVolumesFxChain": {
+        "description": "The FX-chain engage toggle on a track's 7-inch config panel."
+    },
+    "readoutVolumesListeningTracks": "PISTAS A LA ESCUCHA",
+    "@readoutVolumesListeningTracks": {
+        "description": "Caption over the read-only pills naming the tracks that record an input, on its 7-inch config panel."
+    },
+    "readoutVolumesConditioning": "ACONDICIONAMIENTO",
+    "@readoutVolumesConditioning": {
+        "description": "Caption over the input-conditioning toggles on the 7-inch input config panel (arrives with #697)."
+    },
+    "readoutVolumesHpf": "HPF",
+    "@readoutVolumesHpf": {
+        "description": "High-pass filter conditioning toggle on the 7-inch input config panel."
+    },
+    "readoutVolumesHum": "HUM",
+    "@readoutVolumesHum": {
+        "description": "Hum-removal conditioning toggle on the 7-inch input config panel."
+    },
+    "readoutVolumesExpander": "EXPANSOR",
+    "@readoutVolumesExpander": {
+        "description": "Expander conditioning toggle on the 7-inch input config panel."
+    },
+    "readoutVolumesRestore": "RESTAURAR",
+    "@readoutVolumesRestore": {
+        "description": "Restoration conditioning toggle on the 7-inch input config panel."
     },
     "readoutStateRecording": "REC",
     "@readoutStateRecording": {
@@ -1720,9 +1793,9 @@
     "@controlFxHoldRow": {
         "description": "Row that switches the Mode footswitch to a Record/Mute tap cycle with FX behind a hold."
     },
-    "controlFxHoldSub": "Solo el conmutador de modo del pedal: una pulsación alterna entre Grabar y Silenciar; mantener entra y sale de FX. Desactivado, una pulsación recorre los tres modos y mantener arma la grabación de actuación.",
+    "controlFxHoldSub": "Solo el pedal: una pulsación de Modo alterna entre Grabar y Silenciar, mantener Modo entra y sale de FX, y mantener Banco arma la grabación de actuación. Desactivado, una pulsación de Modo recorre los tres modos y mantener Modo arma la grabación.",
     "@controlFxHoldSub": {
-        "description": "One-liner under the Hold-for-FX row: scoped to the pedal alone (keyboard and on-screen controls keep the three-way cycle either way), what the hold gains, and what it stops doing."
+        "description": "One-liner under the Hold-for-FX row: scoped to the pedal alone (keyboard and on-screen controls keep the three-way cycle either way), what the Mode hold gains, and where the recording hold moves (the Bank switch, #677)."
     },
     "midiDeviceGroup": "CONTROLADOR MIDI DE PIE",
     "@midiDeviceGroup": {

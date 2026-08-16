@@ -50,8 +50,13 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       (event, _) => _repository.setVolume(event.volume, channel: event.channel),
     );
     on<LooperMuteToggled>(
+      // Resolved against the repository's remembered intent, NOT the
+      // poll-mirrored [state]: the snapshot is ~16 ms stale, so a fast
+      // double-toggle inside the echo window would read the pre-toggle
+      // value twice and re-apply the first flip (staying muted) instead of
+      // undoing it. Same discipline as `LooperTrackChainToggled` below.
       (event, _) => _repository.setMute(
-        muted: !_isMuted(event.channel),
+        muted: !_repository.trackMuted(event.channel),
         channel: event.channel,
       ),
     );
@@ -512,11 +517,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// is started when an editor opens and cancelled on close / [close] so a
   /// closed editor never leaves a ticking timer (D-WIN/D-SYNC).
   final Map<(int, int, int), Timer> _lanePluginEditorTimers = {};
-
-  bool _isMuted(int channel) =>
-      channel >= 0 &&
-      channel < state.tracks.length &&
-      state.tracks[channel].muted;
 
   /// Clears track [channel] and returns it to its default armed-to-play state:
   /// unmuted. A cleared track should be ready to sound again on the next

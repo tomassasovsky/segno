@@ -1803,6 +1803,35 @@ int32_t le_engine_set_monitor_input_fx_chain_enabled(le_engine* engine,
   return LE_OK;
 }
 
+/* ---- Per-input conditioning stage (input conditioning, S1) ----
+ * Both setters ride the ring (the per-input monitor command shape: the input
+ * index in the addressed field, bounds vs LE_MAX_MONITORED_INPUTS) so the
+ * audio thread — sole owner of the stage's biquad/envelope state — resets or
+ * recomputes it in lockstep with the config change (an enable edge resets
+ * state; a param change recomputes only its own section's coefficients).
+ * Values are clamped by the audio thread on apply (le_cond_update_param);
+ * the control side validates only addressing. NOT perf-logged: conditioning
+ * is upstream of capture, so recorded PCM already embodies it. */
+
+int32_t le_engine_set_input_conditioning(le_engine* engine, int32_t input,
+                                         int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_INPUT_COND, input, enabled ? 1.0f : 0.0f);
+}
+
+int32_t le_engine_set_input_conditioning_param(le_engine* engine, int32_t input,
+                                               int32_t param, float value) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
+  if (param < LE_COND_HPF_HZ || param > LE_COND_EXP_RELEASE_MS) {
+    return LE_ERR_INVALID;
+  }
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_SET_INPUT_COND_PARAM,
+                                  .lanef = {input, param, value}});
+}
+
 /* ---- Track-stage + Master insert chains (FX v3 part 1b) ----
  * The bus twins of the lane/monitor setter families above, on the two
  * le_fx_bus owners (le_track.bus / le_engine.master_fx): type/count via the
@@ -2146,10 +2175,24 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   /* The monitor capture set is frozen at arm: whichever inputs are enabled
    * right now, and no others — an input enabled later is logged, not tapped
    * (umbrella scope for this part). Every captured monitor ring is stereo
-   * (the monitor's own chain, e.g. a reverb, may decorrelate l/r). */
+   * (the monitor's own chain, e.g. a reverb, may decorrelate l/r).
+   *
+   * Clamped to the DEVICE's input count, not just LE_MAX_MONITORED_INPUTS
+   * (#710). le_engine_set_monitor_input validates only against the array
+   * bound, so a session saved on an 8-in interface and reloaded on a 2-in one
+   * leaves monitors 2..7 enabled. Capturing them would open a stem the audio
+   * thread can never fill — mix_monitors_frame taps only c < ch_in — so the
+   * drain would silence-fill that file for the entire take. Harmless while
+   * nothing counted the padding; now that a zero-fill raises the capture's
+   * glitch flag, it would light the warning on every single capture and drown
+   * the real signal. An input that does not exist is not a captured input. */
   uint32_t input_mask = 0;
+  const int32_t monitor_ch_limit =
+      (engine->in_channels > 0 && engine->in_channels < LE_MAX_MONITORED_INPUTS)
+          ? engine->in_channels
+          : LE_MAX_MONITORED_INPUTS;
   const size_t monitor_cap = le_perf_ring_capacity(2, sr);
-  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+  for (int32_t c = 0; c < monitor_ch_limit; ++c) {
     if (!load_i32(&engine->monitors[c].a_enabled)) continue;
     float* buf = (float*)malloc(monitor_cap * sizeof(float));
     if (buf == NULL) {
@@ -2163,6 +2206,8 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
 
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_zero_filled_frames, 0u,
+                        memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_log_overruns, 0u, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_log_ctrl_overruns, 0u,
                         memory_order_relaxed);

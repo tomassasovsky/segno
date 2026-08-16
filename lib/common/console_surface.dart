@@ -562,10 +562,11 @@ class ConsoleGroupLabel extends StatelessWidget {
         color: surface.textMuted,
         fontSize: 13,
         height: 1.23,
-        // The mockups set these captions at 1.2 on one tab and 0.91 on the
-        // other. One value, since a caption is one thing: the wider tracking
-        // is what three of the five screens carry.
-        letterSpacing: 1.2,
+        // One value, since a caption is one thing: 0.91 is what the DS
+        // `SectionCaption` component and the large majority of the pen's
+        // screens carry (81 of 102 group captions at last count). The pen's
+        // own 1.2 stragglers get normalized to match from the design side.
+        letterSpacing: 0.91,
         leadingDistribution: TextLeadingDistribution.even,
       ),
     );

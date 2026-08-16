@@ -215,8 +215,9 @@ class MockAudioEngine implements AudioEngine {
           : AudioBackend.miniaudio,
       isPerfArmed: _perfArmed,
       perfFrames: _perfFrames,
-      // perfOverruns defaults to 0: the mock models no ring capacity, so
-      // nothing ever overflows.
+      // perfOverruns / perfZeroFilledFrames default to 0: the mock models no
+      // ring capacity and no drain thread, so nothing ever overflows and no
+      // silence is ever substituted.
       tempoBpm: _tempoBpm,
       tempoSource: _tempoSource,
       tsNum: _tsNum,

@@ -553,6 +553,8 @@ class EngineSnapshot {
     this.inputChannels = 0,
     this.outputChannels = 0,
     this.excludedInputMask = 0,
+    this.inputClipMask = 0,
+    this.inputCondMask = 0,
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
     this.recordOffsetFrames = 0,
@@ -566,6 +568,7 @@ class EngineSnapshot {
     this.isPerfArmed = false,
     this.perfFrames = 0,
     this.perfOverruns = 0,
+    this.perfZeroFilledFrames = 0,
     this.perfStopped = false,
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
@@ -595,6 +598,8 @@ class EngineSnapshot {
       inputChannels = 0,
       outputChannels = 0,
       excludedInputMask = 0,
+      inputClipMask = 0,
+      inputCondMask = 0,
       framesProcessed = 0,
       xrunCount = 0,
       inputRms = 0,
@@ -615,6 +620,7 @@ class EngineSnapshot {
       isPerfArmed = false,
       perfFrames = 0,
       perfOverruns = 0,
+      perfZeroFilledFrames = 0,
       perfStopped = false,
       tempoBpm = 0,
       tempoSource = TempoSource.none,
@@ -650,6 +656,8 @@ class EngineSnapshot {
     inputChannels: native.input_channels,
     outputChannels: native.output_channels,
     excludedInputMask: native.excluded_input_mask,
+    inputClipMask: native.input_clip_mask,
+    inputCondMask: native.input_cond_mask,
     framesProcessed: native.frames_processed,
     xrunCount: native.xrun_count,
     inputRms: native.input_rms,
@@ -670,6 +678,7 @@ class EngineSnapshot {
     isPerfArmed: native.perf_armed != 0,
     perfFrames: native.perf_frames,
     perfOverruns: native.perf_overruns,
+    perfZeroFilledFrames: native.perf_zero_filled_frames,
     perfStopped: native.perf_stopped != 0,
     tempoBpm: native.tempo_bpm,
     tempoSource: TempoSource.fromCode(native.tempo_source),
@@ -715,6 +724,21 @@ class EngineSnapshot {
   /// Bitmask of input channels excluded as loopback (never recorded, monitored,
   /// or routable). `0` when nothing is excluded (always so off macOS).
   final int excludedInputMask;
+
+  /// HOT inputs: bit `c` set means a rail-run — `LE_CLIP_RUN` (4) consecutive
+  /// raw samples at `|s| >= LE_CLIP_LEVEL` (0.999) — was seen on input `c`
+  /// within the last `LE_CLIP_HOLD_MS` (1500 ms) of processed audio.
+  ///
+  /// Detected on the RAW device buffer, upstream of the conditioning stage,
+  /// so a clipped input flags HOT even when the expander/HPF has reshaped
+  /// what records. Loopback-excluded inputs never flag.
+  final int inputClipMask;
+
+  /// Conditioning activity: bit `c` set means input `c`'s conditioning stage
+  /// is currently active — enabled AND not loopback-excluded, i.e. the stage
+  /// actually runs on the audio path (the truth for a "conditioning on"
+  /// badge; a stage enabled on an excluded channel reads `0` here).
+  final int inputCondMask;
 
   /// Total frames processed by the audio callback since the device started.
   final int framesProcessed;
@@ -803,6 +827,17 @@ class EngineSnapshot {
   /// Capture frames dropped (a full ring) since the most recent
   /// `AudioEngine.perfArm`. `0` when never armed or nothing has overflowed.
   final int perfOverruns;
+
+  /// Frames of digital silence the capture drain SUBSTITUTED into the take
+  /// since the most recent `AudioEngine.perfArm`, summed over every file it
+  /// writes.
+  ///
+  /// Broader than [perfOverruns], which only counts frames the audio thread
+  /// could not enqueue: silence also gets written for audio that was counted
+  /// but never tapped. Read it as zero vs non-zero — non-zero means the take
+  /// contains silence the performer did not play, so the recorder latches it
+  /// into the capture's glitch flag alongside [perfOverruns] (#710).
+  final int perfZeroFilledFrames;
 
   /// Whether the capture drain thread stopped ITSELF because a write failed —
   /// disk full, a quota, a read-only remount, an I/O error.
@@ -927,6 +962,8 @@ class EngineSnapshot {
           inputChannels == other.inputChannels &&
           outputChannels == other.outputChannels &&
           excludedInputMask == other.excludedInputMask &&
+          inputClipMask == other.inputClipMask &&
+          inputCondMask == other.inputCondMask &&
           framesProcessed == other.framesProcessed &&
           xrunCount == other.xrunCount &&
           tunerHz == other.tunerHz &&
@@ -947,6 +984,7 @@ class EngineSnapshot {
           isPerfArmed == other.isPerfArmed &&
           perfFrames == other.perfFrames &&
           perfOverruns == other.perfOverruns &&
+          perfZeroFilledFrames == other.perfZeroFilledFrames &&
           perfStopped == other.perfStopped &&
           tempoBpm == other.tempoBpm &&
           tempoSource == other.tempoSource &&
@@ -975,6 +1013,8 @@ class EngineSnapshot {
     inputChannels,
     outputChannels,
     excludedInputMask,
+    inputClipMask,
+    inputCondMask,
     framesProcessed,
     xrunCount,
     inputRms,
@@ -995,6 +1035,7 @@ class EngineSnapshot {
     isPerfArmed,
     perfFrames,
     perfOverruns,
+    perfZeroFilledFrames,
     perfStopped,
     tempoBpm,
     tempoSource,

@@ -316,6 +316,35 @@ void main() {
       expect(buildRepo().state.status.excludedInputMask, 0x2);
     });
 
+    test('projects the clip + conditioning masks onto EngineStatus', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        inputChannels: 4,
+        outputChannels: 2,
+        inputClipMask: 0x5,
+        inputCondMask: 0x2,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+      );
+      final status = buildRepo().state.status;
+      expect(status.inputClipMask, 0x5);
+      expect(status.inputCondMask, 0x2);
+      expect(status.isInputHot(0), isTrue);
+      expect(status.isInputHot(1), isFalse);
+      expect(status.isInputHot(2), isTrue);
+      expect(status.isInputHot(-1), isFalse);
+      expect(status.isInputConditioned(1), isTrue);
+      expect(status.isInputConditioned(0), isFalse);
+      expect(status.isInputConditioned(32), isFalse);
+    });
+
     test('projects fx added latency onto EngineStatus (frames + ms)', () {
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,
@@ -3479,6 +3508,31 @@ void main() {
     });
 
     test(
+      'trackMuted reads the remembered whole-track intent synchronously',
+      () {
+        // The synchronous reader toggles resolve from — the polled snapshot is
+        // ~16 ms stale, and a toggle resolved from it can double-apply inside
+        // the echo window (segno #704 review).
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneCount(channel: 2, count: 2);
+        addTearDown(repo.dispose);
+
+        expect(repo.trackMuted(2), isFalse);
+        repo.setMute(muted: true, channel: 2);
+        expect(repo.trackMuted(2), isTrue);
+
+        // A partially-muted track is not "muted": trackMuted mirrors setMute's
+        // whole-track reading, every lane of it.
+        repo.setLaneMute(muted: false, channel: 2, lane: 1);
+        expect(repo.trackMuted(2), isFalse);
+
+        repo.setMute(muted: false, channel: 2);
+        expect(repo.trackMuted(2), isFalse);
+      },
+    );
+
+    test(
       'setVolume on a multi-lane track sets EVERY lane, not just lane 0',
       () {
         final repo = buildRepo()
@@ -4045,6 +4099,56 @@ void main() {
         expect(engine.laneMute[(0, 0)], isTrue);
       },
     );
+
+    test('fires rigReplaced once on a successful apply — the explicit seam '
+        '(the cleared window is transient, so the projection alone cannot '
+        'announce the replacement)', () async {
+      engine.nextSnapshot = clearedSnapshot(2);
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      final replacements = <void>[];
+      final sub = repo.rigReplaced.listen(replacements.add);
+      addTearDown(sub.cancel);
+
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          tracks: [
+            rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+          ],
+        ),
+        clearPollInterval: Duration.zero,
+      );
+      // The listen microtask.
+      await Future<void>.delayed(Duration.zero);
+
+      expect(replacements, hasLength(1));
+    });
+
+    test('does not fire rigReplaced on a failed apply — a failed load leaves '
+        'a stably empty rig the projection does announce', () async {
+      // Never settles empty, so the apply's clear wait throws.
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      final replacements = <void>[];
+      final sub = repo.rigReplaced.listen(replacements.add);
+      addTearDown(sub.cancel);
+
+      await expectLater(
+        repo.applySession(
+          const SessionRig(),
+          clearPollInterval: Duration.zero,
+          clearPollAttempts: 1,
+        ),
+        throwsStateError,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(replacements, isEmpty);
+    });
 
     test('an empty rig imports nothing and establishes no master', () async {
       engine.nextSnapshot = clearedSnapshot(2);

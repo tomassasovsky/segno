@@ -15,9 +15,16 @@ void main() {
       ReadoutTrack(name: 'Gtr', state: 'empty', pending: true),
     ],
     tempoBpm: 128,
+    hasTempo: true,
+    currentBeat: 2,
+    countingIn: true,
     loopBars: 8,
     isRunning: true,
     mode: 'fx',
+    activeBank: 1,
+    elapsedSeconds: 71,
+    recordArmed: true,
+    recordSeconds: 12,
   );
 
   group('PerformanceReadout wire format', () {
@@ -29,6 +36,91 @@ void main() {
 
     test('a decoded empty payload is the default readout', () {
       expect(PerformanceReadout.fromMap(const {}), const PerformanceReadout());
+    });
+
+    test('ignores unknown fields, so a newer sender is readable', () {
+      // A newer main window may grow the payload; an older sub-window must
+      // read the fields it knows and drop the rest, never throw.
+      final map = readout.toMap()..['someFutureFact'] = 42;
+      expect(PerformanceReadout.fromMap(map), readout);
+    });
+
+    test('defaults the console facts on a pre-console payload', () {
+      // A v1 (pre-console-readout) sender never wrote these keys: the decode
+      // must fall back to quiet defaults, and hasTempo must fall back to the
+      // old "tempo > 0" reading rather than hiding the dots.
+      final decoded = PerformanceReadout.fromMap(const {
+        'tempoBpm': 120.0,
+        'mode': 'mute',
+      });
+      expect(decoded.hasTempo, isTrue);
+      expect(decoded.currentBeat, 0);
+      expect(decoded.countingIn, isFalse);
+      // A #696-era sender dropped activeBank as unrendered; the decode
+      // defaults it to bank A rather than throwing — the "without ceremony"
+      // re-add that removal promised.
+      expect(decoded.activeBank, 0);
+      expect(decoded.elapsedSeconds, 0);
+      expect(decoded.recordArmed, isFalse);
+      expect(decoded.recordSeconds, 0);
+      expect(
+        PerformanceReadout.fromMap(const {'tempoBpm': 0.0}).hasTempo,
+        isFalse,
+      );
+    });
+
+    test('carries the volume-overlay facts through a round trip', () {
+      // The #698 additions: per-track volume / chain / default-name flag /
+      // source names, plus the configured-inputs group.
+      const mixed = PerformanceReadout(
+        tracks: [
+          ReadoutTrack(
+            name: 'GUITAR',
+            state: 'playing',
+            volume: 1.26,
+            chainEnabled: false,
+            inputNames: ['GUITAR'],
+          ),
+          ReadoutTrack(name: 'TRACK 5', state: 'empty', defaultName: true),
+        ],
+        inputs: [
+          ReadoutInput(
+            index: 1,
+            name: 'MIC',
+            volume: 0.5,
+            listeningTracks: ['VOX'],
+          ),
+        ],
+      );
+      expect(PerformanceReadout.fromMap(mixed.toMap()), mixed);
+    });
+
+    test('defaults the volume-overlay facts on a pre-overlay payload', () {
+      // A pre-#698 sender wrote none of these keys: volumes fall back to
+      // unity (an unmoved fader, not silence), chains to engaged, and the
+      // inputs group to empty.
+      final decoded = PerformanceReadout.fromMap(const {
+        'tracks': [
+          {'name': 'Drums', 'state': 'playing'},
+        ],
+      });
+      final track = decoded.tracks.single;
+      expect(track.volume, 1);
+      expect(track.chainEnabled, isTrue);
+      expect(track.defaultName, isFalse);
+      expect(track.inputNames, isEmpty);
+      expect(decoded.inputs, isEmpty);
+    });
+
+    test('drops non-string entries from re-serialized name lists', () {
+      // The plugin re-serializes typed lists as List<Object?> across the
+      // engine boundary; junk entries must be dropped, not thrown on.
+      final decoded = ReadoutInput.fromMap(const {
+        'index': 2,
+        'name': 'MIC',
+        'listeningTracks': ['VOX', 3, null],
+      });
+      expect(decoded.listeningTracks, ['VOX']);
     });
 
     test('equality is by value, which is what makes the push diff work', () {
@@ -144,6 +236,18 @@ void main() {
     ) async {
       await pump(tester, const PerformanceReadout());
       expect(find.text('--  4/4'), findsOneWidget);
+    });
+
+    testWidgets('decides the tempo decimal on the rendered string', (
+      tester,
+    ) async {
+      // Same rule as the console readout: 119.98 is non-integer as a value
+      // but rounds to "120.0" at one decimal — it must read "120".
+      await pump(tester, const PerformanceReadout(tempoBpm: 119.98));
+      expect(find.text('120  4/4'), findsOneWidget);
+
+      await pump(tester, const PerformanceReadout(tempoBpm: 120.5));
+      expect(find.text('120.5  4/4'), findsOneWidget);
     });
   });
 }

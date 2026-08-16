@@ -34,6 +34,10 @@ void main() {
       expect(snapshot.isPerfArmed, isFalse);
       expect(snapshot.perfFrames, 0);
       expect(snapshot.perfOverruns, 0);
+      expect(snapshot.perfZeroFilledFrames, 0);
+      // Input clip + conditioning (S2) defaults: nothing HOT, nothing active.
+      expect(snapshot.inputClipMask, 0);
+      expect(snapshot.inputCondMask, 0);
       // Tempo grid + click/count-in (A1/A2) grid-off defaults.
       expect(snapshot.tempoBpm, 0);
       expect(snapshot.tempoSource, TempoSource.none);
@@ -387,6 +391,8 @@ void main() {
           ..input_channels = 2
           ..output_channels = 4
           ..excluded_input_mask = 0x4
+          ..input_clip_mask = 0x3
+          ..input_cond_mask = 0x5
           ..frames_processed = 123456
           ..xrun_count = 3
           ..input_rms = 0.25
@@ -440,6 +446,8 @@ void main() {
         expect(snapshot.inputChannels, 2);
         expect(snapshot.outputChannels, 4);
         expect(snapshot.excludedInputMask, 0x4);
+        expect(snapshot.inputClipMask, 0x3);
+        expect(snapshot.inputCondMask, 0x5);
         expect(snapshot.framesProcessed, 123456);
         expect(snapshot.latencyState, LatencyState.done);
         expect(snapshot.measuredLatencyMs, closeTo(7.5, 1e-9));
@@ -605,6 +613,7 @@ void main() {
       bool isPerfArmed = false,
       int perfFrames = 0,
       int perfOverruns = 0,
+      int perfZeroFilledFrames = 0,
       double tempoBpm = 0,
       TempoSource tempoSource = TempoSource.none,
       int tsNum = 4,
@@ -620,6 +629,8 @@ void main() {
       bool countingIn = false,
       int countInBeatsLeft = 0,
       LooperMode looperMode = LooperMode.multi,
+      int inputClipMask = 0,
+      int inputCondMask = 0,
     }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
@@ -639,6 +650,7 @@ void main() {
       isPerfArmed: isPerfArmed,
       perfFrames: perfFrames,
       perfOverruns: perfOverruns,
+      perfZeroFilledFrames: perfZeroFilledFrames,
       tempoBpm: tempoBpm,
       tempoSource: tempoSource,
       tsNum: tsNum,
@@ -654,6 +666,8 @@ void main() {
       countingIn: countingIn,
       countInBeatsLeft: countInBeatsLeft,
       looperMode: looperMode,
+      inputClipMask: inputClipMask,
+      inputCondMask: inputCondMask,
     );
 
     test('distinct equal snapshots compare equal and share a hashCode', () {
@@ -694,6 +708,10 @@ void main() {
 
     test('perfOverruns participates in equality', () {
       expect(build(), isNot(equals(build(perfOverruns: 3))));
+    });
+
+    test('perfZeroFilledFrames participates in equality', () {
+      expect(build(), isNot(equals(build(perfZeroFilledFrames: 128))));
     });
 
     test('tempoBpm participates in equality', () {
@@ -757,6 +775,14 @@ void main() {
 
     test('looperMode participates in equality', () {
       expect(build(), isNot(equals(build(looperMode: LooperMode.sync))));
+    });
+
+    test('inputClipMask participates in equality', () {
+      expect(build(), isNot(equals(build(inputClipMask: 0x1))));
+    });
+
+    test('inputCondMask participates in equality', () {
+      expect(build(), isNot(equals(build(inputCondMask: 0x2))));
     });
 
     test('fxAddedLatencyMs is 0 when the sample rate is unknown', () {

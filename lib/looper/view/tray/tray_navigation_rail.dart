@@ -273,9 +273,11 @@ class _RailItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(_radius),
-          color: selected
-              ? surface.accent.withValues(alpha: 0.18)
-              : Colors.transparent,
+          // The flat DS `accent-surface` token, not a translucent accent
+          // tint — the same correction `PillTabs` records on itself: an
+          // alpha fill reads as a different colour on each background a
+          // surface sits on, and the pen fills this pill with the token.
+          color: selected ? surface.accentSurface : Colors.transparent,
         ),
         // Icon beside the label, one row per destination. The label is at
         // reading size rather than caption size: this is the surface you aim
@@ -289,11 +291,17 @@ class _RailItem extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                // The pen's `NavItem` label: `$text-base` (17) at normal
+                // weight, and 600 while selected. A weight change here
+                // re-measures nothing that moves a neighbour — the pills are
+                // stretch-width with an Expanded label — so the selected
+                // bolding is safe in a way it is not on the shrink-wrapped
+                // `PillTabs`.
                 style: TextStyle(
                   color: tint,
-                  fontSize: 14,
+                  fontSize: 17,
                   height: 1.1,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
                 ),
               ),
             ),

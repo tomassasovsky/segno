@@ -629,6 +629,109 @@ void main() {
         expect(performance.armedDirectory, isNull);
       });
 
+      // #677: with the MODE hold gone to the FX door, BANK carries the
+      // recording hold under holdFx — and stays a plain press under
+      // cycleThree, where the MODE hold still arms.
+      test('cycleThree: a BANK hold stays a plain press-time bank toggle '
+          'and never arms recording — regression pin', () async {
+        expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.cycleThree);
+        // The toggle fires ON the press, before any threshold could elapse —
+        // no gesture is armed under this style.
+        transport.emit(0x90, PedalButton.bank.note, 127);
+        await pumpEventQueue();
+        expect(cubit.state.activeBank, 1);
+        expect(cubit.state.cursor, ControlState.tracksPerBank);
+        // Held past the threshold: the hold means nothing and the release
+        // adds nothing.
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        transport.emit(0x80, PedalButton.bank.note, 0);
+        await pumpEventQueue();
+        expect(cubit.state.activeBank, 1);
+        expect(performance.armedDirectory, isNull);
+      });
+
+      test('holdFx: a BANK tap still toggles the bank — moved to the '
+          'release, the price of telling a tap from a hold', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        transport.emit(0x90, PedalButton.bank.note, 127);
+        await pumpEventQueue();
+        // Below the threshold nothing has happened yet.
+        expect(cubit.state.activeBank, 0);
+        transport.emit(0x80, PedalButton.bank.note, 0);
+        await pumpEventQueue();
+        expect(cubit.state.activeBank, 1);
+        expect(cubit.state.cursor, ControlState.tracksPerBank);
+        expect(performance.armedDirectory, isNull);
+      });
+
+      test('holdFx: a BANK hold arms performance recording and does NOT '
+          'toggle the bank — the pedal path the MODE hold gave up', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        final armed = awaitStatus(performance, PerformanceCaptureStatus.armed);
+        await hold(PedalButton.bank);
+        await armed;
+        expect(performance.armedDirectory, isNotNull);
+        expect(cubit.state.activeBank, 0); // the hold retired the tap
+        expect(cubit.state.cursor, 0);
+        expect(cubit.state.mode, InteractionMode.record); // untouched
+      });
+
+      test('holdFx: a second BANK hold disarms again', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        final armed = awaitStatus(performance, PerformanceCaptureStatus.armed);
+        await hold(PedalButton.bank);
+        await armed;
+        expect(performance.armedDirectory, isNotNull);
+
+        // Past disarm's double-press guard window (D-GUARD) — the fake clock
+        // does not advance with the real 600 ms long-press delay.
+        clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+
+        // `done`, not the first non-armed status: disarm passes through
+        // `finalizing` and only clears the directory at the end of it.
+        final disarmed = awaitStatus(
+          performance,
+          PerformanceCaptureStatus.done,
+        );
+        await hold(PedalButton.bank);
+        await disarmed;
+        expect(performance.armedDirectory, isNull);
+      });
+
+      test('holdFx: the frame pushed through a BANK-hold arm carries the '
+          'armed light and still shows bank A', () async {
+        await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
+        pedal.bind('out');
+        await pumpEventQueue();
+        transport.sent.clear();
+
+        final armed = awaitStatus(performance, PerformanceCaptureStatus.armed);
+        // Press and stay held: below the threshold nothing is pushed for the
+        // bank and nothing is armed.
+        transport.emit(0x90, PedalButton.bank.note, 127);
+        await pumpEventQueue();
+        expect(performance.armedDirectory, isNull);
+
+        // Past the threshold, foot STILL down: the arm has landed and the
+        // pushed frame already carries it — commit-at-threshold, like the
+        // MODE hold's own FX flip.
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        await armed;
+        await pumpEventQueue();
+        final frame = PedalCodec.decodeFrame(transport.sent.last);
+        expect(frame?.performanceArmed, isTrue);
+        expect(frame?.activeBank, 0);
+
+        // The release is silent — the hold retired the bank toggle.
+        transport.emit(0x80, PedalButton.bank.note, 0);
+        await pumpEventQueue();
+        expect(cubit.state.activeBank, 0);
+        expect(
+          PedalCodec.decodeFrame(transport.sent.last)?.performanceArmed,
+          isTrue,
+        );
+      });
+
       test('a style change clears the FX return latch — a mute latched under '
           'an earlier holdFx spell is not read after a round-trip', () async {
         await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);

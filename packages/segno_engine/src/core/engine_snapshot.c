@@ -195,6 +195,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
       atomic_load_explicit(&engine->a_perf_frames, memory_order_relaxed);
   out->perf_overruns =
       atomic_load_explicit(&engine->a_perf_overruns, memory_order_relaxed);
+  out->perf_zero_filled_frames = atomic_load_explicit(
+      &engine->a_perf_zero_filled_frames, memory_order_relaxed);
   /* No drain (never armed, or already disarmed) reads as "not stopped" -- the
    * flag describes a live capture that died, not the absence of one. */
   out->perf_stopped =
@@ -227,6 +229,21 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->primary_track = load_i32(&engine->a_primary_track);
   /* MIDI clock (Phase C, D15; trailing block; default reads 0 = OFF). */
   out->clock_mode = load_i32(&engine->a_clock_mode);
+  /* Input clip + conditioning activity (input clip, S2; trailing block).
+   * The clip mask is the audio thread's published verdict; the cond mask is
+   * derived here from the published per-input enables intersected with the
+   * loopback exclusion — the same gate the audio thread applies before
+   * running a stage, so a bit is set iff the stage actually runs. */
+  out->input_clip_mask =
+      atomic_load_explicit(&engine->a_input_clip_mask, memory_order_relaxed);
+  uint32_t cond_mask = 0u;
+  for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    if (load_i32(&engine->cond[c].a_enabled) &&
+        !(out->excluded_input_mask & (1u << c))) {
+      cond_mask |= 1u << c;
+    }
+  }
+  out->input_cond_mask = cond_mask;
 }
 
 void le_engine_get_track(le_engine* engine, int32_t channel,

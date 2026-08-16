@@ -180,6 +180,38 @@ void main() {
   );
 
   testWidgets(
+    'renaming to the reserved "recovered" name shows the inline '
+    'invalid-name error instead of a dead Save — the take would otherwise '
+    "BECOME the boot salvage's recovered/ area (#679 r5)",
+    (tester) async {
+      await pump(
+        tester,
+        const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-1'),
+        ),
+      );
+      final strings = await l10n();
+
+      await tester.tap(find.byKey(const Key('perfCompletion_rename')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('perfRename_field')),
+        'Recovered',
+      );
+      await tester.tap(find.byKey(const Key('perfRename_save')));
+      await tester.pumpAndSettle();
+
+      expect(find.text(strings.perfRenameInvalid), findsOneWidget);
+      expect(
+        find.byKey(const Key('perfRename_field')),
+        findsOneWidget,
+        reason: 'the dialog stays open for a corrected name',
+      );
+      verifyNever(() => cubit.renameCompletedCapture(any()));
+    },
+  );
+
+  testWidgets(
     'a PerformanceNameCollision thrown by the cubit shows a SnackBar with '
     'the duplicate message',
     (tester) async {
@@ -534,6 +566,67 @@ void main() {
       expect(find.byKey(const Key('perfCompletion_sheet')), findsNothing);
       expect(find.byType(ModalBarrier).evaluate().length, barriers);
     });
+
+    testWidgets(
+      'a foreign state after the dialog already left leaves the home '
+      'route alone',
+      (tester) async {
+        // Regression (#712): the operator's Done/Hide races a pedal-side
+        // state change — the listener still fires while the dialog route is
+        // animating out, and an unconditional pop removed the HOME route
+        // (black stage). Not-current means already leaving: correct no-op.
+        final context = await host(
+          tester,
+          const PerformanceRecorderRendering(percent: 40),
+        );
+        unawaited(showPerformanceCompletionSheet(context));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('perfRendering_hide')));
+        await tester.pump(const Duration(milliseconds: 20)); // mid-exit
+
+        states.add(const PerformanceRecorderIdle());
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const Key('perfRendering_dialog')), findsNothing);
+        expect(
+          find.byType(Scaffold),
+          findsOneWidget,
+          reason: 'the home route must survive the foreign state',
+        );
+      },
+    );
+
+    testWidgets(
+      'two foreign states in quick succession pop once, not the home route',
+      (tester) async {
+        // Regression (#712): the first foreign state pops the dialog; the
+        // second used to pop again during the exit transition (home route),
+        // and on an emptied navigator threw `Bad state: No element`.
+        final context = await host(
+          tester,
+          const PerformanceRecorderRendering(percent: 40),
+        );
+        final barriers = find.byType(ModalBarrier).evaluate().length;
+        unawaited(showPerformanceCompletionSheet(context));
+        await tester.pumpAndSettle();
+
+        states
+          ..add(const PerformanceRecorderIdle())
+          ..add(const PerformanceRecorderCompleted.discardedShort());
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(const Key('perfRendering_dialog')), findsNothing);
+        expect(
+          find.byType(Scaffold),
+          findsOneWidget,
+          reason: 'only the dialog route may go',
+        );
+        expect(find.byType(ModalBarrier).evaluate().length, barriers);
+      },
+    );
 
     testWidgets('teardown without a pop still releases the double-open flag', (
       tester,

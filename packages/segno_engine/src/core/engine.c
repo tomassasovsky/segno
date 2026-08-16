@@ -304,6 +304,14 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_perf_armed, 0);
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
+  /* a_perf_zero_filled_frames is deliberately NOT cleared here (#710).
+   * le_perf_arm resets it, so a fresh capture always starts at zero — this
+   * store would be redundant, and worse than redundant: a device change
+   * reconfigures the engine between the drain thread's final cycle and the
+   * app's finalize, and the app reads this counter at `done` precisely to
+   * catch a glitch from that last cycle. Clearing it here would erase the one
+   * reading the app came for, on exactly the abnormal stop most likely to
+   * have glitched. */
 
   if (input_channels <= 0) input_channels = 2;
   if (input_channels > LE_MAX_CHANNELS) input_channels = LE_MAX_CHANNELS;
@@ -527,6 +535,33 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     le_monitor_input_reset(&engine->monitors[c]);
   }
+
+  /* Per-input conditioning stages (input conditioning, S1): defaults (all
+   * disabled) + the conditioned-copy scratch for the new channel count. The
+   * device is closed during configure, so both the seed and the realloc are
+   * race-free. A failed allocation leaves cond_buf NULL — the audio thread
+   * then simply keeps the raw path (conditioning silently off). */
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    le_cond_seed_defaults(&engine->cond[c], sample_rate);
+  }
+  free(engine->cond_buf);
+  engine->cond_buf_cap =
+      (int64_t)LE_COND_SCRATCH_FRAMES * (int64_t)input_channels;
+  engine->cond_buf =
+      (float*)calloc((size_t)engine->cond_buf_cap, sizeof(float));
+  if (engine->cond_buf == NULL) engine->cond_buf_cap = 0;
+  /* Raw-fallback telemetry: per session, like a_xruns above. */
+  atomic_store_explicit(&engine->a_cond_fallback_blocks, 0u,
+                        memory_order_relaxed);
+
+  /* Input clip ("HOT") detector (input clip, S2): fresh session, no input is
+   * HOT and no rail-run is in progress. Plain fields are race-free here (the
+   * device is closed during configure), same as the cond seeds above. */
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    engine->clip_run[c] = 0;
+    engine->clip_hold_until[c] = 0;
+  }
+  atomic_store_explicit(&engine->a_input_clip_mask, 0u, memory_order_relaxed);
 
   /* Master insert chain (part 1b): defaults empty/enabled, same rationale as
    * the per-track bus resets above. */
@@ -774,6 +809,7 @@ void le_engine_destroy(le_engine* engine) {
         &engine->master_fx.fx.plugin[s], memory_order_relaxed));
   }
   free(engine->lat_buf);
+  free(engine->cond_buf); /* conditioned-copy scratch (input conditioning) */
   /* The device is already closed (no audio thread), so the performance-capture
    * rings — including any left retracted-but-allocated by a disarm that could
    * not confirm quiescence — can be freed directly, without the handshake. The
