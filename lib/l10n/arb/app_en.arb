@@ -1556,6 +1556,10 @@
     "@readoutModeFx": {
         "description": "Mode chip on the 7-inch readout: a track press stomps its FX chain."
     },
+    "readoutMix": "MIX",
+    "@readoutMix": {
+        "description": "The pill in the waveform strip's bottom-right corner on the 7-inch readout — the only touch affordance, opens the volume overlay. Kept short (and untranslated where possible): the pill is drawn 180 wide."
+    },
     "readoutVolumesInputs": "INPUTS",
     "@readoutVolumesInputs": {
         "description": "Pinned header caption over the input rows on the 7-inch volume overlay."

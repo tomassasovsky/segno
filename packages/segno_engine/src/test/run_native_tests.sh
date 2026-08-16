@@ -24,10 +24,15 @@ EXTRA_CFLAGS="${EXTRA_CFLAGS:-}"
 # (clock_gettime / CLOCK_MONOTONIC; strict c11 also triggers ALSA's struct
 # timespec redefinition). Include path mirrors src/CMakeLists.txt: every src
 # subdir holding headers, so the sources' flat `#include "x.h"` resolves.
-# third_party/rnnoise/include carries only the public rnnoise.h (the vendored
-# TUs resolve their internal headers relative to their own directory).
+# third_party/rnnoise/include carries the public rnnoise.h; third_party/
+# rnnoise/src is needed too, and only on x86: vec.h pulls vec_avx.h on any
+# SSE2 host, which includes src/x86/x86cpu.h, whose own `#include "common.h"`
+# resolves against src/x86/ and misses the header one level up. Upstream
+# builds with src/ on the path for exactly this reason. It goes LAST so the
+# engine's own headers still win any future name clash (there are none today
+# — the two sets were compared).
 STD="-std=gnu11 -I src/core -I src/midi -I src/asio -I src/miniaudio \
-  -I third_party/rnnoise/include"
+  -I third_party/rnnoise/include -I third_party/rnnoise/src"
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ENGINE_LIBS="-lole32 -lwinmm -lm"; MIDI_LIBS="-lwinmm -lm" ;;
@@ -51,8 +56,12 @@ esac
 # src/midi/le_midi_clock.c (C1, D15), which IS an engine dependency
 # (engine_process.c calls le_midi_clock_advance every block) despite living in
 # midi/ per the plan's file placement; keep it in sync with CMakeLists.txt.
+# src/core/restore_*.c (offline loop-close restoration DSP, #697 S8) sit
+# outside the engine*.c glob on purpose (pure DSP TUs, not engine state) and
+# are listed explicitly — keep in sync with CMakeLists.txt.
 ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
+  src/core/restore_declip.c src/core/restore_halfband.c \
   src/core/audio_ring.c src/core/perf_drain.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c"
 

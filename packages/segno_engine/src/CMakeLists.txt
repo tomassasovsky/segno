@@ -83,6 +83,12 @@ add_library(segno_engine SHARED
   core/engine_commands.c     # control-thread command producers
   core/engine_cache.c        # Loop-stage wet cache (scheduler + render worker)
   core/engine_cond.c         # per-input conditioning stage (input conditioning)
+  # Offline loop-close restoration DSP (#697 S8) — pure TUs, no engine state;
+  # consumed by the restore worker (engine_restore.c, S9). NOT matched by
+  # run_native_tests.sh's engine*.c glob — they are listed explicitly there;
+  # keep the two lists in sync.
+  core/restore_declip.c      # de-clip: flat-run detect + spline/Burg-AR repair
+  core/restore_halfband.c    # 2:1 half-band resample (RNNoise's 48 k leg)
   # The miniaudio device backend (le_device_backend.h), compiled unconditionally
   # — the only device backend this build ships; ASIO slots in behind
   # le_select_backend.
@@ -231,10 +237,16 @@ target_sources(segno_engine PRIVATE
   "${SEGNO_RNNOISE_DIR}/src/rnnoise_data.c"
   "${SEGNO_RNNOISE_DIR}/src/rnnoise_tables.c"
 )
-# Only the public header dir goes on the include path; the rnnoise TUs resolve
-# their internal headers relative to their own directory (quote-includes).
+# The public header dir plus the vendored src dir: on x86 hosts vec.h pulls
+# vec_avx.h, which includes src/x86/x86cpu.h, whose `#include "common.h"`
+# resolves against src/x86/ and misses the header one level up (upstream
+# builds with src/ on the path for the same reason). Listed after the
+# engine's own dirs so engine headers win any future clash.
+# Otherwise the rnnoise TUs resolve their internal headers relative to their
+# own directory (quote-includes).
 target_include_directories(segno_engine PRIVATE
   "${SEGNO_RNNOISE_DIR}/include"
+  "${SEGNO_RNNOISE_DIR}/src"
 )
 # Compile the vendored TUs with hidden visibility (upstream builds with
 # -fvisibility=hidden too): with default visibility the shared segno_engine
