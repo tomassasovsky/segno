@@ -116,10 +116,23 @@ void le_find_loopback(ma_context* ctx, le_loopback_info* out,
   }
 }
 
+/* Every transient probe context in the engine opens through here — see the
+ * contract on the declaration in engine_private.h. The list is the platform
+ * seam's, i.e. exactly what le_engine_start hands ma_context_init, so a probe
+ * can never reach a backend the streaming path is pinned away from. macOS and
+ * Windows return (NULL, 0), which is miniaudio's default and what this call
+ * site passed before. */
+ma_result le_probe_context_init(ma_context* ctx) {
+  const ma_backend* backends = NULL;
+  ma_uint32 backend_count = 0;
+  le_platform_backends(&backends, &backend_count);
+  return ma_context_init(backends, backend_count, NULL, ctx);
+}
+
 int32_t le_detect_loopback(le_loopback_info* out) {
   if (out == NULL) return LE_ERR_INVALID;
   ma_context ctx;
-  if (ma_context_init(NULL, 0, NULL, &ctx) != MA_SUCCESS) {
+  if (le_probe_context_init(&ctx) != MA_SUCCESS) {
     out->available = 0;
     out->kind = LE_LOOPBACK_NONE;
     out->device_name[0] = '\0';
@@ -284,8 +297,12 @@ int32_t enumerate_devices(le_device_info* out, int32_t max, int32_t* count,
    * plugin clutter and hands back ids that never match a JACK port prefix, so a
    * selection cannot route. When this handles it, the ids pin correctly. */
   if (le_platform_enumerate_devices(out, max, count, capture)) return LE_OK;
+  /* The seam declines whenever it finds no card in this direction — an
+   * appliance whose interface is unplugged, or one whose only remaining cards
+   * are the filtered-out vc4-hdmi outputs — so this fall-through runs on the
+   * appliance too, once per direction per poll. It must stay pinned. */
   ma_context ctx;
-  if (ma_context_init(NULL, 0, NULL, &ctx) != MA_SUCCESS) return LE_ERR_INVALID;
+  if (le_probe_context_init(&ctx) != MA_SUCCESS) return LE_ERR_INVALID;
   ma_device_info* playback = NULL;
   ma_uint32 playback_count = 0;
   ma_device_info* cap = NULL;

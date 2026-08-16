@@ -1381,6 +1381,22 @@ struct le_engine {
 int32_t enumerate_devices(le_device_info* out, int32_t max, int32_t* count,
                           int capture);
 
+/* Opens a TRANSIENT probe context — the throwaway ma_context enumeration and
+ * loopback detection run on, never the streaming one — with the SAME per-OS
+ * backend preference the streaming path uses (le_platform_backends).
+ *
+ * The pin has to reach here, not just the device open: ma_context_init(NULL, 0,
+ * ...) walks miniaudio's whole default backend list in enum order, and on Linux
+ * that puts ma_backend_pulseaudio BEFORE ma_backend_alsa. On the appliance
+ * (SEGNO_ALSA_ONLY, no PulseAudio server in the image) every probe therefore
+ * attempted a Pulse connection that could only fail, once per poll — and each
+ * failed attempt leaked a memfd (#721). Routing every probe context through one
+ * function is what keeps enumeration and streaming from drifting apart again.
+ *
+ * Returns MA_SUCCESS with *ctx open (caller owns ma_context_uninit), or the
+ * miniaudio error on failure. Defined in engine_devices.c. */
+ma_result le_probe_context_init(ma_context* ctx);
+
 /* Device-resolution helpers defined in the portable core (engine.c) and shared
  * with the miniaudio backend (engine_miniaudio.c), which resolves pinned /
  * loopback device ids at device open. le_find_loopback also backs the FFI

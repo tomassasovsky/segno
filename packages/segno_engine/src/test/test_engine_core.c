@@ -22,6 +22,9 @@
 #include <string.h>
 #include <time.h> /* clock (conditioning CPU smoke) */
 #include <wchar.h>
+#if defined(__linux__)
+#include <dirent.h> /* /proc/self/fd walk (probe-context descriptor leak, #721) */
+#endif
 
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
 #include "engine_core.h"      /* le_push (raw ring pushes for the tempo tests) */
@@ -5042,6 +5045,124 @@ static void test_select_backend_defaults_to_miniaudio(void) {
   CHECK(le_miniaudio_backend.start != NULL);
   CHECK(le_miniaudio_backend.stop != NULL);
   CHECK(le_miniaudio_backend.close != NULL);
+}
+
+/* ---- probe-context backend pin (#721) ---- */
+
+/* Pins SEGNO_ALSA_ONLY for this process, the way the appliance's kiosk launcher
+ * does. The platform seam reads the variable ONCE and caches it, so both tests
+ * below must run before anything else in the binary can consult it — main()
+ * calls them first for that reason. Windows has no such pin (engine_windows.c
+ * ignores the variable), so nothing is set there. */
+static void set_alsa_only_pin(void) {
+#if !defined(_WIN32)
+  setenv("SEGNO_ALSA_ONLY", "1", /*overwrite=*/1);
+#endif
+}
+
+/* A transient probe context — the throwaway ma_context enumeration and loopback
+ * detection run on — must open on the SAME backend the streaming path is pinned
+ * to, never on one the pin excludes.
+ *
+ * The regression: enumeration used to call ma_context_init(NULL, 0, ...), which
+ * walks miniaudio's default backend list in ma_backend enum order, and that
+ * order puts ma_backend_pulseaudio ahead of ma_backend_alsa. On desktop Linux
+ * that silently opened the probe on PulseAudio; on the appliance it attempted a
+ * PulseAudio connection that could only fail (no server in the image), and each
+ * failed attempt leaked a memfd. Asserting the CHOSEN backend rather than the
+ * requested list is what makes this a behavioural test: it fails on any host
+ * where an excluded backend would have won. */
+static void test_probe_context_honors_backend_pin(void) {
+  printf("test_probe_context_honors_backend_pin\n");
+  set_alsa_only_pin();
+  ma_context ctx;
+  if (le_probe_context_init(&ctx) != MA_SUCCESS) {
+    /* No usable audio stack on this host (headless CI without ALSA): there is
+     * no context to make an assertion about. Not a failure — the FD test below
+     * still covers the path that matters. */
+    printf("  (skipped: no audio backend available on this host)\n");
+    return;
+  }
+  /* Nothing may route a probe through PulseAudio while the ALSA-only pin is on,
+   * on any OS. */
+  CHECK(ctx.backend != ma_backend_pulseaudio);
+#if defined(__linux__)
+  /* The appliance pin is exact: ALSA and nothing else. */
+  CHECK(ctx.backend == ma_backend_alsa);
+#endif
+  ma_context_uninit(&ctx);
+}
+
+#if defined(__linux__)
+/* Open descriptors held by this process, or -1 if /proc is unavailable. The
+ * directory handle itself is open during the walk, so it is counted identically
+ * in every sample and cancels out of a before/after comparison. */
+static int open_fd_count(void) {
+  DIR* d = opendir("/proc/self/fd");
+  if (d == NULL) return -1;
+  int n = 0;
+  const struct dirent* e;
+  while ((e = readdir(d)) != NULL) {
+    if (e->d_name[0] != '.') ++n;
+  }
+  closedir(d);
+  return n;
+}
+#endif
+
+/* Repeated enumeration must not grow the process's descriptor table.
+ *
+ * This is the shape of the appliance failure in #721: AudioSetupCubit
+ * re-enumerates on a 1 Hz timer, in both directions, for the life of the app.
+ * Each direction that the platform seam declines (no card with a PCM that way)
+ * falls through to the miniaudio probe context, and while that probe was
+ * unpinned each fall-through leaked one `memfd:pulseaudio` — 991 of the
+ * process's 1024 descriptors on the bench unit, after which no window surface
+ * or socket could be created any more.
+ *
+ * LINUX ONLY: it reads /proc/self/fd, which macOS and Windows do not have, so
+ * it no-ops there and the CI Linux job is what actually runs it. */
+static void test_enumeration_leaks_no_fds(void) {
+  printf("test_enumeration_leaks_no_fds\n");
+#if defined(__linux__)
+  set_alsa_only_pin();
+  enum { WARMUP = 4, ITERS = 64 };
+  le_device_info devices[8];
+  int32_t count = 0;
+  le_loopback_info loopback;
+
+  /* Warm up first: the first pass legitimately opens process-lifetime handles
+   * (the dlopen'd backend, the ALSA symbol table), and those are setup, not a
+   * leak. Only steady-state growth is the bug. */
+  for (int i = 0; i < WARMUP; ++i) {
+    le_enumerate_playback_devices(devices, 8, &count);
+    le_enumerate_capture_devices(devices, 8, &count);
+    le_detect_loopback(&loopback);
+  }
+
+  const int before = open_fd_count();
+  if (before < 0) {
+    printf("  (skipped: /proc/self/fd unavailable)\n");
+    return;
+  }
+  for (int i = 0; i < ITERS; ++i) {
+    le_enumerate_playback_devices(devices, 8, &count);
+    le_enumerate_capture_devices(devices, 8, &count);
+    le_detect_loopback(&loopback);
+  }
+  const int after = open_fd_count();
+  /* Exact, not a tolerance: a transient probe context owns nothing once it is
+   * uninitialised, so 64 rounds of it must land on the same number it started
+   * on. A tolerance here would hide exactly the slow drip that took ~40 minutes
+   * to kill the appliance. */
+  if (after != before) {
+    printf("  fd count grew across %d enumerations: %d -> %d\n", ITERS, before,
+           after);
+  }
+  CHECK(after == before);
+#else
+  printf("  (skipped: needs /proc/self/fd — Linux only)\n");
+#endif
 }
 
 /* The grown FFI structs default to the miniaudio path when zero-initialized
@@ -20776,6 +20897,12 @@ static void test_halfband_lengths_and_arg_guards(void) {
 
 int main(void) {
   printf("== segno_engine_core native tests ==\n");
+  /* FIRST: both set the SEGNO_ALSA_ONLY pin, and the platform seam caches that
+   * variable on its first read for the rest of the process. Anything that
+   * consulted it earlier would freeze the unpinned value and make these two
+   * assert nothing. */
+  test_probe_context_honors_backend_pin();
+  test_enumeration_leaks_no_fds();
   test_lane_setters_reject_invalid_args();
   test_two_lanes_unmerged_both_play();
   test_lane_fx_colors_only_its_lane();
