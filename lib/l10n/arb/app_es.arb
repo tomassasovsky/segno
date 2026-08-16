@@ -1139,6 +1139,10 @@
     "@readoutModeFx": {
         "description": "Mode chip on the 7-inch readout: a track press stomps its FX chain."
     },
+    "readoutMix": "MIX",
+    "@readoutMix": {
+        "description": "The pill in the waveform strip's bottom-right corner on the 7-inch readout — the only touch affordance, opens the volume overlay. MIX is common usage for Spanish-speaking musicians and fits the drawn 180-wide pill; MEZCLA would not."
+    },
     "readoutVolumesInputs": "ENTRADAS",
     "@readoutVolumesInputs": {
         "description": "Pinned header caption over the input rows on the 7-inch volume overlay."

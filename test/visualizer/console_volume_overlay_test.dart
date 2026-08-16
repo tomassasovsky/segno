@@ -54,7 +54,26 @@ void main() {
             body: ConsoleVolumeOverlay(
               readout: data,
               onControl: (control) => controls.add(control),
-              child: const SizedBox.expand(key: Key('readout_face')),
+              // A stand-in face shaped like the real one: dead glass plus
+              // the one affordance the overlay hands out — the real MIX
+              // pill wiring is covered by the readout-view and window
+              // tests.
+              builder: (context, openMixer) => Stack(
+                key: const Key('readout_face'),
+                children: [
+                  const SizedBox.expand(key: Key('readout_dead_glass')),
+                  Positioned(
+                    right: 24,
+                    bottom: 24,
+                    child: GestureDetector(
+                      key: const Key('mix_pill'),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: openMixer,
+                      child: const SizedBox(width: 60, height: 24),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -65,17 +84,31 @@ void main() {
     }
 
     Future<void> open(WidgetTester tester) async {
-      await tester.tap(find.byKey(const Key('console_readout_touch')));
+      await tester.tap(find.byKey(const Key('mix_pill')));
       await tester.pump();
     }
 
-    testWidgets('tapping anywhere on the readout opens the volume list', (
+    /// An off-centre point inside [rowKey]'s fader capsule — off-centre
+    /// because a centre tap on a `kSignalMaxGain`-wide capsule places the
+    /// fader AT unity, which would be indistinguishable from the reset.
+    Offset faderPoint(WidgetTester tester, Key rowKey) =>
+        tester.getCenter(find.byKey(rowKey)) + const Offset(80, 0);
+
+    testWidgets('only the handed-out MIX affordance opens the volume list', (
       tester,
     ) async {
       await pump(tester);
-      // The whole glass is the touch target — the readout face is wrapped,
-      // not given a button.
       expect(find.byKey(const Key('readout_face')), findsOneWidget);
+
+      // The face's dead glass is NOT a touch target (#707: tap-anywhere is
+      // dead; the overlay no longer wraps the face in a gesture).
+      await tester.tapAt(
+        tester.getCenter(find.byKey(const Key('readout_dead_glass'))),
+      );
+      await tester.pump();
+      expect(find.byKey(const Key('readout_face')), findsOneWidget);
+      expect(find.byKey(const Key('volume_overlay_list')), findsNothing);
+
       await open(tester);
 
       expect(find.byKey(const Key('volume_overlay_list')), findsOneWidget);
@@ -149,15 +182,29 @@ void main() {
       expect(find.byKey(const Key('readout_face')), findsOneWidget);
     });
 
-    testWidgets('a dead-space tap dismisses to the readout', (tester) async {
-      await pump(tester);
-      await open(tester);
+    testWidgets(
+      'a dead-space tap on the list is inert but still resets the revert '
+      'timer',
+      (tester) async {
+        await pump(tester);
+        await open(tester);
 
-      // The bottom-left corner: inside the panel's inset, on no row.
-      await tester.tapAt(const Offset(5, 595));
-      await tester.pump();
-      expect(find.byKey(const Key('readout_face')), findsOneWidget);
-    });
+        // Six seconds in, a stray tap lands on the bottom-left corner:
+        // inside the panel, on no row. It must NOT eject the mixer (#707:
+        // dismissal is the BACK chip and the revert only)...
+        await tester.pump(const Duration(seconds: 6));
+        await tester.tapAt(const Offset(5, 595));
+        await tester.pump();
+        expect(find.byKey(const Key('volume_overlay_list')), findsOneWidget);
+
+        // ...but it IS activity: 6 more seconds (12 since opening) still
+        // show the list, and only a full 8 s after the touch reverts.
+        await tester.pump(const Duration(seconds: 6));
+        expect(find.byKey(const Key('volume_overlay_list')), findsOneWidget);
+        await tester.pump(const Duration(seconds: 3));
+        expect(find.byKey(const Key('readout_face')), findsOneWidget);
+      },
+    );
 
     testWidgets('8 s of inactivity reverts the list to the readout', (
       tester,
@@ -265,7 +312,7 @@ void main() {
       expect(controls.last.index, 0);
     });
 
-    testWidgets('a dead-space tap on a config panel steps back to the list', (
+    testWidgets('a dead-space tap on a config panel is inert too', (
       tester,
     ) async {
       await pump(tester);
@@ -273,7 +320,16 @@ void main() {
       await tester.tap(find.byKey(const Key('volume_row_config_track_1')));
       await tester.pump();
 
+      // An accidental background tap mid-adjustment must not step the
+      // panel away (#707) — only its BACK chip and the revert do.
       await tester.tapAt(const Offset(5, 595));
+      await tester.pump();
+      expect(
+        find.byKey(const Key('volume_overlay_track_config')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('volume_overlay_back')));
       await tester.pump();
       expect(find.byKey(const Key('volume_overlay_list')), findsOneWidget);
     });
@@ -424,7 +480,235 @@ void main() {
       await tester.pump();
 
       expect(controls, isEmpty);
-      // Nor may the label taps fall through to the dead-space dismissal.
+      // Nor may the label taps fall through and dismiss anything.
+      expect(find.byKey(const Key('volume_overlay_list')), findsOneWidget);
+    });
+
+    testWidgets(
+      'a double tap on a track row resets it to unity — one immediate '
+      'control, past the throttle',
+      (tester) async {
+        await pump(tester);
+        await open(tester);
+
+        final at = faderPoint(tester, const Key('volume_row_track_0'));
+        await tester.tapAt(at);
+        // The second tap lands INSIDE the first's 33 ms send gap, so the
+        // reset arriving immediately proves the throttle bypass.
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.tapAt(at);
+        await tester.pump();
+
+        // The first tap placed normally (it cannot wait to learn whether a
+        // second is coming — zero added latency on singles); the second
+        // committed the reset at its lift, its own placement suppressed:
+        // exactly one control for it, at unity.
+        expect(controls, hasLength(2));
+        expect(controls.first.value, isNot(1.0));
+        expect(controls.last.action, ReadoutControl.trackVolume);
+        expect(controls.last.index, 0);
+        expect(controls.last.value, 1.0);
+
+        // The local echo already draws 0.0 dB in place of the row's pushed
+        // +2.0 dB, and no queued placement flushes over the reset later.
+        expect(find.text('+2.0 dB'), findsNothing);
+        await tester.pump(ConsoleVolumeOverlay.sendGap * 2);
+        expect(controls, hasLength(2));
+
+        // The reset enjoys the same localHold a drag does: a stale
+        // snapshot still carrying the old volume cannot snap it back.
+        await pump(
+          tester,
+          PerformanceReadout(
+            tracks: readout.tracks,
+            inputs: readout.inputs,
+            tempoBpm: 99,
+          ),
+        );
+        await tester.pump();
+        expect(find.text('+2.0 dB'), findsNothing);
+      },
+    );
+
+    testWidgets('a double tap resets an input row by its engine index', (
+      tester,
+    ) async {
+      await pump(tester);
+      await open(tester);
+
+      final at = faderPoint(tester, const Key('volume_row_input_1'));
+      await tester.tapAt(at);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tapAt(at);
+      await tester.pump();
+
+      expect(controls, hasLength(2));
+      expect(controls.last.action, ReadoutControl.inputVolume);
+      expect(controls.last.index, 1);
+      expect(controls.last.value, 1.0);
+      // MIC's −6.0 dB has become the unity readout.
+      expect(find.text('−6.0 dB'), findsNothing);
+    });
+
+    testWidgets('a double tap resets a config panel fader', (tester) async {
+      await pump(tester);
+      await open(tester);
+      await tester.tap(find.byKey(const Key('volume_row_config_input_1')));
+      await tester.pump();
+
+      final at = faderPoint(tester, const Key('volume_config_fader'));
+      await tester.tapAt(at);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tapAt(at);
+      await tester.pump();
+
+      expect(controls, hasLength(2));
+      expect(controls.last.action, ReadoutControl.inputVolume);
+      expect(controls.last.index, 1);
+      expect(controls.last.value, 1.0);
+    });
+
+    testWidgets('two slow taps place twice and never reset', (tester) async {
+      await pump(tester);
+      await open(tester);
+
+      final at = faderPoint(tester, const Key('volume_row_track_0'));
+      await tester.tapAt(at);
+      // Past the 300 ms pair window: the second tap is just another tap.
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tapAt(at);
+      await tester.pump();
+
+      expect(controls, hasLength(2));
+      expect(controls.last.value, controls.first.value);
+      expect(controls.last.value, isNot(1.0));
+    });
+
+    testWidgets('a hold-release then a quick tap is not a double tap', (
+      tester,
+    ) async {
+      await pump(tester);
+      await open(tester);
+
+      // Held past the 250 ms tap ceiling: not a clean tap, so the quick
+      // tap right after it opens no pair.
+      final at = faderPoint(tester, const Key('volume_row_track_0'));
+      final gesture = await tester.startGesture(at);
+      await tester.pump(const Duration(milliseconds: 400));
+      await gesture.up();
+      await tester.tapAt(at);
+      await tester.pump(ConsoleVolumeOverlay.sendGap * 2);
+
+      expect(controls, isNotEmpty);
+      expect(controls.map((c) => c.value), everyElement(isNot(1.0)));
+    });
+
+    testWidgets(
+      'a tap then an immediate grab just drags, with zero added delay and '
+      'no reset',
+      (tester) async {
+        await pump(tester);
+        await open(tester);
+
+        final at = faderPoint(tester, const Key('volume_row_track_0'));
+        await tester.tapAt(at);
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Grabbing again inside the pair window: the reset commits only
+        // when the second gesture COMPLETES as a clean tap, so a gesture
+        // that moves never resets — and the drag still tracks from its
+        // very first movement: no recognizer waits out a double-tap
+        // timeout.
+        final gesture = await tester.startGesture(at);
+        await gesture.moveBy(const Offset(-200, 0));
+        await tester.pump();
+        // The drag start placed and sent instantly — a second control with
+        // no time pumped at all is the zero-added-latency proof.
+        expect(controls.length, greaterThanOrEqualTo(2));
+
+        // The trailing flush lands the finger's position (throttle as
+        // always) and unity never fires: a drag is not a double tap.
+        await gesture.up();
+        await tester.pump(ConsoleVolumeOverlay.sendGap * 2);
+        expect(controls.last.value, lessThan(1.0));
+        expect(controls.last.action, ReadoutControl.trackVolume);
+        expect(controls.map((c) => c.value), everyElement(isNot(1.0)));
+      },
+    );
+
+    testWidgets('a tap then a scroll-swipe over the same capsule never '
+        'resets', (tester) async {
+      await pump(tester);
+      await open(tester);
+
+      // The regression the up-fired semantic exists for: set a volume,
+      // then within the pair window fling the list vertically with the
+      // finger landing on the same capsule. A down-fired reset committed
+      // unity here and the scroll never re-placed it — the just-set
+      // volume silently jumped.
+      final at = faderPoint(tester, const Key('volume_row_track_0'));
+      await tester.tapAt(at);
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final gesture = await tester.startGesture(at);
+      await gesture.moveBy(const Offset(0, -80));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump(ConsoleVolumeOverlay.sendGap * 2);
+
+      // Only the deliberate placement ever landed.
+      expect(controls, hasLength(1));
+      expect(controls.single.value, isNot(1.0));
+    });
+
+    testWidgets('a chorded brush then a quick tap never resets', (
+      tester,
+    ) async {
+      await pump(tester);
+      await open(tester);
+
+      // Two fingers brush the capsule; the first lifts clean while the
+      // second rests. That lift must NOT arm the pair window — the next
+      // placement tap would otherwise fire a spurious unity reset.
+      final at = faderPoint(tester, const Key('volume_row_track_0'));
+      final finger1 = await tester.startGesture(at);
+      final finger2 = await tester.startGesture(at + const Offset(-40, 0));
+      await finger1.up();
+      await finger2.up();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.tapAt(at);
+      await tester.pump(ConsoleVolumeOverlay.sendGap * 2);
+
+      expect(controls, isNotEmpty);
+      expect(controls.map((c) => c.value), everyElement(isNot(1.0)));
+    });
+
+    testWidgets('a double tap on the name or dB zones does nothing', (
+      tester,
+    ) async {
+      await pump(tester);
+      await open(tester);
+
+      final name = find.descendant(
+        of: find.byKey(const Key('volume_row_track_1')),
+        matching: find.text('BOOM'),
+      );
+      await tester.tap(name);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(name);
+      await tester.pump();
+
+      final value = find.descendant(
+        of: find.byKey(const Key('volume_row_track_0')),
+        matching: find.text('+2.0 dB'),
+      );
+      await tester.tap(value);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(value);
+      await tester.pump();
+
+      expect(controls, isEmpty);
       expect(find.byKey(const Key('volume_overlay_list')), findsOneWidget);
     });
 
