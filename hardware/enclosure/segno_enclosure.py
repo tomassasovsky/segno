@@ -128,10 +128,12 @@ PEDAL_PAD_BACK_INSET = 16.43  # pad rear edge inset from the case back edge
 # pedestal's provisional gravity+pocket retention.
 PEDAL_BASE_ROW_BACK_OFF = 4.0    # rear row, rearward of the side-screw axis
 PEDAL_BASE_ROW_PITCH    = 80.0   # rear row to front row, toe-ward
-PEDAL_BASE_SPAN_REAR    = 54.5   # centre-to-centre across the rear pair. Third reading
-                                 # (55.75 -> 54.05 -> 54.5, all 2026-08-16); the spread is
-                                 # 1.7 mm, so treat this as settled only once the paper
-                                 # gauge (_pedal_base_gauge.py) confirms it.
+PEDAL_BASE_SPAN_REAR    = 55.75  # centre-to-centre across the rear pair. FOURTH reading,
+                                 # and it lands back on the first: 55.75 -> 54.05 -> 54.5
+                                 # -> 55.75 (all 2026-08-16). The 54.5 print read narrow,
+                                 # which points the same way. Note the front pair has only
+                                 # ever been measured ONCE (53.00) -- if the rear needed
+                                 # four passes, the front deserves a second.
 PEDAL_BASE_SPAN_FRONT   = 53.0   # ...and the front pair (the case tapers toe-ward)
 PEDAL_BASE_HOLE_D       = 4.0    # INFERRED, not measured. First called M3-ish (3.0-3.4),
                                  # but the Ø3.5 pin later asked for cannot enter a 3.2 hole,
@@ -1542,12 +1544,19 @@ def build_mini_console():
     the 2.0 mm aluminium sheet gauge it used to borrow. Walls run into the
     pedestal tubs instead of standing free beside them, the plan corners are
     radiused, and the wall/floor junction carries a gusset.
-    Frame: X = u - MINI_U0, Y = FLAT (projected) v, Z = world z."""
+    Frame: X = across the tray from its LEFT edge (symmetric about CX = Wt/2),
+    Y = FLAT (projected) v, Z = world z."""
     import cadquery as cq
     cs = math.cos(math.radians(SLOPE_ANGLE))
     tn = math.tan(math.radians(SLOPE_ANGLE))
-    U0 = 625.3
-    PEDS = [_row1_u(6), _row1_u(7)]  # the TRACK3/TRACK4 pair, pitch preserved
+    # The tray is SYMMETRIC about its own centre-line. It used to inherit the
+    # pedals' absolute console u and put its left edge at 0, which left the pair
+    # sitting 1.74 mm right of centre: the right tub fused into its wall while
+    # the left needed a filler block, and every hard-coded x -- anchors, feet,
+    # ribs, lid tabs -- was then tuned around that offset. Only the PITCH has to
+    # be faithful (it is what makes this a fit test), so keep the pitch and
+    # centre the pair. Both tubs now fuse into their walls and the filler is gone.
+    PITCH = _row1_u(7) - _row1_u(6)
     V1S = 160.0                      # depth on-slope (pedals + pills + board bay)
     D = V1S * cs
     # PRINTED wall/floor gauges -- deliberately NOT T (that is sheet metal)
@@ -1561,20 +1570,25 @@ def build_mini_console():
                                       # 12 mm flat ceiling -> slicer adds support)
     MINI_BAFFLE_T = 1.6               # 4 beads on the tub's light-baffle ring
     ZLIFT = FLOOR_T - T               # everything above the floor rises with it
-    # the right wall OVERLAPS TRACK4's tub by 0.5 so the two fuse into one
-    # braced section -- the old +0.5 left them a 0.5 mm slot the nozzle cannot
-    # resolve, running 115 mm up a 44 mm wall
-    Wt = (PEDS[1] - U0) + SKIRT_OUT_W/2.0 - 0.5 + WALL_T
+    # BOTH walls overlap their tub by 0.5 so each fuses into one braced section
+    # -- a bare +0.5 gap would leave a 0.5 mm slot the nozzle cannot resolve,
+    # running 115 mm up a 44 mm wall. Symmetric, so the width follows from the
+    # pitch rather than from one pedal's absolute u.
+    TUB_FUSE = 0.5
+    Wt = PITCH + SKIRT_OUT_W - 2*TUB_FUSE + 2*WALL_T
+    CX = Wt/2.0                                  # THE centre-line; every x below
+    PEDS = [CX - PITCH/2.0, CX + PITCH/2.0]      # is CX +/- something
     C0 = (lid_top_z(PEDAL_ROW1_V) + SKIRT_DRIFT_ROW1 - T) - tn * (PEDAL_ROW1_V * cs) + ZLIFT
     # under-base lid anchors: triangle clamp, nothing on top. The screws lean
     # REARWARD going down (they follow the lid normal), so each bottom exit
     # lands ~(pillar-top z)*tan(slope) behind the pillar -- the rear pair
-    # therefore sits at y=140 in the side strips (x 8.5 / 190.4, clear of the
-    # diffuser flanges and the board bay) so the exits stay in open floor
-    # instead of breaking through the rear wall footprint.
-    ANCHORS = ((8.5, 139.0), (190.4, 139.0), (101.13, 20.0))
+    # therefore sits at y=139 in the side strips (clear of the diffuser flanges
+    # and the board bay) so the exits stay in open floor instead of breaking
+    # through the rear wall footprint. The apex sits ON the centre-line.
+    ANCHOR_DX = CX - 8.5
+    ANCHORS = ((CX - ANCHOR_DX, 139.0), (CX + ANCHOR_DX, 139.0), (CX, 20.0))
     BOARD_W, BOARD_D = 34.2, 18.8    # Pro Micro pocket (33 x 18 board + clearance)
-    BOARD_XC = (PEDS[0] + PEDS[1])/2.0 - U0   # centred between the tubs
+    BOARD_XC = CX                    # centred between the tubs == centred in the tray
 
     def slope_cut(sol, z0):
         cutter = (cq.Workplane("XY").box(900.0, 900.0, 300.0, centered=(True, True, False))
@@ -1632,8 +1646,9 @@ def build_mini_console():
     # ...located by an engraved RING, not a solid recess. A recess is a flat
     # 12 mm ceiling 0.5 mm off the bed, which every slicer supports; the groove
     # only ever has to bridge its own 1.2 mm width.
+    FOOT_DX_R = 62.5                   # rear pair, either side of the centre-line
     for (fx, fy) in ((15.0, 15.0), (Wt - 15.0, 15.0),
-                     (30.0, D - 14.0), (155.0, D - 14.0)):
+                     (CX - FOOT_DX_R, D - 14.0), (CX + FOOT_DX_R, D - 14.0)):
         tray = tray.cut(cq.Workplane("XY")
                         .circle(FOOT_D/2.0).circle(FOOT_D/2.0 - FOOT_RING_W)
                         .extrude(FOOT_REC).translate((fx, fy, 0.0)))
@@ -1642,7 +1657,7 @@ def build_mini_console():
         ped = (_platform_printed(cq, platform_h(PEDAL_ROW1_V), PEDAL_ROW1_V,
                                  standalone=False, baffle_t=MINI_BAFFLE_T, sled=True)
                .rotate((0, 0, 0), (0, 0, 1), 90)
-               .translate((u - U0, yc, FLOOR_T)))
+               .translate((u, yc, FLOOR_T)))
         tray = tray.union(ped)
         # SLED retention (#719): carry the pedestal's central bore on down
         # through the tray floor and seat the head UNDER it -- same idiom as the
@@ -1651,34 +1666,44 @@ def build_mini_console():
         # sled comes back out; it has no finger relief of its own, because the
         # pedal overhangs its edge to within 0.9 mm.
         tray = tray.cut(cq.Workplane("XY").circle(D_M3/2.0 + 0.15)
-                        .extrude(FLOOR_T + 6.0).translate((u - U0, yc, -3.0)))
+                        .extrude(FLOOR_T + 6.0).translate((u, yc, -3.0)))
         tray = tray.cut(cq.Workplane("XY").circle(4.25).extrude(40.0)
-                        .translate((u - U0, yc, FLOOR_T + 1.5 - 40.0)))
+                        .translate((u, yc, FLOOR_T + 1.5 - 40.0)))
     # BRACING. The tall thin side walls have to lean on something, and the bare
     # floor between and behind the tubs is where the warp map peaked.
-    tub_x = [(u - U0 - SKIRT_OUT_W/2.0, u - U0 + SKIRT_OUT_W/2.0) for u in PEDS]
+    tub_x = [(u - SKIRT_OUT_W/2.0, u + SKIRT_OUT_W/2.0) for u in PEDS]
     tub_od = max(SKIRT_OUT_D, SKIRT_IN_D + 2*MINI_BAFFLE_T)   # body AND ring
     tub_y = (yc - tub_od/2.0, yc + tub_od/2.0)
-    gap_l = tub_x[0][0] - WALL_T           # left wall stood in a 3 mm canyon
-    if gap_l > 0.05:                       # fill it: the wall becomes tub-braced
-        # front end at the wall (kills the sliver the cavity's corner radius
-        # leaves), rear end at the tub -- running it full depth put it under the
-        # rear anchor bosses, which drop 8 mm below the lid plane (#539)
-        tray = tray.union(slope_cut(cq.Workplane("XY").box(
-            gap_l + 0.2, tub_y[1] - WALL_T, 80.0, centered=False)
-            .translate((WALL_T, WALL_T, FLOOR_T)), C0))
+    # Both walls fuse into their tub by TUB_FUSE, by construction -- so the
+    # filler block the asymmetric layout needed on the LEFT (where the wall used
+    # to stand in a 3 mm canyon) is gone, not merely skipped.
+    for side, gap in (("left", tub_x[0][0] - WALL_T),
+                      ("right", (Wt - WALL_T) - tub_x[1][1])):
+        assert abs(gap + TUB_FUSE) < 1e-6, (
+            f"MINI_SYM: {side} wall/tub overlap {-gap:.2f} != {TUB_FUSE:.2f} -- "
+            "the walls no longer fuse symmetrically into the tubs")
     for ry in (35.0, 66.0, 108.0):         # ties the two tubs to each other
         # (clear of the centre anchor at y=20: its pillar spans y 14..26 and the
         # lid's boss drops onto the pillar TOP, not onto a rib)
         tray = tray.union(cq.Workplane("XY").box(
             tub_x[1][0] - tub_x[0][1] + 0.4, 5.0, 8.0, centered=False)
             .translate((tub_x[0][1] - 0.2, ry - 2.5, FLOOR_T)))
-    for rx in (30.0, 70.0, 135.0, 170.0):  # stiffens the open rear bay
-        # (kept off the Pro Micro boss's x 80.0..122.2: a rib landing just
-        # beside it leaves a 0.8 mm slot the nozzle cannot resolve)
+    RIB_DX = (27.0, 67.0)                  # stiffens the open rear bay, mirrored
+    for rx in [CX + s*d for d in RIB_DX for s in (-1, 1)]:
+        # (kept off the Pro Micro boss, which straddles CX: a rib landing just
+        # beside it leaves a 0.8 mm slot the nozzle cannot resolve -- the assert
+        # after this loop is what actually holds that, not the chosen numbers)
         tray = tray.union(cq.Workplane("XY").box(
             4.0, (D - WALL_T) - tub_y[1] + 0.4, 8.0, centered=False)
             .translate((rx - 2.0, tub_y[1] - 0.2, FLOOR_T)))
+    # the rib-to-boss slot that the old hand-picked x values were guarding by
+    # eye. Stated once, checked once.
+    boss_half = BOARD_W/2.0 + 4.0
+    for d in RIB_DX:
+        slot = d - 2.0 - boss_half
+        assert slot < -2.0 or slot > 0.8, (
+            f"MINI_RIB: rib at CX+/-{d:.1f} leaves a {slot:.2f} mm slot beside "
+            "the Pro Micro boss -- the nozzle cannot resolve it")
     # Pro Micro bay: raised boss against the rear wall, open-top pocket, and a
     # USB cutout through the rear wall (board slides in from above; the USB
     # lead + pocket friction retain it -- PROVISIONAL, fine for the mini)
@@ -1712,7 +1737,7 @@ def build_mini_console():
     # --- lid (prints FLAT; seats on the wall tops at the real slope) ------
     lid = cq.Workplane("XY").box(Wt, V1S, T, centered=False)
     for u in PEDS:
-        x = u - U0
+        x = u
         lid = lid.cut(cq.Workplane("XY").box(FSW_SLOT_W, FSW_SLOT_D, 3*T, centered=(True, True, False))
                       .translate((x, PEDAL_ROW1_V, -T)))
         vc = PEDAL_ROW1_V + FSW_SLOT_D/2 + LED_GAP
@@ -1751,12 +1776,60 @@ def build_mini_console():
         "MINI_TAB: front tab overhangs the front wall top"
     assert (ft_y + FT_D) * cs + FT_H * sn <= tub_y[0] - 0.4, \
         "MINI_TAB: front tab sweeps into the pedestal tub"
-    for tx in (40.0, 165.0):
+    for tx in (CX - 62.5, CX + 62.5):
         lid = lid.union(cq.Workplane("XY").box(10.0, FT_D, FT_H, centered=False)
                         .translate((tx - 5.0, ft_y, -FT_H)))
-    for tx in (60.0, 168.0):
+    for tx in (CX - 54.0, CX + 54.0):
         lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, 5.0, centered=False)
-                        .translate((tx, (D - WALL_T)/cs - 12.0, -5.0)))
+                        .translate((tx - 5.0, (D - WALL_T)/cs - 12.0, -5.0)))
+
+    # SYMMETRY GATE. Enumerating the hard-coded x values and mirroring them by
+    # hand is exactly how the asymmetry got in -- it only takes one nobody
+    # re-derived -- so ask the SOLID instead.
+    #
+    # NOT by cutting the solid against its own mirror: when the part IS
+    # symmetric the two are geometrically identical, every face is coincident,
+    # and OCC's boolean returns EMPTY. That reads as "totally asymmetric" and is
+    # the exact opposite of the truth. (Confirmed four ways: Shape.mirror,
+    # reversed, gp_Trsf, and reversed gp_Trsf all return 0.)
+    #
+    # Instead split at x = CX -- axis-aligned half-space booleans are well
+    # behaved -- and compare the two halves by MASS PROPERTIES, which needs no
+    # boolean between them. A mirror about CX negates (x - CX), so a symmetric
+    # part has equal volumes, centroids that are equal and opposite in x and
+    # equal in y/z, and an inertia tensor whose Ixy/Ixz flip sign while the
+    # rest match.
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+
+    def _props(shape):
+        g = GProp_GProps()
+        BRepGProp.VolumeProperties_s(shape.wrapped, g)
+        c, m = g.CentreOfMass(), g.MatrixOfInertia()
+        return (g.Mass(), (c.X(), c.Y(), c.Z()),
+                tuple(m.Value(i, j) for i in (1, 2, 3) for j in (1, 2, 3)))
+
+    BIG = 1000.0
+    for tag, sol in (("tray", tray), ("lid", lid)):
+        halves = []
+        for s in (-1, 1):
+            hs = (cq.Workplane("XY").box(BIG, BIG, BIG, centered=True)
+                  .translate((CX + s*BIG/2.0, 0, 0)))
+            halves.append(_props(sol.val().intersect(hs.val())))
+        (vl, cl, il), (vr, cr, ir) = halves
+        assert abs(vl - vr) < 1.0, (
+            f"MINI_SYM: {tag} halves differ by {vl - vr:+.1f} mm3 about x={CX:.2f} "
+            "-- some feature is still placed off an absolute x")
+        assert abs((CX - cl[0]) - (cr[0] - CX)) < 0.01 and \
+               abs(cl[1] - cr[1]) < 0.01 and abs(cl[2] - cr[2]) < 0.01, (
+            f"MINI_SYM: {tag} half-centroids are not mirror images: "
+            f"left {cl} right {cr} about x={CX:.2f}")
+        # inertia: index 1 = Ixy and 2 = Ixz in row-major 3x3, both flip sign
+        for k, (a, b) in enumerate(zip(il, ir)):
+            want = -b if k in (1, 2, 3, 6) else b
+            assert abs(a - want) < max(1.0, abs(b)*1e-6), (
+                f"MINI_SYM: {tag} half-inertia component {k} differs "
+                f"({a:.1f} vs expected {want:.1f}) -- the halves are not mirrors")
 
     # ASSEMBLY GATE. Three separate clashes got into this part by moving tray
     # geometry without re-checking what the lid drops into it (#539): the left
@@ -1814,11 +1887,11 @@ def build_mini_console():
     sled_z = FLOOR_T + (platform_h(PEDAL_ROW1_V) - T - SLED_DECK_DROP)
     for u in PEDS:
         seat = (sled.rotate((0, 0, 0), (0, 0, 1), 90)
-                    .translate((u - U0, yc, sled_z)))
+                    .translate((u, yc, sled_z)))
         c = tray.val().intersect(seat.val())
         cv = sum(s.Volume() for s in c.Solids()) if c is not None else 0.0
         assert cv < 0.5, (
-            f"MINI_SLED: sled fouls the tray by {cv:.1f} mm3 at u={u - U0:.1f} "
+            f"MINI_SLED: sled fouls the tray by {cv:.1f} mm3 at u={u:.1f} "
             "-- it cannot be dropped in, which is the one thing it exists to do")
 
     outp = []

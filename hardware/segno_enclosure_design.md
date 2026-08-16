@@ -104,7 +104,7 @@ fully internal.
 > after all, in two rows — the `PEDAL_BASE_*` constants. They sit *under* the
 > anti-slip pad, so both rows are dimensioned off the **side screw axis**, the
 > only datum findable without pulling the pad: rear row = axis **+4.0 toward the
-> back**, front row = rear row **+80.0 toward the toe**, spans **54.5** (rear)
+> back**, front row = rear row **+80.0 toward the toe**, spans **55.75** (rear)
 > and **53.00** (front), symmetric about the centre-line. Bolting through these
 > is what will retire the PROVISIONAL retention above — but not before the
 > **fit-test jig** proves the pattern on a print (§8).
@@ -123,6 +123,19 @@ fully internal.
 > faceplate, the slot and the flush-at-rim rule are untouched. The bottom
 > anti-slip pad comes off (it has to; the base holes are under it), which also
 > means the joint clamps metal-to-plastic instead of through 2.2 mm of rubber.
+>
+> **The mini tray is symmetric about `CX = Wt/2`.** It used to inherit the
+> pedals' absolute console `u` with its left edge at 0, which left the pair
+> 1.74 mm right of centre: the right tub fused into its wall while the left
+> needed a filler block, and every hard-coded x — anchors, feet, ribs, lid tabs —
+> was tuned around that. Only the *pitch* has to be faithful, so the width now
+> follows from the pitch and every x is `CX ± something`; both tubs fuse and the
+> filler is gone (195.29 wide, was 198.775). `MINI_SYM` holds it by splitting the
+> solid at `CX` and comparing the halves' **mass properties** — volume, centroid
+> and inertia tensor. Not by cutting the solid against its own mirror: when the
+> part is symmetric the two are geometrically identical, every face is
+> coincident, and OCC's boolean returns *empty*, which reads as "totally
+> asymmetric" and is the exact opposite of the truth.
 >
 > **The case is a wedge in plan, not only in height.** `PEDAL_W` 76.35 is the
 > width at the **back edge**; it tapers to `PEDAL_TOE_W` 73.08 at the toe, so a
