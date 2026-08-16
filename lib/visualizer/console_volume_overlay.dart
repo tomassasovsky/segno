@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
@@ -18,34 +19,39 @@ const kReadoutInputConditioning = false;
 /// Which overlay screen is up; the readout face itself is the `null` page.
 enum _OverlayPage { list, input, track }
 
-/// The 7" readout's volume overlay (#698), drawn to the pen's
-/// `STAGE / readout-volumes` (+ its `-input` / `-track` config panels).
+/// The 7" readout's volume overlay (#698; entry, dismissal, and the fader
+/// reset reworked in #707), drawn to the pen's `STAGE / readout-volumes`
+/// (+ its `-input` / `-track` config panels).
 ///
-/// Tapping ANYWHERE on the readout ([child]) opens the volume list — the
-/// whole glass is the touch target; there is no dedicated button. The list
-/// is a full-screen panel on the stage background (not a modal over dimmed
-/// content: at 7" a modal frame wastes pixels): a pinned header over a
-/// scrolling list of finger-scale volume rows — one per configured input,
-/// one per live track — each with an 88-wide chevron zone opening that
-/// element's own config panel.
+/// The MIX pill on the readout face is the ONLY way in: [builder] receives
+/// the open callback and wires it to the pill; the rest of the readout
+/// glass is inert (its surfaces are reserved for future interactivity).
+/// The list is a full-screen panel on the stage background (not a modal
+/// over dimmed content: at 7" a modal frame wastes pixels): a pinned header
+/// over a scrolling list of finger-scale volume rows — one per configured
+/// input, one per live track — each with an 88-wide chevron zone opening
+/// that element's own config panel.
 ///
-/// Dismissal contract: the BACK chip, a tap on any dead space, or
-/// [revertDelay] of inactivity — a performance screen must never stay stuck
-/// on a menu. Both the tap and the timer step one level at a time
-/// (panel → list → readout), and any interaction re-arms the timer.
+/// Dismissal contract (`c/readout-volumes`, #707): the BACK chip or
+/// [revertDelay] of inactivity — ONLY those two. Dead space is inert
+/// everywhere in the overlay: an accidental background tap mid-mixing must
+/// not eject the mixer, but it still counts as activity and re-arms the
+/// timer. The timer steps one level at a time (panel → list → readout) — a
+/// performance screen must never stay stuck on a menu.
 ///
 /// Volume rows commit CONTINUOUSLY (a live mixer, not commit-on-release):
 /// tap-or-drag on the fader capsule places the fader (the name and value
 /// columns are deliberately inert — see [_RowFader]), updates the local
 /// drawing immediately, and sends a [ReadoutControl] through [onControl]
 /// throttled to one per [sendGap] with a trailing flush so the last
-/// position always lands.
+/// position always lands. A double tap on any fader resets it to unity
+/// (0.0 dB) — one discrete commit, unthrottled (see [_RowFader]).
 class ConsoleVolumeOverlay extends StatefulWidget {
-  /// Creates a [ConsoleVolumeOverlay] over the readout face [child].
+  /// Creates a [ConsoleVolumeOverlay] over the readout face from [builder].
   const ConsoleVolumeOverlay({
     required this.readout,
     required this.onControl,
-    required this.child,
+    required this.builder,
     super.key,
   });
 
@@ -55,8 +61,10 @@ class ConsoleVolumeOverlay extends StatefulWidget {
   /// Sends a control command back to the main window.
   final ValueChanged<ReadoutControl> onControl;
 
-  /// The readout face shown when no overlay page is up.
-  final Widget child;
+  /// Builds the readout face shown when no overlay page is up. The callback
+  /// it receives opens the volume list; the face wires it to its MIX pill —
+  /// the only affordance that opens the overlay (#707).
+  final Widget Function(BuildContext context, VoidCallback openMixer) builder;
 
   /// Inactivity before the overlay steps back one level.
   static const revertDelay = Duration(seconds: 8);
@@ -226,6 +234,25 @@ class _ConsoleVolumeOverlayState extends State<ConsoleVolumeOverlay> {
     _armRevert();
   }
 
+  /// The faders' default: unity gain, 0.0 dB.
+  static const _unityGain = 1.0;
+
+  /// The double-tap reset (#707): places the fader at unity and commits it
+  /// NOW, bypassing [_sendThrottled]. A discrete reset is self-limiting like
+  /// a toggle, and the first tap of the pair has usually just opened the
+  /// send gap — throttling here would queue the reset behind it. Clearing
+  /// [_queued] keeps that first tap's placement from flushing AFTER the
+  /// reset and undoing it. The local echo goes through the same [_local]
+  /// hold as a drag, so a stale snapshot cannot snap the fader back.
+  void _resetVolume(String key, String action, int index) {
+    setState(() => _local[key] = (volume: _unityGain, at: DateTime.now()));
+    _queued = null;
+    widget.onControl(
+      ReadoutControl(action: action, index: index, value: _unityGain),
+    );
+    _armRevert();
+  }
+
   /// Discrete toggles send unthrottled: taps are self-limiting, and dropping
   /// one would drop a mute.
   void _sendToggle(String action, int index) {
@@ -239,12 +266,9 @@ class _ConsoleVolumeOverlayState extends State<ConsoleVolumeOverlay> {
   Widget build(BuildContext context) {
     final page = _page;
     if (page == null) {
-      return GestureDetector(
-        key: const Key('console_readout_touch'),
-        behavior: HitTestBehavior.opaque,
-        onTap: _toList,
-        child: widget.child,
-      );
+      // The face carries its own (single) way in — the MIX pill (#707); no
+      // wrapper gesture, so the rest of the glass stays genuinely inert.
+      return widget.builder(context, _toList);
     }
     final readout = widget.readout;
     // A config page whose subject vanished from the snapshot (a shrunk
@@ -287,12 +311,14 @@ class _ConsoleVolumeOverlayState extends State<ConsoleVolumeOverlay> {
 /// the same proportional contract `ConsoleReadoutView` uses.
 const _penSize = Size(1920, 1080);
 
-/// Scaffolds one overlay page: the stage background, the pen's 32-inset
-/// content, and the dead-space tap that steps back one level.
+/// Scaffolds one overlay page: the stage background and the pen's 32-inset
+/// content. Dead space is deliberately INERT (#707): no tap target here, so
+/// a stray background tap mid-mixing changes nothing — dismissal is the
+/// BACK chip or the inactivity revert, and the page-level [Listener] still
+/// sees the touch and re-arms the timer.
 class _OverlayScaffold extends StatelessWidget {
-  const _OverlayScaffold({required this.onDeadSpace, required this.builder});
+  const _OverlayScaffold({required this.builder});
 
-  final VoidCallback onDeadSpace;
   final Widget Function(BuildContext context, double s) builder;
 
   @override
@@ -310,16 +336,12 @@ class _OverlayScaffold extends StatelessWidget {
         final s = (width / _penSize.width < height / _penSize.height)
             ? width / _penSize.width
             : height / _penSize.height;
-        return GestureDetector(
+        return ColoredBox(
           key: const Key('volume_overlay_dead_space'),
-          behavior: HitTestBehavior.opaque,
-          onTap: onDeadSpace,
-          child: ColoredBox(
-            color: context.surface.background,
-            child: Padding(
-              padding: EdgeInsets.all(32 * s),
-              child: builder(context, s),
-            ),
+          color: context.surface.background,
+          child: Padding(
+            padding: EdgeInsets.all(32 * s),
+            child: builder(context, s),
           ),
         );
       },
@@ -340,7 +362,6 @@ class _VolumeListPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return _OverlayScaffold(
-      onDeadSpace: overlay._toReadout,
       builder: (context, s) {
         final rows = <Widget>[
           for (final input in readout.inputs)
@@ -355,6 +376,11 @@ class _VolumeListPage extends StatelessWidget {
                 ReadoutControl.inputVolume,
                 input.index,
                 v,
+              ),
+              onDefault: () => overlay._resetVolume(
+                'i${input.index}',
+                ReadoutControl.inputVolume,
+                input.index,
               ),
               onConfig: () => overlay._open(_OverlayPage.input, input.index),
               configKey: Key('volume_row_config_input_${input.index}'),
@@ -374,6 +400,11 @@ class _VolumeListPage extends StatelessWidget {
                 ReadoutControl.trackVolume,
                 channel,
                 v,
+              ),
+              onDefault: () => overlay._resetVolume(
+                't$channel',
+                ReadoutControl.trackVolume,
+                channel,
               ),
               onConfig: () => overlay._open(_OverlayPage.track, channel),
               configKey: Key('volume_row_config_track_$channel'),
@@ -427,7 +458,6 @@ class _InputConfigPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return _OverlayScaffold(
-      onDeadSpace: overlay._toList,
       builder: (context, s) => Column(
         key: const Key('volume_overlay_input_config'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -454,6 +484,11 @@ class _InputConfigPage extends StatelessWidget {
                 ReadoutControl.inputVolume,
                 input.index,
                 v,
+              ),
+              onDefault: () => overlay._resetVolume(
+                'i${input.index}',
+                ReadoutControl.inputVolume,
+                input.index,
               ),
             ),
           ),
@@ -517,7 +552,6 @@ class _TrackConfigPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return _OverlayScaffold(
-      onDeadSpace: overlay._toList,
       builder: (context, s) => Column(
         key: const Key('volume_overlay_track_config'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -546,6 +580,11 @@ class _TrackConfigPage extends StatelessWidget {
                 ReadoutControl.trackVolume,
                 channel,
                 v,
+              ),
+              onDefault: () => overlay._resetVolume(
+                't$channel',
+                ReadoutControl.trackVolume,
+                channel,
               ),
             ),
           ),
@@ -607,6 +646,7 @@ class _VolumeRow extends StatelessWidget {
     required this.secondaryTone,
     required this.volume,
     required this.onVolume,
+    required this.onDefault,
     required this.onConfig,
     required this.configKey,
     super.key,
@@ -621,6 +661,7 @@ class _VolumeRow extends StatelessWidget {
 
   final double volume;
   final ValueChanged<double> onVolume;
+  final VoidCallback onDefault;
   final VoidCallback onConfig;
   final Key configKey;
 
@@ -640,6 +681,7 @@ class _VolumeRow extends StatelessWidget {
               valueWidth: 220 * s,
               volume: volume,
               onVolume: onVolume,
+              onDefault: onDefault,
               leading: Align(
                 alignment: Alignment.centerLeft,
                 child: AppText(
@@ -690,15 +732,28 @@ class _VolumeRow extends StatelessWidget {
 /// anywhere on the row"): with the name and value columns live, an
 /// accidental label tap committed volume 0 (silencing a track
 /// mid-performance) and a value tap committed max. Owner-directed deviation
-/// for performance safety; the pen note update is handled from the main
-/// session. The name and value columns absorb their taps inertly so a label
-/// touch neither moves the fader nor falls through to the page's dead-space
-/// dismissal.
-class _RowFader extends StatelessWidget {
+/// for performance safety, since written back into `c/readout-volumes`. The
+/// name and value columns absorb their taps inertly so a label touch
+/// neither moves the fader nor reaches anything behind the row.
+///
+/// **Double tap = default** (#707): two clean taps in quick succession on
+/// the capsule reset the fader to unity (0.0 dB) via `onDefault`. Detection
+/// is manual, on the raw pointer stream — a [Listener] beside the existing
+/// recognizers — because `GestureDetector.onDoubleTap` would put a
+/// double-tap recognizer in the arena, and that recognizer HOLDS the arena
+/// after every first tap: single taps and drag starts would wait out its
+/// ~300 ms window, and the hard contract here is zero added latency on
+/// singles. The observer costs nothing: a tap is down→up with < `_tapSlop`
+/// movement in < `_maxTapDuration`; a second down within `_doubleTapWindow`
+/// of the first's up fires the reset at the DOWN (snappiest honest moment)
+/// and suppresses that gesture's own tap placement. Drag recognizers are
+/// untouched, so a press that moves keeps placing from its first frame.
+class _RowFader extends StatefulWidget {
   const _RowFader({
     required this.s,
     required this.volume,
     required this.onVolume,
+    required this.onDefault,
     required this.valueGap,
     required this.valueWidth,
     this.leading,
@@ -713,6 +768,10 @@ class _RowFader extends StatelessWidget {
   final double volume;
 
   final ValueChanged<double> onVolume;
+
+  /// Resets the fader to its default — the double-tap commit (#707).
+  final VoidCallback onDefault;
+
   final Widget? leading;
   final double leadingWidth;
   final double leadingGap;
@@ -720,21 +779,94 @@ class _RowFader extends StatelessWidget {
   final double valueWidth;
 
   @override
+  State<_RowFader> createState() => _RowFaderState();
+}
+
+class _RowFaderState extends State<_RowFader> {
+  /// A press that travels farther than this is a drag, not a tap.
+  static const _tapSlop = 12.0;
+
+  /// A press held longer than this is a hold, not a tap.
+  static const _maxTapDuration = Duration(milliseconds: 250);
+
+  /// How soon after a clean tap's release the next down counts as the
+  /// double tap.
+  static const _doubleTapWindow = Duration(milliseconds: 300);
+
+  /// When the last clean tap lifted; null when the last touch was anything
+  /// else. `package:clock` so widget tests' fake clock drives the windows —
+  /// test pointer events carry no usable timestamps.
+  DateTime? _lastTapUp;
+
+  /// The pointer being tracked. Bookkeeping is single-touch: a second
+  /// simultaneous finger is never part of a tap pair.
+  int? _pointer;
+
+  DateTime _downAt = DateTime.fromMillisecondsSinceEpoch(0);
+  Offset _downPosition = Offset.zero;
+  bool _moved = false;
+
+  /// True while the current gesture is the pair's second tap: the reset
+  /// already fired at its down, so its own tap placement must not land on
+  /// top. Drag callbacks stay live — a moving finger always wins.
+  bool _resetTap = false;
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (_pointer != null) {
+      // A second finger mid-gesture: whatever this was, it is not a tap.
+      _lastTapUp = null;
+      return;
+    }
+    final now = clock.now();
+    _resetTap =
+        _lastTapUp != null && now.difference(_lastTapUp!) < _doubleTapWindow;
+    _lastTapUp = null;
+    _pointer = event.pointer;
+    _downAt = now;
+    _downPosition = event.position;
+    _moved = false;
+    if (_resetTap) widget.onDefault();
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _pointer) return;
+    if ((event.position - _downPosition).distance > _tapSlop) _moved = true;
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    if (event.pointer != _pointer) return;
+    _pointer = null;
+    final clean =
+        !_moved &&
+        !_resetTap &&
+        clock.now().difference(_downAt) < _maxTapDuration;
+    // The reset tap itself never opens the next window: a triple tap is
+    // two fresh taps away from another reset, not one.
+    _lastTapUp = clean ? clock.now() : null;
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _pointer) return;
+    _pointer = null;
+    _lastTapUp = null;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final fraction = (volume / kSignalMaxGain).clamp(0.0, 1.0);
+    final fraction = (widget.volume / kSignalMaxGain).clamp(0.0, 1.0);
     // The empty-tap absorber: the strip outside the capsule (name, value)
-    // reacts to nothing but also lets nothing fall through to the page's
-    // dead-space dismissal. The capsule's own detector is deeper, so it
-    // wins the arena over this one.
+    // reacts to nothing — and, sitting outside the capsule's Listener, it
+    // can never be part of a double tap. The capsule's own detector is
+    // deeper, so it wins the arena over this one.
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {},
       child: Row(
         children: [
-          if (leading != null) ...[
-            SizedBox(width: leadingWidth, child: leading),
-            SizedBox(width: leadingGap),
+          if (widget.leading != null) ...[
+            SizedBox(width: widget.leadingWidth, child: widget.leading),
+            SizedBox(width: widget.leadingGap),
           ],
           Expanded(
             child: LayoutBuilder(
@@ -742,35 +874,44 @@ class _RowFader extends StatelessWidget {
                 final trackWidth = math.max(1, constraints.maxWidth);
                 void place(Offset local) {
                   final f = (local.dx / trackWidth).clamp(0.0, 1.0);
-                  onVolume(f * kSignalMaxGain);
+                  widget.onVolume(f * kSignalMaxGain);
                 }
 
-                return GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapDown: (details) => place(details.localPosition),
-                  onHorizontalDragStart: (details) =>
-                      place(details.localPosition),
-                  onHorizontalDragUpdate: (details) =>
-                      place(details.localPosition),
-                  child: Container(
-                    clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      color: surface.surface,
-                      borderRadius: BorderRadius.circular(14 * s),
-                      border: Border.all(color: surface.line),
-                    ),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: FractionallySizedBox(
-                        widthFactor: fraction,
-                        heightFactor: 1,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: surface.accentSurface,
-                            border: Border(
-                              right: BorderSide(
-                                color: surface.accent,
-                                width: 4 * s,
+                return Listener(
+                  onPointerDown: _onPointerDown,
+                  onPointerMove: _onPointerMove,
+                  onPointerUp: _onPointerUp,
+                  onPointerCancel: _onPointerCancel,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (details) {
+                      if (_resetTap) return;
+                      place(details.localPosition);
+                    },
+                    onHorizontalDragStart: (details) =>
+                        place(details.localPosition),
+                    onHorizontalDragUpdate: (details) =>
+                        place(details.localPosition),
+                    child: Container(
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: surface.surface,
+                        borderRadius: BorderRadius.circular(14 * widget.s),
+                        border: Border.all(color: surface.line),
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: fraction,
+                          heightFactor: 1,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: surface.accentSurface,
+                              border: Border(
+                                right: BorderSide(
+                                  color: surface.accent,
+                                  width: 4 * widget.s,
+                                ),
                               ),
                             ),
                           ),
@@ -782,15 +923,15 @@ class _RowFader extends StatelessWidget {
               },
             ),
           ),
-          SizedBox(width: valueGap),
+          SizedBox(width: widget.valueGap),
           SizedBox(
-            width: valueWidth,
+            width: widget.valueWidth,
             child: AppText(
-              signalGainReadout(volume),
+              signalGainReadout(widget.volume),
               maxLines: 1,
               style: TextStyle(
                 color: surface.textSecondary,
-                fontSize: 40 * s,
+                fontSize: 40 * widget.s,
                 height: 1.2,
                 fontFeatures: const [FontFeature.tabularFigures()],
                 leadingDistribution: TextLeadingDistribution.even,
