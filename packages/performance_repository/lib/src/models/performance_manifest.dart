@@ -416,7 +416,8 @@ class PerformanceManifest {
 
   /// The raw decoded `performance.json` map, as last read from disk —
   /// carries every native field (`sample_rate`, `capture_frames`,
-  /// `overrun_count`, `overrun_gaps`, `layers`, `stopped_early`) verbatim.
+  /// `overrun_count`, `zero_filled_frames`, `overrun_gaps`, `layers`,
+  /// `stopped_early`) verbatim.
   final Map<String, dynamic> native;
 
   /// The arm-time snapshot, or `null` if the capture crashed before it could
@@ -435,6 +436,16 @@ class PerformanceManifest {
 
   /// Capture ring overruns since arm, from the native fields.
   int get overrunCount => (native['overrun_count'] as num?)?.toInt() ?? 0;
+
+  /// Frames of digital silence the drain substituted into the take, summed
+  /// over every capture file, from the native fields.
+  ///
+  /// Not the same as [overrunCount]: that counts frames the audio thread
+  /// could not enqueue, while this counts the silence actually written —
+  /// which a take can carry with a clean [overrunCount] (#710). `0` on a
+  /// sidecar written before the field existed.
+  int get zeroFilledFrames =>
+      (native['zero_filled_frames'] as num?)?.toInt() ?? 0;
 
   /// Why capture stopped early (`disk_full` / `device_changed`), or `null`
   /// for a normal disarm.

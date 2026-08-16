@@ -195,6 +195,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
       atomic_load_explicit(&engine->a_perf_frames, memory_order_relaxed);
   out->perf_overruns =
       atomic_load_explicit(&engine->a_perf_overruns, memory_order_relaxed);
+  out->perf_zero_filled_frames = atomic_load_explicit(
+      &engine->a_perf_zero_filled_frames, memory_order_relaxed);
   /* No drain (never armed, or already disarmed) reads as "not stopped" -- the
    * flag describes a live capture that died, not the absence of one. */
   out->perf_stopped =

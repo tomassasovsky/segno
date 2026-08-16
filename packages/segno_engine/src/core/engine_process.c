@@ -4393,9 +4393,22 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * call processed, including ones the latency harness diverted, so it reads
    * as wall-clock frames since arm, not samples the master tap actually
    * captured. */
+  /* RELEASE, not relaxed (#710): this add is the drain thread's "the rings
+   * already hold this many frames" signal, and the whole silence-fill
+   * decision rests on it. Every capture tap earlier in this call published
+   * its frames with a RELEASE store on the ring's tail — but release is
+   * one-way. It orders the sample writes before that tail store; it does
+   * NOT stop a later relaxed store from becoming visible first. A relaxed
+   * fetch_add here could therefore be observed by the drain BEFORE the tail
+   * stores it is meant to vouch for, on any weakly-ordered machine (the Pi 5
+   * console, Apple Silicon) — the drain would read a frame count the rings
+   * cannot yet show it and pad silence over audio that is genuinely there.
+   * Releasing here makes the drain's ACQUIRE load of a_perf_frames
+   * synchronize-with this add, so everything sequenced before it — every
+   * tail store — is visible to the pops that follow. */
   if (e->perf.armed) {
     atomic_fetch_add_explicit(&e->a_perf_frames, (uint64_t)frames,
-                              memory_order_relaxed);
+                              memory_order_release);
   }
 
   /* MIDI clock send (C1, D15). BLOCK granularity, like the tap-tempo frame

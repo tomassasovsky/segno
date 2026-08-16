@@ -735,6 +735,17 @@ typedef struct le_snapshot {
   int32_t perf_armed;      /* 0/1: the RT taps are live */
   uint64_t perf_frames;    /* frames processed since the most recent arm */
   uint32_t perf_overruns;  /* dropped capture frames (ring full) since arm */
+  /* Frames of digital silence the drain thread SUBSTITUTED into the capture
+   * files since arm, because the audio they should have held never reached
+   * it, summed over every file it writes (master + each monitored input).
+   * A superset of perf_overruns' consequences: every dropped frame is
+   * zero-filled, but a zero-fill can also come from audio that was counted
+   * (perf_frames) yet never tapped. Read it as zero vs non-zero: non-zero
+   * means the take contains silence the performer did not play -- #710's
+   * audible flickers -- so the app latches it into the capture's glitch
+   * flag exactly like perf_overruns. The per-gap positions stay in the
+   * sidecar's `overrun_gaps`; this is the never-saturating total. */
+  uint64_t perf_zero_filled_frames;
   /* 0/1: the drain thread stopped ITSELF because a write failed -- disk full,
    * a quota, a read-only remount, an I/O error. Published here because the
    * stop was otherwise invisible to the app: the thread stopped, the capture

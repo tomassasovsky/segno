@@ -568,6 +568,7 @@ class EngineSnapshot {
     this.isPerfArmed = false,
     this.perfFrames = 0,
     this.perfOverruns = 0,
+    this.perfZeroFilledFrames = 0,
     this.perfStopped = false,
     this.tempoBpm = 0,
     this.tempoSource = TempoSource.none,
@@ -619,6 +620,7 @@ class EngineSnapshot {
       isPerfArmed = false,
       perfFrames = 0,
       perfOverruns = 0,
+      perfZeroFilledFrames = 0,
       perfStopped = false,
       tempoBpm = 0,
       tempoSource = TempoSource.none,
@@ -676,6 +678,7 @@ class EngineSnapshot {
     isPerfArmed: native.perf_armed != 0,
     perfFrames: native.perf_frames,
     perfOverruns: native.perf_overruns,
+    perfZeroFilledFrames: native.perf_zero_filled_frames,
     perfStopped: native.perf_stopped != 0,
     tempoBpm: native.tempo_bpm,
     tempoSource: TempoSource.fromCode(native.tempo_source),
@@ -825,6 +828,17 @@ class EngineSnapshot {
   /// `AudioEngine.perfArm`. `0` when never armed or nothing has overflowed.
   final int perfOverruns;
 
+  /// Frames of digital silence the capture drain SUBSTITUTED into the take
+  /// since the most recent `AudioEngine.perfArm`, summed over every file it
+  /// writes.
+  ///
+  /// Broader than [perfOverruns], which only counts frames the audio thread
+  /// could not enqueue: silence also gets written for audio that was counted
+  /// but never tapped. Read it as zero vs non-zero — non-zero means the take
+  /// contains silence the performer did not play, so the recorder latches it
+  /// into the capture's glitch flag alongside [perfOverruns] (#710).
+  final int perfZeroFilledFrames;
+
   /// Whether the capture drain thread stopped ITSELF because a write failed —
   /// disk full, a quota, a read-only remount, an I/O error.
   ///
@@ -970,6 +984,7 @@ class EngineSnapshot {
           isPerfArmed == other.isPerfArmed &&
           perfFrames == other.perfFrames &&
           perfOverruns == other.perfOverruns &&
+          perfZeroFilledFrames == other.perfZeroFilledFrames &&
           perfStopped == other.perfStopped &&
           tempoBpm == other.tempoBpm &&
           tempoSource == other.tempoSource &&
@@ -1020,6 +1035,7 @@ class EngineSnapshot {
     isPerfArmed,
     perfFrames,
     perfOverruns,
+    perfZeroFilledFrames,
     perfStopped,
     tempoBpm,
     tempoSource,

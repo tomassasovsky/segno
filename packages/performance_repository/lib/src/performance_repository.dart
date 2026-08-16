@@ -208,11 +208,12 @@ class PerformanceRepository {
       _engine.renderTrackStatuses();
 
   /// The in-progress capture's elapsed time and overrun flag, read from the
-  /// engine snapshot's own `perfFrames`/`perfOverruns` fields (part 1) —
-  /// meaningful only while armed; reads as zero/`false` otherwise, mirroring
-  /// those fields' own at-rest defaults. Poll-on-demand, the same convention
-  /// [renderProgress] uses, so a UI driving an elapsed-time readout ticks
-  /// this itself rather than this repository owning a second internal timer.
+  /// engine snapshot's own `perfFrames`/`perfOverruns`/
+  /// `perfZeroFilledFrames` fields — meaningful only while armed; reads as
+  /// zero/`false` otherwise, mirroring those fields' own at-rest defaults.
+  /// Poll-on-demand, the same convention [renderProgress] uses, so a UI
+  /// driving an elapsed-time readout ticks this itself rather than this
+  /// repository owning a second internal timer.
   ({Duration elapsed, bool overrun, bool selfStopped}) get captureProgress {
     final snapshot = _engine.snapshot();
     final sampleRate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 48000;
@@ -220,7 +221,12 @@ class PerformanceRepository {
       elapsed: Duration(
         microseconds: snapshot.perfFrames * 1000000 ~/ sampleRate,
       ),
-      overrun: snapshot.perfOverruns > 0,
+      // Either kind of hole counts. `perfOverruns` is only the frames the
+      // audio thread could not enqueue; `perfZeroFilledFrames` is the silence
+      // the drain actually wrote into the take, whatever its cause. #710's
+      // takes had audible flickers with the first still reading zero, which
+      // is how a glitched capture finalized claiming it was clean.
+      overrun: snapshot.perfOverruns > 0 || snapshot.perfZeroFilledFrames > 0,
       // The drain thread died on a failed write. Carried alongside the
       // progress the UI already polls rather than on a second channel, so the
       // app learns about it at tick rate instead of not at all (#652).

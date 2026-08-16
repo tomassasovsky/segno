@@ -2004,6 +2004,17 @@ void main() {
       expect(progress.elapsed, const Duration(seconds: 1));
       expect(progress.overrun, isTrue);
     });
+
+    test('flags overrun on silence-filled frames with no ring overrun', () {
+      // #710: the take carried audible silence while perfOverruns read 0,
+      // because the drain can fall behind for reasons the ring never sees.
+      engine
+        ..perfFrames = 48000
+        ..perfOverruns = 0
+        ..perfZeroFilledFrames = 128;
+
+      expect(repo.captureProgress.overrun, isTrue);
+    });
   });
 
   group('renameCapture', () {

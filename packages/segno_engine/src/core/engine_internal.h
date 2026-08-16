@@ -257,6 +257,17 @@ int le_perf_drain_self_stopped(struct le_perf_drain* drain);
  * (pass 0) before the next test runs. Not part of the FFI surface. */
 void le_perf_drain_force_write_failure_for_test(int enabled);
 
+/* Runs `fn(ctx)` on the drain thread inside every drain cycle, at the one
+ * instant that matters for #710: after the capture rings have been drained
+ * and before the silence-fill catch-up runs. It exists to make the cycle's
+ * elapsed-then-drain ordering testable — a hook that pushes frames and bumps
+ * a_perf_frames from there stands in for the audio thread producing while a
+ * slow cycle writes, which is otherwise a microsecond-wide race no test can
+ * hit on purpose. Process-global, NULL (disabled) by default; a test must
+ * clear it (pass NULL) before the next test runs. Not part of the FFI
+ * surface. */
+void le_perf_drain_set_mid_cycle_hook_for_test(void (*fn)(void*), void* ctx);
+
 /* ---- perf-render test seams (perf_render.c; part 8) ---- */
 
 /* Forces the offline render worker's dry-stem write (only) to fail for a

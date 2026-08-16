@@ -1625,6 +1625,7 @@ class PumpedNativeEngine extends NativeAudioEngine {
       isPerfArmed: s.isPerfArmed,
       perfFrames: s.perfFrames,
       perfOverruns: s.perfOverruns,
+      perfZeroFilledFrames: s.perfZeroFilledFrames,
       tempoBpm: s.tempoBpm,
       tempoSource: s.tempoSource,
       tsNum: s.tsNum,

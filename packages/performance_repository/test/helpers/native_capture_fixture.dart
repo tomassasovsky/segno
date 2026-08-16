@@ -5,7 +5,8 @@ import 'dart:typed_data';
 /// Writes a `performance.json` matching the shape `perf_drain.c` (parts 2-5)
 /// actually produces, into [dir] — the fields `PerformanceRepository._finalize`
 /// reads back (`sample_rate`, `channel_layout`, `capture_frames`,
-/// `overrun_count`, `overrun_gaps`, `layers`) plus the always-`false`
+/// `overrun_count`, `zero_filled_frames`, `overrun_gaps`, `layers`) plus the
+/// always-`false`
 /// `finalized` the drain thread writes on every cycle while armed.
 void writeNativeSidecar(
   String dir, {
@@ -14,6 +15,7 @@ void writeNativeSidecar(
   List<int> capturedInputs = const [],
   int captureFrames = 0,
   int overrunCount = 0,
+  int zeroFilledFrames = 0,
   List<Map<String, dynamic>> layers = const [],
   bool finalized = false,
 }) {
@@ -26,6 +28,7 @@ void writeNativeSidecar(
     },
     'capture_frames': captureFrames,
     'overrun_count': overrunCount,
+    'zero_filled_frames': zeroFilledFrames,
     'overrun_gaps': <Map<String, dynamic>>[],
     'layers': layers,
     'finalized': finalized,

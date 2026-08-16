@@ -380,6 +380,18 @@ void main() {
       expect(decoded.disarmSnapshot, isNull);
     });
 
+    test('zeroFilledFrames reads the native field when present', () {
+      // #710: a take can carry silence the drain wrote while the ring never
+      // overran, so this must not be inferred from overrun_count.
+      const manifest = PerformanceManifest(
+        slug: 's',
+        finalized: true,
+        native: {'overrun_count': 0, 'zero_filled_frames': 192},
+      );
+      expect(manifest.overrunCount, 0);
+      expect(manifest.zeroFilledFrames, 192);
+    });
+
     test('stoppedEarly reflects the native field when present', () {
       const manifest = PerformanceManifest(
         slug: 's',
@@ -398,6 +410,7 @@ void main() {
       expect(manifest.sampleRate, 0);
       expect(manifest.captureFrames, 0);
       expect(manifest.overrunCount, 0);
+      expect(manifest.zeroFilledFrames, 0);
       expect(manifest.stoppedEarly, isNull);
       expect(manifest.layers, isEmpty);
     });
