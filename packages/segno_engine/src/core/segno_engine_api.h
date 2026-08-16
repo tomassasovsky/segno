@@ -570,6 +570,19 @@ typedef struct le_config {
  * this constant was split to end. */
 #define LE_MAX_MONITORED_INPUTS 8
 
+/* ---- Input clip ("HOT") detector (input clip, S2) ---- *
+ * Always on, no parameters, RAW path: LE_CLIP_RUN or more CONSECUTIVE samples
+ * at |s| >= LE_CLIP_LEVEL on a non-loopback input latch that input's bit in
+ * le_snapshot.input_clip_mask, held for LE_CLIP_HOLD_MS past the last detected
+ * run (a persisting rail keeps refreshing the hold). The run requirement is
+ * the point: a one-or-two-sample full-scale transient is music, while a flat
+ * run at the rail is the clamp signature of an overdriven ADC. Detection reads
+ * the RAW device buffer — upstream of the conditioning stage — so a clipped
+ * input flags HOT even when the expander/HPF has reshaped what records. */
+#define LE_CLIP_LEVEL 0.999f
+#define LE_CLIP_RUN 4
+#define LE_CLIP_HOLD_MS 1500
+
 /* Ceiling for a per-lane / per-monitor channel volume. 2.0 is +6.02 dB, so the
  * UI can boost a quiet take/input up to +6 dB rather than only attenuate from
  * unity (1.0 = 0 dB). The output limiter downstream still guards the bus. */
@@ -797,6 +810,22 @@ typedef struct le_snapshot {
    * reason as the blocks above). le_clock_mode; default 0 = OFF, so an
    * untouched engine emits no clock bytes. See le_engine_set_clock_mode. */
   int32_t clock_mode;
+
+  /* ---- input clip detector + conditioning activity (input clip, S2;
+   * trailing for the same offset-stability reason as the blocks above).
+   * Both default to 0 — an untouched engine reports no HOT input and no
+   * active conditioning. */
+  /* Bit c: HOT — a rail-run (LE_CLIP_RUN consecutive raw samples at
+   * |s| >= LE_CLIP_LEVEL) was seen on input c within the last
+   * LE_CLIP_HOLD_MS of processed audio. Detected on the RAW device buffer,
+   * so the flag reflects the ADC even when the conditioning stage has ducked
+   * or notched what records. Loopback-excluded inputs never flag. */
+  uint32_t input_clip_mask;
+  /* Bit c: input c's conditioning stage is currently ACTIVE — enabled AND
+   * not loopback-excluded, i.e. the stage actually runs on the audio path
+   * (the UI truth for a "conditioning on" badge; a stage enabled on an
+   * excluded channel reads 0 here because it never runs). */
+  uint32_t input_cond_mask;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
