@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:segno/visualizer/performance_readout.dart';
+import 'package:segno/visualizer/readout_control.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
 import 'package:segno/visualizer/waveform_window_channel.dart';
 
@@ -35,6 +36,12 @@ abstract interface class WaveformWindowService {
   /// from re-serialising eight track records sixty times a second across an
   /// engine boundary.
   void pushReadout(PerformanceReadout readout);
+
+  /// Handler for control commands the sub-window's volume overlay sends back
+  /// (#698) — the channel's first sub→main control path. The app shell sets
+  /// this to a callback that applies the command through the same blocs the
+  /// main UI uses; `null` drops commands on the floor.
+  abstract void Function(ReadoutControl control)? onControl;
 }
 
 /// Opens a real second OS window via `desktop_multi_window` and streams
@@ -48,6 +55,18 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   /// Static to match [_readyCompleter]: the channel itself is process-wide.
   static PerformanceReadout? _lastReadout;
   static var _mainChannelRegistered = false;
+
+  /// Static like [_readyCompleter]: the channel handler is process-wide, so
+  /// whichever instance last set a handler owns command delivery.
+  static void Function(ReadoutControl control)? _controlHandler;
+
+  @override
+  void Function(ReadoutControl control)? get onControl => _controlHandler;
+
+  @override
+  set onControl(void Function(ReadoutControl control)? handler) {
+    _controlHandler = handler;
+  }
 
   /// Closes sub-windows left over from a hot restart. Dart state is reset but
   /// native windows from `desktop_multi_window` survive.
@@ -72,6 +91,12 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
     await waveformWindowChannel.setMethodCallHandler((call) async {
       if (call.method == waveformWindowReadyMethod) {
         _readyCompleter?.complete();
+      }
+      if (call.method == waveformWindowControlMethod) {
+        final arguments = call.arguments;
+        if (arguments is Map<Object?, Object?>) {
+          _controlHandler?.call(ReadoutControl.fromMap(arguments));
+        }
       }
       return null;
     });
@@ -150,6 +175,9 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
 class NoopWaveformWindowService implements WaveformWindowService {
   @override
   bool get isOpen => false;
+
+  @override
+  void Function(ReadoutControl control)? onControl;
 
   @override
   Future<bool> open({String title = 'Segno — Output'}) async => true;

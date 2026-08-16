@@ -69,6 +69,60 @@ void main() {
       );
     });
 
+    test('carries the volume-overlay facts through a round trip', () {
+      // The #698 additions: per-track volume / chain / default-name flag /
+      // source names, plus the configured-inputs group.
+      const mixed = PerformanceReadout(
+        tracks: [
+          ReadoutTrack(
+            name: 'GUITAR',
+            state: 'playing',
+            volume: 1.26,
+            chainEnabled: false,
+            inputNames: ['GUITAR'],
+          ),
+          ReadoutTrack(name: 'TRACK 5', state: 'empty', defaultName: true),
+        ],
+        inputs: [
+          ReadoutInput(
+            index: 1,
+            name: 'MIC',
+            volume: 0.5,
+            listeningTracks: ['VOX'],
+          ),
+        ],
+      );
+      expect(PerformanceReadout.fromMap(mixed.toMap()), mixed);
+    });
+
+    test('defaults the volume-overlay facts on a pre-overlay payload', () {
+      // A pre-#698 sender wrote none of these keys: volumes fall back to
+      // unity (an unmoved fader, not silence), chains to engaged, and the
+      // inputs group to empty.
+      final decoded = PerformanceReadout.fromMap(const {
+        'tracks': [
+          {'name': 'Drums', 'state': 'playing'},
+        ],
+      });
+      final track = decoded.tracks.single;
+      expect(track.volume, 1);
+      expect(track.chainEnabled, isTrue);
+      expect(track.defaultName, isFalse);
+      expect(track.inputNames, isEmpty);
+      expect(decoded.inputs, isEmpty);
+    });
+
+    test('drops non-string entries from re-serialized name lists', () {
+      // The plugin re-serializes typed lists as List<Object?> across the
+      // engine boundary; junk entries must be dropped, not thrown on.
+      final decoded = ReadoutInput.fromMap(const {
+        'index': 2,
+        'name': 'MIC',
+        'listeningTracks': ['VOX', 3, null],
+      });
+      expect(decoded.listeningTracks, ['VOX']);
+    });
+
     test('equality is by value, which is what makes the push diff work', () {
       expect(
         const PerformanceReadout(tempoBpm: 120),

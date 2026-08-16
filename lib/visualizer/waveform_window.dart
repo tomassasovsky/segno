@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -7,8 +9,10 @@ import 'package:segno/common/console_mode.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
+import 'package:segno/visualizer/console_volume_overlay.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/performance_readout_view.dart';
+import 'package:segno/visualizer/readout_control.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
 import 'package:segno/visualizer/waveform_window_channel.dart';
 import 'package:segno/visualizer/widgets/waveform_view.dart';
@@ -190,7 +194,21 @@ Future<void> runWaveformWindow(WindowController controller) async {
     },
   );
 
-  runApp(WaveformWindowApp(frame: frame, readout: readout, title: title));
+  runApp(
+    WaveformWindowApp(
+      frame: frame,
+      readout: readout,
+      title: title,
+      // The overlay's commands go straight back over the shared channel —
+      // fire-and-forget like every push in the other direction, because a
+      // dropped fader move is corrected by the next one.
+      onControl: (control) => unawaited(
+        waveformWindowChannel
+            .invokeMethod(waveformWindowControlMethod, control.toMap())
+            .catchError((Object _) => null),
+      ),
+    ),
+  );
 }
 
 /// The waveform's colour state for [readout]: the cursor track's transport
@@ -249,8 +267,13 @@ class WaveformWindowApp extends StatelessWidget {
     required this.readout,
     required this.title,
     this.consoleMode = kConsoleMode,
+    this.onControl = _dropControl,
     super.key,
   });
+
+  /// Default [onControl]: a windowed desktop build has no volume overlay, so
+  /// nothing sends.
+  static void _dropControl(ReadoutControl control) {}
 
   /// The latest waveform frame, updated as the main window pushes new data.
   final ValueListenable<WaveformFrame> frame;
@@ -264,6 +287,10 @@ class WaveformWindowApp extends StatelessWidget {
   /// Whether this build is the floor console. A parameter (defaulting to the
   /// compile-time flag) so tests can drive both faces without the define.
   final bool consoleMode;
+
+  /// Sends a volume-overlay control command back to the main window (#698).
+  /// The entrypoint wires this to the window channel; tests capture it.
+  final ValueChanged<ReadoutControl> onControl;
 
   @override
   Widget build(BuildContext context) {
@@ -300,9 +327,16 @@ class WaveformWindowApp extends StatelessWidget {
               );
               if (consoleMode) {
                 // Full-bleed: the console view carries the pen's own inset.
-                return ConsoleReadoutView(
+                // The overlay owns the glass: any tap on the readout face
+                // opens the volume list (#698); the desktop face below is
+                // untouched.
+                return ConsoleVolumeOverlay(
                   readout: readoutData,
-                  waveform: waveform,
+                  onControl: onControl,
+                  child: ConsoleReadoutView(
+                    readout: readoutData,
+                    waveform: waveform,
+                  ),
                 );
               }
               return Padding(

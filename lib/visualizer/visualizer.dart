@@ -3,9 +3,11 @@
 library;
 
 export 'console_readout_view.dart';
+export 'console_volume_overlay.dart';
 export 'cubit/waveform_window_cubit.dart';
 export 'performance_readout.dart';
 export 'performance_readout_view.dart';
+export 'readout_control.dart';
 export 'waveform_window.dart';
 export 'waveform_window_service.dart';
 export 'widgets/waveform_view.dart';

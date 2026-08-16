@@ -1991,6 +1991,21 @@ class LooperRepository {
     return result;
   }
 
+  /// Whether track [channel] is muted per the repository's remembered
+  /// intent — **every lane of it**, the same whole-track reading [setMute]
+  /// writes.
+  ///
+  /// Synchronous intent, not the polled snapshot, for the reason
+  /// [trackChainEnabled] exists: a toggle resolved from a ~16 ms-stale
+  /// snapshot mirror can read the pre-toggle value twice inside the echo
+  /// window and re-apply the first flip instead of undoing it.
+  bool trackMuted(int channel) {
+    for (var lane = 0; lane < laneCount(channel); lane++) {
+      if (!(_laneMute[(channel, lane)] ?? false)) return false;
+    }
+    return true;
+  }
+
   /// Mutes or unmutes track [channel] — **every lane of it**. A track-level
   /// mute is a whole-track control, so a multi-lane track silences (or
   /// restores) all its lanes, not just lane 0. Returns the last failing lane's

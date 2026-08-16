@@ -9,3 +9,8 @@ const waveformWindowChannel = WindowMethodChannel('segno/waveform_window');
 
 /// Sent by the waveform window once [waveformWindowChannel] is registered.
 const waveformWindowReadyMethod = 'ready';
+
+/// Sent by the waveform window when the volume overlay issues a control
+/// command (a `ReadoutControl` map) — the channel's first sub→main control
+/// path (#698).
+const waveformWindowControlMethod = 'readout_control';
