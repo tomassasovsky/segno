@@ -501,7 +501,8 @@ void main() {
 
         // The first tap placed normally (it cannot wait to learn whether a
         // second is coming — zero added latency on singles); the second
-        // committed the reset: exactly one control for it, at unity.
+        // committed the reset at its lift, its own placement suppressed:
+        // exactly one control for it, at unity.
         expect(controls, hasLength(2));
         expect(controls.first.value, isNot(1.0));
         expect(controls.last.action, ReadoutControl.trackVolume);
@@ -603,8 +604,8 @@ void main() {
     });
 
     testWidgets(
-      'a tap then an immediate grab resets at the down and drags with zero '
-      'added delay',
+      'a tap then an immediate grab just drags, with zero added delay and '
+      'no reset',
       (tester) async {
         await pump(tester);
         await open(tester);
@@ -613,26 +614,75 @@ void main() {
         await tester.tapAt(at);
         await tester.pump(const Duration(milliseconds: 100));
 
-        // Grabbing again inside the pair window fires the discrete reset
-        // at the down — and the drag still tracks from its very first
-        // movement: no recognizer waits out a double-tap timeout.
+        // Grabbing again inside the pair window: the reset commits only
+        // when the second gesture COMPLETES as a clean tap, so a gesture
+        // that moves never resets — and the drag still tracks from its
+        // very first movement: no recognizer waits out a double-tap
+        // timeout.
         final gesture = await tester.startGesture(at);
         await gesture.moveBy(const Offset(-200, 0));
         await tester.pump();
-        expect(controls[1].value, 1.0);
-        // The drag start placed and sent instantly — a third control with
+        // The drag start placed and sent instantly — a second control with
         // no time pumped at all is the zero-added-latency proof.
-        expect(controls.length, greaterThanOrEqualTo(3));
+        expect(controls.length, greaterThanOrEqualTo(2));
 
         // The trailing flush lands the finger's position (throttle as
-        // always), and the reset stays a one-off behind it.
+        // always) and unity never fires: a drag is not a double tap.
+        await gesture.up();
         await tester.pump(ConsoleVolumeOverlay.sendGap * 2);
         expect(controls.last.value, lessThan(1.0));
         expect(controls.last.action, ReadoutControl.trackVolume);
-        await gesture.up();
-        await tester.pump();
+        expect(controls.map((c) => c.value), everyElement(isNot(1.0)));
       },
     );
+
+    testWidgets('a tap then a scroll-swipe over the same capsule never '
+        'resets', (tester) async {
+      await pump(tester);
+      await open(tester);
+
+      // The regression the up-fired semantic exists for: set a volume,
+      // then within the pair window fling the list vertically with the
+      // finger landing on the same capsule. A down-fired reset committed
+      // unity here and the scroll never re-placed it — the just-set
+      // volume silently jumped.
+      final at = faderPoint(tester, const Key('volume_row_track_0'));
+      await tester.tapAt(at);
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final gesture = await tester.startGesture(at);
+      await gesture.moveBy(const Offset(0, -80));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump(ConsoleVolumeOverlay.sendGap * 2);
+
+      // Only the deliberate placement ever landed.
+      expect(controls, hasLength(1));
+      expect(controls.single.value, isNot(1.0));
+    });
+
+    testWidgets('a chorded brush then a quick tap never resets', (
+      tester,
+    ) async {
+      await pump(tester);
+      await open(tester);
+
+      // Two fingers brush the capsule; the first lifts clean while the
+      // second rests. That lift must NOT arm the pair window — the next
+      // placement tap would otherwise fire a spurious unity reset.
+      final at = faderPoint(tester, const Key('volume_row_track_0'));
+      final finger1 = await tester.startGesture(at);
+      final finger2 = await tester.startGesture(at + const Offset(-40, 0));
+      await finger1.up();
+      await finger2.up();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.tapAt(at);
+      await tester.pump(ConsoleVolumeOverlay.sendGap * 2);
+
+      expect(controls, isNotEmpty);
+      expect(controls.map((c) => c.value), everyElement(isNot(1.0)));
+    });
 
     testWidgets('a double tap on the name or dB zones does nothing', (
       tester,

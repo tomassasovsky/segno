@@ -745,9 +745,16 @@ class _VolumeRow extends StatelessWidget {
 /// ~300 ms window, and the hard contract here is zero added latency on
 /// singles. The observer costs nothing: a tap is down→up with < `_tapSlop`
 /// movement in < `_maxTapDuration`; a second down within `_doubleTapWindow`
-/// of the first's up fires the reset at the DOWN (snappiest honest moment)
-/// and suppresses that gesture's own tap placement. Drag recognizers are
-/// untouched, so a press that moves keeps placing from its first frame.
+/// of the first's up ARMS the pair, and the reset commits only when that
+/// second gesture itself COMPLETES as a clean tap — at its up, never at
+/// its down: a down-fired reset let a tap followed by a scroll-swipe
+/// landing on the same capsule silently jump the just-set volume to unity.
+/// A scroll or drag never completes a clean tap, so that class is gone,
+/// and the cost is the second finger's lift — imperceptible for a reset.
+/// The armed gesture's own tap placement is suppressed (it must not land
+/// over the reset); drag recognizers are untouched, so a press that moves
+/// keeps placing from its first frame — and, by moving, disqualifies the
+/// reset.
 class _RowFader extends StatefulWidget {
   const _RowFader({
     required this.s,
@@ -799,33 +806,40 @@ class _RowFaderState extends State<_RowFader> {
   DateTime? _lastTapUp;
 
   /// The pointer being tracked. Bookkeeping is single-touch: a second
-  /// simultaneous finger is never part of a tap pair.
+  /// simultaneous finger stays untracked AND taints the tracked gesture —
+  /// a chorded brush over the capsule must not leave a clean-looking lift
+  /// behind for the next placement tap to pair with.
   int? _pointer;
 
   DateTime _downAt = DateTime.fromMillisecondsSinceEpoch(0);
   Offset _downPosition = Offset.zero;
   bool _moved = false;
 
-  /// True while the current gesture is the pair's second tap: the reset
-  /// already fired at its down, so its own tap placement must not land on
-  /// top. Drag callbacks stay live — a moving finger always wins.
-  bool _resetTap = false;
+  /// True while the current gesture began inside [_doubleTapWindow] of a
+  /// clean tap's lift — the candidate second half of a pair. It suppresses
+  /// this gesture's own tap placement (which would otherwise land AFTER
+  /// the up-fired reset and override it — recognizer callbacks run at the
+  /// arena sweep, after the raw up). Recomputed at every tracked down;
+  /// deliberately NOT cleared at the up, so the suppression still holds
+  /// when the recognizer's late callbacks arrive.
+  bool _pairArmed = false;
 
   void _onPointerDown(PointerDownEvent event) {
     if (_pointer != null) {
-      // A second finger mid-gesture: whatever this was, it is not a tap.
+      // A chord: the extra finger stays untracked, and the tracked
+      // gesture is tainted — neither half of this touch is a tap.
+      _moved = true;
       _lastTapUp = null;
       return;
     }
     final now = clock.now();
-    _resetTap =
+    _pairArmed =
         _lastTapUp != null && now.difference(_lastTapUp!) < _doubleTapWindow;
     _lastTapUp = null;
     _pointer = event.pointer;
     _downAt = now;
     _downPosition = event.position;
     _moved = false;
-    if (_resetTap) widget.onDefault();
   }
 
   void _onPointerMove(PointerMoveEvent event) {
@@ -836,12 +850,14 @@ class _RowFaderState extends State<_RowFader> {
   void _onPointerUp(PointerUpEvent event) {
     if (event.pointer != _pointer) return;
     _pointer = null;
-    final clean =
-        !_moved &&
-        !_resetTap &&
-        clock.now().difference(_downAt) < _maxTapDuration;
-    // The reset tap itself never opens the next window: a triple tap is
-    // two fresh taps away from another reset, not one.
+    final clean = !_moved && clock.now().difference(_downAt) < _maxTapDuration;
+    if (_pairArmed && clean) {
+      // The pair completed: reset. _lastTapUp stays null (cleared at this
+      // gesture's down), so the reset tap never opens the next window — a
+      // triple tap is two fresh taps away from another reset, not one.
+      widget.onDefault();
+      return;
+    }
     _lastTapUp = clean ? clock.now() : null;
   }
 
@@ -885,7 +901,7 @@ class _RowFaderState extends State<_RowFader> {
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTapDown: (details) {
-                      if (_resetTap) return;
+                      if (_pairArmed) return;
                       place(details.localPosition);
                     },
                     onHorizontalDragStart: (details) =>
