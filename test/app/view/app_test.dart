@@ -595,6 +595,20 @@ void main() {
         await tester.pump();
         expect(engine.laneMute[(1, 0)], isTrue);
 
+        // The regression the review caught: a fast second tap lands inside
+        // the snapshot echo window (the polled LooperState still reads
+        // unmuted — this test's ticker never even ticks). Resolved against
+        // repository intent it must UNMUTE; resolved against the stale poll
+        // it would re-send the same mute and leave the track silent.
+        onControl(
+          const ReadoutControl(
+            action: ReadoutControl.trackMuteToggle,
+            index: 1,
+          ),
+        );
+        await tester.pump();
+        expect(engine.laneMute[(1, 0)], isFalse);
+
         expect(repository.trackChainEnabled(2), isTrue);
         onControl(
           const ReadoutControl(
@@ -623,6 +637,43 @@ void main() {
           const ReadoutControl(action: 'someFutureAction', index: 0, value: 1),
         );
         await tester.pump();
+        expect(tester.takeException(), isNull);
+
+        // Out-of-range indices are dropped BEFORE any repository write: a
+        // garbled map decodes to index -1, and applying it would seed junk
+        // intent (and persist it) before the engine could reject the
+        // channel. Same for an index past the live track roster.
+        engine.laneVol.clear();
+        onControl(
+          const ReadoutControl(
+            action: ReadoutControl.trackVolume,
+            index: -1,
+            value: 1,
+          ),
+        );
+        onControl(
+          const ReadoutControl(
+            action: ReadoutControl.trackVolume,
+            index: 8,
+            value: 1,
+          ),
+        );
+        onControl(
+          const ReadoutControl(
+            action: ReadoutControl.trackChainToggle,
+            index: -1,
+          ),
+        );
+        onControl(
+          const ReadoutControl(
+            action: ReadoutControl.trackMuteToggle,
+            index: -1,
+          ),
+        );
+        await tester.pump();
+        expect(engine.laneVol, isEmpty);
+        expect(engine.laneMute.containsKey((-1, 0)), isFalse);
+        expect(repository.trackChainEnabled(-1), isTrue);
         expect(tester.takeException(), isNull);
       },
     );

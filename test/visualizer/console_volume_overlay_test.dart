@@ -373,6 +373,135 @@ void main() {
         findsNothing,
       );
       expect(find.byKey(const Key('volume_overlay_list')), findsOneWidget);
+
+      // The transition is REAL state, not a drawing fallback: one dead-space
+      // tap dismisses to the readout (list behaviour), and does not need the
+      // panel's extra step.
+      await tester.tapAt(const Offset(5, 595));
+      await tester.pump();
+      expect(find.byKey(const Key('readout_face')), findsOneWidget);
     });
+
+    testWidgets('the name and value columns are inert — no fader jump, no '
+        'fall-through dismissal', (tester) async {
+      await pump(tester);
+      await open(tester);
+
+      // A tap on the NAME must not commit volume 0 (the drag surface is the
+      // capsule only — owner-directed deviation from the drawn whole-row
+      // contract, for performance safety)...
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key('volume_row_track_1')),
+          matching: find.text('BOOM'),
+        ),
+      );
+      await tester.pump();
+      // ...and a tap on the dB VALUE must not commit max.
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const Key('volume_row_track_0')),
+          matching: find.text('+2.0 dB'),
+        ),
+      );
+      await tester.pump();
+
+      expect(controls, isEmpty);
+      // Nor may the label taps fall through to the dead-space dismissal.
+      expect(find.byKey(const Key('volume_overlay_list')), findsOneWidget);
+    });
+
+    testWidgets('a motionless held finger never triggers the revert', (
+      tester,
+    ) async {
+      await pump(tester);
+      await open(tester);
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('volume_row_track_0'))),
+      );
+      // Well past the 8 s window with the finger resting: the revert must
+      // not unmount the row under the active gesture.
+      await tester.pump(const Duration(seconds: 20));
+      expect(find.byKey(const Key('volume_overlay_list')), findsOneWidget);
+
+      // Release re-arms the timer; only then does inactivity revert.
+      await gesture.up();
+      await tester.pump(const Duration(seconds: 9));
+      expect(find.byKey(const Key('readout_face')), findsOneWidget);
+    });
+
+    testWidgets('unmounting inside the send gap flushes the queued value', (
+      tester,
+    ) async {
+      await pump(tester);
+      await open(tester);
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(const Key('volume_row_track_0'))),
+      );
+      await gesture.moveBy(const Offset(30, 0));
+      await tester.pump();
+      await gesture.moveBy(const Offset(30, 0));
+      await tester.pump();
+      await gesture.up();
+      expect(controls, hasLength(1));
+
+      // Window close / hot restart within 33 ms of the last movement: the
+      // drag's final position must not die with the trailing timer.
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(controls, hasLength(2));
+      expect(controls.last.value, greaterThan(controls.first.value));
+    });
+
+    testWidgets(
+      'a conflicting snapshot cannot snap the fader back inside the hold; '
+      'the pushed truth wins after it',
+      (tester) async {
+        await pump(tester);
+        await open(tester);
+
+        await tester.tap(find.byKey(const Key('volume_row_track_0')));
+        await tester.pump();
+        final sent = controls.single.value;
+        final sentText = signalGainReadout(sent);
+        expect(find.text(sentText), findsOneWidget);
+
+        // The main window pushes a snapshot still carrying the OLD volume
+        // (the command's echo has not landed yet). The fader must hold the
+        // local value — a snap-back mid-adjustment reads as a broken fader.
+        await pump(
+          tester,
+          PerformanceReadout(
+            tracks: readout.tracks,
+            inputs: readout.inputs,
+            tempoBpm: 99,
+          ),
+        );
+        await tester.pump();
+        expect(find.text(sentText), findsOneWidget);
+        expect(find.text('+2.0 dB'), findsNothing);
+
+        // Past localHold (wall clock — the prune stamps with DateTime.now),
+        // the next snapshot's word is final: a dropped command must not lie
+        // forever.
+        await tester.runAsync(
+          () => Future<void>.delayed(
+            ConsoleVolumeOverlay.localHold + const Duration(milliseconds: 100),
+          ),
+        );
+        await pump(
+          tester,
+          PerformanceReadout(
+            tracks: readout.tracks,
+            inputs: readout.inputs,
+            tempoBpm: 101,
+          ),
+        );
+        await tester.pump();
+        expect(find.text(sentText), findsNothing);
+        expect(find.text('+2.0 dB'), findsOneWidget);
+      },
+    );
   });
 }

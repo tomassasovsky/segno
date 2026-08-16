@@ -3479,6 +3479,31 @@ void main() {
     });
 
     test(
+      'trackMuted reads the remembered whole-track intent synchronously',
+      () {
+        // The synchronous reader toggles resolve from — the polled snapshot is
+        // ~16 ms stale, and a toggle resolved from it can double-apply inside
+        // the echo window (segno #704 review).
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneCount(channel: 2, count: 2);
+        addTearDown(repo.dispose);
+
+        expect(repo.trackMuted(2), isFalse);
+        repo.setMute(muted: true, channel: 2);
+        expect(repo.trackMuted(2), isTrue);
+
+        // A partially-muted track is not "muted": trackMuted mirrors setMute's
+        // whole-track reading, every lane of it.
+        repo.setLaneMute(muted: false, channel: 2, lane: 1);
+        expect(repo.trackMuted(2), isFalse);
+
+        repo.setMute(muted: false, channel: 2);
+        expect(repo.trackMuted(2), isFalse);
+      },
+    );
+
+    test(
       'setVolume on a multi-lane track sets EVERY lane, not just lane 0',
       () {
         final repo = buildRepo()

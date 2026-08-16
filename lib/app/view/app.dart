@@ -564,9 +564,22 @@ class _AppViewState extends State<_AppView> {
   /// TOGGLES resolved against repository intent (the overlay's snapshot is a
   /// frame stale by construction), volumes clamped to the mix ceiling here
   /// because the wire is not trusted. Unknown actions from a newer overlay
-  /// are dropped, per the channel's tolerant-decode discipline.
+  /// are dropped, per the channel's tolerant-decode discipline — and so are
+  /// out-of-range indices: a garbled map decodes to index -1, and applying
+  /// it would write junk intent into repository maps (and persist it) before
+  /// the engine ever got a chance to reject the channel.
   void _applyReadoutControl(ReadoutControl control) {
     if (!mounted) return;
+    final index = control.index;
+    if (index < 0) return;
+    final isTrackAction =
+        control.action == ReadoutControl.trackVolume ||
+        control.action == ReadoutControl.trackMuteToggle ||
+        control.action == ReadoutControl.trackChainToggle;
+    if (isTrackAction &&
+        index >= TracksState.tracksPerBank * TracksState.bankCountMax) {
+      return;
+    }
     switch (control.action) {
       case ReadoutControl.trackVolume:
         context.read<LooperBloc>().add(

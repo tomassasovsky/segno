@@ -35,10 +35,11 @@ enum _OverlayPage { list, input, track }
 /// (panel → list → readout), and any interaction re-arms the timer.
 ///
 /// Volume rows commit CONTINUOUSLY (a live mixer, not commit-on-release):
-/// tap-or-drag anywhere on a row places the fader, updates the local drawing
-/// immediately, and sends a [ReadoutControl] through [onControl] throttled
-/// to one per [sendGap] with a trailing flush so the last position always
-/// lands.
+/// tap-or-drag on the fader capsule places the fader (the name and value
+/// columns are deliberately inert — see [_RowFader]), updates the local
+/// drawing immediately, and sends a [ReadoutControl] through [onControl]
+/// throttled to one per [sendGap] with a trailing flush so the last
+/// position always lands.
 class ConsoleVolumeOverlay extends StatefulWidget {
   /// Creates a [ConsoleVolumeOverlay] over the readout face [child].
   const ConsoleVolumeOverlay({
@@ -106,6 +107,21 @@ class _ConsoleVolumeOverlayState extends State<ConsoleVolumeOverlay> {
       return (entry.volume - pushed).abs() < 0.001 ||
           now.difference(entry.at) > ConsoleVolumeOverlay.localHold;
     });
+    // A config page whose subject vanished from the snapshot (a shrunk
+    // roster after a device change) transitions to the list FOR REAL — a
+    // build-side fallback alone would draw the list while [_page] stayed on
+    // the panel, so dead-space taps would no-op and the revert chain would
+    // take two steps from what looks like the list.
+    final page = _page;
+    final vanished = switch (page) {
+      _OverlayPage.input => _inputOf(widget.readout, _configIndex) == null,
+      _OverlayPage.track => _configIndex >= widget.readout.tracks.length,
+      _ => false,
+    };
+    if (vanished) {
+      _page = _OverlayPage.list;
+      _armRevert();
+    }
   }
 
   double? _pushedVolume(String key) {
@@ -121,14 +137,39 @@ class _ConsoleVolumeOverlayState extends State<ConsoleVolumeOverlay> {
   @override
   void dispose() {
     _revert?.cancel();
+    // A teardown inside the send gap (window close, hot restart) must not
+    // eat the drag's final position: flush the queued command before the
+    // trailing timer dies with the widget.
+    final queued = _queued;
+    if (queued != null) {
+      _queued = null;
+      widget.onControl(queued);
+    }
     _gap?.cancel();
     super.dispose();
   }
 
-  /// (Re-)arms the inactivity revert — called on every interaction.
+  /// How many pointers are currently down on the overlay. While any is, the
+  /// inactivity revert is suppressed entirely: a motionless held finger is
+  /// still an interaction, and reverting mid-gesture would unmount the row
+  /// under an active drag.
+  int _pointersDown = 0;
+
+  void _pointerDown() {
+    _pointersDown++;
+    _revert?.cancel();
+  }
+
+  void _pointerUp() {
+    if (_pointersDown > 0) _pointersDown--;
+    if (_pointersDown == 0) _armRevert();
+  }
+
+  /// (Re-)arms the inactivity revert — called on every interaction. A no-op
+  /// while a pointer is held down; the release re-arms.
   void _armRevert() {
     _revert?.cancel();
-    if (_page == null) return;
+    if (_page == null || _pointersDown > 0) return;
     _revert = Timer(ConsoleVolumeOverlay.revertDelay, _stepBack);
   }
 
@@ -221,12 +262,14 @@ class _ConsoleVolumeOverlayState extends State<ConsoleVolumeOverlay> {
         ),
       _ => _VolumeListPage(readout: readout, overlay: this),
     };
-    // Every pointer-down re-arms the revert, whichever widget claims the
-    // gesture — translucent so it observes without competing.
+    // Every pointer observes the revert timer, whichever widget claims the
+    // gesture — translucent so it observes without competing. Down suppresses
+    // the timer (a held finger is an interaction); release re-arms it.
     return Listener(
       behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => _armRevert(),
-      onPointerMove: (_) => _armRevert(),
+      onPointerDown: (_) => _pointerDown(),
+      onPointerUp: (_) => _pointerUp(),
+      onPointerCancel: (_) => _pointerUp(),
       child: body,
     );
   }
@@ -639,9 +682,17 @@ class _VolumeRow extends StatelessWidget {
 }
 
 /// The fader strip: optional leading name column, the capsule track with its
-/// accent fill and right-edge marker, and the signed-dB value. The WHOLE
-/// region is one drag surface — tap or drag anywhere places the fader; the
-/// position maps onto the track's own sub-rect.
+/// accent fill and right-edge marker, and the signed-dB value.
+///
+/// The drag surface is the CAPSULE's horizontal span at the full row height
+/// — deliberately NOT the whole row the pen note describes ("tap/drag
+/// anywhere on the row"): with the name and value columns live, an
+/// accidental label tap committed volume 0 (silencing a track
+/// mid-performance) and a value tap committed max. Owner-directed deviation
+/// for performance safety; the pen note update is handled from the main
+/// session. The name and value columns absorb their taps inertly so a label
+/// touch neither moves the fader nor falls through to the page's dead-space
+/// dismissal.
 class _RowFader extends StatelessWidget {
   const _RowFader({
     required this.s,
@@ -671,76 +722,82 @@ class _RowFader extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final fraction = (volume / kSignalMaxGain).clamp(0.0, 1.0);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final trackLeft = leadingWidth + leadingGap;
-        final trackWidth = math.max(
-          1,
-          constraints.maxWidth - trackLeft - valueGap - valueWidth,
-        );
-        void place(Offset local) {
-          final f = ((local.dx - trackLeft) / trackWidth).clamp(0.0, 1.0);
-          onVolume(f * kSignalMaxGain);
-        }
+    // The empty-tap absorber: the strip outside the capsule (name, value)
+    // reacts to nothing but also lets nothing fall through to the page's
+    // dead-space dismissal. The capsule's own detector is deeper, so it
+    // wins the arena over this one.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      child: Row(
+        children: [
+          if (leading != null) ...[
+            SizedBox(width: leadingWidth, child: leading),
+            SizedBox(width: leadingGap),
+          ],
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final trackWidth = math.max(1, constraints.maxWidth);
+                void place(Offset local) {
+                  final f = (local.dx / trackWidth).clamp(0.0, 1.0);
+                  onVolume(f * kSignalMaxGain);
+                }
 
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (details) => place(details.localPosition),
-          onHorizontalDragStart: (details) => place(details.localPosition),
-          onHorizontalDragUpdate: (details) => place(details.localPosition),
-          child: Row(
-            children: [
-              if (leading != null) ...[
-                SizedBox(width: leadingWidth, child: leading),
-                SizedBox(width: leadingGap),
-              ],
-              Expanded(
-                child: Container(
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                    color: surface.surface,
-                    borderRadius: BorderRadius.circular(14 * s),
-                    border: Border.all(color: surface.line),
-                  ),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: FractionallySizedBox(
-                      widthFactor: fraction,
-                      heightFactor: 1,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: surface.accentSurface,
-                          border: Border(
-                            right: BorderSide(
-                              color: surface.accent,
-                              width: 4 * s,
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapDown: (details) => place(details.localPosition),
+                  onHorizontalDragStart: (details) =>
+                      place(details.localPosition),
+                  onHorizontalDragUpdate: (details) =>
+                      place(details.localPosition),
+                  child: Container(
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: surface.surface,
+                      borderRadius: BorderRadius.circular(14 * s),
+                      border: Border.all(color: surface.line),
+                    ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: FractionallySizedBox(
+                        widthFactor: fraction,
+                        heightFactor: 1,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: surface.accentSurface,
+                            border: Border(
+                              right: BorderSide(
+                                color: surface.accent,
+                                width: 4 * s,
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
-              SizedBox(width: valueGap),
-              SizedBox(
-                width: valueWidth,
-                child: AppText(
-                  signalGainReadout(volume),
-                  maxLines: 1,
-                  style: TextStyle(
-                    color: surface.textSecondary,
-                    fontSize: 40 * s,
-                    height: 1.2,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                    leadingDistribution: TextLeadingDistribution.even,
-                  ),
-                ),
-              ),
-            ],
+                );
+              },
+            ),
           ),
-        );
-      },
+          SizedBox(width: valueGap),
+          SizedBox(
+            width: valueWidth,
+            child: AppText(
+              signalGainReadout(volume),
+              maxLines: 1,
+              style: TextStyle(
+                color: surface.textSecondary,
+                fontSize: 40 * s,
+                height: 1.2,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                leadingDistribution: TextLeadingDistribution.even,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
