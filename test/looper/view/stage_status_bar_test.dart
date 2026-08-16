@@ -179,6 +179,36 @@ void main() {
       await pump(tester);
       expect(find.text(l10n.interactionModeMute), findsOneWidget);
     });
+
+    testWidgets('wears rec red, mute green and FX blue', (tester) async {
+      // #693 — the owner's call from the bench: mute reads GREEN on every
+      // surface. Rec stays red and FX stays accent-blue.
+      Future<(Color?, Color?)> pillOf(InteractionMode mode) async {
+        whenListen(
+          control,
+          const Stream<ControlState>.empty(),
+          initialState: ControlState(mode: mode),
+        );
+        // Unmount first: re-pumping the same tree reuses the element, and the
+        // pill's `context.select` would keep serving the previous mode.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await pump(tester);
+        final box =
+            tester
+                    .widget<Container>(find.byKey(const Key('stage_mode_pill')))
+                    .decoration!
+                as BoxDecoration;
+        return (box.border!.top.color, box.color);
+      }
+
+      final s = AppTheme.neon.extension<SurfaceTheme>()!;
+      expect(await pillOf(InteractionMode.record), (s.rec, s.recSurface));
+      expect(await pillOf(InteractionMode.mute), (
+        s.success,
+        s.success.withValues(alpha: 0.14),
+      ));
+      expect(await pillOf(InteractionMode.fx), (s.accent, s.accentSurface));
+    });
   });
 
   group('bank pair', () {

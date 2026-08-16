@@ -76,23 +76,15 @@ class _ReadoutHeader extends StatelessWidget {
         const Spacer(),
         // The mode chip is the readout's most load-bearing element: it is the
         // answer to "what does stepping on a track switch do right now".
-        DecoratedBox(
-          key: const Key('readout_mode'),
-          decoration: BoxDecoration(
-            color: surface.accent.withValues(alpha: 0.18),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: AppText(
-              _modeLabel(l10n, readout.mode),
-              style: TextStyle(
-                color: surface.accent,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ),
+        //
+        // Mute wears the design system's `success` green here too (#693) —
+        // the owner's call is that the mute reading is green on EVERY
+        // surface, so this window may not stay accent-blue while the stage
+        // bar, the desktop chip and the 7" readout all went green. The other
+        // modes keep this chip's accent idiom.
+        _ModeChip(
+          color: readout.mode == 'mute' ? surface.success : surface.accent,
+          label: _modeLabel(l10n, readout.mode),
         ),
       ],
     );
@@ -111,6 +103,37 @@ class _ReadoutHeader extends StatelessWidget {
         'fx' => l10n.readoutModeFx,
         _ => token.toUpperCase(),
       };
+}
+
+/// The mode chip: the readout's answer to "what does stepping on a track
+/// switch do right now", in the colour that mode wears across the console.
+class _ModeChip extends StatelessWidget {
+  const _ModeChip({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      key: const Key('readout_mode'),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: AppText(
+          label,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// One labelled figure in the header.

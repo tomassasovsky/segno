@@ -240,9 +240,9 @@ class ModeIndicator extends StatelessWidget {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
-    // One color + icon + name per mode, matching the pedal's own tri-state
-    // MODE indicator (rec green-ish accent, mute primary, FX blue) so the
-    // screen and the plate never disagree about which mode is live.
+    // One color + icon + name per mode, shared with the stage status bar's
+    // pill so the two screens never disagree about which mode is live: rec
+    // red, mute the design system's `success` green (#693), FX blue.
     final (color, icon, modeName) = switch (mode) {
       InteractionMode.record => (
         looper.recordColor,
@@ -250,7 +250,7 @@ class ModeIndicator extends StatelessWidget {
         l10n.interactionModeRec,
       ),
       InteractionMode.mute => (
-        theme.colorScheme.primary,
+        context.surface.success,
         Icons.volume_off_rounded,
         l10n.interactionModeMute,
       ),

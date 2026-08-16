@@ -301,7 +301,7 @@ void main() {
       }
     });
 
-    testWidgets('paints the mode word red only while a press records', (
+    testWidgets('paints the mode word red recording, green muting', (
       tester,
     ) async {
       final surface = AppTheme.neon.extension<SurfaceTheme>()!;
@@ -317,7 +317,17 @@ void main() {
       await pump(tester, const PerformanceReadout());
       expect(styleOf().color, surface.rec);
 
+      // #693 — the owner's call from the bench: the mute reading is green on
+      // every surface, so this word may not fall back to plain white.
       await pump(tester, const PerformanceReadout(mode: 'mute'));
+      expect(styleOf().color, surface.success);
+
+      // FX keeps the neutral reading; only mute moved.
+      await pump(tester, const PerformanceReadout(mode: 'fx'));
+      expect(styleOf().color, surface.textPrimary);
+
+      // An unknown token from an older main window still reads neutral.
+      await pump(tester, const PerformanceReadout(mode: 'custom'));
       expect(styleOf().color, surface.textPrimary);
     });
 

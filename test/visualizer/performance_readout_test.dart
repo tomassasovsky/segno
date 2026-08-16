@@ -191,6 +191,30 @@ void main() {
       expect(find.byKey(const Key('readout_tempo')), findsOneWidget);
     });
 
+    testWidgets('tints the mode chip green while mute is live', (tester) async {
+      // #693 — the owner's call from the bench: the mute reading is green on
+      // EVERY surface, so this window may not stay accent-blue for it. The
+      // other modes keep the chip's accent idiom.
+      final surface = AppTheme.neon.extension<SurfaceTheme>()!;
+      Color chipColor() =>
+          (tester
+                      .widget<DecoratedBox>(
+                        find.byKey(const Key('readout_mode')),
+                      )
+                      .decoration
+                  as BoxDecoration)
+              .color!;
+
+      await pump(tester, const PerformanceReadout(mode: 'mute'));
+      expect(chipColor(), surface.success.withValues(alpha: 0.18));
+
+      await pump(tester, const PerformanceReadout());
+      expect(chipColor(), surface.accent.withValues(alpha: 0.18));
+
+      await pump(tester, const PerformanceReadout(mode: 'fx'));
+      expect(chipColor(), surface.accent.withValues(alpha: 0.18));
+    });
+
     testWidgets('renders an unknown mode token verbatim rather than guessing', (
       tester,
     ) async {

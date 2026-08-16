@@ -450,8 +450,10 @@ class _ModeColumn extends StatelessWidget {
 }
 
 /// The mode word — what a footswitch press does right now — bare and
-/// stage-sized per the pen: red only while a press records, the primary
-/// text colour otherwise.
+/// stage-sized per the pen: red while a press records, the design system's
+/// `success` green while a press mutes (#693), the primary text colour
+/// otherwise (which is what an unknown token from an older main window
+/// reads as).
 class _ModeWord extends StatelessWidget {
   const _ModeWord({required this.mode, required this.s});
 
@@ -475,7 +477,11 @@ class _ModeWord extends StatelessWidget {
       label,
       key: const Key('console_readout_mode'),
       style: TextStyle(
-        color: mode == 'record' ? surface.rec : surface.textPrimary,
+        color: switch (mode) {
+          'record' => surface.rec,
+          'mute' => surface.success,
+          _ => surface.textPrimary,
+        },
         fontSize: 84 * s,
         // The pen draws weight 750; the bundled Inter tops out at the 700
         // cut, which is the nearest face.

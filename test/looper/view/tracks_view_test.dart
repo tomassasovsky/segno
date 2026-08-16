@@ -1301,6 +1301,36 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('the mode indicator wears rec red, mute green, FX blue', (
+      tester,
+    ) async {
+      // #693 — the owner's call from the bench: mute reads GREEN on every
+      // surface, matching the stage status bar's pill so the two screens can
+      // never disagree about which mode is live.
+      Future<Color> colorOf(InteractionMode mode) async {
+        await tester.pumpApp(
+          Scaffold(
+            body: ModeIndicator(mode: mode, onToggle: () {}),
+          ),
+        );
+        return tester
+            .widget<Icon>(
+              find.descendant(
+                of: find.byKey(const Key('tracks_mode_indicator')),
+                matching: find.byType(Icon),
+              ),
+            )
+            .color!;
+      }
+
+      final looper = AppTheme.neon.extension<LooperTheme>()!;
+      final surface = AppTheme.neon.extension<SurfaceTheme>()!;
+
+      expect(await colorOf(InteractionMode.record), looper.recordColor);
+      expect(await colorOf(InteractionMode.mute), surface.success);
+      expect(await colorOf(InteractionMode.fx), looper.fxColor);
+    });
+
     testWidgets('Tab is not swallowed by the tracks key handler', (
       tester,
     ) async {

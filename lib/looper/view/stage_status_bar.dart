@@ -146,15 +146,15 @@ class _SessionBlock extends StatelessWidget {
   }
 }
 
-/// The mode pill: `REC` red, `MUTE` in the theme's primary, `FX` blue — a
-/// readout of [ControlState.mode], sharing the desktop `ModeIndicator`'s
-/// colour mapping so the screen and the plate never disagree. Not tappable:
-/// the MODE footswitch owns the cycle.
+/// The mode pill: `REC` red, `MUTE` green, `FX` blue — a readout of
+/// [ControlState.mode], sharing the desktop `ModeIndicator`'s colour mapping
+/// so the screen and the plate never disagree. Not tappable: the MODE
+/// footswitch owns the cycle.
 ///
 /// The pen draws the record state (`rec` outline over `recSurface`) and the
 /// FX state (`accent` over `accentSurface`); mute follows the same
-/// one-seventh-alpha fill recipe in the desktop chip's own colour, since no
-/// STAGE screen draws it.
+/// one-seventh-alpha fill recipe over the design system's `success` green
+/// (#693 — the owner's call from the bench), since no STAGE screen draws it.
 class _ModePill extends StatelessWidget {
   const _ModePill();
 
@@ -172,8 +172,8 @@ class _ModePill extends StatelessWidget {
         l10n.interactionModeRec,
       ),
       InteractionMode.mute => (
-        Theme.of(context).colorScheme.primary,
-        Theme.of(context).colorScheme.primary.withValues(alpha: 0.14),
+        surface.success,
+        surface.success.withValues(alpha: 0.14),
         l10n.interactionModeMute,
       ),
       InteractionMode.fx => (
