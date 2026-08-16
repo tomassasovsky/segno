@@ -6097,6 +6097,136 @@ static void test_sleep_ms(int ms) {
 }
 #endif
 
+/* ---- allocation interposer for the drain thread (#722) ----
+ *
+ * The drain cycle used to malloc + free a 512 KB sidecar buffer every 250 ms.
+ * The first telling of this called that a per-cycle mmap/munmap and blamed it
+ * for #722's clicks; measurement disproved it (glibc's mmap threshold is
+ * dynamic, so only the first cycle mmaps and the rest come from the arena —
+ * numbers in perf_drain.c's header). The property is still worth holding: a
+ * background writer sharing a machine with a real-time audio callback should
+ * not take the allocator lock on a schedule, and "this loop does not call the
+ * allocator" is only enforceable if something checks it. Hence a counter that
+ * can say NOTHING, rather than an eyeball on the diff.
+ *
+ * Defining the allocator entry points in the test executable interposes on
+ * every call the engine objects make (the linker binds their undefined
+ * references to these definitions before it ever reaches libc), and
+ * forwarding to the real allocator keeps the process working normally.
+ * Counting is gated on a THREAD-LOCAL flag that only the drain thread ever
+ * sets — via the existing mid-cycle hook, which runs on that thread — so the
+ * test thread's own allocations (and every other thread's) are invisible to
+ * the count.
+ *
+ * KNOWN HOLE, stated rather than papered over: this covers malloc, calloc,
+ * realloc and strdup. It does NOT cover posix_memalign, aligned_alloc,
+ * memalign, valloc or reallocarray, so a future cycle that allocated through
+ * one of those would pass this test green. They are left out because reaching
+ * the underlying implementation for each of them portably (glibc's
+ * __libc_memalign vs Darwin's malloc_zone_memalign, plus the overflow rules
+ * reallocarray owns) is more machinery — and more ways to break the whole
+ * test binary — than the risk warrants: nothing in this engine uses an
+ * aligned allocator today, and perf_drain.c's header names this invariant so
+ * the next reader has the pointer.
+ *
+ * Two platforms opt out, and both are stated rather than silently skipped:
+ * under a sanitizer the allocator is already interposed by the runtime and a
+ * second definition either collides at link time or fights the interceptor;
+ * on Windows the CRT's allocator cannot be replaced this way at all. The rest
+ * of the suite (and the CI ASAN job) is unaffected — only this one assertion
+ * is. */
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || \
+    __has_feature(memory_sanitizer)
+#define LE_TEST_SANITIZED 1
+#endif
+#endif
+#if !defined(LE_TEST_SANITIZED) && \
+    (defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__))
+#define LE_TEST_SANITIZED 1
+#endif
+
+#if !defined(_WIN32) && !defined(LE_TEST_SANITIZED)
+#define LE_TEST_HAS_ALLOC_INTERPOSER 1
+#endif
+
+#if defined(LE_TEST_HAS_ALLOC_INTERPOSER)
+#include <stdatomic.h>
+#if defined(__APPLE__)
+#include <malloc/malloc.h> /* malloc_zone_* — the real allocator underneath */
+static void* test_real_malloc(size_t n) {
+  return malloc_zone_malloc(malloc_default_zone(), n);
+}
+static void* test_real_calloc(size_t n, size_t sz) {
+  return malloc_zone_calloc(malloc_default_zone(), n, sz);
+}
+static void* test_real_realloc(void* p, size_t n) {
+  return malloc_zone_realloc(malloc_default_zone(), p, n);
+}
+#else
+/* glibc keeps these public precisely so an interposer can reach the real
+ * implementation without recursing through its own definition. */
+extern void* __libc_malloc(size_t);
+extern void* __libc_calloc(size_t, size_t);
+extern void* __libc_realloc(void*, size_t);
+static void* test_real_malloc(size_t n) { return __libc_malloc(n); }
+static void* test_real_calloc(size_t n, size_t sz) {
+  return __libc_calloc(n, sz);
+}
+static void* test_real_realloc(void* p, size_t n) {
+  return __libc_realloc(p, n);
+}
+#endif
+
+/* Set only by the drain thread, read only by it — a thread-local, so no other
+ * thread's allocations are counted and no synchronization is needed on the
+ * hot path. (Local-exec TLS in an executable needs no allocation of its own,
+ * which would otherwise recurse straight back into these functions.) */
+static _Thread_local int tl_count_allocations = 0;
+static _Atomic int g_test_alloc_count = 0;
+static _Atomic size_t g_test_alloc_largest = 0;
+
+static void test_note_allocation(size_t n) {
+  atomic_fetch_add_explicit(&g_test_alloc_count, 1, memory_order_relaxed);
+  size_t prev =
+      atomic_load_explicit(&g_test_alloc_largest, memory_order_relaxed);
+  while (n > prev && !atomic_compare_exchange_weak_explicit(
+                         &g_test_alloc_largest, &prev, n, memory_order_relaxed,
+                         memory_order_relaxed)) {
+  }
+}
+
+void* malloc(size_t n) {
+  if (tl_count_allocations) test_note_allocation(n);
+  return test_real_malloc(n);
+}
+
+void* calloc(size_t n, size_t sz) {
+  if (tl_count_allocations) test_note_allocation(n * sz);
+  return test_real_calloc(n, sz);
+}
+
+void* realloc(void* p, size_t n) {
+  if (tl_count_allocations) test_note_allocation(n);
+  return test_real_realloc(p, n);
+}
+
+/* strdup is covered because it is the one non-malloc allocator a C file
+ * reaches for by accident; implementing it on top of the forwarder above is
+ * exact (the standard defines it as malloc + copy) and needs no per-platform
+ * symbol. */
+char* strdup(const char* s) {
+  const size_t n = strlen(s) + 1;
+  if (tl_count_allocations) test_note_allocation(n);
+  char* const p = (char*)test_real_malloc(n);
+  if (p != NULL) memcpy(p, s, n);
+  return p;
+}
+/* `free` is deliberately NOT interposed: pointers from the calls above come
+ * from the same underlying allocator the real free already expects, and the
+ * count is about allocations, not releases. */
+#endif /* LE_TEST_HAS_ALLOC_INTERPOSER */
+
 /* Reads up to `cap - 1` bytes of `path` into `out` and NUL-terminates it, for
  * substring-matching a hand-rolled sidecar (no JSON library in this tree — see
  * perf_drain.c). Returns the byte count read, or 0 if the file could not be
@@ -6969,6 +7099,213 @@ static void test_perf_drain_samples_elapsed_before_draining(void) {
   CHECK(strstr(json, "\"zero_filled_frames\": 0") != NULL);
 
   le_engine_destroy(e);
+}
+
+/* THE SIDECAR'S BYTES, IN FULL. Every other sidecar assertion in this file is
+ * a strstr for one field, which would happily pass on a document whose
+ * punctuation, field order or whitespace had drifted. The recovery path reads
+ * this file with a real parser, but daw_export and the salvage flow both
+ * depend on its exact shape, and #722 rewrote how it reaches disk (a raw
+ * descriptor, fsynced, instead of a per-cycle stdio stream) — so this pins the
+ * entire document, byte for byte, as the guard that the change was mechanical.
+ * Anything that legitimately alters the schema updates this literal, on
+ * purpose, in the same commit. */
+static void test_perf_sidecar_bytes_are_exact(void) {
+  printf("test_perf_sidecar_bytes_are_exact\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  float out[LOOP_N];
+  process_const(e, 0.5f, LOOP_N, out); /* exactly LOOP_N captured frames */
+
+  CHECK(le_perf_disarm(e) == LE_OK); /* runs the final cycle synchronously */
+
+  char json[4096];
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+
+  /* The slug is the capture dir's basename (PID-qualified, see
+   * perf_test_dir); every other value here is fixed by the configure call and
+   * the single processed block above. */
+  const char* slug = strrchr(perf_test_dir(), '/');
+  slug = slug != NULL ? slug + 1 : perf_test_dir();
+  char expected[4096];
+  snprintf(expected, sizeof(expected),
+          "{\n"
+          "  \"slug\": \"%s\",\n"
+          "  \"sample_rate\": 48000,\n"
+          "  \"channel_layout\": {\"master_channels\": 1, "
+          "\"captured_inputs\": []},\n" /* no input monitored in this fixture */
+          "  \"capture_frames\": %d,\n"
+          "  \"overrun_count\": 0,\n"
+          "  \"zero_filled_frames\": 0,\n"
+          "  \"overrun_gaps\": [],\n"
+          "  \"layers\": [],\n"
+          "  \"finalized\": false\n"
+          "}\n",
+          slug, LOOP_N);
+  if (strcmp(json, expected) != 0) {
+    printf("  sidecar mismatch\n--- expected ---\n%s--- actual ---\n%s",
+          expected, json);
+  }
+  CHECK(strcmp(json, expected) == 0);
+
+  le_engine_destroy(e);
+}
+
+/* THE STEADY-STATE DRAIN CYCLE IS ALLOCATION-FREE (#722).
+ *
+ * An invariant, not a bug fix: the drain used to malloc + free a 512 KB
+ * sidecar buffer every cycle, and while the mmap/munmap-storm story first
+ * told about that did not survive measurement (perf_drain.c's header has the
+ * numbers), the property is worth pinning — a background writer that shares a
+ * machine with a real-time audio callback should never be taking the
+ * allocator lock on a 4 Hz schedule, and "no allocation in this loop" only
+ * stays true if a test says so. Hence an absolute assertion: across several
+ * LIVE cycles of a real armed capture — rings draining, files growing, the
+ * sidecar rebuilt and renamed each time — the drain thread must not reach the
+ * allocator once.
+ *
+ * The run opens with a POSITIVE CONTROL, because a zero count is otherwise
+ * indistinguishable from an interposer that is not bound: under -flto, or a
+ * toolchain that resolved the engine objects' malloc against libc first, this
+ * test would pass for the wrong reason and a reintroduced allocation would
+ * ship green. The control counts le_perf_arm, which reaches perf_drain.c's
+ * OWN calloc of the session struct — the same object file and the same symbol
+ * binding the assertion depends on — and requires both a non-zero count and a
+ * >= 512 KB largest, so it cannot be satisfied by some incidental small
+ * allocation elsewhere.
+ *
+ * Counting of the drain thread then starts at its third cycle, not its first:
+ * the long-lived PCM streams allocate their stdio buffers lazily at their
+ * first write, a one-time cost at the start of a session rather than steady
+ * state. From there the counter covers every subsequent cycle end to end,
+ * including the final one — which runs on the drain thread itself, at the
+ * bottom of le_pd_drain_thread_main, which is exactly why a thread-local flag
+ * covers it (le_perf_disarm only requests the stop and joins).
+ *
+ * SCOPE, precisely: the cycles are driven hard enough to take
+ * le_pd_drain_ring's loop-again branch (more than LE_PD_SCRATCH_SAMPLES
+ * available per cycle) and, once, le_pd_catch_up's chunked zero-fill after a
+ * deliberate ring overflow. It does NOT cover le_pd_write_staged_layer — that
+ * needs a retired overdub layer, and the layer tests below cover that path's
+ * own allocation handoff. */
+typedef struct {
+  _Atomic int cycles; /* written by the drain thread, polled by the test one */
+} perf_alloc_watch_ctx;
+
+/* Cycles to observe before disarming, and the ceiling on how long to wait for
+ * them. The wait is deliberately generous and POLLED rather than a count of
+ * fixed sleeps: the drain thread is niced now, so its nominal 10 ms poll can
+ * land at 15 ms or worse on a loaded CI runner, and a fixed 6 x 250 ms loop
+ * sat exactly on the boundary of producing enough cycles. Waiting on the
+ * observable instead means a slow machine takes longer, not fails. */
+#define LE_TEST_ALLOC_WATCH_CYCLES 8
+#define LE_TEST_ALLOC_WATCH_TIMEOUT_MS 15000
+/* Frames pushed per 25 ms tick. LE_PD_SCRATCH_SAMPLES is 2048, so ~40k frames
+ * per 250 ms cycle keeps the drain looping on full scratch buffers instead of
+ * emptying the ring in one short pop — while staying inside the ring's
+ * LE_PERF_CAPTURE_SECONDS so nothing overruns except where this test asks. */
+#define LE_TEST_ALLOC_WATCH_FRAMES_PER_TICK 4096
+
+/* Both helpers below serve only this test, so they live inside the same guard
+ * its body does — otherwise a sanitized build carries two unused functions. */
+#if defined(LE_TEST_HAS_ALLOC_INTERPOSER)
+/* Pushes `frames` mono frames through the engine in process_const-sized
+ * chunks (its input buffer is 64 frames), so a test can drive real capture
+ * volume without hand-rolling the loop each time. */
+static void push_frames_for_test(le_engine* e, float value, int frames) {
+  float out[64];
+  while (frames > 0) {
+    const int n = frames < 64 ? frames : 64;
+    process_const(e, value, n, out);
+    frames -= n;
+  }
+}
+
+static void perf_mid_cycle_watch_allocations(void* raw) {
+  perf_alloc_watch_ctx* ctx = (perf_alloc_watch_ctx*)raw;
+  const int n =
+      atomic_fetch_add_explicit(&ctx->cycles, 1, memory_order_relaxed) + 1;
+  /* Runs ON the drain thread, which is the whole point: this arms the
+   * thread-local counter for that thread only. */
+  if (n == 3) tl_count_allocations = 1;
+}
+#endif
+
+static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
+  printf("test_perf_drain_steady_state_cycle_is_allocation_free\n");
+#if !defined(LE_TEST_HAS_ALLOC_INTERPOSER)
+  /* Skip the BODY too, not just the assertion: without a live interposer the
+   * remaining ~2 s of armed capture proves nothing this suite does not
+   * already cover elsewhere. */
+  printf("  (skipped: allocator interposition unavailable on this build)\n");
+#else
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000); /* real ring: nothing may drop */
+
+  perf_alloc_watch_ctx ctx = {0};
+  le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_watch_allocations,
+                                            &ctx);
+
+  /* POSITIVE CONTROL — see the note above. This thread IS the control thread,
+   * so counting across the arm catches perf_drain.c's own session-struct
+   * calloc. */
+  tl_count_allocations = 1;
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  tl_count_allocations = 0;
+  CHECK(atomic_load(&g_test_alloc_count) > 0);
+  CHECK(atomic_load(&g_test_alloc_largest) >= 512u * 1024u);
+  atomic_store(&g_test_alloc_count, 0);
+  atomic_store(&g_test_alloc_largest, 0);
+
+  drain(e);
+
+  /* Keep feeding real audio until enough cycles have been observed, so the
+   * counted ones have genuine work: multi-buffer ring pops, PCM writes, an
+   * events.log append, a sidecar rewrite and rename. */
+  int waited = 0;
+  int overflowed_once = 0;
+  while (atomic_load(&ctx.cycles) < LE_TEST_ALLOC_WATCH_CYCLES &&
+         waited < LE_TEST_ALLOC_WATCH_TIMEOUT_MS) {
+    push_frames_for_test(e, 0.25f, LE_TEST_ALLOC_WATCH_FRAMES_PER_TICK);
+    /* Once, mid-run: hand the ring more than it can hold in a single tick, so
+     * a cycle also runs le_pd_catch_up's chunked zero-fill. */
+    if (!overflowed_once && atomic_load(&ctx.cycles) >= 4) {
+      overflowed_once = 1;
+      push_frames_for_test(e, 0.25f, 48000 * (LE_PERF_CAPTURE_SECONDS + 1));
+    }
+    test_sleep_ms(25);
+    waited += 25;
+  }
+  CHECK(overflowed_once == 1);
+
+  CHECK(le_perf_disarm(e) == LE_OK); /* joins the drain thread */
+  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
+
+  /* LE_TEST_ALLOC_WATCH_CYCLES observed, of which all but the first two were
+   * counted end to end; the timeout is the only other way out of the loop. */
+  CHECK(atomic_load(&ctx.cycles) >= LE_TEST_ALLOC_WATCH_CYCLES);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_zero_filled_frames > 0); /* the zero-fill path really ran */
+
+  if (atomic_load(&g_test_alloc_count) != 0) {
+    printf("  drain thread allocated %d time(s), largest %zu bytes\n",
+          atomic_load(&g_test_alloc_count),
+          atomic_load(&g_test_alloc_largest));
+  }
+  CHECK(atomic_load(&g_test_alloc_count) == 0);
+  /* Nothing to unset: the flag lived on the drain thread, which the disarm
+   * above already joined. */
+
+  le_engine_destroy(e);
+#endif
 }
 
 /* A write failure (forced deterministically — no real full disk needed) stops
@@ -20870,6 +21207,8 @@ int main(void) {
   test_perf_zero_fill_counter_visible_while_armed();
   test_perf_zero_fill_counts_only_silence_actually_written();
   test_perf_drain_samples_elapsed_before_draining();
+  test_perf_sidecar_bytes_are_exact();
+  test_perf_drain_steady_state_cycle_is_allocation_free();
   test_perf_drain_disk_full_stops_cleanly();
   test_perf_drain_files_are_crash_consistent_mid_capture();
   test_perf_reconfigure_while_armed_marks_sidecar_device_changed();
