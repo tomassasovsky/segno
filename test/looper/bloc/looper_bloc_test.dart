@@ -55,6 +55,9 @@ void main() {
     // (narrows the cancel-arm TOCTOU race; see its doc). Defaults to no
     // tracks; per-test overrides stub a pending track set.
     when(() => repository.state).thenReturn(const LooperState());
+    // The mute toggle resolves against the repository's remembered intent
+    // (synchronous), not the polled snapshot — see LooperMuteToggled.
+    when(() => repository.trackMuted(any())).thenReturn(false);
     when(
       () => repository.record(channel: any(named: 'channel')),
     ).thenReturn(EngineResult.ok);
@@ -322,6 +325,19 @@ void main() {
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperMuteToggled(0)),
     verify: (_) => verify(() => repository.setMute(muted: true)).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperMuteToggled resolves against repository intent, not the polled '
+    'state — a double-tap inside the echo window must unmute',
+    build: buildBloc,
+    // The polled snapshot still says unmuted (the echo has not landed), but
+    // the repository already remembers the first tap's mute. Resolving from
+    // the snapshot would re-send muted:true and leave the track silent.
+    seed: () => const LooperState(tracks: [Track()]),
+    setUp: () => when(() => repository.trackMuted(0)).thenReturn(true),
+    act: (bloc) => bloc.add(const LooperMuteToggled(0)),
+    verify: (_) => verify(() => repository.setMute(muted: false)).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
