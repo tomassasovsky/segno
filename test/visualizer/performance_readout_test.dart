@@ -21,6 +21,7 @@ void main() {
     loopBars: 8,
     isRunning: true,
     mode: 'fx',
+    activeBank: 1,
     elapsedSeconds: 71,
     recordArmed: true,
     recordSeconds: 12,
@@ -55,6 +56,10 @@ void main() {
       expect(decoded.hasTempo, isTrue);
       expect(decoded.currentBeat, 0);
       expect(decoded.countingIn, isFalse);
+      // A #696-era sender dropped activeBank as unrendered; the decode
+      // defaults it to bank A rather than throwing — the "without ceremony"
+      // re-add that removal promised.
+      expect(decoded.activeBank, 0);
       expect(decoded.elapsedSeconds, 0);
       expect(decoded.recordArmed, isFalse);
       expect(decoded.recordSeconds, 0);
