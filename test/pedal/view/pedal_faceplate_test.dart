@@ -381,15 +381,18 @@ void main() {
 
       testWidgets(
         'shows the steady tri-state mode indicator when not armed: '
-        'rec green, mute amber, FX blue (mode indicator, part 5b)',
+        'rec red, mute green, FX blue (mode indicator, part 5b; #693)',
         (tester) async {
           final (_, sim) = await pumpFaceplate(tester);
 
           // Each mode gets its OWN color, so a tester reading the plate can
-          // name the live mode from the LEDs alone (SC-1).
+          // name the live mode from the LEDs alone (SC-1). The distinctness
+          // assertion below is the guard that made #693 a two-colour change:
+          // mute could not simply take green, because rec already had it and
+          // the pedal's two BOOT modes would have become one reading.
           final wanted = <PedalMode, Color>{
-            PedalMode.rec: SurfaceTheme.dark.ledGreen,
-            PedalMode.play: SurfaceTheme.dark.ledAmber,
+            PedalMode.rec: SurfaceTheme.dark.ledRed,
+            PedalMode.play: SurfaceTheme.dark.ledGreen,
             PedalMode.fx: SurfaceTheme.dark.ledBlue,
           };
           for (final entry in wanted.entries) {
@@ -444,7 +447,7 @@ void main() {
 
         sim.send(PedalCodec.encodeFrame(_frame()));
         await tester.pump();
-        expect(modeLedColor(tester), SurfaceTheme.dark.ledGreen);
+        expect(modeLedColor(tester), SurfaceTheme.dark.ledRed);
 
         // The shutdown frame's whole contract is that the pedal goes dark; a
         // lit mode dot would imply a live link to an app that has quit.
@@ -456,11 +459,19 @@ void main() {
       testWidgets('falls back to the mode color once disarmed', (tester) async {
         final (_, sim) = await pumpFaceplate(tester);
 
-        sim.send(PedalCodec.encodeFrame(_frame(performanceArmed: true)));
+        // Driven in MUTE, not rec: since #693 the rec mode colour is the same
+        // red as the armed blink, so a rec frame here would pass whether or
+        // not the fallback actually happened. Mute's green makes the handover
+        // observable.
+        sim.send(
+          PedalCodec.encodeFrame(
+            _frame(mode: PedalMode.play, performanceArmed: true),
+          ),
+        );
         await tester.pump();
         expect(modeLedColor(tester), SurfaceTheme.dark.ledRed);
 
-        sim.send(PedalCodec.encodeFrame(_frame()));
+        sim.send(PedalCodec.encodeFrame(_frame(mode: PedalMode.play)));
         await tester.pump();
         // Still present — it is the mode indicator now, not the armed blink.
         expect(modeLedColor(tester), SurfaceTheme.dark.ledGreen);

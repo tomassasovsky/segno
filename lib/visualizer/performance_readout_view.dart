@@ -77,13 +77,23 @@ class _ReadoutHeader extends StatelessWidget {
         // The mode chip is the readout's most load-bearing element: it is the
         // answer to "what does stepping on a track switch do right now".
         //
-        // Mute wears the design system's `success` green here too (#693) —
-        // the owner's call is that the mute reading is green on EVERY
-        // surface, so this window may not stay accent-blue while the stage
-        // bar, the desktop chip and the 7" readout all went green. The other
-        // modes keep this chip's accent idiom.
+        // It carries the same three-way mapping as every other mode surface
+        // (#693): rec red, mute green, FX blue. It used to paint EVERY mode
+        // in one accent blue, which made the chip's colour say nothing at
+        // all — rec and FX were indistinguishable from each other.
+        //
+        // The `_` arm keeps the neutral reading rather than folding unknown
+        // tokens into a real mode's colour: like [_modeLabel], a newer main
+        // window paired with an older sub-window must degrade to "I don't
+        // know this one", never to a confident wrong colour. That covers the
+        // pre-rename legacy `'play'` token too.
         _ModeChip(
-          color: readout.mode == 'mute' ? surface.success : surface.accent,
+          color: switch (readout.mode) {
+            'record' => surface.rec,
+            'mute' => surface.success,
+            'fx' => surface.accent,
+            _ => surface.textPrimary,
+          },
           label: _modeLabel(l10n, readout.mode),
         ),
       ],
@@ -107,6 +117,13 @@ class _ReadoutHeader extends StatelessWidget {
 
 /// The mode chip: the readout's answer to "what does stepping on a track
 /// switch do right now", in the colour that mode wears across the console.
+///
+/// Note the chip's mute green (`success`, #30A46C) is NOT the green the
+/// per-track tints below it use (`ledGreen`, #34D399) — they are two design
+/// tokens that happen to land a shade apart, and this window shows both at
+/// once. The chip reads the mode, the tints read transport state, so they are
+/// answering different questions; reconciling the two greens is a design-
+/// system call, not something to settle here (#693).
 class _ModeChip extends StatelessWidget {
   const _ModeChip({required this.color, required this.label});
 

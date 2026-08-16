@@ -285,7 +285,7 @@ class PedalPlate extends StatelessWidget {
                   _pedalU(3),
                   _row1V,
                   // The tri-state mode indicator (A1), mirroring the firmware
-                  // verbatim: rec green, mute amber, FX blue — with the
+                  // verbatim: rec red, mute green, FX blue (#693) — with the
                   // performance-armed blink keeping precedence, and the
                   // goodbye frame darkening it, exactly as both sketches
                   // render it (`goodbye ? Black : modeColor(...)`).
@@ -996,11 +996,24 @@ Color _ledColor(SurfaceTheme surface, PedalTrackLed led) => switch (led) {
 };
 
 /// The tri-state MODE indicator's color (A1), one per interaction mode —
-/// the on-screen twin of the firmware's `modeColor`, whose amber comes from
-/// the same place the ring's does.
+/// the on-screen twin of the firmware's `modeColor`.
+///
+/// Rec red, mute green, FX blue (#693, owner's call from the bench). This
+/// used to read rec GREEN and mute AMBER, which put the plate at odds with
+/// every screen: the console's mode pill has always drawn rec in red, and the
+/// owner's call is that mute reads green everywhere. Recolouring mute alone
+/// was not possible — green was already spoken for by rec, and collapsing the
+/// two would have made the pedal's two BOOT modes (`record` and `mute`)
+/// indistinguishable on the one indicator that names them. So rec moves to
+/// red in the same stroke, which is where the screens had it all along.
+///
+/// The wire is untouched: the frame carries the 2-bit mode, never a colour,
+/// so this is a rendering change on both sides. Keep it in lockstep with the
+/// firmware's `modeColor` — the same function also tints the ring's idle
+/// glow, so a drift here shows up across the whole plate, not one LED.
 Color _modeColor(SurfaceTheme surface, PedalMode mode) => switch (mode) {
-  PedalMode.rec => surface.ledGreen,
-  PedalMode.play => surface.ledAmber,
+  PedalMode.rec => surface.ledRed,
+  PedalMode.play => surface.ledGreen,
   PedalMode.fx => surface.ledBlue,
 };
 

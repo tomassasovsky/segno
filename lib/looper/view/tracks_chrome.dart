@@ -239,23 +239,32 @@ class ModeIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
-    final looper = theme.extension<LooperTheme>()!;
-    // One color + icon + name per mode, shared with the stage status bar's
-    // pill so the two screens never disagree about which mode is live: rec
-    // red, mute the design system's `success` green (#693), FX blue.
+    final surface = context.surface;
+    // One color + icon + name per mode: rec red, mute the design system's
+    // `success` green (#693), FX blue — the SAME three tokens the stage
+    // status bar's pill reads, so the desktop chrome and the console can
+    // never disagree about which mode is live.
+    //
+    // All three arms come from [SurfaceTheme] on purpose. Record used to read
+    // `LooperTheme.recordColor` (#FF1744) while the pill read `surface.rec`
+    // (#E5484D) — two reds a shade apart claiming to be one mapping, and two
+    // extensions a flavor tweak could desync. `surface.rec` wins because the
+    // pill is the surface the pen actually draws. (`LooperTheme.fxColor` and
+    // `surface.accent` are already the same value in both flavors, so FX
+    // moves token without moving pixel.)
     final (color, icon, modeName) = switch (mode) {
       InteractionMode.record => (
-        looper.recordColor,
+        surface.rec,
         Icons.fiber_manual_record,
         l10n.interactionModeRec,
       ),
       InteractionMode.mute => (
-        context.surface.success,
+        surface.success,
         Icons.volume_off_rounded,
         l10n.interactionModeMute,
       ),
       InteractionMode.fx => (
-        looper.fxColor,
+        surface.accent,
         Icons.graphic_eq,
         l10n.interactionModeFx,
       ),

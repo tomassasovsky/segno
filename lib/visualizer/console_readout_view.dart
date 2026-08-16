@@ -450,10 +450,18 @@ class _ModeColumn extends StatelessWidget {
 }
 
 /// The mode word — what a footswitch press does right now — bare and
-/// stage-sized per the pen: red while a press records, the design system's
-/// `success` green while a press mutes (#693), the primary text colour
-/// otherwise (which is what an unknown token from an older main window
-/// reads as).
+/// stage-sized per the pen: red while a press records, green while a press
+/// mutes (#693), the primary text colour otherwise (which is what an unknown
+/// token from an older main window reads as).
+///
+/// The mute green here is `ledGreen` (#34D399), NOT the `success` (#30A46C)
+/// the desktop chrome and the stage pill use. This is the two-metre panel and
+/// the word is 84px: on this background (#0B0B0C) `success` measures 6.2:1
+/// where the white it replaced measured 17.9:1, and the owner reads this
+/// screen from across the room. `ledGreen` holds 10.2:1 and is the same green
+/// the pedal's own mute LED throws, so the panel and the plate agree at a
+/// glance.
+/// Legibility at distance beats token tidiness on this one surface.
 class _ModeWord extends StatelessWidget {
   const _ModeWord({required this.mode, required this.s});
 
@@ -479,7 +487,7 @@ class _ModeWord extends StatelessWidget {
       style: TextStyle(
         color: switch (mode) {
           'record' => surface.rec,
-          'mute' => surface.success,
+          'mute' => surface.ledGreen,
           _ => surface.textPrimary,
         },
         fontSize: 84 * s,

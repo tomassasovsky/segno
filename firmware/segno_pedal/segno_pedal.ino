@@ -187,17 +187,24 @@ static CRGB globalColor(uint8_t color) {
 }
 
 // The tri-state mode indicator's color per decoded interaction mode (A1):
-// Rec green (ready to record), Play/mute amber, FX blue — matching the
-// chain-enabled track-LED blue. Rendered verbatim from the frame's 2-bit
-// mode; segno remains the single source of truth.
+// Rec red, Play/mute green, FX blue — matching the chain-enabled track-LED
+// blue. Rendered verbatim from the frame's 2-bit mode; segno remains the
+// single source of truth.
+//
+// Rec was green and Play/mute amber until #693. The owner's call is that mute
+// reads green on every surface, and green was already spoken for by rec — so
+// rec moves to red, which is what every screen has always drawn it as. Keep
+// this in lockstep with the app's `_modeColor` in `pedal_plate.dart`; the
+// on-screen plate is this function's twin and the two are compared by eye.
+// No wire byte changes: the frame carries the 2-bit mode, never a colour.
 static CRGB modeColor(uint8_t mode) {
   switch (mode) {
     case PEDAL_MODE_PLAY:
-      return globalColor(PEDAL_GLOBAL_AMBER); // one definition of amber
+      return globalColor(PEDAL_GLOBAL_GREEN); // one definition of green
     case PEDAL_MODE_FX:
       return CRGB::Blue;
     default: // PEDAL_MODE_REC
-      return CRGB::Green;
+      return globalColor(PEDAL_GLOBAL_RED); // one definition of red
   }
 }
 

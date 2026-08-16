@@ -1307,28 +1307,62 @@ void main() {
       // #693 — the owner's call from the bench: mute reads GREEN on every
       // surface, matching the stage status bar's pill so the two screens can
       // never disagree about which mode is live.
-      Future<Color> colorOf(InteractionMode mode) async {
+      //
+      // Icon, label AND border are all asserted: they are fed from one
+      // `color` local, and checking only the icon would let a half-applied
+      // change — new glyph colour over a stale label — pass green.
+      Future<(Color, Color, Color)> colorsOf(InteractionMode mode) async {
         await tester.pumpApp(
           Scaffold(
             body: ModeIndicator(mode: mode, onToggle: () {}),
           ),
         );
-        return tester
+        final scope = find.byKey(const Key('tracks_mode_indicator'));
+        final icon = tester
             .widget<Icon>(
-              find.descendant(
-                of: find.byKey(const Key('tracks_mode_indicator')),
-                matching: find.byType(Icon),
-              ),
+              find.descendant(of: scope, matching: find.byType(Icon)),
             )
             .color!;
+        final label = tester
+            .widget<Text>(
+              find.descendant(of: scope, matching: find.byType(Text)),
+            )
+            .style!
+            .color!;
+        final border =
+            ((tester
+                                .widget<Container>(
+                                  find.descendant(
+                                    of: scope,
+                                    matching: find.byType(Container),
+                                  ),
+                                )
+                                .decoration!
+                            as BoxDecoration)
+                        .border!
+                    as Border)
+                .top
+                .color;
+        return (icon, label, border);
       }
 
-      final looper = AppTheme.neon.extension<LooperTheme>()!;
-      final surface = AppTheme.neon.extension<SurfaceTheme>()!;
+      // All three arms read SurfaceTheme now: record used to come from
+      // `LooperTheme.recordColor` (#FF1744) while the stage pill read
+      // `surface.rec` (#E5484D), so the "one shared mapping" the widget
+      // claims was not actually true. This pins the unified source.
+      final s = AppTheme.neon.extension<SurfaceTheme>()!;
 
-      expect(await colorOf(InteractionMode.record), looper.recordColor);
-      expect(await colorOf(InteractionMode.mute), surface.success);
-      expect(await colorOf(InteractionMode.fx), looper.fxColor);
+      expect(await colorsOf(InteractionMode.record), (s.rec, s.rec, s.rec));
+      expect(await colorsOf(InteractionMode.mute), (
+        s.success,
+        s.success,
+        s.success,
+      ));
+      expect(await colorsOf(InteractionMode.fx), (
+        s.accent,
+        s.accent,
+        s.accent,
+      ));
     });
 
     testWidgets('Tab is not swallowed by the tracks key handler', (

@@ -319,8 +319,14 @@ void main() {
 
       // #693 — the owner's call from the bench: the mute reading is green on
       // every surface, so this word may not fall back to plain white.
+      //
+      // `ledGreen`, not the `success` the desktop surfaces use: this word is
+      // 84px on the two-metre panel, where `success` drops to 6.2:1 against
+      // the background. See _ModeWord's doc for the full reasoning — this
+      // assertion is what stops a well-meaning token unification from
+      // quietly dimming the panel.
       await pump(tester, const PerformanceReadout(mode: 'mute'));
-      expect(styleOf().color, surface.success);
+      expect(styleOf().color, surface.ledGreen);
 
       // FX keeps the neutral reading; only mute moved.
       await pump(tester, const PerformanceReadout(mode: 'fx'));
