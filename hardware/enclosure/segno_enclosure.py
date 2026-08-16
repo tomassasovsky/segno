@@ -1735,7 +1735,11 @@ def build_mini_console():
     tray = tray.cut(usb).cut(roof)
 
     # --- lid (prints FLAT; seats on the wall tops at the real slope) ------
-    lid = cq.Workplane("XY").box(Wt, V1S, T, centered=False)
+    # Built LONGER than V1S by T*tan(slope): raked over, a square-cut rear edge
+    # leaves the lid's top face T*sin short of the rear wall. The extra is
+    # trimmed off plumb below, so the top face lands exactly on the wall.
+    LID_RAKE = T * tn
+    lid = cq.Workplane("XY").box(Wt, V1S + LID_RAKE, T, centered=False)
     for u in PEDS:
         x = u
         lid = lid.cut(cq.Workplane("XY").box(FSW_SLOT_W, FSW_SLOT_D, 3*T, centered=(True, True, False))
@@ -1782,6 +1786,33 @@ def build_mini_console():
     for tx in (CX - 54.0, CX + 54.0):
         lid = lid.union(cq.Workplane("XY").box(10.0, 10.0, 5.0, centered=False)
                         .translate((tx - 5.0, (D - WALL_T)/cs - 12.0, -5.0)))
+
+    # FLUSH OUTLINE. The lid is a flat plate seated at 12.5 deg, so square-cut
+    # edges left its top face T*sin = 0.43 PROUD of the front wall and 0.43 SHY
+    # of the rear one, while its square plan corners overhung the tray's R6
+    # fillets by 6 - 6/sqrt(2) = 1.76. Both had been there since the first tray.
+    #
+    # Fixed in ONE exact operation rather than two computed bevels: in the
+    # SEATED frame, intersect the lid with a VERTICAL prism of the tray's own
+    # plan outline. Front and rear come out plumb, the corners come out on the
+    # tray's radius at EVERY height (a fillet applied in the flat frame would
+    # rake over and only approximate it), and no bevel angle is computed
+    # anywhere -- the tray's outline is the definition.
+    def _seat(s):
+        return s.rotate((0, 0, 0), (1, 0, 0), SLOPE_ANGLE).translate((0, 0, C0))
+
+    def _unseat(s):
+        return s.translate((0, 0, -C0)).rotate((0, 0, 0), (1, 0, 0), -SLOPE_ANGLE)
+
+    outline = (cq.Workplane("XY").box(Wt, D, 400.0, centered=False)
+               .edges("|Z").fillet(CORNER_R).translate((0, 0, -100.0)))
+    lid = _unseat(_seat(lid).intersect(outline))
+    lb = _seat(lid).val().BoundingBox()
+    assert abs(lb.xmin) < 1e-6 and abs(lb.xmax - Wt) < 1e-6 \
+        and abs(lb.ymin) < 1e-6 and abs(lb.ymax - D) < 1e-6, (
+        f"MINI_FLUSH: seated lid {lb.xmin:.3f}..{lb.xmax:.3f} x "
+        f"{lb.ymin:.3f}..{lb.ymax:.3f} does not sit inside the tray outline "
+        f"0..{Wt:.3f} x 0..{D:.3f}")
 
     # SYMMETRY GATE. Enumerating the hard-coded x values and mirroring them by
     # hand is exactly how the asymmetry got in -- it only takes one nobody

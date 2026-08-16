@@ -137,6 +137,17 @@ fully internal.
 > coincident, and OCC's boolean returns *empty*, which reads as "totally
 > asymmetric" and is the exact opposite of the truth.
 >
+> **The lid now sits flush on all four sides.** As a flat plate raked to 12.5°
+> with square-cut edges, its top face used to stand `T·sin` = 0.43 mm proud of
+> the front wall and 0.43 mm shy of the rear, and its square plan corners
+> overhung the tray's R6 fillets by `6 − 6/√2` = 1.76 mm. Both dated from the
+> first tray. Fixed in one exact operation rather than two computed bevels: the
+> lid is built `T·tan` longer at the rear, then — **in the seated frame** —
+> intersected with a vertical prism of the tray's own plan outline. Front and
+> rear come out plumb and the corners land on the tray's radius at *every*
+> height, which a fillet applied in the flat frame could not do (it would rake
+> over with the plate). `MINI_FLUSH` holds the seated bbox to the tray outline.
+>
 > **The case is a wedge in plan, not only in height.** `PEDAL_W` 76.35 is the
 > width at the **back edge**; it tapers to `PEDAL_TOE_W` 73.08 at the toe, so a
 > clearance quoted off `PEDAL_W/2` is understated by up to 1.63 mm per side.
