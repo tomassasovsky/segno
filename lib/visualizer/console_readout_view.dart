@@ -108,9 +108,7 @@ class _ReadoutHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final tempo = readout.tempoBpm > 0
-        ? readout.tempoBpm.toStringAsFixed(readout.tempoBpm % 1 == 0 ? 0 : 1)
-        : '--';
+    final tempo = readout.tempoBpm > 0 ? readoutTempo(readout.tempoBpm) : '--';
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -155,6 +153,18 @@ class _ReadoutHeader extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The tempo rule (`c/readout`): the decimal appears only when the tempo
+/// actually carries one. The check is on the RENDERED string, not the
+/// double: 119.98 rounds to "120.0", and a value-level `% 1` test would
+/// keep that phantom ".0" on screen. Format first, then strip. Shared with
+/// the 16" readout so the two faces can never disagree on a tempo.
+String readoutTempo(double tempoBpm) {
+  final rendered = tempoBpm.toStringAsFixed(1);
+  return rendered.endsWith('.0')
+      ? rendered.substring(0, rendered.length - 2)
+      : rendered;
 }
 
 /// The clock rule (`c/readout`): `m:ss` below ten minutes, `mm:ss` below an
@@ -342,7 +352,21 @@ class _ModeColumn extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisSize: MainAxisSize.min,
       children: [
-        _ModeWord(mode: readout.mode, s: s),
+        // The FittedBox guard on the left cluster does not cover this
+        // column, and the unknown-mode fallback renders a raw token from a
+        // possibly-newer main window at full stage size — the exact
+        // version-skew path the fallback exists to survive. Cap the word at
+        // the pen's right-column width (553) and scale it down past that,
+        // so a long token shrinks instead of RenderFlex-overflowing; every
+        // known word sits far under the cap and renders at the drawn size.
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 553 * s),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerRight,
+            child: _ModeWord(mode: readout.mode, s: s),
+          ),
+        ),
         SizedBox(height: 18 * s),
         Row(
           mainAxisSize: MainAxisSize.min,

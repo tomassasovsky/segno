@@ -183,5 +183,17 @@ void main() {
       await pump(tester, const PerformanceReadout());
       expect(find.text('--  4/4'), findsOneWidget);
     });
+
+    testWidgets('decides the tempo decimal on the rendered string', (
+      tester,
+    ) async {
+      // Same rule as the console readout: 119.98 is non-integer as a value
+      // but rounds to "120.0" at one decimal — it must read "120".
+      await pump(tester, const PerformanceReadout(tempoBpm: 119.98));
+      expect(find.text('120  4/4'), findsOneWidget);
+
+      await pump(tester, const PerformanceReadout(tempoBpm: 120.5));
+      expect(find.text('120.5  4/4'), findsOneWidget);
+    });
   });
 }

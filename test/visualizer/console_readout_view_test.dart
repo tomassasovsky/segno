@@ -25,6 +25,17 @@ void main() {
     });
   });
 
+  group('readoutTempo', () {
+    test('decides the decimal on the rendered string, not the value', () {
+      // 119.98 is non-integer as a double but rounds to "120.0" at one
+      // decimal — a value-level check would keep that phantom ".0".
+      expect(readoutTempo(120), '120');
+      expect(readoutTempo(119.98), '120');
+      expect(readoutTempo(119.94), '119.9');
+      expect(readoutTempo(120.5), '120.5');
+    });
+  });
+
   group('ConsoleReadoutView', () {
     const readout = PerformanceReadout(
       tracks: [
@@ -102,6 +113,12 @@ void main() {
 
       await pump(tester, const PerformanceReadout(tempoBpm: 120.5));
       expect(find.text('120.5'), findsOneWidget);
+
+      // A tapped tempo lands at 119.98: non-integer as a value, integer as
+      // a rendered figure — it must read "120", not "120.0".
+      await pump(tester, const PerformanceReadout(tempoBpm: 119.98));
+      expect(find.text('120'), findsOneWidget);
+      expect(find.text('120.0'), findsNothing);
     });
 
     testWidgets('draws the figures in Inter with tabular numerals, not the '
@@ -254,6 +271,20 @@ void main() {
       // showing the raw mode, never to showing the wrong one.
       await pump(tester, const PerformanceReadout(mode: 'custom'));
       expect(find.text('CUSTOM'), findsOneWidget);
+    });
+
+    testWidgets('scales a long unknown mode token down instead of clipping', (
+      tester,
+    ) async {
+      // The left cluster's FittedBox guard does not cover the right column:
+      // a 20-character token from a newer main window must shrink to the
+      // pen's right-column width, never RenderFlex-overflow the header.
+      await pump(
+        tester,
+        const PerformanceReadout(mode: 'granular-freeze-mode'),
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.text('GRANULAR-FREEZE-MODE'), findsOneWidget);
     });
 
     testWidgets('survives the worst legal header without overflowing', (
