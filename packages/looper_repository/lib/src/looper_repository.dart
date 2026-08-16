@@ -676,6 +676,8 @@ class LooperRepository {
       isConnected: s.isRunning,
       devicePresent: s.devicePresent,
       excludedInputMask: s.excludedInputMask,
+      inputClipMask: s.inputClipMask,
+      inputCondMask: s.inputCondMask,
       recordOffsetFrames: s.recordOffsetFrames,
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
       activeBackend: audioBackendFromEngine(s.activeBackend),

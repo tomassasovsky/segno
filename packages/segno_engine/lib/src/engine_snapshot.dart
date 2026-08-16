@@ -553,6 +553,8 @@ class EngineSnapshot {
     this.inputChannels = 0,
     this.outputChannels = 0,
     this.excludedInputMask = 0,
+    this.inputClipMask = 0,
+    this.inputCondMask = 0,
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
     this.recordOffsetFrames = 0,
@@ -595,6 +597,8 @@ class EngineSnapshot {
       inputChannels = 0,
       outputChannels = 0,
       excludedInputMask = 0,
+      inputClipMask = 0,
+      inputCondMask = 0,
       framesProcessed = 0,
       xrunCount = 0,
       inputRms = 0,
@@ -650,6 +654,8 @@ class EngineSnapshot {
     inputChannels: native.input_channels,
     outputChannels: native.output_channels,
     excludedInputMask: native.excluded_input_mask,
+    inputClipMask: native.input_clip_mask,
+    inputCondMask: native.input_cond_mask,
     framesProcessed: native.frames_processed,
     xrunCount: native.xrun_count,
     inputRms: native.input_rms,
@@ -715,6 +721,21 @@ class EngineSnapshot {
   /// Bitmask of input channels excluded as loopback (never recorded, monitored,
   /// or routable). `0` when nothing is excluded (always so off macOS).
   final int excludedInputMask;
+
+  /// HOT inputs: bit `c` set means a rail-run — `LE_CLIP_RUN` (4) consecutive
+  /// raw samples at `|s| >= LE_CLIP_LEVEL` (0.999) — was seen on input `c`
+  /// within the last `LE_CLIP_HOLD_MS` (1500 ms) of processed audio.
+  ///
+  /// Detected on the RAW device buffer, upstream of the conditioning stage,
+  /// so a clipped input flags HOT even when the expander/HPF has reshaped
+  /// what records. Loopback-excluded inputs never flag.
+  final int inputClipMask;
+
+  /// Conditioning activity: bit `c` set means input `c`'s conditioning stage
+  /// is currently active — enabled AND not loopback-excluded, i.e. the stage
+  /// actually runs on the audio path (the truth for a "conditioning on"
+  /// badge; a stage enabled on an excluded channel reads `0` here).
+  final int inputCondMask;
 
   /// Total frames processed by the audio callback since the device started.
   final int framesProcessed;
@@ -927,6 +948,8 @@ class EngineSnapshot {
           inputChannels == other.inputChannels &&
           outputChannels == other.outputChannels &&
           excludedInputMask == other.excludedInputMask &&
+          inputClipMask == other.inputClipMask &&
+          inputCondMask == other.inputCondMask &&
           framesProcessed == other.framesProcessed &&
           xrunCount == other.xrunCount &&
           tunerHz == other.tunerHz &&
@@ -975,6 +998,8 @@ class EngineSnapshot {
     inputChannels,
     outputChannels,
     excludedInputMask,
+    inputClipMask,
+    inputCondMask,
     framesProcessed,
     xrunCount,
     inputRms,

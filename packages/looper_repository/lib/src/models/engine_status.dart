@@ -16,6 +16,8 @@ class EngineStatus extends Equatable {
     this.isConnected = false,
     this.devicePresent = false,
     this.excludedInputMask = 0,
+    this.inputClipMask = 0,
+    this.inputCondMask = 0,
     this.recordOffsetFrames = 0,
     this.fxAddedLatencyFrames = 0,
     this.activeBackend = AudioBackend.miniaudio,
@@ -60,6 +62,29 @@ class EngineStatus extends Equatable {
   /// or routable). `0` when nothing is excluded (always so off macOS).
   final int excludedInputMask;
 
+  /// HOT inputs: bit `c` set means a rail-run (4 consecutive raw samples at
+  /// `|s| >= 0.999`) was seen on input `c` within the last 1.5 s of processed
+  /// audio — the clamp signature of an overdriven ADC, not a loud transient.
+  ///
+  /// Detected on the RAW device buffer, upstream of the conditioning stage,
+  /// so a clipped input reads HOT even when conditioning has reshaped what
+  /// records. Loopback-excluded inputs never flag.
+  final int inputClipMask;
+
+  /// Conditioning activity: bit `c` set means input `c`'s conditioning stage
+  /// is currently active — enabled and not loopback-excluded, i.e. the stage
+  /// actually runs on the audio path.
+  final int inputCondMask;
+
+  /// Whether input [input] is currently HOT (see [inputClipMask]).
+  bool isInputHot(int input) =>
+      input >= 0 && input < 32 && (inputClipMask & (1 << input)) != 0;
+
+  /// Whether input [input]'s conditioning stage is currently active (see
+  /// [inputCondMask]).
+  bool isInputConditioned(int input) =>
+      input >= 0 && input < 32 && (inputCondMask & (1 << input)) != 0;
+
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
 
@@ -96,6 +121,8 @@ class EngineStatus extends Equatable {
     isConnected,
     devicePresent,
     excludedInputMask,
+    inputClipMask,
+    inputCondMask,
     recordOffsetFrames,
     fxAddedLatencyFrames,
     activeBackend,

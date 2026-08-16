@@ -1024,6 +1024,18 @@ struct le_engine {
    * the day a real consumer needs it. */
   _Atomic uint32_t a_cond_fallback_blocks;
 
+  /* ---- Input clip ("HOT") detector (input clip, S2) ---- *
+   * Always on, no params, RAW path (see the LE_CLIP_* doc in
+   * segno_engine_api.h). clip_run / clip_hold_until are AUDIO-THREAD-LOCAL:
+   * the consecutive-rail-sample count carried across blocks, and the absolute
+   * engine frame (a_frames timeline) each input's HOT bit expires at.
+   * a_input_clip_mask is the published truth le_engine_get_snapshot reads —
+   * recomputed and stored once per processed block. All reset at configure
+   * (the device is closed there, so the plain fields are race-free). */
+  int32_t clip_run[LE_MAX_MONITORED_INPUTS];
+  uint64_t clip_hold_until[LE_MAX_MONITORED_INPUTS];
+  _Atomic uint32_t a_input_clip_mask;
+
   /* Master insert chain (FX v3 part 1b): runs on the summed track mix between
    * mix_tracks_frame and mix_monitors_frame — see le_fx_bus's doc for the
    * full D-MASTER / D-MASTERCH semantics. Live monitors (summed after it)

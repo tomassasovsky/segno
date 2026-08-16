@@ -546,6 +546,15 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   atomic_store_explicit(&engine->a_cond_fallback_blocks, 0u,
                         memory_order_relaxed);
 
+  /* Input clip ("HOT") detector (input clip, S2): fresh session, no input is
+   * HOT and no rail-run is in progress. Plain fields are race-free here (the
+   * device is closed during configure), same as the cond seeds above. */
+  for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+    engine->clip_run[c] = 0;
+    engine->clip_hold_until[c] = 0;
+  }
+  atomic_store_explicit(&engine->a_input_clip_mask, 0u, memory_order_relaxed);
+
   /* Master insert chain (part 1b): defaults empty/enabled, same rationale as
    * the per-track bus resets above. */
   le_fx_bus_reset(&engine->master_fx);

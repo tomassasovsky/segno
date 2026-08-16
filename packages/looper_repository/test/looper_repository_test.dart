@@ -316,6 +316,35 @@ void main() {
       expect(buildRepo().state.status.excludedInputMask, 0x2);
     });
 
+    test('projects the clip + conditioning masks onto EngineStatus', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        inputChannels: 4,
+        outputChannels: 2,
+        inputClipMask: 0x5,
+        inputCondMask: 0x2,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+      );
+      final status = buildRepo().state.status;
+      expect(status.inputClipMask, 0x5);
+      expect(status.inputCondMask, 0x2);
+      expect(status.isInputHot(0), isTrue);
+      expect(status.isInputHot(1), isFalse);
+      expect(status.isInputHot(2), isTrue);
+      expect(status.isInputHot(-1), isFalse);
+      expect(status.isInputConditioned(1), isTrue);
+      expect(status.isInputConditioned(0), isFalse);
+      expect(status.isInputConditioned(32), isFalse);
+    });
+
     test('projects fx added latency onto EngineStatus (frames + ms)', () {
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,
