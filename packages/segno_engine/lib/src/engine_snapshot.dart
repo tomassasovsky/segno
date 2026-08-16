@@ -562,18 +562,19 @@ enum XrunKind {
 /// and how many real backend dropouts happened. The pure-Dart projection of
 /// `le_cb_window_snapshot`.
 ///
-/// Two windows are published side by side on [EngineSnapshot] — one for the
+/// Two windows are published side by side on [CallbackTelemetry] — one for the
 /// whole device session and one reset by every performance arm — because the
 /// question this instrument exists to answer is comparative: is the callback
-/// worse *while a capture is armed*? Counts subtract ([calls], [lateCalls],
-/// [gapEvents], [xruns]); maxima do not, which is why both windows report their
-/// own.
+/// worse *while a capture is armed*? Counts subtract ([periods],
+/// [latePeriods], [gapEvents], [xruns]); maxima do not, which is why both
+/// windows report their own.
 @immutable
 class CallbackWindowStats {
   /// Creates a [CallbackWindowStats].
   const CallbackWindowStats({
     this.calls = 0,
-    this.lateCalls = 0,
+    this.periods = 0,
+    this.latePeriods = 0,
     this.gapEvents = 0,
     this.maxUs = 0,
     this.meanUs = 0,
@@ -586,7 +587,8 @@ class CallbackWindowStats {
   factory CallbackWindowStats.fromNative(le_cb_window_snapshot native) =>
       CallbackWindowStats(
         calls: native.calls,
-        lateCalls: native.late_calls,
+        periods: native.periods,
+        latePeriods: native.late_periods,
         gapEvents: native.gap_events,
         maxUs: native.max_us,
         meanUs: native.mean_us,
@@ -600,34 +602,57 @@ class CallbackWindowStats {
   /// The all-zero window: no device has run, so nothing was measured.
   static const CallbackWindowStats empty = CallbackWindowStats();
 
-  /// Device callbacks observed in this window.
+  /// Device callbacks observed in this window — raw context, never judged.
+  ///
+  /// Not the unit of measurement: a duplex loop typically services one
+  /// hardware period with several back-to-back callbacks, so lateness is
+  /// judged per [periods], not per call.
   final int calls;
 
-  /// Of those, the ones whose duration exceeded the period budget — a missed
-  /// deadline, which is what a click sounds like at a 64-frame period.
-  final int lateCalls;
+  /// Period services completed: runs of consecutive callbacks summing to at
+  /// least one hardware period of frames.
+  ///
+  /// This is the unit everything below is measured in. Judging a single
+  /// sub-period callback would be wrong in both directions — against a whole
+  /// period it under-reports, and against its own `frames / rate` it ignores
+  /// the engine's fixed per-block cost and calls healthy hardware late.
+  final int periods;
 
-  /// Consecutive callback *entries* more than 1.5 periods apart: the device
-  /// did not come back on time. The derived starvation signal, and the only
-  /// one available on CoreAudio, where the backend reports no xruns at all.
+  /// Services whose total duration exceeded the deadline for the frames they
+  /// covered: the engine did not finish a period's work inside a period.
+  ///
+  /// The number to read — this is what a dropout is made of. **Zero on healthy
+  /// hardware.**
+  final int latePeriods;
+
+  /// Consecutive callback *entries* more than 1.5 **nominal periods** apart:
+  /// the device did not come back on time. The derived starvation signal, and
+  /// the only one available on CoreAudio, where the backend reports no xruns.
+  ///
+  /// Independent of [xruns] — a gap arriving just after a counted backend
+  /// recovery is suppressed, so one physical dropout is never counted twice.
+  /// **Zero on healthy hardware**, including on a duplex loop that services a
+  /// period in a burst and then waits.
   final int gapEvents;
 
-  /// Worst callback duration in this window, in microseconds.
+  /// Worst period-service duration in this window, in microseconds.
   final int maxUs;
 
-  /// Mean callback duration in this window, in microseconds.
+  /// Mean period-service duration in this window, in microseconds.
   final int meanUs;
 
   /// Worst entry-to-entry gap in this window, in microseconds; `0` when none
   /// exceeded the 1.5-period threshold.
   final int maxGapUs;
 
-  /// Duration histogram, `LE_CB_BUCKETS` (8) wide. Bucket `i` counts callbacks
-  /// whose duration fell in `[i/8, (i+1)/8)` of the period budget; the last
-  /// bucket is open-ended and so also holds every over-budget call.
+  /// Duration histogram, `LE_CB_BUCKETS` (8) wide. Bucket `i` counts period
+  /// services whose duration fell in `[i/8, (i+1)/8)` of their deadline; the
+  /// last bucket is open-ended and so also holds every over-budget service.
   ///
   /// This is what separates "one huge stall" from "many marginal ones" — the
-  /// same [lateCalls] with completely different causes.
+  /// same [latePeriods] with completely different causes. It is also the CPU
+  /// headroom readout: mass in bucket 2 means the engine uses about a quarter
+  /// of each period.
   final List<int> buckets;
 
   /// Real backend dropouts, indexed by [XrunKind.index].
@@ -641,8 +666,8 @@ class CallbackWindowStats {
   int get xrunTotal => xruns.fold(0, (a, b) => a + b);
 
   /// Whether anything at all went wrong in this window: a missed deadline, a
-  /// starved device, or a backend dropout.
-  bool get hasTrouble => lateCalls > 0 || gapEvents > 0 || xrunTotal > 0;
+  /// starved device, or a backend dropout. `false` on healthy hardware.
+  bool get hasTrouble => latePeriods > 0 || gapEvents > 0 || xrunTotal > 0;
 
   @override
   bool operator ==(Object other) =>
@@ -650,7 +675,8 @@ class CallbackWindowStats {
       other is CallbackWindowStats &&
           runtimeType == other.runtimeType &&
           calls == other.calls &&
-          lateCalls == other.lateCalls &&
+          periods == other.periods &&
+          latePeriods == other.latePeriods &&
           gapEvents == other.gapEvents &&
           maxUs == other.maxUs &&
           meanUs == other.meanUs &&
@@ -661,7 +687,8 @@ class CallbackWindowStats {
   @override
   int get hashCode => Object.hash(
     calls,
-    lateCalls,
+    periods,
+    latePeriods,
     gapEvents,
     maxUs,
     meanUs,
@@ -672,23 +699,29 @@ class CallbackWindowStats {
 
   @override
   String toString() =>
-      'CallbackWindowStats(calls: $calls, late: $lateCalls, '
-      'gaps: $gapEvents, max: ${maxUs}us, mean: ${meanUs}us, '
-      'xruns: $xrunTotal)';
+      'CallbackWindowStats(calls: $calls, periods: $periods, '
+      'late: $latePeriods, gaps: $gapEvents, max: ${maxUs}us, '
+      'mean: ${meanUs}us, xruns: $xrunTotal)';
 }
 
 /// Both telemetry windows plus the deadline they were judged against — the
 /// whole of the audio callback's self-measurement (native issue #722).
 ///
-/// Read by `AudioEngine.callbackTelemetry()`, **on demand**, and deliberately
-/// NOT carried on [EngineSnapshot]. That object is rebuilt at render rate and
-/// feeds `LooperState`'s equality gate; a counter that ticks on every audio
-/// callback can never compare equal, so shipping it there would defeat the
-/// dedupe, re-materialize and re-broadcast the entire looper state 60 times a
-/// second on an idle rig, and allocate the histogram lists on every tick — CPU
-/// pressure manufactured by the very instrument that exists to find CPU
-/// pressure. A diagnostic is pulled when someone asks, not pushed into the
-/// render loop.
+/// Read by `AudioEngine.callbackTelemetry()`, **on demand**, through its own
+/// native entry point and deliberately NOT carried on [EngineSnapshot]. That
+/// object is rebuilt at render rate and feeds `LooperState`'s equality gate; a
+/// counter that ticks on every audio callback can never compare equal, so
+/// shipping it there would defeat the dedupe, re-materialize and re-broadcast
+/// the entire looper state 60 times a second on an idle rig, and allocate the
+/// histogram lists on every tick — CPU pressure manufactured by the very
+/// instrument that exists to find CPU pressure. A diagnostic is pulled when
+/// someone asks, not pushed into the render loop.
+///
+/// **On healthy hardware every judged field reads zero**:
+/// [CallbackWindowStats.latePeriods], [CallbackWindowStats.gapEvents],
+/// [CallbackWindowStats.maxGapUs] and [CallbackWindowStats.xruns] — with the
+/// histogram sitting in the low buckets. That is a design constraint, not a
+/// hope: an instrument that cries wolf on a working rig is worse than none.
 @immutable
 class CallbackTelemetry {
   /// Creates a [CallbackTelemetry].
@@ -698,21 +731,21 @@ class CallbackTelemetry {
     this.armed = CallbackWindowStats.empty,
   });
 
-  /// Projects a native `le_snapshot`'s telemetry block.
-  factory CallbackTelemetry.fromNative(le_snapshot native) => CallbackTelemetry(
-    budgetUs: native.cb_budget_us,
-    session: CallbackWindowStats.fromNative(native.cb_session),
-    armed: CallbackWindowStats.fromNative(native.cb_armed),
-  );
+  /// Projects a native `le_callback_telemetry`.
+  factory CallbackTelemetry.fromNative(le_callback_telemetry native) =>
+      CallbackTelemetry(
+        budgetUs: native.budget_us,
+        session: CallbackWindowStats.fromNative(native.session),
+        armed: CallbackWindowStats.fromNative(native.armed),
+      );
 
   /// Nothing measured: no device has run.
   static const CallbackTelemetry empty = CallbackTelemetry();
 
-  /// The deadline the most recent callback was judged against, in microseconds
-  /// — that callback's own frame count over the sample rate, *not*
-  /// `bufferFrames / sampleRate` (a duplex loop splits periods). `0` when no
-  /// device has been opened or none of its callbacks has landed yet, which is
-  /// also the "nothing is being measured" state.
+  /// The nominal period deadline in microseconds — `bufferFrames / sampleRate`
+  /// — which is what a period service is judged against and what the gap
+  /// detector is measured in. `0` when no device has been opened, which is also
+  /// the "nothing is being measured" state.
   final int budgetUs;
 
   /// Telemetry for the whole device session, cleared on every fresh start —

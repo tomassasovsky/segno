@@ -10,6 +10,7 @@
  * unchanged.
  */
 #include <stdint.h>
+#include <string.h> /* memset — the NULL-engine telemetry read */
 
 #include "engine_core.h"    /* le_lanes_active */
 #include "engine_fx.h"      /* le_octaver_latency */
@@ -244,16 +245,23 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     }
   }
   out->input_cond_mask = cond_mask;
-  /* Audio-callback telemetry (#722). Every field is a relaxed atomic — the
-   * budget is published per callback (it tracks the block size the duplex loop
-   * actually delivered, not the device period) — read field-wise like every
-   * other metering value above. */
-  out->cb_budget_us = (uint32_t)(atomic_load_explicit(
-                                     &engine->cb_timing.a_budget_ns,
-                                     memory_order_relaxed) /
-                                 1000u);
-  le_cb_window_read(&engine->cb_timing.session, &out->cb_session);
-  le_cb_window_read(&engine->cb_timing.armed, &out->cb_armed);
+  /* The audio-callback telemetry (#722) is deliberately NOT read here — it has
+   * its own entry point below. Anything on this struct is projected into the
+   * app's render-rate state, whose equality drives the rebuild dedupe, and a
+   * counter that ticks on every audio callback would defeat it. */
+}
+
+void le_engine_get_callback_telemetry(le_engine* engine,
+                                      le_callback_telemetry* out) {
+  if (out == NULL) return;
+  if (engine == NULL) {
+    memset(out, 0, sizeof(*out));
+    return;
+  }
+  /* Pure relaxed loads — and, unlike le_engine_get_snapshot above, NO
+   * le_engine_drain_events: a diagnostic read has no business collecting
+   * retired undo layers as a side effect. */
+  le_cb_timing_read(&engine->cb_timing, out);
 }
 
 void le_engine_get_track(le_engine* engine, int32_t channel,

@@ -819,7 +819,8 @@ void main() {
     test('empty reads as an unmeasured window', () {
       const stats = CallbackWindowStats.empty;
       expect(stats.calls, 0);
-      expect(stats.lateCalls, 0);
+      expect(stats.periods, 0);
+      expect(stats.latePeriods, 0);
       expect(stats.gapEvents, 0);
       expect(stats.maxUs, 0);
       expect(stats.meanUs, 0);
@@ -849,21 +850,27 @@ void main() {
     });
 
     test('hasTrouble catches a missed deadline and a starved device', () {
-      expect(const CallbackWindowStats(calls: 100).hasTrouble, isFalse);
+      // A healthy window has callbacks and periods and nothing judged against
+      // it — that combination must read as fine.
       expect(
-        const CallbackWindowStats(calls: 100, lateCalls: 1).hasTrouble,
+        const CallbackWindowStats(calls: 400, periods: 100).hasTrouble,
+        isFalse,
+      );
+      expect(
+        const CallbackWindowStats(periods: 100, latePeriods: 1).hasTrouble,
         isTrue,
       );
       expect(
-        const CallbackWindowStats(calls: 100, gapEvents: 1).hasTrouble,
+        const CallbackWindowStats(periods: 100, gapEvents: 1).hasTrouble,
         isTrue,
       );
     });
 
     test('equality covers every counter, including the arrays', () {
       const base = CallbackWindowStats(
-        calls: 10,
-        lateCalls: 1,
+        calls: 40,
+        periods: 10,
+        latePeriods: 1,
         gapEvents: 2,
         maxUs: 900,
         meanUs: 120,
@@ -875,7 +882,11 @@ void main() {
       expect(base.hashCode, base.hashCode);
       expect(
         base,
-        isNot(equals(const CallbackWindowStats(calls: 11, lateCalls: 1))),
+        isNot(equals(const CallbackWindowStats(calls: 41, periods: 10))),
+      );
+      expect(
+        base,
+        isNot(equals(const CallbackWindowStats(calls: 40, periods: 11))),
       );
       expect(
         const CallbackWindowStats(buckets: [1, 0, 0, 0, 0, 0, 0, 0]),
@@ -886,41 +897,45 @@ void main() {
         isNot(equals(CallbackWindowStats.empty)),
       );
       expect(base.toString(), contains('late: 1'));
+      expect(base.toString(), contains('periods: 10'));
     });
   });
 
   group('CallbackTelemetry (#722)', () {
     test('projects both windows and the budget off the native struct', () {
-      final ptr = calloc<le_snapshot>();
+      final ptr = calloc<le_callback_telemetry>();
       try {
-        ptr.ref.cb_budget_us = 666;
-        ptr.ref.cb_session
-          ..calls = 90000
-          ..late_calls = 12
+        ptr.ref.budget_us = 666;
+        ptr.ref.session
+          ..calls = 200000
+          ..periods = 90000
+          ..late_periods = 12
           ..gap_events = 3
           ..max_us = 1900
           ..mean_us = 140
           ..max_gap_us = 4100;
         for (var i = 0; i < LE_CB_BUCKETS; i++) {
-          ptr.ref.cb_session.buckets[i] = i + 1;
+          ptr.ref.session.buckets[i] = i + 1;
         }
         for (var i = 0; i < LE_XRUN_KINDS; i++) {
-          ptr.ref.cb_session.xruns[i] = i;
+          ptr.ref.session.xruns[i] = i;
         }
-        ptr.ref.cb_armed
-          ..calls = 30000
-          ..late_calls = 11
+        ptr.ref.armed
+          ..calls = 70000
+          ..periods = 30000
+          ..late_periods = 11
           ..gap_events = 3
           ..max_us = 1900
           ..mean_us = 210
           ..max_gap_us = 4100;
-        ptr.ref.cb_armed.xruns[XrunKind.playbackUnderrun.index] = 9;
+        ptr.ref.armed.xruns[XrunKind.playbackUnderrun.index] = 9;
 
         final telemetry = CallbackTelemetry.fromNative(ptr.ref);
 
         expect(telemetry.budgetUs, 666);
-        expect(telemetry.session.calls, 90000);
-        expect(telemetry.session.lateCalls, 12);
+        expect(telemetry.session.calls, 200000);
+        expect(telemetry.session.periods, 90000);
+        expect(telemetry.session.latePeriods, 12);
         expect(telemetry.session.gapEvents, 3);
         expect(telemetry.session.maxUs, 1900);
         expect(telemetry.session.meanUs, 140);
@@ -929,20 +944,20 @@ void main() {
         expect(telemetry.session.xruns, [0, 1, 2, 3]);
 
         // The armed window is the suspect; the session window is its control.
-        expect(telemetry.armed.calls, 30000);
-        expect(telemetry.armed.lateCalls, 11);
+        expect(telemetry.armed.periods, 30000);
+        expect(telemetry.armed.latePeriods, 11);
         expect(telemetry.armed.xrunsOf(XrunKind.playbackUnderrun), 9);
-        // "Unarmed" is the difference of the counts: 60000 calls, 1 of them
+        // "Unarmed" is the difference of the counts: 60000 periods, 1 of them
         // late — the comparison the whole instrument exists for.
-        expect(telemetry.session.calls - telemetry.armed.calls, 60000);
-        expect(telemetry.session.lateCalls - telemetry.armed.lateCalls, 1);
+        expect(telemetry.session.periods - telemetry.armed.periods, 60000);
+        expect(telemetry.session.latePeriods - telemetry.armed.latePeriods, 1);
       } finally {
         calloc.free(ptr);
       }
     });
 
     test('an engine that never opened a device reports nothing measured', () {
-      final ptr = calloc<le_snapshot>();
+      final ptr = calloc<le_callback_telemetry>();
       try {
         expect(CallbackTelemetry.fromNative(ptr.ref), CallbackTelemetry.empty);
       } finally {
@@ -954,11 +969,11 @@ void main() {
       // A month of uptime at ~1500 callbacks/s overflows a uint32 bucket; the
       // ABI is 64-bit throughout so a long-running appliance does not report a
       // histogram that silently restarted.
-      final ptr = calloc<le_snapshot>();
+      final ptr = calloc<le_callback_telemetry>();
       try {
         const beyond32 = 0x1_0000_0000 + 7;
-        ptr.ref.cb_session.buckets[3] = beyond32;
-        ptr.ref.cb_session.xruns[XrunKind.captureOverrun.index] = beyond32;
+        ptr.ref.session.buckets[3] = beyond32;
+        ptr.ref.session.xruns[XrunKind.captureOverrun.index] = beyond32;
         final telemetry = CallbackTelemetry.fromNative(ptr.ref);
         expect(telemetry.session.buckets[3], beyond32);
         expect(telemetry.session.xrunsOf(XrunKind.captureOverrun), beyond32);
@@ -970,8 +985,8 @@ void main() {
     test('value semantics', () {
       const base = CallbackTelemetry(
         budgetUs: 666,
-        session: CallbackWindowStats(calls: 10),
-        armed: CallbackWindowStats(calls: 4),
+        session: CallbackWindowStats(calls: 10, periods: 10),
+        armed: CallbackWindowStats(calls: 4, periods: 4),
       );
       expect(base, equals(base));
       expect(base.hashCode, base.hashCode);
@@ -982,8 +997,8 @@ void main() {
           equals(
             const CallbackTelemetry(
               budgetUs: 667,
-              session: CallbackWindowStats(calls: 10),
-              armed: CallbackWindowStats(calls: 4),
+              session: CallbackWindowStats(calls: 10, periods: 10),
+              armed: CallbackWindowStats(calls: 4, periods: 4),
             ),
           ),
         ),
@@ -991,19 +1006,17 @@ void main() {
       expect(base.toString(), contains('budget: 666us'));
     });
 
-    test('is NOT on EngineSnapshot, so it cannot defeat the dedupe', () {
+    test('is not reachable from le_snapshot at all', () {
       // The regression this guards: a counter that ticks on every audio
-      // callback riding a render-rate snapshot would make every projected
-      // state unequal to the last, rebuilding an idle rig continuously. Two
-      // snapshots read from the same engine state must compare equal, whatever
-      // the telemetry underneath is doing.
+      // callback riding the render-rate snapshot would make every projected
+      // state unequal to the last, rebuilding an idle rig continuously. The
+      // structural defence is that `le_snapshot` carries no telemetry at all,
+      // so EngineSnapshot has no field that could ever carry it and a snapshot
+      // read twice from unchanging engine state is equal by construction.
       final ptr = calloc<le_snapshot>();
       try {
         ptr.ref.sample_rate = 48000;
         final first = EngineSnapshot.fromNative(ptr.ref, const []);
-        ptr.ref.cb_budget_us = 666;
-        ptr.ref.cb_session.calls = 1000000;
-        ptr.ref.cb_armed.calls = 999;
         final second = EngineSnapshot.fromNative(ptr.ref, const []);
         expect(second, equals(first));
         expect(second.hashCode, first.hashCode);

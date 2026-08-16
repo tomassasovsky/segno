@@ -374,8 +374,9 @@ void main() {
       engine.nextCallbackTelemetry = const CallbackTelemetry(
         budgetUs: 666,
         session: CallbackWindowStats(
-          calls: 90000,
-          lateCalls: 12,
+          calls: 360000,
+          periods: 90000,
+          latePeriods: 12,
           gapEvents: 4,
           maxUs: 1900,
           meanUs: 140,
@@ -384,8 +385,9 @@ void main() {
           xruns: [4, 1, 0, 0],
         ),
         armed: CallbackWindowStats(
-          calls: 30000,
-          lateCalls: 11,
+          calls: 120000,
+          periods: 30000,
+          latePeriods: 11,
           gapEvents: 4,
           maxUs: 1900,
           meanUs: 210,
@@ -394,10 +396,10 @@ void main() {
           xruns: [4, 1, 0, 0],
         ),
       );
-      final telemetry = buildRepo().callbackTelemetry;
+      final telemetry = buildRepo().readCallbackTelemetry();
 
       expect(telemetry.budgetUs, 666);
-      expect(telemetry.session.lateCalls, 12);
+      expect(telemetry.session.latePeriods, 12);
       expect(telemetry.session.xrunsOf(XrunKind.playbackUnderrun), 4);
       expect(telemetry.session.xrunsOf(XrunKind.captureOverrun), 1);
       expect(telemetry.session.xrunTotal, 5);
@@ -405,7 +407,7 @@ void main() {
       expect(telemetry.armed.hasTrouble, isTrue);
       // Armed vs unarmed: 11 of the 12 missed deadlines, and every dropout,
       // happened inside the armed window.
-      expect(telemetry.session.lateCalls - telemetry.armed.lateCalls, 1);
+      expect(telemetry.session.latePeriods - telemetry.armed.latePeriods, 1);
       expect(telemetry.session.xrunTotal - telemetry.armed.xrunTotal, 0);
     });
 
@@ -420,13 +422,13 @@ void main() {
       final before = repo.state;
       engine.nextCallbackTelemetry = const CallbackTelemetry(
         budgetUs: 666,
-        session: CallbackWindowStats(calls: 1000000, lateCalls: 99),
-        armed: CallbackWindowStats(calls: 999, lateCalls: 42),
+        session: CallbackWindowStats(periods: 1000000, latePeriods: 99),
+        armed: CallbackWindowStats(periods: 999, latePeriods: 42),
       );
       expect(repo.state, equals(before));
       expect(repo.state.status, equals(before.status));
       // ...while the pull still reports the fresh numbers.
-      expect(repo.callbackTelemetry.session.lateCalls, 99);
+      expect(repo.readCallbackTelemetry().session.latePeriods, 99);
     });
 
     test('telemetry defaults to nothing measured', () {
@@ -435,7 +437,7 @@ void main() {
       expect(telemetry.session, CallbackWindowStats.empty);
       expect(telemetry.armed, CallbackWindowStats.empty);
       expect(telemetry.session.hasTrouble, isFalse);
-      expect(buildRepo().callbackTelemetry, CallbackTelemetry.empty);
+      expect(buildRepo().readCallbackTelemetry(), CallbackTelemetry.empty);
     });
   });
 

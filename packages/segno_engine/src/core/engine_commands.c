@@ -2269,10 +2269,11 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
 static void le_cbtel_format_window(const le_cb_window_snapshot* w, char* buf,
                                    size_t cap) {
   snprintf(buf, cap,
-           "{calls=%llu late=%llu gaps=%llu max=%uus mean=%uus maxgap=%uus"
-           " xrun=%llu/%llu/%llu/%llu hist=%llu,%llu,%llu,%llu,%llu,%llu,%llu,"
-           "%llu}",
-           (unsigned long long)w->calls, (unsigned long long)w->late_calls,
+           "{calls=%llu periods=%llu late=%llu gaps=%llu max=%uus mean=%uus"
+           " maxgap=%uus xrun=%llu/%llu/%llu/%llu"
+           " hist=%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu}",
+           (unsigned long long)w->calls, (unsigned long long)w->periods,
+           (unsigned long long)w->late_periods,
            (unsigned long long)w->gap_events, w->max_us, w->mean_us,
            w->max_gap_us,
            (unsigned long long)w->xruns[LE_XRUN_PLAYBACK_UNDERRUN],
@@ -2304,24 +2305,20 @@ static void le_cbtel_format_window(const le_cb_window_snapshot* w, char* buf,
  * window is the control it has to be read against — "unarmed" is their
  * difference. */
 static void le_perf_log_callback_telemetry(le_engine* engine, int stalled) {
-  le_cb_window_snapshot armed;
-  le_cb_window_snapshot session;
+  le_callback_telemetry tel;
   /* Sized for the pathological case — every 64-bit counter at 20 digits — so
    * the line is never silently truncated on a long-lived appliance. */
-  char armed_buf[640];
-  char session_buf[640];
-  le_cb_window_read(&engine->cb_timing.armed, &armed);
-  if (armed.calls == 0) return;
-  le_cb_window_read(&engine->cb_timing.session, &session);
-  le_cbtel_format_window(&armed, armed_buf, sizeof(armed_buf));
-  le_cbtel_format_window(&session, session_buf, sizeof(session_buf));
+  char armed_buf[704];
+  char session_buf[704];
+  /* Read through the same projection le_engine_get_callback_telemetry uses, so
+   * the journal line and the FFI pull can never disagree. */
+  le_cb_timing_read(&engine->cb_timing, &tel);
+  if (tel.armed.calls == 0) return;
+  le_cbtel_format_window(&tel.armed, armed_buf, sizeof(armed_buf));
+  le_cbtel_format_window(&tel.session, session_buf, sizeof(session_buf));
   fprintf(stderr,
           "segno/cbtel perf-disarm stalled=%d budget=%uus armed%s session%s\n",
-          stalled ? 1 : 0,
-          (uint32_t)(atomic_load_explicit(&engine->cb_timing.a_budget_ns,
-                                          memory_order_relaxed) /
-                     1000u),
-          armed_buf, session_buf);
+          stalled ? 1 : 0, tel.budget_us, armed_buf, session_buf);
 }
 
 int32_t le_perf_disarm(le_engine* engine) {

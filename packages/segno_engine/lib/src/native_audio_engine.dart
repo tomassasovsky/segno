@@ -64,6 +64,7 @@ class NativeAudioEngine implements AudioEngine {
       );
     }
     _snapshotPtr = calloc<le_snapshot>();
+    _telemetryPtr = calloc<le_callback_telemetry>();
     _trackPtr = calloc<le_track_snapshot>();
     _lanePtr = calloc<le_lane_snapshot>();
     _vizPtr = calloc<Float>(LE_VIZ_POINTS);
@@ -84,6 +85,7 @@ class NativeAudioEngine implements AudioEngine {
   final SegnoEngineBindings _bindings;
   late final Pointer<le_engine> _engine;
   late final Pointer<le_snapshot> _snapshotPtr;
+  late final Pointer<le_callback_telemetry> _telemetryPtr;
   late final Pointer<le_track_snapshot> _trackPtr;
   late final Pointer<le_lane_snapshot> _lanePtr;
   late final Pointer<Float> _vizPtr;
@@ -149,12 +151,15 @@ class NativeAudioEngine implements AudioEngine {
   @override
   CallbackTelemetry callbackTelemetry() {
     _checkAlive();
-    // Its own `le_engine_get_snapshot` rather than a field on [snapshot]: this
-    // is a pull-when-asked diagnostic, and the whole point is that it stays off
-    // the render-rate path (see [CallbackTelemetry]). No track/lane reads —
-    // only the telemetry block is projected.
-    _bindings.le_engine_get_snapshot(_engine, _snapshotPtr);
-    return CallbackTelemetry.fromNative(_snapshotPtr.ref);
+    // Its own native entry point, not a block on `le_snapshot`. Two reasons,
+    // both deliberate: keeping the telemetry off the snapshot is what stops a
+    // per-callback counter from ever reaching the render-rate projection (see
+    // [CallbackTelemetry]); and `le_engine_get_snapshot` has a SIDE EFFECT —
+    // it drains the engine's event ring, collecting retired undo layers —
+    // which a diagnostic read has no business triggering. This call is pure
+    // relaxed atomic loads, with no track or lane walk.
+    _bindings.le_engine_get_callback_telemetry(_engine, _telemetryPtr);
+    return CallbackTelemetry.fromNative(_telemetryPtr.ref);
   }
 
   @override
@@ -1530,6 +1535,7 @@ class NativeAudioEngine implements AudioEngine {
     _disposed = true;
     _bindings.le_engine_destroy(_engine);
     calloc
+      ..free(_telemetryPtr)
       ..free(_snapshotPtr)
       ..free(_trackPtr)
       ..free(_lanePtr)

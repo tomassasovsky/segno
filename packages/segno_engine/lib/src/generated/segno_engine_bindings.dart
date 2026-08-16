@@ -900,6 +900,45 @@ class SegnoEngineBindings {
         void Function(ffi.Pointer<le_engine>, ffi.Pointer<le_snapshot>)
       >();
 
+  /// Copies the audio-callback telemetry (#722) into *out. No-op if either pointer
+  /// is NULL; a never-started engine fills zeros.
+  ///
+  /// Its own entry point rather than a block on le_snapshot, for two reasons. It
+  /// is a DIAGNOSTIC PULL — a bench readout, a support screen — not render-rate
+  /// state, and keeping it off le_snapshot is what guarantees a per-callback
+  /// counter can never leak into the app's projected state and defeat its rebuild
+  /// dedupe. And it is SIDE-EFFECT FREE: le_engine_get_snapshot also runs
+  /// le_engine_drain_events (collecting retired undo layers), which a diagnostic
+  /// read has no business triggering. Pure relaxed atomic loads; safe from the
+  /// control thread at any time, running or not.
+  void le_engine_get_callback_telemetry(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_callback_telemetry> out,
+  ) {
+    return _le_engine_get_callback_telemetry(
+      engine,
+      out,
+    );
+  }
+
+  late final _le_engine_get_callback_telemetryPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_callback_telemetry>,
+          )
+        >
+      >('le_engine_get_callback_telemetry');
+  late final _le_engine_get_callback_telemetry =
+      _le_engine_get_callback_telemetryPtr
+          .asFunction<
+            void Function(
+              ffi.Pointer<le_engine>,
+              ffi.Pointer<le_callback_telemetry>,
+            )
+          >();
+
   /// Copies track `channel`'s snapshot into *out. Out-of-range channels yield an
   /// empty track. No-op if either pointer is NULL.
   void le_engine_get_track(
@@ -4656,32 +4695,44 @@ enum le_xrun_kind {
 /// nanosecond figure would overflow uint32 after 4.3 s and nothing here is finer
 /// than a microsecond anyway.
 final class le_cb_window_snapshot extends ffi.Struct {
-  /// device callbacks observed in this window
+  /// device callbacks observed — raw context, never judged
   @ffi.Uint64()
   external int calls;
 
-  /// of those, ones whose duration exceeded the budget
+  /// period services completed (see the note above)
   @ffi.Uint64()
-  external int late_calls;
+  external int periods;
 
-  /// Entry-to-entry gaps longer than 1.5 of the previous callback's budget: the
-  /// DERIVED starvation signal. The device coming back that late means it
-  /// starved, whether or not the backend admitted an xrun — this is what works
-  /// on CoreAudio, where miniaudio exposes no xrun signal at all.
+  /// Services whose summed duration exceeded the deadline for the frames they
+  /// covered: the engine did not finish a period's work inside a period. THE
+  /// number to read — this is what a dropout is made of.
+  @ffi.Uint64()
+  external int late_periods;
+
+  /// Entry-to-entry gaps longer than 1.5 NOMINAL PERIODS: the DERIVED
+  /// starvation signal. The device coming back that late means it starved,
+  /// whether or not the backend admitted an xrun — the only such signal
+  /// available on CoreAudio, where miniaudio exposes nothing.
+  ///
+  /// Measured against the nominal period and NOT against the last block's
+  /// budget: on the split duplex loop the callbacks for one period arrive in a
+  /// burst and are then followed by a normal ~one-period wait, so a threshold
+  /// scaled to a sub-period block would fire at every single period boundary on
+  /// completely healthy hardware.
   ///
   /// INDEPENDENT OF `xruns` by construction: an ALSA -EPIPE recovery also
-  /// produces a long gap, so the callback that follows a counted recovery has
-  /// its gap suppressed. One physical dropout is counted once, under one name,
-  /// and max_gap_us is never pinned by a recovery stall. A non-zero gap_events
-  /// therefore means starvation the backend never reported.
+  /// stalls the loop, so a gap arriving within a few periods of a counted
+  /// recovery is suppressed. One physical dropout is counted once, under one
+  /// name, and max_gap_us is never pinned by a recovery stall — while a genuine
+  /// stall later in the session still registers.
   @ffi.Uint64()
   external int gap_events;
 
-  /// worst callback duration seen
+  /// worst period-service duration seen
   @ffi.Uint32()
   external int max_us;
 
-  /// mean callback duration over `calls`
+  /// mean period-service duration over `periods`
   @ffi.Uint32()
   external int mean_us;
 
@@ -4689,7 +4740,7 @@ final class le_cb_window_snapshot extends ffi.Struct {
   @ffi.Uint32()
   external int max_gap_us;
 
-  /// duration histogram; see LE_CB_BUCKETS
+  /// service histogram; see LE_CB_BUCKETS
   @ffi.Array.multi([8])
   external ffi.Array<ffi.Uint64> buckets;
 
@@ -4697,6 +4748,30 @@ final class le_cb_window_snapshot extends ffi.Struct {
   /// window is exactly what xrun_count reports.
   @ffi.Array.multi([4])
   external ffi.Array<ffi.Uint64> xruns;
+}
+
+/// The whole instrument, read through le_engine_get_callback_telemetry.
+///
+/// Deliberately NOT part of le_snapshot. These counters move on every audio
+/// callback, and le_snapshot is projected at render rate into a value object
+/// whose equality drives the app's rebuild dedupe — carrying them there would
+/// make every projection unequal to the last and rebuild an idle rig
+/// continuously, which is CPU pressure invented by the instrument that exists to
+/// find CPU pressure. This is a pull for a bench or a diagnostics screen, and it
+/// has no side effects (unlike le_engine_get_snapshot, which also drains the
+/// engine's event ring).
+final class le_callback_telemetry extends ffi.Struct {
+  /// The nominal period deadline in microseconds: buffer_frames / sample_rate.
+  /// 0 = no device has been opened, which is also the "inert" state in which
+  /// nothing at all is accumulated.
+  @ffi.Uint32()
+  external int budget_us;
+
+  /// since the device started
+  external le_cb_window_snapshot session;
+
+  /// since the most recent le_perf_arm
+  external le_cb_window_snapshot armed;
 }
 
 /// Lock-free snapshot of engine state, published by the audio thread and read by
@@ -4968,21 +5043,6 @@ final class le_snapshot extends ffi.Struct {
   /// excluded channel reads 0 here because it never runs).
   @ffi.Uint32()
   external int input_cond_mask;
-
-  /// The deadline the MOST RECENT callback was judged against, in microseconds:
-  /// that callback's frame count over the sample rate. Usually constant, but it
-  /// tracks a duplex loop that varies the block size rather than pretending
-  /// buffer_frames is the answer (see the note above). 0 = no device has been
-  /// opened, or none of its callbacks has landed yet — which is also the
-  /// "telemetry inert" state, in which nothing is accumulated at all.
-  @ffi.Uint32()
-  external int cb_budget_us;
-
-  /// since the device started
-  external le_cb_window_snapshot cb_session;
-
-  /// since the most recent le_perf_arm
-  external le_cb_window_snapshot cb_armed;
 }
 
 /// The plugin format a descriptor was discovered in.

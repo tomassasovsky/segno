@@ -509,7 +509,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * atomic still holds the PREVIOUS session's period until le_engine_start
    * republishes it, so reading it would arm the instrument against a stale
    * deadline for the length of the open. */
-  le_engine_configure_callback_budget(engine, 0);
+  le_engine_configure_callback_budget(engine, 0, 0);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity on every fresh start */
   /* Limiter off by default (the app enables it); ceiling just below full scale.
    * Overdub feedback unity by default == classic additive overdub. */
@@ -701,14 +701,15 @@ void le_engine_note_callback_span(le_engine* engine, uint64_t entry_ns,
 }
 
 void le_engine_configure_callback_budget(le_engine* engine,
-                                         int32_t sample_rate) {
+                                         int32_t sample_rate,
+                                         int32_t period_frames) {
   if (engine == NULL) return;
   /* The flat tally and the per-kind windows are two views of the same events,
    * so they are cleared TOGETHER and nowhere else. Clearing only the windows
    * here would leave xrun_count carrying dropouts the breakdown no longer
    * shows — a reading that looks like a bug in the instrument. */
   atomic_store_explicit(&engine->a_xruns, 0u, memory_order_relaxed);
-  le_cb_timing_configure(&engine->cb_timing, sample_rate);
+  le_cb_timing_configure(&engine->cb_timing, sample_rate, period_frames);
 }
 
 void le_engine_mark_device_lost(le_engine* engine) {
@@ -915,7 +916,8 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
    * and a_xruns together, so the numbers a bench reads always belong to the
    * device session in front of it. Still before start(), so the callback cannot
    * be running yet — nothing races this write. */
-  le_engine_configure_callback_budget(engine, info.sample_rate);
+  le_engine_configure_callback_budget(engine, info.sample_rate,
+                                      info.buffer_frames);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   engine->lat_active = 0;
   engine->lat_emit_remaining = 0;

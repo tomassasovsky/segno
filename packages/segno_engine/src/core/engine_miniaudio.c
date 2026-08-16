@@ -47,9 +47,10 @@ static void data_callback(ma_device* device, void* output, const void* input,
 #if LE_CALLBACK_TELEMETRY
   const uint64_t entry_ns = le_now_ns();
   le_engine_process(e, (float*)output, (const float*)input, frame_count);
-  /* frame_count, not the device period: this loop delivers min(capture,
-   * playback) chunks and short reads, and the deadline belongs to the block
-   * actually processed (see le_cb_timing_note). */
+  /* frame_count is passed because this loop delivers min(capture, playback)
+   * chunks and short reads rather than one period per callback: the telemetry
+   * sums consecutive callbacks into one period service and judges THAT (see
+   * le_cb_timing_note). */
   le_engine_note_callback_span(e, entry_ns, le_now_ns(), frame_count);
 #else
   le_engine_process(e, (float*)output, (const float*)input, frame_count);
@@ -75,39 +76,27 @@ static void le_miniaudio_xrun_hook(void* pUserData, int kind) {
 }
 
 /* ma_segno_xrun_callback is ONE process-global pointer but engines are not a
- * singleton, so installing and retracting it is refcounted: engine A closing
- * its device must not silently stop dropout counting for engine B's still-open
- * one — that would put xrun_count back to a permanent 0, which is the exact
- * symptom #722 exists to end. The hook itself is engine-agnostic (it dispatches
- * on the device's own pUserData), so one installation serves every device; only
- * the LAST close retracts it.
+ * singleton, so it is installed on the first device open and NEVER retracted.
  *
- * Atomic because opens/closes come from control threads that need not be the
- * same one. Both transitions happen while the device in question is not
- * running — install before ma_device_init, retract after ma_device_uninit — so
- * no data loop can be mid-call on the pointer either way. */
-static _Atomic int32_t g_xrun_hook_refs;
-
-static void le_miniaudio_xrun_hook_retain(void) {
-  if (atomic_fetch_add_explicit(&g_xrun_hook_refs, 1, memory_order_acq_rel) ==
-      0) {
-    ma_segno_xrun_callback = le_miniaudio_xrun_hook;
-  }
-}
-
-static void le_miniaudio_xrun_hook_release(void) {
-  int32_t prev =
-      atomic_load_explicit(&g_xrun_hook_refs, memory_order_relaxed);
-  /* Never drop below zero: close() is idempotent and is also the failure-
-   * cleanup path, so it can run on an engine that never retained. */
-  while (prev > 0) {
-    if (atomic_compare_exchange_weak_explicit(&g_xrun_hook_refs, &prev, prev - 1,
-                                              memory_order_acq_rel,
-                                              memory_order_relaxed)) {
-      if (prev == 1) ma_segno_xrun_callback = NULL;
-      return;
-    }
-  }
+ * That is not laziness, it is the only shape with no race and no way to lose
+ * counting. Retraction has to be refcounted (engine A closing its device must
+ * not stop counting for engine B's still-open one — that would put xrun_count
+ * back to a permanent 0, the exact symptom #722 exists to end), and a refcount
+ * whose pointer write sits outside the atomic RMW can interleave into
+ * "refs == 1, hook == NULL": B installs between A's decrement and A's clear,
+ * and B then counts nothing for its whole session. Making the pointer and the
+ * count move together needs a lock around a control-path operation whose only
+ * benefit would be nulling a pointer nobody reads.
+ *
+ * Leaving it installed is free and safe: the only caller is a RUNNING ALSA data
+ * loop, which passes its own device's pUserData, so the hook never touches a
+ * stale engine — it simply is not called when no device is open. Every store
+ * writes the identical value, so repeated opens cannot race each other either.
+ *
+ * (Nothing here reaches the -DLE_CALLBACK_TELEMETRY=0 build: the vendored call
+ * sites are compiled out there, so the pointer is never read.) */
+static void le_miniaudio_install_xrun_hook(void) {
+  ma_segno_xrun_callback = le_miniaudio_xrun_hook;
 }
 #endif /* LE_CALLBACK_TELEMETRY */
 
@@ -158,13 +147,6 @@ static void le_miniaudio_close(le_engine* engine) {
     ma_device_stop(&engine->device);
     ma_device_uninit(&engine->device);
     engine->device_initialised = 0;
-#if LE_CALLBACK_TELEMETRY
-    /* Paired one-for-one with the retain in le_miniaudio_open, and inside this
-     * guard so it is exactly as idempotent as the close it lives in. Released
-     * only AFTER uninit, so the ALSA data-loop thread — the only caller — is
-     * already joined and cannot observe the retraction. */
-    le_miniaudio_xrun_hook_release();
-#endif
   }
   le_uninit_context(engine);
 }
@@ -294,11 +276,9 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
   engine->device_initialised = 1;
 #if LE_CALLBACK_TELEMETRY
   /* Install the backend-dropout hook (#722) the moment a device exists and
-   * before it can be started, so no -EPIPE recovery is ever missed. Retained
-   * here rather than at the top of open() so it pairs exactly with the release
-   * in le_miniaudio_close's device_initialised block — a failed ma_device_init
-   * returns above without ever having retained. */
-  le_miniaudio_xrun_hook_retain();
+   * before it can be started, so no -EPIPE recovery is ever missed. Idempotent
+   * and never retracted — see le_miniaudio_install_xrun_hook. */
+  le_miniaudio_install_xrun_hook();
 #endif
 
   /* Negotiated parameters (they may differ from requested). Channel counts are

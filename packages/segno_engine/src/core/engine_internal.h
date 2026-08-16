@@ -55,15 +55,19 @@ void le_engine_note_backend_xrun(le_engine* engine, int32_t kind);
 void le_engine_note_callback_span(le_engine* engine, uint64_t entry_ns,
                                   uint64_t exit_ns, uint32_t frames);
 
-/* Opens a fresh callback-telemetry session at the negotiated `sample_rate`:
- * clears both windows AND the flat a_xruns tally (they are two views of the
- * same events and must never disagree), then arms the instrument. Called by
- * le_engine_start once the backend reports its negotiated rate — deliberately
- * NOT by le_engine_configure, which seeds an inert 0 instead, so an engine that
- * never opened a device (the native test pump) measures nothing. Control thread
- * only, while the device is shut. Not part of the FFI surface. */
+/* Opens a fresh callback-telemetry session at the negotiated `sample_rate` and
+ * NOMINAL `period_frames`: clears both windows AND the flat a_xruns tally (they
+ * are two views of the same events and must never disagree), then arms the
+ * instrument. The period is what the period-service accumulator batches to and
+ * what the gap detector is measured against — a per-block threshold would fire
+ * on the normal burst-then-wait rhythm of a split duplex loop. Called by
+ * le_engine_start once the backend reports both — deliberately NOT by
+ * le_engine_configure, which seeds inert zeros instead, so an engine that never
+ * opened a device (the native test pump) measures nothing. Control thread only,
+ * while the device is shut. Not part of the FFI surface. */
 void le_engine_configure_callback_budget(le_engine* engine,
-                                         int32_t sample_rate);
+                                         int32_t sample_rate,
+                                         int32_t period_frames);
 
 /* Publishes "device lost" (a_device_present = 0, a_running untouched) so the
  * control layer drives reconnection. Mirrors the miniaudio device-notification

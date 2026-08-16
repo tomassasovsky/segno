@@ -418,18 +418,24 @@ class LooperRepository {
   /// The current state, read synchronously from the engine.
   LooperState get state => _project(_engine.snapshot());
 
-  /// The audio callback's self-measurement (native issue #722), read
-  /// synchronously from the engine: per-callback duration against its
-  /// deadline, the entry-to-entry starvation detector, and real backend
-  /// dropouts — in a whole-session window and a since-the-last-arm window.
+  /// Reads the audio callback's self-measurement (native issue #722): how long
+  /// the engine takes to service one hardware period against the period, the
+  /// entry-to-entry starvation detector, and real backend dropouts — in a
+  /// whole-session window and a since-the-last-arm window.
   ///
-  /// A **pull**, never part of [state] or the [looperState] stream. Every
-  /// counter here changes on every audio callback, so putting them in the
-  /// projected state would make it unequal to the previous one on every tick,
-  /// defeat [looperState]'s dedupe, and rebuild the whole UI 60 times a second
-  /// on an idle rig. Read it when something asks — a bench readout, a
-  /// diagnostics screen — not on a frame timer.
-  CallbackTelemetry get callbackTelemetry => _engine.callbackTelemetry();
+  /// **For diagnostics — a bench readout, a support screen — never for
+  /// `build()`.** A method rather than a getter precisely so it does not read
+  /// like cheap state: every call crosses the FFI boundary and allocates the
+  /// histogram lists. More importantly, every counter it returns changes on
+  /// every audio callback, so feeding it into a widget or into [state] would
+  /// make each frame's value unequal to the last, defeat [looperState]'s dedupe
+  /// and rebuild the whole UI continuously on an idle rig — CPU pressure
+  /// invented by the instrument that exists to find CPU pressure. That is why
+  /// it is not on [LooperState] at all.
+  ///
+  /// On healthy hardware every judged field reads zero; see
+  /// [CallbackTelemetry].
+  CallbackTelemetry readCallbackTelemetry() => _engine.callbackTelemetry();
 
   /// The most recent config passed to [startEngine], or `null` before the first
   /// successful start.
