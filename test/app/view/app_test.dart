@@ -543,6 +543,18 @@ void main() {
           .setMode(InteractionMode.fx);
       await tester.pump(const Duration(milliseconds: 40));
       expect(windowService.readouts.last.mode, 'fx');
+
+      // The bank rides the wire too (re-added for the readout's v2 bank
+      // pair): a BANK switch must reach the second screen the same way.
+      expect(windowService.readouts.last.activeBank, 0);
+      tester
+          .element(find.byType(LooperPage))
+          .read<ControlCubit>()
+          .browseBank(
+            1,
+          );
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts.last.activeBank, 1);
     });
 
     testWidgets(

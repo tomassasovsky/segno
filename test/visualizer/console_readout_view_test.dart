@@ -6,6 +6,36 @@ import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/performance_readout.dart';
 
 void main() {
+  group('readoutClock', () {
+    test('shows m:ss below ten minutes — no phantom leading hours', () {
+      expect(readoutClock(0), '0:00');
+      expect(readoutClock(11), '0:11');
+      expect(readoutClock(272), '4:32');
+    });
+
+    test('shows mm:ss below one hour', () {
+      expect(readoutClock(754), '12:34');
+      expect(readoutClock(3599), '59:59');
+    });
+
+    test('grows hours only at one hour and beyond', () {
+      expect(readoutClock(3600), '1:00:00');
+      expect(readoutClock(3671), '1:01:11');
+      expect(readoutClock(36000), '10:00:00');
+    });
+  });
+
+  group('readoutTempo', () {
+    test('decides the decimal on the rendered string, not the value', () {
+      // 119.98 is non-integer as a double but rounds to "120.0" at one
+      // decimal — a value-level check would keep that phantom ".0".
+      expect(readoutTempo(120), '120');
+      expect(readoutTempo(119.98), '120');
+      expect(readoutTempo(119.94), '119.9');
+      expect(readoutTempo(120.5), '120.5');
+    });
+  });
+
   group('ConsoleReadoutView', () {
     const readout = PerformanceReadout(
       tracks: [
@@ -17,7 +47,7 @@ void main() {
       currentBeat: 1,
       loopBars: 8,
       isRunning: true,
-      elapsedSeconds: 11,
+      elapsedSeconds: 272,
     );
 
     Future<void> pump(
@@ -39,7 +69,7 @@ void main() {
       ),
     );
 
-    testWidgets('shows tempo, bars, clock, mode word and the beat dots', (
+    testWidgets('shows tempo, clock, bars, mode word and the beat dots', (
       tester,
     ) async {
       await pump(tester, readout);
@@ -49,7 +79,7 @@ void main() {
       expect(find.byKey(const Key('console_readout_bars')), findsOneWidget);
       expect(find.text('8'), findsOneWidget);
       expect(find.byKey(const Key('console_readout_clock')), findsOneWidget);
-      expect(find.text('0:00:11'), findsOneWidget);
+      expect(find.text('4:32'), findsOneWidget);
       expect(find.byKey(const Key('console_readout_mode')), findsOneWidget);
       expect(find.byKey(const Key('console_readout_beats')), findsOneWidget);
     });
@@ -57,10 +87,10 @@ void main() {
     testWidgets('renders no track-level content — names live on the 16"', (
       tester,
     ) async {
-      // Owner-directed revision of the pen's drawn screen (#695): at two
-      // metres the per-track words are noise; the readout must not render
-      // them even though the payload still carries the tracks (the waveform
-      // colouring keys off the selected one).
+      // Owner decision (`c/readout`): at two metres the per-track words are
+      // noise; the readout must not render them even though the payload
+      // still carries the tracks (the waveform colouring keys off the
+      // selected one).
       await pump(tester, readout);
       expect(find.text('DRUMS'), findsNothing);
       expect(find.text('BASS'), findsNothing);
@@ -70,6 +100,41 @@ void main() {
       await pump(tester, readout);
       expect(find.byKey(const Key('console_readout_waveform')), findsOneWidget);
       expect(find.byKey(const Key('waveform_region')), findsOneWidget);
+    });
+
+    testWidgets('drops the decimal on an integer tempo, keeps one otherwise', (
+      tester,
+    ) async {
+      // The two-metre face never states "120.0" — the decimal appears only
+      // when the tempo actually carries one.
+      await pump(tester, readout);
+      expect(find.text('120'), findsOneWidget);
+      expect(find.text('120.0'), findsNothing);
+
+      await pump(tester, const PerformanceReadout(tempoBpm: 120.5));
+      expect(find.text('120.5'), findsOneWidget);
+
+      // A tapped tempo lands at 119.98: non-integer as a value, integer as
+      // a rendered figure — it must read "120", not "120.0".
+      await pump(tester, const PerformanceReadout(tempoBpm: 119.98));
+      expect(find.text('120'), findsOneWidget);
+      expect(find.text('120.0'), findsNothing);
+    });
+
+    testWidgets('draws the figures in Inter with tabular numerals, not the '
+        'mono face', (tester) async {
+      // The owner rejected the mono face's dotted zeros; tabular figures are
+      // what keep the ticking clock from jittering in the proportional face.
+      await pump(tester, readout);
+      for (final figure in ['120', '4:32', '8']) {
+        final style = tester.widget<Text>(find.text(figure)).style!;
+        expect(style.fontFamily, isNot(SurfaceTheme.monoFont));
+        expect(
+          style.fontFeatures,
+          contains(const FontFeature.tabularFigures()),
+          reason: '$figure must use tabular numerals',
+        );
+      }
     });
 
     testWidgets('lights one beat dot per tsNum, the current one', (
@@ -98,7 +163,7 @@ void main() {
       expect(find.byKey(const Key('console_readout_beats')), findsNothing);
       expect(find.text('--'), findsOneWidget);
       // The clock still runs: the transport can play tempo-free.
-      expect(find.text('0:00:05'), findsOneWidget);
+      expect(find.text('0:05'), findsOneWidget);
     });
 
     testWidgets('hides the bar count when nothing defines a loop yet', (
@@ -116,6 +181,28 @@ void main() {
       await pump(tester, readout.copyWithBeat(countingIn: true));
       expect(find.byKey(const Key('console_readout_count_in')), findsOneWidget);
       expect(find.text(l10n.readoutCountIn), findsOneWidget);
+    });
+
+    testWidgets('fills the active half of the bank pair', (tester) async {
+      Color? fillOf(int bank) {
+        final half = tester.widget<Container>(
+          find.byKey(Key('console_readout_bank_$bank')),
+        );
+        return (half.decoration as BoxDecoration?)?.color;
+      }
+
+      final control = AppTheme.neon.extension<SurfaceTheme>()!.control;
+
+      await pump(tester, readout);
+      expect(find.byKey(const Key('console_readout_bank')), findsOneWidget);
+      expect(find.text('A'), findsOneWidget);
+      expect(find.text('B'), findsOneWidget);
+      expect(fillOf(0), control);
+      expect(fillOf(1), isNull);
+
+      await pump(tester, const PerformanceReadout(activeBank: 1));
+      expect(fillOf(0), isNull);
+      expect(fillOf(1), control);
     });
 
     testWidgets('the record light idles dim and lights with the elapsed when '
@@ -157,6 +244,26 @@ void main() {
       }
     });
 
+    testWidgets('paints the mode word red only while a press records', (
+      tester,
+    ) async {
+      final surface = AppTheme.neon.extension<SurfaceTheme>()!;
+      TextStyle styleOf() => tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byKey(const Key('console_readout_mode')),
+              matching: find.byType(Text),
+            ),
+          )
+          .style!;
+
+      await pump(tester, const PerformanceReadout());
+      expect(styleOf().color, surface.rec);
+
+      await pump(tester, const PerformanceReadout(mode: 'mute'));
+      expect(styleOf().color, surface.textPrimary);
+    });
+
     testWidgets('renders an unknown mode token verbatim rather than guessing', (
       tester,
     ) async {
@@ -166,14 +273,29 @@ void main() {
       expect(find.text('CUSTOM'), findsOneWidget);
     });
 
+    testWidgets('scales a long unknown mode token down instead of clipping', (
+      tester,
+    ) async {
+      // The left cluster's FittedBox guard does not cover the right column:
+      // a 20-character token from a newer main window must shrink to the
+      // pen's right-column width, never RenderFlex-overflow the header.
+      await pump(
+        tester,
+        const PerformanceReadout(mode: 'granular-freeze-mode'),
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.text('GRANULAR-FREEZE-MODE'), findsOneWidget);
+    });
+
     testWidgets('survives the worst legal header without overflowing', (
       tester,
     ) async {
       // Everything the header can carry, at once, in the wordier locale: the
       // Spanish count-in phrase, a 15-beat signature's dot run, an hour-plus
-      // clock, and an armed capture. The pen never draws this state — the
-      // figures-and-dots cluster must scale down gracefully rather than
-      // clip the mode word and record light off the panel.
+      // clock (h:mm:ss), a non-integer tempo, MUTE, bank B, and an armed
+      // capture. The pen proves its drawn worst case with ~110 px of slack;
+      // this one it never draws, so the figures-and-dots cluster must scale
+      // down gracefully rather than clip the right column off the panel.
       await pump(
         tester,
         const PerformanceReadout(
@@ -183,6 +305,8 @@ void main() {
           currentBeat: 14,
           countingIn: true,
           loopBars: 12,
+          mode: 'mute',
+          activeBank: 1,
           elapsedSeconds: 3671,
           recordArmed: true,
           recordSeconds: 3599,
@@ -190,8 +314,9 @@ void main() {
         locale: const Locale('es'),
       );
       expect(tester.takeException(), isNull);
-      // Both right-side pills are still on the panel.
+      // The whole right column is still on the panel.
       expect(find.byKey(const Key('console_readout_mode')), findsOneWidget);
+      expect(find.byKey(const Key('console_readout_bank')), findsOneWidget);
       expect(
         find.byKey(const Key('console_readout_record_elapsed')),
         findsOneWidget,
@@ -202,7 +327,7 @@ void main() {
       tester,
     ) async {
       // The pen draws at 1920x1080; the device window is 640x360 logical
-      // today. The tempo figure must be the pen's 77 times height/1080 —
+      // today. The tempo figure must be the pen's 180 times height/1080 —
       // proportions are the contract, not pixels.
       tester.view.physicalSize = const Size(1920, 1080);
       tester.view.devicePixelRatio = 1;
@@ -235,6 +360,7 @@ extension on PerformanceReadout {
     loopBars: loopBars,
     isRunning: isRunning,
     mode: mode,
+    activeBank: activeBank,
     elapsedSeconds: elapsedSeconds,
     recordArmed: recordArmed,
     recordSeconds: recordSeconds,
