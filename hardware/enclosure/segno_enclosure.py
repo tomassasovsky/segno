@@ -333,8 +333,14 @@ MIDI_SCREW_D     = 3.2   # M3 clearance
 # calipers or dimensioned photo; "datasheet" = manufacturer or distributor
 # figure, with the source named; "UNCONFIRMED" = nobody has checked it.
 REAR_IO_PROVENANCE = {
-    "D_PWRBTN":          "datasheet: generic 16 mm panel button",
-    "D_FUSE":            "datasheet: generic 12 mm panel fuse holder",
+    # "generic <n> mm part" is NOT a datasheet -- there is no source and no part.
+    # Both predate #743 and nobody has ever chosen the component. The fuse is the
+    # worse of the two: the current budget in segno_wiring.md puts ~7 A through
+    # the 9 V input, and a 12 mm panel holder is the 5x20 cartridge size, which is
+    # commonly rated 5-6.3 A. The hole may be sized for a part that cannot carry
+    # its own load.
+    "D_PWRBTN":          "UNCONFIRMED: no part chosen; must be MOMENTARY (GPIO soft shutdown)",
+    "D_FUSE":            "UNCONFIRMED: no part chosen; rating unresolved vs a ~7 A 9 V input",
     "D_GND":             "design: M6 stud clearance",
     "D_BARREL":          "datasheet: DC-099 listing, 11 mm hole (+0.5 fit)",
     "D_TRS_BORE":        "datasheet: neutrik.com NC3FD-L-1, 'standardized D sized 24 mm panel cutout'",

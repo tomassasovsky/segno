@@ -226,8 +226,8 @@ right, power first and away from signal:
 | ref | cutout | keep-out | note |
 |---|---|---|---|
 | `9V_DC` | Ø11.5 | 17.5 | DC-099; listing says Ø11 hole, +0.5 so it cannot rattle before the nut bites |
-| `POWER` | Ø16 | 22 | shutdown button — the Pi still needs a clean stop |
-| `FUSE` | Ø12 | 18 | |
+| `POWER` | Ø16 | 22 | **no part chosen.** Must be MOMENTARY — it drives a Pi GPIO soft shutdown, it does not break power |
+| `FUSE` | Ø12 | 18 | **no part chosen, rating unresolved** — see below |
 | `MIDI_IN` / `MIDI_OUT` | Ø15.1 + 2 × Ø3.2 @ 22 | 28.4 | REAN NYS325; **IN needs opto-isolation on the board**, not here |
 | `CTRL_1` / `CTRL_2` | **Ø24**, fixings **not cut** | 30.4 | **D-series** punch, not a threaded bushing |
 | `USB3_1` / `USB3_2` | 22.5 square, **R8.84** | 28.5 | flange Ø28.5 is the keep-out, not the hole |
@@ -291,9 +291,30 @@ leaves 4 mm of wall above and below.
 (with the source named) or `UNCONFIRMED`. `rear_io_unconfirmed()` returns the
 unsourced ones and the build prints them as a **`DO NOT CUT`** line; a gate
 refuses any rear-I/O dimension with no entry at all, so a new connector cannot be
-added without declaring where its numbers came from. Currently unconfirmed:
-**`D_TRS_SCREW_PITCH`** and **`MIDI_SCREW_PITCH`** — the bores are sourced, the
-fixing pitches are not.
+added without declaring where its numbers came from.
+
+Currently unconfirmed — **`D_FUSE`, `D_PWRBTN`, `D_TRS_SCREW_PITCH`,
+`MIDI_SCREW_PITCH`**.
+
+> **`POWER` and `FUSE` have no component behind them at all.** Both constants
+> predate #743 and no part has ever been chosen; Ø16 and Ø12 are the sizes of a
+> *typical* panel button and a *5×20 cartridge* holder, which is a shape, not a
+> source. They were briefly recorded as "datasheet: generic …" — "generic" is not
+> a datasheet, and that entry was exactly the false authority the provenance table
+> exists to catch.
+>
+> The fuse is the one with an engineering question, not just a shopping one. The
+> current budget in [`segno_wiring.md`](segno_wiring.md) puts **~7 A through the
+> 9 V input** (≈50 W of 5 V load across two bucks). A Ø12 panel holder is the
+> **5×20 cartridge** size, commonly rated **5–6.3 A** — so the hole may be sized
+> for a part that cannot carry the load it is protecting. A 6.3×32 (¼"×1¼")
+> holder handles 10–15 A but wants a **Ø13–14** hole. **Pick the fuse rating
+> first, then the holder, then the hole** — not the other way round.
+>
+> The button carries no power current: it drives a Pi **GPIO soft shutdown**, so
+> the Pi can flush the SD card. That means it must be **momentary**, and it also
+> means **nothing on this unit actually breaks power** — pulling the barrel plug
+> is the only hard off.
 
 > **Fallout to settle separately:** the `nopi` build (external host, HDMI ×2 +
 > USB touch ×2) had no home but that window, so it is **retired** — an
