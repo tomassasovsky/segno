@@ -72,6 +72,40 @@ Carried by the `segno_pedal_main` USB-MIDI board — fab + BOM in
       stainless ×1 — [APIELE, $4.50 ea](https://www.amazon.com/dp/B079HTQ7XD).
       Must be momentary: it drives a Pi GPIO soft shutdown, it does not break
       power. Domed, not flat — the dome is what gives it mechanical feel
+### Sourcing — Argentina (MercadoLibre) vs Amazon
+
+Rates at the time of writing: blue **1545**, card **1963** ARS/USD. An Amazon order
+is paid at the *card* rate plus freight, so the crossover is well below face value.
+
+| item | local (ARS) | Amazon | buy |
+|---|---|---|---|
+| **T5A slow-blow fuse** | 4 770 ("fusible 5×20 **lento** 5 A", Itytarg) | ~$7 for a 20-pack | **local** — one fuse, not twenty |
+| **Fuse holder** | — | $8.50–11.13 | **local** |
+| **DC 5.5×2.1 chassis, threaded** | 10 150 / 5 = 2 030 ea | DC-099 $1.52 ea (5-pack) | **local**, marginal |
+| **Rubber feet, screw-on** | 5 500 | uxcell $5.69 / 4 | **local** |
+| **DIN-5 female chassis** | 3 900 ea | REAN NYS325 $3.48 ea | see note |
+| **TRS 6.35 D-series** | Neutrik **NJ3FP6C** 25 000 | MEIRIYFA $5.00 ea | see note |
+| **Power button 19 mm SS** | 14 858 | APIELE **$4.50** ea | **Amazon**, ~40 % cheaper |
+| **USB 3.0 coupler** | 17 650 generic · Neutrik NAUSB3 46 000 | already specified | **Amazon** |
+
+> **DIN-5.** The local generic is cheaper, but `MIDI_BODY_D` = 15.1 is sourced from
+> the REAN NYS325 specifically. Buying a generic means re-measuring the bore and the
+> fixing pitch before the panel is cut — it moves a *sourced* number back to
+> unconfirmed. Worth it only if the REAN is hard to get.
+>
+> **TRS — read the note in the design doc before buying locally.** A plain
+> threaded-bushing chassis jack will not work in the Ø24 D punch. Locally that means
+> the **Neutrik NJ3FP6C** specifically; it is 3× the clone but genuine Neutrik and
+> **latching**, which on a floor unit with external control pedals is worth real
+> money.
+>
+> **Possible simplification, not yet taken.** MercadoLibre also stocks the **Neutrik
+> NAUSB3** USB 3.0 feedthrough (ARS 46 000), which is *also* a D-size part. Using it
+> would put TRS ×2 and USB ×2 all on **one** cutout profile — the idea floated when
+> #743 opened, now actually buyable. It costs ~ARS 92 k for the pair and would
+> replace the 22.1 rounded square with a D punch, so it is a real change: raised,
+> not taken.
+
 - See the power budget in [`hardware/console/README.md`](console/README.md).
 
 ## Mechanical / enclosure

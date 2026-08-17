@@ -243,6 +243,14 @@ spreads the nine across `REAR_IO_SPAN` = 360, left-justified against `EDGE`, wit
 > Ø10 round hole a threaded-bushing jack wants. Neutrik's own datasheet calls it a
 > "standardized D sized 24 mm panel cutout". This was wrong in the first cut of
 > the panel and is the reason `REAR_IO_KEEPOUT_CONTAINS` exists (below).
+>
+> **This is the one station where buying locally can break the panel.** The common
+> Argentine chassis jack ("jack 6.35 hembra chasis metal", ARS 2.6–7.9 k) is a
+> **threaded-bushing** part wanting ~Ø10 — drop one of those into a Ø24 D punch and
+> it has nothing to clamp. Sourcing locally means specifically the **Neutrik
+> NJ3FP6C** (ARS 25 k, MercadoLibre), which *is* D-series and also **latching**, so
+> a kicked control-pedal lead cannot pull out. That is an upgrade on the MEIRIYFA
+> clone, not a substitute, and it needs no CAD change.
 
 That swap took the TRS keep-out from 16 to 30.4 and squeezed the old 290 mm strip
 to 7.2 mm gaps, so the cluster was widened to 360. That was only possible because
