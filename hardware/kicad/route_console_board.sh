@@ -42,7 +42,8 @@ BEST=99999
 for ATTEMPT in 1 2 3 4 5; do
   echo "== 3-5. autoroute + DRC (attempt $ATTEMPT) =="
   # NOT -Djava.awt.headless=true: Freerouting needs a real display even in batch.
-  ( cd "$OUT" && java -jar "$JAR" -de console.dsn -do console.ses -mp 30 2>&1 \
+  # -dct 0 kills its 20 s "dialog confirmation timeout" -- pure wall-clock waste.
+  ( cd "$OUT" && java -jar "$JAR" -de console.dsn -do console.ses -mp 30 -dct 0 2>&1 \
       | grep -E "Auto-routing|optimization" ) || true
 
   cp "$OUT/console.placed.kicad_pcb" "$PCB" 2>/dev/null || true

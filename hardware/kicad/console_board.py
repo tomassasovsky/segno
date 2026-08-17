@@ -47,6 +47,7 @@ import os
 import sys
 
 from skidl import (
+    Pin,
     Part, Net, generate_netlist, ERC, POWER, set_default_tool, KICAD8,
     lib_search_paths,
 )
@@ -126,7 +127,14 @@ PICO = {  # GPIO number -> module pad
 ADC_GPIO = (26, 27, 28)          # the only ADC-capable pins on the module header
 
 pico = Part("Connector_Generic", "Conn_01x40",
-            footprint="Module:RaspberryPi_Pico_Common_THT", ref="J1", value="Pico2")
+            footprint="Module:RaspberryPi_Pico_SMD_HandSolder", ref="J1", value="Pico2")
+# Conn_01x40 is the 40 castellated ways. The SMD footprint ALSO carries the three
+# debug pads (D1/D2/D3 along the module's bottom edge), which no generic connector
+# symbol has, so they are added to the part by hand -- otherwise SWD has nothing to
+# attach to and silently falls back to needing a header.
+pico.add_pins(Pin(num="D1", name="SWCLK", func=Pin.types.BIDIR),
+              Pin(num="D2", name="GND", func=Pin.types.PASSIVE),
+              Pin(num="D3", name="SWDIO", func=Pin.types.BIDIR))
 for _p in PICO_GND_PADS:
     pico[_p] += gnd
 pico[39] += v5                   # VSYS: 5 V in, onboard reg makes 3V3
@@ -291,14 +299,20 @@ j_btn = jst(2, "J8", "PWR_BTN")
 j_btn[1] += pwr_btn
 j_btn[2] += gnd
 
-# ---- J9: SWD, so the Pi can reflash the MCU without opening the case ---------
-# Three flying wires to the Pico's debug pads. Those pads are deliberately NOT in
-# the footprint: neither KiCad's nor ncarandini's THT variant carries them, and a
-# guessed pad offset is a respin.
-j_swd = jst(3, "J9", "SWD_TO_PICO")
-j_swd[1] += swclk
-j_swd[2] += gnd
-j_swd[3] += swdio
+# ---- SWD: straight onto the module's own debug pads, no connector -----------
+# The THT footprint does not carry the debug pads, so v1 of this board broke SWD
+# out to a 3-pin header (J9) and three flying wires. The SMD_HandSolder footprint
+# DOES carry them -- its description is "surface-mount footprint with debug pads
+# for hand soldering, supports Raspberry Pi Pico 2 (non-W)" -- as pads D1/D2/D3
+# along the module's bottom edge. So the header, its wires and the space it took
+# in the crowded right-hand column all go away.
+#
+# The trade: the module is now soldered down via its castellations rather than
+# sitting on headers, so it is not swappable without a hot-air station. For a
+# sealed console that is reflashed over SWD anyway, that is the right way round.
+SWD_PADS = {"D1": swclk, "D2": gnd, "D3": swdio}
+for _pad, _net in SWD_PADS.items():
+    pico[_pad] += _net
 
 # ---- J22: expansion -- the six GPIO that are otherwise doing nothing ---------
 # Deliberately unpopulated by default. GP0/GP1 are a UART0 pair and GP20/GP21 a
@@ -440,6 +454,10 @@ def _check(strict_stations=True):
             f"EXPANSION: J22 pin {_i} is labelled {EXP_PINOUT[_i - 1]} but wired to "
             f"GP{_gp}")
 
+    assert set(SWD_PADS) == {"D1", "D2", "D3"} and SWD_PADS["D2"] is gnd, (
+        "SWD: the debug lines must land on the module's own D1/D2/D3 pads with GND "
+        "on D2 -- if this reverts to a header, the footprint has changed too")
+
     # the Pi's power-button pin must be the one that can wake it from halt
     assert 5 in PI_HDR and PI_HDR[5] is pwr_btn, (
         "PWR_BTN: the button must land on Pi header pin 5 (GPIO3) -- it is the only "
@@ -472,7 +490,7 @@ def report():
     for name, gp in sorted(GPIO.items(), key=lambda kv: kv[1]):
         lay.append("  GP%-3d pad %-3d %s" % (gp, PICO[gp], name))
     return ("Segno CONSOLE board v2 (#747)\n"
-            "Pico 2 (RP2350) on Module:RaspberryPi_Pico_Common_THT\n"
+            "Pico 2 (RP2350) on Module:RaspberryPi_Pico_SMD_HandSolder\n"
             "\nPin map:\n" + "\n".join(lay) +
             "\n\nRails : +5V (logic) | +5V_LED (WS2812, own pair to the buck) | "
             "+3V3 (from the Pi)\n"

@@ -38,7 +38,7 @@ KICAD_FP = "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints"
 LOCAL_FP = os.path.join(HERE, "segno.pretty")
 
 ORIGIN = (100.0, 60.0)          # board origin on the KiCad page
-BW, BH = 115.0, 95.0            # see FLOORPLAN below
+BW, BH = 115.0, 96.0            # see FLOORPLAN below
 EDGE_R = 3.0                    # corner radius
 MOUNT_D, MOUNT_INSET = 3.2, 5.0  # M3 clearance, from each corner
 
@@ -84,7 +84,7 @@ def P(x, y):
 #   y 78   [========= ten footswitch headers ======]
 REAR_PANEL_ORDER = ["J8", "J5", "J4", "J20", "J21"]   # = the panel's own order
 
-PICO_X, PICO_Y = 50.0, 46.0
+PICO_X, PICO_Y = 53.5, 46.0
 PLACEMENT = {
     "J1":  (PICO_X, PICO_Y, 90),   # Pico 2, rot 90 so the pad rows lie horizontal.
                                    # x 50, not 45: the switch row cannot start left
@@ -98,30 +98,30 @@ PLACEMENT = {
                                    # the UART on GP16/17. USB is bench-only.
 
     # top edge: the rear-panel loom, in the panel's order
-    # Even 17.5 mm pitch, centred on x 54 -- the same centre line as the switch row
+    # Even 17.5 mm pitch, centred on x 57.5 -- the BOARD centre -- the same centre line as the switch row
     # below. These were at 14/30/47/64/81: three different gaps, group off-centre.
-    "J8":  (19.0, 8.0, 0),         # POWER    -> J2 pin 5 (GPIO3, wakes the Pi)
-    "J5":  (36.5, 8.0, 0),         # MIDI IN  -- 2 leads: DIN pins 4 and 5 only.
+    "J8":  (22.5, 8.0, 0),         # POWER    -> J2 pin 5 (GPIO3, wakes the Pi)
+    "J5":  (40.0, 8.0, 0),         # MIDI IN  -- 2 leads: DIN pins 4 and 5 only.
                                    # Pin 2 is left OFF at a receiver by MIDI 1.0;
                                    # bonding the shield here would short out the
                                    # isolation U2 exists to provide.
-    "J4":  (54.0, 8.0, 0),         # MIDI OUT -- 3 leads: DIN pins 4, 5 and 2.
-    "J20": (71.5, 8.0, 0),         # CTRL 1, over GP26 = pad 31
-    "J21": (89.0, 8.0, 0),         # CTRL 2, over GP27 = pad 32
-    "U2":  (36.5, 21.0, 0),        # H11L1, directly under its own jack, in its own
+    "J4":  (57.5, 8.0, 0),         # MIDI OUT -- 3 leads: DIN pins 4, 5 and 2.
+    "J20": (75.0, 8.0, 0),         # CTRL 1, over GP26 = pad 31
+    "J21": (92.5, 8.0, 0),         # CTRL 2, over GP27 = pad 32
+    "U2":  (40.0, 21.0, 0),        # H11L1, directly under its own jack, in its own
                                    # ISOLATION_GAP pocket
 
     # CTRL divider + anti-alias, hand-placed under their own two jacks. All five
     # anchor within a few mm of each other, so the spiral packs the first ones in
     # and leaves the last with no legal slot -- and these are signal-path parts, so
     # they should hug the pins they serve rather than land wherever there is room.
-    "R8":  (70.0, 16.0, 0), "R7": (85.0, 16.0, 0),
+    "R8":  (73.5, 16.0, 0), "R7": (88.5, 16.0, 0),
     # The two MIDI OUT series resistors, likewise by hand. R3 spans U1's gate-C
     # output to the jack -- a 46 mm reach -- so anchored to either end it is 48 mm
     # from the other. A series part belongs BETWEEN its endpoints, not beside one.
-    "R3":  (64.0, 26.0, 0), "R4": (54.0, 16.0, 0),
-    "R6":  (78.0, 25.0, 0),
-    "C13": (58.0, 21.0, 0), "C14": (75.0, 21.0, 0), "R9": (87.0, 21.0, 0),
+    "R3":  (76.0, 31.0, 0), "R4": (57.5, 16.0, 0),
+    "R6":  (81.0, 25.0, 0),
+    "C13": (64.0, 21.0, 0), "C14": (75.0, 21.0, 0), "R9": (87.0, 21.0, 0),
 
     # left edge: power in and its reservoir
     "J3":  (10.0, 46.0, 90),       # 5 V in, beside VBUS/VSYS (pads 40/39)
@@ -129,16 +129,18 @@ PLACEMENT = {
     "C30": (10.0, 66.0, 0),        # 470uF  on +5V_LED
 
     # right: the buffer, then the ribbon on the edge itself
-    "U1":  (90.0, 34.0, 0),        # 74AHCT125. y 34 lines gate A's input (pin 2) up
-                                   # with the module's row-B pads, so IND_DATA is a
-                                   # straight run and not a jog across the channel.
+    "U1":  (93.0, 44.0, 0),        # 74AHCT125, sat LOW on purpose. Its ring input is
+                                   # pin 5; RING_DATA comes off the module's row A
+                                   # (the bottom row), so with U1 up at y 34 that one
+                                   # net had to climb 18 mm THROUGH the link / IND /
+                                   # EXP / CTRL bundle that crosses the same gap, and
+                                   # it was the only net that would never route. At
+                                   # y 44 pin 5 comes down to meet it. Pin 2 (IND,
+                                   # from row B) is still within 2 mm of its own row.
     "J2":  (107.0, 40.0, 0),       # Pi ribbon, ON THE EDGE. A 40-way ribbon leaving
                                    # mid-board folds straight back over everything;
                                    # here the cable clears the board immediately.
-    "J9":  (94.0, 56.0, 0),        # SWD -> J2 pins 18/22. Shares x with J7
-                                   # below it: same 3-pin footprint, so any
-                                   # offset between them is just a mistake.
-    "J22": (50.0, 26.0, 0),        # expansion. Not on the top edge: its GP28 pin is
+    "J22": (53.5, 26.0, 0),        # expansion. Not on the top edge: its GP28 pin is
                                    # pad 34, near the module's LEFT end, while GP19..
                                    # GP22 are pads 25..29 toward the right -- from
                                    # the top-right corner that ADC lead ran 61 mm.
@@ -150,15 +152,21 @@ PLACEMENT = {
     # across the busiest corner of the board and would not route at all. R1 sits
     # BELOW the corridor, not in it: at y 51 it plugged the very channel RING_DATA
     # needs to reach U1, and simply moved which of the two nets failed.
-    "R1":  (80.0, 62.0, 0),       # 330R, U1 gate B -> J6 pin 5 (ring data)
-    "R2":  (92.0, 50.0, 0),        # 330R, U1 gate C -> J7 pin 2 (indicators)
-    "J6":  (60.0, 68.0, 0),        # ring/encoder, under pads 16/17/19/20
-    "J7":  (94.0, 68.0, 0),        # indicators -- x matches J9 above
+    # The right column, stacked so nothing sits in the RING_DATA corridor
+    # (x 80.5..88): left to the spiral, C11 lands against the opto and R2 lands in
+    # the corridor, and the one net that has to climb from row A to U1's input has
+    # nowhere to go.
+    "C11": (93.0, 31.0, 0),        # +5V decoupling for U1
+    "C20": (25.0, 21.0, 0),        # +3V3 decoupling for U2
+    "R1":  (68.0, 62.0, 0),       # 330R, U1 gate B -> J6 pin 5 (ring data)
+    "R2":  (93.0, 57.0, 0),        # 330R, U1 gate C -> J7 pin 2 (indicators)
+    "J6":  (63.5, 68.0, 0),        # ring/encoder, under pads 16/17/19/20
+    "J7":  (82.0, 70.0, 0),        # indicators -- x matches J9 above
 }
 # footswitches J10..J19 along the bottom, left-to-right in GPIO order -- that
 # ordering is what keeps the fan-out from crossing (gated in _check)
-FSW_Y = 83.0
-FSW_X0, FSW_X1 = 12.0, 96.0   # centred on the module's footswitch pads (4..15,
+FSW_Y = 84.0
+FSW_X0, FSW_X1 = 15.5, 99.5   # centred on the module's footswitch pads (4..15,
                                # x 45.5..73.4) so no lane crosses another. Starts at
                                # 12, not 6: KiCad's courtyard check is stricter than
                                # the pad extents this script compares, and J10 was
@@ -167,7 +175,7 @@ FSW_X0, FSW_X1 = 12.0, 96.0   # centred on the module's footswitch pads (4..15,
                                # the 0.8 mm keepout. It ends at 89 rather than 92 so
                                # the LAST debounce cap, which sits 8 mm higher than
                                # its switch, still clears the Pi ribbon.
-CAP_Y = 75.0                   # the debounce cap row, one cap directly above its
+CAP_Y = 76.0                   # the debounce cap row, one cap directly above its
                                # own switch -- see _place_debounce_caps()
 
 
@@ -827,7 +835,7 @@ LABELS = {
     "J15": "TRK2", "J16": "TRK3", "J17": "TRK4", "J18": "CLR",  "J19": "BANK",
     "J2":  "PI",     "J3":  "5V IN",    "J20": "CTRL 1", "J21": "CTRL 2",
     "J22": "EXP",    "J4":  "MIDI OUT", "J5":  "MIDI IN",
-    "J6":  "RING",   "J7":  "LEDS",     "J8":  "PWR BTN", "J9": "SWD",
+    "J6":  "RING",   "J7":  "LEDS",     "J8":  "PWR BTN",
 }
 SILK_H = 1.0
 # Pinned label rows. A GROUP of labels reads as tidy only if it sits on one side at
@@ -837,7 +845,7 @@ SILK_H = 1.0
 # fallback for the handful of one-off headers.
 LABEL_ROW = dict(
     [(r, 3.0) for r in ("J8", "J5", "J4", "J20", "J21")]
-    + [("J%d" % (10 + i), 78.2) for i in range(10)]
+    + [("J%d" % (10 + i), 79.2) for i in range(10)]
 )
 SILK_PAD = 0.5
 
@@ -1022,8 +1030,8 @@ def build(quiet=False):
     # i.e. hanging 10 mm off the left of the board, and at y 86 on an 82 mm board.
     # It has never actually been printable. Gated below now.
     _labels(board, fps)
-    _silk(board, "SEGNO CONSOLE v2  #747", 30.0, 92.0, 1.6)
-    _silk(board, "MIDI IN: ISOLATED", 90.0, 92.0, 1.0)
+    _silk(board, "SEGNO CONSOLE v2  #747", 30.0, 93.0, 1.6)
+    _silk(board, "MIDI IN: ISOLATED", 90.0, 93.0, 1.0)
 
     if quiet:
         global _QUIET
