@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -364,6 +365,128 @@ void main() {
       final status = buildRepo().state.status;
       expect(status.fxAddedLatencyFrames, 1024);
       expect(status.fxAddedLatencyMs, closeTo(1024 * 1000 / 48000, 1e-9));
+    });
+
+    test('exposes the callback telemetry as a pull, not on the state', () {
+      // A 64-frame period at 96 kHz — the appliance's real configuration, and
+      // the one #722's clicks were characterised on. The armed window is worse
+      // than the session as a whole: exactly the reading this is here to make
+      // legible.
+      engine.nextCallbackTelemetry = const CallbackTelemetry(
+        budgetUs: 666,
+        session: CallbackWindowStats(
+          calls: 360000,
+          periods: 90000,
+          latePeriods: 12,
+          gapEvents: 4,
+          maxUs: 1900,
+          meanUs: 140,
+          maxGapUs: 4100,
+          buckets: [80000, 9000, 800, 100, 50, 30, 8, 12],
+          xruns: [4, 1, 0, 0],
+        ),
+        armed: CallbackWindowStats(
+          calls: 120000,
+          periods: 30000,
+          latePeriods: 11,
+          gapEvents: 4,
+          maxUs: 1900,
+          meanUs: 210,
+          maxGapUs: 4100,
+          buckets: [20000, 8000, 900, 50, 20, 10, 9, 11],
+          xruns: [4, 1, 0, 0],
+        ),
+      );
+      final telemetry = buildRepo().readCallbackTelemetry();
+
+      expect(telemetry.budgetUs, 666);
+      expect(telemetry.session.latePeriods, 12);
+      expect(telemetry.session.xrunsOf(XrunKind.playbackUnderrun), 4);
+      expect(telemetry.session.xrunsOf(XrunKind.captureOverrun), 1);
+      expect(telemetry.session.xrunTotal, 5);
+      expect(telemetry.armed.meanUs, 210);
+      expect(telemetry.armed.hasTrouble, isTrue);
+      // Armed vs unarmed: 11 of the 12 missed deadlines, and every dropout,
+      // happened inside the armed window.
+      expect(telemetry.session.latePeriods - telemetry.armed.latePeriods, 1);
+      expect(telemetry.session.xrunTotal - telemetry.armed.xrunTotal, 0);
+    });
+
+    test('telemetry never reaches LooperState, so the dedupe still holds', () {
+      // The regression this guards: these counters tick on every audio
+      // callback, so if they rode EngineStatus no two projections could ever
+      // compare equal — `looperState`'s `next == _last` gate would be
+      // permanently defeated and an IDLE rig would re-broadcast its whole
+      // state (every track, lane and effect) on every poll tick. That is CPU
+      // pressure invented by the instrument that exists to find CPU pressure.
+      //
+      // Mutating the fake's telemetry and asserting `repo.state` is unchanged
+      // cannot fail — the projection never reads that field, precisely because
+      // the defence is STRUCTURAL. So this is a golden over the field set of
+      // `EngineStatus`, the only carrier of engine health inside `LooperState`:
+      // it fails loudly the day a field is added, and whoever adds one has to
+      // say in the diff whether it moves at callback rate.
+      const expectedFields = <String>{
+        'deviceName',
+        'sampleRate',
+        'bufferFrames',
+        'inputChannels',
+        'outputChannels',
+        'latencyState',
+        'measuredLatencyMs',
+        'xrunCount',
+        'isConnected',
+        'devicePresent',
+        'excludedInputMask',
+        'inputClipMask',
+        'inputCondMask',
+        'recordOffsetFrames',
+        'fxAddedLatencyFrames',
+        'activeBackend',
+      };
+
+      final actual = _declaredFinalFields(
+        'lib/src/models/engine_status.dart',
+        'EngineStatus extends Equatable',
+      );
+      expect(
+        actual,
+        expectedFields,
+        reason:
+            'EngineStatus gained or lost a field. Anything that moves at '
+            'audio-callback rate must stay off it — read it through '
+            'LooperRepository.readCallbackTelemetry() instead, which is a '
+            'method precisely so it does not read like cheap state. If the '
+            'new field moves at human pace (like xrunCount), add it above.',
+      );
+      expect(
+        actual.where(
+          (f) =>
+              f.contains('latePeriod') ||
+              f.contains('gapEvent') ||
+              f.contains('telemetry') ||
+              f.contains('Telemetry'),
+        ),
+        isEmpty,
+      );
+
+      // And the pull still reports the fresh numbers the state does not carry.
+      final repo = buildRepo();
+      engine.nextCallbackTelemetry = const CallbackTelemetry(
+        budgetUs: 666,
+        session: CallbackWindowStats(periods: 1000000, latePeriods: 99),
+        armed: CallbackWindowStats(periods: 999, latePeriods: 42),
+      );
+      expect(repo.readCallbackTelemetry().session.latePeriods, 99);
+    });
+
+    test('telemetry defaults to nothing measured', () {
+      const telemetry = CallbackTelemetry.empty;
+      expect(telemetry.budgetUs, 0);
+      expect(telemetry.session, CallbackWindowStats.empty);
+      expect(telemetry.armed, CallbackWindowStats.empty);
+      expect(telemetry.session.hasTrouble, isFalse);
+      expect(buildRepo().readCallbackTelemetry(), CallbackTelemetry.empty);
     });
   });
 
@@ -6745,4 +6868,53 @@ void main() {
       expect(monitorPushes(), after);
     });
   });
+}
+
+/// The instance fields `class [classHeader]` declares in the library at
+/// [relativePath] (relative to this package's root), read from source.
+///
+/// Source-level rather than reflective because `dart:mirrors` does not exist
+/// under `flutter test` and `Isolate.resolvePackageUri` throws there, while the
+/// property being guarded is a property of the DECLARATION, not of any
+/// instance — no runtime value can reveal a field that is simply absent.
+Set<String> _declaredFinalFields(String relativePath, String classHeader) {
+  final file = _packageFile(relativePath);
+  final source = file.readAsStringSync();
+
+  final start = source.indexOf('\nclass $classHeader {');
+  expect(start, isNot(-1), reason: '$classHeader not found in ${file.path}');
+  final end = source.indexOf('\n}\n', start);
+  expect(end, isNot(-1), reason: '$classHeader has no closing brace');
+
+  final body = source.substring(start, end);
+  // `final <type> name;` and `final <type> name = <init>;`, where `<type>` may
+  // be absent (inferred), prefixed (`ffi.Pointer<Int32>`), a function type
+  // (`void Function(int)`) or a record (`(int, String)`).
+  //
+  // The type is "anything up to the name that is not `;`, `=` or a newline"
+  // rather than an identifier character class, and the initializer arm is
+  // optional, because both narrower forms leave the guard with a HOLE: a class
+  // of `[\w<>,?\s]` silently skips any field whose type contains `.`, `(` or
+  // `)`, and a pattern with no `=` arm silently skips every field carrying a
+  // declaration initializer — `final int x = 0;` used to leave this golden
+  // green. A field the golden cannot see is a field it cannot guard, and a
+  // golden with a hole is worse than none because it is trusted.
+  return RegExp(
+    r'^  final\s+(?:[^;=\n]+?\s)?(\w+)\s*(?:=[^;]*)?;',
+    multiLine: true,
+  ).allMatches(body).map((m) => m.group(1)!).toSet();
+}
+
+/// Locates [relativePath] whether the suite was started from this package's
+/// root (what `flutter test` and CI do) or from an ancestor of it.
+File _packageFile(String relativePath) {
+  for (var dir = Directory.current; ; dir = dir.parent) {
+    for (final prefix in const ['', 'packages/looper_repository/']) {
+      final candidate = File('${dir.path}/$prefix$relativePath');
+      if (candidate.existsSync()) return candidate;
+    }
+    if (dir.path == dir.parent.path) {
+      fail('could not locate $relativePath from ${Directory.current.path}');
+    }
+  }
 }

@@ -101,6 +101,18 @@ abstract interface class EngineMetering {
   /// Reads the current lock-free [EngineSnapshot] published by the engine.
   EngineSnapshot snapshot();
 
+  /// Reads the audio callback's self-measurement (native issue #722): how long
+  /// each device callback took against its deadline, how far apart callbacks
+  /// arrived, and how many real backend dropouts happened — in a whole-session
+  /// window and a since-the-last-arm window.
+  ///
+  /// A separate pull rather than a field on [snapshot] **on purpose**: these
+  /// counters change on every audio callback, so carrying them on the snapshot
+  /// would make every projected state unequal to the last and defeat the
+  /// render-rate dedupe that keeps an idle rig from rebuilding. Call it when a
+  /// bench or a diagnostic screen asks — not on a frame timer.
+  CallbackTelemetry callbackTelemetry();
+
   /// Arms the chromatic tuner on hardware [input], or disarms it with `-1`.
   ///
   /// The tuner taps the input BEFORE any lane or effect — the player is tuning

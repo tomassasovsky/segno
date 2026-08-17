@@ -76,6 +76,9 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
+  CallbackTelemetry callbackTelemetry() => CallbackTelemetry.empty;
+
+  @override
   EngineSnapshot snapshot() => perfStopped
       ? EngineSnapshot(
           isRunning: nextSnapshot.isRunning,

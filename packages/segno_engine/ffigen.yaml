@@ -43,6 +43,7 @@ enums:
     - 'le_plugin_param_flags'
     - 'le_cache_state'
     - 'le_cache_reason'
+    - 'le_xrun_kind'
 preamble: |
   // ignore_for_file: type=lint, doc_directive_unknown
   // coverage:ignore-file

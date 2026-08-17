@@ -34,6 +34,60 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
   scan/slot native tests against the vendored VST3/CLAP SDKs. Each suite
   prints "ALL PASSED"; the script exits non-zero on any compile or test
   failure.
+
+  CI runs the same script in **two more configurations**, both of which must
+  stay green and both of which are worth running locally after touching the
+  engine:
+  ```sh
+  EXTRA_CFLAGS="-fsanitize=address -g" bash packages/segno_engine/src/test/run_native_tests.sh
+  EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0" bash packages/segno_engine/src/test/run_native_tests.sh
+  ```
+  The second is the callback-telemetry gate (#722) — the escape hatch if the
+  instrument ever perturbs the appliance, so it has to *pass*, not merely
+  compile. Assertions that can only hold with the instrument compiled in are
+  wrapped in `CHECK_TIMING` in `test_engine_core.c`; everything else is asserted
+  in both builds.
+- **Adding a header to `src/core/` — the C++ blast radius nothing on macOS
+  catches.** Any new core header reaches **every C++ translation unit in the
+  VST3 builds**, via `engine_private.h` → `engine_fx.h` →
+  `vst3/test/host_harness.{h,cpp}` (which includes `engine_fx.h` *inside* an
+  `extern "C" { }` block). So a header that is perfectly good C can still break
+  the plugin builds on two of three platforms:
+  - `engine_private.h` carries a **C++ atomics shim** (`#undef _Atomic` plus
+    macro/`template` stand-ins for `atomic_load_explicit` and friends) because
+    MSVC and GCC reject `_Atomic` in C++ and offer no keyword-compatible
+    `<stdatomic.h>` there. It is guarded to `#if defined(__cplusplus) &&
+    !defined(__clang__)` — **so macOS CI never compiles it at all**. A header
+    that uses an atomic op the shim does not cover passes every macOS job and
+    fails Windows *and* Linux. (This bit twice on #722: first a missing
+    `atomic_exchange_explicit`, then a `template` that cannot be declared with C
+    linkage — the shim's `extern "C++" { }` wrapper is what fixes the latter and
+    is load-bearing, not decoration.)
+  - **The only local repro on this Mac** (there is no non-Clang compiler here) —
+    note the `-U__clang__`, the `extern "C"` wrapper, and `std::min` in scope;
+    a plain top-level `#include` does **not** reproduce it:
+    ```sh
+    cd packages/segno_engine
+    cat > /tmp/shim_repro.cpp <<'EOF'
+    #include <algorithm>
+    extern "C" {
+    #include "engine_fx.h"
+    }
+    int main() { return (int)std::min(1, 2); }
+    EOF
+    clang++ -std=c++17 -U__clang__ -I src/core -I src/midi -I src/miniaudio \
+      -c /tmp/shim_repro.cpp -o /tmp/shim_repro.o
+    ```
+  - A core header that pulls in **`<windows.h>`** must `#define NOMINMAX` first,
+    guarded with `#ifndef`, because stock `<windows.h>` defines `min`/`max` as
+    macros and turns any later `std::min(` into MSVC C2589 — which is exactly
+    the `std::min` in the repro above. Define it **in the header that drags
+    `<windows.h>` in**, not in the build files: a `-DNOMINMAX` would have to be
+    repeated in CMake, the podspec, the SPM target and the native test runner,
+    and would drift the first time one was missed. Do **not** reach for
+    `WIN32_LEAN_AND_MEAN` instead — it applies to the whole TU, including
+    miniaudio's own later `<windows.h>`, and miniaudio documents it as excluding
+    symbols it then redefines by hand.
 - **Regenerate FFI bindings** after touching `src/segno_engine_api.h`:
   ```sh
   cd packages/segno_engine

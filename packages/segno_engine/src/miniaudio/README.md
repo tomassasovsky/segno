@@ -31,9 +31,9 @@ where they are, this tells you why they must survive an upgrade.
 **On upgrade: re-apply every cluster below, or prove upstream fixed it.** A
 plain drop-in replacement silently reverts all of them.
 
-The 13 markers split 9 / 4 between the two clusters below. If you are auditing
-by hand, that split is the number to check against — a cluster that comes up
-short is a patch that did not survive.
+The 20 markers split 9 / 4 / 7 across the three clusters below. If you are
+auditing by hand, that split is the number to check against — a cluster that
+comes up short is a patch that did not survive.
 
 ### 1. ALSA duplex data-loop hardening (appliance) — 9 markers
 
@@ -93,10 +93,66 @@ One limit worth knowing: on a host with **no libpulse installed** miniaudio
 never loads the backend and both tests skip (loudly). CI installs it explicitly
 so that cannot happen there.
 
-After any upgrade, check by hand as well:
+### 3. Backend-dropout hook (#722) — 7 markers
+
+A typedef + `extern` declaration next to `ma_device_notification_proc`, the one
+global definition at the top of the implementation section (outside every
+backend guard, so it links on platforms with no ALSA), and five sites inside
+`ma_device_read__alsa` / `ma_device_write__alsa`: the two per-call `reported`
+latches and the three points that call out.
+
+miniaudio's public API exposes **no** underrun/overrun signal. The ALSA data
+loop knows about every one — it recovers from each `-EPIPE` itself — but the
+only trace is an `ma_log` DEBUG line, and matching log strings is not an
+instrument. Without this hook `le_snapshot.xrun_count` is permanently `0` on
+Linux and macOS, which is the blind spot #722 exists to close. The three call
+sites are the two `-EPIPE` recoveries of cluster 1 and its slipped-playback
+resync — that last one because the stock stream raises **no** XRUN for a slip at
+all (`stop_threshold` sits at the ring boundary, so an underrun just loops) yet
+the drop+prepare is audible.
+
+The `kind` integers `0/1/2` are pinned: `le_xrun_kind` in `segno_engine_api.h`
+mirrors them one-for-one.
+
+**Two rules that are easy to get wrong when re-applying:**
+
+- **Install once, never retract.** The pointer is process-global; devices are
+  not. Nulling it on device close needs a refcount, and a refcount whose pointer
+  write sits outside the atomic RMW interleaves into `refs == 1, hook == NULL`,
+  after which the surviving engine counts nothing for its whole session — the
+  exact permanent-zero symptom the patch removes. `engine_miniaudio.c` installs
+  it on first open and leaves it, and argues that out at length; there is no
+  refcount there, whatever an older draft of the in-file comment implied.
+- **One call per physical dropout.** Both `-EPIPE` branches sit inside a retry
+  loop that `continue`s when recover/start loses its race, so a wedged device
+  re-enters them repeatedly. Each read/write call reports at most once, via a
+  local `segnoXrunReported` latch — otherwise one stuck stream manufactures
+  thousands of counted xruns and thousands of cross-TU calls from the real-time
+  thread.
+
+All of this is compiled out by `-DLE_CALLBACK_TELEMETRY=0`, which
+`miniaudio_impl.c` pulls in through `engine_telemetry_gate.h` **before**
+including `miniaudio.h`.
+
+**Covered by tests?** The hook's *call sites* are ALSA data-loop behaviour and
+need real hardware, like cluster 1. Everything downstream of the hook is
+covered in `src/test/test_engine_core.c` (`test_backend_xrun_kinds_tally_and_
+reset` and the `test_cb_timing_*` suite), and the gate-off build is built AND
+run by the `native-tests-telemetry-off` CI job, so the `#if` branches here
+cannot rot silently.
+
+## Not upstream's, not ours either
+
+`#if 0` blocks (the disabled `ma_device_uninit` stop, the AVX helpers, the MMAP
+path, …) are **upstream** miniaudio, not Segno patches — do not "restore" them.
+`engine_miniaudio.c` documents the one that matters: because `ma_device_uninit`
+does not stop a *running* data loop, the backend must call `ma_device_stop`
+first.
+
+## Auditing an upgrade
 
 ```sh
-grep -c "SEGNO PATCH" packages/segno_engine/src/miniaudio/miniaudio.h   # expect 13
+grep -c "SEGNO PATCH" packages/segno_engine/src/miniaudio/miniaudio.h   # expect 20
 ```
 
-with 9 in the ALSA cluster and 4 in the Pulse one.
+with 9 in the ALSA cluster, 4 in the Pulse one and 7 in the dropout hook.

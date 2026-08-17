@@ -657,6 +657,167 @@ typedef struct le_track_snapshot {
   int32_t one_shot;
 } le_track_snapshot;
 
+/* ===================== Audio-callback telemetry (#722) =====================
+ *
+ * The audio callback measuring its OWN lateness. Until this existed nothing on
+ * the miniaudio backends (Linux/macOS) counted a missed deadline: xrun_count was
+ * fed only by the Windows ASIO overload notification, so the appliance could not
+ * tell a callback that ran long from one that ran fine. Observation only — no
+ * audio behaviour depends on any of it.
+ *
+ * WHAT IS MEASURED, and where: the device backend's data callback wraps
+ * le_engine_process between two monotonic clock reads (engine_miniaudio.c), so a
+ * duration here is what the DEVICE's callback thread actually spent, and an
+ * entry-to-entry gap is what the DEVICE actually experienced.
+ *
+ * THE UNIT IS A PERIOD SERVICE, NOT A CALLBACK. miniaudio's duplex loop does not
+ * hand the engine one period per callback: it delivers min(capture, playback)
+ * chunks, split further by the converter's stack buffer and by short readi()
+ * returns, so one hardware period is typically serviced by k back-to-back
+ * callbacks. Neither obvious per-callback deadline survives that:
+ *
+ *   - judging every callback against a FULL period under-reports badly (a
+ *     callback doing a k-th of the work gets k times the deadline it needs, so a
+ *     struggling device reads "all clear");
+ *   - judging it against its own frames/rate over-reports just as badly, because
+ *     le_engine_process has a fixed per-block cost — the command drain, the
+ *     per-lane and per-monitor snapshot loops, the metering publish — that does
+ *     NOT shrink with the block. A 16-frame tail block would be given 166 us for
+ *     overhead a 64-frame block absorbs inside 666 us, and would land in the
+ *     over-budget bucket every single time on perfectly healthy hardware.
+ *
+ * So consecutive callbacks are summed until they cover at least one nominal
+ * period, and THAT total is judged against the frames it actually covered. The
+ * fixed overhead is amortised over a real period by construction, which is also
+ * the true deadline: the work for one period must fit inside one period. calls
+ * stays as raw context (how many callbacks made up those services).
+ *
+ * budget_us is the nominal period deadline, buffer_frames / sample_rate — a
+ * constant for the device session, and what the gap detector is measured
+ * against.
+ *
+ * TWO WINDOWS, because the bug being hunted (#722: clicks ONLY while a
+ * performance capture is armed) is a comparison, not an absolute: `session`
+ * accumulates for the whole device session (reset per configure/start, exactly
+ * like xrun_count), `armed` is reset by every le_perf_arm and so covers only
+ * the armed window. "Unarmed" is read as the difference of the counts; the two
+ * maxima are reported separately because a maximum cannot be subtracted.
+ *
+ * ON HEALTHY HARDWARE EVERY JUDGED FIELD READS ZERO: late_periods, gap_events,
+ * max_gap_us and xruns are all 0, and the histogram sits in the low buckets.
+ * That is a deliberate design constraint — an instrument that cries wolf on a
+ * working rig is worse than no instrument, because the bench then chases it. */
+
+/* Duration-histogram resolution. Bucket i counts period services whose total
+ * duration fell in [i/8, (i+1)/8) of the deadline for the frames they covered;
+ * the last bucket is the open-ended ">= 7/8" danger zone and therefore also
+ * holds every over-budget service (which `late_periods` counts exactly). A
+ * histogram distinguishes "one huge stall" from "many marginal ones" — the two
+ * have completely different causes. */
+#define LE_CB_BUCKETS 8
+
+/* Dropout classes counted per window. The three ALSA ones come from the direct
+ * ALSA duplex path (miniaudio's -EPIPE recoveries and the playback-slip resync);
+ * OVERLOAD is the Windows ASIO driver's kAsioOverload notification. */
+typedef enum le_xrun_kind {
+  LE_XRUN_PLAYBACK_UNDERRUN = 0, /* writei() -EPIPE: the card ran out of audio */
+  LE_XRUN_CAPTURE_OVERRUN = 1,   /* readi()  -EPIPE: we did not read in time */
+  LE_XRUN_PLAYBACK_RESYNC = 2,   /* the slipped-playback drop+prepare resync */
+  LE_XRUN_BACKEND_OVERLOAD = 3,  /* ASIO kAsioOverload */
+} le_xrun_kind;
+
+/* How many le_xrun_kind values there are — the per-window tally array width.
+ * A macro rather than a trailing enum member so the enum stays free of a
+ * sentinel that is not a kind (it crosses the FFI boundary as a Dart enum). */
+#define LE_XRUN_KINDS 4
+
+/* One accumulation window of callback telemetry. Every counter is monotonic
+ * within its window and is only ever cleared by the event that owns the window
+ * (a fresh configure/start for the session window; le_perf_arm for the armed
+ * one). Counts are 64-bit throughout — a 32-bit histogram bucket at ~1500
+ * callbacks/second wraps inside a month, and this has to stay readable on an
+ * appliance that has been up since the last OTA. Durations are microseconds: a
+ * nanosecond figure would overflow uint32 after 4.3 s and nothing here is finer
+ * than a microsecond anyway. */
+typedef struct le_cb_window_snapshot {
+  uint64_t calls;   /* device callbacks observed — raw context, never judged */
+  uint64_t periods; /* period services completed (see the note above) */
+  /* Services whose summed duration exceeded the deadline for the frames they
+   * covered: the engine did not finish a period's work inside a period. THE
+   * number to read — this is what a dropout is made of. */
+  uint64_t late_periods;
+  /* Entry-to-entry gaps longer than 1.5 NOMINAL PERIODS: the DERIVED
+   * "the callback did not come back on time" signal, and the only one
+   * available on CoreAudio, where miniaudio exposes nothing.
+   *
+   * WHAT IT CAN AND CANNOT DISTINGUISH. An entry-to-entry span contains the
+   * previous callback's OWN duration, so a gap event says the callback stream
+   * stalled — not whose fault it was. Two different causes reach it:
+   *   - the device starved us: we returned promptly and it still came back
+   *     late. Then `late_periods` stays flat and this moves alone, which is the
+   *     reading the bench table is built on;
+   *   - WE ran long: any single callback taking more than 1.5 nominal periods
+   *     forces a gap event on the next entry by arithmetic alone. So this is
+   *     NOT independent of `late_periods` — a badly overloaded engine moves
+   *     both, and the pair moving together means "we were slow", not "two
+   *     separate problems". (A merely late period service is not enough: the
+   *     threshold is per-callback spacing, and a service is often several
+   *     callbacks. It takes one callback past 1.5 periods.)
+   * Read the two TOGETHER, never this one alone.
+   *
+   * Measured against the nominal period and NOT against the last block's
+   * budget: on the split duplex loop the callbacks for one period arrive in a
+   * burst and are then followed by a normal ~one-period wait, so a threshold
+   * scaled to a sub-period block would fire at every single period boundary on
+   * completely healthy hardware.
+   *
+   * NOT double-counted against `xruns`: an ALSA -EPIPE recovery also stalls the
+   * loop, so a gap arriving within a few periods of a counted recovery is
+   * suppressed. One physical dropout is counted once, under one name, and
+   * max_gap_us is never pinned by a recovery stall — while a genuine stall
+   * later in the session still registers. The suppressor excuses BACKEND
+   * recoveries only; it does not excuse our own overrun, which is why the
+   * coupling above is real and documented rather than filtered away. A device
+   * reroute or a system audio interruption breaks the timeline instead of
+   * producing a gap, so switching the default device mid-session reads 0. */
+  uint64_t gap_events;
+  uint32_t max_us;     /* worst period-service duration seen */
+  uint32_t mean_us;    /* mean period-service duration over `periods` */
+  uint32_t max_gap_us; /* worst counted gap (0 when none exceeded) */
+  uint64_t buckets[LE_CB_BUCKETS]; /* service histogram; see LE_CB_BUCKETS */
+  /* Real backend dropouts, indexed by le_xrun_kind: the per-class breakdown of
+   * the flat xrun_count on le_snapshot.
+   *
+   * Over the session window these sum to xrun_count for every kind THIS BUILD
+   * KNOWS — which is every kind any shipping backend produces (ALSA passes
+   * 0/1/2, ASIO passes 3), so the sum holds today. It is not an invariant for
+   * all time: a dropout reported with a kind outside le_xrun_kind increments
+   * xrun_count but lands in no bucket, deliberately, because the headline
+   * number's job is "a real dropout happened" and an unclassifiable one still
+   * happened. Folding it into an existing bucket instead would corrupt the
+   * breakdown; dropping it entirely would under-report reality. */
+  uint64_t xruns[LE_XRUN_KINDS];
+} le_cb_window_snapshot;
+
+/* The whole instrument, read through le_engine_get_callback_telemetry.
+ *
+ * Deliberately NOT part of le_snapshot. These counters move on every audio
+ * callback, and le_snapshot is projected at render rate into a value object
+ * whose equality drives the app's rebuild dedupe — carrying them there would
+ * make every projection unequal to the last and rebuild an idle rig
+ * continuously, which is CPU pressure invented by the instrument that exists to
+ * find CPU pressure. This is a pull for a bench or a diagnostics screen, and it
+ * has no side effects (unlike le_engine_get_snapshot, which also drains the
+ * engine's event ring). */
+typedef struct le_callback_telemetry {
+  /* The nominal period deadline in microseconds: buffer_frames / sample_rate.
+   * 0 = no device has been opened, which is also the "inert" state in which
+   * nothing at all is accumulated. */
+  uint32_t budget_us;
+  le_cb_window_snapshot session; /* since the device started */
+  le_cb_window_snapshot armed;   /* since the most recent le_perf_arm */
+} le_callback_telemetry;
+
 /* Lock-free snapshot of engine state, published by the audio thread and read by
  * Dart on a render-rate timer. Fields are individually atomic; readers may see
  * a one-frame-stale mix across fields, which is fine for metering/UI. */
@@ -678,10 +839,14 @@ typedef struct le_snapshot {
    * any track input mask. Always 0 off macOS / when no label matches. */
   uint32_t excluded_input_mask;
   uint64_t frames_processed;  /* total frames seen by the callback */
-  /* Device dropouts (xruns) since the device started, as reported by the backend.
-   * The Windows ASIO backend tallies the driver's kAsioOverload notifications;
-   * the miniaudio backends (macOS / Linux) expose no portable per-callback xrun
-   * signal, so this stays 0 there. Monotonic; cleared on each fresh start. */
+  /* Device dropouts (xruns) since the device started, as reported by the
+   * backend, every class summed. The Windows ASIO backend tallies the driver's
+   * kAsioOverload notifications; the direct ALSA path tallies miniaudio's
+   * -EPIPE recoveries and its slipped-playback resyncs (#722), so this finally
+   * moves on Linux. Still 0 on CoreAudio, which exposes no xrun signal at all —
+   * read le_callback_telemetry's gap detector there. The per-class breakdown is
+   * le_cb_window_snapshot.xruns; see its note for how the two relate.
+   * Monotonic; cleared on each fresh start. */
   uint32_t xrun_count;
   float input_rms;            /* 0..1 */
   float input_peak;           /* 0..1 */
@@ -837,6 +1002,8 @@ typedef struct le_snapshot {
    * (the UI truth for a "conditioning on" badge; a stage enabled on an
    * excluded channel reads 0 here because it never runs). */
   uint32_t input_cond_mask;
+  /* NOTE: the audio-callback telemetry (#722) is deliberately NOT here — see
+   * le_callback_telemetry and le_engine_get_callback_telemetry. */
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -1127,6 +1294,20 @@ LE_EXPORT void le_engine_process(le_engine* engine, float* output,
 /* Copies the current state snapshot into *out. No-op if either pointer is NULL.
  */
 LE_EXPORT void le_engine_get_snapshot(le_engine* engine, le_snapshot* out);
+
+/* Copies the audio-callback telemetry (#722) into *out. No-op if either pointer
+ * is NULL; a never-started engine fills zeros.
+ *
+ * Its own entry point rather than a block on le_snapshot, for two reasons. It
+ * is a DIAGNOSTIC PULL — a bench readout, a support screen — not render-rate
+ * state, and keeping it off le_snapshot is what guarantees a per-callback
+ * counter can never leak into the app's projected state and defeat its rebuild
+ * dedupe. And it is SIDE-EFFECT FREE: le_engine_get_snapshot also runs
+ * le_engine_drain_events (collecting retired undo layers), which a diagnostic
+ * read has no business triggering. Pure relaxed atomic loads; safe from the
+ * control thread at any time, running or not. */
+LE_EXPORT void le_engine_get_callback_telemetry(le_engine* engine,
+                                                le_callback_telemetry* out);
 
 /* Copies track `channel`'s snapshot into *out. Out-of-range channels yield an
  * empty track. No-op if either pointer is NULL. */

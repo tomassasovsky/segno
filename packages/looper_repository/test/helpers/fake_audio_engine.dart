@@ -42,6 +42,12 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineSnapshot snapshot() => nextSnapshot;
 
+  @override
+  CallbackTelemetry callbackTelemetry() => nextCallbackTelemetry;
+
+  /// The value [callbackTelemetry] returns.
+  CallbackTelemetry nextCallbackTelemetry = CallbackTelemetry.empty;
+
   /// Loopback detection result returned by [detectLoopback].
   LoopbackInfo loopback = const LoopbackInfo.none();
 

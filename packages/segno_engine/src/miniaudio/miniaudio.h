@@ -6789,6 +6789,65 @@ typedef void (* ma_device_notification_proc)(const ma_device_notification* pNoti
 
 
 /*
+SEGNO PATCH: backend-dropout hook (segno issue #722).
+
+miniaudio's public API exposes NO underrun/overrun signal. The ALSA data loop
+knows about them precisely — it recovers from every -EPIPE itself — but the only
+trace it leaves is an ma_log DEBUG line ("EPIPE (read)" / "EPIPE (write)"), and
+matching log strings is not an instrument. This hook is called at those exact
+recovery points, plus at the SEGNO-PATCH slipped-playback resync, so the host can
+count real device dropouts instead of guessing.
+
+Called ON the ALSA data-loop (real-time) thread, in the middle of a recovery: an
+implementation must do no more than bump a counter. `pUserData` is the device's
+ma_device_config.pUserData. `kind` is:
+
+    0 = playback underrun  (snd_pcm_writei returned -EPIPE)
+    1 = capture overrun    (snd_pcm_readi  returned -EPIPE)
+    2 = playback resync    (the slipped-playback drop+prepare below)
+
+These integers are pinned: segno's le_xrun_kind mirrors them one-for-one.
+
+ONE CALL PER PHYSICAL DROPOUT. The -EPIPE branches sit inside a retry loop that
+`continue`s when recover/start fails, so a wedged device re-enters them over and
+over; each read/write call therefore reports at most once (a local `reported`
+latch), otherwise a single stuck stream would manufacture thousands of counted
+xruns and thousands of cross-TU calls from the real-time thread.
+
+Global rather than per-device so it needs no ma_device_config field (keeping the
+patch to a declaration, a definition, and three call sites). NULL = no hook, the
+stock behaviour.
+
+INSTALL ONCE, NEVER RETRACT. Set it before the first ma_device_init and then
+leave it alone for the life of the process. Do NOT null it on device close: the
+pointer is process-global while devices are not, so a second engine's device can
+be running when the first one closes, and any retraction scheme has to be
+refcounted. A refcount whose pointer write sits outside the atomic RMW
+interleaves into "refs == 1, hook == NULL" — B installs between A's decrement
+and A's clear — and B then counts nothing for its entire session, which is the
+permanent-zero symptom segno #722 exists to end. engine_miniaudio.c argues this
+out at length and deliberately keeps the hook installed; there is no refcount
+there to imitate. Leaving it installed is free and safe because the only caller
+is a RUNNING ALSA data loop, which passes its own device's pUserData, so the
+hook cannot be handed a stale host object — it simply is not called when no
+device is open.
+
+(If you are re-applying this patch after a miniaudio version bump: that
+paragraph is the contract. An earlier draft of it said "clear it after the
+device is uninited", which is the one change that would silently reintroduce the
+bug. The README.md next to this header catalogues every patch cluster in this
+file and is the checklist for a version bump. Note this sentence deliberately
+avoids the marker string itself, so it does not inflate that file's audit
+count.)
+
+Compiled out entirely by -DLE_CALLBACK_TELEMETRY=0 (engine_telemetry_gate.h,
+included by miniaudio_impl.c ahead of this header).
+*/
+typedef void (* ma_segno_xrun_proc)(void* pUserData, int kind);
+extern ma_segno_xrun_proc ma_segno_xrun_callback;
+
+
+/*
 The callback for processing audio data from the device.
 
 The data callback is fired by miniaudio whenever the device needs to have more data delivered to a playback device, or when a capture device has some data
@@ -11437,6 +11496,11 @@ IMPLEMENTATION
 #if defined(MINIAUDIO_IMPLEMENTATION) || defined(MA_IMPLEMENTATION)
 #ifndef miniaudio_c
 #define miniaudio_c
+
+/* SEGNO PATCH: the backend-dropout hook declared near ma_device_notification_proc
+ * above. Defined here — outside every backend guard — so it links on platforms
+ * that have no ALSA (macOS/Windows), where it simply stays NULL. */
+ma_segno_xrun_proc ma_segno_xrun_callback = NULL;
 
 #include <assert.h>
 #include <limits.h>         /* For INT_MAX */
@@ -28269,6 +28333,13 @@ static ma_result ma_device_wait_write__alsa(ma_device* pDevice)
 static ma_result ma_device_read__alsa(ma_device* pDevice, void* pFramesOut, ma_uint32 frameCount, ma_uint32* pFramesRead)
 {
     ma_snd_pcm_sframes_t resultALSA = 0;
+#if !defined(LE_CALLBACK_TELEMETRY) || LE_CALLBACK_TELEMETRY
+    /* SEGNO PATCH (#722): one dropout report per call, not per retry — see the
+     * ma_segno_xrun_proc doc. The -EPIPE branch below is re-entered whenever
+     * recover/start loses its race, and a wedged stream would otherwise report
+     * thousands of xruns for one physical overrun. */
+    int segnoXrunReported = 0;
+#endif
 
     MA_ASSERT(pDevice != NULL);
     MA_ASSERT(pFramesOut != NULL);
@@ -28312,6 +28383,16 @@ static ma_result ma_device_read__alsa(ma_device* pDevice, void* pFramesOut, ma_u
             } else if (resultALSA == -EPIPE) {
                 ma_log_postf(ma_device_get_log(pDevice), MA_LOG_LEVEL_DEBUG, "EPIPE (read)\n");
 
+#if !defined(LE_CALLBACK_TELEMETRY) || LE_CALLBACK_TELEMETRY
+                /* SEGNO PATCH (#722): a real capture overrun — tell the host,
+                 * once for this call however many times the retry loop below
+                 * lands back here. */
+                if (!segnoXrunReported && ma_segno_xrun_callback != NULL) {
+                    segnoXrunReported = 1;
+                    ma_segno_xrun_callback(pDevice->pUserData, 1);
+                }
+#endif
+
                 /* Overrun. Recover + restart, then try again. SEGNO PATCH: on a
                  * failure here we CONTINUE (retry) rather than returning an error.
                  * Returning would exit miniaudio's data loop and leave the device
@@ -28346,6 +28427,9 @@ static ma_result ma_device_read__alsa(ma_device* pDevice, void* pFramesOut, ma_u
 static ma_result ma_device_write__alsa(ma_device* pDevice, const void* pFrames, ma_uint32 frameCount, ma_uint32* pFramesWritten)
 {
     ma_snd_pcm_sframes_t resultALSA = 0;
+#if !defined(LE_CALLBACK_TELEMETRY) || LE_CALLBACK_TELEMETRY
+    int segnoXrunReported = 0; /* SEGNO PATCH (#722): see ma_device_read__alsa. */
+#endif
 
     MA_ASSERT(pDevice != NULL);
     MA_ASSERT(pFrames != NULL);
@@ -28376,6 +28460,16 @@ static ma_result ma_device_write__alsa(ma_device* pDevice, const void* pFrames, 
         if (st == MA_SND_PCM_STATE_RUNNING && bufFrames > 0) {
             ma_snd_pcm_sframes_t a = ((ma_snd_pcm_avail_proc)pDevice->pContext->alsa.snd_pcm_avail)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback);
             if (a > (ma_snd_pcm_sframes_t)bufFrames) {
+#if !defined(LE_CALLBACK_TELEMETRY) || LE_CALLBACK_TELEMETRY
+                /* SEGNO PATCH (#722): the slip itself is a dropout the stock
+                 * stream never raises an XRUN for, and the drop+prepare below is
+                 * audible. Count it as its own kind so a bench can tell it apart
+                 * from an ordinary underrun. Already once-per-call — this sits
+                 * outside the retry loop. */
+                if (ma_segno_xrun_callback != NULL) {
+                    ma_segno_xrun_callback(pDevice->pUserData, 2);
+                }
+#endif
                 ((ma_snd_pcm_drop_proc)pDevice->pContext->alsa.snd_pcm_drop)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback);
                 ((ma_snd_pcm_prepare_proc)pDevice->pContext->alsa.snd_pcm_prepare)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback);
             }
@@ -28400,6 +28494,16 @@ static ma_result ma_device_write__alsa(ma_device* pDevice, const void* pFrames, 
                 continue;   /* Try again. */
             } else if (resultALSA == -EPIPE) {
                 ma_log_postf(ma_device_get_log(pDevice), MA_LOG_LEVEL_DEBUG, "EPIPE (write)\n");
+
+#if !defined(LE_CALLBACK_TELEMETRY) || LE_CALLBACK_TELEMETRY
+                /* SEGNO PATCH (#722): a real playback underrun — tell the host,
+                 * once for this call however many times the retry loop below
+                 * lands back here. */
+                if (!segnoXrunReported && ma_segno_xrun_callback != NULL) {
+                    segnoXrunReported = 1;
+                    ma_segno_xrun_callback(pDevice->pUserData, 0);
+                }
+#endif
 
                 /* Underrun. Recover and try again. SEGNO PATCH: retry (continue)
                  * on failure instead of returning an error, so a startup underrun

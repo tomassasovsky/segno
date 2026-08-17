@@ -900,6 +900,45 @@ class SegnoEngineBindings {
         void Function(ffi.Pointer<le_engine>, ffi.Pointer<le_snapshot>)
       >();
 
+  /// Copies the audio-callback telemetry (#722) into *out. No-op if either pointer
+  /// is NULL; a never-started engine fills zeros.
+  ///
+  /// Its own entry point rather than a block on le_snapshot, for two reasons. It
+  /// is a DIAGNOSTIC PULL — a bench readout, a support screen — not render-rate
+  /// state, and keeping it off le_snapshot is what guarantees a per-callback
+  /// counter can never leak into the app's projected state and defeat its rebuild
+  /// dedupe. And it is SIDE-EFFECT FREE: le_engine_get_snapshot also runs
+  /// le_engine_drain_events (collecting retired undo layers), which a diagnostic
+  /// read has no business triggering. Pure relaxed atomic loads; safe from the
+  /// control thread at any time, running or not.
+  void le_engine_get_callback_telemetry(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_callback_telemetry> out,
+  ) {
+    return _le_engine_get_callback_telemetry(
+      engine,
+      out,
+    );
+  }
+
+  late final _le_engine_get_callback_telemetryPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_callback_telemetry>,
+          )
+        >
+      >('le_engine_get_callback_telemetry');
+  late final _le_engine_get_callback_telemetry =
+      _le_engine_get_callback_telemetryPtr
+          .asFunction<
+            void Function(
+              ffi.Pointer<le_engine>,
+              ffi.Pointer<le_callback_telemetry>,
+            )
+          >();
+
   /// Copies track `channel`'s snapshot into *out. Out-of-range channels yield an
   /// empty track. No-op if either pointer is NULL.
   void le_engine_get_track(
@@ -4619,6 +4658,149 @@ final class le_track_snapshot extends ffi.Struct {
   external int one_shot;
 }
 
+/// Dropout classes counted per window. The three ALSA ones come from the direct
+/// ALSA duplex path (miniaudio's -EPIPE recoveries and the playback-slip resync);
+/// OVERLOAD is the Windows ASIO driver's kAsioOverload notification.
+enum le_xrun_kind {
+  /// writei() -EPIPE: the card ran out of audio
+  LE_XRUN_PLAYBACK_UNDERRUN(0),
+
+  /// readi()  -EPIPE: we did not read in time
+  LE_XRUN_CAPTURE_OVERRUN(1),
+
+  /// the slipped-playback drop+prepare resync
+  LE_XRUN_PLAYBACK_RESYNC(2),
+
+  /// ASIO kAsioOverload
+  LE_XRUN_BACKEND_OVERLOAD(3);
+
+  final int value;
+  const le_xrun_kind(this.value);
+
+  static le_xrun_kind fromValue(int value) => switch (value) {
+    0 => LE_XRUN_PLAYBACK_UNDERRUN,
+    1 => LE_XRUN_CAPTURE_OVERRUN,
+    2 => LE_XRUN_PLAYBACK_RESYNC,
+    3 => LE_XRUN_BACKEND_OVERLOAD,
+    _ => throw ArgumentError('Unknown value for le_xrun_kind: $value'),
+  };
+}
+
+/// One accumulation window of callback telemetry. Every counter is monotonic
+/// within its window and is only ever cleared by the event that owns the window
+/// (a fresh configure/start for the session window; le_perf_arm for the armed
+/// one). Counts are 64-bit throughout — a 32-bit histogram bucket at ~1500
+/// callbacks/second wraps inside a month, and this has to stay readable on an
+/// appliance that has been up since the last OTA. Durations are microseconds: a
+/// nanosecond figure would overflow uint32 after 4.3 s and nothing here is finer
+/// than a microsecond anyway.
+final class le_cb_window_snapshot extends ffi.Struct {
+  /// device callbacks observed — raw context, never judged
+  @ffi.Uint64()
+  external int calls;
+
+  /// period services completed (see the note above)
+  @ffi.Uint64()
+  external int periods;
+
+  /// Services whose summed duration exceeded the deadline for the frames they
+  /// covered: the engine did not finish a period's work inside a period. THE
+  /// number to read — this is what a dropout is made of.
+  @ffi.Uint64()
+  external int late_periods;
+
+  /// Entry-to-entry gaps longer than 1.5 NOMINAL PERIODS: the DERIVED
+  /// "the callback did not come back on time" signal, and the only one
+  /// available on CoreAudio, where miniaudio exposes nothing.
+  ///
+  /// WHAT IT CAN AND CANNOT DISTINGUISH. An entry-to-entry span contains the
+  /// previous callback's OWN duration, so a gap event says the callback stream
+  /// stalled — not whose fault it was. Two different causes reach it:
+  /// - the device starved us: we returned promptly and it still came back
+  /// late. Then `late_periods` stays flat and this moves alone, which is the
+  /// reading the bench table is built on;
+  /// - WE ran long: any single callback taking more than 1.5 nominal periods
+  /// forces a gap event on the next entry by arithmetic alone. So this is
+  /// NOT independent of `late_periods` — a badly overloaded engine moves
+  /// both, and the pair moving together means "we were slow", not "two
+  /// separate problems". (A merely late period service is not enough: the
+  /// threshold is per-callback spacing, and a service is often several
+  /// callbacks. It takes one callback past 1.5 periods.)
+  /// Read the two TOGETHER, never this one alone.
+  ///
+  /// Measured against the nominal period and NOT against the last block's
+  /// budget: on the split duplex loop the callbacks for one period arrive in a
+  /// burst and are then followed by a normal ~one-period wait, so a threshold
+  /// scaled to a sub-period block would fire at every single period boundary on
+  /// completely healthy hardware.
+  ///
+  /// NOT double-counted against `xruns`: an ALSA -EPIPE recovery also stalls the
+  /// loop, so a gap arriving within a few periods of a counted recovery is
+  /// suppressed. One physical dropout is counted once, under one name, and
+  /// max_gap_us is never pinned by a recovery stall — while a genuine stall
+  /// later in the session still registers. The suppressor excuses BACKEND
+  /// recoveries only; it does not excuse our own overrun, which is why the
+  /// coupling above is real and documented rather than filtered away. A device
+  /// reroute or a system audio interruption breaks the timeline instead of
+  /// producing a gap, so switching the default device mid-session reads 0.
+  @ffi.Uint64()
+  external int gap_events;
+
+  /// worst period-service duration seen
+  @ffi.Uint32()
+  external int max_us;
+
+  /// mean period-service duration over `periods`
+  @ffi.Uint32()
+  external int mean_us;
+
+  /// worst counted gap (0 when none exceeded)
+  @ffi.Uint32()
+  external int max_gap_us;
+
+  /// service histogram; see LE_CB_BUCKETS
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Uint64> buckets;
+
+  /// Real backend dropouts, indexed by le_xrun_kind: the per-class breakdown of
+  /// the flat xrun_count on le_snapshot.
+  ///
+  /// Over the session window these sum to xrun_count for every kind THIS BUILD
+  /// KNOWS — which is every kind any shipping backend produces (ALSA passes
+  /// 0/1/2, ASIO passes 3), so the sum holds today. It is not an invariant for
+  /// all time: a dropout reported with a kind outside le_xrun_kind increments
+  /// xrun_count but lands in no bucket, deliberately, because the headline
+  /// number's job is "a real dropout happened" and an unclassifiable one still
+  /// happened. Folding it into an existing bucket instead would corrupt the
+  /// breakdown; dropping it entirely would under-report reality.
+  @ffi.Array.multi([4])
+  external ffi.Array<ffi.Uint64> xruns;
+}
+
+/// The whole instrument, read through le_engine_get_callback_telemetry.
+///
+/// Deliberately NOT part of le_snapshot. These counters move on every audio
+/// callback, and le_snapshot is projected at render rate into a value object
+/// whose equality drives the app's rebuild dedupe — carrying them there would
+/// make every projection unequal to the last and rebuild an idle rig
+/// continuously, which is CPU pressure invented by the instrument that exists to
+/// find CPU pressure. This is a pull for a bench or a diagnostics screen, and it
+/// has no side effects (unlike le_engine_get_snapshot, which also drains the
+/// engine's event ring).
+final class le_callback_telemetry extends ffi.Struct {
+  /// The nominal period deadline in microseconds: buffer_frames / sample_rate.
+  /// 0 = no device has been opened, which is also the "inert" state in which
+  /// nothing at all is accumulated.
+  @ffi.Uint32()
+  external int budget_us;
+
+  /// since the device started
+  external le_cb_window_snapshot session;
+
+  /// since the most recent le_perf_arm
+  external le_cb_window_snapshot armed;
+}
+
 /// Lock-free snapshot of engine state, published by the audio thread and read by
 /// Dart on a render-rate timer. Fields are individually atomic; readers may see
 /// a one-frame-stale mix across fields, which is fine for metering/UI.
@@ -4660,10 +4842,14 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Uint64()
   external int frames_processed;
 
-  /// Device dropouts (xruns) since the device started, as reported by the backend.
-  /// The Windows ASIO backend tallies the driver's kAsioOverload notifications;
-  /// the miniaudio backends (macOS / Linux) expose no portable per-callback xrun
-  /// signal, so this stays 0 there. Monotonic; cleared on each fresh start.
+  /// Device dropouts (xruns) since the device started, as reported by the
+  /// backend, every class summed. The Windows ASIO backend tallies the driver's
+  /// kAsioOverload notifications; the direct ALSA path tallies miniaudio's
+  /// -EPIPE recoveries and its slipped-playback resyncs (#722), so this finally
+  /// moves on Linux. Still 0 on CoreAudio, which exposes no xrun signal at all —
+  /// read le_callback_telemetry's gap detector there. The per-class breakdown is
+  /// le_cb_window_snapshot.xruns; see its note for how the two relate.
+  /// Monotonic; cleared on each fresh start.
   @ffi.Uint32()
   external int xrun_count;
 
@@ -5142,5 +5328,9 @@ const int LE_CLIP_HOLD_MS = 1500;
 const double LE_MAX_GAIN = 2.0;
 
 const int LE_VIZ_POINTS = 512;
+
+const int LE_CB_BUCKETS = 8;
+
+const int LE_XRUN_KINDS = 4;
 
 const int LE_CACHE_DEFAULT_CAP_BYTES = 67108864;
