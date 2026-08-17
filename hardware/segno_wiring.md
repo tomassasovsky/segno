@@ -101,6 +101,85 @@ fast-blow T5 equivalent will nuisance-blow.
 
 ---
 
+## 2b. Pro Micro ↔ Pi link, and MIDI moves to the Pi (#746)
+
+**Why this exists.** The Pi 5's four USB-A ports are exactly consumed — 2 touch,
+2 rear panel couplers — and a hub is ruled out, so the Pro Micro cannot have one.
+Its only hardware UART (`Serial1`, D0/D1) was already the DIN-5 pair, so the fix is
+to **move MIDI onto the Pi** and give `Serial1` to the pedal link. The Pi runs the
+looper, so MIDI timing belongs there anyway; the Pro Micro reduces to footswitches
+and LEDs.
+
+```
+   Pro Micro D1/TX (5V) ──[1k8]──┬──────────────► Pi uart2 RX      (pedal protocol,
+                            [3k3]│                                   115200)
+                              GND┘   3.24 V
+
+   Pi uart2 TX (3.3V) ──► 74AHCT125 ──5V──► Pro Micro D0/RX
+
+   Pi uart0 TX (3.3V) ──► 74AHCT125 ──5V──►[220Ω]──► DIN MIDI OUT pin 5
+                                              +5V ──[220Ω]──► DIN MIDI OUT pin 4
+
+   DIN MIDI IN pin 4 ──[220Ω]──► H11L1 (run at 3.3V) ──► Pi uart0 RX
+   DIN MIDI IN pin 5 ──────────► H11L1 ;  pin 2 NOT connected (isolation)
+```
+
+### The level shifting, and why each direction is different
+
+The Pro Micro is **5 V logic**; Pi GPIO is **3.3 V and not 5 V tolerant**. Connecting
+D1 straight to a Pi pin can damage the RP1. The two directions are not symmetric:
+
+| direction | problem | fix |
+|---|---|---|
+| **Pro Micro TX 5 V → Pi RX** | over-voltage — this one can destroy the Pi | **resistor divider**, 1k8 series + 3k3 to GND → **3.24 V** |
+| **Pi TX 3.3 V → Pro Micro RX** | works, but marginal | **74AHCT125** buffer |
+
+On the second one: the ATmega32U4 at VCC 5 V has `V_IH` = 0.6 × VCC = **3.0 V**, so a
+3.3 V input has **0.3 V of margin** — it runs, but it is not something to ship. The
+**AHCT** family has **TTL-level inputs** (`V_IH` 2.0 V) and CMOS 5 V outputs, so
+3.3 V in gives a clean 5 V out.
+
+The divider is genuinely fine here, not a bodge: Thévenin ≈ 1.16 kΩ into ~30 pF of
+stray is a **35 ns** edge, against an 8.7 µs bit at 115200. Use 1k8/3k3 rather than
+10k/20k — the ratio is the same but the higher values slow the edges.
+
+### The consolidation
+
+**We need the 74AHCT125 anyway.** A spec-compliant MIDI OUT is a 5 V current loop
+(two 220 Ω), and the Pi's 3.3 V TX cannot drive it properly — so a buffer is
+required for MIDI OUT regardless. It is a **quad**, so one part covers *both* 3.3→5
+paths and still leaves two gates spare (tie unused inputs low).
+
+And **MIDI IN needs no shifter at all**: the H11L1 is a Schmitt-trigger *logic-output*
+opto, so running it from **3.3 V** makes it output 3.3 V straight into the Pi.
+
+### Parts
+
+| qty | part | job |
+|---|---|---|
+| 1 | **74AHCT125** (quad, 5 V) | Pi TX → Pro Micro RX · Pi TX → MIDI OUT |
+| 1 | **H11L1** opto, powered at **3.3 V** | DIN MIDI IN → Pi RX |
+| 2 | 220 Ω | MIDI OUT current loop |
+| 1 | 220 Ω | MIDI IN LED |
+| 1 | 1N4148 | MIDI IN reverse clamp |
+| 1 | 1.8 kΩ + 1 | 3.3 kΩ | divider, Pro Micro TX → Pi RX |
+| 2 | 100 nF | decoupling (AHCT125, H11L1) |
+
+Both DIN jacks and all of the above live on a **small daughterboard**. On the main
+board, simply **do not populate** J4/J5, U2 (H11L1) and the MIDI-OUT resistors —
+that leaves D0/D1 free at their pads with nothing to cut. If a board is already
+assembled, those connections have to be lifted instead.
+
+### Pi UARTs
+
+`uart0` (GPIO14/15) → MIDI at 31250. A second UART via `dtoverlay` — `uart2` is
+GPIO4/5 on the Pi 5 — → the Pro Micro at **115200**. Baud is free now: the pedal
+protocol is a custom framed stream, not MIDI, so it no longer has to run at 31250.
+**Confirm the overlay-to-GPIO mapping on the actual device** before the harness is
+made.
+
+---
+
 ## 3. Control board (Pro Micro) — I/O
 
 Unchanged from the standalone pedal design (`segno_pedal_pcb_design.md`):

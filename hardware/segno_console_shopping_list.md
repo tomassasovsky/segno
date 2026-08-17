@@ -80,6 +80,28 @@ Carried by the `segno_pedal_main` USB-MIDI board — fab + BOM in
 
 - See the power budget in [`hardware/console/README.md`](console/README.md).
 
+## Pro Micro ↔ Pi link + MIDI daughterboard (#746)
+
+MIDI moves off the Pro Micro onto the Pi so `Serial1` can carry the pedal link —
+the Pi's 4 USB ports are exactly consumed and a hub is ruled out. Full reasoning
+and schematic in [`segno_wiring.md` §2b](segno_wiring.md).
+
+- [ ] **74AHCT125** quad buffer (DIP-14) ×1 — 3.3 V → 5 V, both directions that
+      need it (Pi TX → Pro Micro RX, and Pi TX → MIDI OUT). **AHCT, not HCT/HC** —
+      the TTL-level inputs are the whole point
+- [ ] **H11L1** Schmitt-output opto (DIP-6) ×1 — DIN MIDI IN. Run it from **3.3 V**
+      and it feeds the Pi directly, no shifter
+- [ ] 220 Ω ×3 — MIDI OUT loop (2) + MIDI IN LED (1)
+- [ ] 1N4148 ×1 — MIDI IN reverse clamp
+- [ ] **1.8 kΩ ×1 + 3.3 kΩ ×1** — divider, Pro Micro TX (5 V) → Pi RX (3.24 V).
+      **Do not connect this line directly**; Pi GPIO is not 5 V tolerant
+- [ ] 100 nF ×2 — decoupling
+- [ ] DIN-5 sockets ×2 (already in the rear-panel list) wired to this board
+- [ ] Small perfboard / custom PCB ×1
+
+> On the main board, **do not populate** J4/J5, U2 and the MIDI-OUT resistors —
+> that frees D0/D1 at their pads with nothing to cut.
+
 ## Mechanical / enclosure
 
 - [ ] Enclosure material (plywood / aluminium / 3D-printed panels) — tilted body
