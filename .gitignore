@@ -156,3 +156,8 @@ graphify-out/
 deploy/yocto/prebuilt/
 deploy/yocto/meta-segno/.rauc-keys/
 docs/code-review/
+
+# console board v2 layout: generated, and NOT manufacturable yet (see #747)
+hardware/kicad/out_console/gerbers/
+hardware/kicad/out_console/*.zip
+hardware/kicad/out_console/*.kicad_prl
