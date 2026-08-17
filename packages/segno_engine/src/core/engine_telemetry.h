@@ -71,6 +71,24 @@
 #include "segno_engine_api.h" /* LE_CB_BUCKETS, LE_XRUN_KINDS, le_cb_window_snapshot */
 
 #if defined(_WIN32)
+/* engine_private.h includes this header, and engine_fx.h includes THAT, so
+ * <windows.h> now lands in every C++ translation unit that touches the DSP
+ * types — including vst3/test/host_harness.cpp, which calls std::min. Stock
+ * <windows.h> defines min/max as macros, which turns `std::min(` into MSVC
+ * C2589; NOMINMAX suppresses them. Guarded, so a TU that already set it is
+ * left alone, and defined HERE rather than in the build files because this
+ * header is what drags <windows.h> in — a -DNOMINMAX would have to be
+ * repeated in every consumer's build description (CMake, the podspec, the SPM
+ * target, the native test runner) and would drift the first time one was
+ * missed. Deliberately NOT WIN32_LEAN_AND_MEAN: that would apply to the whole
+ * TU, including the <windows.h> miniaudio.h pulls in a few lines further down
+ * engine_private.h, and miniaudio documents it as excluding symbols it then
+ * has to redefine by hand (STGM_READ, the whole WinMM surface). Nothing here
+ * needs more than QueryPerformanceCounter/Frequency, but nothing here is worth
+ * changing what the audio backend sees either. */
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <time.h>
