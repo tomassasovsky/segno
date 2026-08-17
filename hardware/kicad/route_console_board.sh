@@ -12,6 +12,7 @@ OUT="out_console"; PCB="$OUT/segno_console_board.kicad_pcb"
 [ -f "$JAR" ] || { echo "Freerouting jar not found at $JAR"; echo \
   "Get freerouting-1.9.0.jar from github.com/freerouting/freerouting/releases, or set FREEROUTING_JAR."; exit 1; }
 
+place_and_export() {
 echo "== 1. place =="
 "$KPY" console_board_pcb.py --no-export
 
@@ -43,17 +44,29 @@ for _net in ('+5V', '+3V3'):
         _ni.SetNetClass(_pw) if _pw else None
 ok = pcbnew.ExportSpecctraDSN(m, os.path.abspath('$OUT/console.dsn'))
 sys.exit(0 if ok else 'DSN export failed')" 2>&1 | grep -viE "wxApp|memory leak|Debug:" || true
+}
 
-# Steps 3-5 are ONE RETRY LOOP, because Freerouting is not deterministic: the same
-# DSN routed 0 unconnected on one run and 2 on the next. Reporting whichever roll
-# came up is not a result, so the loop keeps going until DRC is actually clean and
-# fails loudly if it never is.
+# EVERY step is inside the retry loop, placement included, and that is the whole
+# point of the retry. Freerouting has no seed, and given one DSN it returns the same
+# board every time -- five attempts on one file produced the same "1 unconnected"
+# five times over, and so did five DIFFERENT -mp/-us configurations. What actually
+# varies is the DSN: the PLACEMENT is deterministic in geometry but not in bytes,
+# because KiCad stamps fresh UUIDs on every run, and ExportSpecctraDSN emits in an
+# order those UUIDs influence. A re-placed board is the same board presented to the
+# router in a different order, which is a genuinely different routing problem -- it
+# is the only knob here that changes the outcome, and it is why this board routed
+# clean on one run and left a net on the next. Config still varies too; it costs
+# nothing and covers the case where order is not the obstacle.
+CONFIGS=("-mp 30" "-mp 100" "-mp 30 -us global" "-mp 60 -us hybrid -hr 1:1" "-mp 200")
 BEST=99999
 for ATTEMPT in 1 2 3 4 5; do
-  echo "== 3-5. autoroute + DRC (attempt $ATTEMPT) =="
+  CFG="${CONFIGS[$ATTEMPT-1]}"
+  echo "== attempt $ATTEMPT: re-place, re-export, route ($CFG) =="
+  place_and_export >/dev/null
   # NOT -Djava.awt.headless=true: Freerouting needs a real display even in batch.
   # -dct 0 kills its 20 s "dialog confirmation timeout" -- pure wall-clock waste.
-  ( cd "$OUT" && java -jar "$JAR" -de console.dsn -do console.ses -mp 30 -dct 0 2>&1 \
+  # shellcheck disable=SC2086
+  ( cd "$OUT" && java -jar "$JAR" -de console.dsn -do console.ses $CFG -dct 0 2>&1 \
       | grep -E "Auto-routing|optimization" ) || true
 
   cp "$OUT/console.placed.kicad_pcb" "$PCB" 2>/dev/null || true
