@@ -390,15 +390,29 @@ lugs ≈5, wire bend ≈10.
 the Pi on top of the main board with 4.3 mm of head, which made the bespoke 35.3 mm
 riser load-bearing — one taller connector on the board and it fails.
 
-**Moving it sideways, onto the floor under the 16" screen, is strictly better.**
-Final position `(SCREEN_16_U, bd − 103)` = **u 625.3, v 316**:
+**Moving it sideways, onto the floor under the 16" screen, is strictly better** —
+and **rotated 90°** while it is there. The Pi 5 carries USB-A ×4 + Ethernet on one
+56 mm edge and USB-C + both micro-HDMI on an 85 mm edge. Unrotated, that port edge
+faced the **rear**, which made sense pointing at a window and makes none now:
+every cable goes **left** — panel USB couplers (u 332/376), buck (u 300), 7" screen
+(u 42…196) — and only the 16" screen is overhead. Rotated, the ports face −u and the
+runs are straight; depth also drops 85 → 56, buying back rear-bay clearance.
+
+Final position `(SCREEN_16_U, bd − 106)` = **u 625.3, v 313**, hole rect 58 × 49:
 
 | | |
 |---|---|
-| clear bay behind it | **50.5 mm** (≥45 gated) |
-| PCB footprint | u 597…653, v 283…369 — entirely inside the screen bay (u 454…796, v 178…371) |
-| free height under the screen module | **72 mm** against a **36.6 mm** stack |
+| PCB footprint | u 572.8…657.8, v 285…341 (85 along u, 56 along v) |
+| clear bay behind it | **78 mm** (≥45 gated) |
+| free height under the screen module | **71.4 mm** against a **44.2 mm** stack |
 | stacked over anything | **nothing** |
+
+**The stack now includes the NVMe board and the cooler.** `PI_STACK_H` = 44.2 =
+`STANDOFF_H` 15 + `PI_N07_H` 11.6 + PCB 1.6 + `PI_TALLEST` 16. The GeeekPi N07
+(B0CWD266XR) is a **bottom** board on an FPC, so it costs height, not footprint;
+its 11.6 is the N07 PCB plus the standoffs that lift the Pi over its 2280 SSD. The
+official Active Cooler is ~10 above the PCB, so the **USB-A double stack still sets
+`PI_TALLEST`**, not the cooler.
 
 That bay was simply empty: the main board, the buck and both mid-row pedestals all
 sit left of u 454. And because nothing is stacked, **the bespoke riser disappears** —

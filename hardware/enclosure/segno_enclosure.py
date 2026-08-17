@@ -441,7 +441,16 @@ PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M2.5)
 # in the Base build; in the Pi build a Raspberry Pi rides alongside, linked over USB.
 BOARD_HOLES = (85.0, 87.0)    # M3 mount rectangle (measured, THT Pro Micro V1)
 BOARD_SIZE  = (94.0, 96.0)    # board outline (for the 3D render)
-PI_TALLEST  = 20.0            # tallest thing on the Pi (USB-A stack / cooler)
+# What actually stacks up at the Pi, bottom to top (#743):
+#   plate -> STANDOFF_H -> N07 NVMe bottom board -> its SSD -> standoffs -> Pi PCB
+#   -> the tallest thing on top (the USB-A double stack beats the Active Cooler).
+# GeeekPi N07 (B0CWD266XR) is a BOTTOM board on an FPC: it costs height, not
+# footprint. The official Active Cooler is ~10 above the PCB, so the USB-A stack
+# still sets the number.
+PI_N07_H    = 11.6            # N07 PCB 1.6 + the standoffs that lift the Pi over
+                              # its 2280 SSD
+PI_TALLEST  = 16.0            # USB-A double stack above the Pi PCB
+PI_STACK_H  = STANDOFF_H + PI_N07_H + 1.6 + PI_TALLEST
 BOARD_STACK_H = 16.0          # PCB + the tallest thing on it (Pro Micro on its
                               # header, JST shrouds). Same 16 the 3D render
                               # blocks it out at. #743 made this load-bearing:
@@ -1163,8 +1172,8 @@ def _check():
     # it. The Pi is the thing that reaches furthest back, so it is what gets held.
     _bd = D - 2*T
     _pu, _pv, _ = pi_mount()
-    _pcb_rear = _pv + 52.5
-    _clear = _bd - _pcb_rear
+    _pu0, _pu1, _pv0, _pv1 = pi_pcb_extent()
+    _clear = _bd - _pv1
     assert _clear >= REAR_CONN_DEPTH, (
         f"REAR_BAY: only {_clear:.1f} mm between the Pi's port edge and the rear "
         f"wall, need {REAR_CONN_DEPTH:.0f} for the connector bodies + wiring")
@@ -1184,7 +1193,7 @@ def _check():
     # under the 16" screen rather than straight forward, and it is what lets the
     # bespoke riser reduce to a plain standoff. Test in BOTH axes: an earlier
     # version of this gate checked only v and fired on a Pi 400 mm away in u.
-    _pi = (_pu - 28.0, _pu + 28.0, _pv - 32.5, _pv + 52.5)      # PCB 56 x 85
+    _pi = (_pu0, _pu1, _pv0, _pv1)                               # PCB 85 x 56, rotated
     _b = board_mounts()[0]                                       # (ref, u, v, holes)
     _bku, _bkv, _ = buck_mount()
     for _nm, _o in (("main board", (_b[1] - BOARD_SIZE[0]/2.0, _b[1] + BOARD_SIZE[0]/2.0,
@@ -1203,9 +1212,9 @@ def _check():
         f"REAR_BAY: Pi footprint {_pi} is not inside the 16in screen bay "
         f"({_s16['u']:.0f}..{_s16['u']+_s16['w']:.0f}, {_s16['v']:.0f}..{_s16['v']+_s16['h']:.0f})")
     _free = lid_under_z(_pv) - BIG_DEPTH
-    _stack = PI_RISER_H + 1.6 + PI_TALLEST
+    _stack = PI_STACK_H
     assert _stack + 8.0 <= _free, (
-        f"REAR_BAY: Pi stack {_stack:.1f} + 8 clearance does not fit the {_free:.1f} mm "
+        f"REAR_BAY: Pi stack {_stack:.1f} (incl. N07 + cooler) + 8 clearance does not fit the {_free:.1f} mm "
         "left under the 16in screen module")
 
     # 8b. rear I/O cluster (#743). Each station reserves the width of its NUT or
@@ -1342,9 +1351,23 @@ REAR_CONN_DEPTH = 45.0
 #
 # Cost, for the record: the run to the USB couplers gets ~250 mm longer. The 16"
 # HDMI gets shorter, the 7" longer.
+# ...and ROTATED 90 deg. The Pi 5 carries USB-A x4 + Ethernet on one 56 mm edge and
+# USB-C + both micro-HDMI on an 85 mm edge. Unrotated, the 85 ran along v and that
+# port edge faced the REAR -- which made sense pointing at a window and makes none
+# now, because every cable goes LEFT: the panel USB couplers (u 332/376), the buck
+# (u 300) and the 7" screen (u 42..196) are all to the left, and only the 16" screen
+# is overhead. Rotated, the port edge faces -u and the runs are straight. It also
+# drops the depth from 85 to 56, which buys back rear-bay clearance.
 def pi_mount():
     bd = D - 2*T
-    return (SCREEN_16_U, bd - 103.0, (PI_HOLES[1], PI_HOLES[0]))     # 49 across u, 58 along depth
+    return (SCREEN_16_U, bd - 106.0, (PI_HOLES[0], PI_HOLES[1]))     # 58 across u, 49 along depth
+
+def pi_pcb_extent():
+    """PCB footprint (u_lo, u_hi, v_lo, v_hi) for the ROTATED Pi. The hole pattern
+    is not centred on the board: along the 85 mm axis it sits 10 mm toward the SD
+    edge, so the USB-A edge is 52.5 out and the SD edge 32.5."""
+    u, v, _ = pi_mount()
+    return (u - 52.5, u + 32.5, v - 28.0, v + 28.0)                  # USB-A edge at -u
 
 # External 5V buck: eleUniverse 8-36V -> 5V 10A 50W IP67 potted brick (Amazon
 # B0GGHN97TK; envelope 63.8 x 57.7 x 22.1 incl. mounting ears, 116 g, passive
