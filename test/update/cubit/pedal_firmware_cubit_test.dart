@@ -378,9 +378,13 @@ void main() {
 
         expect(done, isTrue);
         expect(cubit.state.stage, PedalFirmwareStage.failed);
-        // The helper never reported reaching the write phase, so the honest
-        // class for a stall killed this early is not-started.
-        expect(cubit.state.failureClass, PedalFlashFailureClass.notStarted);
+        // The helper never reported reaching the write phase AND left no
+        // legible marker, which is not the same as proving nothing was
+        // written — a helper wedged before its first PROGRESS line looks
+        // identical to one wedged after. Comfort that cannot be proven is not
+        // offered, so an unreadable record reads as interrupted here exactly
+        // as it does on the non-stall path.
+        expect(cubit.state.failureClass, PedalFlashFailureClass.interrupted);
         // Every stalled helper is KILLED before the next attempt begins —
         // two privileged flashers must never fight over the bootloader port.
         //
@@ -421,8 +425,44 @@ void main() {
         expect(backend.abortCalls, 1);
         expect(cubit.state.stage, PedalFirmwareStage.failed);
         expect(cubit.state.failureClass, PedalFlashFailureClass.interrupted);
-        // The stale on-disk marker was never consulted for the stall.
-        expect(backend.failureReads, 0);
+        // The marker IS consulted on the stall path — it just loses here,
+        // because this attempt's own progress is the more pessimistic of the
+        // two signals.
+        expect(backend.failureReads, 1);
+        unawaited(cubit.close());
+      });
+    });
+
+    test("a stall keeps an earlier attempt's interrupted marker", () {
+      // The mirror of the test above, and the one that decides what the user
+      // is told. This attempt stalls at progress 0, so on its own evidence it
+      // "started nothing" — but [_flashOnce] reset that progress to zero, and
+      // the marker on disk is an EARLIER attempt of this same campaign saying
+      // a write had begun. Judging the stall on this attempt alone would
+      // offer "your pedal still works on its previous firmware" for a pedal
+      // holding a half-written image. The evidence outlives the attempt that
+      // produced it.
+      fakeAsync((async) {
+        final backend = _FakeBackend(
+          // No pending version on the second read: fail fast, one attempt.
+          pendingSequence: ['0.4.0'],
+          failureClass: PedalFlashFailureClass.interrupted,
+        );
+        final cubit = cubitOver(backend);
+
+        var done = false;
+        unawaited(cubit.run().whenComplete(() => done = true));
+        async
+          ..flushMicrotasks()
+          ..elapse(
+            PedalFirmwareCubit.stallTimeout + const Duration(seconds: 1),
+          );
+
+        expect(done, isTrue);
+        expect(backend.abortCalls, 1);
+        expect(cubit.state.stage, PedalFirmwareStage.failed);
+        expect(cubit.state.failureClass, PedalFlashFailureClass.interrupted);
+        expect(backend.failureReads, 1);
         unawaited(cubit.close());
       });
     });

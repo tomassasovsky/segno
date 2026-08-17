@@ -184,7 +184,6 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
         final reached = _lastProgress >= _writePhase
             ? PedalFlashFailureClass.interrupted
             : PedalFlashFailureClass.notStarted;
-        final PedalFlashFailureClass failureClass;
         if (error is _FlashStalled) {
           // A stalled helper is killed, not just abandoned: left alive it
           // would fight the next attempt over the bootloader port, and its
@@ -192,21 +191,22 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
           // returns once the process is dead, so no retry can overlap it.
           await _updates.abortPedalFlash();
           if (isClosed) return;
-          // The killed helper wrote no marker at all, so this attempt's own
-          // progress is the only evidence there is.
-          failureClass = reached;
-        } else {
-          // Both signals, and the more pessimistic wins: a stale `not-started`
-          // must not launder an attempt that got as far as avrdude, and a
-          // missing or unparseable marker counts as interrupted because
-          // comfort that cannot be proven must not be offered.
-          final marker =
-              await _updates.lastPedalFlashFailure() ??
-              PedalFlashFailureClass.interrupted;
-          if (isClosed) return;
-          failureClass = marker.worseOf(reached);
         }
+        // Both signals, and the more pessimistic wins: a stale `not-started`
+        // must not launder an attempt that got as far as avrdude, and a
+        // missing or unparseable marker counts as interrupted because comfort
+        // that cannot be proven must not be offered.
+        //
+        // The stall path reads the marker too. The killed helper wrote none
+        // for THIS attempt, but an EARLIER attempt's is still on disk and
+        // still describes the pedal — and [_lastProgress] was reset to 0 by
+        // [_flashOnce], so trusting this attempt alone would report
+        // `notStarted` for a pedal a previous attempt left mid-write.
+        final marker =
+            await _updates.lastPedalFlashFailure() ??
+            PedalFlashFailureClass.interrupted;
         if (isClosed) return;
+        final failureClass = marker.worseOf(reached);
 
         if (attempt < maxAttempts &&
             clock.now().difference(startedAt) < retryBudget &&
@@ -321,8 +321,10 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
 }
 
 /// The helper stopped emitting progress for [PedalFirmwareCubit.stallTimeout]
-/// and was killed. Carries how far it had got, because the on-disk failure
-/// marker cannot classify a stall — the killed helper never wrote one.
+/// and was killed. Carries how far it had got: the killed helper wrote no
+/// marker of its own, so this attempt's progress is the only evidence about
+/// THIS attempt — it is weighed against whatever marker an earlier attempt
+/// left, not used instead of it.
 class _FlashStalled implements Exception {
   const _FlashStalled(this.lastProgress);
 

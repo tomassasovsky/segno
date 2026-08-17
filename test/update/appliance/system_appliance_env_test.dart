@@ -264,7 +264,11 @@ while true; do sleep 1; done
     test('does not throw when the helper is already reaped', () async {
       // Documented "Never throws", and it is awaited inside `run()`'s catch
       // block — a throw there escapes an unawaited `run()` as an uncaught
-      // async error and strands the gate on `flashing`.
+      // root-zone async error. That is not a logged annoyance: there is no
+      // `runZonedGuarded` around `runApp`, and `bootstrap.dart` sets
+      // `PlatformDispatcher.instance.onError` to return `false` on purpose so
+      // the process tears down and segno.service restarts the kiosk. The gate
+      // stranded on `flashing` would be the lesser half of it.
       final env = SystemApplianceEnv(
         helperPath: stub('#!/bin/sh\necho "PROGRESS 50"\nsleep 0.2\n'),
       );

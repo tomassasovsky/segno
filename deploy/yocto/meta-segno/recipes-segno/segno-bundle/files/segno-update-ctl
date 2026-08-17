@@ -350,6 +350,15 @@ pedal_fail_class() {
     cut -d' ' -f1 "$PEDAL_FAIL_FILE" 2>/dev/null || true
 }
 
+# The firmware version recorded in the failure marker, or nothing. `-s` so a
+# legacy single-field marker (pre-#670, a bare version) reports NO version
+# rather than reporting its own class field as one — cut without it passes a
+# delimiter-less line through whole.
+pedal_fail_version() {
+    [ -f "$PEDAL_FAIL_FILE" ] || return 0
+    cut -s -d' ' -f2 "$PEDAL_FAIL_FILE" 2>/dev/null || true
+}
+
 # write_pedal_fail CLASS [VERSION] — records why a flash failed, for the UI.
 #
 # Never downgrades: an existing `interrupted` marker means a write began and no
@@ -400,8 +409,8 @@ write_pedal_fail() {
     fi
 }
 
-# Drops a failure marker left by an EARLIER campaign once the pedal has proven
-# it is not the pedal that marker describes.
+# clear_stale_fail_marker VERSION — drops a failure marker left by an EARLIER
+# campaign once the pedal has proven it is not the pedal that marker describes.
 #
 # An `interrupted` marker claims the pedal may be parked in Caterina with a
 # half-written app section. A pedal that answers on its SKETCH port disproves
@@ -412,11 +421,33 @@ write_pedal_fail() {
 # a downgrade and shows "may need to be flashed again from a computer" for a
 # healthy pedal.
 #
-# Only called once the sketch port has been seen. Failures from that point on
-# write their own marker, and the no-downgrade rule still protects everything
-# written during THIS run.
+# Scoped to markers from a DIFFERENT version, because "answers on its sketch
+# port" does not disprove a marker THIS campaign wrote. The app retries a
+# failed flash by invoking this verb again, so attempt 2 runs the whole
+# function afresh and the no-downgrade rule — which lives inside one
+# invocation's view of the file — cannot see what attempt 1 recorded. A pedal
+# whose half-written app still enumerates under the product name (Caterina
+# times out and jumps to it) would otherwise have attempt 1's `interrupted`
+# deleted here and attempt 2's `not-started` written over the gap, and the
+# dialog would tell the user their pedal still runs its previous firmware.
+#
+# The earlier argument for clearing unconditionally — "campaign A leaves
+# `interrupted 1.0.0`, the channel publishes 1.1.0, and the retry then writes
+# `not-started 1.1.0`" — does not hold: the clear sits AFTER GATE 1, so a
+# failure that never finds the pedal never reaches it and the no-downgrade rule
+# refuses the write anyway.
+#
+# A marker with no version field is by definition not this campaign's: every
+# `interrupted` path records one, and the versionless `not-started` markers
+# predate the manifest fetch (or are legacy, pre-#670) and are overwritable in
+# any case.
 clear_stale_fail_marker() {
     [ -f "$PEDAL_FAIL_FILE" ] || return 0
+    marked=$(pedal_fail_version)
+    if [ -n "$marked" ] && [ "$marked" = "$1" ]; then
+        log "keeping this campaign's own failure marker ($marked)"
+        return 0
+    fi
     log "pedal answers on its sketch port; dropping the stale failure marker"
     rm -f "$PEDAL_FAIL_FILE" 2>/dev/null \
         || log "could not clear $PEDAL_FAIL_FILE"
@@ -516,7 +547,7 @@ do_flash_pedal() {
         return 1
     fi
     log "pedal at $port; publishing $fw_version (current $current)"
-    clear_stale_fail_marker
+    clear_stale_fail_marker "$fw_version"
 
     progress 10
     if ! run_tracked curl -fsSL --max-time 300 -o "$work/$hex" \

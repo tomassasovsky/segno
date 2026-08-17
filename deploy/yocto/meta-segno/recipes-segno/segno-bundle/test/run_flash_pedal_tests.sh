@@ -498,7 +498,6 @@ echo \$! > "$work/avrdude-grandchild"
 wait
 STUB
 chmod +x "$work/bin/avrdude"
-dirs_before=$(ls -d /tmp/segno-pedal.* 2>/dev/null | sort || true)
 run_flash_bg
 await_file "$work/avrdude-grandchild"
 check "avrdude actually got started" yes \
@@ -506,19 +505,26 @@ check "avrdude actually got started" yes \
 avr_pid=$(cat "$work/avrdude-pid" 2>/dev/null || echo 0)
 gc_pid=$(cat "$work/avrdude-grandchild" 2>/dev/null || echo 0)
 kill -TERM "$helper" 2>/dev/null || true
-wait "$helper" 2>/dev/null; hrc=$?
-check "the script's own TERM trap ran (exit 143)" 143 "$hrc"
+wait "$helper" 2>/dev/null
+# Only checks that CANNOT pass against the pre-fix helper are kept here; a
+# check that passes either way inflates the suite's count with coverage it
+# does not have. Two were dropped for that reason:
+#   - "exit 143": bash reports 143 for ANY SIGTERM-killed job, trap or no trap.
+#   - the /tmp work-dir sweep: bash-as-`sh` (macOS) runs EXIT traps on SIGTERM,
+#     so the pre-fix `trap ... EXIT` alone sweeps it there. Only dash does not.
+# What IS discriminating is this line: nothing but the signal trap's own
+# _stop_flash_child writes it, and the pre-fix helper — which ran avrdude in
+# the foreground with nothing tracked — had no child pid to name.
+check "the trap stopped a TRACKED child, not just the shell" yes \
+    "$(grep -q 'stopping the in-flight child' "$work/stderr" && echo yes || echo no)"
 await_gone "$avr_pid" "$gc_pid"
 check "avrdude is dead, not orphaned onto the bootloader port" no "$(alive "$avr_pid")"
 check "avrdude's own child went with it" no "$(alive "$gc_pid")"
-dirs_after=$(ls -d /tmp/segno-pedal.* 2>/dev/null | sort || true)
-check "sweeps its work dir instead of leaving the hex behind" "" \
-    "$(comm -13 <(printf '%s\n' "$dirs_before") <(printf '%s\n' "$dirs_after"))"
 teardown
 
 # --- markers do not outlive the pedal state they describe -------------------
 
-echo "a stale interrupted marker is dropped once the pedal answers as a sketch"
+echo "an EARLIER campaign's interrupted marker is dropped once the pedal answers"
 setup
 write_manifest <<JSON
 { "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
@@ -526,15 +532,42 @@ write_manifest <<JSON
                      "protocolVersion": 3, "sha256": "$hex_sha" } }
 JSON
 attach_pedal
-# The board was reflashed by hand at a workbench after an interrupted OTA.
-# Only a successful OTA flash ever cleared the marker, so it is still here —
-# and without this it would keep telling every future campaign's honest
+# The board was reflashed by hand at a workbench after an interrupted OTA of
+# 1.2.3. Only a successful OTA flash ever cleared the marker, so it is still
+# here — and without this it would keep telling every future campaign's honest
 # not-started failure to show "may need to be flashed from a computer".
 # Answering on the SKETCH port is what disproves "parked in Caterina".
 echo "interrupted 1.2.3" > "$work/state/pedal-firmware-failed"
 run_flash; rc=$?
 check "still reports the download failure" 1 "$rc"
 check "records THIS attempt's honest class" "not-started 9.9.9" "$(fail_marker)"
+teardown
+
+echo "THIS campaign's own interrupted marker survives the retry that follows it"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "does-not-exist.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+attach_pedal
+# The retry case, which the app produces on its own: attempt 1 reached avrdude
+# and died mid-write, leaving `interrupted 9.9.9`. Caterina timed out and
+# jumped to the half-written app, which still enumerates under the product
+# name — so attempt 2 finds a "sketch port" and passes GATE 1. If the clear
+# were not scoped to a different version, attempt 1's marker would be deleted
+# here and attempt 2's honest `not-started` written into the gap, and the
+# dialog would offer "your pedal still works on its previous firmware" for a
+# pedal running a half-written image. Same invocation, one attempt at a time,
+# is exactly what the app does, so the no-downgrade rule alone cannot cover it.
+echo "interrupted 9.9.9" > "$work/state/pedal-firmware-failed"
+run_flash; rc=$?
+check "still reports the download failure" 1 "$rc"
+check "keeps the interrupted class rather than laundering it" \
+    "interrupted 9.9.9" "$(fail_marker)"
+check "says so" yes \
+    "$(grep -q "keeping this campaign's own failure marker" "$work/stderr" \
+       && echo yes || echo no)"
 teardown
 
 echo "a parked pedal's marker survives — it never presents a sketch port"
