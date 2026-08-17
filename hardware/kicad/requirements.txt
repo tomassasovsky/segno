@@ -1,0 +1,22 @@
+# Board generators (main_board.py, ring_board.py, console_board.py).
+#
+#   python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+#   cd hardware/kicad && ./.venv/bin/python main_board.py
+#
+# Python 3.12 specifically: hardware/enclosure/.venv is 3.14 (despite its own
+# comment saying 3.12) and skidl is unproven there. 3.12 is what these generators
+# are verified on.
+#
+# Run the generators FROM hardware/kicad/ — generate_netlist() writes <script>.net
+# into the current working directory, so running from the repo root silently drops
+# the netlist in the wrong place while reporting success.
+#
+# NOTE ON REPRODUCIBILITY: pinning this version does NOT make the committed .net
+# files byte-stable. SKiDL assigns a RANDOM "SKiDL Tag" to every Part that has no
+# explicit tag=, and the component tstamps are derived from it — two runs of the
+# same version on unchanged source differ by ~190 lines (all tags, timestamps and
+# the tool version string; zero net changes). So a netlist diff is not evidence of
+# a design change. What to check instead: "0 errors found while running ERC" and
+# the (net ...) blocks. Byte-stability would mean giving every Part an explicit
+# tag=, which is not worth it today.
+skidl==2.3.0
