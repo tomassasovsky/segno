@@ -135,7 +135,9 @@ PLACEMENT = {
     "J2":  (107.0, 40.0, 0),       # Pi ribbon, ON THE EDGE. A 40-way ribbon leaving
                                    # mid-board folds straight back over everything;
                                    # here the cable clears the board immediately.
-    "J9":  (94.0, 56.0, 0),        # SWD -> J2 pins 18/22
+    "J9":  (94.0, 56.0, 0),        # SWD -> J2 pins 18/22. Shares x with J7
+                                   # below it: same 3-pin footprint, so any
+                                   # offset between them is just a mistake.
     "J22": (50.0, 26.0, 0),        # expansion. Not on the top edge: its GP28 pin is
                                    # pad 34, near the module's LEFT end, while GP19..
                                    # GP22 are pads 25..29 toward the right -- from
@@ -151,7 +153,7 @@ PLACEMENT = {
     "R1":  (80.0, 62.0, 0),       # 330R, U1 gate B -> J6 pin 5 (ring data)
     "R2":  (92.0, 50.0, 0),        # 330R, U1 gate C -> J7 pin 2 (indicators)
     "J6":  (60.0, 68.0, 0),        # ring/encoder, under pads 16/17/19/20
-    "J7":  (92.0, 68.0, 0),        # indicators
+    "J7":  (94.0, 68.0, 0),        # indicators -- x matches J9 above
 }
 # footswitches J10..J19 along the bottom, left-to-right in GPIO order -- that
 # ordering is what keeps the fan-out from crossing (gated in _check)
