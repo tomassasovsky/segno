@@ -1,4 +1,5 @@
 import 'dart:ffi';
+import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1009,20 +1010,135 @@ void main() {
     test('is not reachable from le_snapshot at all', () {
       // The regression this guards: a counter that ticks on every audio
       // callback riding the render-rate snapshot would make every projected
-      // state unequal to the last, rebuilding an idle rig continuously. The
-      // structural defence is that `le_snapshot` carries no telemetry at all,
-      // so EngineSnapshot has no field that could ever carry it and a snapshot
-      // read twice from unchanging engine state is equal by construction.
-      final ptr = calloc<le_snapshot>();
-      try {
-        ptr.ref.sample_rate = 48000;
-        final first = EngineSnapshot.fromNative(ptr.ref, const []);
-        final second = EngineSnapshot.fromNative(ptr.ref, const []);
-        expect(second, equals(first));
-        expect(second.hashCode, first.hashCode);
-      } finally {
-        calloc.free(ptr);
-      }
+      // state unequal to the last, defeating LooperRepository's `next ==
+      // _last` dedupe and rebuilding an IDLE rig continuously — CPU pressure
+      // invented by the instrument that exists to find CPU pressure. The
+      // defence is structural: `EngineSnapshot` has no field that could carry
+      // per-callback telemetry, so the leak is impossible rather than avoided.
+      //
+      // Asserting that by reading one unchanging pointer twice proves nothing
+      // (two reads of the same bytes are equal whatever the fields are), so
+      // this is a GOLDEN over the field set instead: it fails loudly the day
+      // someone adds a field, and the reviewer then has to decide in the diff
+      // whether the new field ticks at callback rate. Adding a field is fine —
+      // adding one silently is not. Update the list below deliberately.
+      const expectedFields = <String>{
+        'isRunning',
+        'devicePresent',
+        'sampleRate',
+        'bufferFrames',
+        'inputChannels',
+        'outputChannels',
+        'excludedInputMask',
+        'inputClipMask',
+        'inputCondMask',
+        'framesProcessed',
+        'xrunCount',
+        'tunerHz',
+        'tunerConfidence',
+        'tunerInput',
+        'inputRms',
+        'inputPeak',
+        'outputRms',
+        'latencyState',
+        'measuredLatencyMs',
+        'masterLengthFrames',
+        'masterPositionFrames',
+        'recordOffsetFrames',
+        'fxAddedLatencyFrames',
+        'masterGain',
+        'activeBackend',
+        'outputEnabledMask',
+        'isPerfArmed',
+        'perfFrames',
+        'perfOverruns',
+        'perfZeroFilledFrames',
+        'perfStopped',
+        'tempoBpm',
+        'tempoSource',
+        'tsNum',
+        'tsDen',
+        'syncTempo',
+        'quantizeDiv',
+        'loopBars',
+        'currentBeat',
+        'clickMode',
+        'clickMask',
+        'clickVolume',
+        'countInBars',
+        'countingIn',
+        'countInBeatsLeft',
+        'looperMode',
+        'primaryTrack',
+        'tracks',
+      };
+
+      final actual = _declaredFinalFields(
+        'lib/src/engine_snapshot.dart',
+        'EngineSnapshot',
+      );
+      expect(
+        actual,
+        expectedFields,
+        reason:
+            'EngineSnapshot gained or lost a field. If the new one moves '
+            'at audio-callback rate it must NOT live here — put it on '
+            'le_callback_telemetry, which has its own FFI pull. If it moves '
+            'at human pace, add it to the golden above.',
+      );
+
+      // `xrunCount` is the one dropout number that legitimately rides the
+      // snapshot: a dropout is an event at human pace, not a per-callback
+      // tick. Named here so the golden's intent is unambiguous.
+      expect(actual, contains('xrunCount'));
+      // ...and nothing else here is telemetry-shaped.
+      expect(
+        actual.where(
+          (f) =>
+              f.contains('latePeriod') ||
+              f.contains('gapEvent') ||
+              f.contains('callbackTelemetry') ||
+              f.contains('bucket'),
+        ),
+        isEmpty,
+      );
     });
   });
+}
+
+/// The instance fields `class [className]` declares in the library at
+/// [relativePath] (relative to this package's root), read from source.
+///
+/// Source-level rather than reflective because `dart:mirrors` does not exist
+/// under `flutter test` and `Isolate.resolvePackageUri` throws there, while the
+/// property being guarded is a property of the DECLARATION, not of any
+/// instance — no runtime value can reveal a field that is simply absent.
+Set<String> _declaredFinalFields(String relativePath, String className) {
+  final file = _packageFile(relativePath);
+  final source = file.readAsStringSync();
+
+  final start = source.indexOf('\nclass $className {');
+  expect(start, isNot(-1), reason: '$className not found in ${file.path}');
+  final end = source.indexOf('\n}\n', start);
+  expect(end, isNot(-1), reason: '$className has no closing brace');
+
+  final body = source.substring(start, end);
+  return RegExp(
+    r'^  final\s+[\w<>,?\s]+?\s+(\w+);',
+    multiLine: true,
+  ).allMatches(body).map((m) => m.group(1)!).toSet();
+}
+
+/// Locates [relativePath] whether the suite was started from this package's
+/// root (what `flutter test` and CI do) or from an ancestor of it.
+File _packageFile(String relativePath) {
+  for (var dir = Directory.current; ; dir = dir.parent) {
+    for (final prefix in const ['', 'packages/segno_engine/']) {
+      final candidate = File('${dir.path}/$prefix$relativePath');
+      if (candidate.existsSync()) return candidate;
+    }
+    if (dir.path == dir.parent.path) {
+      fail('could not locate $relativePath from ${Directory.current.path}');
+    }
+  }
 }

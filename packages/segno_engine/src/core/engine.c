@@ -685,11 +685,26 @@ void le_engine_note_backend_xrun(le_engine* engine, int32_t kind) {
    * The armed flag comes from the PUBLISHED atomic, not engine->perf.armed:
    * that mirror is audio-thread-local and these callers do not own it. Reading
    * it here — at the moment of the dropout — is what makes the armed-window
-   * attribution exact rather than "whenever the control thread next polled". */
+   * attribution exact rather than "whenever the control thread next polled".
+   *
+   * ORDER MATTERS, and it is deliberate: the flat tally is bumped BEFORE
+   * le_cb_timing_note_xrun range-checks `kind`, so a kind this build does not
+   * recognise still moves xrun_count even though no per-kind bucket can hold
+   * it. xrun_count answers "did a real dropout happen", and an unclassifiable
+   * dropout still happened — dropping it would make the headline number
+   * under-report reality, which is the failure #722 exists to end. The cost is
+   * that the kinds sum to xrun_count only for kinds this build knows; that is
+   * what segno_engine_api.h documents, and no backend passes anything else
+   * today (ALSA passes 0/1/2, ASIO passes 3). */
   atomic_fetch_add_explicit(&engine->a_xruns, 1u, memory_order_relaxed);
   le_cb_timing_note_xrun(
       &engine->cb_timing, kind,
       atomic_load_explicit(&engine->a_perf_armed, memory_order_relaxed) != 0);
+}
+
+void le_engine_note_callback_timeline_break(le_engine* engine) {
+  if (engine == NULL) return;
+  le_cb_timing_note_timeline_break(&engine->cb_timing);
 }
 
 void le_engine_note_callback_span(le_engine* engine, uint64_t entry_ns,

@@ -6816,10 +6816,27 @@ xruns and thousands of cross-TU calls from the real-time thread.
 
 Global rather than per-device so it needs no ma_device_config field (keeping the
 patch to a declaration, a definition, and three call sites). NULL = no hook, the
-stock behaviour. Set it before ma_device_init and clear it after the device is
-uninited — the data-loop thread is the only reader and only exists in between;
-the host is responsible for keeping it installed while ANY device is open (see
-engine_miniaudio.c's refcount).
+stock behaviour.
+
+INSTALL ONCE, NEVER RETRACT. Set it before the first ma_device_init and then
+leave it alone for the life of the process. Do NOT null it on device close: the
+pointer is process-global while devices are not, so a second engine's device can
+be running when the first one closes, and any retraction scheme has to be
+refcounted. A refcount whose pointer write sits outside the atomic RMW
+interleaves into "refs == 1, hook == NULL" — B installs between A's decrement
+and A's clear — and B then counts nothing for its entire session, which is the
+permanent-zero symptom segno #722 exists to end. engine_miniaudio.c argues this
+out at length and deliberately keeps the hook installed; there is no refcount
+there to imitate. Leaving it installed is free and safe because the only caller
+is a RUNNING ALSA data loop, which passes its own device's pUserData, so the
+hook cannot be handed a stale host object — it simply is not called when no
+device is open.
+
+(If you are re-applying this patch after a miniaudio version bump: that
+paragraph is the contract. An earlier draft of it said "clear it after the
+device is uninited", which is the one change that would silently reintroduce the
+bug. README.md next to this header catalogues every SEGNO PATCH in this file and
+is the checklist for a version bump.)
 
 Compiled out entirely by -DLE_CALLBACK_TELEMETRY=0 (engine_telemetry_gate.h,
 included by miniaudio_impl.c ahead of this header).

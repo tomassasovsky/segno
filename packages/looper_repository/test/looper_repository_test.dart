@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -418,16 +419,64 @@ void main() {
       // permanently defeated and an IDLE rig would re-broadcast its whole
       // state (every track, lane and effect) on every poll tick. That is CPU
       // pressure invented by the instrument that exists to find CPU pressure.
+      //
+      // Mutating the fake's telemetry and asserting `repo.state` is unchanged
+      // cannot fail — the projection never reads that field, precisely because
+      // the defence is STRUCTURAL. So this is a golden over the field set of
+      // `EngineStatus`, the only carrier of engine health inside `LooperState`:
+      // it fails loudly the day a field is added, and whoever adds one has to
+      // say in the diff whether it moves at callback rate.
+      const expectedFields = <String>{
+        'deviceName',
+        'sampleRate',
+        'bufferFrames',
+        'inputChannels',
+        'outputChannels',
+        'latencyState',
+        'measuredLatencyMs',
+        'xrunCount',
+        'isConnected',
+        'devicePresent',
+        'excludedInputMask',
+        'inputClipMask',
+        'inputCondMask',
+        'recordOffsetFrames',
+        'fxAddedLatencyFrames',
+        'activeBackend',
+      };
+
+      final actual = _declaredFinalFields(
+        'lib/src/models/engine_status.dart',
+        'EngineStatus extends Equatable',
+      );
+      expect(
+        actual,
+        expectedFields,
+        reason:
+            'EngineStatus gained or lost a field. Anything that moves at '
+            'audio-callback rate must stay off it — read it through '
+            'LooperRepository.readCallbackTelemetry() instead, which is a '
+            'method precisely so it does not read like cheap state. If the '
+            'new field moves at human pace (like xrunCount), add it above.',
+      );
+      expect(
+        actual.where(
+          (f) =>
+              f.contains('latePeriod') ||
+              f.contains('gapEvent') ||
+              f.contains('telemetry') ||
+              f.contains('Telemetry'),
+        ),
+        isEmpty,
+      );
+
+      // And the pull still reports the fresh numbers the state does not carry.
       final repo = buildRepo();
-      final before = repo.state;
       engine.nextCallbackTelemetry = const CallbackTelemetry(
         budgetUs: 666,
         session: CallbackWindowStats(periods: 1000000, latePeriods: 99),
         armed: CallbackWindowStats(periods: 999, latePeriods: 42),
       );
-      expect(repo.state, equals(before));
-      expect(repo.state.status, equals(before.status));
-      // ...while the pull still reports the fresh numbers.
       expect(repo.readCallbackTelemetry().session.latePeriods, 99);
     });
 
@@ -6819,4 +6868,41 @@ void main() {
       expect(monitorPushes(), after);
     });
   });
+}
+
+/// The instance fields `class [classHeader]` declares in the library at
+/// [relativePath] (relative to this package's root), read from source.
+///
+/// Source-level rather than reflective because `dart:mirrors` does not exist
+/// under `flutter test` and `Isolate.resolvePackageUri` throws there, while the
+/// property being guarded is a property of the DECLARATION, not of any
+/// instance — no runtime value can reveal a field that is simply absent.
+Set<String> _declaredFinalFields(String relativePath, String classHeader) {
+  final file = _packageFile(relativePath);
+  final source = file.readAsStringSync();
+
+  final start = source.indexOf('\nclass $classHeader {');
+  expect(start, isNot(-1), reason: '$classHeader not found in ${file.path}');
+  final end = source.indexOf('\n}\n', start);
+  expect(end, isNot(-1), reason: '$classHeader has no closing brace');
+
+  final body = source.substring(start, end);
+  return RegExp(
+    r'^  final\s+[\w<>,?\s]+?\s+(\w+);',
+    multiLine: true,
+  ).allMatches(body).map((m) => m.group(1)!).toSet();
+}
+
+/// Locates [relativePath] whether the suite was started from this package's
+/// root (what `flutter test` and CI do) or from an ancestor of it.
+File _packageFile(String relativePath) {
+  for (var dir = Directory.current; ; dir = dir.parent) {
+    for (final prefix in const ['', 'packages/looper_repository/']) {
+      final candidate = File('${dir.path}/$prefix$relativePath');
+      if (candidate.existsSync()) return candidate;
+    }
+    if (dir.path == dir.parent.path) {
+      fail('could not locate $relativePath from ${Directory.current.path}');
+    }
+  }
 }

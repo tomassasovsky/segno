@@ -1,3 +1,7 @@
+/// @docImport 'package:looper_repository/src/looper_repository.dart';
+/// @docImport 'package:segno_engine/segno_engine.dart';
+library;
+
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/src/models/audio_config.dart';
 
@@ -51,8 +55,15 @@ class EngineStatus extends Equatable {
   /// underrun/overrun recoveries and its slipped-playback resyncs through this
   /// (native #722), alongside the Windows ASIO overload notification that used
   /// to be its only producer. Still `0` on CoreAudio, which exposes no xrun
-  /// signal — read the gap detector in `LooperRepository.callbackTelemetry`
+  /// signal — read the gap detector in [LooperRepository.readCallbackTelemetry]
   /// there instead, which also carries the per-class breakdown.
+  ///
+  /// The per-class counts in [CallbackWindowStats.xruns] add up to this for
+  /// every class the native build recognises — which is every class a shipping
+  /// backend produces. They are not guaranteed to: a dropout reported with an
+  /// unknown class still increments this (it was a real dropout) but lands in
+  /// no bucket. See `le_cb_window_snapshot.xruns` for why that order is
+  /// deliberate.
   ///
   /// This one number stays on the status because it moves at human pace (a
   /// dropout is an event, not a tick); the per-callback counters deliberately

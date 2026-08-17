@@ -237,6 +237,33 @@ jobs:
           EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g"
           bash packages/segno_engine/src/test/run_native_tests.sh
 
+  # The same suites with the callback telemetry GATED OFF (#722). That gate is
+  # the feature's stated escape hatch if the instrument ever perturbs the
+  # appliance, so it has to be a configuration that builds AND passes — it is
+  # exactly what someone reaches for under pressure, and discovering then that
+  # it does not work is the worst possible time. Nothing built it before this
+  # job, so the `#if LE_CALLBACK_TELEMETRY` branches in miniaudio.h,
+  # engine_miniaudio.c, engine_telemetry.h and the test suite could rot silently
+  # while every other job stayed green.
+  #
+  # It RUNS the suites rather than only compiling them: once the timing-only
+  # assertions are behind CHECK_TIMING the gate-off suite passes, so running it
+  # costs no more than a compile and additionally pins what the gated build must
+  # still do — accumulate nothing, and keep the ungated per-kind dropout tally
+  # (which is what leaves xrun_count explainable in every build).
+  native-tests-telemetry-off:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install C build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libasound2-dev
+      - name: Build + run native tests with LE_CALLBACK_TELEMETRY=0
+        run: >
+          EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0"
+          bash packages/segno_engine/src/test/run_native_tests.sh
+
   # The control-sequence fuzzer: the REAL native engine (device-free pump) +
   # the real repository/bloc/cubits, driven by seeded random event sequences
   # and checked against the control-surface invariant spec

@@ -4710,9 +4710,23 @@ final class le_cb_window_snapshot extends ffi.Struct {
   external int late_periods;
 
   /// Entry-to-entry gaps longer than 1.5 NOMINAL PERIODS: the DERIVED
-  /// starvation signal. The device coming back that late means it starved,
-  /// whether or not the backend admitted an xrun — the only such signal
+  /// "the callback did not come back on time" signal, and the only one
   /// available on CoreAudio, where miniaudio exposes nothing.
+  ///
+  /// WHAT IT CAN AND CANNOT DISTINGUISH. An entry-to-entry span contains the
+  /// previous callback's OWN duration, so a gap event says the callback stream
+  /// stalled — not whose fault it was. Two different causes reach it:
+  /// - the device starved us: we returned promptly and it still came back
+  /// late. Then `late_periods` stays flat and this moves alone, which is the
+  /// reading the bench table is built on;
+  /// - WE ran long: any single callback taking more than 1.5 nominal periods
+  /// forces a gap event on the next entry by arithmetic alone. So this is
+  /// NOT independent of `late_periods` — a badly overloaded engine moves
+  /// both, and the pair moving together means "we were slow", not "two
+  /// separate problems". (A merely late period service is not enough: the
+  /// threshold is per-callback spacing, and a service is often several
+  /// callbacks. It takes one callback past 1.5 periods.)
+  /// Read the two TOGETHER, never this one alone.
   ///
   /// Measured against the nominal period and NOT against the last block's
   /// budget: on the split duplex loop the callbacks for one period arrive in a
@@ -4720,11 +4734,15 @@ final class le_cb_window_snapshot extends ffi.Struct {
   /// scaled to a sub-period block would fire at every single period boundary on
   /// completely healthy hardware.
   ///
-  /// INDEPENDENT OF `xruns` by construction: an ALSA -EPIPE recovery also
-  /// stalls the loop, so a gap arriving within a few periods of a counted
-  /// recovery is suppressed. One physical dropout is counted once, under one
-  /// name, and max_gap_us is never pinned by a recovery stall — while a genuine
-  /// stall later in the session still registers.
+  /// NOT double-counted against `xruns`: an ALSA -EPIPE recovery also stalls the
+  /// loop, so a gap arriving within a few periods of a counted recovery is
+  /// suppressed. One physical dropout is counted once, under one name, and
+  /// max_gap_us is never pinned by a recovery stall — while a genuine stall
+  /// later in the session still registers. The suppressor excuses BACKEND
+  /// recoveries only; it does not excuse our own overrun, which is why the
+  /// coupling above is real and documented rather than filtered away. A device
+  /// reroute or a system audio interruption breaks the timeline instead of
+  /// producing a gap, so switching the default device mid-session reads 0.
   @ffi.Uint64()
   external int gap_events;
 
@@ -4744,8 +4762,17 @@ final class le_cb_window_snapshot extends ffi.Struct {
   @ffi.Array.multi([8])
   external ffi.Array<ffi.Uint64> buckets;
 
-  /// Real backend dropouts, indexed by le_xrun_kind. Their sum over the session
-  /// window is exactly what xrun_count reports.
+  /// Real backend dropouts, indexed by le_xrun_kind: the per-class breakdown of
+  /// the flat xrun_count on le_snapshot.
+  ///
+  /// Over the session window these sum to xrun_count for every kind THIS BUILD
+  /// KNOWS — which is every kind any shipping backend produces (ALSA passes
+  /// 0/1/2, ASIO passes 3), so the sum holds today. It is not an invariant for
+  /// all time: a dropout reported with a kind outside le_xrun_kind increments
+  /// xrun_count but lands in no bucket, deliberately, because the headline
+  /// number's job is "a real dropout happened" and an unclassifiable one still
+  /// happened. Folding it into an existing bucket instead would corrupt the
+  /// breakdown; dropping it entirely would under-report reality.
   @ffi.Array.multi([4])
   external ffi.Array<ffi.Uint64> xruns;
 }
@@ -4815,10 +4842,14 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Uint64()
   external int frames_processed;
 
-  /// Device dropouts (xruns) since the device started, as reported by the backend.
-  /// The Windows ASIO backend tallies the driver's kAsioOverload notifications;
-  /// the miniaudio backends (macOS / Linux) expose no portable per-callback xrun
-  /// signal, so this stays 0 there. Monotonic; cleared on each fresh start.
+  /// Device dropouts (xruns) since the device started, as reported by the
+  /// backend, every class summed. The Windows ASIO backend tallies the driver's
+  /// kAsioOverload notifications; the direct ALSA path tallies miniaudio's
+  /// -EPIPE recoveries and its slipped-playback resyncs (#722), so this finally
+  /// moves on Linux. Still 0 on CoreAudio, which exposes no xrun signal at all —
+  /// read le_callback_telemetry's gap detector there. The per-class breakdown is
+  /// le_cb_window_snapshot.xruns; see its note for how the two relate.
+  /// Monotonic; cleared on each fresh start.
   @ffi.Uint32()
   external int xrun_count;
 

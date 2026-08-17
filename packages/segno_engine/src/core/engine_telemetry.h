@@ -112,14 +112,37 @@ extern "C" {
  * shorter than the stalls this instrument is looking for. */
 #define LE_CB_GAP_SUPPRESS_PERIODS 4u
 
-/* Monotonic nanoseconds. Never wall-clock: a stepped or slewed clock would
- * manufacture phantom stalls. The Windows arm exists for completeness (the
- * shipping Windows build runs the ASIO backend, which does not call this). */
+/* Monotonic nanoseconds. Never wall-clock (CLOCK_REALTIME / the system time):
+ * that clock STEPS — an NTP correction, a DST-less timezone database update or
+ * a user setting the date can move it backwards or forwards by seconds, and a
+ * single step would manufacture a phantom multi-period stall (or hide a real
+ * one) in the gap detector.
+ *
+ * CLOCK_MONOTONIC is itself NTP-SLEWED — CLOCK_MONOTONIC_RAW is the unslewed
+ * one — and that is fine here, deliberately: slewing only rescales the rate,
+ * never steps it, and ntpd/chrony bound the slew at 500 ppm. Against the 667 us
+ * period this instrument judges, 500 ppm is ~0.3 ns, six orders of magnitude
+ * below the 333 us of slack between the nominal period and the 1.5-period gap
+ * threshold. What matters for a deadline instrument is monotonicity and no
+ * steps, not agreement with TAI. The RAW clock would also cost more (it is not
+ * always a plain vDSO read) and would drift against every other timestamp in
+ * the system for no measurable gain.
+ *
+ * The Windows arm exists for completeness (the shipping Windows build runs the
+ * ASIO backend, which does not call this). */
 static inline uint64_t le_now_ns(void) {
 #if defined(_WIN32)
-  static LARGE_INTEGER freq = {{0, 0}};
+  /* QueryPerformanceFrequency is fixed at boot and, since Windows 7, is a
+   * usermode read of shared data — so it is simply called every time rather
+   * than cached in a function-local `static`. That cache was a lazy
+   * read-check-write with no synchronisation: benign (every writer stores the
+   * identical value) but a formal data race, and on a WASAPI build this sits on
+   * the audio thread, where "benign race" is a phrase worth not having to
+   * defend. Two shared-data reads instead of one, on a path that is not
+   * compiled into the shipping Windows backend at all. */
+  LARGE_INTEGER freq;
   LARGE_INTEGER now;
-  if (freq.QuadPart == 0) QueryPerformanceFrequency(&freq);
+  QueryPerformanceFrequency(&freq);
   QueryPerformanceCounter(&now);
   if (freq.QuadPart <= 0) return 0;
   /* Split to avoid overflowing the 64-bit intermediate on a long uptime. */
@@ -176,6 +199,17 @@ typedef struct le_cb_timing {
    * thread that noticed the dropout. */
   _Atomic uint64_t a_gap_suppress_ns;
 
+  /* Non-zero = the callback stream was interrupted and the timeline above is
+   * stale; the next callback must drop it instead of measuring against it.
+   * Raised by le_cb_timing_note_timeline_break from the DEVICE-NOTIFICATION
+   * thread, consumed by the audio thread inside le_cb_timing_note — which is
+   * why it is an atomic flag rather than the notification thread reaching in
+   * and clearing last_entry_ns / svc_* directly: those three are single-writer
+   * audio-thread state, and that ownership is exactly what licenses the
+   * unsynchronised load-compare-store maxima elsewhere in this file. A flag
+   * costs one relaxed load per callback and keeps the invariant intact. */
+  _Atomic int a_timeline_break;
+
   le_cb_window session;
   le_cb_window armed;
 } le_cb_timing;
@@ -208,6 +242,7 @@ static inline void le_cb_timing_configure(le_cb_timing* t, int32_t sample_rate,
   t->svc_frames = 0;
   t->svc_ns = 0;
   atomic_store_explicit(&t->a_gap_suppress_ns, 0u, memory_order_relaxed);
+  atomic_store_explicit(&t->a_timeline_break, 0, memory_order_relaxed);
   le_cb_window_reset(&t->session);
   le_cb_window_reset(&t->armed);
   if (sample_rate <= 0 || period_frames <= 0) {
@@ -224,6 +259,41 @@ static inline void le_cb_timing_configure(le_cb_timing* t, int32_t sample_rate,
       ((uint64_t)period_frames * 1000000000ull) / (uint64_t)sample_rate;
   t->gap_limit_ns = t->period_ns * LE_CB_GAP_NUM / LE_CB_GAP_DEN;
   t->gap_suppress_window_ns = t->period_ns * LE_CB_GAP_SUPPRESS_PERIODS;
+}
+
+/* Declares the callback TIMELINE broken: the next callback reports no gap and
+ * starts a fresh period service. Measurements already accumulated are NOT
+ * touched — a reroute does not undo the lateness observed before it.
+ *
+ * Called when the device notification path says the callback stream is about to
+ * stop coming: stopped / rerouted / interruption_began (engine_miniaudio.c).
+ * miniaudio handles a reroute or an interruption INTERNALLY — it reinitialises
+ * the device and resumes the data callback without the engine restarting — so
+ * without this the first callback after the switch is measured against the
+ * entry stamp from before it. On macOS, changing the default output device
+ * mid-session is a ~200 ms hole: exactly one phantom gap_event, and max_gap_us
+ * pinned at 200000 for the rest of the device session. That is the "instrument
+ * cries wolf on a healthy rig" failure this whole file is built to avoid, and
+ * le_engine_start's configure was the only reset before this (#722, review
+ * finding 5).
+ *
+ * THE COMPLETE SET of pre-stall state is the three timeline fields
+ * (last_entry_ns, svc_frames, svc_ns) plus the suppressor stamp. The first
+ * three are audio-thread-owned, so they are cleared by the audio thread when it
+ * observes the flag; a_gap_suppress_ns is already atomic and is cleared right
+ * here, because a recovery licensed before the reroute has nothing to do with
+ * the stream that comes back after it. Nothing else in le_cb_timing carries
+ * history across the break: the negotiated rate/period and their derived
+ * thresholds are unchanged by a reroute (miniaudio re-opens with the same
+ * requested config; a device that came back with a different period would need
+ * a full le_engine_start, which reconfigures anyway), and the two windows are
+ * the measurement itself.
+ *
+ * Thread-agnostic and RT-safe: two relaxed stores. */
+static inline void le_cb_timing_note_timeline_break(le_cb_timing* t) {
+  if (t == NULL) return;
+  atomic_store_explicit(&t->a_gap_suppress_ns, 0u, memory_order_relaxed);
+  atomic_store_explicit(&t->a_timeline_break, 1, memory_order_relaxed);
 }
 
 /* Clears the armed window. Called from the AUDIO thread when it applies
@@ -285,6 +355,18 @@ static inline void le_cb_timing_note(le_cb_timing* t, uint64_t entry_ns,
   }
   const uint64_t dur_ns = exit_ns > entry_ns ? exit_ns - entry_ns : 0u;
 
+  /* A reroute / interruption / stop happened since the last callback, so the
+   * timeline is stale (see le_cb_timing_note_timeline_break). Drop it HERE, on
+   * the thread that owns these three fields, rather than from the notification
+   * thread that raised the flag. A relaxed load per callback; the branch is
+   * never taken on a rig nobody is unplugging. */
+  if (atomic_load_explicit(&t->a_timeline_break, memory_order_relaxed) != 0) {
+    atomic_store_explicit(&t->a_timeline_break, 0, memory_order_relaxed);
+    t->last_entry_ns = 0;
+    t->svc_frames = 0;
+    t->svc_ns = 0;
+  }
+
   atomic_fetch_add_explicit(&t->session.a_calls, 1u, memory_order_relaxed);
   if (armed) {
     atomic_fetch_add_explicit(&t->armed.a_calls, 1u, memory_order_relaxed);
@@ -343,9 +425,18 @@ static inline void le_cb_timing_note(le_cb_timing* t, uint64_t entry_ns,
  * into an existing bucket would corrupt the reading.
  *
  * NOT behind LE_CALLBACK_TELEMETRY, unlike the timing path: this runs only once
- * a dropout has already happened, so it has no steady-state cost, and gating it
- * would both break the "kinds sum to xrun_count" invariant in a gated build and
- * silently remove the ASIO overload tally that predates #722.
+ * a dropout has already happened, so it has no steady-state cost; gating it
+ * would leave xrun_count moving in a gated build with no breakdown to explain
+ * it, and would silently remove the ASIO overload tally that predates #722.
+ *
+ * The per-kind counts therefore account for every dropout of a kind THIS BUILD
+ * KNOWS, but they do not necessarily sum to xrun_count: le_engine_note_backend_
+ * xrun bumps the flat tally before this range check, so an unrecognised kind
+ * increments xrun_count with no bucket to land in. That is the deliberate
+ * order — xrun_count's job is "a real dropout happened", and an unclassifiable
+ * one still happened. No backend produces such a kind today (ALSA passes 0/1/2,
+ * ASIO passes 3), so the sum holds in practice; it is a guarantee about the
+ * future, not about today.
  *
  * Also stamps the gap suppressor: the recovery this reports is about to show up
  * as a long entry-to-entry gap, and one physical dropout must not be counted

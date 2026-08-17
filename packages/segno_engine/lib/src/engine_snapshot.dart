@@ -1,6 +1,7 @@
-// The `Array<Uint32>` index operator the fixed-width telemetry arrays
-// (`le_cb_window_snapshot.buckets` / `.xruns`) are read through is a dart:ffi
-// extension, so the library has to be imported for it to be in scope.
+// The `Array<Uint64>` index operator the fixed-width telemetry arrays
+// (`le_cb_window_snapshot.buckets` / `.xruns`, both declared
+// `ffi.Array<ffi.Uint64>` in the generated bindings) are read through is a
+// dart:ffi extension, so the library has to be imported for it to be in scope.
 import 'dart:ffi';
 
 import 'package:meta/meta.dart';
@@ -626,13 +627,25 @@ class CallbackWindowStats {
   final int latePeriods;
 
   /// Consecutive callback *entries* more than 1.5 **nominal periods** apart:
-  /// the device did not come back on time. The derived starvation signal, and
-  /// the only one available on CoreAudio, where the backend reports no xruns.
+  /// the callback stream stalled. The derived starvation signal, and the only
+  /// one available on CoreAudio, where the backend reports no xruns.
   ///
-  /// Independent of [xruns] — a gap arriving just after a counted backend
-  /// recovery is suppressed, so one physical dropout is never counted twice.
+  /// **Read this together with [latePeriods], never alone.** An entry-to-entry
+  /// span contains the previous callback's own duration, so this says the
+  /// stream stalled — not whose fault it was. It moves *alone* when the device
+  /// starved us (we returned promptly and it still came back late), which is
+  /// the reading worth acting on; but any single callback running longer than
+  /// 1.5 nominal periods forces a gap on the next entry by arithmetic, so an
+  /// overloaded engine moves both. The two are coupled, not independent.
+  ///
+  /// Never double-counted against [xruns]: a gap arriving just after a counted
+  /// backend recovery is suppressed, so one physical dropout is counted once.
+  /// That suppressor excuses backend recoveries only — it does not excuse our
+  /// own overrun, which is why the coupling above stands.
+  ///
   /// **Zero on healthy hardware**, including on a duplex loop that services a
-  /// period in a burst and then waits.
+  /// period in a burst and then waits, and across a device reroute or a system
+  /// audio interruption (those break the timeline rather than register a gap).
   final int gapEvents;
 
   /// Worst period-service duration in this window, in microseconds.
@@ -655,7 +668,16 @@ class CallbackWindowStats {
   /// of each period.
   final List<int> buckets;
 
-  /// Real backend dropouts, indexed by [XrunKind.index].
+  /// Real backend dropouts, indexed by [XrunKind.index]: the per-class
+  /// breakdown of `EngineStatus.xrunCount`.
+  ///
+  /// Over the session window these add up to that total for every class the
+  /// native build recognises — which is every class a shipping backend
+  /// produces, so the sum holds today. It is not promised for all time: a
+  /// dropout reported with a class outside [XrunKind] still increments the flat
+  /// total (it was a real dropout) but lands in no bucket here, deliberately —
+  /// folding it into an existing class would corrupt the breakdown, and
+  /// dropping it would under-report reality.
   final List<int> xruns;
 
   /// Dropouts of [kind] in this window.
@@ -749,7 +771,9 @@ class CallbackTelemetry {
   final int budgetUs;
 
   /// Telemetry for the whole device session, cleared on every fresh start —
-  /// like `EngineStatus.xrunCount`, which is its `xruns` total.
+  /// in lockstep with `EngineStatus.xrunCount`, which this window's
+  /// [CallbackWindowStats.xruns] break down (see there for the one case where
+  /// the breakdown can add up to less than the total).
   final CallbackWindowStats session;
 
   /// The same telemetry since the most recent performance arm.

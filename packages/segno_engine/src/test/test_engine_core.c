@@ -51,6 +51,33 @@ static int g_failures = 0;
     }                                                                     \
   } while (0)
 
+/* An assertion about ACCUMULATED CALLBACK TIMING (#722) — i.e. one that can
+ * only hold when LE_CALLBACK_TELEMETRY is on, because the gate compiles the
+ * accumulators, the clock reads and the whole timing path out to nothing.
+ *
+ * The gate is this feature's stated escape hatch if the instrument ever turns
+ * out to perturb the appliance, so `-DLE_CALLBACK_TELEMETRY=0` has to be a
+ * configuration that BUILDS AND PASSES, not one that merely compiles — it is
+ * exactly the thing someone reaches for under pressure, when discovering it
+ * does not work is worst. CI builds and runs it (native-tests-telemetry-off in
+ * .github/workflows/main.yaml), so the `#if` branches in miniaudio.h,
+ * engine_miniaudio.c and engine_telemetry.h cannot rot silently.
+ *
+ * Note what is NOT wrapped: every assertion that a judged field reads ZERO
+ * stays a plain CHECK, in both builds. Those are the healthy-rig property when
+ * the gate is on and the gate's own contract — "nothing is accumulated at
+ * all" — when it is off, so the gate-off run is a real test rather than a
+ * skipped one. The ungated dropout tally (le_cb_timing_note_xrun) likewise
+ * stays a plain CHECK, because it is deliberately outside the gate. */
+#if LE_CALLBACK_TELEMETRY
+#define CHECK_TIMING(cond) CHECK(cond)
+#else
+/* Evaluated and discarded rather than dropped: keeps every local the assertion
+ * reads "used", so a gate-off build does not warn about unused variables. The
+ * conditions are pure comparisons with no side effects. */
+#define CHECK_TIMING(cond) ((void)(cond))
+#endif
+
 static void test_ring_init_rejects_bad_capacity(void) {
   printf("test_ring_init_rejects_bad_capacity\n");
   le_command storage[8];
@@ -1937,10 +1964,15 @@ static void test_cb_timing_healthy_split_duplex_reads_zero(void) {
   le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
 
   /* Four blocks per period, each burning 60 us: 240 us of work per 666 us
-   * period, i.e. ~36% load — a comfortable rig. Note that 60 us ALONE already
-   * exceeds a 16-frame block's own 166 us... no: it is well under it, but the
-   * per-block model would still mis-bucket; what matters is that the SUM is
-   * judged, and that the wait between bursts is not a gap. */
+   * period, i.e. ~36% load — a comfortable rig, and one no per-block model
+   * could read correctly. 60 us is well inside a 16-frame block's own 166 us,
+   * so a per-block deadline would not call this late — it would simply bucket
+   * it wrong (60 of 166 is bucket 2 of the WRONG scale, and the fixed
+   * per-block cost that does not shrink with the block is what pushes a real
+   * 16-frame tail over that budget). What is asserted below is the framing that
+   * survives both: the four spans are SUMMED into one period service and judged
+   * against the 666 us they actually covered, and the ordinary wait between
+   * bursts is not a gap. */
   uint64_t entry = 1000;
   for (int period = 0; period < 50; ++period) {
     entry = le_cb_test_burst(&t, entry, /*blocks=*/4, /*busy_ns=*/60000u,
@@ -1951,16 +1983,17 @@ static void test_cb_timing_healthy_split_duplex_reads_zero(void) {
   le_callback_telemetry tel;
   le_cb_timing_read(&t, &tel);
   CHECK(tel.budget_us == (uint32_t)(LE_CB_TEST_PERIOD_NS / 1000));
-  CHECK(tel.session.calls == 200);   /* 50 periods x 4 callbacks */
-  CHECK(tel.session.periods == 50);  /* ... folded into 50 period services */
+  CHECK_TIMING(tel.session.calls == 200);   /* 50 periods x 4 callbacks */
+  /* ... folded into 50 period services */
+  CHECK_TIMING(tel.session.periods == 50);
   CHECK(tel.session.late_periods == 0);
   CHECK(tel.session.gap_events == 0);
   CHECK(tel.session.max_gap_us == 0);
   for (int k = 0; k < LE_XRUN_KINDS; ++k) CHECK(tel.session.xruns[k] == 0);
   /* 240 us of 666 us is between 2/8 and 3/8 of the deadline. */
-  CHECK(tel.session.buckets[2] == 50);
-  CHECK(tel.session.max_us == 240);
-  CHECK(tel.session.mean_us == 240);
+  CHECK_TIMING(tel.session.buckets[2] == 50);
+  CHECK_TIMING(tel.session.max_us == 240);
+  CHECK_TIMING(tel.session.mean_us == 240);
 }
 
 /* The same rig, but the engine now needs more than a period per period. That IS
@@ -1981,10 +2014,10 @@ static void test_cb_timing_overloaded_split_duplex_reports_late(void) {
 
   le_callback_telemetry tel;
   le_cb_timing_read(&t, &tel);
-  CHECK(tel.session.periods == 10);
-  CHECK(tel.session.late_periods == 10);
-  CHECK(tel.session.buckets[LE_CB_BUCKETS - 1] == 10);
-  CHECK(tel.session.max_us == 720);
+  CHECK_TIMING(tel.session.periods == 10);
+  CHECK_TIMING(tel.session.late_periods == 10);
+  CHECK_TIMING(tel.session.buckets[LE_CB_BUCKETS - 1] == 10);
+  CHECK_TIMING(tel.session.max_us == 720);
   CHECK(tel.session.gap_events == 0); /* the DEVICE was fine; we were not */
 }
 
@@ -2014,15 +2047,15 @@ static void test_cb_timing_durations_max_late_and_buckets(void) {
 
   le_callback_telemetry tel;
   le_cb_timing_read(&t, &tel);
-  CHECK(tel.session.calls == 4);
-  CHECK(tel.session.periods == 4); /* one period per callback here */
-  CHECK(tel.session.late_periods == 1);
-  CHECK(tel.session.max_us == (uint32_t)(eighth * 9 / 1000));
+  CHECK_TIMING(tel.session.calls == 4);
+  CHECK_TIMING(tel.session.periods == 4); /* one period per callback here */
+  CHECK_TIMING(tel.session.late_periods == 1);
+  CHECK_TIMING(tel.session.max_us == (uint32_t)(eighth * 9 / 1000));
   CHECK(tel.session.gap_events == 0);
-  CHECK(tel.session.buckets[0] == 1);
-  CHECK(tel.session.buckets[2] == 1);
-  CHECK(tel.session.buckets[4] == 1);
-  CHECK(tel.session.buckets[LE_CB_BUCKETS - 1] == 1);
+  CHECK_TIMING(tel.session.buckets[0] == 1);
+  CHECK_TIMING(tel.session.buckets[2] == 1);
+  CHECK_TIMING(tel.session.buckets[4] == 1);
+  CHECK_TIMING(tel.session.buckets[LE_CB_BUCKETS - 1] == 1);
   CHECK(tel.session.buckets[1] == 0 && tel.session.buckets[3] == 0 &&
         tel.session.buckets[5] == 0 && tel.session.buckets[6] == 0);
   {
@@ -2030,7 +2063,7 @@ static void test_cb_timing_durations_max_late_and_buckets(void) {
     for (size_t i = 0; i < sizeof(spans) / sizeof(spans[0]); ++i) {
       total += spans[i];
     }
-    CHECK(tel.session.mean_us == (uint32_t)(total / 4 / 1000));
+    CHECK_TIMING(tel.session.mean_us == (uint32_t)(total / 4 / 1000));
   }
 
   /* A histogram earns its place by separating "one huge stall" from "many
@@ -2046,7 +2079,7 @@ static void test_cb_timing_durations_max_late_and_buckets(void) {
   le_callback_telemetry tel2;
   le_cb_timing_read(&t2, &tel2);
   CHECK(tel2.session.late_periods == 0); /* all marginal: 7/8, none over */
-  CHECK(tel2.session.buckets[LE_CB_BUCKETS - 1] == 4);
+  CHECK_TIMING(tel2.session.buckets[LE_CB_BUCKETS - 1] == 4);
 }
 
 /* A callback bigger than a period is judged against the frames it actually
@@ -2064,10 +2097,10 @@ static void test_cb_timing_oversized_block_scales_its_deadline(void) {
                     LE_CB_TEST_FRAMES * 2u, /*armed=*/0);
   le_callback_telemetry tel;
   le_cb_timing_read(&t, &tel);
-  CHECK(tel.session.calls == 1);
-  CHECK(tel.session.periods == 1);
+  CHECK_TIMING(tel.session.calls == 1);
+  CHECK_TIMING(tel.session.periods == 1);
   CHECK(tel.session.late_periods == 0);
-  CHECK(tel.session.buckets[6] == 1); /* 1.5 of 2 periods = 6/8 */
+  CHECK_TIMING(tel.session.buckets[6] == 1); /* 1.5 of 2 periods = 6/8 */
 }
 
 /* The derived starvation signal, measured against the NOMINAL period: a device
@@ -2092,9 +2125,9 @@ static void test_cb_timing_gap_detector(void) {
 
   le_callback_telemetry tel;
   le_cb_timing_read(&t, &tel);
-  CHECK(tel.session.calls == 4);
-  CHECK(tel.session.gap_events == 1);
-  CHECK(tel.session.max_gap_us == (uint32_t)(period * 3 / 1000));
+  CHECK_TIMING(tel.session.calls == 4);
+  CHECK_TIMING(tel.session.gap_events == 1);
+  CHECK_TIMING(tel.session.max_gap_us == (uint32_t)(period * 3 / 1000));
   CHECK(tel.session.late_periods == 0); /* a starved DEVICE is not slow code */
 }
 
@@ -2131,8 +2164,8 @@ static void test_cb_timing_recovery_gap_is_not_double_counted(void) {
   entry += period * 4;
   le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
   le_cb_timing_read(&t, &tel);
-  CHECK(tel.session.gap_events == 1);
-  CHECK(tel.session.max_gap_us == (uint32_t)(period * 4 / 1000));
+  CHECK_TIMING(tel.session.gap_events == 1);
+  CHECK_TIMING(tel.session.max_gap_us == (uint32_t)(period * 4 / 1000));
 
   /* And the licence EXPIRES: a recovery long ago cannot excuse a stall now.
    * The stamp is deliberately aged past gap_suppress_window_ns. */
@@ -2147,7 +2180,176 @@ static void test_cb_timing_recovery_gap_is_not_double_counted(void) {
   le_callback_telemetry tel2;
   le_cb_timing_read(&t2, &tel2);
   CHECK(tel2.session.xruns[LE_XRUN_PLAYBACK_UNDERRUN] == 1);
-  CHECK(tel2.session.gap_events == 1); /* stale licence: the stall still counts */
+  /* stale licence: the stall still counts */
+  CHECK_TIMING(tel2.session.gap_events == 1);
+}
+
+/* A device reroute or a system audio interruption is a hole in the callback
+ * TIMELINE, not a stall (#722, review finding 5). miniaudio absorbs both
+ * internally — it reinitialises and resumes the data callback without
+ * le_engine_start running again — so the first callback back would otherwise be
+ * measured against the entry stamp from before the hole. Switching the default
+ * output device on macOS mid-session is ~200 ms of that, which used to land as
+ * exactly one phantom gap_event with max_gap_us pinned at 200000 for the rest
+ * of the session. le_engine_start's configure was the ONLY reset before this. */
+static void test_cb_timing_timeline_break_survives_a_reroute(void) {
+  printf("test_cb_timing_timeline_break_survives_a_reroute\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+  const uint64_t period = LE_CB_TEST_PERIOD_NS;
+  const uint64_t quick = LE_CB_TEST_BUCKET_NS / 2;
+
+  /* A healthy run, then a partly-accumulated period service left in flight:
+   * two of the four blocks of the next period have been serviced. */
+  uint64_t entry = 1000;
+  for (int i = 0; i < 3; ++i) {
+    le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, 0);
+    entry += period;
+  }
+  le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES / 4u, 0);
+
+  le_callback_telemetry before;
+  le_cb_timing_read(&t, &before);
+  CHECK_TIMING(before.session.periods == 3);
+  CHECK(before.session.gap_events == 0);
+
+  /* The reroute: presence flips to 0, the notification path breaks the
+   * timeline, and ~200 ms later the callback resumes on the new device. */
+  le_cb_timing_note_timeline_break(&t);
+  entry += 200000000ull;
+  le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, 0);
+
+  le_callback_telemetry tel;
+  le_cb_timing_read(&t, &tel);
+  CHECK(tel.session.gap_events == 0); /* the hole is not a stall */
+  CHECK(tel.session.max_gap_us == 0); /* ... and it pins nothing */
+  /* The in-flight partial service was dropped rather than fused across the
+   * hole: the post-reroute callback covers one whole period on its own, so the
+   * count goes 3 -> 4 (a fused service would still be short of a period and
+   * would leave it at 3, then commit a service carrying the frames and the
+   * work of two different device sessions). */
+  CHECK_TIMING(tel.session.periods == 4);
+  CHECK(tel.session.late_periods == 0);
+
+  /* The break is one-shot: a genuine stall right after the reroute still
+   * counts, or the instrument would go blind for the rest of the session. */
+  entry += period * 3;
+  le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, 0);
+  le_cb_timing_read(&t, &tel);
+  CHECK_TIMING(tel.session.gap_events == 1);
+  CHECK_TIMING(tel.session.max_gap_us == (uint32_t)(period * 3 / 1000));
+
+  /* A break with no callback after it must not strand state, and NULL must not
+   * crash (the notification callback runs before any engine null-check here). */
+  le_cb_timing_note_timeline_break(&t);
+  le_cb_timing_note_timeline_break(&t); /* idempotent */
+  le_cb_timing_note_timeline_break(NULL);
+}
+
+/* Through the engine, on the entry point the miniaudio notification callback
+ * actually calls. */
+static void test_engine_timeline_break_clears_the_gap(void) {
+  printf("test_engine_timeline_break_clears_the_gap\n");
+  le_engine* e = make_configured_engine();
+  le_callback_telemetry tel;
+  le_engine_configure_callback_budget(e, LE_CB_TEST_RATE,
+                                      (int32_t)LE_CB_TEST_FRAMES);
+
+  uint64_t entry = 1000;
+  le_engine_note_callback_span(e, entry, entry + 1000, LE_CB_TEST_FRAMES);
+  le_engine_note_callback_timeline_break(e); /* rerouted / interruption_began */
+  entry += 200000000ull;
+  le_engine_note_callback_span(e, entry, entry + 1000, LE_CB_TEST_FRAMES);
+
+  le_engine_get_callback_telemetry(e, &tel);
+  CHECK(tel.session.gap_events == 0);
+  CHECK(tel.session.max_gap_us == 0);
+  CHECK_TIMING(tel.session.calls == 2);
+
+  le_engine_note_callback_timeline_break(NULL); /* must not crash */
+  le_engine_destroy(e);
+}
+
+/* gap_events is NOT independent of late_periods, and this pins the coupling the
+ * API doc now describes (#722, review finding 6). An entry-to-entry span
+ * contains the previous callback's own duration, so a callback that itself runs
+ * longer than 1.5 nominal periods forces a gap on the next entry by arithmetic
+ * alone — the suppressor only excuses counted BACKEND recoveries, never our own
+ * overrun. No other test crosses the threshold this way:
+ * test_cb_timing_overloaded_split_duplex_reports_late lands at 846 us of
+ * burst-to-burst spacing, just under the 1000 us limit, and asserts 0 gaps. */
+static void test_cb_timing_our_own_overrun_forces_a_gap(void) {
+  printf("test_cb_timing_our_own_overrun_forces_a_gap\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+  const uint64_t period = LE_CB_TEST_PERIOD_NS;
+
+  /* The device is perfect: it hands us the next period the instant we return.
+   * We take two periods over each one, so entry-to-entry is 2 x period — past
+   * the 1.5-period threshold, with no device starvation anywhere in it. */
+  uint64_t entry = 1000;
+  for (int i = 0; i < 4; ++i) {
+    le_cb_timing_note(&t, entry, entry + period * 2u, LE_CB_TEST_FRAMES, 0);
+    entry += period * 2u;
+  }
+
+  le_callback_telemetry tel;
+  le_cb_timing_read(&t, &tel);
+  CHECK_TIMING(tel.session.periods == 4);
+  CHECK_TIMING(tel.session.late_periods == 4); /* we blew the deadline ... */
+  /* ... and that ALONE moved the gap detector: 3 of the 4 entries followed one
+   * of our own overruns (the first has no predecessor). Both numbers up means
+   * "we were slow", not "two separate problems". */
+  CHECK_TIMING(tel.session.gap_events == 3);
+  CHECK_TIMING(tel.session.max_gap_us == (uint32_t)(period * 2 / 1000));
+}
+
+/* What -DLE_CALLBACK_TELEMETRY=0 actually promises, asserted in BOTH builds so
+ * the gate cannot rot into a configuration that compiles and measures nothing
+ * useful — or worse, one that no longer compiles at all (#722, review finding
+ * 4). Gate ON: an overloaded rig is reported. Gate OFF: the timing path is
+ * gone, so nothing at all is accumulated. The per-kind dropout tally is outside
+ * the gate by design and must move either way. */
+static void test_cb_timing_gate_matches_the_build(void) {
+  printf("test_cb_timing_gate_matches_the_build\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+
+  uint64_t entry = 1000;
+  for (int i = 0; i < 4; ++i) {
+    le_cb_timing_note(&t, entry, entry + LE_CB_TEST_PERIOD_NS * 2u,
+                      LE_CB_TEST_FRAMES, /*armed=*/0);
+    entry += LE_CB_TEST_PERIOD_NS * 4u; /* also past the gap threshold */
+  }
+  le_cb_timing_note_xrun(&t, LE_XRUN_PLAYBACK_UNDERRUN, /*armed=*/0);
+
+  le_callback_telemetry tel;
+  le_cb_timing_read(&t, &tel);
+#if LE_CALLBACK_TELEMETRY
+  CHECK(tel.budget_us == (uint32_t)(LE_CB_TEST_PERIOD_NS / 1000));
+  CHECK(tel.session.calls == 4);
+  CHECK(tel.session.periods == 4);
+  CHECK(tel.session.late_periods == 4);
+  CHECK(tel.session.gap_events == 3);
+  CHECK(tel.session.max_us > 0);
+#else
+  /* budget_us still reports the negotiated period — le_cb_timing_configure is
+   * not gated, so a gated build can still say what the deadline WOULD be. */
+  CHECK(tel.budget_us == (uint32_t)(LE_CB_TEST_PERIOD_NS / 1000));
+  CHECK(tel.session.calls == 0);
+  CHECK(tel.session.periods == 0);
+  CHECK(tel.session.late_periods == 0);
+  CHECK(tel.session.gap_events == 0);
+  CHECK(tel.session.max_us == 0);
+  CHECK(tel.session.max_gap_us == 0);
+  for (int i = 0; i < LE_CB_BUCKETS; ++i) CHECK(tel.session.buckets[i] == 0);
+#endif
+  /* Never gated, in either build: the dropout tally is what keeps xrun_count
+   * explainable, and gating it would take the pre-#722 ASIO counter away too. */
+  CHECK(tel.session.xruns[LE_XRUN_PLAYBACK_UNDERRUN] == 1);
 }
 
 /* The two windows: the session one accumulates everything, the armed one only
@@ -2176,22 +2378,23 @@ static void test_cb_timing_armed_window(void) {
 
   le_callback_telemetry tel;
   le_cb_timing_read(&t, &tel);
-  CHECK(tel.armed.periods == 3);
-  CHECK(tel.session.periods == 5);
-  CHECK(tel.session.periods - tel.armed.periods == 2); /* unarmed control */
-  CHECK(tel.armed.late_periods == 1);
-  CHECK(tel.session.late_periods == 1);
-  CHECK(tel.armed.max_us == (uint32_t)(period * 2 / 1000));
+  CHECK_TIMING(tel.armed.periods == 3);
+  CHECK_TIMING(tel.session.periods == 5);
+  /* unarmed control */
+  CHECK_TIMING(tel.session.periods - tel.armed.periods == 2);
+  CHECK_TIMING(tel.armed.late_periods == 1);
+  CHECK_TIMING(tel.session.late_periods == 1);
+  CHECK_TIMING(tel.armed.max_us == (uint32_t)(period * 2 / 1000));
 
   /* A second arm starts the armed window over; the session window does not. */
   le_cb_timing_reset_armed(&t);
   entry += period;
   le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, /*armed=*/1);
   le_cb_timing_read(&t, &tel);
-  CHECK(tel.armed.periods == 1);
+  CHECK_TIMING(tel.armed.periods == 1);
   CHECK(tel.armed.late_periods == 0);
-  CHECK(tel.armed.max_us == (uint32_t)(quick / 1000));
-  CHECK(tel.session.periods == 6);
+  CHECK_TIMING(tel.armed.max_us == (uint32_t)(quick / 1000));
+  CHECK_TIMING(tel.session.periods == 6);
 }
 
 /* le_engine_note_backend_xrun (the ALSA -EPIPE / resync hook and the ASIO
@@ -2218,9 +2421,21 @@ static void test_backend_xrun_kinds_tally_and_reset(void) {
   CHECK(tel.session.xruns[LE_XRUN_CAPTURE_OVERRUN] == 1);
   CHECK(tel.session.xruns[LE_XRUN_PLAYBACK_RESYNC] == 1);
   CHECK(tel.session.xruns[LE_XRUN_BACKEND_OVERLOAD] == 1);
-  /* The out-of-range calls still bumped the flat tally (they were real
-   * dropouts, just unclassifiable) — 7 accepted engine calls in total. */
+  /* THE ONE CASE where the kinds do not sum to xrun_count, asserted rather
+   * than glossed: the two out-of-range calls still bumped the flat tally (they
+   * were real dropouts, just unclassifiable) while landing in no bucket. So 7
+   * accepted engine calls against 5 classified ones. That is the documented
+   * contract in segno_engine_api.h — "the kinds sum to xrun_count for every
+   * kind this build knows" — and NOT the stronger "exactly" the doc used to
+   * claim while this test asserted the opposite. Unreachable today (ALSA
+   * passes 0/1/2, ASIO passes 3); the order is deliberate because the headline
+   * number's job is "a real dropout happened". */
   CHECK(s.xrun_count == 7);
+  {
+    uint64_t classified = 0;
+    for (int k = 0; k < LE_XRUN_KINDS; ++k) classified += tel.session.xruns[k];
+    CHECK(classified == 5);
+  }
 
   /* Not armed, so the armed window saw none of it. */
   CHECK(tel.armed.xruns[LE_XRUN_PLAYBACK_UNDERRUN] == 0);
@@ -2296,10 +2511,11 @@ static void test_callback_span_reaches_the_telemetry_pull(void) {
 
   le_engine_get_callback_telemetry(e, &tel);
   CHECK(tel.budget_us == (uint32_t)(LE_CB_TEST_PERIOD_NS / 1000));
-  CHECK(tel.session.calls == 2);
-  CHECK(tel.session.periods == 2);
-  CHECK(tel.session.late_periods == 1);
-  CHECK(tel.session.max_us == (uint32_t)(LE_CB_TEST_PERIOD_NS * 2 / 1000));
+  CHECK_TIMING(tel.session.calls == 2);
+  CHECK_TIMING(tel.session.periods == 2);
+  CHECK_TIMING(tel.session.late_periods == 1);
+  CHECK_TIMING(tel.session.max_us ==
+               (uint32_t)(LE_CB_TEST_PERIOD_NS * 2 / 1000));
   CHECK(tel.armed.calls == 0); /* never armed */
 
   /* Re-opening the telemetry is a new device session: both windows clear. */
@@ -2329,8 +2545,8 @@ static void test_perf_arm_command_resets_armed_window(void) {
                                LE_CB_TEST_FRAMES);
   atomic_store_explicit(&e->a_perf_armed, 0, memory_order_release);
   le_engine_get_callback_telemetry(e, &tel);
-  CHECK(tel.armed.periods == 1);
-  CHECK(tel.armed.late_periods == 1);
+  CHECK_TIMING(tel.armed.periods == 1);
+  CHECK_TIMING(tel.armed.late_periods == 1);
 
   /* The arm command, applied by the audio thread on the next block. */
   CHECK(le_push(e, LE_CMD_PERF_ARM, 0, 0.0f) == LE_OK);
@@ -2341,7 +2557,7 @@ static void test_perf_arm_command_resets_armed_window(void) {
   CHECK(tel.armed.periods == 0);
   CHECK(tel.armed.late_periods == 0);
   CHECK(tel.armed.max_us == 0);
-  CHECK(tel.session.periods == 1); /* the session window is untouched */
+  CHECK_TIMING(tel.session.periods == 1); /* the session window is untouched */
 
   /* Retract the flag so destroy does not think a capture is live. */
   CHECK(le_push(e, LE_CMD_PERF_DISARM, 0, 0.0f) == LE_OK);
@@ -21457,6 +21673,10 @@ int main(void) {
   test_cb_timing_oversized_block_scales_its_deadline();
   test_cb_timing_gap_detector();
   test_cb_timing_recovery_gap_is_not_double_counted();
+  test_cb_timing_timeline_break_survives_a_reroute();
+  test_engine_timeline_break_clears_the_gap();
+  test_cb_timing_our_own_overrun_forces_a_gap();
+  test_cb_timing_gate_matches_the_build();
   test_cb_timing_armed_window();
   test_backend_xrun_kinds_tally_and_reset();
   test_callback_span_reaches_the_telemetry_pull();

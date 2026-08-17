@@ -19,7 +19,7 @@
 #include <stdlib.h> /* getenv — appliance exclusive-mode check */
 #include <string.h>
 
-#include "engine_internal.h"  /* le_engine_process, le_engine_note_callback_span */
+#include "engine_internal.h"  /* le_engine_process, le_engine_note_callback_span, le_engine_note_callback_timeline_break */
 #include "engine_miniaudio.h" /* le_miniaudio_backend */
 #include "engine_platform.h"  /* le_platform_backends / _before_context_init */
 #include "engine_private.h"   /* struct le_engine, le_find_loopback, le_resolve_device_id */
@@ -101,9 +101,27 @@ static void le_miniaudio_install_xrun_hook(void) {
 #endif /* LE_CALLBACK_TELEMETRY */
 
 /* Device-state notifications from miniaudio. RT-adjacent: stores the presence
- * atomic only — never allocates, locks, or touches the device. A stopped /
- * rerouted / interrupted device flips presence to 0; (re)start / resume flips it
- * back to 1. Recovery from a 0 is the Dart layer's job (A2), not native's. */
+ * atomic and raises the telemetry timeline-break flag — never allocates, locks,
+ * or touches the device. A stopped / rerouted / interrupted device flips
+ * presence to 0; (re)start / resume flips it back to 1. Recovery from a 0 is
+ * the Dart layer's job (A2), not native's.
+ *
+ * The presence-0 cases are also where the callback telemetry's TIMELINE has to
+ * be broken (#722, review finding 5). miniaudio absorbs a reroute and an
+ * interruption INTERNALLY: it reinitialises the device and resumes the data
+ * callback without le_engine_start ever running again, so the first callback
+ * back would otherwise be measured against the entry stamp from before the
+ * hole. One macOS default-output switch mid-session is ~200 ms of silence, and
+ * that would land as a lone gap_event with max_gap_us pinned at 200000 for the
+ * rest of the session — an instrument crying wolf on a rig that is fine, which
+ * is exactly what this feature promises not to do. le_engine_start's configure
+ * was previously the ONLY reset, and none of these three paths reaches it.
+ *
+ * `stopped` is included for the same reason even though the usual route back
+ * from it does reconfigure: the flag is idempotent, costs two relaxed stores,
+ * and "the callbacks stopped coming" is precisely the condition it describes.
+ * The accumulated counts are untouched — a reroute does not undo lateness
+ * measured before it. */
 static void notification_callback(const ma_device_notification* notification) {
   if (notification == NULL || notification->pDevice == NULL) return;
   le_engine* e = (le_engine*)notification->pDevice->pUserData;
@@ -117,6 +135,7 @@ static void notification_callback(const ma_device_notification* notification) {
     case ma_device_notification_type_rerouted:
     case ma_device_notification_type_interruption_began:
       atomic_store_explicit(&e->a_device_present, 0, memory_order_relaxed);
+      le_engine_note_callback_timeline_break(e);
       break;
     default:
       break;

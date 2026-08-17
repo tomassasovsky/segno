@@ -46,14 +46,38 @@ void le_engine_note_backend_xrun(le_engine* engine, int32_t kind);
 
 /* Records one device-callback span, [entry_ns, exit_ns) over `frames`, taken
  * with le_now_ns around the backend's call into le_engine_process (#722).
- * `frames` is this callback's own block size, which is what its deadline is
- * derived from — see le_cb_timing_note for why the device's period is the wrong
- * number. Called ON the audio thread from the backend's data callback and
- * RT-safe by construction (engine_telemetry.h). Exposed here (rather than
- * poking engine->cb_timing) so a backend TU need not touch the _Atomic struct,
- * and so native tests can feed synthetic spans. Not part of the FFI surface. */
+ * `frames` is this callback's own block size, which is NOT its own deadline:
+ * the duplex loop splits one hardware period across several callbacks, so
+ * le_cb_timing_note sums consecutive spans into one PERIOD SERVICE and judges
+ * that total against the frames it covered. The nominal period seeded by
+ * le_engine_configure_callback_budget is the batching unit and the gap
+ * threshold; `frames` only tells the accumulator how much of one this callback
+ * carried. (Deriving a per-callback deadline from `frames` alone is exactly the
+ * false positive that fix 1be46380 removed — a 16-frame tail block would get
+ * 166 us for overhead a 64-frame block absorbs inside 666 us, and would read as
+ * late on perfectly healthy hardware.) Called ON the audio thread from the
+ * backend's data callback and RT-safe by construction (engine_telemetry.h).
+ * Exposed here (rather than poking engine->cb_timing) so a backend TU need not
+ * touch the _Atomic struct, and so native tests can feed synthetic spans. Not
+ * part of the FFI surface. */
 void le_engine_note_callback_span(le_engine* engine, uint64_t entry_ns,
                                   uint64_t exit_ns, uint32_t frames);
+
+/* Breaks the callback TIMELINE without touching the accumulated measurements:
+ * the next callback reports no entry-to-entry gap and starts a fresh period
+ * service (#722, review finding 5). Called from the device-notification path
+ * whenever the callback stream is about to be interrupted — a stop, a device
+ * reroute, or a system audio interruption — because miniaudio reinitialises
+ * internally and resumes the data callback with the PRE-stall entry stamp still
+ * held. Without this, one macOS default-device switch mid-session manufactures
+ * a single ~200 ms gap: gap_events goes to 1 and max_gap_us stays pinned there
+ * for the rest of the device session, violating the "healthy rig reads zeros"
+ * constraint and sending the bench after a phantom stall.
+ *
+ * Safe off ANY thread: it only raises a flag the audio thread consumes, so the
+ * timeline fields keep their single-writer ownership (see engine_telemetry.h).
+ * Not part of the FFI surface. */
+void le_engine_note_callback_timeline_break(le_engine* engine);
 
 /* Opens a fresh callback-telemetry session at the negotiated `sample_rate` and
  * NOMINAL `period_frames`: clears both windows AND the flat a_xruns tally (they
