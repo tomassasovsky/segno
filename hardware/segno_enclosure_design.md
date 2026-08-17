@@ -374,6 +374,53 @@ beats a metal one. 10 A / 250 V AC, far above this job.
 > unchanged so this change does not move the internal stack, but it is now
 > vestigial.
 
+### The rear bay — where the Pi went (#743)
+
+Removing the window did not just change the wall; it changed what has to fit
+*behind* it. The Pi used to sit at `(BOARD_ANCHOR_U, bd − 56)`, putting its PCB
+port edge **3.5 mm** off the plate's rear edge — correct while a window existed,
+because its own USB/Ethernet stack poked through. With the window gone that stack
+faces solid folded metal, and those 3.5 mm are exactly where nine connector bodies
+and their wiring now live.
+
+`REAR_CONN_DEPTH` = **45 mm**: deepest body ≈30 (D-series TRS, fuse holder), solder
+lugs ≈5, wire bend ≈10.
+
+**Sliding it straight forward was not the answer.** It fixed the depth but parked
+the Pi on top of the main board with 4.3 mm of head, which made the bespoke 35.3 mm
+riser load-bearing — one taller connector on the board and it fails.
+
+**Moving it sideways, onto the floor under the 16" screen, is strictly better.**
+Final position `(SCREEN_16_U, bd − 103)` = **u 625.3, v 316**:
+
+| | |
+|---|---|
+| clear bay behind it | **50.5 mm** (≥45 gated) |
+| PCB footprint | u 597…653, v 283…369 — entirely inside the screen bay (u 454…796, v 178…371) |
+| free height under the screen module | **72 mm** against a **36.6 mm** stack |
+| stacked over anything | **nothing** |
+
+That bay was simply empty: the main board, the buck and both mid-row pedestals all
+sit left of u 454. And because nothing is stacked, **the bespoke riser disappears** —
+`PI_RISER_H` drops from 35.3 to `STANDOFF_H` (15), the same plain M2.5 standoff the
+main board uses. One fastener kind instead of two, a lower stack, more air over it,
+and it now sits directly in front of the rear exhaust vents.
+
+Cost, for the record: the run to the USB couplers gets ~250 mm longer, and the 7"
+HDMI lengthens while the 16" shortens.
+
+> **The buck stays where it is, and that is correct.** It sits inside the 45 mm
+> bay, but its clearance is *vertical*: connectors are centred `REAR_IO_Z` up the
+> wall, so the lowest metal on the widest of them is at **z 29.8**, and the buck is
+> a 22.1-tall brick bolted flat to the floor — it passes 7.7 mm underneath. The Pi
+> could not do that trick on a riser, which is what forced it to move in plan.
+> Gated, so it is not a shrug.
+
+Four gates hold all of this, each negative-controlled: rear-bay depth, no stacking
+(**in both axes** — an earlier version checked only `v` and fired on a Pi 400 mm
+away in `u`), the Pi footprint staying inside the screen bay, and the stack fitting
+under the screen module.
+
 **Ventilation** (Pi 5 ≤ 12 W; Active Cooler ramps 60/67.5/75 °C): a rear exhaust
 vent block + a bottom-plate intake array give ≈ 17 000 mm² open area (`>` the
 4 000 mm² floor the `VENT_FREE_AREA` assertion checks). The Pi mounts on **M3

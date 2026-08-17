@@ -418,7 +418,8 @@ USB3_CORNER_R = _rr_from_corner_circle(USB3_CUT_SQ, USB3_CORNER_D + 2*USB3_FIT)
 # the TRS to D-series took its keep-out from 16 to 30.4 and squeezed the gaps to
 # 7.2 mm on the old 290 strip. The vents give the width back -- they run at 4x the
 # free-area minimum, and _check() holds that.
-BOARD_ANCHOR_U = 175.0  # board / Pi / buck datum. NOT the connector cluster.
+BOARD_ANCHOR_U = 175.0  # main board / buck datum. NOT the connector cluster,
+                        # and since #743 not the Pi either -- see pi_mount().
 REAR_IO_SPAN   = 360.0  # cluster width; REAR_IO_Z set below (= wall mid-height)
 REAR_IO_U      = 210.0  # left-justified against EDGE (defined further down, so this
                         # is written out; _check() asserts EDGE + SPAN/2 == it)
@@ -440,6 +441,13 @@ PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M2.5)
 # in the Base build; in the Pi build a Raspberry Pi rides alongside, linked over USB.
 BOARD_HOLES = (85.0, 87.0)    # M3 mount rectangle (measured, THT Pro Micro V1)
 BOARD_SIZE  = (94.0, 96.0)    # board outline (for the 3D render)
+PI_TALLEST  = 20.0            # tallest thing on the Pi (USB-A stack / cooler)
+BOARD_STACK_H = 16.0          # PCB + the tallest thing on it (Pro Micro on its
+                              # header, JST shrouds). Same 16 the 3D render
+                              # blocks it out at. #743 made this load-bearing:
+                              # moving the Pi forward slid it OVER the board, so
+                              # PI_RISER_H - (STANDOFF_H + this) is the only gap
+                              # between them, and _check() holds it >= 3.
 # --- rubber feet (issue #743) -------------------------------------------------
 # Screw-on, M4 from inside the case. The head therefore lands on the plate's TOP
 # face, so no fixing may sit under a pedestal -- the rings have to seat flat on
@@ -488,11 +496,12 @@ D           = FACE_RUN + TRANS_RUN + 2*T  # overall depth: +2T so the bottom pla
 # transition DROPS from the peak down to the shorter Rear panel at the very back.
 REAR_WALL_H = H_REAR - TRANS_DROP     # Rear panel height (reduced; below the peak)
 REAR_IO_Z   = REAR_WALL_H / 2.0       # connector cluster centreline up the rear wall
-# The Pi risers were sized so its rear port stack CENTRED in the old I/O window.
-# #743 deleted that window, so this height no longer serves an alignment -- it is
-# kept unchanged (35.30) only so the internal stack does not move as a side effect
-# of a rear-panel change. Dropping the Pi to plain standoffs is a separate call.
-PI_RISER_H  = REAR_IO_Z - PI_STACK_MID
+# The Pi used to ride bespoke 35.3 mm risers, sized so its rear port stack centred
+# in the old I/O window. #743 deleted the window, and moving the Pi under the 16"
+# screen (see pi_mount) took away the second reason -- it no longer has to clear
+# the main board either. So it drops to the SAME plain M2.5 standoffs the board
+# uses: one fastener kind instead of two, a lower stack, and more air over it.
+PI_RISER_H  = STANDOFF_H
 SLOPE_DROP  = H_REAR - H_FRONT
 L_SLOPE     = math.hypot(FACE_RUN, SLOPE_DROP)            # Top-plate sloped length
 SLOPE_ANGLE = math.degrees(math.atan2(SLOPE_DROP, FACE_RUN))
@@ -645,6 +654,10 @@ def _row1_u(i):
 # encoder): the gap between pedals 1 and 2, so the whole column sits above that gap.
 COL_U = (_row1_u(0) + _row1_u(1)) / 2.0
 
+# Centre-line of the 16" screen: over the four TRACK pedals (row-1 right group).
+# Hoisted out of faceplate_holes() because the Pi now mounts under it (#743).
+SCREEN_16_U = (_row1_u(4) + _row1_u(7)) / 2.0
+
 # CLEAR/BANK ride row 2, aligned in u with UNDO (i=2) and MODE (i=3).
 PEDALS = [(_ROW1[i], _row1_u(i), PEDAL_ROW1_V) for i in range(8)] + [
     ("CLEAR", _row1_u(2), PEDAL_ROW2_V), ("BANK", _row1_u(3), PEDAL_ROW2_V)]
@@ -787,7 +800,7 @@ def faceplate_holes():
                      "ref": label + "_LEDSLOT"})
     # --- screens: top edges aligned on SCREEN_TOP_V ------------------------
     cuts.append({"kind": "rect", "u": COL_U - SMALL_W/2.0, "v": SCREEN_TOP_V - SMALL_H, "w": SMALL_W, "h": SMALL_H, "ref": "SCREEN_7IN"})
-    s16_uc = (_row1_u(4) + _row1_u(7)) / 2.0    # centre over the 4 track pedals (row-1 right group)
+    s16_uc = SCREEN_16_U                        # centre over the 4 track pedals (row-1 right group)
     cuts.append({"kind": "rect", "u": s16_uc - BIG_W/2.0, "v": SCREEN_TOP_V - BIG_H, "w": BIG_W, "h": BIG_H, "ref": "SCREEN_16IN"})
     # --- encoder + diffused ring: on the OLD row-2 centre line (ENC_V -- it does
     #     NOT follow CLEAR/BANK rearward, see the PEDAL_ROW2_V note), and on
@@ -1146,6 +1159,55 @@ def _check():
         assert 0 <= lo_u and hi_u <= W and 0 <= lo_z and hi_z <= REAR_WALL_H, \
             f"REAR_BOUNDS: {c['ref']} outside the rear wall (z<= {REAR_WALL_H:.0f})"
 
+    # 8a. the rear bay has to be deep enough for the connectors that now live in
+    # it. The Pi is the thing that reaches furthest back, so it is what gets held.
+    _bd = D - 2*T
+    _pu, _pv, _ = pi_mount()
+    _pcb_rear = _pv + 52.5
+    _clear = _bd - _pcb_rear
+    assert _clear >= REAR_CONN_DEPTH, (
+        f"REAR_BAY: only {_clear:.1f} mm between the Pi's port edge and the rear "
+        f"wall, need {REAR_CONN_DEPTH:.0f} for the connector bodies + wiring")
+    # The BUCK still sits inside that bay (v to bd-31), and that is fine -- but for
+    # a 3D reason, not a planar one, so it gets its own gate rather than a shrug.
+    # The connectors are centred REAR_IO_Z up the wall; the lowest metal on the
+    # widest of them is REAR_IO_Z - keepout/2. The buck is a 22.1-tall brick bolted
+    # flat to the floor, so it passes UNDERNEATH them. The Pi cannot do the same --
+    # it rides a 35.3 riser straight into that band, which is why it had to move in
+    # plan and the buck did not.
+    _lowest = REAR_IO_Z - max(kw for _cu, kw in rear_io_layout().values())/2.0
+    assert BUCK_BODY[2] + 5.0 <= _lowest, (
+        f"REAR_BAY: the buck is {BUCK_BODY[2]:.1f} tall and the lowest connector "
+        f"metal is at z={_lowest:.1f} -- it no longer passes under them")
+
+    # The Pi must not be stacked over anything -- that is the whole reason it moved
+    # under the 16" screen rather than straight forward, and it is what lets the
+    # bespoke riser reduce to a plain standoff. Test in BOTH axes: an earlier
+    # version of this gate checked only v and fired on a Pi 400 mm away in u.
+    _pi = (_pu - 28.0, _pu + 28.0, _pv - 32.5, _pv + 52.5)      # PCB 56 x 85
+    _b = board_mounts()[0]                                       # (ref, u, v, holes)
+    _bku, _bkv, _ = buck_mount()
+    for _nm, _o in (("main board", (_b[1] - BOARD_SIZE[0]/2.0, _b[1] + BOARD_SIZE[0]/2.0,
+                                    _b[2] - BOARD_SIZE[1]/2.0, _b[2] + BOARD_SIZE[1]/2.0)),
+                    ("buck",       (_bku - BUCK_BODY[0]/2.0, _bku + BUCK_BODY[0]/2.0,
+                                    _bkv - BUCK_BODY[1]/2.0, _bkv + BUCK_BODY[1]/2.0))):
+        if _pi[0] < _o[1] and _o[0] < _pi[1] and _pi[2] < _o[3] and _o[2] < _pi[3]:
+            _head = PI_RISER_H - (STANDOFF_H + BOARD_STACK_H)
+            assert _head >= 3.0, (
+                f"REAR_BAY: Pi overlaps the {_nm} in plan with only {_head:.1f} mm "
+                "of head -- raise PI_RISER_H or move the Pi clear in u")
+    # ...and it has to actually fit under the 16" screen module it now lives beneath
+    _s16 = {c["ref"]: c for c in faceplate_holes()[0]}["SCREEN_16IN"]
+    assert (_s16["u"] <= _pi[0] and _pi[1] <= _s16["u"] + _s16["w"]
+            and _s16["v"] <= _pi[2] and _pi[3] <= _s16["v"] + _s16["h"]), (
+        f"REAR_BAY: Pi footprint {_pi} is not inside the 16in screen bay "
+        f"({_s16['u']:.0f}..{_s16['u']+_s16['w']:.0f}, {_s16['v']:.0f}..{_s16['v']+_s16['h']:.0f})")
+    _free = lid_under_z(_pv) - BIG_DEPTH
+    _stack = PI_RISER_H + 1.6 + PI_TALLEST
+    assert _stack + 8.0 <= _free, (
+        f"REAR_BAY: Pi stack {_stack:.1f} + 8 clearance does not fit the {_free:.1f} mm "
+        "left under the 16in screen module")
+
     # 8b. rear I/O cluster (#743). Each station reserves the width of its NUT or
     # FLANGE, not its hole, so a spanner fits; those keep-outs must not overlap
     # each other, must stay on the wall, and must clear the vent block.
@@ -1251,22 +1313,38 @@ def board_mounts():
     bw, bd = W - 2*T, D - 2*T
     return [("MAIN_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
 
-# Pi build only: the Raspberry Pi rides four M2.5 risers (PI_RISER_H tall) so its rear-edge
-# USB/Ethernet stack lines up with the rear I/O window. It sits at the wall, centred on the
-# window, ports facing out -- above and behind the main board, so the two never clash.
+# Depth the rear wall needs behind it, clear of everything, for the panel-mount
+# connectors and their wiring (#743). Deepest body is ~30 (D-series TRS, fuse
+# holder), then solder lugs stick out ~5 and the wire wants ~10 of bend before it
+# turns -- so 45 is the floor and the Pi is placed at ~50.
+REAR_CONN_DEPTH = 45.0
+
+# Pi build only: the Raspberry Pi rides four M2.5 risers (PI_RISER_H tall), sitting
+# ABOVE the main board and the buck so none of the three clash.
 # Returns (centre_u, centre_depth, (u_span, depth_span)) for the 58x49 Pi 4 hole pattern.
 # NOTE the Pi 4's hole pattern is NOT centred on the board: along the 85 mm length the
 # holes sit 3.5/61.5 mm from the SD edge, i.e. the pattern centre is 10 mm SD-ward of the
-# board centre; the PCB port edge is centre_depth + 52.5 and the connector faces ~4 mm
-# beyond that. Depth is bounded by the rear SUB-PANEL, which bolts against the wall's
-# INSIDE face (plate T mm thick): the PCB edge must stop short of that plate -- only the
-# connector bodies pass through its port-block cutout. bd - 56 leaves the PCB edge
-# ~1.4 mm clear of the plate and the connector faces recessed ~1.4 mm inside the wall's
-# outer skin: nothing protrudes past the panel. (bd - 42 put the PCB 8+ mm out through
-# the window; even bd - 52 left the PCB crossing the sub-panel plane.)
+# board centre; the PCB port edge is centre_depth + 52.5.
+#
+# #743 MOVED IT, twice. It used to sit at (BOARD_ANCHOR_U, bd - 56), which put the
+# PCB port edge 3.5 mm off the plate's rear edge -- correct while a window existed,
+# because the Pi's own USB/Ethernet stack poked through it. With the window gone
+# that stack faces solid folded metal, and those 3.5 mm are where nine connector
+# bodies and their wiring now live.
+#
+# Sliding it straight forward fixed the depth but put it on top of the main board,
+# leaving 4.3 mm of head and making the bespoke riser load-bearing. Moving it
+# SIDEWAYS instead, to the floor under the 16" screen, is strictly better: that bay
+# is empty (board, buck and both mid pedestals are all left of the screen), the
+# screen module is only BIG_DEPTH deep so ~72 mm of interior stays free beneath it,
+# and it sits right in front of the rear exhaust vents. Nothing is stacked over
+# anything, so the riser reduces to a plain standoff.
+#
+# Cost, for the record: the run to the USB couplers gets ~250 mm longer. The 16"
+# HDMI gets shorter, the 7" longer.
 def pi_mount():
     bd = D - 2*T
-    return (BOARD_ANCHOR_U, bd - 56.0, (PI_HOLES[1], PI_HOLES[0]))   # 49 across u, 58 along depth
+    return (SCREEN_16_U, bd - 103.0, (PI_HOLES[1], PI_HOLES[0]))     # 49 across u, 58 along depth
 
 # External 5V buck: eleUniverse 8-36V -> 5V 10A 50W IP67 potted brick (Amazon
 # B0GGHN97TK; envelope 63.8 x 57.7 x 22.1 incl. mounting ears, 116 g, passive

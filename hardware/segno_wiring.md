@@ -133,10 +133,14 @@ Unchanged from the standalone pedal design (`segno_pedal_pcb_design.md`):
 - **Audio interface** — external USB audio interface on a **rear** Pi USB-A port (line
   in/out live outside the box); the rear ports stay free for it because the internal
   devices are on the hat.
-- **Front I/O flush at the rear panel** — the Pi rides 38 mm risers so its rear-edge
-  port stack (USB-A ×2 + Gigabit Ethernet) sits flush in the rear-wall window. The
-  other Pi edge (USB-C power, micro-HDMI) faces inward; those cables route internally
-  to the external buck / screens / USB hat.
+- **Position (#743)** — the Pi moved to the floor **under the 16" screen**
+  (u 625, v 316), 50.5 mm clear of the rear wall. There is no longer a window for
+  its port stack to reach, and that space is now the connector bay. Its own
+  USB-A / Ethernet / HDMI / SD face inward and are **not reachable without opening
+  the case** — by intent. Nothing is stacked over it, so it drops from bespoke
+  35.3 mm risers to the **same plain 15 mm M2.5 standoffs as the main board**.
+  Cable consequence: ~250 mm more to the rear USB couplers, shorter 16" HDMI,
+  longer 7" HDMI.
 
 ---
 
