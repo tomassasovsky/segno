@@ -208,10 +208,47 @@ fully internal.
 
 ## 4. Rear I/O & ventilation
 
-Rear wall (`u` = 0…846, `z` = 0…100): **9 V barrel** (Ø12) · **power/shutdown
-button** (Ø16) · **fuse** (Ø12) · **USB-A ×2** (the external audio interface +
-stick/MIDI) · **M6 earth/bond stud** · a **louvre vent block**. No audio aperture,
-no pedal-cable slot — the audio interface is **external**.
+Rear wall (`u` = 0…846, `z` = 0…90). **There is no I/O window and no bolt-on
+sub-panel** (#743): the Pi moved inboard and every connector is a panel-mount
+part fitted straight into the welded wall. Losing HDMI / Ethernet / SD access
+from outside is deliberate — reflashing or a wired network means opening the case.
+
+Nine stations on one centreline at `REAR_IO_Z` (= wall mid-height, 45), left to
+right, power first and away from signal:
+
+| ref | cutout | keep-out | note |
+|---|---|---|---|
+| `9V_DC` | Ø12 | 18 | barrel jack nut |
+| `POWER` | Ø16 | 22 | shutdown button — the Pi still needs a clean stop |
+| `FUSE` | Ø12 | 18 | |
+| `MIDI_IN` / `MIDI_OUT` | Ø16 + 2 × Ø3.2 @ 22 | 28.4 | DIN-5; **IN needs opto-isolation on the board**, not here |
+| `CTRL_1` / `CTRL_2` | Ø10 | 16 | 6.35 mm **TRS** external control |
+| `USB3_1` / `USB3_2` | 22.1 square, **R8.64** | 28.5 | flange Ø28.5 is the keep-out, not the hole |
+
+The keep-out column is the **nut, bezel or flange a spanner has to clear**, not
+the hole — for the USB coupler that is 6.4 mm wider than its own cutout, and
+spacing on cutouts alone would have the two flanges fouling. `rear_io_layout()`
+spreads the nine across `REAR_IO_SPAN` (290, exactly the strip the old window
+occupied, so the vents, board and Pi never moved) with **equal clear gaps**,
+which come out at 10.78 mm. Gates: no two keep-outs overlap, none crosses the
+`EDGE` margin, the gap to the first vent column still fits the earth stud plus a
+spanner, and the widest keep-out leaves 4 mm of wall above and below.
+
+The USB corner radius is **derived, not typed**: `_rr_from_corner_circle()` solves
+the user-measured 22.1-across-flats / Ø24.1-across-corners pair, giving R8.636 and
+only 4.83 mm of straight edge — that cutout is much closer to a circle than to a
+square, which is worth knowing before someone "fixes" it.
+
+> **Provisional.** `D_TRS`, `MIDI_BODY_D` and `MIDI_SCREW_PITCH` are catalogue
+> figures awaiting calipers on the parts in hand. The USB 3.0 numbers are
+> user-measured and are **not** provisional.
+>
+> **Fallout to settle separately:** the `nopi` build (external host, HDMI ×2 +
+> USB touch ×2) had no home but that window, so it is **retired** — an
+> external-host variant would now need its own rear-wall DXF. And `PI_RISER_H`
+> (35.30) existed only to centre the Pi's port stack in the window; it is kept
+> unchanged so this change does not move the internal stack, but it is now
+> vestigial.
 
 **Ventilation** (Pi 5 ≤ 12 W; Active Cooler ramps 60/67.5/75 °C): a rear exhaust
 vent block + a bottom-plate intake array give ≈ 17 000 mm² open area (`>` the
@@ -244,10 +281,12 @@ two platform rows (air crosses the boards to the rear-wall exhaust); and 4 rubbe
 feet. The electronics are reached from the **open top** once the lid is lifted.
 
 **Rubber feet (#743).** Screw-on, not adhesive — glue lets go eventually on a
-thing that gets kicked. The part is a **Ø18 × 7 mm screw-on rubber foot**
-(cutting-board style, stainless screw supplied); the plate gets a plain **Ø4.5
-clearance hole** and the screw is driven **downward from inside** the case, so
-its head lands on the plate's *top* face. That head is the whole reason the
+thing that gets kicked. The part is a **uxcell buffer foot, Ø18 (chassis face) ×
+Ø15 (floor) × 5 mm tall**, rubber with a **metal washer insert** so the screw
+pulls against metal rather than rubber. The screw is **not supplied** — an M4 ×
+~12 self-tapping pan head. The plate gets a plain **Ø4.5 clearance hole** and the
+screw is driven **downward from inside** the case, so its head lands on the
+plate's *top* face. That head is the whole reason the
 stations sit where they do: at `FOOT_INSET_X` = 14.3 they are **outboard of the
 pedestal tubs** (which start at x 24.6), so no ring floor and no sled needs
 relieving to clear a screw head. `foot_relief_xy()` reports any fixing that lands
@@ -335,7 +374,8 @@ the assertions re-validate before re-cutting every panel.
 | M4 screws (+ ~6 nuts) | ~12 | lid skirt: 6 side (into PEM) + 6 front/rear (screw + nut) |
 | M3 standoffs (≥10 mm) | ~6 | Pi / board, airflow gap |
 | M6 earth stud + hardware | 1 | chassis bond |
-| Rubber feet (Ø18 × 7, screw-on) | 4 | bottom, `FOOT_INSET_X/Y` |
+| Rubber feet (uxcell Ø18×15×5, screw-on) | 4 | bottom, `FOOT_INSET_X/Y`; screws not supplied |
+| M4 × 12 self-tapping pan head | 4 | foot fixings, driven from inside |
 | Screen-retention brackets | 4 + 4 | from `segno_screen_bracket` |
 | Diffuser disc (ring) + 12 THT LEDs | 1 | encoder ring |
 

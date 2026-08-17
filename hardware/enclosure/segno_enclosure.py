@@ -297,13 +297,38 @@ D_BARREL  = 12.0     # 9 V DC barrel jack nut
 D_PWRBTN  = 16.0     # power / shutdown button
 D_FUSE    = 12.0     # panel fuse holder
 D_GND     = 6.5      # M6 earth / bond stud
-D_HDMI    = (16.0, 8.0)  # HDMI Type-A panel cutout (w,h)
-D_USB     = (14.0, 7.0)  # USB-A panel cutout (w,h)
-D_PI_IO   = (54.0, 17.0) # Raspberry Pi rear-edge port stack (2x USB-A + RJ45) cutout (w,h)
-# Rear connector WINDOW: a fixed opening in the welded rear wall, closed by a SWAPPABLE
-# I/O sub-panel that carries the version-specific connectors (Pi vs no-Pi).
-REAR_WIN_W = 290.0; REAR_WIN_H = 46.0    # window opening (w,h)
-REAR_WIN_U = 175.0                        # window centre u; REAR_WIN_Z set below (= wall mid-height)
+# Issue #743. The Pi moved inboard and its port WINDOW came out, so there is no
+# opening in the rear wall and no swappable I/O sub-panel any more: every
+# connector is a panel-mount part fitted straight into the welded wall. Losing
+# HDMI / Ethernet / SD access from outside is deliberate -- whatever the build
+# needs comes back out through the connectors below.
+D_TRS     = 10.0     # 6.35 mm TRS jack bushing (external control pedals)
+USB3_SQ       = 22.1 # USB 3.0 panel coupler: square cutout side (user-measured)
+USB3_CORNER_D = 24.1 # ...whose corners lie on this circle -> radius derived below
+USB3_FLANGE_D = 28.5 # flange OD. This, not the cutout, is the real keep-out
+MIDI_BODY_D      = 16.0  # DIN-5 socket body bore
+MIDI_SCREW_PITCH = 22.0  # DIN-5 fixing centres, horizontal
+MIDI_SCREW_D     = 3.2   # M3 clearance for those
+# PROVISIONAL until the parts are in hand and calipered: D_TRS, MIDI_BODY_D,
+# MIDI_SCREW_PITCH. The USB 3.0 numbers are user-measured and are NOT provisional.
+
+def _rr_from_corner_circle(side, corner_d):
+    """Corner radius of a rounded square of `side` whose corner arcs are tangent
+    to a circle of diameter `corner_d` -- i.e. that circle passes through the
+    corners. Solves (side/2 - r)*sqrt(2) + r = corner_d/2 for r."""
+    a, rr = side/2.0, corner_d/2.0
+    r = (a*math.sqrt(2) - rr) / (math.sqrt(2) - 1.0)
+    assert 0.0 < r <= a, (
+        f"USB3: corner circle {corner_d} is not compatible with a {side} square "
+        f"(derived corner radius {r:.2f})")
+    return r
+
+USB3_CORNER_R = _rr_from_corner_circle(USB3_SQ, USB3_CORNER_D)
+
+# Connector cluster: it occupies exactly the strip the old window did, so the
+# vent block, the board and the Pi keep the positions they were laid out at.
+REAR_IO_SPAN = 290.0  # cluster width; REAR_IO_Z set below (= wall mid-height)
+REAR_IO_U    = 175.0  # cluster centre u -- ALSO the anchor the board/Pi/buck use
 
 # --- ventilation / mounting ---------------------------------------------------
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
@@ -314,7 +339,7 @@ STANDOFF_H  = 15.0            # under-board gap: the THT leads + buck-module hea
                               # airflow; 15mm (standard M3 brass) restores the margin
 PI_STACK_MID = 9.7            # USB/RJ45 stack centreline above the Pi PCB BOTTOM
                               # (1.6 PCB + ~8.1 to the middle of the 16mm-tall stack);
-                              # PI_RISER_H is derived from it below REAR_WIN_Z
+                              # PI_RISER_H is derived from it below REAR_IO_Z
 PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M2.5)
 # Main board = the manufactured V1 THT Pro Micro board (the segno_pedal_main THT design,
 # git 794eb48; the later SMD 328P+16U2 redesign is discarded). Measured from its KiCad:
@@ -332,12 +357,13 @@ BOARD_SIZE  = (94.0, 96.0)    # board outline (for the 3D render)
 # (y 405..419), not the front, so the 24.6 mm margin outboard of the end tubs is
 # free. Moving the fixings into it removes the interference instead of
 # accommodating it -- and widens the stance from 756 to 817 mm as a bonus.
-D_FOOT       = 4.5   # M4 clearance for the foot screw. The foot is a screw-on
-                     # rubber Ø18 x 7 (cutting-board style, stainless screw
-                     # supplied); the screw goes DOWN from inside, so the head
-                     # sits on the plate's top face -- hence the clear-of-every-
-                     # pedestal rule below rather than a countersink, which a
-                     # 2.0 mm plate cannot take without a knife edge.
+D_FOOT       = 4.5   # M4 clearance for the foot screw. The foot is a uxcell
+                     # buffer foot, Ø18 (chassis face) x Ø15 (floor) x 5 tall,
+                     # rubber with a metal washer insert; the screw is NOT
+                     # supplied and goes DOWN from inside, so the head sits on
+                     # the plate's top face -- hence the clear-of-every-pedestal
+                     # rule below rather than a countersink, which a 2.0 mm
+                     # plate cannot take without leaving a knife edge.
 FOOT_INSET_X = 14.3  # from each side. Window is 8.2..20.4: bend relief (RI+T) +
                      # hole radius at the low end, tub edge 24.6 at the high end.
                      # _check() holds it inside that, and holds every fixing clear
@@ -368,12 +394,12 @@ D           = FACE_RUN + TRANS_RUN + 2*T  # overall depth: +2T so the bottom pla
 # Profile A: the Top plate rises to the PEAK at its rear edge (H_REAR), then the angled
 # transition DROPS from the peak down to the shorter Rear panel at the very back.
 REAR_WALL_H = H_REAR - TRANS_DROP     # Rear panel height (reduced; below the peak)
-REAR_WIN_Z  = REAR_WALL_H / 2.0       # I/O window centred vertically on the rear wall
-# Pi build: risers lift the Pi so its rear port stack CENTRES in the I/O window
-# (window centre = REAR_WIN_Z up the wall ~= the same height above the bottom
-# plate). The old hardcoded 33.0 left the stack ~2.3mm low - the USB shells'
-# bottom edge hid behind the sub-panel cutout edge.
-PI_RISER_H  = REAR_WIN_Z - PI_STACK_MID
+REAR_IO_Z   = REAR_WALL_H / 2.0       # connector cluster centreline up the rear wall
+# The Pi risers were sized so its rear port stack CENTRED in the old I/O window.
+# #743 deleted that window, so this height no longer serves an alignment -- it is
+# kept unchanged (35.30) only so the internal stack does not move as a side effect
+# of a rear-panel change. Dropping the Pi to plain standoffs is a separate call.
+PI_RISER_H  = REAR_IO_Z - PI_STACK_MID
 SLOPE_DROP  = H_REAR - H_FRONT
 L_SLOPE     = math.hypot(FACE_RUN, SLOPE_DROP)            # Top-plate sloped length
 SLOPE_ANGLE = math.degrees(math.atan2(SLOPE_DROP, FACE_RUN))
@@ -686,62 +712,70 @@ def faceplate_holes():
     # that bear on the underside -- they add NO holes here, keeping the top face clean.
     return cuts, engr
 
+# Rear I/O stations, LEFT to RIGHT along the wall, with the KEEP-OUT width each
+# one needs -- the nut, bezel or flange a fitter has to get a spanner around, NOT
+# the hole. That distinction matters for the USB 3.0 coupler, whose flange (28.5)
+# is 6.4 wider than its own 22.1 cutout; spacing on cutouts alone would have the
+# two couplers' flanges fouling each other.
+REAR_IO_STATIONS = [
+    ("9V_DC",    D_BARREL + 6.0),                        # power first, at the far
+    ("POWER",    D_PWRBTN + 6.0),                        # left, away from signal
+    ("FUSE",     D_FUSE + 6.0),
+    ("MIDI_IN",  MIDI_SCREW_PITCH + 2*MIDI_SCREW_D),     # DIN-5 fixings set the
+    ("MIDI_OUT", MIDI_SCREW_PITCH + 2*MIDI_SCREW_D),     # width, not the bore
+    ("CTRL_1",   D_TRS + 6.0),
+    ("CTRL_2",   D_TRS + 6.0),
+    ("USB3_1",   USB3_FLANGE_D),
+    ("USB3_2",   USB3_FLANGE_D),
+]
+
+def rear_io_layout():
+    """Centre u of every connector station, spread across REAR_IO_SPAN with EQUAL
+    clear gaps between keep-outs (not equal centres -- the stations are different
+    widths). Returns {ref: (centre_u, keepout_w)}."""
+    total = sum(w for _r, w in REAR_IO_STATIONS)
+    gap = (REAR_IO_SPAN - total) / (len(REAR_IO_STATIONS) - 1)
+    out, x = {}, REAR_IO_U - REAR_IO_SPAN/2.0
+    for ref, w in REAR_IO_STATIONS:
+        out[ref] = (x + w/2.0, w)
+        x += w + gap
+    return out
+
 def rear_holes():
-    """Rear WALL features (welded, version-independent): the connector WINDOW (closed by a
-    swappable I/O sub-panel), bolt holes around it, fixed exhaust vents and an earth stud.
-    The version-specific connectors live on the sub-panel, NOT the wall. u=0..W, z=0..REAR_WALL_H."""
-    u, z = REAR_WIN_U, REAR_WIN_Z
-    cuts = [{"kind": "rect", "u": u-REAR_WIN_W/2, "v": z-REAR_WIN_H/2,
-             "w": REAR_WIN_W, "h": REAR_WIN_H, "ref": "IO_WINDOW"}]
-    for du in (-REAR_WIN_W/2-9, REAR_WIN_W/2+9):                 # 4 bolt holes around the window
-        for dz in (-REAR_WIN_H/2-9, REAR_WIN_H/2+9):
-            cuts.append({"kind": "circle", "u": u+du, "v": z+dz, "d": D_M3, "ref": "IO_BOLT"})
-    # Evenly fill the rear wall: matching margins (window left margin = vent right margin = EDGE,
-    # and the window->vents gap = EDGE), with the vent columns evenly pitched across the span.
+    """Rear WALL features (welded): the panel-mount connector cluster (#743), the
+    fixed exhaust vents and the earth stud. There is NO I/O window and no bolt-on
+    sub-panel -- the Pi sits inboard and is not reachable from outside, by
+    intent. u=0..W, z=0..REAR_WALL_H."""
+    z = REAR_IO_Z
+    at = rear_io_layout()
+    cuts = []
+    for ref, d in (("9V_DC", D_BARREL), ("POWER", D_PWRBTN), ("FUSE", D_FUSE),
+                   ("CTRL_1", D_TRS), ("CTRL_2", D_TRS)):
+        cuts.append({"kind": "circle", "u": at[ref][0], "v": z, "d": d, "ref": ref})
+    for ref in ("MIDI_IN", "MIDI_OUT"):
+        cu = at[ref][0]
+        cuts.append({"kind": "circle", "u": cu, "v": z, "d": MIDI_BODY_D, "ref": ref})
+        for s in (-1, 1):                                  # DIN-5 fixings, horizontal
+            cuts.append({"kind": "circle", "u": cu + s*MIDI_SCREW_PITCH/2.0, "v": z,
+                         "d": MIDI_SCREW_D, "ref": ref + "_SCR"})
+    for ref in ("USB3_1", "USB3_2"):                       # square, heavily radiused
+        cu = at[ref][0]
+        cuts.append({"kind": "rect", "u": cu - USB3_SQ/2.0, "v": z - USB3_SQ/2.0,
+                     "w": USB3_SQ, "h": USB3_SQ, "r": USB3_CORNER_R, "ref": ref})
+    # Vents fill the wall to the RIGHT of the cluster: cluster right edge + EDGE to
+    # the wall's EDGE margin, columns evenly pitched to land exactly on both.
     sl = VENT_SLOT[0]
-    v_l = u + REAR_WIN_W/2 + EDGE                                # first vent column (EDGE gap after window)
-    v_r = W - EDGE                                               # last column's right edge (EDGE margin)
+    cl_r = REAR_IO_U + REAR_IO_SPAN/2.0                    # cluster right edge
+    v_l = cl_r + EDGE                                      # first vent column
+    v_r = W - EDGE                                         # last column's right edge
     ncol = max(2, round((v_r - v_l - sl) / (sl + 8.0)) + 1)
-    cp = (v_r - v_l - sl) / (ncol - 1)                          # exact pitch so the block fills v_l..v_r
-    cuts.append({"kind": "circle", "u": (u+REAR_WIN_W/2 + v_l)/2.0, "v": REAR_WALL_H/2.0,
-                 "d": D_GND, "ref": "EARTH_STUD"})              # earth stud centred in the window->vents gap
-    vr = 7                                                       # rows, centred on the wall mid-height
+    cp = (v_r - v_l - sl) / (ncol - 1)
+    cuts.append({"kind": "circle", "u": (cl_r + v_l)/2.0, "v": REAR_WALL_H/2.0,
+                 "d": D_GND, "ref": "EARTH_STUD"})         # centred in that gap
+    vr = 7                                                 # rows, centred on mid-height
     vz0 = REAR_WALL_H/2.0 - ((vr-1)*VENT_PITCH + VENT_SLOT[1])/2.0
     cuts += _vent_array(u0=v_l, z0=vz0, cols=ncol, rows=vr, cp=cp)
     return cuts
-
-def rear_panel_holes(variant):
-    """Connector cutouts for the swappable rear I/O sub-panel, in PANEL-LOCAL coords
-    (origin = window centre). 'pi' = on-board Pi; 'nopi' = external host (screens out)."""
-    hw, hh = D_HDMI; uw, uh = D_USB
-    pwr = [{"kind": "circle", "u": -120, "v": 0, "d": D_BARREL, "ref": "9V_DC"},
-           {"kind": "circle", "u":  -82, "v": 0, "d": D_PWRBTN, "ref": "POWER"},
-           {"kind": "circle", "u":  -44, "v": 0, "d": D_FUSE,   "ref": "FUSE"}]
-    if variant == "pi":
-        # The Raspberry Pi rides a riser so its rear-edge port stack reaches the window;
-        # ONE block exposes that stack directly (2x USB-A + Gigabit Ethernet), centred.
-        pio_w, pio_h = D_PI_IO
-        return pwr + [
-            {"kind": "rect", "u": -pio_w/2, "v": -pio_h/2, "w": pio_w, "h": pio_h, "ref": "PI_USB_ETH"}]
-    return pwr + [        # nopi: external host -> 2x HDMI (16"+7") + 2x USB touch
-        {"kind": "rect", "u":   2-hw/2, "v": -hh/2, "w": hw, "h": hh, "ref": "HDMI_16"},
-        {"kind": "rect", "u":  42-hw/2, "v": -hh/2, "w": hw, "h": hh, "ref": "HDMI_7"},
-        {"kind": "rect", "u":  84-uw/2, "v": -uh/2, "w": uw, "h": uh, "ref": "USB_TOUCH_16"},
-        {"kind": "rect", "u": 120-uw/2, "v": -uh/2, "w": uw, "h": uh, "ref": "USB_TOUCH_7"}]
-
-def dxf_rear_panel(path, variant):
-    """Swappable rear I/O sub-panel: a plate that closes the rear WINDOW (with a bolt-on
-    overlap) carrying the version's connector cutouts. Built per variant ('pi'/'nopi')."""
-    doc = _doc(); msp = doc.modelspace(); ov = 15.0   # overlap: bolts (+9 from window) clear the panel edge by >=4mm
-    pw, ph = REAR_WIN_W + 2*ov, REAR_WIN_H + 2*ov
-    _poly(msp, [(-pw/2,-ph/2), (pw/2,-ph/2), (pw/2,ph/2), (-pw/2,ph/2)], "CUT")
-    _emit(msp, rear_panel_holes(variant))
-    for du in (-REAR_WIN_W/2-9, REAR_WIN_W/2+9):                 # bolt holes match the wall
-        for dz in (-REAR_WIN_H/2-9, REAR_WIN_H/2+9):
-            _circle(msp, du, dz, D_M3)
-    label = "Pi: 9V+btn+fuse+USB-A x2" if variant == "pi" else "no-Pi: 9V+btn+fuse+HDMI x2+USB-touch x2"
-    _text(msp, -pw/2+4, ph/2+6, 6, f"Segno REAR I/O PANEL ({variant})  2.0mm  x1  {label}  PROVISIONAL", "NOTE")
-    doc.saveas(path); return {}
 
 def _vent_array(u0, z0, cols, rows, cp=None):
     """A block of louvre slots; returns rect features on the VENT layer. cp = column pitch."""
@@ -1002,6 +1036,32 @@ def _check():
             lo_u, hi_u, lo_z, hi_z = c["u"], c["u"]+c["w"], c["v"], c["v"]+c["h"]
         assert 0 <= lo_u and hi_u <= W and 0 <= lo_z and hi_z <= REAR_WALL_H, \
             f"REAR_BOUNDS: {c['ref']} outside the rear wall (z<= {REAR_WALL_H:.0f})"
+
+    # 8b. rear I/O cluster (#743). Each station reserves the width of its NUT or
+    # FLANGE, not its hole, so a spanner fits; those keep-outs must not overlap
+    # each other, must stay on the wall, and must clear the vent block.
+    lay = rear_io_layout()
+    boxes = sorted(((cu - kw/2.0, cu + kw/2.0, ref) for ref, (cu, kw) in lay.items()))
+    for (a_lo, a_hi, a_ref), (b_lo, b_hi, b_ref) in zip(boxes, boxes[1:]):
+        assert a_hi <= b_lo + 1e-9, (
+            f"REAR_IO: {a_ref} and {b_ref} keep-outs overlap by "
+            f"{a_hi - b_lo:.2f} mm -- their nuts/flanges would foul")
+    assert boxes[0][0] >= EDGE - 1e-9, (
+        f"REAR_IO: {boxes[0][2]} keep-out starts at u={boxes[0][0]:.1f}, inside "
+        f"the {EDGE:.0f} mm edge margin")
+    # the gap to the vent block carries the earth stud (D_GND) and still has to
+    # leave a spanner's width either side of it
+    _v_l = min(c["u"] for c in rear if c["ref"] == "VENT")
+    _gap = _v_l - boxes[-1][1]
+    assert _gap >= D_GND + 2*8.0, (
+        f"REAR_IO: only {_gap:.1f} mm between {boxes[-1][2]} and the first vent "
+        f"column -- the earth stud (Ø{D_GND}) and its spanner do not fit")
+    # every station has to fit BETWEEN the wall's top and bottom edges too -- the
+    # USB coupler flange is the tall one, and the wall is only REAR_WALL_H
+    _tall = max(kw for _cu, kw in lay.values())
+    assert _tall <= REAR_WALL_H - 2*4.0, (
+        f"REAR_IO: widest keep-out {_tall:.1f} does not leave 4 mm of wall above "
+        f"and below on a {REAR_WALL_H:.0f} mm wall")
     return True
 
 def _bottom_vents_local(bw, bd):
@@ -1029,14 +1089,14 @@ def _bottom_vents():
 # REAR strip of the bottom plate is the clear floor for the electronics. ONE main
 # board (the V1 segno_pedal_main) mounts there on M3 standoffs (>= STANDOFF_H for
 # airflow). 16" screen above is shallow -> clears it.
-# Offset 25 mm off the rear I/O window axis (REAR_WIN_U), AWAY from the CLEAR/BANK
+# Offset 25 mm off the rear I/O cluster axis (REAR_IO_U), AWAY from the CLEAR/BANK
 # platform column: the Pro Micro's USB socket faces that platform, and centring the
 # board left only ~6 mm to it — not enough for a USB-C/micro plug body. The offset
 # buys ~37 mm to the platform slot edge. Sat forward of the rear wall to leave room
 # for the Raspberry Pi, which (in the Pi build) tucks behind the board with its port
 # cluster out the window. The mid-row platforms clear the rear strip, so depth is
 # generous. (Only the Pi needs to stay centred on the window — see pi_mount.)
-BOARD_U = REAR_WIN_U - 25.0
+BOARD_U = REAR_IO_U - 25.0
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
     return [("MAIN_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
@@ -1056,7 +1116,7 @@ def board_mounts():
 # the window; even bd - 52 left the PCB crossing the sub-panel plane.)
 def pi_mount():
     bd = D - 2*T
-    return (REAR_WIN_U, bd - 56.0, (PI_HOLES[1], PI_HOLES[0]))   # 49 across u, 58 along depth
+    return (REAR_IO_U, bd - 56.0, (PI_HOLES[1], PI_HOLES[0]))   # 49 across u, 58 along depth
 
 # External 5V buck: eleUniverse 8-36V -> 5V 10A 50W IP67 potted brick (Amazon
 # B0GGHN97TK; envelope 63.8 x 57.7 x 22.1 incl. mounting ears, 116 g, passive
@@ -1069,7 +1129,7 @@ BUCK_EAR_SPACING = 56.0       # ear hole centres along the long axis — PROVISI
                               # until the unit arrives; drill to the real part
 def buck_mount():
     bd = D - 2*T
-    return (REAR_WIN_U + 125.0, bd - 60.0, BUCK_EAR_SPACING)
+    return (REAR_IO_U + 125.0, bd - 60.0, BUCK_EAR_SPACING)
 
 # ===========================================================================
 # DXF  (ezdxf)
@@ -2346,14 +2406,12 @@ PAINT_FINISH = "Negro texturado mate (RAL 9005) - a confirmar contra cupon de mu
 
 # dxf stem, label (ES), qty per unit, material, remark (ES).
 # segno_overlay is a printed adhesive graphic, NOT metal -- it is never painted.
-# segno_rear_panel_nopi is the ALTERNATIVE to _pi, so only one ships per unit.
 # segno_screen_bracket is NOT here: the screens are bonded to the shell instead of
 # clamped, so the brackets are never manufactured (they stay in DXF_PARTS as the
 # fallback if bonding is abandoned).
 PAINT_BOM = [
     ("segno_base",               "Cuerpo: piso + frente + laterales + trasera", 1, AL_2MM, "Pieza mas grande"),
     ("segno_faceplate",          "Tapa superior (faceplate)",                   1, AL_2MM, "Cara vista principal"),
-    ("segno_rear_panel_pi",      "Panel trasero de I/O",                        1, AL_2MM, "Intercambiable"),
     ("segno_corner_bracket_rear","Angulo de esquina trasera",                   2, AL_2MM, "Interno"),
     ("segno_ring_disc",          "Disco central del aro de LEDs",               1, AL_2MM, "Interno"),
     ("segno_post",               "Poste de apoyo de la tapa",                   2, ST_16,  "ACERO: otro pretratamiento"),
@@ -2543,7 +2601,7 @@ def report():
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
       f"(case top flush with the slot's upper rim, pad +{PEDAL_PAD_T:.1f} above, #373)  [PROVISIONAL]")
     P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 15.6in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
-    P(f"Rear I/O        : 9V + btn + fuse + [pi: Pi USB/Ethernet block | nopi: 2xHDMI+2xUSB] + vents + earth")
+    P(f"Rear I/O        : 9V + btn + fuse + 2x MIDI DIN-5 + 2x TRS + 2x USB3 + vents + earth (no window)")
     P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents()):.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
     P("-"*68)
     P(f"Faceplate cutouts : {len(cuts)}  |  rear-wall cutouts : {len(rear_holes())}")
@@ -2734,8 +2792,6 @@ DXF_PARTS = [
     ("segno_screen_bracket",   dxf_screen_bracket),
     ("segno_ring_disc",        dxf_ring_disc),                        # LED-ring centre disc
     ("segno_corner_bracket_rear",  lambda p: dxf_corner_bracket(p, CORNER_HT, CORNER_ZR_WALL, CORNER_ZR_SIDE, "REAR x2")),
-    ("segno_rear_panel_pi",    lambda p: dxf_rear_panel(p, "pi")),    # swappable rear I/O
-    ("segno_rear_panel_nopi",  lambda p: dxf_rear_panel(p, "nopi")),
     ("segno_post",             dxf_post),  # base-anchored faceplate support post x2 (issue #292)
 ]
 NO_PDF = set()   # every sheet part ships with a PDF drawing
@@ -2761,7 +2817,7 @@ def build_quote_packages():
     pack("segno_sheetmetal.zip", sheet, (".dxf", ".pdf"))
     pack("segno_sheetmetal_step.zip",
          ["segno_assembly", "segno_base", "segno_faceplate", "segno_screen_bracket",
-          "segno_corner_bracket_rear", "segno_rear_panel_pi", "segno_ring_disc",
+          "segno_corner_bracket_rear", "segno_ring_disc",
           "segno_post"],
          (".step",))
     pack("segno_3dprint.zip",

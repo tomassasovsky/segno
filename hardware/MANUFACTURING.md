@@ -15,7 +15,6 @@ STEPs incl. the folded assembly).
 | `segno_base` | 1 | ONE folded blank: floor + 4 walls + rear transition. Weld-free (corner brackets rivet). |
 | `segno_faceplate` | 1 | Sloped lid, full-width blank. Fold conventions in the drawing NOTE (chirality matters). |
 | `segno_corner_bracket_rear` | 2 | Internal L-brackets; ONE part serves both corners (left = flipped). |
-| `segno_rear_panel_pi` | 1 | Rear I/O sub-panel (Pi build). `segno_rear_panel_nopi` is the alternate build — order one or the other. |
 | `segno_screen_bracket` | 8 | 4 per screen (16" + 7"). |
 | `segno_ring_disc` | 1 | Encoder LED-ring centre disc. |
 
