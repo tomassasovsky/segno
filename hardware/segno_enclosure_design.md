@@ -1,6 +1,6 @@
 # Segno — sheet-metal enclosure for the segno Pi loopstation
 
-A wedge-shaped welded console that houses this repo's standalone build
+A wedge-shaped folded-aluminium console that houses this repo's standalone build
 (a Raspberry Pi + the V1 [`segno_pedal_main`](segno_pedal_pcb_design.md) board)
 and **integrates ten foot pedals
 into the chassis** the way the real "Chewie II" / Sonnit reference does. Form
@@ -34,15 +34,13 @@ validated by an in-generator **assertion suite** (see §8). Decisions came from
 | Top slope | **12.5°** | sloped length 407 mm |
 | Material | **2.0 mm 5052-H32 aluminium** | bend R 2.0, K 0.33 |
 
-> ⚠️ **"Welded" in this section is stale and contradicts the buildable spec.**
-> `MANUFACTURING.md` and `dxf_base()` both describe `segno_base` as **ONE folded
-> blank — floor + 4 walls + rear transition, weld-free, corner brackets rivet**.
-> Nothing in the generator emits a weld. Every "welded" below should read
-> "folded"; the prose has not been swept. Tracked separately — do not quote a
-> fabricator from this paragraph.
-
-**Construction = welded lower body + removable top lid.** The front wall, rear
-wall, two sides and the bottom plate are **welded** into a rigid tray; the
+**Construction = folded lower body + removable top lid.** **Nothing on this build
+is welded.** `segno_base` is ONE flat blank: the bottom plate in the centre with
+the front, rear and both side walls as flaps that fold up 90° on its four bottom
+edges, and the rear flap folding a second time into the transition shoulder. The
+four vertical corners are open butt seams closed by **riveted internal
+L-brackets**. That keeps the whole shell inside a cut + bend + powder-coat
+instant quote, with no fabrication step that needs a welder. The
 **faceplate is a removable lid**. The faceplate is **not a bare plate** — it is a
 shallow pan whose front lip, rear edge and **both sides fold down into skirt
 flanges**, and the **screws go through those skirt flanges**, never through the
@@ -51,21 +49,21 @@ top flanges** (a support ledge), and M4 screws pass through each **wall web** in
 the down-turned **lid skirt** behind it — so every fixing sits on a vertical face
 (front lip + the two sides), hidden from the playing surface. Lifting the lid takes
 the **screens, the encoder/ring PCB and the indicator LEDs** with it, while the
-**pedals stay on their welded platforms** in the lower body (the slots clear the
+**pedals stay on their printed platforms** in the lower body (the slots clear the
 pedals straight up) — so service is "back out the side + front-lip screws and lift
 the lid," and the Pi/board are reached from the open top.
 
 ```
-  REMOVABLE TOP LID                       WELDED LOWER BODY
+  REMOVABLE TOP LID                       FOLDED LOWER BODY (weld-free)
   └ faceplate pan (cutouts) + down-turned ├ front wall (12) + top flange (lid ledge)
     front/side/rear skirt flanges +       ├ rear wall (100) + I/O + vents + top flange
     screens + encoder/ring PCB + LEDs     ├ 2× side panel + top flange (lid ledge)
-    (screws through the skirts)           ├ bottom plate (welded, vented, Pi/board)
-                                          └ 10× inner pedal platform (welded) + pedals
+    (screws through the skirts)           ├ bottom plate (centre of the blank)
+                                          └ 10× printed ring + sled + pedals
 ```
 
-Joints are `WELD`-layer callouts, not modelled beads. Per-edge intent: the wall
-**bottom edges weld** to the bottom plate; the wall+side **top edges fold** to an
+Per-edge intent: the wall **bottom edges fold** up from the bottom plate (they are
+the same piece of metal, so there is no joint at all); the wall+side **top edges fold** to an
 inward flange that the lid **rests on** (support ledge, no fixings on the top face);
 the lid's **down-turned skirt flanges** take M4 screws driven horizontally through
 the **wall webs** (front lip + both sides), so no fixing ever pierces the faceplate
@@ -232,7 +230,7 @@ right, power first and away from signal:
 | `FUSE` | Ø12 | 18 | |
 | `MIDI_IN` / `MIDI_OUT` | Ø15.1 + 2 × Ø3.2 @ 22 | 28.4 | REAN NYS325; **IN needs opto-isolation on the board**, not here |
 | `CTRL_1` / `CTRL_2` | **Ø24**, fixings **not cut** | 30.4 | **D-series** punch, not a threaded bushing |
-| `USB3_1` / `USB3_2` | 22.1 square, **R8.64** | 28.5 | flange Ø28.5 is the keep-out, not the hole |
+| `USB3_1` / `USB3_2` | 22.5 square, **R8.84** | 28.5 | flange Ø28.5 is the keep-out, not the hole |
 
 The keep-out column is the **nut, bezel or flange a spanner has to clear**, not
 the hole — for the USB coupler that is 6.4 mm wider than its own cutout, and
@@ -254,10 +252,17 @@ layout exactly where it was, so a rear-panel change cannot move anything inside.
 The width comes out of the vent block, which drops 70 → 63 slots and still runs at
 14 880 mm² against a 4 000 minimum.
 
-The USB corner radius is **derived, not typed**: `_rr_from_corner_circle()` solves
-the 22.1-across-flats / Ø24.1-across-corners pair, giving R8.636 and only 4.83 mm
-of straight edge — that cutout is much closer to a circle than to a square, which
-is worth knowing before someone "fixes" it.
+**22.1 / 24.1 are the coupler's BODY, not the hole it wants**, so the cutout is
+body + `USB3_FIT` = **0.2 per side → 22.5 across flats, 24.5 across corners**.
+That is deliberately the tight end of a panel fit, because the errors are not
+symmetric: too tight is one hole eased with a file in a minute, while too loose
+either rattles under the Ø28.5 flange or — if the coupler turns out to be a
+snap-in — never grips, and that cannot be undone on a cut blank.
+
+The corner radius is **derived, not typed**: `_rr_from_corner_circle()` solves the
+across-flats / across-corners pair, giving **R8.836** and only 4.83 mm of straight
+edge — that cutout is much closer to a circle than to a square, which is worth
+knowing before someone "fixes" it.
 
 **The D-series fixings are deliberately NOT cut.** Its two M3 sit on *diagonally
 opposite* corners of the flange, not on a horizontal pair, and no sourced
@@ -290,12 +295,6 @@ added without declaring where its numbers came from. Currently unconfirmed:
 **`D_TRS_SCREW_PITCH`** and **`MIDI_SCREW_PITCH`** — the bores are sourced, the
 fixing pitches are not.
 
-> **Open, and it decides whether the USB cutout is right:** are 22.1 / 24.1 the
-> coupler's **body** or the **panel cutout** it wants? Cut at nominal a
-> body-sized coupler will not enter; open it up and a snap-in coupler will not
-> grip. `USB3_FIT` = 0 (nominal, as measured) until the part is in hand — this
-> cannot be guessed safely in either direction.
->
 > **Fallout to settle separately:** the `nopi` build (external host, HDMI ×2 +
 > USB touch ×2) had no home but that window, so it is **retired** — an
 > external-host variant would now need its own rear-wall DXF. And `PI_RISER_H`
@@ -309,9 +308,14 @@ vent block + a bottom-plate intake array give ≈ 17 000 mm² open area (`>` the
 standoffs ≥ 10 mm** off the bottom plate for under-board airflow and Active-Cooler
 intake.
 
-**Grounding:** welded joints are continuous, but powder-coat is an insulator — the
-bottom-plate perimeter pads are **masked (un-coated)** for chassis bond, and the
-rear earth stud provides the bond point.
+**Grounding:** the shell is FOLDED, so walls and bottom plate are literally the
+same piece of metal — continuous by construction, no joint to bond across. The
+joints that *do* exist are the four riveted corner brackets, and those are
+mechanical: powder coat is an insulator, so a rivet through two coated faces is
+not a reliable bond. Corner-bracket **faying surfaces must be masked** along with
+the bottom-plate perimeter pads, and the rear earth stud is the bond point.
+(Previously this paragraph argued from "welded joints are continuous" — true of a
+welded shell, and not the shell that gets built.)
 
 ---
 
@@ -326,8 +330,8 @@ side-by-side). The **EC11 ring board** mounts to the
 faceplate underside behind the encoder cutout; the **screens** clamp to the
 faceplate from behind (`screen_bracket`).
 
-The **bottom plate** (`board_mounts()` drives the patterns) is **welded** to the
-wall bottom edges (part of the lower body) and carries: the **Pi** (58 × 49) and
+The **bottom plate** (`board_mounts()` drives the patterns) is the CENTRE of the
+folded blank — the wall bottom edges are its own fold lines, not a joint — and carries: the **Pi** (58 × 49) and
 **`segno_pedal_main` board** (85 × 87 M3, measured from its KiCad)
 standoff holes in the rear; an **intake-vent block** in the clear gap between the
 two platform rows (air crosses the boards to the rear-wall exhaust); and 4 rubber
@@ -352,13 +356,15 @@ the tub edge. Stance is 817 × 329.
 ## 6. Sheet-metal notes
 
 - Folded edges (wall bottom flanges): 90°, inside R = `t` = 2.0, **K 0.33** → bend
-  allowance 4.18 mm. Welded edges get a weld gap, no allowance.
+  allowance 4.18 mm. The vertical corner seams are open butt joints (relief hole
+  each) closed by riveted L-brackets, so they take no allowance.
 - **PEM:** clinch hole Ø6.3 (distinct from M4 Ø4.3 clearance), ≥ 8 mm edge distance
   — the **18 mm side skirt flanges** host them, so the lid threads straight onto the
   side screws; the **wall webs** get Ø4.3 clearance, and the shallow **9 mm front lip**
   is a clearance hole + nut (too short for a clinch nut).
-- DXF layers: `CUT` (thru) · `BEND` (score) · `WELD` (callout) · `VENT` ·
-  `ENGRAVE` · `NOTE`.
+- DXF layers: `CUT` (thru) · `BEND` (score) · `VENT` · `ENGRAVE` · `NOTE`.
+  There is no `WELD` layer: it was declared in all seven DXFs and **empty in every
+  one** — a vestige of the original welded-shell plan — so it was removed.
 - Finish: deburr → powder coat (mask bond pads).
 
 ---

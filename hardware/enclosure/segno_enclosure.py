@@ -10,12 +10,12 @@ SMD LED-strip status indicators (WS2812B segments behind diffuser slots) and a
 Construction (see ../segno_enclosure_design.md and
 ../../docs/plan/2026-06-27-feat-segno-enclosure-rework-plan.md):
 
-  WELDED LOWER BODY (one rigid tray)        REMOVABLE TOP LID
+  FOLDED LOWER BODY (one rigid tray)        REMOVABLE TOP LID
   - front wall (12) + top flange (ledge)    - faceplate pan (sloped top, all cutouts)
   - rear wall (100) + I/O + vents + flange    + down-turned front/side/rear skirts
   - 2x side panel + top flange (ledge)        (lid screws on the SKIRTS, not the top)
-  - bottom plate (welded, vented, Pi/board) - 2x screen-retention bracket
-  - 10x inner pedal platform (welded)
+  - bottom plate (folded, vented, Pi/board) - 2x screen-retention bracket
+  - 10x inner pedal platform (3D printed)
 
 Foot controls = ten Cherub WTB-006 footswitches (109.87x76.35, 29.3 mm tall with
 anti-slip pads; caliper-measured, see hardware/cherub_wtb006_pedal/) standing
@@ -29,7 +29,7 @@ so "the generator runs" means the geometry is valid (width budget, no overlappin
 cutouts, platform head-room, screen depth, vent free-area, bezel overlap).
 
 Outputs (./out, mm): STEP (assembly + per-part), DXF flat patterns
-(CUT/BEND/ENGRAVE/WELD/VENT layers), PDF drawing sheets.
+(CUT/BEND/ENGRAVE/VENT layers), PDF drawing sheets.
 
 Run with the bundled venv (cadquery + ezdxf + matplotlib):
     .venv/bin/python segno_enclosure.py            # check + STEP + DXF + PDF
@@ -341,8 +341,8 @@ REAR_IO_PROVENANCE = {
     "D_TRS_SCREW_PITCH": "UNCONFIRMED: D-series M3 pair is diagonal, pattern not sourced -- NOT CUT",
     "D_TRS_KEEPOUT":     "design: bore + room for the M3 pair once it is known",
     "D_TRS_SCREW_D":     "datasheet: D-series fixings are M3",
-    "USB3_SQ":           "measured: user, across flats",
-    "USB3_CORNER_D":     "measured: user, across corners",
+    "USB3_SQ":           "measured: user, coupler BODY across flats",
+    "USB3_CORNER_D":     "measured: user, coupler BODY across corners",
     "USB3_FLANGE_D":     "measured: user, flange OD",
     "MIDI_BODY_D":       "datasheet: REAN NYS325, Ø15.1 panel cutout (Farnell/CPC)",
     "MIDI_SCREW_PITCH":  "UNCONFIRMED: NYS325 fixing pitch not sourced",
@@ -355,12 +355,12 @@ def rear_io_unconfirmed():
     return {k: globals()[k] for k, v in REAR_IO_PROVENANCE.items()
             if v.startswith("UNCONFIRMED")}
 
-# OPEN, and it decides whether the USB cutout is right: are 22.1 / 24.1 the
-# coupler's BODY or the panel CUTOUT it wants? Cut at nominal (below) a body-sized
-# coupler will not enter, and a snap-in coupler in an oversized hole will not grip
-# -- so this cannot be guessed safely in either direction. Left at nominal, which
-# is what was measured, until the part is in hand.
-USB3_FIT = 0.0
+# 22.1 / 24.1 are the coupler's BODY, so the hole has to be bigger than both or
+# the part will not enter at all. 0.2 per side is deliberately the TIGHT end of a
+# panel fit: the errors are not symmetric. Too tight is one hole eased with a file
+# in a minute; too loose either rattles under the Ø28.5 flange or, if the coupler
+# turns out to be a snap-in, never grips and cannot be undone on a cut blank.
+USB3_FIT = 0.2
 
 def _rr_from_corner_circle(side, corner_d):
     """Corner radius of a rounded square of `side` whose corner arcs are tangent
@@ -713,7 +713,7 @@ _POST_FOOT_VP = _POST_VP - POST_FOOTL/2.0                   # foot-bolt depth (f
 
 def faceplate_holes():
     """All faceplate features. Pedal slots have NO mounting holes (the pedals
-    stand on internal welded platforms). u=player L->R, v=front->rear."""
+    stand on internal printed platforms). u=player L->R, v=front->rear."""
     cuts, engr = [], []
     # --- 10 pedal slots (two rows); a status LED pill above EVERY pedal --------
     for label, u, v in PEDALS:
@@ -902,7 +902,7 @@ def _check():
                 continue
             assert not _overlap(a, b), f"NO_OVERLAP: {ra} intersects {rb}"
 
-    # everything must sit inside the usable faceplate (margin from welded edges)
+    # everything must sit inside the usable faceplate (margin from folded edges)
     for ref, b in boxes:
         assert b[0] >= 8 and b[2] <= FP_W - 8 and b[1] >= 8 and b[3] <= FP_V - 8, \
             f"BOUNDS: {ref} outside the faceplate usable area"
@@ -1256,7 +1256,6 @@ def _doc():
     doc.layers.add("BEND", color=4, linetype="DASHED")
     doc.layers.add("ENGRAVE", color=3)
     doc.layers.add("VENT", color=7)
-    doc.layers.add("WELD", color=6)
     doc.layers.add("NOTE", color=8)
     doc.layers.add("SILK", color=5)    # silkscreen (printed labels)
     # MASK is annotation, never cut: rings around the features the powder coater
@@ -1362,7 +1361,8 @@ def dxf_base(path):
     """ONE-PIECE BASE developed as a SINGLE flat blank: the bottom plate in the centre,
     with the FRONT, REAR and both SIDE walls as flaps that fold UP 90 deg on the four
     bottom edges (folding up from the flat bottom works at any front height). Corners
-    are welded butt seams with a small relief hole each. The rear flap has a SECOND fold
+    are OPEN butt seams with a small relief hole each, closed by riveted internal
+    L-brackets -- nothing on this build is welded. The rear flap has a SECOND fold
     = the transition shoulder. The lid drops in on top, screwed at the front + rear."""
     doc = _doc(); msp = doc.modelspace()
     BW, BD = W - 2*T, D - 2*T               # bottom plate (folds up to ~W x D outer)
@@ -2495,7 +2495,7 @@ def dxf_to_pdf(dxf_path, pdf_path, title="", material="2.0 mm 5052-H32 Al", qty=
     fig.text(0.04, 0.045, "Segno loopstation enclosure", fontsize=12, weight="bold")
     fig.text(0.04, 0.022,
              f"{title}   |   {material}   |   qty {qty}   |   units mm   |   "
-             f"CUT(thru) · BEND(score) · WELD · VENT · ENGRAVE   |   bend R {RI:.1f}",
+             f"CUT(thru) · BEND(score) · VENT · ENGRAVE   |   bend R {RI:.1f}",
              fontsize=9, color="#333")
     fig.savefig(pdf_path, dpi=150); plt.close(fig)
 
@@ -2701,7 +2701,7 @@ def report():
     P(f"Envelope        : {W:.0f} W x {D:.0f} D x {H_REAR:.0f} H mm (front lip {H_FRONT:.0f})")
     P(f"Top slope       : {SLOPE_ANGLE:.2f}deg, sloped length {L_SLOPE:.1f} mm")
     P(f"Material        : {T:.1f} mm 5052-H32 Al, bend R {RI:.1f}, K={KF}, BA90 {BA90:.2f}")
-    P(f"Construction    : welded lower body + REMOVABLE TOP LID (faceplate carries")
+    P(f"Construction    : folded weld-free lower body + REMOVABLE TOP LID (faceplate carries")
     P(f"                  screens + encoder/ring PCB + LEDs; pedals stay on platforms)")
     P("-"*68)
     n1 = sum(1 for _, _, v in PEDALS if v == PEDAL_ROW1_V)
@@ -2746,7 +2746,7 @@ def layout_svg(path):
          f'<rect width="{Wv:.0f}" height="{Hv:.0f}" fill="#0f1623"/>',
          f'<text x="{M}" y="{M-12}" fill="#94a3b8" font-size="12" font-weight="600">'
          f'Segno TOP FACEPLATE — player view · {W:.0f} x {D:.0f} x {H_REAR:.0f} mm · '
-         f'welded shell · slope {SLOPE_ANGLE:.1f}deg</text>',
+         f'folded shell · slope {SLOPE_ANGLE:.1f}deg</text>',
          f'<rect x="{M}" y="{M}" width="{fw:.1f}" height="{fh:.1f}" rx="9" '
          'fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>']
     for c in cuts:

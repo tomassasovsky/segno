@@ -130,18 +130,24 @@ Unchanged from the standalone pedal design (`segno_pedal_pcb_design.md`):
 
 ## 5. Rear panel mapping
 
-The welded rear wall has a fixed **window**; a bolt-in **sub-panel** carries the
-build-specific cutouts:
+Since #743 there is **no window and no sub-panel**. The rear wall is a folded face
+of `segno_base`, and every connector is a panel-mount part fitted directly into
+it. Nine stations on one centreline, left to right:
 
-- **Both builds:** 9 V barrel, power/shutdown button, fuse, an earth stud, and the
-  exhaust vent array beside the window.
-- **Pi build sub-panel:** one **port-block cutout** framing the Pi's USB-A ×2 +
-  Ethernet directly.
-- **Base build sub-panel:** **2× HDMI** (video in for the two screens) + **2× USB**
-  (touch out to the external host).
+| station | qty | wiring note |
+|---|---|---|
+| 9 V barrel | 1 | DC-099, 30 V / 10 A |
+| power / shutdown button | 1 | the Pi still needs a clean stop |
+| fuse | 1 | |
+| MIDI DIN-5 | 2 | IN + OUT. **IN is opto-isolated on the board** — the socket alone is not enough |
+| TRS 6.35 (D-series) | 2 | external control pedals |
+| USB 3.0 coupler | 2 | |
+| earth stud | 1 | between the cluster and the vent block |
 
-DIN-5 MIDI jacks live on the control board's edge (internal, or brought to a side
-cutout); the external audio interface is outside the box on a USB lead.
+The Pi's own HDMI, Ethernet and SD are **no longer reachable from outside** — that
+is deliberate. Anything the build needs comes back out through the stations above,
+so a USB coupler wired as a pass-through needs an internal A-to-A lead to the Pi.
+The external audio interface is still outside the box on a USB lead.
 
 ---
 
