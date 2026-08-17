@@ -336,7 +336,19 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
  * that clear — skipping the copy would silently destroy it, which is exactly
  * the hazard this part exists to close. A dropped copy (OOM, or the staging
  * ring itself full — see LE_LAYER_STAGING_RING_CAPACITY) increments a
- * dedicated overrun atomic rather than corrupting state. */
+ * dedicated overrun atomic rather than corrupting state.
+ *
+ * KNOWN COST, deliberately left alone by #722: these copies are multi-MB for
+ * any real loop, so the malloc here and the matching free on the drain thread
+ * are the largest allocator events in the armed path. (They are NOT a
+ * per-pass mmap/munmap storm — glibc's mmap threshold is dynamic and rises to
+ * the size of the first large chunk freed, so repeated same-size passes come
+ * from the arena; see perf_drain.c's header for the measurement that
+ * disproved the original claim.) Removing them needs a real design anyway:
+ * the sizes are the track's ACTUAL loop length, so a preallocated pool would
+ * either pin max_loop_frames per slot (hundreds of MB across LE_MAX_TRACKS *
+ * LE_MAX_LANES) or need a size-keyed free-list recycled back across the
+ * thread boundary. Neither is in scope here. */
 static void le_stage_retired_layer(le_engine* engine, int32_t channel,
                                    int32_t slot, uint32_t generation) {
   if (!atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
