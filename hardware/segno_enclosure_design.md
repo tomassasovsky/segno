@@ -34,6 +34,13 @@ validated by an in-generator **assertion suite** (see §8). Decisions came from
 | Top slope | **12.5°** | sloped length 407 mm |
 | Material | **2.0 mm 5052-H32 aluminium** | bend R 2.0, K 0.33 |
 
+> ⚠️ **"Welded" in this section is stale and contradicts the buildable spec.**
+> `MANUFACTURING.md` and `dxf_base()` both describe `segno_base` as **ONE folded
+> blank — floor + 4 walls + rear transition, weld-free, corner brackets rivet**.
+> Nothing in the generator emits a weld. Every "welded" below should read
+> "folded"; the prose has not been swept. Tracked separately — do not quote a
+> fabricator from this paragraph.
+
 **Construction = welded lower body + removable top lid.** The front wall, rear
 wall, two sides and the bottom plate are **welded** into a rigid tray; the
 **faceplate is a removable lid**. The faceplate is **not a bare plate** — it is a
@@ -208,40 +215,86 @@ fully internal.
 
 ## 4. Rear I/O & ventilation
 
-Rear wall (`u` = 0…846, `z` = 0…90). **There is no I/O window and no bolt-on
+Rear wall (`u` = 0…850, `z` = 0…90). **There is no I/O window and no bolt-on
 sub-panel** (#743): the Pi moved inboard and every connector is a panel-mount
-part fitted straight into the welded wall. Losing HDMI / Ethernet / SD access
-from outside is deliberate — reflashing or a wired network means opening the case.
+part fitted straight into the wall — which is a **folded face of `segno_base`,
+not a welded panel** (`segno_base` is one blank: floor + 4 walls, weld-free,
+corner brackets rivet). Losing HDMI / Ethernet / SD access from outside is
+deliberate — reflashing or a wired network means opening the case.
 
 Nine stations on one centreline at `REAR_IO_Z` (= wall mid-height, 45), left to
 right, power first and away from signal:
 
 | ref | cutout | keep-out | note |
 |---|---|---|---|
-| `9V_DC` | Ø12 | 18 | barrel jack nut |
+| `9V_DC` | Ø11.5 | 17.5 | DC-099; listing says Ø11 hole, +0.5 so it cannot rattle before the nut bites |
 | `POWER` | Ø16 | 22 | shutdown button — the Pi still needs a clean stop |
 | `FUSE` | Ø12 | 18 | |
-| `MIDI_IN` / `MIDI_OUT` | Ø16 + 2 × Ø3.2 @ 22 | 28.4 | DIN-5; **IN needs opto-isolation on the board**, not here |
-| `CTRL_1` / `CTRL_2` | Ø10 | 16 | 6.35 mm **TRS** external control |
+| `MIDI_IN` / `MIDI_OUT` | Ø15.1 + 2 × Ø3.2 @ 22 | 28.4 | REAN NYS325; **IN needs opto-isolation on the board**, not here |
+| `CTRL_1` / `CTRL_2` | **Ø24**, fixings **not cut** | 30.4 | **D-series** punch, not a threaded bushing |
 | `USB3_1` / `USB3_2` | 22.1 square, **R8.64** | 28.5 | flange Ø28.5 is the keep-out, not the hole |
 
 The keep-out column is the **nut, bezel or flange a spanner has to clear**, not
 the hole — for the USB coupler that is 6.4 mm wider than its own cutout, and
 spacing on cutouts alone would have the two flanges fouling. `rear_io_layout()`
-spreads the nine across `REAR_IO_SPAN` (290, exactly the strip the old window
-occupied, so the vents, board and Pi never moved) with **equal clear gaps**,
-which come out at 10.78 mm. Gates: no two keep-outs overlap, none crosses the
-`EDGE` margin, the gap to the first vent column still fits the earth stud plus a
-spanner, and the widest keep-out leaves 4 mm of wall above and below.
+spreads the nine across `REAR_IO_SPAN` = 360, left-justified against `EDGE`, with
+**equal clear gaps** of 15.99 mm.
+
+> **The TRS is D-series.** The chosen jack (MEIRIYFA, "fits standard D Series
+> panel mount designs") takes the Neutrik D punch — Ø24 with an M3 pair — not the
+> Ø10 round hole a threaded-bushing jack wants. Neutrik's own datasheet calls it a
+> "standardized D sized 24 mm panel cutout". This was wrong in the first cut of
+> the panel and is the reason `REAR_IO_KEEPOUT_CONTAINS` exists (below).
+
+That swap took the TRS keep-out from 16 to 30.4 and squeezed the old 290 mm strip
+to 7.2 mm gaps, so the cluster was widened to 360. That was only possible because
+`REAR_IO_U` used to do **two** jobs — placing the window *and* anchoring the
+board, Pi and buck. They are now split: `BOARD_ANCHOR_U` (175) keeps the internal
+layout exactly where it was, so a rear-panel change cannot move anything inside.
+The width comes out of the vent block, which drops 70 → 63 slots and still runs at
+14 880 mm² against a 4 000 minimum.
 
 The USB corner radius is **derived, not typed**: `_rr_from_corner_circle()` solves
-the user-measured 22.1-across-flats / Ø24.1-across-corners pair, giving R8.636 and
-only 4.83 mm of straight edge — that cutout is much closer to a circle than to a
-square, which is worth knowing before someone "fixes" it.
+the 22.1-across-flats / Ø24.1-across-corners pair, giving R8.636 and only 4.83 mm
+of straight edge — that cutout is much closer to a circle than to a square, which
+is worth knowing before someone "fixes" it.
 
-> **Provisional.** `D_TRS`, `MIDI_BODY_D` and `MIDI_SCREW_PITCH` are catalogue
-> figures awaiting calipers on the parts in hand. The USB 3.0 numbers are
-> user-measured and are **not** provisional.
+**The D-series fixings are deliberately NOT cut.** Its two M3 sit on *diagonally
+opposite* corners of the flange, not on a horizontal pair, and no sourced
+coordinates were found. The widely-repeated "24 mm" is provably wrong here: on a
+Ø24 bore it puts the screw centres exactly on the bore edge — the land gate
+reports **−1.60 mm**, i.e. the screw breaks straight into the hole. So the bore
+(sourced) gets cut and the fixings wait for the part in hand; `D_TRS_KEEPOUT`
+already reserves their room so nothing has to move later. Drilling two M3 in an
+assembled chassis is easy; a wrong pair in an 850 mm laser-cut blank is scrap.
+
+### Gates
+
+Seven, all negative-controlled. The important one is **containment**: each station's
+own cutouts must fit inside the keep-out it reserved. Without it a station can
+reserve less than it cuts and the overlap check passes *on a lie* — which is
+exactly what a Ø24 bore behind a Ø10 keep-out did. Next most useful is **land**:
+a fixing hole must leave ≥1.5 mm of metal against its own bore, which is what
+disproved the 24 mm D-series pitch. The rest: no two keep-outs overlap, none
+crosses `EDGE`, the cluster centre really is `EDGE + span/2`, the gap to the first
+vent column still fits the earth stud plus a spanner, and the widest keep-out
+leaves 4 mm of wall above and below.
+
+### Provenance — every dimension says where it came from
+
+`REAR_IO_PROVENANCE` tags each number `measured` (user's calipers), `datasheet`
+(with the source named) or `UNCONFIRMED`. `rear_io_unconfirmed()` returns the
+unsourced ones and the build prints them as a **`DO NOT CUT`** line; a gate
+refuses any rear-I/O dimension with no entry at all, so a new connector cannot be
+added without declaring where its numbers came from. Currently unconfirmed:
+**`D_TRS_SCREW_PITCH`** and **`MIDI_SCREW_PITCH`** — the bores are sourced, the
+fixing pitches are not.
+
+> **Open, and it decides whether the USB cutout is right:** are 22.1 / 24.1 the
+> coupler's **body** or the **panel cutout** it wants? Cut at nominal a
+> body-sized coupler will not enter; open it up and a snap-in coupler will not
+> grip. `USB3_FIT` = 0 (nominal, as measured) until the part is in hand — this
+> cannot be guessed safely in either direction.
 >
 > **Fallout to settle separately:** the `nopi` build (external host, HDMI ×2 +
 > USB touch ×2) had no home but that window, so it is **retired** — an

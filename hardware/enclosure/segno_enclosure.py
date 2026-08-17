@@ -293,24 +293,74 @@ N_IND     = 10       # indicator LED pills -- ALL 10 pedals (issue #366). Firmwa
 IND_PITCH = 50.0     # indicator LED pitch
 
 # --- rear I/O -----------------------------------------------------------------
-D_BARREL  = 12.0     # 9 V DC barrel jack nut
+# Issue #743. The Pi moved inboard and its port WINDOW came out, so there is no
+# opening in the rear wall and no swappable I/O sub-panel any more: every
+# connector is a panel-mount part fitted straight into the FOLDED rear wall
+# (segno_base is ONE blank -- floor + 4 walls, weld-free, corner brackets rivet).
+# Losing HDMI / Ethernet / SD access from outside is deliberate.
+#
+# EVERY dimension below carries a provenance in REAR_IO_PROVENANCE. Cutting a
+# panel against a number nobody checked is how a 850 mm blank becomes scrap, so
+# the unchecked ones are listed by name on the drawing and in the build summary
+# rather than hidden behind an optimistic comment.
 D_PWRBTN  = 16.0     # power / shutdown button
 D_FUSE    = 12.0     # panel fuse holder
 D_GND     = 6.5      # M6 earth / bond stud
-# Issue #743. The Pi moved inboard and its port WINDOW came out, so there is no
-# opening in the rear wall and no swappable I/O sub-panel any more: every
-# connector is a panel-mount part fitted straight into the welded wall. Losing
-# HDMI / Ethernet / SD access from outside is deliberate -- whatever the build
-# needs comes back out through the connectors below.
-D_TRS     = 10.0     # 6.35 mm TRS jack bushing (external control pedals)
-USB3_SQ       = 22.1 # USB 3.0 panel coupler: square cutout side (user-measured)
-USB3_CORNER_D = 24.1 # ...whose corners lie on this circle -> radius derived below
+D_BARREL  = 11.5     # DC-099 barrel jack: listing states an 11 mm mounting hole;
+                     # +0.5 so the thread drops in but cannot rattle before the
+                     # nut bites. 12.0 (the old value) left 1 mm of slop.
+# The chosen TRS is a D-SERIES jack (MEIRIYFA B0G5GHCCHM, "fits standard D Series
+# panel mount designs"), NOT a threaded-bushing jack -- so it takes the Neutrik D
+# punch, a Ø24 bore with two M3 fixings, not a Ø10 round hole.
+D_TRS_BORE       = 24.0  # Neutrik: "standardized D sized 24 mm panel cutout"
+D_TRS_SCREW_D    = 3.2   # M3 clearance
+# ...and its fixings are NOT CUT. A D-series flange carries its two M3 on
+# DIAGONALLY OPPOSITE corners, not on a horizontal pair, and no sourced
+# coordinates were found -- the widely-repeated "24 mm" would put the screw
+# centres exactly on the Ø24 bore edge, which _check() now rejects outright.
+# The bore is sourced and gets cut; the fixings wait for the part in hand. The
+# keep-out below still reserves room for them so nothing has to move later.
+D_TRS_SCREW_PITCH = None
+D_TRS_KEEPOUT    = 30.4  # bore + an M3 pair, once their real pattern is known
+USB3_SQ       = 22.1 # USB 3.0 panel coupler: square across flats
+USB3_CORNER_D = 24.1 # ...corners on this circle -> corner radius derived below
 USB3_FLANGE_D = 28.5 # flange OD. This, not the cutout, is the real keep-out
-MIDI_BODY_D      = 16.0  # DIN-5 socket body bore
-MIDI_SCREW_PITCH = 22.0  # DIN-5 fixing centres, horizontal
-MIDI_SCREW_D     = 3.2   # M3 clearance for those
-# PROVISIONAL until the parts are in hand and calipered: D_TRS, MIDI_BODY_D,
-# MIDI_SCREW_PITCH. The USB 3.0 numbers are user-measured and are NOT provisional.
+MIDI_BODY_D      = 15.1  # REAN NYS325 panel cutout (distributor spec)
+MIDI_SCREW_PITCH = 22.0  # UNCONFIRMED -- see REAR_IO_PROVENANCE
+MIDI_SCREW_D     = 3.2   # M3 clearance
+
+# What each rear-I/O dimension actually rests on. "measured" = the user's own
+# calipers or dimensioned photo; "datasheet" = manufacturer or distributor
+# figure, with the source named; "UNCONFIRMED" = nobody has checked it.
+REAR_IO_PROVENANCE = {
+    "D_PWRBTN":          "datasheet: generic 16 mm panel button",
+    "D_FUSE":            "datasheet: generic 12 mm panel fuse holder",
+    "D_GND":             "design: M6 stud clearance",
+    "D_BARREL":          "datasheet: DC-099 listing, 11 mm hole (+0.5 fit)",
+    "D_TRS_BORE":        "datasheet: neutrik.com NC3FD-L-1, 'standardized D sized 24 mm panel cutout'",
+    "D_TRS_SCREW_PITCH": "UNCONFIRMED: D-series M3 pair is diagonal, pattern not sourced -- NOT CUT",
+    "D_TRS_KEEPOUT":     "design: bore + room for the M3 pair once it is known",
+    "D_TRS_SCREW_D":     "datasheet: D-series fixings are M3",
+    "USB3_SQ":           "measured: user, across flats",
+    "USB3_CORNER_D":     "measured: user, across corners",
+    "USB3_FLANGE_D":     "measured: user, flange OD",
+    "MIDI_BODY_D":       "datasheet: REAN NYS325, Ø15.1 panel cutout (Farnell/CPC)",
+    "MIDI_SCREW_PITCH":  "UNCONFIRMED: NYS325 fixing pitch not sourced",
+    "MIDI_SCREW_D":      "datasheet: DIN-5 chassis sockets take M3",
+}
+
+def rear_io_unconfirmed():
+    """Rear-I/O dimensions that rest on nothing yet, name -> value. Non-empty is
+    NOT a build failure -- it is a do-not-cut-the-panel-yet list."""
+    return {k: globals()[k] for k, v in REAR_IO_PROVENANCE.items()
+            if v.startswith("UNCONFIRMED")}
+
+# OPEN, and it decides whether the USB cutout is right: are 22.1 / 24.1 the
+# coupler's BODY or the panel CUTOUT it wants? Cut at nominal (below) a body-sized
+# coupler will not enter, and a snap-in coupler in an oversized hole will not grip
+# -- so this cannot be guessed safely in either direction. Left at nominal, which
+# is what was measured, until the part is in hand.
+USB3_FIT = 0.0
 
 def _rr_from_corner_circle(side, corner_d):
     """Corner radius of a rounded square of `side` whose corner arcs are tangent
@@ -323,12 +373,20 @@ def _rr_from_corner_circle(side, corner_d):
         f"(derived corner radius {r:.2f})")
     return r
 
-USB3_CORNER_R = _rr_from_corner_circle(USB3_SQ, USB3_CORNER_D)
+USB3_CUT_SQ = USB3_SQ + 2*USB3_FIT
+USB3_CORNER_R = _rr_from_corner_circle(USB3_CUT_SQ, USB3_CORNER_D + 2*USB3_FIT)
 
-# Connector cluster: it occupies exactly the strip the old window did, so the
-# vent block, the board and the Pi keep the positions they were laid out at.
-REAR_IO_SPAN = 290.0  # cluster width; REAR_IO_Z set below (= wall mid-height)
-REAR_IO_U    = 175.0  # cluster centre u -- ALSO the anchor the board/Pi/buck use
+# The old REAR_WIN_U did two jobs -- it placed the window AND anchored the board,
+# Pi and buck inside. Those are now separate: the internal layout keeps its 175
+# anchor (nothing inside moves because of a rear-panel change), and the connector
+# cluster is free to use as much of the wall as it needs. It needs it: swapping
+# the TRS to D-series took its keep-out from 16 to 30.4 and squeezed the gaps to
+# 7.2 mm on the old 290 strip. The vents give the width back -- they run at 4x the
+# free-area minimum, and _check() holds that.
+BOARD_ANCHOR_U = 175.0  # board / Pi / buck datum. NOT the connector cluster.
+REAR_IO_SPAN   = 360.0  # cluster width; REAR_IO_Z set below (= wall mid-height)
+REAR_IO_U      = 210.0  # left-justified against EDGE (defined further down, so this
+                        # is written out; _check() asserts EDGE + SPAN/2 == it)
 
 # --- ventilation / mounting ---------------------------------------------------
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
@@ -723,8 +781,8 @@ REAR_IO_STATIONS = [
     ("FUSE",     D_FUSE + 6.0),
     ("MIDI_IN",  MIDI_SCREW_PITCH + 2*MIDI_SCREW_D),     # DIN-5 fixings set the
     ("MIDI_OUT", MIDI_SCREW_PITCH + 2*MIDI_SCREW_D),     # width, not the bore
-    ("CTRL_1",   D_TRS + 6.0),
-    ("CTRL_2",   D_TRS + 6.0),
+    ("CTRL_1",   D_TRS_KEEPOUT),                         # D-series: the M3 pair is
+    ("CTRL_2",   D_TRS_KEEPOUT),                         # wider than the Ø24 bore
     ("USB3_1",   USB3_FLANGE_D),
     ("USB3_2",   USB3_FLANGE_D),
 ]
@@ -742,26 +800,37 @@ def rear_io_layout():
     return out
 
 def rear_holes():
-    """Rear WALL features (welded): the panel-mount connector cluster (#743), the
-    fixed exhaust vents and the earth stud. There is NO I/O window and no bolt-on
-    sub-panel -- the Pi sits inboard and is not reachable from outside, by
-    intent. u=0..W, z=0..REAR_WALL_H."""
+    """Rear WALL features: the panel-mount connector cluster (#743), the fixed
+    exhaust vents and the earth stud. The wall is a FOLDED face of segno_base,
+    not a separate welded panel. There is NO I/O window and no bolt-on sub-panel
+    -- the Pi sits inboard and is not reachable from outside, by intent.
+    u=0..W, z=0..REAR_WALL_H."""
     z = REAR_IO_Z
     at = rear_io_layout()
     cuts = []
-    for ref, d in (("9V_DC", D_BARREL), ("POWER", D_PWRBTN), ("FUSE", D_FUSE),
-                   ("CTRL_1", D_TRS), ("CTRL_2", D_TRS)):
+    for ref, d in (("9V_DC", D_BARREL), ("POWER", D_PWRBTN), ("FUSE", D_FUSE)):
         cuts.append({"kind": "circle", "u": at[ref][0], "v": z, "d": d, "ref": ref})
-    for ref in ("MIDI_IN", "MIDI_OUT"):
+    # Bored-plus-two-M3 stations. The DIN-5 and the D-series jack are the same
+    # shape of problem -- a bore with a fixing pair straddling it -- so they are
+    # built by one loop; only the numbers differ. The fixings run HORIZONTALLY:
+    # the wall is 90 tall and the D pair spans 24, which would leave only 33 of
+    # wall above and below, but across the wall there is room to spare.
+    for ref, bore, pitch, scr in (
+            ("MIDI_IN",  MIDI_BODY_D,  MIDI_SCREW_PITCH,  MIDI_SCREW_D),
+            ("MIDI_OUT", MIDI_BODY_D,  MIDI_SCREW_PITCH,  MIDI_SCREW_D),
+            ("CTRL_1",   D_TRS_BORE,   D_TRS_SCREW_PITCH, D_TRS_SCREW_D),
+            ("CTRL_2",   D_TRS_BORE,   D_TRS_SCREW_PITCH, D_TRS_SCREW_D)):
         cu = at[ref][0]
-        cuts.append({"kind": "circle", "u": cu, "v": z, "d": MIDI_BODY_D, "ref": ref})
-        for s in (-1, 1):                                  # DIN-5 fixings, horizontal
-            cuts.append({"kind": "circle", "u": cu + s*MIDI_SCREW_PITCH/2.0, "v": z,
-                         "d": MIDI_SCREW_D, "ref": ref + "_SCR"})
+        cuts.append({"kind": "circle", "u": cu, "v": z, "d": bore, "ref": ref})
+        if pitch is None:            # pattern not sourced -- bore only, see above
+            continue
+        for s in (-1, 1):
+            cuts.append({"kind": "circle", "u": cu + s*pitch/2.0, "v": z,
+                         "d": scr, "ref": ref + "_SCR"})
     for ref in ("USB3_1", "USB3_2"):                       # square, heavily radiused
         cu = at[ref][0]
-        cuts.append({"kind": "rect", "u": cu - USB3_SQ/2.0, "v": z - USB3_SQ/2.0,
-                     "w": USB3_SQ, "h": USB3_SQ, "r": USB3_CORNER_R, "ref": ref})
+        cuts.append({"kind": "rect", "u": cu - USB3_CUT_SQ/2.0, "v": z - USB3_CUT_SQ/2.0,
+                     "w": USB3_CUT_SQ, "h": USB3_CUT_SQ, "r": USB3_CORNER_R, "ref": ref})
     # Vents fill the wall to the RIGHT of the cluster: cluster right edge + EDGE to
     # the wall's EDGE margin, columns evenly pitched to land exactly on both.
     sl = VENT_SLOT[0]
@@ -1041,11 +1110,42 @@ def _check():
     # FLANGE, not its hole, so a spanner fits; those keep-outs must not overlap
     # each other, must stay on the wall, and must clear the vent block.
     lay = rear_io_layout()
+    # The keep-out has to actually CONTAIN the station's own cutouts. Without this
+    # a station can reserve less than it cuts and the overlap check below passes on
+    # a lie -- which is exactly what happened when the D-series jack (Ø24 bore + an
+    # M3 pair) was carrying a Ø10 threaded-bushing keep-out.
+    for ref, (cu, kw) in lay.items():
+        own = [c for c in rear if c["ref"] == ref or c["ref"] == ref + "_SCR"]
+        assert own, f"REAR_IO: station {ref} is laid out but cuts nothing"
+        for c in own:
+            r = c["d"]/2.0 if c["kind"] == "circle" else 0.0
+            lo = c["u"] - r if c["kind"] == "circle" else c["u"]
+            hi = c["u"] + r if c["kind"] == "circle" else c["u"] + c["w"]
+            assert cu - kw/2.0 - 1e-9 <= lo and hi <= cu + kw/2.0 + 1e-9, (
+                f"REAR_IO: {c['ref']} spans {lo:.2f}..{hi:.2f} but {ref} only "
+                f"reserves {cu - kw/2.0:.2f}..{cu + kw/2.0:.2f} -- the keep-out "
+                "does not contain what it is meant to protect")
+    # A fixing hole that breaks into its own bore is not a fixing hole. This is
+    # the check that caught the "D-series M3 pair sits at 24 mm" figure: on a Ø24
+    # bore that puts the screw centres exactly on the bore edge, leaving no land.
+    for c in rear:
+        if not c["ref"].endswith("_SCR"):
+            continue
+        base = c["ref"][:-4]
+        bore = next(b for b in rear if b["ref"] == base)
+        off = abs(c["u"] - bore["u"])
+        assert off - c["d"]/2.0 >= bore["d"]/2.0 + 1.5, (
+            f"REAR_IO: {c['ref']} at {off:.2f} from centre leaves "
+            f"{off - c['d']/2.0 - bore['d']/2.0:.2f} mm of land against the "
+            f"Ø{bore['d']:g} bore -- the screw would break into the hole")
     boxes = sorted(((cu - kw/2.0, cu + kw/2.0, ref) for ref, (cu, kw) in lay.items()))
     for (a_lo, a_hi, a_ref), (b_lo, b_hi, b_ref) in zip(boxes, boxes[1:]):
         assert a_hi <= b_lo + 1e-9, (
             f"REAR_IO: {a_ref} and {b_ref} keep-outs overlap by "
             f"{a_hi - b_lo:.2f} mm -- their nuts/flanges would foul")
+    assert abs(REAR_IO_U - (EDGE + REAR_IO_SPAN/2.0)) < 1e-9, (
+        f"REAR_IO: cluster centre {REAR_IO_U} is not EDGE + span/2 "
+        f"({EDGE + REAR_IO_SPAN/2.0:.1f}) -- the written-out constant has drifted")
     assert boxes[0][0] >= EDGE - 1e-9, (
         f"REAR_IO: {boxes[0][2]} keep-out starts at u={boxes[0][0]:.1f}, inside "
         f"the {EDGE:.0f} mm edge margin")
@@ -1062,6 +1162,16 @@ def _check():
     assert _tall <= REAR_WALL_H - 2*4.0, (
         f"REAR_IO: widest keep-out {_tall:.1f} does not leave 4 mm of wall above "
         f"and below on a {REAR_WALL_H:.0f} mm wall")
+    # ...and no rear-I/O dimension may exist without a recorded provenance, so a
+    # new connector cannot be added without saying where its numbers came from
+    _dims = [k for k in globals()
+             if k.startswith(("D_TRS", "MIDI_", "USB3_")) and k not in
+             ("USB3_CORNER_R", "USB3_CUT_SQ", "USB3_FIT")]
+    _dims += ["D_BARREL", "D_PWRBTN", "D_FUSE", "D_GND"]
+    _missing = sorted(set(_dims) - set(REAR_IO_PROVENANCE))
+    assert not _missing, (
+        f"REAR_IO: {_missing} have no entry in REAR_IO_PROVENANCE -- say whether "
+        "each is measured, from a datasheet, or unconfirmed before it is cut")
     return True
 
 def _bottom_vents_local(bw, bd):
@@ -1089,14 +1199,14 @@ def _bottom_vents():
 # REAR strip of the bottom plate is the clear floor for the electronics. ONE main
 # board (the V1 segno_pedal_main) mounts there on M3 standoffs (>= STANDOFF_H for
 # airflow). 16" screen above is shallow -> clears it.
-# Offset 25 mm off the rear I/O cluster axis (REAR_IO_U), AWAY from the CLEAR/BANK
+# Offset 25 mm off the board anchor (BOARD_ANCHOR_U), AWAY from the CLEAR/BANK
 # platform column: the Pro Micro's USB socket faces that platform, and centring the
 # board left only ~6 mm to it — not enough for a USB-C/micro plug body. The offset
 # buys ~37 mm to the platform slot edge. Sat forward of the rear wall to leave room
 # for the Raspberry Pi, which (in the Pi build) tucks behind the board with its port
 # cluster out the window. The mid-row platforms clear the rear strip, so depth is
 # generous. (Only the Pi needs to stay centred on the window — see pi_mount.)
-BOARD_U = REAR_IO_U - 25.0
+BOARD_U = BOARD_ANCHOR_U - 25.0
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
     return [("MAIN_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
@@ -1116,7 +1226,7 @@ def board_mounts():
 # the window; even bd - 52 left the PCB crossing the sub-panel plane.)
 def pi_mount():
     bd = D - 2*T
-    return (REAR_IO_U, bd - 56.0, (PI_HOLES[1], PI_HOLES[0]))   # 49 across u, 58 along depth
+    return (BOARD_ANCHOR_U, bd - 56.0, (PI_HOLES[1], PI_HOLES[0]))   # 49 across u, 58 along depth
 
 # External 5V buck: eleUniverse 8-36V -> 5V 10A 50W IP67 potted brick (Amazon
 # B0GGHN97TK; envelope 63.8 x 57.7 x 22.1 incl. mounting ears, 116 g, passive
@@ -1129,7 +1239,7 @@ BUCK_EAR_SPACING = 56.0       # ear hole centres along the long axis — PROVISI
                               # until the unit arrives; drill to the real part
 def buck_mount():
     bd = D - 2*T
-    return (REAR_IO_U + 125.0, bd - 60.0, BUCK_EAR_SPACING)
+    return (BOARD_ANCHOR_U + 125.0, bd - 60.0, BUCK_EAR_SPACING)
 
 # ===========================================================================
 # DXF  (ezdxf)
@@ -2601,7 +2711,12 @@ def report():
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
       f"(case top flush with the slot's upper rim, pad +{PEDAL_PAD_T:.1f} above, #373)  [PROVISIONAL]")
     P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 15.6in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
-    P(f"Rear I/O        : 9V + btn + fuse + 2x MIDI DIN-5 + 2x TRS + 2x USB3 + vents + earth (no window)")
+    P(f"Rear I/O        : 9V + btn + fuse + 2x MIDI DIN-5 + 2x TRS (D-series) + 2x USB3 + vents + earth (no window)")
+    _unc = rear_io_unconfirmed()
+    if _unc:
+        P("  DO NOT CUT     : " + ", ".join(
+            f"{k}={'not cut' if v is None else format(v, 'g')}"
+            for k, v in sorted(_unc.items())) + "  <- unconfirmed, no source")
     P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents()):.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
     P("-"*68)
     P(f"Faceplate cutouts : {len(cuts)}  |  rear-wall cutouts : {len(rear_holes())}")
