@@ -2,9 +2,13 @@
 title: "feat: console board v2 — RP2350 on the Pi's GPIO carrying the rear-panel I/O"
 type: feat
 date: 2026-08-17
+issue: 747
 ---
 
 ## feat: console board v2 — RP2350 on the Pi's GPIO carrying the rear-panel I/O
+
+> **Note:** this plan ships as **three PRs** — see `## PR split` below. Part 1 and
+> part 2 are independent of each other; part 3 depends on both.
 
 Tracking [#747](https://github.com/tomassasovsky/segno/issues/747) ·
 Brainstorm [`docs/brainstorm/2026-08-17-console-board-v2-brainstorm-doc.md`](../brainstorm/2026-08-17-console-board-v2-brainstorm-doc.md) ·
@@ -54,7 +58,18 @@ existing boards are.
 | Indicators | 1 × JST-XH 3-pin, WS2812 chain via 74AHCT125 3V3→5 V |
 | Ring/encoder | 1 × JST-XH 8-pin to `ring_board` |
 | Power button | 1 × JST-XH 2-pin, passed straight through to a Pi GPIO |
-| Power in | 1 × JST-XH 2-pin, 5 V from the external potted buck |
+| Power in | 1 × JST-XH 2-pin, 5 V from the external potted buck + **bulk caps** (below) |
+
+### Power-in protection: bulk yes, series diode no
+
+V1 guards its 9 V input with a Schottky, a TVS and 100 µF (`main_board.py:199-211`)
+because that is a **barrel jack** a user can plug anything into. This board takes 5 V
+from a fixed internal potted buck over a **keyed** JST, so that threat model does not
+transfer. What does transfer is **bulk capacitance**: 22 WS2812s draw ~1.3 A of
+transients, and a series Schottky on that rail would burn ~0.4 W and eat headroom the
+LEDs want. So: **bulk electrolytic on `+5V_LED` at the injection point, plus local
+decoupling** — and no series diode. State this in the generator so nobody "restores"
+the V1 pattern without re-reading it.
 
 ### Two rails, deliberately
 
@@ -95,26 +110,58 @@ of being discovered during assembly.
 Direct import is not viable — `segno_enclosure` needs `cadquery`, which the KiCad
 venv will not have — hence the JSON handoff.
 
-### Assertion suite, in the house style
+### Assertion suite — plain gates in the house style, plus one thing that is new
 
-`segno_enclosure.py` proves its geometry with in-generator gates, each
-negative-controlled. The board generator adopts the same idiom:
+`segno_enclosure.py` proves its geometry with in-generator `assert`s and prints
+`"Geometry assertions ... ALL PASS"`. The gates below copy that exactly.
+
+`--selftest` is **new to this repo** — nothing else here has it, and this plan should
+not borrow authority it does not have. It earns its place on the respin-cost argument:
+running negative controls by hand during #743 caught **two genuinely dead gates** (a
+vent-clearance check that could never fire, and an overlap check that tested only one
+axis and fired on a Pi 400 mm away). Scope it to ~30 lines of gate-flipping, no
+framework.
+
+> **Hard constraint:** `--selftest` must `return` **before** `generate_netlist()`, or a
+> self-test run overwrites the committed `.net` with a deliberately-broken netlist.
+
+Gates:
 
 - no GPIO assigned twice
 - ADC nets land only on GP26–28
 - UART nets land only on UART-capable pins
-- every net has ≥2 pins (nothing floating)
+- every net has ≥2 pins (nothing floating), **with a named exemption list** — V1
+  deliberately floats pins via `do_erc = False`: spare AHCT125 gates
+  (`main_board.py:164-165`) and MIDI IN's DIN pin 2 (`:186`, isolation, preserved here)
 - exactly 10 footswitch headers; every rear-panel station accounted for
+- **the ring header's pin-to-net order matches `ring_board.py` J1** — `1,2 = +5V_LED ·
+  3,4 = GND · 5 = RING_DATA · 6 = ENC_A · 7 = ENC_B · 8 = ENC_SW`. That contract is
+  currently hand-mirrored between `main_board.py:236-241` and `ring_board.py:57-62`
+  and held together by a comment; this board would be the **third** copy
 - `--selftest` flips each gate and exits 0 only if **every** gate bites
 
 ### Toolchain reality
 
 `skidl` is **not installed anywhere in the repo** — the existing `.net` files were
-generated ad hoc. This plan adds `hardware/kicad/.venv` (mirroring
-`hardware/enclosure/.venv`) plus a `requirements.txt`, so the generator is
-reproducible. Netlist generation also needs KiCad's symbol libraries present, so
-**these gates are local-only** — there is no board CI today and this plan does not
-add one.
+generated ad hoc. This plan adds `hardware/kicad/.venv` plus a **pinned**
+`requirements.txt`. Note this is a *step up from* precedent, not parity:
+`hardware/enclosure/.venv` has **no** requirements file (it is documented only by the
+recreate comment in its `.gitignore`) and its interpreter is **3.14** while that
+comment says 3.12. **Name the interpreter version explicitly in Phase 1** — skidl on
+3.14 is unproven, which is exactly why Phase 1 regenerates `main_board.py` in the new
+venv before anything else rides on it.
+
+**Both generators write their netlist to the CWD.** `main_board.py` calls bare
+`generate_netlist()` and its docstring says *"Run (from hardware/kicad/)"*. So every
+command below **`cd hardware/kicad` first** — running from the repo root silently drops
+`console_board.net` in the wrong directory while reporting success.
+
+**`console_board.net` is committed**, like `main_board.net` and `ring_board.net`
+(nothing in `.gitignore` excludes `*.net`). `test -f` alone would let it be
+generated-and-forgotten.
+
+Netlist generation also needs KiCad's symbol libraries present, so **these gates are
+local-only** — there is no board CI today and this plan does not add one.
 
 ## Success Criteria
 
@@ -122,14 +169,13 @@ add one.
 GOAL: hardware/kicad/console_board.py generates a netlist-complete, layout-ready console board v2, with an assertion suite that proves the pin budget and connector set before any copper is laid.
 
 SUCCESS CRITERIA:
-- The generator runs clean and writes a netlist | verify: hardware/kicad/.venv/bin/python hardware/kicad/console_board.py && test -f hardware/kicad/console_board.net
-- SKiDL ERC reports zero errors | verify: hardware/kicad/.venv/bin/python hardware/kicad/console_board.py 2>&1 | grep -q "0 errors found during ERC"
-- Every in-generator gate passes | verify: hardware/kicad/.venv/bin/python hardware/kicad/console_board.py 2>&1 | grep -q "Board assertions ... ALL PASS"
-- Every gate is negative-controlled — each one bites when its invariant is broken | verify: hardware/kicad/.venv/bin/python hardware/kicad/console_board.py --selftest
-- A Pico 2 footprint exists in the project library | verify: test -f hardware/kicad/segno.pretty/Pico2.kicad_mod
-- The board terminates every rear-panel station the enclosure declares | verify: hardware/enclosure/.venv/bin/python hardware/enclosure/segno_enclosure.py >/dev/null && test -f hardware/enclosure/out/rear_io_stations.json && hardware/kicad/.venv/bin/python hardware/kicad/console_board.py 2>&1 | grep -q "REAR_IO_COVER"
+- The generator runs clean and writes a netlist | verify: cd hardware/kicad && .venv/bin/python console_board.py && test -f console_board.net
+- SKiDL ERC reports zero errors | verify: cd hardware/kicad && .venv/bin/python console_board.py 2>&1 | grep -q "0 errors found during ERC"
+- Every in-generator gate passes | verify: cd hardware/kicad && .venv/bin/python console_board.py 2>&1 | grep -q "Board assertions ... ALL PASS"
+- Every gate is negative-controlled — each one bites when its invariant is broken | verify: cd hardware/kicad && .venv/bin/python console_board.py --selftest
+- The board terminates every rear-panel station the enclosure declares | verify: hardware/enclosure/.venv/bin/python hardware/enclosure/segno_enclosure.py --report >/dev/null && test -f hardware/enclosure/out/rear_io_stations.json && cd hardware/kicad && .venv/bin/python console_board.py 2>&1 | grep -q "REAR_IO_COVER"
 - Prose spell-checks clean | verify: npx --yes cspell@latest --config .github/cspell.json --no-progress hardware/kicad/console_board.py docs/plan/2026-08-17-feat-console-board-v2-plan.md
-- Every footprint resolves when the netlist is imported | verify: manual 1. Open hardware/kicad/segno_console.kicad_pro in KiCad. 2. Tools > Update PCB from Schematic (or import console_board.net). 3. Confirm zero "footprint not found" errors in the report.
+- Every footprint resolves, and the Pico 2 footprint is dimensionally right | verify: manual 1. Create an empty KiCad project in hardware/kicad/ and import console_board.net. 2. Confirm zero "footprint not found" errors. 3. Measure the Pico2 footprint: 2x20 pads at 2.54 mm pitch, 51 x 21 mm body, rows 17.78 mm apart — a file-exists check cannot catch a wrong pad pitch.
 
 NON-GOALS:
 - PCB layout, routing, DRC and fabrication output
@@ -140,7 +186,7 @@ NON-GOALS:
 - Any change to the standalone pedal's V1 board
 - Board CI (needs KiCad symbol libraries in the runner)
 
-VERIFICATION COMMAND: hardware/enclosure/.venv/bin/python hardware/enclosure/segno_enclosure.py >/dev/null && hardware/kicad/.venv/bin/python hardware/kicad/console_board.py --selftest && hardware/kicad/.venv/bin/python hardware/kicad/console_board.py 2>&1 | tee /dev/stderr | grep -q "0 errors found during ERC" && test -f hardware/kicad/console_board.net && test -f hardware/kicad/segno.pretty/Pico2.kicad_mod
+VERIFICATION COMMAND: hardware/enclosure/.venv/bin/python hardware/enclosure/segno_enclosure.py --report >/dev/null && cd hardware/kicad && .venv/bin/python console_board.py --selftest && .venv/bin/python console_board.py 2>&1 | tee /dev/stderr | grep -q "0 errors found during ERC" && .venv/bin/python console_board.py 2>&1 | grep -q "Board assertions ... ALL PASS" && test -f console_board.net
 ```
 
 ## Implementation
@@ -149,33 +195,80 @@ Layered, per AGENTS.md — each step leaves something that works.
 
 ### Phase 1 — toolchain and footprint
 
-- [ ] `hardware/kicad/requirements.txt` (`skidl`) + `hardware/kicad/.venv`, mirroring `hardware/enclosure/.venv`
+- [ ] `hardware/kicad/requirements.txt` with a **pinned** `skidl`, + `hardware/kicad/.venv`.
+      **Name the Python version** (`hardware/enclosure/.venv` is 3.14 while its own
+      comment says 3.12, and skidl on 3.14 is unproven)
+- [ ] Add `.venv/` and `__pycache__/` to `hardware/kicad/.gitignore` — it covers
+      `*.erc`, `*_sklib.py` and fab intermediates but **not** virtualenvs, so the first
+      commit would otherwise ship one. `hardware/enclosure/.gitignore` shows the idiom,
+      including the recreate command as a comment
 - [ ] Confirm `main_board.py` still generates in that venv — proves the venv before new work rides on it
 - [ ] `hardware/kicad/segno.pretty/Pico2.kicad_mod` — 51 × 21, 2×20 THT at 2.54 mm, castellations optional. Model on the existing `ProMicro.kicad_mod`
 
 ### Phase 2 — the generator
 
 - [ ] `hardware/kicad/console_board.py`: nets, rails, `R`/`C` helpers copied from `main_board.py`
-- [ ] Pico 2 as a `Conn_01x20` ×2 pair (the `main_board.py` idiom for a module)
+- [ ] Pico 2 as **one** `Conn_01x40` + `footprint="segno:Pico2"`, `ref="J1"` — the
+      `main_board.py:82` idiom. (Its *docstring* at `:11` says "two 1x12 rows"; that
+      is **stale** — the code uses a single `Conn_01x24` with one custom footprint.
+      Carry the pad-number-to-signal comment block from `main_board.py:77-80`: it is
+      the only place the pad map is written down.)
 - [ ] MIDI IN (H11L1 @ 3V3) and MIDI OUT (74AHCT125 + 2 × 220 Ω) — reuse `main_board.py:169-197`
 - [ ] 10 × footswitch headers + RC debounce
 - [ ] CTRL 1/2 → ADC with pull-ups; indicator chain via AHCT125; ring 8-pin; power button pass-through; 5 V in
 - [ ] 2×20 **shrouded** IDC to the Pi + the 1k8/3k3 divider on MCU TX
-- [ ] `ERC()` + `generate_netlist()`
+- [ ] **Allocate ref-designator blocks in the header comment before the first layout
+      import.** V1 hand-assigns `J10..J19` for its ten footswitches (`main_board.py:139`)
+      and had to pin an explicit `ref="C16"` (`:193`) to stop a late addition
+      renumbering C1..C15 and invalidating a started layout
+- [ ] `ERC()` + `generate_netlist()` (and **not** on a `--selftest` run)
 
 ### Phase 3 — the gates
 
-- [ ] Emit `rear_io_stations.json` from `segno_enclosure.py`
+- [ ] Emit `out/rear_io_stations.json` from `segno_enclosure.py` **before** the
+      `if "--report" in argv: return` early-return at `segno_enclosure.py:3094`.
+      Placing it next to the DXF loop instead would force a full run — every DXF, PDF,
+      STEP, printed part and four quote zips, minutes of cadquery and a dirty tree —
+      to obtain one JSON file. Verified with `--report`
 - [ ] Assertion suite (list above), printing `Board assertions ... ALL PASS`
 - [ ] `--selftest` that flips every gate and fails if any does not bite
 - [ ] Run the full verification command
 
 ### Phase 4 — documentation
 
-- [ ] `hardware/segno_console_board_design.md` — pin map, rails, connector table, bring-up order
+- [ ] `console_board.py` **prints** its own pin map / connector table, the way
+      `segno_enclosure.py`'s `report()` prints derived geometry. That makes the
+      generator the single owner
+- [ ] `hardware/segno_console_board_design.md` — bring-up order and rationale, and it
+      **links to** the generator's printed table rather than restating it. `segno_wiring.md`
+      §2b already owns the divider values, the part table and the uart assignment, so
+      point at it rather than forking a second prose owner of the same numbers
 - [ ] Update `segno_wiring.md` §2b: the daughterboard becomes this board
 - [ ] Update `firmware/led_driver/README.md`: its GPIO14/15 assumption dies with this board
-- [ ] Console shopping list: Pico 2, shrouded IDC + ribbon, JST-XH kit, AHCT125, H11L1, passives
+- [ ] **`hardware/console/README.md`** — it currently states *"the Pi reads no controls
+      directly"* and that an RP2040 LED driver handles the status LEDs. Both die here
+- [ ] **`hardware/MANUFACTURING.md`** — add a row for the third board, marked
+      *designed, not fabbed* (fab output is a non-goal)
+- [ ] Console shopping list: this is a **section rewrite**, not an append — it currently
+      lists the 32U4 pedal board and an RP2040 LED driver as the console's control path.
+      New: Pico 2, shrouded IDC + ribbon, JST-XH kit, AHCT125, H11L1, passives
+
+## PR split
+
+Three PRs. Parts 1 and 2 have zero coupling to the netlist and to each other; part 3
+is the netlist and stays whole, because a partial netlist cannot ERC clean and a
+reviewer needs the entire connector map in view at once to catch a missed station.
+
+| part | scope | depends on |
+|---|---|---|
+| **1** | Phase 1 — venv, pinned `requirements.txt`, `.gitignore`, `Pico2.kicad_mod`, regenerate `main_board.py` to prove the venv | — |
+| **2** | Phase 3 bullet 1 — `rear_io_stations.json` from `segno_enclosure.py` (a different generator, independently verifiable) | — |
+| **3** | Phases 2 + 3 + 4 — the generator, its gates, the cross-artifact check, and the docs | 1 and 2 |
+
+Docs ride with part 3 deliberately, so they describe a final pin map rather than a
+speculative one. Note this repo's history of **squash-merges breaking stacked-PR merge
+refs** — parts 1 and 2 are independent, so merge them before opening part 3 rather than
+stacking three deep.
 
 ## Dependencies & Risks
 
@@ -187,6 +280,7 @@ Layered, per AGENTS.md — each step leaves something that works.
 | KiCad symbol library paths differ per machine | `main_board.py` already probes several; extend rather than reinvent |
 | Pedal protocol may move to v4 (epic #442) | Board is protocol-agnostic — it carries a UART. Firmware only |
 | `indicatorLeds[7]` vs 10 pills (#366) | Board wires the chain; the count is firmware. Tracked separately |
+| **Green gates ≠ a working board** | Per `docs/TRACKING.md`'s three-question test this is **`autonomy:blocked-verify`** — question 1 already fails, since the gates are local-only, criterion 8 is manual, and the `uart2` GPIO mapping needs the device. It must never be auto-merged. PRs carry `Closes #747`, `stage:in-review`, `ci:*`, `review:pending` |
 
 ## References & Research
 
