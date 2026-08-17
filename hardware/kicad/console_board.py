@@ -45,7 +45,9 @@ stop a late addition renumbering C1..C15 and invalidating a started layout):
 import json
 import os
 import sys
+import tempfile
 
+import netlist
 from skidl import (
     Pin,
     Part, Net, generate_netlist, ERC, POWER, set_default_tool, KICAD8,
@@ -108,7 +110,8 @@ v5 = Net("+5V")            # logic: Pico VSYS + the AHCT125
 #
 # The ring board is unaffected. It declares its own single supply as Net("+5V_LED")
 # locally (ring_board.py:46); two netlists joined by a cable do not have to agree on
-# net NAMES, only on pin order -- which is what RING_PINOUT gates.
+# net NAMES, only on pin order -- which is what RING_CONTRACT gates, by reading
+# ring_board.net and mapping the two names onto each other (see RING_ALIASES).
 v3v3 = Net("+3V3")         # from the Pi ribbon -- the MIDI front end is the Pi's,
                            # so it runs on the Pi's rail and works whenever the Pi
                            # is up, regardless of the MCU
@@ -296,10 +299,17 @@ for _ref, _net in (("J20", ctrl1), ("J21", ctrl2)):
     C("10nF")[1, 2] += _net, gnd               # anti-alias / debounce
 
 # ---- J6/J7: ring+encoder and the indicator chain ----------------------------
-# J6's pin order is NOT free: it must match ring_board.py's J1, which main_board.py
-# already mirrors by hand. This board is the third copy, so _check() gates it.
-RING_PINOUT = ["+5V", "+5V", "GND", "GND", "RING_DATA_OUT",
-               "ENC_A", "ENC_B", "ENC_SW"]
+# J6's pin order is NOT free: it is one end of an 8-way cable whose other end is
+# ring_board.py's J1. There is no hand-written copy of that pinout here to drift
+# from it -- _check() reads ring_board.net and compares the two connectors pin by
+# pin. The two netlists do NOT have to agree on net NAMES (see the rail note
+# above), only on which conductor each pin carries, so the alias table below is
+# the entire contract between the boards. Anything not aliased must match exactly.
+RING_NET = os.path.join(HERE, "ring_board.net")
+RING_ALIASES = {          # ring_board.py's name -> this board's name
+    "+5V_LED": "+5V",     # that board still declares its own single supply locally
+    "RING_DATA": "RING_DATA_OUT",   # here it is the AHCT125's buffered output
+}
 j_ring = jst(8, "J6", "RING_ENC")
 j_ring[1, 2] += v5
 j_ring[3, 4] += gnd
@@ -484,14 +494,26 @@ def _check(strict_stations=True):
         f"PAD_ROW: J22's pins straddle both pad rows "
         f"({ {gp: PICO[gp] for gp in EXPANSION_GPIO} }) -- one header carries them all")
 
-    # the ring header is the THIRD hand-copy of a pinout held together by a comment
-    assert RING_PINOUT == ["+5V", "+5V", "GND", "GND", "RING_DATA_OUT",
-                           "ENC_A", "ENC_B", "ENC_SW"], (
-        "RING_CONTRACT: J6 no longer matches ring_board.py's J1 -- 1,2=5V supply "
-        "3,4=GND 5=RING_DATA 6=ENC_A 7=ENC_B 8=ENC_SW")
-    for _i, _want in enumerate(RING_PINOUT, start=1):
+    # The two ends of the ring cable, compared against each other. This used to
+    # assert a literal list against itself and never open ring_board.py at all,
+    # while its message claimed it had -- so the day that board's encoder pull-ups
+    # were deleted, nothing was watching the interface they sat on. The other end
+    # is now READ.
+    assert os.path.exists(RING_NET), (
+        f"RING_CONTRACT: {RING_NET} is missing -- run ring_board.py; the other end "
+        "of the ring cable is what J6 is checked against")
+    ring_j1 = netlist.pin_map(RING_NET, "J1")
+    assert sorted(int(p) for p in ring_j1) == list(range(1, 9)), (
+        f"RING_CONTRACT: ring_board J1 has pins {sorted(ring_j1)}, expected 1..8 -- "
+        "the cable is 8-way at this end")
+    for _i in range(1, 9):
+        _want = ring_j1[str(_i)]
+        _want = RING_ALIASES.get(_want, _want)
         got = {n.name for n in j_ring[_i].nets}
-        assert _want in got, f"RING_CONTRACT: J6 pin {_i} carries {got}, expected {_want}"
+        assert _want in got, (
+            f"RING_CONTRACT: ring_board J1 pin {_i} carries {_want}, but J6 pin {_i} "
+            f"carries {got} -- these are the two ends of one 8-way cable, so a pin "
+            "that means different things at each end wires the encoder to the LEDs")
 
     assert len(EXP_PINOUT) == 8 and EXP_PINOUT[:2] == ["+3V3", "+5V"] \
         and EXP_PINOUT[-1] == "GND", (
@@ -502,9 +524,19 @@ def _check(strict_stations=True):
             f"EXPANSION: J22 pin {_i} is labelled {EXP_PINOUT[_i - 1]} but wired to "
             f"GP{_gp}")
 
-    assert set(SWD_PADS) == {"D1", "D2", "D3"} and SWD_PADS["D2"] is gnd, (
-        "SWD: the debug lines must land on the module's own D1/D2/D3 pads with GND "
-        "on D2 -- if this reverts to a header, the footprint has changed too")
+    # Read off the PART, not off the SWD_PADS literal two lines above it. Asserting
+    # against the dict that made the connections is a tautology, and it passed with
+    # SWCLK and SWDIO swapped -- which is the mistake that actually happens, and
+    # which bricks flashing rather than announcing itself.
+    assert pico.footprint.endswith("RaspberryPi_Pico_SMD_HandSolder"), (
+        f"SWD: J1 is on {pico.footprint}, which has no D1/D2/D3 debug pads -- SWD "
+        "would need a header and three flying wires again")
+    for _pad, _want in (("D1", "SWCLK"), ("D2", "GND"), ("D3", "SWDIO")):
+        got = {n.name for n in pico[_pad].nets}
+        assert _want in got, (
+            f"SWD: the module's {_pad} pad carries {got}, expected {_want} -- the "
+            "debug pad order is the module's, not ours, and swapping SWCLK/SWDIO "
+            "leaves a board that cannot be flashed")
 
     # The power button must NOT be on the 40-way at all. This gate used to assert
     # the opposite -- "the button must land on Pi header pin 5 (GPIO3)... the only
@@ -573,11 +605,11 @@ def _selftest():
     """Flip each gate and fail unless every one of them bites. New to this repo --
     see the plan. Returns before generate_netlist() so a self-test run can never
     overwrite the committed netlist with a deliberately broken one."""
-    import copy
+    global RING_NET
     cases = []
 
-    def case(name, mutate):
-        cases.append((name, mutate))
+    def case(name, want, mutate):
+        cases.append((name, want, mutate))
 
     def _dup_gpio():
         GPIO["SW_STOP"] = GPIO["SW_UNDO"]
@@ -589,7 +621,24 @@ def _selftest():
         GPIO["CTRL1_TIP"], GPIO["SW_RECPLAY"] = GPIO["SW_RECPLAY"], GPIO["CTRL1_TIP"]
 
     def _ring_order():
-        RING_PINOUT[4] = "ENC_A"
+        # The other board reorders ITS connector and this one does not follow. The
+        # mutation therefore has to happen in ring_board.net -- a control that
+        # edited a copy of the pinout held here would only prove that the copy
+        # exists, which is exactly how this gate came to be dead.
+        global RING_NET
+        text = open(RING_NET).read()
+        a, b = '(ref "J1")\n        (pin "6")', '(ref "J1")\n        (pin "7")'
+        text = text.replace(a, "\0").replace(b, a).replace("\0", b)
+        RING_NET = os.path.join(tempfile.gettempdir(), "ring_board.selftest.net")
+        with open(RING_NET, "w") as fh:
+            fh.write(text)
+
+    def _swd_swap():
+        # The one SWD mistake that gets made, and the reason the old gate was worth
+        # nothing: a board that is electrically perfect and cannot be flashed.
+        pico["D1"].disconnect(); pico["D3"].disconnect()
+        pico["D1"] += swdio
+        pico["D3"] += swclk
 
     def _btn_pin():
         PI_HDR[5] = gnd
@@ -614,33 +663,47 @@ def _selftest():
     def _exp_collide():
         GPIO["SW_STOP"] = EXPANSION_GPIO[0]
 
-    case("duplicate GPIO", _dup_gpio)
-    case("expansion pin fighting an on-board function", _exp_collide)
-    case("LINK on a pin with no UART", _uart_split)
-    case("connector group straddling both pad rows", _row_straddle)
-    case("CTRL off an ADC pin", _ctrl_off_adc)
-    case("ring pinout drift", _ring_order)
-    case("power button off GPIO3", _btn_pin)
-    case("wrong footswitch count", _fsw_count)
-    case("board terminates a station the panel lacks", _station)
+    # Each control names the gate it must trip. A control that trips some OTHER
+    # gate proves nothing about its own and reads as a pass -- console_board_pcb.py
+    # gained this check after two of its controls silently did exactly that, and
+    # this side was catching a bare AssertionError and never asking which one.
+    case("duplicate GPIO", "PIN_MAP:", _dup_gpio)
+    case("expansion pin fighting an on-board function", "PIN_MAP:", _exp_collide)
+    case("LINK on a pin with no UART", "LINK_UART:", _uart_split)
+    case("connector group straddling both pad rows", "PAD_ROW:", _row_straddle)
+    case("CTRL off an ADC pin", "PIN_MAP:", _ctrl_off_adc)
+    case("ring board reorders its connector", "RING_CONTRACT:", _ring_order)
+    case("SWCLK and SWDIO swapped on the debug pads", "SWD:", _swd_swap)
+    case("power button off GPIO3", "PWR_BTN:", _btn_pin)
+    case("wrong footswitch count", "PIN_MAP:", _fsw_count)
+    case("board terminates a station the panel lacks", "REAR_IO_COVER:", _station)
 
     ok = True
-    for name, mutate in cases:
-        saved = (dict(GPIO), list(RING_PINOUT), dict(PI_HDR),
-                 list(FSW_ORDER), dict(STATION_HEADERS))
+    ring_net_saved = RING_NET
+    for name, want, mutate in cases:
+        saved = (dict(GPIO), dict(PI_HDR), list(FSW_ORDER), dict(STATION_HEADERS))
         mutate()
         try:
             _check()
-            print("  NO BITE  %s  <-- gate is dead" % name)
+            print("  NO BITE    %s  <-- gate is dead" % name)
             ok = False
         except AssertionError as exc:
-            print("  bites    %-42s %s" % (name, str(exc).replace("\n", " ")[:58]))
+            msg = str(exc).replace("\n", " ")
+            if want in msg:
+                print("  bites      %-42s %s" % (name, msg[:56]))
+            else:
+                print("  WRONG GATE %-42s wanted %s, got: %s" % (name, want, msg[:40]))
+                ok = False
         finally:
             GPIO.clear(); GPIO.update(saved[0])
-            RING_PINOUT[:] = saved[1]
-            PI_HDR.clear(); PI_HDR.update(saved[2])
-            FSW_ORDER[:] = saved[3]
-            STATION_HEADERS.clear(); STATION_HEADERS.update(saved[4])
+            PI_HDR.clear(); PI_HDR.update(saved[1])
+            FSW_ORDER[:] = saved[2]
+            STATION_HEADERS.clear(); STATION_HEADERS.update(saved[3])
+            RING_NET = ring_net_saved
+            if mutate is _swd_swap:
+                pico["D1"].disconnect(); pico["D3"].disconnect()
+                pico["D1"] += swclk
+                pico["D3"] += swdio
     return ok
 
 
