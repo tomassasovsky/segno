@@ -242,8 +242,22 @@ SKIRT_GAP    = 0.3            # wall top to the REAL faceplate underside. Small 
 # slope, and by a row-dependent amount -- measured in "Segno console (populated)"
 # (the manufacturing source of truth) 2026-07-28: +1.6 over row 1, +0.7 over
 # row 2. Without this the skirt gap came out 2.6/1.7 instead of 1.0.
-SKIRT_DRIFT_ROW1 = 1.6
-SKIRT_DRIFT_ROW2 = 0.5   # was 0.7 at the old row-2 line; re-measured after the #366
+# Measured seating offset of the REAL plate above the bare geometric slope, from
+# the "Segno console (populated)" doc. It used to be a two-point LINE,
+# face_drift(v) = 1.96 - 0.00533*v, fitted at the row-1 and old row-2 lines.
+#
+# That slope was not the plate. -0.00533 is the tan/sin unit error (0.005253) to
+# within 1.5 %: the fit was measuring #742's bug, not a physical taper. Re-reduce
+# the same three measurements against a sin slope and they land on
+# +1.955 / +1.942 / +1.939 -- a CONSTANT, to within 0.016 mm. Three independent
+# points agreeing that closely is the evidence that sin is right.
+#
+# Correcting both together moves platform_h by -0.0003 mm at the front row and
+# +0.015 mm at the mid row, so nothing already printed or cut is invalidated.
+FACE_SEAT = 1.95
+
+SKIRT_DRIFT_ROW1 = FACE_SEAT   # was 1.6 -- the same #742 fit; see FACE_SEAT
+SKIRT_DRIFT_ROW2 = FACE_SEAT   # was 0.5 -- ditto; both rows share one constant now
                          # rearward move + #373 flush-raise: 0.5 leaves 0.3 mm to the
                          # REAL plate at the tub's rear band (probed in the populated doc)
 SKIRT_NOTCH_W = 12.0          # cable notch in the rear tub wall, centred (the
@@ -604,8 +618,20 @@ assert HR_FLAT > max(CORNER_ZR_WALL) + T + 2.0, (
     "rear web too short: corner-bracket rivet holes cross the transition fold")
 
 def lid_top_z(v):
-    """Z of the Top-plate surface at control-area depth v (0..FACE_RUN)."""
-    return H_FRONT + SLOPE_DROP * (min(v, FACE_RUN) / FACE_RUN)
+    """Z of the Top-plate surface at control-area depth v (0..FP_V).
+
+    v is measured ALONG THE SLOPE, not in plan: FP_V == L_SLOPE (406.64), which is
+    the faceplate's own length, not FACE_RUN (397). Rising a distance v along a
+    plane inclined at SLOPE_ANGLE lifts you by v*sin -- so sin, not tan.
+
+    This used to divide by FACE_RUN, i.e. treat an along-slope v as a horizontal
+    run, overstating the height by v*(tan - sin) = 0.00525*v -- 0.36 mm at the
+    front row, 1.42 mm at the mid row, 1.95 mm at the back of the 16in aperture
+    (issue #742). face_drift's docstring already named the bug ("lid_top_z uses
+    the tan-slope shortcut, the real plate follows sin") and a two-point fit was
+    used to cancel it; see FACE_SEAT for why that fit collapses to a constant now.
+    """
+    return H_FRONT + min(v, L_SLOPE) * math.sin(math.radians(SLOPE_ANGLE))
 
 def lid_under_z(v):
     """Z of the faceplate UNDERSIDE at depth v."""
@@ -715,13 +741,10 @@ def platform_h(v):
     v_rim = v + FSW_SLOT_D / 2.0
     return lid_top_z(v_rim) + face_drift(v_rim) + PEDAL_PAD_T - PEDAL_H + POCKET_DEPTH
 
-def face_drift(v):
-    """Measured faceplate seating offset ABOVE the bare lid_top_z slope in the
-    "Segno console (populated)" doc -- two-point calibration (+1.6 mm at the row-1
-    line, +0.7 mm at the old row-2 line; the same pair behind SKIRT_DRIFT_*).
-    lid_top_z uses the tan-slope shortcut, the real plate follows sin + a seating
-    offset; this closes the gap where a check needs REAL clearance."""
-    return 1.96 - 0.00533 * v
+
+def face_drift(_v=None):
+    """Kept as a call so the intent stays greppable; the offset is CONSTANT now."""
+    return FACE_SEAT
 
 # ---------------------------------------------------------------------------
 # FACEPLATE SUPPORT POSTS  (base-anchored props -- issue #292)
@@ -941,6 +964,27 @@ def _overlap(a, b, clr=2.0):
 
 def _check():
     """Validate the geometry. Raises AssertionError with a clear message."""
+    # 0. THE SLOPE CONVENTION (issue #742). v is measured ALONG THE SLOPE --
+    # FP_V == L_SLOPE, not FACE_RUN -- so height is v*sin, never v*tan. This went
+    # wrong once and was masked for months by a two-point "drift" fit that was
+    # really cancelling the error, so pin it rather than trust a comment.
+    assert abs(FP_V - L_SLOPE) < 1e-9, (
+        f"SLOPE_CONV: FP_V {FP_V:.3f} != L_SLOPE {L_SLOPE:.3f} -- if the faceplate "
+        "v axis is no longer the slope length, every lid_top_z caller changes meaning")
+    _sin = math.sin(math.radians(SLOPE_ANGLE))
+    for _v in (0.0, 67.8, 200.0, FP_V):
+        assert abs(lid_top_z(_v) - (H_FRONT + min(_v, L_SLOPE)*_sin)) < 1e-9, (
+            f"SLOPE_CONV: lid_top_z({_v}) is not H_FRONT + v*sin -- a tan there "
+            "overstates the plate by 0.00525*v (1.95 mm at the 16in aperture)")
+    assert abs(lid_top_z(FP_V) - H_REAR) < 1e-9, \
+        f"SLOPE_CONV: the top of the slope is {lid_top_z(FP_V):.3f}, not H_REAR {H_REAR}"
+    # ...and the seating offset must stay a CONSTANT. The moment it grows a v term
+    # again it is almost certainly re-absorbing a unit error, which is what the old
+    # face_drift(v) = 1.96 - 0.00533*v turned out to be.
+    assert face_drift(0.0) == face_drift(400.0) == FACE_SEAT, (
+        "SLOPE_CONV: face_drift is v-dependent again -- that is how #742 hid. A "
+        "real seating offset does not taper along the plate")
+
     cuts, _ = faceplate_holes()
     rear = rear_holes()
     byref = {c["ref"]: c for c in cuts}

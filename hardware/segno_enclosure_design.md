@@ -486,6 +486,43 @@ the tub edge. Stance is 817 × 329.
 
 ---
 
+### The slope convention — `v` is along the plate, so height is `v·sin` (#742)
+
+`v` on the faceplate is measured **along the slope**, not in plan: `FP_V == L_SLOPE`
+(406.64), the plate's own length, not `FACE_RUN` (397). Moving `v` along a plane
+inclined at `SLOPE_ANGLE` lifts you by **`v·sin`**.
+
+`lid_top_z` used to interpolate over `FACE_RUN` — i.e. treat an along-slope `v` as a
+horizontal run — overstating the plate by `v·(tan − sin)` = **0.00525·v**: 0.36 mm at
+the front row, 1.42 mm at the mid row, **1.95 mm** at the back of the 16" aperture.
+
+**It was masked, not missed.** `face_drift`'s own docstring named it ("*lid_top_z uses
+the tan-slope shortcut, the real plate follows sin*"), and a two-point fit
+`face_drift(v) = 1.96 − 0.00533·v` was calibrated in the Fusion doc to cancel it. That
+slope was never the plate: **−0.00533 is the tan/sin error (0.005253) to within 1.5 %.**
+The fit was measuring the bug.
+
+Re-reduce the same three measurements against a **sin** slope and they land on
+**+1.955 / +1.942 / +1.939** — a constant, to within 0.016 mm. Three independent points
+agreeing that closely is the evidence. So `FACE_SEAT = 1.95` is the real, physical
+seating offset, and `SKIRT_DRIFT_ROW1/ROW2` (1.6 / 0.5 — the same fit, duplicated)
+collapse into it.
+
+> **Nothing already made is invalidated.** Correcting both together moves `platform_h`
+> by **−0.0003 mm** at the front row and **+0.015 mm** at the mid row, and **every DXF
+> is byte-identical apart from timestamps and GUIDs**. The printed rings and sleds stay
+> valid.
+>
+> What it *does* fix is the **uncompensated** call sites — `lid_under_z` for screen
+> depth and Pi headroom never had drift added, so the interior was overstated by up to
+> 1.95 mm, in the direction that makes you think there is more room than there is.
+
+Gated at the **top** of `_check()`, before anything derived from it: `FP_V == L_SLOPE`,
+`lid_top_z` is exactly `H_FRONT + v·sin`, the top of the slope is `H_REAR`, and
+`face_drift` is **constant** — the moment it grows a `v` term again it is almost
+certainly re-absorbing a unit error, which is exactly how this hid. All four
+negative-controlled.
+
 ## 6. Sheet-metal notes
 
 - Folded edges (wall bottom flanges): 90°, inside R = `t` = 2.0, **K 0.33** → bend
