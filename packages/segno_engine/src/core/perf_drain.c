@@ -46,12 +46,25 @@
  * stop) or lives on this thread's stack, and the sidecar goes out through a
  * raw descriptor. test_engine_core.c's
  * test_perf_drain_steady_state_cycle_is_allocation_free interposes the
- * allocator around several live cycles and asserts zero calls — keep it that
- * way when adding to this file.
+ * allocator around several live cycles and asserts zero calls — and separately
+ * interposes fopen, because on macOS an allocation made INSIDE libc (a FILE
+ * object and its stream buffer) never binds to the executable's malloc and so
+ * is invisible to the first counter. Keep BOTH true when adding to this file:
+ * no allocation, and no stdio stream opened per cycle.
  *
- * (Retired-layer PCM is the one exception, and it is not steady state: those
- * buffers are malloc'd by the CONTROL thread per overdub pass and freed here
- * — see le_pd_write_staged_layer.)
+ * RETIRED LAYERS ARE THE ONE EXCEPTION, and the exception really does allocate
+ * ON THIS THREAD — not just free what another thread allocated. Per retired
+ * layer, le_pd_write_staged_layer does a fopen/fclose right here in the cycle:
+ * the same per-call FILE object and lazily-allocated stream buffer this change
+ * just took off the sidecar path, so a performer doing overdub passes makes the
+ * drain thread take the arena lock once per retired layer, inside the cycle.
+ * (It also frees the lane PCM the CONTROL thread malloc'd for that pass — that
+ * half is a free, not an allocation.) It is left as-is because it is
+ * user-paced rather than steady state: it fires on punch-outs, not four times
+ * a second, and only while the performer is actually stacking layers. The
+ * allocation test excludes this path by construction (no retired layer in its
+ * fixture) and says so in its SCOPE note; if that path ever becomes
+ * per-cycle, it needs the same treatment the sidecar just got.
  */
 #include "perf_drain.h"
 
@@ -155,6 +168,47 @@
  *     250 ms cadence, i.e. manufactured overruns.
  *   - Windows: THREAD_PRIORITY_BELOW_NORMAL on the created handle.
  *
+ * THE HEADROOM THIS SPENDS, stated because rejecting QoS above on a measured
+ * cadence stretch and then applying nice/priority on none would be an
+ * unargued double standard.
+ *
+ * The budget: le_perf_arm sizes master_ring for LE_PERF_CAPTURE_SECONDS (= 2 s)
+ * and the cycle runs every LE_PD_FLUSH_MS (= 250 ms), so a cycle may stretch to
+ * 8x its cadence before a ring the audio thread is still filling overruns and
+ * le_pd_catch_up starts writing zero-filled silence into the take (#710). That
+ * 8x is the whole margin; everything below is spent out of it.
+ *
+ * What the QoS path spent: ~750 ms observed, 3 of the 8. It spent it on the
+ * WAKEUP — timer coalescing defers when this thread runs at all, so the 10 ms
+ * poll itself became ~30 ms and the cadence with it. That is the expensive
+ * kind, because the deferral is a system policy with no ceiling this code can
+ * reason about: the ~750 ms was measured on an IDLE machine, and coalescing
+ * windows widen with load and low-power states rather than narrowing.
+ *
+ * What nice 10 / SCHED_OTHER-15 spends: CPU SHARE ONCE RUNNABLE, not the
+ * wakeup. Nothing about them defers a timer. Under CFS, nice 10 is weight
+ * 110 against nice 0's 1024 — roughly a 10% share against a saturating
+ * nice-0 competitor, which is the pessimistic case a loaded Pi (UI + export +
+ * plugin scan) actually presents. The cycle's own work is small and bounded:
+ * pop ~250 ms of audio out of the rings (~96 KB/cycle for stereo master at
+ * 48 kHz, plus each monitor stem), the fwrites for it, one ~1 KB snprintf pass
+ * and one open/write/close/rename for the sidecar — single-digit milliseconds
+ * of CPU on the appliance target. At a 10% share, single-digit ms of work
+ * takes tens of ms of wall time: ~12% of the 250 ms cadence, ~1.5% of the 2 s
+ * ring. Reaching the 8x that actually hurts would need the cycle stretched
+ * past 2 s, i.e. two orders of magnitude worse than the share alone explains —
+ * a machine on which the audio callback has already failed. And niceness does
+ * not starve: CFS still schedules by vruntime, and a thread that sleeps 10 ms
+ * out of every 10 ms comes back with a low one, so it is picked up promptly
+ * rather than queued behind the hogs.
+ *
+ * So the margin holds where QoS's did not, for a reason and not just a smaller
+ * number: this drop cannot move the wakeup, and the wakeup is what the cadence
+ * is made of. What makes that claim CHECKABLE rather than asserted is the
+ * monotonic deadline in le_pd_drain_thread_main — before it, the cycle counted
+ * assumed sleep, so any stretch this invites would have drifted the cadence
+ * with nothing measuring it.
+ *
  * It is NEVER raised to a real-time policy: a late sidecar flush is invisible,
  * a late audio callback is a click. Failure to apply any of this is
  * non-fatal — the capture still has to start (a fallback pthread_create with
@@ -211,6 +265,12 @@ static void le_pd_thread_join(le_pd_thread_t th) {
 }
 
 static void le_pd_sleep_ms(int ms) { Sleep((DWORD)ms); }
+
+/* Milliseconds on a monotonic clock — never the wall clock, which an NTP step
+ * or a manual date change could move backwards under the flush deadline.
+ * GetTickCount64 is already 64-bit-since-boot, so there is no wrap to handle;
+ * its ~10-16 ms resolution is irrelevant against a 250 ms cadence. */
+static uint64_t le_pd_now_ms(void) { return (uint64_t)GetTickCount64(); }
 
 static int le_pd_mkdir_one(const char* path) {
   if (path[0] == '\0') return 1;
@@ -308,6 +368,19 @@ static void le_pd_thread_join(le_pd_thread_t th) { pthread_join(th, NULL); }
 static void le_pd_sleep_ms(int ms) {
   struct timespec ts = {ms / 1000, (long)(ms % 1000) * 1000000L};
   nanosleep(&ts, NULL);
+}
+
+/* Milliseconds on a monotonic clock — CLOCK_MONOTONIC, the same source
+ * midi_backend_linux.c timestamps with, deliberately not a new abstraction and
+ * deliberately not CLOCK_REALTIME (an NTP step or a manual date change must
+ * never move the flush deadline). A failure leaves ts zeroed, which reads as
+ * "no time passed" and simply defers this cycle by one poll; it cannot fail in
+ * practice on any platform this builds for. */
+static uint64_t le_pd_now_ms(void) {
+  struct timespec ts;
+  memset(&ts, 0, sizeof(ts));
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000u + (uint64_t)(ts.tv_nsec / 1000000L);
 }
 
 static int le_pd_mkdir_one(const char* path) {
@@ -518,15 +591,10 @@ int le_perf_drain_self_stopped(struct le_perf_drain* drain) {
 }
 
 /* Low-level bounded write; checks the force-failure test hook so every PCM/
- * silence-fill write path fails uniformly.
- *
- * (The rest of that sentence used to read "le_pd_flush and
- * le_pd_write_sidecar each check it too, at their own I/O boundary" — a
- * pre-existing inaccuracy, noted rather than repaired mid-#722 because both
- * of those functions document their real, deliberate behaviour at their own
- * definitions: neither has ever consulted g_pd_force_write_failure, and the
- * sidecar's exemption is what makes the `stopped_early` marker testable
- * after a forced PCM failure.) */
+ * silence-fill write path fails uniformly. This is the ONLY function that
+ * consults it — le_pd_flush and le_pd_write_sidecar deliberately do NOT check
+ * it; see their own definitions for why (the sidecar's exemption is what makes
+ * the `stopped_early` marker testable after a forced PCM failure). */
 static int le_pd_write(FILE* f, const void* data, size_t bytes) {
   if (atomic_load_explicit(&g_pd_force_write_failure, memory_order_relaxed)) {
     return 0;
@@ -1065,18 +1133,46 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
 
 static void le_pd_drain_thread_main(void* arg) {
   le_perf_drain* d = (le_perf_drain*)arg;
-  int since_flush_ms = 0;
 
   /* Before the first cycle: drop this thread's own scheduling share (#722).
    * See the shim block's SCHEDULING note for why this half has to happen from
    * inside the thread rather than in the attributes. */
   le_pd_thread_lower_own_priority();
 
+  /* A MONOTONIC DEADLINE, not a tick accumulator. This loop used to add
+   * LE_PD_POLL_MS per iteration and fire at 25 of them — counting ASSUMED
+   * sleep, with nothing measuring the elapsed kind. le_pd_sleep_ms(10) is a
+   * floor, never a ceiling, and this thread is now deliberately deprioritized
+   * (see the SCHEDULING note), so a poll landing at 15 ms or worse under load
+   * is an expected outcome rather than an anomaly. Under the accumulator that
+   * silently stretched the cadence: 25 polls of 30 ms is a 750 ms cycle that
+   * still believes it ran at 250. The failure at the far end is #710's — more
+   * than LE_PERF_CAPTURE_SECONDS of audio piling into master_ring inside one
+   * cycle, an overrun, and le_pd_catch_up padding the take with zero-filled
+   * silence.
+   *
+   * The deadline is re-based off ITSELF, not off `now`, so a cycle that ran
+   * long does not push the next one out by its own duration — the cadence is
+   * of cycle STARTS. If a whole interval has already been missed, it resyncs
+   * to now instead of trying to make it up with back-to-back cycles (catching
+   * up by running the writer harder is the opposite of what a background
+   * writer should do when the machine is busy).
+   *
+   * This can only ever make cycles MORE frequent, never less: a real sleep is
+   * always at least as long as its request, so the accumulator's 25th tick
+   * always landed at or after 250 ms of true elapsed time, and this fires at
+   * the first poll wake at or after exactly that. The one case where the
+   * accumulator fired sooner is a nanosleep cut short by a signal — it would
+   * credit a full 10 ms for a partial sleep — and firing at the true 250 ms
+   * instead is the documented contract, comfortably inside the 2 s ring. */
+  uint64_t next_flush_ms = le_pd_now_ms() + LE_PD_FLUSH_MS;
+
   while (atomic_load_explicit(&d->running, memory_order_acquire)) {
     le_pd_sleep_ms(LE_PD_POLL_MS);
-    since_flush_ms += LE_PD_POLL_MS;
-    if (since_flush_ms < LE_PD_FLUSH_MS) continue;
-    since_flush_ms = 0;
+    const uint64_t now_ms = le_pd_now_ms();
+    if (now_ms < next_flush_ms) continue;
+    next_flush_ms += LE_PD_FLUSH_MS;
+    if (next_flush_ms <= now_ms) next_flush_ms = now_ms + LE_PD_FLUSH_MS;
     if (!le_pd_drain_cycle(d)) {
       atomic_store_explicit(&d->disk_full, 1, memory_order_release);
       break;
