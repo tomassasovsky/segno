@@ -323,19 +323,21 @@ PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M2.5)
 BOARD_HOLES = (85.0, 87.0)    # M3 mount rectangle (measured, THT Pro Micro V1)
 BOARD_SIZE  = (94.0, 96.0)    # board outline (for the 3D render)
 # --- rubber feet (issue #743) -------------------------------------------------
-# 40 x 15 mm Shore-A60 silicone, FEMALE threaded (Amazon B0DSHFV4NT, 35 lb each),
-# screwed on with an M4 from INSIDE. That head lands on the plate's top face --
-# and the two FRONT fixings sit under the REC/PLAY and TRACK4 pedestals, which
-# have to seat flat on that same face.
-# Countersinking the plate was the first idea and it does not work: the smallest
-# foot thread anyone sells is M4, and an M4 csk needs 1.85 mm of a 2.0 mm sheet,
-# leaving a knife edge. (M3 would have been fine at 1.5 -- no M3 feet exist.)
-# So the plate keeps a plain hole and the PRINTED parts absorb the head instead:
-# a clearance hole through the ring floor, a pocket in the sled underside.
-D_FOOT      = 4.5    # M4 clearance for the foot screw (was Ø8, a bigger fixing)
-FOOT_INSET  = 45.0   # foot centres, in from the bottom-plate corners
-FOOT_RLF_D  = 12.0   # relief for the M4 head in ring floor + sled underside
-FOOT_RLF_H  = 5.0    # pocket depth in the sled (head ~2.8 + slack)
+# Screw-on, M4 from inside the case. The head therefore lands on the plate's TOP
+# face, so no fixing may sit under a pedestal -- the rings have to seat flat on
+# that same face.
+# At the old x=45 the two front fixings landed squarely under REC/PLAY and
+# TRACK4, and the first fix was to relieve the ring floor and pocket the sled.
+# Unnecessary: the front corners are CLEAR. The corner brackets are at the REAR
+# (y 405..419), not the front, so the 24.6 mm margin outboard of the end tubs is
+# free. Moving the fixings into it removes the interference instead of
+# accommodating it -- and widens the stance from 756 to 817 mm as a bonus.
+D_FOOT       = 4.5   # M4 clearance for the foot screw
+FOOT_INSET_X = 14.3  # from each side. Window is 8.2..20.4: bend relief (RI+T) +
+                     # hole radius at the low end, tub edge 24.6 at the high end.
+                     # _check() holds it inside that, and holds every fixing clear
+                     # of every pedestal.
+FOOT_INSET_Y = 45.0  # from front and rear
 
 # --- fasteners ----------------------------------------------------------------
 D_M3      = 3.2      # M3 clearance (Pi/board standoffs)
@@ -909,25 +911,18 @@ def _check():
             assert plate + tn_*(hx - INSERT_PILOT_D/2.0) > CONSOLE_SLED_T - 0.5, (
                 f"CONSOLE_SLED: {tag} sloped top cuts more than 0.5 mm into the "
                 f"pedal insert at x={hx:.2f} -- the bore rim would not seat flat")
-    # RUBBER FEET (#743): every fixing that lands under a pedestal must be
-    # relieved in BOTH the ring floor and the sled, or the ring will not seat on
-    # the base plate -- which is how this was found in the first place.
-    rel = foot_relief_xy()
-    assert len(rel) == 2, (
-        f"FOOT_RELIEF: expected 2 fixings under pedestals, got {len(rel)} -- the "
-        "feet or the pedal rows moved and the reliefs no longer match")
-    shd_, shw_ = (SKIRT_IN_D - 2*SLED_CLR)/2.0, (SKIRT_IN_W - 2*SLED_CLR)/2.0
-    for rx, ry in rel:
-        assert abs(rx) + FOOT_RLF_D/2.0 <= shd_ and abs(ry) + FOOT_RLF_D/2.0 <= shw_, \
-            f"FOOT_RELIEF: pocket at ({rx:.1f}, {ry:.1f}) runs off the sled"
-        near = min(math.hypot(rx-a, ry-b)
-                   for a, b in list(pedal_base_holes()) + list(platform_foot_xy()))
-        assert near >= FOOT_RLF_D/2.0 + INSERT_PILOT_D/2.0 + 1.0, (
-            f"FOOT_RELIEF: pocket at ({rx:.1f}, {ry:.1f}) is {near:.2f} mm from an "
-            "insert bore -- they would break into each other")
-    assert FOOT_RLF_H <= CONSOLE_SLED_T - INSERT_DEPTH - 1.0, \
-        "FOOT_RELIEF: pocket depth would break into the pedal inserts above it"
-    assert D_FOOT < FOOT_RLF_D, "FOOT_RELIEF: relief must clear the screw head"
+    # RUBBER FEET (#743). The screw head sits on the plate's top face, so the
+    # rule is simply that NO fixing may land under a pedestal -- then no ring or
+    # sled needs relieving. foot_relief_xy() reports any that do; it must be empty.
+    stray = foot_relief_xy()
+    assert not stray, (
+        f"FOOT_CLEAR: {len(stray)} foot fixing(s) land under a pedestal at "
+        f"{stray[:2]} -- the screw head would stop the ring seating flat")
+    _bend = RI + T
+    _tub_lo = min(u for _l, u, v in PEDALS if v == PEDAL_ROW1_V) - SKIRT_OUT_W/2.0
+    assert _bend + D_FOOT/2.0 + 2.0 <= FOOT_INSET_X <= _tub_lo - D_FOOT/2.0 - 2.0, (
+        f"FOOT_CLEAR: inset {FOOT_INSET_X} outside the window "
+        f"{_bend + D_FOOT/2.0 + 2.0:.1f}..{_tub_lo - D_FOOT/2.0 - 2.0:.1f}")
     # the sled takes M3x5 from BOTH faces -- that is what sets its thickness
     assert CONSOLE_SLED_T >= 2*INSERT_DEPTH + 0.5, (
         f"CONSOLE_SLED: {CONSOLE_SLED_T:.2f} cannot take {INSERT_DEPTH:.1f} mm "
@@ -1472,8 +1467,8 @@ def base_foot_xy():
     source: dxf_base() drills them and foot_relief_xy() asks which land under a
     pedestal."""
     BW, BD = W - 2*T, D - 2*T
-    return [(x, y) for x in (FOOT_INSET, BW - FOOT_INSET)
-            for y in (FOOT_INSET, BD - FOOT_INSET)]
+    return [(x, y) for x in (FOOT_INSET_X, BW - FOOT_INSET_X)
+            for y in (FOOT_INSET_Y, BD - FOOT_INSET_Y)]
 
 def foot_relief_xy(v=None):
     """Foot fixings that land UNDER a pedestal, in the PEDESTAL frame (X = depth,
@@ -1526,13 +1521,6 @@ def pedal_console_sled(cq):
     for fx, fy in platform_foot_xy():                 # chassis, from below
         s = s.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2.0)
                   .extrude(INSERT_DEPTH).translate((fx, fy, 0)))
-    # RUBBER-FOOT HEAD POCKET (#743), underside. Only the two FRONT-row pedestals
-    # actually sit over a foot, but this is one sled part for all ten, so it
-    # carries the union -- an unused blind pocket on the other eight costs
-    # nothing. The head is M4 pan (~2.8 tall) with slack.
-    for rx, ry in foot_relief_xy():
-        s = s.cut(cq.Workplane("XY").circle(FOOT_RLF_D/2.0)
-                  .extrude(FOOT_RLF_H).translate((rx, ry, 0)))
     # SLOPED TOP, toe end. The sled fills the tub BORE, which is SKIRT_SETBACK
     # larger than the slot's horizontal opening -- so its toe-side top corner ends
     # up UNDER the faceplate, and a 12.5 deg plate is at its lowest exactly there.
@@ -1650,13 +1638,6 @@ def _platform_printed(cq, ph, v_c, standalone=True, baffle_t=None, sled=False):
                 for dy in platform_foot_u(sw):
                     body = body.cut(cq.Workplane("XY").circle(D_M3/2.0 + 0.25)
                                     .extrude(h + 1.0).translate((dx, dy, 0)))
-            # RUBBER-FOOT RELIEF (#743). The two front foot screws come up from
-            # under the base plate and their M4 heads sit on its top face --
-            # right where this ring has to seat. Clear straight through the floor;
-            # the head then lives in the sled's pocket above.
-            for rx, ry in foot_relief_xy(v_c):
-                body = body.cut(cq.Workplane("XY").circle(FOOT_RLF_D/2.0)
-                                .extrude(h + 1.0).translate((rx, ry, 0)))
         else:
             # MINI TUB -- part of the tray, so it needs no clamping of its own.
             # A single central retention bore instead; the caller cuts the head
