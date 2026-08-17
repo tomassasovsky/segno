@@ -70,7 +70,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATIONS_JSON = os.path.join(HERE, "..", "enclosure", "out", "rear_io_stations.json")
 
 R_FP = "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
-C_FP = "Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm"
+# 2.50 mm lead pitch, not 5.00. Commodity "104" discs and MLCCs ship on 2.5 mm
+# spacing; the 5 mm land would have meant splaying the leads on all 16 of them, or
+# hunting an unusual part. Changing the board is cheaper than changing the BOM.
+# (C30 is the opposite case and keeps its 10 mm / 5 mm land -- order a 470uF at
+# 25 V or 35 V, since the common 16 V part is 8 x 11.5 mm on 3.5 mm pitch and will
+# not physically fit.)
+C_FP = "Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P2.50mm"
 JST = "Connector_JST:JST_XH_B%dB-XH-A_1x%02d_P2.50mm_Vertical"
 
 
