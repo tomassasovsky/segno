@@ -877,6 +877,25 @@ def _check():
         if tag == "front":
             assert abs(deck - RING_FLOOR) < 1e-3, \
                 f"CONSOLE_SLED: front floor {deck:.3f} != RING_FLOOR {RING_FLOOR}"
+    # ...and the sled's top must stay UNDER the faceplate everywhere it reaches.
+    # It fills the tub bore, which is SKIRT_SETBACK wider than the slot opening,
+    # so its toe-side corner sits beneath the plate -- exactly where a 12.5 deg
+    # plate is lowest. Without the sloped cut this fouled the faceplate (9.3 mm3
+    # front / 10.6 mm3 mid, measured in the populated doc).
+    tn_ = math.tan(math.radians(SLOPE_ANGLE))
+    half_d = (SKIRT_IN_D - 2*SLED_CLR)/2.0
+    for tag, v, drift in (("front", PEDAL_ROW1_V, SKIRT_DRIFT_ROW1),
+                          ("mid", PEDAL_ROW2_V, SKIRT_DRIFT_ROW2)):
+        seat = platform_h(v) - T - (CONSOLE_SLED_T - (PEDAL_PAD_T - POCKET_DEPTH))
+        plate = (lid_top_z(v) + drift - 2*T - SKIRT_GAP) - seat      # sled frame, x=0
+        assert plate - tn_*half_d < CONSOLE_SLED_T, (
+            f"CONSOLE_SLED: {tag} sled toe would clear the plate without a cut -- "
+            "the sloped top in pedal_console_sled() has become dead code")
+        # the four pedal inserts must survive that cut: their bores start at the top
+        for hx, _hy in pedal_base_holes():
+            assert plate + tn_*(hx - INSERT_PILOT_D/2.0) > CONSOLE_SLED_T - 0.5, (
+                f"CONSOLE_SLED: {tag} sloped top cuts more than 0.5 mm into the "
+                f"pedal insert at x={hx:.2f} -- the bore rim would not seat flat")
     # the sled takes M3x5 from BOTH faces -- that is what sets its thickness
     assert CONSOLE_SLED_T >= 2*INSERT_DEPTH + 0.5, (
         f"CONSOLE_SLED: {CONSOLE_SLED_T:.2f} cannot take {INSERT_DEPTH:.1f} mm "
@@ -1449,6 +1468,20 @@ def pedal_console_sled(cq):
     for fx, fy in platform_foot_xy():                 # chassis, from below
         s = s.cut(cq.Workplane("XY").circle(INSERT_PILOT_D/2.0)
                   .extrude(INSERT_DEPTH).translate((fx, fy, 0)))
+    # SLOPED TOP, toe end. The sled fills the tub BORE, which is SKIRT_SETBACK
+    # larger than the slot's horizontal opening -- so its toe-side top corner ends
+    # up UNDER the faceplate, and a 12.5 deg plate is at its lowest exactly there.
+    # The ring's top already gets this cut; the sled needs it too, or it fouls the
+    # plate (measured 9.3 mm3 front / 10.6 mm3 mid before this existed).
+    # ONE plane serves both rows: the flush-at-rim rule (#373) fixes the pedal to
+    # the plate identically, so the overshoot comes out 2.458 front / 2.473 mid --
+    # cut to the tighter of the two and the other clears by 0.015.
+    v_c = PEDAL_ROW1_V
+    seat = platform_h(v_c) - T - (CONSOLE_SLED_T - (PEDAL_PAD_T - POCKET_DEPTH))
+    zc = (lid_top_z(v_c) + SKIRT_DRIFT_ROW1 - 2*T - SKIRT_GAP) - seat   # plane at x=0, sled frame
+    s = s.cut(cq.Workplane("XY").box(400.0, 400.0, 200.0, centered=(True, True, False))
+              .rotate((0, 0, 0), (0, 1, 0), -SLOPE_ANGLE)
+              .translate((0, 0, zc)))
     return s
 
 def pedal_sled(cq):
