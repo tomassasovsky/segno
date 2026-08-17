@@ -132,6 +132,9 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   Stream<double> flashPedalFirmware() => _env.flashPedal();
 
   @override
+  Future<void> abortPedalFlash() => _env.abortPedalFlash();
+
+  @override
   Future<PedalFlashFailureClass?> lastPedalFlashFailure() async {
     final marker = _env.readTextSync(pedalFailFile)?.trim();
     if (marker == null || marker.isEmpty) return null;

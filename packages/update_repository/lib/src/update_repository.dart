@@ -64,4 +64,8 @@ class UpdateRepository {
   /// record. See [PlatformUpdateBackend.lastPedalFlashFailure].
   Future<PedalFlashFailureClass?> lastPedalFlashFailure() =>
       _backend.lastPedalFlashFailure();
+
+  /// Terminates a still-running pedal flash, if any, returning once it is
+  /// dead. See [PlatformUpdateBackend.abortPedalFlash].
+  Future<void> abortPedalFlash() => _backend.abortPedalFlash();
 }

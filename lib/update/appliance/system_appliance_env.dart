@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -55,7 +56,29 @@ class SystemApplianceEnv implements ApplianceEnv {
   Stream<double> stage(String version) => _runHelper(['install', version]);
 
   @override
-  Stream<double> flashPedal() => _runHelper(['flash-pedal']);
+  Stream<double> flashPedal() => _runHelper(const ['flash-pedal'], track: true);
+
+  /// The live `flash-pedal` helper, kept so [abortPedalFlash] can kill it.
+  /// Static because callers hold this env as `const` — there is only ever one
+  /// flash in flight on the appliance either way.
+  static Process? _pedalFlash;
+
+  @override
+  Future<void> abortPedalFlash() async {
+    final process = _pedalFlash;
+    _pedalFlash = null;
+    if (process == null) return;
+    process.kill();
+    try {
+      await process.exitCode.timeout(const Duration(seconds: 3));
+    } on TimeoutException {
+      // The helper ignored SIGTERM (probably blocked in avrdude); take the
+      // whole group down hard rather than leave a privileged flasher fighting
+      // the next attempt over the bootloader port.
+      process.kill(ProcessSignal.sigkill);
+      await process.exitCode;
+    }
+  }
 
   @override
   Future<String?> pedalPending() async {
@@ -72,9 +95,24 @@ class SystemApplianceEnv implements ApplianceEnv {
 
   /// Runs the privileged helper with [args], republishing its
   /// `PROGRESS <0-100>` lines as `[0, 1]` and throwing with the collected
-  /// stderr on a non-zero exit.
-  Stream<double> _runHelper(List<String> args) async* {
+  /// stderr on a non-zero exit. With [track], the live process is exposed to
+  /// [abortPedalFlash] until it exits.
+  Stream<double> _runHelper(List<String> args, {bool track = false}) async* {
     final process = await Process.start(helperPath, args);
+    if (track) {
+      _pedalFlash = process;
+      // The handle is dropped when the PROCESS dies, never when this stream is
+      // merely cancelled — cancelling is exactly what the stall path does, a
+      // microtask before it asks for the kill, so clearing it there would let
+      // a wedged helper escape [abortPedalFlash] and go on holding the
+      // bootloader port. A handle to an already-exited process is a harmless
+      // target: killing it is a no-op.
+      unawaited(
+        process.exitCode.whenComplete(() {
+          if (identical(_pedalFlash, process)) _pedalFlash = null;
+        }),
+      );
+    }
     final stderrLines = <String>[];
     final stderrDone = process.stderr
         .transform(utf8.decoder)

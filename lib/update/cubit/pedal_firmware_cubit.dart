@@ -80,6 +80,14 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
 
   final UpdateRepository _updates;
 
+  /// The in-flight attempt's teardown handles, so [close] can dismantle a
+  /// flash mid-air: the stall [Timer] would otherwise sit armed for up to
+  /// [stallTimeout] after the widget tree is gone, and the helper subscription
+  /// would keep delivering into a closed cubit.
+  Timer? _stall;
+  StreamSubscription<double>? _sub;
+  Completer<void>? _flashDone;
+
   /// Total flash attempts before the failed dialog is shown (#670). The
   /// retries are silent — the gate keeps its "Finishing update" face — because
   /// most transient failures (a dropped manifest fetch, a missed bootloader
@@ -100,6 +108,12 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
   /// than the helper's longest silent stretch (the 300 s hex download cap), so
   /// it can only fire on a genuinely stuck helper.
   static const Duration stallTimeout = Duration(minutes: 6);
+
+  /// The helper's progress value at the moment it hands avrdude the
+  /// bootloader port (`PROGRESS 50` in `segno-update-ctl flash-pedal`). A
+  /// stall at or past this mark means a write may have begun; before it,
+  /// nothing was written.
+  static const double _writePhase = 0.5;
 
   /// Flashes the pending firmware, if any. Safe to call once per app start.
   Future<void> run() async {
@@ -131,11 +145,28 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
         return;
       } on Exception catch (error) {
         if (isClosed) return;
-        // Unknown counts as interrupted: comfort that cannot be proven must
-        // not be offered.
-        final failureClass =
-            await _updates.lastPedalFlashFailure() ??
-            PedalFlashFailureClass.interrupted;
+        final PedalFlashFailureClass failureClass;
+        if (error is _FlashStalled) {
+          // A stalled helper is killed, not just abandoned: left alive it
+          // would fight the next attempt over the bootloader port, and its
+          // eventual marker write could race the new attempt's. abort only
+          // returns once the process is dead, so no retry can overlap it.
+          await _updates.abortPedalFlash();
+          if (isClosed) return;
+          // The marker on disk cannot be trusted after a stall — the killed
+          // helper never wrote one, so whatever is there is from an EARLIER
+          // attempt. Classify from this attempt's own progress instead:
+          // avrdude reached means a write may have begun.
+          failureClass = error.lastProgress >= _writePhase
+              ? PedalFlashFailureClass.interrupted
+              : PedalFlashFailureClass.notStarted;
+        } else {
+          // Unknown counts as interrupted: comfort that cannot be proven
+          // must not be offered.
+          failureClass =
+              await _updates.lastPedalFlashFailure() ??
+              PedalFlashFailureClass.interrupted;
+        }
         if (isClosed) return;
 
         if (attempt < maxAttempts && await _worthRetrying(failureClass)) {
@@ -157,37 +188,34 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
   }
 
   /// One complete flash attempt: drains the helper's progress stream into
-  /// [PedalFirmwareStage.flashing] states, completing on success and throwing
-  /// on failure or on a stall.
+  /// [PedalFirmwareStage.flashing] states, completing on success, throwing the
+  /// stream's error on failure, and throwing [_FlashStalled] on a stall.
   ///
   /// The stall guard is a hand-armed [Timer] re-armed on every progress event
   /// rather than `Stream.timeout`, which never resolves under the fake-async
   /// zones the tests run in (its events escape the zone's clock).
   Future<void> _flashOnce(String version) async {
-    final done = Completer<void>();
-    Timer? stall;
+    final done = _flashDone = Completer<void>();
+    var lastProgress = 0.0;
 
     void arm() {
-      stall?.cancel();
-      stall = Timer(stallTimeout, () {
-        if (!done.isCompleted) {
-          done.completeError(
-            TimeoutException('update helper stopped responding', stallTimeout),
-          );
-        }
+      _stall?.cancel();
+      _stall = Timer(stallTimeout, () {
+        if (!done.isCompleted) done.completeError(_FlashStalled(lastProgress));
       });
     }
 
     arm();
-    final sub = _updates.flashPedalFirmware().listen(
+    _sub = _updates.flashPedalFirmware().listen(
       (value) {
         arm();
+        lastProgress = value.clamp(0.0, 1.0);
         if (isClosed) return;
         emit(
           PedalFirmwareState(
             stage: PedalFirmwareStage.flashing,
             version: version,
-            progress: value.clamp(0.0, 1.0),
+            progress: lastProgress,
           ),
         );
       },
@@ -202,12 +230,29 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
     try {
       await done.future;
     } finally {
-      stall?.cancel();
+      _stall?.cancel();
+      _stall = null;
       // Not awaited: awaiting a stream cancel inline can hang under the
-      // widget-test fake clock (dart-lang/sdk#49353 shape; see the repo's
-      // testWidgets stream-cancel note).
-      unawaited(sub.cancel());
+      // widget-test fake clock (see the repo's testWidgets stream-cancel
+      // note).
+      unawaited(_sub?.cancel());
+      _sub = null;
+      _flashDone = null;
     }
+  }
+
+  @override
+  Future<void> close() {
+    // Dismantle any flash still in the air: cancel the stall timer (it would
+    // otherwise sit armed after the tree is gone), stop listening, let the
+    // pending attempt unwind, and kill the helper process so no privileged
+    // flasher outlives its supervisor.
+    _stall?.cancel();
+    unawaited(_sub?.cancel());
+    final done = _flashDone;
+    if (done != null && !done.isCompleted) done.complete();
+    unawaited(_updates.abortPedalFlash());
+    return super.close();
   }
 
   /// Whether another silent attempt can help.
@@ -229,4 +274,19 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
   /// again.
   void dismiss() =>
       emit(const PedalFirmwareState(stage: PedalFirmwareStage.idle));
+}
+
+/// The helper stopped emitting progress for [PedalFirmwareCubit.stallTimeout]
+/// and was killed. Carries how far it had got, because the on-disk failure
+/// marker cannot classify a stall — the killed helper never wrote one.
+class _FlashStalled implements Exception {
+  const _FlashStalled(this.lastProgress);
+
+  /// The last progress value the helper reported before going quiet.
+  final double lastProgress;
+
+  @override
+  String toString() =>
+      'update helper stopped responding '
+      '(last progress ${(lastProgress * 100).round()}%)';
 }

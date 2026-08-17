@@ -47,4 +47,7 @@ class UnsupportedPlatformBackend implements PlatformUpdateBackend {
 
   @override
   Future<PedalFlashFailureClass?> lastPedalFlashFailure() async => null;
+
+  @override
+  Future<void> abortPedalFlash() async {}
 }

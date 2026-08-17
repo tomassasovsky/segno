@@ -32,6 +32,11 @@ class _FakeBackend implements PlatformUpdateBackend {
   int pendingCalls = 0;
   int flashCalls = 0;
   int failureReads = 0;
+  int abortCalls = 0;
+
+  /// Interleaving of `flash` and `abort` calls, to prove no retry starts
+  /// while a killed helper could still be alive.
+  final calls = <String>[];
   StreamController<double>? controller;
 
   @override
@@ -48,6 +53,7 @@ class _FakeBackend implements PlatformUpdateBackend {
   @override
   Stream<double> flashPedalFirmware() {
     flashCalls++;
+    calls.add('flash');
     if (flashCalls <= flashErrors.length) {
       return Stream.error(flashErrors[flashCalls - 1]);
     }
@@ -59,6 +65,12 @@ class _FakeBackend implements PlatformUpdateBackend {
   Future<PedalFlashFailureClass?> lastPedalFlashFailure() async {
     failureReads++;
     return failureClass;
+  }
+
+  @override
+  Future<void> abortPedalFlash() async {
+    abortCalls++;
+    calls.add('abort');
   }
 
   @override
@@ -290,25 +302,82 @@ void main() {
 
         expect(done, isTrue);
         expect(cubit.state.stage, PedalFirmwareStage.failed);
-        expect(cubit.state.failureClass, PedalFlashFailureClass.interrupted);
+        // The helper never reported reaching the write phase, so the honest
+        // class for a stall killed this early is not-started.
+        expect(cubit.state.failureClass, PedalFlashFailureClass.notStarted);
+        // Every stalled helper is KILLED before the next attempt begins —
+        // two privileged flashers must never fight over the bootloader port.
+        expect(backend.calls, [
+          'flash',
+          'abort',
+          'flash',
+          'abort',
+          'flash',
+          'abort',
+        ]);
         unawaited(cubit.close());
       });
     });
 
-    test('a flash still running when the cubit closes emits nothing', () async {
-      // The window is real: closing a window during the flash disposes the
-      // provider while avrdude is mid-write.
-      final backend = _FakeBackend(pending: '0.4.0');
-      final cubit = cubitOver(backend);
+    test('a stall after the write phase is interrupted, marker or not', () {
+      // The killed helper wrote no marker, so whatever is on disk is from an
+      // EARLIER attempt. A stale not-started record must not buy comfort for
+      // a flash that had already been handed the bootloader port.
+      fakeAsync((async) {
+        final backend = _FakeBackend(
+          // After the stall the pedal (wedged mid-write) presents no sketch
+          // port: fail fast rather than retry.
+          pendingSequence: ['0.4.0'],
+          failureClass: PedalFlashFailureClass.notStarted,
+        );
+        final cubit = cubitOver(backend);
 
-      final done = cubit.run();
-      await pumpEventQueue();
-      await cubit.close();
+        var done = false;
+        unawaited(cubit.run().whenComplete(() => done = true));
+        async.flushMicrotasks();
+        // The helper reaches the avrdude hand-off (PROGRESS 50), then wedges.
+        backend.controller!.add(0.5);
+        async
+          ..flushMicrotasks()
+          ..elapse(
+            PedalFirmwareCubit.stallTimeout + const Duration(seconds: 1),
+          );
 
-      backend.controller!.add(0.7);
-      await backend.controller!.close();
-
-      await expectLater(done, completes);
+        expect(done, isTrue);
+        expect(backend.flashCalls, 1);
+        expect(backend.abortCalls, 1);
+        expect(cubit.state.stage, PedalFirmwareStage.failed);
+        expect(cubit.state.failureClass, PedalFlashFailureClass.interrupted);
+        // The stale on-disk marker was never consulted for the stall.
+        expect(backend.failureReads, 0);
+        unawaited(cubit.close());
+      });
     });
+
+    test(
+      'closing mid-flash unwinds the attempt and kills the helper',
+      () async {
+        // The window is real: closing a window during the flash disposes the
+        // provider while avrdude is mid-write. The stall timer must not stay
+        // armed, the run future must unwind on its own (no stream event
+        // needed), and no privileged flasher may outlive its supervisor.
+        final backend = _FakeBackend(pending: '0.4.0');
+        final cubit = cubitOver(backend);
+
+        final done = cubit.run();
+        await pumpEventQueue();
+        await cubit.close();
+
+        await expectLater(done, completes);
+        expect(backend.abortCalls, 1);
+
+        // Late stream events after close are swallowed, not emitted.
+        backend.controller!.add(0.7);
+        unawaited(backend.controller!.close());
+        await pumpEventQueue();
+        expect(cubit.state.stage, PedalFirmwareStage.flashing);
+        expect(cubit.state.progress, 0);
+      },
+    );
   });
 }

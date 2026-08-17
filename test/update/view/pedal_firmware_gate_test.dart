@@ -35,6 +35,13 @@ class _FakeBackend implements PlatformUpdateBackend {
   @override
   Future<PedalFlashFailureClass?> lastPedalFlashFailure() async => failureClass;
 
+  int abortCalls = 0;
+
+  @override
+  Future<void> abortPedalFlash() async {
+    abortCalls++;
+  }
+
   @override
   String get channel => 'experimental';
 
@@ -66,7 +73,13 @@ void main() {
     final cubit = PedalFirmwareCubit(
       updates: UpdateRepository(backend: backend),
     );
-    addTearDown(cubit.close);
+    // Guarded, because a test that closes the cubit itself must not close it
+    // twice: the second close returns the done future the FIRST one created
+    // inside the widget-test fake-async zone, and nothing drives that zone
+    // once the body is over — the tear-down would hang forever.
+    addTearDown(() async {
+      if (!cubit.isClosed) await cubit.close();
+    });
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.neon,
@@ -205,6 +218,37 @@ void main() {
 
     expect(find.byKey(const Key('pedal_firmware_gate')), findsNothing);
     expect(find.byKey(const Key('looper')), findsOneWidget);
+  });
+
+  testWidgets('disposing mid-flash leaves no pending stall timer', (
+    tester,
+  ) async {
+    // testWidgets itself fails on any timer still armed at the end of the
+    // test, so this test IS the assertion that close() disarms the 6-minute
+    // stall guard when the tree goes down mid-flash.
+    final backend = _FakeBackend(pending: '0.4.0');
+    final cubit = await pumpGate(tester, backend);
+
+    unawaited(cubit.run());
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('pedal_firmware_gate')), findsOneWidget);
+
+    // Tear the tree down first, as the framework does on shutdown, THEN
+    // close. The close is deliberately NOT awaited inline: under the
+    // widget-test fake clock nothing drains the microtask queue while the test
+    // body is suspended, so `await cubit.close()` here deadlocks the whole
+    // suite (the same stream-cancel gotcha the repo's testWidgets notes
+    // document). `pump()` drives the zone instead.
+    await tester.pumpWidget(const SizedBox());
+    unawaited(cubit.close());
+    await tester.pump();
+
+    // The helper is killed rather than left flashing unsupervised.
+    expect(backend.abortCalls, 1);
+    // Not awaited: the gate's subscription is already cancelled, so the
+    // controller's done future has no listener to wait on.
+    unawaited(backend.progress.close());
   });
 
   testWidgets('an interrupted flash gets the honest copy, not comfort', (

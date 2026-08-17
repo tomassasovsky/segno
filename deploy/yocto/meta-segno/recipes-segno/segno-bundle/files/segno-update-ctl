@@ -281,22 +281,30 @@ pedal_fail_class() {
 # flash has completed since — the pedal is (or may be) holding a half-written
 # app section. A LATER attempt that fails before touching the pedal (no
 # manifest, no port — the parked pedal presents no sketch port at all) does not
-# change what the pedal is left holding, so `not-started` must not overwrite
-# `interrupted`. Only a successful flash clears the marker.
+# change what the pedal is left holding, so `not-started` may only overwrite a
+# marker that is itself provably `not-started`. Anything else is kept: legacy
+# markers (pre-#670, a bare version, only ever written on interrupted paths)
+# and empty/garbled markers (a write cut short) all mean "a write may have
+# begun". Only a successful flash clears the marker.
+#
+# The write itself is tmp + mv so a power cut mid-write leaves either the old
+# marker or the new one, never a truncated file that would launder the class.
 write_pedal_fail() {
     class=$1
     version=${2:-}
-    if [ "$class" = "not-started" ] && \
-       [ "$(pedal_fail_class)" = "interrupted" ]; then
-        log "keeping earlier 'interrupted' failure marker (a write had begun)"
+    if [ "$class" = "not-started" ] && [ -f "$PEDAL_FAIL_FILE" ] && \
+       [ "$(pedal_fail_class)" != "not-started" ]; then
+        log "keeping earlier failure marker (not provably not-started)"
         return 0
     fi
     mkdir -p "$(dirname "$PEDAL_FAIL_FILE")" 2>/dev/null || true
+    tmp="$PEDAL_FAIL_FILE.tmp.$$"
     if [ -n "$version" ]; then
-        printf '%s %s\n' "$class" "$version" > "$PEDAL_FAIL_FILE" 2>/dev/null || true
+        printf '%s %s\n' "$class" "$version" > "$tmp" 2>/dev/null || return 0
     else
-        printf '%s\n' "$class" > "$PEDAL_FAIL_FILE" 2>/dev/null || true
+        printf '%s\n' "$class" > "$tmp" 2>/dev/null || return 0
     fi
+    mv -f "$tmp" "$PEDAL_FAIL_FILE" 2>/dev/null || rm -f "$tmp" 2>/dev/null || true
 }
 
 # What the pedal is running, as recorded by the last successful flash.

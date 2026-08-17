@@ -75,4 +75,13 @@ abstract interface class PlatformUpdateBackend {
   /// missing or unparseable — treat it as [PedalFlashFailureClass.interrupted],
   /// because comfort that cannot be proven must not be offered.
   Future<PedalFlashFailureClass?> lastPedalFlashFailure();
+
+  /// Terminates a still-running pedal flash, if any, and only returns once it
+  /// is dead (SIGTERM, then SIGKILL after a short grace on the appliance).
+  ///
+  /// Called when the flash stream stalls or the caller is torn down: a
+  /// half-abandoned privileged flasher left alive would fight the next attempt
+  /// over the bootloader port, and its eventual marker write could race the
+  /// new attempt's. No-op when nothing is running.
+  Future<void> abortPedalFlash();
 }

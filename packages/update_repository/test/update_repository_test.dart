@@ -66,6 +66,13 @@ class _FakeBackend implements PlatformUpdateBackend {
 
   @override
   Future<PedalFlashFailureClass?> lastPedalFlashFailure() async => failureClass;
+
+  int abortCount = 0;
+
+  @override
+  Future<void> abortPedalFlash() async {
+    abortCount++;
+  }
 }
 
 /// Builds a manifest with minor component [minor] (e.g. `_manifest(2)` ==
@@ -189,6 +196,14 @@ void main() {
       await UpdateRepository(backend: backend).flashPedalFirmware().toList();
 
       expect(backend.flashCount, 1);
+    });
+
+    test('abortPedalFlash forwards to the backend', () async {
+      final backend = _FakeBackend();
+
+      await UpdateRepository(backend: backend).abortPedalFlash();
+
+      expect(backend.abortCount, 1);
     });
 
     test('lastPedalFlashFailure forwards to the backend', () async {

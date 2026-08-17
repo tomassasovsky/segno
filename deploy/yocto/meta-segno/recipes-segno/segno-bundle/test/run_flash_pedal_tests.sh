@@ -326,6 +326,60 @@ detach_pedal
 run_flash; rc=$?
 check "still refuses" 1 "$rc"
 check "keeps the interrupted class" "interrupted 9.9.9" "$(fail_marker)"
+check "leaves no tmp residue" "" "$(ls "$work/state"/*.tmp.* 2>/dev/null)"
+teardown
+
+echo "a legacy (pre-#670) marker must not be downgraded either"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "segno-pedal-9.9.9.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+# The old format was a bare version, only ever written on interrupted paths
+# (avrdude failed / sketch never re-enumerated). After an OTA to this script it
+# still means "a write may have begun" and must survive a not-started failure.
+echo "9.9.9" > "$work/state/pedal-firmware-failed"
+detach_pedal
+run_flash; rc=$?
+check "still refuses" 1 "$rc"
+check "keeps the legacy marker" "9.9.9" "$(fail_marker)"
+teardown
+
+echo "an empty (torn) marker must not be downgraded either"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "segno-pedal-9.9.9.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+# A marker torn by power loss carries no class; treat it like interrupted.
+: > "$work/state/pedal-firmware-failed"
+detach_pedal
+run_flash; rc=$?
+check "still refuses" 1 "$rc"
+check "does not launder the torn marker to not-started" "" "$(fail_marker)"
+teardown
+
+echo "interrupted still overwrites a legacy marker"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "segno-pedal-9.9.9.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+attach_pedal
+echo "1.2.3" > "$work/state/pedal-firmware-failed"
+cat > "$work/bin/avrdude" <<'STUB'
+#!/bin/sh
+echo "avrdude: programmer is not responding" >&2
+exit 1
+STUB
+chmod +x "$work/bin/avrdude"
+run_flash; rc=$?
+check "reports failure" 1 "$rc"
+check "upgrades the legacy marker to a classed one" "interrupted 9.9.9" "$(fail_marker)"
+check "leaves no tmp residue" "" "$(ls "$work/state"/*.tmp.* 2>/dev/null)"
 teardown
 
 # --- the two failure modes the on-device run actually hit ----------------------
