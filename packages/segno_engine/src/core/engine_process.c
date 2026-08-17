@@ -695,6 +695,51 @@ static void le_seam_fold(le_track* t, int32_t len, int32_t F) {
   }
 }
 
+/* Applies the SAME fold to an in-flight overdub undo shadow (#728). When a
+ * take finalizes straight into OVERDUBBING (rec/dub — the common press) the
+ * dub's backup-on-write starts saving pre-values immediately, and a quantized
+ * rec/dub finalizes ON the loop top, so during the F overlap frames the write
+ * head sweeps 0..F-1 and the shadow captures the head BEFORE the fold rewrites
+ * it. Without this the first undo would swap in a layer whose head still
+ * splices — a silent revert to the pre-#728 behaviour, undoable only by
+ * undoing again.
+ *
+ * The shadow holds the pre-pass image, and the corrected pre-pass image is the
+ * FOLDED head: the continuation belongs to the take that just finalized, i.e.
+ * to exactly the content the shadow is an image of. So this is the identical
+ * arithmetic on the identical pre-value, just stored in the shadow — the
+ * continuation is read from the live slot because the shadow is loop-length
+ * quantized and has no [len, len + F) region of its own.
+ *
+ * Positions of [0, F) this pass has NOT backed up yet are folded speculatively
+ * and that is harmless: every shadow position is written exactly once before
+ * the layer retires — by backup-on-write when the trajectory reaches it, or by
+ * le_dub_block_update's drain walk, which enumerates precisely the uncovered
+ * set — and both copy from the live slot, which by then is folded. Gated on
+ * a_layer_in_flight so a merely pre-armed spare is never touched.
+ *
+ * KNOWN GAP: a layer that RETIRED inside the overlap window (only reachable
+ * when a re-punch merges into a session whose pass boundary lands in those few
+ * ms) keeps its un-folded head. Same low-severity shape — that undo step
+ * reverts to today's seam, it does not corrupt. */
+static void le_seam_fold_dub_shadow(le_track* t, int32_t len, int32_t F) {
+  const int32_t slot = t->dub_slot;
+  if (slot < 0 || !load_i32(&t->a_layer_in_flight)) return;
+  const int32_t n = le_lanes_active(t);
+  for (int32_t l = 0; l < n; ++l) {
+    le_lane* ln = &t->lanes[l];
+    const int32_t live = load_i32(&ln->a_live);
+    const float* b = ln->pool[live];
+    float* sb = ln->pool[slot];
+    if (b == NULL || sb == NULL) continue;
+    if (ln->pool_cap[live] < len + F || ln->pool_cap[slot] < F) continue;
+    for (int32_t i = 0; i < F; ++i) {
+      const float x = (float)i / (float)F; /* 0..1 across the fade */
+      sb[i] = b[len + i] * (1.0f - x) + sb[i] * x;
+    }
+  }
+}
+
 /* Requests finalize of the *defining master* at its current length. When the
  * loop is long enough and the buffer has room, this defers the finalize: the
  * track keeps RECORDING F more frames so the seam can be crossfaded (see
@@ -951,9 +996,30 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
    *
    * Armed only when the take actually FILLED its length: the compensated write
    * head must sit exactly at `len`, so the F frames that follow really are the
-   * continuation of position len-1. A take that stopped early (auto rounds the
-   * length UP) leaves [record_pos, len) as digital silence and its wrap is a
-   * different artifact with a different fix — see #728's round-up note. */
+   * continuation of position len-1. Two cases are refused, both correctly,
+   * because in neither does a continuation of position len-1 exist:
+   *
+   *   - The take STOPPED EARLY. Auto rounds the length UP, so [record_pos, len)
+   *     stays the digital silence le_prepare_new_capture wrote; the wrap is a
+   *     silence cut, a different artifact with a different fix (#730), and
+   *     folding a continuation of the wrong sample onto the head would only
+   *     add a second one.
+   *
+   *   - a_record_offset > 0 — i.e. EVERY latency-calibrated rig. Compensation
+   *     writes input frame i at position i - offset, so a take that ran to
+   *     `len` leaves its head at len - offset and the last `offset` frames of
+   *     the buffer as those same prepared zeros. record_pos - offset == len
+   *     therefore cannot hold on the auto path (auto rounds up, so len >=
+   *     record_pos, and the equality needs offset <= 0), and on the fixed-
+   *     multiple path only when record_start happens to equal offset. So the
+   *     fold silently does not run there, and that is the honest outcome: the
+   *     buffer's true last sample is at len - offset - 1 and what follows it is
+   *     already IN the loop, not past it — there is nothing to capture and no
+   *     seam of the assumed shape to smooth. Refusing leaves such a take
+   *     exactly as it was before #728; giving the offset path a seam of its own
+   *     means first fixing the trailing-zeros gap it shares with #730, which is
+   *     a length/round-up direction call, not a crossfade one. Pinned by
+   *     test_loop_seam_not_armed_with_record_offset. */
   const int32_t new_len = load_i32(&t->lanes[0].a_len);
   const int32_t seam_f = seam_room(e, t, new_len);
   if (seam_f > 0 && t->record_pos - load_i32(&e->a_record_offset) == new_len) {
@@ -3710,7 +3776,27 @@ static inline void mix_tracks_frame(
   /* Allocated frames of the very same slot `buf` came from — read together
    * with it so the seam overlap write below can prove itself in bounds even if
    * the control thread swaps a shorter undo slot into a_live mid-capture
-   * (#728). */
+   * (#728).
+   *
+   * pool_cap is a PLAIN int32_t array the control thread writes, and #728 is
+   * the first time the audio thread reads it — a new, deliberately non-atomic
+   * control->audio read, so state the invariant that makes it safe. Reading it
+   * with the same a_live load only rules out a_live SWAPS; what rules out
+   * reallocation generations is that the control thread never resizes a slot
+   * the audio thread can be reading through pool[a_live]:
+   *   - le_lane_ensure_slot (grow-by-replace: frees pool[slot], stores a new
+   *     pointer, then the new cap) only ever touches a LIVE slot while the
+   *     track is EMPTY — le_begin_empty_capture, le_prepare_new_capture and
+   *     session import all establish that first, and an EMPTY track's buffer
+   *     is never dereferenced here (the null guard and the state switch below
+   *     both fall through to silence). le_engine_set_lane_count grows slot 0
+   *     of lanes that are not active yet, so this loop does not even visit
+   *     them. Every other slot it grows is an undo/shadow slot the audio
+   *     thread does not hold as live.
+   *   - le_lane_shrink_slot only touches RETIRED slots — a layer the audio
+   *     thread handed off through the evt_ring and can no longer name.
+   * So for every slot this loop can actually observe as live-and-playing, the
+   * (pointer, cap) pair is immutable for the whole block. */
   int32_t cap[LE_MAX_TRACKS][LE_MAX_LANES];
   float vol[LE_MAX_TRACKS][LE_MAX_LANES];
   int mut[LE_MAX_TRACKS][LE_MAX_LANES];
@@ -4064,9 +4150,20 @@ static inline void mix_tracks_frame(
 
     /* #728: the trailing overlap capture completes here (once per frame per
      * track, all lanes having just written this frame's sample) and folds the
-     * captured continuation into the head. */
+     * captured continuation into the head. The two folds touch disjoint
+     * regions of the live slot (the shadow one only READS [len, len + F)),
+     * so their order is immaterial. */
     if (seam_w >= 0 && --tr->seam_capture == 0) {
+      le_seam_fold_dub_shadow(tr, tr->seam_len, seam_f);
       le_seam_fold(tr, tr->seam_len, seam_f);
+      /* [R1] seam fold: an in-place content write, and the only one in the
+       * new-track path that does NOT already ride a finalize bump. The master
+       * path folds and then calls finalize_master, which bumps; here the
+       * finalize bumped F frames ago, so without this the wet cache would key
+       * the un-crossfaded head as current — a copy spanning the fold would
+       * publish torn content, and one completing just before it would replay
+       * exactly the click this fold removes. */
+      le_audio_rev_bump(tr);
     }
   }
 }

@@ -684,6 +684,15 @@ typedef struct le_track {
    *   -----------------------------+---------+------------------------------
    *   record finalize (defining)   | audio   | finalize_master
    *   record finalize (later trk)  | audio   | finalize_new_track
+   *   loop-seam fold (later trk)   | audio   | mix_tracks_frame (the trailing
+   *                                |         | overlap fold, #728 — a head
+   *                                |         | rewrite F frames AFTER the
+   *                                |         | finalize above, so that row's
+   *                                |         | bump does not cover it. The
+   *                                |         | defining master's fold needs
+   *                                |         | no row: finalize_master_xfade
+   *                                |         | folds and THEN finalizes, and
+   *                                |         | finalize_master bumps.)
    *   entry into OVERDUBBING       | audio   | le_dub_session_start
    *   each retired overdub pass    | audio   | le_dub_boundary,
    *                                |         | le_dub_block_update (drain)

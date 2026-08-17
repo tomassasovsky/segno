@@ -2354,6 +2354,197 @@ static void test_loop_seam_on_non_defining_track(void) {
   le_engine_destroy(e);
 }
 
+/* #728 (c): with a NONZERO record offset — i.e. every latency-calibrated rig —
+ * the seam is deliberately NOT folded, and the take is left exactly as #728
+ * found it. Compensation writes input frame i at position i - offset, so a
+ * take that ran a full lap leaves its head at len - offset and the trailing
+ * `offset` frames as the zeros le_prepare_new_capture wrote: there is no
+ * continuation of position len-1 to fold, and finalize_new_track's arming gate
+ * refuses. This pins that refusal (rather than leaving it to be discovered as
+ * a silent no-op), and pins that refusing costs nothing — the head is the raw
+ * take, untouched, and nothing was written past the compensated write head. */
+static void test_loop_seam_not_armed_with_record_offset(void) {
+  printf("test_loop_seam_not_armed_with_record_offset\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  const int OFF = 64;  /* a small, realistic measureLatency result */
+  const int F = 480;   /* seam_xfade_frames at 48 kHz */
+  le_engine_set_record_offset(e, OFF);
+
+  /* Silent defining master on track 0, so only track 1 holds content. */
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  le_test_osc osc = make_osc(36.25, 48000.0);
+  const double phase0 = osc.phase;
+  const double inc = osc.inc;
+  le_engine_record(e, 1);
+  drain(e); /* the take starts on the next frame fed */
+  feed_osc(e, &osc, N, NULL, NULL);
+  le_engine_record(e, 1);
+  feed_osc(e, &osc, 512, NULL, NULL);
+  drain(e);
+  settle_layers(e);
+
+  /* The gate refused: no overlap was ever armed, so nothing counted down and
+   * nothing folded. */
+  CHECK(e->tracks[1].seam_capture == 0);
+
+  float* stem = (float*)malloc(sizeof(float) * (size_t)N);
+  CHECK(le_engine_export_track(e, 1, stem, N) == N);
+
+  /* The head is the raw take: input frame j + OFF landed at position j. */
+  double head_dev = 0.0;
+  for (int j = 0; j < F; ++j) {
+    const double want = 0.5 * sin(phase0 + inc * (double)(j + OFF));
+    const double d = fabs((double)stem[j] - want);
+    if (d > head_dev) head_dev = d;
+  }
+  /* And nothing was written past the compensated write head: the last OFF
+   * frames are still the prepared zeros. A stray overlap write would land
+   * exactly here. */
+  double tail_max = 0.0;
+  for (int j = N - OFF; j < N; ++j) {
+    const double a = fabs((double)stem[j]);
+    if (a > tail_max) tail_max = a;
+  }
+  printf("  offset take: head deviation %.7f, tail-zero max %.7f\n", head_dev,
+         tail_max);
+  CHECK(head_dev < 1e-5);
+  CHECK(tail_max < 1e-9);
+
+  free(stem);
+  le_engine_destroy(e);
+}
+
+/* #728 / reconfigure: le_engine_configure resets every track to EMPTY and
+ * frees and reallocates every lane buffer. A trailing seam overlap left armed
+ * across it would keep writing live input into the FRESH buffer of a track
+ * that now reads EMPTY, at an index that means nothing there, and fold it into
+ * [0, F) F frames later — breaking the invariant le_begin_empty_capture and
+ * le_prepare_new_capture rely on. Arms the capture, reconfigures inside the
+ * window, and checks both halves: the arm is gone, and content loaded
+ * afterwards survives more than F frames of loud input bit-identical. */
+static void test_seam_capture_cleared_by_reconfigure(void) {
+  printf("test_seam_capture_cleared_by_reconfigure\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  le_engine_record(e, 1);
+  drain(e);
+  feed_osc(e, &osc, N, NULL, NULL);
+  le_engine_record(e, 1);
+  feed_osc(e, &osc, 64, NULL, NULL); /* well inside F (480 @ 48 kHz) */
+  CHECK(e->tracks[1].seam_capture > 0); /* the window really is open */
+
+  le_engine_configure(e, 48000, 1, 1, 48000); /* device-loss recovery */
+  CHECK(e->tracks[1].seam_capture == 0);
+  CHECK(e->tracks[1].seam_len == 0);
+
+  /* Content proof: load a known loop into the very track the capture was armed
+   * on, then feed LOUD input for longer than F. A surviving capture would park
+   * that input past the loop and fold it into the head. */
+  float* stem = (float*)malloc(sizeof(float) * (size_t)N);
+  for (int i = 0; i < N; ++i) stem[i] = (float)(0.25 * sin(0.001 * (double)i));
+  CHECK(le_engine_import_track(e, 1, stem, N) == LE_OK);
+  CHECK(le_engine_commit_session(e, N) == LE_OK);
+  drain(e);
+  feed_const(e, 1.0f, 1024, NULL, NULL);
+  drain(e);
+
+  float* back = (float*)malloc(sizeof(float) * (size_t)N);
+  CHECK(le_engine_export_track(e, 1, back, N) == N);
+  double worst = 0.0;
+  for (int i = 0; i < N; ++i) {
+    const double d = fabs((double)back[i] - (double)stem[i]);
+    if (d > worst) worst = d;
+  }
+  printf("  imported loop after reconfigure: worst deviation %.7f\n", worst);
+  CHECK(worst < 1e-6);
+
+  free(back);
+  free(stem);
+  le_engine_destroy(e);
+}
+
+/* #728 (d): the crossfade must survive UNDO. A rec/dub press finalizes the
+ * take straight into OVERDUBBING, and a quantized rec/dub finalizes ON the
+ * loop top — so during the F overlap frames the dub's backup-on-write sweeps
+ * the very head positions the fold is about to rewrite, and the retired layer
+ * would otherwise keep the un-crossfaded head. Undoing that pass would then
+ * silently reinstate the pre-#728 splice (le_seam_fold_dub_shadow is what
+ * stops it). */
+static void test_loop_seam_survives_undo_after_rec_dub(void) {
+  printf("test_loop_seam_survives_undo_after_rec_dub\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+
+  /* Silent defining master on track 0. */
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  /* Track 1: record one lap, second press continues straight into OVERDUBBING
+   * (rec/dub), one whole overdub lap, punch out. */
+  le_engine_set_rec_dub(e, 1);
+  le_engine_record(e, 1);
+  drain(e);
+  feed_osc(e, &osc, N, NULL, NULL);
+  le_engine_record(e, 1); /* finalize -> OVERDUBBING, and arm the seam */
+  feed_osc(e, &osc, N, NULL, NULL); /* one complete pass -> retires a layer */
+  le_engine_record(e, 1); /* punch out */
+  feed_osc(e, &osc, 512, NULL, NULL);
+  drain(e);
+  settle_layers(e);
+
+  /* Peel every overdub layer (the complete pass, plus whatever partial the
+   * punch-out fade tail drained): what is left live is the take alone, and its
+   * seam must be the folded one. */
+  le_snapshot s;
+  for (int k = 0; k < 8; ++k) {
+    le_engine_get_snapshot(e, &s);
+    if (s.tracks[1].undo_depth <= 0) break;
+    le_engine_undo(e, 1);
+    drain(e);
+    settle_layers(e);
+  }
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].undo_depth == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+
+  float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * N));
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, loop, &n);
+  double step = 0.0;
+  double med = 0.0;
+  const double score = splice_score(loop, n, &step, &med);
+  printf("  undone-to-take seam: step=%.5f median-delta=%.6f score=%.1fx\n",
+         step, med, score);
+  CHECK(score < 25.0);
+  free(loop);
+
+  le_engine_destroy(e);
+}
+
 /* The master limiter caps the output at its ceiling when the mix would exceed
  * it, is bit-transparent below the ceiling, and is fully bypassed when off. */
 static void test_master_limiter_caps_and_transparent(void) {
@@ -20127,6 +20318,33 @@ static void test_cache_audio_rev_bump_sites(void) {
   now = le_engine_track_audio_rev(a, 1);
   CHECK(now != prev);
 
+  /* loop-seam fold (later track, #728). The fold rewrites the head F frames
+   * AFTER finalize_new_track's bump, so it is a content write that no other
+   * row covers — without its own bump the cache would key the un-crossfaded
+   * head as current. Its own engine: the master's grid and the buffer room the
+   * overlap needs do not fit the cache harness's short loop. */
+  {
+    le_engine* b = le_engine_create();
+    CHECK(le_engine_configure(b, 48000, 1, 1, 48000) == LE_OK);
+    le_engine_record(b, 0); /* silent defining master */
+    feed_const(b, 0.0f, len, NULL, NULL);
+    le_engine_record(b, 0);
+    feed_const(b, 0.0f, 512, NULL, NULL);
+    drain(b);
+    feed_to_loop_top(b);
+    le_engine_record(b, 1); /* a non-defining take, exactly one lap */
+    drain(b);
+    feed_const(b, 0.5f, len, NULL, NULL);
+    le_engine_record(b, 1); /* finalize: bumps, and arms the overlap */
+    feed_const(b, 0.5f, 1, NULL, NULL);
+    CHECK(b->tracks[1].seam_capture > 0);
+    const uint32_t before_fold = le_engine_track_audio_rev(b, 1);
+    feed_const(b, 0.5f, 1000, NULL, NULL); /* > F: the fold completes */
+    CHECK(b->tracks[1].seam_capture == 0);
+    CHECK(le_engine_track_audio_rev(b, 1) != before_fold);
+    le_engine_destroy(b);
+  }
+
   le_engine_destroy(a);
 }
 
@@ -21510,6 +21728,9 @@ int main(void) {
   test_loop_seam_master_take_no_splice();
   test_loop_seam_survives_whole_lap_overdub();
   test_loop_seam_on_non_defining_track();
+  test_loop_seam_not_armed_with_record_offset();
+  test_seam_capture_cleared_by_reconfigure();
+  test_loop_seam_survives_undo_after_rec_dub();
   test_master_limiter_caps_and_transparent();
   test_overdub_feedback_decays_layers();
   test_master_seam_crossfade_no_click();
