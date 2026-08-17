@@ -56,17 +56,24 @@
 /* engine_telemetry.h claims its gap-suppression licence with an exchange, so
  * unlike the three above this one has to YIELD the old value rather than
  * discard it — which no comma-expression macro can do, and GCC's statement
- * expressions are not available under MSVC. Hence a function; a two-parameter
- * template so an unsuffixed literal (`0u` against a uint64_t slot) still
- * deduces, and this whole block is C++-only by construction. It must also sit
- * ahead of the `extern "C"` below, which a template cannot live inside.
- * Read-then-write without atomicity is safe for exactly the reason the rest of
- * this shim is: no plugin TU ever reaches these call sites. */
+ * expressions are not available under MSVC. Hence a function: a two-parameter
+ * template, so an unsuffixed literal (`0u` against a uint64_t slot) still
+ * deduces. Read-then-write without atomicity is safe for exactly the reason
+ * the rest of this shim is: no plugin TU ever reaches these call sites.
+ *
+ * The `extern "C++"` is load-bearing, not decoration. Callers reach this
+ * header from inside their own `extern "C" { #include ... }` — the VST3 test
+ * harness (vst3/test/host_harness.h) does exactly that — and a template
+ * cannot be declared with C linkage (MSVC C2894, GCC "template with C
+ * linkage"). Nesting `extern "C++"` restores C++ linkage wherever the include
+ * lands, so this does not depend on how any includer wraps it. */
+extern "C++" {
 template <typename T, typename V>
 inline T le_cxx_atomic_exchange(T* slot, V value) {
   const T previous = *slot;
   *slot = (T)value;
   return previous;
+}
 }
 #undef atomic_exchange_explicit
 #define atomic_exchange_explicit(slot, v, mo) le_cxx_atomic_exchange((slot), (v))
