@@ -44,9 +44,9 @@ MOUNT_D, MOUNT_INSET = 3.2, 5.0  # M3 clearance, from each corner
 
 # Widths per the pcb-layout skill (IPC-2152 rule of thumb): ~1.0 mm for
 # power/ground, ~0.6 mm for signal. The first cut used 0.35/0.8, which is
-# under-sized on both counts -- the +5V_LED rail feeds 22 WS2812s.
+# under-sized on both counts -- the +5V rail feeds 22 WS2812s as well as logic.
 TRACK_W = 0.6                   # signal
-TRACK_PWR = 1.0                 # +5V / +5V_LED / +3V3
+TRACK_PWR = 1.0                 # +5V / +3V3
 VIA_D, VIA_DRILL = 0.8, 0.4
 CLEARANCE = 0.25
 
@@ -126,7 +126,7 @@ PLACEMENT = {
     # left edge: power in and its reservoir
     "J3":  (10.0, 62.0, 90),       # 5 V in, beside VBUS/VSYS (pads 40/39)
     "C31": (10.0, 20.0, 0),        # 100uF  on +5V
-    "C30": (10.0, 33.0, 0),        # 470uF  on +5V_LED
+    "C30": (10.0, 33.0, 0),        # 470uF bulk on +5V (the WS2812 reservoir)
 
     # right: the buffer, then the ribbon on the edge itself
     "U1":  (93.0, 44.0, 0),        # 74AHCT125, sat LOW on purpose. Its ring input is
@@ -186,7 +186,7 @@ def fsw_x(i):
 for _i in range(10):
     PLACEMENT["J%d" % (10 + _i)] = (fsw_x(_i), FSW_Y, 0)
 
-PWR_NETS = {"+5V", "+5V_LED", "+3V3"}
+PWR_NETS = {"+5V", "+3V3"}
 POUR_NET = "GND"
 
 
@@ -402,12 +402,13 @@ def _pour_gnd(board, net, layer=pcbnew.B_Cu):
     z.SetPadConnection(pcbnew.ZONE_CONNECTION_THERMAL)
     z.SetThermalReliefGap(FromMM(0.3))
     z.SetThermalReliefSpokeWidth(FromMM(0.4))
-    z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_AREA)
-    # Drop slivers under 3 mm2. A fragment that small reaches one pad and goes
-    # nowhere -- it cannot carry a return, and it fails DRC as a starved thermal
-    # because a single spoke lands on an island. Every GND pad already has its own
-    # via to the plane on the other layer, so nothing is lost by removing them.
-    z.SetMinIslandArea(int(FromMM(3.0)) * int(FromMM(1.0)))
+    z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_ALWAYS)
+    # Delete every fragment not joined to the pour's main body. A dense 2-layer
+    # F.Cu pour always breaks up around the routing, and raising a minimum-area
+    # threshold only moves the complaint to the next pad -- it was chased from C14
+    # to C5 to U1 that way. A fragment cannot carry a return current anywhere, and
+    # nothing depends on it: _stitch_gnd() already drops a via on every GND pad, so
+    # each one reaches the B.Cu plane on its own.
     o = z.Outline()
     o.NewOutline()
     for x, y in ((0.3, 0.3), (BW - 0.3, 0.3), (BW - 0.3, BH - 0.3), (0.3, BH - 0.3)):
@@ -617,10 +618,10 @@ POURED_NETS = {"GND"}
 #
 # Measured worst hops on the layout below: 38 mm (SW_TRACK3, the geometric
 # footswitch fan-out) and 30 mm (MIDI_RX, which has to cross J2's body). 42 mm is
-# the larger plus ~10%. Rails are exempt: +5V/+3V3/+5V_LED touch parts at both ends
+# the larger plus ~10%. Rails are exempt: +5V and +3V3 touch parts at both ends
 # of the board by definition, and are carried by wide traces and the pour.
 MAX_HOP_MM = 42.0
-RAIL_NETS = {"+3V3", "+5V", "+5V_LED"}
+RAIL_NETS = {"+3V3", "+5V"}
 
 
 def worst_hops(fps, nets):

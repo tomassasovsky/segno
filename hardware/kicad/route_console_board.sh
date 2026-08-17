@@ -59,7 +59,11 @@ sys.exit(0 if ok else 'SES import failed')" 2>&1 | grep -viE "wxApp|memory leak|
   # --refill-zones is what pours the plane: in-process pcbnew.ZONE_FILLER segfaults
   # without a wxApp, and gerbers plotted before this ship an EMPTY ground plane.
   "$CLI" pcb drc --refill-zones --save-board --format json -o "$OUT/drc.json" \
-         --severity-error "$PCB" >/dev/null 2>&1
+         --severity-all "$PCB" >/dev/null 2>&1
+  # --severity-all, NOT --severity-error. With errors only, this pipeline reported
+  # "0 violations" for an entire design cycle while the board actually carried 131:
+  # 100 holes_co_located (stitching vias landing dead on through-hole pad centres),
+  # 30 via_dangling, 1 starved_thermal. Warnings are where the fab problems live.
   BAD=$(python3 -c "
 import json, collections
 d = json.load(open('$OUT/drc.json'))

@@ -91,8 +91,18 @@ def jst(n, ref, value):
 
 gnd = Net("GND")
 v5 = Net("+5V")            # logic: Pico VSYS + the AHCT125
-v5led = Net("+5V_LED")     # WS2812 ring + indicators, starred back to the buck on
-                           # its own pair so LED transients stay off the MCU rail
+# ONE 5 V rail. There used to be a second, "+5V_LED", on the theory that giving the
+# WS2812s their own pair back to the supply kept their IR drop out of the logic
+# rail. Both rails come off the same 8-36V->5V 10A buck, so it was never redundancy
+# or headroom -- and the benefit it did have was half undone on this board anyway,
+# because GND is a single pour: the feeds were separated and the returns were not.
+# J3 keeps four ways, but as two PARALLEL pairs, which buys the thing that is
+# actually scarce: JST XH is rated ~3 A per contact and the LED chain alone
+# approaches that.
+#
+# The ring board is unaffected. It declares its own single supply as Net("+5V_LED")
+# locally (ring_board.py:46); two netlists joined by a cable do not have to agree on
+# net NAMES, only on pin order -- which is what RING_PINOUT gates.
 v3v3 = Net("+3V3")         # from the Pi ribbon -- the MIDI front end is the Pi's,
                            # so it runs on the Pi's rail and works whenever the Pi
                            # is up, regardless of the MCU
@@ -277,10 +287,10 @@ for _ref, _net in (("J20", ctrl1), ("J21", ctrl2)):
 # ---- J6/J7: ring+encoder and the indicator chain ----------------------------
 # J6's pin order is NOT free: it must match ring_board.py's J1, which main_board.py
 # already mirrors by hand. This board is the third copy, so _check() gates it.
-RING_PINOUT = ["+5V_LED", "+5V_LED", "GND", "GND", "RING_DATA_OUT",
+RING_PINOUT = ["+5V", "+5V", "GND", "GND", "RING_DATA_OUT",
                "ENC_A", "ENC_B", "ENC_SW"]
 j_ring = jst(8, "J6", "RING_ENC")
-j_ring[1, 2] += v5led
+j_ring[1, 2] += v5
 j_ring[3, 4] += gnd
 j_ring[5] += ring_out
 j_ring[6] += encA
@@ -288,7 +298,7 @@ j_ring[7] += encB
 j_ring[8] += encSW
 
 j_ind = jst(3, "J7", "INDICATORS")
-j_ind[1] += v5led
+j_ind[1] += v5
 j_ind[2] += ind_out
 j_ind[3] += gnd
 
@@ -331,16 +341,16 @@ for _i, _gp in enumerate(EXPANSION_GPIO, start=3):
 j_exp[8] += gnd
 
 # ---- J3: power in, 5 V from the external potted buck ------------------------
-# Four pins so the LED pair is a SEPARATE run back to the buck -- that is what
-# makes the +5V/+5V_LED split real rather than cosmetic.
+# Four pins, doubled up: 1+3 are both +5V and 2+4 are both GND. This used to be a
+# separate LED pair; see the rail note at the top for why that was dropped.
 # No series Schottky: V1's guards a barrel jack a user can plug anything into;
 # this is a keyed internal JST, and a diode would burn ~0.4 W of LED headroom.
 j_pwr = jst(4, "J3", "5V_IN")
 j_pwr[1] += v5
 j_pwr[2] += gnd
-j_pwr[3] += v5led
-j_pwr[4] += gnd
-C("470uF", fp="Capacitor_THT:CP_Radial_D10.0mm_P5.00mm", ref="C30")[1, 2] += v5led, gnd
+j_pwr[3] += v5          # pins 1/3 and 2/4 are PARALLEL, not two rails: XH is
+j_pwr[4] += gnd         # ~3 A per contact and the LED chain alone nears that
+C("470uF", fp="Capacitor_THT:CP_Radial_D10.0mm_P5.00mm", ref="C30")[1, 2] += v5, gnd
 C("100uF", fp="Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", ref="C31")[1, 2] += v5, gnd
 
 # ---- J2: the Pi ribbon (2x20, SHROUDED and KEYED) ---------------------------
@@ -437,9 +447,9 @@ def _check(strict_stations=True):
         f"({ {gp: PICO[gp] for gp in EXPANSION_GPIO} }) -- one header carries them all")
 
     # the ring header is the THIRD hand-copy of a pinout held together by a comment
-    assert RING_PINOUT == ["+5V_LED", "+5V_LED", "GND", "GND", "RING_DATA_OUT",
+    assert RING_PINOUT == ["+5V", "+5V", "GND", "GND", "RING_DATA_OUT",
                            "ENC_A", "ENC_B", "ENC_SW"], (
-        "RING_CONTRACT: J6 no longer matches ring_board.py's J1 -- 1,2=+5V_LED "
+        "RING_CONTRACT: J6 no longer matches ring_board.py's J1 -- 1,2=5V supply "
         "3,4=GND 5=RING_DATA 6=ENC_A 7=ENC_B 8=ENC_SW")
     for _i, _want in enumerate(RING_PINOUT, start=1):
         got = {n.name for n in j_ring[_i].nets}
@@ -465,7 +475,7 @@ def _check(strict_stations=True):
 
     # nothing may drive the Pi at more than 3V3
     for n in (link_tx, link_rx, midi_rx, pwr_btn, swclk, swdio):
-        assert v5 not in n.nets and v5led not in n.nets, (
+        assert v5 not in n.nets, (
             f"PI_LEVELS: {n.name} touches a 5 V rail -- Pi GPIO is not 5 V tolerant")
 
     if strict_stations:
@@ -492,7 +502,7 @@ def report():
     return ("Segno CONSOLE board v2 (#747)\n"
             "Pico 2 (RP2350) on Module:RaspberryPi_Pico_SMD_HandSolder\n"
             "\nPin map:\n" + "\n".join(lay) +
-            "\n\nRails : +5V (logic) | +5V_LED (WS2812, own pair to the buck) | "
+            "\n\nRails : +5V (logic AND WS2812, doubled contacts on J3) | "
             "+3V3 (from the Pi)\n"
             "Link  : 3V3 <-> 3V3, DIRECT -- the Pico is not 5 V, so no divider\n"
             "AHCT  : MIDI OUT, ring, indicators (the three real 3V3->5V crossings)\n")
@@ -582,7 +592,7 @@ print("Board assertions ...", end=" ")
 _check()
 print("ALL PASS")
 
-for _n in (gnd, v5, v5led, v3v3):
+for _n in (gnd, v5, v3v3):
     _n.drive = POWER
 
 ERC()
