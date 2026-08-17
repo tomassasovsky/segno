@@ -21,8 +21,14 @@
  *            device_info_copy, so `real` there is the platform seam and NOT
  *            the miniaudio path below — and the counts are not filled at all.
  *   ma-lean  a local replica of the miniaudio path WITHOUT any per-device
- *            query: ma_context_init, ma_context_get_devices, copy, uninit.
- *            What enumeration costs when only the cheap list is read.
+ *            query: le_probe_context_init, ma_context_get_devices, copy, uninit.
+ *            What enumeration costs when only the cheap list is read. The
+ *            replicas open their context through the shipped
+ *            le_probe_context_init, not a bare ma_context_init, so they keep
+ *            the same backend pin the real path has (#721) — otherwise the
+ *            bench would both measure a backend walk the app no longer does and
+ *            leak a memfd per iteration on the very appliance it is run to
+ *            verify.
  *   ma-full  the same replica WITH ma_context_get_device_info per device, every
  *            time. ma-full minus ma-lean is what the counts cost UNMEMOISED —
  *            which is both what the memo table saves on macOS and what Linux
@@ -60,6 +66,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "engine_private.h"  /* le_probe_context_init — the shipped probe-context pin */
 #include "segno_engine_api.h"
 #include "miniaudio.h"
 
@@ -86,7 +93,7 @@ static int cmp_u64(const void* a, const void* b) {
  * number of devices seen, or -1 if the context/enumeration failed. */
 static int ma_replica(int capture, int with_counts) {
   ma_context ctx;
-  if (ma_context_init(NULL, 0, NULL, &ctx) != MA_SUCCESS) return -1;
+  if (le_probe_context_init(&ctx) != MA_SUCCESS) return -1;
   ma_device_info* playback = NULL;
   ma_uint32 playback_count = 0;
   ma_device_info* cap = NULL;
@@ -159,7 +166,7 @@ static int one_tick(bench_mode mode, int* out_devices) {
       /* Twice, because a tick pays the context twice — once per direction. */
       for (int i = 0; i < 2; ++i) {
         ma_context ctx;
-        if (ma_context_init(NULL, 0, NULL, &ctx) != MA_SUCCESS) return -1;
+        if (le_probe_context_init(&ctx) != MA_SUCCESS) return -1;
         ma_context_uninit(&ctx);
       }
       break;
@@ -189,7 +196,7 @@ static const char* mode_name(bench_mode mode) {
  * query and not the context. */
 static void run_perdev_direction(int capture, int iters, uint64_t* samples) {
   ma_context ctx;
-  if (ma_context_init(NULL, 0, NULL, &ctx) != MA_SUCCESS) {
+  if (le_probe_context_init(&ctx) != MA_SUCCESS) {
     printf("  perdev  FAILED (context init)\n");
     return;
   }
