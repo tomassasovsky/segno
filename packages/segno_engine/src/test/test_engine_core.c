@@ -6278,7 +6278,27 @@ char* strdup(const char* s) {
  * lazily on first call and cached; racing threads may each resolve it, which
  * is harmless (dlsym is idempotent and returns the same pointer). Verified on
  * macOS arm64 that this executable's definition is what the engine objects
- * bind to and that RTLD_NEXT reaches the real one underneath. */
+ * bind to and that RTLD_NEXT reaches the real one underneath.
+ *
+ * WHY CALLING dlsym FROM INSIDE THE INTERPOSED fopen IS SAFE, and it is the
+ * one invariant holding this whole fixture up — DO NOT break it. dlsym may
+ * allocate internally (glibc's error-string and scope bookkeeping), and it
+ * runs here while an fopen is in flight. It cannot recurse because:
+ *
+ *   1. The malloc forwarders above do NOT go through dlsym. They call
+ *      __libc_malloc / malloc_zone_malloc DIRECTLY. So a dlsym-internal
+ *      allocation lands in our malloc, is forwarded straight to the real
+ *      allocator, and returns — it never re-enters dlsym.
+ *   2. Neither glibc's nor dyld's dlsym calls fopen, so it cannot re-enter
+ *      this function either.
+ *
+ * If someone "simplifies" the malloc forwarders to dlsym(RTLD_NEXT, "malloc")
+ * for portability, (1) is gone: the first allocation calls dlsym, dlsym
+ * allocates, that allocation calls dlsym again on the not-yet-cached pointer,
+ * and the test binary deadlocks or blows the stack on its very first malloc —
+ * the classic recursive-initialization hang, with no symptom pointing back
+ * here. Reaching the real allocator without dlsym is not an optimization; it
+ * is the reason this file works. */
 typedef FILE* (*test_fopen_fn)(const char*, const char*);
 static _Atomic(test_fopen_fn) g_test_real_fopen = NULL;
 
@@ -7354,13 +7374,26 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   CHECK(atomic_load(&g_test_alloc_count) > 0);
   /* WHAT CLEARS THIS FLOOR, measured on this fixture rather than assumed,
    * because it is a constant coupled to two unrelated sizings and a reader
-   * debugging a failure here needs to know which one moved. The arm makes
-   * exactly two counted allocations:
+   * debugging a failure here needs to know which one moved. Two ENGINE-SIDE
+   * allocations cross the arm:
    *   - le_perf_drain itself, 724104 bytes — sizeof the struct, which since
    *     #722 carries json_buf (LE_PD_JSON_BUF = 512 KB) inside it;
    *   - le_perf_arm's master ring, 524288 bytes — le_perf_ring_capacity
    *     rounds 1 ch x 48000 x LE_PERF_CAPTURE_SECONDS up to a power of two
    *     (131072 samples x 4 B), landing EXACTLY on this floor.
+   *
+   * HOW MANY ALLOCATIONS THE ARM ACTUALLY COUNTS IS PLATFORM-SPECIFIC, so do
+   * not read any one number as a constant. On macOS those two ARE the whole
+   * tally — two: libc-internal allocations bind to libsystem_malloc and never
+   * reach this executable's definitions, the two-level-namespace hole
+   * described above. On glibc the flip side applies: ELF interposition DOES
+   * catch libc's internals, so the two fopens' FILE objects and stream buffers
+   * are counted as well and the tally is five (instrumented and measured in
+   * gcc:13; largest is 724104 and the fopen counter reads 2 on both). Both are
+   * correct. Only the two engine-side sizes above are portable, and only the
+   * largest of them is what this floor asserts on — which is why the assertion
+   * below is on `largest` and not on a count.
+   *
    * So the control does not depend on the change under test: the ring clears
    * it on its own, as it did before #722. But it clears it by zero bytes, so
    * do not read a failure here as "interposition broke" without checking

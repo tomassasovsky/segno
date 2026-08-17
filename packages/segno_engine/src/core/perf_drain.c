@@ -269,8 +269,14 @@ static void le_pd_sleep_ms(int ms) { Sleep((DWORD)ms); }
 /* Milliseconds on a monotonic clock — never the wall clock, which an NTP step
  * or a manual date change could move backwards under the flush deadline.
  * GetTickCount64 is already 64-bit-since-boot, so there is no wrap to handle;
- * its ~10-16 ms resolution is irrelevant against a 250 ms cadence. */
-static uint64_t le_pd_now_ms(void) { return (uint64_t)GetTickCount64(); }
+ * its ~10-16 ms resolution is irrelevant against a 250 ms cadence.
+ * GetTickCount64 has no failure mode, so this always reports success; the
+ * success/failure return exists for the POSIX twin, whose caller must fail
+ * closed on an unreadable clock. */
+static int le_pd_now_ms(uint64_t* out_ms) {
+  *out_ms = (uint64_t)GetTickCount64();
+  return 1;
+}
 
 static int le_pd_mkdir_one(const char* path) {
   if (path[0] == '\0') return 1;
@@ -373,14 +379,24 @@ static void le_pd_sleep_ms(int ms) {
 /* Milliseconds on a monotonic clock — CLOCK_MONOTONIC, the same source
  * midi_backend_linux.c timestamps with, deliberately not a new abstraction and
  * deliberately not CLOCK_REALTIME (an NTP step or a manual date change must
- * never move the flush deadline). A failure leaves ts zeroed, which reads as
- * "no time passed" and simply defers this cycle by one poll; it cannot fail in
- * practice on any platform this builds for. */
-static uint64_t le_pd_now_ms(void) {
+ * never move the flush deadline).
+ *
+ * A failure is REPORTED, not swallowed, and *out_ms is left untouched. An
+ * earlier revision returned 0 on failure and let the caller compare it against
+ * the deadline; that reads as "no time has passed", so a PERSISTENT failure
+ * would have deferred the cycle at every poll forever — rings filling,
+ * master_ring overrunning, le_pd_catch_up zero-filling the take: #710's
+ * outcome, silently, with no self-stop and no disk-full marker. The safe
+ * direction on an unreadable clock is to FIRE the cycle, not to skip it, so
+ * the caller checks this return. CLOCK_MONOTONIC cannot actually fail on any
+ * platform this builds for; the point is that the unreachable case fails
+ * cheaply (an early write) rather than catastrophically (a lost take). */
+static int le_pd_now_ms(uint64_t* out_ms) {
   struct timespec ts;
   memset(&ts, 0, sizeof(ts));
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return (uint64_t)ts.tv_sec * 1000u + (uint64_t)(ts.tv_nsec / 1000000L);
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+  *out_ms = (uint64_t)ts.tv_sec * 1000u + (uint64_t)(ts.tv_nsec / 1000000L);
+  return 1;
 }
 
 static int le_pd_mkdir_one(const char* path) {
@@ -403,7 +419,12 @@ static int le_pd_mkdir_one(const char* path) {
  * 0666 matches fopen("wb")'s creation mode exactly (umask applies to both);
  * O_CLOEXEC is a small upgrade on it — the sidecar is rewritten four times a
  * second, so any Process.start from the Dart side landing in that window used
- * to inherit a writable descriptor onto the temp inode. */
+ * to inherit a writable descriptor onto the temp inode. It closes ONLY that
+ * window, and it is the narrow one: master.pcm, events.log and every staged
+ * layer are still plain fopen(..., "wb") with no "e", so a child spawned any
+ * time during a capture inherits those writable descriptors for as long as it
+ * lives. Widening the close-on-exec discipline to the stdio streams is a
+ * separate change, deliberately not smuggled in with a perf fix. */
 #if defined(_WIN32)
 static int le_pd_open_trunc(const char* path) {
   /* _O_NOINHERIT is the O_CLOEXEC equivalent. */
@@ -525,9 +546,14 @@ typedef struct le_pd_gap {
   uint64_t duration_frames;
 } le_pd_gap;
 
-/* One retired-layer manifest entry (part 5, D-LAYER) — recorded once its
- * file is durably written (fclose'd), so it never appears in the sidecar
- * before the bytes it describes are actually on disk. `channel`/`slot`/
+/* One retired-layer manifest entry (part 5, D-LAYER) — recorded only after
+ * its file has been fclose'd, so a reader never sees an entry naming a file
+ * whose last bytes are still sitting in a stdio buffer. That is a VISIBILITY
+ * ordering, not a durability one: fclose flushes to the page cache and makes
+ * the file complete to other processes, it does not put it on the platter.
+ * Nothing in this module fsyncs, on either side (see the durability note above
+ * the sidecar's descriptor shims, and #727), so a power cut can still lose a
+ * staged layer whose manifest entry survived. `channel`/`slot`/
  * `generation` are the same key events.log's LE_PLOG_LAYER_RETIRED entry
  * carries, for a renderer to cross-reference the sample-accurate frame (see
  * layer_staging_ring.h and docs/design/performance-event-log-format.md). */
@@ -666,8 +692,10 @@ static int le_pd_drain_log_ring(FILE* f, le_perf_log_ring* ring) {
  * `entry->lane_pcm[l]` before returning, success or failure — this function
  * takes ownership of the staged copy unconditionally, matching
  * layer_staging_ring.h's documented handoff contract. Only records a
- * manifest entry on success, and only once the file is fclose'd (durably on
- * disk) — see le_pd_layer_manifest_entry's doc comment for why. */
+ * manifest entry on success, and only once the file is fclose'd — i.e. once
+ * every byte has reached the OS and the file is complete to any other reader,
+ * which is not the same as being on the device (no fsync here or anywhere else
+ * in this module) — see le_pd_layer_manifest_entry's doc comment for why. */
 static int le_pd_write_staged_layer(le_perf_drain* d,
                                     const le_staged_layer* entry) {
   char filename[64];
@@ -1102,9 +1130,13 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
 
   /* Retired-layer persistence (part 5, D-LAYER): each staged layer is its
    * own self-contained file (open, write, fclose — not a long-lived stream
-   * like master.pcm), so there is nothing to flush separately below; the
-   * fclose inside le_pd_write_staged_layer already makes it durable before
-   * its manifest entry is recorded. */
+   * like master.pcm), so there is nothing to flush separately below: the
+   * fclose inside le_pd_write_staged_layer has already pushed every byte out
+   * of stdio and into the page cache before the manifest entry is recorded.
+   * That is the same guarantee le_pd_flush gives the long-lived streams —
+   * visible to other processes, NOT on the device. No fsync is involved
+   * anywhere in this module, on either side (see the durability note above the
+   * sidecar's descriptor shims, and #727). */
   if (ok && !le_pd_drain_layer_staging(d)) ok = 0;
 
   /* The PCM files stay open for the whole capture session (never closed
@@ -1153,10 +1185,23 @@ static void le_pd_drain_thread_main(void* arg) {
    *
    * The deadline is re-based off ITSELF, not off `now`, so a cycle that ran
    * long does not push the next one out by its own duration — the cadence is
-   * of cycle STARTS. If a whole interval has already been missed, it resyncs
-   * to now instead of trying to make it up with back-to-back cycles (catching
-   * up by running the writer harder is the opposite of what a background
-   * writer should do when the machine is busy).
+   * of cycle STARTS. What that means when a cycle DOES overrun, stated
+   * precisely because it is the load-bearing behaviour under exactly the
+   * conditions #710 shows up in:
+   *
+   *   - Overrun by a FULL interval or more: the re-based deadline is still in
+   *     the past, so it resyncs to now + LE_PD_FLUSH_MS. The missed cycles are
+   *     dropped rather than made up — running the writer harder to catch up is
+   *     the opposite of what a background writer should do on a busy machine.
+   *   - Overrun by LESS than one interval: the re-based deadline is already
+   *     past, so the next cycle fires at the very next 10 ms poll. While the
+   *     overrun persists, cycles run effectively back-to-back at poll
+   *     granularity. That is deliberate for #710 — the rings hold only
+   *     LE_PERF_CAPTURE_SECONDS, and draining them promptly is what keeps
+   *     zero-filled silence out of the take — but it is the wrong direction
+   *     for load: combined with the priority drop, the worst case is more
+   *     drain CPU exactly when the machine is busiest. The trade is taken
+   *     knowingly; data loss is unrecoverable and CPU contention is not.
    *
    * This can only ever make cycles MORE frequent, never less: a real sleep is
    * always at least as long as its request, so the accumulator's 25th tick
@@ -1165,14 +1210,23 @@ static void le_pd_drain_thread_main(void* arg) {
    * accumulator fired sooner is a nanosleep cut short by a signal — it would
    * credit a full 10 ms for a partial sleep — and firing at the true 250 ms
    * instead is the documented contract, comfortably inside the 2 s ring. */
-  uint64_t next_flush_ms = le_pd_now_ms() + LE_PD_FLUSH_MS;
+  uint64_t next_flush_ms = 0;
+  if (le_pd_now_ms(&next_flush_ms)) next_flush_ms += LE_PD_FLUSH_MS;
 
   while (atomic_load_explicit(&d->running, memory_order_acquire)) {
     le_pd_sleep_ms(LE_PD_POLL_MS);
-    const uint64_t now_ms = le_pd_now_ms();
-    if (now_ms < next_flush_ms) continue;
-    next_flush_ms += LE_PD_FLUSH_MS;
-    if (next_flush_ms <= now_ms) next_flush_ms = now_ms + LE_PD_FLUSH_MS;
+    uint64_t now_ms = 0;
+    if (le_pd_now_ms(&now_ms)) {
+      if (now_ms < next_flush_ms) continue;
+      next_flush_ms += LE_PD_FLUSH_MS;
+      if (next_flush_ms <= now_ms) next_flush_ms = now_ms + LE_PD_FLUSH_MS;
+    }
+    /* else: the clock could not be read. FIRE rather than skip (see
+     * le_pd_now_ms) — a cycle that runs early costs one extra write on a
+     * deprioritized thread, while a cycle that never runs loses the take. The
+     * deadline is left untouched, so a clock that comes back resyncs it on the
+     * next poll; a persistent failure degrades to one cycle per poll, which is
+     * the expensive-but-correct direction, not a stall. */
     if (!le_pd_drain_cycle(d)) {
       atomic_store_explicit(&d->disk_full, 1, memory_order_release);
       break;
