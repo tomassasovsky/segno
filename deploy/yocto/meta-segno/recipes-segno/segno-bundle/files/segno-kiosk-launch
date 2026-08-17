@@ -59,10 +59,31 @@ export SEGNO_ALSA_ONLY=1
 export SEGNO_RT_AUDIO=1
 # ALSA duplex buffer depth (period count). The engine's startup fixes (capture
 # backlog flush + period-aligned reads + self-healing playback resync) make the
-# monitor path robust, but a 3-period buffer gives the playback write side a
-# stable cushion above the underrun edge. Validated on device: 10/10 clean cold
-# starts under a worst-case input transient at 96kHz/64 frames with periods=3
-# (~5ms), where 2 periods intermittently latched a "robotic" monitor. Retest at
-# 2 (reclaims ~1.3ms) is tracked separately; default 2 stays in the engine.
-export SEGNO_ALSA_PERIODS=3
+# monitor path robust, but a deeper buffer gives both sides a stable cushion
+# above the underrun/overrun edge. Two measurements on this appliance, both on
+# the bench Pi 4 + Scarlett rig, and both still true:
+#
+#   1. Monitor path, cold start. 10/10 clean cold starts under a worst-case
+#      input transient at 96kHz/64 frames with periods=3 (~5ms), where 2
+#      periods intermittently latched a "robotic" monitor. This is what
+#      originally picked 3, and nothing here contradicts it: 3 is enough for
+#      the monitor path.
+#   2. Long performance capture. The same rig at 3 periods drops capture
+#      periods over a full-length take (the engine counts and flags them since
+#      the dropped-capture-period work); 8 held with none.
+#
+# 8 ships because the value has to satisfy the harder of the two cases, not the
+# one that was measured first. The cost is output buffer depth — five more
+# periods, ~1.3ms each by the figure the cold-start run used — which is cheap
+# next to a dropped capture period, since a monitor a few ms later is a
+# nuisance and a hole in a recorded take is not recoverable.
+#
+# What would make 8 wrong: a different interface or SoC (the underrun edge is a
+# property of this Scarlett + Pi 4 pair), or an engine change that removes the
+# capture-side backlog this is padding against. Re-measure BOTH cases before
+# lowering it — a clean cold-start run on its own is the evidence that picked 3
+# and it was not sufficient. The separately tracked "retest at 2, reclaims
+# ~1.3ms" therefore has to clear the capture case too, not just the monitor
+# one. The engine's own default stays 2; this override is appliance-only.
+export SEGNO_ALSA_PERIODS=8
 exec /opt/segno/segno "$@"

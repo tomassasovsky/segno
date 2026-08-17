@@ -91,7 +91,13 @@ echo "==> starting profile build"
 # The environment mirrors /usr/bin/segno-kiosk-launch exactly. It has to: the
 # ALSA/RT/HOME variables change how the engine and path_provider behave, and a
 # profile run under a different environment would not be measuring the appliance.
-# Kept in sync by hand -- if that launcher changes, change this too.
+# Kept in sync by hand -- if that launcher changes, change this too. That
+# includes SEGNO_ALSA_PERIODS: it tracks the shipped value rather than pinning
+# one of its own, because the whole point of this script is to profile the
+# configuration that ships. Pinning a different depth here would make every
+# capture-path measurement describe a build nobody runs. To profile a candidate
+# depth, edit it here for that one run and put it back -- a value left behind
+# here stops measuring the appliance without saying so.
 #
 # setsid + nohup + </dev/null, NOT `ssh -f ... &`: with a bare trailing `&` the
 # remote shell exits immediately and SIGHUPs the app before it ever opens its
@@ -111,7 +117,7 @@ ssh -o BatchMode=yes "$HOST" "
   export XDG_CONFIG_HOME=\$HOME/.config
   export SEGNO_ALSA_ONLY=1
   export SEGNO_RT_AUDIO=1
-  export SEGNO_ALSA_PERIODS=3
+  export SEGNO_ALSA_PERIODS=8
   setsid nohup $REMOTE_DIR/segno >$REMOTE_DIR/profile.log 2>&1 </dev/null &
   echo \$! > $REMOTE_DIR/segno.pid
 "
