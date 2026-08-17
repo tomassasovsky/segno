@@ -227,7 +227,7 @@ right, power first and away from signal:
 |---|---|---|---|
 | `9V_DC` | Ø11.5 | 17.5 | DC-099; listing says Ø11 hole, +0.5 so it cannot rattle before the nut bites |
 | `POWER` | **Ø19.5** | 29.2 | APIELE 19 mm **high-round** momentary, stainless. **Unlit** |
-| `FUSE` | **Ø12.5** | 18.5 | **SCI R3-11**, bayonet cap, 10 A / 250 V AC |
+| `FUSE` | Ø12.0 | 18 | generic 5×20 screw-cap holder, 10 A / 250 V AC |
 | `MIDI_IN` / `MIDI_OUT` | Ø15.1 + 2 × Ø3.2 @ 22 | 28.4 | REAN NYS325; **IN needs opto-isolation on the board**, not here |
 | `CTRL_1` / `CTRL_2` | **Ø24**, fixings **not cut** | 30.4 | **D-series** punch, not a threaded bushing |
 | `USB3_1` / `USB3_2` | 22.5 square, **R8.84** | 28.5 | flange Ø28.5 is the keep-out, not the hole |
@@ -244,13 +244,11 @@ spreads the nine across `REAR_IO_SPAN` = 360, left-justified against `EDGE`, wit
 > "standardized D sized 24 mm panel cutout". This was wrong in the first cut of
 > the panel and is the reason `REAR_IO_KEEPOUT_CONTAINS` exists (below).
 >
-> **This is the one station where buying locally can break the panel.** The common
-> Argentine chassis jack ("jack 6.35 hembra chasis metal", ARS 2.6–7.9 k) is a
-> **threaded-bushing** part wanting ~Ø10 — drop one of those into a Ø24 D punch and
-> it has nothing to clamp. Sourcing locally means specifically the **Neutrik
-> NJ3FP6C** (ARS 25 k, MercadoLibre), which *is* D-series and also **latching**, so
-> a kicked control-pedal lead cannot pull out. That is an upgrade on the MEIRIYFA
-> clone, not a substitute, and it needs no CAD change.
+> **Any substitute must also be D-series.** A plain threaded-bushing 6.35 chassis
+> jack — the default in most shops — wants ~Ø10 and has nothing to clamp in a Ø24
+> punch. The genuine article is the **Neutrik NJ3FP6C**, which is also *latching*,
+> so a kicked control-pedal lead cannot pull out; it drops straight into this
+> cutout.
 
 That swap took the TRS keep-out from 16 to 30.4 and squeezed the old 290 mm strip
 to 7.2 mm gaps, so the cluster was widened to 360. That was only possible because
@@ -330,33 +328,28 @@ safety and IP67-vs-IP65 is moot on an indoor rear panel. Against that, APIELE ha
 > the slop either way — cutting 19.0 would jam the ZJWZJH. `PWRBTN_HEAD_D` =
 > **25.2**: across hex *corners*, ZJWZJH 25.2 / APIELE 25.0.
 
-**Fuse — SCI R3-11**, best bought as the [5-pack at $17.07 = **$3.41 each**](https://www.amazon.com/dp/B0DY3XMGWM) rather than the [2-pack at $8.50 each](https://www.amazon.com/dp/B0752BGGRY). The
-**bayonet-cap** holder used on guitar amps and pro audio, not a generic bakelite
-screw cap: black nylon body, **nickel hex bezel**, solder lugs, CSA/cURus marked,
-10 A / 250 V AC, panels up to 4.5 mm. A quarter-turn beats unscrewing a cap, and
-it is the part that looks like it belongs next to a stainless domed button.
-[TME](https://www.tme.com/us/en-us/details/gba-za11/panel-mount-fuseholders/sci/r3-11a/)
-gives the cutout as **Ø12.5** for both the R3-11A and R3-11B.
+**Fuse — a generic 5×20 screw-cap panel holder**, e.g.
+[NeoLum, 4 pcs $7.69](https://www.amazon.com/dp/B0GF33P9FF). Generic **by
+decision**: it is a small black cap on a rear panel, the one station where generic
+costs nothing to look at. Plastic body with a metal cap, which is also the right
+way round — an insulating body around a live fuse inside an earthed metal chassis
+beats a metal one. 10 A / 250 V AC, far above this job.
 
-> **Two caveats on the cheap pack.** It has no reviews, and its "Fit Compatible"
-> title is the phrasing knockoffs use — check the body is actually moulded
-> `SCI R3-11` with the CSA/cURus marks. If not, the 2-pack is the safe buy, and
-> the genuine tier *above* SCI is
-> [Cooper Bussmann BK/HTB-36M-R](https://www.amazon.com/dp/B005T8WCPO) at $11.13
-> each — 16 A, quick-connect spade terminals, the reference brand. Its cutout is
-> **not** verified here, so moving to it would change `D_FUSE` again.
+`D_FUSE` = **12.0**, from two independent listings ("12 mm diameter aperture";
+"Installation Hole 12mm").
+
+> **That 0.5 mm is the whole point of naming the part.** The
+> [SCI R3-11](https://www.amazon.com/dp/B0752BGGRY) — the bayonet-cap holder used
+> on guitar amps, nickel hex bezel, solder lugs — wants **Ø12.5**, and the panel
+> was briefly cut for it. The error is not symmetric: a 12.5 hole around a 12.0
+> thread sits loose and lets the holder **spin when the cap is turned**. So the
+> hole follows the holder, never the other way round. If the SCI is ever wanted
+> back, `D_FUSE` goes to 12.5 and the panel must be re-cut.
 >
-> **Check on arrival:** some R3 variants carry an anti-rotation flat or lug. A
-> bayonet cap is pushed and twisted, so a holder sitting in a plain round hole on
-> its nut alone can rotate in service. If the part has a flat, `D_FUSE` needs a
-> D-shaped cutout rather than a circle.
->
-> **If the holder is bought locally, `D_FUSE` is UNVERIFIED until it is measured.**
-> 12.5 is the SCI R3-11 number. The generic screw-cap holders sold in Argentina are
-> the **Ø12.0** type — the half-millimetre is exactly the difference between a part
-> that locates and one that rattles, and it goes the wrong way (a 12.5 hole around
-> a 12.0 thread). Same for `D_BARREL` 11.5, which is the DC-099's Ø11 thread: local
-> DC jacks come in Ø8, Ø9.5, Ø11 and Ø12 threads. **Caliper both before cutting.**
+> **"Generic" is a class, not a part.** 12.0 holds across the screw-cap holders
+> checked, but if a different one is bought, read its stated aperture before the
+> panel is cut — this is the cheapest station on the wall and the only one whose
+> exact part is not pinned.
 
 > **Rating.** An earlier note here claimed ~7 A through the 9 V input and that a
 > Ø12 holder could not carry it. Both were wrong. The ~7.5 A in the budget is

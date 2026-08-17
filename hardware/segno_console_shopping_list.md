@@ -62,63 +62,21 @@ Carried by the `segno_pedal_main` USB-MIDI board — fab + BOM in
 - [ ] Separate **5 V / ≥3 A** supply for the WS2812 LEDs + RP2040 ×1
       *(do not draw the LED ring/strip off the Pi's 5 V pin)*
 - [ ] The 16″ and 7″ screens use their **own** adapters (USB-C / barrel) ×2
-- [ ] **Panel fuse holder** SCI **R3-11**, bayonet cap, 10 A / 250 VAC, Ø12.5
-      cutout ×1 — [5-pack, $3.41 ea](https://www.amazon.com/dp/B0DY3XMGWM)
-      (the 2-pack is $8.50 ea for the same part). The amp/pro-audio part, not a
-      generic bakelite screw cap
+- [ ] **Panel fuse holder**, generic 5×20 screw-cap, 10 A / 250 VAC, **Ø12.0**
+      aperture ×1 — e.g. [NeoLum 4-pack](https://www.amazon.com/dp/B0GF33P9FF).
+      Generic by decision. NOTE the aperture: the SCI R3-11 upgrade wants
+      Ø12.5 and the panel is no longer cut for it
 - [ ] **T5A slow-blow** 5×20 fuses (T5AL250V) ×1 pack — NOT fast-blow; the two
       bucks' inrush will nuisance-blow a fast fuse
 - [ ] **Momentary HIGH-ROUND** push button, 19 mm hole (Ø19.5), **unlit**,
       stainless ×1 — [APIELE, $4.50 ea](https://www.amazon.com/dp/B079HTQ7XD).
       Must be momentary: it drives a Pi GPIO soft shutdown, it does not break
       power. Domed, not flat — the dome is what gives it mechanical feel
-### Sourcing — Argentina (MercadoLibre) vs Amazon
-
-Rates at the time of writing: blue **1545**, card **1963** ARS/USD. An Amazon order
-is paid at the *card* rate plus freight, so the crossover is well below face value.
-
-| item | local (ARS) | Amazon | buy |
-|---|---|---|---|
-| **T5A slow-blow fuse** | 4 770 ("fusible 5×20 **lento** 5 A", Itytarg) | ~$7 for a 20-pack | **local** — one fuse, not twenty |
-| **Fuse holder** | — | $8.50–11.13 | **local** |
-| **DC 5.5×2.1 chassis, threaded** | 10 150 / 5 = 2 030 ea | DC-099 $1.52 ea (5-pack) | **local**, marginal |
-| **Rubber feet, screw-on** | 5 500 | uxcell $5.69 / 4 | **local** |
-| **DIN-5 female chassis** | 3 900 ea | REAN NYS325 $3.48 ea | see note |
-| **TRS 6.35 D-series** | Neutrik **NJ3FP6C** 25 000 | MEIRIYFA $5.00 ea | see note |
-| **Power button 19 mm SS** | 14 858 | APIELE **$4.50** ea | **Amazon**, ~40 % cheaper |
-| **USB 3.0 coupler** | 17 650 generic · Neutrik NAUSB3 46 000 | already specified | **Amazon** |
-
-> **DIN-5.** The local generic is cheaper, but `MIDI_BODY_D` = 15.1 is sourced from
-> the REAN NYS325 specifically. Buying a generic means re-measuring the bore and the
-> fixing pitch before the panel is cut — it moves a *sourced* number back to
-> unconfirmed. Worth it only if the REAN is hard to get.
->
-> **TRS — read the note in the design doc before buying locally.** A plain
-> threaded-bushing chassis jack will not work in the Ø24 D punch. Locally that means
-> the **Neutrik NJ3FP6C** specifically; it is 3× the clone but genuine Neutrik and
-> **latching**, which on a floor unit with external control pedals is worth real
-> money.
->
-**MercadoLibre search links** (item URLs could not be captured — ML blocks the
-sandboxed browser; open these in a signed-in browser):
-
-| part | search | listing seen | ARS |
-|---|---|---|---|
-| T5A slow-blow fuse | [`fusible-vidrio-5x20-5a-retardado`](https://listado.mercadolibre.com.ar/fusible-vidrio-5x20-5a-retardado) | "Fusible Vidrio 5x20mm **Lento** 5a 250v Itytarg" | 4 770 |
-| Fuse holder | [`portafusible-5x20-chasis-panel`](https://listado.mercadolibre.com.ar/portafusible-5x20-chasis-panel) | *not searched — see warning* | — |
-| DC 5.5×2.1 chassis | [`ficha-conector-dc-5.5-2.1-chasis-metalico-tuerca`](https://listado.mercadolibre.com.ar/ficha-conector-dc-5.5-2.1-chasis-metalico-tuerca) | "5 Unidades Ficha Jack Hueco 5,5 X 2.1mm **Rosca** Chasis C/corte" | 10 150 |
-| Screw-on feet | [`patas-goma-tornillo-gabinete-antideslizante`](https://listado.mercadolibre.com.ar/patas-goma-tornillo-gabinete-antideslizante) | "Pata De Goma Con Tornillo" | 5 500 |
-| TRS D-series *(only if local)* | [`neutrik-nj3fp6c`](https://listado.mercadolibre.com.ar/neutrik-nj3fp6c) | "Neutrik Jack 1/4 Con Traba Nj3fp6c" | 25 000 |
-
-**On the fuse:** the word to match is **`lento`** (or `retardado`). A `rápido`
-fuse of the same 5 A rating will nuisance-blow on the bucks' inrush.
-
-> **Possible simplification, not yet taken.** MercadoLibre also stocks the **Neutrik
-> NAUSB3** USB 3.0 feedthrough (ARS 46 000), which is *also* a D-size part. Using it
-> would put TRS ×2 and USB ×2 all on **one** cutout profile — the idea floated when
-> #743 opened, now actually buyable. It costs ~ARS 92 k for the pair and would
-> replace the 22.1 rounded square with a D punch, so it is a real change: raised,
-> not taken.
+> **Everything on this list is bought from Amazon.com** (decision, 2026-08-17).
+> A MercadoLibre comparison was run and is in git history at `d5295b69` /
+> `1621f676` if local sourcing ever comes back up; the one finding worth keeping
+> is that a plain local 6.35 chassis jack will NOT fit the Ø24 D punch — see the
+> TRS note in the design doc.
 
 - See the power budget in [`hardware/console/README.md`](console/README.md).
 

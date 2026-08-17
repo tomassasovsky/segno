@@ -150,7 +150,7 @@ it. Nine stations on one centreline, left to right:
 |---|---|---|
 | 9 V barrel | 1 | DC-099, 30 V / 10 A |
 | power / shutdown button | 1 | **momentary, unlit** → Pi GPIO soft shutdown. Two wires, no 5 V run to the rear panel. This machine has **no power indicator at all**: the two screens are the indicator |
-| fuse | 1 | 5×20 holder (10 A) in series with the 9 V input, ahead of the Y-split. **T5A slow-blow** — fast-blow will nuisance-blow on buck inrush |
+| fuse | 1 | generic 5×20 screw-cap holder (10 A), Ø12.0, in series with the 9 V input ahead of the Y-split. **T5A slow-blow** — fast-blow will nuisance-blow on buck inrush |
 | MIDI DIN-5 | 2 | IN + OUT. **IN is opto-isolated on the board** — the socket alone is not enough |
 | TRS 6.35 (D-series) | 2 | external control pedals |
 | USB 3.0 coupler | 2 | |

@@ -327,12 +327,18 @@ D_PWRBTN      = 19.5  # M19x1 needs >19.0 to pass. APIELE says "19", ZJWZJH's
                       # covers the slop. Cutting 19.0 would jam the ZJWZJH thread.
 PWRBTN_HEAD_D = 25.2  # hex bezel ACROSS CORNERS: ZJWZJH 25.2, APIELE 25.0. The
                       # corners are what has to clear a neighbour, not the flats.
-# Fuse: SCI R3-11, the bayonet-cap holder used on real amps and pro audio, not a
-# generic bakelite screw cap. Black nylon body with a nickel hex bezel, solder
-# lugs, 10 A / 250 V AC, panel up to 4.5 mm. Metal-bodied 5x20 panel holders are
-# not really a thing, and an insulating body around a live fuse inside an earthed
-# metal chassis is the right answer anyway.
-D_FUSE    = 12.5     # TME (SCI R3-11A/R3-11B): "Cutout: Ø12.5mm"
+# Fuse: a GENERIC 5x20 screw-cap panel holder, by decision -- it is a small black
+# cap on a rear panel, the one station where generic costs nothing to look at.
+# That class is consistently Ø12.0, NOT the Ø12.5 the SCI R3-11 wants, and the
+# error is not symmetric: a 12.5 hole around a 12.0 thread sits loose and lets the
+# holder spin when the cap is turned. Plastic body with a metal cap -- which is
+# also right, since an insulating body around a live fuse in an earthed metal
+# chassis beats a metal one. Rated 10 A / 250 V AC, far above this job.
+#
+# These holders ship FAST-BLOW fuses. See the T5A slow-blow note in the design
+# doc: the two bucks' inrush will nuisance-blow a fast fuse at switch-on.
+D_FUSE    = 12.0     # NeoLum B0GF33P9FF: "12 mm diameter aperture"; B0DLKJ813T:
+                     # "Installation Hole 12mm". Two independent listings agree.
 D_GND     = 6.5      # M6 earth / bond stud
 D_BARREL  = 11.5     # DC-099 barrel jack: listing states an 11 mm mounting hole;
                      # +0.5 so the thread drops in but cannot rattle before the
@@ -363,7 +369,7 @@ MIDI_SCREW_D     = 3.2   # M3 clearance
 REAR_IO_PROVENANCE = {
     "D_PWRBTN":          "datasheet: APIELE + ZJWZJH drawings, M19x1; 19.5 brackets both",
     "PWRBTN_HEAD_D":     "datasheet: APIELE 25.0 / ZJWZJH 25.2 across hex corners; 25.2 brackets both",
-    "D_FUSE":            "datasheet: TME listing for SCI R3-11A/B, 'Cutout: Ø12.5mm'",
+    "D_FUSE":            "datasheet: two generic 5x20 screw-cap listings, 12 mm aperture",
     "D_GND":             "design: M6 stud clearance",
     "D_BARREL":          "datasheet: DC-099 listing, 11 mm hole (+0.5 fit)",
     "D_TRS_BORE":        "datasheet: neutrik.com NC3FD-L-1, 'standardized D sized 24 mm panel cutout'",
@@ -812,8 +818,7 @@ REAR_IO_STATIONS = [
                                                          # Sized off the HEAD, not the
                                                          # hole -- the head is what
                                                          # has to clear its neighbour
-    ("FUSE",     D_FUSE + 6.0),                          # nickel hex bezel + a
-                                                         # quarter-turn on the cap
+    ("FUSE",     D_FUSE + 6.0),                          # screw cap + a spanner
     ("MIDI_IN",  MIDI_SCREW_PITCH + 2*MIDI_SCREW_D),     # DIN-5 fixings set the
     ("MIDI_OUT", MIDI_SCREW_PITCH + 2*MIDI_SCREW_D),     # width, not the bore
     ("CTRL_1",   D_TRS_KEEPOUT),                         # D-series: the M3 pair is
