@@ -2224,12 +2224,15 @@ static void test_cb_timing_timeline_break_survives_a_reroute(void) {
   le_cb_timing_read(&t, &tel);
   CHECK(tel.session.gap_events == 0); /* the hole is not a stall */
   CHECK(tel.session.max_gap_us == 0); /* ... and it pins nothing */
-  /* The in-flight partial service was dropped rather than fused across the
-   * hole: the post-reroute callback covers one whole period on its own, so the
-   * count goes 3 -> 4 (a fused service would still be short of a period and
-   * would leave it at 3, then commit a service carrying the frames and the
-   * work of two different device sessions). */
   CHECK_TIMING(tel.session.periods == 4);
+  /* The in-flight partial service was DROPPED rather than fused across the
+   * hole. The period count alone cannot show that (16 + 64 frames also commits
+   * one service), so the discriminator is the duration: dropped, the committed
+   * service carries only the post-reroute callback's `quick`, leaving the
+   * running max where the three healthy periods put it. Fused, it would carry
+   * 2 x quick — work and frames from two different device sessions in one
+   * reading — and max_us would double. */
+  CHECK_TIMING(tel.session.max_us == (uint32_t)(quick / 1000));
   CHECK(tel.session.late_periods == 0);
 
   /* The break is one-shot: a genuine stall right after the reroute still

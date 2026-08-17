@@ -42,6 +42,14 @@
  *     immaterial to an instrument whose windows are minutes long, and paying
  *     for a lock on the RT path to remove it would be absurd. The same applies
  *     to an in-flight period service straddling an arm.
+ *   - a_timeline_break is a one-bit handshake in the other direction: the
+ *     device-NOTIFICATION thread raises it, the callback thread consumes it.
+ *     It exists precisely so that the first bullet stays true — a reroute has
+ *     to invalidate last_entry_ns / svc_frames / svc_ns, and the notification
+ *     thread writing those directly would make them multi-writer and cost the
+ *     unsynchronised maxima their justification. Worst case on a lost race is
+ *     that the break is honoured one callback later, which is one callback of
+ *     stale timeline on a device that just disappeared.
  *
  * HEADER-ONLY on purpose. A new .c TU would have to be added to six build
  * descriptions (CMakeLists, the macOS podspec forwarders, the SPM forwarders,
