@@ -350,6 +350,13 @@ gives the cutout as **Ø12.5** for both the R3-11A and R3-11B.
 > bayonet cap is pushed and twisted, so a holder sitting in a plain round hole on
 > its nut alone can rotate in service. If the part has a flat, `D_FUSE` needs a
 > D-shaped cutout rather than a circle.
+>
+> **If the holder is bought locally, `D_FUSE` is UNVERIFIED until it is measured.**
+> 12.5 is the SCI R3-11 number. The generic screw-cap holders sold in Argentina are
+> the **Ø12.0** type — the half-millimetre is exactly the difference between a part
+> that locates and one that rattles, and it goes the wrong way (a 12.5 hole around
+> a 12.0 thread). Same for `D_BARREL` 11.5, which is the DC-099's Ø11 thread: local
+> DC jacks come in Ø8, Ø9.5, Ø11 and Ø12 threads. **Caliper both before cutting.**
 
 > **Rating.** An earlier note here claimed ~7 A through the 9 V input and that a
 > Ø12 holder could not carry it. Both were wrong. The ~7.5 A in the budget is

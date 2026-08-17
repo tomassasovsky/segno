@@ -99,6 +99,20 @@ is paid at the *card* rate plus freight, so the crossover is well below face val
 > **latching**, which on a floor unit with external control pedals is worth real
 > money.
 >
+**MercadoLibre search links** (item URLs could not be captured — ML blocks the
+sandboxed browser; open these in a signed-in browser):
+
+| part | search | listing seen | ARS |
+|---|---|---|---|
+| T5A slow-blow fuse | [`fusible-vidrio-5x20-5a-retardado`](https://listado.mercadolibre.com.ar/fusible-vidrio-5x20-5a-retardado) | "Fusible Vidrio 5x20mm **Lento** 5a 250v Itytarg" | 4 770 |
+| Fuse holder | [`portafusible-5x20-chasis-panel`](https://listado.mercadolibre.com.ar/portafusible-5x20-chasis-panel) | *not searched — see warning* | — |
+| DC 5.5×2.1 chassis | [`ficha-conector-dc-5.5-2.1-chasis-metalico-tuerca`](https://listado.mercadolibre.com.ar/ficha-conector-dc-5.5-2.1-chasis-metalico-tuerca) | "5 Unidades Ficha Jack Hueco 5,5 X 2.1mm **Rosca** Chasis C/corte" | 10 150 |
+| Screw-on feet | [`patas-goma-tornillo-gabinete-antideslizante`](https://listado.mercadolibre.com.ar/patas-goma-tornillo-gabinete-antideslizante) | "Pata De Goma Con Tornillo" | 5 500 |
+| TRS D-series *(only if local)* | [`neutrik-nj3fp6c`](https://listado.mercadolibre.com.ar/neutrik-nj3fp6c) | "Neutrik Jack 1/4 Con Traba Nj3fp6c" | 25 000 |
+
+**On the fuse:** the word to match is **`lento`** (or `retardado`). A `rápido`
+fuse of the same 5 A rating will nuisance-blow on the bucks' inrush.
+
 > **Possible simplification, not yet taken.** MercadoLibre also stocks the **Neutrik
 > NAUSB3** USB 3.0 feedthrough (ARS 46 000), which is *also* a D-size part. Using it
 > would put TRS ×2 and USB ×2 all on **one** cutout profile — the idea floated when
