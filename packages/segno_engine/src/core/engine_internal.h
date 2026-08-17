@@ -251,10 +251,19 @@ struct le_perf_drain; /* opaque; full definition in perf_drain.c */
  * (#640, #652). */
 int le_perf_drain_self_stopped(struct le_perf_drain* drain);
 
-/* Forces every subsequent PCM/sidecar write attempt (across every drain
- * thread in the process) to fail, deterministically simulating a full disk
- * without needing a real one. Disabled by default; a test must re-disable it
- * (pass 0) before the next test runs. Not part of the FFI surface. */
+/* Forces every subsequent PCM write attempt (across every drain thread in the
+ * process) to fail, deterministically simulating a full disk without needing a
+ * real one. Disabled by default; a test must re-disable it (pass 0) before the
+ * next test runs. Not part of the FFI surface.
+ *
+ * SCOPE, because getting this wrong sends a test author hunting a drain bug
+ * that is not there: only perf_drain.c's le_pd_write consults the flag, so it
+ * covers the PCM and silence-fill writes and NOTHING else. It does NOT make
+ * the SIDECAR fail — le_pd_write_sidecar goes out through a raw descriptor
+ * that never looks at the flag — and it does not make le_pd_flush fail. That
+ * exemption is deliberate and load-bearing: it is what lets a test force a PCM
+ * failure and then read the resulting `stopped_early` marker back out of a
+ * cleanly written performance.json. */
 void le_perf_drain_force_write_failure_for_test(int enabled);
 
 /* Runs `fn(ctx)` on the drain thread inside every drain cycle, at the one

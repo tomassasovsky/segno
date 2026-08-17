@@ -9,6 +9,14 @@
  * mid-capture leaves salvageable raw PCM + a parseable sidecar, never a
  * truncated WAV (umbrella D-FMT).
  *
+ * It runs at a below-normal, explicitly non-inherited scheduling priority and
+ * its steady-state cycle performs NO heap allocation — not because either was
+ * shown to cause an audible artifact (#722 investigated exactly that and the
+ * allocator mechanism did not survive measurement), but because a background
+ * writer sharing a machine with a real-time audio callback should hold no
+ * allocator lock and outrank nothing. See perf_drain.c's header for what was
+ * measured and the invariant to preserve when changing that loop.
+ *
  * Lifecycle sibling of the plugin scan thread (host/plugin_scan.cpp), but
  * this one is plain C (no SDK dependency) so it lives in core/ alongside the
  * rest of the engine. Thread ownership: engine_commands.c's le_perf_arm/
