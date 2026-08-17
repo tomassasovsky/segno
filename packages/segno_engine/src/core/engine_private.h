@@ -781,6 +781,21 @@ typedef struct le_track {
   int32_t xfade_len;
   int32_t xfade_end_state;
 
+  /* Loop-seam continuity for the takes the deferral above does NOT cover
+   * (#728). A NON-defining track (finalize_new_track) gets no crossfade at
+   * all today, so its wrap splices two moments a whole lap apart, once per
+   * loop cycle, for as long as the take lives. Its finalize arms a trailing
+   * overlap capture: the performance keeps being written into
+   * [seam_len, seam_len + F) for `seam_capture` more frames and is then folded
+   * into the head with the SAME fade length (seam_xfade_frames) and the SAME
+   * equal-gain fold (le_seam_fold) the master finalize uses. Unlike the
+   * master's deferral the state change is NOT delayed: playback (or overdub)
+   * starts on the press exactly as before, and only the buffer is smoothed a
+   * few ms later. 0 == nothing in flight. Armed only when the overlap
+   * provably fits every live lane buffer (seam_room). */
+  int32_t seam_capture;
+  int32_t seam_len;
+
   /* Free/Song mode (B2b + B4, index Architecture §4): this track's OWN loop
    * clock, structurally identical to (and reusing) the master's
    * le_loop_clock — length 0 means "not yet established", exactly like
