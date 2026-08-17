@@ -98,26 +98,29 @@ PLACEMENT = {
                                    # the UART on GP16/17. USB is bench-only.
 
     # top edge: the rear-panel loom, in the panel's order
-    "J8":  (14.0, 8.0, 0),         # POWER    -> J2 pin 5 (GPIO3, wakes the Pi)
-    "J5":  (30.0, 8.0, 0),         # MIDI IN  -- 2 leads: DIN pins 4 and 5 only.
+    # Even 17.5 mm pitch, centred on x 54 -- the same centre line as the switch row
+    # below. These were at 14/30/47/64/81: three different gaps, group off-centre.
+    "J8":  (19.0, 8.0, 0),         # POWER    -> J2 pin 5 (GPIO3, wakes the Pi)
+    "J5":  (36.5, 8.0, 0),         # MIDI IN  -- 2 leads: DIN pins 4 and 5 only.
                                    # Pin 2 is left OFF at a receiver by MIDI 1.0;
                                    # bonding the shield here would short out the
                                    # isolation U2 exists to provide.
-    "J4":  (47.0, 8.0, 0),         # MIDI OUT -- 3 leads: DIN pins 4, 5 and 2.
-    "J20": (64.0, 8.0, 0),         # CTRL 1, over GP26 = pad 31
-    "J21": (81.0, 8.0, 0),         # CTRL 2, over GP27 = pad 32
-    "U2":  (30.0, 21.0, 0),        # H11L1, directly under its own jack, in its own
+    "J4":  (54.0, 8.0, 0),         # MIDI OUT -- 3 leads: DIN pins 4, 5 and 2.
+    "J20": (71.5, 8.0, 0),         # CTRL 1, over GP26 = pad 31
+    "J21": (89.0, 8.0, 0),         # CTRL 2, over GP27 = pad 32
+    "U2":  (36.5, 21.0, 0),        # H11L1, directly under its own jack, in its own
                                    # ISOLATION_GAP pocket
 
     # CTRL divider + anti-alias, hand-placed under their own two jacks. All five
     # anchor within a few mm of each other, so the spiral packs the first ones in
     # and leaves the last with no legal slot -- and these are signal-path parts, so
     # they should hug the pins they serve rather than land wherever there is room.
-    "R8":  (58.0, 16.0, 0), "R7": (72.5, 16.0, 0),
+    "R8":  (70.0, 16.0, 0), "R7": (85.0, 16.0, 0),
     # The two MIDI OUT series resistors, likewise by hand. R3 spans U1's gate-C
     # output to the jack -- a 46 mm reach -- so anchored to either end it is 48 mm
     # from the other. A series part belongs BETWEEN its endpoints, not beside one.
-    "R3":  (66.0, 26.0, 0), "R4": (44.0, 16.0, 0),
+    "R3":  (64.0, 26.0, 0), "R4": (54.0, 16.0, 0),
+    "R6":  (78.0, 25.0, 0),
     "C13": (58.0, 21.0, 0), "C14": (75.0, 21.0, 0), "R9": (87.0, 21.0, 0),
 
     # left edge: power in and its reservoir
@@ -133,7 +136,7 @@ PLACEMENT = {
                                    # mid-board folds straight back over everything;
                                    # here the cable clears the board immediately.
     "J9":  (94.0, 56.0, 0),        # SWD -> J2 pins 18/22
-    "J22": (45.0, 26.0, 0),        # expansion. Not on the top edge: its GP28 pin is
+    "J22": (50.0, 26.0, 0),        # expansion. Not on the top edge: its GP28 pin is
                                    # pad 34, near the module's LEFT end, while GP19..
                                    # GP22 are pads 25..29 toward the right -- from
                                    # the top-right corner that ADC lead ran 61 mm.
@@ -145,7 +148,7 @@ PLACEMENT = {
     # across the busiest corner of the board and would not route at all. R1 sits
     # BELOW the corridor, not in it: at y 51 it plugged the very channel RING_DATA
     # needs to reach U1, and simply moved which of the two nets failed.
-    "R1":  (82.0, 62.0, 90),       # 330R, U1 gate B -> J6 pin 5 (ring data)
+    "R1":  (80.0, 62.0, 0),       # 330R, U1 gate B -> J6 pin 5 (ring data)
     "R2":  (92.0, 50.0, 0),        # 330R, U1 gate C -> J7 pin 2 (indicators)
     "J6":  (60.0, 68.0, 0),        # ring/encoder, under pads 16/17/19/20
     "J7":  (92.0, 68.0, 0),        # indicators
@@ -825,6 +828,15 @@ LABELS = {
     "J6":  "RING",   "J7":  "LEDS",     "J8":  "PWR BTN", "J9": "SWD",
 }
 SILK_H = 1.0
+# Pinned label rows. A GROUP of labels reads as tidy only if it sits on one side at
+# one y; left to the search below, the rear-panel row came out "above, right, above,
+# right, right" and REC sat left of its header while its nine neighbours sat above.
+# Each was individually legal and collectively a mess. The search stays as the
+# fallback for the handful of one-off headers.
+LABEL_ROW = dict(
+    [(r, 3.0) for r in ("J8", "J5", "J4", "J20", "J21")]
+    + [("J%d" % (10 + i), 78.2) for i in range(10)]
+)
 SILK_PAD = 0.5
 
 
@@ -854,6 +866,10 @@ def _labels(board, fps):
         if ref not in fps:
             continue
         text = LABELS[ref]
+        if ref in LABEL_ROW:
+            x0, _y0, x1, _y1 = _extent(fps[ref])
+            _silk(board, text, (x0 + x1) / 2.0, LABEL_ROW[ref], SILK_H)
+            continue
         w, h = 0.72 * SILK_H * len(text), SILK_H * 1.4
         px0, py0, px1, py1 = _extent(fps[ref])
         cx, cy = (px0 + px1) / 2.0, (py0 + py1) / 2.0
