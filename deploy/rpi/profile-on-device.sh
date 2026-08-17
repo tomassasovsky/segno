@@ -88,16 +88,32 @@ tar -C "$BUNDLE" -cf - . | ssh -o BatchMode=yes "$HOST" "tar -C $REMOTE_DIR -xf 
 ssh -o BatchMode=yes "$HOST" "chmod +x $REMOTE_DIR/segno"
 
 echo "==> starting profile build"
-# The environment mirrors /usr/bin/segno-kiosk-launch exactly. It has to: the
-# ALSA/RT/HOME variables change how the engine and path_provider behave, and a
-# profile run under a different environment would not be measuring the appliance.
-# Kept in sync by hand -- if that launcher changes, change this too. That
-# includes SEGNO_ALSA_PERIODS: it tracks the shipped value rather than pinning
-# one of its own, because the whole point of this script is to profile the
-# configuration that ships. Pinning a different depth here would make every
+# The ENVIRONMENT VARIABLES below mirror /usr/bin/segno-kiosk-launch. They have
+# to: the ALSA/RT/HOME variables change how the engine and path_provider behave,
+# and a profile run under a different environment would not be measuring the
+# appliance. Kept in sync by hand -- if that launcher changes, change this too.
+# That includes SEGNO_ALSA_PERIODS: it tracks the shipped value rather than
+# pinning one of its own, because the whole point of this script is to profile
+# the configuration that ships. Pinning a different depth here would make every
 # capture-path measurement describe a build nobody runs. To profile a candidate
 # depth, edit it here for that one run and put it back -- a value left behind
 # here stops measuring the appliance without saying so.
+#
+# What is NOT mirrored, so nobody reads "mirrors the launcher" as "is the
+# launcher". Both are benign today; the second has a tripwire.
+#
+#   1. Filesystem setup. segno-kiosk-launch:15-20 falls back to HOME=/root when
+#      /data is unmounted, and seeds user-dirs.dirs plus $HOME/log (:25, :33-45).
+#      This script skips all of it and just exports HOME. Fine while /data is
+#      mounted, which is the case a profile run cares about.
+#   2. Process limits. segno.service:29-30 sets LimitRTPRIO=95 and
+#      LimitMEMLOCK=infinity; an ssh-spawned process is not in that unit and
+#      gets neither. This is moot ONLY because the profile runs as root, where
+#      CAP_SYS_NICE and CAP_IPC_LOCK bypass both limits. The day the appliance
+#      stops running as root, SEGNO_RT_AUDIO=1 below silently stops taking
+#      effect here: setschedparam EPERMs, the audio thread stays SCHED_OTHER,
+#      and every profile run measures a non-RT thread while still claiming to
+#      measure the appliance. Add explicit ulimits here before that happens.
 #
 # setsid + nohup + </dev/null, NOT `ssh -f ... &`: with a bare trailing `&` the
 # remote shell exits immediately and SIGHUPs the app before it ever opens its

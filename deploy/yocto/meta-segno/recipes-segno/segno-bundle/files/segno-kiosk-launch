@@ -64,26 +64,56 @@ export SEGNO_RT_AUDIO=1
 # the bench Pi 4 + Scarlett rig, and both still true:
 #
 #   1. Monitor path, cold start. 10/10 clean cold starts under a worst-case
-#      input transient at 96kHz/64 frames with periods=3 (~5ms), where 2
-#      periods intermittently latched a "robotic" monitor. This is what
-#      originally picked 3, and nothing here contradicts it: 3 is enough for
-#      the monitor path.
+#      input transient at 96kHz/64 frames with periods=3, where 2 periods
+#      intermittently latched a "robotic" monitor. This is what originally
+#      picked 3, and nothing here contradicts it: 3 is enough for the monitor
+#      path.
 #   2. Long performance capture. The same rig at 3 periods drops capture
 #      periods over a full-length take (the engine counts and flags them since
 #      the dropped-capture-period work); 8 held with none.
 #
 # 8 ships because the value has to satisfy the harder of the two cases, not the
-# one that was measured first. The cost is output buffer depth — five more
-# periods, ~1.3ms each by the figure the cold-start run used — which is cheap
-# next to a dropped capture period, since a monitor a few ms later is a
-# nuisance and a hole in a recorded take is not recoverable.
+# one that was measured first.
+#
+# The arithmetic, since every period figure this comment inherited was roughly
+# 2x too large: at the shipped 96kHz/64 frames one period is 64/96000 =
+# 0.67ms, so 3 periods is 2ms of buffer and 8 is 5.3ms. (Live on the unit at
+# periods=8: /proc/asound/card2/pcm0p/sub0/hw_params reads rate 96000,
+# period_size 64, buffer_size 512 — 8 x 64, as asked.) Five more periods is
+# therefore 3.3ms of additional capacity, not 6.5ms, and the separately tracked
+# "retest at 2" is chasing 0.67ms, not ~1.3ms.
+#
+# That extra capacity costs approximately nothing in steady-state monitor
+# latency, which is not obvious and is worth stating with its mechanism. ALSA
+# starts playback at start_threshold, and miniaudio hardcodes that to two
+# periods (miniaudio.h:27840 passes internalPeriodSizeInFrames*2), independent
+# of the period COUNT — so raising `periods` deepens the ring without moving the
+# point at which playback begins. The duplex loop is capture-driven
+# read-then-blocking-write, so occupancy stays pinned near that threshold rather
+# than filling the ring. Measured live at periods=8: start_threshold 128 (= 2
+# periods) and appl_ptr - hw_ptr sampled 90-129 frames of the 512-frame ring
+# (delay 210-249). The extra periods are overrun headroom, not added delay.
+# Evidence honestly stated: only the periods=8 state was measured on the unit —
+# no periods=3 comparison was taken — so this rests on that measurement plus the
+# start-threshold mechanism above, not on a before/after.
+#
+# 8 is also the ceiling, which the sweep language above should not be read to
+# deny. The engine accepts the override only in [2,8]
+# (packages/segno_engine/src/core/engine_miniaudio.c:127); an out-of-range value
+# is silently IGNORED, not clamped, leaving the default 2 from line 111 — the
+# single worst configuration on record here. So "8 held" is not the top of a
+# sweep, it is the deepest buffer the engine can be asked for, and 4 through 7
+# were never tried. The concrete failure this note prevents: capture drops
+# reappear on a new interface, someone reads "go deeper" and sets
+# SEGNO_ALSA_PERIODS=12, silently gets 2, and concludes buffer depth was never
+# the issue.
 #
 # What would make 8 wrong: a different interface or SoC (the underrun edge is a
 # property of this Scarlett + Pi 4 pair), or an engine change that removes the
 # capture-side backlog this is padding against. Re-measure BOTH cases before
 # lowering it — a clean cold-start run on its own is the evidence that picked 3
-# and it was not sufficient. The separately tracked "retest at 2, reclaims
-# ~1.3ms" therefore has to clear the capture case too, not just the monitor
-# one. The engine's own default stays 2; this override is appliance-only.
+# and it was not sufficient. The separately tracked "retest at 2" therefore has
+# to clear the capture case too, not just the monitor one. The engine's own
+# default stays 2; this override is appliance-only.
 export SEGNO_ALSA_PERIODS=8
 exec /opt/segno/segno "$@"
