@@ -2387,13 +2387,16 @@ static void test_loop_seam_not_armed_with_record_offset(void) {
   drain(e); /* the take starts on the next frame fed */
   feed_osc(e, &osc, N, NULL, NULL);
   le_engine_record(e, 1);
-  feed_osc(e, &osc, 512, NULL, NULL);
+  /* Checked HERE, one block after the finalize press and well inside F, for
+   * the same reason test_seam_capture_cleared_by_reconfigure checks `> 0` at
+   * this exact point: seam_capture is a COUNTDOWN, so once F frames have been
+   * fed an armed capture reads 0 too and the assertion says nothing. The
+   * window is open at 64 or it was never armed. */
+  feed_osc(e, &osc, 64, NULL, NULL);
+  CHECK(e->tracks[1].seam_capture == 0);
+  feed_osc(e, &osc, 512 - 64, NULL, NULL);
   drain(e);
   settle_layers(e);
-
-  /* The gate refused: no overlap was ever armed, so nothing counted down and
-   * nothing folded. */
-  CHECK(e->tracks[1].seam_capture == 0);
 
   float* stem = (float*)malloc(sizeof(float) * (size_t)N);
   CHECK(le_engine_export_track(e, 1, stem, N) == N);
@@ -2543,6 +2546,151 @@ static void test_loop_seam_survives_undo_after_rec_dub(void) {
   free(loop);
 
   le_engine_destroy(e);
+}
+
+/* Runs one take plus one overdub on track 1 over a silent defining master,
+ * peels every overdub layer back off, and scores the seam of the take that is
+ * left live. Shared driver for the two shadow-fold tests below.
+ *
+ * `dub_at` says where the overdub BEGINS relative to the take's finalize
+ * (which lands on the loop top, so it is also frame 0 of the seam's F-frame
+ * fold window): 0 uses the rec/dub press, so the dub starts exactly ON the
+ * seam and its shadow is fully backed up by the time the fold runs; a positive
+ * value finalizes to PLAYING first and punches IN that many frames later,
+ * leaving [0, dub_at) of the shadow not yet backed up at fold time.
+ * `dub_len` (>= 64) is how long the dub runs before the punch-out. Fills the
+ * largest single-sample step, the peak sample of the peeled loop, and the
+ * dub's start position. */
+static double seam_of_peeled_take(int dub_at, int dub_len, double* out_step,
+                                  double* out_peak, int32_t* out_vpos) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+
+  /* Silent defining master on track 0, so only track 1 holds content. */
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  if (dub_at == 0) le_engine_set_rec_dub(e, 1);
+  le_engine_record(e, 1);
+  drain(e); /* the take starts on the next frame fed */
+  feed_osc(e, &osc, N, NULL, NULL);
+  le_engine_record(e, 1); /* finalize the take, arming the seam overlap */
+  if (dub_at > 0) {
+    feed_osc(e, &osc, dub_at, NULL, NULL);
+    le_engine_record(e, 1); /* punch IN, still inside the fold window */
+  }
+  feed_osc(e, &osc, 64, NULL, NULL); /* the press reaches the audio thread */
+  if (out_vpos != NULL) *out_vpos = e->tracks[1].dub_start_vpos;
+  feed_osc(e, &osc, dub_len - 64, NULL, NULL);
+  le_engine_record(e, 1);           /* punch out */
+  feed_osc(e, &osc, N, NULL, NULL); /* let the fade, drain and fold all run */
+  drain(e);
+  settle_layers(e);
+
+  /* Peel every overdub layer: what is left live is the take alone. */
+  le_snapshot s;
+  for (int k = 0; k < 8; ++k) {
+    le_engine_get_snapshot(e, &s);
+    if (s.tracks[1].undo_depth <= 0) break;
+    le_engine_undo(e, 1);
+    drain(e);
+    settle_layers(e);
+  }
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+
+  float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * N));
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, loop, &n);
+  double med = 0.0;
+  const double score = splice_score(loop, n, out_step, &med);
+  double peak = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const double a = fabs((double)loop[i]);
+    if (a > peak) peak = a;
+  }
+  if (out_peak != NULL) *out_peak = peak;
+  free(loop);
+  le_engine_destroy(e);
+  return score;
+}
+
+/* #728 (e): the PARTIALLY backed-up dub shadow — the case
+ * le_seam_fold_dub_shadow's "speculative and harmless" paragraph is about, and
+ * the one no other test in this file reaches. Punching IN partway through the
+ * fold window leaves the shadow split at the punch point when the fold fires:
+ * [dub_at, F) has been saved by backup-on-write and must be folded here and
+ * now, while [0, dub_at) has not, is folded speculatively into a value nobody
+ * will ever read, and is later overwritten from the (by then folded) live slot
+ * by le_dub_block_update's drain walk. Undoing the pass must therefore hand
+ * back ONE coherent folded head, with no step where the two halves meet.
+ *
+ * Discriminating: with le_seam_fold_dub_shadow stubbed out these three punch
+ * points score 345x / 254x / 85x — the step is at the split, not at the wrap.
+ * The dub_at == 0 shape (test_loop_seam_survives_undo_after_rec_dub) only ever
+ * sees a fully covered shadow and cannot catch that. */
+static void test_loop_seam_folds_partially_backed_up_dub_shadow(void) {
+  printf("test_loop_seam_folds_partially_backed_up_dub_shadow\n");
+  const int N = 4800;
+  const int F = 480; /* seam_xfade_frames at 48 kHz */
+  /* Inside the window, so [0, dub_at) really is uncovered at fold time; plus
+   * one control well past it, where the fold has already completed and no
+   * shadow of it exists. */
+  const int dub_at[] = {128, 256, 384, 2 * F};
+  for (size_t i = 0; i < sizeof(dub_at) / sizeof(dub_at[0]); ++i) {
+    double step = 0.0;
+    double peak = 0.0;
+    int32_t vpos = -1;
+    const double score = seam_of_peeled_take(dub_at[i], N, &step, &peak, &vpos);
+    printf("  punched in at %4d: vpos=%4d step=%.5f peak=%.4f score=%.1fx\n",
+           dub_at[i], vpos, step, peak, score);
+    CHECK(vpos == dub_at[i]); /* the dub really did start where we asked */
+    CHECK(score < 25.0);      /* one folded head, no split */
+    CHECK(peak < 0.51);       /* and no doubled sample anywhere in it */
+  }
+}
+
+/* #728 KNOWN GAP, pinned rather than left to be rediscovered: an overdub layer
+ * that RETIRES before the fold runs keeps the un-folded head, so that one undo
+ * step reverts to the pre-#728 seam.
+ *
+ * Reachable by a plain punch-out inside the first F/2 frames after the
+ * finalize — no re-punch and no merge needed. od_fade_frames == F, so a dub
+ * punched out at frame p has only ramped to p/F and decays back to 0 by frame
+ * 2p; LE_DRAIN_CHUNK (32768) then drains the whole remainder in a single
+ * block, retiring the layer while the fold is still counting down.
+ *
+ * Severity is low and the numbers say so: the peeled head is the honest raw
+ * seam of the take, peak 0.5 like every other case here — a step, not garbage,
+ * and only on the undo path. If the `> 50` case ever starts failing, the gap
+ * has been CLOSED: move that entry into the folded list rather than relaxing
+ * the bound. */
+static void test_loop_seam_gap_when_dub_retires_before_the_fold(void) {
+  printf("test_loop_seam_gap_when_dub_retires_before_the_fold\n");
+  const int F = 480;
+  const int punch_at[] = {64, 192, 240, 600};
+  for (size_t i = 0; i < sizeof(punch_at) / sizeof(punch_at[0]); ++i) {
+    double step = 0.0;
+    double peak = 0.0;
+    int32_t vpos = -1;
+    const double score =
+        seam_of_peeled_take(0, punch_at[i], &step, &peak, &vpos);
+    const int retires_early = 2 * punch_at[i] < F;
+    printf("  punched out at %4d: step=%.5f peak=%.4f score=%.1fx (%s)\n",
+           punch_at[i], step, peak, score, retires_early ? "gap" : "folded");
+    CHECK(vpos == 0);   /* rec/dub: the dub starts on the seam */
+    CHECK(peak < 0.51); /* audio either way, never corruption */
+    if (retires_early) {
+      CHECK(score > 50.0);
+    } else {
+      CHECK(score < 25.0);
+    }
+  }
 }
 
 /* The master limiter caps the output at its ceiling when the mix would exceed
@@ -21731,6 +21879,8 @@ int main(void) {
   test_loop_seam_not_armed_with_record_offset();
   test_seam_capture_cleared_by_reconfigure();
   test_loop_seam_survives_undo_after_rec_dub();
+  test_loop_seam_folds_partially_backed_up_dub_shadow();
+  test_loop_seam_gap_when_dub_retires_before_the_fold();
   test_master_limiter_caps_and_transparent();
   test_overdub_feedback_decays_layers();
   test_master_seam_crossfade_no_click();

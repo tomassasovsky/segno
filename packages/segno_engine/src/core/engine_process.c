@@ -718,10 +718,19 @@ static void le_seam_fold(le_track* t, int32_t len, int32_t F) {
  * set — and both copy from the live slot, which by then is folded. Gated on
  * a_layer_in_flight so a merely pre-armed spare is never touched.
  *
- * KNOWN GAP: a layer that RETIRED inside the overlap window (only reachable
- * when a re-punch merges into a session whose pass boundary lands in those few
- * ms) keeps its un-folded head. Same low-severity shape — that undo step
- * reverts to today's seam, it does not corrupt. */
+ * KNOWN GAP: a layer that RETIRES before the fold runs keeps its un-folded
+ * head, so that one undo step reverts to the pre-#728 seam. The trigger is
+ * plainer than it looks — no re-punch and no merge needed, just a PUNCH-OUT
+ * inside the first F/2 frames after the finalize. od_fade_frames is the same
+ * sr/100 as F, so a dub punched out at frame p has only ramped to p/F and
+ * decays back to 0 by frame 2p; LE_DRAIN_CHUNK (32768 samples) then drains the
+ * whole remaining pass in a single block, and the layer retires while the fold
+ * is still counting down. Measured at 48 kHz (F = 480): punch-out at 64 or 192
+ * leaves the raw seam (score 204x, step 0.352), at 240 or 600 the folded one
+ * (1.6x, 0.003) — pinned both ways by
+ * test_loop_seam_gap_when_dub_retires_before_the_fold. Low severity and the
+ * numbers say so: the head that survives is the honest raw seam of the take at
+ * its true peak, a step rather than garbage, and only on the undo path. */
 static void le_seam_fold_dub_shadow(le_track* t, int32_t len, int32_t F) {
   const int32_t slot = t->dub_slot;
   if (slot < 0 || !load_i32(&t->a_layer_in_flight)) return;
@@ -729,9 +738,25 @@ static void le_seam_fold_dub_shadow(le_track* t, int32_t len, int32_t F) {
   for (int32_t l = 0; l < n; ++l) {
     le_lane* ln = &t->lanes[l];
     const int32_t live = load_i32(&ln->a_live);
+    /* Structural, not currently reachable: track_acquire_slot excludes `live`
+     * when it arms a shadow, so slot != live. If that ever stopped holding,
+     * folding here would run le_seam_fold's arithmetic a SECOND time over the
+     * same head — the one way this function could corrupt rather than merely
+     * miss. Cheaper to rule out than to reason about. */
+    if (slot == live) continue;
     const float* b = ln->pool[live];
     float* sb = ln->pool[slot];
     if (b == NULL || sb == NULL) continue;
+    /* The second audio-thread read of the non-atomic pool_cap (#728) — see the
+     * invariant stated at the `cap` snapshot in mix_tracks_frame. That
+     * argument covers the LIVE slot; this one also reads a SHADOW slot's cap,
+     * and the same "never resized under the audio thread" property holds for
+     * it: track_acquire_slot excludes live, both history stacks and
+     * outstanding_slots when it picks a shadow, so le_lane_ensure_slot can
+     * never grow a slot that is armed as dub_slot, and le_lane_shrink_slot
+     * runs only from le_handle_retired — after the audio thread has cleared
+     * dub_slot and pushed the retire event, i.e. after it can no longer name
+     * the slot. So (pointer, cap) is immutable here too. */
     if (ln->pool_cap[live] < len + F || ln->pool_cap[slot] < F) continue;
     for (int32_t i = 0; i < F; ++i) {
       const float x = (float)i / (float)F; /* 0..1 across the fade */
@@ -1287,6 +1312,12 @@ static void close_active_capture(le_engine* e, int32_t except_ch,
           tr->record_pos = tr->xfade_len;
           tr->xfade_capture = 0;
         }
+        /* Provably already 0 on this branch — a trailing seam overlap is armed
+         * only by finalize_new_track, which is only reachable with a defining
+         * loop, and this is the no-loop one (#728). Cleared anyway so the
+         * per-take deferral reset here is exhaustive by CONSTRUCTION rather
+         * than by that argument, which no assertion holds up. */
+        tr->seam_capture = 0;
         finalize_master(e, tr, LE_TRACK_PLAYING, frame); /* defines the master loop */
       } else {
         finalize_new_track(e, tr, LE_TRACK_PLAYING, frame); /* round up to whole loops */
@@ -3796,7 +3827,11 @@ static inline void mix_tracks_frame(
    *   - le_lane_shrink_slot only touches RETIRED slots — a layer the audio
    *     thread handed off through the evt_ring and can no longer name.
    * So for every slot this loop can actually observe as live-and-playing, the
-   * (pointer, cap) pair is immutable for the whole block. */
+   * (pointer, cap) pair is immutable for the whole block.
+   *
+   * This states the LIVE read only. le_seam_fold_dub_shadow makes the one
+   * other audio-thread pool_cap read, against a shadow slot; the matching
+   * argument for that index is written there. */
   int32_t cap[LE_MAX_TRACKS][LE_MAX_LANES];
   float vol[LE_MAX_TRACKS][LE_MAX_LANES];
   int mut[LE_MAX_TRACKS][LE_MAX_LANES];
