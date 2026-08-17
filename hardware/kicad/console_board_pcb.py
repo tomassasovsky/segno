@@ -100,7 +100,8 @@ PLACEMENT = {
     # top edge: the rear-panel loom, in the panel's order
     # Even 17.5 mm pitch, centred on x 57.5 -- the BOARD centre -- the same centre line as the switch row
     # below. These were at 14/30/47/64/81: three different gaps, group off-centre.
-    "J8":  (22.5, 8.0, 0),         # POWER    -> J2 pin 5 (GPIO3, wakes the Pi)
+    "J8":  (22.5, 8.0, 0),
+    "J9":  (28.0, 30.0, 0),        # flying lead to the Pi 5's own J2 button pads         # POWER    -> J2 pin 5 (GPIO3, wakes the Pi)
     "J5":  (40.0, 8.0, 0),         # MIDI IN  -- 2 leads: DIN pins 4 and 5 only.
                                    # Pin 2 is left OFF at a receiver by MIDI 1.0;
                                    # bonding the shield here would short out the
@@ -158,6 +159,9 @@ PLACEMENT = {
     # nowhere to go.
     "C11": (93.0, 31.0, 0),        # +5V decoupling for U1
     "C20": (25.0, 21.0, 0),        # +3V3 decoupling for U2
+    # The three encoder pull-ups. New: they used to live on ring_board.py tied to
+    # its 5 V rail, which sat 1.4 V over the RP2350's absolute maximum.
+    "R11": (24.0, 62.0, 0), "R12": (38.0, 62.0, 0), "R13": (52.0, 62.0, 0),
     "R1":  (68.0, 62.0, 0),       # 330R, U1 gate B -> J6 pin 5 (ring data)
     "R2":  (93.0, 57.0, 0),        # 330R, U1 gate C -> J7 pin 2 (indicators)
     "J6":  (63.5, 69.0, 0),        # ring/encoder, under pads 16/17/19/20
@@ -858,6 +862,20 @@ def _route(board, fps, nets, netmap):
 def _stitch_gnd(board, fps, nets, netmap):
     """Every GND pad gets a via into the B.Cu pour."""
     n = 0
+    # A via goes BESIDE an SMD pad and NOWHERE NEAR a through-hole one.
+    #
+    # A plated through-hole pad already reaches both layers -- that is what the
+    # plating is -- so a via at its centre connects nothing and just puts a second
+    # drill hit on the same coordinate. That was 102 holes_co_located: CAM either
+    # holds the order or drills the spot twice, breaking bits.
+    #
+    # SMD pads DO need one, but offset, never centred. A through-via at the centre of a surface-mount pad wicks
+    # solder to the far side and starves the joint -- and on the Pico those pads sit
+    # UNDER the module, so the cold joint is invisible and unreachable. It also
+    # silently undoes the thermal relief: KiCad applies zone pad-connection settings
+    # to pads only, and always ties a via solid, so the nine GND pads the relief was
+    # added for were tied solid through the via in their middle. This is also the
+    # 100 co-located drill hits the fab review found.
     for ref, pad in nets.get(POUR_NET, []):
         if ref not in fps:
             continue
@@ -882,7 +900,7 @@ LABELS = {
     "J15": "TRK2", "J16": "TRK3", "J17": "TRK4", "J18": "CLR",  "J19": "BANK",
     "J2":  "PI",     "J3":  "5V IN",    "J20": "CTRL 1", "J21": "CTRL 2",
     "J22": "EXP",    "J4":  "MIDI OUT", "J5":  "MIDI IN",
-    "J6":  "RING",   "J7":  "LEDS",     "J8":  "PWR BTN",
+    "J6":  "RING",   "J7":  "LEDS",     "J8":  "PWR BTN", "J9": "PI PWR",
 }
 SILK_H = 1.0
 # Pinned label rows. A GROUP of labels reads as tidy only if it sits on one side at
@@ -1123,10 +1141,19 @@ def build(quiet=False):
 
 
 def export():
+    # REFUSE to plot an unrouted board. Running this module without --no-export
+    # produced a JLCPCB-ready zip, "ALL PASS", "0 violations" and exit 0 from a board
+    # with ZERO tracks and 80 unconnected items: build() stopped routing when that
+    # moved to route_console_board.sh, and --exit-code-violations counts violations
+    # only -- never unconnected_items. That is the one failure that reaches a fab.
+    _b = pcbnew.LoadBoard(PCB)
+    if not [t for t in _b.GetTracks() if t.GetClass() != "PCB_VIA"]:
+        raise SystemExit("EXPORT: refusing to plot -- board has no tracks. "
+                         "Routing lives in route_console_board.sh; run that.")
     # DRC first: it is what pours the zone (--refill-zones --save-board), so
     # plotting before it would ship gerbers with an empty ground plane.
     drc = subprocess.run([KICAD_CLI, "pcb", "drc", "--refill-zones", "--save-board",
-                          "--severity-error", "--exit-code-violations", BOARD_PATH],
+                          "--severity-all", "--exit-code-violations", BOARD_PATH],
                          capture_output=True, text=True)
     tail = [ln for ln in drc.stdout.splitlines() if ln.strip()][-4:]
     print("DRC:", " | ".join(tail) if tail else "(clean)")

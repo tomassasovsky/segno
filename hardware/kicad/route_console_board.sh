@@ -29,8 +29,18 @@ m = pcbnew.LoadBoard(os.path.abspath('$PCB'))
 # rule produced an actual 0.1979 mm and one clearance violation. Widening the rule
 # only moves the problem, so the DSN gets 0.3 mm and the board keeps its 0.2 mm
 # check; the difference is the rounding headroom.
+# Widths as well as clearance. Freerouting takes BOTH from the DSN netclass, not
+# from anything in console_board_pcb.py -- so TRACK_W/TRACK_PWR there were purely
+# decorative and every one of the 268 tracks came out at Freerouting's own 0.2 mm
+# default, including +5V feeding ~1 A of WS2812s (0.2 mm is good for about 0.5 A).
 for _n, _nc in m.GetAllNetClasses().items():
     _nc.SetClearance(pcbnew.FromMM(0.3))
+    _nc.SetTrackWidth(pcbnew.FromMM(0.6))
+_pw = m.GetAllNetClasses().get('Power')
+for _net in ('+5V', '+3V3'):
+    _ni = m.FindNet(_net)
+    if _ni:
+        _ni.SetNetClass(_pw) if _pw else None
 ok = pcbnew.ExportSpecctraDSN(m, os.path.abspath('$OUT/console.dsn'))
 sys.exit(0 if ok else 'DSN export failed')" 2>&1 | grep -viE "wxApp|memory leak|Debug:" || true
 

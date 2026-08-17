@@ -97,8 +97,11 @@ enc["S1"] += encSW
 enc["S2"] += gnd
 # pull-ups + RC de-bounce (encoders bounce). Powered from +5V_LED, so the encoder
 # is live only in standalone/9V mode -- same as the LED ring.
-R("10k")[1, 2] += v5, encA
-R("10k")[1, 2] += v5, encB
+# NO pull-ups here. They used to be 10k to this board's 5 V rail, which was right
+# when the cable's far end was main_board.py's 5 V Pro Micro and wrong the moment it
+# became a 3.3 V Pico: they drove GP13/GP14 1.4 V past absolute maximum, continuously.
+# The console board now pulls ENC_A/ENC_B/ENC_SW up to ITS OWN 3V3, so the pull-up
+# always matches whatever MCU is actually on the other end.
 C("100nF")[1, 2] += encA, gnd
 C("100nF")[1, 2] += encB, gnd
 

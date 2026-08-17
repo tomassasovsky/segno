@@ -117,7 +117,6 @@ ring_data, ring_buf, ring_out = Net("RING_DATA"), Net("RING_DATA_BUF"), Net("RIN
 ind_data, ind_buf, ind_out = Net("IND_DATA"), Net("IND_DATA_BUF"), Net("IND_DATA_OUT")
 encA, encB, encSW = Net("ENC_A"), Net("ENC_B"), Net("ENC_SW")
 ctrl1, ctrl2 = Net("CTRL1_TIP"), Net("CTRL2_TIP")
-ctrl_ref = Net("CTRL_REF")  # 3V3 through 1k -- see the CTRL block for why
 
 # ---- J1: Pico 2 (RP2350) ----------------------------------------------------
 # KiCad's own Module:RaspberryPi_Pico_Common_THT -- its description states it
@@ -275,11 +274,17 @@ opto[4] += midi_rx
 # shorts ring to sleeve, so a hard 3V3 on the ring would be a dead short to GND
 # every time someone plugs in a footswitch. With it, a pot reads mid-scale and a
 # switch reads rail-to-rail, and firmware can tell them apart.
-R("1k")[1, 2] += v3v3, ctrl_ref
 for _ref, _net in (("J20", ctrl1), ("J21", ctrl2)):
     j = jst(3, _ref, "CTRL_TRS")
     j[1] += _net                               # tip   = wiper / switch
-    j[2] += ctrl_ref                           # ring  = pot top, current-limited
+    # ONE 1k PER JACK, not one shared between them. Shared, a TS plug in either
+    # jack -- which is the normal way to use a footswitch, and the exact case the
+    # resistor exists for -- shorts ring to sleeve and drags the OTHER jack's pot
+    # top to ground, so an expression pedal there reads a constant. Two pedals also
+    # loaded each other's full scale. Separate resistors, separate nets.
+    _ref_net = Net(_ref + "_REF")
+    R("1k")[1, 2] += v3v3, _ref_net
+    j[2] += _ref_net                           # ring  = pot top, current-limited
     j[3] += gnd                                # sleeve
     R("10k")[1, 2] += v3v3, _net
     C("10nF")[1, 2] += _net, gnd               # anti-alias / debounce
@@ -293,6 +298,15 @@ j_ring = jst(8, "J6", "RING_ENC")
 j_ring[1, 2] += v5
 j_ring[3, 4] += gnd
 j_ring[5] += ring_out
+# The encoder pull-ups live HERE, at 3V3, and ring_board.py's two 10k to its 5 V
+# rail are deleted. Those were correct when the other end of this cable was a 5 V
+# Pro Micro (main_board.py); against an RP2350 they sat 1.4 V over the 3.6 V
+# absolute maximum on GP13/GP14, continuously, whenever the console was powered.
+# Nothing caught it: PI_LEVELS guards the Pi, and no gate could see across into a
+# second generator's netlist. PICO_LEVELS below now does.
+R("10k")[1, 2] += v3v3, encA
+R("10k")[1, 2] += v3v3, encB
+R("10k")[1, 2] += v3v3, encSW      # ring_board.py never had one on the switch
 j_ring[6] += encA
 j_ring[7] += encB
 j_ring[8] += encSW
@@ -308,6 +322,15 @@ j_ind[3] += gnd
 j_btn = jst(2, "J8", "PWR_BTN")
 j_btn[1] += pwr_btn
 j_btn[2] += gnd
+
+# ...and passed straight through to the Pi 5's own power-button pads. On a Pi 5 an
+# external button cannot be a GPIO: RP1 and the SoC are unpowered until the PMIC
+# brings them up, so nothing on the 40-way can wake the machine. Raspberry Pi break
+# the function out as two solder pads (J2, beside the RTC battery connector) and
+# that is the only thing that works. This header is a 2-pin flying lead to them.
+j_pi_btn = jst(2, "J9", "PI_PWR_PADS")
+j_pi_btn[1] += pwr_btn
+j_pi_btn[2] += gnd
 
 # ---- SWD: straight onto the module's own debug pads, no connector -----------
 # The THT footprint does not carry the debug pads, so v1 of this board broke SWD
@@ -358,19 +381,28 @@ C("100uF", fp="Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", ref="C31")[1, 2] += v5, 
 # polarising notch and a keyed IDC socket. Cheapest mistake on the board to
 # design out. Only ~11 of the 40 ways carry anything; the rest are the Pi's own
 # pins and are left alone.
-#   Pi pin 2,4  = 5V        1,17 = 3V3      6,9,14,20,25,30,34,39 = GND
+#   Pi pin 2,4  = 5V  -- DELIBERATELY NOT CONNECTED. Tying them to +5V puts the
+#                        external buck in hard parallel with the Pi 5's own PMIC
+#                        rail, with no ORing diode: whichever regulator sits higher
+#                        back-feeds the other, bypassing the Pi's input protection.
+#                        It also lands the whole WS2812 load on the Pi's 5 V header
+#                        pin, which segno_console_shopping_list.md explicitly
+#                        forbids. The Pi is powered from its own supply; this board
+#                        is powered from J3. They share only GND and 3V3.
+#                            1,17 = 3V3      6,9,14,20,25,30,34,39 = GND
 #   Pi pin 8    = GPIO14 TXD (uart0)        10 = GPIO15 RXD (uart0)
 #   Pi pin 7    = GPIO4      (uart2 TX)     29 = GPIO5    (uart2 RX)
-#   Pi pin 5    = GPIO3  -- the power button pin: GPIO3 is the one that can WAKE
-#                           the Pi from halt, which a plain GPIO cannot
+#   Pi pin 5    = GPIO3  -- NOT the power button. GPIO3 wakes a Pi 4; on a Pi 5 the
+#                           GPIO lives behind RP1 and power-on is the PMIC's job, so
+#                           no GPIO can wake it. The Pi 5's button goes on the J2
+#                           solder pads by the RTC connector -- hence J9 below.
 #   Pi pin 18   = GPIO24 SWCLK              22 = GPIO25 SWDIO
 PI_HDR = {
-    2: v5, 4: v5, 1: v3v3, 17: v3v3,
+    1: v3v3, 17: v3v3,
     6: gnd, 9: gnd, 14: gnd, 20: gnd, 25: gnd, 30: gnd, 34: gnd, 39: gnd,
     8: midi_tx, 10: midi_rx,
     7: link_rx,     # Pi uart2 TX -> Pico RX  (3V3 -> 3V3, direct)
     29: link_tx,    # Pi uart2 RX <- Pico TX  (3V3 -> 3V3, direct)
-    5: pwr_btn,
     18: swclk, 22: swdio,
 }
 j_pi = Part("Connector_Generic", "Conn_02x20_Odd_Even",
@@ -468,10 +500,33 @@ def _check(strict_stations=True):
         "SWD: the debug lines must land on the module's own D1/D2/D3 pads with GND "
         "on D2 -- if this reverts to a header, the footprint has changed too")
 
-    # the Pi's power-button pin must be the one that can wake it from halt
-    assert 5 in PI_HDR and PI_HDR[5] is pwr_btn, (
-        "PWR_BTN: the button must land on Pi header pin 5 (GPIO3) -- it is the only "
-        "pin that wakes the Pi from halt; any other GPIO gives shutdown but not wake")
+    # The power button must NOT be on the 40-way at all. This gate used to assert
+    # the opposite -- "the button must land on Pi header pin 5 (GPIO3)... the only
+    # pin that wakes the Pi from halt" -- which is true of a Pi 4 and false of a
+    # Pi 5, where the GPIO is behind RP1 and neither it nor the SoC is powered until
+    # the PMIC wakes them. A gate can enforce a wrong belief just as firmly as a
+    # right one; this one did, for the whole design.
+    assert 5 not in PI_HDR, (
+        "PWR_BTN: Pi header pin 5 (GPIO3) cannot wake a Pi 5 -- the button belongs "
+        "on the Pi's own J2 solder pads, brought out as J9")
+    assert {n.name for n in j_pi_btn[1].nets} == {"PWR_BTN"}, (
+        "PWR_BTN: J9 must carry the button through to the Pi's J2 pads")
+
+    # ...and the buck must not be paralleled with the Pi's own 5 V rail.
+    for _pin in (2, 4):
+        assert _pin not in PI_HDR, (
+            f"PI_POWER: Pi header pin {_pin} is a 5 V SUPPLY pin. Connecting it ties "
+            "the external buck to the Pi's PMIC rail with no ORing diode, and puts "
+            "the WS2812 load on the Pi's 5 V pin -- which the shopping list forbids")
+
+    # Nothing may drive the PICO over 3V3 either. There was no such gate: PI_LEVELS
+    # guarded the Pi only, so the ring board's 5 V encoder pull-ups sat 1.4 V over
+    # GP13/GP14's absolute maximum and every check on this board stayed green.
+    for _pad, _name in ((PICO[GPIO[n]], n) for n in GPIO):
+        for _n in pico[_pad].nets:
+            assert v5 not in _n.nets, (
+                f"PICO_LEVELS: {_name} (pad {_pad}) touches a 5 V rail -- RP2350 IO "
+                "is 3.3 V and its absolute maximum is 3.6 V")
 
     # nothing may drive the Pi at more than 3V3
     for n in (link_tx, link_rx, midi_rx, pwr_btn, swclk, swdio):
