@@ -19,4 +19,8 @@
 # a design change. What to check instead: "0 errors found while running ERC" and
 # the (net ...) blocks. Byte-stability would mean giving every Part an explicit
 # tag=, which is not worth it today.
+#
+# FOOTPRINTS: the Pico 2 uses KiCad's own Module:RaspberryPi_Pico_Common_THT,
+# whose description states it "supports Raspberry Pi Pico 2". Nothing to vendor
+# and nothing hand-rolled — see hardware/kicad/README.md.
 skidl==2.3.0
