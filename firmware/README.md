@@ -180,12 +180,19 @@ the existing **MODE** button (`D6`, note `3`) instead:
   firmware does not need to distinguish tap from hold.
 
 The one wire change is **payload byte 0, bit 3** (`performance_armed`),
-alongside the existing bit0 (mode) / bit1 (clear fade) / bit2 (goodbye). When
-set, **LED 12** (the mode/global-activity LED) blinks red instead of showing
-its usual transport-activity color — deliberately distinct from
-`PEDAL_GLOBAL_RED`'s **solid** red (looper recording), so the performer can
-tell "armed" from "recording" eyes-free. Blink half-period is 400 ms,
-matching the on-screen simulator.
+alongside the existing bit0 (mode) / bit1 (clear fade) / bit2 (goodbye).
+
+**The pedal does not render it.** It once blinked **LED 12** (the mode LED)
+red while armed, at a 400 ms half-period. That is gone (#693): armed is
+already permanently in view on segno's screens, and once rec mode itself went
+solid red, "blinking red" vs "solid red" was the only thing separating armed
+from rec mode on a single 5 mm dot at stage distance. The MODE LED now reports
+the interaction mode and nothing else — rec red / play green / FX blue,
+**solid in every state**, dark only on the goodbye frame.
+
+The bit stays on the wire (the host keeps reporting armed state, and the codec
+and its golden fixtures are unchanged), so firmware that wants to surface it
+some other way still can; the shipping sketches simply do not read it.
 
 **Back-compat:** a pedal still running pre-D-PEDAL firmware never sets bit3,
 which decodes as `performance_armed = 0` — segno just never shows the pedal as

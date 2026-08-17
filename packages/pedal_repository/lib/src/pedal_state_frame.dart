@@ -182,9 +182,12 @@ class PedalStateFrame extends Equatable {
   /// darkens when segno quits while the USB stays powered.
   final bool isGoodbye;
 
-  /// Whether performance-recording is armed (D-PEDAL) — the firmware renders
-  /// this as **blinking** red, distinct from [GlobalColor.red]'s solid red
-  /// (looper recording), so the performer can tell the two apart eyes-free.
+  /// Whether performance-recording is armed (D-PEDAL) — reported to the pedal,
+  /// but **not rendered by it**. The firmware used to blink the mode LED red
+  /// for this; it no longer does, because armed already shows on segno's
+  /// screens and the mode LED now says the interaction mode and nothing else
+  /// (solid, in every state). The flag stays on the wire for firmware that
+  /// wants it; nothing in the shipping sketches reads it for display.
   final bool performanceArmed;
 
   /// The engine's master output gain, `0.0`..`1.0` (the value the encoder

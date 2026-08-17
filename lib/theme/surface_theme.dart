@@ -34,6 +34,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.accentAlt,
     required this.warning,
     required this.success,
+    required this.successSurface,
     required this.rec,
     required this.recSurface,
     required this.recTint,
@@ -113,8 +114,15 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// brightened in the high-contrast variant so it stays legible (WCAG 1.4.3).
   final Color warning;
 
-  /// Positive/confirmation colour (DS `success`).
+  /// Positive/confirmation colour (DS `success`), and its tinted wash — the
+  /// [success] sibling of [recSurface]/[accentSurface], used behind pills that
+  /// read positive (the STAGE mute-mode pill). It is a token rather than an
+  /// inline alpha so the high-contrast flavor can boost it the way it boosts
+  /// the other two; a hardcoded `success.withValues(alpha: …)` would pin mute
+  /// at the dark flavor's fill and leave it visibly weaker than the REC and FX
+  /// pills beside it.
   final Color success;
+  final Color successSurface;
 
   /// The UI-chrome record red family (DS `rec`, `rec-surface`, `rec-tint`,
   /// `rec-line`, `rec-deep`): REC pills, armed banners, and armed-row tints.
@@ -226,6 +234,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? accentAlt,
     Color? warning,
     Color? success,
+    Color? successSurface,
     Color? rec,
     Color? recSurface,
     Color? recTint,
@@ -272,6 +281,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     accentAlt: accentAlt ?? this.accentAlt,
     warning: warning ?? this.warning,
     success: success ?? this.success,
+    successSurface: successSurface ?? this.successSurface,
     rec: rec ?? this.rec,
     recSurface: recSurface ?? this.recSurface,
     recTint: recTint ?? this.recTint,
@@ -324,6 +334,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       accentAlt: c(accentAlt, other.accentAlt),
       warning: c(warning, other.warning),
       success: c(success, other.success),
+      successSurface: c(successSurface, other.successSurface),
       rec: c(rec, other.rec),
       recSurface: c(recSurface, other.recSurface),
       recTint: c(recTint, other.recTint),
@@ -396,6 +407,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     accentAlt: Color(0xFF738CF2),
     warning: Color(0xFFE0A94A),
     success: Color(0xFF30A46C),
+    successSurface: Color(0x2430A46C),
     rec: Color(0xFFE5484D),
     recSurface: Color(0x24E5484D),
     recTint: Color(0x21E5484D),
@@ -462,6 +474,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     accentAlt: Color(0xFF9AB4FF),
     warning: Color(0xFFFFD27A),
     success: Color(0xFF6EE7B7),
+    successSurface: Color(0x336EE7B7),
     rec: Color(0xFFFF6B6B),
     recSurface: Color(0x33FF6B6B),
     recTint: Color(0x2EFF6B6B),

@@ -613,9 +613,14 @@ class _RecordPill extends StatelessWidget {
       padding: EdgeInsets.symmetric(horizontal: 40 * s),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        // `recSurface` is a `rec`-tinted wash; derive the fill from the same
-        // red the outline uses so the whole pill is one colour.
-        color: armed ? red.withValues(alpha: 0.14) : null,
+        // The wash stays the `recSurface` TOKEN even though the outline reads
+        // `ledRed`. Deriving it from `ledRed` at a fixed alpha looked tidier,
+        // but it dropped the armed fill from 20% to 14% in the high-contrast
+        // flavor (`0x33FF6B6B` vs an inline `0.14`) — a regression on exactly
+        // the flavor and the panel this change exists to make more legible.
+        // The hue difference it "fixes" is `rec` vs `ledRed` at 14% over
+        // `#0B0B0C`, which is not a visible reading; the alpha is.
+        color: armed ? surface.recSurface : null,
         borderRadius: BorderRadius.circular(24 * s),
         border: Border.all(color: color, width: 2 * s),
       ),

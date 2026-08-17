@@ -55,9 +55,10 @@ void main() {
       PerformanceReadout data, {
       Locale? locale,
       VoidCallback? onMix,
+      ThemeData? theme,
     }) => tester.pumpWidget(
       MaterialApp(
-        theme: AppTheme.neon,
+        theme: theme ?? AppTheme.neon,
         locale: locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
@@ -351,6 +352,50 @@ void main() {
         surface.ledBlue,
         surface.textPrimary,
       }, hasLength(4));
+    });
+
+    testWidgets('the armed record pill washes with the recSurface TOKEN', (
+      tester,
+    ) async {
+      BoxDecoration pillOf() =>
+          tester
+                  .widget<Container>(
+                    find.byKey(const Key('console_readout_record')),
+                  )
+                  .decoration!
+              as BoxDecoration;
+
+      // The outline reads `ledRed` for contrast, and deriving the wash from
+      // that same red at a fixed alpha looked tidier. It is not: the wash is
+      // the one part of this pill the flavors override, and an inline alpha
+      // silently pinned the armed fill at 0.14 while high contrast lifts the
+      // token to 0.2 — dimming the accessibility flavor on the 7" panel, the
+      // exact surface this change exists to make more legible.
+      for (final data in [AppTheme.neon, AppTheme.highContrast]) {
+        final s = data.extension<SurfaceTheme>()!;
+        // Unmount between flavors: MaterialApp animates a theme swap, so
+        // re-pumping the same tree with a new theme would still read the old
+        // one on the single frame this pumps.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await pump(
+          tester,
+          const PerformanceReadout(recordArmed: true),
+          theme: data,
+        );
+        expect(pillOf().color, s.recSurface);
+        expect(pillOf().border!.top.color, s.ledRed);
+
+        await pump(tester, const PerformanceReadout(), theme: data);
+        expect(pillOf().color, isNull, reason: 'idle pill takes no wash');
+      }
+
+      // The dark flavor alone cannot see this: its `recSurface` alpha (0x24)
+      // rounds to the same 0.14 the hardcode used, so only the boost proves
+      // the token is actually being read.
+      expect(
+        SurfaceTheme.highContrast.recSurface.a,
+        greaterThan(SurfaceTheme.dark.recSurface.a),
+      );
     });
 
     testWidgets('renders an unknown mode token verbatim rather than guessing', (

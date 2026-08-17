@@ -967,14 +967,18 @@ Color _ledColor(SurfaceTheme surface, PedalTrackLed led) => switch (led) {
 /// so this is a rendering change on both sides. Keep it in lockstep with the
 /// firmware's `modeColor`.
 ///
-/// The two are NOT equivalent in reach, and the difference matters when you
-/// are deciding what a screenshot proves. Here `_modeColor` has exactly one
-/// call site: the MODE LED. On hardware, `modeColor()` ALSO tints the ring's
-/// idle sweep (`kRingModeIdleLevel`) when segno sends no activity colour —
-/// this plate has no such reading, because its ring renders straight from
-/// `_ringColor(frame.globalColor)`. So the mute-green and rec-red idle ring
-/// exist only on the physical pedal and cannot be eyeballed on this widget or
-/// in any golden; that reading is device-gated and unverified here.
+/// Both sides now have exactly ONE call site for this mapping: the MODE LED.
+/// The firmware's `modeColor()` used to also tint the ring's idle sweep, so
+/// the plate carried a mode reading this widget could not show; #693 dropped
+/// that in both sketches in favour of the neutral `kRingIdleGlow` (the app's
+/// [SurfaceTheme.ringGlow]), because a dim red idle ring in rec mode reads as
+/// a live take from stage distance. The ring renders straight from
+/// `_ringColor(frame.globalColor)` here and from the activity colour there —
+/// mode-blind on both.
+///
+/// The MODE LED is also SOLID in every state on both sides. The armed blink is
+/// gone (armed shows on the screens); `PedalStateFrame.performanceArmed` still
+/// crosses the wire and is deliberately not read for display.
 Color _modeColor(SurfaceTheme surface, PedalMode mode) => switch (mode) {
   PedalMode.rec => surface.ledRed,
   PedalMode.play => surface.ledGreen,

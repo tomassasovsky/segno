@@ -79,7 +79,7 @@ void main() {
     );
   });
 
-  Future<void> pump(WidgetTester tester) {
+  Future<void> pump(WidgetTester tester, {ThemeData? theme}) {
     // The strip is drawn for the console's fixed 1920-wide panel; the default
     // 800px test surface would cramp the readouts into each other.
     tester.view
@@ -88,6 +88,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     return tester.pumpApp(
+      theme: theme,
       MultiBlocProvider(
         providers: [
           BlocProvider<LooperBloc>.value(value: bloc),
@@ -180,34 +181,76 @@ void main() {
       expect(find.text(l10n.interactionModeMute), findsOneWidget);
     });
 
+    Future<(Color?, Color?)> pillOf(
+      WidgetTester tester,
+      InteractionMode mode, {
+      ThemeData? theme,
+    }) async {
+      whenListen(
+        control,
+        const Stream<ControlState>.empty(),
+        initialState: ControlState(mode: mode),
+      );
+      // Unmount first: re-pumping the same tree reuses the element, and the
+      // pill's `context.select` would keep serving the previous mode.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pump(tester, theme: theme);
+      final box =
+          tester
+                  .widget<Container>(find.byKey(const Key('stage_mode_pill')))
+                  .decoration!
+              as BoxDecoration;
+      return (box.border!.top.color, box.color);
+    }
+
     testWidgets('wears rec red, mute green and FX blue', (tester) async {
       // #693 — the owner's call from the bench: mute reads GREEN on every
       // surface. Rec stays red and FX stays accent-blue.
-      Future<(Color?, Color?)> pillOf(InteractionMode mode) async {
-        whenListen(
-          control,
-          const Stream<ControlState>.empty(),
-          initialState: ControlState(mode: mode),
-        );
-        // Unmount first: re-pumping the same tree reuses the element, and the
-        // pill's `context.select` would keep serving the previous mode.
-        await tester.pumpWidget(const SizedBox.shrink());
-        await pump(tester);
-        final box =
-            tester
-                    .widget<Container>(find.byKey(const Key('stage_mode_pill')))
-                    .decoration!
-                as BoxDecoration;
-        return (box.border!.top.color, box.color);
-      }
-
       final s = AppTheme.neon.extension<SurfaceTheme>()!;
-      expect(await pillOf(InteractionMode.record), (s.rec, s.recSurface));
-      expect(await pillOf(InteractionMode.mute), (
-        s.success,
-        s.success.withValues(alpha: 0.14),
+      expect(await pillOf(tester, InteractionMode.record), (
+        s.rec,
+        s.recSurface,
       ));
-      expect(await pillOf(InteractionMode.fx), (s.accent, s.accentSurface));
+      expect(await pillOf(tester, InteractionMode.mute), (
+        s.success,
+        s.successSurface,
+      ));
+      expect(await pillOf(tester, InteractionMode.fx), (
+        s.accent,
+        s.accentSurface,
+      ));
+    });
+
+    testWidgets('all three fills follow the high-contrast flavor', (
+      tester,
+    ) async {
+      // The regression this pins: mute's fill was once an inline
+      // `success.withValues(alpha: 0.14)`, which is a no-op difference in the
+      // dark flavor (`successSurface` is alpha 0x24 ≈ 0.141) and therefore
+      // INVISIBLE to the test above. High contrast is the only flavor that
+      // overrides these washes, so it is the only one that catches a hardcode:
+      // it lifts rec and accent to 0.2 while a hardcoded mute stayed at 0.14,
+      // leaving mute visibly weaker than the two pills beside it on the
+      // accessibility flavor.
+      final hc = AppTheme.highContrast;
+      final s = hc.extension<SurfaceTheme>()!;
+
+      final rec = await pillOf(tester, InteractionMode.record, theme: hc);
+      final mute = await pillOf(tester, InteractionMode.mute, theme: hc);
+      final fx = await pillOf(tester, InteractionMode.fx, theme: hc);
+
+      expect(rec, (s.rec, s.recSurface));
+      expect(mute, (s.success, s.successSurface));
+      expect(fx, (s.accent, s.accentSurface));
+
+      // Stated as the reading rather than the hex: the three pills must sit at
+      // one fill weight, and that weight must be the boosted one.
+      expect(mute.$2!.a, rec.$2!.a);
+      expect(
+        mute.$2!.a,
+        greaterThan(SurfaceTheme.dark.successSurface.a),
+        reason: 'high contrast must boost the mute wash, not pin it',
+      );
     });
   });
 

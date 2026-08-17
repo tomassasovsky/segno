@@ -152,9 +152,11 @@ class _SessionBlock extends StatelessWidget {
 /// footswitch owns the cycle.
 ///
 /// The pen draws the record state (`rec` outline over `recSurface`) and the
-/// FX state (`accent` over `accentSurface`); mute follows the same
-/// one-seventh-alpha fill recipe over the design system's `success` green
-/// (#693 — the owner's call from the bench), since no STAGE screen draws it.
+/// FX state (`accent` over `accentSurface`); mute is `success` over the
+/// matching `successSurface` (#693 — the owner's call from the bench), since
+/// no STAGE screen draws it. All three arms read a wash TOKEN, so the
+/// high-contrast flavor lifts them together — an inline alpha here would pin
+/// mute at the dark fill while its two siblings brightened around it.
 class _ModePill extends StatelessWidget {
   const _ModePill();
 
@@ -173,7 +175,7 @@ class _ModePill extends StatelessWidget {
       ),
       InteractionMode.mute => (
         surface.success,
-        surface.success.withValues(alpha: 0.14),
+        surface.successSurface,
         l10n.interactionModeMute,
       ),
       InteractionMode.fx => (

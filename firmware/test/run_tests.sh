@@ -89,8 +89,12 @@ done
 # The ring's idle glow is a bare constant rather than a function, and it is
 # exactly the kind of value that gets tuned in one copy only.
 for sym in kRingIdleGlow; do
-  p="$(grep -h "^static const CRGB $sym" "$PRIMARY_INO" | normalize)"
-  m="$(grep -h "^static const CRGB $sym" "$MIRROR_INO" | normalize)"
+  # `|| true`: grep exits 1 when it matches nothing, which under `set -e`
+  # would abort the script before the `<missing>` diagnostic below could name
+  # the constant -- i.e. exactly the drift this block exists to report would
+  # fail CI with no message at all.
+  p="$(grep -h "^static const CRGB $sym" "$PRIMARY_INO" | normalize || true)"
+  m="$(grep -h "^static const CRGB $sym" "$MIRROR_INO" | normalize || true)"
   if [ -z "$p" ] || [ "$p" != "$m" ]; then
     echo "FAIL: $sym differs (or is missing) between the two sketches." >&2
     echo "  $PRIMARY_INO: ${p:-<missing>}" >&2
