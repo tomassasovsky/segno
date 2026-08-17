@@ -140,20 +140,51 @@ pico[37].do_erc = False          # 3V3_EN -- internal pull-up
 # as an unconnected pin, and a wall of expected warnings is how a REAL one gets
 # missed -- so the exemptions are named here rather than tolerated in the log.
 # main_board.py does the same for its unused AHCT gates and MIDI IN's DIN pin 2.
-SPARE_GPIO = (17, 18, 19, 20, 21, 22, 28)
+# GP19 is the only pin left with nothing on it. The other six spares now go to the
+# expansion header J22 rather than being quietly ERC-exempted into thin air -- an
+# unpopulated 2x5 costs a footprint and nothing else, and it is the difference
+# between "add a feature" and "respin the board".
+SPARE_GPIO = (0, 1)
+# All five are row-B pads, so ONE header reaches all of them -- GP0/GP1 are row A
+# (the far end of the module) and would have made J22 straddle the whole thing, so
+# they stay spare instead. Same rule the other connectors are gated on.
+EXPANSION_GPIO = (19, 20, 21, 22, 28)
 for _gp in SPARE_GPIO:
     pico[PICO[_gp]].do_erc = False
 
 # ---- pin assignment ---------------------------------------------------------
 GPIO = {
-    "LINK_TX": 0, "LINK_RX": 1,
+    # THE PIN MAP IS A FLOORPLAN. The module's pads 1..20 are one physical row and
+    # 21..40 the other, so a GPIO number decides where on the board a connector can
+    # physically sit. Each connector's signals are therefore kept inside ONE row and
+    # adjacent, and the row is chosen to face the part it talks to:
+    #
+    #   row A, left  ..  centre ......................  right
+    #   pads 1        4 --------- 15                16 17  19 20
+    #                 the ten footswitches           J6: ring + encoder
+    #   row B, left  ..  centre ......................  right
+    #   pads 40 39               32 31                 23   22 21
+    #   VBUS VSYS <- J3          CTRL2/1                IND  LINK_RX/TX -> J2
+    #
+    # LINK is on GP16/17, not GP0/1: both are UART0 TX/RX pairs electrically, but
+    # GP16/17 are pads 21/22 -- the end nearest the Pi ribbon J2, which is what the
+    # link actually talks to. On GP0/1 (pads 1/2) it left the module at the far end
+    # and crossed the whole board. Same for IND_DATA on GP18: it is one of the three
+    # signals U1 buffers, and U1 sits off the module's right end.
+    "LINK_TX": 16, "LINK_RX": 17,
     "SW_RECPLAY": 2, "SW_STOP": 3, "SW_UNDO": 4, "SW_MODE": 5,
     "SW_TRACK1": 6, "SW_TRACK2": 7, "SW_TRACK3": 8, "SW_TRACK4": 9,
     "SW_CLEAR": 10, "SW_BANK": 11,
-    "IND_DATA": 12, "RING_DATA": 13,
-    "ENC_A": 14, "ENC_B": 15, "ENC_SW": 16,
+    "RING_DATA": 12, "ENC_A": 13, "ENC_B": 14, "ENC_SW": 15,
+    "IND_DATA": 18,
     "CTRL1_TIP": 26, "CTRL2_TIP": 27,
 }
+
+# Which pads each UART instance can reach on RP2350. Moving LINK to a "spare-
+# looking" GPIO is a one-character edit that silently costs the link its hardware
+# UART, so the pairing is gated rather than trusted to the comment above.
+UART_PINS = {0: ({0, 12, 16, 28}, {1, 13, 17, 29}),
+             1: ({4, 8, 20, 24}, {5, 9, 21, 25})}
 FSW_ORDER = ["RECPLAY", "STOP", "UNDO", "MODE", "TRACK1",
              "TRACK2", "TRACK3", "TRACK4", "CLEAR", "BANK"]
 
@@ -184,9 +215,16 @@ buf = Part("74xx", "74AHCT125", value="74AHCT125N",
 buf[14] += v5
 buf[7] += gnd
 C("100nF")[1, 2] += v5, gnd
-buf[1] += gnd; buf[2] += midi_tx; buf[3] += midi_out_buf       # gate A: MIDI OUT
+# WHICH GATE carries which signal is a layout decision, not an arbitrary one: on a
+# DIP-14 pins 1-7 are one side and 8-14 the other, so a gate's input pin decides
+# which side of the package that signal has to arrive from. IND_DATA and RING_DATA
+# come off the module (to U1's left) and MIDI_TX comes off the Pi ribbon (to its
+# right), so they take gates whose inputs face the right way. Wired the other way
+# round, IND_DATA had to travel around the package and was the one net on the board
+# the autorouter could not finish.
+buf[1] += gnd; buf[2] += ind_data; buf[3] += ind_buf            # gate A: indicators
 buf[4] += gnd; buf[5] += ring_data; buf[6] += ring_buf          # gate B: ring
-buf[10] += gnd; buf[9] += ind_data; buf[8] += ind_buf           # gate C: indicators
+buf[10] += gnd; buf[9] += midi_tx; buf[8] += midi_out_buf       # gate C: MIDI OUT
 buf[13] += v5                                                    # gate D: unused,
 buf[12] += gnd                                                   # /OE high, input low
 buf[11].do_erc = False
@@ -262,6 +300,22 @@ j_swd[1] += swclk
 j_swd[2] += gnd
 j_swd[3] += swdio
 
+# ---- J22: expansion -- the six GPIO that are otherwise doing nothing ---------
+# Deliberately unpopulated by default. GP0/GP1 are a UART0 pair and GP20/GP21 a
+# UART1 pair, so this header can carry a whole second serial device; GP28 is an
+# ADC, so it can carry a third pedal input. Nothing on the board depends on it.
+EXP_PINOUT = ["+3V3", "+5V", "GP19", "GP20", "GP21", "GP22", "GP28", "GND"]
+j_exp = Part("Connector_Generic", "Conn_02x04_Odd_Even",
+             footprint="Connector_PinHeader_2.54mm:PinHeader_2x04_P2.54mm_Vertical",
+             ref="J22", value="EXPANSION")
+j_exp[1] += v3v3
+j_exp[2] += v5
+for _i, _gp in enumerate(EXPANSION_GPIO, start=3):
+    n = Net("EXP_GP%d" % _gp)
+    pico[PICO[_gp]] += n
+    j_exp[_i] += n
+j_exp[8] += gnd
+
 # ---- J3: power in, 5 V from the external potted buck ------------------------
 # Four pins so the LED pair is a SEPARATE run back to the buck -- that is what
 # makes the +5V/+5V_LED split real rather than cosmetic.
@@ -325,6 +379,19 @@ def _check(strict_stations=True):
         assert gp in PICO, f"PIN_MAP: {name} -> GP{gp} is not on the module header"
         assert gp not in used, f"PIN_MAP: GP{gp} is assigned to both {used[gp]} and {name}"
         used[gp] = name
+    for gp in EXPANSION_GPIO:
+        assert gp in PICO, f"PIN_MAP: expansion GP{gp} is not on the module header"
+        assert gp not in used, (
+            f"PIN_MAP: GP{gp} is on the expansion header AND used by {used[gp]} -- "
+            "the header would fight the on-board function for the pin")
+        used[gp] = "J22 expansion"
+    # LINK must be a real hardware UART pair on ONE instance -- GP16 TX with GP29 RX
+    # looks fine in a pin list and is two different UARTs.
+    assert any(GPIO["LINK_TX"] in tx and GPIO["LINK_RX"] in rx
+               for tx, rx in UART_PINS.values()), (
+        f"LINK_UART: GP{GPIO['LINK_TX']}/GP{GPIO['LINK_RX']} is not a TX/RX pair on "
+        f"one UART instance -- valid pairs are {UART_PINS}")
+
     for name, gp in GPIO.items():
         if name.startswith("CTRL"):
             assert gp in ADC_GPIO, (
@@ -340,6 +407,21 @@ def _check(strict_stations=True):
             "exemption on a live pin hides a real unconnected-pin warning")
     assert len(FSW_ORDER) == 10, f"PIN_MAP: {len(FSW_ORDER)} footswitches, expected 10"
 
+    # ...and both ends of a connector's signal group must sit in the same pad row,
+    # or the connector cannot be placed near all of them. Row A is pads 1..20.
+    for group in (("LINK_TX", "LINK_RX"),
+                  ("RING_DATA", "ENC_A", "ENC_B", "ENC_SW"),
+                  tuple("SW_" + n for n in FSW_ORDER)):
+        rows = {PICO[GPIO[n]] <= 20 for n in group if n in GPIO}
+        assert len(rows) == 1, (
+            f"PAD_ROW: {group} straddles both pad rows of the module "
+            f"({ {n: PICO[GPIO[n]] for n in group if n in GPIO} }) -- one connector "
+            "carries them all, so it would have to reach around the module")
+    exp_rows = {PICO[gp] <= 20 for gp in EXPANSION_GPIO}
+    assert len(exp_rows) == 1, (
+        f"PAD_ROW: J22's pins straddle both pad rows "
+        f"({ {gp: PICO[gp] for gp in EXPANSION_GPIO} }) -- one header carries them all")
+
     # the ring header is the THIRD hand-copy of a pinout held together by a comment
     assert RING_PINOUT == ["+5V_LED", "+5V_LED", "GND", "GND", "RING_DATA_OUT",
                            "ENC_A", "ENC_B", "ENC_SW"], (
@@ -348,6 +430,15 @@ def _check(strict_stations=True):
     for _i, _want in enumerate(RING_PINOUT, start=1):
         got = {n.name for n in j_ring[_i].nets}
         assert _want in got, f"RING_CONTRACT: J6 pin {_i} carries {got}, expected {_want}"
+
+    assert len(EXP_PINOUT) == 8 and EXP_PINOUT[:2] == ["+3V3", "+5V"] \
+        and EXP_PINOUT[-1] == "GND", (
+            "EXPANSION: J22 must keep power on pins 1/2 and ground on pin 8 -- the "
+            "pinout is silkscreened and anything plugged in trusts it")
+    for _i, _gp in enumerate(EXPANSION_GPIO, start=3):
+        assert EXP_PINOUT[_i - 1] == "GP%d" % _gp, (
+            f"EXPANSION: J22 pin {_i} is labelled {EXP_PINOUT[_i - 1]} but wired to "
+            f"GP{_gp}")
 
     # the Pi's power-button pin must be the one that can wake it from halt
     assert 5 in PI_HDR and PI_HDR[5] is pwr_btn, (
@@ -420,7 +511,24 @@ def _selftest():
     def _station():
         STATION_HEADERS["NOT_A_STATION"] = "J99"
 
+    def _uart_split():
+        # GP19 is on no UART at all and is the one pin still spare, so this reaches
+        # the UART gate rather than tripping the duplicate or expansion checks that
+        # run ahead of it.
+        # GP1 is UART0's RX, never a TX, and is one of the two pins still spare --
+        # so this reaches the UART gate instead of the duplicate or expansion checks.
+        GPIO["LINK_TX"] = 1
+
+    def _row_straddle():
+        GPIO["ENC_SW"], GPIO["IND_DATA"] = GPIO["IND_DATA"], GPIO["ENC_SW"]
+
+    def _exp_collide():
+        GPIO["SW_STOP"] = EXPANSION_GPIO[0]
+
     case("duplicate GPIO", _dup_gpio)
+    case("expansion pin fighting an on-board function", _exp_collide)
+    case("LINK on a pin with no UART", _uart_split)
+    case("connector group straddling both pad rows", _row_straddle)
     case("CTRL off an ADC pin", _ctrl_off_adc)
     case("ring pinout drift", _ring_order)
     case("power button off GPIO3", _btn_pin)
