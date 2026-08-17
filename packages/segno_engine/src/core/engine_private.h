@@ -1007,11 +1007,15 @@ struct le_engine {
    * published in the snapshot. All bits set on a fresh configure (default-on). */
   _Atomic uint32_t a_output_enabled_mask;
   _Atomic uint64_t a_frames;
-  /* Every backend dropout this session, all le_xrun_kind classes summed --
-   * published as le_snapshot.xrun_count. Fed by le_engine_note_backend_xrun;
-   * cb_timing below carries the same events broken out per kind and per
-   * window. Until #722 the ONLY producer was the Windows ASIO overload
-   * notification, so this read a flat 0 on the appliance. */
+  /* EVERY backend dropout this session, classifiable or not -- published as
+   * le_snapshot.xrun_count. Fed by le_engine_note_backend_xrun, which bumps
+   * this BEFORE the kind is range-checked, so a dropout reported with a kind
+   * outside le_xrun_kind moves this counter while landing in no per-kind
+   * bucket. cb_timing below carries the same events broken out per kind and
+   * per window, and those buckets sum to this only for kinds THIS BUILD KNOWS
+   * -- which is every kind any shipping backend produces today (ALSA passes
+   * 0/1/2, ASIO passes 3). Until #722 the ONLY producer was the Windows ASIO
+   * overload notification, so this read a flat 0 on the appliance. */
   _Atomic uint32_t a_xruns;
   /* Audio-callback telemetry (#722): per-callback duration vs the period
    * deadline, the entry-to-entry gap detector, and the per-kind dropout

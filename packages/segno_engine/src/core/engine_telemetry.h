@@ -47,9 +47,14 @@
  *     It exists precisely so that the first bullet stays true — a reroute has
  *     to invalidate last_entry_ns / svc_frames / svc_ns, and the notification
  *     thread writing those directly would make them multi-writer and cost the
- *     unsynchronised maxima their justification. Worst case on a lost race is
- *     that the break is honoured one callback later, which is one callback of
- *     stale timeline on a device that just disappeared.
+ *     unsynchronised maxima their justification. The consume side is an atomic
+ *     EXCHANGE, not a load-then-store: a second break raised between the two
+ *     halves of a load-then-store would be erased by the store and dropped
+ *     OUTRIGHT — not deferred a callback. That is a real sequence (macOS fires
+ *     interruption_began and then rerouted back-to-back), and dropping the
+ *     second break is precisely the pinned-max_gap_us bug this flag exists to
+ *     remove. Exchange makes a break raised at any point either observed by
+ *     this callback or left standing for the next; it can never be lost.
  *
  * HEADER-ONLY on purpose. A new .c TU would have to be added to six build
  * descriptions (CMakeLists, the macOS podspec forwarders, the SPM forwarders,
@@ -290,12 +295,22 @@ static inline void le_cb_timing_configure(le_cb_timing* t, int32_t sample_rate,
  * three are audio-thread-owned, so they are cleared by the audio thread when it
  * observes the flag; a_gap_suppress_ns is already atomic and is cleared right
  * here, because a recovery licensed before the reroute has nothing to do with
- * the stream that comes back after it. Nothing else in le_cb_timing carries
- * history across the break: the negotiated rate/period and their derived
- * thresholds are unchanged by a reroute (miniaudio re-opens with the same
- * requested config; a device that came back with a different period would need
- * a full le_engine_start, which reconfigures anyway), and the two windows are
- * the measurement itself.
+ * the stream that comes back after it. The two windows are the measurement
+ * itself, so they are deliberately kept.
+ *
+ * KNOWN ASSUMPTION, not something this code checks: period_frames, period_ns,
+ * gap_limit_ns and gap_suppress_window_ns are left at the OLD device's values,
+ * on the belief that miniaudio re-opens the replacement with the same requested
+ * config and that a genuinely different negotiated period would arrive through
+ * a full le_engine_start, which reconfigures. Nothing here verifies that — the
+ * notification path carries no new period, and le_cb_timing never re-reads the
+ * device. If a reroute ever did land on a device negotiating a LARGER period,
+ * the stale (smaller) gap_limit_ns would make the detector fire every period
+ * until the next start. That would show as gap_events climbing steadily with
+ * late_periods flat, which the bench table already reads as device starvation;
+ * treat a reroute immediately beforehand as the more likely explanation. Left
+ * as an assumption on purpose: re-plumbing the negotiated period through the
+ * notification path is more machinery than an unobserved case is worth.
  *
  * Thread-agnostic and RT-safe: two relaxed stores. */
 static inline void le_cb_timing_note_timeline_break(le_cb_timing* t) {
@@ -366,10 +381,16 @@ static inline void le_cb_timing_note(le_cb_timing* t, uint64_t entry_ns,
   /* A reroute / interruption / stop happened since the last callback, so the
    * timeline is stale (see le_cb_timing_note_timeline_break). Drop it HERE, on
    * the thread that owns these three fields, rather than from the notification
-   * thread that raised the flag. A relaxed load per callback; the branch is
-   * never taken on a rig nobody is unplugging. */
-  if (atomic_load_explicit(&t->a_timeline_break, memory_order_relaxed) != 0) {
-    atomic_store_explicit(&t->a_timeline_break, 0, memory_order_relaxed);
+   * thread that raised the flag.
+   *
+   * EXCHANGE, not load-then-store: the notification thread can raise a second
+   * break between a load and a store (macOS sends interruption_began then
+   * rerouted back-to-back), and the store would erase it — the timeline would
+   * then be measured across the hole and pin max_gap_us for the session, the
+   * exact failure this flag removes. One relaxed RMW per callback; the branch
+   * is never taken on a rig nobody is unplugging. */
+  if (atomic_exchange_explicit(&t->a_timeline_break, 0, memory_order_relaxed) !=
+      0) {
     t->last_entry_ns = 0;
     t->svc_frames = 0;
     t->svc_ns = 0;

@@ -6887,8 +6887,20 @@ Set<String> _declaredFinalFields(String relativePath, String classHeader) {
   expect(end, isNot(-1), reason: '$classHeader has no closing brace');
 
   final body = source.substring(start, end);
+  // `final <type> name;` and `final <type> name = <init>;`, where `<type>` may
+  // be absent (inferred), prefixed (`ffi.Pointer<Int32>`), a function type
+  // (`void Function(int)`) or a record (`(int, String)`).
+  //
+  // The type is "anything up to the name that is not `;`, `=` or a newline"
+  // rather than an identifier character class, and the initializer arm is
+  // optional, because both narrower forms leave the guard with a HOLE: a class
+  // of `[\w<>,?\s]` silently skips any field whose type contains `.`, `(` or
+  // `)`, and a pattern with no `=` arm silently skips every field carrying a
+  // declaration initializer — `final int x = 0;` used to leave this golden
+  // green. A field the golden cannot see is a field it cannot guard, and a
+  // golden with a hole is worse than none because it is trusted.
   return RegExp(
-    r'^  final\s+[\w<>,?\s]+?\s+(\w+);',
+    r'^  final\s+(?:[^;=\n]+?\s)?(\w+)\s*(?:=[^;]*)?;',
     multiLine: true,
   ).allMatches(body).map((m) => m.group(1)!).toSet();
 }
