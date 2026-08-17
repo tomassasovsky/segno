@@ -226,7 +226,7 @@ right, power first and away from signal:
 | ref | cutout | keep-out | note |
 |---|---|---|---|
 | `9V_DC` | Ø11.5 | 17.5 | DC-099; listing says Ø11 hole, +0.5 so it cannot rattle before the nut bites |
-| `POWER` | **Ø19.5** | 29.2 | ZJWZJH 19 mm **domed** momentary, UL+CE, 316/304 stainless. **Unlit** |
+| `POWER` | **Ø19.5** | 29.2 | APIELE 19 mm **high-round** momentary, stainless. **Unlit** |
 | `FUSE` | **Ø12.5** | 18.5 | **SCI R3-11**, bayonet cap, 10 A / 250 V AC |
 | `MIDI_IN` / `MIDI_OUT` | Ø15.1 + 2 × Ø3.2 @ 22 | 28.4 | REAN NYS325; **IN needs opto-isolation on the board**, not here |
 | `CTRL_1` / `CTRL_2` | **Ø24**, fixings **not cut** | 30.4 | **D-series** punch, not a threaded bushing |
@@ -302,32 +302,27 @@ Both were the last stations with no component behind them (they predate #743 and
 were briefly mis-recorded as "datasheet: generic …" — "generic" is not a datasheet,
 and that was exactly the false authority this table exists to catch). Resolved:
 
-**Button — [ZJWZJH 19 mm domed momentary](https://www.amazon.com/dp/B09CCPDC1C), $16.99/2.**
-**UL + CE listed**, 316 stainless head on a 304 shell, IP67/IK10, **1,000,000
-mechanical cycles**, M2.5 screw terminals, gold-over-silver contacts. It ships
-with a real dimensioned drawing, which is where every number below comes from:
-**panel hole Ø19.5** (thread M19×1), hex bezel **22 across flats / 25.2 across
-corners**, Ø15 dome face, 13 mm of thread, 17.8 mm behind the panel.
+**Button — [APIELE 19 mm high-round momentary](https://www.amazon.com/dp/B079HTQ7XD),
+$8.99/2 = $4.50 each.** Stainless, IP65, M19×1, screw terminals, 1,000,000
+mechanical cycles, 3-year replacement warranty, **4.7★ over 1,039 reviews**. It
+ships a full dimensioned drawing: hole 19 (M19×1), hex bezel **21.9 across flats /
+25.0 across corners**, Ø14.1 dome face, 6 mm of dome proud of a 3.5 mm bezel,
+24.4 behind the panel.
 
-`POWER`'s keep-out is derived from `PWRBTN_HEAD_D` = **25.2** — the bezel is a
-hexagon, so its *corners*, not its flats, are what has to clear a neighbour.
+Chosen over the [UL+CE ZJWZJH](https://www.amazon.com/dp/B09CCPDC1C) at **half the
+price**. That part is nicer on paper — UL + CE listed, IP67/IK10, 316 head — but
+none of it earns its keep here: this switch is a **dry contact to a 3.3 V Pi
+GPIO**, not a mains switch on a wet deck, so the certification is irrelevant to
+safety and IP67-vs-IP65 is moot on an indoor rear panel. Against that, APIELE has
+1,039 reviews at 4.7 versus 9 at 3.9, and a *taller* head — more dome, more feel.
 
-> **It is deliberately NOT illuminated, and that is what buys the mechanical
-> feel.** An LED ring forces a flat, near-travel-free waterproof face — that
-> construction *is* the dead "touch pad" feel. The domed head is what gives real
-> travel and a positive click, and it only exists on unlit parts.
->
-> Nothing is lost by dropping the lamp. The button faces **away from the player**,
-> so a rear indicator is invisible exactly when it would be wanted; and the machine
-> has a 7" and a 16" screen, which say "on" far better than any lamp, from the side
-> you actually stand on. It also deletes a 5 V run to the rear panel and the
-> "does it mean brick-on or buck-on" ambiguity.
->
-> Consequence: **this machine has no power indicator at all.** `faceplate_holes()`
-> used to defer to the rear button for it ("power state shows on the rear power
-> button"); that note is now corrected.
+> **The two constants deliberately bracket both candidates**, so the choice never
+> re-cuts the panel. `D_PWRBTN` = **19.5**: an M19×1 thread needs more than 19.0 to
+> pass, APIELE's drawing says "19" and ZJWZJH's says Ø19.5, and a Ø25 bezel covers
+> the slop either way — cutting 19.0 would jam the ZJWZJH. `PWRBTN_HEAD_D` =
+> **25.2**: across hex *corners*, ZJWZJH 25.2 / APIELE 25.0.
 
-**Fuse — [SCI R3-11](https://www.amazon.com/dp/B0752BGGRY), $16.99/2.** The
+**Fuse — SCI R3-11**, best bought as the [5-pack at $17.07 = **$3.41 each**](https://www.amazon.com/dp/B0DY3XMGWM) rather than the [2-pack at $8.50 each](https://www.amazon.com/dp/B0752BGGRY). The
 **bayonet-cap** holder used on guitar amps and pro audio, not a generic bakelite
 screw cap: black nylon body, **nickel hex bezel**, solder lugs, CSA/cURus marked,
 10 A / 250 V AC, panels up to 4.5 mm. A quarter-turn beats unscrewing a cap, and
@@ -335,6 +330,14 @@ it is the part that looks like it belongs next to a stainless domed button.
 [TME](https://www.tme.com/us/en-us/details/gba-za11/panel-mount-fuseholders/sci/r3-11a/)
 gives the cutout as **Ø12.5** for both the R3-11A and R3-11B.
 
+> **Two caveats on the cheap pack.** It has no reviews, and its "Fit Compatible"
+> title is the phrasing knockoffs use — check the body is actually moulded
+> `SCI R3-11` with the CSA/cURus marks. If not, the 2-pack is the safe buy, and
+> the genuine tier *above* SCI is
+> [Cooper Bussmann BK/HTB-36M-R](https://www.amazon.com/dp/B005T8WCPO) at $11.13
+> each — 16 A, quick-connect spade terminals, the reference brand. Its cutout is
+> **not** verified here, so moving to it would change `D_FUSE` again.
+>
 > **Check on arrival:** some R3 variants carry an anti-rotation flat or lug. A
 > bayonet cap is pushed and twisted, so a holder sitting in a plain round hole on
 > its nut alone can rotate in service. If the part has a flat, `D_FUSE` needs a

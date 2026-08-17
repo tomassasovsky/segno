@@ -63,14 +63,15 @@ Carried by the `segno_pedal_main` USB-MIDI board — fab + BOM in
       *(do not draw the LED ring/strip off the Pi's 5 V pin)*
 - [ ] The 16″ and 7″ screens use their **own** adapters (USB-C / barrel) ×2
 - [ ] **Panel fuse holder** SCI **R3-11**, bayonet cap, 10 A / 250 VAC, Ø12.5
-      cutout ×1 — [Amazon 2-pack](https://www.amazon.com/dp/B0752BGGRY). The
-      amp/pro-audio part, not a generic bakelite screw cap
+      cutout ×1 — [5-pack, $3.41 ea](https://www.amazon.com/dp/B0DY3XMGWM)
+      (the 2-pack is $8.50 ea for the same part). The amp/pro-audio part, not a
+      generic bakelite screw cap
 - [ ] **T5A slow-blow** 5×20 fuses (T5AL250V) ×1 pack — NOT fast-blow; the two
       bucks' inrush will nuisance-blow a fast fuse
-- [ ] **Momentary DOMED** push button, 19 mm hole (Ø19.5), **unlit**, UL+CE,
-      316/304 stainless ×1 — [Amazon 2-pack](https://www.amazon.com/dp/B09CCPDC1C).
+- [ ] **Momentary HIGH-ROUND** push button, 19 mm hole (Ø19.5), **unlit**,
+      stainless ×1 — [APIELE, $4.50 ea](https://www.amazon.com/dp/B079HTQ7XD).
       Must be momentary: it drives a Pi GPIO soft shutdown, it does not break
-      power. Domed, not flat: the dome is what gives it mechanical feel
+      power. Domed, not flat — the dome is what gives it mechanical feel
 - See the power budget in [`hardware/console/README.md`](console/README.md).
 
 ## Mechanical / enclosure

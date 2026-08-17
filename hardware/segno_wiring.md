@@ -85,8 +85,8 @@ more than that buck can give, so they get a **separate, external high-current bu
 total ≈ **~50W**, so a **9V/6A (54W) supply** or larger.
 
 **Power button** → Pi GPIO (soft shutdown / wake), not a hard 5V cut, so the Pi can
-flush the SD card. It carries no load current, so it must be a **momentary** part (ZJWZJH 19 mm
-domed, UL+CE). It is **unlit** — an LED ring only comes on flat, near-travel-free
+flush the SD card. It carries no load current, so it must be a **momentary** part (APIELE 19 mm
+high-round). It is **unlit** — an LED ring only comes on flat, near-travel-free
 faces, and the domed head is what gives it a real click. So it is two wires to a
 GPIO and nothing else: no 5 V run to the rear panel, and no "does the lamp mean
 brick-on or buck-on" question. **The machine has no power indicator**; the 7" and

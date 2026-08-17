@@ -303,10 +303,15 @@ IND_PITCH = 50.0     # indicator LED pitch
 # panel against a number nobody checked is how a 850 mm blank becomes scrap, so
 # the unchecked ones are listed by name on the drawing and in the build summary
 # rather than hidden behind an optimistic comment.
-# Power button: ZJWZJH 19 mm DOMED momentary, UL + CE listed (B09CCPDC1C). 316
-# stainless head, 304 shell, IP67/IK10, 1e6 mechanical cycles, M2.5 screw
-# terminals. MOMENTARY, which the soft-shutdown wiring requires -- it drives a Pi
-# GPIO, it does not break power.
+# Power button: APIELE 19 mm HIGH ROUND momentary (B079HTQ7XD). Stainless, IP65,
+# M19x1, 1e6 mechanical cycles, screw terminals, 3-year warranty. MOMENTARY, which
+# the soft-shutdown wiring requires -- it drives a Pi GPIO, it does not break power.
+#
+# Chosen over the UL+CE ZJWZJH (B09CCPDC1C) at HALF the price: that listing's
+# UL/CE and IP67 buy nothing here -- this is a dry contact to a 3.3 V GPIO, not a
+# mains switch on a wet deck -- while APIELE has 1039 reviews at 4.7 against 9 at
+# 3.9, and a TALLER head. Both ship dimension drawings and both land inside the
+# constants below, so the choice does not touch the panel.
 #
 # NOT ILLUMINATED, deliberately. An LED ring forces a flat waterproof face with
 # almost no travel, which is exactly the dead "touch pad" feel we were rejecting;
@@ -315,9 +320,13 @@ IND_PITCH = 50.0     # indicator LED pitch
 # "it is on" indicators than a lamp nobody can see from the playing position.
 # faceplate_holes()'s "power state shows on the rear power button" no longer
 # holds -- see the note there.
-D_PWRBTN      = 19.5  # drawing: panel hole Ø19.5 (thread is M19x1)
-PWRBTN_HEAD_D = 25.2  # drawing: hex bezel, 22 across flats / 25.2 across CORNERS.
-                      # The corners are what has to clear a neighbour.
+# Both constants deliberately BRACKET the two candidates rather than tracking one,
+# so swapping switch does not re-cut the panel:
+D_PWRBTN      = 19.5  # M19x1 needs >19.0 to pass. APIELE says "19", ZJWZJH's
+                      # drawing says Ø19.5 -- 19.5 accepts both, and a Ø25 bezel
+                      # covers the slop. Cutting 19.0 would jam the ZJWZJH thread.
+PWRBTN_HEAD_D = 25.2  # hex bezel ACROSS CORNERS: ZJWZJH 25.2, APIELE 25.0. The
+                      # corners are what has to clear a neighbour, not the flats.
 # Fuse: SCI R3-11, the bayonet-cap holder used on real amps and pro audio, not a
 # generic bakelite screw cap. Black nylon body with a nickel hex bezel, solder
 # lugs, 10 A / 250 V AC, panel up to 4.5 mm. Metal-bodied 5x20 panel holders are
@@ -352,8 +361,8 @@ MIDI_SCREW_D     = 3.2   # M3 clearance
 # calipers or dimensioned photo; "datasheet" = manufacturer or distributor
 # figure, with the source named; "UNCONFIRMED" = nobody has checked it.
 REAR_IO_PROVENANCE = {
-    "D_PWRBTN":          "datasheet: ZJWZJH 19 mm domed switch dimension drawing, Ø19.5 panel hole",
-    "PWRBTN_HEAD_D":     "datasheet: same drawing, hex bezel 22 A/F = 25.2 across corners",
+    "D_PWRBTN":          "datasheet: APIELE + ZJWZJH drawings, M19x1; 19.5 brackets both",
+    "PWRBTN_HEAD_D":     "datasheet: APIELE 25.0 / ZJWZJH 25.2 across hex corners; 25.2 brackets both",
     "D_FUSE":            "datasheet: TME listing for SCI R3-11A/B, 'Cutout: Ø12.5mm'",
     "D_GND":             "design: M6 stud clearance",
     "D_BARREL":          "datasheet: DC-099 listing, 11 mm hole (+0.5 fit)",
