@@ -85,10 +85,12 @@ more than that buck can give, so they get a **separate, external high-current bu
 total ≈ **~50W**, so a **9V/6A (54W) supply** or larger.
 
 **Power button** → Pi GPIO (soft shutdown / wake), not a hard 5V cut, so the Pi can
-flush the SD card. It carries no load current, so it must be a **momentary** part
-(weideer M-16-POWER). Its 3–6 V ring LED runs off the **5 V rail**, downstream of
-the buck, so it lights only when conversion is actually up — and it is the only
-power indicator on the machine, since the faceplate deliberately has none.
+flush the SD card. It carries no load current, so it must be a **momentary** part (ZJWZJH 19 mm
+domed, UL+CE). It is **unlit** — an LED ring only comes on flat, near-travel-free
+faces, and the domed head is what gives it a real click. So it is two wires to a
+GPIO and nothing else: no 5 V run to the rear panel, and no "does the lamp mean
+brick-on or buck-on" question. **The machine has no power indicator**; the 7" and
+16" screens do that job, from the side the player is actually on.
 
 **Fuse** protects the shared 9V input, in series ahead of the Y-split. Converting
 the 5 V budget above: 7.5 A × 5 V = 37.5 W, so at 9 V and ~85 % buck efficiency the
@@ -147,7 +149,7 @@ it. Nine stations on one centreline, left to right:
 | station | qty | wiring note |
 |---|---|---|
 | 9 V barrel | 1 | DC-099, 30 V / 10 A |
-| power / shutdown button | 1 | **momentary** → Pi GPIO soft shutdown. Ring LED 3–6 V ≤20 mA off the **5 V rail** (so it means "converted and up"). It is the machine's **only** power indication — the faceplate has none |
+| power / shutdown button | 1 | **momentary, unlit** → Pi GPIO soft shutdown. Two wires, no 5 V run to the rear panel. This machine has **no power indicator at all**: the two screens are the indicator |
 | fuse | 1 | 5×20 holder (10 A) in series with the 9 V input, ahead of the Y-split. **T5A slow-blow** — fast-blow will nuisance-blow on buck inrush |
 | MIDI DIN-5 | 2 | IN + OUT. **IN is opto-isolated on the board** — the socket alone is not enough |
 | TRS 6.35 (D-series) | 2 | external control pedals |

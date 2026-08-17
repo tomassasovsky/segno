@@ -226,8 +226,8 @@ right, power first and away from signal:
 | ref | cutout | keep-out | note |
 |---|---|---|---|
 | `9V_DC` | Ø11.5 | 17.5 | DC-099; listing says Ø11 hole, +0.5 so it cannot rattle before the nut bites |
-| `POWER` | Ø16 | 22 | weideer M-16-POWER; **momentary**, Ø18 head, 3–6 V ring LED |
-| `FUSE` | Ø12 | 18 | 5×20 screw-cap panel holder, 10 A / 250 V AC |
+| `POWER` | **Ø19.5** | 29.2 | ZJWZJH 19 mm **domed** momentary, UL+CE, 316/304 stainless. **Unlit** |
+| `FUSE` | **Ø12.5** | 18.5 | **SCI R3-11**, bayonet cap, 10 A / 250 V AC |
 | `MIDI_IN` / `MIDI_OUT` | Ø15.1 + 2 × Ø3.2 @ 22 | 28.4 | REAN NYS325; **IN needs opto-isolation on the board**, not here |
 | `CTRL_1` / `CTRL_2` | **Ø24**, fixings **not cut** | 30.4 | **D-series** punch, not a threaded bushing |
 | `USB3_1` / `USB3_2` | 22.5 square, **R8.84** | 28.5 | flange Ø28.5 is the keep-out, not the hole |
@@ -302,42 +302,56 @@ Both were the last stations with no component behind them (they predate #743 and
 were briefly mis-recorded as "datasheet: generic …" — "generic" is not a datasheet,
 and that was exactly the false authority this table exists to catch). Resolved:
 
-**Button — [weideer M-16-POWER-BK-BU](https://www.amazon.com/dp/B095SFP93Y), $6.50.**
-Ø16 mounting hole (so `D_PWRBTN` was right), Ø18 head, metal, IP67, 60 cm leads.
-Three things make it the correct part rather than merely a fitting one:
+**Button — [ZJWZJH 19 mm domed momentary](https://www.amazon.com/dp/B09CCPDC1C), $16.99/2.**
+**UL + CE listed**, 316 stainless head on a 304 shell, IP67/IK10, **1,000,000
+mechanical cycles**, M2.5 screw terminals, gold-over-silver contacts. It ships
+with a real dimensioned drawing, which is where every number below comes from:
+**panel hole Ø19.5** (thread M19×1), hex bezel **22 across flats / 25.2 across
+corners**, Ø15 dome face, 13 mm of thread, 17.8 mm behind the panel.
 
-- **Momentary** ("push and hold ON, release OFF"). Mandatory — it drives a Pi GPIO
-  soft shutdown so the Pi can flush the SD card. A latching Ø16 "power switch",
-  which is the more common thing sold at this size, would be wrong.
-- **Ring LED is 3–6 V ≤20 mA** → straight off the 5 V rail, no dropper. Being
-  *downstream of the buck* it indicates "converted and up", not just "brick
-  plugged in".
-- **The ring is an engraved power symbol.** That matters more than decoration here:
-  the faceplate carries **no power LED at all** — `faceplate_holes()` says so
-  explicitly ("power state shows on the rear power button"), so this ring is the
-  only power indication the machine has.
+`POWER`'s keep-out is derived from `PWRBTN_HEAD_D` = **25.2** — the bezel is a
+hexagon, so its *corners*, not its flats, are what has to clear a neighbour.
 
-`POWER`'s keep-out is now derived from `PWRBTN_HEAD_D` (18) rather than the hole,
-because the head is what has to clear its neighbour. Same 22, honestly obtained.
+> **It is deliberately NOT illuminated, and that is what buys the mechanical
+> feel.** An LED ring forces a flat, near-travel-free waterproof face — that
+> construction *is* the dead "touch pad" feel. The domed head is what gives real
+> travel and a positive click, and it only exists on unlit parts.
+>
+> Nothing is lost by dropping the lamp. The button faces **away from the player**,
+> so a rear indicator is invisible exactly when it would be wanted; and the machine
+> has a 7" and a 16" screen, which say "on" far better than any lamp, from the side
+> you actually stand on. It also deletes a 5 V run to the rear panel and the
+> "does it mean brick-on or buck-on" ambiguity.
+>
+> Consequence: **this machine has no power indicator at all.** `faceplate_holes()`
+> used to defer to the rear button for it ("power state shows on the rear power
+> button"); that note is now corrected.
 
-**Fuse — 5×20 screw-cap panel holder** (e.g.
-[NeoLum, 4 pcs](https://www.amazon.com/dp/B0GF33P9FF), $7.69), listing states a
-**"12 mm diameter aperture"**, confirming `D_FUSE`. Bakelite body, metal cap.
-Metal-bodied 5×20 panel holders are not really a thing, and an insulating body
-around a live fuse inside an earthed metal chassis is the right answer anyway.
+**Fuse — [SCI R3-11](https://www.amazon.com/dp/B0752BGGRY), $16.99/2.** The
+**bayonet-cap** holder used on guitar amps and pro audio, not a generic bakelite
+screw cap: black nylon body, **nickel hex bezel**, solder lugs, CSA/cURus marked,
+10 A / 250 V AC, panels up to 4.5 mm. A quarter-turn beats unscrewing a cap, and
+it is the part that looks like it belongs next to a stainless domed button.
+[TME](https://www.tme.com/us/en-us/details/gba-za11/panel-mount-fuseholders/sci/r3-11a/)
+gives the cutout as **Ø12.5** for both the R3-11A and R3-11B.
+
+> **Check on arrival:** some R3 variants carry an anti-rotation flat or lug. A
+> bayonet cap is pushed and twisted, so a holder sitting in a plain round hole on
+> its nut alone can rotate in service. If the part has a flat, `D_FUSE` needs a
+> D-shaped cutout rather than a circle.
 
 > **Rating.** An earlier note here claimed ~7 A through the 9 V input and that a
 > Ø12 holder could not carry it. Both were wrong. The ~7.5 A in the budget is
 > **5 V-side** current; converted, 37.5 W at 9 V and 85 % efficiency is **4.9 A
 > peak / 2.0 A typical** on the input side. And these holders are **10 A / 250 V
-> AC**, not 5–6.3 A. There was never a rating problem.
+> AC**. There was never a rating problem.
 >
 > Fuse: **T5A slow-blow** (T5AL250V). Above the 4.9 A coincident peak, at/below
-> the 9 V/6 A supply, well under the 10 A holder. **Slow-blow is not optional** —
-> two bucks charging their bulk caps draw a large inrush, and the fast-blow fuses
-> these holders ship with will nuisance-blow at switch-on. A
-> [12-value T-fuse assortment](https://www.amazon.com/dp/B08779766V) is worth it
-> over a single value: start at T5A and step up only if real measured draw says so.
+> the 9 V/6 A supply, well under the holder's 10 A. **Slow-blow is not optional** —
+> two bucks charging their bulk caps draw a large inrush, and a fast-blow fuse
+> will nuisance-blow at switch-on. A
+> [12-value T assortment](https://www.amazon.com/dp/B08779766V) is worth it over a
+> single value: start at T5A and step up only if real measured draw says so.
 >
 > **Nothing on this unit hard-breaks power.** The button is a GPIO input; pulling
 > the barrel plug is the only true off. Deliberate, but worth knowing.

@@ -303,20 +303,27 @@ IND_PITCH = 50.0     # indicator LED pitch
 # panel against a number nobody checked is how a 850 mm blank becomes scrap, so
 # the unchecked ones are listed by name on the drawing and in the build summary
 # rather than hidden behind an optimistic comment.
-# Power button: weideer M-16-POWER-BK-BU (B095SFP93Y). MOMENTARY, which the
-# soft-shutdown wiring requires -- it drives a Pi GPIO, it does not break power.
-# Metal, IP67, and its ring is an engraved POWER SYMBOL, which matters because
-# the faceplate carries no power LED at all ("power state shows on the rear
-# button", see faceplate_holes). LED is 3-6 V <=20 mA, so it runs straight off
-# the 5 V rail with no dropper -- and being downstream of the buck it indicates
-# "converted and up", not merely "brick plugged in".
-D_PWRBTN     = 16.0  # listing: 16 mm mounting hole
-PWRBTN_HEAD_D = 18.0 # listing: 18 mm head. This is what needs the clearance.
-# Fuse: 5x20 screw-cap panel holder, e.g. NeoLum B0GF33P9FF. Bakelite body with a
-# metal cap -- metal-bodied 5x20 panel holders are not really a thing, and an
-# insulating body around a live fuse inside an earthed metal chassis is the right
-# answer anyway. Rated 10 A / 250 V AC, far above this job.
-D_FUSE    = 12.0     # listing: "12 mm diameter aperture"
+# Power button: ZJWZJH 19 mm DOMED momentary, UL + CE listed (B09CCPDC1C). 316
+# stainless head, 304 shell, IP67/IK10, 1e6 mechanical cycles, M2.5 screw
+# terminals. MOMENTARY, which the soft-shutdown wiring requires -- it drives a Pi
+# GPIO, it does not break power.
+#
+# NOT ILLUMINATED, deliberately. An LED ring forces a flat waterproof face with
+# almost no travel, which is exactly the dead "touch pad" feel we were rejecting;
+# the domed head is what buys real travel and a positive click. Nothing is lost:
+# the button faces AWAY from the player, and a 7" and a 16" screen are far better
+# "it is on" indicators than a lamp nobody can see from the playing position.
+# faceplate_holes()'s "power state shows on the rear power button" no longer
+# holds -- see the note there.
+D_PWRBTN      = 19.5  # drawing: panel hole Ø19.5 (thread is M19x1)
+PWRBTN_HEAD_D = 25.2  # drawing: hex bezel, 22 across flats / 25.2 across CORNERS.
+                      # The corners are what has to clear a neighbour.
+# Fuse: SCI R3-11, the bayonet-cap holder used on real amps and pro audio, not a
+# generic bakelite screw cap. Black nylon body with a nickel hex bezel, solder
+# lugs, 10 A / 250 V AC, panel up to 4.5 mm. Metal-bodied 5x20 panel holders are
+# not really a thing, and an insulating body around a live fuse inside an earthed
+# metal chassis is the right answer anyway.
+D_FUSE    = 12.5     # TME (SCI R3-11A/R3-11B): "Cutout: Ø12.5mm"
 D_GND     = 6.5      # M6 earth / bond stud
 D_BARREL  = 11.5     # DC-099 barrel jack: listing states an 11 mm mounting hole;
                      # +0.5 so the thread drops in but cannot rattle before the
@@ -345,9 +352,9 @@ MIDI_SCREW_D     = 3.2   # M3 clearance
 # calipers or dimensioned photo; "datasheet" = manufacturer or distributor
 # figure, with the source named; "UNCONFIRMED" = nobody has checked it.
 REAR_IO_PROVENANCE = {
-    "D_PWRBTN":          "datasheet: weideer M-16-POWER-BK-BU listing, 16 mm mounting hole",
-    "PWRBTN_HEAD_D":     "datasheet: weideer M-16-POWER-BK-BU listing, 18 mm head",
-    "D_FUSE":            "datasheet: NeoLum 5x20 panel holder listing, '12 mm diameter aperture'",
+    "D_PWRBTN":          "datasheet: ZJWZJH 19 mm domed switch dimension drawing, Ø19.5 panel hole",
+    "PWRBTN_HEAD_D":     "datasheet: same drawing, hex bezel 22 A/F = 25.2 across corners",
+    "D_FUSE":            "datasheet: TME listing for SCI R3-11A/B, 'Cutout: Ø12.5mm'",
     "D_GND":             "design: M6 stud clearance",
     "D_BARREL":          "datasheet: DC-099 listing, 11 mm hole (+0.5 fit)",
     "D_TRS_BORE":        "datasheet: neutrik.com NC3FD-L-1, 'standardized D sized 24 mm panel cutout'",
@@ -775,7 +782,9 @@ def faceplate_holes():
     cuts.append({"kind": "ring",   "u": enc_u, "v": enc_v, "od": RING_OD, "id": RING_ID, "ref": "RING"})
     cuts.append({"kind": "circle", "u": enc_u, "v": enc_v, "d": D_ENC, "ref": "ENCODER"})
     # NOTE: no LEDs flank the encoder -- like the reference, the ring stands alone.
-    # Power state shows on the rear power button.
+    # There is NO power indicator anywhere on this machine (#743): the rear
+    # button is deliberately unlit, and two lit screens say "on" from the side
+    # the player actually stands on.
     # The lid bolts to the body through its DOWN-TURNED SKIRT FLANGES (front lip +
     # sides + rear), NOT through this top face -- those screw holes live on the
     # flanges, added in dxf_faceplate / the render. So nothing more on the top here.
@@ -794,7 +803,8 @@ REAR_IO_STATIONS = [
                                                          # Sized off the HEAD, not the
                                                          # hole -- the head is what
                                                          # has to clear its neighbour
-    ("FUSE",     D_FUSE + 6.0),
+    ("FUSE",     D_FUSE + 6.0),                          # nickel hex bezel + a
+                                                         # quarter-turn on the cap
     ("MIDI_IN",  MIDI_SCREW_PITCH + 2*MIDI_SCREW_D),     # DIN-5 fixings set the
     ("MIDI_OUT", MIDI_SCREW_PITCH + 2*MIDI_SCREW_D),     # width, not the bore
     ("CTRL_1",   D_TRS_KEEPOUT),                         # D-series: the M3 pair is
