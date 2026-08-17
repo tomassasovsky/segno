@@ -53,12 +53,37 @@
 /* le_audio_rev_bump below; plugins never call it but the compiler parses it. */
 #undef atomic_fetch_add_explicit
 #define atomic_fetch_add_explicit(slot, v, mo) ((void)(*(slot) += (v)))
+/* engine_telemetry.h claims its gap-suppression licence with an exchange, so
+ * unlike the three above this one has to YIELD the old value rather than
+ * discard it — which no comma-expression macro can do, and GCC's statement
+ * expressions are not available under MSVC. Hence a function: a two-parameter
+ * template, so an unsuffixed literal (`0u` against a uint64_t slot) still
+ * deduces. Read-then-write without atomicity is safe for exactly the reason
+ * the rest of this shim is: no plugin TU ever reaches these call sites.
+ *
+ * The `extern "C++"` is load-bearing, not decoration. Callers reach this
+ * header from inside their own `extern "C" { #include ... }` — the VST3 test
+ * harness (vst3/test/host_harness.h) does exactly that — and a template
+ * cannot be declared with C linkage (MSVC C2894, GCC "template with C
+ * linkage"). Nesting `extern "C++"` restores C++ linkage wherever the include
+ * lands, so this does not depend on how any includer wraps it. */
+extern "C++" {
+template <typename T, typename V>
+inline T le_cxx_atomic_exchange(T* slot, V value) {
+  const T previous = *slot;
+  *slot = (T)value;
+  return previous;
+}
+}
+#undef atomic_exchange_explicit
+#define atomic_exchange_explicit(slot, v, mo) le_cxx_atomic_exchange((slot), (v))
 #endif
 
 #include "audio_ring.h"        /* le_audio_ring (performance-recording taps) */
 #include "layer_staging_ring.h" /* le_layer_staging_ring (retired-layer persistence) */
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
 #include "le_midi_clock.h"     /* le_midi_clock_gen (C1 24-PPQN clock-send emitter) */
+#include "engine_telemetry.h"  /* le_cb_timing (audio-callback telemetry, #722) */
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
 #include "segno_engine_api.h"  /* le_engine typedef, le_config, le_device_info,
@@ -982,7 +1007,22 @@ struct le_engine {
    * published in the snapshot. All bits set on a fresh configure (default-on). */
   _Atomic uint32_t a_output_enabled_mask;
   _Atomic uint64_t a_frames;
+  /* EVERY backend dropout this session, classifiable or not -- published as
+   * le_snapshot.xrun_count. Fed by le_engine_note_backend_xrun, which bumps
+   * this BEFORE the kind is range-checked, so a dropout reported with a kind
+   * outside le_xrun_kind moves this counter while landing in no per-kind
+   * bucket. cb_timing below carries the same events broken out per kind and
+   * per window, and those buckets sum to this only for kinds THIS BUILD KNOWS
+   * -- which is every kind any shipping backend produces today (ALSA passes
+   * 0/1/2, ASIO passes 3). Until #722 the ONLY producer was the Windows ASIO
+   * overload notification, so this read a flat 0 on the appliance. */
   _Atomic uint32_t a_xruns;
+  /* Audio-callback telemetry (#722): per-callback duration vs the period
+   * deadline, the entry-to-entry gap detector, and the per-kind dropout
+   * tallies -- each in a session window and an armed window. Written from the
+   * device callback (relaxed atomics, no allocation/lock/syscall beyond the
+   * clock read); read by le_engine_get_snapshot. See engine_telemetry.h. */
+  le_cb_timing cb_timing;
   _Atomic uint32_t a_in_rms_bits;
   _Atomic uint32_t a_in_peak_bits;
   _Atomic uint32_t a_out_rms_bits;

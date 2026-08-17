@@ -13,8 +13,14 @@ cd "$(dirname "$0")/../.."   # src/test -> packages/segno_engine
 OUT="${TMPDIR:-/tmp}"
 CC="${CC:-gcc}"
 # Extra compile/link flags, e.g. EXTRA_CFLAGS="-fsanitize=address -g" for the
-# CI ASAN job (the engine/MIDI suites compile and link in one $CC call, so one
-# variable covers both). SCOPE: only the engine + MIDI suites below take these
+# CI ASAN job, or EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0" for the callback
+# telemetry gate-off job (#722) — both of which CI runs on every PR
+# (native-tests-asan / native-tests-telemetry-off in .github/workflows/main.yaml).
+# The gate-off run MUST stay green: assertions that can only hold with the
+# instrument compiled in are wrapped in CHECK_TIMING in test_engine_core.c, and
+# everything outside it is asserted in both builds. (The engine/MIDI suites
+# compile and link in one $CC call, so one variable covers both.)
+# SCOPE: only the engine + MIDI suites below take these
 # flags — the Darwin-only plugin scan/slot builds further down do not, so a
 # sanitized run does NOT cover the plugin host C++. Threading sanitizers
 # through those separate compile+link steps is a follow-up if ever needed.

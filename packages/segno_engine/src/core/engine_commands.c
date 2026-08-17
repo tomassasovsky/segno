@@ -22,6 +22,7 @@
  * engine_process.c.
  */
 #include <stdint.h>
+#include <stdio.h> /* fprintf — the disarm callback-telemetry summary (#722) */
 #include <stdlib.h>
 #include <string.h>
 
@@ -2274,6 +2275,64 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   return LE_OK;
 }
 
+/* One window, formatted as `{calls=… late=… …}` into `buf`. Split out so the
+ * summary below prints both windows through one definition instead of a
+ * forty-argument fprintf whose two halves could drift apart. */
+static void le_cbtel_format_window(const le_cb_window_snapshot* w, char* buf,
+                                   size_t cap) {
+  snprintf(buf, cap,
+           "{calls=%llu periods=%llu late=%llu gaps=%llu max=%uus mean=%uus"
+           " maxgap=%uus xrun=%llu/%llu/%llu/%llu"
+           " hist=%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu}",
+           (unsigned long long)w->calls, (unsigned long long)w->periods,
+           (unsigned long long)w->late_periods,
+           (unsigned long long)w->gap_events, w->max_us, w->mean_us,
+           w->max_gap_us,
+           (unsigned long long)w->xruns[LE_XRUN_PLAYBACK_UNDERRUN],
+           (unsigned long long)w->xruns[LE_XRUN_CAPTURE_OVERRUN],
+           (unsigned long long)w->xruns[LE_XRUN_PLAYBACK_RESYNC],
+           (unsigned long long)w->xruns[LE_XRUN_BACKEND_OVERLOAD],
+           (unsigned long long)w->buckets[0], (unsigned long long)w->buckets[1],
+           (unsigned long long)w->buckets[2], (unsigned long long)w->buckets[3],
+           (unsigned long long)w->buckets[4], (unsigned long long)w->buckets[5],
+           (unsigned long long)w->buckets[6], (unsigned long long)w->buckets[7]);
+}
+
+/* One-line callback-telemetry summary, written to stderr when a capture
+ * disarms (#722). The appliance runs under systemd, so stderr IS the journal
+ * (`journalctl -u segno.service`) — the place a bench operator is already
+ * looking. Emitted from the CONTROL thread: no formatting, no I/O, and no
+ * allocation ever happens on the audio thread, which only bumps relaxed
+ * atomics.
+ *
+ * Emitted on BOTH disarm outcomes. `stalled=1` marks the path where the
+ * quiescent handshake timed out and le_perf_disarm bails with LE_ERR_DEVICE —
+ * i.e. the device callback has stopped coming back, which is precisely when
+ * these numbers matter most and precisely when a summary printed only on the
+ * happy path would be missing.
+ *
+ * Silent unless a real device drove callbacks in the armed window, so the
+ * device-free native test pump (and any never-started engine) prints nothing.
+ * Both windows go on one line: the armed window is the suspect, the session
+ * window is the control it has to be read against — "unarmed" is their
+ * difference. */
+static void le_perf_log_callback_telemetry(le_engine* engine, int stalled) {
+  le_callback_telemetry tel;
+  /* Sized for the pathological case — every 64-bit counter at 20 digits — so
+   * the line is never silently truncated on a long-lived appliance. */
+  char armed_buf[704];
+  char session_buf[704];
+  /* Read through the same projection le_engine_get_callback_telemetry uses, so
+   * the journal line and the FFI pull can never disagree. */
+  le_cb_timing_read(&engine->cb_timing, &tel);
+  if (tel.armed.calls == 0) return;
+  le_cbtel_format_window(&tel.armed, armed_buf, sizeof(armed_buf));
+  le_cbtel_format_window(&tel.session, session_buf, sizeof(session_buf));
+  fprintf(stderr,
+          "segno/cbtel perf-disarm stalled=%d budget=%uus armed%s session%s\n",
+          stalled ? 1 : 0, tel.budget_us, armed_buf, session_buf);
+}
+
 int32_t le_perf_disarm(le_engine* engine) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
@@ -2309,6 +2368,12 @@ int32_t le_perf_disarm(le_engine* engine) {
        * nothing dispatches to them again) and allocated; a later successful
        * disarm (once the callback recovers) or le_engine_destroy reclaims
        * them. */
+      /* Print the telemetry BEFORE bailing (#722). A stalled callback is the
+       * single most interesting thing this instrument can catch, and this is
+       * the one exit that would otherwise never reach the summary at the end
+       * of the function — the numbers would go missing exactly when they are
+       * worth the most. */
+      le_perf_log_callback_telemetry(engine, /*stalled=*/1);
       return LE_ERR_DEVICE;
     }
   }
@@ -2330,6 +2395,7 @@ int32_t le_perf_disarm(le_engine* engine) {
     }
   }
   engine->perf.input_mask = 0;
+  le_perf_log_callback_telemetry(engine, /*stalled=*/0);
   return LE_OK;
 }
 

@@ -514,7 +514,16 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * into the next session. The SETTING (a_clock_mode) persists, seeded once
    * in le_engine_create like a_looper_mode/a_primary_track. */
   le_midi_clock_reset(&engine->midi_clock);
-  atomic_store_explicit(&engine->a_xruns, 0u, memory_order_relaxed); /* per session */
+  /* Callback telemetry + the flat dropout tally (#722), cleared together and
+   * per session. Rate 0 = INERT on purpose: the device is not open yet at
+   * configure time (le_engine_start calls le_engine_configure_callback_budget
+   * with the negotiated rate once it is), and an engine driven by the native
+   * test pump has no device deadline to miss and must not manufacture one.
+   * Deliberately NOT seeded from a_buffer_frames here — on a restart that
+   * atomic still holds the PREVIOUS session's period until le_engine_start
+   * republishes it, so reading it would arm the instrument against a stale
+   * deadline for the length of the open. */
+  le_engine_configure_callback_budget(engine, 0, 0);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity on every fresh start */
   /* Limiter off by default (the app enables it); ceiling just below full scale.
    * Overdub feedback unity by default == classic additive overdub. */
@@ -675,13 +684,61 @@ void le_engine_mark_started(le_engine* engine) {
 }
 
 void le_engine_note_xrun(le_engine* engine) {
+  le_engine_note_backend_xrun(engine, LE_XRUN_BACKEND_OVERLOAD);
+}
+
+void le_engine_note_backend_xrun(le_engine* engine, int32_t kind) {
   if (engine == NULL) return;
-  /* Relaxed: a monotonically-increasing dropout tally read by the snapshot
-   * poller — no other state is ordered against it. Called from the device
-   * backend's overload notification (e.g. the ASIO message thread), never from
+  /* Relaxed throughout: a monotonically-increasing dropout tally read by the
+   * snapshot poller — no other state is ordered against it. Called from a
+   * device backend's own thread (the ASIO message thread for an overload; the
+   * ALSA data-loop thread for an -EPIPE recovery), never from inside
    * le_engine_process; exists as a C helper so a C++ backend TU need not touch
-   * the _Atomic field directly (mirrors le_engine_mark_started). */
+   * the _Atomic fields directly (mirrors le_engine_mark_started).
+   *
+   * The armed flag comes from the PUBLISHED atomic, not engine->perf.armed:
+   * that mirror is audio-thread-local and these callers do not own it. Reading
+   * it here — at the moment of the dropout — is what makes the armed-window
+   * attribution exact rather than "whenever the control thread next polled".
+   *
+   * ORDER MATTERS, and it is deliberate: the flat tally is bumped BEFORE
+   * le_cb_timing_note_xrun range-checks `kind`, so a kind this build does not
+   * recognise still moves xrun_count even though no per-kind bucket can hold
+   * it. xrun_count answers "did a real dropout happen", and an unclassifiable
+   * dropout still happened — dropping it would make the headline number
+   * under-report reality, which is the failure #722 exists to end. The cost is
+   * that the kinds sum to xrun_count only for kinds this build knows; that is
+   * what segno_engine_api.h documents, and no backend passes anything else
+   * today (ALSA passes 0/1/2, ASIO passes 3). */
   atomic_fetch_add_explicit(&engine->a_xruns, 1u, memory_order_relaxed);
+  le_cb_timing_note_xrun(
+      &engine->cb_timing, kind,
+      atomic_load_explicit(&engine->a_perf_armed, memory_order_relaxed) != 0);
+}
+
+void le_engine_note_callback_timeline_break(le_engine* engine) {
+  if (engine == NULL) return;
+  le_cb_timing_note_timeline_break(&engine->cb_timing);
+}
+
+void le_engine_note_callback_span(le_engine* engine, uint64_t entry_ns,
+                                  uint64_t exit_ns, uint32_t frames) {
+  if (engine == NULL) return;
+  le_cb_timing_note(
+      &engine->cb_timing, entry_ns, exit_ns, frames,
+      atomic_load_explicit(&engine->a_perf_armed, memory_order_relaxed) != 0);
+}
+
+void le_engine_configure_callback_budget(le_engine* engine,
+                                         int32_t sample_rate,
+                                         int32_t period_frames) {
+  if (engine == NULL) return;
+  /* The flat tally and the per-kind windows are two views of the same events,
+   * so they are cleared TOGETHER and nowhere else. Clearing only the windows
+   * here would leave xrun_count carrying dropouts the breakdown no longer
+   * shows — a reading that looks like a bug in the instrument. */
+  atomic_store_explicit(&engine->a_xruns, 0u, memory_order_relaxed);
+  le_cb_timing_configure(&engine->cb_timing, sample_rate, period_frames);
 }
 
 void le_engine_mark_device_lost(le_engine* engine) {
@@ -882,6 +939,14 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   /* Publish the negotiated parameters (configure() reset them above). */
   store_i32(&engine->a_active_backend, info.active_backend);
   store_i32(&engine->a_buffer_frames, info.buffer_frames);
+  /* Callback telemetry (#722): arm the instrument at the negotiated rate.
+   * le_engine_configure above deliberately left it inert, so this is the single
+   * point where a device session's measurement begins; it clears both windows
+   * and a_xruns together, so the numbers a bench reads always belong to the
+   * device session in front of it. Still before start(), so the callback cannot
+   * be running yet — nothing races this write. */
+  le_engine_configure_callback_budget(engine, info.sample_rate,
+                                      info.buffer_frames);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   engine->lat_active = 0;
   engine->lat_emit_remaining = 0;

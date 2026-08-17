@@ -1,3 +1,9 @@
+// The `Array<Uint64>` index operator the fixed-width telemetry arrays
+// (`le_cb_window_snapshot.buckets` / `.xruns`, both declared
+// `ffi.Array<ffi.Uint64>` in the generated bindings) are read through is a
+// dart:ffi extension, so the library has to be imported for it to be in scope.
+import 'dart:ffi';
+
 import 'package:meta/meta.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
@@ -531,10 +537,278 @@ class TrackSnapshot {
   );
 }
 
+/// A class of real device dropout, as counted by [CallbackWindowStats.xruns].
+///
+/// Mirrors the native `le_xrun_kind`; the ordinals are the array indices the
+/// engine tallies into, so the order is load-bearing.
+enum XrunKind {
+  /// `snd_pcm_writei` returned `-EPIPE`: the card ran out of audio to play.
+  playbackUnderrun,
+
+  /// `snd_pcm_readi` returned `-EPIPE`: we did not read capture in time.
+  captureOverrun,
+
+  /// The slipped-playback drop+prepare resync — a stream that fell behind the
+  /// hardware pointer with no XRUN raised, resynced by the ALSA backend.
+  playbackResync,
+
+  /// The Windows ASIO driver's `kAsioOverload` notification.
+  backendOverload,
+}
+
+/// One accumulation window of audio-callback telemetry (native issue #722).
+///
+/// The audio callback measuring its own lateness: how long each device callback
+/// took against the period budget, how far apart consecutive callbacks arrived,
+/// and how many real backend dropouts happened. The pure-Dart projection of
+/// `le_cb_window_snapshot`.
+///
+/// Two windows are published side by side on [CallbackTelemetry] — one for the
+/// whole device session and one reset by every performance arm — because the
+/// question this instrument exists to answer is comparative: is the callback
+/// worse *while a capture is armed*? Counts subtract ([periods],
+/// [latePeriods], [gapEvents], [xruns]); maxima do not, which is why both
+/// windows report their own.
+@immutable
+class CallbackWindowStats {
+  /// Creates a [CallbackWindowStats].
+  const CallbackWindowStats({
+    this.calls = 0,
+    this.periods = 0,
+    this.latePeriods = 0,
+    this.gapEvents = 0,
+    this.maxUs = 0,
+    this.meanUs = 0,
+    this.maxGapUs = 0,
+    this.buckets = const [0, 0, 0, 0, 0, 0, 0, 0],
+    this.xruns = const [0, 0, 0, 0],
+  });
+
+  /// Projects a native `le_cb_window_snapshot`.
+  factory CallbackWindowStats.fromNative(le_cb_window_snapshot native) =>
+      CallbackWindowStats(
+        calls: native.calls,
+        periods: native.periods,
+        latePeriods: native.late_periods,
+        gapEvents: native.gap_events,
+        maxUs: native.max_us,
+        meanUs: native.mean_us,
+        maxGapUs: native.max_gap_us,
+        buckets: [
+          for (var i = 0; i < LE_CB_BUCKETS; i++) native.buckets[i],
+        ],
+        xruns: [for (var i = 0; i < LE_XRUN_KINDS; i++) native.xruns[i]],
+      );
+
+  /// The all-zero window: no device has run, so nothing was measured.
+  static const CallbackWindowStats empty = CallbackWindowStats();
+
+  /// Device callbacks observed in this window — raw context, never judged.
+  ///
+  /// Not the unit of measurement: a duplex loop typically services one
+  /// hardware period with several back-to-back callbacks, so lateness is
+  /// judged per [periods], not per call.
+  final int calls;
+
+  /// Period services completed: runs of consecutive callbacks summing to at
+  /// least one hardware period of frames.
+  ///
+  /// This is the unit everything below is measured in. Judging a single
+  /// sub-period callback would be wrong in both directions — against a whole
+  /// period it under-reports, and against its own `frames / rate` it ignores
+  /// the engine's fixed per-block cost and calls healthy hardware late.
+  final int periods;
+
+  /// Services whose total duration exceeded the deadline for the frames they
+  /// covered: the engine did not finish a period's work inside a period.
+  ///
+  /// The number to read — this is what a dropout is made of. **Zero on healthy
+  /// hardware.**
+  final int latePeriods;
+
+  /// Consecutive callback *entries* more than 1.5 **nominal periods** apart:
+  /// the callback stream stalled. The derived starvation signal, and the only
+  /// one available on CoreAudio, where the backend reports no xruns.
+  ///
+  /// **Read this together with [latePeriods], never alone.** An entry-to-entry
+  /// span contains the previous callback's own duration, so this says the
+  /// stream stalled — not whose fault it was. It moves *alone* when the device
+  /// starved us (we returned promptly and it still came back late), which is
+  /// the reading worth acting on; but any single callback running longer than
+  /// 1.5 nominal periods forces a gap on the next entry by arithmetic, so an
+  /// overloaded engine moves both. The two are coupled, not independent.
+  ///
+  /// Never double-counted against [xruns]: a gap arriving just after a counted
+  /// backend recovery is suppressed, so one physical dropout is counted once.
+  /// That suppressor excuses backend recoveries only — it does not excuse our
+  /// own overrun, which is why the coupling above stands.
+  ///
+  /// **Zero on healthy hardware**, including on a duplex loop that services a
+  /// period in a burst and then waits, and across a device reroute or a system
+  /// audio interruption (those break the timeline rather than register a gap).
+  final int gapEvents;
+
+  /// Worst period-service duration in this window, in microseconds.
+  final int maxUs;
+
+  /// Mean period-service duration in this window, in microseconds.
+  final int meanUs;
+
+  /// Worst entry-to-entry gap in this window, in microseconds; `0` when none
+  /// exceeded the 1.5-period threshold.
+  final int maxGapUs;
+
+  /// Duration histogram, `LE_CB_BUCKETS` (8) wide. Bucket `i` counts period
+  /// services whose duration fell in `[i/8, (i+1)/8)` of their deadline; the
+  /// last bucket is open-ended and so also holds every over-budget service.
+  ///
+  /// This is what separates "one huge stall" from "many marginal ones" — the
+  /// same [latePeriods] with completely different causes. It is also the CPU
+  /// headroom readout: mass in bucket 2 means the engine uses about a quarter
+  /// of each period.
+  final List<int> buckets;
+
+  /// Real backend dropouts, indexed by [XrunKind.index]: the per-class
+  /// breakdown of `EngineStatus.xrunCount`.
+  ///
+  /// Over the session window these add up to that total for every class the
+  /// native build recognises — which is every class a shipping backend
+  /// produces, so the sum holds today. It is not promised for all time: a
+  /// dropout reported with a class outside [XrunKind] still increments the flat
+  /// total (it was a real dropout) but lands in no bucket here, deliberately —
+  /// folding it into an existing class would corrupt the breakdown, and
+  /// dropping it would under-report reality.
+  final List<int> xruns;
+
+  /// Dropouts of [kind] in this window.
+  int xrunsOf(XrunKind kind) =>
+      kind.index < xruns.length ? xruns[kind.index] : 0;
+
+  /// Every dropout class summed.
+  int get xrunTotal => xruns.fold(0, (a, b) => a + b);
+
+  /// Whether anything at all went wrong in this window: a missed deadline, a
+  /// starved device, or a backend dropout. `false` on healthy hardware.
+  bool get hasTrouble => latePeriods > 0 || gapEvents > 0 || xrunTotal > 0;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CallbackWindowStats &&
+          runtimeType == other.runtimeType &&
+          calls == other.calls &&
+          periods == other.periods &&
+          latePeriods == other.latePeriods &&
+          gapEvents == other.gapEvents &&
+          maxUs == other.maxUs &&
+          meanUs == other.meanUs &&
+          maxGapUs == other.maxGapUs &&
+          _listEquals(buckets, other.buckets) &&
+          _listEquals(xruns, other.xruns);
+
+  @override
+  int get hashCode => Object.hash(
+    calls,
+    periods,
+    latePeriods,
+    gapEvents,
+    maxUs,
+    meanUs,
+    maxGapUs,
+    Object.hashAll(buckets),
+    Object.hashAll(xruns),
+  );
+
+  @override
+  String toString() =>
+      'CallbackWindowStats(calls: $calls, periods: $periods, '
+      'late: $latePeriods, gaps: $gapEvents, max: ${maxUs}us, '
+      'mean: ${meanUs}us, xruns: $xrunTotal)';
+}
+
+/// Both telemetry windows plus the deadline they were judged against — the
+/// whole of the audio callback's self-measurement (native issue #722).
+///
+/// Read by `AudioEngine.callbackTelemetry()`, **on demand**, through its own
+/// native entry point and deliberately NOT carried on [EngineSnapshot]. That
+/// object is rebuilt at render rate and feeds `LooperState`'s equality gate; a
+/// counter that ticks on every audio callback can never compare equal, so
+/// shipping it there would defeat the dedupe, re-materialize and re-broadcast
+/// the entire looper state 60 times a second on an idle rig, and allocate the
+/// histogram lists on every tick — CPU pressure manufactured by the very
+/// instrument that exists to find CPU pressure. A diagnostic is pulled when
+/// someone asks, not pushed into the render loop.
+///
+/// **On healthy hardware every judged field reads zero**:
+/// [CallbackWindowStats.latePeriods], [CallbackWindowStats.gapEvents],
+/// [CallbackWindowStats.maxGapUs] and [CallbackWindowStats.xruns] — with the
+/// histogram sitting in the low buckets. That is a design constraint, not a
+/// hope: an instrument that cries wolf on a working rig is worse than none.
+@immutable
+class CallbackTelemetry {
+  /// Creates a [CallbackTelemetry].
+  const CallbackTelemetry({
+    this.budgetUs = 0,
+    this.session = CallbackWindowStats.empty,
+    this.armed = CallbackWindowStats.empty,
+  });
+
+  /// Projects a native `le_callback_telemetry`.
+  factory CallbackTelemetry.fromNative(le_callback_telemetry native) =>
+      CallbackTelemetry(
+        budgetUs: native.budget_us,
+        session: CallbackWindowStats.fromNative(native.session),
+        armed: CallbackWindowStats.fromNative(native.armed),
+      );
+
+  /// Nothing measured: no device has run.
+  static const CallbackTelemetry empty = CallbackTelemetry();
+
+  /// The nominal period deadline in microseconds — `bufferFrames / sampleRate`
+  /// — which is what a period service is judged against and what the gap
+  /// detector is measured in. `0` when no device has been opened, which is also
+  /// the "nothing is being measured" state.
+  final int budgetUs;
+
+  /// Telemetry for the whole device session, cleared on every fresh start —
+  /// in lockstep with `EngineStatus.xrunCount`, which this window's
+  /// [CallbackWindowStats.xruns] break down (see there for the one case where
+  /// the breakdown can add up to less than the total).
+  final CallbackWindowStats session;
+
+  /// The same telemetry since the most recent performance arm.
+  ///
+  /// The armed-vs-unarmed comparison #722 exists to make: the count fields
+  /// subtract from [session] to give the unarmed control, while each window
+  /// reports its own maxima (a maximum cannot be subtracted). Not cleared by a
+  /// disarm, so the numbers survive to be read after the fact.
+  final CallbackWindowStats armed;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CallbackTelemetry &&
+          runtimeType == other.runtimeType &&
+          budgetUs == other.budgetUs &&
+          session == other.session &&
+          armed == other.armed;
+
+  @override
+  int get hashCode => Object.hash(budgetUs, session, armed);
+
+  @override
+  String toString() =>
+      'CallbackTelemetry(budget: ${budgetUs}us, session: $session, '
+      'armed: $armed)';
+}
+
 /// An immutable, lock-free snapshot of the native audio engine's state.
 ///
 /// Published by the engine's audio thread and read by Dart on a render-rate
-/// timer. The pure-Dart projection of the native `le_snapshot` struct.
+/// timer. The pure-Dart projection of the native `le_snapshot` struct — with
+/// one deliberate omission: the audio-callback telemetry block, which is pulled
+/// separately through `AudioEngine.callbackTelemetry()` so it never rides this
+/// object's render-rate equality. See [CallbackTelemetry].
 @immutable
 class EngineSnapshot {
   /// Creates an [EngineSnapshot] with explicit values.
