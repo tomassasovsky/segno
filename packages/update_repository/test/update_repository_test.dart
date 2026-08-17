@@ -230,6 +230,17 @@ void main() {
       expect(PedalFlashFailureClass.tryParse(null), isNull);
     });
 
+    test('PedalFlashFailureClass.worseOf keeps the pessimistic claim', () {
+      const notStarted = PedalFlashFailureClass.notStarted;
+      const interrupted = PedalFlashFailureClass.interrupted;
+      // Either side claiming a write may have begun settles it: the comforting
+      // copy is only offered when BOTH signals agree nothing was written.
+      expect(notStarted.worseOf(interrupted), interrupted);
+      expect(interrupted.worseOf(notStarted), interrupted);
+      expect(interrupted.worseOf(interrupted), interrupted);
+      expect(notStarted.worseOf(notStarted), notStarted);
+    });
+
     test('applyAndRestart forwards to the backend', () async {
       final backend = _FakeBackend();
       await UpdateRepository(backend: backend).applyAndRestart();

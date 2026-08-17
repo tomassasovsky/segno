@@ -29,7 +29,7 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
     this.stagedFile = '/data/.ota-staged-version',
     this.helperPath = '/usr/bin/segno-update-ctl',
     this.pedalFailFile = '/data/segno/pedal-firmware-failed',
-  }) : _env = env ?? const SystemApplianceEnv();
+  }) : _env = env ?? SystemApplianceEnv();
 
   final ApplianceEnv _env;
 

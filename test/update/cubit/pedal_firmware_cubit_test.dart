@@ -11,6 +11,7 @@ class _FakeBackend implements PlatformUpdateBackend {
     this.pending,
     this.pendingSequence,
     this.flashErrors = const [],
+    this.progressBeforeError = const [],
     this.failureClass,
   });
 
@@ -25,6 +26,10 @@ class _FakeBackend implements PlatformUpdateBackend {
   /// Errors for the first N flash calls; further calls get a fresh
   /// [controller] whose completion means success.
   final List<Object> flashErrors;
+
+  /// Progress an erroring attempt reports before it dies, so a test can put a
+  /// failure past the write phase without a stall.
+  final List<double> progressBeforeError;
 
   /// What the failure marker says, or null for "no legible record".
   final PedalFlashFailureClass? failureClass;
@@ -55,7 +60,13 @@ class _FakeBackend implements PlatformUpdateBackend {
     flashCalls++;
     calls.add('flash');
     if (flashCalls <= flashErrors.length) {
-      return Stream.error(flashErrors[flashCalls - 1]);
+      final error = flashErrors[flashCalls - 1];
+      final reported = progressBeforeError;
+      return () async* {
+        yield* Stream.fromIterable(reported);
+        // Rethrown as-is so a test can script a non-Exception failure too.
+        Error.throwWithStackTrace(error, StackTrace.current);
+      }();
     }
     controller = StreamController<double>();
     return controller!.stream;
@@ -263,6 +274,71 @@ void main() {
       },
     );
 
+    test(
+      'a stale not-started marker cannot launder a failure past the write '
+      'phase',
+      () async {
+        // The marker gap is wider than stalls. EVERY path where the helper
+        // dies without writing one — an OOM kill, a full /data, a `set -e`
+        // abort on a line with no write_pedal_fail call — leaves an EARLIER
+        // attempt's marker on disk. Trusting it alone is how a pedal with dead
+        // switches gets told "your pedal still works on its previous
+        // firmware". This attempt's own progress is the check.
+        final backend = _FakeBackend(
+          pendingSequence: ['0.4.0'],
+          flashErrors: [Exception('helper vanished')],
+          progressBeforeError: const [0.5],
+          failureClass: PedalFlashFailureClass.notStarted,
+        );
+        final cubit = cubitOver(backend);
+        addTearDown(cubit.close);
+
+        await cubit.run();
+
+        expect(backend.failureReads, greaterThan(0));
+        expect(cubit.state.stage, PedalFirmwareStage.failed);
+        expect(cubit.state.failureClass, PedalFlashFailureClass.interrupted);
+      },
+    );
+
+    test(
+      'an interrupted marker still wins over an attempt that got nowhere',
+      () async {
+        // The other direction of the same rule: the more pessimistic of the
+        // two signals decides, so a marker written by the helper itself is
+        // never softened by this attempt failing early.
+        final backend = _FakeBackend(
+          pendingSequence: ['0.4.0'],
+          flashErrors: [Exception('no manifest')],
+          failureClass: PedalFlashFailureClass.interrupted,
+        );
+        final cubit = cubitOver(backend);
+        addTearDown(cubit.close);
+
+        await cubit.run();
+
+        expect(cubit.state.failureClass, PedalFlashFailureClass.interrupted);
+      },
+    );
+
+    test('an Error from the helper still reaches the failed dialog', () async {
+      // `on Exception` would let this escape with the stall timer already
+      // disarmed: stage stuck on flashing, blocksLooper true, no Continue —
+      // an unrecoverable console lock, and run() is called unawaited so
+      // nothing downstream would catch it either.
+      final backend = _FakeBackend(
+        pendingSequence: ['0.4.0'],
+        flashErrors: [StateError('helper stream broke')],
+      );
+      final cubit = cubitOver(backend);
+      addTearDown(cubit.close);
+
+      await cubit.run();
+
+      expect(cubit.state.stage, PedalFirmwareStage.failed);
+      expect(cubit.state.error, contains('helper stream broke'));
+    });
+
     test('an illegible failure marker counts as interrupted', () async {
       // Comfort that cannot be proven must not be offered: with no legible
       // record of how far the flash got, the dialog must not promise the
@@ -307,14 +383,11 @@ void main() {
         expect(cubit.state.failureClass, PedalFlashFailureClass.notStarted);
         // Every stalled helper is KILLED before the next attempt begins —
         // two privileged flashers must never fight over the bootloader port.
-        expect(backend.calls, [
-          'flash',
-          'abort',
-          'flash',
-          'abort',
-          'flash',
-          'abort',
-        ]);
+        //
+        // Two attempts, not maxAttempts: each stall costs stallTimeout, so the
+        // third would start past retryBudget. That is the budget doing its
+        // job — 12 minutes behind an undismissable gate instead of 18.
+        expect(backend.calls, ['flash', 'abort', 'flash', 'abort']);
         unawaited(cubit.close());
       });
     });

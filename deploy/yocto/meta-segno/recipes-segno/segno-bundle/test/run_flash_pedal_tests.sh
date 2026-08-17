@@ -68,7 +68,7 @@ run_flash() {
     SEGNO_CHANNEL_FILE="/nonexistent" \
     SEGNO_CHANNEL_OVERRIDE_FILE="/nonexistent" \
     SEGNO_PEDAL_STATE_FILE="$work/state/pedal-firmware-version" \
-    SEGNO_PEDAL_FAIL_FILE="$work/state/pedal-firmware-failed" \
+    SEGNO_PEDAL_FAIL_FILE="${FAIL_FILE_OVERRIDE:-$work/state/pedal-firmware-failed}" \
     SEGNO_PEDAL_SERIAL_DIR="$work/serial" \
     SEGNO_AVRDUDE="$work/bin/avrdude" \
     SEGNO_PEDAL_PORT_TIMEOUT=3 \
@@ -77,6 +77,46 @@ run_flash() {
     PATH="$work/bin:$PATH" \
         sh "$CTL" flash-pedal 2>"$work/stderr"
 }
+
+# Same invocation, backgrounded, with the helper's own pid in $helper.
+#
+# The `&` is on the `sh` command itself, not on a function call: bash would
+# otherwise hand back the pid of the subshell wrapping the function and the
+# signal would never reach the script under test.
+run_flash_bg() {
+    SEGNO_UPDATE_BASE="file://$work/channel" \
+    SEGNO_CHANNEL_FILE="/nonexistent" \
+    SEGNO_CHANNEL_OVERRIDE_FILE="/nonexistent" \
+    SEGNO_PEDAL_STATE_FILE="$work/state/pedal-firmware-version" \
+    SEGNO_PEDAL_FAIL_FILE="$work/state/pedal-firmware-failed" \
+    SEGNO_PEDAL_SERIAL_DIR="$work/serial" \
+    SEGNO_AVRDUDE="$work/bin/avrdude" \
+    SEGNO_PEDAL_PORT_TIMEOUT=3 \
+    SEGNO_PEDAL_BOOTLOADER_TRIES=3 \
+    SEGNO_AVRDUDE_TIMEOUT=120 \
+    SEGNO_FLASH_CHILD_GRACE=1 \
+    PATH="$work/bin:$PATH" \
+        sh "$CTL" flash-pedal >/dev/null 2>"$work/stderr" &
+    helper=$!
+}
+
+# Polls until FILE exists, or ~10s pass.
+await_file() {
+    local i=0
+    while [ ! -f "$1" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+}
+
+# Polls until neither pid is alive, or ~10s pass.
+await_gone() {
+    local i=0
+    while { kill -0 "$1" 2>/dev/null || kill -0 "$2" 2>/dev/null; } \
+          && [ "$i" -lt 100 ]; do
+        sleep 0.1
+        i=$((i + 1))
+    done
+}
+
+alive() { kill -0 "$1" 2>/dev/null && echo yes || echo no; }
 
 run_pending() {
     SEGNO_UPDATE_BASE="file://$work/channel" \
@@ -146,6 +186,8 @@ run_flash; rc=$?
 check "refuses (exit 1)" 1 "$rc"
 check "does not flash" no "$(flashed)"
 check "classifies the failure as not-started" "not-started 9.9.9" "$(fail_marker)"
+check "logs the marker it recorded" yes \
+    "$(grep -q 'recorded failure marker: not-started 9.9.9' "$work/stderr" && echo yes || echo no)"
 teardown
 
 echo "manifest publishes no sha256"
@@ -425,6 +467,123 @@ check "gives up instead of hanging" 1 "$rc"
 check "reports the timeout" yes \
     "$(grep -q 'timed out' "$work/stderr" && echo yes || echo no)"
 check "classifies the failure as interrupted" "interrupted 9.9.9" "$(fail_marker)"
+teardown
+
+# --- the abort has to reach avrdude, not just the shell ---------------------
+#
+# The app kills this script when the flash stalls, then starts the next
+# attempt. A signal to a shell running `timeout avrdude ...` in the FOREGROUND
+# kills only the shell — its exitCode resolves in milliseconds while avrdude
+# carries on as an orphan still owning the Caterina bootloader port, so the
+# retry the kill exists to make safe ends up racing an unkilled flasher for
+# that port and for the marker write. These tests assert the descendants are
+# actually gone, not merely that the script exited.
+
+echo "SIGTERM to the helper takes avrdude down with it"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "segno-pedal-9.9.9.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+attach_pedal
+# Stands in for an avrdude wedged on an unresponsive port. Records its own pid
+# AND a child's, so both generations below the script can be checked.
+cat > "$work/bin/avrdude" <<STUB
+#!/bin/sh
+echo "\$@" > "$work/avrdude-args"
+echo \$\$ > "$work/avrdude-pid"
+sleep 60 &
+echo \$! > "$work/avrdude-grandchild"
+wait
+STUB
+chmod +x "$work/bin/avrdude"
+dirs_before=$(ls -d /tmp/segno-pedal.* 2>/dev/null | sort || true)
+run_flash_bg
+await_file "$work/avrdude-grandchild"
+check "avrdude actually got started" yes \
+    "$([ -f "$work/avrdude-grandchild" ] && echo yes || echo no)"
+avr_pid=$(cat "$work/avrdude-pid" 2>/dev/null || echo 0)
+gc_pid=$(cat "$work/avrdude-grandchild" 2>/dev/null || echo 0)
+kill -TERM "$helper" 2>/dev/null || true
+wait "$helper" 2>/dev/null; hrc=$?
+check "the script's own TERM trap ran (exit 143)" 143 "$hrc"
+await_gone "$avr_pid" "$gc_pid"
+check "avrdude is dead, not orphaned onto the bootloader port" no "$(alive "$avr_pid")"
+check "avrdude's own child went with it" no "$(alive "$gc_pid")"
+dirs_after=$(ls -d /tmp/segno-pedal.* 2>/dev/null | sort || true)
+check "sweeps its work dir instead of leaving the hex behind" "" \
+    "$(comm -13 <(printf '%s\n' "$dirs_before") <(printf '%s\n' "$dirs_after"))"
+teardown
+
+# --- markers do not outlive the pedal state they describe -------------------
+
+echo "a stale interrupted marker is dropped once the pedal answers as a sketch"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "does-not-exist.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+attach_pedal
+# The board was reflashed by hand at a workbench after an interrupted OTA.
+# Only a successful OTA flash ever cleared the marker, so it is still here —
+# and without this it would keep telling every future campaign's honest
+# not-started failure to show "may need to be flashed from a computer".
+# Answering on the SKETCH port is what disproves "parked in Caterina".
+echo "interrupted 1.2.3" > "$work/state/pedal-firmware-failed"
+run_flash; rc=$?
+check "still reports the download failure" 1 "$rc"
+check "records THIS attempt's honest class" "not-started 9.9.9" "$(fail_marker)"
+teardown
+
+echo "a parked pedal's marker survives — it never presents a sketch port"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "segno-pedal-9.9.9.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+# The complement of the test above, and the one that must not regress: the
+# clear happens at GATE 1, which a parked pedal never reaches.
+echo "interrupted 9.9.9" > "$work/state/pedal-firmware-failed"
+detach_pedal
+run_flash; rc=$?
+check "refuses" 1 "$rc"
+check "keeps the interrupted class" "interrupted 9.9.9" "$(fail_marker)"
+teardown
+
+echo "a tmp marker left by a killed write is swept"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "segno-pedal-9.9.9.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+attach_pedal
+# write_pedal_fail killed between its printf and its mv leaves this on /data
+# forever; nothing else ever removes it.
+echo "interrupted 9.9.9" > "$work/state/pedal-firmware-failed.tmp.4242"
+run_flash >/dev/null
+check "sweeps the orphaned tmp marker" "" "$(ls "$work/state"/*.tmp.* 2>/dev/null)"
+teardown
+
+echo "a failure marker that cannot be written is logged, not swallowed"
+setup
+write_manifest <<JSON
+{ "version": "1.0.0", "bundle": "b.raucb", "channel": "production",
+  "pedalFirmware": { "version": "9.9.9", "hex": "segno-pedal-9.9.9.hex",
+                     "protocolVersion": 3, "sha256": "$hex_sha" } }
+JSON
+detach_pedal
+# /data full, or the directory replaced by a file: the marker cannot land. The
+# app then reads whatever marker IS there — an earlier attempt's — so a silent
+# failure here shows one pedal's dialog for another pedal's state.
+: > "$work/state/blocked"
+FAIL_FILE_OVERRIDE="$work/state/blocked/pedal-firmware-failed" run_flash; rc=$?
+check "still reports the failure" 1 "$rc"
+check "says the marker could not be written" yes \
+    "$(grep -q 'could not write failure marker' "$work/stderr" && echo yes || echo no)"
 teardown
 
 # --- pedal-pending: what the app gates the UI on ---------------------------

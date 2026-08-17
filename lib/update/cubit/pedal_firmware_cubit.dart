@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:update_repository/update_repository.dart';
@@ -88,6 +89,11 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
   StreamSubscription<double>? _sub;
   Completer<void>? _flashDone;
 
+  /// The furthest the CURRENT attempt got, reset by every [_flashOnce]. A
+  /// field rather than a local because it classifies failures the helper never
+  /// got to record — see the classification in [run].
+  double _lastProgress = 0;
+
   /// Total flash attempts before the failed dialog is shown (#670). The
   /// retries are silent — the gate keeps its "Finishing update" face — because
   /// most transient failures (a dropped manifest fetch, a missed bootloader
@@ -109,6 +115,19 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
   /// it can only fire on a genuinely stuck helper.
   static const Duration stallTimeout = Duration(minutes: 6);
 
+  /// A ceiling on how long the silent retries may hold the gate.
+  ///
+  /// One attempt's worst case is the helper's own budgets stacked: 30 s
+  /// manifest + 300 s hex + ~8 s bootloader window + 120 s avrdude + 10 s
+  /// re-enumerate, ~7.8 min — and [stallTimeout] bounds a silent one at 6.
+  /// [maxAttempts] of those back to back is over twenty minutes behind a
+  /// `dismissible: false` gate with the ring restarting from zero and nothing
+  /// said, which a lossy link is enough to produce. Retrying a few times and
+  /// then saying it failed is still the policy; this only stops it costing a
+  /// third of an hour. A retry is started only while under this budget, so the
+  /// true ceiling is the budget plus one attempt, not [maxAttempts] of them.
+  static const Duration retryBudget = Duration(minutes: 8);
+
   /// The helper's progress value at the moment it hands avrdude the
   /// bootloader port (`PROGRESS 50` in `segno-update-ctl flash-pedal`). A
   /// stall at or past this mark means a write may have begun; before it,
@@ -129,6 +148,10 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
       return;
     }
 
+    // Through package:clock, not a Stopwatch: fake_async fakes the clock but
+    // not Stopwatch, so a Stopwatch here would read ~0 forever under the
+    // widget tests and the budget below would never be exercised.
+    final startedAt = clock.now();
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
       // Progress restarts from zero on a retry — an honest bar that starts
       // over beats one frozen where the last attempt died.
@@ -143,8 +166,24 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
         if (isClosed) return;
         emit(const PedalFirmwareState(stage: PedalFirmwareStage.idle));
         return;
-      } on Exception catch (error) {
+      } on Object catch (error) {
+        // Not `on Exception`: an Error escaping here would leave the gate on
+        // [PedalFirmwareStage.flashing] with [PedalFirmwareState.blocksLooper]
+        // set, no Continue, and the stall timer already disarmed by
+        // [_flashOnce]'s finally — an unrecoverable console lock, and
+        // `run()` is called unawaited so nothing else would catch it either.
+        // A failed dialog the user can dismiss beats that in every case.
         if (isClosed) return;
+
+        // How far THIS attempt got is always true of this attempt. The marker
+        // on disk may not be: the helper only writes one where it lives long
+        // enough to, and a stall (it is killed), an OOM kill, a full /data or
+        // a `set -e` abort on a line with no `write_pedal_fail` call all leave
+        // whatever an EARLIER attempt wrote. Past [_writePhase] the helper had
+        // handed avrdude the bootloader port, so a write may have begun.
+        final reached = _lastProgress >= _writePhase
+            ? PedalFlashFailureClass.interrupted
+            : PedalFlashFailureClass.notStarted;
         final PedalFlashFailureClass failureClass;
         if (error is _FlashStalled) {
           // A stalled helper is killed, not just abandoned: left alive it
@@ -153,23 +192,25 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
           // returns once the process is dead, so no retry can overlap it.
           await _updates.abortPedalFlash();
           if (isClosed) return;
-          // The marker on disk cannot be trusted after a stall — the killed
-          // helper never wrote one, so whatever is there is from an EARLIER
-          // attempt. Classify from this attempt's own progress instead:
-          // avrdude reached means a write may have begun.
-          failureClass = error.lastProgress >= _writePhase
-              ? PedalFlashFailureClass.interrupted
-              : PedalFlashFailureClass.notStarted;
+          // The killed helper wrote no marker at all, so this attempt's own
+          // progress is the only evidence there is.
+          failureClass = reached;
         } else {
-          // Unknown counts as interrupted: comfort that cannot be proven
-          // must not be offered.
-          failureClass =
+          // Both signals, and the more pessimistic wins: a stale `not-started`
+          // must not launder an attempt that got as far as avrdude, and a
+          // missing or unparseable marker counts as interrupted because
+          // comfort that cannot be proven must not be offered.
+          final marker =
               await _updates.lastPedalFlashFailure() ??
               PedalFlashFailureClass.interrupted;
+          if (isClosed) return;
+          failureClass = marker.worseOf(reached);
         }
         if (isClosed) return;
 
-        if (attempt < maxAttempts && await _worthRetrying(failureClass)) {
+        if (attempt < maxAttempts &&
+            clock.now().difference(startedAt) < retryBudget &&
+            await _worthRetrying(failureClass)) {
           if (isClosed) return;
           continue;
         }
@@ -196,12 +237,12 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
   /// zones the tests run in (its events escape the zone's clock).
   Future<void> _flashOnce(String version) async {
     final done = _flashDone = Completer<void>();
-    var lastProgress = 0.0;
+    _lastProgress = 0;
 
     void arm() {
       _stall?.cancel();
       _stall = Timer(stallTimeout, () {
-        if (!done.isCompleted) done.completeError(_FlashStalled(lastProgress));
+        if (!done.isCompleted) done.completeError(_FlashStalled(_lastProgress));
       });
     }
 
@@ -209,13 +250,13 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
     _sub = _updates.flashPedalFirmware().listen(
       (value) {
         arm();
-        lastProgress = value.clamp(0.0, 1.0);
+        _lastProgress = value.clamp(0.0, 1.0);
         if (isClosed) return;
         emit(
           PedalFirmwareState(
             stage: PedalFirmwareStage.flashing,
             version: version,
-            progress: lastProgress,
+            progress: _lastProgress,
           ),
         );
       },
@@ -243,10 +284,13 @@ class PedalFirmwareCubit extends Cubit<PedalFirmwareState> {
 
   @override
   Future<void> close() {
-    // Dismantle any flash still in the air: cancel the stall timer (it would
-    // otherwise sit armed after the tree is gone), stop listening, let the
-    // pending attempt unwind, and kill the helper process so no privileged
-    // flasher outlives its supervisor.
+    // Dismantle any flash still in the air: stop listening, let the pending
+    // attempt unwind, and kill the helper process so no privileged flasher
+    // outlives its supervisor.
+    //
+    // The timer cancel is belt and braces — completing [_flashDone] below
+    // unwinds [_flashOnce], whose finally does the real disarm — kept because
+    // it costs nothing and the disarm must not depend on that ordering.
     _stall?.cancel();
     unawaited(_sub?.cancel());
     final done = _flashDone;

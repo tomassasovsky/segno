@@ -60,9 +60,81 @@ PEDAL_PORT_TIMEOUT="${SEGNO_PEDAL_PORT_TIMEOUT:-10}"
 PEDAL_BOOTLOADER_TRIES="${SEGNO_PEDAL_BOOTLOADER_TRIES:-6}"
 # Upper bound on the avrdude write itself.
 AVRDUDE_TIMEOUT="${SEGNO_AVRDUDE_TIMEOUT:-120}"
+# Seconds a tracked child gets to honour SIGTERM before it is killed. avrdude
+# installs no handler, so TERM lands at once unless it is blocked in a USB
+# ioctl — which is precisely the stall the abort path exists for, and the only
+# case where the KILL is the remaining lever.
+FLASH_CHILD_GRACE="${SEGNO_FLASH_CHILD_GRACE:-3}"
 
 log() { echo "segno-update-ctl: $*" >&2; }
 progress() { echo "PROGRESS $1"; }
+
+# --- taking the flash down with the script ----------------------------------
+#
+# The app kills this script (Dart's Process.kill) when the flash stalls or the
+# console is torn down. A signal to a shell running `timeout avrdude ...` in
+# the FOREGROUND kills only the shell: `exitCode` resolves in milliseconds
+# while avrdude carries on as an orphan still owning the Caterina bootloader
+# port — so the retry the kill exists to make safe races an unkilled flasher
+# for that port. The long-running children are therefore backgrounded, their
+# pid tracked, and a TERM/INT trap takes them down before this shell exits.
+_flash_child=""
+
+# Signals the tracked child, and its process group when it leads one.
+# coreutils `timeout` puts itself and the command it manages in a fresh group,
+# so signalling the group is what actually reaches avrdude; busybox's does not,
+# hence both. `kill -0 -PID` succeeding proves a group with that id exists, and
+# pids are unique, so that group can only be the child's own — never this
+# console's.
+_signal_flash_child() {
+    sig=$1
+    if kill -0 "-$_flash_child" 2>/dev/null; then
+        kill "-$sig" "-$_flash_child" 2>/dev/null || true
+    fi
+    kill "-$sig" "$_flash_child" 2>/dev/null || true
+}
+
+# SIGTERM the tracked child, give it a real grace period, then kill. TERM
+# first on purpose: a KILL landing mid page write is recoverable (Caterina
+# lives in the protected boot section and avr109 cannot erase it) but it is
+# still a worse place to leave a pedal than a clean abort.
+_stop_flash_child() {
+    [ -n "$_flash_child" ] || return 0
+    kill -0 "$_flash_child" 2>/dev/null || { _flash_child=""; return 0; }
+    log "signalled; stopping the in-flight child (pid $_flash_child)"
+    _signal_flash_child TERM
+    i=0
+    while [ "$i" -lt "$FLASH_CHILD_GRACE" ] && kill -0 "$_flash_child" 2>/dev/null
+    do
+        sleep 1
+        i=$((i + 1))
+    done
+    if kill -0 "$_flash_child" 2>/dev/null; then
+        log "child ignored SIGTERM after ${FLASH_CHILD_GRACE}s; killing"
+        _signal_flash_child KILL
+    fi
+    _flash_child=""
+}
+
+# `trap ... EXIT` never runs on an untrapped SIGTERM, so every aborted flash
+# used to leave its work dir (and a 32 KB hex) behind with nothing to sweep it.
+_on_terminate() {
+    _stop_flash_child
+    [ -z "${work:-}" ] || rm -rf "$work"
+    exit 143
+}
+
+# Runs "$@" as a tracked background child and waits for it, so the trap above
+# can take it down instead of orphaning it. Returns the child's exit status.
+run_tracked() {
+    "$@" &
+    _flash_child=$!
+    # Its own name: `sh` has no locals, and callers keep their status in `rc`.
+    _tracked_rc=0
+    wait "$_flash_child" || _tracked_rc=$?
+    _flash_child=""
+    return "$_tracked_rc"
+}
 
 # Prefer the Settings-written override on /data, then the image-baked marker.
 resolve_channel() {
@@ -114,7 +186,10 @@ do_install() {
     current=$(cat "$CUR_FILE" 2>/dev/null || echo "0.0.0")
 
     work=$(mktemp -d /tmp/segno-update.XXXXXX)
+    # INT/TERM too: an EXIT trap alone never runs on an untrapped signal, and
+    # a killed install would leave a whole staged bundle in /tmp.
     trap 'rm -rf "$work"' EXIT
+    trap _on_terminate INT TERM
     progress 0
 
     if ! curl -fsSL --max-time 30 -o "$work/manifest.json" \
@@ -299,12 +374,52 @@ write_pedal_fail() {
     fi
     mkdir -p "$(dirname "$PEDAL_FAIL_FILE")" 2>/dev/null || true
     tmp="$PEDAL_FAIL_FILE.tmp.$$"
+    # Every failure here is swallowed on purpose: `set -eu` makes a non-zero
+    # return from inside an `if ... then` body abort the whole script, and
+    # losing the marker must not also lose the exit code that classifies the
+    # failure. But it is LOGGED — a marker that silently fails to land leaves
+    # the previous one in place, and the app then shows that pedal's dialog.
     if [ -n "$version" ]; then
-        printf '%s %s\n' "$class" "$version" > "$tmp" 2>/dev/null || return 0
+        printf '%s %s\n' "$class" "$version" > "$tmp" 2>/dev/null || {
+            log "could not write failure marker ($class) to $tmp"
+            rm -f "$tmp" 2>/dev/null || true
+            return 0
+        }
     else
-        printf '%s\n' "$class" > "$tmp" 2>/dev/null || return 0
+        printf '%s\n' "$class" > "$tmp" 2>/dev/null || {
+            log "could not write failure marker ($class) to $tmp"
+            rm -f "$tmp" 2>/dev/null || true
+            return 0
+        }
     fi
-    mv -f "$tmp" "$PEDAL_FAIL_FILE" 2>/dev/null || rm -f "$tmp" 2>/dev/null || true
+    if mv -f "$tmp" "$PEDAL_FAIL_FILE" 2>/dev/null; then
+        log "recorded failure marker: $class${version:+ }$version"
+    else
+        log "could not replace $PEDAL_FAIL_FILE; keeping the earlier marker"
+        rm -f "$tmp" 2>/dev/null || true
+    fi
+}
+
+# Drops a failure marker left by an EARLIER campaign once the pedal has proven
+# it is not the pedal that marker describes.
+#
+# An `interrupted` marker claims the pedal may be parked in Caterina with a
+# half-written app section. A pedal that answers on its SKETCH port disproves
+# exactly that: it booted, it enumerated, it is running a firmware. Without
+# this the marker outlives the pedal state it recorded — a board reflashed by
+# hand at a workbench keeps it forever, since only a successful OTA flash ever
+# clears it, and the next campaign's honest `not-started` failure is refused as
+# a downgrade and shows "may need to be flashed again from a computer" for a
+# healthy pedal.
+#
+# Only called once the sketch port has been seen. Failures from that point on
+# write their own marker, and the no-downgrade rule still protects everything
+# written during THIS run.
+clear_stale_fail_marker() {
+    [ -f "$PEDAL_FAIL_FILE" ] || return 0
+    log "pedal answers on its sketch port; dropping the stale failure marker"
+    rm -f "$PEDAL_FAIL_FILE" 2>/dev/null \
+        || log "could not clear $PEDAL_FAIL_FILE"
 }
 
 # What the pedal is running, as recorded by the last successful flash.
@@ -332,6 +447,7 @@ do_pedal_pending() {
     channel=$(resolve_channel)
     work=$(mktemp -d /tmp/segno-pedal-pending.XXXXXX)
     trap 'rm -rf "$work"' EXIT
+    trap _on_terminate INT TERM
 
     curl -fsSL --max-time 10 -o "$work/manifest.json" \
         "$BASE_URL/$channel/manifest.json" 2>/dev/null || return 0
@@ -358,6 +474,10 @@ do_flash_pedal() {
 
     work=$(mktemp -d /tmp/segno-pedal.XXXXXX)
     trap 'rm -rf "$work"' EXIT
+    trap _on_terminate INT TERM
+    # Nothing else sweeps these: a write_pedal_fail killed between its printf
+    # and its mv leaves one on /data forever.
+    rm -f "$PEDAL_FAIL_FILE".tmp.* 2>/dev/null || true
     progress 0
 
     if ! curl -fsSL --max-time 30 -o "$work/manifest.json" \
@@ -396,9 +516,11 @@ do_flash_pedal() {
         return 1
     fi
     log "pedal at $port; publishing $fw_version (current $current)"
+    clear_stale_fail_marker
 
     progress 10
-    if ! curl -fsSL --max-time 300 -o "$work/$hex" "$BASE_URL/$channel/$hex"; then
+    if ! run_tracked curl -fsSL --max-time 300 -o "$work/$hex" \
+         "$BASE_URL/$channel/$hex"; then
         log "firmware download failed"
         write_pedal_fail not-started "$fw_version"
         return 1
@@ -455,8 +577,11 @@ do_flash_pedal() {
     log "flashing $hex via $boot_port"
     # `rc=$?` inside `if ! cmd` would read the status of the NEGATION, not of
     # avrdude, so capture it on the failure path instead.
+    #
+    # Run through run_tracked, not in the foreground: a foreground avrdude
+    # survives the app's kill as an orphan still holding the bootloader port.
     rc=0
-    timeout "$AVRDUDE_TIMEOUT" "$AVRDUDE" -p atmega32u4 -c avr109 \
+    run_tracked timeout "$AVRDUDE_TIMEOUT" "$AVRDUDE" -p atmega32u4 -c avr109 \
         -P "$boot_port" -b 57600 -U "flash:w:$work/$hex:i" >&2 || rc=$?
     if [ "$rc" -ne 0 ]; then
         [ "$rc" = 124 ] && log "avrdude timed out after ${AVRDUDE_TIMEOUT}s"

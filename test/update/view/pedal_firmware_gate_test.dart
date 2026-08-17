@@ -220,12 +220,16 @@ void main() {
     expect(find.byKey(const Key('looper')), findsOneWidget);
   });
 
-  testWidgets('disposing mid-flash leaves no pending stall timer', (
+  testWidgets('disposing mid-flash kills the helper and leaves no timer', (
     tester,
   ) async {
-    // testWidgets itself fails on any timer still armed at the end of the
-    // test, so this test IS the assertion that close() disarms the 6-minute
-    // stall guard when the tree goes down mid-flash.
+    // Two assertions, only one of them visible. testWidgets fails on any timer
+    // still armed at the end of a test, so reaching the end at all asserts the
+    // 6-minute stall guard is disarmed when the tree goes down mid-flash —
+    // though the disarm is done by _flashOnce's finally, not by close()'s own
+    // cancel, so deleting that (belt-and-braces) line would not fail here.
+    // The abortCalls expectation below is the load-bearing one: a privileged
+    // flasher must not outlive its supervisor.
     final backend = _FakeBackend(pending: '0.4.0');
     final cubit = await pumpGate(tester, backend);
 
