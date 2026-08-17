@@ -53,6 +53,23 @@
 /* le_audio_rev_bump below; plugins never call it but the compiler parses it. */
 #undef atomic_fetch_add_explicit
 #define atomic_fetch_add_explicit(slot, v, mo) ((void)(*(slot) += (v)))
+/* engine_telemetry.h claims its gap-suppression licence with an exchange, so
+ * unlike the three above this one has to YIELD the old value rather than
+ * discard it — which no comma-expression macro can do, and GCC's statement
+ * expressions are not available under MSVC. Hence a function; a two-parameter
+ * template so an unsuffixed literal (`0u` against a uint64_t slot) still
+ * deduces, and this whole block is C++-only by construction. It must also sit
+ * ahead of the `extern "C"` below, which a template cannot live inside.
+ * Read-then-write without atomicity is safe for exactly the reason the rest of
+ * this shim is: no plugin TU ever reaches these call sites. */
+template <typename T, typename V>
+inline T le_cxx_atomic_exchange(T* slot, V value) {
+  const T previous = *slot;
+  *slot = (T)value;
+  return previous;
+}
+#undef atomic_exchange_explicit
+#define atomic_exchange_explicit(slot, v, mo) le_cxx_atomic_exchange((slot), (v))
 #endif
 
 #include "audio_ring.h"        /* le_audio_ring (performance-recording taps) */
