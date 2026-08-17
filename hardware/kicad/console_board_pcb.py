@@ -124,9 +124,9 @@ PLACEMENT = {
     "C13": (64.0, 21.0, 0), "C14": (75.0, 21.0, 0), "R9": (87.0, 21.0, 0),
 
     # left edge: power in and its reservoir
-    "J3":  (10.0, 46.0, 90),       # 5 V in, beside VBUS/VSYS (pads 40/39)
-    "C31": (10.0, 22.0, 0),        # 100uF  on +5V
-    "C30": (10.0, 66.0, 0),        # 470uF  on +5V_LED
+    "J3":  (10.0, 62.0, 90),       # 5 V in, beside VBUS/VSYS (pads 40/39)
+    "C31": (10.0, 20.0, 0),        # 100uF  on +5V
+    "C30": (10.0, 33.0, 0),        # 470uF  on +5V_LED
 
     # right: the buffer, then the ribbon on the edge itself
     "U1":  (93.0, 44.0, 0),        # 74AHCT125, sat LOW on purpose. Its ring input is
@@ -160,8 +160,8 @@ PLACEMENT = {
     "C20": (25.0, 21.0, 0),        # +3V3 decoupling for U2
     "R1":  (68.0, 62.0, 0),       # 330R, U1 gate B -> J6 pin 5 (ring data)
     "R2":  (93.0, 57.0, 0),        # 330R, U1 gate C -> J7 pin 2 (indicators)
-    "J6":  (63.5, 68.0, 0),        # ring/encoder, under pads 16/17/19/20
-    "J7":  (82.0, 70.0, 0),        # indicators -- x matches J9 above
+    "J6":  (63.5, 69.0, 0),        # ring/encoder, under pads 16/17/19/20
+    "J7":  (82.0, 69.0, 0),        # indicators -- x matches J9 above
 }
 # footswitches J10..J19 along the bottom, left-to-right in GPIO order -- that
 # ordering is what keeps the fan-out from crossing (gated in _check)
@@ -796,6 +796,24 @@ def _check(fps, nets, board=None):
                 f"{sorted(smd)[:3]} are surface-mount -- SMD pads need thermal "
                 "relief or they cannot be hand-soldered reliably")
 
+    # Keep the corridor off the module's USB end clear. USB is not needed in normal
+    # operation, but a board that makes it physically impossible to plug in is a
+    # different claim -- and the 5 V inlet was sitting directly in front of the
+    # socket. The module's USB is at its LEFT end (it is rotated 90 deg), so the
+    # corridor is everything left of it within the connector's own height.
+    px0, py0, _px1, py1 = _extent(fps["J1"])
+    ucy = (py0 + py1) / 2.0
+    usb = (0.0, ucy - 6.0, px0, ucy + 6.0)
+    for ref, fp in fps.items():
+        if ref == "J1":
+            continue
+        x0, y0, x1, y1 = _extent(fp)
+        if not (x1 < usb[0] or usb[2] < x0 or y1 < usb[1] or usb[3] < y0):
+            raise AssertionError(
+                f"USB_CLEAR: {ref} sits in the corridor off the module's USB end "
+                f"(x<{usb[2]:.0f}, y {usb[1]:.0f}..{usb[3]:.0f}) -- a cable could "
+                "never be plugged in")
+
     hops = worst_hops(fps, nets)
     if hops:
         d, name, ref, pad = hops[0]
@@ -967,6 +985,8 @@ def _selftest():
         # displacing U2 also displaces the anchors of its own passives, and the
         # placer then fails before the isolation gate is ever reached.
         ("opto barrier inside ISOLATION_GAP", "ISOLATION:", {"R7": (30.0, 28.0, 0)}),
+        # the exact mistake that was shipped: the 5 V inlet parked in front of USB
+        ("part blocking the USB corridor", "USB_CLEAR:", {"J3": (10.0, 46.0, 90)}),
         ("footswitch fan-out out of order", "CROSSING:",
          {"J10": (FSW_X1, FSW_Y, 0), "J19": (FSW_X0, FSW_Y, 0)}),
     ]
