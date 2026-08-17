@@ -332,7 +332,12 @@ BOARD_SIZE  = (94.0, 96.0)    # board outline (for the 3D render)
 # (y 405..419), not the front, so the 24.6 mm margin outboard of the end tubs is
 # free. Moving the fixings into it removes the interference instead of
 # accommodating it -- and widens the stance from 756 to 817 mm as a bonus.
-D_FOOT       = 4.5   # M4 clearance for the foot screw
+D_FOOT       = 4.5   # M4 clearance for the foot screw. The foot is a screw-on
+                     # rubber Ø18 x 7 (cutting-board style, stainless screw
+                     # supplied); the screw goes DOWN from inside, so the head
+                     # sits on the plate's top face -- hence the clear-of-every-
+                     # pedestal rule below rather than a countersink, which a
+                     # 2.0 mm plate cannot take without a knife edge.
 FOOT_INSET_X = 14.3  # from each side. Window is 8.2..20.4: bend relief (RI+T) +
                      # hole radius at the low end, tub edge 24.6 at the high end.
                      # _check() holds it inside that, and holds every fixing clear

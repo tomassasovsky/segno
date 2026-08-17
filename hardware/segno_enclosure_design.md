@@ -243,6 +243,18 @@ standoff holes in the rear; an **intake-vent block** in the clear gap between th
 two platform rows (air crosses the boards to the rear-wall exhaust); and 4 rubber
 feet. The electronics are reached from the **open top** once the lid is lifted.
 
+**Rubber feet (#743).** Screw-on, not adhesive — glue lets go eventually on a
+thing that gets kicked. The part is a **Ø18 × 7 mm screw-on rubber foot**
+(cutting-board style, stainless screw supplied); the plate gets a plain **Ø4.5
+clearance hole** and the screw is driven **downward from inside** the case, so
+its head lands on the plate's *top* face. That head is the whole reason the
+stations sit where they do: at `FOOT_INSET_X` = 14.3 they are **outboard of the
+pedestal tubs** (which start at x 24.6), so no ring floor and no sled needs
+relieving to clear a screw head. `foot_relief_xy()` reports any fixing that lands
+under a pedestal and the gate asserts it comes back **empty**. A second gate pins
+`FOOT_INSET_X` inside the 8.2…20.4 window between the bend relief (`RI + T`) and
+the tub edge. Stance is 817 × 329.
+
 ---
 
 ## 6. Sheet-metal notes
@@ -323,7 +335,7 @@ the assertions re-validate before re-cutting every panel.
 | M4 screws (+ ~6 nuts) | ~12 | lid skirt: 6 side (into PEM) + 6 front/rear (screw + nut) |
 | M3 standoffs (≥10 mm) | ~6 | Pi / board, airflow gap |
 | M6 earth stud + hardware | 1 | chassis bond |
-| Rubber feet | 4 | bottom |
+| Rubber feet (Ø18 × 7, screw-on) | 4 | bottom, `FOOT_INSET_X/Y` |
 | Screen-retention brackets | 4 + 4 | from `segno_screen_bracket` |
 | Diffuser disc (ring) + 12 THT LEDs | 1 | encoder ring |
 
