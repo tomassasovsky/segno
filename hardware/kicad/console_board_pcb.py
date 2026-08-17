@@ -199,7 +199,7 @@ POUR_NET = "GND"
 KEEPOUT = 0.8                   # margin around every footprint, mm. Also covers
                                 # the body overhanging its outermost pads.
 GRID = 1.0                      # placement search step
-STITCH_STEP = 18.0               # GND stitching via pitch
+STITCH_STEP = 12.0               # GND stitching via pitch
 
 
 # ---- netlist ---------------------------------------------------------------
@@ -377,22 +377,37 @@ def _stitch_grid(board, net, fps):
     return n
 
 
+# 12 mm, not 18: with SOLID pad ties the pads themselves bridged the pour, so a
+# coarse grid was enough. Thermal relief deliberately stops them doing that, which
+# left an F.Cu region with no path home. Relief and stitch pitch are one decision,
+# not two.
+
+
 def _pour_gnd(board, net, layer=pcbnew.B_Cu):
     z = pcbnew.ZONE(board)
     z.SetLayer(layer)
     z.SetNet(net)
     z.SetLocalClearance(FromMM(CLEARANCE))
     z.SetMinThickness(FromMM(0.2))
-    # Solid, not thermal-relief spokes: 5 "starved_thermal" errors came from
-    # spokes too narrow to form, and a solid tie is the lower-impedance return
-    # the layout guidance wants from a ground plane anyway. THT parts here are
-    # hand-soldered, so the usual thermal-relief argument (wave/reflow) is moot.
-    z.SetPadConnection(pcbnew.ZONE_CONNECTION_FULL)
-    # Routing on B.Cu chops the pour into islands. An island with nothing tying it
-    # to GND is not a ground plane, it is a floating copper antenna -- and DRC
-    # rightly calls it unconnected. Deleting them is the correct fix, not silencing
-    # the check; the stitching grid is what keeps the REAL plane whole.
-    z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_ALWAYS)
+    # Thermal relief, NOT a solid tie. This was solid on the strength of "every
+    # part here is through-hole and hand-soldered, so the usual wave/reflow thermal
+    # argument is moot" -- which stopped being true the moment the Pico became a
+    # surface-mount module. Its nine GND pads now sit in a plane on their own layer,
+    # and a solid tie wicks the iron's heat straight into that plane: cold joints on
+    # the one part that is painful to rework.
+    #
+    # The original reason for going solid was five "starved_thermal" errors from
+    # spokes too narrow to form, which is a symptom of leaving the widths at their
+    # defaults rather than a reason to abandon relief -- so they are set explicitly.
+    z.SetPadConnection(pcbnew.ZONE_CONNECTION_THERMAL)
+    z.SetThermalReliefGap(FromMM(0.3))
+    z.SetThermalReliefSpokeWidth(FromMM(0.4))
+    z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_AREA)
+    # Drop slivers under 3 mm2. A fragment that small reaches one pad and goes
+    # nowhere -- it cannot carry a return, and it fails DRC as a starved thermal
+    # because a single spoke lands on an island. Every GND pad already has its own
+    # via to the plane on the other layer, so nothing is lost by removing them.
+    z.SetMinIslandArea(int(FromMM(3.0)) * int(FromMM(1.0)))
     o = z.Outline()
     o.NewOutline()
     for x, y in ((0.3, 0.3), (BW - 0.3, 0.3), (BW - 0.3, BH - 0.3), (0.3, BH - 0.3)):
@@ -767,6 +782,19 @@ def _check(fps, nets, board=None):
     assert max(ys) - min(ys) < 2.0, (
         "REAR_ORDER: the rear-panel headers are not on one edge -- the whole point "
         "is that this loom leaves the board once, from one place")
+
+    # A solid pad tie is defensible on an all-through-hole board and wrong the
+    # moment anything is surface-mount: an SMD pad tied straight into a plane wicks
+    # the iron's heat away and cold-joints. That transition is exactly what happened
+    # here and nothing caught it, so it is checked rather than remembered.
+    smd = [r for r, fp in fps.items()
+           if any(p.GetAttribute() == pcbnew.PAD_ATTRIB_SMD for p in fp.Pads())]
+    if smd and board:
+        for z in board.Zones():
+            assert z.GetPadConnection() != pcbnew.ZONE_CONNECTION_FULL, (
+                f"THERMALS: the {z.GetNetname()} pour ties pads solid, but "
+                f"{sorted(smd)[:3]} are surface-mount -- SMD pads need thermal "
+                "relief or they cannot be hand-soldered reliably")
 
     hops = worst_hops(fps, nets)
     if hops:
