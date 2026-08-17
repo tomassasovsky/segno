@@ -17,16 +17,20 @@ sits in the SAME left-to-right order as the Pico pads it serves, so each fan-out
 diverges without crossing and routes on one layer. Ordering is a gate, not a hope --
 _check() proves no signal net has to cross another before a single track is drawn.
 
-GND is not routed at all: it is a solid B.Cu pour, and every GND pad gets a via.
+GND is not routed at all: it is a pour on both layers, and every GND pad gets its
+own via BESIDE it -- never on it, since a via on a plated hole is a second drill hit
+at the same coordinate and a via in an SMD pad starves the joint.
 """
+import json
 import math
 import os
-import re
 import shutil
 import subprocess
 import sys
 
 import pcbnew
+
+from netlist import parse_netlist
 
 FromMM, ToMM = pcbnew.FromMM, pcbnew.ToMM
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -49,6 +53,11 @@ TRACK_W = 0.6                   # signal
 TRACK_PWR = 1.0                 # +5V / +3V3
 VIA_D, VIA_DRILL = 0.8, 0.4
 CLEARANCE = 0.25
+
+# How the ground pours meet a pad. THERMAL, for the reason spelled out in
+# _pour_gnd(); it is a named constant so --selftest can put it back to FULL and
+# prove the gate that forbids that still bites.
+PAD_CONNECTION = pcbnew.ZONE_CONNECTION_THERMAL
 
 # MIDI IN's opto barrier: the DIN side of U2 must not share copper or a pour with
 # anything else, or the isolation the H11L1 exists for is undone.
@@ -203,67 +212,7 @@ POUR_NET = "GND"
 KEEPOUT = 0.8                   # margin around every footprint, mm. Also covers
                                 # the body overhanging its outermost pads.
 GRID = 1.0                      # placement search step
-STITCH_STEP = 12.0               # GND stitching via pitch
-
-
-# ---- netlist ---------------------------------------------------------------
-
-def _sexpr(text):
-    """Minimal s-expression reader -> nested lists of str.
-
-    A regex is not good enough here and the failure is silent: KiCad writes the
-    netlist MULTI-LINE, so a pattern anchored on "(net (code N) (name ...)" never
-    finds the next net and every net swallows the nodes of all those after it.
-    That parses cleanly, produces plausible-looking output, and shorts the whole
-    board together. Parse the parens properly instead.
-    """
-    tok = re.findall(r'\(|\)|"(?:[^"\\]|\\.)*"|[^\s()]+', text)
-    pos = 0
-
-    def read():
-        nonlocal pos
-        out = []
-        while pos < len(tok):
-            t = tok[pos]; pos += 1
-            if t == "(":
-                out.append(read())
-            elif t == ")":
-                return out
-            else:
-                out.append(t[1:-1] if t.startswith('"') else t)
-        return out
-
-    return read()
-
-
-def _find(node, key):
-    return [n for n in node if isinstance(n, list) and n and n[0] == key]
-
-
-def _val(node, key, default=None):
-    got = _find(node, key)
-    return got[0][1] if got and len(got[0]) > 1 else default
-
-
-def parse_netlist(path):
-    """-> (components{ref: (lib, fpname, value)}, nets{name: [(ref, pad)]})."""
-    root = _sexpr(open(path).read())
-    top = root[0] if root and isinstance(root[0], list) else root
-    comps, nets = {}, {}
-    for section in _find(top, "components"):
-        for comp in _find(section, "comp"):
-            ref = _val(comp, "ref")
-            fp = _val(comp, "footprint")
-            if ref and fp and ":" in fp:
-                lib, name = fp.split(":", 1)
-                comps[ref] = (lib, name, _val(comp, "value", ""))
-    for section in _find(top, "nets"):
-        for net in _find(section, "net"):
-            name = _val(net, "name")
-            nodes = [(_val(n, "ref"), _val(n, "pin")) for n in _find(net, "node")]
-            if name and nodes:
-                nets[name] = nodes
-    return comps, nets
+STITCH_STEP = 12.0              # GND stitching via pitch
 
 
 # ---- board -----------------------------------------------------------------
@@ -333,12 +282,52 @@ def _load_fp(board, lib, name, ref, x, y, rot, by_centre=True):
     return fp
 
 
-def _pad_xy(fp, padname):
+def _pad(fp, padname):
     for p in fp.Pads():
         if p.GetNumber() == str(padname):
-            pos = p.GetPosition()
-            return (ToMM(pos.x) - ORIGIN[0], ToMM(pos.y) - ORIGIN[1])
+            return p
     return None
+
+
+def _pad_xy(fp, padname):
+    p = _pad(fp, padname)
+    if p is None:
+        return None
+    pos = p.GetPosition()
+    return (ToMM(pos.x) - ORIGIN[0], ToMM(pos.y) - ORIGIN[1])
+
+
+VIA_KEEPOUT = VIA_D / 2.0 + CLEARANCE     # via centre -> anything else it must clear
+
+
+def _drill_keepout(fps):
+    """Every pad on the board as a box a via centre may not enter.
+
+    Boxes come from the pad's own bounding box, which is in board coordinates and
+    already accounts for the footprint's rotation -- GetSize() does not, and a
+    rotated module's pads then read as keepouts of the wrong shape.
+    """
+    out = []
+    for fp in fps.values():
+        for p in fp.Pads():
+            b = p.GetBoundingBox()
+            out.append((ToMM(b.GetLeft()) - ORIGIN[0] - VIA_KEEPOUT,
+                        ToMM(b.GetTop()) - ORIGIN[1] - VIA_KEEPOUT,
+                        ToMM(b.GetRight()) - ORIGIN[0] + VIA_KEEPOUT,
+                        ToMM(b.GetBottom()) - ORIGIN[1] + VIA_KEEPOUT))
+    return out
+
+
+def _via_free(x, y, boxes):
+    if not (1.0 <= x <= BW - 1.0 and 1.0 <= y <= BH - 1.0):
+        return False
+    return not any(x0 <= x <= x1 and y0 <= y <= y1 for x0, y0, x1, y1 in boxes)
+
+
+def _claim_via(x, y, boxes):
+    """Reserve a via's own footprint so the next one cannot land on top of it."""
+    r = VIA_D + CLEARANCE
+    boxes.append((x - r, y - r, x + r, y + r))
 
 
 def _track(board, net, layer, width, a, b):
@@ -359,32 +348,41 @@ def _via(board, net, x, y):
     board.Add(v)
 
 
-def _stitch_grid(board, net, fps):
+def _stitch_grid(board, net, fps, boxes):
     """A coarse via grid tying the B.Cu pour together.
 
     Routing on B.Cu chops the pour into islands, and an island with no via back to
     the net reads as "unconnected" -- four of them did. Per-pad vias alone are not
     enough because they sit where the copper is busiest. Vias go in BEFORE the DSN
     export so Freerouting treats them as obstacles and routes around them.
+
+    `boxes` carries the drill keepout: every pad, plus every via already placed. The
+    lattice walks a fixed pitch with no idea what is under it, so without that it
+    will happily drop a via down a plated hole.
     """
-    boxes = [_bbox_mm(fp) for fp in fps.values()]
+    keep = list(boxes) + [_bbox_mm(fp) for fp in fps.values()]
     n = 0
     y = STITCH_STEP
     while y < BH - STITCH_STEP / 2:
         x = STITCH_STEP
         while x < BW - STITCH_STEP / 2:
-            if not any(b[0] <= x <= b[2] and b[1] <= y <= b[3] for b in boxes):
+            if _via_free(x, y, keep):
                 _via(board, net, x, y)
+                _claim_via(x, y, keep)
                 n += 1
             x += STITCH_STEP
         y += STITCH_STEP
     return n
 
 
-# 12 mm, not 18: with SOLID pad ties the pads themselves bridged the pour, so a
-# coarse grid was enough. Thermal relief deliberately stops them doing that, which
-# left an F.Cu region with no path home. Relief and stitch pitch are one decision,
-# not two.
+# 12 mm, and deliberately no finer. The lattice is the COARSE half of the stitching:
+# it ties the open areas, and _stitch_gnd() ties everything that matters near a pad,
+# which is where a pour actually fragments. Tightening the lattice instead was tried
+# -- 8 mm, 49 lattice vias -- and it is the wrong lever twice over: it cannot place a
+# via near a connector anyway (every point inside a footprint is skipped), so it did
+# not fix the starved thermals at J6, and the extra obstacles in the open middle cost
+# the router SWCLK, which it then left unrouted. Ties belong beside the pads that
+# need them, not spread evenly over the board.
 
 
 def _pour_gnd(board, net, layer=pcbnew.B_Cu):
@@ -403,7 +401,7 @@ def _pour_gnd(board, net, layer=pcbnew.B_Cu):
     # The original reason for going solid was five "starved_thermal" errors from
     # spokes too narrow to form, which is a symptom of leaving the widths at their
     # defaults rather than a reason to abandon relief -- so they are set explicitly.
-    z.SetPadConnection(pcbnew.ZONE_CONNECTION_THERMAL)
+    z.SetPadConnection(PAD_CONNECTION)
     z.SetThermalReliefGap(FromMM(0.3))
     z.SetThermalReliefSpokeWidth(FromMM(0.4))
     z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_ALWAYS)
@@ -422,6 +420,34 @@ def _pour_gnd(board, net, layer=pcbnew.B_Cu):
     return z
 
 
+def _ref_key(ref):
+    """J2 before J10, so the placement order does not depend on string sorting."""
+    head = ref.rstrip("0123456789")
+    return (head, int(ref[len(head):] or 0))
+
+
+def _silk_items(board, fps):
+    """-> [(text, (x0, y0, x1, y1))] for everything printed on the front silkscreen.
+
+    Board drawings AND every footprint's own reference and value. The gate used to
+    read GetDrawings() alone, which is the 21 labels this file draws and none of the
+    58 designators the library footprints bring with them -- so "J1" sat across R3
+    with every check green.
+    """
+    out = []
+    items = [t for t in board.GetDrawings() if t.GetClass() == "PCB_TEXT"]
+    for fp in fps.values():
+        items += [fp.Reference(), fp.Value()]
+    for t in items:
+        if not t.IsOnLayer(pcbnew.F_SilkS) or not t.IsVisible():
+            continue
+        b = t.GetBoundingBox()
+        out.append((t.GetText(),
+                    (ToMM(b.GetLeft()) - ORIGIN[0], ToMM(b.GetTop()) - ORIGIN[1],
+                     ToMM(b.GetRight()) - ORIGIN[0], ToMM(b.GetBottom()) - ORIGIN[1])))
+    return out
+
+
 def _silk(board, text, x, y, h=1.2):
     t = pcbnew.PCB_TEXT(board)
     t.SetText(text)
@@ -430,6 +456,19 @@ def _silk(board, text, x, y, h=1.2):
     t.SetTextSize(pcbnew.VECTOR2I(FromMM(h), FromMM(h)))
     t.SetTextThickness(FromMM(h / 6.0))
     board.Add(t)
+    return t
+
+
+def _text_box(t):
+    """(x0, y0, x1, y1) of a text item as RENDERED, in board-local mm.
+
+    Character-count estimates are close enough to place by and not to check by:
+    they put every footswitch label within 0.07 mm of its own designator, which
+    reads as a comfortable gap here and as 14 silk_overlap errors in KiCad.
+    """
+    b = t.GetBoundingBox()
+    return (ToMM(b.GetLeft()) - ORIGIN[0], ToMM(b.GetTop()) - ORIGIN[1],
+            ToMM(b.GetRight()) - ORIGIN[0], ToMM(b.GetBottom()) - ORIGIN[1])
 
 
 _CY = {}          # (lib, name) -> (w, h) of the UNROTATED courtyard, measured once
@@ -761,20 +800,26 @@ def _check(fps, nets, board=None):
     if not _QUIET:
         print("\n  ratsnest %.0f mm on %.0fx%.0f (%.0f cm2), budget %.0f mm ... "
               % (total, BW, BH, BW * BH / 100.0, MAX_RATSNEST_MM), end="")
-    for t in (board.GetDrawings() if board else []):
-        if t.GetClass() == "PCB_TEXT" and t.IsOnLayer(pcbnew.F_SilkS):
-            b = t.GetBoundingBox()
-            x0, y0 = ToMM(b.GetLeft()) - ORIGIN[0], ToMM(b.GetTop()) - ORIGIN[1]
-            x1, y1 = ToMM(b.GetRight()) - ORIGIN[0], ToMM(b.GetBottom()) - ORIGIN[1]
-            for ref, fp in fps.items():
-                fx0, fy0, fx1, fy1 = _extent(fp)
-                if not (x1 < fx0 or fx1 < x0 or y1 < fy0 or fy1 < y0):
-                    raise AssertionError(
-                        f"SILK: '{t.GetText()}' is printed across {ref} -- silkscreen "
-                        "over a pad or a body is unreadable and can foul the solder mask")
-            assert 0 <= x0 and x1 <= BW and 0 <= y0 and y1 <= BH, (
-                f"SILK: '{t.GetText()}' spans ({x0:.1f},{y0:.1f})..({x1:.1f},{y1:.1f}), "
-                f"off the {BW:.0f}x{BH:.0f} outline -- it will not be printed")
+    silk = _silk_items(board, fps) if board else []
+    for text, (x0, y0, x1, y1) in silk:
+        for ref, fp in fps.items():
+            fx0, fy0, fx1, fy1 = _extent(fp)
+            if not (x1 < fx0 or fx1 < x0 or y1 < fy0 or fy1 < y0):
+                raise AssertionError(
+                    f"SILK: '{text}' is printed across {ref} -- silkscreen "
+                    "over a pad or a body is unreadable and can foul the solder mask")
+        assert 0 <= x0 and x1 <= BW and 0 <= y0 and y1 <= BH, (
+            f"SILK: '{text}' spans ({x0:.1f},{y0:.1f})..({x1:.1f},{y1:.1f}), "
+            f"off the {BW:.0f}x{BH:.0f} outline -- it will not be printed")
+    # ...and not over each other either, which is a rule KiCad has and this did not:
+    # the function label and the designator of all ten footswitches were printed one
+    # on top of the other, 0.07 mm apart, and only DRC ever said so.
+    for i, (ta, (ax0, ay0, ax1, ay1)) in enumerate(silk):
+        for tb, (bx0, by0, bx1, by1) in silk[i + 1:]:
+            if not (ax1 < bx0 or bx1 < ax0 or ay1 < by0 or by1 < ay0):
+                raise AssertionError(
+                    f"SILK: '{ta}' and '{tb}' are printed on top of each other -- "
+                    "neither can be read at the bench")
 
     xs = [(_extent(fps[r])[0] + _extent(fps[r])[2]) / 2.0
           for r in REAR_PANEL_ORDER if r in fps]
@@ -859,30 +904,72 @@ def _route(board, fps, nets, netmap):
     return routed
 
 
-def _stitch_gnd(board, fps, nets, netmap):
-    """Every GND pad gets a via into the B.Cu pour."""
+def _stitch_gnd(board, fps, nets, netmap, boxes):
+    """Every GND pad gets a via into the pours -- BESIDE it, never on it.
+
+    Never on it, for two different reasons depending on the pad:
+
+    A plated through-hole pad already reaches both layers -- that is what the
+    plating is -- so a via at its centre connects nothing and just puts a second
+    drill hit on the same coordinate. That was all 102 holes_co_located: every one
+    of them is a via sitting on a PTH pad centre, and CAM either holds the order or
+    drills the spot twice and breaks bits.
+
+    A via in the middle of a SURFACE-MOUNT pad wicks solder to the far side and
+    starves the joint -- and on the Pico those pads sit UNDER the module, so the cold
+    joint is invisible and unreachable. It also silently undoes the thermal relief:
+    KiCad applies a zone's pad-connection setting to PADS only and always ties a via
+    solid, so the nine GND pads the relief was added for would be tied solid through
+    the via in their middle.
+
+    Beside EVERY GND pad, though, including the through-hole ones -- which is not
+    just belt and braces. The blind lattice cannot drop a via anywhere near a
+    connector, so the pour around a dense header is exactly where it fragments, and
+    the fill then deletes the fragment as an island: J6's two ground pins came back
+    starved_thermal with their only spoke reaching copper that was about to vanish.
+    A via one pad-width away ties that region to the other layer's plane, so it is
+    not an island in the first place.
+    """
     n = 0
-    # A via goes BESIDE an SMD pad and NOWHERE NEAR a through-hole one.
-    #
-    # A plated through-hole pad already reaches both layers -- that is what the
-    # plating is -- so a via at its centre connects nothing and just puts a second
-    # drill hit on the same coordinate. That was 102 holes_co_located: CAM either
-    # holds the order or drills the spot twice, breaking bits.
-    #
-    # SMD pads DO need one, but offset, never centred. A through-via at the centre of a surface-mount pad wicks
-    # solder to the far side and starves the joint -- and on the Pico those pads sit
-    # UNDER the module, so the cold joint is invisible and unreachable. It also
-    # silently undoes the thermal relief: KiCad applies zone pad-connection settings
-    # to pads only, and always ties a via solid, so the nine GND pads the relief was
-    # added for were tied solid through the via in their middle. This is also the
-    # 100 co-located drill hits the fab review found.
-    for ref, pad in nets.get(POUR_NET, []):
+    for ref, pad in sorted(nets.get(POUR_NET, [])):
         if ref not in fps:
             continue
+        p = _pad(fps[ref], pad)
+        if p is None:
+            continue
         xy = _pad_xy(fps[ref], pad)
-        if xy:
-            _via(board, netmap[POUR_NET], xy[0], xy[1])
-            n += 1
+        bb = p.GetBoundingBox()
+        reach = max(ToMM(bb.GetWidth()), ToMM(bb.GetHeight())) / 2.0 + VIA_KEEPOUT
+        # INWARD first: toward the middle of the part the pad belongs to. A pad's
+        # fan-out leaves the footprint outward, so a via on the outward side sits in
+        # the one lane the net has -- SW_TRACK3 stopped routing at all when a Pico
+        # ground via landed in the footswitch fan-out. Under the part's own body
+        # nothing is trying to get past.
+        fx0, fy0, fx1, fy1 = _extent(fps[ref])
+        inward = ((fx0 + fx1) / 2.0 - xy[0], (fy0 + fy1) / 2.0 - xy[1])
+        dirs = sorted(((0, -1), (0, 1), (1, 0), (-1, 0)),
+                      key=lambda d: -(d[0] * inward[0] + d[1] * inward[1]))
+        spot = None
+        for k in range(12):
+            d = reach + k * 0.5
+            for dx, dy in dirs:
+                cand = (xy[0] + dx * d, xy[1] + dy * d)
+                if _via_free(cand[0], cand[1], boxes):
+                    spot = cand
+                    break
+            if spot:
+                break
+        if spot is None:
+            raise SystemExit(
+                f"STITCH: nowhere clear beside {ref} pad {pad} to land its GND via")
+        _via(board, netmap[POUR_NET], spot[0], spot[1])
+        # A stub from the pad to its via. The pour reaches the pad through thermal
+        # spokes, but only where it actually fills; the stub is what makes the tie
+        # unconditional, and it is on the pad's own layer so it never adds a
+        # crossing.
+        _track(board, netmap[POUR_NET], p.GetLayer(), TRACK_W, xy, spot)
+        _claim_via(spot[0], spot[1], boxes)
+        n += 1
     return n
 
 
@@ -903,6 +990,10 @@ LABELS = {
     "J6":  "RING",   "J7":  "LEDS",     "J8":  "PWR BTN", "J9": "PI PWR",
 }
 SILK_H = 1.0
+REF_H = 0.8          # designators, a size down from the function labels: there are
+                     # 58 of them and they have to fit in the gaps the labels leave
+AUTOPLACE_REFS = True   # off = the designators stay where each library footprint
+                        # left them, which is the board that shipped "J1" across R3
 # Pinned label rows. A GROUP of labels reads as tidy only if it sits on one side at
 # one y; left to the search below, the rear-panel row came out "above, right, above,
 # right, right" and REC sat left of its header while its nine neighbours sat above.
@@ -941,26 +1032,62 @@ def _labels(board, fps):
         if ref not in fps:
             continue
         text = LABELS[ref]
+        # Drawn first, then measured, then moved. Its rendered width is the only
+        # one worth searching with, and it is also what has to go into `taken`:
+        # the pinned rows below skipped that entirely, so all ten footswitch
+        # designators were later placed straight on top of their own labels.
+        t = _silk(board, text, 0.0, 0.0, SILK_H)
+        tx0, ty0, tx1, ty1 = _text_box(t)
+        w, h = tx1 - tx0, ty1 - ty0
+        px0, py0, px1, py1 = _extent(fps[ref])
         if ref in LABEL_ROW:
-            x0, _y0, x1, _y1 = _extent(fps[ref])
-            _silk(board, text, (x0 + x1) / 2.0, LABEL_ROW[ref], SILK_H)
+            spot = ((px0 + px1) / 2.0, LABEL_ROW[ref])
+        else:
+            cx, cy = (px0 + px1) / 2.0, (py0 + py1) / 2.0
+            spot = None
+            for d in [i * 0.5 for i in range(2, 24)]:
+                for x, y in ((cx, py0 - d), (cx, py1 + d), (px1 + d + w / 2, cy),
+                             (px0 - d - w / 2, cy)):
+                    if free(x - w / 2, y - h / 2, x + w / 2, y + h / 2):
+                        spot = (x, y)
+                        break
+                if spot:
+                    break
+            assert spot, f"SILK: nowhere free to print '{text}' next to {ref}"
+        t.SetPosition(P(*spot))
+        taken.append(_text_box(t))
+
+    # ...and the same treatment for the 58 reference designators, which the library
+    # footprints drop wherever their author put them -- which is how "J1" came to be
+    # printed across R3. They were invisible to every check here because the gate
+    # walked board.GetDrawings() only, and a footprint's reference is not a drawing.
+    for ref in sorted(fps, key=_ref_key) if AUTOPLACE_REFS else ():
+        t = fps[ref].Reference()
+        if not t.IsVisible() or not t.IsOnLayer(pcbnew.F_SilkS):
             continue
-        w, h = 0.72 * SILK_H * len(text), SILK_H * 1.4
+        # Level and shrunk. Rotation follows the footprint, so J1's designator was
+        # standing on end beside a module whose own extent is 50 mm long.
+        t.SetTextAngle(pcbnew.EDA_ANGLE(0, pcbnew.DEGREES_T))
+        t.SetTextSize(pcbnew.VECTOR2I(FromMM(REF_H), FromMM(REF_H)))
+        t.SetTextThickness(FromMM(REF_H / 6.0))
+        tx0, ty0, tx1, ty1 = _text_box(t)
+        w, h = tx1 - tx0, ty1 - ty0
         px0, py0, px1, py1 = _extent(fps[ref])
         cx, cy = (px0 + px1) / 2.0, (py0 + py1) / 2.0
         spot = None
-        for d in [i * 0.5 for i in range(2, 24)]:
-            for x, y in ((cx, py0 - d), (cx, py1 + d), (px1 + d + w / 2, cy),
-                         (px0 - d - w / 2, cy)):
+        for d in [i * 0.25 for i in range(2, 60)]:
+            for x, y in ((cx, py0 - d - h / 2), (cx, py1 + d + h / 2),
+                         (px1 + d + w / 2, cy), (px0 - d - w / 2, cy)):
                 if free(x - w / 2, y - h / 2, x + w / 2, y + h / 2):
                     spot = (x, y)
                     break
             if spot:
                 break
-        assert spot, f"SILK: nowhere free to print '{text}' next to {ref}"
-        _silk(board, text, spot[0], spot[1], SILK_H)
-        taken.append((spot[0] - w / 2, spot[1] - h / 2,
-                      spot[0] + w / 2, spot[1] + h / 2))
+        assert spot, (
+            f"SILK: nowhere free to print the reference '{ref}' -- the board is too "
+            "tightly packed to be assembled by hand from its own silkscreen")
+        t.SetPosition(P(*spot))
+        taken.append(_text_box(t))
 
 
 def _debounce_caps(nets):
@@ -997,21 +1124,42 @@ def _selftest():
     # Each control names the gate it is meant to prove. A control that trips some
     # OTHER gate proves nothing about its own, and two of these silently did exactly
     # that after the floorplan moved -- so the expected message is checked, not read.
+    # A case moves parts (the PLACEMENT dict) and/or overrides a module constant --
+    # the two pours and the designator placement are decisions, not coordinates, and
+    # they need controls just as much.
     cases = [
-        ("ring series resistor stranded", "HOP:", {"R1": (60.0, 91.0, 0)}),
-        ("part pushed off the outline", "outside the", {"J2": (112.0, 40.0, 0)}),
+        ("ring series resistor moved off its own net", "HOP:", {"R1": (60.0, 91.0, 0)}, {}),
+        ("part pushed off the outline", "outside the", {"J2": (112.0, 40.0, 0)}, {}),
         # Move a NON-isolated part up against the opto rather than moving the opto:
         # displacing U2 also displaces the anchors of its own passives, and the
-        # placer then fails before the isolation gate is ever reached.
-        ("opto barrier inside ISOLATION_GAP", "ISOLATION:", {"R7": (30.0, 28.0, 0)}),
+        # placer then fails before the isolation gate is ever reached. C20 is a
+        # 5.6 mm disc, so this leaves ~1 mm of the 2 mm barrier and no overlap --
+        # a control that overlaps trips PLACE and proves nothing about ISOLATION.
+        ("opto barrier inside ISOLATION_GAP", "ISOLATION:", {"C20": (31.5, 21.0, 0)}, {}),
         # the exact mistake that was shipped: the 5 V inlet parked in front of USB
-        ("part blocking the USB corridor", "USB_CLEAR:", {"J3": (10.0, 46.0, 90)}),
+        ("part blocking the USB corridor", "USB_CLEAR:", {"J3": (10.0, 46.0, 90)}, {}),
         ("footswitch fan-out out of order", "CROSSING:",
-         {"J10": (FSW_X1, FSW_Y, 0), "J19": (FSW_X0, FSW_Y, 0)}),
+         {"J10": (FSW_X1, FSW_Y, 0), "J19": (FSW_X0, FSW_Y, 0)}, {}),
+        # The pours tie SMD pads solid. This gate ran BEFORE the pours existed, so it
+        # looped over an empty board.Zones() and could not fail; the ordering is what
+        # makes the control below meaningful rather than the assertion text.
+        ("ground pours tying SMD pads solid", "THERMALS:", {},
+         {"PAD_CONNECTION": pcbnew.ZONE_CONNECTION_FULL}),
+        # ...and the designators left exactly where the library footprints put them,
+        # which is the board that shipped with "J1" printed across R3.
+        ("designators left where the footprints put them", "SILK:", {},
+         {"AUTOPLACE_REFS": False}),
+        # A label on a PINNED row grows into its neighbour. The pinned rows are
+        # placed at a fixed spot rather than searched for a free one, so nothing
+        # about the placement can refuse them -- only the gate can.
+        ("a pinned label overrunning its neighbour", "SILK:", {},
+         {"LABELS": dict(LABELS, J20="CTRL 1 EXPRESSION PEDAL INPUT JACK")}),
     ]
     ok = True
-    for name, want, mutate in cases:
+    for name, want, mutate, over in cases:
         PLACEMENT.clear(); PLACEMENT.update(saved); PLACEMENT.update(mutate)
+        keep = {k: globals()[k] for k in over}
+        globals().update(over)
         try:
             build(quiet=True)
             print("  NO BITE    %s  <-- gate is dead" % name)
@@ -1023,6 +1171,8 @@ def _selftest():
             else:
                 print("  WRONG GATE %-38s wanted %s, got: %s" % (name, want, msg[:40]))
                 ok = False
+        finally:
+            globals().update(keep)
     PLACEMENT.clear(); PLACEMENT.update(saved)
     return ok
 
@@ -1096,9 +1246,25 @@ def build(quiet=False):
     # _silk() takes the text CENTRE, not its left edge -- the title was at x 6,
     # i.e. hanging 10 mm off the left of the board, and at y 86 on an 82 mm board.
     # It has never actually been printable. Gated below now.
-    _labels(board, fps)
+    # Titles BEFORE the labels: _labels() treats whatever silk already exists as
+    # occupied, so anything drawn after it is drawn on top of it.
     _silk(board, "SEGNO CONSOLE v2  #747", 30.0, 93.0, 1.6)
     _silk(board, "MIDI IN: ISOLATED", 90.0, 93.0, 1.0)
+    _labels(board, fps)
+
+    # Poured on BOTH layers, not just B.Cu. With one pour, B.Cu routing chopped the
+    # plane into pieces and three islands were left with no path back to the main
+    # body -- DRC reported them as unconnected, which they were. A second pour on
+    # F.Cu gives every island a route home through the stitching grid that is
+    # already there, and it is what the layout guidance asks for anyway: a
+    # continuous low-impedance return directly beneath each signal.
+    #
+    # BEFORE _check(), not after. THERMALS reads board.Zones(), so with the pours
+    # created afterwards it looped over an empty list and could not fail: the gate
+    # that exists to catch "SMD pads tied solid into a plane" would have waved
+    # through exactly that.
+    _pour_gnd(board, netmap[POUR_NET], pcbnew.B_Cu)
+    _pour_gnd(board, netmap[POUR_NET], pcbnew.F_Cu)
 
     if quiet:
         global _QUIET
@@ -1117,27 +1283,59 @@ def build(quiet=False):
     # pcb-layout skill. Placement quality is what makes that autoroute good --
     # "better placement in, cleaner autoroute out" -- which is why the ordering
     # and isolation gates above matter more now, not less.
-    n_tracks = 0
-    n_vias = _stitch_gnd(board, fps, nets, netmap)
-    n_vias += _stitch_grid(board, netmap[POUR_NET], fps)
-    # Poured on BOTH layers, not just B.Cu. With one pour, B.Cu routing chopped the
-    # plane into pieces and three islands were left with no path back to the main
-    # body -- DRC reported them as unconnected, which they were. A second pour on
-    # F.Cu gives every island a route home through the stitching grid that is
-    # already there, and it is what the layout guidance asks for anyway: a
-    # continuous low-impedance return directly beneath each signal.
-    zone = _pour_gnd(board, netmap[POUR_NET], pcbnew.B_Cu)
-    _pour_gnd(board, netmap[POUR_NET], pcbnew.F_Cu)
-
+    boxes = _drill_keepout(fps)
+    n_vias = _stitch_gnd(board, fps, nets, netmap, boxes)
+    n_vias += _stitch_grid(board, netmap[POUR_NET], fps, boxes)
 
     # NOT pcbnew.ZONE_FILLER here: in-process it segfaults with no wxApp. The
     # LED-strip generator hit the same wall and fills via kicad-cli instead --
     # `pcb drc --refill-zones --save-board` pours and checks in one pass.
     os.makedirs(OUT, exist_ok=True)
     board.Save(BOARD_PATH)
-    print(f"placed {len(fps)} footprints | {n_tracks} tracks | {n_vias} GND vias"
-          f" | 2 GND pours (filled by kicad-cli)")
+    print(f"placed {len(fps)} footprints | {n_vias} GND vias | "
+          "2 GND pours (filled by kicad-cli)")
     return board
+
+
+def _drc_json(path, report):
+    """Fill the zones, run DRC, and read the result back as a dict."""
+    subprocess.run([KICAD_CLI, "pcb", "drc", "--refill-zones", "--save-board",
+                    "--format", "json", "-o", report, "--severity-all", path],
+                   capture_output=True, text=True)
+    with open(report) as fh:
+        return json.load(fh)
+
+
+def prune_dangling_vias(path=BOARD_PATH, rounds=4):
+    """Delete stitching vias that the FILL left connected to nothing, then re-fill.
+
+    The stitching lattice is placed before Freerouting runs, because the vias have to
+    be obstacles it routes around. Which of them end up useful is decided much later,
+    by the fill: routing chops the pour into islands, ISLAND_REMOVAL_MODE_ALWAYS
+    deletes the fragments, and any via that sat in one is left joined to nothing on
+    either layer -- 31 of them. That cannot be predicted at placement time from
+    geometry alone, so it is not predicted: the board is poured, KiCad is asked which
+    vias are dangling, and those are removed.
+
+    Deleting one can strand another (the island it was holding up may itself go), so
+    this repeats until a pour comes back with none left.
+    """
+    report = os.path.join(OUT, "drc.json")
+    for _round in range(rounds):
+        drc = _drc_json(path, report)
+        bad = {i["uuid"] for v in drc.get("violations", [])
+               if v["type"] == "via_dangling" for i in v.get("items", [])}
+        if not bad:
+            return 0
+        board = pcbnew.LoadBoard(path)
+        doomed = [t for t in board.GetTracks()
+                  if t.GetClass() == "PCB_VIA" and t.m_Uuid.AsString() in bad]
+        for t in doomed:
+            board.Remove(t)
+        board.Save(path)
+        print(f"   pruned {len(doomed)} dangling stitching vias")
+    return len({i["uuid"] for v in _drc_json(path, report).get("violations", [])
+                if v["type"] == "via_dangling" for i in v.get("items", [])})
 
 
 def export():
@@ -1147,8 +1345,12 @@ def export():
     # moved to route_console_board.sh, and --exit-code-violations counts violations
     # only -- never unconnected_items. That is the one failure that reaches a fab.
     _b = pcbnew.LoadBoard(PCB)
-    if not [t for t in _b.GetTracks() if t.GetClass() != "PCB_VIA"]:
-        raise SystemExit("EXPORT: refusing to plot -- board has no tracks. "
+    # Tracks on a SIGNAL net, not just any track: the placed board now carries a
+    # stub from every ground pad to its stitching via, so "has tracks" stopped
+    # being the same question as "has been routed".
+    if not [t for t in _b.GetTracks()
+            if t.GetClass() != "PCB_VIA" and t.GetNetname() != POUR_NET]:
+        raise SystemExit("EXPORT: refusing to plot -- board has no routed signals. "
                          "Routing lives in route_console_board.sh; run that.")
     # DRC first: it is what pours the zone (--refill-zones --save-board), so
     # plotting before it would ship gerbers with an empty ground plane.
@@ -1179,6 +1381,10 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv:
         print("Negative controls:")
         sys.exit(0 if _selftest() else 1)
+    if "--prune-vias" in sys.argv:
+        # Post-fill, so it runs from route_console_board.sh after the SES import,
+        # not from build(): nothing here can be known until the board is poured.
+        sys.exit(1 if prune_dangling_vias() else 0)
     build()
     if "--no-export" not in sys.argv:
         sys.exit(export())

@@ -66,6 +66,12 @@ print('   tracks:', len([t for t in m.GetTracks() if t.GetClass()!='PCB_VIA']),
       'vias:', len([t for t in m.GetTracks() if t.GetClass()=='PCB_VIA']))
 sys.exit(0 if ok else 'SES import failed')" 2>&1 | grep -viE "wxApp|memory leak|Debug:" || true
 
+  # Which stitching vias are useful is decided by the FILL, not by placement: the
+  # ones left in islands the fill deleted connect to nothing on either layer. They
+  # can only be found here, after routing, so they are pruned here -- this pours,
+  # asks DRC, deletes, and repeats until a pour comes back clean.
+  "$KPY" console_board_pcb.py --prune-vias 2>&1 | grep -viE "wxApp|memory leak|Debug:" || true
+
   # --refill-zones is what pours the plane: in-process pcbnew.ZONE_FILLER segfaults
   # without a wxApp, and gerbers plotted before this ship an EMPTY ground plane.
   "$CLI" pcb drc --refill-zones --save-board --format json -o "$OUT/drc.json" \
