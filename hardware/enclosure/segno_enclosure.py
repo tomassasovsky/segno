@@ -303,8 +303,20 @@ IND_PITCH = 50.0     # indicator LED pitch
 # panel against a number nobody checked is how a 850 mm blank becomes scrap, so
 # the unchecked ones are listed by name on the drawing and in the build summary
 # rather than hidden behind an optimistic comment.
-D_PWRBTN  = 16.0     # power / shutdown button
-D_FUSE    = 12.0     # panel fuse holder
+# Power button: weideer M-16-POWER-BK-BU (B095SFP93Y). MOMENTARY, which the
+# soft-shutdown wiring requires -- it drives a Pi GPIO, it does not break power.
+# Metal, IP67, and its ring is an engraved POWER SYMBOL, which matters because
+# the faceplate carries no power LED at all ("power state shows on the rear
+# button", see faceplate_holes). LED is 3-6 V <=20 mA, so it runs straight off
+# the 5 V rail with no dropper -- and being downstream of the buck it indicates
+# "converted and up", not merely "brick plugged in".
+D_PWRBTN     = 16.0  # listing: 16 mm mounting hole
+PWRBTN_HEAD_D = 18.0 # listing: 18 mm head. This is what needs the clearance.
+# Fuse: 5x20 screw-cap panel holder, e.g. NeoLum B0GF33P9FF. Bakelite body with a
+# metal cap -- metal-bodied 5x20 panel holders are not really a thing, and an
+# insulating body around a live fuse inside an earthed metal chassis is the right
+# answer anyway. Rated 10 A / 250 V AC, far above this job.
+D_FUSE    = 12.0     # listing: "12 mm diameter aperture"
 D_GND     = 6.5      # M6 earth / bond stud
 D_BARREL  = 11.5     # DC-099 barrel jack: listing states an 11 mm mounting hole;
                      # +0.5 so the thread drops in but cannot rattle before the
@@ -333,14 +345,9 @@ MIDI_SCREW_D     = 3.2   # M3 clearance
 # calipers or dimensioned photo; "datasheet" = manufacturer or distributor
 # figure, with the source named; "UNCONFIRMED" = nobody has checked it.
 REAR_IO_PROVENANCE = {
-    # "generic <n> mm part" is NOT a datasheet -- there is no source and no part.
-    # Both predate #743 and nobody has ever chosen the component. The fuse is the
-    # worse of the two: the current budget in segno_wiring.md puts ~7 A through
-    # the 9 V input, and a 12 mm panel holder is the 5x20 cartridge size, which is
-    # commonly rated 5-6.3 A. The hole may be sized for a part that cannot carry
-    # its own load.
-    "D_PWRBTN":          "UNCONFIRMED: no part chosen; must be MOMENTARY (GPIO soft shutdown)",
-    "D_FUSE":            "UNCONFIRMED: no part chosen; rating unresolved vs a ~7 A 9 V input",
+    "D_PWRBTN":          "datasheet: weideer M-16-POWER-BK-BU listing, 16 mm mounting hole",
+    "PWRBTN_HEAD_D":     "datasheet: weideer M-16-POWER-BK-BU listing, 18 mm head",
+    "D_FUSE":            "datasheet: NeoLum 5x20 panel holder listing, '12 mm diameter aperture'",
     "D_GND":             "design: M6 stud clearance",
     "D_BARREL":          "datasheet: DC-099 listing, 11 mm hole (+0.5 fit)",
     "D_TRS_BORE":        "datasheet: neutrik.com NC3FD-L-1, 'standardized D sized 24 mm panel cutout'",
@@ -783,7 +790,10 @@ def faceplate_holes():
 # two couplers' flanges fouling each other.
 REAR_IO_STATIONS = [
     ("9V_DC",    D_BARREL + 6.0),                        # power first, at the far
-    ("POWER",    D_PWRBTN + 6.0),                        # left, away from signal
+    ("POWER",    PWRBTN_HEAD_D + 4.0),                   # left, away from signal.
+                                                         # Sized off the HEAD, not the
+                                                         # hole -- the head is what
+                                                         # has to clear its neighbour
     ("FUSE",     D_FUSE + 6.0),
     ("MIDI_IN",  MIDI_SCREW_PITCH + 2*MIDI_SCREW_D),     # DIN-5 fixings set the
     ("MIDI_OUT", MIDI_SCREW_PITCH + 2*MIDI_SCREW_D),     # width, not the bore
@@ -1173,7 +1183,7 @@ def _check():
     _dims = [k for k in globals()
              if k.startswith(("D_TRS", "MIDI_", "USB3_")) and k not in
              ("USB3_CORNER_R", "USB3_CUT_SQ", "USB3_FIT")]
-    _dims += ["D_BARREL", "D_PWRBTN", "D_FUSE", "D_GND"]
+    _dims += ["D_BARREL", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND"]
     _missing = sorted(set(_dims) - set(REAR_IO_PROVENANCE))
     assert not _missing, (
         f"REAR_IO: {_missing} have no entry in REAR_IO_PROVENANCE -- say whether "

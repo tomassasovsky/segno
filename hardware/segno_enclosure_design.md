@@ -226,8 +226,8 @@ right, power first and away from signal:
 | ref | cutout | keep-out | note |
 |---|---|---|---|
 | `9V_DC` | Ø11.5 | 17.5 | DC-099; listing says Ø11 hole, +0.5 so it cannot rattle before the nut bites |
-| `POWER` | Ø16 | 22 | **no part chosen.** Must be MOMENTARY — it drives a Pi GPIO soft shutdown, it does not break power |
-| `FUSE` | Ø12 | 18 | **no part chosen, rating unresolved** — see below |
+| `POWER` | Ø16 | 22 | weideer M-16-POWER; **momentary**, Ø18 head, 3–6 V ring LED |
+| `FUSE` | Ø12 | 18 | 5×20 screw-cap panel holder, 10 A / 250 V AC |
 | `MIDI_IN` / `MIDI_OUT` | Ø15.1 + 2 × Ø3.2 @ 22 | 28.4 | REAN NYS325; **IN needs opto-isolation on the board**, not here |
 | `CTRL_1` / `CTRL_2` | **Ø24**, fixings **not cut** | 30.4 | **D-series** punch, not a threaded bushing |
 | `USB3_1` / `USB3_2` | 22.5 square, **R8.84** | 28.5 | flange Ø28.5 is the keep-out, not the hole |
@@ -293,28 +293,54 @@ unsourced ones and the build prints them as a **`DO NOT CUT`** line; a gate
 refuses any rear-I/O dimension with no entry at all, so a new connector cannot be
 added without declaring where its numbers came from.
 
-Currently unconfirmed — **`D_FUSE`, `D_PWRBTN`, `D_TRS_SCREW_PITCH`,
-`MIDI_SCREW_PITCH`**.
+Currently unconfirmed — **`D_TRS_SCREW_PITCH`** and **`MIDI_SCREW_PITCH`**, both
+fixing pitches. Every bore on the wall is now sourced.
 
-> **`POWER` and `FUSE` have no component behind them at all.** Both constants
-> predate #743 and no part has ever been chosen; Ø16 and Ø12 are the sizes of a
-> *typical* panel button and a *5×20 cartridge* holder, which is a shape, not a
-> source. They were briefly recorded as "datasheet: generic …" — "generic" is not
-> a datasheet, and that entry was exactly the false authority the provenance table
-> exists to catch.
+### Power button and fuse
+
+Both were the last stations with no component behind them (they predate #743 and
+were briefly mis-recorded as "datasheet: generic …" — "generic" is not a datasheet,
+and that was exactly the false authority this table exists to catch). Resolved:
+
+**Button — [weideer M-16-POWER-BK-BU](https://www.amazon.com/dp/B095SFP93Y), $6.50.**
+Ø16 mounting hole (so `D_PWRBTN` was right), Ø18 head, metal, IP67, 60 cm leads.
+Three things make it the correct part rather than merely a fitting one:
+
+- **Momentary** ("push and hold ON, release OFF"). Mandatory — it drives a Pi GPIO
+  soft shutdown so the Pi can flush the SD card. A latching Ø16 "power switch",
+  which is the more common thing sold at this size, would be wrong.
+- **Ring LED is 3–6 V ≤20 mA** → straight off the 5 V rail, no dropper. Being
+  *downstream of the buck* it indicates "converted and up", not just "brick
+  plugged in".
+- **The ring is an engraved power symbol.** That matters more than decoration here:
+  the faceplate carries **no power LED at all** — `faceplate_holes()` says so
+  explicitly ("power state shows on the rear power button"), so this ring is the
+  only power indication the machine has.
+
+`POWER`'s keep-out is now derived from `PWRBTN_HEAD_D` (18) rather than the hole,
+because the head is what has to clear its neighbour. Same 22, honestly obtained.
+
+**Fuse — 5×20 screw-cap panel holder** (e.g.
+[NeoLum, 4 pcs](https://www.amazon.com/dp/B0GF33P9FF), $7.69), listing states a
+**"12 mm diameter aperture"**, confirming `D_FUSE`. Bakelite body, metal cap.
+Metal-bodied 5×20 panel holders are not really a thing, and an insulating body
+around a live fuse inside an earthed metal chassis is the right answer anyway.
+
+> **Rating.** An earlier note here claimed ~7 A through the 9 V input and that a
+> Ø12 holder could not carry it. Both were wrong. The ~7.5 A in the budget is
+> **5 V-side** current; converted, 37.5 W at 9 V and 85 % efficiency is **4.9 A
+> peak / 2.0 A typical** on the input side. And these holders are **10 A / 250 V
+> AC**, not 5–6.3 A. There was never a rating problem.
 >
-> The fuse is the one with an engineering question, not just a shopping one. The
-> current budget in [`segno_wiring.md`](segno_wiring.md) puts **~7 A through the
-> 9 V input** (≈50 W of 5 V load across two bucks). A Ø12 panel holder is the
-> **5×20 cartridge** size, commonly rated **5–6.3 A** — so the hole may be sized
-> for a part that cannot carry the load it is protecting. A 6.3×32 (¼"×1¼")
-> holder handles 10–15 A but wants a **Ø13–14** hole. **Pick the fuse rating
-> first, then the holder, then the hole** — not the other way round.
+> Fuse: **T5A slow-blow** (T5AL250V). Above the 4.9 A coincident peak, at/below
+> the 9 V/6 A supply, well under the 10 A holder. **Slow-blow is not optional** —
+> two bucks charging their bulk caps draw a large inrush, and the fast-blow fuses
+> these holders ship with will nuisance-blow at switch-on. A
+> [12-value T-fuse assortment](https://www.amazon.com/dp/B08779766V) is worth it
+> over a single value: start at T5A and step up only if real measured draw says so.
 >
-> The button carries no power current: it drives a Pi **GPIO soft shutdown**, so
-> the Pi can flush the SD card. That means it must be **momentary**, and it also
-> means **nothing on this unit actually breaks power** — pulling the barrel plug
-> is the only hard off.
+> **Nothing on this unit hard-breaks power.** The button is a GPIO input; pulling
+> the barrel plug is the only true off. Deliberate, but worth knowing.
 
 > **Fallout to settle separately:** the `nopi` build (external host, HDMI ×2 +
 > USB touch ×2) had no home but that window, so it is **retired** — an

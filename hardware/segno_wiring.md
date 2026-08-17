@@ -85,7 +85,17 @@ more than that buck can give, so they get a **separate, external high-current bu
 total ≈ **~50W**, so a **9V/6A (54W) supply** or larger.
 
 **Power button** → Pi GPIO (soft shutdown / wake), not a hard 5V cut, so the Pi can
-flush the SD card. The fuse protects the shared 9V input.
+flush the SD card. It carries no load current, so it must be a **momentary** part
+(weideer M-16-POWER). Its 3–6 V ring LED runs off the **5 V rail**, downstream of
+the buck, so it lights only when conversion is actually up — and it is the only
+power indicator on the machine, since the faceplate deliberately has none.
+
+**Fuse** protects the shared 9V input, in series ahead of the Y-split. Converting
+the 5 V budget above: 7.5 A × 5 V = 37.5 W, so at 9 V and ~85 % buck efficiency the
+input sees **4.9 A peak / 2.0 A typical**. Fuse **T5A slow-blow** — above the
+coincident peak, at/below the 9 V/6 A supply, well under the holder's 10 A.
+**Slow-blow is required:** both bucks charge their bulk caps at switch-on and a
+fast-blow T5 equivalent will nuisance-blow.
 
 ---
 
@@ -137,8 +147,8 @@ it. Nine stations on one centreline, left to right:
 | station | qty | wiring note |
 |---|---|---|
 | 9 V barrel | 1 | DC-099, 30 V / 10 A |
-| power / shutdown button | 1 | the Pi still needs a clean stop |
-| fuse | 1 | |
+| power / shutdown button | 1 | **momentary** → Pi GPIO soft shutdown. Ring LED 3–6 V ≤20 mA off the **5 V rail** (so it means "converted and up"). It is the machine's **only** power indication — the faceplate has none |
+| fuse | 1 | 5×20 holder (10 A) in series with the 9 V input, ahead of the Y-split. **T5A slow-blow** — fast-blow will nuisance-blow on buck inrush |
 | MIDI DIN-5 | 2 | IN + OUT. **IN is opto-isolated on the board** — the socket alone is not enough |
 | TRS 6.35 (D-series) | 2 | external control pedals |
 | USB 3.0 coupler | 2 | |

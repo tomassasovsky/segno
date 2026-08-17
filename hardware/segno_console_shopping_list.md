@@ -62,7 +62,14 @@ Carried by the `segno_pedal_main` USB-MIDI board — fab + BOM in
 - [ ] Separate **5 V / ≥3 A** supply for the WS2812 LEDs + RP2040 ×1
       *(do not draw the LED ring/strip off the Pi's 5 V pin)*
 - [ ] The 16″ and 7″ screens use their **own** adapters (USB-C / barrel) ×2
-- [ ] Inline fuse / power switch for the mains side ×1
+- [ ] **Panel fuse holder** 5×20 screw-cap, 10 A / 250 VAC, 12 mm aperture ×1 —
+      e.g. [NeoLum 4-pack](https://www.amazon.com/dp/B0GF33P9FF)
+- [ ] **T5A slow-blow** 5×20 fuses (T5AL250V) ×1 pack — NOT fast-blow; the two
+      bucks' inrush will nuisance-blow a fast fuse
+- [ ] **Momentary** illuminated push button, 16 mm hole, 3–6 V ring LED ×1 —
+      [weideer M-16-POWER](https://www.amazon.com/dp/B095SFP93Y). Must be
+      momentary: it drives a Pi GPIO soft shutdown, it does not break power.
+      Its LED is the machine's only power indicator (the faceplate has none)
 - See the power budget in [`hardware/console/README.md`](console/README.md).
 
 ## Mechanical / enclosure
