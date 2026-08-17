@@ -27,17 +27,32 @@
                                * le_config / le_device_info / LE_MAX_CHANNELS /
                                * LE_OK + ma_backend arrive transitively */
 
+/* Test-only override of the pin below: <0 means "read the environment" (the
+ * shipping behaviour, and the value in every non-test process). See
+ * le_platform_set_alsa_only_for_test. */
+static int g_alsa_only_override = -1;
+
 /* The appliance sets SEGNO_ALSA_ONLY (via the kiosk launcher): a single app owns
  * the card with no PipeWire/JACK/Pulse in the image, so we drive ALSA directly
  * for the lowest latency and zero IPC, and skip all the PipeWire quantum plumbing.
  * Read once and cache — the env does not change over a process's life. */
 static int le_alsa_only(void) {
+  /* Checked BEFORE the cache, deliberately. The cache is a function-static
+   * primed on the first call anywhere in the process, so by the time a test
+   * wants the other value it is already frozen — putenv/setenv at that point is
+   * a silent no-op, and so is setenv in a fork()ed child, which inherits the
+   * primed cache. The override is the only way to ask this question twice. */
+  if (g_alsa_only_override >= 0) return g_alsa_only_override;
   static int cached = -1;
   if (cached < 0) {
     const char* v = getenv("SEGNO_ALSA_ONLY");
     cached = (v != NULL && v[0] != '\0' && v[0] != '0') ? 1 : 0;
   }
   return cached;
+}
+
+void le_platform_set_alsa_only_for_test(int state) {
+  g_alsa_only_override = state;
 }
 
 /* Force PipeWire's global graph quantum to `frames` (0 restores the dynamic
@@ -681,6 +696,29 @@ void le_platform_backends(const ma_backend** out_list, ma_uint32* out_count) {
   } else {
     *out_list = k_backends;
     *out_count = 3;
+  }
+}
+
+void le_platform_probe_backends(const ma_backend** out_list,
+                                ma_uint32* out_count) {
+  /* Appliance only. The image has no PulseAudio server, and miniaudio's DEFAULT
+   * order tries ma_backend_pulseaudio before ma_backend_alsa, so every probe
+   * attempted a connection that could only fail — and each failure leaked a
+   * memfd (#721). Excluding Pulse here is the whole fix.
+   *
+   * Desktop Linux deliberately gets (NULL, 0), NOT the streaming preference: a
+   * probe context opened on JACK enumerates one synthetic default device per
+   * direction instead of the real cards, and le_find_loopback's "monitor of"
+   * match is a PulseAudio-only string that a JACK context can never produce.
+   * The streaming path still prefers JACK — that is a different question, asked
+   * of a device that is about to be opened, not of a list being read. */
+  static const ma_backend k_alsa_only[] = {ma_backend_alsa};
+  if (le_alsa_only()) {
+    *out_list = k_alsa_only;
+    *out_count = 1;
+  } else {
+    *out_list = NULL;
+    *out_count = 0;
   }
 }
 

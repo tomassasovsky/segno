@@ -351,6 +351,20 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->start_iter = 0;
     tr->od_gain = 0.0f;
     tr->xfade_capture = 0;
+    /* ...and the trailing seam overlap (#728), for the same reason and then
+     * some. Both are per-take audio-thread deferrals indexed off the OLD
+     * length and living in the OLD live slot, and the lane loop below FREES
+     * and reallocates every pool buffer while this resets the track to EMPTY.
+     * Left armed, the next process block would write live input into the
+     * freshly allocated buffer of a track that reads EMPTY, at an index that
+     * means nothing there, and F frames later fold it into [0, F) — breaking
+     * the invariant le_begin_empty_capture / le_prepare_new_capture rely on
+     * (an EMPTY track's buffer is theirs alone to prepare). Worse after a
+     * sample-rate change: the armed count no longer matches seam_xfade_frames,
+     * so seam_len + (F_new - seam_capture) can land BELOW seam_len, inside
+     * real loop content. */
+    tr->seam_capture = 0;
+    tr->seam_len = 0;
     /* Per-pass layer capture + its control-side bookkeeping: a reconfigure
      * (including a device-loss recovery mid-dub) starts from a clean slate —
      * no armed shadows, no in-flight layer, no queued taps, counters equal. */
