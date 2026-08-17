@@ -3086,11 +3086,42 @@ def build_quote_packages():
     pack("segno_pintura.zip", ["segno_paint_quote"] + [s for s, *_ in PAINT_BOM], (".pdf",))
     return zips
 
+def write_rear_io_stations():
+    """Publish the rear-panel station list for the CONSOLE BOARD generator (#747).
+
+    hardware/kicad/console_board.py asserts it terminates every station declared
+    here, so a connector added to the panel with no header on the board fails a
+    gate instead of surfacing during assembly. It cannot simply import this module
+    -- that needs cadquery, which the KiCad venv does not have -- hence a JSON
+    handoff.
+
+    Written from main() BEFORE the --report early-return on purpose: emitting it
+    alongside the DXF loop would force a full run (every DXF, PDF, STEP, printed
+    part and four quote zips, minutes of cadquery) just to refresh one small file.
+    """
+    import json
+    os.makedirs(OUT, exist_ok=True)
+    path = os.path.join(OUT, "rear_io_stations.json")
+    lay = rear_io_layout()
+    payload = {
+        "source": "segno_enclosure.py",
+        "wall": {"w": W, "h": REAR_WALL_H, "z": REAR_IO_Z},
+        "stations": [
+            {"ref": ref, "keepout": kw, "centre_u": round(lay[ref][0], 3)}
+            for ref, kw in REAR_IO_STATIONS
+        ],
+    }
+    with open(path, "w") as fh:
+        json.dump(payload, fh, indent=2)
+        fh.write("\n")
+    return path
+
 def main(argv):
     print(report())
     print("\nGeometry assertions ...", end=" ")
     _check()
     print("ALL PASS")
+    print("Rear I/O stations: out/%s" % os.path.basename(write_rear_io_stations()))
     if "--report" in argv:
         return
     os.makedirs(OUT, exist_ok=True)

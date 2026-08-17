@@ -160,6 +160,14 @@ command below **`cd hardware/kicad` first** — running from the repo root silen
 (nothing in `.gitignore` excludes `*.net`). `test -f` alone would let it be
 generated-and-forgotten.
 
+**Netlists are NOT byte-reproducible, and pinning skidl does not change that** —
+measured while building part 1. SKiDL assigns a **random** `SKiDL Tag` to every `Part`
+without an explicit `tag=`, and component `tstamps` derive from it: two runs of the
+*same* version on unchanged source differ by **~190 lines**, all tags and timestamps,
+**zero net changes**. So never treat a netlist diff as evidence of a design change, and
+do not add a "regenerating produces no diff" gate — it cannot pass. The real checks are
+the ERC error count and the `(net ...)` structure.
+
 Netlist generation also needs KiCad's symbol libraries present, so **these gates are
 local-only** — there is no board CI today and this plan does not add one.
 
@@ -170,7 +178,7 @@ GOAL: hardware/kicad/console_board.py generates a netlist-complete, layout-ready
 
 SUCCESS CRITERIA:
 - The generator runs clean and writes a netlist | verify: cd hardware/kicad && .venv/bin/python console_board.py && test -f console_board.net
-- SKiDL ERC reports zero errors | verify: cd hardware/kicad && .venv/bin/python console_board.py 2>&1 | grep -q "0 errors found during ERC"
+- SKiDL ERC reports zero errors | verify: cd hardware/kicad && .venv/bin/python console_board.py 2>&1 | grep -q "0 errors found while running ERC"
 - Every in-generator gate passes | verify: cd hardware/kicad && .venv/bin/python console_board.py 2>&1 | grep -q "Board assertions ... ALL PASS"
 - Every gate is negative-controlled — each one bites when its invariant is broken | verify: cd hardware/kicad && .venv/bin/python console_board.py --selftest
 - The board terminates every rear-panel station the enclosure declares | verify: hardware/enclosure/.venv/bin/python hardware/enclosure/segno_enclosure.py --report >/dev/null && test -f hardware/enclosure/out/rear_io_stations.json && cd hardware/kicad && .venv/bin/python console_board.py 2>&1 | grep -q "REAR_IO_COVER"
@@ -186,7 +194,7 @@ NON-GOALS:
 - Any change to the standalone pedal's V1 board
 - Board CI (needs KiCad symbol libraries in the runner)
 
-VERIFICATION COMMAND: hardware/enclosure/.venv/bin/python hardware/enclosure/segno_enclosure.py --report >/dev/null && cd hardware/kicad && .venv/bin/python console_board.py --selftest && .venv/bin/python console_board.py 2>&1 | tee /dev/stderr | grep -q "0 errors found during ERC" && .venv/bin/python console_board.py 2>&1 | grep -q "Board assertions ... ALL PASS" && test -f console_board.net
+VERIFICATION COMMAND: hardware/enclosure/.venv/bin/python hardware/enclosure/segno_enclosure.py --report >/dev/null && cd hardware/kicad && .venv/bin/python console_board.py --selftest && .venv/bin/python console_board.py 2>&1 | tee /dev/stderr | grep -q "0 errors found while running ERC" && .venv/bin/python console_board.py 2>&1 | grep -q "Board assertions ... ALL PASS" && test -f console_board.net
 ```
 
 ## Implementation
@@ -259,16 +267,22 @@ Three PRs. Parts 1 and 2 have zero coupling to the netlist and to each other; pa
 is the netlist and stays whole, because a partial netlist cannot ERC clean and a
 reviewer needs the entire connector map in view at once to catch a missed station.
 
-| part | scope | depends on |
-|---|---|---|
-| **1** | Phase 1 — venv, pinned `requirements.txt`, `.gitignore`, `Pico2.kicad_mod`, regenerate `main_board.py` to prove the venv | — |
-| **2** | Phase 3 bullet 1 — `rear_io_stations.json` from `segno_enclosure.py` (a different generator, independently verifiable) | — |
-| **3** | Phases 2 + 3 + 4 — the generator, its gates, the cross-artifact check, and the docs | 1 and 2 |
+| part | scope | depends on | status |
+|---|---|---|---|
+| **1** | Phase 1 — venv, pinned `requirements.txt`, `.gitignore`, `Pico2.kicad_mod`, regenerate `main_board.py` to prove the venv | — | **PR #748** |
+| **2** | Phase 3 bullet 1 — `rear_io_stations.json` from `segno_enclosure.py` | **PR #717** | folded into #717 |
+| **3** | Phases 2 + 3 + 4 — the generator, its gates, the cross-artifact check, and the docs | 1 and 2 | |
+
+> **Correction.** The first cut of this table said parts 1 and 2 were both independent.
+> Part 2 is not: `REAR_IO_STATIONS` **does not exist on master** — master still has the
+> old `IO_WINDOW` rear panel, and the station list is introduced by #717. So part 2 was
+> folded into **#717 itself**, which is where that data is born. Emitting the JSON from
+> anywhere else would mean branching off an unmerged PR to publish a list that PR owns.
+> That leaves a **two-PR** split for the board work: #748, then part 3.
 
 Docs ride with part 3 deliberately, so they describe a final pin map rather than a
 speculative one. Note this repo's history of **squash-merges breaking stacked-PR merge
-refs** — parts 1 and 2 are independent, so merge them before opening part 3 rather than
-stacking three deep.
+refs** — land #748 and #717 before opening part 3 rather than stacking.
 
 ## Dependencies & Risks
 

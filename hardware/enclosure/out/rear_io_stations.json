@@ -1,0 +1,55 @@
+{
+  "source": "segno_enclosure.py",
+  "wall": {
+    "w": 850.0,
+    "h": 90.0,
+    "z": 45.0
+  },
+  "stations": [
+    {
+      "ref": "9V_DC",
+      "keepout": 17.5,
+      "centre_u": 38.75
+    },
+    {
+      "ref": "POWER",
+      "keepout": 29.2,
+      "centre_u": 77.188
+    },
+    {
+      "ref": "FUSE",
+      "keepout": 18.0,
+      "centre_u": 115.875
+    },
+    {
+      "ref": "MIDI_IN",
+      "keepout": 28.4,
+      "centre_u": 154.162
+    },
+    {
+      "ref": "MIDI_OUT",
+      "keepout": 28.4,
+      "centre_u": 197.65
+    },
+    {
+      "ref": "CTRL_1",
+      "keepout": 30.4,
+      "centre_u": 242.137
+    },
+    {
+      "ref": "CTRL_2",
+      "keepout": 30.4,
+      "centre_u": 287.625
+    },
+    {
+      "ref": "USB3_1",
+      "keepout": 28.5,
+      "centre_u": 332.163
+    },
+    {
+      "ref": "USB3_2",
+      "keepout": 28.5,
+      "centre_u": 375.75
+    }
+  ]
+}
