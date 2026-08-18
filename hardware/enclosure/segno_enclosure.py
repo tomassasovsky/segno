@@ -1620,7 +1620,9 @@ def _check(strict_board_mount=True):
 SIDE_VENT_V     = (250.0, 372.0)   # depth band: over the boards, clear of the rear
                                    # connectors' 45 mm wiring reserve
 SIDE_VENT_MARGIN = 12.0            # keep clear of the bottom fold and the wedge top
-SIDE_VENT_ROWS   = 5
+SIDE_VENT_MIN_SL = 20.0            # a trailing column may shorten to this rather
+                                   # than be dropped -- the stepped field should
+                                   # run the full band
 FOAM_OPEN_FRACTION = 0.5           # open-cell PU filter foam, ~45 ppi: half the
                                    # geometric area survives as free area. Measured
                                    # figures for this class run 0.5..0.7; the low end
@@ -1643,18 +1645,30 @@ def side_vents(flap, bw):
     flap: 'R' (extends +x from bw) or 'L' (extends -x from 0). Slots run ALONG the
     depth axis and stack up the wall, which is the way a louvre sheds anything that
     lands on it when the case is upright.
+
+    The field is STEPPED to match the wedge (user call, 2026-08-18): each column
+    carries as many rows as the wall above it allows, so the vent block's top edge
+    staircases up with the sloped side instead of floating as a fixed 5-row
+    rectangle on a triangular wall. A trailing column shortens (down to
+    SIDE_VENT_MIN_SL) rather than being dropped, so the steps run the full band.
+    Row count is derived at each column's FRONT edge -- the lowest point of the
+    wedge top over the slot's span -- so every slot clears the sloped edge by at
+    least SIDE_VENT_MARGIN, which is what the wedge-top gate asserts per slot.
     """
     sl, sw = VENT_SLOT
     v0, v1 = SIDE_VENT_V
-    cols = max(1, int((v1 - v0 + 8.0) // (sl + 8.0)))
     out = []
-    for c in range(cols):
-        v = v0 + c * (sl + 8.0)
-        for r in range(SIDE_VENT_ROWS):
+    v = v0
+    while v1 - v >= SIDE_VENT_MIN_SL:
+        length = min(sl, v1 - v)
+        h_lim = _side_wall_top(v) - SIDE_VENT_MARGIN
+        rows = max(1, int((h_lim - SIDE_VENT_MARGIN - sw) // VENT_PITCH) + 1)
+        for r in range(rows):
             off = SIDE_VENT_MARGIN + r * VENT_PITCH
             u = (bw + off) if flap == 'R' else (-off - sw)
-            out.append({"kind": "rect", "u": u, "v": v, "w": sw, "h": sl,
+            out.append({"kind": "rect", "u": u, "v": v, "w": sw, "h": length,
                         "ref": "SIDE_VENT", "layer": "VENT"})
+        v += sl + 8.0
     return out
 
 
