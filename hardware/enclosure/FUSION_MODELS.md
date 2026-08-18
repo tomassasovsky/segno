@@ -26,12 +26,27 @@ table, the placement is wrong, not the table.
 | component | populated | VAMP sheet metal |
 |---|---|---|
 | base | `[1,0,0,0 \| 0,1,0,0 \| 0,0,1,0.2]` | `[-1,0,0,84.8 \| 0,0,1,0.2 \| 0,1,0,0]` |
+| faceplate (lid) | `[1,0,0,-0.19 \| 0,0.9763,-0.2164,-1.122 \| 0,0.2164,0.9763,1.1985]` | `[-1,0,0,84.99 \| 0,0.2164,0.9763,1.1985 \| 0,0.9763,-0.2164,-1.122]` |
 | rear_panel (inside mount) | `[1,0,0,62.5286 \| 0,0,-1,41.691 \| 0,1,0,4.5]` | `[-1,0,0,22.2714 \| 0,1,0,4.5 \| 0,0,-1,41.691]` |
 | console_board_v4 (KiCad STEP) | `[1,0,0,36.225 \| 0,1,0,38.575 \| 0,0,1,1.7]` | — |
 
 - The base's `+0.2` z puts the floor's bottom face at world z=0 (the feet plane).
   There is **no y/depth offset** — an earlier `+0.2` there put the whole shell
   2 mm rearward of every mount.
+- **Faceplate anchor**: the lid's front fold line (mold line) lands at the front
+  wall's OUTER face, on its top edge — world (depth −0.2, height 1.2) — so the
+  underside rests on the side-wall top edges (`fp_loc` in `_render_parts`;
+  0.2164/0.9763 = sin/cos of `SLOPE_ANGLE`). Fixed 2026-08-18: the whole lid
+  stack sat 2 mm rearward (old base frame). **The lid stack moves together**:
+  faceplate, ring_disc, screen_bracket (both docs), plus in populated
+  screen_16in/7in, encoder, led_strips, texts, segno_logo, the pill diffusers.
+  If the faceplate moves, every one of these gets the same delta.
+- Known kiss-fit residual: the front lip penetrates the front wall ~0.9 mm in
+  the model. NOT a placement bug — the faceplate DXF has no bend deduction at
+  the lip fold (the base uses `dev_deduct`; the lid doesn't), so the folded lip
+  lands ~1 mm rearward of flush. Side-wall seat and rear-lap seat are exact
+  (boolean intersection ≈ 0). Fab-relevant; fix belongs in `dxf_faceplate`,
+  never in Fusion.
 - The panel transforms press its outer face on the rear wall's INNER face
   (inside mount, user decision): panel spans depth 41.691..41.891. Its x-centre
   is the generator's `rear_panel_outline()` centre /10 (recompute after any
