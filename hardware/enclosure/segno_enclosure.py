@@ -1088,15 +1088,27 @@ def rear_holes():
     return cuts
 
 def _vent_array(u0, z0, cols, rows, cp=None):
-    """A block of louvre slots; returns rect features on the VENT layer. cp = column pitch."""
+    """A block of louvre slots in BRICK BOND; returns rect features on the VENT
+    layer. cp = column pitch. Odd rows are phase-shifted half a period like
+    running bond (user call, 2026-08-18) and their edge slots clip to the same
+    envelope as the even rows, so the block keeps its rectangular outline. The
+    stagger keeps every web the same size while breaking the continuous cut
+    lines of an aligned grid -- better looking AND stiffer."""
     sl, sw = VENT_SLOT
     if cp is None:
         cp = sl + 8.0
+    u_hi = u0 + (cols - 1) * cp + sl                       # block envelope, right edge
+    min_sl = sl * 0.3                                      # drop stubs, keep half-bricks
     out = []
     for r in range(rows):
-        for c in range(cols):
-            out.append({"kind": "rect", "u": u0 + c * cp, "v": z0 + r * VENT_PITCH,
-                        "w": sl, "h": sw, "ref": "VENT", "layer": "VENT"})
+        phase = cp / 2.0 if r % 2 else 0.0
+        u = u0 + phase - cp                                # a period early: clipped heads
+        while u < u_hi:
+            lo, hi = max(u, u0), min(u + sl, u_hi)
+            if hi - lo >= min_sl:
+                out.append({"kind": "rect", "u": lo, "v": z0 + r * VENT_PITCH,
+                            "w": hi - lo, "h": sw, "ref": "VENT", "layer": "VENT"})
+            u += cp
     return out
 
 def _vent_free_area(feats):
@@ -1646,29 +1658,38 @@ def side_vents(flap, bw):
     depth axis and stack up the wall, which is the way a louvre sheds anything that
     lands on it when the case is upright.
 
-    The field is STEPPED to match the wedge (user call, 2026-08-18): each column
-    carries as many rows as the wall above it allows, so the vent block's top edge
-    staircases up with the sloped side instead of floating as a fixed 5-row
-    rectangle on a triangular wall. A trailing column shortens (down to
-    SIDE_VENT_MIN_SL) rather than being dropped, so the steps run the full band.
-    Row count is derived at each column's FRONT edge -- the lowest point of the
-    wedge top over the slot's span -- so every slot clears the sloped edge by at
-    least SIDE_VENT_MARGIN, which is what the wedge-top gate asserts per slot.
+    The field is BRICK-BOND on the wedge (user call, 2026-08-18): rows of parallel
+    slots with every other row phase-shifted half a period, like running bond, and
+    each row starts only where the sloped wall above it is tall enough -- so the
+    field's leading edge follows the hypotenuse diagonally instead of floating as
+    a rectangle on a triangular wall. Structure: the webs between slots stay
+    2T = 4 mm vertically and 8 mm along the row (same as the rear array), and the
+    stagger means no web line is cut twice in a row -- stiffer than aligned
+    columns, not weaker. Edge slots clip to the band/slope and are dropped below
+    SIDE_VENT_MIN_SL rather than left as stubs.
     """
     sl, sw = VENT_SLOT
     v0, v1 = SIDE_VENT_V
+    period = sl + 8.0
+    tan_s = math.tan(math.radians(SLOPE_ANGLE))
     out = []
-    v = v0
-    while v1 - v >= SIDE_VENT_MIN_SL:
-        length = min(sl, v1 - v)
-        h_lim = _side_wall_top(v) - SIDE_VENT_MARGIN
-        rows = max(1, int((h_lim - SIDE_VENT_MARGIN - sw) // VENT_PITCH) + 1)
-        for r in range(rows):
-            off = SIDE_VENT_MARGIN + r * VENT_PITCH
-            u = (bw + off) if flap == 'R' else (-off - sw)
-            out.append({"kind": "rect", "u": u, "v": v, "w": sw, "h": length,
-                        "ref": "SIDE_VENT", "layer": "VENT"})
-        v += sl + 8.0
+    r = 0
+    while True:
+        off = SIDE_VENT_MARGIN + r * VENT_PITCH
+        # depth from which the wedge above is tall enough for this row's top edge
+        v_min = max(v0, (off + sw + SIDE_VENT_MARGIN - H_FRONT) / tan_s)
+        if v1 - v_min < SIDE_VENT_MIN_SL:
+            break
+        phase = period / 2.0 if r % 2 else 0.0
+        u = (bw + off) if flap == 'R' else (-off - sw)
+        v = v0 + phase - period          # start a period early so clipped heads emit
+        while v < v1:
+            lo, hi = max(v, v_min), min(v + sl, v1)
+            if hi - lo >= SIDE_VENT_MIN_SL:
+                out.append({"kind": "rect", "u": u, "v": lo, "w": sw, "h": hi - lo,
+                            "ref": "SIDE_VENT", "layer": "VENT"})
+            v += period
+        r += 1
     return out
 
 
