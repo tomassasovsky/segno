@@ -55,6 +55,15 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   front flap — the wall's square top corner cannot clear the lip-fold roll
   (#760). A future base rebuild gets this from the DXF automatically; do not
   delete the feature without rebuilding from a current flat.
+- The panel transforms press its outer face on the rear wall's INNER face
+  (inside mount, user decision): panel spans depth 41.691..41.891. Its x-centre
+  is the generator's `rear_panel_outline()` centre /10 (recompute after any
+  station change — it moves).
+- Board STEP mapping: world = (36.225 + kicad_x/10, 38.575 − kicad_y/10, ·) —
+  note the **y flip**. Derived so the board's H1–H4 land exactly on the floor's
+  `board_mounts()` drills.
+- All transforms must have **det = +1** (no mirrors — Fusion rejects or mangles
+  improper matrices silently).
 
 ## The lid (faceplate) rebuild recipe
 
@@ -74,15 +83,6 @@ Much simpler than the base — no wrap, two folds, one per call:
 6. Appearance "Plastic - Matte (Black)", then transform LAST (see the seat
    above), then guarded snapshot. Setting appearance after the transform
    RESETS the transform.
-- The panel transforms press its outer face on the rear wall's INNER face
-  (inside mount, user decision): panel spans depth 41.691..41.891. Its x-centre
-  is the generator's `rear_panel_outline()` centre /10 (recompute after any
-  station change — it moves).
-- Board STEP mapping: world = (36.225 + kicad_x/10, 38.575 − kicad_y/10, ·) —
-  note the **y flip**. Derived so the board's H1–H4 land exactly on the floor's
-  `board_mounts()` drills.
-- All transforms must have **det = +1** (no mirrors — Fusion rejects or mangles
-  improper matrices silently).
 
 ## The base rebuild recipe (the ONLY supported way to change the base)
 
