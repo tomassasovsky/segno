@@ -217,7 +217,15 @@ PLACEMENT = {
                                    # it was the only net that would never route. At
                                    # y 44 pin 5 comes down to meet it. Pin 2 (IND,
                                    # from row B) is still within 2 mm of its own row.
-    "J2":  (89.5, 42.0, 0),       # Pi ribbon, ON THE EDGE. A 40-way ribbon leaving
+    "J2":  (89.5, 42.0, 180),      # Pi ribbon, ON THE EDGE, and rotated 180 so its
+                                   # PIN 1 is at the FRONT end (-v in the enclosure).
+                                   # The Pi's header has pin 1 at its SD-card end,
+                                   # which the enclosure puts at -v as well: two
+                                   # vertical headers facing each other across a gap
+                                   # need pin 1 at the SAME end, or the ribbon has to
+                                   # fold back on itself to mate -- and that fold is
+                                   # what drapes it over the Pi's cooler intake.
+                                   # A 40-way ribbon leaving
                                    # mid-board folds straight back over everything;
                                    # here the cable clears the board immediately.
     "J22": (46.3, 26.0, 0),        # expansion. Not on the top edge: its GP28 pin is
