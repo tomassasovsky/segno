@@ -1374,9 +1374,53 @@ def build(quiet=False):
     os.makedirs(OUT, exist_ok=True)
     board.Save(PLACED_PATH)
     write_mount_json()
+    write_bom()
     print(f"placed {len(fps)} footprints | {n_vias} GND vias | "
           "2 GND pours (filled by kicad-cli)")
     return board
+
+
+def write_bom():
+    """A parts list, in the CSV shape fab/segno_pedal_main_bom.csv already uses.
+
+    The board had gerbers and no BOM. You cannot buy a board from gerbers alone --
+    somebody has to order the parts, and "read them off the netlist" is how a build
+    ends up with the wrong capacitor voltage.
+
+    Two groupings, because the netlist's "value" means different things by part:
+      * PASSIVES and ICs are grouped by value AND footprint -- the same 100nF at two
+        lead pitches is two different purchases, and the same footprint at two
+        capacitances certainly is.
+      * CONNECTORS are grouped by FOOTPRINT, with their roles in the comment. Their
+        value is a role name (FSW_STOP, MIDI_IN), so grouping by it lists the same
+        13 identical 2-pin JSTs as 13 separate things to buy.
+
+    Mounting holes are not in it. They are holes.
+    """
+    comps, _nets = parse_netlist(NETLIST)
+    parts, conns = {}, {}
+    for ref, (_lib, fp, val) in comps.items():
+        if "MountingHole" in fp:
+            continue
+        (conns if ref.startswith("J") else parts).setdefault(
+            fp if ref.startswith("J") else (val, fp), []).append((ref, val))
+
+    rows = []
+    for (val, fp), items in parts.items():
+        rows.append((val, [r for r, _v in items], fp))
+    for fp, items in conns.items():
+        roles = ", ".join(v for _r, v in sorted(items, key=lambda i: _ref_key(i[0])))
+        rows.append((roles, [r for r, _v in items], fp))
+
+    path = os.path.join(HERE, "fab", "segno_console_board_bom.csv")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as fh:
+        fh.write("Comment,Designator,Footprint,LCSC,Qty,Type\n")
+        for comment, refs, fp in sorted(rows, key=lambda r: (-len(r[1]), r[2])):
+            refs = sorted(refs, key=_ref_key)
+            fh.write('"%s","%s",%s,,%d,Component\n'
+                     % (comment or "?", ",".join(refs), fp, len(refs)))
+    return path
 
 
 def write_mount_json():

@@ -56,6 +56,10 @@ from skidl import (
 
 set_default_tool(KICAD8)
 
+# SKiDL puts the active circuit in builtins rather than exporting it, and the
+# POLARITY gate below wants EVERY part, not a list this file remembers to update.
+from builtins import default_circuit          # noqa: E402  (set up by skidl)
+
 _SYMBOL_DIRS = [
     os.environ.get("KICAD_SYMBOL_DIR", ""),
     r"C:\Program Files\KiCad\10.0\share\kicad\symbols",
@@ -88,6 +92,19 @@ def R(value, **kw):
 
 def C(value, fp=C_FP, **kw):
     return Part("Device", "C", value=value, footprint=fp, **kw)
+
+
+def CP(value, fp, **kw):
+    """An ELECTROLYTIC. Polarised symbol, not just a polarised footprint.
+
+    C30/C31 were built with Device:C -- the non-polarised symbol -- on CP_Radial
+    footprints. The board was right (pad 1 is + on those footprints, and pin 1 went
+    to +5V), but nothing DECLARED the part as polarised, so nothing could ever check
+    it: reorder the two pins in a future edit and you get a 470uF electrolytic
+    backwards across a 5 V rail, which vents at power-on and no gate here would have
+    said a word. ring_board.py already used C_Polarized, so this was an oversight.
+    """
+    return Part("Device", "C_Polarized", value=value, footprint=fp, **kw)
 
 
 def jst(n, ref, value):
@@ -460,8 +477,8 @@ j_pwr[1] += v5
 j_pwr[2] += gnd
 j_pwr[3] += v5          # pins 1/3 and 2/4 are PARALLEL, not two rails: XH is
 j_pwr[4] += gnd         # ~3 A per contact and the LED chain alone nears that
-C("470uF", fp="Capacitor_THT:CP_Radial_D10.0mm_P5.00mm", ref="C30")[1, 2] += v5, gnd
-C("100uF", fp="Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", ref="C31")[1, 2] += v5, gnd
+CP("470uF", "Capacitor_THT:CP_Radial_D10.0mm_P5.00mm", ref="C30")[1, 2] += v5, gnd
+CP("100uF", "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", ref="C31")[1, 2] += v5, gnd
 
 # ---- J2: the Pi ribbon (2x20, SHROUDED and KEYED) ---------------------------
 # Reversed, a 2x20 puts 5 V onto GND pins -- specify a shrouded header with a
@@ -711,6 +728,24 @@ def _check(strict_stations=True):
     assert {n.name for n in j_pi_btn[1].nets} == {"PWR_BTN"}, (
         "PWR_BTN: J9 must carry the button through to the Pi's J2 pads")
 
+    # Every part with a POLARISED footprint must use a polarised symbol and sit the
+    # right way round: pin 1 (+) on a positive rail, pin 2 (-) on ground. A reversed
+    # electrolytic is the one assembly mistake on this board that fails loudly and
+    # takes the rail with it, and DRC cannot see it -- copper is copper.
+    for _p in default_circuit.parts:
+        _fp = str(getattr(_p, "footprint", "") or "")
+        if "CP_" not in _fp and "Polarized" not in _fp:
+            continue
+        assert "Polarized" in str(_p.name), (
+            f"POLARITY: {_p.ref} has the polarised footprint {_fp.split(':')[-1]} but "
+            f"the {_p.name} symbol -- nothing declares which end is positive, so "
+            "nothing can check it")
+        _plus = {n.name for n in _p[1].nets}
+        _minus = {n.name for n in _p[2].nets}
+        assert _plus & {"+5V", "+3V3"} and _minus == {"GND"}, (
+            f"POLARITY: {_p.ref} has pin 1 (+) on {_plus} and pin 2 (-) on {_minus} "
+            "-- an electrolytic backwards across a rail vents at power-on")
+
     # Nothing of ours may sit on a pin another board on this Pi has taken. Rails
     # are exempt: 3V3 and GND are shared by every HAT by definition, and sharing
     # them is the point.
@@ -824,6 +859,13 @@ def _selftest():
         d_clamp[1] += opto[2]
         d_clamp[2] += opto[1]
 
+    def _cap_backwards():
+        # The 470uF reservoir fitted the other way round.
+        c30 = next(p for p in default_circuit.parts if p.ref == "C30")
+        c30[1].disconnect(); c30[2].disconnect()
+        c30[1] += gnd
+        c30[2] += v5
+
     def _reserved_pin():
         # The exact mistake this gate exists for: the link moved back onto a pin
         # the NVMe board underneath has already claimed.
@@ -865,6 +907,7 @@ def _selftest():
     case("SWCLK and SWDIO swapped on the debug pads", "SWD:", _swd_swap)
     case("a second mounting hole strapped to GND", "CHASSIS_BOND:", _second_bond)
     case("MIDI IN clamp diode reversed", "MIDI_CLAMP:", _clamp_reversed)
+    case("reservoir electrolytic fitted backwards", "POLARITY:", _cap_backwards)
     case("link on a pin the NVMe board owns", "PI_RESERVED:", _reserved_pin)
     case("power button off GPIO3", "PWR_BTN:", _btn_pin)
     case("wrong footswitch count", "PIN_MAP:", _fsw_count)
@@ -895,6 +938,10 @@ def _selftest():
             if mutate is _second_bond:
                 holes["H3"][1].disconnect()
                 holes["H3"][1] += Net("CHASSIS_H3")
+            if mutate is _cap_backwards:
+                _c30 = next(p for p in default_circuit.parts if p.ref == "C30")
+                _c30[1].disconnect(); _c30[2].disconnect()
+                _c30[1, 2] += v5, gnd
             if mutate is _clamp_reversed:
                 d_clamp[1].disconnect(); d_clamp[2].disconnect()
                 d_clamp[1, 2] += opto[1], opto[2]
