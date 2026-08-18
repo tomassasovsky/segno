@@ -128,8 +128,10 @@ otherwise fully through-hole:
   The 3× M3 holes sit on the **outer rim (radius 26 mm)**, outside the module's
   44.5 mm OD, so the screws clear the ring module's PCB.
 - **EC11 encoder front-centre** (shaft through the module's centre hole). The
-  8-pin main-board link (J1, JST-XH), bulk cap and encoder pull-ups/filter mount
-  on the **back**. **TWO connection options to the NeoPixel ring, same nets:**
+  8-pin main-board link (J1, JST-XH) and bulk cap mount on the **back**. (The
+  encoder pull-ups were deleted from this board — 5 V bias would exceed the
+  console's RP2350 absolute maximum; bias comes from the MCU end on both
+  products.) **TWO connection options to the NeoPixel ring, same nets:**
   - `J2` (`segno:WirePads_1x04`) — 4 flat front pads in the module's centre hole
     for **flying wires** (5V/GND/DIN/DOUT-spare).
   - `J3` (`segno:ModuleMountPads_4`) — **4 THT pads placed exactly under the

@@ -70,12 +70,17 @@ below needs bare metal or a star washer under its terminal, or it bonds to paint
    *painted* faces, which is not a bond. Each needs a strap to the stud, or masked
    contact patches under its fasteners.
 2. **A protective-earth conductor — only if mains ever enters the box.** Today it
-   does not: the console takes 9 V DC from an external brick and the fuse is in
-   series with that. If an internal mains supply ever lands here, this stud becomes
-   a *safety* earth and its rules harden: ≥1.5 mm² green/yellow, ring terminal,
-   star washer, lock nut, and nothing else may share the fastener.
-3. **The external buck's case, if it is metal.** The potted unit currently
-   specified is not, so nothing to do — but check the part actually fitted.
+   does not: the console takes 20 V DC over a USB-C PD contract (#754) and the
+   fuse is in series with that feed. If an internal mains supply ever lands here,
+   this stud becomes a *safety* earth and its rules harden: ≥1.5 mm² green/yellow,
+   ring terminal, star washer, lock nut, and nothing else may share the fastener.
+3. **The bucks' cases, if they are metal — and check V− first.** #754 replaced
+   the single potted unit with two B0GGHN97TK bricks, which ship in aluminium
+   shells. Before bolting either to bare metal, meter its shell against its own
+   V−: a case-common negative bolted to the chassis is a second DC bond — the
+   exact loop this scheme forbids (chassis → buck case → V− → board GND → H1 →
+   chassis). Isolated shells may bond to the stud; case-common ones mount on
+   insulating pads and bond through nothing.
 
 **Deliberately NOT on the stud:**
 
@@ -111,7 +116,10 @@ Ten minutes with a multimeter on continuity, from bare chassis metal to:
       Pi 3, and the N07 NVMe board sits between the Pi and the plate in this stack.
 - [ ] **Console board GND**, with H1's screw *out* — expect open, because the only
       other paths are connector flanges. Anything else means an accidental bond.
-- [ ] **Each rear-panel connector shell**: 2× USB coupler, 2× DIN-5, 2× TRS.
+- [ ] **Each rear-panel connector shell**: 2× USB coupler, 2× DIN-5, 2× TRS, and
+      the USB-C PD coupler.
+- [ ] **Each buck's shell against its own V−** (B0GGHN97TK ×2) — mount per
+      stud item 3 above depending on what the meter says.
 - [ ] **The top shell and faceplate**, to check whether the painted joints conduct.
 
 Then decide:

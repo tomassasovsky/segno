@@ -82,8 +82,12 @@ j3[2] += v5          # +5V
 j3[3] += gnd         # GND
 j3[4] += ring_dout   # DOUT (spare; soldered for mechanical support)
 
-# bulk cap at the module power entry (16 LEDs ~1 A) -- THT radial electrolytic
-Part("Device", "C_Polarized", value="470uF",
+# bulk cap at the module power entry (16 LEDs ~1 A) -- THT radial electrolytic.
+# ESR grade in the VALUE because the value is what a BOM prints and the grade is
+# load-bearing: a general-purpose 470uF in the same can runs ~0.5 ohm, and the
+# ring's amp-scale frame edges x that ESR is real ripple on the LEDs' own VDD.
+# Same rule as the console board's C30.
+Part("Device", "C_Polarized", value="470uF 16V low-ESR <=0.15R",
      footprint="Capacitor_THT:CP_Radial_D8.0mm_P3.50mm")[1, 2] += v5, gnd
 
 # ---- EC11 rotary encoder (A,B,C common, S1,S2 switch) ----------------------

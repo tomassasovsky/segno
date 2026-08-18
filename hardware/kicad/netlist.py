@@ -63,6 +63,13 @@ def parse_netlist(path):
             name = _val(net, "name")
             nodes = [(_val(n, "ref"), _val(n, "pin")) for n in _find(net, "node")]
             if name and nodes:
+                # Last-wins here would silently drop the shadowed block's nodes.
+                # KiCad never writes duplicates -- but this repo has git
+                # TEXT-merged generated artifacts before, and a gate reasoning
+                # over half a file must fail loudly instead.
+                assert name not in nets, (
+                    f"duplicate net {name!r} in {path} -- a text-merged "
+                    "netlist? Regenerate it from its generator")
                 nets[name] = nodes
     return comps, nets
 

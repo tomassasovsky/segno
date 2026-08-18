@@ -2,7 +2,7 @@
   (version "D")
   (design
     (source "ring_board.py")
-    (date "08/17/2026 07:03 PM")
+    (date "08/18/2026 12:45 PM")
     (tool "SKiDL (2.3.0)")
     (sheet
       (number 1)
@@ -44,7 +44,7 @@
   (components
     (comp
       (ref "C1")
-      (value "470uF")
+      (value "470uF 16V low-ESR <=0.15R")
       (description "Polarized capacitor")
       (footprint "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm")
       (fields
@@ -55,16 +55,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "zSirolr39i")
+          (name "SKiDL Tag") "lXqvXA2Mx9")
         (field
-          (name "SKiDL Line") "ring_board.py:86"))
+          (name "SKiDL Line") "ring_board.py:90"))
       (libsource
         (lib "Device")
         (part "C_Polarized"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "dab58bfd-612a-58d9-9b36-a9059a5f25c3"))
+      (tstamps "c7a7580b-5e15-58a6-9a8e-adfcd9333615"))
     (comp
       (ref "C2")
       (value "100nF")
@@ -78,7 +78,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "A3GSIQ2bNn")
+          (name "SKiDL Tag") "WhIX7yMRUt")
         (field
           (name "SKiDL Line") "ring_board.py:40"))
       (libsource
@@ -87,7 +87,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "922c76e5-3696-51e9-ae1a-8ac28ae18ceb"))
+      (tstamps "d3d984d2-4089-566b-893d-7f315208636b"))
     (comp
       (ref "C3")
       (value "100nF")
@@ -101,7 +101,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "qlnGYJgHCn")
+          (name "SKiDL Tag") "y6drolJNHL")
         (field
           (name "SKiDL Line") "ring_board.py:40"))
       (libsource
@@ -110,7 +110,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "61ab9441-0d05-5f58-acb9-742bb8170bde"))
+      (tstamps "75a1f631-be14-5a0a-a64b-05fe0ba2d8a8"))
     (comp
       (ref "ENC1")
       (value "RotaryEncoder_Switch")
@@ -124,16 +124,16 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "cG9paMRNPp")
+          (name "SKiDL Tag") "DK3ZF64FDi")
         (field
-          (name "SKiDL Line") "ring_board.py:90"))
+          (name "SKiDL Line") "ring_board.py:94"))
       (libsource
         (lib "Device")
         (part "RotaryEncoder_Switch"))
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "60a01105-4c65-5839-8446-a08c78c05783"))
+      (tstamps "dd21e861-0898-5a13-98c3-74aafa7a822c"))
     (comp
       (ref "J1")
       (value "Conn_01x08")
@@ -147,7 +147,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "yuSzR6NxwL")
+          (name "SKiDL Tag") "mug2MSf5V3")
         (field
           (name "SKiDL Line") "ring_board.py:55"))
       (libsource
@@ -156,7 +156,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "b7b423a6-3773-5478-8c35-328a8586f655"))
+      (tstamps "309da1ec-977c-5036-81d6-ba5f4bfa3bcc"))
     (comp
       (ref "J2")
       (value "NEOPIXEL")
@@ -170,7 +170,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "Gq5etoky1Q")
+          (name "SKiDL Tag") "EDxFtmRrXw")
         (field
           (name "SKiDL Line") "ring_board.py:66"))
       (libsource
@@ -179,7 +179,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "c9dca4f9-ee39-5261-a49d-84dc292d51f8"))
+      (tstamps "0da30448-ca62-5663-a92c-c17825f9ae3e"))
     (comp
       (ref "J3")
       (value "RINGPINS")
@@ -193,7 +193,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "84ON3MKYEu")
+          (name "SKiDL Tag") "3QOC5tmkFi")
         (field
           (name "SKiDL Line") "ring_board.py:78"))
       (libsource
@@ -202,7 +202,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "c60556d3-cc14-5b3f-bbc5-503016aed5a2")))
+      (tstamps "88180c1b-4715-5c67-b472-2322a70e4bf8")))
   (nets
     (net
       (code 1)

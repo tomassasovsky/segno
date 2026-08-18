@@ -3,7 +3,7 @@
 Generates a **manufacturing package** for a wedge-shaped floor console modelled on
 the "Chewie II" / Sonnit reference (850 x 465 x 100 mm, top sloping toward the
 player), housing this repo's standalone build: a Raspberry Pi 4/5 running segno,
-the segno_pedal_main board, ten foot pedals, the EC11 encoder + diffused LED ring,
+the console board v2 (#747), ten foot pedals, the EC11 encoder + diffused LED ring,
 SMD LED-strip status indicators (WS2812B segments behind diffuser slots) and a
 7" + 16" touchscreen pair. Branded **Segno**.
 
@@ -1496,34 +1496,23 @@ def _bottom_vents():
 # --- internal board mounting -------------------------------------------------
 # Bottom-plate frame: x = width (0..W-2T), y = depth (0..D-2T, 0 = front).
 # The pedal platforms hang from the walls at the front + CLEAR/BANK rows, so the
-# REAR strip of the bottom plate is the clear floor for the electronics. ONE main
-# board (the V1 segno_pedal_main) mounts there on M3 standoffs (>= STANDOFF_H for
-# airflow). 16" screen above is shallow -> clears it.
-# Offset 25 mm off the board anchor (BOARD_ANCHOR_U), AWAY from the CLEAR/BANK
-# platform column: the Pro Micro's USB socket faces that platform, and centring the
-# board left only ~6 mm to it — not enough for a USB-C/micro plug body. The offset
-# buys ~37 mm to the platform slot edge. Sat forward of the rear wall to leave room
-# for the Raspberry Pi, which (in the Pi build) tucks behind the board with its port
-# cluster out the window. The mid-row platforms clear the rear strip, so depth is
-# generous. (Only the Pi needs to stay centred on the window — see pi_mount.)
+# REAR strip of the bottom plate is the clear floor for the electronics. ONE
+# control board -- the console board v2 (#747) -- mounts there on M3 standoffs
+# (>= STANDOFF_H for airflow); the 16" screen above is shallow and clears it.
+# The board's position is BOARD_U below (both boards under the 16" screen); the
+# V1-era rationale about a Pro Micro USB plug facing the platform column died
+# with that board -- the v2 board's only cable to the Pi is the keyed ribbon.
 # Both boards live under the 16" screen now. The console board terminates five rear
 # stations, so the cluster moved with it (see REAR_IO_U) -- which is what makes this
 # possible: the board is still under its own connectors, and the Pi is 30 mm away
 # instead of 402, so the ribbon is a stock 10 cm part rather than something to hunt.
-BOARD_U = 512.0
-# WHY THE BOARD IS HERE AND NOT NEXT TO THE Pi. It is 477 mm from it, which invites
-# the obvious question, and the answer is that both positions are pinned by
-# something else. The Pi has to sit under the 16" screen (#743, gated in _check as
-# REAR_BAY). The console board has to sit under its own rear-panel stations: POWER,
-# MIDI_IN, MIDI_OUT, CTRL_1 and CTRL_2 all land between u=77 and u=288, and this
-# board terminates every one of them.
 #
-# Closing the gap therefore does not remove a cable, it moves one. Next to the Pi,
-# the 40-way ribbon shrinks to ~100 mm and FIVE panel looms grow by ~400 mm -- two
-# of which are the CTRL tip lines, unshielded analog running into an ADC, and the
-# noisiest thing in the box to lengthen. The ribbon carries 31.25 kbaud MIDI, a
-# UART link and an SWD port used only for flashing: slow, digital, and the right
-# cable to make long. It stays.
+# THE CLUSTER FOLLOWS THE BOARD, and that is electrical, not tidiness: the CTRL
+# tip lines are unshielded analog running into an ADC -- the noisiest thing in
+# the box to lengthen -- so wherever the board goes, CTRL_1/CTRL_2 (and the rest
+# of the five stations) go with it. A reshuffle that parks the CTRL jacks away
+# from the board's end of the cluster buys hum on an expression pedal.
+BOARD_U = 512.0
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
     return [("CONSOLE_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
@@ -2836,7 +2825,7 @@ def build_step(write_parts=True):
     for i, (label, u, v) in enumerate(PEDALS):
         plat = _platform_printed(cq, platform_h(v), v)
         addw(plat, f"platform_{i}", cq.Location(cq.Vector(v * _cs, u + T, T)))
-    # representative segno_pedal_main board on standoffs, rear clear zone (visual stand-in;
+    # representative console board v2 on standoffs, rear clear zone (visual stand-in;
     # the fully-detailed KiCad model is rendered in the 3D viewer, not the STEP)
     blk = {"CONSOLE_BOARD": (BOARD_SIZE[0], BOARD_SIZE[1], 16.0)}
     for name, cx, cy, pat in board_mounts():
