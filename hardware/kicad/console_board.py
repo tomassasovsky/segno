@@ -377,7 +377,8 @@ j_ring[5] += ring_out
 # Pro Micro (main_board.py); against an RP2350 they sat 1.4 V over the 3.6 V
 # absolute maximum on GP13/GP14, continuously, whenever the console was powered.
 # Nothing caught it: PI_LEVELS guards the Pi, and no gate could see across into a
-# second generator's netlist. PICO_LEVELS below now does.
+# second generator's netlist. RING_LEVELS in _check() now reads ring_board.net
+# for exactly that shape (and CONSOLE_LEVELS watches this board's own parts).
 R("10k")[1, 2] += v3v3, encA
 R("10k")[1, 2] += v3v3, encB
 R("10k")[1, 2] += v3v3, encSW      # ring_board.py never had one on the switch
@@ -549,9 +550,14 @@ R("100k", ref="R16")[1, 2] += ind_data, gnd
 # unrated clamp is <=1 mA. 1 k bounded it at ~2.7 mA -- above that line, for
 # days at a stretch; 10 k bounds it at ~270 uA, and at the link's 115200 baud
 # (firmware/led_driver) the RC against ~20-50 pF is 0.2-0.5 us against an
-# 8.7 us bit -- edges stay clean. SWCLK/SWDIO get no series resistor: the only
-# standing source there is the Pico's own ~60k SWDIO pull-up, a ~50 uA trickle
-# 50x under the line, and bitbanged SWD wants its edges unloaded while flashing.
+# 8.7 us bit -- edges stay clean. The practical ceiling with 10 k is ~230 kbaud;
+# a faster link someday means a smaller R (and re-doing this arithmetic), not a
+# quiet baud bump. Firmware note: at soft-off the Pico's internal pull-up cannot
+# restore idle-high on LINK_RX through 10 k against the dead pad's clamp -- the
+# line reads as a standing break; detect Pi-off by that, do not fight it.
+# SWCLK/SWDIO get no series resistor: the only standing source there is the
+# Pico's own ~60k SWDIO pull-up, a ~50 uA trickle ~20x under the line, and
+# bitbanged SWD wants its edges unloaded while flashing.
 R("10k", ref="R17")[1, 2] += link_tx, link_tx_pi
 R("10k", ref="R18")[1, 2] += link_rx_pi, link_rx
 
@@ -625,8 +631,8 @@ PI_HDR = {
     # GPIO8/9 are SPI0's CE0 and MISO. Nothing here uses SPI0: the screens are USB
     # and HDMI, the SSD is PCIe, and MIDI and the link are UARTs. If an SPI device
     # ever lands on this Pi, this is the pair it will want.
-    24: link_rx_pi,  # GPIO8, uart3 TX -> R18 -> Pico RX  (3V3 -> 3V3, via 1 k)
-    21: link_tx_pi,  # GPIO9, uart3 RX <- R17 <- Pico TX  (3V3 -> 3V3, via 1 k)
+    24: link_rx_pi,  # GPIO8, uart3 TX -> R18 -> Pico RX  (3V3 -> 3V3, via 10 k)
+    21: link_tx_pi,  # GPIO9, uart3 RX <- R17 <- Pico TX  (3V3 -> 3V3, via 10 k)
     18: swclk, 22: swdio,
 }
 j_pi = Part("Connector_Generic", "Conn_02x20_Odd_Even",
@@ -713,9 +719,22 @@ def _check(strict_stations=True):
         "of the ring cable is what J6 is checked against")
     # One parse serves both ring gates -- RING_CONTRACT and RING_LEVELS reason
     # from the same snapshot of the file, and pin_map()'s second parse goes away.
+    # Pin keys are normalised (a future exporter writing "01" must not pass the
+    # 1..8 guard and then KeyError three lines later), and a pin on two nets is
+    # a broken netlist, said so instead of last-wins.
     _ring_comps, _ring_nets = netlist.parse_netlist(RING_NET)
-    ring_j1 = {p: n for n, nodes in _ring_nets.items() for r, p in nodes
-               if r == "J1"}
+    ring_j1 = {}
+    for _n, _nodes in _ring_nets.items():
+        for _r, _p in _nodes:
+            if _r != "J1":
+                continue
+            assert str(_p).strip().isdigit(), (
+                f"RING_CONTRACT: ring_board J1 pin {_p!r} is not numeric")
+            _key = str(int(_p))
+            assert _key not in ring_j1, (
+                f"RING_CONTRACT: ring_board J1 pin {_key} appears on two nets "
+                f"({ring_j1[_key]} and {_n}) -- the netlist is broken")
+            ring_j1[_key] = _n
     assert sorted(int(p) for p in ring_j1) == list(range(1, 9)), (
         f"RING_CONTRACT: ring_board J1 has pins {sorted(ring_j1)}, expected 1..8 -- "
         "the cable is 8-way at this end")
@@ -735,40 +754,39 @@ def _check(strict_stations=True):
     # separate -- which is exactly the historical failure (ring_board's 10k to 5 V
     # on GP13/GP14, 1.4 V over the RP2350's 3.6 V absolute maximum). RING_CONTRACT
     # cannot see it either: adding a pull-up changes no pin's net, so the
-    # positional map stays green. Three hardenings from review, each closing a
-    # way the gate could go quietly blind:
+    # positional map stays green. Hardenings from review, each closing a way the
+    # gate could go quietly blind:
     #   * the rail is read off J1 pin 1 rather than named (a renamed rail cannot
     #     retire the check);
     #   * the encoder pins are DERIVED from which J6 positions carry the encoder
     #     nets, not hardcoded -- a coordinated cable re-pin (which RING_CONTRACT
     #     permits by design) moves the watch with it;
-    #   * unknown parts fail CLOSED: parse_netlist silently drops a comp whose
-    #     footprint is missing or unparsable, and an absent comp must not read as
-    #     "not a resistor". Classification also matches resistor-shaped VALUES
-    #     (10k, 4k7...) so a resistor on a custom footprint lib is still caught.
+    #   * the rule needs NO classification: any TWO-PIN part bridging the rail
+    #     to an encoder line delivers the rail's DC to a Pico input, whatever it
+    #     calls itself -- resistor, 0R jumper, ferrite bead, capacitor. Judging
+    #     by footprint lib or value string failed open on custom libs and
+    #     suffixed values; a connected-pin count from the netlist cannot. J1
+    #     itself (8 pins) and the encoder are exempt by arithmetic, not by name.
     _rail = ring_j1["1"]
     _rail_refs = {r for r, _p in _ring_nets.get(_rail, [])}
+    _node_count = {}
+    for _n, _nodes in _ring_nets.items():
+        for _r, _p in _nodes:
+            _node_count[_r] = _node_count.get(_r, 0) + 1
     _enc_pins = [_p for _p in ring_j1
                  if {n.name for n in j_ring[int(_p)].nets}
                  & {"ENC_A", "ENC_B", "ENC_SW"}]
     assert len(_enc_pins) == 3, (
         f"RING_LEVELS: expected 3 encoder pins on J6, found {_enc_pins} -- the "
         "derivation from the console-side nets has come apart")
-    _r_value = re.compile(r"^\d+(\.\d+)?[kKmMrR]?\d*$")
     for _pin in _enc_pins:
         _sig = ring_j1[_pin]
         for _ref, _pad in _ring_nets.get(_sig, []):
-            assert _ref in _ring_comps, (
-                f"RING_LEVELS: {_ref} sits on {_sig} (J1 pin {_pin}) but has no "
-                "parsable footprint in ring_board.net -- an unclassifiable part "
-                "on an encoder line fails CLOSED, not open; assign a footprint")
-            _lib, _fpname, _val = _ring_comps[_ref]
-            _looks_r = _lib.startswith("Resistor") or bool(_r_value.match(_val))
-            assert not (_ref in _rail_refs and _looks_r), (
+            assert not (_ref in _rail_refs and _node_count.get(_ref, 9) <= 2), (
                 f"RING_LEVELS: {_ref} on ring_board bridges {_sig} (J1 pin {_pin}) "
-                f"to {_rail} -- a pull-up to the LED rail puts 5 V on a Pico input "
-                "whose absolute maximum is 3.6 V, and no direct-contact gate can "
-                "see a resistive path")
+                f"to {_rail} -- a two-pin part from the LED rail to an encoder "
+                "line puts 5 V on a Pico input whose absolute maximum is 3.6 V, "
+                "and no direct-contact gate can see the path")
 
     assert len(EXP_PINOUT) == 8 and EXP_PINOUT[:2] == ["+3V3", "+5V"] \
         and EXP_PINOUT[-1] == "GND", (
@@ -899,20 +917,23 @@ def _check(strict_stations=True):
     # board's own parts. The ring board shipped the mistake once (10k pull-ups to
     # 5 V on Pico inputs) and nothing here would have caught the same move on the
     # console board itself: PI/PICO_LEVELS see only direct contact, RING_LEVELS
-    # reads only the other board's netlist. No allowlist -- since R14 pulls DOWN,
-    # no legitimate resistor on this board bridges +5V to a Pi or Pico signal.
+    # reads only the other board's netlist. Same classification-free rule as
+    # RING_LEVELS: any TWO-PIN part bridging +5V to a protected net delivers 5 V
+    # there, whatever its footprint claims -- and the pin-count arithmetic
+    # exempts U1/the module/J22 (whose VCC-beside-signal pads are legitimate)
+    # without naming them. No allowlist: since R14 pulls DOWN, no legitimate
+    # two-pin part on this board bridges +5V to any of these nets.
     _protected = {n.name for n in (link_tx, link_rx, link_tx_pi, link_rx_pi,
                                    midi_tx, midi_rx, pwr_btn, swclk, swdio,
                                    ring_data, ind_data, encA, encB, encSW,
                                    ctrl1, ctrl2)}
     for _p in default_circuit.parts:
-        _fp = str(getattr(_p, "footprint", "") or "")
-        if not _fp.startswith("Resistor"):
+        if len(_p.pins) > 2:
             continue
         _touch = {n.name for _pin in _p.pins for n in _pin.nets}
         assert not ("+5V" in _touch and _touch & _protected), (
             f"CONSOLE_LEVELS: {_p.ref} bridges +5V to "
-            f"{sorted(_touch & _protected)} -- a resistive path to 5 V on a "
+            f"{sorted(_touch & _protected)} -- a two-pin path to 5 V on a "
             "3.3 V-only pin passes every direct-contact gate and cooks the pin "
             "at leisure; the ring board already shipped this mistake once")
 
@@ -929,13 +950,24 @@ def _check(strict_stations=True):
         f"PIN_REFS: {_strays} exist -- a pinned ref collided with the auto "
         "counter and SKiDL renamed it; declare pinned parts after the last "
         "auto-numbered one")
-    for _ref, _want_val in (("R14", "100k"), ("R15", "100k"), ("R16", "100k"),
-                            ("R17", "10k"), ("R18", "10k")):
+    # Identity is value AND nets: the recorded usurper was itself a 10k, so a
+    # value check alone cannot tell the stolen name from the real part -- the
+    # nets can, always.
+    for _ref, _want_val, _want_nets in (
+            ("R14", "100k", {"MIDI_TX", "GND"}),
+            ("R15", "100k", {"RING_DATA", "GND"}),
+            ("R16", "100k", {"IND_DATA", "GND"}),
+            ("R17", "10k", {"LINK_TX", "LINK_TX_PI"}),
+            ("R18", "10k", {"LINK_RX_PI", "LINK_RX"})):
         _p = next((p for p in default_circuit.parts if p.ref == _ref), None)
         assert _p is not None and _p.value == _want_val, (
             f"PIN_REFS: {_ref} is "
             f"{'missing' if _p is None else 'a ' + str(_p.value)} -- the pinned "
             f"ref no longer names the {_want_val} part it was declared as")
+        _got = {n.name for _pin in _p.pins for n in _pin.nets}
+        assert _got == _want_nets, (
+            f"PIN_REFS: {_ref} sits on {sorted(_got)}, declared for "
+            f"{sorted(_want_nets)} -- the name survives on the wrong part")
 
     if strict_stations:
         assert os.path.exists(STATIONS_JSON), (

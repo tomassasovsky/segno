@@ -3,7 +3,7 @@
 Generates a **manufacturing package** for a wedge-shaped floor console modelled on
 the "Chewie II" / Sonnit reference (850 x 465 x 100 mm, top sloping toward the
 player), housing this repo's standalone build: a Raspberry Pi 4/5 running segno,
-the segno_pedal_main board, ten foot pedals, the EC11 encoder + diffused LED ring,
+the console board v2 (#747), ten foot pedals, the EC11 encoder + diffused LED ring,
 SMD LED-strip status indicators (WS2812B segments behind diffuser slots) and a
 7" + 16" touchscreen pair. Branded **Segno**.
 
@@ -1496,16 +1496,12 @@ def _bottom_vents():
 # --- internal board mounting -------------------------------------------------
 # Bottom-plate frame: x = width (0..W-2T), y = depth (0..D-2T, 0 = front).
 # The pedal platforms hang from the walls at the front + CLEAR/BANK rows, so the
-# REAR strip of the bottom plate is the clear floor for the electronics. ONE main
-# board (the V1 segno_pedal_main) mounts there on M3 standoffs (>= STANDOFF_H for
-# airflow). 16" screen above is shallow -> clears it.
-# Offset 25 mm off the board anchor (BOARD_ANCHOR_U), AWAY from the CLEAR/BANK
-# platform column: the Pro Micro's USB socket faces that platform, and centring the
-# board left only ~6 mm to it — not enough for a USB-C/micro plug body. The offset
-# buys ~37 mm to the platform slot edge. Sat forward of the rear wall to leave room
-# for the Raspberry Pi, which (in the Pi build) tucks behind the board with its port
-# cluster out the window. The mid-row platforms clear the rear strip, so depth is
-# generous. (Only the Pi needs to stay centred on the window — see pi_mount.)
+# REAR strip of the bottom plate is the clear floor for the electronics. ONE
+# control board -- the console board v2 (#747) -- mounts there on M3 standoffs
+# (>= STANDOFF_H for airflow); the 16" screen above is shallow and clears it.
+# The board's position is BOARD_U below (both boards under the 16" screen); the
+# V1-era rationale about a Pro Micro USB plug facing the platform column died
+# with that board -- the v2 board's only cable to the Pi is the keyed ribbon.
 # Both boards live under the 16" screen now. The console board terminates five rear
 # stations, so the cluster moved with it (see REAR_IO_U) -- which is what makes this
 # possible: the board is still under its own connectors, and the Pi is 30 mm away
@@ -2829,7 +2825,7 @@ def build_step(write_parts=True):
     for i, (label, u, v) in enumerate(PEDALS):
         plat = _platform_printed(cq, platform_h(v), v)
         addw(plat, f"platform_{i}", cq.Location(cq.Vector(v * _cs, u + T, T)))
-    # representative segno_pedal_main board on standoffs, rear clear zone (visual stand-in;
+    # representative console board v2 on standoffs, rear clear zone (visual stand-in;
     # the fully-detailed KiCad model is rendered in the 3D viewer, not the STEP)
     blk = {"CONSOLE_BOARD": (BOARD_SIZE[0], BOARD_SIZE[1], 16.0)}
     for name, cx, cy, pat in board_mounts():

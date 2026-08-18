@@ -236,7 +236,11 @@ with its pedal function** (RECPLAY, STOP, …) plus its ref designator. Mapping:
 - **12× WS2812B** in a circle (loop ring), chain indices 7–18, DIN from the cable,
   DOUT unused (end of chain). 100 nF per ~4 LEDs + **1000 µF** bulk across 5 V at DIN.
 - **EC11 rotary encoder** (with push switch): A→ENC_A, B→ENC_B, C(common)→GND,
-  switch→ENC_SW + GND. Add **10 kΩ pull-ups + 100 nF** RC on A/B (encoders bounce).
+  switch→ENC_SW + GND. 100 nF RC on A/B (encoders bounce). **No pull-ups on this
+  board** — they were deleted (5 V bias exceeds the console RP2350's absolute
+  max; the console board pulls up at 3V3, and the standalone pedal's 32U4 relies
+  on its internal pull-ups, which `segno_pedal.ino` enables via `INPUT_PULLUP` —
+  that internal bias is now load-bearing, not belt-and-suspenders).
 - **Inter-board connector** (8-pin JST-XH, see §9).
 - Center cutout / mount for the encoder shaft; ring LED pitch sized to the enclosure.
 

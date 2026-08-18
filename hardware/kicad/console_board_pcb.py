@@ -860,7 +860,7 @@ def _check_place(fps):
         x0, y0, x1, y1 = _extent(fp)
         assert 0.5 <= x0 and x1 <= BW - 0.5 and 0.5 <= y0 and y1 <= BH - 0.5, (
             f"PLACE: {ref} spans ({x0:.1f},{y0:.1f})..({x1:.1f},{y1:.1f}), outside "
-            f"the {BW:.0f}x{BH:.0f} outline")
+            f"the {BW:.1f}x{BH:.1f} outline")
 
     # footprints must not overlap each other
     refs = sorted(fps)
