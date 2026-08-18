@@ -26,10 +26,12 @@ WS2812 timing to an RP2040 for exactly that reason.
 
 THE PICO DELETED THE LEVEL-SHIFTING PROBLEM
 -------------------------------------------
-segno_wiring.md section 2b specifies a 1k8/3k3 divider and an AHCT gate on the MCU
-link. That was written for a **Pro Micro at 5 V** against a Pi that is not 5 V
-tolerant. The RP2350 is **3.3 V, the same as the Pi**, so the link is a direct
-wire in both directions -- no divider, no buffer, nothing to get wrong.
+The old plan (a 5 V Pro Micro) needed a 1k8/3k3 divider and an AHCT gate on the
+MCU link; the RP2350 is **3.3 V, the same as the Pi**, so the link needs no
+level shifting in either direction. It is not bare wire, though: R17/R18 put
+10 k in series, bounding the current that flows when one power domain is up and
+the other is not (see their comment block). segno_wiring.md section 3 carries
+the harness-facing version of this story.
 
 The 74AHCT125 is still here, but for the three places that genuinely cross 3.3 -> 5:
   * MIDI OUT   -- the Pi's 3.3 V TX cannot drive a 5 V MIDI current loop
@@ -42,12 +44,13 @@ Ref-designator blocks (allocated up front -- main_board.py had to pin ref="C16" 
 stop a late addition renumbering C1..C15 and invalidating a started layout):
     J1  Pico 2          J2  Pi ribbon      J3  power in     J4  MIDI OUT
     J5  MIDI IN         J6  ring/encoder   J7  indicators   J8  power button
-    J9  SWD             J10..J19 footswitches               J20/J21 CTRL 1/2
-    U1  74AHCT125       U2  H11L1
-    R14..R16 idle-state resistors (U1's inputs)             R17/R18 link series
+    J9  Pi power-button pads (through-lead)                 J10..J19 footswitches
+    J20/J21 CTRL 1/2    U1  74AHCT125      U2  H11L1
+    R14..R16 idle-state pull-downs (U1's inputs)            R17/R18 link series
 """
 import json
 import os
+import re
 import sys
 import tempfile
 
@@ -138,7 +141,7 @@ v3v3 = Net("+3V3")         # from the Pi ribbon -- the MIDI front end is the Pi'
                            # is up, regardless of the MCU
 link_tx = Net("LINK_TX")   # Pico -> Pi   (3V3 both ends: no level shifting...)
 link_rx = Net("LINK_RX")   # Pi   -> Pico (3V3 both ends)
-link_tx_pi = Net("LINK_TX_PI")   # ...but 1 k in series (R17/R18): these are the
+link_tx_pi = Net("LINK_TX_PI")   # ...but 10 k in series (R17/R18): these are the
 link_rx_pi = Net("LINK_RX_PI")   # two nets that cross power domains -- see below
 midi_tx = Net("MIDI_TX")   # Pi uart0 TX -> AHCT125 -> DIN OUT
 midi_rx = Net("MIDI_RX")   # opto (3V3) -> Pi uart0 RX
@@ -189,11 +192,11 @@ pico[37].do_erc = False          # 3V3_EN -- internal pull-up
 # as an unconnected pin, and a wall of expected warnings is how a REAL one gets
 # missed -- so the exemptions are named here rather than tolerated in the log.
 # main_board.py does the same for its unused AHCT gates and MIDI IN's DIN pin 2.
-# GP0/GP1 are the only pins left with nothing on them -- they are row A's far end,
-# where a header would straddle the whole module (see EXPANSION_GPIO below). The
-# other five unused GPIO go to the expansion header J22 rather than being quietly
-# ERC-exempted into thin air -- an unpopulated 2x4 costs a footprint and nothing
-# else, and it is the difference between "add a feature" and "respin the board".
+# GP0/GP1 are the only pins left with nothing on them (why: the EXPANSION_GPIO
+# note below). The other five unused GPIO go to the expansion header J22 rather
+# than being quietly ERC-exempted into thin air -- an unpopulated 2x4 costs a
+# footprint and nothing else, and it is the difference between "add a feature"
+# and "respin the board".
 SPARE_GPIO = (0, 1)
 # All five are row-B pads, so ONE header reaches all of them -- GP0/GP1 are row A
 # (the far end of the module) and would have made J22 straddle the whole thing, so
@@ -418,7 +421,7 @@ SWD_PADS = {"D1": swclk, "D2": gnd, "D3": swdio}
 for _pad, _net in SWD_PADS.items():
     pico[_pad] += _net
 
-# ---- J22: expansion -- the six GPIO that are otherwise doing nothing ---------
+# ---- J22: expansion -- the five GPIO that are otherwise doing nothing --------
 # Deliberately unpopulated by default. GP0/GP1 are a UART0 pair and GP20/GP21 a
 # UART1 pair, so this header can carry a whole second serial device; GP28 is an
 # ADC, so it can carry a third pedal input. Nothing on the board depends on it.
@@ -484,11 +487,16 @@ j_pwr[1] += v5
 j_pwr[2] += gnd
 j_pwr[3] += v5          # pins 1/3 and 2/4 are PARALLEL, not two rails: XH is
 j_pwr[4] += gnd         # ~3 A per contact and the LED chain alone nears that
-# The voltage is part of the VALUE because the value is what the BOM prints, and
-# the rating is load-bearing at purchase time: a common 16 V 470uF is 8 x 11.5 mm
-# on 3.5 mm pitch and does not fit this 10 mm / 5 mm land. 25 V is the rating
-# whose can matches the footprint (see the C_FP note above).
-CP("470uF 25V", "Capacitor_THT:CP_Radial_D10.0mm_P5.00mm", ref="C30")[1, 2] += v5, gnd
+# The voltage AND the ESR grade are part of the VALUE because the value is what
+# the BOM prints, and both are load-bearing at purchase time: a common 16 V 470uF
+# is 8 x 11.5 mm on 3.5 mm pitch and does not fit this 10 mm / 5 mm land (25 V is
+# the rating whose can matches -- see the C_FP note above), and a general-purpose
+# 470uF/25V ships in the IDENTICAL can at ~0.5 ohm ESR -- which, against the
+# WS2812 chain's amp-scale frame-edge steps, puts ~0.5-1 V of excursion on the
+# shared 5 V rail the AHCT (VCC min 4.5 V) also lives on. Low-ESR is the spec,
+# bounded so a buyer can check it. ring_board.py's C1 carries the same rule.
+CP("470uF 25V low-ESR <=0.15R", "Capacitor_THT:CP_Radial_D10.0mm_P5.00mm",
+   ref="C30")[1, 2] += v5, gnd
 CP("100uF 16V", "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", ref="C31")[1, 2] += v5, gnd
 
 # ---- R14..R18: the review-fix resistors (idle states + the power-domain seam)
@@ -497,20 +505,36 @@ CP("100uF 16V", "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", ref="C31")[1, 2] += v5
 # renumbered themselves, and the pinned "R17" collided into an R17_1 -- exactly
 # the renumbering the ref-block note at the top exists to prevent.
 #
-# R14..R16 are idle-state resistors for U1's inputs. CMOS inputs must never float
-# while the package is powered, and each of the three has a state where its
-# driver is gone:
-#   * MIDI_TX floats whenever the Pi is halted while BUCK_AUX keeps this board up
-#     -- and soft-off IS that state, for as long as the console sits "off". A
-#     floating gate-C input is ICC shoot-through in U1 and garbage bytes into
-#     whatever synth is on MIDI OUT. Pull UP, and to +5V rather than 3V3: the 3V3
-#     rail is the Pi's own and is dead in exactly this state. Idle-high is MIDI's
-#     no-current idle, the AHCT input is 5 V-rated, and when the Pi IS up its
-#     push-pull TX sees 17 uA against a driven pin -- nothing.
-#   * RING_DATA and IND_DATA float while the Pico is held in reset over SWD --
-#     every reflash, with the board powered. Pull DOWN: a WS2812 chain with a low
-#     data line holds its last frame instead of strobing garbage at the player.
-R("100k", ref="R14")[1, 2] += v5, midi_tx
+# R14..R16 are idle-state resistors for U1's inputs -- all three pull DOWN.
+# CMOS inputs must never float while the package is powered, and each input has a
+# state where its driver is gone. Uniform pull-downs make every such state a
+# DETERMINISTIC low; the first cut pulled MIDI_TX up to +5V instead, and review
+# proved that wrong twice over on the same net:
+#   * At soft-off (Pi halted, RP1 unpowered, this board still on BUCK_AUX) the
+#     dead pad's protection clamp -- the same clamp R17/R18's rationale below is
+#     built on -- pins MIDI_TX near one diode above the collapsed 3V3 rail. A
+#     100k pull-up cannot lift a clamped pad: the node parks AT the AHCT's 0.8 V
+#     VIL boundary, or in the 0.8-2.0 V forbidden band if the rail drifts.
+#   * At every boot, RP1's default ~50k pull-down on GPIO14 divides against a
+#     100k-to-5V to ~1.7 V -- mid-threshold on a hysteresis-free input, i.e. the
+#     chatter the resistor was added to kill, in a window that used to be a clean
+#     solid low. No resistor pair fixes this by level (the divider constraints
+#     for high-at-soft-off and low-when-driven exclude each other).
+# So MIDI_TX pulls DOWN, and the consequence is ACCEPTED and stated: in every
+# undriven window (soft-off, boot, an image without the uart0 overlay) gate C
+# drives the MIDI OUT loop low = a standing MIDI break, ~5-6 mA through an
+# attached synth's opto -- harmless to any compliant receiver, byte-free, and
+# deterministic. True no-current idle at soft-off would take a FET inverter
+# qualifying gate C's /OE with 3V3-presence; take that only if a real device in
+# the field objects to break.
+#   * RING_DATA and IND_DATA: their pull-downs cover the states where the module
+#     is absent or unprogrammed (bench bring-up, a bare board). During SWD reset
+#     the RP2350 already holds its pads LOW itself -- PADS_BANK0 resets with the
+#     pull-down enabled and the input isolated, so the lines never actually
+#     float in reset; the external 100k is a same-direction backstop, not the
+#     thing preventing a mid-flash light show. A low data line is the WS2812
+#     latch state: the chain holds its last frame.
+R("100k", ref="R14")[1, 2] += midi_tx, gnd
 R("100k", ref="R15")[1, 2] += ring_data, gnd
 R("100k", ref="R16")[1, 2] += ind_data, gnd
 
@@ -520,12 +544,16 @@ R("100k", ref="R16")[1, 2] += ind_data, gnd
 # this board -- and the Pico, whose UART TX idles HIGH -- alive. 3.3 V into an
 # unpowered RP1 pin runs standing current through its protection clamp; the mirror
 # case (Pi up, J3 unplugged on a bench) phantom-powers the Pico through LINK_RX.
-# 1 k in each line bounds either case under 3 mA -- invisible at link baud rates,
-# harmless at either clamp. SWCLK/SWDIO get no resistor on purpose: the Pi drives
-# them only while flashing, which is not a standing state, and bitbanged SWD wants
-# its edges clean.
-R("1k", ref="R17")[1, 2] += link_tx, link_tx_pi
-R("1k", ref="R18")[1, 2] += link_rx_pi, link_rx
+# 10 k, not 1 k: the injection is CONTINUOUS for as long as the console sits off,
+# RP1 publishes no continuous-injection rating, and the conservative line for an
+# unrated clamp is <=1 mA. 1 k bounded it at ~2.7 mA -- above that line, for
+# days at a stretch; 10 k bounds it at ~270 uA, and at the link's 115200 baud
+# (firmware/led_driver) the RC against ~20-50 pF is 0.2-0.5 us against an
+# 8.7 us bit -- edges stay clean. SWCLK/SWDIO get no series resistor: the only
+# standing source there is the Pico's own ~60k SWDIO pull-up, a ~50 uA trickle
+# 50x under the line, and bitbanged SWD wants its edges unloaded while flashing.
+R("10k", ref="R17")[1, 2] += link_tx, link_tx_pi
+R("10k", ref="R18")[1, 2] += link_rx_pi, link_rx
 
 # ---- J2: the Pi ribbon (2x20, SHROUDED and KEYED) ---------------------------
 # Reversed, a 2x20 puts 5 V onto GND pins -- specify a shrouded header with a
@@ -683,7 +711,11 @@ def _check(strict_stations=True):
     assert os.path.exists(RING_NET), (
         f"RING_CONTRACT: {RING_NET} is missing -- run ring_board.py; the other end "
         "of the ring cable is what J6 is checked against")
-    ring_j1 = netlist.pin_map(RING_NET, "J1")
+    # One parse serves both ring gates -- RING_CONTRACT and RING_LEVELS reason
+    # from the same snapshot of the file, and pin_map()'s second parse goes away.
+    _ring_comps, _ring_nets = netlist.parse_netlist(RING_NET)
+    ring_j1 = {p: n for n, nodes in _ring_nets.items() for r, p in nodes
+               if r == "J1"}
     assert sorted(int(p) for p in ring_j1) == list(range(1, 9)), (
         f"RING_CONTRACT: ring_board J1 has pins {sorted(ring_j1)}, expected 1..8 -- "
         "the cable is 8-way at this end")
@@ -703,16 +735,36 @@ def _check(strict_stations=True):
     # separate -- which is exactly the historical failure (ring_board's 10k to 5 V
     # on GP13/GP14, 1.4 V over the RP2350's 3.6 V absolute maximum). RING_CONTRACT
     # cannot see it either: adding a pull-up changes no pin's net, so the
-    # positional map stays green. The rail is read off J1 pin 1 rather than named,
-    # so a renamed rail cannot silently retire this check.
-    _ring_comps, _ring_nets = netlist.parse_netlist(RING_NET)
+    # positional map stays green. Three hardenings from review, each closing a
+    # way the gate could go quietly blind:
+    #   * the rail is read off J1 pin 1 rather than named (a renamed rail cannot
+    #     retire the check);
+    #   * the encoder pins are DERIVED from which J6 positions carry the encoder
+    #     nets, not hardcoded -- a coordinated cable re-pin (which RING_CONTRACT
+    #     permits by design) moves the watch with it;
+    #   * unknown parts fail CLOSED: parse_netlist silently drops a comp whose
+    #     footprint is missing or unparsable, and an absent comp must not read as
+    #     "not a resistor". Classification also matches resistor-shaped VALUES
+    #     (10k, 4k7...) so a resistor on a custom footprint lib is still caught.
     _rail = ring_j1["1"]
     _rail_refs = {r for r, _p in _ring_nets.get(_rail, [])}
-    for _pin in ("6", "7", "8"):              # ENC_A / ENC_B / ENC_SW -> Pico GPIO
+    _enc_pins = [_p for _p in ring_j1
+                 if {n.name for n in j_ring[int(_p)].nets}
+                 & {"ENC_A", "ENC_B", "ENC_SW"}]
+    assert len(_enc_pins) == 3, (
+        f"RING_LEVELS: expected 3 encoder pins on J6, found {_enc_pins} -- the "
+        "derivation from the console-side nets has come apart")
+    _r_value = re.compile(r"^\d+(\.\d+)?[kKmMrR]?\d*$")
+    for _pin in _enc_pins:
         _sig = ring_j1[_pin]
         for _ref, _pad in _ring_nets.get(_sig, []):
-            _lib = _ring_comps.get(_ref, ("", "", ""))[0]
-            assert not (_ref in _rail_refs and _lib.startswith("Resistor")), (
+            assert _ref in _ring_comps, (
+                f"RING_LEVELS: {_ref} sits on {_sig} (J1 pin {_pin}) but has no "
+                "parsable footprint in ring_board.net -- an unclassifiable part "
+                "on an encoder line fails CLOSED, not open; assign a footprint")
+            _lib, _fpname, _val = _ring_comps[_ref]
+            _looks_r = _lib.startswith("Resistor") or bool(_r_value.match(_val))
+            assert not (_ref in _rail_refs and _looks_r), (
                 f"RING_LEVELS: {_ref} on ring_board bridges {_sig} (J1 pin {_pin}) "
                 f"to {_rail} -- a pull-up to the LED rail puts 5 V on a Pico input "
                 "whose absolute maximum is 3.6 V, and no direct-contact gate can "
@@ -837,11 +889,53 @@ def _check(strict_stations=True):
     # Nothing over 3V3 on any net the Pi touches -- midi_tx included: it is DRIVEN
     # by the Pi, and 5 V on it fights the RP1's own output driver just as surely as
     # it would overdrive an input. DIRECT contact only, deliberately: a resistor to
-    # 5 V keeps the nets separate and passes here, which is why RING_LEVELS above
-    # walks the ring netlist for exactly that shape on the pins it can reach.
+    # 5 V keeps the nets separate and passes here -- RING_LEVELS above walks the
+    # ring netlist for that shape, and CONSOLE_LEVELS below walks this board's own.
     for n in (link_tx_pi, link_rx_pi, midi_tx, midi_rx, pwr_btn, swclk, swdio):
         assert v5 not in n.nets, (
             f"PI_LEVELS: {n.name} touches a 5 V rail -- Pi GPIO is not 5 V tolerant")
+
+    # CONSOLE_LEVELS: the resistive version of the two gates above, on THIS
+    # board's own parts. The ring board shipped the mistake once (10k pull-ups to
+    # 5 V on Pico inputs) and nothing here would have caught the same move on the
+    # console board itself: PI/PICO_LEVELS see only direct contact, RING_LEVELS
+    # reads only the other board's netlist. No allowlist -- since R14 pulls DOWN,
+    # no legitimate resistor on this board bridges +5V to a Pi or Pico signal.
+    _protected = {n.name for n in (link_tx, link_rx, link_tx_pi, link_rx_pi,
+                                   midi_tx, midi_rx, pwr_btn, swclk, swdio,
+                                   ring_data, ind_data, encA, encB, encSW,
+                                   ctrl1, ctrl2)}
+    for _p in default_circuit.parts:
+        _fp = str(getattr(_p, "footprint", "") or "")
+        if not _fp.startswith("Resistor"):
+            continue
+        _touch = {n.name for _pin in _p.pins for n in _pin.nets}
+        assert not ("+5V" in _touch and _touch & _protected), (
+            f"CONSOLE_LEVELS: {_p.ref} bridges +5V to "
+            f"{sorted(_touch & _protected)} -- a resistive path to 5 V on a "
+            "3.3 V-only pin passes every direct-contact gate and cooks the pin "
+            "at leisure; the ring board already shipped this mistake once")
+
+    # PIN_REFS: the pinned refs R14..R18 must have SURVIVED SKiDL's numbering.
+    # Declaring a pinned ref after the counter has passed it does not error -- it
+    # renames the part (R17 became R17_1 during this board's own build, and the
+    # auto part that stole the name was a 10k on the wrong nets). A bare
+    # existence check cannot catch that (the name exists, on the wrong part), so
+    # this asserts identity: no suffixed strays, and each pinned ref carries the
+    # value it was declared with.
+    _strays = sorted(p.ref for p in default_circuit.parts
+                     if re.match(r"R1[4-8]_", p.ref))
+    assert not _strays, (
+        f"PIN_REFS: {_strays} exist -- a pinned ref collided with the auto "
+        "counter and SKiDL renamed it; declare pinned parts after the last "
+        "auto-numbered one")
+    for _ref, _want_val in (("R14", "100k"), ("R15", "100k"), ("R16", "100k"),
+                            ("R17", "10k"), ("R18", "10k")):
+        _p = next((p for p in default_circuit.parts if p.ref == _ref), None)
+        assert _p is not None and _p.value == _want_val, (
+            f"PIN_REFS: {_ref} is "
+            f"{'missing' if _p is None else 'a ' + str(_p.value)} -- the pinned "
+            f"ref no longer names the {_want_val} part it was declared as")
 
     if strict_stations:
         assert os.path.exists(STATIONS_JSON), (
@@ -869,7 +963,7 @@ def report():
             "\nPin map:\n" + "\n".join(lay) +
             "\n\nRails : +5V (logic AND WS2812, doubled contacts on J3) | "
             "+3V3 (from the Pi)\n"
-            "Link  : 3V3 <-> 3V3 via 1 k series (R17/R18) -- no level shifting,\n"
+            "Link  : 3V3 <-> 3V3 via 10 k series (R17/R18) -- no level shifting,\n"
             "        the resistors only bound cross-domain current at soft-off\n"
             "AHCT  : MIDI OUT, ring, indicators (the three real 3V3->5V crossings)\n")
 
@@ -880,6 +974,8 @@ def _selftest():
     overwrite the committed netlist with a deliberately broken one."""
     global RING_NET
     cases = []
+    _tmp_nets = []          # mkstemp copies the ring controls write; unlinked
+                            # in the harness's finally so runs don't accumulate
 
     def case(name, want, mutate):
         cases.append((name, want, mutate))
@@ -901,10 +997,17 @@ def _selftest():
         global RING_NET
         text = open(RING_NET).read()
         a, b = '(ref "J1")\n        (pin "6")', '(ref "J1")\n        (pin "7")'
+        # A silent-miss replace here is a control that mutates NOTHING and then
+        # reports NO BITE against a healthy gate -- fail loudly instead.
+        assert a in text and b in text, (
+            "ring_board.net's format changed under _ring_order -- fix the anchors")
         text = text.replace(a, "\0").replace(b, a).replace("\0", b)
-        RING_NET = os.path.join(tempfile.gettempdir(), "ring_board.selftest.net")
-        with open(RING_NET, "w") as fh:
+        # mkstemp, not a fixed name: two concurrent --selftest runs (a real
+        # pattern in this multi-worktree repo) must not race on one path.
+        _fd, RING_NET = tempfile.mkstemp(suffix="-ring_board.selftest.net")
+        with os.fdopen(_fd, "w") as fh:
             fh.write(text)
+        _tmp_nets.append(RING_NET)
 
     def _ring_pullup():
         # The RESISTIVE failure: a pull-up re-added on the ring board from its 5 V
@@ -925,11 +1028,14 @@ def _selftest():
                 '        (pintype "PASSIVE"))\n')
         for _net, _pin in (("+5V_LED", "1"), ("ENC_A", "2")):
             _anchor = '(name "%s")\n      (class "Default")\n' % _net
-            assert _anchor in text
+            assert _anchor in text, (
+                "ring_board.net's format or net names changed under _ring_pullup "
+                "-- fix the control's anchors")
             text = text.replace(_anchor, _anchor + node % _pin, 1)
-        RING_NET = os.path.join(tempfile.gettempdir(), "ring_board.selftest2.net")
-        with open(RING_NET, "w") as fh:
+        _fd, RING_NET = tempfile.mkstemp(suffix="-ring_board.selftest2.net")
+        with os.fdopen(_fd, "w") as fh:
             fh.write(text)
+        _tmp_nets.append(RING_NET)
 
     def _swd_swap():
         # The one SWD mistake that gets made, and the reason the old gate was worth
@@ -974,9 +1080,6 @@ def _selftest():
         STATION_HEADERS["NOT_A_STATION"] = "J99"
 
     def _uart_split():
-        # GP19 is on no UART at all and is the one pin still spare, so this reaches
-        # the UART gate rather than tripping the duplicate or expansion checks that
-        # run ahead of it.
         # GP1 is UART0's RX, never a TX, and is one of the two pins still spare --
         # so this reaches the UART gate instead of the duplicate or expansion checks.
         GPIO["LINK_TX"] = 1
@@ -986,6 +1089,18 @@ def _selftest():
 
     def _exp_collide():
         GPIO["SW_STOP"] = EXPANSION_GPIO[0]
+
+    def _ref_collision():
+        # The renumbering failure PIN_REFS exists for, replayed literally: the
+        # pinned NAME survives -- on the wrong part -- and the real part wears a
+        # suffix. A bare existence check passes this; the identity check must not.
+        _r17 = next(p for p in default_circuit.parts if p.ref == "R17")
+        _r17.ref = "R17_1"
+
+    def _console_pullup():
+        # The ring board's shipped mistake, tried on THIS board: a pull-up from
+        # the 5 V rail to a Pico line. Every direct-contact gate stays green.
+        R("10k", ref="R99")[1, 2] += v5, ring_data
 
     # Each control names the gate it must trip. A control that trips some OTHER
     # gate proves nothing about its own and reads as a pass -- console_board_pcb.py
@@ -1006,13 +1121,24 @@ def _selftest():
     case("power button off GPIO3", "PWR_BTN:", _btn_pin)
     case("wrong footswitch count", "PIN_MAP:", _fsw_count)
     case("board terminates a station the panel lacks", "REAR_IO_COVER:", _station)
+    case("pinned ref stolen by the auto counter", "PIN_REFS:", _ref_collision)
+    case("console board pulls a Pico line to 5 V", "CONSOLE_LEVELS:", _console_pullup)
 
     ok = True
     ring_net_saved = RING_NET
     for name, want, mutate in cases:
         saved = (dict(GPIO), dict(PI_HDR), list(FSW_ORDER), dict(STATION_HEADERS))
-        mutate()
         try:
+            # The fixture is not the gate: a control that dies while SETTING UP
+            # its mutation must read as fixture breakage, not as harness noise --
+            # and its failure must not skip the restores below.
+            try:
+                mutate()
+            except Exception as exc:
+                print("  FIXTURE    %-42s broke before its gate ran: %s"
+                      % (name, str(exc).replace("\n", " ")[:48]))
+                ok = False
+                continue
             _check()
             print("  NO BITE    %s  <-- gate is dead" % name)
             ok = False
@@ -1043,6 +1169,26 @@ def _selftest():
                 pico["D1"].disconnect(); pico["D3"].disconnect()
                 pico["D1"] += swclk
                 pico["D3"] += swdio
+            if mutate is _ref_collision:
+                _r = next((p for p in default_circuit.parts
+                           if p.ref == "R17_1"), None)
+                if _r is not None:
+                    _r.ref = "R17"
+            if mutate is _console_pullup:
+                _r99 = next((p for p in default_circuit.parts
+                             if p.ref == "R99"), None)
+                if _r99 is not None:
+                    # The part cannot be deleted from the circuit; disconnected,
+                    # it touches no nets and every gate ignores it. Netlist
+                    # generation never runs under --selftest, so it cannot leak
+                    # into an artifact either.
+                    _r99[1].disconnect(); _r99[2].disconnect()
+            for _f in _tmp_nets:
+                try:
+                    os.unlink(_f)
+                except OSError:
+                    pass
+            _tmp_nets.clear()
     return ok
 
 

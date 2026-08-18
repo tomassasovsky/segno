@@ -1,41 +1,41 @@
 # Segno Floor Console — hardware design
 
-Hardware for the standalone Pi 5 floor console: the power/thermal budget and
-the enclosure. The BOM is
+Hardware for the standalone Pi 5 floor console. The BOM is
 [`hardware/segno_console_shopping_list.md`](../segno_console_shopping_list.md).
-Footswitches and the encoder connect through the USB-MIDI pedal board
-(`segno_pedal_main`) — the Pi reads no controls directly. The status LEDs
-(WS2812 ring + strip) are designed to be driven by the RP2040 LED driver over
-UART ([`firmware/led_driver`](../../firmware/led_driver/README.md)); the
-firmware exists, but the Pi-side sender was removed in PR #98 and must be
-rebuilt for console integration.
+Footswitches, the encoder, the CTRL jacks, MIDI and the WS2812 drive all
+terminate on the **console board v2** — a Pico 2 (RP2350) board on a short
+keyed ribbon to the Pi's 40-pin header
+([`hardware/kicad/console_board.py`](../kicad/console_board.py), #747). The Pi
+reads no controls directly and never bit-bangs WS2812; the earlier plan of a
+`segno_pedal_main` USB board plus a separate RP2040 LED driver is dead for the
+console (both survive only in the standalone pedal product and in
+[`firmware/led_driver`](../../firmware/led_driver/README.md), whose UART
+protocol the v2 board's firmware inherits).
 
-> **Status: design + budget only.** This documents the budgets; the enclosure
-> CAD/fab files and the assembled-unit gates (latency soak, stage-abuse) are
-> physical work, tracked as the on-hardware checklist in
+> **Status:** the board is fab-ready (#747); the enclosure is designed under
+> `hardware/enclosure/`; the assembled-unit gates (latency soak, stage-abuse)
+> are physical work, tracked as the on-hardware checklist in
 > [`docs/RUNNING_ON_RPI.md`](../../docs/RUNNING_ON_RPI.md).
 
-## Power budget
+## Power
 
-The console runs several loads; budget them and keep headroom. Screens use their
-own adapters; the Pi and the LEDs each get a dedicated 5 V feed (the LED ring +
-strip must **not** draw off the Pi's 5 V pin).
+Canonical since #754: **one 20 V USB-C PD contract at a rear-panel coupler,
+two 20→5 V bucks split by rail** — BUCK_PI feeds the Pi (via its USB-C, 25 W
+worst case), BUCK_AUX feeds both screens, the console board and the LEDs (34 W
+worst case). No mains enters the enclosure; the fuse sits in the 20 V feed.
+The full budget, the trim/window arithmetic, and the wiring live in
+[`segno_wiring.md` §2](../segno_wiring.md) — this README no longer keeps its
+own copy of the table, because two copies of a power budget is how one goes
+stale.
 
-| Load | Rail | Typical | Peak | Supply |
-|---|---|---|---|---|
-| Raspberry Pi 5 (+ active cooler) | 5 V | ~5 W | ~25 W | Official 27 W USB-C PD |
-| 16″ touchscreen (1080p) | own | ~10 W | ~15 W | Its own adapter |
-| 7″ HDMI display | own | ~3 W | ~5 W | Its own adapter |
-| USB audio interface | USB bus | ~2.5 W | ~5 W | From the Pi (bus-powered) or own |
-| RP2040 LED driver | 5 V | <0.5 W | ~1 W | Shared LED 5 V feed |
-| WS2812 ring + strip (~20 LEDs) | 5 V | ~1 W | **~6 W** (all white) | Dedicated 5 V / ≥3 A |
+Rules that survive any future edit:
 
-- The Pi 5 wants the **27 W** supply on its own; sharing its USB-C with peripheral
-  draw risks under-volt throttling.
-- WS2812 peak is ~60 mA/LED at full white; cap brightness in firmware
-  (`strip.setBrightness`) to keep the worst case well under the LED supply.
-- Add an inline fuse + power switch on the mains side; a single mains inlet can
-  feed all the adapters via a small internal power strip.
+- The LED chain must **not** draw off the Pi's 5 V pin (ribbon pins 2/4 are
+  deliberately unconnected — the board's `PI_POWER` gate enforces it).
+- WS2812 peak is ~60 mA/LED at full white; cap brightness in firmware to keep
+  the worst case inside BUCK_AUX's budget.
+- The Pi caps downstream USB at 600 mA unless `usb_max_current_enable=1` is in
+  `config.txt` — required, the touch panels and audio interface hang off it.
 
 ## Thermals
 
@@ -48,14 +48,11 @@ throttle without help:
   closed enclosure with **no thermal throttle** (`vcgencmd get_throttled` stays
   `0x0`) and no xrun-rate regression. Record results in `docs/RUNNING_ON_RPI.md`.
 
-## Enclosure (design intent — CAD/fab deferred)
+## Enclosure
 
-- Tilted body: the **16″ touchscreen + 7″ waveform** mounted up top at a
-  readable angle; the **footswitch + encoder panel** on the front edge where it
-  can be stomped.
-- A rigid stomp face (steel/aluminium) for the footswitches; rubber feet /
-  non-slip base; strain relief for every external cable.
-- Internal mounts for the Pi 5 (with cooler clearance), the RP2040 LED driver,
-  the USB interface, and the power distribution.
-- Fab files (CAD, panel cuts) land here when designed; this PR is the circuit +
-  budgets that gate the physical build.
+Designed and generated under [`hardware/enclosure/`](../enclosure/) (sheet
+metal, printed platforms, rear-panel stations); `segno_enclosure_design.md`
+carries the design story. The 16″ touchscreen and 7″ waveform panel mount up
+top; the footswitch + encoder deck is the stomp face; the Pi and the console
+board both sit under the 16″ screen with the rear I/O cluster directly above
+the board.

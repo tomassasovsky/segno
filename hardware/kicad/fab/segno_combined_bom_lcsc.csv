@@ -1,10 +1,11 @@
 LCSC,Comment,Value,Package,Qty,Designator,Notes
 ,Ceramic capacitor,100nF,C_Disc_D5.0mm_P5.00mm (THT),15,"MAIN:C1-C11,C14,C15 + RING:C2,C3",Any in-stock 100nF 50V THT disc or 5mm-pitch MLCC
 C26761,Electrolytic,100uF,CP_Radial_D6.3mm_P2.50mm (>=16V),1,MAIN:C12,Chengx 100uF 25V leaded radial
-C231191,Electrolytic,470uF,CP_Radial_D8.0mm_P3.50mm (>=16V),2,MAIN:C13 + RING:C1,Lelon 470uF 16V leaded radial
+C231191,Electrolytic,470uF,CP_Radial_D8.0mm_P3.50mm (>=16V),1,MAIN:C13,Lelon 470uF 16V leaded radial
+,Electrolytic,470uF 16V low-ESR <=0.15R,CP_Radial_D8.0mm_P3.50mm,1,RING:C1,"Low-ESR grade (e.g. Panasonic FC / Nichicon PW) -- GP parts in the same can run ~0.5R and ripple the LED rail"
 ,Resistor,220R,Axial 1/4W DIN0207,3,MAIN:R3 R4 R5,Any in-stock 1/4W axial
 ,Resistor,330R,Axial 1/4W DIN0207,2,MAIN:R1 R2,Any in-stock 1/4W axial
-,Resistor,10k,Axial 1/4W DIN0207,3,MAIN:R6 + RING:R1 R2,Any in-stock 1/4W axial
+,Resistor,10k,Axial 1/4W DIN0207,1,MAIN:R6,Any in-stock 1/4W axial. RING:R1/R2 are deleted -- the encoder pull-ups moved to the console board at 3V3 (RING_LEVELS gates their return)
 C354152,74AHCT125N,74AHCT125N,DIP-14,1,MAIN:U1,TI SN74AHCT125N quad buffer
 C78588,H11L1,H11L1,DIP-6,1,MAIN:U2,Everlight Schmitt-output optocoupler (MIDI IN)
 C163750,1N4148,1N4148,DO-35,1,MAIN:D3,Switching diode

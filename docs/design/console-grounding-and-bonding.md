@@ -118,9 +118,8 @@ Ten minutes with a multimeter on continuity, from bare chassis metal to:
       other paths are connector flanges. Anything else means an accidental bond.
 - [ ] **Each rear-panel connector shell**: 2× USB coupler, 2× DIN-5, 2× TRS, and
       the USB-C PD coupler.
-- [ ] **Each buck's shell against its own V−** (B0GGHN97TK ×2, aluminium cases):
-      case-common negatives bolted to the chassis are a second DC bond — isolate
-      the mounting if so (see item 3 above).
+- [ ] **Each buck's shell against its own V−** (B0GGHN97TK ×2) — mount per
+      stud item 3 above depending on what the meter says.
 - [ ] **The top shell and faceplate**, to check whether the painted joints conduct.
 
 Then decide:

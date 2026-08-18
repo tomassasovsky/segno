@@ -1510,6 +1510,12 @@ def _bottom_vents():
 # stations, so the cluster moved with it (see REAR_IO_U) -- which is what makes this
 # possible: the board is still under its own connectors, and the Pi is 30 mm away
 # instead of 402, so the ribbon is a stock 10 cm part rather than something to hunt.
+#
+# THE CLUSTER FOLLOWS THE BOARD, and that is electrical, not tidiness: the CTRL
+# tip lines are unshielded analog running into an ADC -- the noisiest thing in
+# the box to lengthen -- so wherever the board goes, CTRL_1/CTRL_2 (and the rest
+# of the five stations) go with it. A reshuffle that parks the CTRL jacks away
+# from the board's end of the cluster buys hum on an expression pedal.
 BOARD_U = 512.0
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T

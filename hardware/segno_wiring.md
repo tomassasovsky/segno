@@ -26,7 +26,7 @@ way now — the console does not use that board at all.
 
    DATA / CONTROL
      console board <---- keyed 2x20 ribbon, ~10 cm ----> Pi 40-pin header
-        link  Pico uart0 (GP16/17) <-> Pi uart3 (GPIO8/9), 1 k series each way
+        link  Pico uart0 (GP16/17) <-> Pi uart3 (GPIO8/9), 10 k series each way
         MIDI  DIN IN -> H11L1 (at 3V3) -> Pi uart0 RX (GPIO15)
               Pi uart0 TX (GPIO14) -> 74AHCT125 -> 220R loop -> DIN OUT
         SWD   Pi GPIO24/25 -> the Pico's debug pads (cold flashing)
@@ -37,9 +37,8 @@ way now — the console does not use that board at all.
      power button --J8 -> board -> J9 flying lead--> the Pi 5's own J2 pads
                           (PMIC wake -- no GPIO can wake a Pi 5)
 
-   GND: single common ground; DIN IN opto-isolated; ONE chassis bond at the
-        board's H1; M6 earth stud on the rear wall
-        (docs/design/console-grounding-and-bonding.md)
+   GND: single common ground -- the scheme, the earth-stud rules and the bench
+        audit are Section 6's
 ```
 
 ---
@@ -47,10 +46,12 @@ way now — the console does not use that board at all.
 ## 2. Power distribution (#754)
 
 **20 V in, 5 V made next to the loads.** 5 V at the inlet was tried and dropped:
-a 5 V rail has a ±5 % window, and at the console's ~12 A even a heavy 1.5 m lead
-drops ~0.3 V — and the drop is *load-dependent*, so no supply trim holds both
-idle and full-tilt inside 5.0–5.25 V without remote sense. At 20 V the same 59 W
-is under 3 A, the lead drop is regulated away by the bucks, and the tight 5 V
+the usable window is **5.0–5.25 V** (the Pi 5 browns out under ~4.8 V and it and
+both screens cap at 5.25 V, so trimming low eats brown-out margin and trimming
+high eats the ceiling), and at the console's ~12 A even a heavy 1.5 m lead drops
+~0.3 V — *load-dependently*, so no single supply trim holds both idle and
+full-tilt inside that 250 mV band without remote sense. At 20 V the same 59 W is
+under 3 A, the lead drop is regulated away by the bucks, and the tight 5 V
 tolerance only has to survive ~100 mm of internal wiring.
 
 - **Inlet:** panel-mount USB-C coupler on a D punch (QIANRENON B0CQ4VD2N2,
@@ -85,6 +86,11 @@ budget, the screens' ratings, 26 WS2812 at 60 mA all-white.
 - The console board takes 5 V from **BUCK_AUX on J3** — four ways as two
   parallel pairs, because JST-XH is ~3 A per contact and the LED chain alone
   nears that.
+- **Unverified until a build (carried from #754):** the UPERFECT 15.6" is a
+  USB-C portable monitor, and many of those expect PD and run dim — or refuse
+  to light — on a plain non-PD 5 V feed. BUCK_AUX is exactly that. Verify the
+  panel at full brightness on bench 5 V **before** committing the harness; the
+  fallback is a dedicated PD trigger for the screen off the 20 V rail.
 
 ---
 
@@ -101,16 +107,15 @@ with no fold in the cable. 16 of the 40 ways carry something;
 | 1, 17 | 3V3 — the board's 3V3 rail (opto + pull-up bias, ~15 mA) |
 | 6, 9, 14, 20, 25, 30, 34, 39 | GND |
 | 8 / 10 | uart0 TX / RX = MIDI OUT / MIDI IN (GPIO14/15) |
-| 21 / 24 | uart3 RX / TX = pedal link (GPIO9/8, `dtoverlay=uart3-pi5`), **1 k series** |
+| 21 / 24 | uart3 RX / TX = pedal link (GPIO9/8, `dtoverlay=uart3-pi5`), **10 k series** |
 | 18 / 22 | GPIO24/25 = SWD to the Pico's debug pads (flashing only) |
 | 2, 4 | 5 V — deliberately **not connected** (`PI_POWER`) |
 
 The link needs **no level shifting**: RP2350 and Pi are both 3.3 V. The old
 1k8/3k3 divider and the AHCT gate on this path were the 5 V Pro Micro's needs
-and died with it. The series 1 k in each link line is not level shifting — it
+and died with it. The series 10 k in each link line is not level shifting — it
 bounds the cross-domain current when one side is powered and the other is not
-(soft-off leaves the bucks live while the Pi's rails are down; see R17/R18 in
-`console_board.py`).
+(rationale and arithmetic: R17/R18 in `console_board.py`).
 
 The **74AHCT125** remains for the three real 3.3→5 V crossings: MIDI OUT's
 current loop, ring data, indicator data. **MIDI IN's H11L1 runs at 3.3 V** and
@@ -145,7 +150,7 @@ source of truth.
 |---|---|
 | USB-C PD inlet (`PD_IN`) | D punch; coupler → STUSB4500 → fuse → both bucks. Never touches the console board |
 | power button (`POWER`) | momentary, **unlit** → J8, through the board to J9 → the Pi 5's own J2 solder pads. Two wires; no 5 V run to the rear panel. The machine has no power indicator — the screens are the indicator |
-| fuse (`FUSE`) | 5×20 screw-cap holder, **T5A slow-blow**, in series with the 20 V feed ahead of both bucks |
+| fuse (`FUSE`) | 5×20 screw-cap holder — value and placement are §2's (T5A slow-blow, in the 20 V feed) |
 | MIDI DIN-5 ×2 (`MIDI_IN`/`MIDI_OUT`) | IN is opto-isolated **on the board** — the socket alone is not enough. IN's pin 2 stays unbonded (that isolation is the point) |
 | TRS 6.35 D-series ×2 (`CTRL_1`/`CTRL_2`) | expression pedal OR footswitch on the same jack, auto-detected (tip → ADC with pull-up, ring → 3V3 through 1 k) |
 | USB 3.0 coupler ×2 (`USB3_1`/`USB3_2`) | internal A-to-A leads to two Pi ports |

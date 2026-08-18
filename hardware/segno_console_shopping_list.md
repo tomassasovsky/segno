@@ -36,32 +36,41 @@ electronics shops / MercadoLibre, except the Pi 5, screens, and USB interface
 
 ## Foot controls
 
-Carried by the `segno_pedal_main` USB-MIDI board — fab + BOM in
-[`MANUFACTURING.md`](MANUFACTURING.md) (order it alongside this list).
+Terminated by the **console board v2** (`hardware/kicad/console_board.py`, #747)
+— the loose parts here are only what bolts to the panel and plugs into it.
 
-- [ ] Momentary **SPST footswitches** (stomp-rated) ×5 — rec/overdub, stop,
-      undo, clear, encoder-press is separate
+- [ ] Momentary **SPST footswitches** (stomp-rated, Cherub WTB-006 per
+      [`MANUFACTURING.md`](MANUFACTURING.md)) ×10 — one per pedal, J10..J19
 - [ ] **EC11 rotary encoder** (with push switch) ×1 — mounts on the encoder
       ring PCB (also in `MANUFACTURING.md`)
 - [ ] Knob for the EC11 ×1
-- [ ] USB-A → USB cable, Pi → `segno_pedal_main` ×1
+- [ ] JST-XH pre-crimped 2-pin leads for the footswitch looms ×10
 
-## LEDs + driver
+## LEDs
 
-- [ ] **RP2040** board — Adafruit QT Py RP2040 or a Pi Pico ×1 (the LED driver)
-- [ ] WS2812 **ring**, 12 LEDs (loop-position ring) ×1
-- [ ] WS2812 **strip/indicators**, ≥10 LEDs (one pill per pedal, issue #366) ×1
-- [ ] 3.3 V → 5 V level shifter (e.g. 74AHCT125N, **DIP-14**) ×1 — for the
-      WS2812 data line off the RP2040
-- [ ] 1000 µF electrolytic, 6.3 V+ ×1 — across the WS2812 5 V rail
-- [ ] 330–470 Ω resistor ×1 — in series with the WS2812 data line
+Driven by the console board's own Pico 2 — there is **no separate LED-driver
+board, shifter, bulk cap or series resistor to buy**; all of that is on the v2
+board's BOM.
 
-## Power
+- [ ] WS2812 **ring, 16 LEDs** ×1 — authentic Adafruit NeoPixel Ring 16
+      (44.5 mm OD; clones are 68 mm and won't fit the diffuser)
+- [ ] WS2812 **indicator pills**, 10 LEDs (one per pedal, issue #366) ×1 strip
 
-- [ ] Raspberry Pi 5 **official 27 W USB-C PD** supply ×1 — Pi 5 alone
-- [ ] Separate **5 V / ≥3 A** supply for the WS2812 LEDs + RP2040 ×1
-      *(do not draw the LED ring/strip off the Pi's 5 V pin)*
-- [ ] The 16″ and 7″ screens use their **own** adapters (USB-C / barrel) ×2
+## Power (#754 — one 20 V PD contract, two bucks)
+
+- [ ] **USB-C PD panel coupler**, D punch — QIANRENON
+      [B0CQ4VD2N2](https://www.amazon.com/dp/B0CQ4VD2N2) ×1 (100 W, 10 Gbps —
+      the 10 Gbps grade matters: all 24 ways wired means CC reaches the trigger;
+      charge-only couplers drop CC and nothing powers up)
+- [ ] **STUSB4500 PD trigger board** (SparkFun) ×1 — program the PDO to
+      **20 V / 5 A** before first power-up; the shipped default asks 20 V at
+      only 1 A
+- [ ] **20 V → 5 V buck** (eleUniverse 8–36 V→5 V 10 A IP67,
+      [B0GGHN97TK](https://www.amazon.com/dp/B0GGHN97TK)) ×**2** — BUCK_PI and
+      BUCK_AUX, split by rail, never paralleled (wiring doc §2)
+- [ ] **100 W-class USB-C PD supply** (20 V / 5 A capable) + 5 A-rated C-to-C
+      cable ×1 — the external brick; no mains enters the enclosure
+- [ ] **2×20 keyed IDC ribbon**, ~10 cm ×1 — console board J2 → Pi header
 - [ ] **Panel fuse holder**, generic 5×20 screw-cap, 10 A / 250 VAC, **Ø12.0**
       aperture ×1 — e.g. [NeoLum 4-pack](https://www.amazon.com/dp/B0GF33P9FF).
       Generic by decision. NOTE the aperture: the SCI R3-11 upgrade wants
@@ -70,15 +79,17 @@ Carried by the `segno_pedal_main` USB-MIDI board — fab + BOM in
       bucks' inrush will nuisance-blow a fast fuse
 - [ ] **Momentary HIGH-ROUND** push button, 19 mm hole (Ø19.5), **unlit**,
       stainless ×1 — [APIELE, $4.50 ea](https://www.amazon.com/dp/B079HTQ7XD).
-      Must be momentary: it drives a Pi GPIO soft shutdown, it does not break
-      power. Domed, not flat — the dome is what gives it mechanical feel
+      Must be momentary: it pulses the Pi 5's own power-button pads (its J2,
+      through the console board's J8→J9 lead) — no GPIO is involved and it does
+      not break power. Domed, not flat — the dome is what gives it a real click
 > **Everything on this list is bought from Amazon.com** (decision, 2026-08-17).
 > A MercadoLibre comparison was run and is in git history at `d5295b69` /
 > `1621f676` if local sourcing ever comes back up; the one finding worth keeping
 > is that a plain local 6.35 chassis jack will NOT fit the Ø24 D punch — see the
 > TRS note in the design doc.
 
-- See the power budget in [`hardware/console/README.md`](console/README.md).
+- The power budget is [`segno_wiring.md` §2](segno_wiring.md) — canonical since
+  #754.
 
 ## Console board v2 (#747) — supersedes the link + MIDI daughterboard (#746)
 
@@ -88,10 +99,16 @@ with the board — order from
 [`kicad/fab/segno_console_board_bom.csv`](kicad/fab/segno_console_board_bom.csv),
 not from a list transcribed here. What died with the daughterboard: the
 1k8/3k3 divider (the RP2350 link is 3.3 V at both ends — no level shifting,
-only a 1 k series pair bounding cross-domain current), the perfboard, and the
+only a 10 k series pair bounding cross-domain current), the perfboard, and the
 "do not populate J4/J5/U2" note for the V1 board — the console does not use
 the V1 board at all. The DIN-5 sockets stay in the rear-panel list and wire to
 the v2 board's J4/J5.
+
+One purchasing rule from that BOM that is easy to violate under stock pressure:
+**U1 must be AHCT (74AHCT125), not HC or HCT.** The TTL-level inputs
+(V_IH = 2.0 V) are the whole point — a 74HC125 at 5 V wants V_IH ≈ 3.15 V, and
+a 3.3 V drive would leave all three 3.3→5 V crossings (MIDI OUT, ring data,
+indicator data) ~0.15 V of margin: works on the bench, flaky in the field.
 
 ## Mechanical / enclosure
 
@@ -120,8 +137,7 @@ a waveform, so pick any 7″ HDMI panel; set its per-output `--scale` in
 - Keep the engine at **48 kHz** with the PipeWire **Pro Audio** profile for the
   full channel count + lowest stable latency (see
   [`docs/RUNNING_ON_LINUX.md`](../docs/RUNNING_ON_LINUX.md)).
-- The RP2040 LED driver talks UART to the Pi (GPIO14/15) — see the firmware
-  README for wiring + the wire-format spec.
-- The foot controls wire to the `segno_pedal_main` board (fabbed — see
-  `MANUFACTURING.md`); there is no console-specific PCB. Enclosure/fab files
-  live under `hardware/console/` once designed.
+- The LEDs and foot controls all terminate on the **console board v2**
+  (`hardware/kicad/console_board.py`); Pi GPIO14/15 carry MIDI, and the pedal
+  link rides uart3 (GPIO8/9) over the ribbon. The `segno_pedal_main` board
+  belongs to the standalone pedal product, not the console.

@@ -252,37 +252,35 @@ PLACEMENT = {
     # its 5 V rail, which sat 1.4 V over the RP2350's absolute maximum.
     "R11": (19.4, 63.0, 0), "R12": (32.2, 63.0, 0), "R13": (45.0, 63.0, 0),
     "R1":  (59.0, 63.0, 0),       # 330R, U1 gate B -> J6 pin 5 (ring data).
-                                   # 0.6 left of where it sat, which is what opens
-                                   # a 12.4 mm slot for R18 between it and R2.
-    "R2":  (79.5, 63.0, 90),        # 330R, U1 gate C -> J7 pin 2 (indicators)
+                                   # sitting left of the 12.4 mm slot R18 needs
+                                   # between it and R2.
+    "R2":  (79.5, 63.0, 90),        # 330R, U1 gate A -> J7 pin 2 (indicators)
 
     # The five review-fix resistors. ALL hand-placed: the passive bands were
     # already at capacity (R5/R10/D1 above went by hand for the same reason) and
-    # the spiral found no slot for the first of these it tried. Every position is
-    # arithmetic against the neighbours' courtyards and the 42 mm HOP limit, not
-    # taste -- the SE quarter, roomy as it looks, fails HOP for any net that is
-    # not GND, which is why none of them landed there.
-    # Slot geography, learned the expensive way: the SE field is unusable (the
-    # footswitch labels' pinned row at y 80.1 prints across anything parked
-    # there); the U1-south pocket may hold nothing in the x 69..73 column, or the
-    # pinned 'LEDS' label loses the one window it can print in (above J7, reached
-    # at d~5.5); and the channel east of the ribbon holds exactly three uprights.
-    # Assignment is by spur cost -- each part sits nearest its OWN net, because
-    # the RATSNEST budget below counts every millimetre of these.
-    "R14": (96.9, 59.85, 90),      # 100k midi_tx pull-up, upright east of the
-                                   # ribbon, level with J2 pin 8: 11 mm from it,
-                                   # 24 mm from +5V on U1 pin 13
-    "R17": (96.9, 45.0, 90),       # 1k link_tx series, upright east of the
+    # the spiral found no slot for the first of these it tried. Slot geography,
+    # learned the expensive way: the SE field sits under the footswitch labels'
+    # fixed row at y 80.1, which prints across anything parked there (the row is
+    # a placement keepout in build() now, so the spiral at least knows); the
+    # U1-south pocket must keep its x 69..73 column open or the search-placed
+    # 'LEDS' label loses the one window it can print in (above J7, reached at
+    # d~5.5); and the channel east of the ribbon fits three uprights, of which
+    # R14 and R17 stand there today. Assignment is by spur cost -- each part
+    # sits nearest its OWN net, because the RATSNEST budget below counts every
+    # millimetre of these.
+    "R14": (96.9, 59.85, 90),      # 100k midi_tx pull-DOWN, upright east of the
+                                   # ribbon, level with J2 pin 8: 11 mm from it;
+                                   # the GND leg lands in the pour
+    "R17": (96.9, 45.0, 90),       # 10k link_tx series, upright east of the
                                    # ribbon: 11 mm from J2 pin 21, 29 mm from
                                    # the Pico's GP16 pad
-    "R18": (71.6, 63.0, 0),        # 1k link_rx series, flat in the R1..R2 slot;
+    "R18": (71.6, 63.0, 0),        # 10k link_rx series, flat in the R1..R2 slot;
                                    # both legs within 28 mm
     "R15": (48.0, 59.6, 0),        # 100k ring_data pulldown, in the slim band
                                    # under the module's row A, 4 mm from pad 16
     "R16": (61.5, 59.6, 0),        # 100k ind_data pulldown, flat beside R15 in
-                                   # the same band: 22 mm from U1 pin 2, and its
-                                   # GND leg is free (GND is a pour, not copper
-                                   # the budget counts)
+                                   # the same band: 22 mm from U1 pin 2; its GND
+                                   # leg lands in the pour
     "J6":  (52.5, 69.0, 0),        # ring/encoder, under pads 16/17/19/20
     "J7":  (71.0, 69.0, 0),        # indicators -- x matches J9 above
 
@@ -738,9 +736,10 @@ def _free_slot(anchor, w, h, boxes):
 # efficient or merely tidy, and it is why the pin map and this table have to move
 # together. GND is excluded: it is a pour, not a net of tracks.
 #
-# Measured 1458 mm on the layout below, on a 100x96 board. For scale, the same
-# floorplan measured 1573 mm at 115x96 and the first one 2495 mm on 160x100 --
-# shrinking the outline SHORTENED the copper, because every fan-out got shorter.
+# Measured 1607 mm on the layout below (with the review-fix resistors
+# R14..R18; it was 1458 before them). For scale, the same floorplan measured
+# 1573 mm at 115x96 and the first one 2495 mm on 160x100 -- shrinking the
+# outline SHORTENED the copper, because every fan-out got shorter.
 #
 # It is NOT the minimum achievable: packing the five rear-panel headers together in
 # the panel's own order costs about 180 mm, most of it PWR_BTN, because POWER is
@@ -753,11 +752,10 @@ def _free_slot(anchor, w, h, boxes):
 # so a placement that drifts back toward "connectors in neat rows regardless of
 # which pad they serve" fails here rather than at the autorouter.
 #
-# Re-measured at 1607 mm with the five review-fix resistors (R14..R18). Most of
-# the growth is the two link series parts: the link's 25 mm diagonal crosses U1,
-# so R17/R18 cannot sit on it and their legs detour around the package -- ~85 mm
-# of minimum copper that is the price of bounding cross-domain current, not
-# placement waste. The budget follows the rule above from the new measurement.
+# Most of the growth from the five review-fix resistors is the two link series
+# parts: the link's 25 mm diagonal crosses U1, so R17/R18 cannot sit on it and
+# their legs detour around the package -- ~85 mm of minimum copper that is the
+# price of bounding cross-domain current, not placement waste.
 #
 # ~500 mm of that total is the ten SW_* nets, and it is NOT a defect to be
 # optimised away. The module's footswitch pads span 28 mm; ten 8.5 mm JSTs cannot
@@ -798,12 +796,15 @@ def worst_hops(fps, nets):
     for name, nodes in nets.items():
         if name in POURED_NETS or name in RAIL_NETS:
             continue
-        # Nets landing on J2 are exempt. J2's position is not a routing choice --
-        # a 40-way ribbon has to exit at a board edge, and no edge is within 42 mm
-        # of the module wherever it sits. Every signal on it is slow (MIDI is 31.25
-        # kbaud, the link a UART, SWD a flashing port, PWR_BTN a switch), so trace
-        # length is not the binding constraint; where the cable goes is. The rest of
-        # the board is still checked, and so are these nets' OTHER ends.
+        # Nets landing on J2 are exempt -- the WHOLE net, both ends; this
+        # `continue` checks nothing about them. J2's position is not a routing
+        # choice: a 40-way ribbon has to exit at a board edge, and no edge is
+        # within 42 mm of the module wherever it sits. Every signal on it is slow
+        # (MIDI is 31.25 kbaud, the link a UART, SWD a flashing port, PWR_BTN a
+        # switch), so trace length is not the binding constraint; where the cable
+        # goes is. The cost, named honestly: parts whose nets are all either
+        # rails or J2-landing (R14 is one) have NO distance gate at all -- their
+        # placement comments carry the arithmetic instead.
         if any(r == "J2" for r, _p in nodes):
             continue
         here = {n: pads[n] for n in nodes if n in pads}
@@ -846,13 +847,13 @@ def ratsnest_mm(fps, nets, per_net=False):
 _QUIET = False
 
 
-def _check(fps, nets, board=None):
-    """Prove the layout is sane BEFORE any copper is drawn.
+def _check_place(fps):
+    """The pure-geometry placement gates: on the board, and not on each other.
 
-    The load-bearing one is CROSSING: this board has no autorouter, and routing is
-    only trivial because every fan-out preserves left-to-right order. If an
-    ordering ever breaks, two tracks cross on one layer and the board is quietly
-    wrong -- so it is checked, not assumed.
+    A function of its own so build() can run it the moment placement finishes --
+    BEFORE _outline()/_labels() -- and a displaced part fails with its true
+    identity instead of as the label-placement symptom it causes downstream.
+    _check() runs it again; the asserts are idempotent and the double cost is nil.
     """
     # every placed footprint is inside the outline, with room for the edge
     for ref, fp in fps.items():
@@ -870,6 +871,22 @@ def _check(fps, nets, board=None):
             if not (ax1 <= bx0 or bx1 <= ax0 or ay1 <= by0 or by1 <= ay0):
                 raise AssertionError(
                     f"PLACE: {a} and {b} overlap -- footprints cannot share copper area")
+
+
+def _check(fps, nets, board=None):
+    """Prove the layout is sane BEFORE any copper is drawn.
+
+    The load-bearing one is CROSSING: this board has no autorouter, and routing is
+    only trivial because every fan-out preserves left-to-right order. If an
+    ordering ever breaks, two tracks cross on one layer and the board is quietly
+    wrong -- so it is checked, not assumed.
+    """
+    # Placement geometry first -- via _check_place, which build() also runs the
+    # moment placement finishes, BEFORE the silk stage. A displaced part must
+    # fail as the placement error it is: _labels() runs early and its own
+    # "nowhere to print" assert used to fire first, so a bad coordinate reported
+    # as a silkscreen symptom and a selftest control once proved the wrong gate.
+    _check_place(fps)
 
     # the footswitch fan-out must preserve order, or its tracks cross
     order = []
@@ -1251,13 +1268,12 @@ def _selftest():
     cases = [
         ("ring series resistor moved off its own net", "HOP:",
          {"R1": (12.0, 13.0, 90)}, {}),
-        # H3, not J2: a displaced part still needs its silkscreen placed, and that
-        # runs BEFORE _check() -- J2 pushed off the board left its pinned 'PI'
-        # label nowhere to print (the x 94..98 strip it used to escape into now
-        # holds R14/R16/R17), so the SILK assert fired first and this control
-        # proved the wrong gate. H3 has no function label, and its 0.8 mm
-        # designator still finds a gap beside the displaced hole.
-        ("part pushed off the outline", "outside the", {"H3": (112.0, 94.5, 0)}, {}),
+        # J2 again, the representative case: only hand-PLACEMENT parts can ever
+        # be off-board (the spiral bounds its own slots), and those are exactly
+        # the labelled connectors. This control briefly became H3 because the
+        # displaced J2's label assert fired before the outline gate; build() now
+        # runs _check_place() ahead of the silk stage, so the true gate answers.
+        ("part pushed off the outline", "outside the", {"J2": (112.0, 40.0, 0)}, {}),
         # Move a NON-isolated part up against the opto rather than moving the opto:
         # displacing U2 also displaces the anchors of its own passives, and the
         # placer then fails before the isolation gate is ever reached. C20 is a
@@ -1344,6 +1360,14 @@ def build(quiet=False):
 
     # everything else follows the netlist
     boxes = [_bbox_mm(fp) for fp in fps.values()]
+    # The pinned label rows are geometry, not folklore: LABEL_ROW fixes fifteen
+    # labels at two y coordinates before the spiral ever runs, so the spiral must
+    # see those strips as occupied. Without this, a part auto-placed near the top
+    # or bottom edge passes placement and fails five gates later at SILK -- one
+    # full pipeline run per lesson, which is how the slot-geography comments in
+    # PLACEMENT got written.
+    for _y in sorted({y for y in LABEL_ROW.values()}):
+        boxes.append((0.0, _y - SILK_H, BW, _y + SILK_H))
     net_of = {}
     for nname, nodes in nets.items():
         for r, _pad in nodes:
@@ -1361,6 +1385,11 @@ def build(quiet=False):
         fp.SetPosition(P(pos[0] - off[0], pos[1] - off[1]))
         boxes.append(_bbox_mm(fp))
         fps[ref] = fp
+
+    # Placement geometry is judged HERE, the moment it exists -- a bad hand
+    # coordinate must fail as PLACE, not surface later as a label with nowhere
+    # to print (see _check_place's docstring).
+    _check_place(fps)
 
     # attach nets to pads
     for name, nodes in nets.items():

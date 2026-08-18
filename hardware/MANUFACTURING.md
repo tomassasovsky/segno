@@ -60,7 +60,9 @@ Full lists with links: **`segno_console_shopping_list.md`** (console) and
 
 - 10× Cherub WTB-006 footswitches; 15.6" 5V USB-C touch panel; APROTII 7" monitor
 - Raspberry Pi 5 + Active Cooler
-- 5V buck: **eleUniverse 8–36V→5V 10A IP67** (Amazon B0GGHN97TK) + 9V ≥5A brick
+- 5V bucks: **eleUniverse 8–36V→5V 10A IP67** (Amazon B0GGHN97TK) **×2** —
+  BUCK_PI + BUCK_AUX, fed 20 V from the USB-C PD inlet (#754); the 9 V brick
+  is gone
 - 1× NeoPixel Ring 16 (authentic Adafruit, 44.5 mm OD — clones are 68 mm and won't fit)
 - Heat-set inserts: **M3 5×5 throughout** (5.0 long × 5.0 OD, pilots Ø4.5), brass —
   40× console pedestals (4 per pedestal) + 8× mini-console pedestals + 3× mini lid.
@@ -69,7 +71,8 @@ Full lists with links: **`segno_console_shopping_list.md`** (console) and
   10× Ø3.2 pop rivets (corner brackets), 4× M2.5×35.3 Pi risers (stack or turn —
   35.3 mm is derived, see `PI_RISER_H`), 4× M3×12 + standoffs 15 mm (main board),
   2× M4 (buck ears), PEM M4 nuts per drawing
-- Cabling per **`segno_wiring.md`** (HDMI ×2, USB, 9V Y-harness, JST looms)
+- Cabling per **`segno_wiring.md`** (HDMI ×2, USB, the 20 V PD feed + 5 V buck
+  runs, the 2×20 keyed ribbon, JST looms)
 
 ## 6. Reference (do not send to vendors)
 
