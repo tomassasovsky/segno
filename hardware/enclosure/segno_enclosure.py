@@ -1970,8 +1970,10 @@ def dxf_faceplate(path):
         # = 6.955): station from the lid's front mold corner = _cfy - z, flat from
         # the fold line = station - DD_LIP. The old ffl/2 sat 0.74 high. (#760)
         _circle(msp, ox + u, ffl - ((_cfy - (H_FRONT - DEV90) / 2.0 - DEV90) - DD_LIP), 3.4)  # M3 clearance
-    for u in (PW*0.18, PW*0.5, PW*0.82):
-        _circle(msp, ox + u, SEAM_M4_V, D_M4)                             # rear lap -> transition (concentric with the flange PEM row)
+    for u in FRONT_SCREW_U:
+        _circle(msp, ox + u, SEAM_M4_V, D_M4)                             # rear lap -> transition: SAME 9
+                                                                          # stations as the front lip (#760),
+                                                                          # concentric with the flange PEM row
     _text(msp, 10, yr1+8, 8, f"Segno LID  2.0mm  x1  top plate + front lip + rear lap (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}deg); rests on the base side walls; no top screws; legends on printed OVERLAY (see segno_overlay); FOLD with the DRAWN side as the OUTSIDE face (canonical mirror: encoder lands on the player's LEFT)", "NOTE")
     doc.saveas(path)
     return {"blank": (LW, yr1)}
@@ -2158,10 +2160,10 @@ def dxf_base(path):
     for c in io:
         c["v"] = BD + c["v"]                                           # rear z -> depth on the flap
     _emit(msp, io)
-    for f in (0.18, 0.5, 0.82):
-        _circle(msp, BW*f, BD + SEAM_PEM_V, PEM_M4)                    # lid-lap PEM on the transition
-                                                                       # (concentric with the lap M4s)
-        _circle(msp, BW*f, BD + SEAM_PEM_V, MASK_PEM_D, "MASK")        # keep the M4 thread bare
+    for u in FRONT_SCREW_U:
+        _circle(msp, u, BD + SEAM_PEM_V, PEM_M4)                       # lid-lap PEM on the transition:
+                                                                       # SAME 9 stations as the front (#760)
+        _circle(msp, u, BD + SEAM_PEM_V, MASK_PEM_D, "MASK")           # keep the M4 thread bare
     for c in io:                                                       # bonding land: paint is an
         if c.get("ref") == "EARTH_STUD":                               # insulator, so the ring
             _circle(msp, c["u"], c["v"], MASK_GND_D, "MASK")           # terminal needs bare metal
