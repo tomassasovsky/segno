@@ -323,14 +323,14 @@ def pcb_parts():
     # external 5V buck: TWO ear holes on a flat mount, not the old 4-hole quad on
     # standoffs. buck_mount() returns (cx, cy, ear_spacing) -- a scalar third
     # element, which is what used to blow this function up (#742).
-    bcx, bcy, bsp = V.buck_mount()
-    for k, dx in enumerate((-bsp/2.0, bsp/2.0)):
-        out.append((f"buckear{k}",
-                    cq.Workplane("XY").circle(V.D_M4/2.0).extrude(V.T)
-                      .translate((bcx+dx, bcy, 0.0)).val()))
-    out.append(("buck", cq.Workplane("XY")
-                .box(V.BUCK_BODY[0], V.BUCK_BODY[1], V.BUCK_BODY[2], centered=(True, True, False))
-                .translate((bcx, bcy, V.T)).val()))
+    for bi, (bn, bcx, bcy, bsp) in enumerate(V.buck_mounts()):
+        for k, dx in enumerate((-bsp/2.0, bsp/2.0)):
+            out.append((f"buckear{bi}{k}",
+                        cq.Workplane("XY").circle(V.D_M4/2.0).extrude(V.T)
+                          .translate((bcx+dx, bcy, 0.0)).val()))
+        out.append((f"buck{bi}", cq.Workplane("XY")
+                    .box(V.BUCK_BODY[0], V.BUCK_BODY[1], V.BUCK_BODY[2], centered=(True, True, False))
+                    .translate((bcx, bcy, V.T)).val()))
     return out
 
 

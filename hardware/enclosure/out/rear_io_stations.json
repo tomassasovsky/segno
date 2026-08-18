@@ -7,49 +7,49 @@
   },
   "stations": [
     {
-      "ref": "9V_DC",
-      "keepout": 17.5,
-      "centre_u": 38.75
+      "ref": "PD_IN",
+      "keepout": 30.4,
+      "centre_u": 471.2
     },
     {
       "ref": "POWER",
       "keepout": 29.2,
-      "centre_u": 77.188
+      "centre_u": 514.475
     },
     {
       "ref": "FUSE",
       "keepout": 18.0,
-      "centre_u": 115.875
+      "centre_u": 551.55
     },
     {
       "ref": "MIDI_IN",
       "keepout": 28.4,
-      "centre_u": 154.162
+      "centre_u": 588.225
     },
     {
       "ref": "MIDI_OUT",
       "keepout": 28.4,
-      "centre_u": 197.65
+      "centre_u": 630.1
     },
     {
       "ref": "CTRL_1",
       "keepout": 30.4,
-      "centre_u": 242.137
+      "centre_u": 672.975
     },
     {
       "ref": "CTRL_2",
       "keepout": 30.4,
-      "centre_u": 287.625
+      "centre_u": 716.85
     },
     {
       "ref": "USB3_1",
       "keepout": 28.5,
-      "centre_u": 332.163
+      "centre_u": 759.775
     },
     {
       "ref": "USB3_2",
       "keepout": 28.5,
-      "centre_u": 375.75
+      "centre_u": 801.75
     }
   ]
 }

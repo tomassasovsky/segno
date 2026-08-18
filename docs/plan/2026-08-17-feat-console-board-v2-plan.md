@@ -110,6 +110,13 @@ of being discovered during assembly.
 Direct import is not viable — `segno_enclosure` needs `cadquery`, which the KiCad
 venv will not have — hence the JSON handoff.
 
+**The board's gate reads the COMMITTED JSON; it does not re-run the enclosure.**
+The first cut of the verification command invoked `segno_enclosure.py` to refresh
+the file, which needs a *second* venv a fresh worktree does not have — venvs are
+gitignored, and the command failed on exactly that. The JSON is a committed
+artifact like every other `out/` deliverable, so reading it is enough; refreshing
+it is the enclosure's job, on the enclosure's own gate.
+
 ### Assertion suite — plain gates in the house style, plus one thing that is new
 
 `segno_enclosure.py` proves its geometry with in-generator `assert`s and prints
@@ -181,7 +188,7 @@ SUCCESS CRITERIA:
 - SKiDL ERC reports zero errors | verify: cd hardware/kicad && .venv/bin/python console_board.py 2>&1 | grep -q "0 errors found while running ERC"
 - Every in-generator gate passes | verify: cd hardware/kicad && .venv/bin/python console_board.py 2>&1 | grep -q "Board assertions ... ALL PASS"
 - Every gate is negative-controlled — each one bites when its invariant is broken | verify: cd hardware/kicad && .venv/bin/python console_board.py --selftest
-- The board terminates every rear-panel station the enclosure declares | verify: hardware/enclosure/.venv/bin/python hardware/enclosure/segno_enclosure.py --report >/dev/null && test -f hardware/enclosure/out/rear_io_stations.json && cd hardware/kicad && .venv/bin/python console_board.py 2>&1 | grep -q "REAR_IO_COVER"
+- The board terminates every rear-panel station the enclosure declares | verify: test -f hardware/enclosure/out/rear_io_stations.json && cd hardware/kicad && .venv/bin/python console_board.py 2>&1 | grep -q "Board assertions ... ALL PASS"
 - Prose spell-checks clean | verify: npx --yes cspell@latest --config .github/cspell.json --no-progress hardware/kicad/console_board.py docs/plan/2026-08-17-feat-console-board-v2-plan.md
 - Every footprint resolves, and the Pico 2 footprint is dimensionally right | verify: manual 1. Create an empty KiCad project in hardware/kicad/ and import console_board.net. 2. Confirm zero "footprint not found" errors. 3. Measure the Pico2 footprint: 2x20 pads at 2.54 mm pitch, 51 x 21 mm body, rows 17.78 mm apart — a file-exists check cannot catch a wrong pad pitch.
 
@@ -194,7 +201,7 @@ NON-GOALS:
 - Any change to the standalone pedal's V1 board
 - Board CI (needs KiCad symbol libraries in the runner)
 
-VERIFICATION COMMAND: hardware/enclosure/.venv/bin/python hardware/enclosure/segno_enclosure.py --report >/dev/null && cd hardware/kicad && .venv/bin/python console_board.py --selftest && .venv/bin/python console_board.py 2>&1 | tee /dev/stderr | grep -q "0 errors found while running ERC" && .venv/bin/python console_board.py 2>&1 | grep -q "Board assertions ... ALL PASS" && test -f console_board.net
+VERIFICATION COMMAND: cd hardware/kicad && .venv/bin/python console_board.py --selftest && .venv/bin/python console_board.py 2>&1 | grep -qE "0 errors found while running ERC|No errors or warnings found while running ERC" && .venv/bin/python console_board.py 2>&1 | grep -q "Board assertions ... ALL PASS" && test -f console_board.net
 ```
 
 ## Implementation

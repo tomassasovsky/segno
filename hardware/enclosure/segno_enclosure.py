@@ -354,9 +354,13 @@ PWRBTN_HEAD_D = 25.2  # hex bezel ACROSS CORNERS: ZJWZJH 25.2, APIELE 25.0. The
 D_FUSE    = 12.0     # NeoLum B0GF33P9FF: "12 mm diameter aperture"; B0DLKJ813T:
                      # "Installation Hole 12mm". Two independent listings agree.
 D_GND     = 6.5      # M6 earth / bond stud
-D_BARREL  = 11.5     # DC-099 barrel jack: listing states an 11 mm mounting hole;
-                     # +0.5 so the thread drops in but cannot rattle before the
-                     # nut bites. 12.0 (the old value) left 1 mm of slop.
+# The inlet is USB-C PD (#754): one 20 V PD contract feeds the whole console and
+# two bucks make 5 V at the load. It replaces a 9 V barrel because the barrel was
+# only ever the buck's input -- nothing in the design uses 9 V -- and because a
+# USB-C panel coupler takes the SAME D punch as the TRS jacks, so the inlet stops
+# being a hole type of its own. Part: QIANRENON D-type USB-C F/F, 100 W, 10 Gbps
+# (Amazon B0CQ4VD2N2). 10 Gbps matters: it means all 24 ways are wired, so CC
+# passes and PD can negotiate. A charge-only coupler drops CC and nothing works.
 # The chosen TRS is a D-SERIES jack (MEIRIYFA B0G5GHCCHM, "fits standard D Series
 # panel mount designs"), NOT a threaded-bushing jack -- so it takes the Neutrik D
 # punch, a Ø24 bore with two M3 fixings, not a Ø10 round hole.
@@ -370,6 +374,7 @@ D_TRS_SCREW_D    = 3.2   # M3 clearance
 # keep-out below still reserves room for them so nothing has to move later.
 D_TRS_SCREW_PITCH = None
 D_TRS_KEEPOUT    = 30.4  # bore + an M3 pair, once their real pattern is known
+D_PD_BORE = D_TRS_BORE   # same D-series punch as CTRL_1/CTRL_2
 USB3_SQ       = 22.1 # USB 3.0 panel coupler: square across flats
 USB3_CORNER_D = 24.1 # ...corners on this circle -> corner radius derived below
 USB3_FLANGE_D = 28.5 # flange OD. This, not the cutout, is the real keep-out
@@ -385,7 +390,8 @@ REAR_IO_PROVENANCE = {
     "PWRBTN_HEAD_D":     "datasheet: APIELE 25.0 / ZJWZJH 25.2 across hex corners; 25.2 brackets both",
     "D_FUSE":            "datasheet: two generic 5x20 screw-cap listings, 12 mm aperture",
     "D_GND":             "design: M6 stud clearance",
-    "D_BARREL":          "datasheet: DC-099 listing, 11 mm hole (+0.5 fit)",
+    "D_PD_BORE":         "datasheet: QIANRENON B0CQ4VD2N2 states D-type/XLR panel "
+                         "dimensions 19x24 mm; the 24 mm bore is the D standard",
     "D_TRS_BORE":        "datasheet: neutrik.com NC3FD-L-1, 'standardized D sized 24 mm panel cutout'",
     "D_TRS_SCREW_PITCH": "UNCONFIRMED: D-series M3 pair is diagonal, pattern not sourced -- NOT CUT",
     "D_TRS_KEEPOUT":     "design: bore + room for the M3 pair once it is known",
@@ -435,8 +441,13 @@ USB3_CORNER_R = _rr_from_corner_circle(USB3_CUT_SQ, USB3_CORNER_D + 2*USB3_FIT)
 BOARD_ANCHOR_U = 175.0  # main board / buck datum. NOT the connector cluster,
                         # and since #743 not the Pi either -- see pi_mount().
 REAR_IO_SPAN   = 360.0  # cluster width; REAR_IO_Z set below (= wall mid-height)
-REAR_IO_U      = 210.0  # left-justified against EDGE (defined further down, so this
-                        # is written out; _check() asserts EDGE + SPAN/2 == it)
+REAR_IO_U      = 636.0  # RIGHT-justified against EDGE. It used to be left-justified
+                        # at 210, from when the console board lived under the 7"
+                        # screen: the board terminates five of these stations, so the
+                        # cluster follows the board. Both boards now sit under the
+                        # 16" screen (see BOARD_U / pi_mount), which took the Pi
+                        # ribbon from 402 mm to 30 mm. _check() asserts the
+                        # right-justified form, so this constant cannot drift.
 
 # --- ventilation / mounting ---------------------------------------------------
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
@@ -449,22 +460,30 @@ PI_STACK_MID = 9.7            # USB/RJ45 stack centreline above the Pi PCB BOTTO
                               # (1.6 PCB + ~8.1 to the middle of the 16mm-tall stack);
                               # PI_RISER_H is derived from it below REAR_IO_Z
 PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M2.5)
-# Main board = the manufactured V1 THT Pro Micro board (the segno_pedal_main THT design,
-# git 794eb48; the later SMD 328P+16U2 redesign is discarded). Measured from its KiCad:
-# 4x M3 over an 85 x 87 mm rectangle, centred on a 94 x 96 mm outline. Same board (alone)
-# in the Base build; in the Pi build a Raspberry Pi rides alongside, linked over USB.
-BOARD_HOLES = (85.0, 87.0)    # M3 mount rectangle (measured, THT Pro Micro V1)
-BOARD_SIZE  = (94.0, 96.0)    # board outline (for the 3D render)
+# The board on this plate is the CONSOLE BOARD v2 (#747) -- the RP2350 board that
+# carries the MIDI front end and a header for every rear-panel connector. It is not
+# the V1 THT Pro Micro board any more; that one stays with the standalone pedal,
+# which is the product it was designed for.
+#
+# These two numbers are NOT measured or copied. They are checked in _check() against
+# hardware/kicad/out_console/console_board_mount.json, which the board generator
+# writes -- the mirror of the rear_io_stations.json handoff going the other way. The
+# plate spent a while drilling 85 x 87 for a board whose holes had moved to 89.5 x
+# 89.5, and neither part had been ordered only by luck.
+BOARD_HOLES = (89.5, 89.5)    # M3 mount rectangle (console board v2, 5 mm inset)
+BOARD_SIZE  = (99.5, 99.5)    # board outline (for the 3D render + clearance gates)
+BOARD_MOUNT_JSON = os.path.join(HERE, "..", "kicad", "out_console",
+                                "console_board_mount.json")
 # What actually stacks up at the Pi, bottom to top (#743):
 #   plate -> STANDOFF_H -> N07 NVMe bottom board -> its SSD -> standoffs -> Pi PCB
 #   -> the tallest thing on top (the USB-A double stack beats the Active Cooler).
 # GeeekPi N07 (B0CWD266XR) is a BOTTOM board on an FPC: it costs height, not
 # footprint. The official Active Cooler is ~10 above the PCB, so the USB-A stack
 # still sets the number.
-PI_N07_H    = 11.6            # N07 PCB 1.6 + the standoffs that lift the Pi over
-                              # its 2280 SSD
+PI_N07_H    = 7.6             # what sits between the riser top and the Pi: the N07
+                              # PCB (1.6) + the 6 mm male/female extender that
+                              # threads into the riser through it
 PI_TALLEST  = 16.0            # USB-A double stack above the Pi PCB
-PI_STACK_H  = STANDOFF_H + PI_N07_H + 1.6 + PI_TALLEST
 BOARD_STACK_H = 16.0          # PCB + the tallest thing on it (Pro Micro on its
                               # header, JST shrouds). Same 16 the 3D render
                               # blocks it out at. #743 made this load-bearing:
@@ -524,7 +543,12 @@ REAR_IO_Z   = REAR_WALL_H / 2.0       # connector cluster centreline up the rear
 # screen (see pi_mount) took away the second reason -- it no longer has to clear
 # the main board either. So it drops to the SAME plain M2.5 standoffs the board
 # uses: one fastener kind instead of two, a lower stack, and more air over it.
-PI_RISER_H  = STANDOFF_H
+# The Pi does NOT ride the same 15 mm standoff as the board. Its stack is
+# 12 mm standoff -> N07 NVMe board -> 6 mm male/female extender -> Pi, so the first
+# standoff is 12 and the Pi PCB ends up 12 + 1.6 + 6 = 19.6 above the plate. It was
+# tied to STANDOFF_H when the N07 was a guess; it is a bought part now.
+PI_RISER_H  = 12.0
+PI_STACK_H  = PI_RISER_H + PI_N07_H + 1.6 + PI_TALLEST   # plate -> tallest on the Pi
 SLOPE_DROP  = H_REAR - H_FRONT
 L_SLOPE     = math.hypot(FACE_RUN, SLOPE_DROP)            # Top-plate sloped length
 SLOPE_ANGLE = math.degrees(math.atan2(SLOPE_DROP, FACE_RUN))
@@ -858,7 +882,7 @@ def faceplate_holes():
 # is 6.4 wider than its own 22.1 cutout; spacing on cutouts alone would have the
 # two couplers' flanges fouling each other.
 REAR_IO_STATIONS = [
-    ("9V_DC",    D_BARREL + 6.0),                        # power first, at the far
+    ("PD_IN",    D_TRS_KEEPOUT),                         # power first, at the far
     ("POWER",    PWRBTN_HEAD_D + 4.0),                   # left, away from signal.
                                                          # Sized off the HEAD, not the
                                                          # hole -- the head is what
@@ -893,7 +917,7 @@ def rear_holes():
     z = REAR_IO_Z
     at = rear_io_layout()
     cuts = []
-    for ref, d in (("9V_DC", D_BARREL), ("POWER", D_PWRBTN), ("FUSE", D_FUSE)):
+    for ref, d in (("PD_IN", D_PD_BORE), ("POWER", D_PWRBTN), ("FUSE", D_FUSE)):
         cuts.append({"kind": "circle", "u": at[ref][0], "v": z, "d": d, "ref": ref})
     # Bored-plus-two-M3 stations. The DIN-5 and the D-series jack are the same
     # shape of problem -- a bore with a fixing pair straddling it -- so they are
@@ -916,15 +940,17 @@ def rear_holes():
         cu = at[ref][0]
         cuts.append({"kind": "rect", "u": cu - USB3_CUT_SQ/2.0, "v": z - USB3_CUT_SQ/2.0,
                      "w": USB3_CUT_SQ, "h": USB3_CUT_SQ, "r": USB3_CORNER_R, "ref": ref})
-    # Vents fill the wall to the RIGHT of the cluster: cluster right edge + EDGE to
-    # the wall's EDGE margin, columns evenly pitched to land exactly on both.
+    # Vents fill the wall to the LEFT of the cluster: the wall's EDGE margin to the
+    # cluster's left edge - EDGE, columns evenly pitched to land exactly on both.
+    # (Mirror of the original rule, which had them to the RIGHT -- they swapped when
+    # the cluster moved right to follow the boards.)
     sl = VENT_SLOT[0]
-    cl_r = REAR_IO_U + REAR_IO_SPAN/2.0                    # cluster right edge
-    v_l = cl_r + EDGE                                      # first vent column
-    v_r = W - EDGE                                         # last column's right edge
+    cl_l = REAR_IO_U - REAR_IO_SPAN/2.0                    # cluster LEFT edge
+    v_l = EDGE                                             # first vent column
+    v_r = cl_l - EDGE                                      # last column's right edge
     ncol = max(2, round((v_r - v_l - sl) / (sl + 8.0)) + 1)
     cp = (v_r - v_l - sl) / (ncol - 1)
-    cuts.append({"kind": "circle", "u": (cl_r + v_l)/2.0, "v": REAR_WALL_H/2.0,
+    cuts.append({"kind": "circle", "u": (v_r + cl_l)/2.0, "v": REAR_WALL_H/2.0,
                  "d": D_GND, "ref": "EARTH_STUD"})         # centred in that gap
     vr = 7                                                 # rows, centred on mid-height
     vz0 = REAR_WALL_H/2.0 - ((vr-1)*VENT_PITCH + VENT_SLOT[1])/2.0
@@ -962,8 +988,27 @@ def _overlap(a, b, clr=2.0):
     return not (a[2] + clr <= b[0] or b[2] + clr <= a[0] or
                 a[3] + clr <= b[1] or b[3] + clr <= a[1])
 
-def _check():
+def _check(strict_board_mount=True):
     """Validate the geometry. Raises AssertionError with a clear message."""
+    # The plate drills holes for a board this file does not own. Those numbers came
+    # from measuring the V1 board, and stayed put while the board they were meant
+    # for was replaced and then resized twice -- so they are read from the board
+    # generator now instead of remembered.
+    if strict_board_mount:
+        import json
+        assert os.path.exists(BOARD_MOUNT_JSON), (
+            f"BOARD_MOUNT: {os.path.relpath(BOARD_MOUNT_JSON, HERE)} is missing -- run "
+            "console_board_pcb.py; the plate cannot drill for a board it cannot see")
+        with open(BOARD_MOUNT_JSON) as fh:
+            _bm = json.load(fh)
+        assert tuple(_bm["hole_pattern_mm"]) == BOARD_HOLES, (
+            f"BOARD_MOUNT: the plate drills {BOARD_HOLES} but {_bm['board']} puts its "
+            f"holes on {tuple(_bm['hole_pattern_mm'])} -- the standoffs would not line "
+            "up with the board")
+        assert tuple(_bm["outline_mm"]) == BOARD_SIZE, (
+            f"BOARD_MOUNT: the plate reserves {BOARD_SIZE} for the board but "
+            f"{_bm['board']} is {tuple(_bm['outline_mm'])} -- every clearance gate "
+            "below is measuring the wrong rectangle")
     # 0. THE SLOPE CONVENTION (issue #742). v is measured ALONG THE SLOPE --
     # FP_V == L_SLOPE, not FACE_RUN -- so height is v*sin, never v*tan. This went
     # wrong once and was masked for months by a two-point "drift" fit that was
@@ -1190,9 +1235,36 @@ def _check():
                 f"SCREEN_DEPTH: pedal {label} clashes with 16in screen"
 
     # 5. ventilation free area + standoff height
-    area = _vent_free_area(rear) + _vent_free_area(_bottom_vents())
+    _bw_v = W - 2*T
+    _side = sum(c["w"] * c["h"]
+                for c in side_vents('R', _bw_v) + side_vents('L', _bw_v))
+    # the side louvres are foam-backed and only count for what gets through it
+    area = (_vent_free_area(rear) + _vent_free_area(_bottom_vents())
+            + _side * FOAM_OPEN_FRACTION)
     assert area >= VENT_FREE_AREA_MIN, (
         f"VENT_FREE_AREA: {area:.0f} mm^2 < target {VENT_FREE_AREA_MIN:.0f}")
+    # ...and every side louvre has to be ON the side wall, under a wedge top that
+    # slopes: a slot that is fine at the front of the band can be through the top
+    # edge at the back of it, and the blank would just unfold with a gap in it.
+    for _c in side_vents('R', _bw_v) + side_vents('L', _bw_v):
+        _off = abs(_c["u"] - _bw_v) if _c["u"] > _bw_v / 2 else abs(_c["u"])
+        _top = _side_wall_top(_c["v"] + _c["h"])          # shallowest end of the slot
+        assert _off + _c["w"] <= _top - SIDE_VENT_MARGIN, (
+            f"SIDE_VENT: a louvre reaches {_off + _c['w']:.1f} mm up a wall that is "
+            f"{_top:.1f} mm tall at v={_c['v'] + _c['h']:.0f}, leaving less than the "
+            f"{SIDE_VENT_MARGIN:.0f} mm margin to the wedge top")
+        # ...and off the FOLD. A slot cut too close to a bend line distorts when the
+        # flap is folded: the material there is being stretched. The usual floor is
+        # the inside radius plus twice the thickness, and it is the reason
+        # SIDE_VENT_MARGIN is 12 and not "whatever looks fine".
+        assert _off >= RI + 2*T - 1e-9, (
+            f"SIDE_VENT: a louvre starts {_off:.1f} mm from the fold, inside the "
+            f"{RI + 2*T:.1f} mm (bend radius {RI:.1f} + 2T) a bend needs to form "
+            "cleanly -- the slot would draw out into the radius")
+        assert _c["v"] + _c["h"] <= (D - 2*T) - REAR_CONN_DEPTH + 1e-9, (
+            f"SIDE_VENT: a louvre reaches v={_c['v'] + _c['h']:.0f}, inside the "
+            f"{REAR_CONN_DEPTH:.0f} mm the rear connectors need for their bodies and "
+            "wiring -- foam and a DIN socket cannot share the same space")
     assert STANDOFF_H >= 8.0, "VENT: under-board gap too small for airflow"
 
     # 6. screen bezel overlaps the aperture (mount from behind)
@@ -1239,11 +1311,12 @@ def _check():
     # version of this gate checked only v and fired on a Pi 400 mm away in u.
     _pi = (_pu0, _pu1, _pv0, _pv1)                               # PCB 85 x 56, rotated
     _b = board_mounts()[0]                                       # (ref, u, v, holes)
-    _bku, _bkv, _ = buck_mount()
-    for _nm, _o in (("main board", (_b[1] - BOARD_SIZE[0]/2.0, _b[1] + BOARD_SIZE[0]/2.0,
-                                    _b[2] - BOARD_SIZE[1]/2.0, _b[2] + BOARD_SIZE[1]/2.0)),
-                    ("buck",       (_bku - BUCK_BODY[0]/2.0, _bku + BUCK_BODY[0]/2.0,
-                                    _bkv - BUCK_BODY[1]/2.0, _bkv + BUCK_BODY[1]/2.0))):
+    _obs = [("console board", (_b[1] - BOARD_SIZE[0]/2.0, _b[1] + BOARD_SIZE[0]/2.0,
+                               _b[2] - BOARD_SIZE[1]/2.0, _b[2] + BOARD_SIZE[1]/2.0))]
+    for _bn, _bku, _bkv, _ in buck_mounts():
+        _obs.append((_bn, (_bku - BUCK_BODY[0]/2.0, _bku + BUCK_BODY[0]/2.0,
+                           _bkv - BUCK_BODY[1]/2.0, _bkv + BUCK_BODY[1]/2.0)))
+    for _nm, _o in _obs:
         if _pi[0] < _o[1] and _o[0] < _pi[1] and _pi[2] < _o[3] and _o[2] < _pi[3]:
             _head = PI_RISER_H - (STANDOFF_H + BOARD_STACK_H)
             assert _head >= 3.0, (
@@ -1298,36 +1371,108 @@ def _check():
         assert a_hi <= b_lo + 1e-9, (
             f"REAR_IO: {a_ref} and {b_ref} keep-outs overlap by "
             f"{a_hi - b_lo:.2f} mm -- their nuts/flanges would foul")
-    assert abs(REAR_IO_U - (EDGE + REAR_IO_SPAN/2.0)) < 1e-9, (
-        f"REAR_IO: cluster centre {REAR_IO_U} is not EDGE + span/2 "
-        f"({EDGE + REAR_IO_SPAN/2.0:.1f}) -- the written-out constant has drifted")
+    _bw_r = W - 2*T
+    assert abs(REAR_IO_U - (_bw_r - EDGE - REAR_IO_SPAN/2.0)) < 1e-9, (
+        f"REAR_IO: cluster centre {REAR_IO_U} is not bw - EDGE - span/2 "
+        f"({_bw_r - EDGE - REAR_IO_SPAN/2.0:.1f}) -- the written-out constant has "
+        "drifted. It is RIGHT-justified: the cluster follows the boards")
     assert boxes[0][0] >= EDGE - 1e-9, (
         f"REAR_IO: {boxes[0][2]} keep-out starts at u={boxes[0][0]:.1f}, inside "
         f"the {EDGE:.0f} mm edge margin")
     # the gap to the vent block carries the earth stud (D_GND) and still has to
     # leave a spanner's width either side of it
-    _v_l = min(c["u"] for c in rear if c["ref"] == "VENT")
-    _gap = _v_l - boxes[-1][1]
+    _v_r = max(c["u"] + c.get("w", 0.0) for c in rear if c["ref"] == "VENT")
+    _gap = boxes[0][0] - _v_r
     assert _gap >= D_GND + 2*8.0, (
-        f"REAR_IO: only {_gap:.1f} mm between {boxes[-1][2]} and the first vent "
-        f"column -- the earth stud (Ø{D_GND}) and its spanner do not fit")
+        f"REAR_IO: only {_gap:.1f} mm between the last vent column and "
+        f"{boxes[0][2]} -- the earth stud (Ø{D_GND}) and its spanner do not fit")
     # every station has to fit BETWEEN the wall's top and bottom edges too -- the
     # USB coupler flange is the tall one, and the wall is only REAR_WALL_H
     _tall = max(kw for _cu, kw in lay.values())
     assert _tall <= REAR_WALL_H - 2*4.0, (
         f"REAR_IO: widest keep-out {_tall:.1f} does not leave 4 mm of wall above "
         f"and below on a {REAR_WALL_H:.0f} mm wall")
+    # 8c. the two bricks (#754). They are split BY RAIL and must not overlap each
+    #     other in plan, or the second one has nowhere to bolt down.
+    _bk = buck_mounts()
+    assert len(_bk) == 2, f"BUCK_SPLIT: expected 2 bricks, got {len(_bk)}"
+    (_n1, _u1, _v1, _), (_n2, _u2, _v2, _) = _bk
+    _clear = abs(_u2 - _u1) - BUCK_BODY[0]
+    assert _clear >= 8.0, (
+        f"BUCK_SPLIT: {_n1} and {_n2} leave {_clear:.1f} mm between bodies -- no room "
+        "to land the wiring, and no air between two things that both make heat")
+    #     ...and both have to stay on the plate in u. NOT in v: the bricks are
+    #     DELIBERATELY under the connector band -- that is what the REAR_BAY height
+    #     gate above checks, and it is why they are 22.1 mm tall things bolted flat
+    #     rather than anything on standoffs. A planar "clear of REAR_CONN_DEPTH"
+    #     rule would contradict it and push them off the plate for no reason.
+    for _bn, _bu, _bv, _ in _bk:
+        assert _bu - BUCK_BODY[0]/2.0 >= EDGE and _bu + BUCK_BODY[0]/2.0 <= W - 2*T - EDGE, (
+            f"BUCK_SPLIT: {_bn} spans u {_bu - BUCK_BODY[0]/2.0:.1f}.."
+            f"{_bu + BUCK_BODY[0]/2.0:.1f}, outside the {EDGE:.0f} mm edge margins")
+
     # ...and no rear-I/O dimension may exist without a recorded provenance, so a
     # new connector cannot be added without saying where its numbers came from
     _dims = [k for k in globals()
              if k.startswith(("D_TRS", "MIDI_", "USB3_")) and k not in
              ("USB3_CORNER_R", "USB3_CUT_SQ", "USB3_FIT")]
-    _dims += ["D_BARREL", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND"]
+    _dims += ["D_PD_BORE", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND"]
     _missing = sorted(set(_dims) - set(REAR_IO_PROVENANCE))
     assert not _missing, (
         f"REAR_IO: {_missing} have no entry in REAR_IO_PROVENANCE -- say whether "
         "each is measured, from a datasheet, or unconfirmed before it is cut")
     return True
+
+# ---- side-wall exhaust vents (#753) ------------------------------------------
+# The rear vents moved LEFT when the I/O cluster took the right-hand wall, which put
+# the exhaust 200..400 mm upstream of the Pi -- the hottest thing in the box and now
+# the furthest from an opening. These put an outlet in each side wall directly
+# beside the electronics bay instead, so hot air leaves where it is made.
+#
+# They are FOAM-BACKED, and that is a requirement, not a finish note: a bare louvre
+# at eye level on a stage box shows the loom and the LEDs through it. Open-cell
+# filter foam on the inside face fixes that and costs airflow, so the free-area
+# check below derates them rather than counting the slots at face value.
+SIDE_VENT_V     = (250.0, 372.0)   # depth band: over the boards, clear of the rear
+                                   # connectors' 45 mm wiring reserve
+SIDE_VENT_MARGIN = 12.0            # keep clear of the bottom fold and the wedge top
+SIDE_VENT_ROWS   = 5
+FOAM_OPEN_FRACTION = 0.5           # open-cell PU filter foam, ~45 ppi: half the
+                                   # geometric area survives as free area. Measured
+                                   # figures for this class run 0.5..0.7; the low end
+                                   # is taken because it is the one that has to hold.
+
+
+def _side_wall_top(y):
+    """Conservative side-wall height at depth y, in the flat pattern's frame.
+
+    The blank's own wedge solver (shf_f/shf_r in dxf_base) is exact and delicate;
+    this is deliberately a hair LOW -- it ignores the bend deduction, so slots
+    placed under it sit below the real wedge top with margin to spare.
+    """
+    return H_FRONT + y * math.tan(math.radians(SLOPE_ANGLE))
+
+
+def side_vents(flap, bw):
+    """Louvre slots in one side wall, in flat-pattern coordinates.
+
+    flap: 'R' (extends +x from bw) or 'L' (extends -x from 0). Slots run ALONG the
+    depth axis and stack up the wall, which is the way a louvre sheds anything that
+    lands on it when the case is upright.
+    """
+    sl, sw = VENT_SLOT
+    v0, v1 = SIDE_VENT_V
+    cols = max(1, int((v1 - v0 + 8.0) // (sl + 8.0)))
+    out = []
+    for c in range(cols):
+        v = v0 + c * (sl + 8.0)
+        for r in range(SIDE_VENT_ROWS):
+            off = SIDE_VENT_MARGIN + r * VENT_PITCH
+            u = (bw + off) if flap == 'R' else (-off - sw)
+            out.append({"kind": "rect", "u": u, "v": v, "w": sw, "h": sl,
+                        "ref": "SIDE_VENT", "layer": "VENT"})
+    return out
+
 
 def _bottom_vents_local(bw, bd):
     """Intake-vent block in the clear gap between the front and CLEAR/BANK platform
@@ -1361,10 +1506,27 @@ def _bottom_vents():
 # for the Raspberry Pi, which (in the Pi build) tucks behind the board with its port
 # cluster out the window. The mid-row platforms clear the rear strip, so depth is
 # generous. (Only the Pi needs to stay centred on the window — see pi_mount.)
-BOARD_U = BOARD_ANCHOR_U - 25.0
+# Both boards live under the 16" screen now. The console board terminates five rear
+# stations, so the cluster moved with it (see REAR_IO_U) -- which is what makes this
+# possible: the board is still under its own connectors, and the Pi is 30 mm away
+# instead of 402, so the ribbon is a stock 10 cm part rather than something to hunt.
+BOARD_U = 512.0
+# WHY THE BOARD IS HERE AND NOT NEXT TO THE Pi. It is 477 mm from it, which invites
+# the obvious question, and the answer is that both positions are pinned by
+# something else. The Pi has to sit under the 16" screen (#743, gated in _check as
+# REAR_BAY). The console board has to sit under its own rear-panel stations: POWER,
+# MIDI_IN, MIDI_OUT, CTRL_1 and CTRL_2 all land between u=77 and u=288, and this
+# board terminates every one of them.
+#
+# Closing the gap therefore does not remove a cable, it moves one. Next to the Pi,
+# the 40-way ribbon shrinks to ~100 mm and FIVE panel looms grow by ~400 mm -- two
+# of which are the CTRL tip lines, unshielded analog running into an ADC, and the
+# noisiest thing in the box to lengthen. The ribbon carries 31.25 kbaud MIDI, a
+# UART link and an SWD port used only for flashing: slow, digital, and the right
+# cable to make long. It stays.
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
-    return [("MAIN_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
+    return [("CONSOLE_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
 
 # Depth the rear wall needs behind it, clear of everything, for the panel-mount
 # connectors and their wiring (#743). Deepest body is ~30 (D-series TRS, fuse
@@ -1402,16 +1564,40 @@ REAR_CONN_DEPTH = 45.0
 # (u 300) and the 7" screen (u 42..196) are all to the left, and only the 16" screen
 # is overhead. Rotated, the port edge faces -u and the runs are straight. It also
 # drops the depth from 85 to 56, which buys back rear-bay clearance.
+# The Pi is ROTATED so its 40-pin header runs along DEPTH, on the board-facing
+# edge. That is what makes the ribbon a straight shot: J2 sits on the console
+# board's +u edge with its pins running along v, so the Pi's header has to run
+# along v too, or the cable leaves one connector and turns 90 deg to reach the
+# other. The script used to have the 85 mm axis along u, which is a quarter turn
+# from that -- caught by eye in the Fusion assembly, not by a gate.
+#
+#   u: 56 mm across, holes 49 apart, symmetric (3.5 in from each long edge)
+#   v: 85 mm along,  holes 58 apart, NOT symmetric -- 3.5 from one end, 23.5 from
+#      the other, so the hole pattern sits 10 mm toward the SD-card end
+PI_HDR_LEN   = 50.8           # 2x20 on 0.1in
+PI_HDR_V_OFF = 32.5           # header centre from the Pi's 3.5 mm hole end -- which
+                              # is also where the hole pattern centres, so aligning
+                              # the header to J2 aligns the hole pattern with it
+PI_PCB_U0    = 622.5          # board-facing long edge: sets the ribbon run (below)
+PI_HDR_V     = 281.75         # header centre in v == J2's centre in v, so the two
+                              # connectors face each other square across the gap
+
+
 def pi_mount():
     bd = D - 2*T
-    return (SCREEN_16_U, bd - 106.0, (PI_HOLES[0], PI_HOLES[1]))     # 58 across u, 49 along depth
+    # Hole-pattern centre. u: midway between holes 3.5 in from each 56 mm edge.
+    # v: the pattern centres on PI_HDR_V by construction (see PI_HDR_V_OFF).
+    return (PI_PCB_U0 + 28.0, PI_HDR_V, (PI_HOLES[1], PI_HOLES[0]))  # 49 across u, 58 along v
 
 def pi_pcb_extent():
-    """PCB footprint (u_lo, u_hi, v_lo, v_hi) for the ROTATED Pi. The hole pattern
-    is not centred on the board: along the 85 mm axis it sits 10 mm toward the SD
-    edge, so the USB-A edge is 52.5 out and the SD edge 32.5."""
+    """PCB footprint (u_lo, u_hi, v_lo, v_hi) for the ROTATED Pi.
+
+    85 mm along v, 56 mm across u. The hole pattern is not centred along the 85 mm
+    axis: 3.5 mm from one end and 23.5 from the other, i.e. 10 mm toward the SD
+    edge, so the PCB reaches 32.5 one way and 52.5 the other from the hole centre.
+    """
     u, v, _ = pi_mount()
-    return (u - 52.5, u + 32.5, v - 28.0, v + 28.0)                  # USB-A edge at -u
+    return (u - 28.0, u + 28.0, v - 32.5, v + 52.5)                  # SD edge at -v
 
 # External 5V buck: eleUniverse 8-36V -> 5V 10A 50W IP67 potted brick (Amazon
 # B0GGHN97TK; envelope 63.8 x 57.7 x 22.1 incl. mounting ears, 116 g, passive
@@ -1422,9 +1608,25 @@ def pi_pcb_extent():
 BUCK_BODY = (63.8, 57.7, 22.1)
 BUCK_EAR_SPACING = 56.0       # ear hole centres along the long axis — PROVISIONAL
                               # until the unit arrives; drill to the real part
-def buck_mount():
+# TWO of them (#754). One 10 A brick cannot carry the whole console: worst case is
+# 11.7 A at 5 V (58.5 W) and a 50 W part would be 18% over. They are split BY RAIL,
+# never paralleled -- two buck outputs tied together have no current sharing, so one
+# hogs the load until it limits and then they hunt. Same 20 V input, separate 5 V
+# outputs, common ground only:
+#   BUCK_PI  -> Pi 5 + its USB + the NVMe        ~5.0 A / 25 W   (50% of part)
+#   BUCK_AUX -> both screens + this board + LEDs ~6.7 A / 34 W   (67% of part)
+# BUCK_AUX is the tighter one and the one that wants airflow; a cheap 10 A module
+# is rarely honest at 10 A in still air.
+BUCK_GAP = 12.0               # between the two bricks, for wiring and air
+def buck_mounts():
+    """Both bricks, side by side in the rear airflow bay, long axis along u. Left of
+    the console board keeps the runs to the inlet and to J3 short and stays clear of
+    the CLEAR/BANK pedal platform, which owns u 230..313."""
     bd = D - 2*T
-    return (BOARD_ANCHOR_U + 125.0, bd - 60.0, BUCK_EAR_SPACING)
+    v = bd - 60.0
+    pitch = BUCK_BODY[0] + BUCK_GAP
+    return [("BUCK_PI",  410.0 - pitch/2.0, v, BUCK_EAR_SPACING),
+            ("BUCK_AUX", 410.0 + pitch/2.0, v, BUCK_EAR_SPACING)]
 
 # ===========================================================================
 # DXF  (ezdxf)
@@ -1654,6 +1856,8 @@ def dxf_base(path):
 
     # ---- bottom features: vents + Pi/board M3 standoffs + rubber feet -------------
     _emit(msp, _bottom_vents_local(BW, BD))
+    _emit(msp, side_vents('R', BW))          # exhaust beside the electronics bay,
+    _emit(msp, side_vents('L', BW))          # foam-backed -- see SIDE_VENT_V
     for name, cx, cy, (sx, sy) in board_mounts():
         for dx in (-sx/2, sx/2):
             for dy in (-sy/2, sy/2):
@@ -1664,11 +1868,11 @@ def dxf_base(path):
         for dy in (-psy/2, psy/2):
             _circle(msp, pcx+dx, pcy+dy, D_M3)
     _text(msp, pcx - psx/2, pcy + psy/2 + 4, 5, f"PI_RISER x{PI_RISER_H:.0f}mm (Pi build)", "NOTE")
-    bkx, bky, bsp = buck_mount()                   # external 5V buck: 2 ear holes, flat mount
-    for dx in (-bsp/2, bsp/2):
-        _circle(msp, bkx+dx, bky, D_M4)
-    _text(msp, bkx - bsp/2, bky + BUCK_BODY[1]/2 + 4, 5,
-          "BUCK 5V (eleUniverse 8-36V>5V 10A IP67; ear pitch PROVISIONAL)", "NOTE")
+    for _bn, bkx, bky, bsp in buck_mounts():       # 2x 20V->5V brick, 2 ear holes each
+        for dx in (-bsp/2, bsp/2):
+            _circle(msp, bkx+dx, bky, D_M4)
+        _text(msp, bkx - bsp/2, bky + BUCK_BODY[1]/2 + 4, 5,
+              f"{_bn} 20V>5V 10A (B0GGHN97TK; ear pitch PROVISIONAL)", "NOTE")
     for x, y in base_foot_xy():                    # M4 clearance, plain hole: the
         _circle(msp, x, y, D_FOOT)                 # head is relieved in the RING
     _emit(msp, platform_foot_holes())              # M3 holes for the 10 pedal-platform feet
@@ -2634,7 +2838,7 @@ def build_step(write_parts=True):
         addw(plat, f"platform_{i}", cq.Location(cq.Vector(v * _cs, u + T, T)))
     # representative segno_pedal_main board on standoffs, rear clear zone (visual stand-in;
     # the fully-detailed KiCad model is rendered in the 3D viewer, not the STEP)
-    blk = {"MAIN_BOARD": (BOARD_SIZE[0], BOARD_SIZE[1], 16.0)}
+    blk = {"CONSOLE_BOARD": (BOARD_SIZE[0], BOARD_SIZE[1], 16.0)}
     for name, cx, cy, pat in board_mounts():
         bx, by, bz = blk[name]
         b = cq.Workplane("XY").box(bx, by, bz, centered=(True, True, False)).translate((cy + T, cx + T, STANDOFF_H))
@@ -2896,13 +3100,20 @@ def report():
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
       f"(case top flush with the slot's upper rim, pad +{PEDAL_PAD_T:.1f} above, #373)  [PROVISIONAL]")
     P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 15.6in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
-    P(f"Rear I/O        : 9V + btn + fuse + 2x MIDI DIN-5 + 2x TRS (D-series) + 2x USB3 + vents + earth (no window)")
+    P(f"Rear I/O        : USB-C PD + btn + fuse + 2x MIDI DIN-5 + 2x TRS (D-series) + 2x USB3 + vents + earth (no window)")
     _unc = rear_io_unconfirmed()
     if _unc:
         P("  DO NOT CUT     : " + ", ".join(
             f"{k}={'not cut' if v is None else format(v, 'g')}"
             for k, v in sorted(_unc.items())) + "  <- unconfirmed, no source")
-    P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents()):.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
+    _bwv = W - 2*T
+    _sv = side_vents('R', _bwv) + side_vents('L', _bwv)
+    _sv_area = sum(c["w"] * c["h"] for c in _sv)
+    P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents())+_sv_area*FOAM_OPEN_FRACTION:.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
+    P(f"  side louvres  : {len(_sv)} slots ({_sv_area:.0f} mm^2 geometric, counted at "
+      f"{FOAM_OPEN_FRACTION:.0%} through foam), v {SIDE_VENT_V[0]:.0f}..{SIDE_VENT_V[1]:.0f}")
+    P(f"  FOAM REQUIRED : open-cell filter foam on the INSIDE face of both side "
+      f"louvre blocks -- they look straight into the loom otherwise")
     P("-"*68)
     P(f"Faceplate cutouts : {len(cuts)}  |  rear-wall cutouts : {len(rear_holes())}")
     area = (W*D + W*L_SLOPE + W*REAR_WALL_H + W*H_FRONT) + 2*(D*(H_FRONT+H_REAR)/2)
@@ -2967,7 +3178,7 @@ def layout_svg(path):
         elif c["kind"] == "rect":
             e.append(f'<rect x="{X(c["u"]):.1f}" y="{Yr(c["v"]+c["h"]):.1f}" width="{c["w"]:.1f}" height="{c["h"]:.1f}" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>')
     fy = rear_base + REAR_WALL_H + 28
-    e.append(f'<text x="{M}" y="{fy:.1f}" fill="#7c8aa3" font-size="10.5">9V · power · fuse · USB-A x2 · earth stud · vents   |   service: back out the front-lip + rear-lap screws, lift the lid (side wings just locate)</text>')
+    e.append(f'<text x="{M}" y="{fy:.1f}" fill="#7c8aa3" font-size="10.5">USB-C PD · power · fuse · USB-A x2 · earth stud · vents   |   service: back out the front-lip + rear-lap screws, lift the lid (side wings just locate)</text>')
     e.append(f'<text x="{M}" y="{fy+18:.1f}" fill="#7c8aa3" font-size="10.5">10x Cherub WTB-006 pedals on printed pedestals (PROVISIONAL) · 10 indicator LED pills (one per pedal) + encoder ring · Pi+board mount on the rear bottom plate</text>')
     e.append('</svg>')
     with open(path, "w") as f:
@@ -3021,7 +3232,7 @@ def _render_parts(cq, explode=0.0):
         if c["kind"]=="circle" and (c["ref"].endswith("_LED") or c["ref"]=="PWR_LED"):
             col=(1.0,0.72,0.20) if c["ref"]=="MODE_LED" else (0.35,1.0,0.50)
             add(on_fp(cq.Workplane("XY").circle(max(c["d"]/2,2.7)).extrude(3.6).translate((c["v"],c["u"],T))), col)
-    blk={"MAIN_BOARD":(BOARD_SIZE[0],BOARD_SIZE[1],16,(0.26,0.52,0.92))}
+    blk={"CONSOLE_BOARD":(BOARD_SIZE[0],BOARD_SIZE[1],16,(0.26,0.52,0.92))}
     for name,cx,cy,_ in board_mounts():
         bx,by,bz,col=blk[name]; add(cq.Workplane("XY").box(bx,by,bz,centered=(True,True,False)).translate((cy+T,cx+T,STANDOFF_H)).val(), col)
     # --- fasteners (show how it bolts together; visible from the underside) ----
