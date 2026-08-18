@@ -451,23 +451,38 @@ C("100uF", fp="Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", ref="C31")[1, 2] += v5, 
 #                        is powered from J3. They share only GND and 3V3.
 #                            1,17 = 3V3      6,9,14,20,25,30,34,39 = GND
 #   Pi pin 8    = GPIO14 TXD (uart0)        10 = GPIO15 RXD (uart0)
-#   Pi pin 7    = GPIO4      (uart2 TX)     29 = GPIO5    (uart2 RX)
-#                        ...on a PI 5 specifically: `dtoverlay=uart2-pi5` is
-#                        "Enable uart 2 on GPIOs 4-5. Pi 5 only." (raspberrypi/linux
-#                        overlays README). The SAME PINS are uart3 on a Pi 4, where
-#                        uart2 is GPIOs 0-3 -- so the overlay name is not portable
-#                        even though the wiring is. Firmware wants uart2-pi5.
+#   Pi pin 32   = GPIO12 (uart4 TX)         33 = GPIO13   (uart4 RX)
+#                        Firmware wants `dtoverlay=uart4-pi5` -- "Enable uart 4 on
+#                        GPIOs 12-13. Pi 5 only." (raspberrypi/linux overlays
+#                        README). NOT portable to a Pi 4, where GPIO12-13 is uart5.
+#                        This was GPIO4/5 (uart2-pi5) until the N07 NVMe board was
+#                        found sitting on GPIO4 -- see PI_RESERVED.
 #   Pi pin 5    = GPIO3  -- NOT the power button. GPIO3 wakes a Pi 4; on a Pi 5 the
 #                           GPIO lives behind RP1 and power-on is the PMIC's job, so
 #                           no GPIO can wake it. The Pi 5's button goes on the J2
 #                           solder pads by the RTC connector -- hence J9 below.
 #   Pi pin 18   = GPIO24 SWCLK              22 = GPIO25 SWDIO
+# Physical pins that something ELSE on this Pi has already claimed. The console
+# does not have a bare Pi: a GeeekPi N07 NVMe board lives under it, and it takes
+# GPIO4 (pin 7) along with 5 V and grounds. Sharing a RAIL with it is fine -- rails
+# are shared by definition -- so only SIGNAL pins are reserved here.
+#
+# The link UART sat on pin 7 until this was noticed, which would have been a board
+# that assembles, passes every gate, and cannot talk to its own MCU.
+PI_RESERVED = {
+    7: "GeeekPi N07 NVMe board (GPIO4)",
+}
 PI_HDR = {
     1: v3v3, 17: v3v3,
     6: gnd, 9: gnd, 14: gnd, 20: gnd, 25: gnd, 30: gnd, 34: gnd, 39: gnd,
     8: midi_tx, 10: midi_rx,
-    7: link_rx,     # Pi uart2 TX -> Pico RX  (3V3 -> 3V3, direct)
-    29: link_tx,    # Pi uart2 RX <- Pico TX  (3V3 -> 3V3, direct)
+    # LINK moved off GPIO4/5 (uart2-pi5) to GPIO12/13, which is `dtoverlay=uart4-pi5`
+    # -- "Enable uart 4 on GPIOs 12-13. Pi 5 only." GPIO5 goes with it: it is the
+    # other half of the pair the N07 sits on, and a peripheral that takes one fan
+    # pin often takes its neighbour. Pins 32/33 are also at the far end of the
+    # header, away from the first six positions everything else crowds into.
+    32: link_rx,    # GPIO12, uart4 TX -> Pico RX  (3V3 -> 3V3, direct)
+    33: link_tx,    # GPIO13, uart4 RX <- Pico TX  (3V3 -> 3V3, direct)
     18: swclk, 22: swdio,
 }
 j_pi = Part("Connector_Generic", "Conn_02x20_Odd_Even",
@@ -669,6 +684,15 @@ def _check(strict_stations=True):
     assert {n.name for n in j_pi_btn[1].nets} == {"PWR_BTN"}, (
         "PWR_BTN: J9 must carry the button through to the Pi's J2 pads")
 
+    # Nothing of ours may sit on a pin another board on this Pi has taken. Rails
+    # are exempt: 3V3 and GND are shared by every HAT by definition, and sharing
+    # them is the point.
+    for _pin, _who in PI_RESERVED.items():
+        _n = PI_HDR.get(_pin)
+        assert _n is None or _n in (gnd, v3v3), (
+            f"PI_RESERVED: Pi header pin {_pin} carries {_n.name}, but {_who} "
+            "already uses it -- two drivers on one pin is a link that never comes up")
+
     # ...and the buck must not be paralleled with the Pi's own 5 V rail.
     for _pin in (2, 4):
         assert _pin not in PI_HDR, (
@@ -773,6 +797,11 @@ def _selftest():
         d_clamp[1] += opto[2]
         d_clamp[2] += opto[1]
 
+    def _reserved_pin():
+        # The exact mistake this gate exists for: the link moved back onto a pin
+        # the NVMe board underneath has already claimed.
+        PI_HDR[7] = link_rx
+
     def _btn_pin():
         PI_HDR[5] = gnd
 
@@ -809,6 +838,7 @@ def _selftest():
     case("SWCLK and SWDIO swapped on the debug pads", "SWD:", _swd_swap)
     case("a second mounting hole strapped to GND", "CHASSIS_BOND:", _second_bond)
     case("MIDI IN clamp diode reversed", "MIDI_CLAMP:", _clamp_reversed)
+    case("link on a pin the NVMe board owns", "PI_RESERVED:", _reserved_pin)
     case("power button off GPIO3", "PWR_BTN:", _btn_pin)
     case("wrong footswitch count", "PIN_MAP:", _fsw_count)
     case("board terminates a station the panel lacks", "REAR_IO_COVER:", _station)
