@@ -734,11 +734,13 @@ PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the
 # edge fouls the slot. The slot cut ALONE carries the correction (#760): labels,
 # LED pills, screens and the platform stack keep the frozen approved layout.
 PEDAL_AP_DEV = (DEV90 + T) / math.cos(_ra) - DD_LIP
-# The slot grows FORWARD only: the pedal's front lip carries the case screws
-# (the ones that hold the pedal shut), and the approved layout kept ~4mm of
-# open slot in front of the lip for them. Centring the pedal (1.5mm each way)
-# buried the screw line under the plate edge. Rear clearance stays nominal. (#760)
-FSW_FRONT_EXTRA = 2.5 / math.cos(_ra)
+# The slot grows FORWARD only, back to the APPROVED front gap of 1.93mm: the
+# pedal's front lip carries the case screws and needs that room, but on the
+# sloped plate a bigger gap drops the slot's front rim BELOW the pedal floor
+# (each mm of gap lowers the lip by tan(SLOPE)). At 1.93mm the floor sits
+# +0.16mm on the lip -- visually flush, exactly the approved relation now that
+# the pedal rides +0.443 on the reseated plate. Rear clearance stays nominal. (#760)
+FSW_FRONT_EXTRA = 0.43 / math.cos(_ra)
 # 7" screen, LED ring and encoder share ONE vertical centre-line (COL_U, defined
 # with the pedal layout below): the gap between pedals 1 and 2.
 # SCREEN_TOP_V is FROZEN at the value the console was built around (the screens,
