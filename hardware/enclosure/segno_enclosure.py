@@ -435,42 +435,13 @@ USB3_CORNER_R = _rr_from_corner_circle(USB3_CUT_SQ, USB3_CORNER_D + 2*USB3_FIT)
 BOARD_ANCHOR_U = 175.0  # main board / buck datum. NOT the connector cluster,
                         # and since #743 not the Pi either -- see pi_mount().
 REAR_IO_SPAN   = 360.0  # cluster width; REAR_IO_Z set below (= wall mid-height)
-REAR_IO_U      = None   # set to SCREEN_16_U below -- the panel is CENTRED ON THE
-                        # 16" SCREEN, which is the thing a player lines it up with
-                        # by eye. It was RIGHT-justified against EDGE. It used to be left-justified
+REAR_IO_U      = 636.0  # RIGHT-justified against EDGE. It used to be left-justified
                         # at 210, from when the console board lived under the 7"
                         # screen: the board terminates five of these stations, so the
                         # cluster follows the board. Both boards now sit under the
                         # 16" screen (see BOARD_U / pi_mount), which took the Pi
                         # ribbon from 402 mm to 30 mm. _check() asserts the
                         # right-justified form, so this constant cannot drift.
-
-# --- rear I/O sub-panel (#751) ------------------------------------------------
-# The cluster is DISMOUNTABLE: the wall carries a window, and a bolt-on panel
-# carries the nine connectors. It was folded straight into the wall for one
-# revision (77e0ef9b) on the grounds that the Pi's port window had gone away and
-# the sub-panel had no home -- but that reasoning was about the WINDOW, not about
-# the connectors. Cut into the wall, the loom can only be worked on inside a
-# 850x423 box through a 46 mm slot, and a single stripped thread scraps the base.
-# On a panel it lifts out, gets soldered on a bench, and a mis-drilled panel costs
-# a panel. It is NOT a folded face of the base; it needs its own bond -- see
-# docs/design/console-grounding-and-bonding.md.
-REAR_WIN_CLR        = 3.0   # window clearance around the outermost station cutouts
-REAR_WIN_H_MIN      = 46.0  # minimum window height. Derived tight, the opening came
-                            # out 30 mm on a 90 mm wall -- a letterbox that makes
-                            # every connector a knuckle-scrape to reach and looks
-                            # like a mistake next to the panel around it. 46 is the
-                            # height the sub-panel carried before it was retired.
-REAR_PANEL_OV       = 15.0  # panel overlap past the window, every side
-REAR_PANEL_BOLT_OFF = 9.0   # bolt centres past the window edge (>=4 mm inside the
-                            # panel edge at OV 15, and clear of every flange)
-MASK_BOND_D         = 12.0  # bare bonding land around ONE panel bolt, both faces.
-                            # The panel carries the TRS sleeves (which ARE board
-                            # GND) and both USB coupler flanges, and it bolts to a
-                            # powder-coated wall through four painted holes -- so
-                            # without this it is a floating metal plate holding
-                            # every shield in the machine. ONE land, not four:
-                            # a single defined path, same rule as H1 on the board.
 
 # --- ventilation / mounting ---------------------------------------------------
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
@@ -739,11 +710,6 @@ COL_U = (_row1_u(0) + _row1_u(1)) / 2.0
 # Centre-line of the 16" screen: over the four TRACK pedals (row-1 right group).
 # Hoisted out of faceplate_holes() because the Pi now mounts under it (#743).
 SCREEN_16_U = (_row1_u(4) + _row1_u(7)) / 2.0
-# The rear I/O cluster (and so the window and the bolt-on panel) is centred on the
-# 16" screen. Right-justifying it against EDGE put the panel 11 mm off that centre
-# for no reason a player could see, and the panel is the one rear feature anyone
-# looks at while plugging in.
-REAR_IO_U = SCREEN_16_U
 
 # CLEAR/BANK ride row 2, aligned in u with UNDO (i=2) and MODE (i=3).
 PEDALS = [(_ROW1[i], _row1_u(i), PEDAL_ROW1_V) for i in range(8)] + [
@@ -936,13 +902,12 @@ def rear_io_layout():
         x += w + gap
     return out
 
-def rear_io_cutouts():
-    """The nine panel-mount connector cutouts, in WALL coords (u=0..W, z=0..REAR_WALL_H).
-
-    They are cut in the bolt-on sub-panel, not in the wall -- but they are laid out
-    against the wall's own u so the panel, the window and the wall all agree without
-    anyone converting coordinates by hand. rear_panel_holes() shifts them to
-    panel-local; nothing else re-derives them."""
+def rear_holes():
+    """Rear WALL features: the panel-mount connector cluster (#743), the fixed
+    exhaust vents and the earth stud. The wall is a FOLDED face of segno_base,
+    not a separate welded panel. There is NO I/O window and no bolt-on sub-panel
+    -- the Pi sits inboard and is not reachable from outside, by intent.
+    u=0..W, z=0..REAR_WALL_H."""
     z = REAR_IO_Z
     at = rear_io_layout()
     cuts = []
@@ -951,8 +916,8 @@ def rear_io_cutouts():
     # Bored-plus-two-M3 stations. The DIN-5 and the D-series jack are the same
     # shape of problem -- a bore with a fixing pair straddling it -- so they are
     # built by one loop; only the numbers differ. The fixings run HORIZONTALLY:
-    # the panel is 46 tall and the D pair spans 24, which would leave only 11 of
-    # panel above and below, but across the panel there is room to spare.
+    # the wall is 90 tall and the D pair spans 24, which would leave only 33 of
+    # wall above and below, but across the wall there is room to spare.
     for ref, bore, pitch, scr in (
             ("MIDI_IN",  MIDI_BODY_D,  MIDI_SCREW_PITCH,  MIDI_SCREW_D),
             ("MIDI_OUT", MIDI_BODY_D,  MIDI_SCREW_PITCH,  MIDI_SCREW_D),
@@ -969,86 +934,12 @@ def rear_io_cutouts():
         cu = at[ref][0]
         cuts.append({"kind": "rect", "u": cu - USB3_CUT_SQ/2.0, "v": z - USB3_CUT_SQ/2.0,
                      "w": USB3_CUT_SQ, "h": USB3_CUT_SQ, "r": USB3_CORNER_R, "ref": ref})
-    return cuts
-
-def _feat_extent(f):
-    """(u_lo, u_hi, z_lo, z_hi) of one cutout feature."""
-    if f["kind"] == "circle":
-        r = f["d"] / 2.0
-        return (f["u"] - r, f["u"] + r, f["v"] - r, f["v"] + r)
-    return (f["u"], f["u"] + f["w"], f["v"], f["v"] + f["h"])
-
-def rear_window():
-    """The I/O WINDOW in the rear wall: (u_lo, z_lo, w, h).
-
-    Derived from the cutouts it has to pass, not typed. The window used to be a
-    290x46 constant while the cluster it framed was laid out by rear_io_layout(),
-    so the two could drift apart silently -- and did, when the cluster moved right
-    to follow the boards (#743). Now the wall opening is whatever the connectors
-    need plus REAR_WIN_CLR, and a station that grows drags the window with it."""
-    ext = [_feat_extent(f) for f in rear_io_cutouts()]
-    u_lo = min(e[0] for e in ext) - REAR_WIN_CLR
-    u_hi = max(e[1] for e in ext) + REAR_WIN_CLR
-    z_lo = min(e[2] for e in ext) - REAR_WIN_CLR
-    z_hi = max(e[3] for e in ext) + REAR_WIN_CLR
-    if z_hi - z_lo < REAR_WIN_H_MIN:            # open it up about the cluster centreline
-        z_mid = (z_lo + z_hi) / 2.0
-        z_lo, z_hi = z_mid - REAR_WIN_H_MIN/2.0, z_mid + REAR_WIN_H_MIN/2.0
-    return (u_lo, z_lo, u_hi - u_lo, z_hi - z_lo)
-
-def rear_panel_bolts():
-    """Bolt centres (u, z) in WALL coords -- drilled in the wall AND the panel from
-    this one list, so they cannot disagree."""
-    u0, z0, w, h = rear_window()
-    cu, cz = u0 + w/2.0, z0 + h/2.0
-    return [(cu + su*(w/2.0 + REAR_PANEL_BOLT_OFF), cz + sz*(h/2.0 + REAR_PANEL_BOLT_OFF))
-            for su in (-1, 1) for sz in (-1, 1)]
-
-def rear_panel_outline():
-    """Panel blank (u_lo, z_lo, w, h) in WALL coords: the window plus an overlap wide
-    enough that the bolts clear its edge."""
-    u0, z0, w, h = rear_window()
-    return (u0 - REAR_PANEL_OV, z0 - REAR_PANEL_OV, w + 2*REAR_PANEL_OV, h + 2*REAR_PANEL_OV)
-
-def rear_panel_holes():
-    """Sub-panel features in PANEL-LOCAL coords (origin = panel centre)."""
-    u0, z0, w, h = rear_panel_outline()
-    cu, cz = u0 + w/2.0, z0 + h/2.0
-    out = []
-    for f in rear_io_cutouts():
-        g = dict(f)
-        g["u"] = f["u"] - cu
-        g["v"] = f["v"] - cz
-        out.append(g)
-    _bond = rear_panel_bolts()[0]
-    for bu, bz in rear_panel_bolts():
-        out.append({"kind": "circle", "u": bu - cu, "v": bz - cz, "d": D_M3,
-                    "ref": "PANEL_BOLT"})
-        if (bu, bz) == _bond:
-            out.append({"kind": "circle", "u": bu - cu, "v": bz - cz,
-                        "d": MASK_BOND_D, "ref": "PANEL_BOND", "layer": "MASK"})
-    return out
-
-def rear_holes():
-    """Rear WALL features: the I/O WINDOW and its four bolt holes, the fixed exhaust
-    vents and the earth stud. The connectors themselves are NOT here -- they are in
-    the bolt-on sub-panel (segno_rear_panel), so the whole connector loom lifts out
-    as one assembly instead of being trapped in a folded face of the base.
-    u=0..W, z=0..REAR_WALL_H."""
-    u0, z0, w, h = rear_window()
-    cuts = [{"kind": "rect", "u": u0, "v": z0, "w": w, "h": h, "ref": "IO_WINDOW"}]
-    _bond = rear_panel_bolts()[0]                          # the one nearest the stud
-    for bu, bz in rear_panel_bolts():
-        cuts.append({"kind": "circle", "u": bu, "v": bz, "d": D_M3, "ref": "PANEL_BOLT"})
-        if (bu, bz) == _bond:
-            cuts.append({"kind": "circle", "u": bu, "v": bz, "d": MASK_BOND_D,
-                         "ref": "PANEL_BOND", "layer": "MASK"})
-    # Vents fill the wall to the LEFT of the panel: the wall's EDGE margin to the
-    # panel's left edge - EDGE, columns evenly pitched to land exactly on both.
+    # Vents fill the wall to the LEFT of the cluster: the wall's EDGE margin to the
+    # cluster's left edge - EDGE, columns evenly pitched to land exactly on both.
     # (Mirror of the original rule, which had them to the RIGHT -- they swapped when
     # the cluster moved right to follow the boards.)
     sl = VENT_SLOT[0]
-    cl_l = rear_panel_outline()[0]                         # panel LEFT edge
+    cl_l = REAR_IO_U - REAR_IO_SPAN/2.0                    # cluster LEFT edge
     v_l = EDGE                                             # first vent column
     v_r = cl_l - EDGE                                      # last column's right edge
     ncol = max(2, round((v_r - v_l - sl) / (sl + 8.0)) + 1)
@@ -1134,8 +1025,7 @@ def _check(strict_board_mount=True):
         "real seating offset does not taper along the plate")
 
     cuts, _ = faceplate_holes()
-    rear = rear_holes()            # WALL: window, bolts, vents, earth stud
-    rear_io = rear_io_cutouts()    # PANEL: the nine connector stations
+    rear = rear_holes()
     byref = {c["ref"]: c for c in cuts}
 
     # 1. width budget: the front row of 8 pedals must fit across FP_W
@@ -1446,7 +1336,7 @@ def _check(strict_board_mount=True):
     # a lie -- which is exactly what happened when the D-series jack (Ø24 bore + an
     # M3 pair) was carrying a Ø10 threaded-bushing keep-out.
     for ref, (cu, kw) in lay.items():
-        own = [c for c in rear_io if c["ref"] == ref or c["ref"] == ref + "_SCR"]
+        own = [c for c in rear if c["ref"] == ref or c["ref"] == ref + "_SCR"]
         assert own, f"REAR_IO: station {ref} is laid out but cuts nothing"
         for c in own:
             r = c["d"]/2.0 if c["kind"] == "circle" else 0.0
@@ -1459,11 +1349,11 @@ def _check(strict_board_mount=True):
     # A fixing hole that breaks into its own bore is not a fixing hole. This is
     # the check that caught the "D-series M3 pair sits at 24 mm" figure: on a Ø24
     # bore that puts the screw centres exactly on the bore edge, leaving no land.
-    for c in rear_io:
+    for c in rear:
         if not c["ref"].endswith("_SCR"):
             continue
         base = c["ref"][:-4]
-        bore = next(b for b in rear_io if b["ref"] == base)
+        bore = next(b for b in rear if b["ref"] == base)
         off = abs(c["u"] - bore["u"])
         assert off - c["d"]/2.0 >= bore["d"]/2.0 + 1.5, (
             f"REAR_IO: {c['ref']} at {off:.2f} from centre leaves "
@@ -1475,73 +1365,26 @@ def _check(strict_board_mount=True):
             f"REAR_IO: {a_ref} and {b_ref} keep-outs overlap by "
             f"{a_hi - b_lo:.2f} mm -- their nuts/flanges would foul")
     _bw_r = W - 2*T
-    assert abs(REAR_IO_U - SCREEN_16_U) < 1e-9, (
-        f"REAR_IO: cluster centre {REAR_IO_U:.1f} is not the 16in screen centre "
-        f"({SCREEN_16_U:.1f}) -- the panel is centred on the screen, which is what "
-        "anyone plugging into it lines it up against")
+    assert abs(REAR_IO_U - (_bw_r - EDGE - REAR_IO_SPAN/2.0)) < 1e-9, (
+        f"REAR_IO: cluster centre {REAR_IO_U} is not bw - EDGE - span/2 "
+        f"({_bw_r - EDGE - REAR_IO_SPAN/2.0:.1f}) -- the written-out constant has "
+        "drifted. It is RIGHT-justified: the cluster follows the boards")
     assert boxes[0][0] >= EDGE - 1e-9, (
         f"REAR_IO: {boxes[0][2]} keep-out starts at u={boxes[0][0]:.1f}, inside "
         f"the {EDGE:.0f} mm edge margin")
-
-    # 8c. the dismountable I/O panel (#751). The wall carries a window; the panel
-    # carries the connectors and bolts over it. Four ways that goes wrong, four
-    # gates -- the panel is derived from the cutouts, so each one is a statement
-    # about what the derivation must keep true, not a repetition of it.
-    _pu0, _pz0, _pw, _ph = rear_panel_outline()
-    _wu0, _wz0, _ww, _wh = rear_window()
-    # (i) the window has to pass every cutout it frames. Derived, but a station
-    # that grows past the derivation -- a rect with a corner radius, a bore that
-    # picks up a flange -- would be trimmed by the wall instead of the panel.
-    for c in rear_io:
-        lo, hi, zlo, zhi = _feat_extent(c)
-        assert (_wu0 <= lo and hi <= _wu0 + _ww
-                and _wz0 <= zlo and zhi <= _wz0 + _wh), (
-            f"REAR_PANEL: {c['ref']} spans u {lo:.1f}..{hi:.1f}, z {zlo:.1f}..{zhi:.1f} "
-            f"but the window is u {_wu0:.1f}..{_wu0+_ww:.1f}, z {_wz0:.1f}..{_wz0+_wh:.1f} "
-            "-- the wall would cut into the connector")
-    # (ii) a bolt through a flange is a panel that cannot be done up. The bolts sit
-    # outside the window; the flanges reach past the cutouts, and on the outermost
-    # stations they reach FURTHER than the window edge does.
-    for _bu, _bz in rear_panel_bolts():
-        for _ref, (_cu, _kw) in lay.items():
-            _clr = abs(_bu - _cu) - _kw/2.0 - D_M3/2.0
-            assert _clr >= 0.0 or abs(_bz - REAR_IO_Z) > _kw/2.0 + D_M3/2.0, (
-                f"REAR_PANEL: bolt at ({_bu:.1f}, {_bz:.1f}) fouls {_ref}'s "
-                f"Ø{_kw:.1f} flange by {-_clr:.1f} mm")
-        assert (_bu - _pu0 >= 4.0 and _pu0 + _pw - _bu >= 4.0
-                and _bz - _pz0 >= 4.0 and _pz0 + _ph - _bz >= 4.0), (
-            f"REAR_PANEL: bolt at ({_bu:.1f}, {_bz:.1f}) leaves under 4 mm of "
-            f"panel edge -- REAR_PANEL_OV {REAR_PANEL_OV} vs bolt offset "
-            f"{REAR_PANEL_BOLT_OFF}")
-    # (iii) the panel is a plate bolted to the OUTSIDE of a wedge-topped wall, so
-    # it does not owe the wall's EDGE margin -- that margin is for features cut
-    # into a face that has to fold and take a corner bracket. What it does owe:
-    # staying on the wall, and lying FLAT. The corner brackets are pop-riveted
-    # from inside, which puts their heads on the outside, in the panel's plane --
-    # CORNER_RO is 8 mm precisely so they hug the corner and clear this panel, and
-    # that intent is worth a gate rather than a comment.
-    _bw_wall = W - 2*T
-    assert _pu0 >= 4.0 and _pu0 + _pw <= _bw_wall - 4.0, (
-        f"REAR_PANEL: panel spans u {_pu0:.1f}..{_pu0+_pw:.1f}, off a "
-        f"{_bw_wall:.0f} mm wall")
-    assert _pz0 >= 4.0 and _pz0 + _ph <= REAR_WALL_H - 4.0, (
-        f"REAR_PANEL: panel spans z {_pz0:.1f}..{_pz0+_ph:.1f}, which does not "
-        f"leave 4 mm of wall above and below on a {REAR_WALL_H:.0f} mm wall")
-    for _ru in (CORNER_RO, _bw_wall - CORNER_RO):
-        for _rz in CORNER_ZR_WALL:
-            _clr = max(_pu0 - _ru, _ru - (_pu0 + _pw), _pz0 - _rz, _rz - (_pz0 + _ph))
-            assert _clr >= 4.0, (
-                f"REAR_PANEL: corner rivet head at ({_ru:.1f}, {_rz:.1f}) is "
-                f"{_clr:.1f} mm from the panel -- the panel will not lie flat")
-    # (iv) the gap to the vent block carries the earth stud (D_GND) and still has
-    # to leave a spanner's width either side. Measured to the PANEL edge now, not
-    # the first station: the panel overhangs the cluster by REAR_PANEL_OV, and it
-    # is the panel a spanner collides with.
+    # the gap to the vent block carries the earth stud (D_GND) and still has to
+    # leave a spanner's width either side of it
     _v_r = max(c["u"] + c.get("w", 0.0) for c in rear if c["ref"] == "VENT")
-    _gap = _pu0 - _v_r
+    _gap = boxes[0][0] - _v_r
     assert _gap >= D_GND + 2*8.0, (
-        f"REAR_PANEL: only {_gap:.1f} mm between the last vent column and the "
-        f"panel edge -- the earth stud (Ø{D_GND}) and its spanner do not fit")
+        f"REAR_IO: only {_gap:.1f} mm between the last vent column and "
+        f"{boxes[0][2]} -- the earth stud (Ø{D_GND}) and its spanner do not fit")
+    # every station has to fit BETWEEN the wall's top and bottom edges too -- the
+    # USB coupler flange is the tall one, and the wall is only REAR_WALL_H
+    _tall = max(kw for _cu, kw in lay.values())
+    assert _tall <= REAR_WALL_H - 2*4.0, (
+        f"REAR_IO: widest keep-out {_tall:.1f} does not leave 4 mm of wall above "
+        f"and below on a {REAR_WALL_H:.0f} mm wall")
     # ...and no rear-I/O dimension may exist without a recorded provenance, so a
     # new connector cannot be added without saying where its numbers came from
     _dims = [k for k in globals()
@@ -2059,23 +1902,6 @@ def platform_foot_holes():
             out.append({"kind": "circle", "u": u + fy, "v": vb + fx,
                         "d": D_M3, "ref": "PLAT_SCR"})
     return out
-
-def dxf_rear_panel(path):
-    """The dismountable rear I/O panel: a flat plate that closes the rear WINDOW with
-    a bolt-on overlap and carries all nine connector stations. Same 2 mm sheet as the
-    base, so it is one more part on the same cut+bend quote (it has no bends).
-
-    Everything here is derived: the outline from the window, the window from the
-    cutouts, the cutouts from rear_io_layout(). Move a station and the panel, the
-    window and the wall's bolt pattern all follow."""
-    doc = _doc(); msp = doc.modelspace()
-    _u0, _z0, pw, ph = rear_panel_outline()
-    _poly(msp, [(-pw/2, -ph/2), (pw/2, -ph/2), (pw/2, ph/2), (-pw/2, ph/2)], "CUT")
-    _emit(msp, rear_panel_holes())
-    _text(msp, -pw/2 + 4, ph/2 + 6, 6,
-          "Segno REAR I/O PANEL  2.0mm  x1  9V + shutdown + fuse + 2x DIN-5 + 2x TRS + 2x USB3",
-          "NOTE")
-    doc.saveas(path); return {}
 
 def dxf_screen_bracket(path):
     """Rear clamp bracket that retains a bezel monitor from behind (qty per
@@ -3437,7 +3263,6 @@ DXF_PARTS = [
     ("segno_faceplate",        dxf_faceplate),
     ("segno_overlay",          dxf_overlay),  # printed adhesive top-plate graphic (replaces silkscreen)
     ("segno_base",             dxf_base),     # bottom + front/rear/side walls, ONE folded blank
-    ("segno_rear_panel",       dxf_rear_panel),  # dismountable I/O panel (#751)
     ("segno_screen_bracket",   dxf_screen_bracket),
     ("segno_ring_disc",        dxf_ring_disc),                        # LED-ring centre disc
     ("segno_corner_bracket_rear",  lambda p: dxf_corner_bracket(p, CORNER_HT, CORNER_ZR_WALL, CORNER_ZR_SIDE, "REAR x2")),
