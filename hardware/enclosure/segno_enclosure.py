@@ -221,7 +221,7 @@ CONSOLE_SLED_T = 12.633   # thicker than the mini's, because this sled takes M3x
                           # mini's only takes them from one. Derived as the FRONT
                           # row's metal-base height less RING_FLOOR; _check() holds
                           # that, so the three numbers cannot drift apart.
-RING_FLOOR = 1.6          # front-row ring floor. The mid row's "floor" is the tall
+RING_FLOOR = 1.6 + 0.443  # front-row ring floor (+#760 reseat recal). The mid row's "floor" is the tall
                           # pedestal deck it already had -- same formula, and only
                           # the front row is tight enough for this to bind.
 # Light-baffle TUB around the pedal: the pedestal's walls rise from the deck to
@@ -254,7 +254,14 @@ SKIRT_GAP    = 0.3            # wall top to the REAL faceplate underside. Small 
 #
 # Correcting both together moves platform_h by -0.0003 mm at the front row and
 # +0.015 mm at the mid row, so nothing already printed or cut is invalidated.
-FACE_SEAT = 1.95
+#
+# 2026-08-18 (#760): the lid now seats on the SEAM-SOLVER anchor. The plane the
+# 2026-07-28 measurements were taken against sat 2.0 mm rearward (the old doc
+# frame), i.e. 2*tan(SLOPE) = 0.443 mm LOWER than the real seat. Re-measured in
+# the reseated doc: pedals 0.46 (row 1) / 0.423 (row 2) below the slot rims --
+# the uniform +0.443 recalibration lands within 0.02 mm of both. Platforms
+# printed before this are 0.44 mm short.
+FACE_SEAT = 1.95 + 0.443
 
 SKIRT_DRIFT_ROW1 = FACE_SEAT   # was 1.6 -- the same #742 fit; see FACE_SEAT
 SKIRT_DRIFT_ROW2 = FACE_SEAT   # was 0.5 -- ditto; both rows share one constant now
@@ -871,7 +878,7 @@ POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), N
 # POST_V has since moved twice: to 137 (post pulled forward, issue #296) and then to
 # 146.5 (Cherub slope-corrected slots, issue #360; web now ~38.3 mm) -- NOT re-checked
 # against that doc at this position; re-verify there before fabrication.
-POST_FACEDRIFT = 1.5
+POST_FACEDRIFT = 1.5 + 0.443   # same #760 reseat recalibration as FACE_SEAT
 POST_H     = lid_top_z(POST_V) - T - POST_T - POST_FELT - POST_FACEDRIFT
 _POST_VP   = POST_V * math.cos(math.radians(SLOPE_ANGLE))   # projected web depth on the flat base
 _POST_FOOT_VP = _POST_VP - POST_FOOTL/2.0                   # foot-bolt depth (forward of the web)
