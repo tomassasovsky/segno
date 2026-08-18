@@ -1864,7 +1864,7 @@ def dxf_overlay(path):
     _text(msp, 10, FP_V + 8, 8, "Segno TOP OVERLAY  printed adhesive (polycarbonate/vinyl); BLACK field + WHITE legend; die-cut apertures; bonded to the faceplate (no silkscreen on metal)", "NOTE")
     doc.saveas(path); return {}
 
-def dxf_base(path):
+def dxf_base(path, dev=None):
     """ONE-PIECE BASE developed as a SINGLE flat blank: the bottom plate in the centre,
     with the FRONT, REAR and both SIDE walls as flaps that fold UP 90 deg on the four
     bottom edges (folding up from the flat bottom works at any front height). Corners
@@ -1875,9 +1875,16 @@ def dxf_base(path):
     BW, BD = W - 2*T, D - 2*T               # bottom plate (folds up to ~W x D outer)
     # Exact bend allowance: each flap's flat extent = wall height - the 90-deg bend
     # deduction (T + K*T), so the folded OUTER dimensions come out at nominal.
-    bdd = DEV90                              # exact 90-deg development (issue #237)
+    # dev = the 90-deg bend deduction taken out of every flap. DEV90 is the real one
+    # and is what gets cut. dev=0 draws the same blank with UNDEDUCTED flaps: that is
+    # the CAD flat (segno_base_cad.dxf), and it exists because Fusion's Fold does not
+    # take the deduction back out -- fold the manufacturing flat there and every wall
+    # comes up DEV90 short, so the lid will not seat. Folding the undeducted blank with
+    # the bend radius run down to ~0 lands both the wall planes and their heights on
+    # nominal. Nothing but the Fusion model may use it.
+    bdd = DEV90 if dev is None else dev
     Hf = H_FRONT - bdd
-    Hr = HR_FLAT                             # rear web from the seam solver: the flange
+    Hr = HR_FLAT + (DEV90 - bdd)             # rear web from the seam solver: the flange
     Ht = HT_FLAT                             # outer lands ONE SHEET below the lap outer
     rrel = T + 1.0                          # small bend-relief radius at each corner
     LIPR_R = 3.0                            # lip-bend relief radius: a cove TANGENT
@@ -1911,8 +1918,13 @@ def dxf_base(path):
     # there is nothing for the band to wrap -- same rule as any wing root).
     y_edge = BD - 0.15                      # side wedge rear edge (clears the rear
                                             # wall inner face at BD - 0.089)
-    ROOT_REL = 2.6                          # overhang root relief past the rear
-                                            # fold band (BA90/2 = 2.09 + margin)
+    ROOT_REL = 2.6 + (DEV90 - bdd)          # overhang root relief past the rear
+                                            # fold band (BA90/2 = 2.09 + margin).
+                                            # It has to grow with the flaps: on the
+                                            # undeducted CAD flat every wall is DEV90
+                                            # taller, so the rear flap's full-width
+                                            # overhangs meet the side walls DEV90
+                                            # sooner and the rear fold jams.
     CORNER_R = 2.0                          # fillet where the wedge top meets it
     h_x = shf_f(y_x)                        # crease height (= shf_r(y_x))
     h_corner = shf_r(y_edge)                # wedge top at the rear edge
@@ -3462,8 +3474,14 @@ def build_quote_packages():
                         z.write(p, n + ext)
         zips.append(zp)
 
-    sheet = [n for n, _ in DXF_PARTS]
+    sheet = [n for n, _ in DXF_PARTS if not n.endswith("_cad")]
     pack("segno_sheetmetal.zip", sheet, (".dxf", ".pdf"))
+    # A CAD-only flat in the laser pack is a scrapped base: segno_base_cad.dxf has the
+    # bend deduction switched OFF, so cut as-is every wall comes out DEV90 too long.
+    # It is not a DXF_PART for that reason, and this proves it did not sneak in.
+    with zipfile.ZipFile(os.path.join(OUT, "segno_sheetmetal.zip")) as _z:
+        _bad = [n for n in _z.namelist() if n.endswith("_cad.dxf") or n.endswith("_cad.pdf")]
+        assert not _bad, f"FAB_PACK: CAD-only flats in the laser pack: {_bad}"
     pack("segno_sheetmetal_step.zip",
          ["segno_assembly", "segno_base", "segno_faceplate", "segno_screen_bracket",
           "segno_corner_bracket_rear", "segno_ring_disc",
@@ -3531,6 +3549,9 @@ def main(argv):
                 print("  out/" + name + ".pdf")
             except Exception as e:  # pragma: no cover
                 print(f"    (pdf skipped: {e})")
+    cad = os.path.join(OUT, "segno_base_cad.dxf")
+    dxf_base(cad, dev=0.0)
+    print("  out/segno_base_cad.dxf   (CAD ONLY -- undeducted flaps, never cut this)")
     if "--no-pdf" not in argv:
         try:
             paint_quote_pdf(os.path.join(OUT, "segno_paint_quote.pdf"))
