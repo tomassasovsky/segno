@@ -782,7 +782,7 @@ def _check(strict_stations=True):
     for _pin in _enc_pins:
         _sig = ring_j1[_pin]
         for _ref, _pad in _ring_nets.get(_sig, []):
-            assert not (_ref in _rail_refs and _node_count.get(_ref, 9) <= 2), (
+            assert not (_ref in _rail_refs and _node_count.get(_ref, 0) <= 2), (
                 f"RING_LEVELS: {_ref} on ring_board bridges {_sig} (J1 pin {_pin}) "
                 f"to {_rail} -- a two-pin part from the LED rail to an encoder "
                 "line puts 5 V on a Pico input whose absolute maximum is 3.6 V, "

@@ -1,7 +1,7 @@
 # Segno — sheet-metal enclosure for the segno Pi loopstation
 
 A wedge-shaped folded-aluminium console that houses this repo's standalone build
-(a Raspberry Pi + the V1 [`segno_pedal_main`](segno_pedal_pcb_design.md) board)
+(a Raspberry Pi 5 + the [console board v2](kicad/console_board.py), #747)
 and **integrates ten foot pedals
 into the chassis** the way the real "Chewie II" / Sonnit reference does. Form
 (850 × 465 × 100 mm, top sloping toward the player) and layout from the reference;
@@ -225,7 +225,7 @@ right, power first and away from signal:
 
 | ref | cutout | keep-out | note |
 |---|---|---|---|
-| `9V_DC` | Ø11.5 | 17.5 | DC-099; listing says Ø11 hole, +0.5 so it cannot rattle before the nut bites |
+| `PD_IN` | Ø24 D punch | 30.4 | USB-C PD coupler (QIANRENON, #754) — the SAME D punch the TRS jacks use; the 9 V DC-099 barrel died with the 9 V architecture |
 | `POWER` | **Ø19.5** | 29.2 | APIELE 19 mm **high-round** momentary, stainless. **Unlit** |
 | `FUSE` | Ø12.0 | 18 | generic 5×20 screw-cap holder, 10 A / 250 V AC |
 | `MIDI_IN` / `MIDI_OUT` | Ø15.1 + 2 × Ø3.2 @ 22 | 28.4 | REAN NYS325; **IN needs opto-isolation on the board**, not here |
@@ -351,14 +351,13 @@ beats a metal one. 10 A / 250 V AC, far above this job.
 > panel is cut — this is the cheapest station on the wall and the only one whose
 > exact part is not pinned.
 
-> **Rating.** An earlier note here claimed ~7 A through the 9 V input and that a
-> Ø12 holder could not carry it. Both were wrong. The ~7.5 A in the budget is
-> **5 V-side** current; converted, 37.5 W at 9 V and 85 % efficiency is **4.9 A
-> peak / 2.0 A typical** on the input side. And these holders are **10 A / 250 V
-> AC**. There was never a rating problem.
+> **Rating.** The input is **20 V USB-C PD** (#754): the 59 W worst case is
+> ~2.95 A on the 20 V side (~3.3 A with buck efficiency), and these holders are
+> **10 A / 250 V AC** — no rating problem. (An earlier 9 V-era note here worked
+> the same conclusion from the dead architecture's numbers.)
 >
-> Fuse: **T5A slow-blow** (T5AL250V). Above the 4.9 A coincident peak, at/below
-> the 9 V/6 A supply, well under the holder's 10 A. **Slow-blow is not optional** —
+> Fuse: **T5A slow-blow** (T5AL250V). Above the ~3.3 A coincident peak, at the
+> 5 A PD contract ceiling, well under the holder's 10 A. **Slow-blow is not optional** —
 > two bucks charging their bulk caps draw a large inrush, and a fast-blow fuse
 > will nuisance-blow at switch-on. A
 > [12-value T assortment](https://www.amazon.com/dp/B08779766V) is worth it over a
@@ -457,15 +456,16 @@ welded shell, and not the shell that gets built.)
 The pedal platforms hang from the walls at the front + CLEAR/BANK rows, so the
 **rear strip of the bottom plate is the clear floor** for the electronics — and the
 16" screen above it is shallow (mounts to the faceplate, ~18 mm deep), leaving head
-height. The **Raspberry Pi and the `segno_pedal_main` board mount there on
-standoffs** (≥ `STANDOFF_H` for under-board airflow), linked over USB (they sit
-side-by-side). The **EC11 ring board** mounts to the
+height. The **Raspberry Pi and the console board v2 mount there on
+standoffs** (≥ `STANDOFF_H` for under-board airflow), linked by the keyed 2×20
+ribbon (~10 cm; they sit side-by-side). The **EC11 ring board** mounts to the
 faceplate underside behind the encoder cutout; the **screens** clamp to the
 faceplate from behind (`screen_bracket`).
 
 The **bottom plate** (`board_mounts()` drives the patterns) is the CENTRE of the
 folded blank — the wall bottom edges are its own fold lines, not a joint — and carries: the **Pi** (58 × 49) and
-**`segno_pedal_main` board** (85 × 87 M3, measured from its KiCad)
+**console board v2** (89.5 × 89.5 M3 — the number comes over the
+`console_board_mount.json` seam, gated by `BOARD_MOUNT`, not copied by hand)
 standoff holes in the rear; an **intake-vent block** in the clear gap between the
 two platform rows (air crosses the boards to the rear-wall exhaust); and 4 rubber
 feet. The electronics are reached from the **open top** once the lid is lifted.

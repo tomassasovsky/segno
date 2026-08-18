@@ -268,7 +268,8 @@ The console targets a Pi 5, but the software is portable arm64 + standard
 peripherals and runs on a **Pi 4 Model B 8GB** with no code changes:
 
 - **Displays** — Pi 4 has 2× micro-HDMI; labwc/Wayland + `wlr-randr` run on it.
-- **LED driver** — external RP2040 over UART (GPIO14/15), Pi-model-agnostic.
+- **LED driver** — the console board v2's own Pico 2, over the pedal link on
+  uart3 (GPIO8/9); Pi-model-agnostic. (GPIO14/15 carry MIDI on the console.)
 - **Caveats are performance, not compatibility.** The Pi 4 CPU is ~2–3× slower,
   so the ≤10 ms audio round-trip target is tighter — expect to use a slightly
   larger buffer (256→512 frames) for xrun-free operation — and a stompable
@@ -281,9 +282,10 @@ peripherals and runs on a **Pi 4 Model B 8GB** with no code changes:
 The console's hardware design lives under [`hardware/`](../hardware):
 
 - **BOM / shopping list:** [`hardware/segno_console_shopping_list.md`](../hardware/segno_console_shopping_list.md)
-  (Argentina-sourced) — Pi 5 + active cooler, 16″ touchscreen, **7″ HDMI**
-  display, USB interface, footswitches, EC11 encoder, WS2812 ring + strip, the
-  RP2040 LED driver, and power.
+  (Amazon-sourced, decision 2026-08-17) — Pi 5 + active cooler, 16″ touchscreen,
+  **7″ HDMI** display, USB interface, footswitches, EC11 encoder, WS2812
+  ring + indicator pills, the 20 V PD power chain, and the console board v2's
+  generated BOM (`hardware/kicad/fab/segno_console_board_bom.csv`).
 - **Power/thermal budget + enclosure intent:**
   [`hardware/console/README.md`](../hardware/console/README.md) — the per-rail
   power budget and the active-cooling requirement.
