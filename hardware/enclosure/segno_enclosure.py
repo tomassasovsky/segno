@@ -85,7 +85,8 @@ CORNER_LEG = 12.0    # bracket leg width (along the wall)
 CORNER_ZR_WALL = (8.0, 40.0, 72.0)    # rear-wall leg rivets (3)
 CORNER_ZR_SIDE = (24.0, 56.0)         # side-wall leg rivets (2), interleaved with the wall leg
 CORNER_HT      = 80.0                  # rear bracket height (covers the ~90 mm rear wall)
-LID_FRONT_FL = 9.0   # front-lip flange flat (down-turned lip; rests on the front wall, no screw)
+# LID_FRONT_FL (front-lip flange flat) is DERIVED below from the seam solver:
+# the lip runs from the fold to the VERY BOTTOM of the base (#760).
 # LID_REAR_LAP (rear-lap length) is DERIVED by the rear-seam solver below
 LID_SIDE_LIP = 16.0  # inward lip at the bottom of each lid side wall (screws to the base from below)
 # Lid -> body fixing scheme:
@@ -652,6 +653,12 @@ _bd  = D - 2.0 * T                              # bottom plate flat depth (= BD)
 # lid front mold corner (lip outer face x lid outer skin), lip hugging the wall:
 _cfy = H_FRONT - T * math.tan(_ra) + T / math.cos(_ra)
 _cfz = -DEV90 - T
+# Front-lip flange: the lip TIP lands flush with the base's bottom face (z=0),
+# covering the whole front -- wall, floor edge and all (user call 2026-08-18,
+# #760; the old 9mm flange stopped ~3.2mm short). A flat point f past the bend
+# line lands at station f + DD from the mold corner, so tip-at-zero needs
+# flat = corner height - DD_LIP.
+LID_FRONT_FL = _cfy - DD_LIP
 _mtop   = FP_V + DD_LIP + DD_LAP                # lid top-plate mold length
 RIDGE_Z = _cfz + _mtop * math.cos(_ra)          # lid rear mold corner (the ridge)
 RIDGE_Y = _cfy + _mtop * math.sin(_ra)
@@ -792,12 +799,16 @@ REAR_IO_U = SCREEN_16_U
 PEDALS = [(_ROW1[i], _row1_u(i), PEDAL_ROW1_V) for i in range(8)] + [
     ("CLEAR", _row1_u(2), PEDAL_ROW2_V), ("BANK", _row1_u(3), PEDAL_ROW2_V)]
 
-# Front-lip screws: ONE PER PEDAL GAP (7 total; was 3 -- #760). The knuckle trim
-# left the front wall 10.09 tall with the screw row at ~6.95, so each hole keeps
-# only ~1.0mm of metal above its edge; spreading the lid load over every gap cuts
-# the per-screw pull ~2.3x. All 7 land clear of every foot-plate by construction.
+# Front-lip screws: ONE PER PEDAL GAP plus one OUTBOARD of each end pedal at the
+# mirrored half-pitch (9 total; was 3 -- #760). The knuckle trim left the front
+# wall 10.09 tall with the screw row at ~6.95, so each hole keeps only ~1.0mm of
+# metal above its edge; spreading the lid load over every station cuts the
+# per-screw pull ~3x. All 9 land clear of every foot-plate by construction.
 # Shared by the lid lip and the front wall.
-FRONT_SCREW_U = [(_row1_u(i) + _row1_u(i + 1)) / 2.0 for i in range(len(_ROW1) - 1)]
+_FS_HP = (_row1_u(1) - _row1_u(0)) / 2.0
+FRONT_SCREW_U = ([_row1_u(0) - _FS_HP]
+                 + [(_row1_u(i) + _row1_u(i + 1)) / 2.0 for i in range(len(_ROW1) - 1)]
+                 + [_row1_u(len(_ROW1) - 1) + _FS_HP])
 
 # Status-LED pedals: ALL of them (issue #366 -- the LED trial added pills over
 # REC/PLAY, STOP, UNDO and MODE; the encoder ring stays as well).
