@@ -719,6 +719,14 @@ LED_GAP      = 12.0      # status-LED offset behind a pedal (toward rear)
 SILK_H       = 25.0      # silkscreen cap height -- SAME for every label (a too-wide word
 SILK_CW      = 0.66      # gets squished horizontally). bold char advance / cap height.
 PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the edge
+# The platform stack (platform_foot_holes and everything on it) converts lid-v
+# to plan as v*cos(SLOPE) -- but the DEVELOPED lid's content v=0 does NOT land
+# at plan 0: the lip hugs the wall at -(DEV90+T) and the flat starts DD_LIP past
+# the front mold corner (rear-seam solver, #237). Net: raw-v apertures cut
+# ~2.6mm forward of where the floor actually puts the pedals, and the pedal rear
+# edge fouls the slot. The slot cut ALONE carries the correction (#760): labels,
+# LED pills, screens and the platform stack keep the frozen approved layout.
+PEDAL_AP_DEV = (DEV90 + T) / math.cos(_ra) - DD_LIP
 # 7" screen, LED ring and encoder share ONE vertical centre-line (COL_U, defined
 # with the pedal layout below): the gap between pedals 1 and 2.
 # SCREEN_TOP_V is FROZEN at the value the console was built around (the screens,
@@ -869,8 +877,9 @@ def faceplate_holes():
     cuts, engr = [], []
     # --- 10 pedal slots (two rows); a status LED pill above EVERY pedal --------
     for label, u, v in PEDALS:
-        cuts.append({"kind": "rect", "u": u - FSW_SLOT_W/2, "v": v - FSW_SLOT_D/2,
-                     "w": FSW_SLOT_W, "h": FSW_SLOT_D, "r": 0.0, "ref": label})  # square: max corner clearance
+        cuts.append({"kind": "rect", "u": u - FSW_SLOT_W/2,
+                     "v": v - FSW_SLOT_D/2 + PEDAL_AP_DEV,   # development offset: meet the
+                     "w": FSW_SLOT_W, "h": FSW_SLOT_D, "r": 0.0, "ref": label})  # pedals where the floor puts them (#760)
         led = _has_led(label)   # (slot cutouts below replace the old per-pedal LED holes;
                                 #  the flag still sets the label offset, unchanged)
         # silkscreen label ABOVE the pedal (rear side); every line is drawn at
