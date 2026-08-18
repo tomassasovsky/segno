@@ -320,7 +320,17 @@ def pcb_parts():
         out.append((f"piriser{k}",
                     cq.Workplane("XY").circle(2.6).circle(1.3).extrude(V.PI_RISER_H)
                       .translate((pcx+dx, pcy+dy, V.T)).val()))
-    # the external 5V buck is gone (#754): one 5 V supply feeds the whole console
+    # external 5V buck: TWO ear holes on a flat mount, not the old 4-hole quad on
+    # standoffs. buck_mount() returns (cx, cy, ear_spacing) -- a scalar third
+    # element, which is what used to blow this function up (#742).
+    bcx, bcy, bsp = V.buck_mount()
+    for k, dx in enumerate((-bsp/2.0, bsp/2.0)):
+        out.append((f"buckear{k}",
+                    cq.Workplane("XY").circle(V.D_M4/2.0).extrude(V.T)
+                      .translate((bcx+dx, bcy, 0.0)).val()))
+    out.append(("buck", cq.Workplane("XY")
+                .box(V.BUCK_BODY[0], V.BUCK_BODY[1], V.BUCK_BODY[2], centered=(True, True, False))
+                .translate((bcx, bcy, V.T)).val()))
     return out
 
 
@@ -527,6 +537,8 @@ if __name__ == "__main__":
         if n=="lid_knob": return cq.Color(0.13,0.13,0.15,1.0)            # encoder knob
         if n=="lid_ring": return cq.Color(0.93,0.95,1.00,1.0)            # diffused LED ring cover
         if n=="lid_ringmetal": return cq.Color(0.72,0.74,0.78,1.0)       # metal centre disc inside the ring
+        if n.startswith("buckso"): return cq.Color(0.78,0.66,0.32,1.0)    # brass standoffs
+        if n.startswith("buck"): return cq.Color(0.12,0.32,0.46,1.0)      # external buck module
         if n.startswith("crivet"): return cq.Color(0.85,0.86,0.90,1.0)    # rivets (bright metal)
         if n.startswith("cbracket"): return cq.Color(0.95,0.55,0.20,1.0)  # corner brackets (orange, visible)
         if "sclamp" in n: return cq.Color(0.20,0.78,0.70,1.0)            # screen-retention clamps (teal, visible)
