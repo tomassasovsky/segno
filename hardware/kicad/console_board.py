@@ -573,8 +573,9 @@ STATION_HEADERS = {          # rear-panel station -> the header that terminates 
     "CTRL_1": "J20", "CTRL_2": "J21",
 }
 STATION_NOT_ON_BOARD = {     # ...and the ones that deliberately never touch it
-    "9V_DC": "goes to the external buck, not this board",
-    "FUSE": "in series with the 9 V input, upstream of everything here",
+    "5V_DC": "the GX20 inlet: ONE 5 V supply feeds the Pi, both screens and this "
+             "board (#754). It lands on J3, not here",
+    "FUSE": "in series with the 5 V input, upstream of everything here",
     "USB3_1": "passes through to a Pi USB port",
     "USB3_2": "passes through to a Pi USB port",
 }

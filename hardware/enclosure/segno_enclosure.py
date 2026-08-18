@@ -349,14 +349,23 @@ PWRBTN_HEAD_D = 25.2  # hex bezel ACROSS CORNERS: ZJWZJH 25.2, APIELE 25.0. The
 # also right, since an insulating body around a live fuse in an earthed metal
 # chassis beats a metal one. Rated 10 A / 250 V AC, far above this job.
 #
-# These holders ship FAST-BLOW fuses. See the T5A slow-blow note in the design
-# doc: the two bucks' inrush will nuisance-blow a fast fuse at switch-on.
+# These holders ship FAST-BLOW fuses, and the screens' + Pi's inrush will
+# nuisance-blow a fast fuse at switch-on -- fit a slow-blow element.
+# RATING IS NOW THE OPEN QUESTION (#754): this station was sized for a 5x20 holder
+# on a 9 V / ~2 A inlet. One 5 V supply for the whole console puts ~12 A through
+# it, and generic 5x20 screw-cap holders top out at 6.3-10 A. The APERTURE below
+# is unchanged (6x30 screw-cap holders use the same 12 mm hole), but the HOLDER
+# and element have to be re-picked for >=15 A before anything is cut.
 D_FUSE    = 12.0     # NeoLum B0GF33P9FF: "12 mm diameter aperture"; B0DLKJ813T:
                      # "Installation Hole 12mm". Two independent listings agree.
 D_GND     = 6.5      # M6 earth / bond stud
-D_BARREL  = 11.5     # DC-099 barrel jack: listing states an 11 mm mounting hole;
-                     # +0.5 so the thread drops in but cannot rattle before the
-                     # nut bites. 12.0 (the old value) left 1 mm of slop.
+D_GX20    = 20.5     # GX20 4-pin aviation inlet, +0.5 fit (#754). The 9 V barrel
+                     # it replaces was an 11 mm DC-099 rated ~5 A -- fine feeding a
+                     # buck at 2 A, hopeless now the whole console runs off ONE 5 V
+                     # supply and the inlet carries ~12 A. GX20 is ~10 A per pin, so
+                     # two pins are paralleled for +5V and two for the return.
+                     # Deliberately NOT an XLR or speakON: those mate with audio
+                     # cabling, and a power inlet a speaker lead fits is a trap.
 # The chosen TRS is a D-SERIES jack (MEIRIYFA B0G5GHCCHM, "fits standard D Series
 # panel mount designs"), NOT a threaded-bushing jack -- so it takes the Neutrik D
 # punch, a Ø24 bore with two M3 fixings, not a Ø10 round hole.
@@ -385,7 +394,8 @@ REAR_IO_PROVENANCE = {
     "PWRBTN_HEAD_D":     "datasheet: APIELE 25.0 / ZJWZJH 25.2 across hex corners; 25.2 brackets both",
     "D_FUSE":            "datasheet: two generic 5x20 screw-cap listings, 12 mm aperture",
     "D_GND":             "design: M6 stud clearance",
-    "D_BARREL":          "datasheet: DC-099 listing, 11 mm hole (+0.5 fit)",
+    "D_GX20":            "UNCONFIRMED: GX20 shells are nominally \u00d820 panel cutout; "
+                         "confirm against the unit bought before cutting",
     "D_TRS_BORE":        "datasheet: neutrik.com NC3FD-L-1, 'standardized D sized 24 mm panel cutout'",
     "D_TRS_SCREW_PITCH": "UNCONFIRMED: D-series M3 pair is diagonal, pattern not sourced -- NOT CUT",
     "D_TRS_KEEPOUT":     "design: bore + room for the M3 pair once it is known",
@@ -876,7 +886,7 @@ def faceplate_holes():
 # is 6.4 wider than its own 22.1 cutout; spacing on cutouts alone would have the
 # two couplers' flanges fouling each other.
 REAR_IO_STATIONS = [
-    ("9V_DC",    D_BARREL + 6.0),                        # power first, at the far
+    ("5V_DC",    D_GX20 + 6.0),                          # power first, at the far
     ("POWER",    PWRBTN_HEAD_D + 4.0),                   # left, away from signal.
                                                          # Sized off the HEAD, not the
                                                          # hole -- the head is what
@@ -911,7 +921,7 @@ def rear_holes():
     z = REAR_IO_Z
     at = rear_io_layout()
     cuts = []
-    for ref, d in (("9V_DC", D_BARREL), ("POWER", D_PWRBTN), ("FUSE", D_FUSE)):
+    for ref, d in (("5V_DC", D_GX20), ("POWER", D_PWRBTN), ("FUSE", D_FUSE)):
         cuts.append({"kind": "circle", "u": at[ref][0], "v": z, "d": d, "ref": ref})
     # Bored-plus-two-M3 stations. The DIN-5 and the D-series jack are the same
     # shape of problem -- a bore with a fixing pair straddling it -- so they are
@@ -1287,17 +1297,17 @@ def _check(strict_board_mount=True):
     assert _clear >= REAR_CONN_DEPTH, (
         f"REAR_BAY: only {_clear:.1f} mm between the Pi's port edge and the rear "
         f"wall, need {REAR_CONN_DEPTH:.0f} for the connector bodies + wiring")
-    # The BUCK still sits inside that bay (v to bd-31), and that is fine -- but for
-    # a 3D reason, not a planar one, so it gets its own gate rather than a shrug.
-    # The connectors are centred REAR_IO_Z up the wall; the lowest metal on the
-    # widest of them is REAR_IO_Z - keepout/2. The buck is a 22.1-tall brick bolted
-    # flat to the floor, so it passes UNDERNEATH them. The Pi cannot do the same --
-    # it rides a 35.3 riser straight into that band, which is why it had to move in
-    # plan and the buck did not.
+    # The buck that used to live in this bay is gone (#754): one external 5 V
+    # supply feeds the whole console, so there is nothing left to convert. What
+    # the bay still has to respect is the connector band -- the stations are
+    # centred REAR_IO_Z up the wall and the lowest metal on the widest of them is
+    # REAR_IO_Z - keepout/2, so anything parked against the rear wall has to pass
+    # under it. The Pi cannot: it rides a riser straight into that band, which is
+    # why it moved in plan rather than being tucked behind.
     _lowest = REAR_IO_Z - max(kw for _cu, kw in rear_io_layout().values())/2.0
-    assert BUCK_BODY[2] + 5.0 <= _lowest, (
-        f"REAR_BAY: the buck is {BUCK_BODY[2]:.1f} tall and the lowest connector "
-        f"metal is at z={_lowest:.1f} -- it no longer passes under them")
+    assert _lowest >= 20.0, (
+        f"REAR_BAY: the lowest connector metal is at z={_lowest:.1f} -- under 20 mm "
+        "there is no room left to run the loom beneath the cluster")
 
     # The Pi must not be stacked over anything -- that is the whole reason it moved
     # under the 16" screen rather than straight forward, and it is what lets the
@@ -1305,11 +1315,8 @@ def _check(strict_board_mount=True):
     # version of this gate checked only v and fired on a Pi 400 mm away in u.
     _pi = (_pu0, _pu1, _pv0, _pv1)                               # PCB 85 x 56, rotated
     _b = board_mounts()[0]                                       # (ref, u, v, holes)
-    _bku, _bkv, _ = buck_mount()
     for _nm, _o in (("console board", (_b[1] - BOARD_SIZE[0]/2.0, _b[1] + BOARD_SIZE[0]/2.0,
-                                    _b[2] - BOARD_SIZE[1]/2.0, _b[2] + BOARD_SIZE[1]/2.0)),
-                    ("buck",       (_bku - BUCK_BODY[0]/2.0, _bku + BUCK_BODY[0]/2.0,
-                                    _bkv - BUCK_BODY[1]/2.0, _bkv + BUCK_BODY[1]/2.0))):
+                                       _b[2] - BOARD_SIZE[1]/2.0, _b[2] + BOARD_SIZE[1]/2.0)),):
         if _pi[0] < _o[1] and _o[0] < _pi[1] and _pi[2] < _o[3] and _o[2] < _pi[3]:
             _head = PI_RISER_H - (STANDOFF_H + BOARD_STACK_H)
             assert _head >= 3.0, (
@@ -1390,7 +1397,7 @@ def _check(strict_board_mount=True):
     _dims = [k for k in globals()
              if k.startswith(("D_TRS", "MIDI_", "USB3_")) and k not in
              ("USB3_CORNER_R", "USB3_CUT_SQ", "USB3_FIT")]
-    _dims += ["D_BARREL", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND"]
+    _dims += ["D_GX20", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND"]
     _missing = sorted(set(_dims) - set(REAR_IO_PROVENANCE))
     assert not _missing, (
         f"REAR_IO: {_missing} have no entry in REAR_IO_PROVENANCE -- say whether "
@@ -1573,23 +1580,10 @@ def pi_pcb_extent():
     u, v, _ = pi_mount()
     return (u - 28.0, u + 28.0, v - 32.5, v + 52.5)                  # SD edge at -v
 
-# External 5V buck: eleUniverse 8-36V -> 5V 10A 50W IP67 potted brick (Amazon
-# B0GGHN97TK; envelope 63.8 x 57.7 x 22.1 incl. mounting ears, 116 g, passive
-# aluminium shell) — the add-on that makes 5V for the Pi + screens (the
-# in-production board is untouched). Screws FLAT to the floor of the rear
-# airflow bay by its two end ears (no standoffs), long axis along u.
-# (Replaces the Pololu D24V90F5 — too expensive / hard to source.)
-BUCK_BODY = (63.8, 57.7, 22.1)
-BUCK_EAR_SPACING = 56.0       # ear hole centres along the long axis — PROVISIONAL
-                              # until the unit arrives; drill to the real part
-def buck_mount():
-    """The 8-36V -> 5V brick. It sits between the 9 V inlet that feeds it and the
-    board's J3 that it feeds, so it follows them: parked at its old u it would have
-    been 165 mm from an inlet that moved to the right with the rest of the cluster,
-    for no reason but inertia. Left of the console board keeps both runs short and
-    stays clear of the CLEAR/BANK pedal platform, which owns u 230..313."""
-    bd = D - 2*T
-    return (410.0, bd - 60.0, BUCK_EAR_SPACING)
+# The external 5 V buck is GONE (#754). It converted a 9 V inlet the design never
+# otherwise used; now one external 5 V supply feeds the Pi, both screens, this
+# board and the LEDs, and the only power part left inside is wiring. The floor it
+# used to occupy (u ~410, v bd-60) is free.
 
 # ===========================================================================
 # DXF  (ezdxf)
@@ -1831,11 +1825,6 @@ def dxf_base(path):
         for dy in (-psy/2, psy/2):
             _circle(msp, pcx+dx, pcy+dy, D_M3)
     _text(msp, pcx - psx/2, pcy + psy/2 + 4, 5, f"PI_RISER x{PI_RISER_H:.0f}mm (Pi build)", "NOTE")
-    bkx, bky, bsp = buck_mount()                   # external 5V buck: 2 ear holes, flat mount
-    for dx in (-bsp/2, bsp/2):
-        _circle(msp, bkx+dx, bky, D_M4)
-    _text(msp, bkx - bsp/2, bky + BUCK_BODY[1]/2 + 4, 5,
-          "BUCK 5V (eleUniverse 8-36V>5V 10A IP67; ear pitch PROVISIONAL)", "NOTE")
     for x, y in base_foot_xy():                    # M4 clearance, plain hole: the
         _circle(msp, x, y, D_FOOT)                 # head is relieved in the RING
     _emit(msp, platform_foot_holes())              # M3 holes for the 10 pedal-platform feet
@@ -3063,7 +3052,7 @@ def report():
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
       f"(case top flush with the slot's upper rim, pad +{PEDAL_PAD_T:.1f} above, #373)  [PROVISIONAL]")
     P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 15.6in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
-    P(f"Rear I/O        : 9V + btn + fuse + 2x MIDI DIN-5 + 2x TRS (D-series) + 2x USB3 + vents + earth (no window)")
+    P(f"Rear I/O        : 5V GX20 + btn + fuse + 2x MIDI DIN-5 + 2x TRS (D-series) + 2x USB3 + vents + earth (no window)")
     _unc = rear_io_unconfirmed()
     if _unc:
         P("  DO NOT CUT     : " + ", ".join(
@@ -3141,7 +3130,7 @@ def layout_svg(path):
         elif c["kind"] == "rect":
             e.append(f'<rect x="{X(c["u"]):.1f}" y="{Yr(c["v"]+c["h"]):.1f}" width="{c["w"]:.1f}" height="{c["h"]:.1f}" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>')
     fy = rear_base + REAR_WALL_H + 28
-    e.append(f'<text x="{M}" y="{fy:.1f}" fill="#7c8aa3" font-size="10.5">9V · power · fuse · USB-A x2 · earth stud · vents   |   service: back out the front-lip + rear-lap screws, lift the lid (side wings just locate)</text>')
+    e.append(f'<text x="{M}" y="{fy:.1f}" fill="#7c8aa3" font-size="10.5">5V GX20 · power · fuse · USB-A x2 · earth stud · vents   |   service: back out the front-lip + rear-lap screws, lift the lid (side wings just locate)</text>')
     e.append(f'<text x="{M}" y="{fy+18:.1f}" fill="#7c8aa3" font-size="10.5">10x Cherub WTB-006 pedals on printed pedestals (PROVISIONAL) · 10 indicator LED pills (one per pedal) + encoder ring · Pi+board mount on the rear bottom plate</text>')
     e.append('</svg>')
     with open(path, "w") as f:
