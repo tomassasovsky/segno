@@ -269,9 +269,13 @@ R("220")[1, 2] += j_min[1], opto[1]            # DIN pin 4
 opto[2] += j_min[2]                            # DIN pin 5
 # MIDI 1.0: the IN jack's pin 2 (shield) is NOT connected at the receiver, which is
 # why J5 is a 2-pin header and not a 3-pin one -- the isolation is the point.
-Part("Device", "D", value="1N4148",
-     footprint="Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal",
-     ref="D1")[1, 2] += opto[1], opto[2]
+# ANTI-parallel with the opto's LED, and read that twice: KiCad's Device:D numbers
+# pin 1 as K and pin 2 as A, so this line -- which looks like "same direction as the
+# LED" -- is the correct reverse clamp. MIDI_CLAMP in _check() asserts it by PIN
+# NAME so the next reader does not have to trust the numbering.
+d_clamp = Part("Device", "D", value="1N4148",
+               footprint="Diode_THT:D_DO-35_SOD27_P7.62mm_Horizontal", ref="D1")
+d_clamp[1, 2] += opto[1], opto[2]
 opto[6] += v3v3                                # 3V3, so its output feeds the Pi direct
 opto[5] += gnd
 C("100nF", ref="C20")[1, 2] += v3v3, gnd
@@ -389,41 +393,35 @@ j_exp[8] += gnd
 # or through whichever connector flange happens to have the best contact.
 #
 # So: ONE hard bond, at the corner nearest the rear-panel loom and diagonally away
-# from the Pi ribbon, and three holes left as a HYBRID BOND option.
+# from the Pi ribbon. The other three holes get the same PLATED PAD and nothing
+# else -- isolated copper, touching only their standoff.
 #
-# The hybrid is the part worth understanding. A second DC bond would close a mains-
-# frequency loop (chassis -> Pi -> ribbon -> here -> chassis), which is where hum
-# comes from. A capacitor does not: 10 nF is ~318 k at 50 Hz, so no hum current can
-# flow, and ~0.16 ohm at 100 MHz, so ESD and RF still get a short path into the
-# case. The 1 M bleeds the static the cap would otherwise hold. All three are DNF:
-# the board ships single-point bonded, and the pads exist so EMC testing can change
-# that with a soldering iron instead of a respin.
+# There are no components on those three. An earlier cut fitted each with a 10 nF
+# 2 kV cap and a 1 M bleeder, DNF, so EMC testing could add an RF bond without a DC
+# loop. The idea is sound and the parts were wrong: nothing fits those corners in
+# through-hole, so they were SMD -- six surface-mount parts on a board that is
+# hand-soldered through-hole on purpose, for a bond that may never be wanted. If it
+# ever is, the pad is there and a leaded cap solders from it to the nearest ground
+# via, which is a bench job on one board rather than a BOM line on every board.
 CHASSIS_BOND_HOLE = "H1"
 MOUNT_HOLES = ("H1", "H2", "H3", "H4")
 MOUNT_FP = "MountingHole:MountingHole_3.2mm_M3_Pad"   # 6.4 mm pad, bare on BOTH
                                                       # faces: screw head above,
                                                       # standoff below
 holes = {}          # ref -> the hole part, so the gate reads the PART, not a search
-bond_network = {}   # ref -> the parts standing between that hole and ground
 for _h in MOUNT_HOLES:
     _hole = Part("Mechanical", "MountingHole_Pad", ref=_h, footprint=MOUNT_FP,
                  value="M3 CHASSIS" if _h == CHASSIS_BOND_HOLE else "M3")
     holes[_h] = _hole
-    bond_network[_h] = []
     if _h == CHASSIS_BOND_HOLE:
         _hole[1] += gnd
         continue
-    _bond = Net("CHASSIS_%s" % _h)
-    _hole[1] += _bond
-    # DNF, and said so in the value: this board has no BOM field for it, and a part
-    # that looks fitted in a parts list is worse than one that says what it is.
-    _cap = C("10nF 2kV DNF", ref="C4%s" % _h[1:],
-             fp="Capacitor_SMD:C_1210_3225Metric_Pad1.33x2.70mm_HandSolder")
-    _bleed = Part("Device", "R", ref="R4%s" % _h[1:], value="1M DNF",
-                  footprint="Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder")
-    _cap[1, 2] += _bond, gnd
-    _bleed[1, 2] += _bond, gnd
-    bond_network[_h] = [_cap, _bleed]
+    # Deliberately connected to nothing. Named like the other exemptions on this
+    # board rather than tolerated as a warning in the log.
+    _iso = Net("CHASSIS_%s" % _h)
+    _iso.do_erc = False          # isolated on purpose: a pad for a standoff, not a
+    _hole[1] += _iso             # signal. A wall of expected warnings is how a real
+    _hole[1].do_erc = False      # one gets missed -- see the SPARE_GPIO note above
 
 # ---- J3: power in, 5 V from the external potted buck ------------------------
 # Four pins, doubled up: 1+3 are both +5V and 2+4 are both GND. This used to be a
@@ -570,6 +568,56 @@ def _check(strict_stations=True):
             f"EXPANSION: J22 pin {_i} is labelled {EXP_PINOUT[_i - 1]} but wired to "
             f"GP{_gp}")
 
+    # MIDI IN's clamp diode, by pin NAME. Reversed, the 1N4148 sits in parallel
+    # with the opto's LED in the same direction, and its ~0.7 V forward drop shunts
+    # the LED's ~1.4 V: almost no current reaches the phototransistor and MIDI IN is
+    # dead. Nothing else on the board would notice -- ERC sees two connected pins
+    # either way, and DRC sees copper. The trap is that Device:D is numbered K=1,
+    # A=2, so the correct wiring reads backwards in the source.
+    _led_a = {n.name for n in opto[1].nets}      # LED anode, fed via R5 from DIN 4
+    _led_k = {n.name for n in opto[2].nets}      # LED cathode -> DIN 5
+    _clamp_k = {n.name for n in d_clamp["K"].nets}
+    _clamp_a = {n.name for n in d_clamp["A"].nets}
+    assert _clamp_k == _led_a, (
+        f"MIDI_CLAMP: D1's cathode is on {_clamp_k}, expected the opto's LED anode "
+        f"{_led_a} -- a clamp in PARALLEL with the LED shunts it and MIDI IN "
+        "receives nothing")
+    assert _clamp_a == _led_k, (
+        f"MIDI_CLAMP: D1's anode is on {_clamp_a}, expected the opto's LED cathode "
+        f"{_led_k}")
+
+    # Read off the PART, not off the SWD_PADS literal two lines above it. Asserting
+    # against the dict that made the connections is a tautology, and it passed with
+    # SWCLK and SWDIO swapped -- which is the mistake that actually happens, and
+    # which bricks flashing rather than announcing itself.
+    assert pico.footprint.endswith("RaspberryPi_Pico_SMD_HandSolder"), (
+        f"SWD: J1 is on {pico.footprint}, which has no D1/D2/D3 debug pads -- SWD "
+        "would need a header and three flying wires again")
+    for _pad, _want in (("D1", "SWCLK"), ("D2", "GND"), ("D3", "SWDIO")):
+        got = {n.name for n in pico[_pad].nets}
+        assert _want in got, (
+            f"SWD: the module's {_pad} pad carries {got}, expected {_want} -- the "
+            "debug pad order is the module's, not ours, and swapping SWCLK/SWDIO "
+            "leaves a board that cannot be flashed")
+
+    # MIDI IN's clamp diode, by pin NAME. Reversed, the 1N4148 sits in parallel
+    # with the opto's LED in the same direction, and its ~0.7 V forward drop shunts
+    # the LED's ~1.4 V: almost no current reaches the phototransistor and MIDI IN is
+    # dead. Nothing else on the board would notice -- ERC sees two connected pins
+    # either way, and DRC sees copper. The trap is that Device:D is numbered K=1,
+    # A=2, so the correct wiring reads backwards in the source.
+    _led_a = {n.name for n in opto[1].nets}      # LED anode, fed via R5 from DIN 4
+    _led_k = {n.name for n in opto[2].nets}      # LED cathode -> DIN 5
+    _clamp_k = {n.name for n in d_clamp["K"].nets}
+    _clamp_a = {n.name for n in d_clamp["A"].nets}
+    assert _clamp_k == _led_a, (
+        f"MIDI_CLAMP: D1's cathode is on {_clamp_k}, expected the opto's LED anode "
+        f"{_led_a} -- a clamp in PARALLEL with the LED shunts it and MIDI IN "
+        "receives nothing")
+    assert _clamp_a == _led_k, (
+        f"MIDI_CLAMP: D1's anode is on {_clamp_a}, expected the opto's LED cathode "
+        f"{_led_k}")
+
     # Read off the PART, not off the SWD_PADS literal two lines above it. Asserting
     # against the dict that made the connections is a tautology, and it passed with
     # SWCLK and SWDIO swapped -- which is the mistake that actually happens, and
@@ -588,22 +636,21 @@ def _check(strict_stations=True):
     # mains-frequency loop through the Pi ribbon, which is the thing this scheme
     # exists to avoid; none would leave the board floating inside an earthed metal
     # case, relying on whichever connector flange happens to touch best. The other
-    # holes may only reach ground through their capacitor.
+    # holes are isolated pads, wired to nothing at all.
     _bonded = [h for h, p in holes.items() if gnd in p[1].nets]
     assert _bonded == [CHASSIS_BOND_HOLE], (
         f"CHASSIS_BOND: {_bonded or 'no hole'} is hard-bonded to GND, expected "
         f"exactly [{CHASSIS_BOND_HOLE}] -- two DC bonds close a hum loop through "
         "the ribbon, and zero leaves the board floating in an earthed metal box")
-    for _h, _parts in bond_network.items():
+    for _h, _p in holes.items():
         if _h == CHASSIS_BOND_HOLE:
             continue
-        _kinds = {p.ref[0] for p in _parts}
-        assert _kinds == {"C", "R"}, (
-            f"CHASSIS_BOND: {_h} reaches ground through {[p.ref for p in _parts]} -- "
-            "an optional bond is a capacitor (RF short, DC open) with a bleeder, not "
-            "a bare pad and not a wire")
-        assert all(gnd in p[2].nets for p in _parts), (
-            f"CHASSIS_BOND: {_h}'s bond network does not land on GND")
+        _touching = {q.part.ref for n in _p[1].nets for q in n.get_pins()
+                     if q.part.ref != _h}
+        assert not _touching, (
+            f"CHASSIS_BOND: {_h} is wired to {_touching} -- the other three holes "
+            "are isolated pads. A second path to ground, through anything, is the "
+            "loop this scheme exists to prevent")
 
     # The power button must NOT be on the 40-way at all. This gate used to assert
     # the opposite -- "the button must land on Pi header pin 5 (GPIO3)... the only
@@ -714,10 +761,12 @@ def _selftest():
         holes["H3"][1].disconnect()
         holes["H3"][1] += gnd
 
-    def _bond_without_cap():
-        # ...and the other half: an optional bond made with copper instead of a
-        # capacitor, which is the same DC loop wearing a different hat.
-        bond_network["H2"] = []
+    def _clamp_reversed():
+        # The 1N4148 fitted the other way round: electrically parallel with the
+        # opto's LED, which kills MIDI IN and looks perfectly fine everywhere else.
+        d_clamp[1].disconnect(); d_clamp[2].disconnect()
+        d_clamp[1] += opto[2]
+        d_clamp[2] += opto[1]
 
     def _btn_pin():
         PI_HDR[5] = gnd
@@ -754,7 +803,7 @@ def _selftest():
     case("ring board reorders its connector", "RING_CONTRACT:", _ring_order)
     case("SWCLK and SWDIO swapped on the debug pads", "SWD:", _swd_swap)
     case("a second mounting hole strapped to GND", "CHASSIS_BOND:", _second_bond)
-    case("an optional bond made of copper, not a cap", "CHASSIS_BOND:", _bond_without_cap)
+    case("MIDI IN clamp diode reversed", "MIDI_CLAMP:", _clamp_reversed)
     case("power button off GPIO3", "PWR_BTN:", _btn_pin)
     case("wrong footswitch count", "PIN_MAP:", _fsw_count)
     case("board terminates a station the panel lacks", "REAR_IO_COVER:", _station)
@@ -762,8 +811,7 @@ def _selftest():
     ok = True
     ring_net_saved = RING_NET
     for name, want, mutate in cases:
-        saved = (dict(GPIO), dict(PI_HDR), list(FSW_ORDER), dict(STATION_HEADERS),
-                 {h: list(v) for h, v in bond_network.items()})
+        saved = (dict(GPIO), dict(PI_HDR), list(FSW_ORDER), dict(STATION_HEADERS))
         mutate()
         try:
             _check()
@@ -781,11 +829,13 @@ def _selftest():
             PI_HDR.clear(); PI_HDR.update(saved[1])
             FSW_ORDER[:] = saved[2]
             STATION_HEADERS.clear(); STATION_HEADERS.update(saved[3])
-            bond_network.clear(); bond_network.update(saved[4])
             RING_NET = ring_net_saved
             if mutate is _second_bond:
                 holes["H3"][1].disconnect()
                 holes["H3"][1] += Net("CHASSIS_H3")
+            if mutate is _clamp_reversed:
+                d_clamp[1].disconnect(); d_clamp[2].disconnect()
+                d_clamp[1, 2] += opto[1], opto[2]
             if mutate is _swd_swap:
                 pico["D1"].disconnect(); pico["D3"].disconnect()
                 pico["D1"] += swclk

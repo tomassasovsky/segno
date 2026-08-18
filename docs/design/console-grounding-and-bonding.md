@@ -3,8 +3,8 @@
 The scheme for the 10-pedal console. Issue #751; the board it lands on is #747.
 
 The short version: **one hard DC bond from board ground to the chassis, at H1.**
-Everything else that touches metal is either a known bond we accept, a bond we
-break deliberately, or a capacitor.
+Everything else that touches metal is either a known bond we accept or one we
+break deliberately.
 
 ## Why there is a scheme at all
 
@@ -24,9 +24,9 @@ are made deliberate instead.
 | Hole | Position | Bond |
 |---|---|---|
 | **H1** | top-left, nearest the rear-panel loom | **hard-wired to GND** — the single DC bond |
-| H2 | top-right | isolated pad; C42 10 nF 2 kV + R42 1 M to GND, **DNF** |
-| H3 | bottom-right | isolated pad; C43 + R43, **DNF** |
-| H4 | bottom-left | isolated pad; C44 + R44, **DNF** |
+| H2 | top-right | plated pad, isolated — wired to nothing |
+| H3 | bottom-right | plated pad, isolated |
+| H4 | bottom-left | plated pad, isolated |
 
 All four use `MountingHole_3.2mm_M3_Pad`: a 6.4 mm plated pad with bare copper on
 **both** faces, so the screw head above and the standoff below both make contact.
@@ -36,16 +36,25 @@ H1 is top-left because that is the corner nearest where the outside world arrive
 edge) and diagonally away from the Pi ribbon. An ESD strike on a footswitch cable
 should reach the case there, not travel the 40-way into the Pi.
 
-**The hybrid bond, and why it is a capacitor.** A second *DC* bond would close a
-mains-frequency loop — chassis → Pi → ribbon → this board → chassis. A capacitor
-does not: 10 nF is ~318 kΩ at 50 Hz, so no hum current flows, and ~0.16 Ω at
-100 MHz, so ESD and RF still get a short path into the case. The 1 MΩ bleeds the
-static the cap would otherwise hold. They ship unfitted; the pads exist so EMC
-testing can change the answer with a soldering iron instead of a respin.
+**If a second bond is ever wanted, it is a capacitor, not copper.** A second *DC*
+bond closes a mains-frequency loop — chassis → Pi → ribbon → this board → chassis.
+A capacitor does not: 10 nF is ~318 kΩ at 50 Hz, so no hum current flows, and
+~0.16 Ω at 100 MHz, so ESD and RF still get a short path into the case. Add a 1 MΩ
+in parallel to bleed the static the cap would otherwise hold.
 
-`CHASSIS_BOND` in `console_board.py` gates this: exactly one hole hard-bonded, and
-every other hole reaching ground only through a cap **and** a bleeder. Two negative
-controls prove it bites.
+**Those parts are not on the board, deliberately.** A version of this fitted all
+three holes with a 10 nF 2 kV cap and a 1 MΩ bleeder, unfitted by default, so EMC
+testing could add an RF bond without a respin. Nothing in through-hole fits those
+corners, so they were SMD — six surface-mount parts on a board that is hand-soldered
+through-hole on purpose, carried by every unit, for a bond that may never be wanted.
+The pad is enough: if a bond is ever needed, a leaded cap solders from it to the
+nearest ground via. That is a bench job on one board instead of a BOM line on all of
+them.
+
+`CHASSIS_BOND` in `console_board.py` gates this: exactly one hole hard-bonded to
+GND, and the other three wired to nothing at all — a second path to ground through
+*anything* fails. Its negative control is a hole strapped to GND "for a better
+connection", which is the mistake the scheme exists to prevent.
 
 ## What goes on the M6 earth stud
 
@@ -107,9 +116,10 @@ Ten minutes with a multimeter on continuity, from bare chassis metal to:
 
 Then decide:
 
-- **Pi/N07 not chassis-bonded** (expected): H1 alone is the bond. Optionally strap
-  H2–H4 with their caps for a lower-impedance RF bond — no DC loop is possible,
-  because only one board is bonded.
-- **Pi/N07 *is* bonded**: keep H1 alone, leave the caps unfitted, and consider
-  nylon shoulder washers on whichever connector turns out to bond the panel, so
-  the DC path stays single-point.
+- **Pi/N07 not chassis-bonded** (expected): H1 alone is the bond, and it is enough.
+  If EMC testing later wants a lower-impedance RF bond, solder a leaded 10 nF from
+  H2/H3/H4's pad to the nearest ground via — no DC loop is possible while only one
+  board is bonded, so even a hard strap would be defensible there.
+- **Pi/N07 *is* bonded**: keep H1 alone, add nothing, and consider nylon shoulder
+  washers on whichever connector turns out to bond the panel, so the DC path stays
+  single-point.

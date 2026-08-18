@@ -1,0 +1,33 @@
+{
+  "source": "console_board_pcb.py",
+  "board": "segno console board v2 (#747)",
+  "outline_mm": [
+    99.5,
+    99.5
+  ],
+  "hole_pattern_mm": [
+    89.5,
+    89.5
+  ],
+  "hole_inset_mm": 5.0,
+  "hole_drill_mm": 3.2,
+  "holes_mm": {
+    "H1": [
+      5.0,
+      5.0
+    ],
+    "H2": [
+      94.5,
+      5.0
+    ],
+    "H3": [
+      94.5,
+      94.5
+    ],
+    "H4": [
+      5.0,
+      94.5
+    ]
+  },
+  "chassis_bond_hole": "H1"
+}

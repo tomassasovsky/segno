@@ -449,12 +449,20 @@ PI_STACK_MID = 9.7            # USB/RJ45 stack centreline above the Pi PCB BOTTO
                               # (1.6 PCB + ~8.1 to the middle of the 16mm-tall stack);
                               # PI_RISER_H is derived from it below REAR_IO_Z
 PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M2.5)
-# Main board = the manufactured V1 THT Pro Micro board (the segno_pedal_main THT design,
-# git 794eb48; the later SMD 328P+16U2 redesign is discarded). Measured from its KiCad:
-# 4x M3 over an 85 x 87 mm rectangle, centred on a 94 x 96 mm outline. Same board (alone)
-# in the Base build; in the Pi build a Raspberry Pi rides alongside, linked over USB.
-BOARD_HOLES = (85.0, 87.0)    # M3 mount rectangle (measured, THT Pro Micro V1)
-BOARD_SIZE  = (94.0, 96.0)    # board outline (for the 3D render)
+# The board on this plate is the CONSOLE BOARD v2 (#747) -- the RP2350 board that
+# carries the MIDI front end and a header for every rear-panel connector. It is not
+# the V1 THT Pro Micro board any more; that one stays with the standalone pedal,
+# which is the product it was designed for.
+#
+# These two numbers are NOT measured or copied. They are checked in _check() against
+# hardware/kicad/out_console/console_board_mount.json, which the board generator
+# writes -- the mirror of the rear_io_stations.json handoff going the other way. The
+# plate spent a while drilling 85 x 87 for a board whose holes had moved to 89.5 x
+# 89.5, and neither part had been ordered only by luck.
+BOARD_HOLES = (89.5, 89.5)    # M3 mount rectangle (console board v2, 5 mm inset)
+BOARD_SIZE  = (99.5, 99.5)    # board outline (for the 3D render + clearance gates)
+BOARD_MOUNT_JSON = os.path.join(HERE, "..", "kicad", "out_console",
+                                "console_board_mount.json")
 # What actually stacks up at the Pi, bottom to top (#743):
 #   plate -> STANDOFF_H -> N07 NVMe bottom board -> its SSD -> standoffs -> Pi PCB
 #   -> the tallest thing on top (the USB-A double stack beats the Active Cooler).
@@ -962,8 +970,27 @@ def _overlap(a, b, clr=2.0):
     return not (a[2] + clr <= b[0] or b[2] + clr <= a[0] or
                 a[3] + clr <= b[1] or b[3] + clr <= a[1])
 
-def _check():
+def _check(strict_board_mount=True):
     """Validate the geometry. Raises AssertionError with a clear message."""
+    # The plate drills holes for a board this file does not own. Those numbers came
+    # from measuring the V1 board, and stayed put while the board they were meant
+    # for was replaced and then resized twice -- so they are read from the board
+    # generator now instead of remembered.
+    if strict_board_mount:
+        import json
+        assert os.path.exists(BOARD_MOUNT_JSON), (
+            f"BOARD_MOUNT: {os.path.relpath(BOARD_MOUNT_JSON, HERE)} is missing -- run "
+            "console_board_pcb.py; the plate cannot drill for a board it cannot see")
+        with open(BOARD_MOUNT_JSON) as fh:
+            _bm = json.load(fh)
+        assert tuple(_bm["hole_pattern_mm"]) == BOARD_HOLES, (
+            f"BOARD_MOUNT: the plate drills {BOARD_HOLES} but {_bm['board']} puts its "
+            f"holes on {tuple(_bm['hole_pattern_mm'])} -- the standoffs would not line "
+            "up with the board")
+        assert tuple(_bm["outline_mm"]) == BOARD_SIZE, (
+            f"BOARD_MOUNT: the plate reserves {BOARD_SIZE} for the board but "
+            f"{_bm['board']} is {tuple(_bm['outline_mm'])} -- every clearance gate "
+            "below is measuring the wrong rectangle")
     # 0. THE SLOPE CONVENTION (issue #742). v is measured ALONG THE SLOPE --
     # FP_V == L_SLOPE, not FACE_RUN -- so height is v*sin, never v*tan. This went
     # wrong once and was masked for months by a two-point "drift" fit that was
@@ -1240,7 +1267,7 @@ def _check():
     _pi = (_pu0, _pu1, _pv0, _pv1)                               # PCB 85 x 56, rotated
     _b = board_mounts()[0]                                       # (ref, u, v, holes)
     _bku, _bkv, _ = buck_mount()
-    for _nm, _o in (("main board", (_b[1] - BOARD_SIZE[0]/2.0, _b[1] + BOARD_SIZE[0]/2.0,
+    for _nm, _o in (("console board", (_b[1] - BOARD_SIZE[0]/2.0, _b[1] + BOARD_SIZE[0]/2.0,
                                     _b[2] - BOARD_SIZE[1]/2.0, _b[2] + BOARD_SIZE[1]/2.0)),
                     ("buck",       (_bku - BUCK_BODY[0]/2.0, _bku + BUCK_BODY[0]/2.0,
                                     _bkv - BUCK_BODY[1]/2.0, _bkv + BUCK_BODY[1]/2.0))):
@@ -1364,7 +1391,7 @@ def _bottom_vents():
 BOARD_U = BOARD_ANCHOR_U - 25.0
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
-    return [("MAIN_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
+    return [("CONSOLE_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
 
 # Depth the rear wall needs behind it, clear of everything, for the panel-mount
 # connectors and their wiring (#743). Deepest body is ~30 (D-series TRS, fuse
@@ -2634,7 +2661,7 @@ def build_step(write_parts=True):
         addw(plat, f"platform_{i}", cq.Location(cq.Vector(v * _cs, u + T, T)))
     # representative segno_pedal_main board on standoffs, rear clear zone (visual stand-in;
     # the fully-detailed KiCad model is rendered in the 3D viewer, not the STEP)
-    blk = {"MAIN_BOARD": (BOARD_SIZE[0], BOARD_SIZE[1], 16.0)}
+    blk = {"CONSOLE_BOARD": (BOARD_SIZE[0], BOARD_SIZE[1], 16.0)}
     for name, cx, cy, pat in board_mounts():
         bx, by, bz = blk[name]
         b = cq.Workplane("XY").box(bx, by, bz, centered=(True, True, False)).translate((cy + T, cx + T, STANDOFF_H))
@@ -3021,7 +3048,7 @@ def _render_parts(cq, explode=0.0):
         if c["kind"]=="circle" and (c["ref"].endswith("_LED") or c["ref"]=="PWR_LED"):
             col=(1.0,0.72,0.20) if c["ref"]=="MODE_LED" else (0.35,1.0,0.50)
             add(on_fp(cq.Workplane("XY").circle(max(c["d"]/2,2.7)).extrude(3.6).translate((c["v"],c["u"],T))), col)
-    blk={"MAIN_BOARD":(BOARD_SIZE[0],BOARD_SIZE[1],16,(0.26,0.52,0.92))}
+    blk={"CONSOLE_BOARD":(BOARD_SIZE[0],BOARD_SIZE[1],16,(0.26,0.52,0.92))}
     for name,cx,cy,_ in board_mounts():
         bx,by,bz,col=blk[name]; add(cq.Workplane("XY").box(bx,by,bz,centered=(True,True,False)).translate((cy+T,cx+T,STANDOFF_H)).val(), col)
     # --- fasteners (show how it bolts together; visible from the underside) ----

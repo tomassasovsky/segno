@@ -36,7 +36,14 @@ FromMM, ToMM = pcbnew.FromMM, pcbnew.ToMM
 HERE = os.path.dirname(os.path.abspath(__file__))
 NETLIST = os.path.join(HERE, "console_board.net")
 OUT = os.path.join(HERE, "out_console")
-BOARD_PATH = os.path.join(OUT, "segno_console_board.kicad_pcb")
+BOARD_PATH = os.path.join(OUT, "segno_console_board.kicad_pcb")   # ROUTED: the
+# deliverable, written only by the routing pipeline. build() does NOT touch it --
+# it writes PLACED_PATH, and route_console_board.sh copies that over BOARD_PATH
+# before importing the session. Placement used to write the deliverable directly,
+# so running the generator on its own quietly replaced a routed, DRC-clean board
+# with an unrouted one, and the next thing to read it (a fab check, a commit) was
+# looking at a different board than the one that passed.
+PLACED_PATH = os.path.join(OUT, "console.placed.kicad_pcb")       # PLACED only
 KICAD_CLI = "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"
 KICAD_FP = "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints"
 LOCAL_FP = os.path.join(HERE, "segno.pretty")
@@ -70,10 +77,34 @@ MOUNT_INSET = 5.0               # mounting-hole centres, in from each corner.
 # Widths per the pcb-layout skill (IPC-2152 rule of thumb): ~1.0 mm for
 # power/ground, ~0.6 mm for signal. The first cut used 0.35/0.8, which is
 # under-sized on both counts -- the +5V rail feeds 22 WS2812s as well as logic.
-TRACK_W = 0.6                   # signal
-TRACK_PWR = 1.0                 # +5V / +3V3
+# ONE width, 0.6 mm, and it is what the board actually gets: Freerouting takes the
+# width from the DSN netclass, so this constant only reaches copper via the GND
+# stubs. There used to be a TRACK_PWR = 1.0 beside it "for +5V/+3V3" -- it was read
+# by _route(), the straight-line router that was retired when Freerouting took over,
+# so the rails have been 0.6 mm all along while a constant said otherwise.
+#
+# 0.6 mm is the right answer anyway, and this is the arithmetic rather than a shrug.
+# Worst case on +5V is 26 WS2812s flat out (16 ring + 10 indicators) at 60 mA =
+# 1.56 A, plus ~60 mA of Pico and AHCT logic. IPC-2152 gives a 0.6 mm external trace
+# in 1 oz copper about 2 A for a 10 degC rise, so the margin is ~20%, and the IR drop
+# over the ~60 mm from J3 to J6/J7 is 1.6 A x 0.049 ohm = 81 mV -- a WS2812 chain
+# entering at 4.92 V. Verified after routing by MIN_PWR_TRACK_W in export().
+TRACK_W = 0.6                   # every routed track, signal and rail alike
 VIA_D, VIA_DRILL = 0.8, 0.4
 CLEARANCE = 0.25
+
+# Silkscreen, as the FAB sees it. JLCPCB will not print a line thinner than
+# 0.15 mm or text shorter than 0.8 mm -- below that it thins, breaks, or is dropped
+# outright, and you find out when the boards arrive. KiCad's own defaults are looser
+# (m_MinSilkTextThickness is 0.08), so its DRC is no help here and _check() carries
+# the rule instead.
+#
+# The stroke is h/5, not the h/6 this used: at h/6 every one of the 58 reference
+# designators came out at 0.133 mm, i.e. under the floor, on a board that had
+# otherwise passed every check we had.
+FAB_MIN_SILK_STROKE = 0.15
+FAB_MIN_SILK_HEIGHT = 0.8
+SILK_STROKE_RATIO = 1.0 / 5.0
 
 # How the ground pours meet a pad. THERMAL, for the reason spelled out in
 # _pour_gnd(); it is a named constant so --selftest can put it back to FULL and
@@ -223,15 +254,6 @@ PLACEMENT = {
     "H2":  (BW - MOUNT_INSET, MOUNT_INSET, 0),
     "H3":  (BW - MOUNT_INSET, BH - MOUNT_INSET, 0),
     "H4":  (MOUNT_INSET, BH - MOUNT_INSET, 0),
-    # ...and each optional bond's cap + bleeder, beside the hole they belong to.
-    # Hand-placed because a corner is exactly where the spiral has nothing to offer:
-    # it is boxed in by the hole's own 6.4 mm pad on one side and the board edge on
-    # two others. They are SMD on an otherwise through-hole board on purpose -- they
-    # are DNF, they sit in the last few mm of free corner, and a 2 kV disc would not
-    # fit any of these three gaps.
-    "C42": (87.0, 3.5, 0),  "R42": (87.0, 7.0, 0),    # H2, top-right
-    "C43": (87.0, 93.0, 0), "R43": (87.0, 96.0, 0),   # H3, bottom-right
-    "C44": (12.0, 93.0, 0), "R44": (12.0, 96.0, 0),   # H4, bottom-left
 }
 # footswitches J10..J19 along the bottom, left-to-right in GPIO order -- that
 # ordering is what keeps the fan-out from crossing (gated in _check)
@@ -258,6 +280,12 @@ for _i in range(10):
     PLACEMENT["J%d" % (10 + _i)] = (fsw_x(_i), FSW_Y, 0)
 
 PWR_NETS = {"+5V", "+3V3"}
+MIN_PWR_TRACK_W = 0.6           # see the TRACK_W note: 1.56 A of WS2812 needs it
+# Copper, mask, silk, outline -- the layers a fab needs and nothing else.
+FAB_LAYERS = "F.Cu,B.Cu,F.Mask,B.Mask,F.Silkscreen,B.Silkscreen,Edge.Cuts"
+# The board's own via geometry. Router-inserted vias are checked against it because
+# they arrive from Freerouting, not from _via(), and defaulted to 0.6/0.3 once.
+MIN_VIA_D, MIN_VIA_DRILL = 0.8, 0.4
 POUR_NET = "GND"
 
 
@@ -468,7 +496,7 @@ def _ref_key(ref):
 
 
 def _silk_items(board, fps):
-    """-> [(text, (x0, y0, x1, y1))] for everything printed on the front silkscreen.
+    """-> [(item, text, (x0, y0, x1, y1))] for everything on the front silkscreen.
 
     Board drawings AND every footprint's own reference and value. The gate used to
     read GetDrawings() alone, which is the 21 labels this file draws and none of the
@@ -483,7 +511,7 @@ def _silk_items(board, fps):
         if not t.IsOnLayer(pcbnew.F_SilkS) or not t.IsVisible():
             continue
         b = t.GetBoundingBox()
-        out.append((t.GetText(),
+        out.append((t, t.GetText(),
                     (ToMM(b.GetLeft()) - ORIGIN[0], ToMM(b.GetTop()) - ORIGIN[1],
                      ToMM(b.GetRight()) - ORIGIN[0], ToMM(b.GetBottom()) - ORIGIN[1])))
     return out
@@ -495,7 +523,7 @@ def _silk(board, text, x, y, h=1.2):
     t.SetPosition(P(x, y))
     t.SetLayer(pcbnew.F_SilkS)
     t.SetTextSize(pcbnew.VECTOR2I(FromMM(h), FromMM(h)))
-    t.SetTextThickness(FromMM(h / 6.0))
+    t.SetTextThickness(FromMM(h * SILK_STROKE_RATIO))
     board.Add(t)
     return t
 
@@ -847,7 +875,20 @@ def _check(fps, nets, board=None):
         print("\n  ratsnest %.0f mm on %.1fx%.1f (%.0f cm2), budget %.0f mm ... "
               % (total, BW, BH, BW * BH / 100.0, MAX_RATSNEST_MM), end="")
     silk = _silk_items(board, fps) if board else []
-    for text, (x0, y0, x1, y1) in silk:
+    # ...and it has to be PRINTABLE, which is a fab limit, not a KiCad one. KiCad's
+    # own minimum stroke is 0.08 mm, so its DRC passed a board whose 58 designators
+    # were all stroked at 0.133 mm -- under JLCPCB's 0.15 mm floor, where lines thin,
+    # break, or are dropped and you find out when the boards arrive.
+    for item, text, _box in silk:
+        stroke, height = ToMM(item.GetTextThickness()), ToMM(item.GetTextHeight())
+        assert stroke >= FAB_MIN_SILK_STROKE - 1e-9, (
+            f"SILK_FAB: '{text}' is stroked at {stroke:.3f} mm, under the "
+            f"{FAB_MIN_SILK_STROKE} mm the fab can print -- it will come out thin, "
+            "broken, or not at all")
+        assert height >= FAB_MIN_SILK_HEIGHT - 1e-9, (
+            f"SILK_FAB: '{text}' is {height:.3f} mm tall, under the "
+            f"{FAB_MIN_SILK_HEIGHT} mm the fab can print")
+    for item, text, (x0, y0, x1, y1) in silk:
         for ref, fp in fps.items():
             fx0, fy0, fx1, fy1 = _extent(fp)
             if not (x1 < fx0 or fx1 < x0 or y1 < fy0 or fy1 < y0):
@@ -860,8 +901,8 @@ def _check(fps, nets, board=None):
     # ...and not over each other either, which is a rule KiCad has and this did not:
     # the function label and the designator of all ten footswitches were printed one
     # on top of the other, 0.07 mm apart, and only DRC ever said so.
-    for i, (ta, (ax0, ay0, ax1, ay1)) in enumerate(silk):
-        for tb, (bx0, by0, bx1, by1) in silk[i + 1:]:
+    for i, (_ia, ta, (ax0, ay0, ax1, ay1)) in enumerate(silk):
+        for _ib, tb, (bx0, by0, bx1, by1) in silk[i + 1:]:
             if not (ax1 < bx0 or bx1 < ax0 or ay1 < by0 or by1 < ay0):
                 raise AssertionError(
                     f"SILK: '{ta}' and '{tb}' are printed on top of each other -- "
@@ -926,29 +967,6 @@ def _check(fps, nets, board=None):
 
 
 # ---- route -----------------------------------------------------------------
-
-def _route(board, fps, nets, netmap):
-    """Straight pad-to-pad on F.Cu for signals; GND is poured, not routed."""
-    routed = 0
-    for name, nodes in sorted(nets.items()):
-        if name == POUR_NET:
-            continue
-        pts = []
-        for ref, pad in nodes:
-            if ref in fps:
-                xy = _pad_xy(fps[ref], pad)
-                if xy:
-                    pts.append(xy)
-        if len(pts) < 2:
-            continue
-        width = TRACK_PWR if name in PWR_NETS else TRACK_W
-        # chain them in x order so a multi-point net is a bus, not a star
-        pts.sort()
-        for a, b in zip(pts, pts[1:]):
-            _track(board, netmap[name], pcbnew.F_Cu, width, a, b)
-            routed += 1
-    return routed
-
 
 def _stitch_gnd(board, fps, nets, netmap, boxes):
     """Every GND pad gets a via into the pours -- BESIDE it, never on it.
@@ -1037,7 +1055,12 @@ LABELS = {
 }
 SILK_H = 1.0
 REF_H = 0.8          # designators, a size down from the function labels: there are
-                     # 58 of them and they have to fit in the gaps the labels leave
+                     # 58 of them and they have to fit in the gaps the labels leave.
+                     # This is exactly the fab's minimum printable height. 0.9 was
+                     # tried for margin and does not fit: the designators stop
+                     # finding gaps, which trades a printing risk for a legibility
+                     # one. The STROKE is where the margin went instead -- h/5 puts
+                     # it at 0.16 mm against a 0.15 floor
 AUTOPLACE_REFS = True   # off = the designators stay where each library footprint
                         # left them, which is the board that shipped "J1" across R3
 # Pinned label rows. A GROUP of labels reads as tidy only if it sits on one side at
@@ -1115,7 +1138,7 @@ def _labels(board, fps):
         # standing on end beside a module whose own extent is 50 mm long.
         t.SetTextAngle(pcbnew.EDA_ANGLE(0, pcbnew.DEGREES_T))
         t.SetTextSize(pcbnew.VECTOR2I(FromMM(REF_H), FromMM(REF_H)))
-        t.SetTextThickness(FromMM(REF_H / 6.0))
+        t.SetTextThickness(FromMM(REF_H * SILK_STROKE_RATIO))
         tx0, ty0, tx1, ty1 = _text_box(t)
         w, h = tx1 - tx0, ty1 - ty0
         px0, py0, px1, py1 = _extent(fps[ref])
@@ -1202,6 +1225,11 @@ def _selftest():
         # which is the board that shipped with "J1" printed across R3.
         ("designators left where the footprints put them", "SILK:", {},
          {"AUTOPLACE_REFS": False}),
+        # Silk too thin for the fab to print. The stroke follows the text size, so
+        # the control moves the RATIO -- which is the number a future "make the
+        # designators lighter" edit would reach for.
+        ("silkscreen stroked below the fab minimum", "SILK_FAB:", {},
+         {"SILK_STROKE_RATIO": 1.0 / 12.0}),
         # A label on a PINNED row grows into its neighbour. The pinned rows are
         # placed at a fixed spot rather than searched for a free one, so nothing
         # about the placement can refuse them -- only the gate can.
@@ -1297,10 +1325,9 @@ def build(quiet=False):
     # It has never actually been printable. Gated below now.
     # Titles BEFORE the labels: _labels() treats whatever silk already exists as
     # occupied, so anything drawn after it is drawn on top of it.
-    # x 33, not 28: the title is 33.1 mm wide as RENDERED, and at 28 its left end
-    # ran into H4's bond capacitor. The bottom strip is now a packed row --
-    # H4 | C44/R44 | title | MIDI note | C43/R43 | H3 -- so these two numbers are
-    # measurements, not taste.
+    # x 33, not 28: the title is 33.1 mm wide as RENDERED, which is wider than a
+    # character count suggests, and it has to clear H4's pad at the left end of the
+    # bottom strip. Measured, not taste.
     _silk(board, "SEGNO CONSOLE v2  #747", 33.0, 95.5, 1.6)
     _silk(board, "MIDI IN: ISOLATED", 72.0, 95.5, 1.0)
     _labels(board, fps)
@@ -1344,10 +1371,43 @@ def build(quiet=False):
     # LED-strip generator hit the same wall and fills via kicad-cli instead --
     # `pcb drc --refill-zones --save-board` pours and checks in one pass.
     os.makedirs(OUT, exist_ok=True)
-    board.Save(BOARD_PATH)
+    board.Save(PLACED_PATH)
+    write_mount_json()
     print(f"placed {len(fps)} footprints | {n_vias} GND vias | "
           "2 GND pours (filled by kicad-cli)")
     return board
+
+
+def write_mount_json():
+    """Publish the outline and the M3 pattern for the enclosure to drill against.
+
+    The mirror image of rear_io_stations.json, which the enclosure writes and
+    console_board.py reads. That one flows panel -> board because the panel owns
+    where a connector sits; this one flows board -> panel because the BOARD owns
+    where its own holes are, and the plate has to follow.
+
+    It exists because the two drifted: the plate was drilling an 85 x 87 rectangle
+    measured off the V1 Pro Micro board while this board put its holes on 89.5 x
+    89.5, and nothing was watching. Neither part had been ordered, so it cost
+    nothing -- once, and only because someone thought to look.
+    """
+    path = os.path.join(OUT, "console_board_mount.json")
+    holes = {ref: PLACEMENT[ref][:2] for ref in ("H1", "H2", "H3", "H4")}
+    payload = {
+        "source": "console_board_pcb.py",
+        "board": "segno console board v2 (#747)",
+        "outline_mm": [BW, BH],
+        "hole_pattern_mm": [BW - 2 * MOUNT_INSET, BH - 2 * MOUNT_INSET],
+        "hole_inset_mm": MOUNT_INSET,
+        "hole_drill_mm": 3.2,
+        "holes_mm": {ref: [round(x, 3), round(y, 3)] for ref, (x, y) in holes.items()},
+        "chassis_bond_hole": "H1",   # see docs/design/console-grounding-and-bonding.md
+    }
+    os.makedirs(OUT, exist_ok=True)
+    with open(path, "w") as fh:
+        json.dump(payload, fh, indent=2)
+        fh.write("\n")
+    return path
 
 
 def _drc_json(path, report):
@@ -1391,20 +1451,66 @@ def prune_dangling_vias(path=BOARD_PATH, rounds=4):
                 if v["type"] == "via_dangling" for i in v.get("items", [])})
 
 
-def export():
+def check_routed_board(path=None):
+    """Fab gates that can only be asked of the ROUTED board. Raises SystemExit.
+
+    Run from route_console_board.sh before it plots, and from export(). Neither the
+    placement gates nor DRC cover these: DRC checks the board against its own rules,
+    and these check the board against the FAB and against the current budget, which
+    are constraints KiCad has never been told about.
+    """
+    _b = pcbnew.LoadBoard(path or BOARD_PATH)
     # REFUSE to plot an unrouted board. Running this module without --no-export
     # produced a JLCPCB-ready zip, "ALL PASS", "0 violations" and exit 0 from a board
     # with ZERO tracks and 80 unconnected items: build() stopped routing when that
     # moved to route_console_board.sh, and --exit-code-violations counts violations
     # only -- never unconnected_items. That is the one failure that reaches a fab.
-    _b = pcbnew.LoadBoard(PCB)
-    # Tracks on a SIGNAL net, not just any track: the placed board now carries a
-    # stub from every ground pad to its stitching via, so "has tracks" stopped
-    # being the same question as "has been routed".
+    #
+    # Tracks on a SIGNAL net, not just any track: the placed board now carries a stub
+    # from every ground pad to its stitching via, so "has tracks" stopped being the
+    # same question as "has been routed".
     if not [t for t in _b.GetTracks()
             if t.GetClass() != "PCB_VIA" and t.GetNetname() != POUR_NET]:
-        raise SystemExit("EXPORT: refusing to plot -- board has no routed signals. "
-                         "Routing lives in route_console_board.sh; run that.")
+        raise SystemExit("FAB: board has no routed signals. Routing lives in "
+                         "route_console_board.sh; run that.")
+    # The rails, measured on the copper that is about to be plotted. Track width is
+    # set in the DSN netclass, i.e. in route_console_board.sh -- three files away
+    # from the current budget it has to satisfy -- and a constant here claiming
+    # 1.0 mm sat next to rails that were 0.6 mm for the whole design. Numbers that
+    # live somewhere else get checked HERE, on the real board, or not at all.
+    thin = [(t.GetNetname(), ToMM(t.GetWidth())) for t in _b.GetTracks()
+            if t.GetClass() != "PCB_VIA" and t.GetNetname() in PWR_NETS
+            and ToMM(t.GetWidth()) < MIN_PWR_TRACK_W - 1e-9]
+    if thin:
+        raise SystemExit(
+            f"FAB: {len(thin)} rail track(s) under {MIN_PWR_TRACK_W} mm, thinnest "
+            f"{min(w for _n, w in thin):.2f} mm on {thin[0][0]} -- the WS2812 chain "
+            "draws 1.56 A. Width comes from the DSN netclass in route_console_board.sh.")
+    small = [(round(ToMM(t.GetWidth(pcbnew.F_Cu)), 3), round(ToMM(t.GetDrill()), 3))
+             for t in _b.GetTracks() if t.GetClass() == "PCB_VIA"
+             and (ToMM(t.GetWidth(pcbnew.F_Cu)) < MIN_VIA_D - 1e-9
+                  or ToMM(t.GetDrill()) < MIN_VIA_DRILL - 1e-9)]
+    if small:
+        raise SystemExit(
+            f"FAB: {len(small)} via(s) smaller than {MIN_VIA_D}/{MIN_VIA_DRILL} mm "
+            f"(e.g. {small[0][0]}/{small[0][1]}) -- Freerouting takes via size from "
+            "the DSN netclass; set it in route_console_board.sh")
+    # Silk that the fab will not print, checked on the plotted article rather than on
+    # the objects build() happened to create.
+    for fp in _b.Footprints():
+        for t in (fp.Reference(), fp.Value()):
+            if not (t.IsOnLayer(pcbnew.F_SilkS) and t.IsVisible()):
+                continue
+            if ToMM(t.GetTextThickness()) < FAB_MIN_SILK_STROKE - 1e-9:
+                raise SystemExit(
+                    f"FAB: {fp.GetReference()}'s '{t.GetText()}' is stroked at "
+                    f"{ToMM(t.GetTextThickness()):.3f} mm, under the fab's "
+                    f"{FAB_MIN_SILK_STROKE} mm")
+    return _b
+
+
+def export():
+    check_routed_board()
     # DRC first: it is what pours the zone (--refill-zones --save-board), so
     # plotting before it would ship gerbers with an empty ground plane.
     drc = subprocess.run([KICAD_CLI, "pcb", "drc", "--refill-zones", "--save-board",
@@ -1416,14 +1522,15 @@ def export():
     gerber_dir = os.path.join(OUT, "gerbers")
     shutil.rmtree(gerber_dir, ignore_errors=True)
     os.makedirs(gerber_dir)
-    subprocess.run([KICAD_CLI, "pcb", "export", "gerbers",
-                    "--no-protel-ext", "-o", gerber_dir + "/", BOARD_PATH],
+    subprocess.run([KICAD_CLI, "pcb", "export", "gerbers", "--no-protel-ext",
+                    "--layers", FAB_LAYERS, "-o", gerber_dir + "/", BOARD_PATH],
                    check=True, capture_output=True)
     subprocess.run([KICAD_CLI, "pcb", "export", "drill",
                     "--format", "excellon", "--excellon-separate-th",
                     "-o", gerber_dir + "/", BOARD_PATH],
                    check=True, capture_output=True)
     zip_base = os.path.join(OUT, "segno_console_board_gerbers")
+    # make_archive truncates, unlike `zip -r`; see the note in route_console_board.sh
     shutil.make_archive(zip_base, "zip", gerber_dir)
     print(f"wrote {zip_base}.zip")
 
@@ -1434,6 +1541,10 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv:
         print("Negative controls:")
         sys.exit(0 if _selftest() else 1)
+    if "--check-routed" in sys.argv:
+        check_routed_board()
+        print("   fab checks on the routed board: PASS")
+        sys.exit(0)
     if "--prune-vias" in sys.argv:
         # Post-fill, so it runs from route_console_board.sh after the SES import,
         # not from build(): nothing here can be known until the board is poured.
