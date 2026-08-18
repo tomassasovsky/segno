@@ -60,7 +60,12 @@ ORIGIN = (100.0, 60.0)          # board origin on the KiCad page
 # J3 + the module + U1 + the ribbon, at 80.5 mm.
 BW, BH = 99.5, 99.5             # see FLOORPLAN below
 EDGE_R = 3.0                    # corner radius
-MOUNT_D, MOUNT_INSET = 3.2, 5.0  # M3 clearance, from each corner
+MOUNT_INSET = 5.0               # mounting-hole centres, in from each corner.
+# The holes are NOT synthesised here any more: H1..H4 come out of the netlist like
+# every other part, because one of them carries GND. A chassis bond is a connection,
+# so it belongs in the netlist, and placing them from PLACEMENT below means the
+# auto-placer sees them before it looks for slots -- which is what stopped a passive
+# landing on H2 back when they were added afterwards.
 
 # Widths per the pcb-layout skill (IPC-2152 rule of thumb): ~1.0 mm for
 # power/ground, ~0.6 mm for signal. The first cut used 0.35/0.8, which is
@@ -181,7 +186,7 @@ PLACEMENT = {
                                    # it was the only net that would never route. At
                                    # y 44 pin 5 comes down to meet it. Pin 2 (IND,
                                    # from row B) is still within 2 mm of its own row.
-    "J2":  (89.5, 40.0, 0),       # Pi ribbon, ON THE EDGE. A 40-way ribbon leaving
+    "J2":  (89.5, 42.0, 0),       # Pi ribbon, ON THE EDGE. A 40-way ribbon leaving
                                    # mid-board folds straight back over everything;
                                    # here the cable clears the board immediately.
     "J22": (46.3, 26.0, 0),        # expansion. Not on the top edge: its GP28 pin is
@@ -209,6 +214,24 @@ PLACEMENT = {
     "R2":  (79.5, 63.0, 90),        # 330R, U1 gate C -> J7 pin 2 (indicators)
     "J6":  (52.5, 69.0, 0),        # ring/encoder, under pads 16/17/19/20
     "J7":  (71.0, 69.0, 0),        # indicators -- x matches J9 above
+
+    # The four M3 holes, one per corner. H1 is the chassis bond (see console_board.py):
+    # top-left, the corner nearest the rear-panel loom and diagonally away from the
+    # ribbon, so an ESD strike on a footswitch lead reaches the case rather than
+    # travelling the 40-way into the Pi.
+    "H1":  (MOUNT_INSET, MOUNT_INSET, 0),
+    "H2":  (BW - MOUNT_INSET, MOUNT_INSET, 0),
+    "H3":  (BW - MOUNT_INSET, BH - MOUNT_INSET, 0),
+    "H4":  (MOUNT_INSET, BH - MOUNT_INSET, 0),
+    # ...and each optional bond's cap + bleeder, beside the hole they belong to.
+    # Hand-placed because a corner is exactly where the spiral has nothing to offer:
+    # it is boxed in by the hole's own 6.4 mm pad on one side and the board edge on
+    # two others. They are SMD on an otherwise through-hole board on purpose -- they
+    # are DNF, they sit in the last few mm of free corner, and a 2 kV disc would not
+    # fit any of these three gaps.
+    "C42": (87.0, 3.5, 0),  "R42": (87.0, 7.0, 0),    # H2, top-right
+    "C43": (87.0, 93.0, 0), "R43": (87.0, 96.0, 0),   # H3, bottom-right
+    "C44": (12.0, 93.0, 0), "R44": (12.0, 96.0, 0),   # H4, bottom-left
 }
 # footswitches J10..J19 along the bottom, left-to-right in GPIO order -- that
 # ordering is what keeps the fan-out from crossing (gated in _check)
@@ -269,23 +292,6 @@ def _outline(board):
         a.SetCenter(P(cx, cy)); a.SetStart(P(*sa)); a.SetEnd(P(*ea))
         a.SetLayer(pcbnew.Edge_Cuts); a.SetWidth(FromMM(0.1))
         board.Add(a)
-
-
-def _mounting_holes(board):
-    """Real library footprints, not hand-built FOOTPRINT objects.
-
-    A bare pcbnew.FOOTPRINT() has no library id, and the Specctra DSN exporter
-    silently refuses the whole board when it meets one -- ExportSpecctraDSN
-    returned False here while succeeding on segno_pedal_main.kicad_pcb, which is
-    what pinned it down. A library part also brings a courtyard and silk for free.
-    """
-    out = {}
-    for i, (x, y) in enumerate((
-            (MOUNT_INSET, MOUNT_INSET), (BW - MOUNT_INSET, MOUNT_INSET),
-            (BW - MOUNT_INSET, BH - MOUNT_INSET), (MOUNT_INSET, BH - MOUNT_INSET))):
-        out["H%d" % (i + 1)] = _load_fp(board, "MountingHole", "MountingHole_3.2mm_M3",
-                                        "H%d" % (i + 1), x, y, 0)
-    return out
 
 
 def _load_fp(board, lib, name, ref, x, y, rot, by_centre=True):
@@ -1255,10 +1261,6 @@ def build(quiet=False):
         lib, name, _v = comps[ref]
         fps[ref] = _load_fp(board, lib, name, ref, x, y, rot)
 
-    # Mounting holes go in BEFORE the occupancy list is built, or the auto-placer
-    # cannot see them and drops a passive straight onto one (R5 landed on H2).
-    fps.update(_mounting_holes(board))
-
     # everything else follows the netlist
     boxes = [_bbox_mm(fp) for fp in fps.values()]
     net_of = {}
@@ -1295,7 +1297,11 @@ def build(quiet=False):
     # It has never actually been printable. Gated below now.
     # Titles BEFORE the labels: _labels() treats whatever silk already exists as
     # occupied, so anything drawn after it is drawn on top of it.
-    _silk(board, "SEGNO CONSOLE v2  #747", 28.0, 95.5, 1.6)
+    # x 33, not 28: the title is 33.1 mm wide as RENDERED, and at 28 its left end
+    # ran into H4's bond capacitor. The bottom strip is now a packed row --
+    # H4 | C44/R44 | title | MIDI note | C43/R43 | H3 -- so these two numbers are
+    # measurements, not taste.
+    _silk(board, "SEGNO CONSOLE v2  #747", 33.0, 95.5, 1.6)
     _silk(board, "MIDI IN: ISOLATED", 72.0, 95.5, 1.0)
     _labels(board, fps)
 

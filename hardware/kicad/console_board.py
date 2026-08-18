@@ -379,6 +379,52 @@ for _i, _gp in enumerate(EXPANSION_GPIO, start=3):
     j_exp[_i] += n
 j_exp[8] += gnd
 
+# ---- H1..H4: the mounting holes, which are a CIRCUIT, not just geometry ------
+# They used to be bare NPTH -- no copper -- so the board floated inside an earthed
+# metal chassis. That was never a decision; it was the default footprint. And the
+# board does not float in practice anyway: two USB 3.0 panel couplers, two DIN-5
+# chassis sockets and two D-series TRS jacks all bolt metal flanges through a metal
+# panel, and the TRS sleeves ARE this board's GND. The choice is not whether the
+# board touches the chassis, only whether it does so through a defined, short path
+# or through whichever connector flange happens to have the best contact.
+#
+# So: ONE hard bond, at the corner nearest the rear-panel loom and diagonally away
+# from the Pi ribbon, and three holes left as a HYBRID BOND option.
+#
+# The hybrid is the part worth understanding. A second DC bond would close a mains-
+# frequency loop (chassis -> Pi -> ribbon -> here -> chassis), which is where hum
+# comes from. A capacitor does not: 10 nF is ~318 k at 50 Hz, so no hum current can
+# flow, and ~0.16 ohm at 100 MHz, so ESD and RF still get a short path into the
+# case. The 1 M bleeds the static the cap would otherwise hold. All three are DNF:
+# the board ships single-point bonded, and the pads exist so EMC testing can change
+# that with a soldering iron instead of a respin.
+CHASSIS_BOND_HOLE = "H1"
+MOUNT_HOLES = ("H1", "H2", "H3", "H4")
+MOUNT_FP = "MountingHole:MountingHole_3.2mm_M3_Pad"   # 6.4 mm pad, bare on BOTH
+                                                      # faces: screw head above,
+                                                      # standoff below
+holes = {}          # ref -> the hole part, so the gate reads the PART, not a search
+bond_network = {}   # ref -> the parts standing between that hole and ground
+for _h in MOUNT_HOLES:
+    _hole = Part("Mechanical", "MountingHole_Pad", ref=_h, footprint=MOUNT_FP,
+                 value="M3 CHASSIS" if _h == CHASSIS_BOND_HOLE else "M3")
+    holes[_h] = _hole
+    bond_network[_h] = []
+    if _h == CHASSIS_BOND_HOLE:
+        _hole[1] += gnd
+        continue
+    _bond = Net("CHASSIS_%s" % _h)
+    _hole[1] += _bond
+    # DNF, and said so in the value: this board has no BOM field for it, and a part
+    # that looks fitted in a parts list is worse than one that says what it is.
+    _cap = C("10nF 2kV DNF", ref="C4%s" % _h[1:],
+             fp="Capacitor_SMD:C_1210_3225Metric_Pad1.33x2.70mm_HandSolder")
+    _bleed = Part("Device", "R", ref="R4%s" % _h[1:], value="1M DNF",
+                  footprint="Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder")
+    _cap[1, 2] += _bond, gnd
+    _bleed[1, 2] += _bond, gnd
+    bond_network[_h] = [_cap, _bleed]
+
 # ---- J3: power in, 5 V from the external potted buck ------------------------
 # Four pins, doubled up: 1+3 are both +5V and 2+4 are both GND. This used to be a
 # separate LED pair; see the rail note at the top for why that was dropped.
@@ -538,6 +584,27 @@ def _check(strict_stations=True):
             "debug pad order is the module's, not ours, and swapping SWCLK/SWDIO "
             "leaves a board that cannot be flashed")
 
+    # EXACTLY ONE hard bond from board ground to the chassis. Two would close a
+    # mains-frequency loop through the Pi ribbon, which is the thing this scheme
+    # exists to avoid; none would leave the board floating inside an earthed metal
+    # case, relying on whichever connector flange happens to touch best. The other
+    # holes may only reach ground through their capacitor.
+    _bonded = [h for h, p in holes.items() if gnd in p[1].nets]
+    assert _bonded == [CHASSIS_BOND_HOLE], (
+        f"CHASSIS_BOND: {_bonded or 'no hole'} is hard-bonded to GND, expected "
+        f"exactly [{CHASSIS_BOND_HOLE}] -- two DC bonds close a hum loop through "
+        "the ribbon, and zero leaves the board floating in an earthed metal box")
+    for _h, _parts in bond_network.items():
+        if _h == CHASSIS_BOND_HOLE:
+            continue
+        _kinds = {p.ref[0] for p in _parts}
+        assert _kinds == {"C", "R"}, (
+            f"CHASSIS_BOND: {_h} reaches ground through {[p.ref for p in _parts]} -- "
+            "an optional bond is a capacitor (RF short, DC open) with a bleeder, not "
+            "a bare pad and not a wire")
+        assert all(gnd in p[2].nets for p in _parts), (
+            f"CHASSIS_BOND: {_h}'s bond network does not land on GND")
+
     # The power button must NOT be on the 40-way at all. This gate used to assert
     # the opposite -- "the button must land on Pi header pin 5 (GPIO3)... the only
     # pin that wakes the Pi from halt" -- which is true of a Pi 4 and false of a
@@ -640,6 +707,18 @@ def _selftest():
         pico["D1"] += swdio
         pico["D3"] += swclk
 
+    def _second_bond():
+        # The mistake this scheme exists to prevent: a second hole strapped to
+        # ground "for a better connection", which closes a mains-frequency loop
+        # through the ribbon and the Pi.
+        holes["H3"][1].disconnect()
+        holes["H3"][1] += gnd
+
+    def _bond_without_cap():
+        # ...and the other half: an optional bond made with copper instead of a
+        # capacitor, which is the same DC loop wearing a different hat.
+        bond_network["H2"] = []
+
     def _btn_pin():
         PI_HDR[5] = gnd
 
@@ -674,6 +753,8 @@ def _selftest():
     case("CTRL off an ADC pin", "PIN_MAP:", _ctrl_off_adc)
     case("ring board reorders its connector", "RING_CONTRACT:", _ring_order)
     case("SWCLK and SWDIO swapped on the debug pads", "SWD:", _swd_swap)
+    case("a second mounting hole strapped to GND", "CHASSIS_BOND:", _second_bond)
+    case("an optional bond made of copper, not a cap", "CHASSIS_BOND:", _bond_without_cap)
     case("power button off GPIO3", "PWR_BTN:", _btn_pin)
     case("wrong footswitch count", "PIN_MAP:", _fsw_count)
     case("board terminates a station the panel lacks", "REAR_IO_COVER:", _station)
@@ -681,7 +762,8 @@ def _selftest():
     ok = True
     ring_net_saved = RING_NET
     for name, want, mutate in cases:
-        saved = (dict(GPIO), dict(PI_HDR), list(FSW_ORDER), dict(STATION_HEADERS))
+        saved = (dict(GPIO), dict(PI_HDR), list(FSW_ORDER), dict(STATION_HEADERS),
+                 {h: list(v) for h, v in bond_network.items()})
         mutate()
         try:
             _check()
@@ -699,7 +781,11 @@ def _selftest():
             PI_HDR.clear(); PI_HDR.update(saved[1])
             FSW_ORDER[:] = saved[2]
             STATION_HEADERS.clear(); STATION_HEADERS.update(saved[3])
+            bond_network.clear(); bond_network.update(saved[4])
             RING_NET = ring_net_saved
+            if mutate is _second_bond:
+                holes["H3"][1].disconnect()
+                holes["H3"][1] += Net("CHASSIS_H3")
             if mutate is _swd_swap:
                 pico["D1"].disconnect(); pico["D3"].disconnect()
                 pico["D1"] += swclk
