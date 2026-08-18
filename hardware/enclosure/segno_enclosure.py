@@ -792,9 +792,12 @@ REAR_IO_U = SCREEN_16_U
 PEDALS = [(_ROW1[i], _row1_u(i), PEDAL_ROW1_V) for i in range(8)] + [
     ("CLEAR", _row1_u(2), PEDAL_ROW2_V), ("BANK", _row1_u(3), PEDAL_ROW2_V)]
 
-# Front-lip screws: outer two land in the GAPS between pedals 1-2 and 7-8 (clear of
-# every foot-plate), the middle one on centre. Shared by the lid lip and the front wall.
-FRONT_SCREW_U = [COL_U, FP_W / 2.0, (_row1_u(6) + _row1_u(7)) / 2.0]
+# Front-lip screws: ONE PER PEDAL GAP (7 total; was 3 -- #760). The knuckle trim
+# left the front wall 10.09 tall with the screw row at ~6.95, so each hole keeps
+# only ~1.0mm of metal above its edge; spreading the lid load over every gap cuts
+# the per-screw pull ~2.3x. All 7 land clear of every foot-plate by construction.
+# Shared by the lid lip and the front wall.
+FRONT_SCREW_U = [(_row1_u(i) + _row1_u(i + 1)) / 2.0 for i in range(len(_ROW1) - 1)]
 
 # Status-LED pedals: ALL of them (issue #366 -- the LED trial added pills over
 # REC/PLAY, STOP, UNDO and MODE; the encoder ring stays as well).
@@ -1952,7 +1955,10 @@ def dxf_faceplate(path):
     # legends are NOT silkscreened on the metal -- they live on a printed adhesive overlay
     # (dxf_overlay / segno_overlay). Keeps the metal a plain cut+bend+powder part (cheap).
     for u in FRONT_SCREW_U:
-        _circle(msp, ox + u, ffl/2.0, D_M4)                                # front lip -> front wall (horizontal)
+        # lip hole HEIGHT matched to the wall hole (z = (H_FRONT-DEV90)/2 + DEV90
+        # = 6.955): station from the lid's front mold corner = _cfy - z, flat from
+        # the fold line = station - DD_LIP. The old ffl/2 sat 0.74 high. (#760)
+        _circle(msp, ox + u, ffl - ((_cfy - (H_FRONT - DEV90) / 2.0 - DEV90) - DD_LIP), D_M4)
     for u in (PW*0.18, PW*0.5, PW*0.82):
         _circle(msp, ox + u, SEAM_M4_V, D_M4)                             # rear lap -> transition (concentric with the flange PEM row)
     _text(msp, 10, yr1+8, 8, f"Segno LID  2.0mm  x1  top plate + front lip + rear lap (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}deg); rests on the base side walls; no top screws; legends on printed OVERLAY (see segno_overlay); FOLD with the DRAWN side as the OUTSIDE face (canonical mirror: encoder lands on the player's LEFT)", "NOTE")
