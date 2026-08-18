@@ -1389,6 +1389,19 @@ def _bottom_vents():
 # cluster out the window. The mid-row platforms clear the rear strip, so depth is
 # generous. (Only the Pi needs to stay centred on the window — see pi_mount.)
 BOARD_U = BOARD_ANCHOR_U - 25.0
+# WHY THE BOARD IS HERE AND NOT NEXT TO THE Pi. It is 477 mm from it, which invites
+# the obvious question, and the answer is that both positions are pinned by
+# something else. The Pi has to sit under the 16" screen (#743, gated in _check as
+# REAR_BAY). The console board has to sit under its own rear-panel stations: POWER,
+# MIDI_IN, MIDI_OUT, CTRL_1 and CTRL_2 all land between u=77 and u=288, and this
+# board terminates every one of them.
+#
+# Closing the gap therefore does not remove a cable, it moves one. Next to the Pi,
+# the 40-way ribbon shrinks to ~100 mm and FIVE panel looms grow by ~400 mm -- two
+# of which are the CTRL tip lines, unshielded analog running into an ADC, and the
+# noisiest thing in the box to lengthen. The ribbon carries 31.25 kbaud MIDI, a
+# UART link and an SWD port used only for flashing: slow, digital, and the right
+# cable to make long. It stays.
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
     return [("CONSOLE_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
