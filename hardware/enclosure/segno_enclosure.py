@@ -1695,18 +1695,15 @@ def side_vents(flap, bw):
 
 def _bottom_vents_local(bw, bd):
     """Intake-vent block in the clear gap between the front and CLEAR/BANK platform
-    rows (air enters here, crosses the boards, exits the rear-wall vents)."""
+    rows (air enters here, crosses the boards, exits the rear-wall vents). Same
+    brick bond as every other vent field -- nobody sees the underside, but the
+    stagger costs nothing and the floor takes the machine's weight."""
     sl, sw = VENT_SLOT
     cols, rows = 6, 5
     gap_y = (PEDAL_ROW1_V + FSW_SLOT_D/2 + PLATFORM_MARGIN +
              PEDAL_ROW2_V - FSW_SLOT_D/2 - PLATFORM_MARGIN) / 2.0
     u0, v0 = bw/2 - (cols*(sl+14))/2, gap_y - (rows*VENT_PITCH)/2
-    out = []
-    for r in range(rows):
-        for c in range(cols):
-            out.append({"kind": "rect", "u": u0 + c*(sl+14), "v": v0 + r*VENT_PITCH,
-                        "w": sl, "h": sw, "ref": "VENT", "layer": "VENT"})
-    return out
+    return _vent_array(u0=u0, z0=v0, cols=cols, rows=rows, cp=sl + 14)
 
 
 def _bottom_vents():
