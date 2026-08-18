@@ -269,7 +269,9 @@ peripherals and runs on a **Pi 4 Model B 8GB** with no code changes:
 
 - **Displays** — Pi 4 has 2× micro-HDMI; labwc/Wayland + `wlr-randr` run on it.
 - **LED driver** — the console board v2's own Pico 2, over the pedal link on
-  uart3 (GPIO8/9); Pi-model-agnostic. (GPIO14/15 carry MIDI on the console.)
+  GPIO8/9. The PINS are Pi-model-agnostic; the UART is not: uart3 on a Pi 5
+  (`dtoverlay=uart3-pi5`), uart4 on a Pi 4 — a different dtoverlay and serial
+  device, same header pins. (GPIO14/15 carry MIDI on the console.)
 - **Caveats are performance, not compatibility.** The Pi 4 CPU is ~2–3× slower,
   so the ≤10 ms audio round-trip target is tighter — expect to use a slightly
   larger buffer (256→512 frames) for xrun-free operation — and a stompable
