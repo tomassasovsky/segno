@@ -305,34 +305,6 @@ def silk_text(path, z=V.T, emboss=0.6, gap=0.8, max_w=None):
     return cq.Compound.makeCompound(out) if out else None
 
 
-def fold_platform(path):
-    """Fold ONE platform from its DXF: a closed 4-WALL box (skirt) with out-turned foot
-    flanges. Each wall folds down 90 deg; each flange then folds out 90 deg to lie flat.
-    Returns ([solids], ztop) centred on the shelf (x=y=0) with the flanged feet at z=0."""
-    outline, holes, circles, bends = read_dxf(path)
-    flat = flat_solid(outline, holes, circles)
-    vx, hy = _bendlines(bends)
-    x0, x1 = vx                              # left wall | right wall fold (= shelf x extents)
-    fy, y0, y1, ry = hy                      # front flange | shelf F | shelf R | rear flange (bend y's)
-    h = x0                                   # wall height (left/right walls have no flange)
-    Xax = lambda p: (p, (p[0]+1, p[1], p[2]))
-    Yax = lambda p: (p, (p[0], p[1]+1, p[2]))
-    P = [region(flat, x0, x1, y0, y1)]       # shelf
-    # LEFT/RIGHT plain walls fold down
-    P.append(region(flat, -BIG, x0, y0, y1).rotate(*Yax((x0, 0, 0)), -90))
-    P.append(region(flat, x1, BIG, y0, y1).rotate(*Yax((x1, 0, 0)), 90))
-    # FRONT: wall down +90 about x@y0; flange IN +90 about x@(y0,-h)
-    P.append(region(flat, x0, x1, fy, y0).rotate(*Xax((0, y0, 0)), 90))
-    P.append(region(flat, x0, x1, -BIG, fy).rotate(*Xax((0, y0, 0)), 90).rotate(*Xax((0, y0, -h)), 90))
-    # REAR: wall down -90 about x@y1; flange IN -90 about x@(y1,-h)
-    P.append(region(flat, x0, x1, y1, ry).rotate(*Xax((0, y1, 0)), -90))
-    P.append(region(flat, x0, x1, ry, BIG).rotate(*Xax((0, y1, 0)), -90).rotate(*Xax((0, y1, -h)), -90))
-    zmin = min(p.BoundingBox().zmin for p in P)
-    xc, yc = (x0 + x1) / 2.0, (y0 + y1) / 2.0
-    P = [p.translate((-xc, -yc, -zmin)) for p in P]      # centre on shelf, feet to z=0
-    return P, T - zmin                                   # ztop = shelf-top height
-
-
 def pcb_parts():
     """Standoffs on the bottom plate: short ones for the main board, plus four tall risers
     that lift the Raspberry Pi (Pi build) so its rear port stack meets the I/O window."""
@@ -348,17 +320,17 @@ def pcb_parts():
         out.append((f"piriser{k}",
                     cq.Workplane("XY").circle(2.6).circle(1.3).extrude(V.PI_RISER_H)
                       .translate((pcx+dx, pcy+dy, V.T)).val()))
-    # external Pololu D24V90F5 buck on M2 standoffs in the rear airflow bay
-    bcx, bcy, (bx, by) = V.buck_mount()
-    for k, (dx, dy) in enumerate(quad(bx, by)):
-        out.append((f"buckso{k}",
-                    cq.Workplane("XY").circle(2.2).circle(1.0).extrude(V.STANDOFF_H)
-                      .translate((bcx+dx, bcy+dy, V.T)).val()))
-    z = V.T + V.STANDOFF_H
-    out.append(("buck", cq.Workplane("XY").box(40.6, 20.3, 4.0, centered=(True, True, False))
-                          .translate((bcx, bcy, z)).val()))
-    out.append(("buck_ind", cq.Workplane("XY").box(12, 12, 7, centered=(True, True, False))
-                              .translate((bcx + 9, bcy, z + 4)).val()))
+    # external 5V buck: TWO ear holes on a flat mount, not the old 4-hole quad on
+    # standoffs. buck_mount() returns (cx, cy, ear_spacing) -- a scalar third
+    # element, which is what used to blow this function up (#742).
+    bcx, bcy, bsp = V.buck_mount()
+    for k, dx in enumerate((-bsp/2.0, bsp/2.0)):
+        out.append((f"buckear{k}",
+                    cq.Workplane("XY").circle(V.D_M4/2.0).extrude(V.T)
+                      .translate((bcx+dx, bcy, 0.0)).val()))
+    out.append(("buck", cq.Workplane("XY")
+                .box(V.BUCK_BODY[0], V.BUCK_BODY[1], V.BUCK_BODY[2], centered=(True, True, False))
+                .translate((bcx, bcy, V.T)).val()))
     return out
 
 
@@ -409,23 +381,58 @@ def corner_joins():
             out.append((f"crivet_{tag}_s{i}", cq.Solid.makeCylinder(1.7, 3*T, cq.Vector(cx - sx, cy + sy*RO, T + z), cq.Vector(sx, 0, 0))))   # side wall -> legB
     return out
 
+def check_platform_screws(path):
+    """THE gate this file exists for (#742). Read the PLAT_SCR holes out of the
+    ACTUAL base-plate DXF and prove they land where the parts that bolt through
+    them expect. The drift that prompted this was exactly here: the Fusion
+    document's plate still had the pre-WTB-006 pattern (SKIRT_OUT_W 79.0 /
+    SKIRT_OUT_D 104.0) while the platforms had moved on, and nothing checked."""
+    doc = ezdxf.readfile(path)
+    cs = math.cos(math.radians(V.SLOPE_ANGLE))
+    got = sorted((round(e.dxf.center.x, 3), round(e.dxf.center.y, 3))
+                 for e in doc.modelspace().query("CIRCLE")
+                 if abs(e.dxf.radius*2 - V.D_M3) < 1e-6)
+    want = sorted((round(u + fy, 3), round(v*cs + fx, 3))
+                  for _l, u, v in V.PEDALS for fx, fy in V.platform_foot_xy())
+    missing = [w for w in want if w not in got]
+    if missing:
+        raise AssertionError(
+            "PLAT_SCR: %d of %d platform screw holes are NOT in %s -- e.g. %s. "
+            "The plate and the platforms have drifted apart."
+            % (len(missing), len(want), os.path.basename(path), missing[:3]))
+    print("PLAT_SCR: all %d platform screw holes present in %s and aligned with "
+          "platform_foot_xy()" % (len(want), os.path.basename(path)))
+    return len(want)
+
+
 def build(explode=0.0):
     """Assemble base + platforms + pedals + lid, all from the DXFs (no mirror)."""
     parts = list(fold_base(os.path.join(OUT, "segno_base.dxf")))
     parts += corner_joins()
     parts += pcb_parts()
     parts += rear_panels()
-    # two platform heights: front-row (8, short) and mid CLEAR/BANK (2, tall)
-    front = fold_platform(os.path.join(OUT, "segno_platform_front.dxf"))
-    mid   = fold_platform(os.path.join(OUT, "segno_platform_mid.dxf"))
+    # PLATFORMS ARE NO LONGER SHEET METAL (#719): ring + sled, 3D printed, and
+    # they never had a DXF to fold -- this used to read segno_platform_front.dxf
+    # and _mid.dxf, which the generator has never emitted, which is why this
+    # whole validator had stopped running (#742). Take the real printed solids
+    # from the generator instead: they are what actually bolts to this plate, so
+    # they are what the collision and screw checks should see. The pedal
+    # stand-in is the WTB-006 too, not the ASP-1 placeholder this carried.
     cs = math.cos(math.radians(V.SLOPE_ANGLE))   # slot at slope-distance v lands at horizontal v*cos
+    rings = {}
+    for v in (V.PEDAL_ROW1_V, V.PEDAL_ROW2_V):
+        rings[v] = (V._platform_printed(cq, V.platform_h(v), v, sled=V.CONSOLE_SLED_T)
+                    .val().rotate((0, 0, 0), (0, 0, 1), 90),
+                    V.platform_h(v) - V.T - (V.CONSOLE_SLED_T - (V.PEDAL_PAD_T - V.POCKET_DEPTH)))
+    sled = V.pedal_console_sled(cq).val().rotate((0, 0, 0), (0, 0, 1), 90)
     for i, (label, u, v) in enumerate(V.PEDALS):
         vh = v * cs
-        pset, ztop = mid if v == V.PEDAL_ROW2_V else front
-        for j, shp in enumerate(pset):
-            parts.append((f"plat{i}_{j}", shp.translate((u, vh, V.T + explode))))      # layer 1
-        ped = (cq.Workplane("XY").box(V.ASP1_W, V.ASP1_D, V.ASP1_H, centered=(True, True, False))
-                 .translate((u, vh, ztop + V.T + 2*explode)).val())                    # layer 2
+        ring, seat = rings[v]
+        parts.append((f"ring{i}", ring.translate((u, vh, V.T + explode))))
+        parts.append((f"sled{i}", sled.translate((u, vh, V.T + seat + explode))))
+        ped = (cq.Workplane("XY").box(V.PEDAL_D, V.PEDAL_W, V.PEDAL_BODY_H,
+                                      centered=(True, True, False))
+                 .translate((u, vh, V.T + seat + V.CONSOLE_SLED_T + 2*explode)).val())
         parts.append((f"pedal{i}", ped))
     # faceplate = top layer (3); base stays at 0. explode separates the vertical layers.
     parts += fold_faceplate(os.path.join(OUT, "segno_faceplate.dxf"), explode=3*explode)

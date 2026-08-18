@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461269.04974537
+2461269.746238426
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461269.04974537
+2461269.746238426
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-1DC
+1DF
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{37EEAF00-1EB0-408F-8EB0-80CA7414AB43}
+{3BE4F7D4-E55A-42EA-AC0E-CC3A71D11970}
   9
 $VERSIONGUID
   2
-{5B87682B-9598-429B-ACE1-21C0B5B15C58}
+{27F102A6-AF67-4283-A158-866E37BEC2BB}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -3113,7 +3113,7 @@ ACAD
   0
 APPID
   5
-1D9
+1DC
 330
 3
 100
@@ -3127,7 +3127,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-1DA
+1DD
 330
 3
 100
@@ -10775,13 +10775,13 @@ GAUGE
 100
 AcDbCircle
  10
-77.975
+77.125
  20
 230.755
  30
 0.0
  40
-1.6
+2.0
   0
 CIRCLE
   5
@@ -10795,7 +10795,7 @@ GAUGE
 100
 AcDbCircle
  10
-77.975
+77.125
  20
 230.755
  30
@@ -10815,7 +10815,7 @@ GAUGE
 100
 AcDbCircle
  10
-77.975
+77.125
  20
 230.755
  30
@@ -10835,13 +10835,13 @@ GAUGE
 100
 AcDbCircle
  10
-132.025
+132.875
  20
 230.755
  30
 0.0
  40
-1.6
+2.0
   0
 CIRCLE
   5
@@ -10855,7 +10855,7 @@ GAUGE
 100
 AcDbCircle
  10
-132.025
+132.875
  20
 230.755
  30
@@ -10875,7 +10875,7 @@ GAUGE
 100
 AcDbCircle
  10
-132.025
+132.875
  20
 230.755
  30
@@ -10903,7 +10903,7 @@ AcDbText
  40
 2.6
   1
-span 54.05 c/c?
+span 55.75 c/c?
  11
 105.0
  21
@@ -12893,7 +12893,7 @@ AcDbCircle
  30
 0.0
  40
-1.6
+2.0
   0
 CIRCLE
   5
@@ -12953,7 +12953,7 @@ AcDbCircle
  30
 0.0
  40
-1.6
+2.0
   0
 CIRCLE
   5
@@ -13039,7 +13039,7 @@ AcDbText
  10
 12.0
  20
-100.0
+104.0
  30
 0.0
  40
@@ -13049,7 +13049,7 @@ PEDAL BASE UP, PAD OFF. Case back edge on the BACK EDGE line, centred.
  11
 12.0
  21
-100.0
+104.0
  31
 0.0
 100
@@ -13069,7 +13069,7 @@ AcDbText
  10
 12.0
  20
-94.6
+99.0
  30
 0.0
  40
@@ -13079,7 +13079,7 @@ AcDbText
  11
 12.0
  21
-94.6
+99.0
  31
 0.0
 100
@@ -13099,7 +13099,7 @@ AcDbText
  10
 12.0
  20
-89.2
+94.0
  30
 0.0
  40
@@ -13109,7 +13109,7 @@ AcDbText
  11
 12.0
  21
-89.2
+94.0
  31
 0.0
 100
@@ -13129,7 +13129,7 @@ AcDbText
  10
 12.0
  20
-83.8
+89.0
  30
 0.0
  40
@@ -13139,7 +13139,7 @@ AcDbText
  11
 12.0
  21
-83.8
+89.0
  31
 0.0
 100
@@ -13159,7 +13159,7 @@ AcDbText
  10
 12.0
  20
-78.4
+84.0
  30
 0.0
  40
@@ -13169,7 +13169,7 @@ AcDbText
  11
 12.0
  21
-78.4
+84.0
  31
 0.0
 100
@@ -13189,7 +13189,7 @@ AcDbText
  10
 12.0
  20
-73.0
+79.0
  30
 0.0
  40
@@ -13199,7 +13199,7 @@ AcDbText
  11
 12.0
  21
-73.0
+79.0
  31
 0.0
 100
@@ -13219,7 +13219,7 @@ AcDbText
  10
 12.0
  20
-67.6
+74.0
  30
 0.0
  40
@@ -13229,7 +13229,7 @@ AcDbText
  11
 12.0
  21
-67.6
+74.0
  31
 0.0
 100
@@ -13249,7 +13249,7 @@ AcDbText
  10
 12.0
  20
-62.199999999999996
+69.0
  30
 0.0
  40
@@ -13259,7 +13259,7 @@ AcDbText
  11
 12.0
  21
-62.199999999999996
+69.0
  31
 0.0
 100
@@ -13279,7 +13279,7 @@ AcDbText
  10
 12.0
  20
-56.8
+64.0
  30
 0.0
  40
@@ -13289,7 +13289,7 @@ AcDbText
  11
 12.0
  21
-56.8
+64.0
  31
 0.0
 100
@@ -13309,7 +13309,7 @@ AcDbText
  10
 12.0
  20
-51.4
+59.0
  30
 0.0
  40
@@ -13319,7 +13319,7 @@ AcDbText
  11
 12.0
  21
-51.4
+59.0
  31
 0.0
 100
@@ -13339,7 +13339,7 @@ AcDbText
  10
 12.0
  20
-46.0
+54.0
  30
 0.0
  40
@@ -13349,7 +13349,7 @@ AcDbText
  11
 12.0
  21
-46.0
+54.0
  31
 0.0
 100
@@ -13369,7 +13369,7 @@ AcDbText
  10
 12.0
  20
-40.599999999999994
+49.0
  30
 0.0
  40
@@ -13379,7 +13379,7 @@ AcDbText
  11
 12.0
  21
-40.599999999999994
+49.0
  31
 0.0
 100
@@ -13399,7 +13399,7 @@ AcDbText
  10
 12.0
  20
-35.19999999999999
+44.0
  30
 0.0
  40
@@ -13409,7 +13409,7 @@ AcDbText
  11
 12.0
  21
-35.19999999999999
+44.0
  31
 0.0
 100
@@ -13429,17 +13429,17 @@ AcDbText
  10
 12.0
  20
-29.799999999999997
+39.0
  30
 0.0
  40
 2.9
   1
-
+5  When you said '4 mm back from the screw line', was that line the screw
  11
 12.0
  21
-29.799999999999997
+39.0
  31
 0.0
 100
@@ -13459,17 +13459,17 @@ AcDbText
  10
 12.0
  20
-24.39999999999999
+34.0
  30
 0.0
  40
 2.9
   1
-Report the readings as they read.  Centre-to-centre vs edge-to-edge does
+   AXIS / centre, or an EDGE of the Ø10 boss?  An edge is 5 mm off axis,
  11
 12.0
  21
-24.39999999999999
+34.0
  31
 0.0
 100
@@ -13489,7 +13489,97 @@ AcDbText
  10
 12.0
  20
+29.0
+ 30
+0.0
+ 40
+2.9
+  1
+   which would move the whole pattern by 5 mm and look exactly like this.
+ 11
+12.0
+ 21
+29.0
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+1D9
+330
+17
+100
+AcDbEntity
+  8
+GAUGE
+100
+AcDbText
+ 10
+12.0
+ 20
+24.0
+ 30
+0.0
+ 40
+2.9
+  1
+
+ 11
+12.0
+ 21
+24.0
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+1DA
+330
+17
+100
+AcDbEntity
+  8
+GAUGE
+100
+AcDbText
+ 10
+12.0
+ 20
 19.0
+ 30
+0.0
+ 40
+2.9
+  1
+Report the readings as they read.  Centre-to-centre vs edge-to-edge does
+ 11
+12.0
+ 21
+19.0
+ 31
+0.0
+100
+AcDbText
+  0
+TEXT
+  5
+1DB
+330
+17
+100
+AcDbEntity
+  8
+GAUGE
+100
+AcDbText
+ 10
+12.0
+ 20
+14.0
  30
 0.0
  40
@@ -13499,7 +13589,7 @@ not matter as long as you say which -- the rulers make it explicit.
  11
 12.0
  21
-19.0
+14.0
  31
 0.0
 100
@@ -14595,7 +14685,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-1DB
+1DE
   0
 DICTIONARYVAR
   5
@@ -14607,7 +14697,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-16T04:11:38.237169+00:00
+1.4.4 @ 2026-08-16T20:54:35.304985+00:00
   0
 VISUALSTYLE
   5
@@ -21161,7 +21251,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-1DB
+1DE
 330
 2D
 100
@@ -21169,7 +21259,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-16T04:11:38.242552+00:00
+1.4.4 @ 2026-08-16T20:54:35.310445+00:00
   0
 ENDSEC
   0

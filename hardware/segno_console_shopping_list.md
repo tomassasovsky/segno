@@ -62,8 +62,45 @@ Carried by the `segno_pedal_main` USB-MIDI board — fab + BOM in
 - [ ] Separate **5 V / ≥3 A** supply for the WS2812 LEDs + RP2040 ×1
       *(do not draw the LED ring/strip off the Pi's 5 V pin)*
 - [ ] The 16″ and 7″ screens use their **own** adapters (USB-C / barrel) ×2
-- [ ] Inline fuse / power switch for the mains side ×1
+- [ ] **Panel fuse holder**, generic 5×20 screw-cap, 10 A / 250 VAC, **Ø12.0**
+      aperture ×1 — e.g. [NeoLum 4-pack](https://www.amazon.com/dp/B0GF33P9FF).
+      Generic by decision. NOTE the aperture: the SCI R3-11 upgrade wants
+      Ø12.5 and the panel is no longer cut for it
+- [ ] **T5A slow-blow** 5×20 fuses (T5AL250V) ×1 pack — NOT fast-blow; the two
+      bucks' inrush will nuisance-blow a fast fuse
+- [ ] **Momentary HIGH-ROUND** push button, 19 mm hole (Ø19.5), **unlit**,
+      stainless ×1 — [APIELE, $4.50 ea](https://www.amazon.com/dp/B079HTQ7XD).
+      Must be momentary: it drives a Pi GPIO soft shutdown, it does not break
+      power. Domed, not flat — the dome is what gives it mechanical feel
+> **Everything on this list is bought from Amazon.com** (decision, 2026-08-17).
+> A MercadoLibre comparison was run and is in git history at `d5295b69` /
+> `1621f676` if local sourcing ever comes back up; the one finding worth keeping
+> is that a plain local 6.35 chassis jack will NOT fit the Ø24 D punch — see the
+> TRS note in the design doc.
+
 - See the power budget in [`hardware/console/README.md`](console/README.md).
+
+## Pro Micro ↔ Pi link + MIDI daughterboard (#746)
+
+MIDI moves off the Pro Micro onto the Pi so `Serial1` can carry the pedal link —
+the Pi's 4 USB ports are exactly consumed and a hub is ruled out. Full reasoning
+and schematic in [`segno_wiring.md` §2b](segno_wiring.md).
+
+- [ ] **74AHCT125** quad buffer (DIP-14) ×1 — 3.3 V → 5 V, both directions that
+      need it (Pi TX → Pro Micro RX, and Pi TX → MIDI OUT). **AHCT, not HCT/HC** —
+      the TTL-level inputs are the whole point
+- [ ] **H11L1** Schmitt-output opto (DIP-6) ×1 — DIN MIDI IN. Run it from **3.3 V**
+      and it feeds the Pi directly, no shifter
+- [ ] 220 Ω ×3 — MIDI OUT loop (2) + MIDI IN LED (1)
+- [ ] 1N4148 ×1 — MIDI IN reverse clamp
+- [ ] **1.8 kΩ ×1 + 3.3 kΩ ×1** — divider, Pro Micro TX (5 V) → Pi RX (3.24 V).
+      **Do not connect this line directly**; Pi GPIO is not 5 V tolerant
+- [ ] 100 nF ×2 — decoupling
+- [ ] DIN-5 sockets ×2 (already in the rear-panel list) wired to this board
+- [ ] Small perfboard / custom PCB ×1
+
+> On the main board, **do not populate** J4/J5, U2 and the MIDI-OUT resistors —
+> that frees D0/D1 at their pads with nothing to cut.
 
 ## Mechanical / enclosure
 
