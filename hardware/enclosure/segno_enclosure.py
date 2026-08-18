@@ -435,8 +435,13 @@ USB3_CORNER_R = _rr_from_corner_circle(USB3_CUT_SQ, USB3_CORNER_D + 2*USB3_FIT)
 BOARD_ANCHOR_U = 175.0  # main board / buck datum. NOT the connector cluster,
                         # and since #743 not the Pi either -- see pi_mount().
 REAR_IO_SPAN   = 360.0  # cluster width; REAR_IO_Z set below (= wall mid-height)
-REAR_IO_U      = 210.0  # left-justified against EDGE (defined further down, so this
-                        # is written out; _check() asserts EDGE + SPAN/2 == it)
+REAR_IO_U      = 636.0  # RIGHT-justified against EDGE. It used to be left-justified
+                        # at 210, from when the console board lived under the 7"
+                        # screen: the board terminates five of these stations, so the
+                        # cluster follows the board. Both boards now sit under the
+                        # 16" screen (see BOARD_U / pi_mount), which took the Pi
+                        # ribbon from 402 mm to 30 mm. _check() asserts the
+                        # right-justified form, so this constant cannot drift.
 
 # --- ventilation / mounting ---------------------------------------------------
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
@@ -924,15 +929,17 @@ def rear_holes():
         cu = at[ref][0]
         cuts.append({"kind": "rect", "u": cu - USB3_CUT_SQ/2.0, "v": z - USB3_CUT_SQ/2.0,
                      "w": USB3_CUT_SQ, "h": USB3_CUT_SQ, "r": USB3_CORNER_R, "ref": ref})
-    # Vents fill the wall to the RIGHT of the cluster: cluster right edge + EDGE to
-    # the wall's EDGE margin, columns evenly pitched to land exactly on both.
+    # Vents fill the wall to the LEFT of the cluster: the wall's EDGE margin to the
+    # cluster's left edge - EDGE, columns evenly pitched to land exactly on both.
+    # (Mirror of the original rule, which had them to the RIGHT -- they swapped when
+    # the cluster moved right to follow the boards.)
     sl = VENT_SLOT[0]
-    cl_r = REAR_IO_U + REAR_IO_SPAN/2.0                    # cluster right edge
-    v_l = cl_r + EDGE                                      # first vent column
-    v_r = W - EDGE                                         # last column's right edge
+    cl_l = REAR_IO_U - REAR_IO_SPAN/2.0                    # cluster LEFT edge
+    v_l = EDGE                                             # first vent column
+    v_r = cl_l - EDGE                                      # last column's right edge
     ncol = max(2, round((v_r - v_l - sl) / (sl + 8.0)) + 1)
     cp = (v_r - v_l - sl) / (ncol - 1)
-    cuts.append({"kind": "circle", "u": (cl_r + v_l)/2.0, "v": REAR_WALL_H/2.0,
+    cuts.append({"kind": "circle", "u": (v_r + cl_l)/2.0, "v": REAR_WALL_H/2.0,
                  "d": D_GND, "ref": "EARTH_STUD"})         # centred in that gap
     vr = 7                                                 # rows, centred on mid-height
     vz0 = REAR_WALL_H/2.0 - ((vr-1)*VENT_PITCH + VENT_SLOT[1])/2.0
@@ -1217,9 +1224,36 @@ def _check(strict_board_mount=True):
                 f"SCREEN_DEPTH: pedal {label} clashes with 16in screen"
 
     # 5. ventilation free area + standoff height
-    area = _vent_free_area(rear) + _vent_free_area(_bottom_vents())
+    _bw_v = W - 2*T
+    _side = sum(c["w"] * c["h"]
+                for c in side_vents('R', _bw_v) + side_vents('L', _bw_v))
+    # the side louvres are foam-backed and only count for what gets through it
+    area = (_vent_free_area(rear) + _vent_free_area(_bottom_vents())
+            + _side * FOAM_OPEN_FRACTION)
     assert area >= VENT_FREE_AREA_MIN, (
         f"VENT_FREE_AREA: {area:.0f} mm^2 < target {VENT_FREE_AREA_MIN:.0f}")
+    # ...and every side louvre has to be ON the side wall, under a wedge top that
+    # slopes: a slot that is fine at the front of the band can be through the top
+    # edge at the back of it, and the blank would just unfold with a gap in it.
+    for _c in side_vents('R', _bw_v) + side_vents('L', _bw_v):
+        _off = abs(_c["u"] - _bw_v) if _c["u"] > _bw_v / 2 else abs(_c["u"])
+        _top = _side_wall_top(_c["v"] + _c["h"])          # shallowest end of the slot
+        assert _off + _c["w"] <= _top - SIDE_VENT_MARGIN, (
+            f"SIDE_VENT: a louvre reaches {_off + _c['w']:.1f} mm up a wall that is "
+            f"{_top:.1f} mm tall at v={_c['v'] + _c['h']:.0f}, leaving less than the "
+            f"{SIDE_VENT_MARGIN:.0f} mm margin to the wedge top")
+        # ...and off the FOLD. A slot cut too close to a bend line distorts when the
+        # flap is folded: the material there is being stretched. The usual floor is
+        # the inside radius plus twice the thickness, and it is the reason
+        # SIDE_VENT_MARGIN is 12 and not "whatever looks fine".
+        assert _off >= RI + 2*T - 1e-9, (
+            f"SIDE_VENT: a louvre starts {_off:.1f} mm from the fold, inside the "
+            f"{RI + 2*T:.1f} mm (bend radius {RI:.1f} + 2T) a bend needs to form "
+            "cleanly -- the slot would draw out into the radius")
+        assert _c["v"] + _c["h"] <= (D - 2*T) - REAR_CONN_DEPTH + 1e-9, (
+            f"SIDE_VENT: a louvre reaches v={_c['v'] + _c['h']:.0f}, inside the "
+            f"{REAR_CONN_DEPTH:.0f} mm the rear connectors need for their bodies and "
+            "wiring -- foam and a DIN socket cannot share the same space")
     assert STANDOFF_H >= 8.0, "VENT: under-board gap too small for airflow"
 
     # 6. screen bezel overlaps the aperture (mount from behind)
@@ -1325,19 +1359,21 @@ def _check(strict_board_mount=True):
         assert a_hi <= b_lo + 1e-9, (
             f"REAR_IO: {a_ref} and {b_ref} keep-outs overlap by "
             f"{a_hi - b_lo:.2f} mm -- their nuts/flanges would foul")
-    assert abs(REAR_IO_U - (EDGE + REAR_IO_SPAN/2.0)) < 1e-9, (
-        f"REAR_IO: cluster centre {REAR_IO_U} is not EDGE + span/2 "
-        f"({EDGE + REAR_IO_SPAN/2.0:.1f}) -- the written-out constant has drifted")
+    _bw_r = W - 2*T
+    assert abs(REAR_IO_U - (_bw_r - EDGE - REAR_IO_SPAN/2.0)) < 1e-9, (
+        f"REAR_IO: cluster centre {REAR_IO_U} is not bw - EDGE - span/2 "
+        f"({_bw_r - EDGE - REAR_IO_SPAN/2.0:.1f}) -- the written-out constant has "
+        "drifted. It is RIGHT-justified: the cluster follows the boards")
     assert boxes[0][0] >= EDGE - 1e-9, (
         f"REAR_IO: {boxes[0][2]} keep-out starts at u={boxes[0][0]:.1f}, inside "
         f"the {EDGE:.0f} mm edge margin")
     # the gap to the vent block carries the earth stud (D_GND) and still has to
     # leave a spanner's width either side of it
-    _v_l = min(c["u"] for c in rear if c["ref"] == "VENT")
-    _gap = _v_l - boxes[-1][1]
+    _v_r = max(c["u"] + c.get("w", 0.0) for c in rear if c["ref"] == "VENT")
+    _gap = boxes[0][0] - _v_r
     assert _gap >= D_GND + 2*8.0, (
-        f"REAR_IO: only {_gap:.1f} mm between {boxes[-1][2]} and the first vent "
-        f"column -- the earth stud (Ø{D_GND}) and its spanner do not fit")
+        f"REAR_IO: only {_gap:.1f} mm between the last vent column and "
+        f"{boxes[0][2]} -- the earth stud (Ø{D_GND}) and its spanner do not fit")
     # every station has to fit BETWEEN the wall's top and bottom edges too -- the
     # USB coupler flange is the tall one, and the wall is only REAR_WALL_H
     _tall = max(kw for _cu, kw in lay.values())
@@ -1355,6 +1391,57 @@ def _check(strict_board_mount=True):
         f"REAR_IO: {_missing} have no entry in REAR_IO_PROVENANCE -- say whether "
         "each is measured, from a datasheet, or unconfirmed before it is cut")
     return True
+
+# ---- side-wall exhaust vents (#753) ------------------------------------------
+# The rear vents moved LEFT when the I/O cluster took the right-hand wall, which put
+# the exhaust 200..400 mm upstream of the Pi -- the hottest thing in the box and now
+# the furthest from an opening. These put an outlet in each side wall directly
+# beside the electronics bay instead, so hot air leaves where it is made.
+#
+# They are FOAM-BACKED, and that is a requirement, not a finish note: a bare louvre
+# at eye level on a stage box shows the loom and the LEDs through it. Open-cell
+# filter foam on the inside face fixes that and costs airflow, so the free-area
+# check below derates them rather than counting the slots at face value.
+SIDE_VENT_V     = (250.0, 372.0)   # depth band: over the boards, clear of the rear
+                                   # connectors' 45 mm wiring reserve
+SIDE_VENT_MARGIN = 12.0            # keep clear of the bottom fold and the wedge top
+SIDE_VENT_ROWS   = 5
+FOAM_OPEN_FRACTION = 0.5           # open-cell PU filter foam, ~45 ppi: half the
+                                   # geometric area survives as free area. Measured
+                                   # figures for this class run 0.5..0.7; the low end
+                                   # is taken because it is the one that has to hold.
+
+
+def _side_wall_top(y):
+    """Conservative side-wall height at depth y, in the flat pattern's frame.
+
+    The blank's own wedge solver (shf_f/shf_r in dxf_base) is exact and delicate;
+    this is deliberately a hair LOW -- it ignores the bend deduction, so slots
+    placed under it sit below the real wedge top with margin to spare.
+    """
+    return H_FRONT + y * math.tan(math.radians(SLOPE_ANGLE))
+
+
+def side_vents(flap, bw):
+    """Louvre slots in one side wall, in flat-pattern coordinates.
+
+    flap: 'R' (extends +x from bw) or 'L' (extends -x from 0). Slots run ALONG the
+    depth axis and stack up the wall, which is the way a louvre sheds anything that
+    lands on it when the case is upright.
+    """
+    sl, sw = VENT_SLOT
+    v0, v1 = SIDE_VENT_V
+    cols = max(1, int((v1 - v0 + 8.0) // (sl + 8.0)))
+    out = []
+    for c in range(cols):
+        v = v0 + c * (sl + 8.0)
+        for r in range(SIDE_VENT_ROWS):
+            off = SIDE_VENT_MARGIN + r * VENT_PITCH
+            u = (bw + off) if flap == 'R' else (-off - sw)
+            out.append({"kind": "rect", "u": u, "v": v, "w": sw, "h": sl,
+                        "ref": "SIDE_VENT", "layer": "VENT"})
+    return out
+
 
 def _bottom_vents_local(bw, bd):
     """Intake-vent block in the clear gap between the front and CLEAR/BANK platform
@@ -1388,7 +1475,11 @@ def _bottom_vents():
 # for the Raspberry Pi, which (in the Pi build) tucks behind the board with its port
 # cluster out the window. The mid-row platforms clear the rear strip, so depth is
 # generous. (Only the Pi needs to stay centred on the window — see pi_mount.)
-BOARD_U = BOARD_ANCHOR_U - 25.0
+# Both boards live under the 16" screen now. The console board terminates five rear
+# stations, so the cluster moved with it (see REAR_IO_U) -- which is what makes this
+# possible: the board is still under its own connectors, and the Pi is 30 mm away
+# instead of 402, so the ribbon is a stock 10 cm part rather than something to hunt.
+BOARD_U = 512.0
 # WHY THE BOARD IS HERE AND NOT NEXT TO THE Pi. It is 477 mm from it, which invites
 # the obvious question, and the answer is that both positions are pinned by
 # something else. The Pi has to sit under the 16" screen (#743, gated in _check as
@@ -1444,7 +1535,9 @@ REAR_CONN_DEPTH = 45.0
 # drops the depth from 85 to 56, which buys back rear-bay clearance.
 def pi_mount():
     bd = D - 2*T
-    return (SCREEN_16_U, bd - 106.0, (PI_HOLES[0], PI_HOLES[1]))     # 58 across u, 49 along depth
+    # Beside the console board, not centred under the screen: the ribbon between
+    # them is the shortest cable in the box now.
+    return (620.0, bd - 106.0, (PI_HOLES[0], PI_HOLES[1]))          # 58 across u, 49 along depth
 
 def pi_pcb_extent():
     """PCB footprint (u_lo, u_hi, v_lo, v_hi) for the ROTATED Pi. The hole pattern
@@ -1463,8 +1556,13 @@ BUCK_BODY = (63.8, 57.7, 22.1)
 BUCK_EAR_SPACING = 56.0       # ear hole centres along the long axis — PROVISIONAL
                               # until the unit arrives; drill to the real part
 def buck_mount():
+    """The 8-36V -> 5V brick. It sits between the 9 V inlet that feeds it and the
+    board's J3 that it feeds, so it follows them: parked at its old u it would have
+    been 165 mm from an inlet that moved to the right with the rest of the cluster,
+    for no reason but inertia. Left of the console board keeps both runs short and
+    stays clear of the CLEAR/BANK pedal platform, which owns u 230..313."""
     bd = D - 2*T
-    return (BOARD_ANCHOR_U + 125.0, bd - 60.0, BUCK_EAR_SPACING)
+    return (410.0, bd - 60.0, BUCK_EAR_SPACING)
 
 # ===========================================================================
 # DXF  (ezdxf)
@@ -1694,6 +1792,8 @@ def dxf_base(path):
 
     # ---- bottom features: vents + Pi/board M3 standoffs + rubber feet -------------
     _emit(msp, _bottom_vents_local(BW, BD))
+    _emit(msp, side_vents('R', BW))          # exhaust beside the electronics bay,
+    _emit(msp, side_vents('L', BW))          # foam-backed -- see SIDE_VENT_V
     for name, cx, cy, (sx, sy) in board_mounts():
         for dx in (-sx/2, sx/2):
             for dy in (-sy/2, sy/2):
@@ -2942,7 +3042,14 @@ def report():
         P("  DO NOT CUT     : " + ", ".join(
             f"{k}={'not cut' if v is None else format(v, 'g')}"
             for k, v in sorted(_unc.items())) + "  <- unconfirmed, no source")
-    P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents()):.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
+    _bwv = W - 2*T
+    _sv = side_vents('R', _bwv) + side_vents('L', _bwv)
+    _sv_area = sum(c["w"] * c["h"] for c in _sv)
+    P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents())+_sv_area*FOAM_OPEN_FRACTION:.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
+    P(f"  side louvres  : {len(_sv)} slots ({_sv_area:.0f} mm^2 geometric, counted at "
+      f"{FOAM_OPEN_FRACTION:.0%} through foam), v {SIDE_VENT_V[0]:.0f}..{SIDE_VENT_V[1]:.0f}")
+    P(f"  FOAM REQUIRED : open-cell filter foam on the INSIDE face of both side "
+      f"louvre blocks -- they look straight into the loom otherwise")
     P("-"*68)
     P(f"Faceplate cutouts : {len(cuts)}  |  rear-wall cutouts : {len(rear_holes())}")
     area = (W*D + W*L_SLOPE + W*REAR_WALL_H + W*H_FRONT) + 2*(D*(H_FRONT+H_REAR)/2)
