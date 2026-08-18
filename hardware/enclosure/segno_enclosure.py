@@ -2016,9 +2016,17 @@ def dxf_base(path):
                - RI / math.cos(_ra))                            # RI perpendicular below
     FRONT_LIP_CLEAR = 0.3
     Hf = (_axis_h - FRONT_LIP_CLEAR) - bdd
-    # the lip screws keep their ORIGINAL height (they mate the lid lip's holes,
-    # which did not move) -- decoupled from the shortened flap
-    _fscrew_flat = (H_FRONT - bdd) * 0.5
+    # OPEN HEM on the front wall's top edge (#760): the top folds 180 deg back
+    # down against the inner face (inside r = T, layers ~2mm apart), replacing
+    # the sheared edge with a rolled one, stiffening the wall, and DOUBLING the
+    # metal at the screw band -- drill 3.3 + tap M4 through BOTH layers after
+    # folding (the return ships blind; the wall hole is the drill guide), so the
+    # lid screws get ~4mm of thread in place of 2. Return reaches just past the
+    # screw band's lower edge.
+    HEM_BA  = bend_allowance(180.0)          # 180-deg allowance at the T2 rule
+    HEM_RET = Hf - (_fscrew_flat := (H_FRONT - bdd) * 0.5) + D_M4 / 2.0 + 1.5
+    # (the walrus keeps _fscrew_flat's original definition in one place: the lip
+    # screws keep their ORIGINAL height, mating the lid lip's holes)
     Hr = HR_FLAT                             # rear web from the seam solver: the flange
     Ht = HT_FLAT                             # outer lands ONE SHEET below the lap outer
     rrel = T + 1.0                          # small bend-relief radius at each corner
@@ -2071,7 +2079,7 @@ def dxf_base(path):
     ay = y_edge - ft * math.cos(_rth)
     bx = h_corner - ft                          # tangent on the rear edge
     outline = [
-        (0, -Hf), (BW, -Hf), (BW, 0),                                  # FRONT flap
+        (0, -(Hf + HEM_BA + HEM_RET)), (BW, -(Hf + HEM_BA + HEM_RET)), (BW, 0),  # FRONT flap + open hem
         (BW+h_F, 0, lb), (BW+h_T, y_T),                               # lip relief cove: tangent
                                                                        # to the front edge, sweeps
                                                                        # up to kiss the top line
@@ -2092,6 +2100,11 @@ def dxf_base(path):
 
     # ---- bend lines: fold UP 90 on the four bottom edges; rear has a 2nd fold ------
     _poly(msp, [(0, 0), (BW, 0)], "BEND", closed=False)                # front
+    _poly(msp, [(0, -Hf), (BW, -Hf)], "BEND", closed=False)            # front-wall OPEN HEM
+    _text(msp, 10, -(Hf + HEM_BA + HEM_RET) - 6, 5,
+          "FRONT WALL OPEN HEM: fold 180deg DOWN-INWARD at the marked line, inside r = 2 "
+          "(layers ~2mm apart, return inside); the 9 screw holes are in the WALL layer only "
+          "-- drill 3.3 through the blind return using them as guides, tap M4 through both", "NOTE")
     _poly(msp, [(0, BD), (BW, BD)], "BEND", closed=False)             # rear
     _poly(msp, [(0, 0), (0, BD)], "BEND", closed=False)               # left
     _poly(msp, [(BW, 0), (BW, BD)], "BEND", closed=False)             # right
