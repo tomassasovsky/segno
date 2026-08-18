@@ -1,12 +1,12 @@
 """SKiDL generator for the Segno CONSOLE board v2 (issue #747).
 
 The 10-pedal console's control board. Lies flat on the bottom plate beside the
-Raspberry Pi 5 and links to it over a KEYED 2x20 ribbon -- about 500 mm of it, not
-the "short" cable this line used to claim: the board sits under its five rear-panel
-stations on the left of the plate and the Pi sits under the 16" screen on the right,
-which is 477 mm centre to centre. See board_mounts() in segno_enclosure.py. Carries a
-**Pico 2 (RP2350)** module, the MIDI front end, and a JST header for every pedal
-and every rear-panel connector.
+Raspberry Pi 5 and links to it over a KEYED 2x20 ribbon -- a stock ~10 cm part:
+both boards live under the 16" screen with the Pi ~30 mm away, and the five
+rear-panel stations the board terminates sit directly above it (the cluster moved
+with the boards). See board_mounts() and REAR_IO_U in segno_enclosure.py, which
+own the geometry. Carries a **Pico 2 (RP2350)** module, the MIDI front end, and a
+JST header for every pedal and every rear-panel connector.
 
 Run (from hardware/kicad/):
     ./.venv/bin/python console_board.py            # netlist + gates

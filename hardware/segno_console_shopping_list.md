@@ -5,12 +5,12 @@ electronics shops / MercadoLibre, except the Pi 5, screens, and USB interface
 (import or specialty). Mirrors [`segno_pedal_shopping_list.md`](segno_pedal_shopping_list.md).
 
 > The console is a **standalone Pi 5 appliance**. The foot controls
-> (footswitches + encoder) connect through the 32U4 USB-MIDI pedal board
-> (`segno_pedal_main` — see [`MANUFACTURING.md`](MANUFACTURING.md)); the Pi
-> reads no controls directly. The WS2812 LEDs are offloaded to a small RP2040
-> driver over UART (see
-> [`firmware/led_driver/README.md`](../firmware/led_driver/README.md));
-> the Pi never bit-bangs WS2812.
+> (footswitches + encoder), the WS2812 drive and the MIDI front end all live on
+> the **console board v2** — a Pico 2 (RP2350) board linked to the Pi's 40-pin
+> header over a short keyed ribbon (`hardware/kicad/console_board.py`, #747).
+> The Pi reads no controls directly and never bit-bangs WS2812. The 32U4
+> USB-MIDI pedal board (`segno_pedal_main`) stays with the standalone pedal
+> product and is not part of the console.
 
 ---
 
@@ -80,32 +80,23 @@ Carried by the `segno_pedal_main` USB-MIDI board — fab + BOM in
 
 - See the power budget in [`hardware/console/README.md`](console/README.md).
 
-## Pro Micro ↔ Pi link + MIDI daughterboard (#746)
+## Console board v2 (#747) — supersedes the link + MIDI daughterboard (#746)
 
-MIDI moves off the Pro Micro onto the Pi so `Serial1` can carry the pedal link —
-the Pi's 4 USB ports are exactly consumed and a hub is ruled out. Full reasoning
-and schematic in [`segno_wiring.md` §2b](segno_wiring.md).
-
-- [ ] **74AHCT125** quad buffer (DIP-14) ×1 — 3.3 V → 5 V, both directions that
-      need it (Pi TX → Pro Micro RX, and Pi TX → MIDI OUT). **AHCT, not HCT/HC** —
-      the TTL-level inputs are the whole point
-- [ ] **H11L1** Schmitt-output opto (DIP-6) ×1 — DIN MIDI IN. Run it from **3.3 V**
-      and it feeds the Pi directly, no shifter
-- [ ] 220 Ω ×3 — MIDI OUT loop (2) + MIDI IN LED (1)
-- [ ] 1N4148 ×1 — MIDI IN reverse clamp
-- [ ] **1.8 kΩ ×1 + 3.3 kΩ ×1** — divider, Pro Micro TX (5 V) → Pi RX (3.24 V).
-      **Do not connect this line directly**; Pi GPIO is not 5 V tolerant
-- [ ] 100 nF ×2 — decoupling
-- [ ] DIN-5 sockets ×2 (already in the rear-panel list) wired to this board
-- [ ] Small perfboard / custom PCB ×1
-
-> On the main board, **do not populate** J4/J5, U2 and the MIDI-OUT resistors —
-> that frees D0/D1 at their pads with nothing to cut.
+MIDI, the pedal link, the footswitch headers, the CTRL jacks and the LED
+buffers all live on the **console board v2** now. Its parts list is generated
+with the board — order from
+[`kicad/fab/segno_console_board_bom.csv`](kicad/fab/segno_console_board_bom.csv),
+not from a list transcribed here. What died with the daughterboard: the
+1k8/3k3 divider (the RP2350 link is 3.3 V at both ends — no level shifting,
+only a 1 k series pair bounding cross-domain current), the perfboard, and the
+"do not populate J4/J5/U2" note for the V1 board — the console does not use
+the V1 board at all. The DIN-5 sockets stay in the rear-panel list and wire to
+the v2 board's J4/J5.
 
 ## Mechanical / enclosure
 
 - [ ] Enclosure material (plywood / aluminium / 3D-printed panels) — tilted body
-- [ ] M2.5/M3 screws + standoffs for the Pi, RP2040, and screen mounts ×1 set
+- [ ] M2.5/M3 screws + standoffs for the Pi, the console board, and screen mounts ×1 set
 - [ ] Stomp-panel face (steel/aluminium) for the footswitches ×1
 - [ ] Rubber feet / non-slip base ×1 set
 - [ ] Cable strain reliefs / grommets ×1 set
