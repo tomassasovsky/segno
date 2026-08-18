@@ -522,6 +522,18 @@ PI_RESERVED = {
     32: "possible N07 contact if the observation is counted from the far end",
     33: "possible N07 contact if the observation is counted from the far end",
 }
+# MIDI KEEPS GPIO14/15 (uart0, pins 8/10), by decision, even though they appear on
+# the list of pins the NVMe module may want. There is nowhere else worth going: a
+# Pi 5 has five hardware UART pairs, and once GPIO4/5, GPIO12/13 and GPIO14/15 are
+# excluded the only ones left are GPIO8/9 -- which the link already has -- and
+# GPIO0/1, which the HAT+ spec reserves for the ID EEPROM. Moving MIDI onto the
+# Pico instead would work and was considered, but it reverses a settled decision
+# (#747: MIDI terminates on the Pi's UART, because the Pi runs the looper).
+#
+# So the resolution is the module, not the board: if the N07 turns out to claim
+# GPIO14/15 as well, swap the NVMe board for a PCIe-only one. That is a shopping
+# decision on a part that is not yet committed, versus a respin of a board that is.
+# Do not re-open this in review.
 PI_HDR = {
     1: v3v3, 17: v3v3,
     6: gnd, 9: gnd, 14: gnd, 20: gnd, 25: gnd, 30: gnd, 34: gnd, 39: gnd,
