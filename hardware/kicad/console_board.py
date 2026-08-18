@@ -44,6 +44,7 @@ stop a late addition renumbering C1..C15 and invalidating a started layout):
     J5  MIDI IN         J6  ring/encoder   J7  indicators   J8  power button
     J9  SWD             J10..J19 footswitches               J20/J21 CTRL 1/2
     U1  74AHCT125       U2  H11L1
+    R14..R16 idle-state resistors (U1's inputs)             R17/R18 link series
 """
 import json
 import os
@@ -135,8 +136,10 @@ v5 = Net("+5V")            # logic: Pico VSYS + the AHCT125
 v3v3 = Net("+3V3")         # from the Pi ribbon -- the MIDI front end is the Pi's,
                            # so it runs on the Pi's rail and works whenever the Pi
                            # is up, regardless of the MCU
-link_tx = Net("LINK_TX")   # Pico -> Pi   (3V3 both ends: direct)
-link_rx = Net("LINK_RX")   # Pi   -> Pico (3V3 both ends: direct)
+link_tx = Net("LINK_TX")   # Pico -> Pi   (3V3 both ends: no level shifting...)
+link_rx = Net("LINK_RX")   # Pi   -> Pico (3V3 both ends)
+link_tx_pi = Net("LINK_TX_PI")   # ...but 1 k in series (R17/R18): these are the
+link_rx_pi = Net("LINK_RX_PI")   # two nets that cross power domains -- see below
 midi_tx = Net("MIDI_TX")   # Pi uart0 TX -> AHCT125 -> DIN OUT
 midi_rx = Net("MIDI_RX")   # opto (3V3) -> Pi uart0 RX
 midi_out_buf = Net("MIDI_OUT_BUF")
@@ -481,8 +484,48 @@ j_pwr[1] += v5
 j_pwr[2] += gnd
 j_pwr[3] += v5          # pins 1/3 and 2/4 are PARALLEL, not two rails: XH is
 j_pwr[4] += gnd         # ~3 A per contact and the LED chain alone nears that
-CP("470uF", "Capacitor_THT:CP_Radial_D10.0mm_P5.00mm", ref="C30")[1, 2] += v5, gnd
-CP("100uF", "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", ref="C31")[1, 2] += v5, gnd
+# The voltage is part of the VALUE because the value is what the BOM prints, and
+# the rating is load-bearing at purchase time: a common 16 V 470uF is 8 x 11.5 mm
+# on 3.5 mm pitch and does not fit this 10 mm / 5 mm land. 25 V is the rating
+# whose can matches the footprint (see the C_FP note above).
+CP("470uF 25V", "Capacitor_THT:CP_Radial_D10.0mm_P5.00mm", ref="C30")[1, 2] += v5, gnd
+CP("100uF 16V", "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", ref="C31")[1, 2] += v5, gnd
+
+# ---- R14..R18: the review-fix resistors (idle states + the power-domain seam)
+# Declared HERE, after the last auto-numbered part, with pinned refs. Declaring
+# them mid-file bumped SKiDL's counter past 16, the CTRL and encoder resistors
+# renumbered themselves, and the pinned "R17" collided into an R17_1 -- exactly
+# the renumbering the ref-block note at the top exists to prevent.
+#
+# R14..R16 are idle-state resistors for U1's inputs. CMOS inputs must never float
+# while the package is powered, and each of the three has a state where its
+# driver is gone:
+#   * MIDI_TX floats whenever the Pi is halted while BUCK_AUX keeps this board up
+#     -- and soft-off IS that state, for as long as the console sits "off". A
+#     floating gate-C input is ICC shoot-through in U1 and garbage bytes into
+#     whatever synth is on MIDI OUT. Pull UP, and to +5V rather than 3V3: the 3V3
+#     rail is the Pi's own and is dead in exactly this state. Idle-high is MIDI's
+#     no-current idle, the AHCT input is 5 V-rated, and when the Pi IS up its
+#     push-pull TX sees 17 uA against a driven pin -- nothing.
+#   * RING_DATA and IND_DATA float while the Pico is held in reset over SWD --
+#     every reflash, with the board powered. Pull DOWN: a WS2812 chain with a low
+#     data line holds its last frame instead of strobing garbage at the player.
+R("100k", ref="R14")[1, 2] += v5, midi_tx
+R("100k", ref="R15")[1, 2] += ring_data, gnd
+R("100k", ref="R16")[1, 2] += ind_data, gnd
+
+# R17/R18 sit in series with the link -- the two nets that cross power domains.
+# The Pi and this board are fed by DIFFERENT bucks (#754), and soft-off is a
+# STANDING state: the Pi halts (its 3V3 dies, RP1 unpowered) while BUCK_AUX keeps
+# this board -- and the Pico, whose UART TX idles HIGH -- alive. 3.3 V into an
+# unpowered RP1 pin runs standing current through its protection clamp; the mirror
+# case (Pi up, J3 unplugged on a bench) phantom-powers the Pico through LINK_RX.
+# 1 k in each line bounds either case under 3 mA -- invisible at link baud rates,
+# harmless at either clamp. SWCLK/SWDIO get no resistor on purpose: the Pi drives
+# them only while flashing, which is not a standing state, and bitbanged SWD wants
+# its edges clean.
+R("1k", ref="R17")[1, 2] += link_tx, link_tx_pi
+R("1k", ref="R18")[1, 2] += link_rx_pi, link_rx
 
 # ---- J2: the Pi ribbon (2x20, SHROUDED and KEYED) ---------------------------
 # Reversed, a 2x20 puts 5 V onto GND pins -- specify a shrouded header with a
@@ -554,8 +597,8 @@ PI_HDR = {
     # GPIO8/9 are SPI0's CE0 and MISO. Nothing here uses SPI0: the screens are USB
     # and HDMI, the SSD is PCIe, and MIDI and the link are UARTs. If an SPI device
     # ever lands on this Pi, this is the pair it will want.
-    24: link_rx,    # GPIO8, uart3 TX -> Pico RX  (3V3 -> 3V3, direct)
-    21: link_tx,    # GPIO9, uart3 RX <- Pico TX  (3V3 -> 3V3, direct)
+    24: link_rx_pi,  # GPIO8, uart3 TX -> R18 -> Pico RX  (3V3 -> 3V3, via 1 k)
+    21: link_tx_pi,  # GPIO9, uart3 RX <- R17 <- Pico TX  (3V3 -> 3V3, via 1 k)
     18: swclk, 22: swdio,
 }
 j_pi = Part("Connector_Generic", "Conn_02x20_Odd_Even",
@@ -796,7 +839,7 @@ def _check(strict_stations=True):
     # it would overdrive an input. DIRECT contact only, deliberately: a resistor to
     # 5 V keeps the nets separate and passes here, which is why RING_LEVELS above
     # walks the ring netlist for exactly that shape on the pins it can reach.
-    for n in (link_tx, link_rx, midi_tx, midi_rx, pwr_btn, swclk, swdio):
+    for n in (link_tx_pi, link_rx_pi, midi_tx, midi_rx, pwr_btn, swclk, swdio):
         assert v5 not in n.nets, (
             f"PI_LEVELS: {n.name} touches a 5 V rail -- Pi GPIO is not 5 V tolerant")
 
@@ -826,7 +869,8 @@ def report():
             "\nPin map:\n" + "\n".join(lay) +
             "\n\nRails : +5V (logic AND WS2812, doubled contacts on J3) | "
             "+3V3 (from the Pi)\n"
-            "Link  : 3V3 <-> 3V3, DIRECT -- the Pico is not 5 V, so no divider\n"
+            "Link  : 3V3 <-> 3V3 via 1 k series (R17/R18) -- no level shifting,\n"
+            "        the resistors only bound cross-domain current at soft-off\n"
             "AHCT  : MIDI OUT, ring, indicators (the three real 3V3->5V crossings)\n")
 
 

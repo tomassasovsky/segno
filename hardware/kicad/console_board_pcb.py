@@ -251,8 +251,38 @@ PLACEMENT = {
     # The three encoder pull-ups. New: they used to live on ring_board.py tied to
     # its 5 V rail, which sat 1.4 V over the RP2350's absolute maximum.
     "R11": (19.4, 63.0, 0), "R12": (32.2, 63.0, 0), "R13": (45.0, 63.0, 0),
-    "R1":  (59.6, 63.0, 0),       # 330R, U1 gate B -> J6 pin 5 (ring data)
+    "R1":  (59.0, 63.0, 0),       # 330R, U1 gate B -> J6 pin 5 (ring data).
+                                   # 0.6 left of where it sat, which is what opens
+                                   # a 12.4 mm slot for R18 between it and R2.
     "R2":  (79.5, 63.0, 90),        # 330R, U1 gate C -> J7 pin 2 (indicators)
+
+    # The five review-fix resistors. ALL hand-placed: the passive bands were
+    # already at capacity (R5/R10/D1 above went by hand for the same reason) and
+    # the spiral found no slot for the first of these it tried. Every position is
+    # arithmetic against the neighbours' courtyards and the 42 mm HOP limit, not
+    # taste -- the SE quarter, roomy as it looks, fails HOP for any net that is
+    # not GND, which is why none of them landed there.
+    # Slot geography, learned the expensive way: the SE field is unusable (the
+    # footswitch labels' pinned row at y 80.1 prints across anything parked
+    # there); the U1-south pocket may hold nothing in the x 69..73 column, or the
+    # pinned 'LEDS' label loses the one window it can print in (above J7, reached
+    # at d~5.5); and the channel east of the ribbon holds exactly three uprights.
+    # Assignment is by spur cost -- each part sits nearest its OWN net, because
+    # the RATSNEST budget below counts every millimetre of these.
+    "R14": (96.9, 59.85, 90),      # 100k midi_tx pull-up, upright east of the
+                                   # ribbon, level with J2 pin 8: 11 mm from it,
+                                   # 24 mm from +5V on U1 pin 13
+    "R17": (96.9, 45.0, 90),       # 1k link_tx series, upright east of the
+                                   # ribbon: 11 mm from J2 pin 21, 29 mm from
+                                   # the Pico's GP16 pad
+    "R18": (71.6, 63.0, 0),        # 1k link_rx series, flat in the R1..R2 slot;
+                                   # both legs within 28 mm
+    "R15": (48.0, 59.6, 0),        # 100k ring_data pulldown, in the slim band
+                                   # under the module's row A, 4 mm from pad 16
+    "R16": (61.5, 59.6, 0),        # 100k ind_data pulldown, flat beside R15 in
+                                   # the same band: 22 mm from U1 pin 2, and its
+                                   # GND leg is free (GND is a pour, not copper
+                                   # the budget counts)
     "J6":  (52.5, 69.0, 0),        # ring/encoder, under pads 16/17/19/20
     "J7":  (71.0, 69.0, 0),        # indicators -- x matches J9 above
 
@@ -723,6 +753,12 @@ def _free_slot(anchor, w, h, boxes):
 # so a placement that drifts back toward "connectors in neat rows regardless of
 # which pad they serve" fails here rather than at the autorouter.
 #
+# Re-measured at 1607 mm with the five review-fix resistors (R14..R18). Most of
+# the growth is the two link series parts: the link's 25 mm diagonal crosses U1,
+# so R17/R18 cannot sit on it and their legs detour around the package -- ~85 mm
+# of minimum copper that is the price of bounding cross-domain current, not
+# placement waste. The budget follows the rule above from the new measurement.
+#
 # ~500 mm of that total is the ten SW_* nets, and it is NOT a defect to be
 # optimised away. The module's footswitch pads span 28 mm; ten 8.5 mm JSTs cannot
 # span less than 84 mm side by side, so the fan-out is geometric. Staggering them
@@ -730,7 +766,7 @@ def _free_slot(anchor, w, h, boxes):
 # hand-wired board: pedal 1..10 reading left to right, unambiguously, at the bench.
 # These are debounced switch lines -- 60 mm of trace is electrically free. Keep the
 # straight ordered row.
-MAX_RATSNEST_MM = 1610.0
+MAX_RATSNEST_MM = 1770.0
 POURED_NETS = {"GND"}
 
 # The ratsnest total is a GLOBAL number, and --selftest proved it cannot see a
@@ -1215,7 +1251,13 @@ def _selftest():
     cases = [
         ("ring series resistor moved off its own net", "HOP:",
          {"R1": (12.0, 13.0, 90)}, {}),
-        ("part pushed off the outline", "outside the", {"J2": (112.0, 40.0, 0)}, {}),
+        # H3, not J2: a displaced part still needs its silkscreen placed, and that
+        # runs BEFORE _check() -- J2 pushed off the board left its pinned 'PI'
+        # label nowhere to print (the x 94..98 strip it used to escape into now
+        # holds R14/R16/R17), so the SILK assert fired first and this control
+        # proved the wrong gate. H3 has no function label, and its 0.8 mm
+        # designator still finds a gap beside the displaced hole.
+        ("part pushed off the outline", "outside the", {"H3": (112.0, 94.5, 0)}, {}),
         # Move a NON-isolated part up against the opto rather than moving the opto:
         # displacing U2 also displaces the anchors of its own passives, and the
         # placer then fails before the isolation gate is ever reached. C20 is a
