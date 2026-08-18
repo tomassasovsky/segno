@@ -64,17 +64,25 @@ below needs bare metal or a star washer under its terminal, or it bonds to paint
 
 **Must be on the stud:**
 
-1. **Any separate metal panel that is not a folded face of the base.** The rear
-   panel and bottom plate are one part, so they need nothing. The top shell, the
-   faceplate and any bracket that is its own part are joined by screws through
-   *painted* faces, which is not a bond. Each needs a strap to the stud, or masked
-   contact patches under its fasteners.
-2. **A protective-earth conductor — only if mains ever enters the box.** Today it
+1. **Any separate metal panel that is not a folded face of the base.** The top
+   shell, the faceplate and any bracket that is its own part are joined by screws
+   through *painted* faces, which is not a bond. Each needs a strap to the stud, or
+   masked contact patches under its fasteners.
+2. **Nothing for the rear I/O panel — it bonds at its own bolt instead.** The panel
+   is dismountable again (#743, #753), and it is the single most important part to
+   bond: it carries both TRS sleeves, which *are* this board's GND, and both USB
+   coupler flanges. Bolted through four powder-coated holes it would be a floating
+   plate holding every shield in the machine. So `MASK_BOND_D` masks a 12 mm bare
+   land around **one** of its four bolts, on the panel and on the wall, and that
+   bolt is the bond. One land, not four — same single-point rule as H1 on the
+   board. A strap from this panel to the stud as *well* is the second DC bond this
+   scheme exists to prevent.
+3. **A protective-earth conductor — only if mains ever enters the box.** Today it
    does not: the console takes 20 V DC over a USB-C PD contract (#754) and the
    fuse is in series with that feed. If an internal mains supply ever lands here,
    this stud becomes a *safety* earth and its rules harden: ≥1.5 mm² green/yellow,
    ring terminal, star washer, lock nut, and nothing else may share the fastener.
-3. **The bucks' cases, if they are metal — and check V− first.** #754 replaced
+4. **The bucks' cases, if they are metal — and check V− first.** #754 replaced
    the single potted unit with two B0GGHN97TK bricks, which ship in aluminium
    shells. Before bolting either to bare metal, meter its shell against its own
    V−: a case-common negative bolted to the chassis is a second DC bond — the
@@ -118,8 +126,11 @@ Ten minutes with a multimeter on continuity, from bare chassis metal to:
       other paths are connector flanges. Anything else means an accidental bond.
 - [ ] **Each rear-panel connector shell**: 2× USB coupler, 2× DIN-5, 2× TRS, and
       the USB-C PD coupler.
+- [ ] **The rear I/O panel itself**, with its masked bolt done up — expect a short
+      to chassis. If it reads open, the masked land is painted over or the wrong
+      bolt was masked, and every shell on that panel is floating.
 - [ ] **Each buck's shell against its own V−** (B0GGHN97TK ×2) — mount per
-      stud item 3 above depending on what the meter says.
+      stud item 4 above depending on what the meter says.
 - [ ] **The top shell and faceplate**, to check whether the painted joints conduct.
 
 Then decide:
