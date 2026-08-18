@@ -31,7 +31,7 @@ table, the placement is wrong, not the table.
 | console_board_v4 (KiCad STEP) | `[1,0,0,36.225 \| 0,1,0,38.575 \| 0,0,1,1.7]` | — |
 
 `c`/`s` = cos/sin of `SLOPE_ANGLE` (12.498241812070852°) at full precision —
-rounded values fail `transform2` orthonormality validation.
+rounded values fail `transform2` validation (the rotation must be exactly orthogonal).
 
 - The base's `+0.2` z puts the floor's bottom face at world z=0 (the feet plane).
   There is **no y/depth offset** — an earlier `+0.2` there put the whole shell
