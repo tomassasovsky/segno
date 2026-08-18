@@ -17,6 +17,14 @@ the loop-position ring locally between frames.
 
 ## Hardware / wiring
 
+> **Console builds: this wiring section is historical.** The console's LEDs are
+> driven by the **console board v2's own Pico 2** (`hardware/kicad/
+> console_board.py`, #747): the frame protocol below is inherited over the
+> pedal link on Pi **uart3 (GPIO8/9)**, the chain is **16 ring + 10
+> indicators**, and Pi **GPIO14/15 carry MIDI** — do not enable `/dev/serial0`
+> for LEDs on a console. The wiring below describes the standalone RP2040
+> driver this firmware was written for.
+
 - **MCU:** RP2040 (e.g. Adafruit QT Py RP2040 or a Pico).
 - **Transport:** UART, **115200 8N1**, on the Pi's UART pins:
   - Pi **TXD (GPIO14)** → RP2040 **Serial1 RX (GP1)**

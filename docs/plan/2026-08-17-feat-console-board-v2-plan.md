@@ -78,6 +78,12 @@ encoder). LED transients stay off the MCU rail. See `main_board.py` nets.
 
 ## Technical Considerations
 
+> **Deviation (shipped design):** the divider below never shipped — the board
+> moved to a Pico 2 (3.3 V both ends, no level shifting) and the back-power
+> property this section argues for is provided by **10 k series resistors
+> R17/R18** instead (see `console_board.py`). The property survived; the
+> mechanism changed.
+
 ### The link is inherently back-power-safe, and that is not an accident
 
 Into the Pi we only ever drive **through the 1k8 series leg of the divider**
