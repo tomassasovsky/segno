@@ -354,9 +354,13 @@ PWRBTN_HEAD_D = 25.2  # hex bezel ACROSS CORNERS: ZJWZJH 25.2, APIELE 25.0. The
 D_FUSE    = 12.0     # NeoLum B0GF33P9FF: "12 mm diameter aperture"; B0DLKJ813T:
                      # "Installation Hole 12mm". Two independent listings agree.
 D_GND     = 6.5      # M6 earth / bond stud
-D_BARREL  = 11.5     # DC-099 barrel jack: listing states an 11 mm mounting hole;
-                     # +0.5 so the thread drops in but cannot rattle before the
-                     # nut bites. 12.0 (the old value) left 1 mm of slop.
+# The inlet is USB-C PD (#754): one 20 V PD contract feeds the whole console and
+# two bucks make 5 V at the load. It replaces a 9 V barrel because the barrel was
+# only ever the buck's input -- nothing in the design uses 9 V -- and because a
+# USB-C panel coupler takes the SAME D punch as the TRS jacks, so the inlet stops
+# being a hole type of its own. Part: QIANRENON D-type USB-C F/F, 100 W, 10 Gbps
+# (Amazon B0CQ4VD2N2). 10 Gbps matters: it means all 24 ways are wired, so CC
+# passes and PD can negotiate. A charge-only coupler drops CC and nothing works.
 # The chosen TRS is a D-SERIES jack (MEIRIYFA B0G5GHCCHM, "fits standard D Series
 # panel mount designs"), NOT a threaded-bushing jack -- so it takes the Neutrik D
 # punch, a Ø24 bore with two M3 fixings, not a Ø10 round hole.
@@ -370,6 +374,7 @@ D_TRS_SCREW_D    = 3.2   # M3 clearance
 # keep-out below still reserves room for them so nothing has to move later.
 D_TRS_SCREW_PITCH = None
 D_TRS_KEEPOUT    = 30.4  # bore + an M3 pair, once their real pattern is known
+D_PD_BORE = D_TRS_BORE   # same D-series punch as CTRL_1/CTRL_2
 USB3_SQ       = 22.1 # USB 3.0 panel coupler: square across flats
 USB3_CORNER_D = 24.1 # ...corners on this circle -> corner radius derived below
 USB3_FLANGE_D = 28.5 # flange OD. This, not the cutout, is the real keep-out
@@ -385,7 +390,8 @@ REAR_IO_PROVENANCE = {
     "PWRBTN_HEAD_D":     "datasheet: APIELE 25.0 / ZJWZJH 25.2 across hex corners; 25.2 brackets both",
     "D_FUSE":            "datasheet: two generic 5x20 screw-cap listings, 12 mm aperture",
     "D_GND":             "design: M6 stud clearance",
-    "D_BARREL":          "datasheet: DC-099 listing, 11 mm hole (+0.5 fit)",
+    "D_PD_BORE":         "datasheet: QIANRENON B0CQ4VD2N2 states D-type/XLR panel "
+                         "dimensions 19x24 mm; the 24 mm bore is the D standard",
     "D_TRS_BORE":        "datasheet: neutrik.com NC3FD-L-1, 'standardized D sized 24 mm panel cutout'",
     "D_TRS_SCREW_PITCH": "UNCONFIRMED: D-series M3 pair is diagonal, pattern not sourced -- NOT CUT",
     "D_TRS_KEEPOUT":     "design: bore + room for the M3 pair once it is known",
@@ -876,7 +882,7 @@ def faceplate_holes():
 # is 6.4 wider than its own 22.1 cutout; spacing on cutouts alone would have the
 # two couplers' flanges fouling each other.
 REAR_IO_STATIONS = [
-    ("9V_DC",    D_BARREL + 6.0),                        # power first, at the far
+    ("PD_IN",    D_TRS_KEEPOUT),                         # power first, at the far
     ("POWER",    PWRBTN_HEAD_D + 4.0),                   # left, away from signal.
                                                          # Sized off the HEAD, not the
                                                          # hole -- the head is what
@@ -911,7 +917,7 @@ def rear_holes():
     z = REAR_IO_Z
     at = rear_io_layout()
     cuts = []
-    for ref, d in (("9V_DC", D_BARREL), ("POWER", D_PWRBTN), ("FUSE", D_FUSE)):
+    for ref, d in (("PD_IN", D_PD_BORE), ("POWER", D_PWRBTN), ("FUSE", D_FUSE)):
         cuts.append({"kind": "circle", "u": at[ref][0], "v": z, "d": d, "ref": ref})
     # Bored-plus-two-M3 stations. The DIN-5 and the D-series jack are the same
     # shape of problem -- a bore with a fixing pair straddling it -- so they are
@@ -1305,11 +1311,12 @@ def _check(strict_board_mount=True):
     # version of this gate checked only v and fired on a Pi 400 mm away in u.
     _pi = (_pu0, _pu1, _pv0, _pv1)                               # PCB 85 x 56, rotated
     _b = board_mounts()[0]                                       # (ref, u, v, holes)
-    _bku, _bkv, _ = buck_mount()
-    for _nm, _o in (("console board", (_b[1] - BOARD_SIZE[0]/2.0, _b[1] + BOARD_SIZE[0]/2.0,
-                                    _b[2] - BOARD_SIZE[1]/2.0, _b[2] + BOARD_SIZE[1]/2.0)),
-                    ("buck",       (_bku - BUCK_BODY[0]/2.0, _bku + BUCK_BODY[0]/2.0,
-                                    _bkv - BUCK_BODY[1]/2.0, _bkv + BUCK_BODY[1]/2.0))):
+    _obs = [("console board", (_b[1] - BOARD_SIZE[0]/2.0, _b[1] + BOARD_SIZE[0]/2.0,
+                               _b[2] - BOARD_SIZE[1]/2.0, _b[2] + BOARD_SIZE[1]/2.0))]
+    for _bn, _bku, _bkv, _ in buck_mounts():
+        _obs.append((_bn, (_bku - BUCK_BODY[0]/2.0, _bku + BUCK_BODY[0]/2.0,
+                           _bkv - BUCK_BODY[1]/2.0, _bkv + BUCK_BODY[1]/2.0)))
+    for _nm, _o in _obs:
         if _pi[0] < _o[1] and _o[0] < _pi[1] and _pi[2] < _o[3] and _o[2] < _pi[3]:
             _head = PI_RISER_H - (STANDOFF_H + BOARD_STACK_H)
             assert _head >= 3.0, (
@@ -1385,12 +1392,31 @@ def _check(strict_board_mount=True):
     assert _tall <= REAR_WALL_H - 2*4.0, (
         f"REAR_IO: widest keep-out {_tall:.1f} does not leave 4 mm of wall above "
         f"and below on a {REAR_WALL_H:.0f} mm wall")
+    # 8c. the two bricks (#754). They are split BY RAIL and must not overlap each
+    #     other in plan, or the second one has nowhere to bolt down.
+    _bk = buck_mounts()
+    assert len(_bk) == 2, f"BUCK_SPLIT: expected 2 bricks, got {len(_bk)}"
+    (_n1, _u1, _v1, _), (_n2, _u2, _v2, _) = _bk
+    _clear = abs(_u2 - _u1) - BUCK_BODY[0]
+    assert _clear >= 8.0, (
+        f"BUCK_SPLIT: {_n1} and {_n2} leave {_clear:.1f} mm between bodies -- no room "
+        "to land the wiring, and no air between two things that both make heat")
+    #     ...and both have to stay on the plate in u. NOT in v: the bricks are
+    #     DELIBERATELY under the connector band -- that is what the REAR_BAY height
+    #     gate above checks, and it is why they are 22.1 mm tall things bolted flat
+    #     rather than anything on standoffs. A planar "clear of REAR_CONN_DEPTH"
+    #     rule would contradict it and push them off the plate for no reason.
+    for _bn, _bu, _bv, _ in _bk:
+        assert _bu - BUCK_BODY[0]/2.0 >= EDGE and _bu + BUCK_BODY[0]/2.0 <= W - 2*T - EDGE, (
+            f"BUCK_SPLIT: {_bn} spans u {_bu - BUCK_BODY[0]/2.0:.1f}.."
+            f"{_bu + BUCK_BODY[0]/2.0:.1f}, outside the {EDGE:.0f} mm edge margins")
+
     # ...and no rear-I/O dimension may exist without a recorded provenance, so a
     # new connector cannot be added without saying where its numbers came from
     _dims = [k for k in globals()
              if k.startswith(("D_TRS", "MIDI_", "USB3_")) and k not in
              ("USB3_CORNER_R", "USB3_CUT_SQ", "USB3_FIT")]
-    _dims += ["D_BARREL", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND"]
+    _dims += ["D_PD_BORE", "D_PWRBTN", "PWRBTN_HEAD_D", "D_FUSE", "D_GND"]
     _missing = sorted(set(_dims) - set(REAR_IO_PROVENANCE))
     assert not _missing, (
         f"REAR_IO: {_missing} have no entry in REAR_IO_PROVENANCE -- say whether "
@@ -1582,14 +1608,25 @@ def pi_pcb_extent():
 BUCK_BODY = (63.8, 57.7, 22.1)
 BUCK_EAR_SPACING = 56.0       # ear hole centres along the long axis — PROVISIONAL
                               # until the unit arrives; drill to the real part
-def buck_mount():
-    """The 8-36V -> 5V brick. It sits between the 9 V inlet that feeds it and the
-    board's J3 that it feeds, so it follows them: parked at its old u it would have
-    been 165 mm from an inlet that moved to the right with the rest of the cluster,
-    for no reason but inertia. Left of the console board keeps both runs short and
-    stays clear of the CLEAR/BANK pedal platform, which owns u 230..313."""
+# TWO of them (#754). One 10 A brick cannot carry the whole console: worst case is
+# 11.7 A at 5 V (58.5 W) and a 50 W part would be 18% over. They are split BY RAIL,
+# never paralleled -- two buck outputs tied together have no current sharing, so one
+# hogs the load until it limits and then they hunt. Same 20 V input, separate 5 V
+# outputs, common ground only:
+#   BUCK_PI  -> Pi 5 + its USB + the NVMe        ~5.0 A / 25 W   (50% of part)
+#   BUCK_AUX -> both screens + this board + LEDs ~6.7 A / 34 W   (67% of part)
+# BUCK_AUX is the tighter one and the one that wants airflow; a cheap 10 A module
+# is rarely honest at 10 A in still air.
+BUCK_GAP = 12.0               # between the two bricks, for wiring and air
+def buck_mounts():
+    """Both bricks, side by side in the rear airflow bay, long axis along u. Left of
+    the console board keeps the runs to the inlet and to J3 short and stays clear of
+    the CLEAR/BANK pedal platform, which owns u 230..313."""
     bd = D - 2*T
-    return (410.0, bd - 60.0, BUCK_EAR_SPACING)
+    v = bd - 60.0
+    pitch = BUCK_BODY[0] + BUCK_GAP
+    return [("BUCK_PI",  410.0 - pitch/2.0, v, BUCK_EAR_SPACING),
+            ("BUCK_AUX", 410.0 + pitch/2.0, v, BUCK_EAR_SPACING)]
 
 # ===========================================================================
 # DXF  (ezdxf)
@@ -1831,11 +1868,11 @@ def dxf_base(path):
         for dy in (-psy/2, psy/2):
             _circle(msp, pcx+dx, pcy+dy, D_M3)
     _text(msp, pcx - psx/2, pcy + psy/2 + 4, 5, f"PI_RISER x{PI_RISER_H:.0f}mm (Pi build)", "NOTE")
-    bkx, bky, bsp = buck_mount()                   # external 5V buck: 2 ear holes, flat mount
-    for dx in (-bsp/2, bsp/2):
-        _circle(msp, bkx+dx, bky, D_M4)
-    _text(msp, bkx - bsp/2, bky + BUCK_BODY[1]/2 + 4, 5,
-          "BUCK 5V (eleUniverse 8-36V>5V 10A IP67; ear pitch PROVISIONAL)", "NOTE")
+    for _bn, bkx, bky, bsp in buck_mounts():       # 2x 20V->5V brick, 2 ear holes each
+        for dx in (-bsp/2, bsp/2):
+            _circle(msp, bkx+dx, bky, D_M4)
+        _text(msp, bkx - bsp/2, bky + BUCK_BODY[1]/2 + 4, 5,
+              f"{_bn} 20V>5V 10A (B0GGHN97TK; ear pitch PROVISIONAL)", "NOTE")
     for x, y in base_foot_xy():                    # M4 clearance, plain hole: the
         _circle(msp, x, y, D_FOOT)                 # head is relieved in the RING
     _emit(msp, platform_foot_holes())              # M3 holes for the 10 pedal-platform feet
@@ -3063,7 +3100,7 @@ def report():
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
       f"(case top flush with the slot's upper rim, pad +{PEDAL_PAD_T:.1f} above, #373)  [PROVISIONAL]")
     P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 15.6in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
-    P(f"Rear I/O        : 9V + btn + fuse + 2x MIDI DIN-5 + 2x TRS (D-series) + 2x USB3 + vents + earth (no window)")
+    P(f"Rear I/O        : USB-C PD + btn + fuse + 2x MIDI DIN-5 + 2x TRS (D-series) + 2x USB3 + vents + earth (no window)")
     _unc = rear_io_unconfirmed()
     if _unc:
         P("  DO NOT CUT     : " + ", ".join(
@@ -3141,7 +3178,7 @@ def layout_svg(path):
         elif c["kind"] == "rect":
             e.append(f'<rect x="{X(c["u"]):.1f}" y="{Yr(c["v"]+c["h"]):.1f}" width="{c["w"]:.1f}" height="{c["h"]:.1f}" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>')
     fy = rear_base + REAR_WALL_H + 28
-    e.append(f'<text x="{M}" y="{fy:.1f}" fill="#7c8aa3" font-size="10.5">9V · power · fuse · USB-A x2 · earth stud · vents   |   service: back out the front-lip + rear-lap screws, lift the lid (side wings just locate)</text>')
+    e.append(f'<text x="{M}" y="{fy:.1f}" fill="#7c8aa3" font-size="10.5">USB-C PD · power · fuse · USB-A x2 · earth stud · vents   |   service: back out the front-lip + rear-lap screws, lift the lid (side wings just locate)</text>')
     e.append(f'<text x="{M}" y="{fy+18:.1f}" fill="#7c8aa3" font-size="10.5">10x Cherub WTB-006 pedals on printed pedestals (PROVISIONAL) · 10 indicator LED pills (one per pedal) + encoder ring · Pi+board mount on the rear bottom plate</text>')
     e.append('</svg>')
     with open(path, "w") as f:
