@@ -123,20 +123,11 @@ a single call have crashed Fusion):
    has zero interference — the rejection is internal unfold bookkeeping).
 5. Folds, all `CenterFoldBendLinePositionType`, all POSITIVE angles, in this
    order: **left (x=0, 90°), right (x=84.6, 90°), lap (y=50.405,
-   +1.1441680444374027 rad), rear (y=41.9, 90°), HEM (y=−0.8183, 90°), front
-   (y=0, 90°) LAST**. The front-wall hem folds at **90° in the model only**:
-   the fab flat specifies a 179° open hem, but Fusion cannot compute a
-   near-180 fold here — folding the hem first at 179° makes the front fold
-   reject (ASM_UNFOLD_SELF_INTERSECTION), folding on the standing wall fails
-   generically, and editing the angle parameter past 90° after the front fold
-   flips the moving-side heuristic (the flange stays, the WALL rotates). 90°
-   is the correct side and stable; the DXF note governs fabrication.
-   The end slivers in RELIEFS_AND_TRIMS run the FULL front flap
-   (y −2.34..0.001) so the hem flange ends clear the side walls. Because the
-   90° stand-in flange juts ~15mm rearward where the REAL 179° hem would hug
-   the wall, each base carries a model-only `HEM_FLANGE_CLEARANCE` cut (offset
-   plane local z=0.55, rect x 0.05..84.55 × y 0.45..1.75, up 1.0) truncating
-   the flange clear of the front platforms — re-apply it after any rebuild.
+   +1.1441680444374027 rad), rear (y=41.9, 90°), front (y=0, 90°) LAST**.
+   (A front-wall hem was tried and REVERTED, #760: its bend zone would have
+   swallowed the screw holes — the 10.1 wall minus two bend zones leaves ~2mm
+   of straight band. The wall is plain single-thickness; the front screws are
+   M3 hand-tapped into Ø2.5 pilots, Ø3.4 clearance in the lip.)
    Stationary face = the big planar z=0 face whose XY bbox contains the bend
    line's midpoint. Verify the bbox after every fold.
 6. **Check the front fold's result bbox.** Its moving-side heuristic is
