@@ -1970,7 +1970,22 @@ def dxf_base(path):
     # Exact bend allowance: each flap's flat extent = wall height - the 90-deg bend
     # deduction (T + K*T), so the folded OUTER dimensions come out at nominal.
     bdd = DEV90                              # exact 90-deg development (issue #237)
-    Hf = H_FRONT - bdd
+    # The front wall must NOT rise to H_FRONT: the lid's lip-fold KNUCKLE (inner
+    # radius RI about an axis RI behind the lip inner face and RI perpendicular
+    # below the lid underside) rolls through the wall's top-corner band, and a
+    # straight top edge across the T thickness only clears the roll below the
+    # bend-axis height (the pocket is tangent to the lip plane exactly there).
+    # The sides already carry the LIPR_R cove for the same roll; the front wall
+    # takes a height drop instead (an edge bevel across 2mm is not a flat-pattern
+    # feature). The gap is invisible: the lip skirts down over it. (#760)
+    _axis_h = ((_cfy - T / math.cos(_ra))                       # underside @ lip corner
+               + ((-DEV90 + RI) - _cfz) * math.tan(_ra)         # ...out to the bend axis
+               - RI / math.cos(_ra))                            # RI perpendicular below
+    FRONT_LIP_CLEAR = 0.3
+    Hf = (_axis_h - FRONT_LIP_CLEAR) - bdd
+    # the lip screws keep their ORIGINAL height (they mate the lid lip's holes,
+    # which did not move) -- decoupled from the shortened flap
+    _fscrew_flat = (H_FRONT - bdd) * 0.5
     Hr = HR_FLAT                             # rear web from the seam solver: the flange
     Ht = HT_FLAT                             # outer lands ONE SHEET below the lap outer
     rrel = T + 1.0                          # small bend-relief radius at each corner
@@ -2098,7 +2113,7 @@ def dxf_base(path):
 
     # ---- front wall: lid front-lip screws | rear wall: I/O + transition PEM --------
     for u in FRONT_SCREW_U:
-        _circle(msp, u, -Hf*0.5, D_M4)                                 # front-lip screws (match the lid lip)
+        _circle(msp, u, -_fscrew_flat, D_M4)                           # front-lip screws (match the lid lip)
     io = rear_holes()                                                  # canonical; no mirror
     for c in io:
         c["v"] = BD + c["v"]                                           # rear z -> depth on the flap
