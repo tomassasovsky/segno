@@ -9,47 +9,47 @@
     {
       "ref": "9V_DC",
       "keepout": 17.5,
-      "centre_u": 464.75
+      "centre_u": 454.036
     },
     {
       "ref": "POWER",
       "keepout": 29.2,
-      "centre_u": 503.188
+      "centre_u": 492.473
     },
     {
       "ref": "FUSE",
       "keepout": 18.0,
-      "centre_u": 541.875
+      "centre_u": 531.161
     },
     {
       "ref": "MIDI_IN",
       "keepout": 28.4,
-      "centre_u": 580.163
+      "centre_u": 569.448
     },
     {
       "ref": "MIDI_OUT",
       "keepout": 28.4,
-      "centre_u": 623.65
+      "centre_u": 612.936
     },
     {
       "ref": "CTRL_1",
       "keepout": 30.4,
-      "centre_u": 668.137
+      "centre_u": 657.423
     },
     {
       "ref": "CTRL_2",
       "keepout": 30.4,
-      "centre_u": 713.625
+      "centre_u": 702.911
     },
     {
       "ref": "USB3_1",
       "keepout": 28.5,
-      "centre_u": 758.162
+      "centre_u": 747.448
     },
     {
       "ref": "USB3_2",
       "keepout": 28.5,
-      "centre_u": 801.75
+      "centre_u": 791.036
     }
   ]
 }
