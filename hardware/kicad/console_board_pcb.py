@@ -1264,12 +1264,13 @@ def build(quiet=False):
 
     ds = board.GetDesignSettings()
     ds.SetCopperLayerCount(2)
-    # 0.1in headers leave less mask web than KiCad's 0.25 mm default wants, which
-    # is ~100 "solder_mask_bridge" errors on a board that is mostly headers. Every
-    # fab bridges these; JLCPCB's own rule is 0.25 mm only for fine-pitch SMD.
-    # Setting it to 0 stops the rule hiding the violations that actually matter.
+    # The mask rule is ON, at the fab's own 0.25 mm. It was set to 0 -- i.e. off --
+    # back when 0.1in headers produced ~100 "solder_mask_bridge" errors that drowned
+    # out everything else. That is no longer true of this layout: re-enabled, DRC
+    # comes back with zero. So the blind spot goes; a rule that currently passes is
+    # worth more than one that was switched off for a board we no longer have.
     try:
-        ds.m_SolderMaskMinWidth = 0
+        ds.m_SolderMaskMinWidth = FromMM(0.25)
     except Exception:
         pass
 
@@ -1495,6 +1496,30 @@ def check_routed_board(path=None):
             f"FAB: {len(small)} via(s) smaller than {MIN_VIA_D}/{MIN_VIA_DRILL} mm "
             f"(e.g. {small[0][0]}/{small[0][1]}) -- Freerouting takes via size from "
             "the DSN netclass; set it in route_console_board.sh")
+    # THE BOARD IMPLEMENTS THE NETLIST. Everything else here checks the board
+    # against fab limits or against itself; this is the only check that asks
+    # whether the copper about to be plotted is the CIRCUIT that was designed.
+    # DRC comes close -- a dropped connection shows up as unconnected -- but it
+    # compares the board to its own internal ratsnest, which came from the same
+    # import that could have gone wrong.
+    _comps, _nets = parse_netlist(NETLIST)
+    want = {(ref, str(pad)): name for name, nodes in _nets.items()
+            for ref, pad in nodes}
+    got, missing = {}, []
+    for fp in _b.Footprints():
+        for p in fp.Pads():
+            if p.GetNumber():
+                got[(fp.GetReference(), p.GetNumber())] = p.GetNetname()
+    for node, name in sorted(want.items()):
+        if node not in got:
+            missing.append(f"{node[0]} pad {node[1]} ({name}) is not on the board")
+        elif got[node] != name:
+            missing.append(f"{node[0]} pad {node[1]} carries {got[node]!r}, "
+                           f"the netlist says {name!r}")
+    if missing:
+        raise SystemExit("FAB: the board does not implement the netlist -- "
+                         + "; ".join(missing[:4])
+                         + (f" (+{len(missing) - 4} more)" if len(missing) > 4 else ""))
     # Silk that the fab will not print, checked on the plotted article rather than on
     # the objects build() happened to create.
     for fp in _b.Footprints():

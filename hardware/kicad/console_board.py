@@ -452,6 +452,11 @@ C("100uF", fp="Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", ref="C31")[1, 2] += v5, 
 #                            1,17 = 3V3      6,9,14,20,25,30,34,39 = GND
 #   Pi pin 8    = GPIO14 TXD (uart0)        10 = GPIO15 RXD (uart0)
 #   Pi pin 7    = GPIO4      (uart2 TX)     29 = GPIO5    (uart2 RX)
+#                        ...on a PI 5 specifically: `dtoverlay=uart2-pi5` is
+#                        "Enable uart 2 on GPIOs 4-5. Pi 5 only." (raspberrypi/linux
+#                        overlays README). The SAME PINS are uart3 on a Pi 4, where
+#                        uart2 is GPIOs 0-3 -- so the overlay name is not portable
+#                        even though the wiring is. Firmware wants uart2-pi5.
 #   Pi pin 5    = GPIO3  -- NOT the power button. GPIO3 wakes a Pi 4; on a Pi 5 the
 #                           GPIO lives behind RP1 and power-on is the PMIC's job, so
 #                           no GPIO can wake it. The Pi 5's button goes on the J2
