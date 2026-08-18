@@ -132,7 +132,11 @@ a single call have crashed Fusion):
    flips the moving-side heuristic (the flange stays, the WALL rotates). 90°
    is the correct side and stable; the DXF note governs fabrication.
    The end slivers in RELIEFS_AND_TRIMS run the FULL front flap
-   (y −2.34..0.001) so the hem flange ends clear the side walls.
+   (y −2.34..0.001) so the hem flange ends clear the side walls. Because the
+   90° stand-in flange juts ~15mm rearward where the REAL 179° hem would hug
+   the wall, each base carries a model-only `HEM_FLANGE_CLEARANCE` cut (offset
+   plane local z=0.55, rect x 0.05..84.55 × y 0.45..1.75, up 1.0) truncating
+   the flange clear of the front platforms — re-apply it after any rebuild.
    Stationary face = the big planar z=0 face whose XY bbox contains the bend
    line's midpoint. Verify the bbox after every fold.
 6. **Check the front fold's result bbox.** Its moving-side heuristic is
