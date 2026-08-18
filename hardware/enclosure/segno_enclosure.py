@@ -366,20 +366,23 @@ D_GND     = 6.5      # M6 earth / bond stud
 # punch, a Ø24 bore with two M3 fixings, not a Ø10 round hole.
 D_TRS_BORE       = 24.0  # Neutrik: "standardized D sized 24 mm panel cutout"
 D_TRS_SCREW_D    = 3.2   # M3 clearance
-# ...and its fixings are NOT CUT. A D-series flange carries its two M3 on
-# DIAGONALLY OPPOSITE corners, not on a horizontal pair, and no sourced
-# coordinates were found -- the widely-repeated "24 mm" would put the screw
-# centres exactly on the Ø24 bore edge, which _check() now rejects outright.
-# The bore is sourced and gets cut; the fixings wait for the part in hand. The
-# keep-out below still reserves room for them so nothing has to move later.
-D_TRS_SCREW_PITCH = None
-D_TRS_KEEPOUT    = 30.4  # bore + an M3 pair, once their real pattern is known
-D_PD_BORE = D_TRS_BORE   # same D-series punch as CTRL_1/CTRL_2
+# The D-series flange carries its two M3 on DIAGONALLY OPPOSITE corners, not a
+# horizontal pair. Pattern SOURCED 2026-08-18: the QIANRENON PD coupler states
+# "XLR panel / D-type panel mounting dimensions (19mm*24mm)" on its listing --
+# 19 across, 24 vertical, one hole per diagonal corner: centres at
+# (+-9.5, -+12) about the bore. Screw centre sits sqrt(9.5^2+12^2)=15.3 from
+# the bore centre, 1.7 clear of the Ø24 bore edge + M3 radius, so _check()'s
+# bore-edge rejection passes. A D shell is point-symmetric about the bore, so a
+# part whose holes run the other diagonal mounts by turning it 180 deg -- one
+# cut diagonal fits every D shell.
+D_TRS_SCREW_DIAG = (19.0, 24.0)   # (du, dz) between the two diagonal M3 centres
+D_TRS_KEEPOUT    = 30.4  # bore + the M3 pair
+D_PD_BORE = D_TRS_BORE   # same D-series punch as CTRL_1/CTRL_2 (same M3 pair too)
 USB3_SQ       = 22.1 # USB 3.0 panel coupler: square across flats
 USB3_CORNER_D = 24.1 # ...corners on this circle -> corner radius derived below
 USB3_FLANGE_D = 28.5 # flange OD. This, not the cutout, is the real keep-out
 MIDI_BODY_D      = 15.1  # REAN NYS325 panel cutout (distributor spec)
-MIDI_SCREW_PITCH = 22.0  # UNCONFIRMED -- see REAR_IO_PROVENANCE
+MIDI_SCREW_PITCH = 22.2  # RS attribute "Mounting Hole Distance 0.874 in" = 22.2
 MIDI_SCREW_D     = 3.2   # M3 clearance
 
 # What each rear-I/O dimension actually rests on. "measured" = the user's own
@@ -393,14 +396,19 @@ REAR_IO_PROVENANCE = {
     "D_PD_BORE":         "datasheet: QIANRENON B0CQ4VD2N2 states D-type/XLR panel "
                          "dimensions 19x24 mm; the 24 mm bore is the D standard",
     "D_TRS_BORE":        "datasheet: neutrik.com NC3FD-L-1, 'standardized D sized 24 mm panel cutout'",
-    "D_TRS_SCREW_PITCH": "UNCONFIRMED: D-series M3 pair is diagonal, pattern not sourced -- NOT CUT",
-    "D_TRS_KEEPOUT":     "design: bore + room for the M3 pair once it is known",
+    "D_TRS_SCREW_DIAG":  "datasheet: QIANRENON B0CQ4VD2N2 'D-type panel mounting "
+                         "dimensions (19mm*24mm)'; MEIRIYFA B0G5FZNH49 is the same "
+                         "standard D shell (photos show the diagonal pair + screws)",
+    "D_TRS_KEEPOUT":     "design: bore + the M3 pair",
     "D_TRS_SCREW_D":     "datasheet: D-series fixings are M3",
-    "USB3_SQ":           "measured: user, coupler BODY across flats",
-    "USB3_CORNER_D":     "measured: user, coupler BODY across corners",
+    "USB3_SQ":           "measured: user, coupler BODY across flats (PENGLIN B09VGK59XQ: "
+                         "a round M24 barrel with two anti-rotation flats; NUT-mounted, "
+                         "no screws -- the square cut grips the flats)",
+    "USB3_CORNER_D":     "measured: user, coupler BODY across corners (= thread OD)",
     "USB3_FLANGE_D":     "measured: user, flange OD",
     "MIDI_BODY_D":       "datasheet: REAN NYS325, Ø15.1 panel cutout (Farnell/CPC)",
-    "MIDI_SCREW_PITCH":  "UNCONFIRMED: NYS325 fixing pitch not sourced",
+    "MIDI_SCREW_PITCH":  "datasheet: RS 70088596 attribute 'Mounting Hole Distance "
+                         "0.874 in' = 22.2 (cutout attr 0.595 in = 15.1 anchors the template)",
     "MIDI_SCREW_D":      "datasheet: DIN-5 chassis sockets take M3",
 }
 
@@ -952,25 +960,28 @@ def rear_io_cutouts():
     z = REAR_IO_Z
     at = rear_io_layout()
     cuts = []
-    for ref, d in (("PD_IN", D_PD_BORE), ("POWER", D_PWRBTN), ("FUSE", D_FUSE)):
+    for ref, d in (("POWER", D_PWRBTN), ("FUSE", D_FUSE)):     # nut-mounted: bore only
         cuts.append({"kind": "circle", "u": at[ref][0], "v": z, "d": d, "ref": ref})
-    # Bored-plus-two-M3 stations. The DIN-5 and the D-series jack are the same
-    # shape of problem -- a bore with a fixing pair straddling it -- so they are
-    # built by one loop; only the numbers differ. The fixings run HORIZONTALLY:
-    # the panel is 46 tall and the D pair spans 24, which would leave only 11 of
-    # panel above and below, but across the panel there is room to spare.
-    for ref, bore, pitch, scr in (
-            ("MIDI_IN",  MIDI_BODY_D,  MIDI_SCREW_PITCH,  MIDI_SCREW_D),
-            ("MIDI_OUT", MIDI_BODY_D,  MIDI_SCREW_PITCH,  MIDI_SCREW_D),
-            ("CTRL_1",   D_TRS_BORE,   D_TRS_SCREW_PITCH, D_TRS_SCREW_D),
-            ("CTRL_2",   D_TRS_BORE,   D_TRS_SCREW_PITCH, D_TRS_SCREW_D)):
+    # DIN-5 stations: a bore with a HORIZONTAL M3 pair straddling it (the panel
+    # is 46 tall; across the panel there is room to spare).
+    for ref in ("MIDI_IN", "MIDI_OUT"):
         cu = at[ref][0]
-        cuts.append({"kind": "circle", "u": cu, "v": z, "d": bore, "ref": ref})
-        if pitch is None:            # pattern not sourced -- bore only, see above
-            continue
+        cuts.append({"kind": "circle", "u": cu, "v": z, "d": MIDI_BODY_D, "ref": ref})
         for s in (-1, 1):
-            cuts.append({"kind": "circle", "u": cu + s*pitch/2.0, "v": z,
-                         "d": scr, "ref": ref + "_SCR"})
+            cuts.append({"kind": "circle", "u": cu + s*MIDI_SCREW_PITCH/2.0, "v": z,
+                         "d": MIDI_SCREW_D, "ref": ref + "_SCR"})
+    # D-series stations (both TRS jacks AND the PD coupler -- same D shell): the
+    # Ø24 bore plus the DIAGONAL M3 pair, 19 across x 24 vertical (see
+    # D_TRS_SCREW_DIAG provenance). One diagonal fits every D shell: the flange
+    # is point-symmetric about the bore, so an opposite-diagonal part mounts by
+    # turning it 180 deg.
+    ddu, ddz = D_TRS_SCREW_DIAG
+    for ref in ("PD_IN", "CTRL_1", "CTRL_2"):
+        cu = at[ref][0]
+        cuts.append({"kind": "circle", "u": cu, "v": z, "d": D_TRS_BORE, "ref": ref})
+        for s in (-1, 1):
+            cuts.append({"kind": "circle", "u": cu + s*ddu/2.0, "v": z - s*ddz/2.0,
+                         "d": D_TRS_SCREW_D, "ref": ref + "_SCR"})
     for ref in ("USB3_1", "USB3_2"):                       # square, heavily radiused
         cu = at[ref][0]
         cuts.append({"kind": "rect", "u": cu - USB3_CUT_SQ/2.0, "v": z - USB3_CUT_SQ/2.0,
@@ -1471,7 +1482,7 @@ def _check(strict_board_mount=True):
             continue
         base = c["ref"][:-4]
         bore = next(b for b in rear_io if b["ref"] == base)
-        off = abs(c["u"] - bore["u"])
+        off = math.hypot(c["u"] - bore["u"], c["v"] - bore["v"])
         assert off - c["d"]/2.0 >= bore["d"]/2.0 + 1.5, (
             f"REAR_IO: {c['ref']} at {off:.2f} from centre leaves "
             f"{off - c['d']/2.0 - bore['d']/2.0:.2f} mm of land against the "

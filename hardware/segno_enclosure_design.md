@@ -225,12 +225,12 @@ right, power first and away from signal:
 
 | ref | cutout | keep-out | note |
 |---|---|---|---|
-| `PD_IN` | Ø24 D punch | 30.4 | USB-C PD coupler (QIANRENON, #754) — the SAME D punch the TRS jacks use; the 9 V DC-099 barrel died with the 9 V architecture |
-| `POWER` | **Ø19.5** | 29.2 | APIELE 19 mm **high-round** momentary, stainless. **Unlit** |
-| `FUSE` | Ø12.0 | 18 | generic 5×20 screw-cap holder, 10 A / 250 V AC |
-| `MIDI_IN` / `MIDI_OUT` | Ø15.1 + 2 × Ø3.2 @ 22 | 28.4 | REAN NYS325; **IN needs opto-isolation on the board**, not here |
-| `CTRL_1` / `CTRL_2` | **Ø24**, fixings **not cut** | 30.4 | **D-series** punch, not a threaded bushing |
-| `USB3_1` / `USB3_2` | 22.5 square, **R8.84** | 28.5 | flange Ø28.5 is the keep-out, not the hole |
+| `PD_IN` | Ø24 D punch + 2 × Ø3.2 diagonal @ 19×24 | 30.4 | USB-C PD coupler (QIANRENON, #754) — the SAME D punch + M3 pair the TRS jacks use; the 9 V DC-099 barrel died with the 9 V architecture |
+| `POWER` | **Ø19.5** | 29.2 | APIELE 19 mm **high-round** momentary, stainless. **Unlit**; M19 nut, no screws |
+| `FUSE` | Ø12.0 | 18 | generic 5×20 screw-cap holder, 10 A / 250 V AC; panel nut, no screws |
+| `MIDI_IN` / `MIDI_OUT` | Ø15.1 + 2 × Ø3.2 @ 22.2 | 28.6 | REAN NYS325 (pitch = RS "Mounting Hole Distance 0.874 in"); **IN needs opto-isolation on the board**, not here |
+| `CTRL_1` / `CTRL_2` | **Ø24** + 2 × Ø3.2 diagonal @ 19×24 | 30.4 | **D-series** punch (MEIRIYFA), not a threaded bushing |
+| `USB3_1` / `USB3_2` | 22.5 square, **R8.84** | 28.5 | PENGLIN M24 bulkhead: a round barrel with two flats, **nut-mounted, no screws** — the square cut grips the flats; flange Ø28.5 is the keep-out, not the hole |
 
 The keep-out column is the **nut, bezel or flange a spanner has to clear**, not
 the hole — for the USB coupler that is 6.4 mm wider than its own cutout, and
@@ -270,14 +270,17 @@ across-flats / across-corners pair, giving **R8.836** and only 4.83 mm of straig
 edge — that cutout is much closer to a circle than to a square, which is worth
 knowing before someone "fixes" it.
 
-**The D-series fixings are deliberately NOT cut.** Its two M3 sit on *diagonally
-opposite* corners of the flange, not on a horizontal pair, and no sourced
-coordinates were found. The widely-repeated "24 mm" is provably wrong here: on a
-Ø24 bore it puts the screw centres exactly on the bore edge — the land gate
-reports **−1.60 mm**, i.e. the screw breaks straight into the hole. So the bore
-(sourced) gets cut and the fixings wait for the part in hand; `D_TRS_KEEPOUT`
-already reserves their room so nothing has to move later. Drilling two M3 in an
-assembled chassis is easy; a wrong pair in an 850 mm laser-cut blank is scrap.
+**The D-series fixings ARE cut, on the sourced diagonal.** The two M3 sit on
+*diagonally opposite* corners of the flange, not on a horizontal pair. The
+pattern was sourced 2026-08-18 from the QIANRENON PD coupler's own listing —
+"D-type panel mounting dimensions (19 mm × 24 mm)": hole centres at (±9.5, ∓12)
+about the bore, one per diagonal. That puts each screw centre 15.3 mm from the
+bore centre, 1.7 mm of land clear of the Ø24 bore + M3 radius, so the land gate
+(now measuring the true 2-D distance, not just Δu) passes. The widely-repeated
+flat "24 mm" pitch remains provably wrong — on a Ø24 bore it puts the centres on
+the bore edge. A D shell is point-symmetric about its bore, so a part whose holes
+run the other diagonal mounts by turning it 180°; one cut diagonal fits all of
+them. The same pair serves `PD_IN`, `CTRL_1` and `CTRL_2`.
 
 ### Gates
 
