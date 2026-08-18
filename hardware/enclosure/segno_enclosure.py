@@ -727,6 +727,11 @@ PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the
 # edge fouls the slot. The slot cut ALONE carries the correction (#760): labels,
 # LED pills, screens and the platform stack keep the frozen approved layout.
 PEDAL_AP_DEV = (DEV90 + T) / math.cos(_ra) - DD_LIP
+# The slot grows FORWARD only: the pedal's front lip carries the case screws
+# (the ones that hold the pedal shut), and the approved layout kept ~4mm of
+# open slot in front of the lip for them. Centring the pedal (1.5mm each way)
+# buried the screw line under the plate edge. Rear clearance stays nominal. (#760)
+FSW_FRONT_EXTRA = 2.5 / math.cos(_ra)
 # 7" screen, LED ring and encoder share ONE vertical centre-line (COL_U, defined
 # with the pedal layout below): the gap between pedals 1 and 2.
 # SCREEN_TOP_V is FROZEN at the value the console was built around (the screens,
@@ -878,8 +883,9 @@ def faceplate_holes():
     # --- 10 pedal slots (two rows); a status LED pill above EVERY pedal --------
     for label, u, v in PEDALS:
         cuts.append({"kind": "rect", "u": u - FSW_SLOT_W/2,
-                     "v": v - FSW_SLOT_D/2 + PEDAL_AP_DEV,   # development offset: meet the
-                     "w": FSW_SLOT_W, "h": FSW_SLOT_D, "r": 0.0, "ref": label})  # pedals where the floor puts them (#760)
+                     "v": v - FSW_SLOT_D/2 + PEDAL_AP_DEV - FSW_FRONT_EXTRA,  # development offset:
+                     "w": FSW_SLOT_W, "h": FSW_SLOT_D + FSW_FRONT_EXTRA,        # meet the pedals where the
+                     "r": 0.0, "ref": label})                                   # floor puts them (#760)
         led = _has_led(label)   # (slot cutouts below replace the old per-pedal LED holes;
                                 #  the flag still sets the label offset, unchanged)
         # silkscreen label ABOVE the pedal (rear side); every line is drawn at
