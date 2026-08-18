@@ -226,6 +226,15 @@ pico[PICO[GPIO["CTRL2_TIP"]]] += ctrl2
 
 # ---- J10..J19: footswitches -- 100nF debounce + one 2-pin JST per pedal ------
 sw_nets = {}
+# THE FIRMWARE OWNS HALF OF THIS CIRCUIT. There is no external pull-up: each
+# footswitch is a bare contact to GND with a 100nF cap, and the idle-high level
+# comes from the RP2350's INTERNAL pull-up. Forget to enable it and all ten inputs
+# float with a capacitor on them, which reads as noise, not as "always released".
+#
+# It also sets the timing: the internal pull-up is ~50-80k, so with 100nF the
+# RELEASE edge is an RC of ~5-8 ms while the press is instant (the switch shorts
+# the cap to ground). That asymmetry is why the debounce wants to trigger on the
+# leading edge -- the slow side is the one that does not matter.
 for _i, _name in enumerate(FSW_ORDER):
     n = Net("SW_" + _name)
     pico[PICO[GPIO["SW_" + _name]]] += n
