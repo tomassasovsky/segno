@@ -495,12 +495,11 @@ CP("100uF", "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", ref="C31")[1, 2] += v5, gn
 #                        is powered from J3. They share only GND and 3V3.
 #                            1,17 = 3V3      6,9,14,20,25,30,34,39 = GND
 #   Pi pin 8    = GPIO14 TXD (uart0)        10 = GPIO15 RXD (uart0)
-#   Pi pin 32   = GPIO12 (uart4 TX)         33 = GPIO13   (uart4 RX)
-#                        Firmware wants `dtoverlay=uart4-pi5` -- "Enable uart 4 on
-#                        GPIOs 12-13. Pi 5 only." (raspberrypi/linux overlays
-#                        README). NOT portable to a Pi 4, where GPIO12-13 is uart5.
-#                        This was GPIO4/5 (uart2-pi5) until the N07 NVMe board was
-#                        found sitting on GPIO4 -- see PI_RESERVED.
+#   Pi pin 24   = GPIO8  (uart3 TX)         21 = GPIO9    (uart3 RX)
+#                        Firmware wants `dtoverlay=uart3-pi5` -- "Enable uart 3 on
+#                        GPIOs 8-9. Pi 5 only." (raspberrypi/linux overlays README).
+#                        NOT portable to a Pi 4, where GPIO8-9 is uart4. Mid-header
+#                        on purpose; see PI_RESERVED.
 #   Pi pin 5    = GPIO3  -- NOT the power button. GPIO3 wakes a Pi 4; on a Pi 5 the
 #                           GPIO lives behind RP1 and power-on is the PMIC's job, so
 #                           no GPIO can wake it. The Pi 5's button goes on the J2
@@ -513,20 +512,34 @@ CP("100uF", "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", ref="C31")[1, 2] += v5, gn
 #
 # The link UART sat on pin 7 until this was noticed, which would have been a board
 # that assembles, passes every gate, and cannot talk to its own MCU.
+# ...and the reading is POSITIONAL, so it could be counted from either end of the
+# header. Taken from the near end it is pins 2/4/6 + 7/9; mirrored, it lands on
+# 39/37/35 + 34/32. Both ends are therefore suspect until a meter says otherwise,
+# which is why the link sits in the MIDDLE of the header now rather than at either
+# end -- a choice that is right under both readings and costs nothing.
 PI_RESERVED = {
-    7: "GeeekPi N07 NVMe board (GPIO4)",
+    7: "GeeekPi N07 NVMe board (GPIO4), as observed from the near end",
+    32: "possible N07 contact if the observation is counted from the far end",
+    33: "possible N07 contact if the observation is counted from the far end",
 }
 PI_HDR = {
     1: v3v3, 17: v3v3,
     6: gnd, 9: gnd, 14: gnd, 20: gnd, 25: gnd, 30: gnd, 34: gnd, 39: gnd,
     8: midi_tx, 10: midi_rx,
-    # LINK moved off GPIO4/5 (uart2-pi5) to GPIO12/13, which is `dtoverlay=uart4-pi5`
-    # -- "Enable uart 4 on GPIOs 12-13. Pi 5 only." GPIO5 goes with it: it is the
-    # other half of the pair the N07 sits on, and a peripheral that takes one fan
-    # pin often takes its neighbour. Pins 32/33 are also at the far end of the
-    # header, away from the first six positions everything else crowds into.
-    32: link_rx,    # GPIO12, uart4 TX -> Pico RX  (3V3 -> 3V3, direct)
-    33: link_tx,    # GPIO13, uart4 RX <- Pico TX  (3V3 -> 3V3, direct)
+    # LINK sits MID-HEADER, on `dtoverlay=uart3-pi5` -- "Enable uart 3 on GPIOs 8-9.
+    # Pi 5 only." Physical pins 24 and 21 are positions 11 and 12 of their rows, as
+    # far from both ends as this header gets.
+    #
+    # It has moved twice. GPIO4/5 (uart2) was where the N07 was observed. GPIO12/13
+    # (uart4) dodged that but sits at the FAR end -- and the observation was a count
+    # of positions, which reads the same from either end, so the far end was no safer
+    # than the near one. The middle is safe under both readings.
+    #
+    # GPIO8/9 are SPI0's CE0 and MISO. Nothing here uses SPI0: the screens are USB
+    # and HDMI, the SSD is PCIe, and MIDI and the link are UARTs. If an SPI device
+    # ever lands on this Pi, this is the pair it will want.
+    24: link_rx,    # GPIO8, uart3 TX -> Pico RX  (3V3 -> 3V3, direct)
+    21: link_tx,    # GPIO9, uart3 RX <- Pico TX  (3V3 -> 3V3, direct)
     18: swclk, 22: swdio,
 }
 j_pi = Part("Connector_Generic", "Conn_02x20_Odd_Even",
