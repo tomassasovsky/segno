@@ -469,7 +469,13 @@ REAR_IO_U      = None   # set to SCREEN_16_U below -- the panel is CENTRED ON TH
 # On a panel it lifts out, gets soldered on a bench, and a mis-drilled panel costs
 # a panel. It is NOT a folded face of the base; it needs its own bond -- see
 # docs/design/console-grounding-and-bonding.md.
-REAR_WIN_CLR        = 3.0   # window clearance around the outermost station cutouts
+REAR_WIN_CLR        = 3.0   # window clearance around the outermost station cutouts (v)
+REAR_WIN_SIDE_CLR   = 6.0   # window side padding BEYOND the outermost station KEEP-OUTS
+                            # (u). The window used to clear only the cutouts, which let
+                            # the PD coupler's keep-out poke 0.2 past the opening's edge
+                            # -- the flange visually kissed the window and there was no
+                            # room to offer it up square (user call, 2026-08-18). Sides
+                            # clear what has to PASS (flanges, nuts), not just the holes.
 REAR_WIN_H_MIN      = 46.0  # minimum window height. Derived tight, the opening came
                             # out 30 mm on a 90 mm wall -- a letterbox that makes
                             # every connector a knuckle-scrape to reach and looks
@@ -1004,8 +1010,12 @@ def rear_window():
     to follow the boards (#743). Now the wall opening is whatever the connectors
     need plus REAR_WIN_CLR, and a station that grows drags the window with it."""
     ext = [_feat_extent(f) for f in rear_io_cutouts()]
-    u_lo = min(e[0] for e in ext) - REAR_WIN_CLR
-    u_hi = max(e[1] for e in ext) + REAR_WIN_CLR
+    # u: the opening must pass the station KEEP-OUTS (flanges, nuts), not just the
+    # holes -- the panel mounts from the inside, so every connector's widest part
+    # crosses the window plane. See REAR_WIN_SIDE_CLR.
+    lay = rear_io_layout()
+    u_lo = min(cu - kw/2.0 for cu, kw in lay.values()) - REAR_WIN_SIDE_CLR
+    u_hi = max(cu + kw/2.0 for cu, kw in lay.values()) + REAR_WIN_SIDE_CLR
     z_lo = min(e[2] for e in ext) - REAR_WIN_CLR
     z_hi = max(e[3] for e in ext) + REAR_WIN_CLR
     if z_hi - z_lo < REAR_WIN_H_MIN:            # open it up about the cluster centreline
