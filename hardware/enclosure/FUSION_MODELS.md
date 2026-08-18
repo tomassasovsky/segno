@@ -26,7 +26,7 @@ table, the placement is wrong, not the table.
 | component | populated | VAMP sheet metal |
 |---|---|---|
 | base | `[1,0,0,0 \| 0,1,0,0 \| 0,0,1,0.2]` | `[-1,0,0,84.8 \| 0,0,1,0.2 \| 0,1,0,0]` |
-| faceplate (lid) | `[1,0,0,-0.19 \| 0,c,-s,-1.13191 \| 0,s,c,1.19625]` | `[-1,0,0,84.99 \| 0,s,c,1.19625 \| 0,c,-s,-1.13191]` |
+| faceplate (lid) | `[1,0,0,-0.19 \| 0,c,-s,-1.44377 \| 0,s,c,1.12715]` | `[-1,0,0,84.99 \| 0,s,c,1.12715 \| 0,c,-s,-1.44377]` |
 | rear_panel (inside mount) | `[1,0,0,62.5286 \| 0,0,-1,41.691 \| 0,1,0,4.5]` | `[-1,0,0,22.2714 \| 0,1,0,4.5 \| 0,0,-1,41.691]` |
 | console_board_v4 (KiCad STEP) | `[1,0,0,36.225 \| 0,1,0,38.575 \| 0,0,1,1.7]` | — |
 
@@ -75,11 +75,18 @@ Much simpler than the base — no wrap, two folds, one per call:
 2. Extrude the CUT max-area profile **−0.2** (top face at z=0).
 3. `body.convertToSheetMetal(top_face, rule)` + `activeSheetMetalRule` (same
    T2/R2/K0.33 rule). Note: the rules collection is `design.designSheetMetalRules`.
-4. Fold the LIP: BEND line at y=0.9, `foldFeatures.createInput(stationaryFace)`
-   then `fi.bendLines.add(line, ValueInput(−radians(90−SLOPE_ANGLE)),
-   CenterFoldBendLinePositionType, True)` — NEGATIVE angle folds down.
-5. Fold the LAP: line at y=ffl+FP_V (41.5636), angle −radians(SLOPE+TRANS)
-   (−36.94°). Local bbox after both: (0, 0.5335, −1.7191)..(84.98, 43.685, 0).
+4. Fold the LIP: BEND line at y=ffl (1.21938 since the full-drop lip, #760),
+   `foldFeatures.createInput(stationaryFace)` then `fi.bendLines.add(line,
+   ValueInput(−radians(90−SLOPE_ANGLE)), CenterFoldBendLinePositionType, True)`
+   — NEGATIVE angle folds down.
+5. Fold the LAP: line at y=ffl+FP_V (41.88296), angle −radians(SLOPE+TRANS)
+   (−36.94°). Local bbox after both: (0, 0.7838, −1.7191)..(84.98, 44.0043, 0).
+   The seat translation is SOLVED from the rebuilt comp's measured lip-inner
+   plane (k = c·y − s·z of the higher-k big lip face): t_depth = −0.19108 − k,
+   t_height = (1.212889 + s·(t_depth + 0.2s))/c + 0.2c. The lid's lip tip
+   renders ~0.42 mm below z=0 — Fusion's fold development, not the flat's
+   (ideal development puts the tip exactly at the base bottom); don't fudge
+   the DXF for it.
 6. Appearance "Plastic - Matte (Black)", then transform LAST (see the seat
    above), then guarded snapshot. Setting appearance after the transform
    RESETS the transform.
