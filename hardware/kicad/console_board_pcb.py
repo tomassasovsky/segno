@@ -169,7 +169,9 @@ PLACEMENT = {
     # starts at 84.5 and comes up to y 10.2, so the last two headers would sit on
     # top of it. The corner mounting holes cap the other end the same way.
     "J8":  (18.1, 8.0, 0),
-    "J9":  (23.1, 30.0, 0),        # flying lead to the Pi 5's own J2 button pads         # POWER    -> J2 pin 5 (GPIO3, wakes the Pi)
+    "J9":  (23.1, 30.0, 0),        # flying lead to the Pi 5's own J2 button pads
+                                   # (NOT a header pin -- no GPIO wakes a Pi 5;
+                                   # see PWR_BTN in console_board.py)
     "J5":  (34.0, 8.0, 0),         # MIDI IN  -- 2 leads: DIN pins 4 and 5 only.
                                    # Pin 2 is left OFF at a receiver by MIDI 1.0;
                                    # bonding the shield here would short out the
@@ -273,9 +275,9 @@ FSW_X0, FSW_X1 = 8.0, 92.0     # THE constraint on the board's width. An 84 mm s
                                # row cannot shrink without giving up one connector
                                # per pedal, so a smaller board means a different
                                # bench story, not a tighter layout.
-                               # y 82.5, not 84: the bottom mounting holes reach up
-                               # to y 87.5 and the row is 6.8 mm deep, so at 84 it
-                               # sat 0.1 mm off them.
+                               # y 85 on the 99.5 board: the row's courtyard bottom
+                               # lands at ~88.4 and the corner holes' 6.4 mm pads
+                               # start at 91.3 -- 2.9 mm clear, which DRC checks.
 CAP_Y = 75.0                   # the debounce cap row, one cap directly above its
                                # own switch -- see _place_debounce_caps()
 

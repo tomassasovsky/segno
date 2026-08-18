@@ -186,10 +186,11 @@ pico[37].do_erc = False          # 3V3_EN -- internal pull-up
 # as an unconnected pin, and a wall of expected warnings is how a REAL one gets
 # missed -- so the exemptions are named here rather than tolerated in the log.
 # main_board.py does the same for its unused AHCT gates and MIDI IN's DIN pin 2.
-# GP19 is the only pin left with nothing on it. The other six spares now go to the
-# expansion header J22 rather than being quietly ERC-exempted into thin air -- an
-# unpopulated 2x5 costs a footprint and nothing else, and it is the difference
-# between "add a feature" and "respin the board".
+# GP0/GP1 are the only pins left with nothing on them -- they are row A's far end,
+# where a header would straddle the whole module (see EXPANSION_GPIO below). The
+# other five unused GPIO go to the expansion header J22 rather than being quietly
+# ERC-exempted into thin air -- an unpopulated 2x4 costs a footprint and nothing
+# else, and it is the difference between "add a feature" and "respin the board".
 SPARE_GPIO = (0, 1)
 # All five are row-B pads, so ONE header reaches all of them -- GP0/GP1 are row A
 # (the far end of the module) and would have made J22 straddle the whole thing, so
@@ -652,6 +653,28 @@ def _check(strict_stations=True):
             f"carries {got} -- these are the two ends of one 8-way cable, so a pin "
             "that means different things at each end wires the encoder to the LEDs")
 
+    # ...and nothing on the ring board may pull an encoder line to its 5 V rail.
+    # This is the RESISTIVE version of PICO_LEVELS, and it exists because no other
+    # gate can see the shape: PICO_LEVELS and PI_LEVELS check nets that TOUCH 5 V
+    # directly, and a pull-up bridges two nets through a part, keeping them
+    # separate -- which is exactly the historical failure (ring_board's 10k to 5 V
+    # on GP13/GP14, 1.4 V over the RP2350's 3.6 V absolute maximum). RING_CONTRACT
+    # cannot see it either: adding a pull-up changes no pin's net, so the
+    # positional map stays green. The rail is read off J1 pin 1 rather than named,
+    # so a renamed rail cannot silently retire this check.
+    _ring_comps, _ring_nets = netlist.parse_netlist(RING_NET)
+    _rail = ring_j1["1"]
+    _rail_refs = {r for r, _p in _ring_nets.get(_rail, [])}
+    for _pin in ("6", "7", "8"):              # ENC_A / ENC_B / ENC_SW -> Pico GPIO
+        _sig = ring_j1[_pin]
+        for _ref, _pad in _ring_nets.get(_sig, []):
+            _lib = _ring_comps.get(_ref, ("", "", ""))[0]
+            assert not (_ref in _rail_refs and _lib.startswith("Resistor")), (
+                f"RING_LEVELS: {_ref} on ring_board bridges {_sig} (J1 pin {_pin}) "
+                f"to {_rail} -- a pull-up to the LED rail puts 5 V on a Pico input "
+                "whose absolute maximum is 3.6 V, and no direct-contact gate can "
+                "see a resistive path")
+
     assert len(EXP_PINOUT) == 8 and EXP_PINOUT[:2] == ["+3V3", "+5V"] \
         and EXP_PINOUT[-1] == "GND", (
             "EXPANSION: J22 must keep power on pins 1/2 and ground on pin 8 -- the "
@@ -660,38 +683,6 @@ def _check(strict_stations=True):
         assert EXP_PINOUT[_i - 1] == "GP%d" % _gp, (
             f"EXPANSION: J22 pin {_i} is labelled {EXP_PINOUT[_i - 1]} but wired to "
             f"GP{_gp}")
-
-    # MIDI IN's clamp diode, by pin NAME. Reversed, the 1N4148 sits in parallel
-    # with the opto's LED in the same direction, and its ~0.7 V forward drop shunts
-    # the LED's ~1.4 V: almost no current reaches the phototransistor and MIDI IN is
-    # dead. Nothing else on the board would notice -- ERC sees two connected pins
-    # either way, and DRC sees copper. The trap is that Device:D is numbered K=1,
-    # A=2, so the correct wiring reads backwards in the source.
-    _led_a = {n.name for n in opto[1].nets}      # LED anode, fed via R5 from DIN 4
-    _led_k = {n.name for n in opto[2].nets}      # LED cathode -> DIN 5
-    _clamp_k = {n.name for n in d_clamp["K"].nets}
-    _clamp_a = {n.name for n in d_clamp["A"].nets}
-    assert _clamp_k == _led_a, (
-        f"MIDI_CLAMP: D1's cathode is on {_clamp_k}, expected the opto's LED anode "
-        f"{_led_a} -- a clamp in PARALLEL with the LED shunts it and MIDI IN "
-        "receives nothing")
-    assert _clamp_a == _led_k, (
-        f"MIDI_CLAMP: D1's anode is on {_clamp_a}, expected the opto's LED cathode "
-        f"{_led_k}")
-
-    # Read off the PART, not off the SWD_PADS literal two lines above it. Asserting
-    # against the dict that made the connections is a tautology, and it passed with
-    # SWCLK and SWDIO swapped -- which is the mistake that actually happens, and
-    # which bricks flashing rather than announcing itself.
-    assert pico.footprint.endswith("RaspberryPi_Pico_SMD_HandSolder"), (
-        f"SWD: J1 is on {pico.footprint}, which has no D1/D2/D3 debug pads -- SWD "
-        "would need a header and three flying wires again")
-    for _pad, _want in (("D1", "SWCLK"), ("D2", "GND"), ("D3", "SWDIO")):
-        got = {n.name for n in pico[_pad].nets}
-        assert _want in got, (
-            f"SWD: the module's {_pad} pad carries {got}, expected {_want} -- the "
-            "debug pad order is the module's, not ours, and swapping SWCLK/SWDIO "
-            "leaves a board that cannot be flashed")
 
     # MIDI IN's clamp diode, by pin NAME. Reversed, the 1N4148 sits in parallel
     # with the opto's LED in the same direction, and its ~0.7 V forward drop shunts
@@ -800,8 +791,12 @@ def _check(strict_stations=True):
                 f"PICO_LEVELS: {_name} (pad {_pad}) touches a 5 V rail -- RP2350 IO "
                 "is 3.3 V and its absolute maximum is 3.6 V")
 
-    # nothing may drive the Pi at more than 3V3
-    for n in (link_tx, link_rx, midi_rx, pwr_btn, swclk, swdio):
+    # Nothing over 3V3 on any net the Pi touches -- midi_tx included: it is DRIVEN
+    # by the Pi, and 5 V on it fights the RP1's own output driver just as surely as
+    # it would overdrive an input. DIRECT contact only, deliberately: a resistor to
+    # 5 V keeps the nets separate and passes here, which is why RING_LEVELS above
+    # walks the ring netlist for exactly that shape on the pins it can reach.
+    for n in (link_tx, link_rx, midi_tx, midi_rx, pwr_btn, swclk, swdio):
         assert v5 not in n.nets, (
             f"PI_LEVELS: {n.name} touches a 5 V rail -- Pi GPIO is not 5 V tolerant")
 
@@ -864,6 +859,31 @@ def _selftest():
         a, b = '(ref "J1")\n        (pin "6")', '(ref "J1")\n        (pin "7")'
         text = text.replace(a, "\0").replace(b, a).replace("\0", b)
         RING_NET = os.path.join(tempfile.gettempdir(), "ring_board.selftest.net")
+        with open(RING_NET, "w") as fh:
+            fh.write(text)
+
+    def _ring_pullup():
+        # The RESISTIVE failure: a pull-up re-added on the ring board from its 5 V
+        # rail to an encoder line. No pin's net changes, so RING_CONTRACT stays
+        # green, and the two nets never touch, so PICO_LEVELS does too -- this is
+        # the shape only RING_LEVELS can see. Mutates a COPY, like _ring_order: a
+        # control that edited a pinout held here would only prove the copy exists.
+        global RING_NET
+        text = open(RING_NET).read()
+        comp = ('    (comp\n      (ref "R99")\n      (value "10k")\n'
+                '      (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm'
+                '_P10.16mm_Horizontal")\n'
+                '      (libsource\n        (lib "Device")\n        (part "R"))\n'
+                '      (tstamps "00000000-9999-0000-0000-000000000000"))\n')
+        assert "  (components\n" in text
+        text = text.replace("  (components\n", "  (components\n" + comp, 1)
+        node = ('      (node\n        (ref "R99")\n        (pin "%s")\n'
+                '        (pintype "PASSIVE"))\n')
+        for _net, _pin in (("+5V_LED", "1"), ("ENC_A", "2")):
+            _anchor = '(name "%s")\n      (class "Default")\n' % _net
+            assert _anchor in text
+            text = text.replace(_anchor, _anchor + node % _pin, 1)
+        RING_NET = os.path.join(tempfile.gettempdir(), "ring_board.selftest2.net")
         with open(RING_NET, "w") as fh:
             fh.write(text)
 
@@ -933,6 +953,7 @@ def _selftest():
     case("connector group straddling both pad rows", "PAD_ROW:", _row_straddle)
     case("CTRL off an ADC pin", "PIN_MAP:", _ctrl_off_adc)
     case("ring board reorders its connector", "RING_CONTRACT:", _ring_order)
+    case("ring board pulls an encoder line to 5 V", "RING_LEVELS:", _ring_pullup)
     case("SWCLK and SWDIO swapped on the debug pads", "SWD:", _swd_swap)
     case("a second mounting hole strapped to GND", "CHASSIS_BOND:", _second_bond)
     case("MIDI IN clamp diode reversed", "MIDI_CLAMP:", _clamp_reversed)
