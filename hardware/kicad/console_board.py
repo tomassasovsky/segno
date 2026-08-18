@@ -304,6 +304,24 @@ for _ref, _net in (("J20", ctrl1), ("J21", ctrl2)):
     # resistor exists for -- shorts ring to sleeve and drags the OTHER jack's pot
     # top to ground, so an expression pedal there reads a constant. Two pedals also
     # loaded each other's full scale. Separate resistors, separate nets.
+    # TWO RAILS, ON PURPOSE-ENOUGH. The pot's top comes from the PI's 3V3 (this
+    # whole board's 3V3 does), while the ADC reading it references the PICO's own
+    # rail: "ADC_VREF is the ADC power supply (and reference) voltage, and is
+    # generated on Pico 2 by filtering the 3.3 V supply" (Pico 2 datasheet). So the
+    # measurement is the ratio of two different regulators, which is not ideal.
+    #
+    # It is left alone deliberately. The same datasheet puts an inherent ~30 mV
+    # (~1%) offset on ADC_VREF from its own 200R filter, drifting with temperature
+    # and sample rate, plus SMPS ripple in PFM mode -- so rail mismatch is one error
+    # among several of the same size, and every one of them is absorbed by the
+    # calibration an expression pedal needs anyway (pot travel varies far more).
+    # The 1k below also keeps the top of travel at 3.3 x 10k/11k = ~3.0 V against a
+    # ~3.27 V reference, so the sweep cannot clip at the top whichever rail is high.
+    #
+    # Firmware notes: enable the RP2350's INTERNAL pull-ups (the encoder and these
+    # jacks lose their bias if the Pi is down while the console is up), and consider
+    # driving the module's GPIO23 high to force the SMPS into PWM mode while
+    # sampling, which the datasheet says "can greatly reduce the inherent ripple".
     _ref_net = Net(_ref + "_REF")
     R("1k")[1, 2] += v3v3, _ref_net
     j[2] += _ref_net                           # ring  = pot top, current-limited
