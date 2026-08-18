@@ -474,10 +474,10 @@ BOARD_MOUNT_JSON = os.path.join(HERE, "..", "kicad", "out_console",
 # GeeekPi N07 (B0CWD266XR) is a BOTTOM board on an FPC: it costs height, not
 # footprint. The official Active Cooler is ~10 above the PCB, so the USB-A stack
 # still sets the number.
-PI_N07_H    = 11.6            # N07 PCB 1.6 + the standoffs that lift the Pi over
-                              # its 2280 SSD
+PI_N07_H    = 7.6             # what sits between the riser top and the Pi: the N07
+                              # PCB (1.6) + the 6 mm male/female extender that
+                              # threads into the riser through it
 PI_TALLEST  = 16.0            # USB-A double stack above the Pi PCB
-PI_STACK_H  = STANDOFF_H + PI_N07_H + 1.6 + PI_TALLEST
 BOARD_STACK_H = 16.0          # PCB + the tallest thing on it (Pro Micro on its
                               # header, JST shrouds). Same 16 the 3D render
                               # blocks it out at. #743 made this load-bearing:
@@ -537,7 +537,12 @@ REAR_IO_Z   = REAR_WALL_H / 2.0       # connector cluster centreline up the rear
 # screen (see pi_mount) took away the second reason -- it no longer has to clear
 # the main board either. So it drops to the SAME plain M2.5 standoffs the board
 # uses: one fastener kind instead of two, a lower stack, and more air over it.
-PI_RISER_H  = STANDOFF_H
+# The Pi does NOT ride the same 15 mm standoff as the board. Its stack is
+# 12 mm standoff -> N07 NVMe board -> 6 mm male/female extender -> Pi, so the first
+# standoff is 12 and the Pi PCB ends up 12 + 1.6 + 6 = 19.6 above the plate. It was
+# tied to STANDOFF_H when the N07 was a guess; it is a bought part now.
+PI_RISER_H  = 12.0
+PI_STACK_H  = PI_RISER_H + PI_N07_H + 1.6 + PI_TALLEST   # plate -> tallest on the Pi
 SLOPE_DROP  = H_REAR - H_FRONT
 L_SLOPE     = math.hypot(FACE_RUN, SLOPE_DROP)            # Top-plate sloped length
 SLOPE_ANGLE = math.degrees(math.atan2(SLOPE_DROP, FACE_RUN))
@@ -1533,18 +1538,40 @@ REAR_CONN_DEPTH = 45.0
 # (u 300) and the 7" screen (u 42..196) are all to the left, and only the 16" screen
 # is overhead. Rotated, the port edge faces -u and the runs are straight. It also
 # drops the depth from 85 to 56, which buys back rear-bay clearance.
+# The Pi is ROTATED so its 40-pin header runs along DEPTH, on the board-facing
+# edge. That is what makes the ribbon a straight shot: J2 sits on the console
+# board's +u edge with its pins running along v, so the Pi's header has to run
+# along v too, or the cable leaves one connector and turns 90 deg to reach the
+# other. The script used to have the 85 mm axis along u, which is a quarter turn
+# from that -- caught by eye in the Fusion assembly, not by a gate.
+#
+#   u: 56 mm across, holes 49 apart, symmetric (3.5 in from each long edge)
+#   v: 85 mm along,  holes 58 apart, NOT symmetric -- 3.5 from one end, 23.5 from
+#      the other, so the hole pattern sits 10 mm toward the SD-card end
+PI_HDR_LEN   = 50.8           # 2x20 on 0.1in
+PI_HDR_V_OFF = 32.5           # header centre from the Pi's 3.5 mm hole end -- which
+                              # is also where the hole pattern centres, so aligning
+                              # the header to J2 aligns the hole pattern with it
+PI_PCB_U0    = 622.5          # board-facing long edge: sets the ribbon run (below)
+PI_HDR_V     = 281.75         # header centre in v == J2's centre in v, so the two
+                              # connectors face each other square across the gap
+
+
 def pi_mount():
     bd = D - 2*T
-    # Beside the console board, not centred under the screen: the ribbon between
-    # them is the shortest cable in the box now.
-    return (620.0, bd - 106.0, (PI_HOLES[0], PI_HOLES[1]))          # 58 across u, 49 along depth
+    # Hole-pattern centre. u: midway between holes 3.5 in from each 56 mm edge.
+    # v: the pattern centres on PI_HDR_V by construction (see PI_HDR_V_OFF).
+    return (PI_PCB_U0 + 28.0, PI_HDR_V, (PI_HOLES[1], PI_HOLES[0]))  # 49 across u, 58 along v
 
 def pi_pcb_extent():
-    """PCB footprint (u_lo, u_hi, v_lo, v_hi) for the ROTATED Pi. The hole pattern
-    is not centred on the board: along the 85 mm axis it sits 10 mm toward the SD
-    edge, so the USB-A edge is 52.5 out and the SD edge 32.5."""
+    """PCB footprint (u_lo, u_hi, v_lo, v_hi) for the ROTATED Pi.
+
+    85 mm along v, 56 mm across u. The hole pattern is not centred along the 85 mm
+    axis: 3.5 mm from one end and 23.5 from the other, i.e. 10 mm toward the SD
+    edge, so the PCB reaches 32.5 one way and 52.5 the other from the hole centre.
+    """
     u, v, _ = pi_mount()
-    return (u - 52.5, u + 32.5, v - 28.0, v + 28.0)                  # USB-A edge at -u
+    return (u - 28.0, u + 28.0, v - 32.5, v + 52.5)                  # SD edge at -v
 
 # External 5V buck: eleUniverse 8-36V -> 5V 10A 50W IP67 potted brick (Amazon
 # B0GGHN97TK; envelope 63.8 x 57.7 x 22.1 incl. mounting ears, 116 g, passive
