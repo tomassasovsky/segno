@@ -233,11 +233,12 @@ RING_FLOOR = 1.6 + 0.443  # front-row ring floor (+#760 reseat recal). The mid r
 # wall gets a full-height vertical CHANNEL the boss slides down at drop-in --
 # it also guides the pedal into the pad pocket.
 SKIRT_SETBACK = 0.4           # wall inner face tucked behind the slot cut line
-SKIRT_GAP    = 0.3            # wall top to the REAL faceplate underside. Small on
-                              # purpose: reads as no gap through the reveal, while
-                              # still keeping the lid seated on its flanges, not on
-                              # ten printed towers (drift calibrated to ~0.05; if a
-                              # tub buzzes on hardware, add felt tape to its top)
+SKIRT_GAP    = 0.0            # wall top FLUSH on the REAL faceplate underside
+                              # (user call 2026-08-18, #760: the 0.3 standoff read
+                              # as a visible gap). Risk accepted: an FDM-proud
+                              # tower can lift the lid off its flange seats -- if
+                              # assembly rocks on hardware, restore 0.3 here (or
+                              # sand the tub tops).
 # Like POST_FACEDRIFT: the assembled faceplate seats ABOVE lid_top_z's bare
 # slope, and by a row-dependent amount -- measured in "Segno console (populated)"
 # (the manufacturing source of truth) 2026-07-28: +1.6 over row 1, +0.7 over
