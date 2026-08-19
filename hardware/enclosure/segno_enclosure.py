@@ -3166,13 +3166,19 @@ def build_screen7_cradle_steps():
     import cadquery as cq
     fw, fh, ft = S7C_FRAME_W, S7C_FRAME_H, S7C_FRAME_T
     x0, y0, x1, y1 = S7C_MOD_BB
-    mcx, mcy = (x0 + x1) / 2.0, (y0 + y1) / 2.0     # module body centre
+    # BACK-VIEW coordinates: the frame faces the module FROM BEHIND, so its
+    # build x is the MIRROR of the screen-front x (caught 2026-08-19 while
+    # assembling in Fusion: with the asymmetric hole pattern, a front-view
+    # build cannot be rotated into place -- only mirrored, which no physical
+    # flip provides). x_back = -x_front throughout.
+    mcx, mcy = -(x0 + x1) / 2.0, (y0 + y1) / 2.0    # module body centre (back view)
     frame = cq.Workplane("XY").center(mcx, mcy).rect(fw, fh).extrude(ft)
     frame = frame.cut(cq.Workplane("XY").center(mcx, mcy)
                       .rect(S7C_WIN_W, S7C_WIN_H).extrude(ft))
     # tab bosses: rise from the frame front (z=0) to the tab back plane
     boss_h = S7C_MOD_DEPTH + S7C_GAP - (S7C_GLASS_TO_TABF + S7C_TAB_T)
-    for (hx, hy) in S7C_HOLES:
+    for (fhx, hy) in S7C_HOLES:
+        hx = -fhx                                    # mirror to back view
         frame = frame.union(cq.Workplane("XY").center(hx, hy)
                             .circle(4.5).extrude(-boss_h))
         # O4.0 x 5 heat-set counterbore, then O2.6 self-tap pilot the rest
