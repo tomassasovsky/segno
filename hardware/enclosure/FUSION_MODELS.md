@@ -58,10 +58,10 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   edges, and the rear lap resting ON the transition — total faceplate∩base
   boolean ≈ 0.008 cm³ of contact films. Verify with TemporaryBRep intersection
   volumes per lump, never bboxes (all Fusion bboxes here are loose hulls).
-- **The lid stack moves together**: faceplate, ring_disc, screen_bracket (both
-  docs), plus in populated screen_16in/7in, encoder, led_strips, texts,
-  segno_logo, the pill diffusers. If the faceplate moves, every one of these
-  gets the same delta.
+- **The lid stack moves together**: faceplate, ring_disc (both docs), plus in
+  populated screen_16in/7in, encoder, led_strips, texts, segno_logo, the pill
+  diffusers. If the faceplate moves, every one of these gets the same delta.
+  (screen_bracket is GONE — screens bond to the shell, part deleted in #760.)
 - **FRONT_WALL_KNUCKLE_TRIM**: both base comps carry a cut (sketch of that
   name, offset plane at local z=0.8094) matching the generator's shortened
   front flap — the wall's square top corner cannot clear the lip-fold roll

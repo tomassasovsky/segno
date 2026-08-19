@@ -14,7 +14,7 @@ Construction (see ../segno_enclosure_design.md and
   - front wall (12) + top flange (ledge)    - faceplate pan (sloped top, all cutouts)
   - rear wall (100) + I/O + vents + flange    + down-turned front/side/rear skirts
   - 2x side panel + top flange (ledge)        (lid screws on the SKIRTS, not the top)
-  - bottom plate (folded, vented, Pi/board) - 2x screen-retention bracket
+  - bottom plate (folded, vented, Pi/board)   (screens are BONDED, no brackets)
   - 10x inner pedal platform (3D printed)
 
 Foot controls = ten Cherub WTB-006 footswitches (109.87x76.35, 29.3 mm tall with
@@ -1925,7 +1925,10 @@ def _emit(msp, feats, ox=0.0, oy=0.0):
         if f["kind"] == "circle":
             _circle(msp, x, y, f["d"], layer)
         elif f["kind"] == "ring":
-            _circle(msp, x, y, f["od"], layer); _circle(msp, x, y, f["id"], layer)
+            # only the OD is a real cut: the ID/shaft geometry belongs to the
+            # ring_disc part (its own DXF) -- emitting the ID here put a scrap
+            # circle inside the aperture (2 wasted laser pierces, #760 audit)
+            _circle(msp, x, y, f["od"], layer)
         elif f["kind"] == "rect":
             r = f.get("r", 0.0 if layer in ("ENGRAVE",) else R_FILLET)
             _rrect(msp, x, y, f["w"], f["h"], r=r, layer=layer)
@@ -1962,7 +1965,10 @@ def dxf_faceplate(path):
     _poly(msp, [(0, yr0), (LW, yr0)], "BEND", closed=False)                # rear lap fold (FULL width)
 
     cuts, _engr = faceplate_holes()                   # canonical layout, 7" left
-    _emit(msp, cuts, ox=ox, oy=ffl)
+    # the ENCODER shaft hole lives in the ring_disc part, not this plate -- the
+    # entry stays in faceplate_holes() for the renders/assembly, but cutting it
+    # here would just pierce scrap inside the RING aperture (#760 audit)
+    _emit(msp, [c for c in cuts if c.get("ref") != "ENCODER"], ox=ox, oy=ffl)
     # legends are NOT silkscreened on the metal -- they live on a printed adhesive overlay
     # (dxf_overlay / segno_overlay). Keeps the metal a plain cut+bend+powder part (cheap).
     for u in FRONT_SCREW_U:
@@ -2228,22 +2234,8 @@ def dxf_rear_panel(path):
           "NOTE")
     doc.saveas(path); return {}
 
-def dxf_screen_bracket(path):
-    """Rear clamp bracket that retains a bezel monitor from behind (qty per
-    screen). Simple L: a face that PEMs to the shell + a return that the monitor
-    clamps against. Two sizes noted."""
-    doc = _doc(); msp = doc.modelspace()
-    bl, bh = 60.0, 30.0
-    bf = 24.0                       # PEM flange depth: M4 clinch ring sits >=9mm from the bend
-    _poly(msp, [(0, -bf), (bl, -bf), (bl, bh), (0, bh)], "CUT")
-    _poly(msp, [(0, 0), (bl, 0)], "BEND", closed=False)
-    for x in (15, bl-15):
-        _circle(msp, x, -bf/2.0, PEM_M4)
-        _circle(msp, x, -bf/2.0, MASK_PEM_D, "MASK")   # keep the M4 thread bare
-        _circle(msp, x, bh/2.0, D_M4)
-    _text(msp, 5, bh+6, 6, "Segno SCREEN BRACKET  2.0mm  x4 (16in) + x4 (7in)", "NOTE")
-    _text(msp, 5, bh+14, 5, "MASK (rojo / no pintar): 2x rosca PEM M4", "MASK")
-    doc.saveas(path); return {}
+# screen_bracket REMOVED (#760): the screens are bonded to the shell; the
+# bracket fallback was dropped entirely (user call 2026-08-18).
 
 def dxf_post(path):
     """Base-anchored faceplate support post (issue #292), x2: a folded C -- foot
@@ -3193,9 +3185,8 @@ PAINT_FINISH = "Negro texturado mate (RAL 9005) - a confirmar contra cupon de mu
 
 # dxf stem, label (ES), qty per unit, material, remark (ES).
 # segno_overlay is a printed adhesive graphic, NOT metal -- it is never painted.
-# segno_screen_bracket is NOT here: the screens are bonded to the shell instead of
-# clamped, so the brackets are never manufactured (they stay in DXF_PARTS as the
-# fallback if bonding is abandoned).
+# There is no screen bracket part: the screens are bonded to the shell. The
+# bracket fallback was deleted outright in the #760 audit (user call 2026-08-18).
 PAINT_BOM = [
     ("segno_base",               "Cuerpo: piso + frente + laterales + trasera", 1, AL_2MM, "Pieza mas grande"),
     ("segno_faceplate",          "Tapa superior (faceplate)",                   1, AL_2MM, "Cara vista principal"),
@@ -3589,7 +3580,6 @@ DXF_PARTS = [
     ("segno_overlay",          dxf_overlay),  # printed adhesive top-plate graphic (replaces silkscreen)
     ("segno_base",             dxf_base),     # bottom + front/rear/side walls, ONE folded blank
     ("segno_rear_panel",       dxf_rear_panel),  # dismountable I/O panel (#751)
-    ("segno_screen_bracket",   dxf_screen_bracket),
     ("segno_ring_disc",        dxf_ring_disc),                        # LED-ring centre disc
     ("segno_corner_bracket_rear",  lambda p: dxf_corner_bracket(p, CORNER_HT, CORNER_ZR_WALL, CORNER_ZR_SIDE, "REAR x2")),
     ("segno_post",             dxf_post),  # base-anchored faceplate support post x2 (issue #292)
@@ -3616,7 +3606,7 @@ def build_quote_packages():
     sheet = [n for n, _ in DXF_PARTS]
     pack("segno_sheetmetal.zip", sheet, (".dxf", ".pdf"))
     pack("segno_sheetmetal_step.zip",
-         ["segno_assembly", "segno_base", "segno_faceplate", "segno_screen_bracket",
+         ["segno_assembly", "segno_base", "segno_faceplate",
           "segno_corner_bracket_rear", "segno_ring_disc",
           "segno_post"],
          (".step",))
