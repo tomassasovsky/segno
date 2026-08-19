@@ -368,8 +368,11 @@ LED_INS_FL_T  = 1.5       # shoulder thickness
 LED_INS_POCKET = (6.0, 6.0, 0.8)  # LED nest recess in the shoulder's back face
 D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
                      # the vendor STEP shows the thread OD needs the 0.2, #762)
-RING_OD   = 58.0     # diffused-annulus ring window OD (12 THT LEDs behind)
-RING_ID   = 40.0     # ring window ID
+RING_OD   = 44.0     # diffused-annulus ring window OD -- sized over the Adafruit
+RING_ID   = 33.0     # NeoPixel Ring 16 (44.5/31.7, LEDs on r~19), which is and
+                     # always was the ring hardware, mounted ON the ring board
+                     # around the EC11. (The old 58/40 window and its '12 THT
+                     # LEDs' note were wrong -- user correction 2026-08-19.)
 N_IND     = 10       # indicator LED pills -- ALL 10 pedals (issue #366). Firmware
                      # chain contract is still indicatorLeds[7]; widening it to 10
                      # is an open firmware change, flagged on the issue.
@@ -3102,11 +3105,10 @@ def build_ring_diffuser_step():
     - the aluminium RING DISC (O40 x 2) drops into a front-side pocket inside
       the lens bore and sits FLUSH with the faceplate top; the EC11 clamps it
       (bushing through the disc's O7, nut on top under the knob);
-    - a full BACK PLATE extends past the window to O72 -- the exposed front
-      ring (r 29..36) is the CA-GLUE land against the faceplate underside;
-    - the NeoPixel Ring 16 nests in the back-face recess (authentic Adafruit
-      44.5 OD -- verify before printing, clones run 68+), glowing through a
-      0.8 mm web under the lens.
+    - a full BACK PLATE extends past the window to O58 -- the exposed front
+      ring (r 22.3..29) is the CA-GLUE land against the faceplate underside;
+    The NeoPixel Ring 16 is MOUNTED ON THE RING BOARD around the EC11 (as
+    built) -- no nest here; its LEDs shine up through the 0.8 mm web.
     z=0 is the faceplate-underside/glue plane."""
     import cadquery as cq
     ro = (RING_OD - LED_INS_CLR) / 2.0
@@ -3115,13 +3117,13 @@ def build_ring_diffuser_step():
     lens = (cq.Workplane("XY").circle(ro).circle(ri)
             .extrude(T + LED_INS_PROUD))
     lens = lens.edges(">Z").chamfer(0.3)
-    ins = lens.union(cq.Workplane("XY").circle(36.0).circle(17.0)
+    ins = lens.union(cq.Workplane("XY").circle(29.0).circle(14.0)
                      .extrude(-plate_t))
-    # disc lip + pocket: the disc rests on the r17..20.15 lip at z=0, flush
-    # with the sheet top when glued (disc top = T)
-    # NeoPixel Ring 16 nest: annular recess in the back face, 0.8 web remains
+    # disc lip: the disc rests on the inner lip at z=0, flush with the sheet
+    # top when glued (disc top = T). Thin the web over the LED circle so the
+    # board-mounted ring glows through 0.8 mm of white PLA.
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
-                  .circle(23.0).circle(16.0).extrude(1.2))
+                  .circle(22.5).circle(16.0).extrude(plate_t - 0.8))
     step = os.path.join(OUT, "segno_ring_diffuser.step")
     cq.exporters.export(ins.val(), step)
     cq.exporters.export(ins.val(), os.path.join(OUT, "segno_ring_diffuser.stl"))
