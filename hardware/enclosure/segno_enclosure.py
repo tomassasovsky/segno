@@ -302,18 +302,22 @@ SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 # compliance call: felt absorbs the height tolerance, the leg slots absorb the
 # rest). The screens do NOT lift with the lid on this scheme: service = lift the
 # lid, screens + cables stay put.
-# All 7"-cradle geometry is ACTIVE-AREA-CENTRED (the aperture centres on the
-# viewport, so the viewport centre is the origin). Source of truth: the vendor
-# STEP ("lcd 7inch cap 1024 600.stp", user-supplied 2026-08-19), cross-checked
-# against the user's calipers (L4.3/R7.3, B21.8/T16.3 -- both agree the module
-# body sits +1.5/-2.75 off the viewport centre; the module is 166.1 x 124.3
-# over-all, NOT the sheet's 99 tall -- the PCB hangs below the glass).
-# The four M3 mounting TABS (O3.1, 1.7 mm thick) live 6.7 mm BEHIND the glass
-# front, protruding above/below the glass -- screws come from the module's
-# front side, straight into bosses that rise from the frame to the tab plane.
-S7C_HOLES = ((-77.53, 54.75), (79.58, 54.75),
-             (-77.53, -60.25), (79.58, -60.25))   # tab holes, active-centred
-S7C_MOD_BB   = (-81.53, -64.90, 84.53, 59.40)     # module outline, active-centred
+# All 7"-cradle geometry is DISPLAY-WINDOW-CENTRED. Source of truth: the vendor
+# STEP ("lcd 7inch cap 1024 600.stp", user-supplied 2026-08-19). The model's
+# front face decomposes into the cover GLASS (164 x 100.1, centred on the
+# model origin -- the datasheet's "164x99" was the glass, not the module) and
+# a CLEAR DISPLAY WINDOW of 154.5 x 89.1 centred at model (-1.75, +2.5): that
+# window is the hard optical boundary, so the aperture centres on IT and it is
+# the origin here. STEP-derived window-to-module-edge margins L3.55 / R8.0 /
+# B22.6 / T12.6 (user calipers said L4.3/R7.3/B21.8/T16.3 -- top differs by
+# 3.7 mm; the powered-screen FIT TEST is the final referee on where the lit
+# pixels sit inside the window). Module body over-all: 166.1 x 124.3 (the PCB
+# hangs ~22 below the glass). The four M3 TABS (O3.1, 1.7 thick) live 6.7
+# BEHIND the glass front, protruding above/below the glass -- screws come from
+# the module's front side into bosses that rise to the tab plane.
+S7C_HOLES = ((-76.80, 52.50), (80.30, 52.50),
+             (-76.80, -62.50), (80.30, -62.50))   # tab holes, window-centred
+S7C_MOD_BB   = (-80.80, -67.15, 85.25, 57.15)     # module outline, window-centred
 S7C_TAB_T    = 1.7     # tab thickness
 S7C_GLASS_TO_TABF = 6.7   # glass front -> tab FRONT face
 S7C_MOD_DEPTH = 14.8      # glass front -> module back (PCB) plane
