@@ -3233,6 +3233,15 @@ def build_screen7_tower_step():
                   .center(mcx + sx * W / 2.0, cy_w).rect(3 * wall, 40.0)
                   .extrude(26.0))
         tower = tower.cut(cutter)
+    # RING-BOARD CLEARANCE NOTCH (#762): the populated 60x60 ring/encoder board
+    # hangs over the tower's front rim with its under-side pins -- the real
+    # board came within 1.7 mm of the wall top. Drop the front wall/rim centre
+    # (70 wide, x-centred on the ring axis = the window centre) to 30 mm so the
+    # board passes with >=6 mm of air. The front tab bosses sit outside this
+    # span; their corbels are untouched.
+    notch = (cq.Workplane("XY").workplane(offset=30.0)
+             .center(0.0, -64.0).rect(70.0, 32.0).extrude(80.0))
+    tower = tower.cut(notch)
     # tab bosses + heat-set counterbores + pilots (front-view positions)
     for (hx, hy) in S7C_HOLES:
         tower = tower.union(wp().center(hx, hy).circle(4.5).extrude(boss_h))
