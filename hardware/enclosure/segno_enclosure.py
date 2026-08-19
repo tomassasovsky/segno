@@ -1834,7 +1834,11 @@ def _bottom_vents():
 # the box to lengthen -- so wherever the board goes, CTRL_1/CTRL_2 (and the rest
 # of the five stations) go with it. A reshuffle that parks the CTRL jacks away
 # from the board's end of the cluster buys hum on an expression pedal.
-BOARD_U = 512.0
+BOARD_U = 560.0   # +48 from 512 (user call 2026-08-19: centre the cluster under
+                  # the 16" screen). Electrically BETTER, not worse: CTRL_1/2 sit
+                  # at u 662/706, so this SHORTENS the unshielded analog runs by
+                  # 48; the Pi (622..678) caps further travel at a 12.5 gap.
+                  # Also widens the 15.6-stand left tower strip to ~93.
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
     return [("CONSOLE_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
@@ -3257,8 +3261,8 @@ def build_screen16_stand_steps():
         return t, anchors
 
     SPLICE = 600.0
-    lt, la = tower(419.0, 459.0, 0)   # strip: platform_mid edge 417 | PCB edge 462
-    left = lt.union(deck_half(419.0, SPLICE, +1))
+    lt, la = tower(460.0, 500.0, -1)  # strip: platform_mid 417 | board PCB now 510
+    left = lt.union(deck_half(460.0, SPLICE, +1))
     rt, ra = tower(745.0, 785.0, -1)
     right = rt.union(deck_half(SPLICE, 785.0, -1))
 
