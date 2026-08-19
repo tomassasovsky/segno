@@ -1893,7 +1893,11 @@ PI_HDR_LEN   = 50.8           # 2x20 on 0.1in
 PI_HDR_V_OFF = 32.5           # header centre from the Pi's 3.5 mm hole end -- which
                               # is also where the hole pattern centres, so aligning
                               # the header to J2 aligns the hole pattern with it
-PI_PCB_U0    = 622.5          # board-facing long edge: sets the ribbon run (below)
+PI_PCB_U0    = 670.5          # board-facing long edge: sets the ribbon run (below).
+                              # +48 with BOARD_U (user call 2026-08-19): the PAIR
+                              # moves together so the 10 cm ribbon keeps its
+                              # designed ~60 mm hop and the cluster centres under
+                              # the 16" screen (centre 618 vs 625).
 PI_HDR_V     = 281.75         # header centre in v == J2's centre in v, so the two
                               # connectors face each other square across the gap
 
