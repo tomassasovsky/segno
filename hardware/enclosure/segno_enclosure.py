@@ -92,7 +92,8 @@ LID_SIDE_LIP = 16.0  # inward lip at the bottom of each lid side wall (screws to
 # Lid -> body fixing scheme:
 #   FRONT  : the Top plate's front lip screws horizontally into the Front panel.
 #   REAR   : the Top plate's rear edge laps onto the angled TRANSITION SURFACE and
-#            screws straight down into PEM nuts there (no fixing on the Rear panel).
+#            screws straight down into hand-tapped M3 holes there (no fixing on the
+#            Rear panel). Same joint as the front lip: ONE tap, ONE screw SKU.
 #   SIDES  : the Top plate has down-turned WINGS that tuck INSIDE the Side panels
 #            for repeatable lateral alignment (locating only, no screws).
 
@@ -569,13 +570,15 @@ FOOT_INSET_Y = 45.0  # from front and rear
 D_M3      = 3.2      # M3 clearance (Pi/board standoffs)
 D_M2      = 2.4      # M2 clearance (external buck standoffs)
 D_M4      = 4.3      # M4 clearance (bottom plate -> shell)
-PEM_M4    = 6.3      # PEM M4 clinch hole (DISTINCT from M4 clearance)
+# The whole lid fixes with ONE screw SKU: M3 into hand-tapped Ø2.5 pilots (front
+# lip AND rear lap seam -- user call 2026-08-18, no clinch nuts anywhere). Taps
+# are cut AFTER powder-coat, so no thread masking is needed.
 # --- powder-coat masking (annotation only; issue #396) ---
-# PEMs are clinched BEFORE the coating line, so the thread has to be plugged. The
-# earth stud needs a bare land on both faces or the ring terminal bonds to paint.
-MASK_PEM_D = 12.0    # silicone plug / masking disc over an M4 clinch thread
+# The earth stud needs a bare land on both faces or the ring terminal bonds to paint.
 MASK_GND_D = 20.0    # bare bonding land around the M6 earth stud
-PEM_EDGE  = 8.0      # min PEM centre-to-edge distance
+PEM_EDGE  = 8.0      # min centre-to-edge distance (named for the retired PEM
+                     # scheme; KEPT as the seam-row solver input so the 9 hole
+                     # stations stay exactly where every doc and model has them)
 R_FILLET  = 3.0      # inside corner radius on rectangular cutouts
 
 # ===========================================================================
@@ -681,19 +684,20 @@ HT_FLAT   = (D_WALL - RIDGE_CLEAR) - DD_TR      # transition flange, developed f
                                                 # development stretches the facet)
 D_FL_TIP  = D_WALL - (HT_FLAT + DD_TR)          # flange tip (= RIDGE_CLEAR)
 D_LAP_TIP = D_WALL - KNUCKLE_CLEAR              # lap tip: clear of the wall knuckle
-# screw row: centred on the lap/flange overlap, pushed down-facet if needed so
-# the PEM keeps its edge distance from the flange tip
+# screw row: centred on the lap/flange overlap, pushed down-facet if needed to
+# keep PEM_EDGE from the flange tip (solved for the retired PEM scheme; frozen --
+# generous for a tapped hole, and every model carries these stations)
 D_SEAM_SCREW = max((D_FL_TIP + D_LAP_TIP) / 2.0, D_FL_TIP + PEM_EDGE)
 LID_REAR_LAP = D_LAP_TIP - DD_LAP               # lap developed flat length
 LRL = LID_REAR_LAP
-SEAM_M4_V  = LID_FRONT_FL + FP_V + (D_SEAM_SCREW - DD_LAP)     # lap M4 row (lid flat v)
-SEAM_PEM_V = HR_FLAT + (D_WALL - D_SEAM_SCREW) - DD_TR         # flange PEM row (base
+SEAM_LAP_V = LID_FRONT_FL + FP_V + (D_SEAM_SCREW - DD_LAP)     # lap screw row (lid flat v)
+SEAM_TAP_V = HR_FLAT + (D_WALL - D_SEAM_SCREW) - DD_TR         # flange tap-pilot row (base
                                                                # flat, from the rear
                                                                # wall bend line)
 # hard DFM guards: a parameter tweak must not silently collapse the lap/flange
 # overlap or push the screw row off the lap (holes in air pass no other check)
 assert HR_FLAT > 0 and LID_REAR_LAP > 0, "seam solver: degenerate rear seam"
-assert D_FL_TIP + PEM_EDGE <= D_SEAM_SCREW <= D_LAP_TIP - (D_M4 / 2.0 + 2.0), (
+assert D_FL_TIP + PEM_EDGE <= D_SEAM_SCREW <= D_LAP_TIP - (3.4 / 2.0 + 2.0), (
     f"seam screw row d={D_SEAM_SCREW:.2f} outside the lap/flange overlap "
     f"[{D_FL_TIP:.2f}, {D_LAP_TIP:.2f}] with edge margins")
 assert HR_FLAT > max(CORNER_ZR_WALL) + T + 2.0, (
@@ -1951,7 +1955,7 @@ def _mirror_u(feats, width):
 def dxf_faceplate(path):
     """REMOVABLE LID (top plate), developed flat = a simple rectangle: the sloped top
     plate (all cutouts) + a down-turned FRONT LIP (screws into the front wall) + a REAR LAP
-    (folds onto the transition shoulder, screws DOWN into PEMs). The SIDES are on the base;
+    (folds onto the transition shoulder, screws DOWN into tapped M3 holes). The SIDES are on the base;
     the lid drops in and rests on the side-wall top edges. NOTE: the front-lip hole sits
     close to the fold (12mm front) -- laser + tap after bending (see H_FRONT)."""
     doc = _doc(); msp = doc.modelspace()
@@ -1977,9 +1981,10 @@ def dxf_faceplate(path):
         # the fold line = station - DD_LIP. The old ffl/2 sat 0.74 high. (#760)
         _circle(msp, ox + u, ffl - ((_cfy - (H_FRONT - DEV90) / 2.0 - DEV90) - DD_LIP), 3.4)  # M3 clearance
     for u in FRONT_SCREW_U:
-        _circle(msp, ox + u, SEAM_M4_V, D_M4)                             # rear lap -> transition: SAME 9
+        _circle(msp, ox + u, SEAM_LAP_V, 3.4)                             # rear lap -> transition: SAME 9
                                                                           # stations as the front lip (#760),
-                                                                          # concentric with the flange PEM row
+                                                                          # Ø3.4 M3 clearance, concentric
+                                                                          # with the flange tap pilots
     _text(msp, 10, yr1+8, 8, f"Segno LID  2.0mm  x1  top plate + front lip + rear lap (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}deg); rests on the base side walls; no top screws; legends on printed OVERLAY (see segno_overlay); FOLD with the DRAWN side as the OUTSIDE face (canonical mirror: encoder lands on the player's LEFT)", "NOTE")
     doc.saveas(path)
     return {"blank": (LW, yr1)}
@@ -2157,7 +2162,7 @@ def dxf_base(path):
     _text(msp, POST_U[0]-24, _POST_FOOT_VP + 8, 5,
           "SUPPORT POST feet x2 (M4; issue #292)", "NOTE")
 
-    # ---- front wall: lid front-lip screws | rear wall: I/O + transition PEM --------
+    # ---- front wall: lid front-lip screws | rear wall: I/O + transition taps ------
     for u in FRONT_SCREW_U:
         _circle(msp, u, -_fscrew_flat, 2.5)                            # front-lip screws: Ø2.5 M3
                                                                        # TAP PILOT (hand-tap M3; the
@@ -2167,15 +2172,16 @@ def dxf_base(path):
         c["v"] = BD + c["v"]                                           # rear z -> depth on the flap
     _emit(msp, io)
     for u in FRONT_SCREW_U:
-        _circle(msp, u, BD + SEAM_PEM_V, PEM_M4)                       # lid-lap PEM on the transition:
-                                                                       # SAME 9 stations as the front (#760)
-        _circle(msp, u, BD + SEAM_PEM_V, MASK_PEM_D, "MASK")           # keep the M4 thread bare
+        _circle(msp, u, BD + SEAM_TAP_V, 2.5)                          # lid-lap screws on the transition:
+                                                                       # Ø2.5 M3 TAP PILOT (hand-tap, same
+                                                                       # tool + screw as the front lip; taps
+                                                                       # cut after paint so no masking; #760)
     for c in io:                                                       # bonding land: paint is an
         if c.get("ref") == "EARTH_STUD":                               # insulator, so the ring
             _circle(msp, c["u"], c["v"], MASK_GND_D, "MASK")           # terminal needs bare metal
     _text(msp, 8, BD+Hr+Ht+22, 7,
-          "MASK (rojo / no pintar): 3x rosca PEM M4 en la transicion + "
-          "zona de masa alrededor del perno M6 (ambas caras)", "MASK")
+          "MASK (rojo / no pintar): zona de masa alrededor del perno M6 "
+          "(ambas caras). Los pilotos de rosca se roscan M3 despues de pintar.", "MASK")
 
     _text(msp, 8, BD+Hr+Ht+10, 9,
           f"Segno BASE  2.0mm  x1  bottom + front/rear/sides fold up (bend ded {bdd:.2f}); WELD-FREE: rivet the 4 corners via L-brackets; rear 2nd fold = transition (flange FULL width, seats on the relieved side-wall tops); FOLD with the DRAWN side as the INSIDE face (canonical mirror: encoder lands on the player's LEFT)",
@@ -3319,7 +3325,7 @@ def paint_quote_pdf(path):
             "  1. La superficie es NETA: contorno exterior menos aperturas (ranuras de pedales, pantallas, ventilaciones). No incluye cantos.",
             "  2. Las piezas llegan cortadas y plegadas, sin ningun recubrimiento ni aceite protector. Pretratamiento para aluminio a cargo del aplicador.",
             "  3. Los postes son ACERO laminado en frio, no aluminio: van en linea aparte porque llevan otro pretratamiento.",
-            "  4. Enmascarado: ver las paginas siguientes. Roscas PEM M4 tapadas y zona de masa alrededor del perno M6 sin pintura, en ambas caras.",
+            "  4. Enmascarado: ver las paginas siguientes. Solo la zona de masa alrededor del perno M6 sin pintura, en ambas caras (los pilotos de tornillo se roscan despues de pintar).",
             "  5. Las aperturas de pantalla son ajustadas: la pelicula come decimas por cara. Si el espesor supera 100 um avisar antes de aplicar.",
             "  6. El aluminio es blando: colgar para pintar, no apoyar sobre las caras vistas.",
             "  7. La tapa figura con su tamano PLANO (850 x 407 x 2): plegada suma la pestana frontal de 12 mm y la solapa trasera.",
@@ -3336,8 +3342,8 @@ def paint_quote_pdf(path):
         # ---- masking / detail pages ---------------------------------------
         sheets = [
             ("segno_base", "CUERPO - plano de enmascarado",
-             "Rojo = NO PINTAR. 3x rosca PEM M4 sobre la transicion (tapon de silicona) y "
-             "zona de masa de 20 mm alrededor del perno M6, en ambas caras."),
+             "Rojo = NO PINTAR. Zona de masa de 20 mm alrededor del perno M6, en ambas "
+             "caras. Los pilotos de la transicion se roscan M3 despues de pintar."),
             ("segno_faceplate", "TAPA SUPERIOR - aperturas criticas",
              "Sin enmascarado. Las dos aperturas grandes son de pantalla y quedan ajustadas "
              "contra el display: contemplar el espesor de pelicula."),
@@ -3535,7 +3541,7 @@ def _render_parts(cq, explode=0.0):
     # screw station from the seam solver (distance down the facet from the ridge)
     lapx = FACE_RUN + D_SEAM_SCREW*math.cos(math.radians(TRANS_ANGLE))
     lapz = H_REAR - D_SEAM_SCREW*math.sin(math.radians(TRANS_ANGLE)) + T
-    for f in (0.18,0.5,0.82):                        # rear LAP screws down into the transition PEM
+    for f in (0.18,0.5,0.82):                        # rear LAP screws down into the tapped transition
         add(cq.Solid.makeCylinder(3.3,2.8,cq.Vector(lapx,(W-2*T)*f+T,lapz),nrm), SCR)
     return P    # raw geometry (canonical layout is in the schedule); player view = camera choice
 
