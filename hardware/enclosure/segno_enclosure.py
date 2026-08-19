@@ -3165,6 +3165,140 @@ def build_screen7_fit_test():
     return sp
 
 
+# --- 15.6" screen stand (3D print x2, #762, PROVISIONAL until the monitor
+# arrives) -- the 7" tower concept, split for the Ender 3 V3 bed (220^2) and
+# bridging OVER the electronics bay (boards at x 46-68, y 23-32: no floor
+# there). LEFT part = end tower + half-deck; RIGHT part mirrors; they lap-
+# splice near the screen centre (2x M3) where the VESA M4s also clamp the
+# monitor. Towers only touch the monitor BACK via pads -- the side edges stay
+# completely free for the panel connectors (right-angle USB-C/mini-HDMI
+# adapters assumed). ALL monitor numbers are the LISTING values -- caliper on
+# arrival: body 353x208x5.8, VESA 75x75 M4 assumed CENTRED on the viewport.
+S16_BODY_W  = 353.0   # PROVISIONAL listing dims
+S16_BODY_H  = 208.0
+S16_BODY_D  = 5.8
+S16_VESA    = 75.0    # PROVISIONAL: pattern, M4, centred
+S16_GAP     = 0.5     # deck sits behind the monitor back; only pads/bosses touch
+S16_BEAM_D  = 110.0   # deck beam depth (v)
+S16_BEAM_T  = 10.0    # deck plate thickness
+S16_RIB_H   = 15.0    # stiffening ribs under the beam edges
+S16_WALL    = 4.0
+S16_FLANGE  = 12.0
+ENDER_BED   = 218.0   # Ender 3 V3 printable square (2mm margin) -- gate below
+
+
+def build_screen16_stand_steps():
+    """15.6" monitor stand, LEFT + RIGHT prints (PETG, #762, PROVISIONAL).
+    World-mm coordinates (origin = plan origin at base floor TOP; place in
+    Fusion at z = floor top). Lid underside (measured): z(y) = 12.437 +
+    tan(SLOPE)*y; world y = cos(SLOPE)*v_plan - 2.093. The monitor's glass
+    presses the underside, its back is S16_BODY_D below, the deck plane sits
+    S16_GAP further back -- only the VESA bosses and tower pads rise to touch.
+    Bed constraint: splice at x=600 (off-centre, clear of the VESA bosses),
+    outboard flange edges trimmed flush so each part stays under ENDER_BED."""
+    import cadquery as cq
+    cs = math.cos(math.radians(SLOPE_ANGLE))
+    sn = math.sin(math.radians(SLOPE_ANGLE))
+    xc = SCREEN_16_U
+    v_c = SCREEN_TOP_V - BIG_H / 2.0
+    yc = cs * v_c - 2.093
+    drop = (S16_BODY_D + S16_GAP) / cs
+    z0 = 12.437 - drop                    # deck plane height AT y=0
+    def wp(off=0.0):
+        return (cq.Workplane("XY").workplane(offset=z0)
+                .transformed(rotate=(SLOPE_ANGLE, 0, 0)).workplane(offset=off))
+    pyc = yc / cs                          # deck centreline, in-plane y
+
+    def deck_half(x0, x1, lapdir):
+        d = (wp().center((x0 + x1) / 2.0, pyc)
+             .rect(x1 - x0, S16_BEAM_D).extrude(-S16_BEAM_T))
+        for sy in (-1, 1):
+            d = d.union(wp(-S16_BEAM_T)
+                        .center((x0 + x1) / 2.0, pyc + sy * (S16_BEAM_D / 2.0 - 5.0))
+                        .rect(x1 - x0, 10.0).extrude(-S16_RIB_H))
+        lap_x = x1 if lapdir > 0 else x0
+        if lapdir > 0:   # lower lap tongue continues past the joint
+            d = d.union(wp(-S16_BEAM_T).center(lap_x + 11.0, pyc)
+                        .rect(22.0, S16_BEAM_D - 12.0).extrude(S16_BEAM_T / 2.0))
+        else:            # upper half relieved so the tongue nests under it
+            d = d.cut(wp(-S16_BEAM_T).center(lap_x + 11.0, pyc)
+                      .rect(22.4, S16_BEAM_D).extrude(S16_BEAM_T / 2.0 + 0.2))
+        return d
+
+    def tower(x0, x1, fl_out_sign):
+        t = (cq.Workplane("XY").center((x0 + x1) / 2.0, yc).rect(x1 - x0, S16_BEAM_D)
+             .extrude(300.0))
+        t = t.cut(cq.Workplane("XY").center((x0 + x1) / 2.0, yc)
+                  .rect(x1 - x0 - 2 * S16_WALL, S16_BEAM_D - 2 * S16_WALL).extrude(301.0))
+        t = t.cut(wp(-S16_BEAM_T - S16_RIB_H).center((x0 + x1) / 2.0, pyc)
+                  .rect(2000, 2000).extrude(500))
+        # flange: fl_out_sign=+1/-1 adds the inboard x flange; 0 = y-only
+        # (the LEFT tower lives in a 48mm strip between platform_mid's body
+        # edge at x~417 and the board standoffs at x~465 -- no x room at all)
+        fx0 = x0 - (S16_FLANGE if fl_out_sign < 0 else 0.0)
+        fx1 = x1 + (S16_FLANGE if fl_out_sign > 0 else 0.0)
+        fl = (cq.Workplane("XY").center((fx0 + fx1) / 2.0, yc)
+              .rect(fx1 - fx0, S16_BEAM_D + 2 * S16_FLANGE).extrude(5.0))
+        fl = fl.cut(cq.Workplane("XY").center((x0 + x1) / 2.0, yc)
+                    .rect(x1 - x0 - 2 * S16_WALL, S16_BEAM_D - 2 * S16_WALL).extrude(5.0))
+        t = t.union(fl)
+        anchors = []
+        sites = [((x0 + x1) / 2.0, yc - (S16_BEAM_D + S16_FLANGE) / 2.0),
+                 ((x0 + x1) / 2.0, yc + (S16_BEAM_D + S16_FLANGE) / 2.0)]
+        if fl_out_sign != 0:
+            inx = (x1 + S16_FLANGE / 2.0) if fl_out_sign > 0 else (x0 - S16_FLANGE / 2.0)
+            sites += [(inx, yc - 30.0), (inx, yc + 30.0)]
+        for ax, ay in sites:
+            anchors.append((ax, ay))
+            t = t.cut(cq.Workplane("XY").center(ax, ay).circle(3.2 / 2.0).extrude(5.0))
+        # pad rising to the monitor back plane
+        t = t.union(wp().center((x0 + x1) / 2.0, pyc).rect(x1 - x0, 30.0)
+                    .extrude(S16_GAP))
+        return t, anchors
+
+    SPLICE = 600.0
+    lt, la = tower(419.0, 459.0, 0)   # strip: platform_mid edge 417 | PCB edge 462
+    left = lt.union(deck_half(419.0, SPLICE, +1))
+    rt, ra = tower(745.0, 785.0, -1)
+    right = rt.union(deck_half(SPLICE, 785.0, -1))
+
+    def add_vesa(d, sxs):
+        for sx in sxs:
+            for sy in (-1, 1):
+                hx = xc + sx * S16_VESA / 2.0
+                hy = pyc + sy * S16_VESA / 2.0
+                d = d.union(wp().center(hx, hy).circle(6.0).extrude(S16_GAP))
+                d = d.cut(wp(S16_GAP).center(hx, hy).circle(4.3 / 2.0)
+                          .extrude(-(S16_GAP + S16_BEAM_T + 1.0)))
+                d = d.cut(wp(-S16_BEAM_T).center(hx, hy).circle(8.0 / 2.0)
+                          .extrude(-S16_RIB_H))
+        return d
+    left = add_vesa(left, (-1,))
+    right = add_vesa(right, (+1,))
+    def add_splice(d):
+        for sy in (-1, 1):
+            d = d.cut(wp(1.0).center(SPLICE + 11.0, pyc + sy * (S16_BEAM_D / 2.0 - 20.0))
+                      .circle(3.4 / 2.0).extrude(-(S16_BEAM_T + 3.0)))
+        return d
+    left = add_splice(left)
+    right = add_splice(right)
+
+    out = []
+    for nm, sol, anc in (("segno_screen16_stand_L", left, la),
+                          ("segno_screen16_stand_R", right, ra)):
+        bb = sol.val().BoundingBox()
+        dims = (bb.xmax - bb.xmin, bb.ymax - bb.ymin, bb.zmax - bb.zmin)
+        assert max(dims) <= ENDER_BED, (
+            f"{nm}: {dims[0]:.0f}x{dims[1]:.0f}x{dims[2]:.0f} exceeds the Ender bed ({ENDER_BED})")
+        print("  %s: %.0f x %.0f x %.0f mm, floor anchors %s" % (
+            nm, dims[0], dims[1], dims[2], ["(%.0f, %.0f)" % a for a in anc]))
+        sp = os.path.join(OUT, nm + ".step")
+        cq.exporters.export(sol.val(), sp)
+        cq.exporters.export(sol.val(), os.path.join(OUT, nm + ".stl"))
+        out.append(sp)
+    return out
+
+
 def build_screen7_tower_step():
     """7" screen support TOWER (3D print in PETG, x1, #762): the one-piece
     replacement for the frame+legs cradle ("more beefy", user call). A closed
@@ -3803,7 +3937,8 @@ def build_quote_packages():
     pack("segno_3dprint.zip",
          ["segno_platform_front", "segno_platform_mid",
           "segno_led_diffuser", "segno_ring_diffuser",
-          "segno_screen7_tower", "segno_screen7_fit_test"],
+          "segno_screen7_tower", "segno_screen7_fit_test",
+          "segno_screen16_stand_L", "segno_screen16_stand_R"],
          (".step", ".stl"))
     # Powder-coat quote pack: the Spanish sheet + every painted part's PDF.
     # Deliberately NO DXFs -- the coater cuts nothing, and a flat pattern only
@@ -3879,6 +4014,8 @@ def main(argv):
             print("Faceplate support post (base-anchored, x2): out/" + os.path.basename(s))
             tw = build_screen7_tower_step()
             print("7in screen support tower (3D print, x1): out/" + os.path.basename(tw) + " (+ .stl)")
+            for sp16 in build_screen16_stand_steps():
+                print("15.6in stand (3D print, PROVISIONAL): out/" + os.path.basename(sp16) + " (+ .stl)")
             ftp = build_screen7_fit_test()
             print("7in screen FIT TEST plate (3D print, x1): out/" + os.path.basename(ftp) + " (+ .stl)")
             for pp in build_platform_steps():
