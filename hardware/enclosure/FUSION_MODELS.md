@@ -16,11 +16,16 @@ once.
 `u`, `v` are the enclosure generator's mm coordinates (`segno_enclosure.py`:
 u along the 850 width from the left wall, v along the 423 depth from the front).
 
-Populated-doc browser hygiene: repetitive occurrences live under grouping
-components at root — `pedals` (10), `platforms` (20), `feet` (4), `diffusers`
-(4), `fasteners` (18 native ISO 7380-1 screws), `vent_foam` — all at identity,
-so members keep world = local of the old root placement (`moveToComponent`
-preserves world transforms; verified delta 0).
+Populated-doc browser hygiene: root holds only the chassis (`VAMP sheet
+metal`, `base`, `faceplate`, `rear_panel`, `vent_foam`) plus identity-placed
+grouping components — `pedals` (10), `platforms` (20), `feet` (4),
+`diffusers` (4), `fasteners` (18 native ISO 7380-1 screws), `lid_stack`
+(screens, encoder, led_strips, texts, logo, support posts), `electronics`
+(Pi, NVMe, console board, bucks, standoffs). Groups are at identity, so
+members keep world = local of the old root placement (`moveToComponent`
+preserves world transforms; verified delta 0). The canonical-transforms
+table below still applies per occurrence; only `fullPathName` gained a
+prefix.
 
 **The populated frame is proven by the mounts**: `base_foot_xy()` equals the
 foot occurrences' translations exactly, and the platforms, Pi/N07 stack and
