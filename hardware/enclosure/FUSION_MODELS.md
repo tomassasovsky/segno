@@ -220,10 +220,12 @@ x 84.29–84.59 (both with a wedge-sloped top edge kept ≥3 mm under the wall
 top), rear wall (2.5, 41.59, 1.7)–(39.9, 41.89, 7.7) — clear of the rear
 panel, which starts at x ≈ 42.5 — and floor (25.6, 14.5, 0.2)–(57.6, 19.1,
 0.5) between the pedal rows. Interference-checked against every other body
-(0 collisions). Physical part: self-adhesive black speaker felt or grille
-cloth (air-permeable — the vents cool the Pi; do NOT use closed-cell foam),
-cut ~5 mm oversize per field. Not in the DXFs: it's a soft good cut with
-scissors, not a fab feature.
+(0 collisions). Physical part: black speaker grille cloth or
+open-cell air-filter foam, cut ~5 mm oversize per field and glued at the
+PERIMETER only — the vents are the Pi 5's convection path, so no closed-cell
+foam and no full-coverage adhesive backing (self-adhesive felt's continuous
+glue film is near-airtight even though the felt itself breathes). Not in the
+DXFs: it's a soft good cut with scissors, not a fab feature.
 
 ## What is deliberately NOT in Fusion
 
