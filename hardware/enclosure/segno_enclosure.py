@@ -3365,8 +3365,15 @@ def build_post_step():
     web_p  = cq.Workplane("XY").box(pw, t, web, centered=False).translate((0, foot, 0))   # vertical at Y=foot
     pad_p  = (cq.Workplane("XY").box(pw, pad, t, centered=False)
               .translate((0, foot - pad, web))                                            # flat at the top, forward
-              .rotate((0, foot, web), (1, foot, web), -POST_TILT))                        # tilt to the slope (free end drops toward the FRONT to match)
-    body = foot_p.union(web_p).union(pad_p)
+              .rotate((0, foot, web), (1, foot, web), POST_TILT))                         # tilt to the slope: +x right-hand rule drops the free (front) end
+                                                                                         # (the restored original had -POST_TILT, which LIFTED the pad into the lid)
+    # hinge weld: the tilted pad only meets the web along the fold LINE, so a
+    # plain union leaves it a separate lump (2-solid STEP, renders broken).
+    # A t-sized block across the fold volume-overlaps both and fuses the part
+    # into ONE solid -- it also stands in for the real bend radius.
+    weld_p = (cq.Workplane("XY").box(pw, 2 * t, 2 * t, centered=False)
+              .translate((0, foot - t, web - t)))
+    body = foot_p.union(web_p).union(weld_p).union(pad_p)
     for du in (-POST_BOLT_DU, POST_BOLT_DU):                                              # M4 through the foot
         body = body.cut(cq.Workplane("XY").cylinder(
             2*t, D_M4/2.0, centered=(True, True, False)).translate((pw/2.0+du, foot/2.0, 0)))
