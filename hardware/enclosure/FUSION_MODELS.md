@@ -19,8 +19,9 @@ u along the 850 width from the left wall, v along the 423 depth from the front).
 Populated-doc browser hygiene: root holds only the chassis (`VAMP sheet
 metal`, `base`, `faceplate`, `rear_panel`, `vent_foam`) plus identity-placed
 grouping components — `pedals` (10), `platforms` (20), `feet` (4),
-`diffusers` (4), `fasteners` (18 native ISO 7380-1 screws), `lid_stack`
-(screens, encoder, led_strips, texts, logo, support posts), `electronics`
+`fasteners` (18 native ISO 7380-1 screws), `lid_stack` (screens, encoder,
+texts, logo, support posts, and `diffusers` = the 4 pill diffusers + the
+`led_strips` bars, all the same white-PLA printed part), `electronics`
 (Pi, NVMe, console board, bucks, standoffs). Groups are at identity, so
 members keep world = local of the old root placement (`moveToComponent`
 preserves world transforms; verified delta 0). The canonical-transforms
