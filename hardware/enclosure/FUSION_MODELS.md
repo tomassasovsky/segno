@@ -139,7 +139,10 @@ a single call have crashed Fusion):
    (A front-wall hem was tried and REVERTED, #760: its bend zone would have
    swallowed the screw holes — the 10.1 wall minus two bend zones leaves ~2mm
    of straight band. The wall is plain single-thickness; the front screws are
-   M3 hand-tapped into Ø2.5 pilots, Ø3.4 clearance in the lip.)
+   M3 hand-tapped into Ø2.5 pilots, Ø3.4 clearance in the lip. The REAR lap
+   seam uses the IDENTICAL joint — Ø2.5 tap pilots in the transition flange,
+   Ø3.4 clearance in the lap, same 9 stations: PEM nuts were dropped so the
+   whole lid fixes with ONE M3 tap and ONE screw SKU, M3×8 ×18.)
    Stationary face = the big planar z=0 face whose XY bbox contains the bend
    line's midpoint. Verify the bbox after every fold.
 6. **Check the front fold's result bbox.** Its moving-side heuristic is
