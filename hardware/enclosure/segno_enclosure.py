@@ -3182,9 +3182,8 @@ def build_screen7_fit_test():
     (down through the O3.1 tab holes, self-tapping into the boss pilots) pull
     the tabs onto the bosses and that preload clamps the GLASS FLAT against
     the plate back -- flatness comes from the screws, not from print height.
-    A 6 mm perimeter wall on the back (open on the bottom edge, where the
-    PCB's connectors point) keeps the thin plate itself flat. Then look
-    through the FRONT: the ACTIVE AREA must fill the aperture -- no bezel
+    Bare slab, no stiffener (user call: it's a test, don't waste material).
+    Then look through the FRONT: the ACTIVE AREA must fill the aperture -- no bezel
     visible, no pixels hidden -- and all four screws must land without
     forcing. Hole positions come from the vendor STEP; if anything misses,
     measure it and correct S7C_HOLES / the aperture offset. The notch marks
@@ -3199,16 +3198,6 @@ def build_screen7_fit_test():
     except Exception:
         pass
     plate = plate.cut(cq.Workplane("XY").center(0, ph / 2.0).circle(3.0).extrude(pt))
-    # back-side stiffening wall (the 2 mm field would potato-chip alone):
-    # a 4 mm x 6 mm rib ring just inside the plate edge, clear of the module
-    # outline on left/right/top, OMITTED along the bottom edge so the PCB's
-    # downward-pointing connectors and cables exit freely
-    ww, wh = 4.0, 6.0
-    rib = (cq.Workplane("XY").rect(pw - 8.0, ph - 8.0)
-           .rect(pw - 8.0 - 2 * ww, ph - 8.0 - 2 * ww).extrude(-wh))
-    rib = rib.cut(cq.Workplane("XY").center(0, -(ph - 8.0) / 2.0 + ww / 2.0)
-                  .rect(pw, ww + 2.0).extrude(-wh))       # open the bottom run
-    plate = plate.union(rib)
     # bosses on the BACK (z<0 side is the back once flipped: build them below
     # z=0 by extruding negative): top face of the plate (z=pt) is the FRONT.
     # 0.2 SHORT of the tab plane = designed clamp preload (see docstring).
