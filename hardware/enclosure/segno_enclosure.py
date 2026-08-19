@@ -294,6 +294,34 @@ SMALL_W, SMALL_H = 153.75, 85.5   # 7" aperture = the 153.75 x 85.5 visible (act
                               # fully (mounted from behind), no lip overlap on this screen.
 SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 
+# --- 7" screen cradle (3D print, #762) -----------------------------------------
+# Floor-anchored printed stand for the APROTII 7": a flat FRAME the module screws
+# onto by its corner-ear holes, on two wedge LEGS whose top face is cut at
+# SLOPE_ANGLE so the frame lies parallel to the faceplate underside. The glass is
+# pressed against the lid by a 2 mm FELT layer on the frame rim (the user's
+# compliance call: felt absorbs the height tolerance, the leg slots absorb the
+# rest). The screens do NOT lift with the lid on this scheme: service = lift the
+# lid, screens + cables stay put.
+S7C_HOLE_X   = 79.25   # ear hole centre from module centre, u -- PROVISIONAL:
+S7C_HOLE_Y   = 41.0    # caliper the real ear holes; the frame carries SLOTS
+S7C_SLOT_L   = 8.0     # (3.4 x 8 radial) so +-3 mm of guess error still bolts up
+S7C_FRAME_W  = 176.0   # frame outline: module 164x99 over ears + 6 mm border
+S7C_FRAME_H  = 112.0
+S7C_FRAME_T  = 5.0     # frame plate thickness
+S7C_WIN_W    = 140.0   # open window: PCB + connectors + backlight switch live
+S7C_WIN_H    = 76.0    # here untouched (ports point rearward through the window)
+S7C_FELT_T   = 2.0     # adhesive felt on the frame rim, compresses to ~1 mm
+S7C_LEG_SEP  = 158.0   # leg centres, symmetric about COL_U -- ON the frame's side
+                       # rails (u +-70..88), clear of the open window
+S7C_LEG_W    = 30.0    # leg web width (along u)
+S7C_LEG_T    = 6.0     # leg web thickness (along v)
+S7C_FOOT_L   = 40.0    # foot flange (along v), 2x M3 to floor anchors (#762)
+S7C_FOOT_GAUGE = 24.0  # foot hole spacing along v
+S7C_ADJ      = 6.0     # height regulation budget: felt compression (~1) + up to
+                       # ~5 of M3 washer shims between leg pad and frame
+# (nominal leg height is computed in build_screen7_cradle_steps -- it needs
+#  SCREEN_TOP_V, which is defined further down)
+
 # --- LEDs / encoder -----------------------------------------------------------
 # Status indicators = SMD LEDs (WS2812B), NOT through-hole: ONE single-LED
 # board per indicator pedal (hardware/led_strip/, 16 x 8 mm puck) stuck to the
@@ -3062,6 +3090,89 @@ def build_ring_diffuser_step():
     return step
 
 
+def build_screen7_cradle_steps():
+    """7" screen cradle (3D print in PETG/PLA, #762): FRAME x1 + LEG x2.
+
+    Frame local frame: XY = the module's back plane (X=u across the screen,
+    Y=v up-slope), Z = rearward (away from the glass). Printed flat on its back.
+    The module screws to the frame's four corner bosses through its ear holes
+    (M3 x 8 -- the ONE screw SKU -- into hex-nut pockets on the frame back);
+    S7C_HOLE_X/Y are PROVISIONAL until calipered, the bosses carry radial slots.
+    2 mm adhesive felt strips go on the frame rim FRONT face: the ear screws pull
+    the module onto the felt, and the leg slots set the stack height so the felt
+    presses the glass against the faceplate underside (compliant preload).
+
+    Leg local frame: printed lying on its side; foot flange bolts to base-floor
+    anchor stations (#762, M3), web rises, top pad meets the frame back through
+    two M3 slots (S7C_ADJ of travel) at the wedge angle SLOPE_ANGLE."""
+    import cadquery as cq
+    fw, fh, ft = S7C_FRAME_W, S7C_FRAME_H, S7C_FRAME_T
+    frame = cq.Workplane("XY").rect(fw, fh).extrude(ft)
+    frame = frame.cut(cq.Workplane("XY").rect(S7C_WIN_W, S7C_WIN_H).extrude(ft))
+    # corner bosses: radial M3 slots + hex nut pockets on the back face
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            cx, cy = sx * S7C_HOLE_X, sy * S7C_HOLE_Y
+            ang = math.degrees(math.atan2(cy, cx))
+            slot = (cq.Workplane("XY").center(cx, cy)
+                    .slot2D(S7C_SLOT_L, 3.4, ang).extrude(ft))
+            frame = frame.cut(slot)
+            nutp = (cq.Workplane("XY").workplane(offset=ft - 2.8).center(cx, cy)
+                    .polygon(6, 6.4).extrude(2.8))
+            frame = frame.cut(nutp)
+    # leg interface on the side rails: through-holes with hex pockets on the
+    # FRONT face (nut sinks flush under the felt; the M3 comes from the leg side,
+    # so nothing stands proud where the module seats)
+    for sx in (-1, 1):
+        for du in (-6.0, 6.0):
+            hole = (cq.Workplane("XY").center(sx * S7C_LEG_SEP / 2.0 + du, 0)
+                    .circle(3.2 / 2.0).extrude(ft))
+            frame = frame.cut(hole)
+            nutp = (cq.Workplane("XY").center(sx * S7C_LEG_SEP / 2.0 + du, 0)
+                    .polygon(6, 6.4).extrude(2.8))   # front face (z=0): the screw
+            frame = frame.cut(nutp)                  # comes up from the leg below
+
+    # leg: nominal height from the seat -- frame back plane under the module centre
+    v_c = SCREEN_TOP_V - SMALL_H / 2.0
+    underside = H_FRONT + math.tan(math.radians(SLOPE_ANGLE)) * v_c - T
+    # stack down from the lid underside: module 9 + felt compressed ~1 + frame
+    leg_h = underside - T - (9.0 + 1.0 + S7C_FRAME_T)
+    lw, lt, fl = S7C_LEG_W, S7C_LEG_T, S7C_FOOT_L
+    # local frame: x = u (across, 0..lw), y = v (rearward +), z = up.
+    # Vertical web + flat foot; a thicker TOP PAD carries two VERTICAL M3s up
+    # into the frame's front-pocketed nuts. The pad's top face is milled at
+    # SLOPE_ANGLE (rising rearward) so the near-horizontal frame beds flat on
+    # it. Height regulation = the felt above (compresses ~1 mm) + plain M3
+    # washers shimmed between pad and frame; the pad slots run along v so the
+    # PROVISIONAL geometry still bolts up.
+    pad_h = 18.0
+    web = cq.Workplane("XY").box(lw, lt, leg_h + 8.0, centered=False)
+    pad = (cq.Workplane("XY").workplane(offset=leg_h - pad_h)
+           .box(lw, 20.0, pad_h + 8.0, centered=False))
+    leg = web.union(pad)
+    cutter = (cq.Workplane("XY").workplane(offset=leg_h)
+              .transformed(rotate=(SLOPE_ANGLE, 0, 0))
+              .center(lw / 2.0, 0).rect(lw * 3, 300).extrude(80))
+    leg = leg.cut(cutter)                       # top face at the lid slope
+    foot = cq.Workplane("XY").box(lw, fl, 5.0, centered=False)
+    leg = leg.union(foot)                       # foot under the web, extending rearward
+    for dv in (S7C_LEG_T + 8.0, S7C_LEG_T + 8.0 + S7C_FOOT_GAUGE):
+        leg = leg.cut(cq.Workplane("XY").center(lw / 2.0, dv).circle(3.2 / 2.0).extrude(5.0))
+    for dx in (lw / 2.0 - 6.0, lw / 2.0 + 6.0):
+        s = (cq.Workplane("XY").workplane(offset=leg_h - pad_h - 1.0)
+             .center(dx, 10.0).slot2D(S7C_SLOT_L, 3.4, 90)
+             .extrude(pad_h + 12.0))
+        leg = leg.cut(s)                        # vertical M3s, slop along v
+    out = []
+    for nm, solid in (("segno_screen7_cradle_frame", frame), ("segno_screen7_cradle_leg", leg)):
+        sp = os.path.join(OUT, nm + ".step")
+        cq.exporters.export(solid.val() if hasattr(solid, "val") else solid, sp)
+        cq.exporters.export(solid.val() if hasattr(solid, "val") else solid,
+                            os.path.join(OUT, nm + ".stl"))
+        out.append(sp)
+    return out
+
+
 def build_post_step():
     """Folded 3D of the base-anchored support post (issue #292, x2): foot flat on
     the floor, vertical web, top pad. X=u (width POST_PW), Y=v, Z=up."""
@@ -3618,7 +3729,8 @@ def build_quote_packages():
          (".step",))
     pack("segno_3dprint.zip",
          ["segno_platform_front", "segno_platform_mid",
-          "segno_led_diffuser", "segno_ring_diffuser"],
+          "segno_led_diffuser", "segno_ring_diffuser",
+          "segno_screen7_cradle_frame", "segno_screen7_cradle_leg"],
          (".step", ".stl"))
     # Powder-coat quote pack: the Spanish sheet + every painted part's PDF.
     # Deliberately NO DXFs -- the coater cuts nothing, and a flat pattern only
@@ -3692,6 +3804,8 @@ def main(argv):
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
             s = build_post_step()
             print("Faceplate support post (base-anchored, x2): out/" + os.path.basename(s))
+            for cp in build_screen7_cradle_steps():
+                print("7in screen cradle (3D print, frame x1 / leg x2): out/" + os.path.basename(cp) + " (+ .stl)")
             for pp in build_platform_steps():
                 print("Printed platform: out/" + os.path.basename(pp) + " (+ .stl)")
             build_mini_console()
