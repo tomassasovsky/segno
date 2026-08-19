@@ -956,8 +956,12 @@ POST_V     = 146.5                 # web depth: COMPACT post in the (now very na
 POST_U     = [625.0, 726.0]        # in the TRACK LED-slot GAPS (T2-T3 @625, T3-T4 @726) so the pad also
                                    # clears the LED slots; still under the 16in aperture, clear of the vent
 POST_PW    = 40.0                  # post width (u) -- lateral stability
-POST_PAD   = 20.0                  # top pad length (v) -- COMPACT; bears on the faceplate underside
-POST_FOOTL = 20.0                  # foot flange length (v) -- COMPACT; bolts to the base floor
+POST_PAD   = 17.0                  # top pad length (v) -- COMPACT; bears on the faceplate underside
+POST_FOOTL = 17.0                  # foot flange length (v) -- COMPACT; bolts to the base floor
+                                   # (both 20 -> 17, 2026-08-19: the v375 pedal platforms' rear wall
+                                   # ends at world ~124 and the 15.6 stand deck zone starts ~143.8 --
+                                   # a 20 mm C overhung the platforms by ~1 mm (user-caught collision);
+                                   # 17 clears them by ~2 mm with the web kept at POST_V)
 POST_FELT  = 1.0                   # ASSEMBLED metal gap: a thicker (2-3 mm) felt/foam cap on the
                                    # pad compresses into this ~1 mm when the lid seats -> preloaded,
                                    # firm, rattle-free contact without jacking the lid.
@@ -1336,6 +1340,13 @@ def _check(strict_board_mount=True):
     # TRACK LED-slot GAPS (in u) so the pad also clears the slots.
     assert POST_V - POST_PAD > PEDAL_ROW1_V + FSW_SLOT_D/2.0, \
         f"POST pad reaches back over the front pedals (v{POST_V-POST_PAD:.0f} vs {PEDAL_ROW1_V+FSW_SLOT_D/2:.0f})"
+    # the printed pedal platforms stand on the FLAT base: their ring rear wall (world
+    # depth) ends at PEDAL_ROW1_V*cos + SKIRT_OUT_D/2. The post's forwardmost metal
+    # (foot AND pad front, both at _POST_VP - POST_FOOTL) must clear it -- the 20 mm C
+    # overhung this by ~1 mm and collided in the populated doc (user-caught 2026-08-19).
+    _plat_rear_w = PEDAL_ROW1_V * math.cos(math.radians(SLOPE_ANGLE)) + SKIRT_OUT_D / 2.0
+    assert _POST_VP - POST_FOOTL > _plat_rear_w + 1.5, \
+        f"POST front (w{_POST_VP-POST_FOOTL:.1f}) hits the pedal platform rear (w{_plat_rear_w:.1f} + 1.5 margin)"
     body_front = SCREEN_TOP_V - BIG_BEZEL[1]   # 15.6in body extends forward to here
     assert POST_V < body_front, \
         f"POST web v={POST_V:.0f} not clear of the 15.6in body front (v={body_front:.0f})"
