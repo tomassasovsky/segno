@@ -3095,25 +3095,32 @@ def build_diffuser_step():
 
 
 def build_ring_diffuser_step():
-    """Encoder LED-ring diffuser INSERT (3D-print in WHITE PLA, x1):
-    the annular sibling of segno_led_diffuser -- pushes into the faceplate's ring
-    window FROM THE INSIDE, shoulder flange seats on the sheet's underside, and
-    an annular pocket on the back nests the NeoPixel Ring 16 (authentic Adafruit,
-    44.5mm OD -- verify before printing, clones run 68mm+) so the 16 LEDs glow
-    through the lens. Same clearances/proud as the pill insert."""
+    """Encoder ring DIFFUSER + DISC HOLDER, one piece (3D-print WHITE PLA, x1,
+    user call 2026-08-19): replaces the plain annular insert. From the top:
+    - the LENS annulus pushes into the faceplate's O58 ring window (proud);
+    - the aluminium RING DISC (O40 x 2) drops into a front-side pocket inside
+      the lens bore and sits FLUSH with the faceplate top; the EC11 clamps it
+      (bushing through the disc's O7, nut on top under the knob);
+    - a full BACK PLATE extends past the window to O72 -- the exposed front
+      ring (r 29..36) is the CA-GLUE land against the faceplate underside;
+    - the NeoPixel Ring 16 nests in the back-face recess (authentic Adafruit
+      44.5 OD -- verify before printing, clones run 68+), glowing through a
+      0.8 mm web under the lens.
+    z=0 is the faceplate-underside/glue plane."""
     import cadquery as cq
     ro = (RING_OD - LED_INS_CLR) / 2.0
     ri = (RING_ID + LED_INS_CLR) / 2.0
+    plate_t = 2.0
     lens = (cq.Workplane("XY").circle(ro).circle(ri)
             .extrude(T + LED_INS_PROUD))
     lens = lens.edges(">Z").chamfer(0.3)
-    fo = RING_OD / 2.0 + LED_INS_FLANGE
-    fi = RING_ID / 2.0 - LED_INS_FLANGE
-    ins = lens.union(cq.Workplane("XY").circle(fo).circle(fi)
-                     .extrude(-LED_INS_FL_T))
-    # NeoPixel Ring 16 nest: annular recess in the shoulder's back face
-    ins = ins.cut(cq.Workplane("XY").workplane(offset=-LED_INS_FL_T)
-                  .circle(23.0).circle(16.0).extrude(0.8))
+    ins = lens.union(cq.Workplane("XY").circle(36.0).circle(17.0)
+                     .extrude(-plate_t))
+    # disc lip + pocket: the disc rests on the r17..20.15 lip at z=0, flush
+    # with the sheet top when glued (disc top = T)
+    # NeoPixel Ring 16 nest: annular recess in the back face, 0.8 web remains
+    ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
+                  .circle(23.0).circle(16.0).extrude(1.2))
     step = os.path.join(OUT, "segno_ring_diffuser.step")
     cq.exporters.export(ins.val(), step)
     cq.exporters.export(ins.val(), os.path.join(OUT, "segno_ring_diffuser.stl"))
