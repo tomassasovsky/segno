@@ -321,11 +321,23 @@ S7C_MOD_BB   = (-80.80, -67.15, 85.25, 57.15)     # module outline, window-centr
 S7C_TAB_T    = 1.7     # tab thickness
 S7C_GLASS_TO_TABF = 6.7   # glass front -> tab FRONT face
 S7C_MOD_DEPTH = 14.8      # glass front -> module back (PCB) plane
-S7C_GAP      = 0.5     # frame front sits this far behind the module back --
+S7C_GAP      = 0.5     # deck sits this far behind the module back --
                        # only the bosses touch the module (PCB never contacts)
-S7C_SLOT_L   = 8.0     # leg-pad slot length (positional slop along v)
-S7C_FRAME_W  = 180.0   # frame outline (centred on the module body)
+S7C_FRAME_W  = 180.0   # tower outline (centred on the module body)
 S7C_FRAME_H  = 138.0
+# --- one-piece support TOWER (v3, "more beefy" -- user call 2026-08-19) -------
+# A closed wedge box: 4 mm perimeter walls, sloped deck carrying the window +
+# tab bosses, wide floor flange with SIX M3 anchors into the base floor (the
+# #762 stations). Touch loads on the screen go tabs -> bosses -> deck -> four
+# walls -> floor; no slender columns, no bolted joints in the load path.
+S7T_WALL   = 4.0       # wall thickness
+S7T_DECK   = 5.0       # deck thickness (along the deck normal)
+S7T_FLANGE = 12.0      # floor flange width (outward)
+S7T_H0     = 66.06     # deck-top height (mm, above the base floor TOP) under the
+                       # display-window centre. From the MEASURED underside plane
+                       # in Fusion (world: z = 12.43 + tan(SLOPE)*y mm): glass
+                       # kisses the lid with ZERO shim; if the print lands low,
+                       # M3 washers under the module tabs take up the gap.
 S7C_FRAME_T  = 5.0     # frame plate thickness
 S7C_WIN_W    = 146.0   # open window: PCB + connectors + backlight switch live
 S7C_WIN_H    = 96.0    # here untouched (ports point rearward through the window)
@@ -3142,112 +3154,98 @@ def build_screen7_fit_test():
     return sp
 
 
-def build_screen7_cradle_steps():
-    """7" screen cradle (3D print in PETG/PLA, #762): FRAME x1 + LEG x2.
+def build_screen7_tower_step():
+    """7" screen support TOWER (3D print in PETG, x1, #762): the one-piece
+    replacement for the frame+legs cradle ("more beefy", user call). A closed
+    wedge box in WORLD coordinates (x = console x, y = depth, z = up; origin =
+    the base-floor point under the display-window centre):
 
-    Frame local frame: XY = active-area-centred, X=u across the screen, Y=v
-    up-slope, Z = rearward (away from the glass). Printed flat on its back.
-    The module hangs from its four O3.1 TABS: bosses rise from the frame front
-    to the tab BACK plane (module back + S7C_GAP behind the frame front, so
-    only the bosses ever touch the module -- the PCB and its components float
-    over the open window). M3 x 8 -- the ONE screw SKU -- drive from the
-    module's front side through the tabs into the boss pilots (self-tap, or
-    fit M3 heat-set inserts in the O4.0 counterbores for a serviceable joint).
-    Hole positions are CAD-exact from the vendor STEP; print the FIT TEST
-    plate first to verify against the physical unit.
+    - sloped DECK (parallel to the faceplate underside) carrying the open
+      window and the four tab BOSSES -- module mounts exactly as before
+      (M3 x 8 through the O3.1 tabs into heat-set inserts / self-tap pilots),
+      only the bosses touch the module, the PCB floats over the window;
+    - 4 mm perimeter WALLS from the deck straight down to the floor -- the box
+      section takes touch loads without racking;
+    - floor FLANGE with SIX M3 anchor stations (these define the #762 base
+      floor holes; positions printed at build time);
+    - cable windows in both side walls.
 
-    Height regulation (the user's "felt or something"): coarse = M3 washer
-    shims at the leg joints; fine = a strip of thin felt between the glass
-    border and the faceplate underside if a soft interface is wanted there.
-
-    Leg local frame: printed lying on its side; foot flange bolts to base-floor
-    anchor stations (#762, M3), web rises, top pad (milled at SLOPE_ANGLE)
-    beds against the frame back through two M3 slots."""
+    Height: S7T_H0 puts the glass in kiss contact with the lid per the
+    measured underside plane; shim M3 washers under the tabs if a print runs
+    short. No mirror games: built in world frame, holes at front-view
+    positions, placed by translation only."""
     import cadquery as cq
-    fw, fh, ft = S7C_FRAME_W, S7C_FRAME_H, S7C_FRAME_T
+    c = math.cos(math.radians(SLOPE_ANGLE))
+    W, D = S7C_FRAME_W, S7C_FRAME_H
     x0, y0, x1, y1 = S7C_MOD_BB
-    # BACK-VIEW coordinates: the frame faces the module FROM BEHIND, so its
-    # build x is the MIRROR of the screen-front x (caught 2026-08-19 while
-    # assembling in Fusion: with the asymmetric hole pattern, a front-view
-    # build cannot be rotated into place -- only mirrored, which no physical
-    # flip provides). x_back = -x_front throughout.
-    mcx, mcy = -(x0 + x1) / 2.0, (y0 + y1) / 2.0    # module body centre (back view)
-    frame = cq.Workplane("XY").center(mcx, mcy).rect(fw, fh).extrude(ft)
-    frame = frame.cut(cq.Workplane("XY").center(mcx, mcy)
-                      .rect(S7C_WIN_W, S7C_WIN_H).extrude(ft))
-    # tab bosses: rise from the frame front (z=0) to the tab back plane
+    mcx, mcy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+    H0, wall, fl, dt = S7T_H0, S7T_WALL, S7T_FLANGE, S7T_DECK
     boss_h = S7C_MOD_DEPTH + S7C_GAP - (S7C_GLASS_TO_TABF + S7C_TAB_T)
-    for (fhx, hy) in S7C_HOLES:
-        hx = -fhx                                    # mirror to back view
-        frame = frame.union(cq.Workplane("XY").center(hx, hy)
-                            .circle(4.5).extrude(-boss_h))
-        # O4.0 x 5 heat-set counterbore, then O2.6 self-tap pilot the rest
-        frame = frame.cut(cq.Workplane("XY").workplane(offset=-boss_h)
-                          .center(hx, hy).circle(4.0 / 2.0).extrude(5.0))
-        frame = frame.cut(cq.Workplane("XY").workplane(offset=-boss_h)
-                          .center(hx, hy).circle(2.6 / 2.0).extrude(boss_h + ft))
-    # leg interface on the side rails: through-holes with hex pockets on the
-    # FRONT face (the screw comes up from the leg pad below)
+
+    def wp(off=0.0):
+        return (cq.Workplane("XY").workplane(offset=H0)
+                .transformed(rotate=(SLOPE_ANGLE, 0, 0))
+                .workplane(offset=off))
+
+    # deck: a THICK slab whose window is cut with 45-degree expanding sides,
+    # leaving corbels that carry the deck rim into the walls (the "structure"
+    # in the hollow box: monocoque walls + corbelled deck + two ribs below).
+    # The corbels also make the standing print support-free.
+    tower = wp().center(mcx, mcy).rect(W, D).extrude(-(dt + 26.0))
+    tower = tower.cut(wp(1.0).center(mcx, mcy).rect(S7C_WIN_W, S7C_WIN_H)
+                      .extrude(-(dt + 29.0), taper=-45.0))
+    # walls: vertical prism ring, cut above the deck's bottom plane
+    cy_w = mcy * c                                   # footprint centre, world y
+    ring = (cq.Workplane("XY").center(mcx, cy_w).rect(W, D * c)
+            .extrude(H0 + 60.0))
+    ring = ring.cut(cq.Workplane("XY").center(mcx, cy_w)
+                    .rect(W - 2 * wall, D * c - 2 * wall).extrude(H0 + 61.0))
+    above_deck = wp(-dt).center(mcx, mcy).rect(2000, 2000).extrude(500)
+    ring = ring.cut(above_deck)
+    tower = tower.union(ring)
+    # keep the deck stack inside the wall footprint
+    tower = tower.intersect(cq.Workplane("XY").center(mcx, cy_w)
+                            .rect(W, D * c).extrude(H0 + 60.0)
+                            .union(cq.Workplane("XY").center(mcx, cy_w)
+                                   .rect(W + 2 * fl, D * c + 2 * fl).extrude(5.0)))
+    # two full-height transverse RIBS flanking the window, deck to floor
     for sx in (-1, 1):
-        for du in (-6.0, 6.0):
-            cx = mcx + sx * S7C_LEG_SEP / 2.0 + du
-            frame = frame.cut(cq.Workplane("XY").center(cx, mcy)
-                              .circle(3.2 / 2.0).extrude(ft))
-            frame = frame.cut(cq.Workplane("XY").center(cx, mcy)
-                              .polygon(6, 6.4).extrude(2.8))
-
-    # leg: nominal height from the seat -- frame BACK plane under the module
-    v_c = SCREEN_TOP_V - SMALL_H / 2.0
-    underside = H_FRONT + math.tan(math.radians(SLOPE_ANGLE)) * v_c - T
-    leg_h = underside - T - (S7C_MOD_DEPTH + S7C_GAP + S7C_FRAME_T)
-    lw, lt, fl = S7C_LEG_W, S7C_LEG_T, S7C_FOOT_L
-    pad_h = 18.0
-    web = cq.Workplane("XY").box(lw, lt, leg_h + 8.0, centered=False)
-    pad = (cq.Workplane("XY").workplane(offset=leg_h - pad_h)
-           .box(lw, 20.0, pad_h + 8.0, centered=False))
-    leg = web.union(pad)
-    cutter = (cq.Workplane("XY").workplane(offset=leg_h)
-              .transformed(rotate=(SLOPE_ANGLE, 0, 0))
-              .center(lw / 2.0, 0).rect(lw * 3, 300).extrude(80))
-    leg = leg.cut(cutter)                       # top face at the lid slope
-    foot = cq.Workplane("XY").box(lw, fl, 5.0, centered=False)
-    leg = leg.union(foot)                       # foot under the web, extending rearward
-    for dv in (S7C_LEG_T + 8.0, S7C_LEG_T + 8.0 + S7C_FOOT_GAUGE):
-        leg = leg.cut(cq.Workplane("XY").center(lw / 2.0, dv).circle(3.2 / 2.0).extrude(5.0))
-    for dx in (lw / 2.0 - 6.0, lw / 2.0 + 6.0):
-        s = (cq.Workplane("XY").workplane(offset=leg_h - pad_h - 1.0)
-             .center(dx, 10.0).slot2D(S7C_SLOT_L, 3.4, 90)
-             .extrude(pad_h + 12.0))
-        leg = leg.cut(s)                        # vertical M3s, slop along v
-    out = []
-    for nm, solid in (("segno_screen7_cradle_frame", frame), ("segno_screen7_cradle_leg", leg)):
-        sp = os.path.join(OUT, nm + ".step")
-        cq.exporters.export(solid.val() if hasattr(solid, "val") else solid, sp)
-        cq.exporters.export(solid.val() if hasattr(solid, "val") else solid,
-                            os.path.join(OUT, nm + ".stl"))
-        out.append(sp)
-    return out
-
-
-    """Folded 3D of the base-anchored support post (issue #292, x2): foot flat on
-    the floor, vertical web, top pad. X=u (width POST_PW), Y=v, Z=up."""
-    import cadquery as cq
-    pw, pad, web, foot, t = POST_PW, POST_PAD, POST_H, POST_FOOTL, POST_T
-    # C-fold, foot + pad both FORWARD of the web. Local X=u(width), Y=v(depth), Z=up.
-    # foot on the floor (Y 0..foot), web vertical at its back edge (Y=foot), pad hinged
-    # at the web top and TILTED down-forward by POST_TILT to bed on the sloped underside.
-    foot_p = cq.Workplane("XY").box(pw, foot, t, centered=False)                          # floor, Y 0..foot
-    web_p  = cq.Workplane("XY").box(pw, t, web, centered=False).translate((0, foot, 0))   # vertical at Y=foot
-    pad_p  = (cq.Workplane("XY").box(pw, pad, t, centered=False)
-              .translate((0, foot - pad, web))                                            # flat at the top, forward
-              .rotate((0, foot, web), (1, foot, web), -POST_TILT))                        # tilt to the slope (free end drops toward the FRONT to match)
-    body = foot_p.union(web_p).union(pad_p)
-    for du in (-POST_BOLT_DU, POST_BOLT_DU):                                              # M4 through the foot
-        body = body.cut(cq.Workplane("XY").cylinder(
-            2*t, D_M4/2.0, centered=(True, True, False)).translate((pw/2.0+du, foot/2.0, 0)))
-    step = os.path.join(OUT, "segno_post.step")
-    cq.exporters.export(body.val(), step)
-    return step
+        rib = (cq.Workplane("XY").center(mcx + sx * (S7C_WIN_W / 2.0 + 6.0), cy_w)
+               .rect(4.0, D * c - 2 * wall).extrude(H0 + 60.0))
+        rib = rib.cut(wp(-dt).center(mcx, mcy).rect(2000, 2000).extrude(500))
+        tower = tower.union(rib)
+    # floor flange + six anchor stations
+    flange = (cq.Workplane("XY").center(mcx, cy_w).rect(W + 2 * fl, D * c + 2 * fl)
+              .extrude(5.0))
+    flange = flange.cut(cq.Workplane("XY").center(mcx, cy_w)
+                        .rect(W - 2 * wall, D * c - 2 * wall).extrude(5.0))
+    anchors = []
+    for ax, ay in ((-(W + fl) / 2.0, -40.0), (-(W + fl) / 2.0, 40.0),
+                   ((W + fl) / 2.0, -40.0), ((W + fl) / 2.0, 40.0),
+                   (0.0, -(D * c + fl) / 2.0), (0.0, (D * c + fl) / 2.0)):
+        anchors.append((mcx + ax, cy_w + ay))
+        flange = flange.cut(cq.Workplane("XY").center(mcx + ax, cy_w + ay)
+                            .circle(3.2 / 2.0).extrude(5.0))
+    tower = tower.union(flange)
+    # cable windows, both side walls
+    for sx in (-1, 1):
+        cutter = (cq.Workplane("XY").workplane(offset=8.0)
+                  .center(mcx + sx * W / 2.0, cy_w).rect(3 * wall, 40.0)
+                  .extrude(26.0))
+        tower = tower.cut(cutter)
+    # tab bosses + heat-set counterbores + pilots (front-view positions)
+    for (hx, hy) in S7C_HOLES:
+        tower = tower.union(wp().center(hx, hy).circle(4.5).extrude(boss_h))
+        tower = tower.cut(wp(boss_h).center(hx, hy).circle(4.0 / 2.0).extrude(-5.0))
+        tower = tower.cut(wp(boss_h).center(hx, hy).circle(2.6 / 2.0)
+                          .extrude(-(boss_h + dt + 2.0)))
+    print("  tower floor anchors (world mm, relative to the display-window centre):")
+    for a in anchors:
+        print("    (%+.1f, %+.1f)" % a)
+    sp = os.path.join(OUT, "segno_screen7_tower.step")
+    cq.exporters.export(tower.val(), sp)
+    cq.exporters.export(tower.val(), os.path.join(OUT, "segno_screen7_tower.stl"))
+    return sp
 
 
 def build_step(write_parts=True):
@@ -3785,8 +3783,7 @@ def build_quote_packages():
     pack("segno_3dprint.zip",
          ["segno_platform_front", "segno_platform_mid",
           "segno_led_diffuser", "segno_ring_diffuser",
-          "segno_screen7_cradle_frame", "segno_screen7_cradle_leg",
-          "segno_screen7_fit_test"],
+          "segno_screen7_tower", "segno_screen7_fit_test"],
          (".step", ".stl"))
     # Powder-coat quote pack: the Spanish sheet + every painted part's PDF.
     # Deliberately NO DXFs -- the coater cuts nothing, and a flat pattern only
@@ -3860,8 +3857,8 @@ def main(argv):
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
             s = build_post_step()
             print("Faceplate support post (base-anchored, x2): out/" + os.path.basename(s))
-            for cp in build_screen7_cradle_steps():
-                print("7in screen cradle (3D print, frame x1 / leg x2): out/" + os.path.basename(cp) + " (+ .stl)")
+            tw = build_screen7_tower_step()
+            print("7in screen support tower (3D print, x1): out/" + os.path.basename(tw) + " (+ .stl)")
             ftp = build_screen7_fit_test()
             print("7in screen FIT TEST plate (3D print, x1): out/" + os.path.basename(ftp) + " (+ .stl)")
             for pp in build_platform_steps():
