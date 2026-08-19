@@ -281,9 +281,11 @@ SKIRT_BOSS_CH_HALF = PEDAL_SCREW_SPAN/2 + 0.7   # channel floor: swallows the bo
 SKIRT_BOSS_CH_X    = PEDAL_D/2 - PEDAL_SCREW_BACK   # +31.695: boss axis, rearward of centre
 
 # --- screens (capacitive touch, mounted from BEHIND; aperture < bezel) --------
-BIG_BEZEL  = (359.5, 223.75)  # 15.6" panel BODY (measured): glass 359.5x206.5 edge-to-edge + a
-                              # connector strip at the bottom extending the body to 223.75. Used for
-                              # slab clearance; note this is ~0.25mm SHORTER than the old 224 so it fits.
+BIG_BEZEL  = (353.0, 208.0)   # 15.6" panel BODY -- UPERFECT (PROVISIONAL listing 13.9x8.2in, caliper
+                              # on arrival): cased portable monitor, connectors exit the SIDE edges,
+                              # bezel ~symmetric (no bottom connector strip). Replaces the old bare
+                              # panel's 359.5x223.75 (glass + 17mm bottom strip) -- that strip was a
+                              # fiction here and pinned the support posts 23mm too far forward.
 BIG_W, BIG_H     = 342.5, 193.0   # 15.6" faceplate APERTURE -- ~0.8mm/side inside the 344.16 x 193.59
                               # ACTIVE area so the faceplate lip overlaps the active edge (no light leak).
                               # The decal (active image, 344.2x193.6) stays; the aperture reveals IT, not
@@ -949,19 +951,21 @@ def face_drift(_v=None):
 # zone -- load runs faceplate -> post -> base -> floor. The posts anchor to the
 # BASE only; the faceplate bears on their felt caps, so the lid still lifts off and
 # NOTHING shows on the top face. Cut+bend only.
-POST_V     = 146.5                 # web depth: COMPACT post in the (now very narrow) band between the
-                                   # slope-corrected Cherub front-row slots (pad front must stay behind
-                                   # v~125.6) and the 15.6in body front (v~147.25) -- was 137 for the
-                                   # 103mm ASP-1 slot; re-verify against the populated Fusion doc
+POST_V     = 165.0                 # web depth (user call 2026-08-19: "move the screws back, make the
+                                   # posts taller"): the pad now sits 13mm in front of the 16in aperture
+                                   # edge (178) -- the actual dent zone -- instead of jammed at 146.5
+                                   # against the OLD panel's fictitious connector strip. Rear limit is
+                                   # the UPERFECT body's bottom edge (~170.5 plan, PROVISIONAL, VESA
+                                   # float +/-2.5); the intake vent field below yields instead (slots
+                                   # under the feet are skipped, see _bottom_vents_local).
 POST_U     = [625.0, 726.0]        # in the TRACK LED-slot GAPS (T2-T3 @625, T3-T4 @726) so the pad also
                                    # clears the LED slots; still under the 16in aperture, clear of the vent
 POST_PW    = 40.0                  # post width (u) -- lateral stability
-POST_PAD   = 17.0                  # top pad length (v) -- COMPACT; bears on the faceplate underside
-POST_FOOTL = 17.0                  # foot flange length (v) -- COMPACT; bolts to the base floor
-                                   # (both 20 -> 17, 2026-08-19: the v375 pedal platforms' rear wall
-                                   # ends at world ~124 and the 15.6 stand deck zone starts ~143.8 --
-                                   # a 20 mm C overhung the platforms by ~1 mm (user-caught collision);
-                                   # 17 clears them by ~2 mm with the web kept at POST_V)
+POST_PAD   = 20.0                  # top pad length (v) -- bears on the faceplate underside
+POST_FOOTL = 20.0                  # foot flange length (v) -- bolts to the base floor
+                                   # (briefly 17 while the post was wedged against the v375 platforms
+                                   # at POST_V=146.5; restored to 20 when POST_V moved to 165 -- the
+                                   # foot front now clears the platform rear wall by ~17 mm)
 POST_FELT  = 1.0                   # ASSEMBLED metal gap: a thicker (2-3 mm) felt/foam cap on the
                                    # pad compresses into this ~1 mm when the lid seats -> preloaded,
                                    # firm, rattle-free contact without jacking the lid.
@@ -982,7 +986,14 @@ POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), N
 # 146.5 (Cherub slope-corrected slots, issue #360; web now ~38.3 mm) -- NOT re-checked
 # against that doc at this position; re-verify there before fabrication.
 POST_FACEDRIFT = 1.5 + 0.443   # same #760 reseat recalibration as FACE_SEAT
-POST_H     = lid_top_z(POST_V) - T - POST_T - POST_FELT - POST_FACEDRIFT
+# DOC CALIBRATION at POST_V=165 (2026-08-19): the warning above came true -- probed in
+# the populated doc, the lid_top_z-minus-drift formula left the pad 4.85 mm below the
+# faceplate underside (target: POST_FELT = 1.0), i.e. the constant-drift model stops
+# tracking the reseated doc away from its v=158 calibration point. POST_DOC_CAL folds
+# the measured shortfall back in (normal gap error / cos(SLOPE)). SINGLE-POINT: if
+# POST_V moves again, re-probe the doc and re-set this before cutting posts.
+POST_DOC_CAL = (4.849 - POST_FELT) / math.cos(math.radians(SLOPE_ANGLE))
+POST_H     = lid_top_z(POST_V) - T - POST_T - POST_FELT - POST_FACEDRIFT + POST_DOC_CAL
 _POST_VP   = POST_V * math.cos(math.radians(SLOPE_ANGLE))   # projected web depth on the flat base
 _POST_FOOT_VP = _POST_VP - POST_FOOTL/2.0                   # foot-bolt depth (forward of the web)
 
@@ -1347,23 +1358,29 @@ def _check(strict_board_mount=True):
     _plat_rear_w = PEDAL_ROW1_V * math.cos(math.radians(SLOPE_ANGLE)) + SKIRT_OUT_D / 2.0
     assert _POST_VP - POST_FOOTL > _plat_rear_w + 1.5, \
         f"POST front (w{_POST_VP-POST_FOOTL:.1f}) hits the pedal platform rear (w{_plat_rear_w:.1f} + 1.5 margin)"
-    body_front = SCREEN_TOP_V - BIG_BEZEL[1]   # 15.6in body extends forward to here
-    assert POST_V < body_front, \
-        f"POST web v={POST_V:.0f} not clear of the 15.6in body front (v={body_front:.0f})"
+    # 15.6in body bottom edge: the UPERFECT bezel is ~symmetric around the aperture
+    # (the old formula assumed the whole bezel surplus hung below -- true only for
+    # the old bare panel's connector strip). PROVISIONAL until the monitor arrives;
+    # the 3.0 margin absorbs the VESA float's +/-2.5 adjustment.
+    body_front = (SCREEN_TOP_V - BIG_H) - (BIG_BEZEL[1] - BIG_H) / 2.0
+    assert POST_V < body_front - 3.0, \
+        f"POST web v={POST_V:.0f} not clear of the 15.6in body bottom edge (v={body_front:.0f} - 3 margin)"
     # posts in the LED-slot gaps: no TRACK LED slot overlaps a post's pad (u +/- POST_PW/2)
     led = [_bbox(c) for c in cuts if c.get("ref","").endswith("_LEDSLOT")]
     for u in POST_U:
         for lb in led:
             assert not (lb[0] < u+POST_PW/2 and u-POST_PW/2 < lb[2]), \
                 f"POST at u={u:.0f} overlaps an LED slot (u {lb[0]:.0f}..{lb[2]:.0f}) -- move to a gap"
-    # post feet on the base must clear the intake vent (forward of the web)
+    # post feet on the base must clear the intake vent SLOTS (the field now skips
+    # slots under the feet -- see _bottom_vents_local -- so check slot-by-slot,
+    # not against the field's bounding box)
     vent_bb = [_bbox(c) for c in _bottom_vents_local(W-2*T, D-2*T) if c.get("kind") == "rect"]
-    vu0 = min(b[0] for b in vent_bb); vu1 = max(b[2] for b in vent_bb)
-    vv0 = min(b[1] for b in vent_bb); vv1 = max(b[3] for b in vent_bb)
     for u in POST_U:
-        for du in (-POST_BOLT_DU, POST_BOLT_DU):
-            assert not (vu0 <= u+du <= vu1 and vv0-3 <= _POST_FOOT_VP <= vv1+3), \
-                f"POST foot ({u+du:.0f},{_POST_FOOT_VP:.0f}) collides with the intake vent"
+        fu0, fu1 = u - POST_PW/2 - 2, u + POST_PW/2 + 2
+        fv0, fv1 = _POST_VP - POST_FOOTL - 2, _POST_VP + POST_T + 2
+        for b in vent_bb:
+            assert not (b[0] < fu1 and fu0 < b[2] and b[1] < fv1 and fv0 < b[3]), \
+                f"POST foot at u={u:.0f} overlaps intake vent slot (u {b[0]:.0f}..{b[2]:.0f}, v {b[1]:.0f}..{b[3]:.0f})"
 
     # 3. platform head-room for BOTH rows: top pad flush+proud at each depth
     for v in (PEDAL_ROW1_V, PEDAL_ROW2_V):
@@ -1835,7 +1852,24 @@ def _bottom_vents_local(bw, bd):
     gap_y = (PEDAL_ROW1_V + FSW_SLOT_D/2 + PLATFORM_MARGIN +
              PEDAL_ROW2_V - FSW_SLOT_D/2 - PLATFORM_MARGIN) / 2.0
     u0, v0 = bw/2 - (cols*(sl+14))/2, gap_y - (rows*VENT_PITCH)/2
-    return _vent_array(u0=u0, z0=v0, cols=cols, rows=rows, cp=sl + 14)
+    cuts = _vent_array(u0=u0, z0=v0, cols=cols, rows=rows, cp=sl + 14)
+    # SUPPORT-POST KEEP-OUT (POST_V=165 sits over this field): drop any slot that
+    # would land under a post foot/pad footprint (+4 mm margin) so the feet bolt
+    # to solid floor. The free-area gate still enforces VENT_FREE_AREA_MIN --
+    # currently ~16k mm^2 total, so the dropped slots cost nothing that matters.
+    keep = []
+    for c in cuts:
+        b = _bbox(c)
+        hit = False
+        for u in POST_U:
+            fu0, fu1 = u - POST_PW/2 - 4, u + POST_PW/2 + 4
+            fv0 = _POST_VP - POST_FOOTL - 4
+            fv1 = _POST_VP + POST_T + 4
+            if b[0] < fu1 and fu0 < b[2] and b[1] < fv1 and fv0 < b[3]:
+                hit = True
+        if not hit:
+            keep.append(c)
+    return keep
 
 
 def _bottom_vents():
