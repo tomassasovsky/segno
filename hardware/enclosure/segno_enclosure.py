@@ -366,7 +366,8 @@ LED_INS_FLANGE = 3.0      # shoulder overhang past the slot, all around (seats o
                           # faceplate UNDERSIDE -- the insert pushes in from INSIDE)
 LED_INS_FL_T  = 1.5       # shoulder thickness
 LED_INS_POCKET = (6.0, 6.0, 0.8)  # LED nest recess in the shoulder's back face
-D_ENC     = 7.0      # EC11 encoder bush
+D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
+                     # the vendor STEP shows the thread OD needs the 0.2, #762)
 RING_OD   = 58.0     # diffused-annulus ring window OD (12 THT LEDs behind)
 RING_ID   = 40.0     # ring window ID
 N_IND     = 10       # indicator LED pills -- ALL 10 pedals (issue #366). Firmware
