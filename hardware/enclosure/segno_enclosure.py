@@ -304,6 +304,15 @@ SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 # lid, screens + cables stay put.
 S7C_HOLE_X   = 79.25   # ear hole centre from module centre, u -- PROVISIONAL:
 S7C_HOLE_Y   = 41.0    # caliper the real ear holes; the frame carries SLOTS
+# Viewport offset (user calipers 2026-08-19, "approximate"): the ACTIVE AREA is
+# not centred on the module -- 4.3 from the left edge vs 7.3 from the right,
+# 21.8 up from the PCB bottom vs 16.3 down from the PCB top. So the module
+# centre sits +1.5 right / -2.75 below the active-area centre, and every mount
+# references the ACTIVE centre (which must centre in the aperture).
+# NOTE: the vertical figures sum to ~124.5 against the sheet's 99 outline --
+# the PCB evidently hangs below the glass; the FIT TEST plate resolves this.
+S7C_MOD_DX   = 1.5     # module centre offset from active-area centre, u
+S7C_MOD_DY   = -2.75   # and v (negative = module sits lower than the viewport)
 S7C_SLOT_L   = 8.0     # (3.4 x 8 radial) so +-3 mm of guess error still bolts up
 S7C_FRAME_W  = 176.0   # frame outline: module 164x99 over ears + 6 mm border
 S7C_FRAME_H  = 112.0
@@ -3090,6 +3099,40 @@ def build_ring_diffuser_step():
     return step
 
 
+def build_screen7_fit_test():
+    """7" screen FIT TEST plate (3D print, x1, #762): a stand-in for the
+    faceplate around the 7" aperture. Bolt the module behind it (M3 x 8 through
+    the ear holes, plain nuts on the front) and look: the ACTIVE AREA should
+    fill the aperture with no bezel showing and no active pixels hidden, and
+    all four screws should land without forcing. If not, measure the miss and
+    correct S7C_MOD_DX/DY (viewport centring) or S7C_HOLE_X/Y (ear centres).
+    Front face = the side with the chamfered aperture edge; the notch marks TOP."""
+    import cadquery as cq
+    pw, ph, pt = 196.0, 140.0, 3.0
+    mdx, mdy = S7C_MOD_DX, S7C_MOD_DY
+    plate = cq.Workplane("XY").rect(pw, ph).extrude(pt)
+    ap = cq.Workplane("XY").rect(SMALL_W, SMALL_H).extrude(pt)
+    plate = plate.cut(ap)
+    plate = plate.edges("|Z").chamfer(0.6)
+    try:  # small chamfer on the aperture's front rim marks the front face
+        plate = plate.faces(">Z").edges("<X or >X or <Y or >Y").chamfer(0.4)
+    except Exception:
+        pass
+    # TOP marker notch on the top edge
+    plate = plate.cut(cq.Workplane("XY").center(0, ph / 2.0).circle(3.0).extrude(pt))
+    # ear holes: O3.4 clearance, EXACT (no slots -- the whole point is to test
+    # the positions), at the module offset + nominal ear centres
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            plate = plate.cut(cq.Workplane("XY")
+                              .center(mdx + sx * S7C_HOLE_X, mdy + sy * S7C_HOLE_Y)
+                              .circle(3.4 / 2.0).extrude(pt))
+    sp = os.path.join(OUT, "segno_screen7_fit_test.step")
+    cq.exporters.export(plate.val(), sp)
+    cq.exporters.export(plate.val(), os.path.join(OUT, "segno_screen7_fit_test.stl"))
+    return sp
+
+
 def build_screen7_cradle_steps():
     """7" screen cradle (3D print in PETG/PLA, #762): FRAME x1 + LEG x2.
 
@@ -3107,12 +3150,16 @@ def build_screen7_cradle_steps():
     two M3 slots (S7C_ADJ of travel) at the wedge angle SLOPE_ANGLE."""
     import cadquery as cq
     fw, fh, ft = S7C_FRAME_W, S7C_FRAME_H, S7C_FRAME_T
-    frame = cq.Workplane("XY").rect(fw, fh).extrude(ft)
-    frame = frame.cut(cq.Workplane("XY").rect(S7C_WIN_W, S7C_WIN_H).extrude(ft))
+    # frame local origin = the ACTIVE-AREA centre (what the aperture centres on);
+    # everything module-shaped shifts by the measured S7C_MOD_DX/DY offset
+    mdx, mdy = S7C_MOD_DX, S7C_MOD_DY
+    frame = cq.Workplane("XY").center(mdx, mdy).rect(fw, fh).extrude(ft)
+    frame = frame.cut(cq.Workplane("XY").center(mdx, mdy)
+                      .rect(S7C_WIN_W, S7C_WIN_H).extrude(ft))
     # corner bosses: radial M3 slots + hex nut pockets on the back face
     for sx in (-1, 1):
         for sy in (-1, 1):
-            cx, cy = sx * S7C_HOLE_X, sy * S7C_HOLE_Y
+            cx, cy = mdx + sx * S7C_HOLE_X, mdy + sy * S7C_HOLE_Y
             ang = math.degrees(math.atan2(cy, cx))
             slot = (cq.Workplane("XY").center(cx, cy)
                     .slot2D(S7C_SLOT_L, 3.4, ang).extrude(ft))
@@ -3730,7 +3777,8 @@ def build_quote_packages():
     pack("segno_3dprint.zip",
          ["segno_platform_front", "segno_platform_mid",
           "segno_led_diffuser", "segno_ring_diffuser",
-          "segno_screen7_cradle_frame", "segno_screen7_cradle_leg"],
+          "segno_screen7_cradle_frame", "segno_screen7_cradle_leg",
+          "segno_screen7_fit_test"],
          (".step", ".stl"))
     # Powder-coat quote pack: the Spanish sheet + every painted part's PDF.
     # Deliberately NO DXFs -- the coater cuts nothing, and a flat pattern only
@@ -3806,6 +3854,8 @@ def main(argv):
             print("Faceplate support post (base-anchored, x2): out/" + os.path.basename(s))
             for cp in build_screen7_cradle_steps():
                 print("7in screen cradle (3D print, frame x1 / leg x2): out/" + os.path.basename(cp) + " (+ .stl)")
+            ftp = build_screen7_fit_test()
+            print("7in screen FIT TEST plate (3D print, x1): out/" + os.path.basename(ftp) + " (+ .stl)")
             for pp in build_platform_steps():
                 print("Printed platform: out/" + os.path.basename(pp) + " (+ .stl)")
             build_mini_console()
