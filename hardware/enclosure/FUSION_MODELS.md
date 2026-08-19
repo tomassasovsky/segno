@@ -16,6 +16,12 @@ once.
 `u`, `v` are the enclosure generator's mm coordinates (`segno_enclosure.py`:
 u along the 850 width from the left wall, v along the 423 depth from the front).
 
+Populated-doc browser hygiene: repetitive occurrences live under grouping
+components at root — `pedals` (10), `platforms` (20), `feet` (4), `diffusers`
+(4), `fasteners` (18 native ISO 7380-1 screws), `vent_foam` — all at identity,
+so members keep world = local of the old root placement (`moveToComponent`
+preserves world transforms; verified delta 0).
+
 **The populated frame is proven by the mounts**: `base_foot_xy()` equals the
 foot occurrences' translations exactly, and the platforms, Pi/N07 stack and
 board mount holes all agree. If a placement disagrees with a generator mount
@@ -204,6 +210,20 @@ snapshot, save.
 - **Screens/decals**: the 16" screen carries a decal on its display slab —
   fragile; see the memory notes referenced in `docs/PROGRESS.md` before
   touching appearances (VSM saves can reset local appearances).
+
+## Vent blackout foam (populated doc only)
+
+`vent_foam` component: four 3 mm black pads glued to the INSIDE of every
+vented region so components aren't visible through the slots. World extents
+(cm): left wall (0.01, 24.5, 0.7)–(0.31, 37.7, 7.7), right wall mirrored at
+x 84.29–84.59 (both with a wedge-sloped top edge kept ≥3 mm under the wall
+top), rear wall (2.5, 41.59, 1.7)–(39.9, 41.89, 7.7) — clear of the rear
+panel, which starts at x ≈ 42.5 — and floor (25.6, 14.5, 0.2)–(57.6, 19.1,
+0.5) between the pedal rows. Interference-checked against every other body
+(0 collisions). Physical part: self-adhesive black speaker felt or grille
+cloth (air-permeable — the vents cool the Pi; do NOT use closed-cell foam),
+cut ~5 mm oversize per field. Not in the DXFs: it's a soft good cut with
+scissors, not a fab feature.
 
 ## What is deliberately NOT in Fusion
 
