@@ -368,11 +368,12 @@ LED_INS_FL_T  = 1.5       # shoulder thickness
 LED_INS_POCKET = (6.0, 6.0, 0.8)  # LED nest recess in the shoulder's back face
 D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
                      # the vendor STEP shows the thread OD needs the 0.2, #762)
-RING_OD   = 44.0     # diffused-annulus ring window OD -- sized over the Adafruit
-RING_ID   = 33.0     # NeoPixel Ring 16 (44.5/31.7, LEDs on r~19), which is and
+RING_OD   = 46.0     # diffused-annulus ring window OD -- sized over the Adafruit
+RING_ID   = 31.0     # NeoPixel Ring 16 (44.5/31.7, LEDs on r~19), which is and
                      # always was the ring hardware, mounted ON the ring board
                      # around the EC11. (The old 58/40 window and its '12 THT
-                     # LEDs' note were wrong -- user correction 2026-08-19.)
+                     # LEDs' note were wrong -- user correction 2026-08-19;
+                     # band widened 44/33 -> 46/31 same day: 'looks small'.)
 N_IND     = 10       # indicator LED pills -- ALL 10 pedals (issue #366). Firmware
                      # chain contract is still indicatorLeds[7]; widening it to 10
                      # is an open firmware change, flagged on the issue.
