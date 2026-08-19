@@ -368,6 +368,14 @@ LED_INS_FL_T  = 1.5       # shoulder thickness
 LED_INS_POCKET = (6.0, 6.0, 0.8)  # LED nest recess in the shoulder's back face
 D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
                      # the vendor STEP shows the thread OD needs the 0.2, #762)
+# EC11 anti-rotation tab keyway in the ring disc (user call 2026-08-19: keyway,
+# not snap-off). PROVISIONAL: the vendor STEP does not model the tab, so these
+# are the Alps-EC11-typical values -- VERIFY on the physical built board (tab
+# centre distance from the shaft axis + direction) before releasing the disc.
+ENC_TAB_R  = 7.5     # tab centre distance from the shaft axis
+ENC_TAB_W  = 3.0     # keyway width (tab ~2.4)
+ENC_TAB_H  = 2.2     # keyway radial length
+ENC_TAB_DIR = +1     # +1 = tab toward the REAR (+v); flip if the unit says otherwise
 RING_OD   = 46.0     # diffused-annulus ring window OD -- sized over the Adafruit
 RING_ID   = 31.0     # NeoPixel Ring 16 (44.5/31.7, LEDs on r~19), which is and
                      # always was the ring hardware, mounted ON the ring board
@@ -1834,6 +1842,23 @@ def _bottom_vents():
 # the box to lengthen -- so wherever the board goes, CTRL_1/CTRL_2 (and the rest
 # of the five stations) go with it. A reshuffle that parks the CTRL jacks away
 # from the board's end of the cluster buys hum on an expression pedal.
+
+# --- screen-stand floor anchors (#762): M3 tap pilots for the 7in tower (6)
+# and the 15.6in bridge stands (4+4). Stations from the verified Fusion
+# assembly (stand flanges), floor-flat coords (u=x, v=y world -- the floor has
+# no slope projection).
+STAND_ANCHORS = [
+    (25.8, 273.5), (25.8, 353.5), (217.8, 273.5), (217.8, 353.5),   # 7in tower sides
+    (121.8, 240.2), (121.8, 386.9),                                  # 7in tower f/r
+    (480.0, 205.0), (480.0, 327.0), (454.0, 236.0), (454.0, 296.0),  # 15.6 L
+    (765.0, 205.0), (765.0, 327.0), (739.0, 236.0), (739.0, 296.0),  # 15.6 R
+]
+# stand anchors: each station must clear the bottom vent field and the rear
+# feet line by >= 3 mm (a hole into a vent slot passes no other check)
+for (_au, _av) in STAND_ANCHORS:
+    _in_vent = (256.0 - 3.0 < _au < 576.0 + 3.0) and (145.0 - 3.0 < _av < 191.0 + 3.0)
+    assert not _in_vent, f"STAND_ANCHOR ({_au},{_av}) lands in the bottom vent field"
+
 BOARD_U = 560.0   # +48 from 512 (user call 2026-08-19: centre the cluster under
                   # the 16" screen). Electrically BETTER, not worse: CTRL_1/2 sit
                   # at u 662/706, so this SHORTENS the unshielded analog runs by
@@ -2227,6 +2252,8 @@ def dxf_base(path):
     for x, y in base_foot_xy():                    # M4 clearance, plain hole: the
         _circle(msp, x, y, D_FOOT)                 # head is relieved in the RING
     _emit(msp, platform_foot_holes())              # M3 holes for the 10 pedal-platform feet
+    for (au, av) in STAND_ANCHORS:                 # screen-stand feet: M3 tap pilots (#762)
+        _circle(msp, au, av, 2.5)
     for u in POST_U:                               # 2 base-anchored support-post feet (issue #292)
         for du in (-POST_BOLT_DU, POST_BOLT_DU):   # foot forward of the web, clear of vent + display
             _circle(msp, u+du, _POST_FOOT_VP, D_M4)
@@ -3275,10 +3302,14 @@ def build_screen16_stand_steps():
             for sy in (-1, 1):
                 hx = xc + sx * S16_VESA / 2.0
                 hy = pyc + sy * S16_VESA / 2.0
-                d = d.union(wp().center(hx, hy).circle(6.0).extrude(S16_GAP))
-                d = d.cut(wp(S16_GAP).center(hx, hy).circle(4.3 / 2.0)
+                # O9.3 float hole: M4 + O12 fender washer gives +-2.5 of
+                # monitor position adjust in BOTH axes -- the metal aperture
+                # never depends on the panel's viewport offsets (11-day
+                # de-risk, user-approved 2026-08-19)
+                d = d.union(wp().center(hx, hy).circle(9.0).extrude(S16_GAP))
+                d = d.cut(wp(S16_GAP).center(hx, hy).circle(9.3 / 2.0)
                           .extrude(-(S16_GAP + S16_BEAM_T + 1.0)))
-                d = d.cut(wp(-S16_BEAM_T).center(hx, hy).circle(8.0 / 2.0)
+                d = d.cut(wp(-S16_BEAM_T).center(hx, hy).circle(14.0 / 2.0)
                           .extrude(-S16_RIB_H))
         return d
     left = add_vesa(left, (-1,))
@@ -3899,6 +3930,8 @@ def dxf_ring_disc(path):
     centre hole and its nut clamps the disc; the knob sits on top. Cut from 2mm sheet."""
     doc = _doc(); msp = doc.modelspace()
     _circle(msp, 0, 0, RING_ID)                 # outline: OD = ring inner diameter
+    # EC11 anti-rotation keyway (PROVISIONAL position -- verify on the unit)
+    _rrect(msp, 0, ENC_TAB_DIR * ENC_TAB_R, ENC_TAB_W, ENC_TAB_H, r=0.4)
     _circle(msp, 0, 0, D_ENC)                   # encoder bush hole (centre)
     _text(msp, -RING_ID/2, RING_ID/2 + 6, 5, "Segno LED-RING CENTRE DISC  2.0mm  x1  (encoder clamps it)", "NOTE")
     doc.saveas(path); return {}
