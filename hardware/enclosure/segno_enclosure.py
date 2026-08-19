@@ -302,24 +302,29 @@ SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 # compliance call: felt absorbs the height tolerance, the leg slots absorb the
 # rest). The screens do NOT lift with the lid on this scheme: service = lift the
 # lid, screens + cables stay put.
-S7C_HOLE_X   = 79.25   # ear hole centre from module centre, u -- PROVISIONAL:
-S7C_HOLE_Y   = 41.0    # caliper the real ear holes; the frame carries SLOTS
-# Viewport offset (user calipers 2026-08-19, "approximate"): the ACTIVE AREA is
-# not centred on the module -- 4.3 from the left edge vs 7.3 from the right,
-# 21.8 up from the PCB bottom vs 16.3 down from the PCB top. So the module
-# centre sits +1.5 right / -2.75 below the active-area centre, and every mount
-# references the ACTIVE centre (which must centre in the aperture).
-# NOTE: the vertical figures sum to ~124.5 against the sheet's 99 outline --
-# the PCB evidently hangs below the glass; the FIT TEST plate resolves this.
-S7C_MOD_DX   = 1.5     # module centre offset from active-area centre, u
-S7C_MOD_DY   = -2.75   # and v (negative = module sits lower than the viewport)
-S7C_SLOT_L   = 8.0     # (3.4 x 8 radial) so +-3 mm of guess error still bolts up
-S7C_FRAME_W  = 176.0   # frame outline: module 164x99 over ears + 6 mm border
-S7C_FRAME_H  = 112.0
+# All 7"-cradle geometry is ACTIVE-AREA-CENTRED (the aperture centres on the
+# viewport, so the viewport centre is the origin). Source of truth: the vendor
+# STEP ("lcd 7inch cap 1024 600.stp", user-supplied 2026-08-19), cross-checked
+# against the user's calipers (L4.3/R7.3, B21.8/T16.3 -- both agree the module
+# body sits +1.5/-2.75 off the viewport centre; the module is 166.1 x 124.3
+# over-all, NOT the sheet's 99 tall -- the PCB hangs below the glass).
+# The four M3 mounting TABS (O3.1, 1.7 mm thick) live 6.7 mm BEHIND the glass
+# front, protruding above/below the glass -- screws come from the module's
+# front side, straight into bosses that rise from the frame to the tab plane.
+S7C_HOLES = ((-77.53, 54.75), (79.58, 54.75),
+             (-77.53, -60.25), (79.58, -60.25))   # tab holes, active-centred
+S7C_MOD_BB   = (-81.53, -64.90, 84.53, 59.40)     # module outline, active-centred
+S7C_TAB_T    = 1.7     # tab thickness
+S7C_GLASS_TO_TABF = 6.7   # glass front -> tab FRONT face
+S7C_MOD_DEPTH = 14.8      # glass front -> module back (PCB) plane
+S7C_GAP      = 0.5     # frame front sits this far behind the module back --
+                       # only the bosses touch the module (PCB never contacts)
+S7C_SLOT_L   = 8.0     # leg-pad slot length (positional slop along v)
+S7C_FRAME_W  = 180.0   # frame outline (centred on the module body)
+S7C_FRAME_H  = 138.0
 S7C_FRAME_T  = 5.0     # frame plate thickness
-S7C_WIN_W    = 140.0   # open window: PCB + connectors + backlight switch live
-S7C_WIN_H    = 76.0    # here untouched (ports point rearward through the window)
-S7C_FELT_T   = 2.0     # adhesive felt on the frame rim, compresses to ~1 mm
+S7C_WIN_W    = 146.0   # open window: PCB + connectors + backlight switch live
+S7C_WIN_H    = 96.0    # here untouched (ports point rearward through the window)
 S7C_LEG_SEP  = 158.0   # leg centres, symmetric about COL_U -- ON the frame's side
                        # rails (u +-70..88), clear of the open window
 S7C_LEG_W    = 30.0    # leg web width (along u)
@@ -3101,32 +3106,32 @@ def build_ring_diffuser_step():
 
 def build_screen7_fit_test():
     """7" screen FIT TEST plate (3D print, x1, #762): a stand-in for the
-    faceplate around the 7" aperture. Bolt the module behind it (M3 x 8 through
-    the ear holes, plain nuts on the front) and look: the ACTIVE AREA should
-    fill the aperture with no bezel showing and no active pixels hidden, and
-    all four screws should land without forcing. If not, measure the miss and
-    correct S7C_MOD_DX/DY (viewport centring) or S7C_HOLE_X/Y (ear centres).
-    Front face = the side with the chamfered aperture edge; the notch marks TOP."""
+    faceplate around the 7" aperture. Lay the module glass-down onto the plate
+    BACK; four bosses rise to the tab plane (the tabs sit 6.7 mm behind the
+    glass); drive M3 x 8 down through the O3.1 tab holes into the boss pilots
+    (self-tap in the print). Then look through the FRONT: the ACTIVE AREA must
+    fill the aperture -- no bezel visible, no pixels hidden -- and all four
+    screws must land without forcing. Hole positions come from the vendor STEP;
+    if anything misses, measure it and correct S7C_HOLES / the aperture offset.
+    The notch marks TOP; the chamfered aperture rim is the FRONT face."""
     import cadquery as cq
-    pw, ph, pt = 196.0, 140.0, 3.0
-    mdx, mdy = S7C_MOD_DX, S7C_MOD_DY
+    pw, ph, pt = 200.0, 152.0, 3.0
     plate = cq.Workplane("XY").rect(pw, ph).extrude(pt)
-    ap = cq.Workplane("XY").rect(SMALL_W, SMALL_H).extrude(pt)
-    plate = plate.cut(ap)
+    plate = plate.cut(cq.Workplane("XY").rect(SMALL_W, SMALL_H).extrude(pt))
     plate = plate.edges("|Z").chamfer(0.6)
-    try:  # small chamfer on the aperture's front rim marks the front face
+    try:
         plate = plate.faces(">Z").edges("<X or >X or <Y or >Y").chamfer(0.4)
     except Exception:
         pass
-    # TOP marker notch on the top edge
     plate = plate.cut(cq.Workplane("XY").center(0, ph / 2.0).circle(3.0).extrude(pt))
-    # ear holes: O3.4 clearance, EXACT (no slots -- the whole point is to test
-    # the positions), at the module offset + nominal ear centres
-    for sx in (-1, 1):
-        for sy in (-1, 1):
-            plate = plate.cut(cq.Workplane("XY")
-                              .center(mdx + sx * S7C_HOLE_X, mdy + sy * S7C_HOLE_Y)
-                              .circle(3.4 / 2.0).extrude(pt))
+    # bosses on the BACK (z<0 side is the back once flipped: build them below
+    # z=0 by extruding negative): top face of the plate (z=pt) is the FRONT
+    boss_h = S7C_GLASS_TO_TABF
+    for (hx, hy) in S7C_HOLES:
+        plate = plate.union(cq.Workplane("XY").center(hx, hy)
+                            .circle(4.5).extrude(-boss_h))
+        plate = plate.cut(cq.Workplane("XY").workplane(offset=-boss_h)
+                          .center(hx, hy).circle(2.6 / 2.0).extrude(boss_h + pt))
     sp = os.path.join(OUT, "segno_screen7_fit_test.step")
     cq.exporters.export(plate.val(), sp)
     cq.exporters.export(plate.val(), os.path.join(OUT, "segno_screen7_fit_test.stl"))
@@ -3136,62 +3141,56 @@ def build_screen7_fit_test():
 def build_screen7_cradle_steps():
     """7" screen cradle (3D print in PETG/PLA, #762): FRAME x1 + LEG x2.
 
-    Frame local frame: XY = the module's back plane (X=u across the screen,
-    Y=v up-slope), Z = rearward (away from the glass). Printed flat on its back.
-    The module screws to the frame's four corner bosses through its ear holes
-    (M3 x 8 -- the ONE screw SKU -- into hex-nut pockets on the frame back);
-    S7C_HOLE_X/Y are PROVISIONAL until calipered, the bosses carry radial slots.
-    2 mm adhesive felt strips go on the frame rim FRONT face: the ear screws pull
-    the module onto the felt, and the leg slots set the stack height so the felt
-    presses the glass against the faceplate underside (compliant preload).
+    Frame local frame: XY = active-area-centred, X=u across the screen, Y=v
+    up-slope, Z = rearward (away from the glass). Printed flat on its back.
+    The module hangs from its four O3.1 TABS: bosses rise from the frame front
+    to the tab BACK plane (module back + S7C_GAP behind the frame front, so
+    only the bosses ever touch the module -- the PCB and its components float
+    over the open window). M3 x 8 -- the ONE screw SKU -- drive from the
+    module's front side through the tabs into the boss pilots (self-tap, or
+    fit M3 heat-set inserts in the O4.0 counterbores for a serviceable joint).
+    Hole positions are CAD-exact from the vendor STEP; print the FIT TEST
+    plate first to verify against the physical unit.
+
+    Height regulation (the user's "felt or something"): coarse = M3 washer
+    shims at the leg joints; fine = a strip of thin felt between the glass
+    border and the faceplate underside if a soft interface is wanted there.
 
     Leg local frame: printed lying on its side; foot flange bolts to base-floor
-    anchor stations (#762, M3), web rises, top pad meets the frame back through
-    two M3 slots (S7C_ADJ of travel) at the wedge angle SLOPE_ANGLE."""
+    anchor stations (#762, M3), web rises, top pad (milled at SLOPE_ANGLE)
+    beds against the frame back through two M3 slots."""
     import cadquery as cq
     fw, fh, ft = S7C_FRAME_W, S7C_FRAME_H, S7C_FRAME_T
-    # frame local origin = the ACTIVE-AREA centre (what the aperture centres on);
-    # everything module-shaped shifts by the measured S7C_MOD_DX/DY offset
-    mdx, mdy = S7C_MOD_DX, S7C_MOD_DY
-    frame = cq.Workplane("XY").center(mdx, mdy).rect(fw, fh).extrude(ft)
-    frame = frame.cut(cq.Workplane("XY").center(mdx, mdy)
+    x0, y0, x1, y1 = S7C_MOD_BB
+    mcx, mcy = (x0 + x1) / 2.0, (y0 + y1) / 2.0     # module body centre
+    frame = cq.Workplane("XY").center(mcx, mcy).rect(fw, fh).extrude(ft)
+    frame = frame.cut(cq.Workplane("XY").center(mcx, mcy)
                       .rect(S7C_WIN_W, S7C_WIN_H).extrude(ft))
-    # corner bosses: radial M3 slots + hex nut pockets on the back face
-    for sx in (-1, 1):
-        for sy in (-1, 1):
-            cx, cy = mdx + sx * S7C_HOLE_X, mdy + sy * S7C_HOLE_Y
-            ang = math.degrees(math.atan2(cy, cx))
-            slot = (cq.Workplane("XY").center(cx, cy)
-                    .slot2D(S7C_SLOT_L, 3.4, ang).extrude(ft))
-            frame = frame.cut(slot)
-            nutp = (cq.Workplane("XY").workplane(offset=ft - 2.8).center(cx, cy)
-                    .polygon(6, 6.4).extrude(2.8))
-            frame = frame.cut(nutp)
+    # tab bosses: rise from the frame front (z=0) to the tab back plane
+    boss_h = S7C_MOD_DEPTH + S7C_GAP - (S7C_GLASS_TO_TABF + S7C_TAB_T)
+    for (hx, hy) in S7C_HOLES:
+        frame = frame.union(cq.Workplane("XY").center(hx, hy)
+                            .circle(4.5).extrude(-boss_h))
+        # O4.0 x 5 heat-set counterbore, then O2.6 self-tap pilot the rest
+        frame = frame.cut(cq.Workplane("XY").workplane(offset=-boss_h)
+                          .center(hx, hy).circle(4.0 / 2.0).extrude(5.0))
+        frame = frame.cut(cq.Workplane("XY").workplane(offset=-boss_h)
+                          .center(hx, hy).circle(2.6 / 2.0).extrude(boss_h + ft))
     # leg interface on the side rails: through-holes with hex pockets on the
-    # FRONT face (nut sinks flush under the felt; the M3 comes from the leg side,
-    # so nothing stands proud where the module seats)
+    # FRONT face (the screw comes up from the leg pad below)
     for sx in (-1, 1):
         for du in (-6.0, 6.0):
-            hole = (cq.Workplane("XY").center(sx * S7C_LEG_SEP / 2.0 + du, 0)
-                    .circle(3.2 / 2.0).extrude(ft))
-            frame = frame.cut(hole)
-            nutp = (cq.Workplane("XY").center(sx * S7C_LEG_SEP / 2.0 + du, 0)
-                    .polygon(6, 6.4).extrude(2.8))   # front face (z=0): the screw
-            frame = frame.cut(nutp)                  # comes up from the leg below
+            cx = mcx + sx * S7C_LEG_SEP / 2.0 + du
+            frame = frame.cut(cq.Workplane("XY").center(cx, mcy)
+                              .circle(3.2 / 2.0).extrude(ft))
+            frame = frame.cut(cq.Workplane("XY").center(cx, mcy)
+                              .polygon(6, 6.4).extrude(2.8))
 
-    # leg: nominal height from the seat -- frame back plane under the module centre
+    # leg: nominal height from the seat -- frame BACK plane under the module
     v_c = SCREEN_TOP_V - SMALL_H / 2.0
     underside = H_FRONT + math.tan(math.radians(SLOPE_ANGLE)) * v_c - T
-    # stack down from the lid underside: module 9 + felt compressed ~1 + frame
-    leg_h = underside - T - (9.0 + 1.0 + S7C_FRAME_T)
+    leg_h = underside - T - (S7C_MOD_DEPTH + S7C_GAP + S7C_FRAME_T)
     lw, lt, fl = S7C_LEG_W, S7C_LEG_T, S7C_FOOT_L
-    # local frame: x = u (across, 0..lw), y = v (rearward +), z = up.
-    # Vertical web + flat foot; a thicker TOP PAD carries two VERTICAL M3s up
-    # into the frame's front-pocketed nuts. The pad's top face is milled at
-    # SLOPE_ANGLE (rising rearward) so the near-horizontal frame beds flat on
-    # it. Height regulation = the felt above (compresses ~1 mm) + plain M3
-    # washers shimmed between pad and frame; the pad slots run along v so the
-    # PROVISIONAL geometry still bolts up.
     pad_h = 18.0
     web = cq.Workplane("XY").box(lw, lt, leg_h + 8.0, centered=False)
     pad = (cq.Workplane("XY").workplane(offset=leg_h - pad_h)
@@ -3220,7 +3219,6 @@ def build_screen7_cradle_steps():
     return out
 
 
-def build_post_step():
     """Folded 3D of the base-anchored support post (issue #292, x2): foot flat on
     the floor, vertical web, top pad. X=u (width POST_PW), Y=v, Z=up."""
     import cadquery as cq
