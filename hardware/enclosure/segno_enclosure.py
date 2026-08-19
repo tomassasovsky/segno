@@ -311,13 +311,18 @@ SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 # the origin here. STEP-derived window-to-module-edge margins L3.55 / R8.0 /
 # B22.6 / T12.6 (user calipers said L4.3/R7.3/B21.8/T16.3 -- top differs by
 # 3.7 mm; the powered-screen FIT TEST is the final referee on where the lit
-# pixels sit inside the window). Module body over-all: 166.1 x 124.3 (the PCB
+# pixels sit inside the window). FIT-TEST VERDICT (printed 2026-08-19): the
+# lit area sits 2.75 mm LOWER than the STEP's window centre (2.75 black strip
+# at the aperture top, bottom flush) -- consistent with the calipers. The
+# frame origin is therefore re-anchored to the LIT area: every window-centred
+# y below carries +2.75 vs the raw STEP values. Reprint the fit test after
+# any further change here. Module body over-all: 166.1 x 124.3 (the PCB
 # hangs ~22 below the glass). The four M3 TABS (O3.1, 1.7 thick) live 6.7
 # BEHIND the glass front, protruding above/below the glass -- screws come from
 # the module's front side into bosses that rise to the tab plane.
-S7C_HOLES = ((-76.80, 52.50), (80.30, 52.50),
-             (-76.80, -62.50), (80.30, -62.50))   # tab holes, window-centred
-S7C_MOD_BB   = (-80.80, -67.15, 85.25, 57.15)     # module outline, window-centred
+S7C_HOLES = ((-76.80, 55.25), (80.30, 55.25),
+             (-76.80, -59.75), (80.30, -59.75))   # tab holes, lit-centred
+S7C_MOD_BB   = (-80.80, -64.40, 85.25, 59.90)     # module outline, lit-centred
 S7C_TAB_T    = 1.7     # tab thickness
 S7C_GLASS_TO_TABF = 6.7   # glass front -> tab FRONT face
 S7C_MOD_DEPTH = 14.8      # glass front -> module back (PCB) plane
@@ -368,14 +373,9 @@ LED_INS_FL_T  = 1.5       # shoulder thickness
 LED_INS_POCKET = (6.0, 6.0, 0.8)  # LED nest recess in the shoulder's back face
 D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
                      # the vendor STEP shows the thread OD needs the 0.2, #762)
-# EC11 anti-rotation tab keyway in the ring disc (user call 2026-08-19: keyway,
-# not snap-off). PROVISIONAL: the vendor STEP does not model the tab, so these
-# are the Alps-EC11-typical values -- VERIFY on the physical built board (tab
-# centre distance from the shaft axis + direction) before releasing the disc.
-ENC_TAB_R  = 7.5     # tab centre distance from the shaft axis
-ENC_TAB_W  = 3.0     # keyway width (tab ~2.4)
-ENC_TAB_H  = 2.2     # keyway radial length
-ENC_TAB_DIR = +1     # +1 = tab toward the REAR (+v); flip if the unit says otherwise
+# EC11 anti-rotation tab: NO keyway in the disc (user call 2026-08-19: the
+# slot looked bad -- the tab gets snapped off the EC11 instead; the nut alone
+# clamps the disc).
 RING_OD   = 46.0     # diffused-annulus ring window OD -- sized over the Adafruit
 RING_ID   = 31.0     # NeoPixel Ring 16 (44.5/31.7, LEDs on r~19), which is and
                      # always was the ring hardware, mounted ON the ring board
@@ -3338,6 +3338,30 @@ def build_screen16_stand_steps():
     return out
 
 
+def build_post_step():
+    """Folded 3D of the base-anchored support post (issue #292, x2): foot flat on
+    the floor, vertical web, top pad. X=u (width POST_PW), Y=v, Z=up.
+    (Restored: the def line was dropped by accident in 845e3e31, which made the
+    whole --no-step block die here and silently skip every later STEP build.)"""
+    import cadquery as cq
+    pw, pad, web, foot, t = POST_PW, POST_PAD, POST_H, POST_FOOTL, POST_T
+    # C-fold, foot + pad both FORWARD of the web. Local X=u(width), Y=v(depth), Z=up.
+    # foot on the floor (Y 0..foot), web vertical at its back edge (Y=foot), pad hinged
+    # at the web top and TILTED down-forward by POST_TILT to bed on the sloped underside.
+    foot_p = cq.Workplane("XY").box(pw, foot, t, centered=False)                          # floor, Y 0..foot
+    web_p  = cq.Workplane("XY").box(pw, t, web, centered=False).translate((0, foot, 0))   # vertical at Y=foot
+    pad_p  = (cq.Workplane("XY").box(pw, pad, t, centered=False)
+              .translate((0, foot - pad, web))                                            # flat at the top, forward
+              .rotate((0, foot, web), (1, foot, web), -POST_TILT))                        # tilt to the slope (free end drops toward the FRONT to match)
+    body = foot_p.union(web_p).union(pad_p)
+    for du in (-POST_BOLT_DU, POST_BOLT_DU):                                              # M4 through the foot
+        body = body.cut(cq.Workplane("XY").cylinder(
+            2*t, D_M4/2.0, centered=(True, True, False)).translate((pw/2.0+du, foot/2.0, 0)))
+    step = os.path.join(OUT, "segno_post.step")
+    cq.exporters.export(body.val(), step)
+    return step
+
+
 def build_screen7_tower_step():
     """7" screen support TOWER (3D print in PETG, x1, #762): the one-piece
     replacement for the frame+legs cradle ("more beefy", user call). A closed
@@ -3930,8 +3954,6 @@ def dxf_ring_disc(path):
     centre hole and its nut clamps the disc; the knob sits on top. Cut from 2mm sheet."""
     doc = _doc(); msp = doc.modelspace()
     _circle(msp, 0, 0, RING_ID)                 # outline: OD = ring inner diameter
-    # EC11 anti-rotation keyway (PROVISIONAL position -- verify on the unit)
-    _rrect(msp, 0, ENC_TAB_DIR * ENC_TAB_R, ENC_TAB_W, ENC_TAB_H, r=0.4)
     _circle(msp, 0, 0, D_ENC)                   # encoder bush hole (centre)
     _text(msp, -RING_ID/2, RING_ID/2 + 6, 5, "Segno LED-RING CENTRE DISC  2.0mm  x1  (encoder clamps it)", "NOTE")
     doc.saveas(path); return {}
@@ -4064,8 +4086,11 @@ def main(argv):
             build_mini_console()
             p = build_step()
             print("\n3D STEP:\n  " + os.path.relpath(p, HERE) + " (+ per-part .step)")
-        except Exception as e:  # pragma: no cover
+        except ImportError as e:  # pragma: no cover -- no cadquery in this env
             print(f"\n(STEP skipped: {e})")
+        # anything else is a real build failure: let it crash the run. The old
+        # blanket `except Exception` swallowed a NameError here for weeks and
+        # shipped stale tower/stand/fit-test STEPs while printing EXIT=0.
     for z in build_quote_packages():
         print("Quote package: out/" + os.path.basename(z))
     if "--render" in argv:
