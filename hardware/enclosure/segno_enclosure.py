@@ -317,14 +317,21 @@ SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 # frame origin is therefore re-anchored to the LIT area: every window-centred
 # y below carries +2.75 vs the raw STEP values. Reprint the fit test after
 # any further change here. Module body over-all: 166.1 x 124.3 (the PCB
-# hangs ~22 below the glass). The four M3 TABS (O3.1, 1.7 thick) live 6.7
-# BEHIND the glass front, protruding above/below the glass -- screws come from
-# the module's front side into bosses that rise to the tab plane.
+# hangs ~22 below the glass). The four M3 TABS (O3.1, 1.7 thick) live
+# S7C_GLASS_TO_TABF (5.6, user-measured) BEHIND the glass front, protruding
+# above/below the glass -- screws come from the module's front side into
+# bosses that rise to the tab plane.
 S7C_HOLES = ((-76.80, 55.25), (80.30, 55.25),
              (-76.80, -59.75), (80.30, -59.75))   # tab holes, lit-centred
 S7C_MOD_BB   = (-80.80, -64.40, 85.25, 59.90)     # module outline, lit-centred
 S7C_TAB_T    = 1.7     # tab thickness
-S7C_GLASS_TO_TABF = 6.7   # glass front -> tab FRONT face
+S7C_GLASS_TO_TABF = 5.6   # glass front -> tab FRONT face. USER-MEASURED
+                          # 2026-08-19: the vendor STEP said 6.7, but the
+                          # round-1 fit test held the glass 1.1 off the plate
+                          # ("lower the standoffs by 1.1"). Physical unit wins.
+                          # (Glass altitude in the tower is invariant to this:
+                          # deck + boss_h + TAB_T + GLASS_TO_TABF collapses to
+                          # deck + MOD_DEPTH + GAP.)
 S7C_MOD_DEPTH = 14.8      # glass front -> module back (PCB) plane
 S7C_GAP      = 0.5     # deck sits this far behind the module back --
                        # only the bosses touch the module (PCB never contacts)
@@ -3170,8 +3177,8 @@ def build_screen7_fit_test():
     """7" screen FIT TEST plate (3D print, x1, #762): a stand-in for the
     faceplate around the 7" aperture, at the REAL sheet gauge (T = 2.0) so the
     reveal through the aperture is what the aluminum will give. Lay the module
-    glass-down onto the plate BACK; four bosses rise toward the tab plane (the
-    tabs sit 6.7 mm behind the glass) but stop 0.2 SHORT: the M3 x 8 screws
+    glass-down onto the plate BACK; four bosses rise toward the tab plane
+    (S7C_GLASS_TO_TABF behind the glass) but stop 0.2 SHORT: the M3 x 8 screws
     (down through the O3.1 tab holes, self-tapping into the boss pilots) pull
     the tabs onto the bosses and that preload clamps the GLASS FLAT against
     the plate back -- flatness comes from the screws, not from print height.
