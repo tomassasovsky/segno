@@ -3168,16 +3168,22 @@ def build_ring_diffuser_step():
 
 def build_screen7_fit_test():
     """7" screen FIT TEST plate (3D print, x1, #762): a stand-in for the
-    faceplate around the 7" aperture. Lay the module glass-down onto the plate
-    BACK; four bosses rise to the tab plane (the tabs sit 6.7 mm behind the
-    glass); drive M3 x 8 down through the O3.1 tab holes into the boss pilots
-    (self-tap in the print). Then look through the FRONT: the ACTIVE AREA must
-    fill the aperture -- no bezel visible, no pixels hidden -- and all four
-    screws must land without forcing. Hole positions come from the vendor STEP;
-    if anything misses, measure it and correct S7C_HOLES / the aperture offset.
-    The notch marks TOP; the chamfered aperture rim is the FRONT face."""
+    faceplate around the 7" aperture, at the REAL sheet gauge (T = 2.0) so the
+    reveal through the aperture is what the aluminum will give. Lay the module
+    glass-down onto the plate BACK; four bosses rise toward the tab plane (the
+    tabs sit 6.7 mm behind the glass) but stop 0.2 SHORT: the M3 x 8 screws
+    (down through the O3.1 tab holes, self-tapping into the boss pilots) pull
+    the tabs onto the bosses and that preload clamps the GLASS FLAT against
+    the plate back -- flatness comes from the screws, not from print height.
+    A 6 mm perimeter wall on the back (open on the bottom edge, where the
+    PCB's connectors point) keeps the thin plate itself flat. Then look
+    through the FRONT: the ACTIVE AREA must fill the aperture -- no bezel
+    visible, no pixels hidden -- and all four screws must land without
+    forcing. Hole positions come from the vendor STEP; if anything misses,
+    measure it and correct S7C_HOLES / the aperture offset. The notch marks
+    TOP; the chamfered aperture rim is the FRONT face."""
     import cadquery as cq
-    pw, ph, pt = 200.0, 152.0, 3.0
+    pw, ph, pt = 200.0, 152.0, T          # T: the faceplate's actual 2.0 gauge
     plate = cq.Workplane("XY").rect(pw, ph).extrude(pt)
     plate = plate.cut(cq.Workplane("XY").rect(SMALL_W, SMALL_H).extrude(pt))
     plate = plate.edges("|Z").chamfer(0.6)
@@ -3186,9 +3192,20 @@ def build_screen7_fit_test():
     except Exception:
         pass
     plate = plate.cut(cq.Workplane("XY").center(0, ph / 2.0).circle(3.0).extrude(pt))
+    # back-side stiffening wall (the 2 mm field would potato-chip alone):
+    # a 4 mm x 6 mm rib ring just inside the plate edge, clear of the module
+    # outline on left/right/top, OMITTED along the bottom edge so the PCB's
+    # downward-pointing connectors and cables exit freely
+    ww, wh = 4.0, 6.0
+    rib = (cq.Workplane("XY").rect(pw - 8.0, ph - 8.0)
+           .rect(pw - 8.0 - 2 * ww, ph - 8.0 - 2 * ww).extrude(-wh))
+    rib = rib.cut(cq.Workplane("XY").center(0, -(ph - 8.0) / 2.0 + ww / 2.0)
+                  .rect(pw, ww + 2.0).extrude(-wh))       # open the bottom run
+    plate = plate.union(rib)
     # bosses on the BACK (z<0 side is the back once flipped: build them below
-    # z=0 by extruding negative): top face of the plate (z=pt) is the FRONT
-    boss_h = S7C_GLASS_TO_TABF
+    # z=0 by extruding negative): top face of the plate (z=pt) is the FRONT.
+    # 0.2 SHORT of the tab plane = designed clamp preload (see docstring).
+    boss_h = S7C_GLASS_TO_TABF - 0.2
     for (hx, hy) in S7C_HOLES:
         plate = plate.union(cq.Workplane("XY").center(hx, hy)
                             .circle(4.5).extrude(-boss_h))
