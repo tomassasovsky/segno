@@ -219,31 +219,7 @@ def fold_faceplate(path, explode=0.0):
     s16uc = (V._row1_u(4) + V._row1_u(7)) / 2.0
     parts.append(screen(V.COL_U, V.SCREEN_TOP_V - V.SMALL_H/2, V.SMALL_W-1, V.SMALL_H-1, 12, "lid_screen7"))
     parts.append(screen(s16uc,               V.SCREEN_TOP_V - V.BIG_H/2,   V.BIG_W-1,   V.BIG_H-1,   16, "lid_screen16"))
-    # --- screen-retention brackets (segno_screen_bracket x4 per screen): each clamps a panel edge
-    #     from behind -- a FOOT rivets to the plate underside, a WALL steps down the panel edge, and
-    #     a HOOK laps over the panel's rear, pressing the bezel forward against the faceplate.
-    def screen_clamps(uc, vc, w, h, sd, tag):
-        cu, cv = uc, vc + yf                       # aperture centre in lid-flat coords (+yf offset)
-        zr = V.T - sd                              # panel rear plane (glass sits at z=T)
-        LEN, FOOT, HOOK, T = 55.0, 16.0, 8.0, V.T
-        def bx(x0, x1, y0, y1, z0, z1):
-            return cq.Workplane("XY").box(x1-x0, y1-y0, z1-z0, centered=False).translate((x0, y0, z0)).val()
-        out = []
-        for nm, axis, s in [("t","u",+1), ("b","u",-1), ("l","v",-1), ("r","v",+1)]:
-            if axis == "u":                        # top/bottom edge: bracket runs along u
-                ey = cv + s*h/2; x0, x1 = cu-LEN/2, cu+LEN/2
-                foot = bx(x0, x1, min(ey, ey+s*FOOT), max(ey, ey+s*FOOT), -T, 0)      # on plate underside, outside aperture
-                wall = bx(x0, x1, ey-T/2, ey+T/2, zr, 0)                              # down the panel edge
-                hook = bx(x0, x1, min(ey, ey-s*HOOK), max(ey, ey-s*HOOK), zr, zr+T)  # laps the panel rear (inward)
-            else:                                  # left/right edge: bracket runs along v
-                ex = cu + s*w/2; y0, y1 = cv-LEN/2, cv+LEN/2
-                foot = bx(min(ex, ex+s*FOOT), max(ex, ex+s*FOOT), y0, y1, -T, 0)
-                wall = bx(ex-T/2, ex+T/2, y0, y1, zr, 0)
-                hook = bx(min(ex, ex-s*HOOK), max(ex, ex-s*HOOK), y0, y1, zr, zr+T)
-            out.append((f"{tag}_{nm}", place(foot.fuse(wall).fuse(hook))))
-        return out
-    parts += screen_clamps(V.COL_U, V.SCREEN_TOP_V - V.SMALL_H/2, V.SMALL_W-1, V.SMALL_H-1, 12, "lid_sclamp7")
-    parts += screen_clamps(s16uc,               V.SCREEN_TOP_V - V.BIG_H/2,   V.BIG_W-1,   V.BIG_H-1,   16, "lid_sclamp16")
+    # (screen-retention clamps removed: screens are bonded to the shell, #760)
     # --- encoder knob + diffused LED-ring cover on the top plate (centred under the 7" screen)
     eu, ev = V.COL_U, V.PEDAL_ROW2_V + yf
     parts.append(("lid_ring", place(cq.Workplane("XY").circle(V.RING_OD/2).circle(V.RING_ID/2)
@@ -444,8 +420,8 @@ def _obj_key(name):
     object, etc.). Embossed silk labels sit on the lid by design, so they're excluded."""
     if "silk" in name:
         return None
-    if name.startswith("crivet") or "sclamp" in name:
-        return None                        # rivets pierce walls / clamps grip the panel BY DESIGN -> skip collision
+    if name.startswith("crivet"):
+        return None                        # rivets pierce walls BY DESIGN -> skip collision
     if name.startswith("cbracket"):
         return name                        # keep each corner bracket separate (grouping the two
                                            # disjoint brackets into one compound makes OCC's
@@ -541,7 +517,6 @@ if __name__ == "__main__":
         if n.startswith("buck"): return cq.Color(0.12,0.32,0.46,1.0)      # external buck module
         if n.startswith("crivet"): return cq.Color(0.85,0.86,0.90,1.0)    # rivets (bright metal)
         if n.startswith("cbracket"): return cq.Color(0.95,0.55,0.20,1.0)  # corner brackets (orange, visible)
-        if "sclamp" in n: return cq.Color(0.20,0.78,0.70,1.0)            # screen-retention clamps (teal, visible)
         if n.startswith("lid"): return cq.Color(0.45,0.55,0.78,1.0)
         if n.startswith("pedal"): return cq.Color(0.30,0.31,0.36,1.0)
         if n.startswith("plat"): return cq.Color(0.62,0.64,0.70,1.0)
@@ -566,7 +541,6 @@ if __name__ == "__main__":
         if n.startswith("board"): return (0.10,0.10,0.12)
         if n.startswith("crivet"): return (0.85,0.86,0.90)
         if n.startswith("cbracket"): return (0.95,0.55,0.20)
-        if "sclamp" in n: return (0.20,0.78,0.70)
         if n.startswith("lid"): return (0.45,0.55,0.80)
         if n.startswith("pedal"): return (0.30,0.31,0.36)
         if n.startswith("plat"): return (0.62,0.64,0.70)

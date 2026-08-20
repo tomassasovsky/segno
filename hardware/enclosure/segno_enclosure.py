@@ -14,7 +14,7 @@ Construction (see ../segno_enclosure_design.md and
   - front wall (12) + top flange (ledge)    - faceplate pan (sloped top, all cutouts)
   - rear wall (100) + I/O + vents + flange    + down-turned front/side/rear skirts
   - 2x side panel + top flange (ledge)        (lid screws on the SKIRTS, not the top)
-  - bottom plate (folded, vented, Pi/board) - 2x screen-retention bracket
+  - bottom plate (folded, vented, Pi/board)   (screens are BONDED, no brackets)
   - 10x inner pedal platform (3D printed)
 
 Foot controls = ten Cherub WTB-006 footswitches (109.87x76.35, 29.3 mm tall with
@@ -85,13 +85,15 @@ CORNER_LEG = 12.0    # bracket leg width (along the wall)
 CORNER_ZR_WALL = (8.0, 40.0, 72.0)    # rear-wall leg rivets (3)
 CORNER_ZR_SIDE = (24.0, 56.0)         # side-wall leg rivets (2), interleaved with the wall leg
 CORNER_HT      = 80.0                  # rear bracket height (covers the ~90 mm rear wall)
-LID_FRONT_FL = 9.0   # front-lip flange flat (down-turned lip; rests on the front wall, no screw)
+# LID_FRONT_FL (front-lip flange flat) is DERIVED below from the seam solver:
+# the lip runs from the fold to the VERY BOTTOM of the base (#760).
 # LID_REAR_LAP (rear-lap length) is DERIVED by the rear-seam solver below
 LID_SIDE_LIP = 16.0  # inward lip at the bottom of each lid side wall (screws to the base from below)
 # Lid -> body fixing scheme:
 #   FRONT  : the Top plate's front lip screws horizontally into the Front panel.
 #   REAR   : the Top plate's rear edge laps onto the angled TRANSITION SURFACE and
-#            screws straight down into PEM nuts there (no fixing on the Rear panel).
+#            screws straight down into hand-tapped M3 holes there (no fixing on the
+#            Rear panel). Same joint as the front lip: ONE tap, ONE screw SKU.
 #   SIDES  : the Top plate has down-turned WINGS that tuck INSIDE the Side panels
 #            for repeatable lateral alignment (locating only, no screws).
 
@@ -221,7 +223,7 @@ CONSOLE_SLED_T = 12.633   # thicker than the mini's, because this sled takes M3x
                           # mini's only takes them from one. Derived as the FRONT
                           # row's metal-base height less RING_FLOOR; _check() holds
                           # that, so the three numbers cannot drift apart.
-RING_FLOOR = 1.6          # front-row ring floor. The mid row's "floor" is the tall
+RING_FLOOR = 1.6 + 0.443  # front-row ring floor (+#760 reseat recal). The mid row's "floor" is the tall
                           # pedestal deck it already had -- same formula, and only
                           # the front row is tight enough for this to bind.
 # Light-baffle TUB around the pedal: the pedestal's walls rise from the deck to
@@ -233,11 +235,12 @@ RING_FLOOR = 1.6          # front-row ring floor. The mid row's "floor" is the t
 # wall gets a full-height vertical CHANNEL the boss slides down at drop-in --
 # it also guides the pedal into the pad pocket.
 SKIRT_SETBACK = 0.4           # wall inner face tucked behind the slot cut line
-SKIRT_GAP    = 0.3            # wall top to the REAL faceplate underside. Small on
-                              # purpose: reads as no gap through the reveal, while
-                              # still keeping the lid seated on its flanges, not on
-                              # ten printed towers (drift calibrated to ~0.05; if a
-                              # tub buzzes on hardware, add felt tape to its top)
+SKIRT_GAP    = 0.0            # wall top FLUSH on the REAL faceplate underside
+                              # (user call 2026-08-18, #760: the 0.3 standoff read
+                              # as a visible gap). Risk accepted: an FDM-proud
+                              # tower can lift the lid off its flange seats -- if
+                              # assembly rocks on hardware, restore 0.3 here (or
+                              # sand the tub tops).
 # Like POST_FACEDRIFT: the assembled faceplate seats ABOVE lid_top_z's bare
 # slope, and by a row-dependent amount -- measured in "Segno console (populated)"
 # (the manufacturing source of truth) 2026-07-28: +1.6 over row 1, +0.7 over
@@ -254,7 +257,14 @@ SKIRT_GAP    = 0.3            # wall top to the REAL faceplate underside. Small 
 #
 # Correcting both together moves platform_h by -0.0003 mm at the front row and
 # +0.015 mm at the mid row, so nothing already printed or cut is invalidated.
-FACE_SEAT = 1.95
+#
+# 2026-08-18 (#760): the lid now seats on the SEAM-SOLVER anchor. The plane the
+# 2026-07-28 measurements were taken against sat 2.0 mm rearward (the old doc
+# frame), i.e. 2*tan(SLOPE) = 0.443 mm LOWER than the real seat. Re-measured in
+# the reseated doc: pedals 0.46 (row 1) / 0.423 (row 2) below the slot rims --
+# the uniform +0.443 recalibration lands within 0.02 mm of both. Platforms
+# printed before this are 0.44 mm short.
+FACE_SEAT = 1.95 + 0.443
 
 SKIRT_DRIFT_ROW1 = FACE_SEAT   # was 1.6 -- the same #742 fit; see FACE_SEAT
 SKIRT_DRIFT_ROW2 = FACE_SEAT   # was 0.5 -- ditto; both rows share one constant now
@@ -271,9 +281,11 @@ SKIRT_BOSS_CH_HALF = PEDAL_SCREW_SPAN/2 + 0.7   # channel floor: swallows the bo
 SKIRT_BOSS_CH_X    = PEDAL_D/2 - PEDAL_SCREW_BACK   # +31.695: boss axis, rearward of centre
 
 # --- screens (capacitive touch, mounted from BEHIND; aperture < bezel) --------
-BIG_BEZEL  = (359.5, 223.75)  # 15.6" panel BODY (measured): glass 359.5x206.5 edge-to-edge + a
-                              # connector strip at the bottom extending the body to 223.75. Used for
-                              # slab clearance; note this is ~0.25mm SHORTER than the old 224 so it fits.
+BIG_BEZEL  = (353.0, 208.0)   # 15.6" panel BODY -- UPERFECT (PROVISIONAL listing 13.9x8.2in, caliper
+                              # on arrival): cased portable monitor, connectors exit the SIDE edges,
+                              # bezel ~symmetric (no bottom connector strip). Replaces the old bare
+                              # panel's 359.5x223.75 (glass + 17mm bottom strip) -- that strip was a
+                              # fiction here and pinned the support posts 23mm too far forward.
 BIG_W, BIG_H     = 342.5, 193.0   # 15.6" faceplate APERTURE -- ~0.8mm/side inside the 344.16 x 193.59
                               # ACTIVE area so the faceplate lip overlaps the active edge (no light leak).
                               # The decal (active image, 344.2x193.6) stays; the aperture reveals IT, not
@@ -283,6 +295,76 @@ SMALL_BEZEL = (165.0, 100.0)  # 7" module outline (APROTII: ears 164x99)
 SMALL_W, SMALL_H = 153.75, 85.5   # 7" aperture = the 153.75 x 85.5 visible (active) area; reveals it
                               # fully (mounted from behind), no lip overlap on this screen.
 SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
+
+# --- 7" screen cradle (3D print, #762) -----------------------------------------
+# Floor-anchored printed stand for the APROTII 7": a flat FRAME the module screws
+# onto by its corner-ear holes, on two wedge LEGS whose top face is cut at
+# SLOPE_ANGLE so the frame lies parallel to the faceplate underside. The glass is
+# pressed against the lid by a 2 mm FELT layer on the frame rim (the user's
+# compliance call: felt absorbs the height tolerance, the leg slots absorb the
+# rest). The screens do NOT lift with the lid on this scheme: service = lift the
+# lid, screens + cables stay put.
+# All 7"-cradle geometry is DISPLAY-WINDOW-CENTRED. Source of truth: the vendor
+# STEP ("lcd 7inch cap 1024 600.stp", user-supplied 2026-08-19). The model's
+# front face decomposes into the cover GLASS (164 x 100.1, centred on the
+# model origin -- the datasheet's "164x99" was the glass, not the module) and
+# a CLEAR DISPLAY WINDOW of 154.5 x 89.1 centred at model (-1.75, +2.5): that
+# window is the hard optical boundary, so the aperture centres on IT and it is
+# the origin here. STEP-derived window-to-module-edge margins L3.55 / R8.0 /
+# B22.6 / T12.6 (user calipers said L4.3/R7.3/B21.8/T16.3 -- top differs by
+# 3.7 mm; the powered-screen FIT TEST is the final referee on where the lit
+# pixels sit inside the window). FIT-TEST VERDICT (printed 2026-08-19): the
+# lit area sits 2.75 mm LOWER than the STEP's window centre (2.75 black strip
+# at the aperture top, bottom flush) -- consistent with the calipers. The
+# frame origin is therefore re-anchored to the LIT area: every window-centred
+# y below carries +2.75 vs the raw STEP values. Reprint the fit test after
+# any further change here. Module body over-all: 166.1 x 124.3 (the PCB
+# hangs ~22 below the glass). The four M3 TABS (O3.1, 1.7 thick) live
+# S7C_GLASS_TO_TABF (5.6, user-measured) BEHIND the glass front, protruding
+# above/below the glass -- screws come from the module's front side into
+# bosses that rise to the tab plane.
+S7C_HOLES = ((-76.80, 55.25), (80.30, 55.25),
+             (-76.80, -59.75), (80.30, -59.75))   # tab holes, lit-centred
+S7C_MOD_BB   = (-80.80, -64.40, 85.25, 59.90)     # module outline, lit-centred
+S7C_TAB_T    = 1.7     # tab thickness
+S7C_GLASS_TO_TABF = 5.6   # glass front -> tab FRONT face. USER-MEASURED
+                          # 2026-08-19: the vendor STEP said 6.7, but the
+                          # round-1 fit test held the glass 1.1 off the plate
+                          # ("lower the standoffs by 1.1"). Physical unit wins.
+                          # (Glass altitude in the tower is invariant to this:
+                          # deck + boss_h + TAB_T + GLASS_TO_TABF collapses to
+                          # deck + MOD_DEPTH + GAP.)
+S7C_MOD_DEPTH = 14.8      # glass front -> module back (PCB) plane
+S7C_GAP      = 0.5     # deck sits this far behind the module back --
+                       # only the bosses touch the module (PCB never contacts)
+S7C_FRAME_W  = 180.0   # tower outline (centred on the module body)
+S7C_FRAME_H  = 138.0
+# --- one-piece support TOWER (v3, "more beefy" -- user call 2026-08-19) -------
+# A closed wedge box: 4 mm perimeter walls, sloped deck carrying the window +
+# tab bosses, wide floor flange with SIX M3 anchors into the base floor (the
+# #762 stations). Touch loads on the screen go tabs -> bosses -> deck -> four
+# walls -> floor; no slender columns, no bolted joints in the load path.
+S7T_WALL   = 4.0       # wall thickness
+S7T_DECK   = 5.0       # deck thickness (along the deck normal)
+S7T_FLANGE = 12.0      # floor flange width (outward)
+S7T_H0     = 66.06     # deck-top height (mm, above the base floor TOP) under the
+                       # display-window centre. From the MEASURED underside plane
+                       # in Fusion (world: z = 12.43 + tan(SLOPE)*y mm): glass
+                       # kisses the lid with ZERO shim; if the print lands low,
+                       # M3 washers under the module tabs take up the gap.
+S7C_FRAME_T  = 5.0     # frame plate thickness
+S7C_WIN_W    = 146.0   # open window: PCB + connectors + backlight switch live
+S7C_WIN_H    = 96.0    # here untouched (ports point rearward through the window)
+S7C_LEG_SEP  = 158.0   # leg centres, symmetric about COL_U -- ON the frame's side
+                       # rails (u +-70..88), clear of the open window
+S7C_LEG_W    = 30.0    # leg web width (along u)
+S7C_LEG_T    = 6.0     # leg web thickness (along v)
+S7C_FOOT_L   = 40.0    # foot flange (along v), 2x M3 to floor anchors (#762)
+S7C_FOOT_GAUGE = 24.0  # foot hole spacing along v
+S7C_ADJ      = 6.0     # height regulation budget: felt compression (~1) + up to
+                       # ~5 of M3 washer shims between leg pad and frame
+# (nominal leg height is computed in build_screen7_cradle_steps -- it needs
+#  SCREEN_TOP_V, which is defined further down)
 
 # --- LEDs / encoder -----------------------------------------------------------
 # Status indicators = SMD LEDs (WS2812B), NOT through-hole: ONE single-LED
@@ -298,9 +380,17 @@ LED_INS_FLANGE = 3.0      # shoulder overhang past the slot, all around (seats o
                           # faceplate UNDERSIDE -- the insert pushes in from INSIDE)
 LED_INS_FL_T  = 1.5       # shoulder thickness
 LED_INS_POCKET = (6.0, 6.0, 0.8)  # LED nest recess in the shoulder's back face
-D_ENC     = 7.0      # EC11 encoder bush
-RING_OD   = 58.0     # diffused-annulus ring window OD (12 THT LEDs behind)
-RING_ID   = 40.0     # ring window ID
+D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
+                     # the vendor STEP shows the thread OD needs the 0.2, #762)
+# EC11 anti-rotation tab: NO keyway in the disc (user call 2026-08-19: the
+# slot looked bad -- the tab gets snapped off the EC11 instead; the nut alone
+# clamps the disc).
+RING_OD   = 46.0     # diffused-annulus ring window OD -- sized over the Adafruit
+RING_ID   = 31.0     # NeoPixel Ring 16 (44.5/31.7, LEDs on r~19), which is and
+                     # always was the ring hardware, mounted ON the ring board
+                     # around the EC11. (The old 58/40 window and its '12 THT
+                     # LEDs' note were wrong -- user correction 2026-08-19;
+                     # band widened 44/33 -> 46/31 same day: 'looks small'.)
 N_IND     = 10       # indicator LED pills -- ALL 10 pedals (issue #366). Firmware
                      # chain contract is still indicatorLeds[7]; widening it to 10
                      # is an open firmware change, flagged on the issue.
@@ -560,13 +650,15 @@ FOOT_INSET_Y = 45.0  # from front and rear
 D_M3      = 3.2      # M3 clearance (Pi/board standoffs)
 D_M2      = 2.4      # M2 clearance (external buck standoffs)
 D_M4      = 4.3      # M4 clearance (bottom plate -> shell)
-PEM_M4    = 6.3      # PEM M4 clinch hole (DISTINCT from M4 clearance)
+# The whole lid fixes with ONE screw SKU: M3 into hand-tapped Ø2.5 pilots (front
+# lip AND rear lap seam -- user call 2026-08-18, no clinch nuts anywhere). Taps
+# are cut AFTER powder-coat, so no thread masking is needed.
 # --- powder-coat masking (annotation only; issue #396) ---
-# PEMs are clinched BEFORE the coating line, so the thread has to be plugged. The
-# earth stud needs a bare land on both faces or the ring terminal bonds to paint.
-MASK_PEM_D = 12.0    # silicone plug / masking disc over an M4 clinch thread
+# The earth stud needs a bare land on both faces or the ring terminal bonds to paint.
 MASK_GND_D = 20.0    # bare bonding land around the M6 earth stud
-PEM_EDGE  = 8.0      # min PEM centre-to-edge distance
+PEM_EDGE  = 8.0      # min centre-to-edge distance (named for the retired PEM
+                     # scheme; KEPT as the seam-row solver input so the 9 hole
+                     # stations stay exactly where every doc and model has them)
 R_FILLET  = 3.0      # inside corner radius on rectangular cutouts
 
 # ===========================================================================
@@ -644,6 +736,12 @@ _bd  = D - 2.0 * T                              # bottom plate flat depth (= BD)
 # lid front mold corner (lip outer face x lid outer skin), lip hugging the wall:
 _cfy = H_FRONT - T * math.tan(_ra) + T / math.cos(_ra)
 _cfz = -DEV90 - T
+# Front-lip flange: the lip TIP lands flush with the base's bottom face (z=0),
+# covering the whole front -- wall, floor edge and all (user call 2026-08-18,
+# #760; the old 9mm flange stopped ~3.2mm short). A flat point f past the bend
+# line lands at station f + DD from the mold corner, so tip-at-zero needs
+# flat = corner height - DD_LIP.
+LID_FRONT_FL = _cfy - DD_LIP
 _mtop   = FP_V + DD_LIP + DD_LAP                # lid top-plate mold length
 RIDGE_Z = _cfz + _mtop * math.cos(_ra)          # lid rear mold corner (the ridge)
 RIDGE_Y = _cfy + _mtop * math.sin(_ra)
@@ -666,19 +764,20 @@ HT_FLAT   = (D_WALL - RIDGE_CLEAR) - DD_TR      # transition flange, developed f
                                                 # development stretches the facet)
 D_FL_TIP  = D_WALL - (HT_FLAT + DD_TR)          # flange tip (= RIDGE_CLEAR)
 D_LAP_TIP = D_WALL - KNUCKLE_CLEAR              # lap tip: clear of the wall knuckle
-# screw row: centred on the lap/flange overlap, pushed down-facet if needed so
-# the PEM keeps its edge distance from the flange tip
+# screw row: centred on the lap/flange overlap, pushed down-facet if needed to
+# keep PEM_EDGE from the flange tip (solved for the retired PEM scheme; frozen --
+# generous for a tapped hole, and every model carries these stations)
 D_SEAM_SCREW = max((D_FL_TIP + D_LAP_TIP) / 2.0, D_FL_TIP + PEM_EDGE)
 LID_REAR_LAP = D_LAP_TIP - DD_LAP               # lap developed flat length
 LRL = LID_REAR_LAP
-SEAM_M4_V  = LID_FRONT_FL + FP_V + (D_SEAM_SCREW - DD_LAP)     # lap M4 row (lid flat v)
-SEAM_PEM_V = HR_FLAT + (D_WALL - D_SEAM_SCREW) - DD_TR         # flange PEM row (base
+SEAM_LAP_V = LID_FRONT_FL + FP_V + (D_SEAM_SCREW - DD_LAP)     # lap screw row (lid flat v)
+SEAM_TAP_V = HR_FLAT + (D_WALL - D_SEAM_SCREW) - DD_TR         # flange tap-pilot row (base
                                                                # flat, from the rear
                                                                # wall bend line)
 # hard DFM guards: a parameter tweak must not silently collapse the lap/flange
 # overlap or push the screw row off the lap (holes in air pass no other check)
 assert HR_FLAT > 0 and LID_REAR_LAP > 0, "seam solver: degenerate rear seam"
-assert D_FL_TIP + PEM_EDGE <= D_SEAM_SCREW <= D_LAP_TIP - (D_M4 / 2.0 + 2.0), (
+assert D_FL_TIP + PEM_EDGE <= D_SEAM_SCREW <= D_LAP_TIP - (3.4 / 2.0 + 2.0), (
     f"seam screw row d={D_SEAM_SCREW:.2f} outside the lap/flange overlap "
     f"[{D_FL_TIP:.2f}, {D_LAP_TIP:.2f}] with edge margins")
 assert HR_FLAT > max(CORNER_ZR_WALL) + T + 2.0, (
@@ -719,6 +818,21 @@ LED_GAP      = 12.0      # status-LED offset behind a pedal (toward rear)
 SILK_H       = 25.0      # silkscreen cap height -- SAME for every label (a too-wide word
 SILK_CW      = 0.66      # gets squished horizontally). bold char advance / cap height.
 PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the edge
+# The platform stack (platform_foot_holes and everything on it) converts lid-v
+# to plan as v*cos(SLOPE) -- but the DEVELOPED lid's content v=0 does NOT land
+# at plan 0: the lip hugs the wall at -(DEV90+T) and the flat starts DD_LIP past
+# the front mold corner (rear-seam solver, #237). Net: raw-v apertures cut
+# ~2.6mm forward of where the floor actually puts the pedals, and the pedal rear
+# edge fouls the slot. The slot cut ALONE carries the correction (#760): labels,
+# LED pills, screens and the platform stack keep the frozen approved layout.
+PEDAL_AP_DEV = (DEV90 + T) / math.cos(_ra) - DD_LIP
+# The slot grows FORWARD only, back to the APPROVED front gap of 1.93mm: the
+# pedal's front lip carries the case screws and needs that room, but on the
+# sloped plate a bigger gap drops the slot's front rim BELOW the pedal floor
+# (each mm of gap lowers the lip by tan(SLOPE)). At 1.93mm the floor sits
+# +0.16mm on the lip -- visually flush, exactly the approved relation now that
+# the pedal rides +0.443 on the reseated plate. Rear clearance stays nominal. (#760)
+FSW_FRONT_EXTRA = 0.43 / math.cos(_ra)
 # 7" screen, LED ring and encoder share ONE vertical centre-line (COL_U, defined
 # with the pedal layout below): the gap between pedals 1 and 2.
 # SCREEN_TOP_V is FROZEN at the value the console was built around (the screens,
@@ -769,9 +883,16 @@ REAR_IO_U = SCREEN_16_U
 PEDALS = [(_ROW1[i], _row1_u(i), PEDAL_ROW1_V) for i in range(8)] + [
     ("CLEAR", _row1_u(2), PEDAL_ROW2_V), ("BANK", _row1_u(3), PEDAL_ROW2_V)]
 
-# Front-lip screws: outer two land in the GAPS between pedals 1-2 and 7-8 (clear of
-# every foot-plate), the middle one on centre. Shared by the lid lip and the front wall.
-FRONT_SCREW_U = [COL_U, FP_W / 2.0, (_row1_u(6) + _row1_u(7)) / 2.0]
+# Front-lip screws: ONE PER PEDAL GAP plus one OUTBOARD of each end pedal at the
+# mirrored half-pitch (9 total; was 3 -- #760). The knuckle trim left the front
+# wall 10.09 tall with the screw row at ~6.95, so each hole keeps only ~1.0mm of
+# metal above its edge; spreading the lid load over every station cuts the
+# per-screw pull ~3x. All 9 land clear of every foot-plate by construction.
+# Shared by the lid lip and the front wall.
+_FS_HP = (_row1_u(1) - _row1_u(0)) / 2.0
+FRONT_SCREW_U = ([_row1_u(0) - _FS_HP]
+                 + [(_row1_u(i) + _row1_u(i + 1)) / 2.0 for i in range(len(_ROW1) - 1)]
+                 + [_row1_u(len(_ROW1) - 1) + _FS_HP])
 
 # Status-LED pedals: ALL of them (issue #366 -- the LED trial added pills over
 # REC/PLAY, STOP, UNDO and MODE; the encoder ring stays as well).
@@ -830,15 +951,21 @@ def face_drift(_v=None):
 # zone -- load runs faceplate -> post -> base -> floor. The posts anchor to the
 # BASE only; the faceplate bears on their felt caps, so the lid still lifts off and
 # NOTHING shows on the top face. Cut+bend only.
-POST_V     = 146.5                 # web depth: COMPACT post in the (now very narrow) band between the
-                                   # slope-corrected Cherub front-row slots (pad front must stay behind
-                                   # v~125.6) and the 15.6in body front (v~147.25) -- was 137 for the
-                                   # 103mm ASP-1 slot; re-verify against the populated Fusion doc
+POST_V     = 165.0                 # web depth (user call 2026-08-19: "move the screws back, make the
+                                   # posts taller"): the pad now sits 13mm in front of the 16in aperture
+                                   # edge (178) -- the actual dent zone -- instead of jammed at 146.5
+                                   # against the OLD panel's fictitious connector strip. Rear limit is
+                                   # the UPERFECT body's bottom edge (~170.5 plan, PROVISIONAL, VESA
+                                   # float +/-2.5); the intake vent field below yields instead (slots
+                                   # under the feet are skipped, see _bottom_vents_local).
 POST_U     = [625.0, 726.0]        # in the TRACK LED-slot GAPS (T2-T3 @625, T3-T4 @726) so the pad also
                                    # clears the LED slots; still under the 16in aperture, clear of the vent
 POST_PW    = 40.0                  # post width (u) -- lateral stability
-POST_PAD   = 20.0                  # top pad length (v) -- COMPACT; bears on the faceplate underside
-POST_FOOTL = 20.0                  # foot flange length (v) -- COMPACT; bolts to the base floor
+POST_PAD   = 20.0                  # top pad length (v) -- bears on the faceplate underside
+POST_FOOTL = 20.0                  # foot flange length (v) -- bolts to the base floor
+                                   # (briefly 17 while the post was wedged against the v375 platforms
+                                   # at POST_V=146.5; restored to 20 when POST_V moved to 165 -- the
+                                   # foot front now clears the platform rear wall by ~17 mm)
 POST_FELT  = 1.0                   # ASSEMBLED metal gap: a thicker (2-3 mm) felt/foam cap on the
                                    # pad compresses into this ~1 mm when the lid seats -> preloaded,
                                    # firm, rattle-free contact without jacking the lid.
@@ -858,8 +985,15 @@ POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), N
 # POST_V has since moved twice: to 137 (post pulled forward, issue #296) and then to
 # 146.5 (Cherub slope-corrected slots, issue #360; web now ~38.3 mm) -- NOT re-checked
 # against that doc at this position; re-verify there before fabrication.
-POST_FACEDRIFT = 1.5
-POST_H     = lid_top_z(POST_V) - T - POST_T - POST_FELT - POST_FACEDRIFT
+POST_FACEDRIFT = 1.5 + 0.443   # same #760 reseat recalibration as FACE_SEAT
+# DOC CALIBRATION at POST_V=165 (2026-08-19): the warning above came true -- probed in
+# the populated doc, the lid_top_z-minus-drift formula left the pad 4.85 mm below the
+# faceplate underside (target: POST_FELT = 1.0), i.e. the constant-drift model stops
+# tracking the reseated doc away from its v=158 calibration point. POST_DOC_CAL folds
+# the measured shortfall back in (normal gap error / cos(SLOPE)). SINGLE-POINT: if
+# POST_V moves again, re-probe the doc and re-set this before cutting posts.
+POST_DOC_CAL = (4.849 - POST_FELT) / math.cos(math.radians(SLOPE_ANGLE))
+POST_H     = lid_top_z(POST_V) - T - POST_T - POST_FELT - POST_FACEDRIFT + POST_DOC_CAL
 _POST_VP   = POST_V * math.cos(math.radians(SLOPE_ANGLE))   # projected web depth on the flat base
 _POST_FOOT_VP = _POST_VP - POST_FOOTL/2.0                   # foot-bolt depth (forward of the web)
 
@@ -869,8 +1003,10 @@ def faceplate_holes():
     cuts, engr = [], []
     # --- 10 pedal slots (two rows); a status LED pill above EVERY pedal --------
     for label, u, v in PEDALS:
-        cuts.append({"kind": "rect", "u": u - FSW_SLOT_W/2, "v": v - FSW_SLOT_D/2,
-                     "w": FSW_SLOT_W, "h": FSW_SLOT_D, "r": 0.0, "ref": label})  # square: max corner clearance
+        cuts.append({"kind": "rect", "u": u - FSW_SLOT_W/2,
+                     "v": v - FSW_SLOT_D/2 + PEDAL_AP_DEV - FSW_FRONT_EXTRA,  # development offset:
+                     "w": FSW_SLOT_W, "h": FSW_SLOT_D + FSW_FRONT_EXTRA,        # meet the pedals where the
+                     "r": 0.0, "ref": label})                                   # floor puts them (#760)
         led = _has_led(label)   # (slot cutouts below replace the old per-pedal LED holes;
                                 #  the flag still sets the label offset, unchanged)
         # silkscreen label ABOVE the pedal (rear side); every line is drawn at
@@ -1215,23 +1351,36 @@ def _check(strict_board_mount=True):
     # TRACK LED-slot GAPS (in u) so the pad also clears the slots.
     assert POST_V - POST_PAD > PEDAL_ROW1_V + FSW_SLOT_D/2.0, \
         f"POST pad reaches back over the front pedals (v{POST_V-POST_PAD:.0f} vs {PEDAL_ROW1_V+FSW_SLOT_D/2:.0f})"
-    body_front = SCREEN_TOP_V - BIG_BEZEL[1]   # 15.6in body extends forward to here
-    assert POST_V < body_front, \
-        f"POST web v={POST_V:.0f} not clear of the 15.6in body front (v={body_front:.0f})"
+    # the printed pedal platforms stand on the FLAT base: their ring rear wall (world
+    # depth) ends at PEDAL_ROW1_V*cos + SKIRT_OUT_D/2. The post's forwardmost metal
+    # (foot AND pad front, both at _POST_VP - POST_FOOTL) must clear it -- the 20 mm C
+    # overhung this by ~1 mm and collided in the populated doc (user-caught 2026-08-19).
+    _plat_rear_w = PEDAL_ROW1_V * math.cos(math.radians(SLOPE_ANGLE)) + SKIRT_OUT_D / 2.0
+    assert _POST_VP - POST_FOOTL > _plat_rear_w + 1.5, \
+        f"POST front (w{_POST_VP-POST_FOOTL:.1f}) hits the pedal platform rear (w{_plat_rear_w:.1f} + 1.5 margin)"
+    # 15.6in body bottom edge: the UPERFECT bezel is ~symmetric around the aperture
+    # (the old formula assumed the whole bezel surplus hung below -- true only for
+    # the old bare panel's connector strip). PROVISIONAL until the monitor arrives;
+    # the 3.0 margin absorbs the VESA float's +/-2.5 adjustment.
+    body_front = (SCREEN_TOP_V - BIG_H) - (BIG_BEZEL[1] - BIG_H) / 2.0
+    assert POST_V < body_front - 3.0, \
+        f"POST web v={POST_V:.0f} not clear of the 15.6in body bottom edge (v={body_front:.0f} - 3 margin)"
     # posts in the LED-slot gaps: no TRACK LED slot overlaps a post's pad (u +/- POST_PW/2)
     led = [_bbox(c) for c in cuts if c.get("ref","").endswith("_LEDSLOT")]
     for u in POST_U:
         for lb in led:
             assert not (lb[0] < u+POST_PW/2 and u-POST_PW/2 < lb[2]), \
                 f"POST at u={u:.0f} overlaps an LED slot (u {lb[0]:.0f}..{lb[2]:.0f}) -- move to a gap"
-    # post feet on the base must clear the intake vent (forward of the web)
+    # post feet on the base must clear the intake vent SLOTS (the field now skips
+    # slots under the feet -- see _bottom_vents_local -- so check slot-by-slot,
+    # not against the field's bounding box)
     vent_bb = [_bbox(c) for c in _bottom_vents_local(W-2*T, D-2*T) if c.get("kind") == "rect"]
-    vu0 = min(b[0] for b in vent_bb); vu1 = max(b[2] for b in vent_bb)
-    vv0 = min(b[1] for b in vent_bb); vv1 = max(b[3] for b in vent_bb)
     for u in POST_U:
-        for du in (-POST_BOLT_DU, POST_BOLT_DU):
-            assert not (vu0 <= u+du <= vu1 and vv0-3 <= _POST_FOOT_VP <= vv1+3), \
-                f"POST foot ({u+du:.0f},{_POST_FOOT_VP:.0f}) collides with the intake vent"
+        fu0, fu1 = u - POST_PW/2 - 2, u + POST_PW/2 + 2
+        fv0, fv1 = _POST_VP - POST_FOOTL - 2, _POST_VP + POST_T + 2
+        for b in vent_bb:
+            assert not (b[0] < fu1 and fu0 < b[2] and b[1] < fv1 and fv0 < b[3]), \
+                f"POST foot at u={u:.0f} overlaps intake vent slot (u {b[0]:.0f}..{b[2]:.0f}, v {b[1]:.0f}..{b[3]:.0f})"
 
     # 3. platform head-room for BOTH rows: top pad flush+proud at each depth
     for v in (PEDAL_ROW1_V, PEDAL_ROW2_V):
@@ -1703,7 +1852,24 @@ def _bottom_vents_local(bw, bd):
     gap_y = (PEDAL_ROW1_V + FSW_SLOT_D/2 + PLATFORM_MARGIN +
              PEDAL_ROW2_V - FSW_SLOT_D/2 - PLATFORM_MARGIN) / 2.0
     u0, v0 = bw/2 - (cols*(sl+14))/2, gap_y - (rows*VENT_PITCH)/2
-    return _vent_array(u0=u0, z0=v0, cols=cols, rows=rows, cp=sl + 14)
+    cuts = _vent_array(u0=u0, z0=v0, cols=cols, rows=rows, cp=sl + 14)
+    # SUPPORT-POST KEEP-OUT (POST_V=165 sits over this field): drop any slot that
+    # would land under a post foot/pad footprint (+4 mm margin) so the feet bolt
+    # to solid floor. The free-area gate still enforces VENT_FREE_AREA_MIN --
+    # currently ~16k mm^2 total, so the dropped slots cost nothing that matters.
+    keep = []
+    for c in cuts:
+        b = _bbox(c)
+        hit = False
+        for u in POST_U:
+            fu0, fu1 = u - POST_PW/2 - 4, u + POST_PW/2 + 4
+            fv0 = _POST_VP - POST_FOOTL - 4
+            fv1 = _POST_VP + POST_T + 4
+            if b[0] < fu1 and fu0 < b[2] and b[1] < fv1 and fv0 < b[3]:
+                hit = True
+        if not hit:
+            keep.append(c)
+    return keep
 
 
 def _bottom_vents():
@@ -1728,7 +1894,39 @@ def _bottom_vents():
 # the box to lengthen -- so wherever the board goes, CTRL_1/CTRL_2 (and the rest
 # of the five stations) go with it. A reshuffle that parks the CTRL jacks away
 # from the board's end of the cluster buys hum on an expression pedal.
-BOARD_U = 512.0
+
+# --- screen-stand floor anchors (#762): M3 tap pilots for the 7in tower (6)
+# and the 15.6in bridge stands (4+4). Stations from the verified Fusion
+# assembly (stand flanges), floor-flat coords (u=x, v=y world -- the floor has
+# no slope projection).
+STAND_ANCHORS = [
+    # 7in tower (RE-MEASURED from the tower flange holes in the verified doc,
+    # 2026-08-19: the previous frozen values predated BOTH the lit-area
+    # re-anchor (+2.75) and the tower placement correction -- they were 6.0 mm
+    # forward of the actual flange holes, caught by /code-review + a Fusion
+    # probe. These MUST track the tower: after any S7C_*/placement change,
+    # re-probe the doc's flange holes before cutting the base.)
+    (25.8, 279.5), (25.8, 359.5), (217.8, 279.5), (217.8, 359.5),   # 7in tower sides
+    (121.8, 246.1), (121.8, 392.8),                                  # 7in tower f/r
+    (480.0, 205.0), (480.0, 327.0), (454.0, 236.0), (454.0, 296.0),  # 15.6 L (doc-verified 0.1)
+    (765.0, 205.0), (765.0, 327.0), (739.0, 236.0), (739.0, 296.0),  # 15.6 R
+]
+# stand anchors: each station must clear the ACTUAL bottom vent slots (derived,
+# not a frozen field box -- the old hardcoded 256..576 x 145..191 window would
+# have silently stopped covering the real field on any vent/pedal-row change)
+for (_au, _av) in STAND_ANCHORS:
+    for _vc in _bottom_vents_local(W - 2*T, D - 2*T):
+        _vb = _bbox(_vc)
+        assert not (_vb[0] - 3.0 < _au < _vb[2] + 3.0 and _vb[1] - 3.0 < _av < _vb[3] + 3.0), \
+            f"STAND_ANCHOR ({_au},{_av}) lands in vent slot (u {_vb[0]:.0f}..{_vb[2]:.0f}, v {_vb[1]:.0f}..{_vb[3]:.0f})"
+
+BOARD_U = 560.0   # +48 from 512 (user call 2026-08-19: centre the cluster under
+                  # the 16" screen; the Pi moved +48 WITH it -- PI_PCB_U0=670.5,
+                  # PCB 670.5..726.5 -- keeping the 10cm ribbon's ~61 gap).
+                  # Electrically BETTER: CTRL_1/2 at u 662/706, so the move
+                  # SHORTENS the unshielded analog runs by 48. Nearby limits:
+                  # Pi right edge 726.5 vs the 15.6 R-stand flange at ~733
+                  # (6.5 clear). Also widens the 15.6 L-tower strip to ~93.
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
     return [("CONSOLE_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
@@ -1783,7 +1981,11 @@ PI_HDR_LEN   = 50.8           # 2x20 on 0.1in
 PI_HDR_V_OFF = 32.5           # header centre from the Pi's 3.5 mm hole end -- which
                               # is also where the hole pattern centres, so aligning
                               # the header to J2 aligns the hole pattern with it
-PI_PCB_U0    = 622.5          # board-facing long edge: sets the ribbon run (below)
+PI_PCB_U0    = 670.5          # board-facing long edge: sets the ribbon run (below).
+                              # +48 with BOARD_U (user call 2026-08-19): the PAIR
+                              # moves together so the 10 cm ribbon keeps its
+                              # designed ~60 mm hop and the cluster centres under
+                              # the 16" screen (centre 618 vs 625).
 PI_HDR_V     = 281.75         # header centre in v == J2's centre in v, so the two
                               # connectors face each other square across the gap
 
@@ -1886,7 +2088,10 @@ def _emit(msp, feats, ox=0.0, oy=0.0):
         if f["kind"] == "circle":
             _circle(msp, x, y, f["d"], layer)
         elif f["kind"] == "ring":
-            _circle(msp, x, y, f["od"], layer); _circle(msp, x, y, f["id"], layer)
+            # only the OD is a real cut: the ID/shaft geometry belongs to the
+            # ring_disc part (its own DXF) -- emitting the ID here put a scrap
+            # circle inside the aperture (2 wasted laser pierces, #760 audit)
+            _circle(msp, x, y, f["od"], layer)
         elif f["kind"] == "rect":
             r = f.get("r", 0.0 if layer in ("ENGRAVE",) else R_FILLET)
             _rrect(msp, x, y, f["w"], f["h"], r=r, layer=layer)
@@ -1909,7 +2114,7 @@ def _mirror_u(feats, width):
 def dxf_faceplate(path):
     """REMOVABLE LID (top plate), developed flat = a simple rectangle: the sloped top
     plate (all cutouts) + a down-turned FRONT LIP (screws into the front wall) + a REAR LAP
-    (folds onto the transition shoulder, screws DOWN into PEMs). The SIDES are on the base;
+    (folds onto the transition shoulder, screws DOWN into tapped M3 holes). The SIDES are on the base;
     the lid drops in and rests on the side-wall top edges. NOTE: the front-lip hole sits
     close to the fold (12mm front) -- laser + tap after bending (see H_FRONT)."""
     doc = _doc(); msp = doc.modelspace()
@@ -1923,13 +2128,22 @@ def dxf_faceplate(path):
     _poly(msp, [(0, yr0), (LW, yr0)], "BEND", closed=False)                # rear lap fold (FULL width)
 
     cuts, _engr = faceplate_holes()                   # canonical layout, 7" left
-    _emit(msp, cuts, ox=ox, oy=ffl)
+    # the ENCODER shaft hole lives in the ring_disc part, not this plate -- the
+    # entry stays in faceplate_holes() for the renders/assembly, but cutting it
+    # here would just pierce scrap inside the RING aperture (#760 audit)
+    _emit(msp, [c for c in cuts if c.get("ref") != "ENCODER"], ox=ox, oy=ffl)
     # legends are NOT silkscreened on the metal -- they live on a printed adhesive overlay
     # (dxf_overlay / segno_overlay). Keeps the metal a plain cut+bend+powder part (cheap).
     for u in FRONT_SCREW_U:
-        _circle(msp, ox + u, ffl/2.0, D_M4)                                # front lip -> front wall (horizontal)
-    for u in (PW*0.18, PW*0.5, PW*0.82):
-        _circle(msp, ox + u, SEAM_M4_V, D_M4)                             # rear lap -> transition (concentric with the flange PEM row)
+        # lip hole HEIGHT matched to the wall hole (z = (H_FRONT-DEV90)/2 + DEV90
+        # = 6.955): station from the lid's front mold corner = _cfy - z, flat from
+        # the fold line = station - DD_LIP. The old ffl/2 sat 0.74 high. (#760)
+        _circle(msp, ox + u, ffl - ((_cfy - (H_FRONT - DEV90) / 2.0 - DEV90) - DD_LIP), 3.4)  # M3 clearance
+    for u in FRONT_SCREW_U:
+        _circle(msp, ox + u, SEAM_LAP_V, 3.4)                             # rear lap -> transition: SAME 9
+                                                                          # stations as the front lip (#760),
+                                                                          # Ø3.4 M3 clearance, concentric
+                                                                          # with the flange tap pilots
     _text(msp, 10, yr1+8, 8, f"Segno LID  2.0mm  x1  top plate + front lip + rear lap (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}deg); rests on the base side walls; no top screws; legends on printed OVERLAY (see segno_overlay); FOLD with the DRAWN side as the OUTSIDE face (canonical mirror: encoder lands on the player's LEFT)", "NOTE")
     doc.saveas(path)
     return {"blank": (LW, yr1)}
@@ -1961,7 +2175,27 @@ def dxf_base(path):
     # Exact bend allowance: each flap's flat extent = wall height - the 90-deg bend
     # deduction (T + K*T), so the folded OUTER dimensions come out at nominal.
     bdd = DEV90                              # exact 90-deg development (issue #237)
-    Hf = H_FRONT - bdd
+    # The front wall must NOT rise to H_FRONT: the lid's lip-fold KNUCKLE (inner
+    # radius RI about an axis RI behind the lip inner face and RI perpendicular
+    # below the lid underside) rolls through the wall's top-corner band, and a
+    # straight top edge across the T thickness only clears the roll below the
+    # bend-axis height (the pocket is tangent to the lip plane exactly there).
+    # The sides already carry the LIPR_R cove for the same roll; the front wall
+    # takes a height drop instead (an edge bevel across 2mm is not a flat-pattern
+    # feature). The gap is invisible: the lip skirts down over it. (#760)
+    _axis_h = ((_cfy - T / math.cos(_ra))                       # underside @ lip corner
+               + ((-DEV90 + RI) - _cfz) * math.tan(_ra)         # ...out to the bend axis
+               - RI / math.cos(_ra))                            # RI perpendicular below
+    FRONT_LIP_CLEAR = 0.3
+    Hf = (_axis_h - FRONT_LIP_CLEAR) - bdd
+    # NO HEM (#760, reverted): a 180-deg hem's bend zone (~4mm at the T2 rule)
+    # plus the floor bend's (~4mm) leaves a ~2mm straight band on the 10.1mm
+    # wall -- the screw holes would sit 3/4 INSIDE the hem's crown and wrap
+    # around it. The wall stays single-thickness with a plain top edge (hidden
+    # behind the full-drop lip); the screws drop to M3 -- 4 full threads when
+    # hand-tapped in the T2 sheet (Ø2.5 pilot below), with drill-to-Ø5.1 +
+    # M3 rivnut as the per-station repair path.
+    _fscrew_flat = (H_FRONT - bdd) * 0.5     # lip screws keep their ORIGINAL height
     Hr = HR_FLAT                             # rear web from the seam solver: the flange
     Ht = HT_FLAT                             # outer lands ONE SHEET below the lap outer
     rrel = T + 1.0                          # small bend-relief radius at each corner
@@ -2081,29 +2315,34 @@ def dxf_base(path):
     for x, y in base_foot_xy():                    # M4 clearance, plain hole: the
         _circle(msp, x, y, D_FOOT)                 # head is relieved in the RING
     _emit(msp, platform_foot_holes())              # M3 holes for the 10 pedal-platform feet
+    for (au, av) in STAND_ANCHORS:                 # screen-stand feet: M3 tap pilots (#762)
+        _circle(msp, au, av, 2.5)
     for u in POST_U:                               # 2 base-anchored support-post feet (issue #292)
         for du in (-POST_BOLT_DU, POST_BOLT_DU):   # foot forward of the web, clear of vent + display
             _circle(msp, u+du, _POST_FOOT_VP, D_M4)
     _text(msp, POST_U[0]-24, _POST_FOOT_VP + 8, 5,
           "SUPPORT POST feet x2 (M4; issue #292)", "NOTE")
 
-    # ---- front wall: lid front-lip screws | rear wall: I/O + transition PEM --------
+    # ---- front wall: lid front-lip screws | rear wall: I/O + transition taps ------
     for u in FRONT_SCREW_U:
-        _circle(msp, u, -Hf*0.5, D_M4)                                 # front-lip screws (match the lid lip)
+        _circle(msp, u, -_fscrew_flat, 2.5)                            # front-lip screws: Ø2.5 M3
+                                                                       # TAP PILOT (hand-tap M3; the
+                                                                       # lid lip carries Ø3.4 clearance)
     io = rear_holes()                                                  # canonical; no mirror
     for c in io:
         c["v"] = BD + c["v"]                                           # rear z -> depth on the flap
     _emit(msp, io)
-    for f in (0.18, 0.5, 0.82):
-        _circle(msp, BW*f, BD + SEAM_PEM_V, PEM_M4)                    # lid-lap PEM on the transition
-                                                                       # (concentric with the lap M4s)
-        _circle(msp, BW*f, BD + SEAM_PEM_V, MASK_PEM_D, "MASK")        # keep the M4 thread bare
+    for u in FRONT_SCREW_U:
+        _circle(msp, u, BD + SEAM_TAP_V, 2.5)                          # lid-lap screws on the transition:
+                                                                       # Ø2.5 M3 TAP PILOT (hand-tap, same
+                                                                       # tool + screw as the front lip; taps
+                                                                       # cut after paint so no masking; #760)
     for c in io:                                                       # bonding land: paint is an
         if c.get("ref") == "EARTH_STUD":                               # insulator, so the ring
             _circle(msp, c["u"], c["v"], MASK_GND_D, "MASK")           # terminal needs bare metal
     _text(msp, 8, BD+Hr+Ht+22, 7,
-          "MASK (rojo / no pintar): 3x rosca PEM M4 en la transicion + "
-          "zona de masa alrededor del perno M6 (ambas caras)", "MASK")
+          "MASK (rojo / no pintar): zona de masa alrededor del perno M6 "
+          "(ambas caras). Los pilotos de rosca se roscan M3 despues de pintar.", "MASK")
 
     _text(msp, 8, BD+Hr+Ht+10, 9,
           f"Segno BASE  2.0mm  x1  bottom + front/rear/sides fold up (bend ded {bdd:.2f}); WELD-FREE: rivet the 4 corners via L-brackets; rear 2nd fold = transition (flange FULL width, seats on the relieved side-wall tops); FOLD with the DRAWN side as the INSIDE face (canonical mirror: encoder lands on the player's LEFT)",
@@ -2162,22 +2401,8 @@ def dxf_rear_panel(path):
           "NOTE")
     doc.saveas(path); return {}
 
-def dxf_screen_bracket(path):
-    """Rear clamp bracket that retains a bezel monitor from behind (qty per
-    screen). Simple L: a face that PEMs to the shell + a return that the monitor
-    clamps against. Two sizes noted."""
-    doc = _doc(); msp = doc.modelspace()
-    bl, bh = 60.0, 30.0
-    bf = 24.0                       # PEM flange depth: M4 clinch ring sits >=9mm from the bend
-    _poly(msp, [(0, -bf), (bl, -bf), (bl, bh), (0, bh)], "CUT")
-    _poly(msp, [(0, 0), (bl, 0)], "BEND", closed=False)
-    for x in (15, bl-15):
-        _circle(msp, x, -bf/2.0, PEM_M4)
-        _circle(msp, x, -bf/2.0, MASK_PEM_D, "MASK")   # keep the M4 thread bare
-        _circle(msp, x, bh/2.0, D_M4)
-    _text(msp, 5, bh+6, 6, "Segno SCREEN BRACKET  2.0mm  x4 (16in) + x4 (7in)", "NOTE")
-    _text(msp, 5, bh+14, 5, "MASK (rojo / no pintar): 2x rosca PEM M4", "MASK")
-    doc.saveas(path); return {}
+# screen_bracket REMOVED (#760): the screens are bonded to the shell; the
+# bracket fallback was dropped entirely (user call 2026-08-18).
 
 def dxf_post(path):
     """Base-anchored faceplate support post (issue #292), x2: a folded C -- foot
@@ -2973,34 +3198,224 @@ def build_diffuser_step():
 
 
 def build_ring_diffuser_step():
-    """Encoder LED-ring diffuser INSERT (3D-print in WHITE PLA, x1):
-    the annular sibling of segno_led_diffuser -- pushes into the faceplate's ring
-    window FROM THE INSIDE, shoulder flange seats on the sheet's underside, and
-    an annular pocket on the back nests the NeoPixel Ring 16 (authentic Adafruit,
-    44.5mm OD -- verify before printing, clones run 68mm+) so the 16 LEDs glow
-    through the lens. Same clearances/proud as the pill insert."""
+    """Encoder ring DIFFUSER + DISC HOLDER, one piece (3D-print WHITE PLA, x1,
+    user call 2026-08-19): replaces the plain annular insert. From the top:
+    - the LENS annulus pushes into the faceplate's RING_OD (O46) ring window
+      (proud);
+    - the aluminium RING DISC (RING_ID = O31 x 2) drops into a front-side
+      pocket inside the lens bore and sits FLUSH with the faceplate top; the
+      EC11 clamps it (bushing through the disc's O7.2, nut under the knob);
+    - a full BACK PLATE extends past the window to O58 -- the exposed front
+      ring (window edge r23 .. plate r29) is the CA-GLUE land against the
+      faceplate underside. NOTE: the back-plate/lip radii (29.0, 22.5, 16.0,
+      14.0) are hardcoded; if RING_OD grows past ~56 the glue land vanishes
+      -- re-derive them together with any window resize;
+    The NeoPixel Ring 16 is MOUNTED ON THE RING BOARD around the EC11 (as
+    built) -- no nest here; its LEDs shine up through the 0.8 mm web.
+    z=0 is the faceplate-underside/glue plane."""
     import cadquery as cq
     ro = (RING_OD - LED_INS_CLR) / 2.0
     ri = (RING_ID + LED_INS_CLR) / 2.0
+    plate_t = 2.0
     lens = (cq.Workplane("XY").circle(ro).circle(ri)
             .extrude(T + LED_INS_PROUD))
     lens = lens.edges(">Z").chamfer(0.3)
-    fo = RING_OD / 2.0 + LED_INS_FLANGE
-    fi = RING_ID / 2.0 - LED_INS_FLANGE
-    ins = lens.union(cq.Workplane("XY").circle(fo).circle(fi)
-                     .extrude(-LED_INS_FL_T))
-    # NeoPixel Ring 16 nest: annular recess in the shoulder's back face
-    ins = ins.cut(cq.Workplane("XY").workplane(offset=-LED_INS_FL_T)
-                  .circle(23.0).circle(16.0).extrude(0.8))
+    ins = lens.union(cq.Workplane("XY").circle(29.0).circle(14.0)
+                     .extrude(-plate_t))
+    # disc lip: the disc rests on the inner lip at z=0, flush with the sheet
+    # top when glued (disc top = T). Thin the web over the LED circle so the
+    # board-mounted ring glows through 0.8 mm of white PLA.
+    ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
+                  .circle(22.5).circle(16.0).extrude(plate_t - 0.8))
     step = os.path.join(OUT, "segno_ring_diffuser.step")
     cq.exporters.export(ins.val(), step)
     cq.exporters.export(ins.val(), os.path.join(OUT, "segno_ring_diffuser.stl"))
     return step
 
 
+def build_screen7_fit_test():
+    """7" screen FIT TEST plate (3D print, x1, #762): a stand-in for the
+    faceplate around the 7" aperture, at the REAL sheet gauge (T = 2.0) so the
+    reveal through the aperture is what the aluminum will give. Lay the module
+    glass-down onto the plate BACK; four bosses rise toward the tab plane
+    (S7C_GLASS_TO_TABF behind the glass) but stop 0.2 SHORT: the M3 x 8 screws
+    (down through the O3.1 tab holes, self-tapping into the boss pilots) pull
+    the tabs onto the bosses and that preload clamps the GLASS FLAT against
+    the plate back -- flatness comes from the screws, not from print height.
+    Bare slab, no stiffener (user call: it's a test, don't waste material).
+    Then look through the FRONT: the ACTIVE AREA must fill the aperture -- no bezel
+    visible, no pixels hidden -- and all four screws must land without
+    forcing. Hole positions come from the vendor STEP; if anything misses,
+    measure it and correct S7C_HOLES / the aperture offset. The notch marks
+    TOP; the chamfered aperture rim is the FRONT face."""
+    import cadquery as cq
+    pw, ph, pt = 200.0, 152.0, T          # T: the faceplate's actual 2.0 gauge
+    plate = cq.Workplane("XY").rect(pw, ph).extrude(pt)
+    plate = plate.cut(cq.Workplane("XY").rect(SMALL_W, SMALL_H).extrude(pt))
+    plate = plate.edges("|Z").chamfer(0.6)
+    try:
+        plate = plate.faces(">Z").edges("<X or >X or <Y or >Y").chamfer(0.4)
+    except Exception:
+        pass
+    plate = plate.cut(cq.Workplane("XY").center(0, ph / 2.0).circle(3.0).extrude(pt))
+    # bosses on the BACK (z<0 side is the back once flipped: build them below
+    # z=0 by extruding negative): top face of the plate (z=pt) is the FRONT.
+    # 0.2 SHORT of the tab plane = designed clamp preload (see docstring).
+    boss_h = S7C_GLASS_TO_TABF - 0.2
+    for (hx, hy) in S7C_HOLES:
+        plate = plate.union(cq.Workplane("XY").center(hx, hy)
+                            .circle(4.5).extrude(-boss_h))
+        plate = plate.cut(cq.Workplane("XY").workplane(offset=-boss_h)
+                          .center(hx, hy).circle(2.6 / 2.0).extrude(boss_h + pt))
+    sp = os.path.join(OUT, "segno_screen7_fit_test.step")
+    cq.exporters.export(plate.val(), sp)
+    cq.exporters.export(plate.val(), os.path.join(OUT, "segno_screen7_fit_test.stl"))
+    return sp
+
+
+# --- 15.6" screen stand (3D print x2, #762, PROVISIONAL until the monitor
+# arrives) -- the 7" tower concept, split for the Ender 3 V3 bed (220^2) and
+# bridging OVER the electronics bay (boards at x 46-68, y 23-32: no floor
+# there). LEFT part = end tower + half-deck; RIGHT part mirrors; they lap-
+# splice near the screen centre (2x M3) where the VESA M4s also clamp the
+# monitor. Towers only touch the monitor BACK via pads -- the side edges stay
+# completely free for the panel connectors (right-angle USB-C/mini-HDMI
+# adapters assumed). ALL monitor numbers are the LISTING values -- caliper on
+# arrival: body 353x208x5.8, VESA 75x75 M4 assumed CENTRED on the viewport.
+S16_BODY_W  = 353.0   # PROVISIONAL listing dims
+S16_BODY_H  = 208.0
+S16_BODY_D  = 5.8
+S16_VESA    = 75.0    # PROVISIONAL: pattern, M4, centred
+S16_GAP     = 0.5     # deck sits behind the monitor back; only pads/bosses touch
+S16_BEAM_D  = 110.0   # deck beam depth (v)
+S16_BEAM_T  = 10.0    # deck plate thickness
+S16_RIB_H   = 15.0    # stiffening ribs under the beam edges
+S16_WALL    = 4.0
+S16_FLANGE  = 12.0
+ENDER_BED   = 218.0   # Ender 3 V3 printable square (2mm margin) -- gate below
+
+
+def build_screen16_stand_steps():
+    """15.6" monitor stand, LEFT + RIGHT prints (PETG, #762, PROVISIONAL).
+    World-mm coordinates (origin = plan origin at base floor TOP; place in
+    Fusion at z = floor top). Lid underside (measured): z(y) = 12.437 +
+    tan(SLOPE)*y; world y = cos(SLOPE)*v_plan - 2.093. The monitor's glass
+    presses the underside, its back is S16_BODY_D below, the deck plane sits
+    S16_GAP further back -- only the VESA bosses and tower pads rise to touch.
+    Bed constraint: splice at x=600 (off-centre, clear of the VESA bosses),
+    outboard flange edges trimmed flush so each part stays under ENDER_BED."""
+    import cadquery as cq
+    cs = math.cos(math.radians(SLOPE_ANGLE))
+    sn = math.sin(math.radians(SLOPE_ANGLE))
+    xc = SCREEN_16_U
+    v_c = SCREEN_TOP_V - BIG_H / 2.0
+    yc = cs * v_c - 2.093
+    drop = (S16_BODY_D + S16_GAP) / cs
+    z0 = 12.437 - drop                    # deck plane height AT y=0
+    def wp(off=0.0):
+        return (cq.Workplane("XY").workplane(offset=z0)
+                .transformed(rotate=(SLOPE_ANGLE, 0, 0)).workplane(offset=off))
+    pyc = yc / cs                          # deck centreline, in-plane y
+
+    def deck_half(x0, x1, lapdir):
+        d = (wp().center((x0 + x1) / 2.0, pyc)
+             .rect(x1 - x0, S16_BEAM_D).extrude(-S16_BEAM_T))
+        for sy in (-1, 1):
+            d = d.union(wp(-S16_BEAM_T)
+                        .center((x0 + x1) / 2.0, pyc + sy * (S16_BEAM_D / 2.0 - 5.0))
+                        .rect(x1 - x0, 10.0).extrude(-S16_RIB_H))
+        lap_x = x1 if lapdir > 0 else x0
+        if lapdir > 0:   # lower lap tongue continues past the joint
+            d = d.union(wp(-S16_BEAM_T).center(lap_x + 11.0, pyc)
+                        .rect(22.0, S16_BEAM_D - 12.0).extrude(S16_BEAM_T / 2.0))
+        else:            # upper half relieved so the tongue nests under it
+            d = d.cut(wp(-S16_BEAM_T).center(lap_x + 11.0, pyc)
+                      .rect(22.4, S16_BEAM_D).extrude(S16_BEAM_T / 2.0 + 0.2))
+        return d
+
+    def tower(x0, x1, fl_out_sign):
+        t = (cq.Workplane("XY").center((x0 + x1) / 2.0, yc).rect(x1 - x0, S16_BEAM_D)
+             .extrude(300.0))
+        t = t.cut(cq.Workplane("XY").center((x0 + x1) / 2.0, yc)
+                  .rect(x1 - x0 - 2 * S16_WALL, S16_BEAM_D - 2 * S16_WALL).extrude(301.0))
+        t = t.cut(wp(-S16_BEAM_T - S16_RIB_H).center((x0 + x1) / 2.0, pyc)
+                  .rect(2000, 2000).extrude(500))
+        # flange: fl_out_sign=+1/-1 adds the inboard x flange; 0 = y-only
+        # (the LEFT tower lives in a 48mm strip between platform_mid's body
+        # edge at x~417 and the board standoffs at x~465 -- no x room at all)
+        fx0 = x0 - (S16_FLANGE if fl_out_sign < 0 else 0.0)
+        fx1 = x1 + (S16_FLANGE if fl_out_sign > 0 else 0.0)
+        fl = (cq.Workplane("XY").center((fx0 + fx1) / 2.0, yc)
+              .rect(fx1 - fx0, S16_BEAM_D + 2 * S16_FLANGE).extrude(5.0))
+        fl = fl.cut(cq.Workplane("XY").center((x0 + x1) / 2.0, yc)
+                    .rect(x1 - x0 - 2 * S16_WALL, S16_BEAM_D - 2 * S16_WALL).extrude(5.0))
+        t = t.union(fl)
+        anchors = []
+        sites = [((x0 + x1) / 2.0, yc - (S16_BEAM_D + S16_FLANGE) / 2.0),
+                 ((x0 + x1) / 2.0, yc + (S16_BEAM_D + S16_FLANGE) / 2.0)]
+        if fl_out_sign != 0:
+            inx = (x1 + S16_FLANGE / 2.0) if fl_out_sign > 0 else (x0 - S16_FLANGE / 2.0)
+            sites += [(inx, yc - 30.0), (inx, yc + 30.0)]
+        for ax, ay in sites:
+            anchors.append((ax, ay))
+            t = t.cut(cq.Workplane("XY").center(ax, ay).circle(3.2 / 2.0).extrude(5.0))
+        # pad rising to the monitor back plane
+        t = t.union(wp().center((x0 + x1) / 2.0, pyc).rect(x1 - x0, 30.0)
+                    .extrude(S16_GAP))
+        return t, anchors
+
+    SPLICE = 600.0
+    lt, la = tower(460.0, 500.0, -1)  # strip: platform_mid 417 | board PCB now 510
+    left = lt.union(deck_half(460.0, SPLICE, +1))
+    rt, ra = tower(745.0, 785.0, -1)
+    right = rt.union(deck_half(SPLICE, 785.0, -1))
+
+    def add_vesa(d, sxs):
+        for sx in sxs:
+            for sy in (-1, 1):
+                hx = xc + sx * S16_VESA / 2.0
+                hy = pyc + sy * S16_VESA / 2.0
+                # O9.3 float hole: M4 + O12 fender washer gives +-2.5 of
+                # monitor position adjust in BOTH axes -- the metal aperture
+                # never depends on the panel's viewport offsets (11-day
+                # de-risk, user-approved 2026-08-19)
+                d = d.union(wp().center(hx, hy).circle(9.0).extrude(S16_GAP))
+                d = d.cut(wp(S16_GAP).center(hx, hy).circle(9.3 / 2.0)
+                          .extrude(-(S16_GAP + S16_BEAM_T + 1.0)))
+                d = d.cut(wp(-S16_BEAM_T).center(hx, hy).circle(14.0 / 2.0)
+                          .extrude(-S16_RIB_H))
+        return d
+    left = add_vesa(left, (-1,))
+    right = add_vesa(right, (+1,))
+    def add_splice(d):
+        for sy in (-1, 1):
+            d = d.cut(wp(1.0).center(SPLICE + 11.0, pyc + sy * (S16_BEAM_D / 2.0 - 20.0))
+                      .circle(3.4 / 2.0).extrude(-(S16_BEAM_T + 3.0)))
+        return d
+    left = add_splice(left)
+    right = add_splice(right)
+
+    out = []
+    for nm, sol, anc in (("segno_screen16_stand_L", left, la),
+                          ("segno_screen16_stand_R", right, ra)):
+        bb = sol.val().BoundingBox()
+        dims = (bb.xmax - bb.xmin, bb.ymax - bb.ymin, bb.zmax - bb.zmin)
+        assert max(dims) <= ENDER_BED, (
+            f"{nm}: {dims[0]:.0f}x{dims[1]:.0f}x{dims[2]:.0f} exceeds the Ender bed ({ENDER_BED})")
+        print("  %s: %.0f x %.0f x %.0f mm, floor anchors %s" % (
+            nm, dims[0], dims[1], dims[2], ["(%.0f, %.0f)" % a for a in anc]))
+        sp = os.path.join(OUT, nm + ".step")
+        cq.exporters.export(sol.val(), sp)
+        cq.exporters.export(sol.val(), os.path.join(OUT, nm + ".stl"))
+        out.append(sp)
+    return out
+
+
 def build_post_step():
     """Folded 3D of the base-anchored support post (issue #292, x2): foot flat on
-    the floor, vertical web, top pad. X=u (width POST_PW), Y=v, Z=up."""
+    the floor, vertical web, top pad. X=u (width POST_PW), Y=v, Z=up.
+    (Restored: the def line was dropped by accident in 845e3e31, which made the
+    whole --no-step block die here and silently skip every later STEP build.)"""
     import cadquery as cq
     pw, pad, web, foot, t = POST_PW, POST_PAD, POST_H, POST_FOOTL, POST_T
     # C-fold, foot + pad both FORWARD of the web. Local X=u(width), Y=v(depth), Z=up.
@@ -3010,14 +3425,124 @@ def build_post_step():
     web_p  = cq.Workplane("XY").box(pw, t, web, centered=False).translate((0, foot, 0))   # vertical at Y=foot
     pad_p  = (cq.Workplane("XY").box(pw, pad, t, centered=False)
               .translate((0, foot - pad, web))                                            # flat at the top, forward
-              .rotate((0, foot, web), (1, foot, web), -POST_TILT))                        # tilt to the slope (free end drops toward the FRONT to match)
-    body = foot_p.union(web_p).union(pad_p)
+              .rotate((0, foot, web), (1, foot, web), POST_TILT))                         # tilt to the slope: +x right-hand rule drops the free (front) end
+                                                                                         # (the restored original had -POST_TILT, which LIFTED the pad into the lid)
+    # hinge weld: the tilted pad only meets the web along the fold LINE, so a
+    # plain union leaves it a separate lump (2-solid STEP, renders broken).
+    # A t-sized block across the fold volume-overlaps both and fuses the part
+    # into ONE solid -- it also stands in for the real bend radius.
+    weld_p = (cq.Workplane("XY").box(pw, 2 * t, 2 * t, centered=False)
+              .translate((0, foot - t, web - t)))
+    body = foot_p.union(web_p).union(weld_p).union(pad_p)
     for du in (-POST_BOLT_DU, POST_BOLT_DU):                                              # M4 through the foot
         body = body.cut(cq.Workplane("XY").cylinder(
             2*t, D_M4/2.0, centered=(True, True, False)).translate((pw/2.0+du, foot/2.0, 0)))
     step = os.path.join(OUT, "segno_post.step")
     cq.exporters.export(body.val(), step)
     return step
+
+
+def build_screen7_tower_step():
+    """7" screen support TOWER (3D print in PETG, x1, #762): the one-piece
+    replacement for the frame+legs cradle ("more beefy", user call). A closed
+    wedge box in WORLD coordinates (x = console x, y = depth, z = up; origin =
+    the base-floor point under the display-window centre):
+
+    - sloped DECK (parallel to the faceplate underside) carrying the open
+      window and the four tab BOSSES -- module mounts exactly as before
+      (M3 x 8 through the O3.1 tabs into heat-set inserts / self-tap pilots),
+      only the bosses touch the module, the PCB floats over the window;
+    - 4 mm perimeter WALLS from the deck straight down to the floor -- the box
+      section takes touch loads without racking;
+    - floor FLANGE with SIX M3 anchor stations (these define the #762 base
+      floor holes; positions printed at build time);
+    - cable windows in both side walls.
+
+    Height: S7T_H0 puts the glass in kiss contact with the lid per the
+    measured underside plane; shim M3 washers under the tabs if a print runs
+    short. No mirror games: built in world frame, holes at front-view
+    positions, placed by translation only."""
+    import cadquery as cq
+    c = math.cos(math.radians(SLOPE_ANGLE))
+    W, D = S7C_FRAME_W, S7C_FRAME_H
+    x0, y0, x1, y1 = S7C_MOD_BB
+    mcx, mcy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+    H0, wall, fl, dt = S7T_H0, S7T_WALL, S7T_FLANGE, S7T_DECK
+    boss_h = S7C_MOD_DEPTH + S7C_GAP - (S7C_GLASS_TO_TABF + S7C_TAB_T)
+
+    def wp(off=0.0):
+        return (cq.Workplane("XY").workplane(offset=H0)
+                .transformed(rotate=(SLOPE_ANGLE, 0, 0))
+                .workplane(offset=off))
+
+    # deck: a THICK slab whose window is cut with 45-degree expanding sides,
+    # leaving corbels that carry the deck rim into the walls (the "structure"
+    # in the hollow box: monocoque walls + corbelled deck + two ribs below).
+    # The corbels also make the standing print support-free.
+    tower = wp().center(mcx, mcy).rect(W, D).extrude(-(dt + 26.0))
+    tower = tower.cut(wp(1.0).center(mcx, mcy).rect(S7C_WIN_W, S7C_WIN_H)
+                      .extrude(-(dt + 29.0), taper=-45.0))
+    # walls: vertical prism ring, cut above the deck's bottom plane
+    cy_w = mcy * c                                   # footprint centre, world y
+    ring = (cq.Workplane("XY").center(mcx, cy_w).rect(W, D * c)
+            .extrude(H0 + 60.0))
+    ring = ring.cut(cq.Workplane("XY").center(mcx, cy_w)
+                    .rect(W - 2 * wall, D * c - 2 * wall).extrude(H0 + 61.0))
+    above_deck = wp(-dt).center(mcx, mcy).rect(2000, 2000).extrude(500)
+    ring = ring.cut(above_deck)
+    tower = tower.union(ring)
+    # keep the deck stack inside the wall footprint
+    tower = tower.intersect(cq.Workplane("XY").center(mcx, cy_w)
+                            .rect(W, D * c).extrude(H0 + 60.0)
+                            .union(cq.Workplane("XY").center(mcx, cy_w)
+                                   .rect(W + 2 * fl, D * c + 2 * fl).extrude(5.0)))
+    # two full-height transverse RIBS flanking the window, deck to floor
+    for sx in (-1, 1):
+        rib = (cq.Workplane("XY").center(mcx + sx * (S7C_WIN_W / 2.0 + 6.0), cy_w)
+               .rect(4.0, D * c - 2 * wall).extrude(H0 + 60.0))
+        rib = rib.cut(wp(-dt).center(mcx, mcy).rect(2000, 2000).extrude(500))
+        tower = tower.union(rib)
+    # floor flange + six anchor stations
+    flange = (cq.Workplane("XY").center(mcx, cy_w).rect(W + 2 * fl, D * c + 2 * fl)
+              .extrude(5.0))
+    flange = flange.cut(cq.Workplane("XY").center(mcx, cy_w)
+                        .rect(W - 2 * wall, D * c - 2 * wall).extrude(5.0))
+    anchors = []
+    for ax, ay in ((-(W + fl) / 2.0, -40.0), (-(W + fl) / 2.0, 40.0),
+                   ((W + fl) / 2.0, -40.0), ((W + fl) / 2.0, 40.0),
+                   (0.0, -(D * c + fl) / 2.0), (0.0, (D * c + fl) / 2.0)):
+        anchors.append((mcx + ax, cy_w + ay))
+        flange = flange.cut(cq.Workplane("XY").center(mcx + ax, cy_w + ay)
+                            .circle(3.2 / 2.0).extrude(5.0))
+    tower = tower.union(flange)
+    # cable windows, both side walls
+    for sx in (-1, 1):
+        cutter = (cq.Workplane("XY").workplane(offset=8.0)
+                  .center(mcx + sx * W / 2.0, cy_w).rect(3 * wall, 40.0)
+                  .extrude(26.0))
+        tower = tower.cut(cutter)
+    # RING-BOARD CLEARANCE NOTCH (#762): the populated 60x60 ring/encoder board
+    # hangs over the tower's front rim with its under-side pins -- the real
+    # board came within 1.7 mm of the wall top. Drop the front wall/rim centre
+    # (70 wide, x-centred on the ring axis = the window centre) to 30 mm so the
+    # board passes with >=6 mm of air. The front tab bosses sit outside this
+    # span; their corbels are untouched.
+    notch = (cq.Workplane("XY").workplane(offset=30.0)
+             .center(0.0, -64.0).rect(70.0, 32.0).extrude(80.0))
+    tower = tower.cut(notch)
+    # tab bosses + heat-set counterbores + pilots (front-view positions)
+    for (hx, hy) in S7C_HOLES:
+        tower = tower.union(wp().center(hx, hy).circle(4.5).extrude(boss_h))
+        tower = tower.cut(wp(boss_h).center(hx, hy).circle(4.0 / 2.0).extrude(-5.0))
+        tower = tower.cut(wp(boss_h).center(hx, hy).circle(2.6 / 2.0)
+                          .extrude(-(boss_h + dt + 2.0)))
+    print("  tower floor anchors (world mm, relative to the display-window centre):")
+    for a in anchors:
+        print("    (%+.1f, %+.1f)" % a)
+    sp = os.path.join(OUT, "segno_screen7_tower.step")
+    cq.exporters.export(tower.val(), sp)
+    cq.exporters.export(tower.val(), os.path.join(OUT, "segno_screen7_tower.stl"))
+    return sp
 
 
 def build_step(write_parts=True):
@@ -3127,9 +3652,8 @@ PAINT_FINISH = "Negro texturado mate (RAL 9005) - a confirmar contra cupon de mu
 
 # dxf stem, label (ES), qty per unit, material, remark (ES).
 # segno_overlay is a printed adhesive graphic, NOT metal -- it is never painted.
-# segno_screen_bracket is NOT here: the screens are bonded to the shell instead of
-# clamped, so the brackets are never manufactured (they stay in DXF_PARTS as the
-# fallback if bonding is abandoned).
+# There is no screen bracket part: the screens are bonded to the shell. The
+# bracket fallback was deleted outright in the #760 audit (user call 2026-08-18).
 PAINT_BOM = [
     ("segno_base",               "Cuerpo: piso + frente + laterales + trasera", 1, AL_2MM, "Pieza mas grande"),
     ("segno_faceplate",          "Tapa superior (faceplate)",                   1, AL_2MM, "Cara vista principal"),
@@ -3262,7 +3786,7 @@ def paint_quote_pdf(path):
             "  1. La superficie es NETA: contorno exterior menos aperturas (ranuras de pedales, pantallas, ventilaciones). No incluye cantos.",
             "  2. Las piezas llegan cortadas y plegadas, sin ningun recubrimiento ni aceite protector. Pretratamiento para aluminio a cargo del aplicador.",
             "  3. Los postes son ACERO laminado en frio, no aluminio: van en linea aparte porque llevan otro pretratamiento.",
-            "  4. Enmascarado: ver las paginas siguientes. Roscas PEM M4 tapadas y zona de masa alrededor del perno M6 sin pintura, en ambas caras.",
+            "  4. Enmascarado: ver las paginas siguientes. Solo la zona de masa alrededor del perno M6 sin pintura, en ambas caras (los pilotos de tornillo se roscan despues de pintar).",
             "  5. Las aperturas de pantalla son ajustadas: la pelicula come decimas por cara. Si el espesor supera 100 um avisar antes de aplicar.",
             "  6. El aluminio es blando: colgar para pintar, no apoyar sobre las caras vistas.",
             "  7. La tapa figura con su tamano PLANO (850 x 407 x 2): plegada suma la pestana frontal de 12 mm y la solapa trasera.",
@@ -3279,8 +3803,8 @@ def paint_quote_pdf(path):
         # ---- masking / detail pages ---------------------------------------
         sheets = [
             ("segno_base", "CUERPO - plano de enmascarado",
-             "Rojo = NO PINTAR. 3x rosca PEM M4 sobre la transicion (tapon de silicona) y "
-             "zona de masa de 20 mm alrededor del perno M6, en ambas caras."),
+             "Rojo = NO PINTAR. Zona de masa de 20 mm alrededor del perno M6, en ambas "
+             "caras. Los pilotos de la transicion se roscan M3 despues de pintar."),
             ("segno_faceplate", "TAPA SUPERIOR - aperturas criticas",
              "Sin enmascarado. Las dos aperturas grandes son de pantalla y quedan ajustadas "
              "contra el display: contemplar el espesor de pelicula."),
@@ -3478,7 +4002,7 @@ def _render_parts(cq, explode=0.0):
     # screw station from the seam solver (distance down the facet from the ridge)
     lapx = FACE_RUN + D_SEAM_SCREW*math.cos(math.radians(TRANS_ANGLE))
     lapz = H_REAR - D_SEAM_SCREW*math.sin(math.radians(TRANS_ANGLE)) + T
-    for f in (0.18,0.5,0.82):                        # rear LAP screws down into the transition PEM
+    for f in (0.18,0.5,0.82):                        # rear LAP screws down into the tapped transition
         add(cq.Solid.makeCylinder(3.3,2.8,cq.Vector(lapx,(W-2*T)*f+T,lapz),nrm), SCR)
     return P    # raw geometry (canonical layout is in the schedule); player view = camera choice
 
@@ -3523,7 +4047,6 @@ DXF_PARTS = [
     ("segno_overlay",          dxf_overlay),  # printed adhesive top-plate graphic (replaces silkscreen)
     ("segno_base",             dxf_base),     # bottom + front/rear/side walls, ONE folded blank
     ("segno_rear_panel",       dxf_rear_panel),  # dismountable I/O panel (#751)
-    ("segno_screen_bracket",   dxf_screen_bracket),
     ("segno_ring_disc",        dxf_ring_disc),                        # LED-ring centre disc
     ("segno_corner_bracket_rear",  lambda p: dxf_corner_bracket(p, CORNER_HT, CORNER_ZR_WALL, CORNER_ZR_SIDE, "REAR x2")),
     ("segno_post",             dxf_post),  # base-anchored faceplate support post x2 (issue #292)
@@ -3550,14 +4073,20 @@ def build_quote_packages():
     sheet = [n for n, _ in DXF_PARTS]
     pack("segno_sheetmetal.zip", sheet, (".dxf", ".pdf"))
     pack("segno_sheetmetal_step.zip",
-         ["segno_assembly", "segno_base", "segno_faceplate", "segno_screen_bracket",
+         ["segno_assembly", "segno_base", "segno_faceplate",
           "segno_corner_bracket_rear", "segno_ring_disc",
           "segno_post"],
          (".step",))
     pack("segno_3dprint.zip",
          ["segno_platform_front", "segno_platform_mid",
-          "segno_led_diffuser", "segno_ring_diffuser"],
+          "segno_led_diffuser", "segno_ring_diffuser",
+          "segno_screen7_tower",
+          "segno_screen16_stand_L", "segno_screen16_stand_R"],
          (".step", ".stl"))
+    # segno_screen7_fit_test deliberately NOT in the vendor pack: it is a
+    # calibration jig (its verdict is already folded into the S7C_* block),
+    # and shipping it invites the vendor to quote/print a non-product part.
+    # It stays buildable for reprints after any S7C_* change.
     # Powder-coat quote pack: the Spanish sheet + every painted part's PDF.
     # Deliberately NO DXFs -- the coater cuts nothing, and a flat pattern only
     # invites confusion. Narrowed to the paint BOM -- not every DXF_PART.
@@ -3630,13 +4159,22 @@ def main(argv):
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
             s = build_post_step()
             print("Faceplate support post (base-anchored, x2): out/" + os.path.basename(s))
+            tw = build_screen7_tower_step()
+            print("7in screen support tower (3D print, x1): out/" + os.path.basename(tw) + " (+ .stl)")
+            for sp16 in build_screen16_stand_steps():
+                print("15.6in stand (3D print, PROVISIONAL): out/" + os.path.basename(sp16) + " (+ .stl)")
+            ftp = build_screen7_fit_test()
+            print("7in screen FIT TEST plate (3D print, x1): out/" + os.path.basename(ftp) + " (+ .stl)")
             for pp in build_platform_steps():
                 print("Printed platform: out/" + os.path.basename(pp) + " (+ .stl)")
             build_mini_console()
             p = build_step()
             print("\n3D STEP:\n  " + os.path.relpath(p, HERE) + " (+ per-part .step)")
-        except Exception as e:  # pragma: no cover
+        except ImportError as e:  # pragma: no cover -- no cadquery in this env
             print(f"\n(STEP skipped: {e})")
+        # anything else is a real build failure: let it crash the run. The old
+        # blanket `except Exception` swallowed a NameError here for weeks and
+        # shipped stale tower/stand/fit-test STEPs while printing EXIT=0.
     for z in build_quote_packages():
         print("Quote package: out/" + os.path.basename(z))
     if "--render" in argv:
