@@ -79,7 +79,7 @@ void main() {
     );
   });
 
-  Future<void> pump(WidgetTester tester) {
+  Future<void> pump(WidgetTester tester, {ThemeData? theme}) {
     // The strip is drawn for the console's fixed 1920-wide panel; the default
     // 800px test surface would cramp the readouts into each other.
     tester.view
@@ -88,6 +88,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     return tester.pumpApp(
+      theme: theme,
       MultiBlocProvider(
         providers: [
           BlocProvider<LooperBloc>.value(value: bloc),
@@ -178,6 +179,88 @@ void main() {
       );
       await pump(tester);
       expect(find.text(l10n.interactionModeMute), findsOneWidget);
+    });
+
+    Future<(Color?, Color?)> pillOf(
+      WidgetTester tester,
+      InteractionMode mode, {
+      ThemeData? theme,
+    }) async {
+      whenListen(
+        control,
+        const Stream<ControlState>.empty(),
+        initialState: ControlState(mode: mode),
+      );
+      // Unmount first: re-pumping the same tree reuses the element (so the
+      // pill's `context.select` keeps serving the previous mode), and a
+      // re-themed MaterialApp ANIMATES the flavor change, so a single pumped
+      // frame still reads the old flavor's tokens.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pump(tester, theme: theme);
+      final box =
+          tester
+                  .widget<Container>(find.byKey(const Key('stage_mode_pill')))
+                  .decoration!
+              as BoxDecoration;
+      return (box.border!.top.color, box.color);
+    }
+
+    testWidgets('wears rec red, mute green and FX blue, all from tokens', (
+      tester,
+    ) async {
+      // #693 — the owner's call from the bench: mute reads GREEN on every
+      // surface (`success` over `successSurface`), replacing the old primary
+      // outline over an inline `primary.withValues(alpha: 0.14)` wash. Rec
+      // stays red and FX stays accent-blue, as the pen draws them.
+      final s = AppTheme.neon.extension<SurfaceTheme>()!;
+      expect(await pillOf(tester, InteractionMode.record), (
+        s.rec,
+        s.recSurface,
+      ));
+      expect(await pillOf(tester, InteractionMode.mute), (
+        s.success,
+        s.successSurface,
+      ));
+      expect(await pillOf(tester, InteractionMode.fx), (
+        s.accent,
+        s.accentSurface,
+      ));
+    });
+
+    testWidgets('the pill fills follow the high-contrast flavor', (
+      tester,
+    ) async {
+      // The regression this pins (#737): an inline wash alpha is a no-op
+      // difference in the dark flavor (`successSurface` is alpha 0x24 ≈ 0.14,
+      // the very value the old hardcode used) and therefore invisible to the
+      // test above. High contrast is the only flavor that overrides the
+      // washes — it lifts them to 0x33 (0.2) — so it is the only flavor
+      // where a hardcoded alpha leaves one pill visibly weaker than the pill
+      // beside it.
+      final hc = AppTheme.highContrast;
+      final s = hc.extension<SurfaceTheme>()!;
+
+      final rec = await pillOf(tester, InteractionMode.record, theme: hc);
+      final mute = await pillOf(tester, InteractionMode.mute, theme: hc);
+      final fx = await pillOf(tester, InteractionMode.fx, theme: hc);
+
+      expect(rec, (s.rec, s.recSurface));
+      expect(mute, (s.success, s.successSurface));
+      expect(fx, (s.accent, s.accentSurface));
+
+      // Stated as the reading rather than the hex: the REC and MUTE washes
+      // sit at one fill weight, and that weight is the boosted one. FX is
+      // deliberately NOT part of the alpha claim — the pen draws
+      // `accentSurface` FLAT (opaque #16233D / #234069), not as a wash, so
+      // its high-contrast boost is a brighter flat value, not a heavier
+      // alpha (#737).
+      expect(mute.$2!.a, rec.$2!.a);
+      expect(
+        mute.$2!.a,
+        greaterThan(SurfaceTheme.dark.successSurface.a),
+        reason: 'high contrast must boost the mute wash, not pin it',
+      );
+      expect(fx.$2!.a, 1.0, reason: 'accentSurface is flat by design');
     });
   });
 

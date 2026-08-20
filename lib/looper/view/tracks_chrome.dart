@@ -239,23 +239,36 @@ class ModeIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
-    final looper = theme.extension<LooperTheme>()!;
-    // One color + icon + name per mode, matching the pedal's own tri-state
-    // MODE indicator (rec green-ish accent, mute primary, FX blue) so the
-    // screen and the plate never disagree about which mode is live.
-    final (color, icon, modeName) = switch (mode) {
+    final surface = context.surface;
+    // One colour pair + icon + name per mode: rec red over its wash, mute the
+    // design system's `success` green over its wash (#693 — the owner's call:
+    // mute reads green), FX accent blue over the flat `accentSurface` — the
+    // SAME token pairs the stage status bar's pill reads, so the desktop
+    // chrome and the console can never disagree about which mode is live.
+    //
+    // Both halves of each pair are TOKENS on purpose (#737). The fill was an
+    // inline `color.withValues(alpha: 0.16)`, which the high-contrast flavor
+    // cannot reach: it lifts the pill washes to a heavier weight, and the
+    // hardcode pinned this chip at the dark flavor's fill while the stage
+    // pill brightened beside it. And the outline used to read
+    // `LooperTheme.recordColor`/`fxColor` while the pill read `surface.rec`/
+    // `surface.accent` — two extensions one flavor tweak could desync.
+    final (color, fill, icon, modeName) = switch (mode) {
       InteractionMode.record => (
-        looper.recordColor,
+        surface.rec,
+        surface.recSurface,
         Icons.fiber_manual_record,
         l10n.interactionModeRec,
       ),
       InteractionMode.mute => (
-        theme.colorScheme.primary,
+        surface.success,
+        surface.successSurface,
         Icons.volume_off_rounded,
         l10n.interactionModeMute,
       ),
       InteractionMode.fx => (
-        looper.fxColor,
+        surface.accent,
+        surface.accentSurface,
         Icons.graphic_eq,
         l10n.interactionModeFx,
       ),
@@ -269,7 +282,7 @@ class ModeIndicator extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.16),
+          color: fill,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: color),
         ),

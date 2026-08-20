@@ -276,6 +276,7 @@ List<Color> _colors(SurfaceTheme s) => [
   s.accentAlt,
   s.warning,
   s.success,
+  s.successSurface,
   s.rec,
   s.recSurface,
   s.recTint,
