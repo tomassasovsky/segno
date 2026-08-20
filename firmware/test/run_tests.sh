@@ -73,7 +73,7 @@ for fn in ledColor globalColor modeColor scaled; do
   m="$(extract_fn "$MIRROR_INO" "$fn" | normalize)"
   if [ -z "$p" ]; then
     echo "FAIL: could not find $fn() in $PRIMARY_INO." >&2
-    echo "The drift gate greps for '^static CRGB $fn(' -- if the signature" >&2
+    echo "The drift gate greps for '^static (const )?CRGB $fn(' -- if the signature" >&2
     echo "changed, update extract_fn's pattern rather than dropping the check." >&2
     exit 1
   fi
