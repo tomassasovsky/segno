@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461257.127453704
+2461273.1210416667
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461257.127453704
+2461273.1210416667
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-9C
+9B
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{5383E9D8-AF93-42A2-A6B1-58E2355EB907}
+{A4682BA2-0CD1-4601-BFD5-9F11DBA90197}
   9
 $VERSIONGUID
   2
-{2391FA12-39F9-4A50-AF20-AFC547EAE6B6}
+{286A9A57-B7C4-4FFC-8A53-FDC2792E8773}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -2237,7 +2237,7 @@ LAYER
 100
 AcDbSymbolTable
  70
-10
+9
   0
 LAYER
   5
@@ -2395,30 +2395,6 @@ AcDbSymbolTableRecord
 100
 AcDbLayerTableRecord
   2
-WELD
- 70
-0
- 62
-6
-  6
-Continuous
-370
--3
-390
-13
-347
-21
-  0
-LAYER
-  5
-90
-330
-1
-100
-AcDbSymbolTableRecord
-100
-AcDbLayerTableRecord
-  2
 NOTE
  70
 0
@@ -2435,7 +2411,7 @@ Continuous
   0
 LAYER
   5
-91
+90
 330
 1
 100
@@ -2459,7 +2435,7 @@ Continuous
   0
 LAYER
   5
-92
+91
 330
 1
 100
@@ -3309,7 +3285,7 @@ ACAD
   0
 APPID
   5
-99
+98
 330
 3
 100
@@ -3323,7 +3299,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-9A
+99
 330
 3
 100
@@ -5435,7 +5411,7 @@ ENTITIES
   0
 LWPOLYLINE
   5
-93
+92
 330
 17
 100
@@ -5459,11 +5435,35 @@ AcDbPolyline
  10
 40.0
  20
-78.3735516372796
+85.10701811598696
  10
 0.0
  20
-78.3735516372796
+85.10701811598696
+  0
+LWPOLYLINE
+  5
+93
+330
+17
+100
+AcDbEntity
+  8
+BEND
+100
+AcDbPolyline
+ 90
+2
+ 70
+0
+ 10
+0.0
+ 20
+20.0
+ 10
+40.0
+ 20
+20.0
   0
 LWPOLYLINE
   5
@@ -5483,13 +5483,13 @@ AcDbPolyline
  10
 0.0
  20
-20.0
+65.10701811598696
  10
 40.0
  20
-20.0
+65.10701811598696
   0
-LWPOLYLINE
+CIRCLE
   5
 95
 330
@@ -5497,21 +5497,17 @@ LWPOLYLINE
 100
 AcDbEntity
   8
-BEND
+CUT
 100
-AcDbPolyline
- 90
-2
- 70
-0
+AcDbCircle
  10
+8.0
+ 20
+75.10701811598696
+ 30
 0.0
- 20
-58.3735516372796
- 10
-40.0
- 20
-58.3735516372796
+ 40
+2.15
   0
 CIRCLE
   5
@@ -5525,29 +5521,9 @@ CUT
 100
 AcDbCircle
  10
-8.0
- 20
-68.3735516372796
- 30
-0.0
- 40
-2.15
-  0
-CIRCLE
-  5
-97
-330
-17
-100
-AcDbEntity
-  8
-CUT
-100
-AcDbCircle
- 10
 32.0
  20
-68.3735516372796
+75.10701811598696
  30
 0.0
  40
@@ -5555,7 +5531,7 @@ AcDbCircle
   0
 TEXT
   5
-98
+97
 330
 17
 100
@@ -5567,17 +5543,17 @@ AcDbText
  10
 5.0
  20
-84.3735516372796
+91.10701811598696
  30
 0.0
  40
 9.0
   1
-Segno FACEPLATE SUPPORT POST  1.6mm COLD-ROLLED STEEL (not the Al shell)  x2  C-fold (pad 20 / web 38 / foot 20 mm); pad fold 102.5deg (beds flush on the 12.5deg slope), foot fold 90deg; foot bolts to the base floor (M4 x2), felt cap on the pad; deduction PROVISIONAL
+Segno FACEPLATE SUPPORT POST  1.6mm COLD-ROLLED STEEL (not the Al shell)  x2  C-fold (pad 20 / web 45 / foot 20 mm); pad fold 102.5deg (beds flush on the 12.5deg slope), foot fold 90deg; foot bolts to the base floor (M4 x2), felt cap on the pad; deduction PROVISIONAL
  11
 5.0
  21
-84.3735516372796
+91.10701811598696
  31
 0.0
 100
@@ -6673,7 +6649,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-9B
+9A
   0
 DICTIONARYVAR
   5
@@ -6685,7 +6661,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-04T06:03:32.926055+00:00
+1.4.4 @ 2026-08-20T05:54:18.741302+00:00
   0
 VISUALSTYLE
   5
@@ -13239,7 +13215,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-9B
+9A
 330
 2D
 100
@@ -13247,7 +13223,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-04T06:03:32.927830+00:00
+1.4.4 @ 2026-08-20T05:54:18.743383+00:00
   0
 ENDSEC
   0

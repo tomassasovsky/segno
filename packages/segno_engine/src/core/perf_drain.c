@@ -12,6 +12,59 @@
  * can build in one bounded pass. Every flush writes a fresh temp file and
  * atomically renames it over performance.json, so a reader never sees a
  * half-written sidecar.
+ *
+ * THE STEADY-STATE CYCLE ALLOCATES NOTHING (#722), and this is hygiene, not a
+ * click fix — the distinction matters, because the first draft of this change
+ * claimed a mechanism that measurement then disproved.
+ *
+ * What was here: a per-cycle malloc + free of LE_PD_JSON_BUF (512 KB) for the
+ * sidecar, plus a per-cycle fopen/fclose of the temp file. The claim was
+ * that 512 KB sits above glibc's 128 KB mmap threshold, so each cycle was an
+ * mmap + munmap, and each munmap a TLB-shootdown IPI to every core — four
+ * times a second, into a real-time audio callback. That is WRONG. glibc's
+ * mmap threshold is DYNAMIC: the first free of a large mmap'd chunk raises
+ * mp_.mmap_threshold to that chunk's size, so every later same-size request
+ * comes out of the (now grown) arena. Measured with mallinfo2 sampled while
+ * the buffer was held, gcc 13 / glibc 2.36, -O0, buffer forced to escape:
+ *
+ *   cycle 0: hblks=1 hblkhd=528384 arena=135168   <- one mmap, once
+ *   cycle 1: hblks=0 hblkhd=0      arena=663552   <- arena, no syscall
+ *   cycle 2..5: identical to cycle 1
+ *
+ * So the allocator churn was once per capture session, not four times a
+ * second, and nothing here is established as the cause of #722's clicks.
+ *
+ * What IS true, and why the change still earns its place: this is a
+ * background writer sharing a machine with a real-time audio callback, so its
+ * cycle should be boring. Removing the per-cycle allocation drops a 512 KB
+ * chunk split/merge under the malloc arena lock (a lock the audio thread must
+ * never be made to wait on, and which any future allocation on this thread
+ * would contend for), drops the stdio FILE object and stream buffer the
+ * per-cycle fopen created, and — the permanent one — makes "this loop does not
+ * call the allocator" a checkable invariant instead of a hope. Every buffer
+ * the cycle needs is now owned by le_perf_drain (allocated at start, freed at
+ * stop) or lives on this thread's stack, and the sidecar goes out through a
+ * raw descriptor. test_engine_core.c's
+ * test_perf_drain_steady_state_cycle_is_allocation_free interposes the
+ * allocator around several live cycles and asserts zero calls — and separately
+ * interposes fopen, because on macOS an allocation made INSIDE libc (a FILE
+ * object and its stream buffer) never binds to the executable's malloc and so
+ * is invisible to the first counter. Keep BOTH true when adding to this file:
+ * no allocation, and no stdio stream opened per cycle.
+ *
+ * RETIRED LAYERS ARE THE ONE EXCEPTION, and the exception really does allocate
+ * ON THIS THREAD — not just free what another thread allocated. Per retired
+ * layer, le_pd_write_staged_layer does a fopen/fclose right here in the cycle:
+ * the same per-call FILE object and lazily-allocated stream buffer this change
+ * just took off the sidecar path, so a performer doing overdub passes makes the
+ * drain thread take the arena lock once per retired layer, inside the cycle.
+ * (It also frees the lane PCM the CONTROL thread malloc'd for that pass — that
+ * half is a free, not an allocation.) It is left as-is because it is
+ * user-paced rather than steady state: it fires on punch-outs, not four times
+ * a second, and only while the performer is actually stacking layers. The
+ * allocation test excludes this path by construction (no retired layer in its
+ * fixture) and says so in its SCOPE note; if that path ever becomes
+ * per-cycle, it needs the same treatment the sidecar just got.
  */
 #include "perf_drain.h"
 
@@ -29,11 +82,20 @@
 
 #if defined(_WIN32)
 #include <direct.h> /* _mkdir */
+#include <fcntl.h>  /* _O_* */
+#include <io.h>     /* _open / _write / _close */
+#include <sys/stat.h> /* _S_IREAD / _S_IWRITE */
 #include <windows.h>
 #else
+#include <fcntl.h>    /* open, O_* */
 #include <pthread.h>
+#include <sched.h>    /* SCHED_OTHER, sched_get_priority_min */
 #include <sys/stat.h> /* mkdir */
 #include <time.h>     /* nanosleep */
+#include <unistd.h>   /* write, close */
+#if defined(__linux__)
+#include <sys/resource.h> /* setpriority, PRIO_PROCESS */
+#endif
 #endif
 
 /* ---- tuning ---- */
@@ -82,7 +144,78 @@
 
 /* ---- portable thread + sleep shim (extends engine_plugin.c's
  * control_sleep_ms one-file-branch-by-platform style to a real joinable
- * thread; see engine_plugin.c for the sibling sleep-only version). ---- */
+ * thread; see engine_plugin.c for the sibling sleep-only version). ----
+ *
+ * SCHEDULING (#722). This thread must never be able to take a core away from
+ * the audio callback. It is created with an EXPLICIT time-sharing policy —
+ * never inheriting the creating (control) thread's — and then asks the OS for
+ * a below-normal share, using whichever knob that OS actually honours per
+ * thread:
+ *
+ *   - Linux: the policy stays SCHED_OTHER and the real lever is niceness,
+ *     which on Linux is a per-thread attribute; the thread nices ITSELF to
+ *     LE_PD_NICE on entry (setpriority(PRIO_PROCESS, 0, ...) addresses the
+ *     calling thread there, and lowering a priority never needs privilege).
+ *     Doing it from inside the thread is what keeps it per-thread — calling
+ *     setpriority from the control thread would nice the whole process,
+ *     audio callback included, which is the exact opposite of the intent.
+ *   - Darwin: the same attribute IS the drop — SCHED_OTHER's minimum priority
+ *     there is 15 against a default of 31. Deliberately NOT a QoS class: the
+ *     background QoS classes bring timer coalescing with them, and this
+ *     thread's 10 ms poll then stretches far enough to triple the flush
+ *     interval — measured at ~750 ms in the native suite — which is not a
+ *     cosmetic delay, it is more audio held in rings that are sized for a
+ *     250 ms cadence, i.e. manufactured overruns.
+ *   - Windows: THREAD_PRIORITY_BELOW_NORMAL on the created handle.
+ *
+ * THE HEADROOM THIS SPENDS, stated because rejecting QoS above on a measured
+ * cadence stretch and then applying nice/priority on none would be an
+ * unargued double standard.
+ *
+ * The budget: le_perf_arm sizes master_ring for LE_PERF_CAPTURE_SECONDS (= 2 s)
+ * and the cycle runs every LE_PD_FLUSH_MS (= 250 ms), so a cycle may stretch to
+ * 8x its cadence before a ring the audio thread is still filling overruns and
+ * le_pd_catch_up starts writing zero-filled silence into the take (#710). That
+ * 8x is the whole margin; everything below is spent out of it.
+ *
+ * What the QoS path spent: ~750 ms observed, 3 of the 8. It spent it on the
+ * WAKEUP — timer coalescing defers when this thread runs at all, so the 10 ms
+ * poll itself became ~30 ms and the cadence with it. That is the expensive
+ * kind, because the deferral is a system policy with no ceiling this code can
+ * reason about: the ~750 ms was measured on an IDLE machine, and coalescing
+ * windows widen with load and low-power states rather than narrowing.
+ *
+ * What nice 10 / SCHED_OTHER-15 spends: CPU SHARE ONCE RUNNABLE, not the
+ * wakeup. Nothing about them defers a timer. Under CFS, nice 10 is weight
+ * 110 against nice 0's 1024 — roughly a 10% share against a saturating
+ * nice-0 competitor, which is the pessimistic case a loaded Pi (UI + export +
+ * plugin scan) actually presents. The cycle's own work is small and bounded:
+ * pop ~250 ms of audio out of the rings (~96 KB/cycle for stereo master at
+ * 48 kHz, plus each monitor stem), the fwrites for it, one ~1 KB snprintf pass
+ * and one open/write/close/rename for the sidecar — single-digit milliseconds
+ * of CPU on the appliance target. At a 10% share, single-digit ms of work
+ * takes tens of ms of wall time: ~12% of the 250 ms cadence, ~1.5% of the 2 s
+ * ring. Reaching the 8x that actually hurts would need the cycle stretched
+ * past 2 s, i.e. two orders of magnitude worse than the share alone explains —
+ * a machine on which the audio callback has already failed. And niceness does
+ * not starve: CFS still schedules by vruntime, and a thread that sleeps 10 ms
+ * out of every 10 ms comes back with a low one, so it is picked up promptly
+ * rather than queued behind the hogs.
+ *
+ * So the margin holds where QoS's did not, for a reason and not just a smaller
+ * number: this drop cannot move the wakeup, and the wakeup is what the cadence
+ * is made of. What makes that claim CHECKABLE rather than asserted is the
+ * monotonic deadline in le_pd_drain_thread_main — before it, the cycle counted
+ * assumed sleep, so any stretch this invites would have drifted the cadence
+ * with nothing measuring it.
+ *
+ * It is NEVER raised to a real-time policy: a late sidecar flush is invisible,
+ * a late audio callback is a click. Failure to apply any of this is
+ * non-fatal — the capture still has to start (a fallback pthread_create with
+ * default attrs covers the EPERM-style refusals some hardened kernels give). */
+#define LE_PD_NICE 10 /* below-normal share; low enough to always yield to the
+                       * audio callback, not so low as to starve on a busy Pi */
+
 #if defined(_WIN32)
 typedef HANDLE le_pd_thread_t;
 
@@ -94,9 +227,37 @@ static DWORD WINAPI le_pd_win_trampoline(LPVOID arg) {
 }
 
 static int le_pd_thread_start(le_pd_thread_t* out, void* arg) {
-  *out = CreateThread(NULL, 0, le_pd_win_trampoline, arg, 0, NULL);
-  return *out != NULL;
+  /* CREATE_SUSPENDED so the priority really is set before the thread runs a
+   * single instruction. Without it the drop would merely race the new thread,
+   * and only the fact that the loop opens with a 10 ms sleep would make it
+   * land in time — a coincidence, not a guarantee. */
+  *out = CreateThread(NULL, 0, le_pd_win_trampoline, arg, CREATE_SUSPENDED,
+                      NULL);
+  if (*out == NULL) return 0;
+  /* Best-effort: a refusal here costs the priority drop, not the capture. */
+  (void)SetThreadPriority(*out, THREAD_PRIORITY_BELOW_NORMAL);
+  if (ResumeThread(*out) == (DWORD)-1) {
+    /* Should be unreachable for a handle created here and suspended exactly
+     * once. If it is ever reached, closing the handle is NOT enough: a
+     * suspended thread keeps running-in-name-only forever, holding its stack
+     * and this call's `arg` — the le_perf_drain the caller is about to free.
+     * TerminateThread is the only way to reap a thread that will never run
+     * its own exit; its usual objection (arbitrary state left locked) does
+     * not apply to a thread parked before its first instruction, which has
+     * taken no lock and allocated nothing. Wait for the terminate to land
+     * before reporting failure, so the arm's free() cannot race it. */
+    (void)TerminateThread(*out, 0);
+    (void)WaitForSingleObject(*out, INFINITE);
+    CloseHandle(*out);
+    *out = NULL;
+    return 0;
+  }
+  return 1;
 }
+
+/* Nothing further to do on the thread itself — the handle-side call above
+ * applied the drop while the thread was still suspended. */
+static void le_pd_thread_lower_own_priority(void) {}
 
 static void le_pd_thread_join(le_pd_thread_t th) {
   WaitForSingleObject(th, INFINITE);
@@ -104,6 +265,18 @@ static void le_pd_thread_join(le_pd_thread_t th) {
 }
 
 static void le_pd_sleep_ms(int ms) { Sleep((DWORD)ms); }
+
+/* Milliseconds on a monotonic clock — never the wall clock, which an NTP step
+ * or a manual date change could move backwards under the flush deadline.
+ * GetTickCount64 is already 64-bit-since-boot, so there is no wrap to handle;
+ * its ~10-16 ms resolution is irrelevant against a 250 ms cadence.
+ * GetTickCount64 has no failure mode, so this always reports success; the
+ * success/failure return exists for the POSIX twin, whose caller must fail
+ * closed on an unreadable clock. */
+static int le_pd_now_ms(uint64_t* out_ms) {
+  *out_ms = (uint64_t)GetTickCount64();
+  return 1;
+}
 
 static int le_pd_mkdir_one(const char* path) {
   if (path[0] == '\0') return 1;
@@ -120,7 +293,79 @@ static void* le_pd_posix_trampoline(void* arg) {
   return NULL;
 }
 
+static void le_pd_thread_lower_own_priority(void) {
+#if defined(__linux__)
+  /* Per-thread on Linux (see the block comment above); ignoring the result is
+   * deliberate — a kernel that refuses still leaves a working capture. */
+  (void)setpriority(PRIO_PROCESS, 0, LE_PD_NICE);
+#endif
+}
+
+/* Fills `attr` with the below-normal, explicitly-non-inherited policy this
+ * thread wants. Returns 0 if any step failed, in which case the caller falls
+ * back to default attributes rather than failing the arm. */
+static int le_pd_thread_attr_init(pthread_attr_t* attr) {
+  if (pthread_attr_init(attr) != 0) return 0;
+  /* SCHED_OTHER at its minimum permitted priority. On Linux that minimum is 0
+   * and the value carries no weight (niceness does, applied in-thread); on
+   * Darwin it is a real drop (15, against a default of 31). The load-bearing
+   * half everywhere is PTHREAD_EXPLICIT_SCHED, which stops the drain from
+   * inheriting a caller that is — or one day becomes — real-time. */
+  struct sched_param sp;
+  memset(&sp, 0, sizeof(sp));
+  const int min_prio = sched_get_priority_min(SCHED_OTHER);
+  sp.sched_priority = min_prio < 0 ? 0 : min_prio;
+  if (pthread_attr_setinheritsched(attr, PTHREAD_EXPLICIT_SCHED) != 0 ||
+      pthread_attr_setschedpolicy(attr, SCHED_OTHER) != 0 ||
+      pthread_attr_setschedparam(attr, &sp) != 0) {
+    pthread_attr_destroy(attr);
+    return 0;
+  }
+  return 1;
+}
+
+/* Is the thread asking for a drain thread itself real-time? The fallback path
+ * below hands the new thread the CALLER's scheduling, so this decides whether
+ * that fallback is harmless or exactly the outcome this code exists to
+ * prevent.
+ *
+ * Only genuinely real-time policies count. "Not SCHED_OTHER" would be wrong:
+ * SCHED_BATCH and SCHED_IDLE both rank BELOW normal, so inheriting either is
+ * strictly safer than the time-sharing default — and an app launched under
+ * `chrt --batch` or a systemd unit with CPUSchedulingPolicy=batch would
+ * otherwise have its arm refused for scheduling that cannot outrank the audio
+ * callback in the first place. Fails closed only where it must: if the policy
+ * cannot be read at all, assume the dangerous case. */
+static int le_pd_caller_is_realtime(void) {
+  int policy = 0;
+  struct sched_param sp;
+  memset(&sp, 0, sizeof(sp));
+  if (pthread_getschedparam(pthread_self(), &policy, &sp) != 0) return 1;
+  if (policy == SCHED_FIFO || policy == SCHED_RR) return 1;
+#if defined(SCHED_DEADLINE)
+  if (policy == SCHED_DEADLINE) return 1; /* ranks above FIFO where visible */
+#endif
+  return 0;
+}
+
 static int le_pd_thread_start(le_pd_thread_t* out, void* arg) {
+  pthread_attr_t attr;
+  if (le_pd_thread_attr_init(&attr)) {
+    const int rc = pthread_create(out, &attr, le_pd_posix_trampoline, arg);
+    pthread_attr_destroy(&attr);
+    if (rc == 0) return 1;
+    /* fell through: some hardened kernels refuse an explicit-sched create
+     * outright (EPERM) — fall back below. */
+  }
+  /* The fallback create INHERITS the caller's scheduling. That is fine from a
+   * time-sharing caller (it is what this module did before #722) and is
+   * exactly the failure this block exists to prevent from a real-time one: a
+   * SCHED_FIFO drain thread outranking the audio callback. le_perf_arm is
+   * control-thread-only today and the control thread is time-sharing, so the
+   * fallback is available as before; should that ever change, the arm fails
+   * loudly (LE_ERR_DEVICE, unwound by the caller) instead of quietly
+   * shipping a priority inversion into a capture. */
+  if (le_pd_caller_is_realtime()) return 0;
   return pthread_create(out, NULL, le_pd_posix_trampoline, arg) == 0;
 }
 
@@ -131,12 +376,120 @@ static void le_pd_sleep_ms(int ms) {
   nanosleep(&ts, NULL);
 }
 
+/* Milliseconds on a monotonic clock — CLOCK_MONOTONIC, the same source
+ * midi_backend_linux.c timestamps with, deliberately not a new abstraction and
+ * deliberately not CLOCK_REALTIME (an NTP step or a manual date change must
+ * never move the flush deadline).
+ *
+ * A failure is REPORTED, not swallowed, and *out_ms is left untouched. An
+ * earlier revision returned 0 on failure and let the caller compare it against
+ * the deadline; that reads as "no time has passed", so a PERSISTENT failure
+ * would have deferred the cycle at every poll forever — rings filling,
+ * master_ring overrunning, le_pd_catch_up zero-filling the take: #710's
+ * outcome, silently, with no self-stop and no disk-full marker. The safe
+ * direction on an unreadable clock is to FIRE the cycle, not to skip it, so
+ * the caller checks this return. CLOCK_MONOTONIC cannot actually fail on any
+ * platform this builds for; the point is that the unreachable case fails
+ * cheaply (an early write) rather than catastrophically (a lost take). */
+static int le_pd_now_ms(uint64_t* out_ms) {
+  struct timespec ts;
+  memset(&ts, 0, sizeof(ts));
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+  *out_ms = (uint64_t)ts.tv_sec * 1000u + (uint64_t)(ts.tv_nsec / 1000000L);
+  return 1;
+}
+
 static int le_pd_mkdir_one(const char* path) {
   if (path[0] == '\0') return 1;
   if (mkdir(path, 0755) == 0) return 1;
   return errno == EEXIST;
 }
 #endif
+
+/* ---- raw-descriptor sidecar write (#722) ----
+ *
+ * The sidecar is the one file in this module that is created, written and
+ * closed afresh EVERY drain cycle (the PCM + events streams are opened once
+ * and kept open, so their stdio buffers are a one-time cost at arm). Going
+ * through stdio for it meant a per-cycle FILE object plus a lazily-allocated
+ * stream buffer — a malloc/free pair, four times a second, for a document
+ * that is already fully built in memory and written in a single call. These
+ * shims write the exact same bytes with no allocator involvement at all,
+ * which is what lets the steady-state cycle be provably allocation-free.
+ * 0666 matches fopen("wb")'s creation mode exactly (umask applies to both);
+ * O_CLOEXEC is a small upgrade on it — the sidecar is rewritten four times a
+ * second, so any Process.start from the Dart side landing in that window used
+ * to inherit a writable descriptor onto the temp inode. It closes ONLY that
+ * window, and it is the narrow one: master.pcm, events.log and every staged
+ * layer are still plain fopen(..., "wb") with no "e", so a child spawned any
+ * time during a capture inherits those writable descriptors for as long as it
+ * lives. Widening the close-on-exec discipline to the stdio streams is a
+ * separate change, deliberately not smuggled in with a perf fix. */
+#if defined(_WIN32)
+static int le_pd_open_trunc(const char* path) {
+  /* _O_NOINHERIT is the O_CLOEXEC equivalent. */
+  return _open(path, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY | _O_NOINHERIT,
+               _S_IREAD | _S_IWRITE);
+}
+/* void, not int: close()'s result is deliberately not a check here — see the
+ * call site, and the durability note below. */
+static void le_pd_fd_close(int fd) { (void)_close(fd); }
+#else
+static int le_pd_open_trunc(const char* path) {
+  return open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
+}
+static void le_pd_fd_close(int fd) { (void)close(fd); }
+#endif
+
+/* WHAT THE RENAME ACTUALLY GUARANTEES — and what it does not. It guarantees
+ * ATOMICITY OF THE DIRECTORY ENTRY: performance.json always names either the
+ * previous flush's complete document or this one's, never a half-written
+ * file, and on POSIX it is never momentarily absent. That is a guarantee
+ * about what a CONCURRENT READER sees.
+ *
+ * It is NOT a durability guarantee. Nothing here fsyncs, so after a power cut
+ * the sidecar may be missing this cycle's content entirely. That is
+ * deliberate, and it is not the weaker choice it looks like:
+ *
+ *   - The sidecar describes the PCM streams, which are only fflush'd (stdio
+ *     buffer -> page cache) and never synced either. Syncing only the sidecar
+ *     makes the pair INCONSISTENT: performance.json durably claiming
+ *     capture_frames = N while master.pcm's last seconds are still page
+ *     cache, so #679's salvage and daw_export lay out an arrangement past the
+ *     audio. Un-synced, both sides lose the same tail and stay consistent.
+ *   - On ext4 data=ordered an fsync here commits the journal transaction
+ *     carrying master.pcm's block allocations too, so it would drag PCM
+ *     writeback onto this cycle synchronously — and the capture rings hold
+ *     only LE_PERF_CAPTURE_SECONDS. An SD garbage-collection stall past that
+ *     inside one cycle overruns master_ring and writes zero-filled silence
+ *     into the take: the exact #710 defect, re-manufactured.
+ *
+ * Real crash-durability needs the sidecar and the PCM synced together, off
+ * this cycle's critical path, with that overrun risk analysed — designed in
+ * #727, not smuggled in here. The comment this replaces claimed the checked
+ * close made unflushed bytes un-renameable; it never did, and overclaiming
+ * was the actual defect. */
+
+/* Writes every byte or reports failure — a short write is a real possibility
+ * on a filling disk, and a partially-written temp file must never be renamed
+ * over a good sidecar. EINTR is retried rather than counted as failure. */
+static int le_pd_fd_write_all(int fd, const char* data, size_t len) {
+  size_t off = 0;
+  while (off < len) {
+#if defined(_WIN32)
+    const int n = _write(fd, data + off, (unsigned int)(len - off));
+#else
+    const ssize_t n = write(fd, data + off, len - off);
+#endif
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      return 0;
+    }
+    if (n == 0) return 0; /* no progress: treat as a failed write, not a spin */
+    off += (size_t)n;
+  }
+  return 1;
+}
 
 /* mkdir -p: creates every missing path segment. Splits on '/' or '\\' so a
  * caller can pass either style; each segment is created in order so a nested
@@ -193,9 +546,14 @@ typedef struct le_pd_gap {
   uint64_t duration_frames;
 } le_pd_gap;
 
-/* One retired-layer manifest entry (part 5, D-LAYER) — recorded once its
- * file is durably written (fclose'd), so it never appears in the sidecar
- * before the bytes it describes are actually on disk. `channel`/`slot`/
+/* One retired-layer manifest entry (part 5, D-LAYER) — recorded only after
+ * its file has been fclose'd, so a reader never sees an entry naming a file
+ * whose last bytes are still sitting in a stdio buffer. That is a VISIBILITY
+ * ordering, not a durability one: fclose flushes to the page cache and makes
+ * the file complete to other processes, it does not put it on the platter.
+ * Nothing in this module fsyncs, on either side (see the durability note above
+ * the sidecar's descriptor shims, and #727), so a power cut can still lose a
+ * staged layer whose manifest entry survived. `channel`/`slot`/
  * `generation` are the same key events.log's LE_PLOG_LAYER_RETIRED entry
  * carries, for a renderer to cross-reference the sample-accurate frame (see
  * layer_staging_ring.h and docs/design/performance-event-log-format.md). */
@@ -239,6 +597,18 @@ struct le_perf_drain {
 
   le_pd_layer_manifest_entry layers[LE_PD_MAX_LAYERS];
   int layer_count;
+
+  /* The sidecar's build buffer, owned by the session and reused by every
+   * cycle (#722). It was a per-cycle malloc(512 KB) + free; measurement (see
+   * the file header) showed glibc served that from the arena after the first
+   * cycle rather than mmapping each time, so this is not the syscall storm
+   * the first draft of this change claimed. What it removes is real but
+   * smaller: a large chunk split/merge under the malloc arena lock, four
+   * times a second, on a thread that shares a machine with a real-time audio
+   * callback. It is still not a stack array (see the note in
+   * le_pd_write_sidecar) and still not sized down — owning it here just moves
+   * the one allocation to arm. */
+  char json_buf[LE_PD_JSON_BUF];
 };
 
 int le_perf_drain_self_stopped(struct le_perf_drain* drain) {
@@ -247,8 +617,10 @@ int le_perf_drain_self_stopped(struct le_perf_drain* drain) {
 }
 
 /* Low-level bounded write; checks the force-failure test hook so every PCM/
- * silence-fill write path fails uniformly (le_pd_flush and
- * le_pd_write_sidecar each check it too, at their own I/O boundary). */
+ * silence-fill write path fails uniformly. This is the ONLY function that
+ * consults it — le_pd_flush and le_pd_write_sidecar deliberately do NOT check
+ * it; see their own definitions for why (the sidecar's exemption is what makes
+ * the `stopped_early` marker testable after a forced PCM failure). */
 static int le_pd_write(FILE* f, const void* data, size_t bytes) {
   if (atomic_load_explicit(&g_pd_force_write_failure, memory_order_relaxed)) {
     return 0;
@@ -260,7 +632,11 @@ static int le_pd_write(FILE* f, const void* data, size_t bytes) {
 /* Flushes a long-lived PCM file handle so its writes actually reach the OS
  * (and become visible to any other reader) rather than sitting in this
  * stream's userspace buffer until an eventual fclose — the file is kept open
- * for the whole capture session, unlike the sidecar's per-cycle fopen/fclose.
+ * for the whole capture session, unlike the sidecar's per-cycle
+ * open/write/close (#722 moved that off stdio; it was fopen/fclose before).
+ * This is a flush to the OS, NOT to the device — no fsync is involved
+ * anywhere in this module, on either side (see the durability note above the
+ * sidecar's descriptor shims, and #727).
  * This IS the ~250 ms flush cadence perf_drain.h documents. Not itself
  * subject to the force-write-failure test hook (le_pd_write already covers
  * the PCM data path; by the time flush would run, either the write already
@@ -316,8 +692,10 @@ static int le_pd_drain_log_ring(FILE* f, le_perf_log_ring* ring) {
  * `entry->lane_pcm[l]` before returning, success or failure — this function
  * takes ownership of the staged copy unconditionally, matching
  * layer_staging_ring.h's documented handoff contract. Only records a
- * manifest entry on success, and only once the file is fclose'd (durably on
- * disk) — see le_pd_layer_manifest_entry's doc comment for why. */
+ * manifest entry on success, and only once the file is fclose'd — i.e. once
+ * every byte has reached the OS and the file is complete to any other reader,
+ * which is not the same as being on the device (no fsync here or anywhere else
+ * in this module) — see le_pd_layer_manifest_entry's doc comment for why. */
 static int le_pd_write_staged_layer(le_perf_drain* d,
                                     const le_staged_layer* entry) {
   char filename[64];
@@ -537,14 +915,14 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
   const uint64_t zero_filled = atomic_load_explicit(
       &d->engine->a_perf_zero_filled_frames, memory_order_relaxed);
 
-  /* Heap-allocated, not a local array: LE_PD_JSON_BUF scales with
-   * LE_PD_MAX_LAYERS (in turn LE_MAX_TRACKS * LE_POOL_SLOTS), and this
-   * function runs on the drain thread, whose stack is sized for the small,
-   * fixed-size buffers every other function here uses — a stack array this
-   * large blew that stack (SIGBUS) the first time LE_PD_JSON_BUF grew past
-   * a few hundred KB. */
-  char* buf = (char*)malloc(LE_PD_JSON_BUF);
-  if (buf == NULL) return 0;
+  /* Not a local array: LE_PD_JSON_BUF scales with LE_PD_MAX_LAYERS (in turn
+   * LE_MAX_TRACKS * LE_POOL_SLOTS), and this function runs on the drain
+   * thread, whose stack is sized for the small, fixed-size buffers every
+   * other function here uses — a stack array this large blew that stack
+   * (SIGBUS) the first time LE_PD_JSON_BUF grew past a few hundred KB. It is
+   * no longer a per-call malloc either (#722): the session owns it, so this
+   * cycle costs nothing but the snprintf passes below and the write. */
+  char* const buf = d->json_buf;
   int result = 0;
   int off = snprintf(buf, LE_PD_JSON_BUF,
                      "{\n"
@@ -630,18 +1008,20 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full,
     snprintf(final_path, sizeof(final_path), "%s/performance.json",
             d->capture_dir);
 
-    FILE* f = fopen(tmp_path, "wb");
-    if (f == NULL) goto done;
-    const size_t len = (size_t)off;
-    const int ok = fwrite(buf, 1, len, f) == len;
-    fclose(f);
+    const int fd = le_pd_open_trunc(tmp_path);
+    if (fd < 0) goto done;
+    const int ok = le_pd_fd_write_all(fd, buf, (size_t)off);
+    /* close() is release-the-descriptor, nothing more: it neither flushes the
+     * page cache nor reports writeback errors, so its result says nothing
+     * about the bytes and is not worth failing a whole capture over (see the
+     * durability note above the shims). The write itself is the check. */
+    le_pd_fd_close(fd);
     if (!ok) goto done;
 
     result = le_pd_atomic_rename(tmp_path, final_path);
   }
 
 done:
-  free(buf);
   return result;
 }
 
@@ -750,9 +1130,13 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
 
   /* Retired-layer persistence (part 5, D-LAYER): each staged layer is its
    * own self-contained file (open, write, fclose — not a long-lived stream
-   * like master.pcm), so there is nothing to flush separately below; the
-   * fclose inside le_pd_write_staged_layer already makes it durable before
-   * its manifest entry is recorded. */
+   * like master.pcm), so there is nothing to flush separately below: the
+   * fclose inside le_pd_write_staged_layer has already pushed every byte out
+   * of stdio and into the page cache before the manifest entry is recorded.
+   * That is the same guarantee le_pd_flush gives the long-lived streams —
+   * visible to other processes, NOT on the device. No fsync is involved
+   * anywhere in this module, on either side (see the durability note above the
+   * sidecar's descriptor shims, and #727). */
   if (ok && !le_pd_drain_layer_staging(d)) ok = 0;
 
   /* The PCM files stay open for the whole capture session (never closed
@@ -781,13 +1165,68 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
 
 static void le_pd_drain_thread_main(void* arg) {
   le_perf_drain* d = (le_perf_drain*)arg;
-  int since_flush_ms = 0;
+
+  /* Before the first cycle: drop this thread's own scheduling share (#722).
+   * See the shim block's SCHEDULING note for why this half has to happen from
+   * inside the thread rather than in the attributes. */
+  le_pd_thread_lower_own_priority();
+
+  /* A MONOTONIC DEADLINE, not a tick accumulator. This loop used to add
+   * LE_PD_POLL_MS per iteration and fire at 25 of them — counting ASSUMED
+   * sleep, with nothing measuring the elapsed kind. le_pd_sleep_ms(10) is a
+   * floor, never a ceiling, and this thread is now deliberately deprioritized
+   * (see the SCHEDULING note), so a poll landing at 15 ms or worse under load
+   * is an expected outcome rather than an anomaly. Under the accumulator that
+   * silently stretched the cadence: 25 polls of 30 ms is a 750 ms cycle that
+   * still believes it ran at 250. The failure at the far end is #710's — more
+   * than LE_PERF_CAPTURE_SECONDS of audio piling into master_ring inside one
+   * cycle, an overrun, and le_pd_catch_up padding the take with zero-filled
+   * silence.
+   *
+   * The deadline is re-based off ITSELF, not off `now`, so a cycle that ran
+   * long does not push the next one out by its own duration — the cadence is
+   * of cycle STARTS. What that means when a cycle DOES overrun, stated
+   * precisely because it is the load-bearing behaviour under exactly the
+   * conditions #710 shows up in:
+   *
+   *   - Overrun by a FULL interval or more: the re-based deadline is still in
+   *     the past, so it resyncs to now + LE_PD_FLUSH_MS. The missed cycles are
+   *     dropped rather than made up — running the writer harder to catch up is
+   *     the opposite of what a background writer should do on a busy machine.
+   *   - Overrun by LESS than one interval: the re-based deadline is already
+   *     past, so the next cycle fires at the very next 10 ms poll. While the
+   *     overrun persists, cycles run effectively back-to-back at poll
+   *     granularity. That is deliberate for #710 — the rings hold only
+   *     LE_PERF_CAPTURE_SECONDS, and draining them promptly is what keeps
+   *     zero-filled silence out of the take — but it is the wrong direction
+   *     for load: combined with the priority drop, the worst case is more
+   *     drain CPU exactly when the machine is busiest. The trade is taken
+   *     knowingly; data loss is unrecoverable and CPU contention is not.
+   *
+   * This can only ever make cycles MORE frequent, never less: a real sleep is
+   * always at least as long as its request, so the accumulator's 25th tick
+   * always landed at or after 250 ms of true elapsed time, and this fires at
+   * the first poll wake at or after exactly that. The one case where the
+   * accumulator fired sooner is a nanosleep cut short by a signal — it would
+   * credit a full 10 ms for a partial sleep — and firing at the true 250 ms
+   * instead is the documented contract, comfortably inside the 2 s ring. */
+  uint64_t next_flush_ms = 0;
+  if (le_pd_now_ms(&next_flush_ms)) next_flush_ms += LE_PD_FLUSH_MS;
 
   while (atomic_load_explicit(&d->running, memory_order_acquire)) {
     le_pd_sleep_ms(LE_PD_POLL_MS);
-    since_flush_ms += LE_PD_POLL_MS;
-    if (since_flush_ms < LE_PD_FLUSH_MS) continue;
-    since_flush_ms = 0;
+    uint64_t now_ms = 0;
+    if (le_pd_now_ms(&now_ms)) {
+      if (now_ms < next_flush_ms) continue;
+      next_flush_ms += LE_PD_FLUSH_MS;
+      if (next_flush_ms <= now_ms) next_flush_ms = now_ms + LE_PD_FLUSH_MS;
+    }
+    /* else: the clock could not be read. FIRE rather than skip (see
+     * le_pd_now_ms) — a cycle that runs early costs one extra write on a
+     * deprioritized thread, while a cycle that never runs loses the take. The
+     * deadline is left untouched, so a clock that comes back resyncs it on the
+     * next poll; a persistent failure degrades to one cycle per poll, which is
+     * the expensive-but-correct direction, not a stall. */
     if (!le_pd_drain_cycle(d)) {
       atomic_store_explicit(&d->disk_full, 1, memory_order_release);
       break;

@@ -155,6 +155,9 @@ class FakeSessionEngine implements AudioEngine {
   }
 
   @override
+  CallbackTelemetry callbackTelemetry() => CallbackTelemetry.empty;
+
+  @override
   EngineSnapshot snapshot() => EngineSnapshot(
     isRunning: true,
     sampleRate: sampleRate,

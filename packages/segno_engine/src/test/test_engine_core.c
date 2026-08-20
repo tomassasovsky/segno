@@ -16,12 +16,31 @@
  * It expects "ALL PASSED". The engine source set it compiles mirrors
  * src/CMakeLists.txt (minus the MIDI TUs this suite does not link).
  */
+/* _GNU_SOURCE, and it has to be here — before the first include, since
+ * features.h latches on the first one. It buys exactly one symbol: RTLD_NEXT,
+ * which glibc hides behind it and which the fopen interposer further down
+ * needs to reach the real fopen. macOS and MinGW define RTLD_NEXT (or need no
+ * dlfcn at all) regardless, so this is a Linux-only concession, scoped to this
+ * TU rather than added to the build's global flags. */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE 1
+#endif
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h> /* clock (conditioning CPU smoke) */
 #include <wchar.h>
+#if defined(__linux__)
+#include <dirent.h>     /* /proc/self/fd walk (probe FD leak, #721) */
+#include <dlfcn.h>      /* dlopen — is libpulse even here? */
+#include <poll.h>       /* the fake server's shutdown-safe accept loop */
+#include <pthread.h>    /* the fake PulseAudio server's accept loop */
+#include <sys/socket.h> /* socket/bind/listen/accept */
+#include <sys/un.h>     /* struct sockaddr_un */
+#include <unistd.h>     /* close, unlink, getpid */
+#endif
 
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
 #include "engine_core.h"      /* le_push (raw ring pushes for the tempo tests) */
@@ -50,6 +69,33 @@ static int g_failures = 0;
       g_failures++;                                                       \
     }                                                                     \
   } while (0)
+
+/* An assertion about ACCUMULATED CALLBACK TIMING (#722) — i.e. one that can
+ * only hold when LE_CALLBACK_TELEMETRY is on, because the gate compiles the
+ * accumulators, the clock reads and the whole timing path out to nothing.
+ *
+ * The gate is this feature's stated escape hatch if the instrument ever turns
+ * out to perturb the appliance, so `-DLE_CALLBACK_TELEMETRY=0` has to be a
+ * configuration that BUILDS AND PASSES, not one that merely compiles — it is
+ * exactly the thing someone reaches for under pressure, when discovering it
+ * does not work is worst. CI builds and runs it (native-tests-telemetry-off in
+ * .github/workflows/main.yaml), so the `#if` branches in miniaudio.h,
+ * engine_miniaudio.c and engine_telemetry.h cannot rot silently.
+ *
+ * Note what is NOT wrapped: every assertion that a judged field reads ZERO
+ * stays a plain CHECK, in both builds. Those are the healthy-rig property when
+ * the gate is on and the gate's own contract — "nothing is accumulated at
+ * all" — when it is off, so the gate-off run is a real test rather than a
+ * skipped one. The ungated dropout tally (le_cb_timing_note_xrun) likewise
+ * stays a plain CHECK, because it is deliberately outside the gate. */
+#if LE_CALLBACK_TELEMETRY
+#define CHECK_TIMING(cond) CHECK(cond)
+#else
+/* Evaluated and discarded rather than dropped: keeps every local the assertion
+ * reads "used", so a gate-off build does not warn about unused variables. The
+ * conditions are pure comparisons with no side effects. */
+#define CHECK_TIMING(cond) ((void)(cond))
+#endif
 
 static void test_ring_init_rejects_bad_capacity(void) {
   printf("test_ring_init_rejects_bad_capacity\n");
@@ -1851,6 +1897,696 @@ static void test_xrun_count_tallies_and_resets(void) {
   le_engine_destroy(e);
 }
 
+/* ---- audio-callback telemetry (#722) ---- *
+ * The instrument is pure math over synthetic timestamps, so it is tested that
+ * way: no device, no clock, no timing flake. LE_CB_TEST_* pin the appliance's
+ * real configuration — 64 frames at 96 kHz, a 666 us period, which is exactly
+ * the deadline the bug is being hunted against.
+ *
+ * The governing property, asserted from several directions below: on HEALTHY
+ * hardware every judged field reads ZERO. An instrument that cries wolf on a
+ * working rig is worse than none, because the bench then chases it. */
+#define LE_CB_TEST_FRAMES 64u
+#define LE_CB_TEST_RATE 96000
+#define LE_CB_TEST_PERIOD_NS 666666ull /* 64 * 1e9 / 96000, truncated */
+#define LE_CB_TEST_BUCKET_NS (LE_CB_TEST_PERIOD_NS / LE_CB_BUCKETS)
+
+/* Feeds one period's worth of audio as `blocks` equal sub-period callbacks, the
+ * way miniaudio's duplex loop actually delivers it: a burst of back-to-back
+ * callbacks (microseconds apart) covering one period, then the caller advances
+ * `entry` by a whole period before the next burst. `busy_ns` is how long EACH
+ * callback takes. Returns the entry stamp after the burst. */
+static uint64_t le_cb_test_burst(le_cb_timing* t, uint64_t entry,
+                                 uint32_t blocks, uint64_t busy_ns, int armed) {
+  const uint32_t frames = LE_CB_TEST_FRAMES / blocks;
+  for (uint32_t i = 0; i < blocks; ++i) {
+    le_cb_timing_note(t, entry, entry + busy_ns, frames, armed);
+    entry += busy_ns; /* the next chunk follows immediately */
+  }
+  return entry;
+}
+
+/* Both negotiated numbers are required; either missing leaves it inert. */
+static void test_cb_timing_configure_derives_budget(void) {
+  printf("test_cb_timing_configure_derives_budget\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+  CHECK(t.sample_rate == LE_CB_TEST_RATE);
+  CHECK(t.period_frames == LE_CB_TEST_FRAMES);
+  CHECK(t.period_ns == LE_CB_TEST_PERIOD_NS);
+  /* The gap threshold is 1.5 NOMINAL periods — never a sub-period block's
+   * budget, which is what would fire at every period boundary. */
+  CHECK(t.gap_limit_ns == LE_CB_TEST_PERIOD_NS * 3u / 2u);
+  CHECK(t.gap_suppress_window_ns == LE_CB_TEST_PERIOD_NS * 4u);
+
+  le_callback_telemetry tel;
+
+  /* No device => no rate/period => nothing measured, whatever it is fed. */
+  le_cb_timing_configure(&t, 0, (int32_t)LE_CB_TEST_FRAMES);
+  le_cb_timing_note(&t, 0, 10 * LE_CB_TEST_PERIOD_NS, LE_CB_TEST_FRAMES, 0);
+  le_cb_timing_read(&t, &tel);
+  CHECK(tel.budget_us == 0);
+  CHECK(tel.session.calls == 0);
+  CHECK(tel.session.periods == 0);
+
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, 0);
+  le_cb_timing_note(&t, 0, 10 * LE_CB_TEST_PERIOD_NS, LE_CB_TEST_FRAMES, 0);
+  le_cb_timing_read(&t, &tel);
+  CHECK(tel.session.calls == 0);
+
+  /* A zero-frame callback carries no work to judge. */
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+  le_cb_timing_note(&t, 0, 10 * LE_CB_TEST_PERIOD_NS, 0u, 0);
+  le_cb_timing_read(&t, &tel);
+  CHECK(tel.session.calls == 0);
+
+  le_cb_timing_note(NULL, 0, 1, LE_CB_TEST_FRAMES, 0);              /* no crash */
+  le_cb_timing_configure(NULL, LE_CB_TEST_RATE, 64);                /* ditto */
+  le_cb_timing_reset_armed(NULL);                                   /* ditto */
+}
+
+/* THE HEALTHY-RIG PROPERTY. A duplex loop splitting each 64-frame period into
+ * four 16-frame callbacks, each doing a modest slice of work, then waiting a
+ * period for the next burst — the ordinary rhythm of the ALSA generic duplex
+ * path. Every judged field must read ZERO.
+ *
+ * Both round-two false positives live here. Judging each 16-frame block against
+ * its own 166 us budget would call the engine's fixed per-block overhead "late"
+ * on every burst; measuring the gap against the trailing block's budget would
+ * call the normal one-period wait "starvation" at every period boundary. */
+static void test_cb_timing_healthy_split_duplex_reads_zero(void) {
+  printf("test_cb_timing_healthy_split_duplex_reads_zero\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+
+  /* Four blocks per period, each burning 60 us: 240 us of work per 666 us
+   * period, i.e. ~36% load — a comfortable rig, and one no per-block model
+   * could read correctly. 60 us is well inside a 16-frame block's own 166 us,
+   * so a per-block deadline would not call this late — it would simply bucket
+   * it wrong (60 of 166 is bucket 2 of the WRONG scale, and the fixed
+   * per-block cost that does not shrink with the block is what pushes a real
+   * 16-frame tail over that budget). What is asserted below is the framing that
+   * survives both: the four spans are SUMMED into one period service and judged
+   * against the 666 us they actually covered, and the ordinary wait between
+   * bursts is not a gap. */
+  uint64_t entry = 1000;
+  for (int period = 0; period < 50; ++period) {
+    entry = le_cb_test_burst(&t, entry, /*blocks=*/4, /*busy_ns=*/60000u,
+                             /*armed=*/0);
+    entry += LE_CB_TEST_PERIOD_NS; /* the device's normal wait */
+  }
+
+  le_callback_telemetry tel;
+  le_cb_timing_read(&t, &tel);
+  CHECK(tel.budget_us == (uint32_t)(LE_CB_TEST_PERIOD_NS / 1000));
+  CHECK_TIMING(tel.session.calls == 200);   /* 50 periods x 4 callbacks */
+  /* ... folded into 50 period services */
+  CHECK_TIMING(tel.session.periods == 50);
+  CHECK(tel.session.late_periods == 0);
+  CHECK(tel.session.gap_events == 0);
+  CHECK(tel.session.max_gap_us == 0);
+  for (int k = 0; k < LE_XRUN_KINDS; ++k) CHECK(tel.session.xruns[k] == 0);
+  /* 240 us of 666 us is between 2/8 and 3/8 of the deadline. */
+  CHECK_TIMING(tel.session.buckets[2] == 50);
+  CHECK_TIMING(tel.session.max_us == 240);
+  CHECK_TIMING(tel.session.mean_us == 240);
+}
+
+/* The same rig, but the engine now needs more than a period per period. That IS
+ * a dropout in the making, and it must be reported — the zero above is a
+ * property of healthy hardware, not of a blind instrument. */
+static void test_cb_timing_overloaded_split_duplex_reports_late(void) {
+  printf("test_cb_timing_overloaded_split_duplex_reports_late\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+
+  uint64_t entry = 1000;
+  for (int period = 0; period < 10; ++period) {
+    /* 4 x 180 us = 720 us of work inside a 666 us period. */
+    entry = le_cb_test_burst(&t, entry, 4, 180000u, /*armed=*/0);
+    entry += LE_CB_TEST_PERIOD_NS;
+  }
+
+  le_callback_telemetry tel;
+  le_cb_timing_read(&t, &tel);
+  CHECK_TIMING(tel.session.periods == 10);
+  CHECK_TIMING(tel.session.late_periods == 10);
+  CHECK_TIMING(tel.session.buckets[LE_CB_BUCKETS - 1] == 10);
+  CHECK_TIMING(tel.session.max_us == 720);
+  CHECK(tel.session.gap_events == 0); /* the DEVICE was fine; we were not */
+}
+
+/* Running max, over-budget tally, mean, and the histogram bucket each service
+ * lands in, driven one whole period per callback. Bucket i is the eighth
+ * [i/8, (i+1)/8) of the deadline; the last is open-ended, so it also holds
+ * every over-budget service. */
+static void test_cb_timing_durations_max_late_and_buckets(void) {
+  printf("test_cb_timing_durations_max_late_and_buckets\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+  const uint64_t eighth = LE_CB_TEST_BUCKET_NS;
+
+  const uint64_t spans[] = {
+      eighth / 2,     /* bucket 0 */
+      eighth * 2 + 1, /* bucket 2 */
+      eighth * 4 + 1, /* bucket 4 */
+      eighth * 9,     /* 9/8 of the deadline: LATE, clamped to the last bucket */
+  };
+  uint64_t entry = 1000;
+  for (size_t i = 0; i < sizeof(spans) / sizeof(spans[0]); ++i) {
+    le_cb_timing_note(&t, entry, entry + spans[i], LE_CB_TEST_FRAMES,
+                      /*armed=*/0);
+    entry += LE_CB_TEST_PERIOD_NS;
+  }
+
+  le_callback_telemetry tel;
+  le_cb_timing_read(&t, &tel);
+  CHECK_TIMING(tel.session.calls == 4);
+  CHECK_TIMING(tel.session.periods == 4); /* one period per callback here */
+  CHECK_TIMING(tel.session.late_periods == 1);
+  CHECK_TIMING(tel.session.max_us == (uint32_t)(eighth * 9 / 1000));
+  CHECK(tel.session.gap_events == 0);
+  CHECK_TIMING(tel.session.buckets[0] == 1);
+  CHECK_TIMING(tel.session.buckets[2] == 1);
+  CHECK_TIMING(tel.session.buckets[4] == 1);
+  CHECK_TIMING(tel.session.buckets[LE_CB_BUCKETS - 1] == 1);
+  CHECK(tel.session.buckets[1] == 0 && tel.session.buckets[3] == 0 &&
+        tel.session.buckets[5] == 0 && tel.session.buckets[6] == 0);
+  {
+    uint64_t total = 0;
+    for (size_t i = 0; i < sizeof(spans) / sizeof(spans[0]); ++i) {
+      total += spans[i];
+    }
+    CHECK_TIMING(tel.session.mean_us == (uint32_t)(total / 4 / 1000));
+  }
+
+  /* A histogram earns its place by separating "one huge stall" from "many
+   * marginal ones": the same late count with a completely different shape. */
+  le_cb_timing t2;
+  memset(&t2, 0, sizeof(t2));
+  le_cb_timing_configure(&t2, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+  entry = 1000;
+  for (int i = 0; i < 4; ++i) {
+    le_cb_timing_note(&t2, entry, entry + eighth * 7 + 1, LE_CB_TEST_FRAMES, 0);
+    entry += LE_CB_TEST_PERIOD_NS;
+  }
+  le_callback_telemetry tel2;
+  le_cb_timing_read(&t2, &tel2);
+  CHECK(tel2.session.late_periods == 0); /* all marginal: 7/8, none over */
+  CHECK_TIMING(tel2.session.buckets[LE_CB_BUCKETS - 1] == 4);
+}
+
+/* A callback bigger than a period is judged against the frames it actually
+ * covered, not against one period — otherwise a coalescing backend would read
+ * as permanently late. */
+static void test_cb_timing_oversized_block_scales_its_deadline(void) {
+  printf("test_cb_timing_oversized_block_scales_its_deadline\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+
+  /* Two periods of frames in one callback, taking 1.5 periods of time: under
+   * its own two-period deadline, so NOT late. */
+  le_cb_timing_note(&t, 1000, 1000 + LE_CB_TEST_PERIOD_NS * 3u / 2u,
+                    LE_CB_TEST_FRAMES * 2u, /*armed=*/0);
+  le_callback_telemetry tel;
+  le_cb_timing_read(&t, &tel);
+  CHECK_TIMING(tel.session.calls == 1);
+  CHECK_TIMING(tel.session.periods == 1);
+  CHECK(tel.session.late_periods == 0);
+  CHECK_TIMING(tel.session.buckets[6] == 1); /* 1.5 of 2 periods = 6/8 */
+}
+
+/* The derived starvation signal, measured against the NOMINAL period: a device
+ * more than 1.5 periods late did not come back on time. The first callback
+ * after a start reports no gap. */
+static void test_cb_timing_gap_detector(void) {
+  printf("test_cb_timing_gap_detector\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+  const uint64_t period = LE_CB_TEST_PERIOD_NS;
+
+  uint64_t entry = 5000;
+  /* first: no previous entry */
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+  entry += period; /* on time */
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+  entry += period + period / 2; /* exactly 1.5: NOT a gap */
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+  entry += period * 3; /* the device starved */
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+
+  le_callback_telemetry tel;
+  le_cb_timing_read(&t, &tel);
+  CHECK_TIMING(tel.session.calls == 4);
+  CHECK_TIMING(tel.session.gap_events == 1);
+  CHECK_TIMING(tel.session.max_gap_us == (uint32_t)(period * 3 / 1000));
+  CHECK(tel.session.late_periods == 0); /* a starved DEVICE is not slow code */
+}
+
+/* One physical dropout is counted ONCE. An ALSA -EPIPE recovery also stalls the
+ * loop, so without suppression the same event would land as an xrun AND as a
+ * gap_event and would pin max_gap_us for the session. The licence EXPIRES,
+ * though: a genuine stall later must still register, or one early recovery
+ * would blind the detector for good. */
+static void test_cb_timing_recovery_gap_is_not_double_counted(void) {
+  printf("test_cb_timing_recovery_gap_is_not_double_counted\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+  const uint64_t period = LE_CB_TEST_PERIOD_NS;
+
+  /* The suppressor stamps le_now_ns(), so the spans here ride the real clock:
+   * a recovery followed immediately by a late block is inside the window. */
+  uint64_t entry = le_now_ns();
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+  entry += period;
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+
+  le_cb_timing_note_xrun(&t, LE_XRUN_PLAYBACK_UNDERRUN, /*armed=*/0);
+  entry = le_now_ns() + period * 3; /* a stall the recovery explains */
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+
+  le_callback_telemetry tel;
+  le_cb_timing_read(&t, &tel);
+  CHECK(tel.session.xruns[LE_XRUN_PLAYBACK_UNDERRUN] == 1);
+  CHECK(tel.session.gap_events == 0); /* explained; not counted twice */
+  CHECK(tel.session.max_gap_us == 0); /* and it did not pin the worst gap */
+
+  /* One-shot: the very next unexplained stall registers. */
+  entry += period * 4;
+  le_cb_timing_note(&t, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+  le_cb_timing_read(&t, &tel);
+  CHECK_TIMING(tel.session.gap_events == 1);
+  CHECK_TIMING(tel.session.max_gap_us == (uint32_t)(period * 4 / 1000));
+
+  /* And the licence EXPIRES: a recovery long ago cannot excuse a stall now.
+   * The stamp is deliberately aged past gap_suppress_window_ns. */
+  le_cb_timing t2;
+  memset(&t2, 0, sizeof(t2));
+  le_cb_timing_configure(&t2, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+  entry = le_now_ns();
+  le_cb_timing_note(&t2, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+  le_cb_timing_note_xrun(&t2, LE_XRUN_PLAYBACK_UNDERRUN, 0);
+  entry = le_now_ns() + t2.gap_suppress_window_ns + period * 10;
+  le_cb_timing_note(&t2, entry, entry + 100, LE_CB_TEST_FRAMES, 0);
+  le_callback_telemetry tel2;
+  le_cb_timing_read(&t2, &tel2);
+  CHECK(tel2.session.xruns[LE_XRUN_PLAYBACK_UNDERRUN] == 1);
+  /* stale licence: the stall still counts */
+  CHECK_TIMING(tel2.session.gap_events == 1);
+}
+
+/* A device reroute or a system audio interruption is a hole in the callback
+ * TIMELINE, not a stall (#722, review finding 5). miniaudio absorbs both
+ * internally — it reinitialises and resumes the data callback without
+ * le_engine_start running again — so the first callback back would otherwise be
+ * measured against the entry stamp from before the hole. Switching the default
+ * output device on macOS mid-session is ~200 ms of that, which used to land as
+ * exactly one phantom gap_event with max_gap_us pinned at 200000 for the rest
+ * of the session. le_engine_start's configure was the ONLY reset before this. */
+static void test_cb_timing_timeline_break_survives_a_reroute(void) {
+  printf("test_cb_timing_timeline_break_survives_a_reroute\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+  const uint64_t period = LE_CB_TEST_PERIOD_NS;
+  const uint64_t quick = LE_CB_TEST_BUCKET_NS / 2;
+
+  /* A healthy run, then a partly-accumulated period service left in flight:
+   * two of the four blocks of the next period have been serviced. */
+  uint64_t entry = 1000;
+  for (int i = 0; i < 3; ++i) {
+    le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, 0);
+    entry += period;
+  }
+  le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES / 4u, 0);
+
+  le_callback_telemetry before;
+  le_cb_timing_read(&t, &before);
+  CHECK_TIMING(before.session.periods == 3);
+  CHECK(before.session.gap_events == 0);
+
+  /* The reroute: presence flips to 0, the notification path breaks the
+   * timeline, and ~200 ms later the callback resumes on the new device. */
+  le_cb_timing_note_timeline_break(&t);
+  entry += 200000000ull;
+  le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, 0);
+
+  le_callback_telemetry tel;
+  le_cb_timing_read(&t, &tel);
+  CHECK(tel.session.gap_events == 0); /* the hole is not a stall */
+  CHECK(tel.session.max_gap_us == 0); /* ... and it pins nothing */
+  CHECK_TIMING(tel.session.periods == 4);
+  /* The in-flight partial service was DROPPED rather than fused across the
+   * hole. The period count alone cannot show that (16 + 64 frames also commits
+   * one service), so the discriminator is the duration: dropped, the committed
+   * service carries only the post-reroute callback's `quick`, leaving the
+   * running max where the three healthy periods put it. Fused, it would carry
+   * 2 x quick — work and frames from two different device sessions in one
+   * reading — and max_us would double. */
+  CHECK_TIMING(tel.session.max_us == (uint32_t)(quick / 1000));
+  CHECK(tel.session.late_periods == 0);
+
+  /* The break is one-shot: a genuine stall right after the reroute still
+   * counts, or the instrument would go blind for the rest of the session. */
+  entry += period * 3;
+  le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, 0);
+  le_cb_timing_read(&t, &tel);
+  CHECK_TIMING(tel.session.gap_events == 1);
+  CHECK_TIMING(tel.session.max_gap_us == (uint32_t)(period * 3 / 1000));
+
+  /* A break with no callback after it must not strand state, and NULL must not
+   * crash (the notification callback runs before any engine null-check here). */
+  le_cb_timing_note_timeline_break(&t);
+  le_cb_timing_note_timeline_break(&t); /* idempotent */
+  le_cb_timing_note_timeline_break(NULL);
+}
+
+/* Through the engine, on the entry point the miniaudio notification callback
+ * actually calls. */
+static void test_engine_timeline_break_clears_the_gap(void) {
+  printf("test_engine_timeline_break_clears_the_gap\n");
+  le_engine* e = make_configured_engine();
+  le_callback_telemetry tel;
+  le_engine_configure_callback_budget(e, LE_CB_TEST_RATE,
+                                      (int32_t)LE_CB_TEST_FRAMES);
+
+  uint64_t entry = 1000;
+  le_engine_note_callback_span(e, entry, entry + 1000, LE_CB_TEST_FRAMES);
+  le_engine_note_callback_timeline_break(e); /* rerouted / interruption_began */
+  entry += 200000000ull;
+  le_engine_note_callback_span(e, entry, entry + 1000, LE_CB_TEST_FRAMES);
+
+  le_engine_get_callback_telemetry(e, &tel);
+  CHECK(tel.session.gap_events == 0);
+  CHECK(tel.session.max_gap_us == 0);
+  CHECK_TIMING(tel.session.calls == 2);
+
+  le_engine_note_callback_timeline_break(NULL); /* must not crash */
+  le_engine_destroy(e);
+}
+
+/* gap_events is NOT independent of late_periods, and this pins the coupling the
+ * API doc now describes (#722, review finding 6). An entry-to-entry span
+ * contains the previous callback's own duration, so a callback that itself runs
+ * longer than 1.5 nominal periods forces a gap on the next entry by arithmetic
+ * alone — the suppressor only excuses counted BACKEND recoveries, never our own
+ * overrun. No other test crosses the threshold this way:
+ * test_cb_timing_overloaded_split_duplex_reports_late lands at 846 us of
+ * burst-to-burst spacing, just under the 1000 us limit, and asserts 0 gaps. */
+static void test_cb_timing_our_own_overrun_forces_a_gap(void) {
+  printf("test_cb_timing_our_own_overrun_forces_a_gap\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+  const uint64_t period = LE_CB_TEST_PERIOD_NS;
+
+  /* The device is perfect: it hands us the next period the instant we return.
+   * We take two periods over each one, so entry-to-entry is 2 x period — past
+   * the 1.5-period threshold, with no device starvation anywhere in it. */
+  uint64_t entry = 1000;
+  for (int i = 0; i < 4; ++i) {
+    le_cb_timing_note(&t, entry, entry + period * 2u, LE_CB_TEST_FRAMES, 0);
+    entry += period * 2u;
+  }
+
+  le_callback_telemetry tel;
+  le_cb_timing_read(&t, &tel);
+  CHECK_TIMING(tel.session.periods == 4);
+  CHECK_TIMING(tel.session.late_periods == 4); /* we blew the deadline ... */
+  /* ... and that ALONE moved the gap detector: 3 of the 4 entries followed one
+   * of our own overruns (the first has no predecessor). Both numbers up means
+   * "we were slow", not "two separate problems". */
+  CHECK_TIMING(tel.session.gap_events == 3);
+  CHECK_TIMING(tel.session.max_gap_us == (uint32_t)(period * 2 / 1000));
+}
+
+/* What -DLE_CALLBACK_TELEMETRY=0 actually promises, asserted in BOTH builds so
+ * the gate cannot rot into a configuration that compiles and measures nothing
+ * useful — or worse, one that no longer compiles at all (#722, review finding
+ * 4). Gate ON: an overloaded rig is reported. Gate OFF: the timing path is
+ * gone, so nothing at all is accumulated. The per-kind dropout tally is outside
+ * the gate by design and must move either way. */
+static void test_cb_timing_gate_matches_the_build(void) {
+  printf("test_cb_timing_gate_matches_the_build\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+
+  uint64_t entry = 1000;
+  for (int i = 0; i < 4; ++i) {
+    le_cb_timing_note(&t, entry, entry + LE_CB_TEST_PERIOD_NS * 2u,
+                      LE_CB_TEST_FRAMES, /*armed=*/0);
+    entry += LE_CB_TEST_PERIOD_NS * 4u; /* also past the gap threshold */
+  }
+  le_cb_timing_note_xrun(&t, LE_XRUN_PLAYBACK_UNDERRUN, /*armed=*/0);
+
+  le_callback_telemetry tel;
+  le_cb_timing_read(&t, &tel);
+#if LE_CALLBACK_TELEMETRY
+  CHECK(tel.budget_us == (uint32_t)(LE_CB_TEST_PERIOD_NS / 1000));
+  CHECK(tel.session.calls == 4);
+  CHECK(tel.session.periods == 4);
+  CHECK(tel.session.late_periods == 4);
+  CHECK(tel.session.gap_events == 3);
+  CHECK(tel.session.max_us > 0);
+#else
+  /* budget_us still reports the negotiated period — le_cb_timing_configure is
+   * not gated, so a gated build can still say what the deadline WOULD be. */
+  CHECK(tel.budget_us == (uint32_t)(LE_CB_TEST_PERIOD_NS / 1000));
+  CHECK(tel.session.calls == 0);
+  CHECK(tel.session.periods == 0);
+  CHECK(tel.session.late_periods == 0);
+  CHECK(tel.session.gap_events == 0);
+  CHECK(tel.session.max_us == 0);
+  CHECK(tel.session.max_gap_us == 0);
+  for (int i = 0; i < LE_CB_BUCKETS; ++i) CHECK(tel.session.buckets[i] == 0);
+#endif
+  /* Never gated, in either build: the dropout tally is what keeps xrun_count
+   * explainable, and gating it would take the pre-#722 ASIO counter away too. */
+  CHECK(tel.session.xruns[LE_XRUN_PLAYBACK_UNDERRUN] == 1);
+}
+
+/* The two windows: the session one accumulates everything, the armed one only
+ * what happened while armed and only since the most recent arm. "Unarmed" is
+ * read as the difference. */
+static void test_cb_timing_armed_window(void) {
+  printf("test_cb_timing_armed_window\n");
+  le_cb_timing t;
+  memset(&t, 0, sizeof(t));
+  le_cb_timing_configure(&t, LE_CB_TEST_RATE, (int32_t)LE_CB_TEST_FRAMES);
+  const uint64_t period = LE_CB_TEST_PERIOD_NS;
+  const uint64_t quick = LE_CB_TEST_BUCKET_NS / 2;
+
+  uint64_t entry = 1000;
+  for (int i = 0; i < 2; ++i) { /* two calm unarmed periods */
+    le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, /*armed=*/0);
+    entry += period;
+  }
+  le_cb_timing_reset_armed(&t); /* what LE_CMD_PERF_ARM does */
+  le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, /*armed=*/1);
+  entry += period;
+  le_cb_timing_note(&t, entry, entry + period * 2, LE_CB_TEST_FRAMES,
+                    /*armed=*/1);
+  entry += period;
+  le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, /*armed=*/1);
+
+  le_callback_telemetry tel;
+  le_cb_timing_read(&t, &tel);
+  CHECK_TIMING(tel.armed.periods == 3);
+  CHECK_TIMING(tel.session.periods == 5);
+  /* unarmed control */
+  CHECK_TIMING(tel.session.periods - tel.armed.periods == 2);
+  CHECK_TIMING(tel.armed.late_periods == 1);
+  CHECK_TIMING(tel.session.late_periods == 1);
+  CHECK_TIMING(tel.armed.max_us == (uint32_t)(period * 2 / 1000));
+
+  /* A second arm starts the armed window over; the session window does not. */
+  le_cb_timing_reset_armed(&t);
+  entry += period;
+  le_cb_timing_note(&t, entry, entry + quick, LE_CB_TEST_FRAMES, /*armed=*/1);
+  le_cb_timing_read(&t, &tel);
+  CHECK_TIMING(tel.armed.periods == 1);
+  CHECK(tel.armed.late_periods == 0);
+  CHECK_TIMING(tel.armed.max_us == (uint32_t)(quick / 1000));
+  CHECK_TIMING(tel.session.periods == 6);
+}
+
+/* le_engine_note_backend_xrun (the ALSA -EPIPE / resync hook and the ASIO
+ * overload hook) tallies per kind into both windows, sums into xrun_count, and
+ * — like a_xruns always has — is per device session. */
+static void test_backend_xrun_kinds_tally_and_reset(void) {
+  printf("test_backend_xrun_kinds_tally_and_reset\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  le_callback_telemetry tel;
+
+  le_engine_note_backend_xrun(e, LE_XRUN_PLAYBACK_UNDERRUN);
+  le_engine_note_backend_xrun(e, LE_XRUN_PLAYBACK_UNDERRUN);
+  le_engine_note_backend_xrun(e, LE_XRUN_CAPTURE_OVERRUN);
+  le_engine_note_backend_xrun(e, LE_XRUN_PLAYBACK_RESYNC);
+  le_engine_note_xrun(e); /* the ASIO path: an OVERLOAD */
+  le_engine_note_backend_xrun(e, LE_XRUN_KINDS); /* out of range: ignored */
+  le_engine_note_backend_xrun(e, -1);            /* ditto */
+  le_engine_note_backend_xrun(NULL, 0);          /* must not crash */
+
+  le_engine_get_snapshot(e, &s);
+  le_engine_get_callback_telemetry(e, &tel);
+  CHECK(tel.session.xruns[LE_XRUN_PLAYBACK_UNDERRUN] == 2);
+  CHECK(tel.session.xruns[LE_XRUN_CAPTURE_OVERRUN] == 1);
+  CHECK(tel.session.xruns[LE_XRUN_PLAYBACK_RESYNC] == 1);
+  CHECK(tel.session.xruns[LE_XRUN_BACKEND_OVERLOAD] == 1);
+  /* THE ONE CASE where the kinds do not sum to xrun_count, asserted rather
+   * than glossed: the two out-of-range calls still bumped the flat tally (they
+   * were real dropouts, just unclassifiable) while landing in no bucket. So 7
+   * accepted engine calls against 5 classified ones. That is the documented
+   * contract in segno_engine_api.h — "the kinds sum to xrun_count for every
+   * kind this build knows" — and NOT the stronger "exactly" the doc used to
+   * claim while this test asserted the opposite. Unreachable today (ALSA
+   * passes 0/1/2, ASIO passes 3); the order is deliberate because the headline
+   * number's job is "a real dropout happened". */
+  CHECK(s.xrun_count == 7);
+  {
+    uint64_t classified = 0;
+    for (int k = 0; k < LE_XRUN_KINDS; ++k) classified += tel.session.xruns[k];
+    CHECK(classified == 5);
+  }
+
+  /* Not armed, so the armed window saw none of it. */
+  CHECK(tel.armed.xruns[LE_XRUN_PLAYBACK_UNDERRUN] == 0);
+  CHECK(tel.armed.xruns[LE_XRUN_BACKEND_OVERLOAD] == 0);
+
+  /* Armed: the same event lands in both windows, attributed at the moment it
+   * happened rather than at the next control-thread poll. */
+  atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
+  le_engine_note_backend_xrun(e, LE_XRUN_PLAYBACK_UNDERRUN);
+  atomic_store_explicit(&e->a_perf_armed, 0, memory_order_release);
+  le_engine_get_callback_telemetry(e, &tel);
+  CHECK(tel.armed.xruns[LE_XRUN_PLAYBACK_UNDERRUN] == 1);
+  CHECK(tel.session.xruns[LE_XRUN_PLAYBACK_UNDERRUN] == 3);
+
+  /* A fresh configure (a new device session) clears every window, exactly the
+   * way it clears a_xruns — and clears the two IN LOCKSTEP, so the flat tally
+   * can never disagree with the per-kind breakdown it summarises. */
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  le_engine_get_snapshot(e, &s);
+  le_engine_get_callback_telemetry(e, &tel);
+  CHECK(s.xrun_count == 0);
+  for (int k = 0; k < LE_XRUN_KINDS; ++k) {
+    CHECK(tel.session.xruns[k] == 0);
+    CHECK(tel.armed.xruns[k] == 0);
+  }
+
+  /* Opening the telemetry for a device session clears both together too. */
+  le_engine_note_backend_xrun(e, LE_XRUN_CAPTURE_OVERRUN);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.xrun_count == 1);
+  le_engine_configure_callback_budget(e, LE_CB_TEST_RATE,
+                                      (int32_t)LE_CB_TEST_FRAMES);
+  le_engine_get_snapshot(e, &s);
+  le_engine_get_callback_telemetry(e, &tel);
+  CHECK(s.xrun_count == 0);
+  CHECK(tel.session.xruns[LE_XRUN_CAPTURE_OVERRUN] == 0);
+
+  le_engine_destroy(e);
+}
+
+/* End-to-end through the engine: an armed rate + period, spans fed the way the
+ * device backend feeds them, and the numbers arriving on the dedicated
+ * telemetry pull (never on le_snapshot — see le_callback_telemetry). */
+static void test_callback_span_reaches_the_telemetry_pull(void) {
+  printf("test_callback_span_reaches_the_telemetry_pull\n");
+  le_engine* e = make_configured_engine();
+  le_callback_telemetry tel;
+
+  /* No device has been opened, so nothing is measured — the native pump must
+   * not manufacture lateness. le_engine_configure seeds an INERT instrument on
+   * purpose (it must not read the previous session's a_buffer_frames, which is
+   * still published at that point). */
+  le_engine_note_callback_span(e, 0, 10 * LE_CB_TEST_PERIOD_NS,
+                               LE_CB_TEST_FRAMES);
+  le_engine_get_callback_telemetry(e, &tel);
+  CHECK(tel.budget_us == 0);
+  CHECK(tel.session.calls == 0);
+
+  /* What le_engine_start does once the backend reports its negotiated pair. */
+  le_engine_configure_callback_budget(e, LE_CB_TEST_RATE,
+                                      (int32_t)LE_CB_TEST_FRAMES);
+  le_engine_configure_callback_budget(NULL, 48000, 64);        /* no crash */
+  le_engine_note_callback_span(NULL, 0, 1, LE_CB_TEST_FRAMES); /* ditto */
+  le_engine_get_callback_telemetry(NULL, &tel);                /* zero-fills */
+  CHECK(tel.budget_us == 0);
+  le_engine_get_callback_telemetry(e, NULL);                   /* no crash */
+
+  uint64_t entry = 1000;
+  le_engine_note_callback_span(e, entry, entry + 100000, LE_CB_TEST_FRAMES);
+  entry += LE_CB_TEST_PERIOD_NS;
+  le_engine_note_callback_span(e, entry, entry + LE_CB_TEST_PERIOD_NS * 2,
+                               LE_CB_TEST_FRAMES);
+
+  le_engine_get_callback_telemetry(e, &tel);
+  CHECK(tel.budget_us == (uint32_t)(LE_CB_TEST_PERIOD_NS / 1000));
+  CHECK_TIMING(tel.session.calls == 2);
+  CHECK_TIMING(tel.session.periods == 2);
+  CHECK_TIMING(tel.session.late_periods == 1);
+  CHECK_TIMING(tel.session.max_us ==
+               (uint32_t)(LE_CB_TEST_PERIOD_NS * 2 / 1000));
+  CHECK(tel.armed.calls == 0); /* never armed */
+
+  /* Re-opening the telemetry is a new device session: both windows clear. */
+  le_engine_configure_callback_budget(e, LE_CB_TEST_RATE,
+                                      (int32_t)LE_CB_TEST_FRAMES);
+  le_engine_get_callback_telemetry(e, &tel);
+  CHECK(tel.session.calls == 0);
+  CHECK(tel.session.max_us == 0);
+
+  le_engine_destroy(e);
+}
+
+/* The audio thread's own arm handler clears the armed window, so the window
+ * starts at the callback the taps go live on. Driven through the real command
+ * ring rather than by calling the reset directly. */
+static void test_perf_arm_command_resets_armed_window(void) {
+  printf("test_perf_arm_command_resets_armed_window\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  le_callback_telemetry tel;
+  le_engine_configure_callback_budget(e, LE_CB_TEST_RATE,
+                                      (int32_t)LE_CB_TEST_FRAMES);
+
+  /* Pretend a previous armed window left counts behind. */
+  atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
+  le_engine_note_callback_span(e, 1000, 1000 + LE_CB_TEST_PERIOD_NS * 2,
+                               LE_CB_TEST_FRAMES);
+  atomic_store_explicit(&e->a_perf_armed, 0, memory_order_release);
+  le_engine_get_callback_telemetry(e, &tel);
+  CHECK_TIMING(tel.armed.periods == 1);
+  CHECK_TIMING(tel.armed.late_periods == 1);
+
+  /* The arm command, applied by the audio thread on the next block. */
+  CHECK(le_push(e, LE_CMD_PERF_ARM, 0, 0.0f) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  le_engine_get_callback_telemetry(e, &tel);
+  CHECK(s.perf_armed == 1);
+  CHECK(tel.armed.periods == 0);
+  CHECK(tel.armed.late_periods == 0);
+  CHECK(tel.armed.max_us == 0);
+  CHECK_TIMING(tel.session.periods == 1); /* the session window is untouched */
+
+  /* Retract the flag so destroy does not think a capture is live. */
+  CHECK(le_push(e, LE_CMD_PERF_DISARM, 0, 0.0f) == LE_OK);
+  drain(e);
+  le_engine_destroy(e);
+}
+
 /* le_engine_mark_device_lost (the ASIO reset / sample-rate-change hook) flips
  * device_present to 0 while leaving running set — the "running-but-disconnected"
  * state the control layer reads to drive reconnection. */
@@ -2131,6 +2867,557 @@ static void test_overdub_punch_no_click(void) {
   CHECK(fabsf(peak - 0.8f) < 0.01f);
 
   le_engine_destroy(e);
+}
+
+/* ---- loop-seam splice detection (#728) ----
+ *
+ * A CONSTANT input (feed_const above) makes a loop seam invisible by
+ * construction: every sample equals every other, so a splice that drops or
+ * repeats material leaves no step. These helpers feed a slow, continuously
+ * phased sine instead — the same "smooth waveform either side of a
+ * single-sample jump" shape the field recording showed — and score the
+ * captured output with the issue's own detector: the largest single-sample
+ * jump, expressed as a multiple of the median adjacent delta. Continuous
+ * material scores ~1-3; a splice scores in the hundreds. */
+
+/* A continuously phased oscillator: successive feeds splice seamlessly, so the
+ * engine sees one unbroken performance across presses and blocks. */
+typedef struct {
+  double phase;
+  double inc;
+} le_test_osc;
+
+static le_test_osc make_osc(double hz, double sr) {
+  le_test_osc o = {0.0, 2.0 * 3.14159265358979323846 * hz / sr};
+  return o;
+}
+
+/* Feeds `count` frames of the oscillator in 64-frame chunks, optionally
+ * appending the per-frame output into `cap`. */
+static void feed_osc(le_engine* e, le_test_osc* o, int count, float* cap,
+                     int* capn) {
+  float in[64];
+  float out[64];
+  int left = count;
+  while (left > 0) {
+    const int n = left < 64 ? left : 64;
+    for (int i = 0; i < n; ++i) {
+      in[i] = (float)(0.5 * sin(o->phase));
+      o->phase += o->inc;
+    }
+    le_engine_process(e, out, in, (uint32_t)n);
+    if (cap != NULL) {
+      for (int i = 0; i < n; ++i) cap[(*capn)++] = out[i];
+    }
+    left -= n;
+  }
+}
+
+/* Feeds silence one frame at a time until the master playhead sits at the loop
+ * top, so a press lands exactly on a pass boundary. Bounded by one lap. */
+static void feed_to_loop_top(le_engine* e) {
+  float in = 0.0f;
+  float out = 0.0f;
+  le_snapshot s;
+  for (int k = 0; k < 200000; ++k) {
+    le_engine_get_snapshot(e, &s);
+    if (s.master_position_frames == 0) return;
+    le_engine_process(e, &out, &in, 1);
+  }
+}
+
+static int cmp_float(const void* a, const void* b) {
+  const float x = *(const float*)a;
+  const float y = *(const float*)b;
+  return (x > y) - (x < y);
+}
+
+/* The issue's smooth-jump-smooth score for a captured span: the largest
+ * |x[i]-x[i-1]| divided by the median |x[i]-x[i-1]|. Reports both parts
+ * through the out params so a failing run prints the measured step. */
+static double splice_score(const float* buf, int n, double* out_step,
+                           double* out_median) {
+  float* d = (float*)malloc(sizeof(float) * (size_t)(n - 1));
+  double max_d = 0.0;
+  for (int i = 1; i < n; ++i) {
+    const double a = fabs((double)buf[i] - (double)buf[i - 1]);
+    d[i - 1] = (float)a;
+    if (a > max_d) max_d = a;
+  }
+  qsort(d, (size_t)(n - 1), sizeof(float), cmp_float);
+  const double med = (double)d[(n - 1) / 2];
+  free(d);
+  if (out_step != NULL) *out_step = max_d;
+  if (out_median != NULL) *out_median = med;
+  if (med <= 0.0) return max_d > 0.0 ? 1e9 : 0.0;
+  return max_d / med;
+}
+
+/* #728 control: the defining master's OWN take already wraps continuously —
+ * finalize_master_xfade folds the captured overlap into the head. Pins both
+ * the behaviour and the detector: if this one ever scores like a splice, the
+ * two tests below are measuring the harness, not the engine. */
+static void test_loop_seam_master_take_no_splice(void) {
+  printf("test_loop_seam_master_take_no_splice\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0); /* 3.625 cycles per lap */
+
+  le_engine_record(e, 0);
+  feed_osc(e, &osc, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_osc(e, &osc, 512, NULL, NULL); /* > the deferred seam overlap */
+  drain(e);
+
+  float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * N));
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, loop, &n);
+  double step = 0.0;
+  double med = 0.0;
+  const double score = splice_score(loop, n, &step, &med);
+  printf("  master take seam: step=%.5f median-delta=%.6f score=%.1fx\n", step,
+         med, score);
+  CHECK(score < 25.0);
+  free(loop);
+
+  le_engine_destroy(e);
+}
+
+/* #728: overdubbing whole laps over the master must not splice the wrap. Each
+ * overdub lap writes the head a whole lap before it writes the tail, so this
+ * is the case that looked most likely to break — it does not, because the
+ * write is read-before-write: every head sample the wrap resolves to was
+ * layered exactly one frame after the tail sample preceding it. The punch-in
+ * and punch-out both land ON the loop top here (what quantized rec/dub does
+ * every time), and the input stays live through the punch-out fade tail, which
+ * is what the tail needs to taper into (same contract as
+ * test_overdub_punch_no_click). Stopping dead on the punch-out instead is a
+ * SEPARATE defect — the tail then keeps a lap the head never got — measured
+ * and filed on its own; it is not what this test covers. */
+static void test_loop_seam_survives_whole_lap_overdub(void) {
+  printf("test_loop_seam_survives_whole_lap_overdub\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800; /* 100 ms; > 2*F (480 @ 48k) so the seam fold engages */
+  /* 36.25 Hz over two laps advances 7.25 cycles, so the punch-out lands on a
+   * sine PEAK — the worst case for a seam that drops the tail's continuation,
+   * and phase-deterministic rather than luck of the draw. */
+  le_test_osc osc = make_osc(36.25, 48000.0);
+
+  /* Silent defining master, so the only content at the seam is the overdub's
+   * (the master's own seam is folded by finalize_master_xfade and is pinned
+   * separately by test_loop_seam_master_take_no_splice). */
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL); /* > the deferred seam overlap */
+  drain(e);
+  feed_to_loop_top(e);
+
+  /* Two whole overdub passes, punched in and out ON the loop top. */
+  le_engine_record(e, 0); /* -> OVERDUBBING */
+  drain(e);
+  feed_osc(e, &osc, 2 * N, NULL, NULL);
+  le_engine_record(e, 0); /* punch out -> PLAYING */
+  feed_osc(e, &osc, 512, NULL, NULL); /* the player plays through the tail */
+  drain(e);
+  settle_layers(e);
+
+  float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * N));
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, loop, &n);
+  double step = 0.0;
+  double med = 0.0;
+  const double score = splice_score(loop, n, &step, &med);
+  printf("  overdubbed master seam: step=%.5f median-delta=%.6f score=%.1fx\n",
+         step, med, score);
+  CHECK(score < 25.0);
+  free(loop);
+
+  le_engine_destroy(e);
+}
+
+/* #728 (b): a NON-defining track (recorded over an existing master) wraps
+ * through finalize_new_track, which never folds the seam at all — so its head
+ * and tail hold input a whole lap apart and every playback wrap splices. */
+static void test_loop_seam_on_non_defining_track(void) {
+  printf("test_loop_seam_on_non_defining_track\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000); /* mono in/out; tracks 0 and 1 */
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+
+  /* Silent defining master on track 0, so only track 1 contributes content. */
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  /* Track 1 over the master: exactly one base loop of the sine. */
+  le_engine_record(e, 1);
+  drain(e);
+  feed_osc(e, &osc, N, NULL, NULL);
+  le_engine_record(e, 1);
+  /* The player keeps playing through the press: those frames are the seam
+   * overlap the finalize folds into the head, exactly as for the master. */
+  feed_osc(e, &osc, 512, NULL, NULL);
+  drain(e);
+  settle_layers(e);
+
+  float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * N));
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, loop, &n);
+  double step = 0.0;
+  double med = 0.0;
+  const double score = splice_score(loop, n, &step, &med);
+  printf("  non-defining track seam: step=%.5f median-delta=%.6f score=%.1fx\n",
+         step, med, score);
+  CHECK(score < 25.0);
+  free(loop);
+
+  le_engine_destroy(e);
+}
+
+/* #728 (c): with a NONZERO record offset — i.e. every latency-calibrated rig —
+ * the seam is deliberately NOT folded, and the take is left exactly as #728
+ * found it. Compensation writes input frame i at position i - offset, so a
+ * take that ran a full lap leaves its head at len - offset and the trailing
+ * `offset` frames as the zeros le_prepare_new_capture wrote: there is no
+ * continuation of position len-1 to fold, and finalize_new_track's arming gate
+ * refuses. This pins that refusal (rather than leaving it to be discovered as
+ * a silent no-op), and pins that refusing costs nothing — the head is the raw
+ * take, untouched, and nothing was written past the compensated write head. */
+static void test_loop_seam_not_armed_with_record_offset(void) {
+  printf("test_loop_seam_not_armed_with_record_offset\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  const int OFF = 64;  /* a small, realistic measureLatency result */
+  const int F = 480;   /* seam_xfade_frames at 48 kHz */
+  le_engine_set_record_offset(e, OFF);
+
+  /* Silent defining master on track 0, so only track 1 holds content. */
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  le_test_osc osc = make_osc(36.25, 48000.0);
+  const double phase0 = osc.phase;
+  const double inc = osc.inc;
+  le_engine_record(e, 1);
+  drain(e); /* the take starts on the next frame fed */
+  feed_osc(e, &osc, N, NULL, NULL);
+  le_engine_record(e, 1);
+  /* Checked HERE, one block after the finalize press and well inside F, for
+   * the same reason test_seam_capture_cleared_by_reconfigure checks `> 0` at
+   * this exact point: seam_capture is a COUNTDOWN, so once F frames have been
+   * fed an armed capture reads 0 too and the assertion says nothing. The
+   * window is open at 64 or it was never armed. */
+  feed_osc(e, &osc, 64, NULL, NULL);
+  CHECK(e->tracks[1].seam_capture == 0);
+  feed_osc(e, &osc, 512 - 64, NULL, NULL);
+  drain(e);
+  settle_layers(e);
+
+  float* stem = (float*)malloc(sizeof(float) * (size_t)N);
+  CHECK(le_engine_export_track(e, 1, stem, N) == N);
+
+  /* The head is the raw take: input frame j + OFF landed at position j. */
+  double head_dev = 0.0;
+  for (int j = 0; j < F; ++j) {
+    const double want = 0.5 * sin(phase0 + inc * (double)(j + OFF));
+    const double d = fabs((double)stem[j] - want);
+    if (d > head_dev) head_dev = d;
+  }
+  /* And nothing was written past the compensated write head: the last OFF
+   * frames are still the prepared zeros. A stray overlap write would land
+   * exactly here. */
+  double tail_max = 0.0;
+  for (int j = N - OFF; j < N; ++j) {
+    const double a = fabs((double)stem[j]);
+    if (a > tail_max) tail_max = a;
+  }
+  printf("  offset take: head deviation %.7f, tail-zero max %.7f\n", head_dev,
+         tail_max);
+  CHECK(head_dev < 1e-5);
+  CHECK(tail_max < 1e-9);
+
+  free(stem);
+  le_engine_destroy(e);
+}
+
+/* #728 / reconfigure: le_engine_configure resets every track to EMPTY and
+ * frees and reallocates every lane buffer. A trailing seam overlap left armed
+ * across it would keep writing live input into the FRESH buffer of a track
+ * that now reads EMPTY, at an index that means nothing there, and fold it into
+ * [0, F) F frames later — breaking the invariant le_begin_empty_capture and
+ * le_prepare_new_capture rely on. Arms the capture, reconfigures inside the
+ * window, and checks both halves: the arm is gone, and content loaded
+ * afterwards survives more than F frames of loud input bit-identical. */
+static void test_seam_capture_cleared_by_reconfigure(void) {
+  printf("test_seam_capture_cleared_by_reconfigure\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  le_engine_record(e, 1);
+  drain(e);
+  feed_osc(e, &osc, N, NULL, NULL);
+  le_engine_record(e, 1);
+  feed_osc(e, &osc, 64, NULL, NULL); /* well inside F (480 @ 48 kHz) */
+  CHECK(e->tracks[1].seam_capture > 0); /* the window really is open */
+
+  le_engine_configure(e, 48000, 1, 1, 48000); /* device-loss recovery */
+  CHECK(e->tracks[1].seam_capture == 0);
+  CHECK(e->tracks[1].seam_len == 0);
+
+  /* Content proof: load a known loop into the very track the capture was armed
+   * on, then feed LOUD input for longer than F. A surviving capture would park
+   * that input past the loop and fold it into the head. */
+  float* stem = (float*)malloc(sizeof(float) * (size_t)N);
+  for (int i = 0; i < N; ++i) stem[i] = (float)(0.25 * sin(0.001 * (double)i));
+  CHECK(le_engine_import_track(e, 1, stem, N) == LE_OK);
+  CHECK(le_engine_commit_session(e, N) == LE_OK);
+  drain(e);
+  feed_const(e, 1.0f, 1024, NULL, NULL);
+  drain(e);
+
+  float* back = (float*)malloc(sizeof(float) * (size_t)N);
+  CHECK(le_engine_export_track(e, 1, back, N) == N);
+  double worst = 0.0;
+  for (int i = 0; i < N; ++i) {
+    const double d = fabs((double)back[i] - (double)stem[i]);
+    if (d > worst) worst = d;
+  }
+  printf("  imported loop after reconfigure: worst deviation %.7f\n", worst);
+  CHECK(worst < 1e-6);
+
+  free(back);
+  free(stem);
+  le_engine_destroy(e);
+}
+
+/* #728 (d): the crossfade must survive UNDO. A rec/dub press finalizes the
+ * take straight into OVERDUBBING, and a quantized rec/dub finalizes ON the
+ * loop top — so during the F overlap frames the dub's backup-on-write sweeps
+ * the very head positions the fold is about to rewrite, and the retired layer
+ * would otherwise keep the un-crossfaded head. Undoing that pass would then
+ * silently reinstate the pre-#728 splice (le_seam_fold_dub_shadow is what
+ * stops it). */
+static void test_loop_seam_survives_undo_after_rec_dub(void) {
+  printf("test_loop_seam_survives_undo_after_rec_dub\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+
+  /* Silent defining master on track 0. */
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  /* Track 1: record one lap, second press continues straight into OVERDUBBING
+   * (rec/dub), one whole overdub lap, punch out. */
+  le_engine_set_rec_dub(e, 1);
+  le_engine_record(e, 1);
+  drain(e);
+  feed_osc(e, &osc, N, NULL, NULL);
+  le_engine_record(e, 1); /* finalize -> OVERDUBBING, and arm the seam */
+  feed_osc(e, &osc, N, NULL, NULL); /* one complete pass -> retires a layer */
+  le_engine_record(e, 1); /* punch out */
+  feed_osc(e, &osc, 512, NULL, NULL);
+  drain(e);
+  settle_layers(e);
+
+  /* Peel every overdub layer (the complete pass, plus whatever partial the
+   * punch-out fade tail drained): what is left live is the take alone, and its
+   * seam must be the folded one. */
+  le_snapshot s;
+  for (int k = 0; k < 8; ++k) {
+    le_engine_get_snapshot(e, &s);
+    if (s.tracks[1].undo_depth <= 0) break;
+    le_engine_undo(e, 1);
+    drain(e);
+    settle_layers(e);
+  }
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].undo_depth == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+
+  float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * N));
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, loop, &n);
+  double step = 0.0;
+  double med = 0.0;
+  const double score = splice_score(loop, n, &step, &med);
+  printf("  undone-to-take seam: step=%.5f median-delta=%.6f score=%.1fx\n",
+         step, med, score);
+  CHECK(score < 25.0);
+  free(loop);
+
+  le_engine_destroy(e);
+}
+
+/* Runs one take plus one overdub on track 1 over a silent defining master,
+ * peels every overdub layer back off, and scores the seam of the take that is
+ * left live. Shared driver for the two shadow-fold tests below.
+ *
+ * `dub_at` says where the overdub BEGINS relative to the take's finalize
+ * (which lands on the loop top, so it is also frame 0 of the seam's F-frame
+ * fold window): 0 uses the rec/dub press, so the dub starts exactly ON the
+ * seam and its shadow is fully backed up by the time the fold runs; a positive
+ * value finalizes to PLAYING first and punches IN that many frames later,
+ * leaving [0, dub_at) of the shadow not yet backed up at fold time.
+ * `dub_len` (>= 64) is how long the dub runs before the punch-out. Fills the
+ * largest single-sample step, the peak sample of the peeled loop, and the
+ * dub's start position. */
+static double seam_of_peeled_take(int dub_at, int dub_len, double* out_step,
+                                  double* out_peak, int32_t* out_vpos) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+
+  /* Silent defining master on track 0, so only track 1 holds content. */
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  if (dub_at == 0) le_engine_set_rec_dub(e, 1);
+  le_engine_record(e, 1);
+  drain(e); /* the take starts on the next frame fed */
+  feed_osc(e, &osc, N, NULL, NULL);
+  le_engine_record(e, 1); /* finalize the take, arming the seam overlap */
+  if (dub_at > 0) {
+    feed_osc(e, &osc, dub_at, NULL, NULL);
+    le_engine_record(e, 1); /* punch IN, still inside the fold window */
+  }
+  feed_osc(e, &osc, 64, NULL, NULL); /* the press reaches the audio thread */
+  if (out_vpos != NULL) *out_vpos = e->tracks[1].dub_start_vpos;
+  feed_osc(e, &osc, dub_len - 64, NULL, NULL);
+  le_engine_record(e, 1);           /* punch out */
+  feed_osc(e, &osc, N, NULL, NULL); /* let the fade, drain and fold all run */
+  drain(e);
+  settle_layers(e);
+
+  /* Peel every overdub layer: what is left live is the take alone. */
+  le_snapshot s;
+  for (int k = 0; k < 8; ++k) {
+    le_engine_get_snapshot(e, &s);
+    if (s.tracks[1].undo_depth <= 0) break;
+    le_engine_undo(e, 1);
+    drain(e);
+    settle_layers(e);
+  }
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+
+  float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * N));
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, loop, &n);
+  double med = 0.0;
+  const double score = splice_score(loop, n, out_step, &med);
+  double peak = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const double a = fabs((double)loop[i]);
+    if (a > peak) peak = a;
+  }
+  if (out_peak != NULL) *out_peak = peak;
+  free(loop);
+  le_engine_destroy(e);
+  return score;
+}
+
+/* #728 (e): the PARTIALLY backed-up dub shadow — the case
+ * le_seam_fold_dub_shadow's "speculative and harmless" paragraph is about, and
+ * the one no other test in this file reaches. Punching IN partway through the
+ * fold window leaves the shadow split at the punch point when the fold fires:
+ * [dub_at, F) has been saved by backup-on-write and must be folded here and
+ * now, while [0, dub_at) has not, is folded speculatively into a value nobody
+ * will ever read, and is later overwritten from the (by then folded) live slot
+ * by le_dub_block_update's drain walk. Undoing the pass must therefore hand
+ * back ONE coherent folded head, with no step where the two halves meet.
+ *
+ * Discriminating: with le_seam_fold_dub_shadow stubbed out these three punch
+ * points score 345x / 254x / 85x — the step is at the split, not at the wrap.
+ * The dub_at == 0 shape (test_loop_seam_survives_undo_after_rec_dub) only ever
+ * sees a fully covered shadow and cannot catch that. */
+static void test_loop_seam_folds_partially_backed_up_dub_shadow(void) {
+  printf("test_loop_seam_folds_partially_backed_up_dub_shadow\n");
+  const int N = 4800;
+  const int F = 480; /* seam_xfade_frames at 48 kHz */
+  /* Inside the window, so [0, dub_at) really is uncovered at fold time; plus
+   * one control well past it, where the fold has already completed and no
+   * shadow of it exists. */
+  const int dub_at[] = {128, 256, 384, 2 * F};
+  for (size_t i = 0; i < sizeof(dub_at) / sizeof(dub_at[0]); ++i) {
+    double step = 0.0;
+    double peak = 0.0;
+    int32_t vpos = -1;
+    const double score = seam_of_peeled_take(dub_at[i], N, &step, &peak, &vpos);
+    printf("  punched in at %4d: vpos=%4d step=%.5f peak=%.4f score=%.1fx\n",
+           dub_at[i], vpos, step, peak, score);
+    CHECK(vpos == dub_at[i]); /* the dub really did start where we asked */
+    CHECK(score < 25.0);      /* one folded head, no split */
+    CHECK(peak < 0.51);       /* and no doubled sample anywhere in it */
+  }
+}
+
+/* #728 KNOWN GAP, pinned rather than left to be rediscovered: an overdub layer
+ * that RETIRES before the fold runs keeps the un-folded head, so that one undo
+ * step reverts to the pre-#728 seam.
+ *
+ * Reachable by a plain punch-out inside the first F/2 frames after the
+ * finalize — no re-punch and no merge needed. od_fade_frames == F, so a dub
+ * punched out at frame p has only ramped to p/F and decays back to 0 by frame
+ * 2p; LE_DRAIN_CHUNK (32768) then drains the whole remainder in a single
+ * block, retiring the layer while the fold is still counting down.
+ *
+ * Severity is low and the numbers say so: the peeled head is the honest raw
+ * seam of the take, peak 0.5 like every other case here — a step, not garbage,
+ * and only on the undo path. If the `> 50` case ever starts failing, the gap
+ * has been CLOSED: move that entry into the folded list rather than relaxing
+ * the bound. */
+static void test_loop_seam_gap_when_dub_retires_before_the_fold(void) {
+  printf("test_loop_seam_gap_when_dub_retires_before_the_fold\n");
+  const int F = 480;
+  const int punch_at[] = {64, 192, 240, 600};
+  for (size_t i = 0; i < sizeof(punch_at) / sizeof(punch_at[0]); ++i) {
+    double step = 0.0;
+    double peak = 0.0;
+    int32_t vpos = -1;
+    const double score =
+        seam_of_peeled_take(0, punch_at[i], &step, &peak, &vpos);
+    const int retires_early = 2 * punch_at[i] < F;
+    printf("  punched out at %4d: step=%.5f peak=%.4f score=%.1fx (%s)\n",
+           punch_at[i], step, peak, score, retires_early ? "gap" : "folded");
+    CHECK(vpos == 0);   /* rec/dub: the dub starts on the seam */
+    CHECK(peak < 0.51); /* audio either way, never corruption */
+    if (retires_early) {
+      CHECK(score > 50.0);
+    } else {
+      CHECK(score < 25.0);
+    }
+  }
 }
 
 /* The master limiter caps the output at its ceiling when the mix would exceed
@@ -5044,6 +6331,333 @@ static void test_select_backend_defaults_to_miniaudio(void) {
   CHECK(le_miniaudio_backend.close != NULL);
 }
 
+/* ---- probe-context backends (#721) ---- */
+
+/* Both probe-backend cases, asserted DETERMINISTICALLY and in-process.
+ *
+ * The pin is injected through le_platform_set_alsa_only_for_test rather than
+ * exported into the environment, because the environment cannot express it
+ * twice: the Linux seam reads SEGNO_ALSA_ONLY once into a function-static and
+ * caches it for the process, so by the time a test runs it is already frozen —
+ * setenv is a silent no-op, and so is setenv in a fork()ed child, which
+ * inherits the primed cache. Either approach still RUNS the assertion, against
+ * whichever value happened to be frozen first: green on a host where the wrong
+ * backend wins by accident, and a hard failure against correct code on a host
+ * where it does not. Injection makes both cases exact on any host, leaves no
+ * state behind (the override is restored), and imposes no ordering on the rest
+ * of the binary.
+ *
+ * DESKTOP (pin off) is the load-bearing half. The probe seam is deliberately
+ * NOT the streaming preference: miniaudio takes the first backend that
+ * INITIALISES, so handing a probe the desktop-Linux list
+ * {jack, pulseaudio, alsa} would make it land on JACK wherever a PipeWire/JACK
+ * server is running. A JACK probe context enumerates one synthetic "Default
+ * Playback Device" + one "Default Capture Device" instead of the host's real
+ * cards, and le_find_loopback's "monitor of" match is a PulseAudio-only string
+ * a JACK context can never produce — so the device picker and desktop loopback
+ * detection would both silently regress. (NULL, 0) is byte-for-byte the call
+ * the probe sites made before #721.
+ *
+ * APPLIANCE (pin on) must be exactly {ma_backend_alsa} on Linux, and unchanged
+ * on the platforms that have no pin at all. */
+static void test_probe_backends_follow_the_pin(void) {
+  printf("test_probe_backends_follow_the_pin\n");
+  const ma_backend* list = NULL;
+  ma_uint32 count = 0;
+
+  le_platform_set_alsa_only_for_test(0);
+  list = (const ma_backend*)&list; /* poison — the seam must overwrite both */
+  count = 12345;
+  le_platform_probe_backends(&list, &count);
+  CHECK(list == NULL);
+  CHECK(count == 0);
+
+  le_platform_set_alsa_only_for_test(1);
+  list = (const ma_backend*)&list;
+  count = 12345;
+  le_platform_probe_backends(&list, &count);
+#if defined(__linux__)
+  CHECK(count == 1);
+  CHECK(list != NULL);
+  if (list != NULL && count == 1) CHECK(list[0] == ma_backend_alsa);
+#else
+  /* No ALSA-only pin off Linux — the probe list is unconditional. */
+  CHECK(list == NULL);
+  CHECK(count == 0);
+#endif
+
+  le_platform_set_alsa_only_for_test(-1); /* restore: follow the environment */
+}
+
+/* Under the appliance pin, the backend a probe context ACTUALLY lands on —
+ * ctx.backend, not the list it asked for — must be exactly ALSA, and in
+ * particular never PulseAudio. Asserting the chosen backend is what makes this
+ * behavioural rather than a restatement of the seam above: it fails on any host
+ * where an excluded backend would have won the race to initialise, which is
+ * precisely the desktop machine (PipeWire-pulse running) that the previous
+ * fork-based version of this test could not describe correctly.
+ *
+ * Restores the override on every exit path, including the skip. */
+static void test_pinned_probe_never_reaches_pulseaudio(void) {
+  printf("test_pinned_probe_never_reaches_pulseaudio\n");
+#if !defined(__linux__)
+  printf("  (skipped: the appliance pin only exists on Linux)\n");
+#else
+  le_platform_set_alsa_only_for_test(1);
+  ma_context ctx;
+  if (le_probe_context_init(&ctx) != MA_SUCCESS) {
+    /* No ALSA on this host: there is no context to make an assertion about.
+     * Said out loud rather than passing silently. */
+    printf("  (skipped: no probe backend available on this host)\n");
+  } else {
+    if (ctx.backend != ma_backend_alsa) {
+      printf("  probe landed on backend %d, want ma_backend_alsa (%d)\n",
+             (int)ctx.backend, (int)ma_backend_alsa);
+    }
+    CHECK(ctx.backend != ma_backend_pulseaudio);
+    CHECK(ctx.backend == ma_backend_alsa);
+    ma_context_uninit(&ctx);
+  }
+  le_platform_set_alsa_only_for_test(-1);
+#endif
+}
+
+#if defined(__linux__)
+/* Open descriptors held by this process, or -1 if /proc is unavailable. The
+ * directory handle itself is open during the walk, so it is counted identically
+ * in every sample and cancels out of a before/after comparison. */
+static int open_fd_count(void) {
+  DIR* d = opendir("/proc/self/fd");
+  if (d == NULL) return -1;
+  int n = 0;
+  const struct dirent* e;
+  while ((e = readdir(d)) != NULL) {
+    if (e->d_name[0] != '.') ++n;
+  }
+  closedir(d);
+  return n;
+}
+
+#endif
+
+/* Repeated probing must not grow the process's descriptor table.
+ *
+ * This is the shape of the appliance failure in #721. AudioSetupCubit
+ * re-enumerates on a 1 Hz timer, in both directions, for the life of the app;
+ * every probe that reached PulseAudio with no server listening leaked one
+ * `memfd:pulseaudio` — 991 of the process's 1024 descriptors on the bench unit,
+ * after which no window surface or socket could be created any more.
+ *
+ * Runs UNPINNED, in this process, on purpose:
+ *
+ *  - unpinned is the condition under which PulseAudio is actually reached, so
+ *    this is what exercises the missing `pa_context_unref` in the vendored
+ *    miniaudio (see src/miniaudio/README.md). Under the appliance pin Pulse is
+ *    never touched and a revert of that patch would go unnoticed;
+ *  - in-process, because a forked child does NOT reproduce it: once libpulse has
+ *    been loaded, `pa_context_new` fails early in a child, so the failure path
+ *    that leaks is never taken there and the test would pass vacuously;
+ *  - it therefore mutates nothing — no environment, no cached pin — and imposes
+ *    no ordering on the rest of the binary.
+ *
+ * Each round drives all three probe sites. `le_probe_context_init` is called
+ * DIRECTLY as well as through the two enumeration entry points, deliberately: on
+ * a host with a sound card the platform seam answers enumeration from its own
+ * source and never opens a probe context, which would leave the leaking path
+ * untested on exactly the machines that have audio hardware.
+ *
+ * WHICH failure path this covers: with no server listening at all,
+ * `pa_context_connect` fails SYNCHRONOUSLY, so this drives the first of
+ * miniaudio's two leaking paths and never the second. Measured, not assumed —
+ * instrumenting both paths in a container showed 358 connect-error takes and
+ * zero wait-failed. The test after it covers the other one.
+ *
+ * LINUX ONLY (reads /proc/self/fd). The `native-tests` jobs install `libpulse0`
+ * with no PulseAudio server running, which is precisely the leaking condition —
+ * without libpulse present, miniaudio skips the backend and this cannot fail. */
+static void test_probing_leaks_no_fds(void) {
+  printf("test_probing_leaks_no_fds\n");
+#if defined(__linux__)
+  enum { WARMUP = 4, ITERS = 64 };
+  le_device_info devices[8];
+  int32_t count = 0;
+  le_loopback_info loopback;
+
+  /* A probe context must actually open, or this test asserts nothing: with no
+   * context ever created, before == after holds trivially. Checked up front so
+   * a host that cannot run it says so instead of passing vacuously. */
+  ma_context probe;
+  if (le_probe_context_init(&probe) != MA_SUCCESS) {
+    printf("  (skipped: no probe backend available on this host)\n");
+    return;
+  }
+  ma_context_uninit(&probe);
+
+  /* Warm up first: the first passes legitimately open process-lifetime handles
+   * (the dlopen'd backend, the ALSA symbol table), and those are setup, not a
+   * leak. Only steady-state growth is the bug. */
+  for (int i = 0; i < WARMUP; ++i) {
+    le_enumerate_playback_devices(devices, 8, &count);
+    le_enumerate_capture_devices(devices, 8, &count);
+    le_detect_loopback(&loopback);
+    if (le_probe_context_init(&probe) == MA_SUCCESS) ma_context_uninit(&probe);
+  }
+
+  const int before = open_fd_count();
+  if (before < 0) {
+    printf("  (skipped: /proc/self/fd unavailable)\n");
+    return;
+  }
+  for (int i = 0; i < ITERS; ++i) {
+    le_enumerate_playback_devices(devices, 8, &count);
+    le_enumerate_capture_devices(devices, 8, &count);
+    le_detect_loopback(&loopback);
+    if (le_probe_context_init(&probe) == MA_SUCCESS) ma_context_uninit(&probe);
+  }
+  const int after = open_fd_count();
+  /* Exact, not a tolerance: a transient probe context owns nothing once it is
+   * uninitialised, so 64 rounds of it must land on the same number it started
+   * on. A tolerance here would hide exactly the slow drip that took ~40 minutes
+   * to kill the appliance. */
+  if (after != before) {
+    printf("  fd count grew across %d probe rounds: %d -> %d\n", ITERS, before,
+           after);
+  }
+  CHECK(after == before);
+#else
+  printf("  (skipped: needs /proc/self/fd — Linux only)\n");
+#endif
+}
+
+#if defined(__linux__)
+/* A fake PulseAudio server that accepts a connection and immediately closes it,
+ * so libpulse sees EOF mid-handshake. Exists to reach miniaudio's SECOND
+ * failure path (see the test below).
+ *
+ * Shutdown is a poll() loop against a stop flag, NOT a blocking accept() that
+ * the main thread interrupts by closing the socket: on Linux, close() does not
+ * wake an accept() already blocked in another thread, so that arrangement
+ * deadlocks the join — measured, in this very test, before it was rewritten.
+ * The listener is closed only after the thread has joined, so the loop can
+ * never race a closed (or worse, reused) descriptor. */
+static int g_fake_pulse_listener = -1;
+static atomic_int g_fake_pulse_stop;  /* cross-thread stop flag */
+
+static void* fake_pulse_accept_loop(void* arg) {
+  (void)arg;
+  while (atomic_load(&g_fake_pulse_stop) == 0) {
+    struct pollfd p;
+    p.fd = g_fake_pulse_listener;
+    p.events = POLLIN;
+    p.revents = 0;
+    if (poll(&p, 1, /*timeout_ms=*/50) <= 0) continue; /* recheck the flag */
+    const int c = accept(g_fake_pulse_listener, NULL, NULL);
+    if (c >= 0) close(c); /* immediate EOF */
+  }
+  return NULL;
+}
+#endif
+
+/* The OTHER PulseAudio failure path must not leak either.
+ *
+ * miniaudio's `ma_init_pa_mainloop_and_pa_context__pulse` has two failure paths
+ * after the `pa_context` exists, and they are mutually exclusive on any given
+ * host: `pa_context_connect` failing synchronously (no socket to connect to —
+ * the test above, and what CI hits naturally), versus the connect succeeding and
+ * the connection then failing while miniaudio waits for it to become ready. Both
+ * leaked the context before #721, and each needs its own patch line — the second
+ * also needs `pa_context_disconnect`, because a connect WAS issued. Without this
+ * test an upgrade could restore one and drop the other, and the suite would stay
+ * green with the leak back.
+ *
+ * Reaching the second path takes a server that answers and then fails, so this
+ * stands one up: a unix socket that accepts and immediately closes, pointed at
+ * by PULSE_SERVER. Verified to work, and to be exact — removing ONLY the second
+ * path's `pa_context_unref` grows the table by precisely one descriptor per
+ * round. libpulse re-reads PULSE_SERVER per context, so the variable is set for
+ * the duration and unset again; nothing else in the binary reads it.
+ *
+ * Skips loudly (never silently) when libpulse is absent — then miniaudio never
+ * loads the backend and there is no path to drive. LINUX ONLY. */
+static void test_probing_leaks_no_fds_when_the_server_fails_mid_connect(void) {
+  printf("test_probing_leaks_no_fds_when_the_server_fails_mid_connect\n");
+#if !defined(__linux__)
+  printf("  (skipped: needs /proc/self/fd — Linux only)\n");
+#else
+  enum { WARMUP = 4, ITERS = 32 };
+  void* pulse_so = dlopen("libpulse.so.0", RTLD_NOW | RTLD_LOCAL);
+  if (pulse_so == NULL) {
+    printf("  (skipped: libpulse not installed — no Pulse path to drive)\n");
+    return;
+  }
+  dlclose(pulse_so);
+
+  char path[96];
+  snprintf(path, sizeof(path), "/tmp/segno-fake-pulse-%ld", (long)getpid());
+  unlink(path);
+  g_fake_pulse_listener = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (g_fake_pulse_listener < 0) {
+    printf("  (skipped: cannot create a unix socket here)\n");
+    return;
+  }
+  struct sockaddr_un addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+  if (bind(g_fake_pulse_listener, (struct sockaddr*)&addr, sizeof(addr)) < 0 ||
+      listen(g_fake_pulse_listener, 16) < 0) {
+    printf("  (skipped: cannot bind/listen at %s)\n", path);
+    close(g_fake_pulse_listener);
+    unlink(path);
+    return;
+  }
+  pthread_t accepter;
+  if (pthread_create(&accepter, NULL, fake_pulse_accept_loop, NULL) != 0) {
+    printf("  (skipped: cannot start the fake-server thread)\n");
+    close(g_fake_pulse_listener);
+    unlink(path);
+    return;
+  }
+
+  char server[128];
+  snprintf(server, sizeof(server), "unix:%s", path);
+  setenv("PULSE_SERVER", server, /*overwrite=*/1);
+  le_platform_set_alsa_only_for_test(0); /* unpinned: Pulse must be reachable */
+
+  ma_context probe;
+  for (int i = 0; i < WARMUP; ++i) {
+    if (le_probe_context_init(&probe) == MA_SUCCESS) ma_context_uninit(&probe);
+  }
+  const int before = open_fd_count();
+  for (int i = 0; i < ITERS; ++i) {
+    if (le_probe_context_init(&probe) == MA_SUCCESS) ma_context_uninit(&probe);
+  }
+  const int after = open_fd_count();
+
+  le_platform_set_alsa_only_for_test(-1);
+  unsetenv("PULSE_SERVER");
+  /* Flag, join, THEN close — see the note on the accept loop. Closing first
+   * would not wake a blocked accept() and would leave the loop polling a
+   * descriptor this thread had already handed back. */
+  atomic_store(&g_fake_pulse_stop, 1);
+  pthread_join(accepter, NULL);
+  close(g_fake_pulse_listener);
+  g_fake_pulse_listener = -1;
+  atomic_store(&g_fake_pulse_stop, 0);
+  unlink(path);
+
+  if (before < 0 || after < 0) {
+    printf("  (skipped: /proc/self/fd unavailable)\n");
+    return;
+  }
+  if (after != before) {
+    printf("  fd count grew across %d failing-server probes: %d -> %d\n", ITERS,
+           before, after);
+  }
+  CHECK(after == before);
+#endif
+}
+
 /* The grown FFI structs default to the miniaudio path when zero-initialized
  * (le_config) and a fresh engine publishes active_backend == miniaudio in its
  * snapshot. Guards against the new fields ever defaulting to a non-zero / non-
@@ -6097,6 +7711,220 @@ static void test_sleep_ms(int ms) {
 }
 #endif
 
+/* ---- allocation interposer for the drain thread (#722) ----
+ *
+ * The drain cycle used to malloc + free a 512 KB sidecar buffer every 250 ms.
+ * The first telling of this called that a per-cycle mmap/munmap and blamed it
+ * for #722's clicks; measurement disproved it (glibc's mmap threshold is
+ * dynamic, so only the first cycle mmaps and the rest come from the arena —
+ * numbers in perf_drain.c's header). The property is still worth holding: a
+ * background writer sharing a machine with a real-time audio callback should
+ * not take the allocator lock on a schedule, and "this loop does not call the
+ * allocator" is only enforceable if something checks it. Hence a counter that
+ * can say NOTHING, rather than an eyeball on the diff.
+ *
+ * Defining the allocator entry points in the test executable interposes on
+ * every call the engine objects make (the linker binds their undefined
+ * references to these definitions before it ever reaches libc), and
+ * forwarding to the real allocator keeps the process working normally.
+ * Counting is gated on a THREAD-LOCAL flag that only the drain thread ever
+ * sets — via the existing mid-cycle hook, which runs on that thread — so the
+ * test thread's own allocations (and every other thread's) are invisible to
+ * the count.
+ *
+ * THE HOLE THAT ACTUALLY MATTERS, and it is a macOS one: interposition only
+ * reaches allocations made by code that BINDS to this executable's symbols.
+ * The engine's own objects do. libc's internals do NOT — on Darwin's two-level
+ * namespace, libsystem_c's internal calls are bound to libsystem_malloc at
+ * link time and never look at the executable — so anything allocated INSIDE
+ * libc is invisible here. Concretely: fopen's FILE object and its lazily
+ * allocated stream buffer, which is precisely one of the two allocations #722
+ * removed from the drain cycle.
+ *
+ * That was verified, not assumed. Reverting only the fopen/fwrite/fclose half
+ * of #722 (leaving json_buf in the struct) still printed a green ALL PASSED on
+ * a default macOS run; reverting only the json_buf half correctly failed with
+ * "drain thread allocated 7 time(s), largest 524288 bytes". So the malloc
+ * counter alone guards ONE of the two halves on the platform this repo's
+ * contributors run locally, and the positive control does not help — it counts
+ * le_perf_arm's engine-side calloc, which is exactly the kind of allocation
+ * that was never in question.
+ *
+ * Hence the SECOND counter below: an fopen interposer. It counts the CALL
+ * rather than the allocation underneath it, so the two-level namespace is
+ * irrelevant — perf_drain.o's undefined `fopen` binds to this executable's
+ * definition the same way its `malloc` does. Forwarding through
+ * dlsym(RTLD_NEXT, "fopen") reaches the real one. It shares the same
+ * thread-local gate, so only the drain thread's calls are seen, and the same
+ * positive-control window covers it for free: le_perf_arm opens master.pcm and
+ * events.log, so a non-zero count there proves the fopen interposer is bound
+ * on this platform before the zero-assertion is trusted.
+ *
+ * SECONDARY HOLES, stated rather than papered over. The allocator side covers
+ * malloc, calloc, realloc and strdup. It does NOT cover posix_memalign,
+ * aligned_alloc, memalign, valloc or reallocarray, so a future cycle that
+ * allocated through one of those would pass this test green. They are left out
+ * because reaching the underlying implementation for each of them portably
+ * (glibc's __libc_memalign vs Darwin's malloc_zone_memalign, plus the overflow
+ * rules reallocarray owns) is more machinery — and more ways to break the
+ * whole test binary — than the risk warrants: nothing in this engine uses an
+ * aligned allocator today, and perf_drain.c's header names this invariant so
+ * the next reader has the pointer. The stdio side covers fopen only, not
+ * fdopen/freopen/tmpfile — same reasoning, and none of them appear in this
+ * module.
+ *
+ * Two platforms opt out, and both are stated rather than silently skipped:
+ * under a sanitizer the allocator is already interposed by the runtime and a
+ * second definition either collides at link time or fights the interceptor;
+ * on Windows the CRT's allocator cannot be replaced this way at all. The rest
+ * of the suite (and the CI ASAN job) is unaffected — only this one assertion
+ * is. */
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || \
+    __has_feature(memory_sanitizer)
+#define LE_TEST_SANITIZED 1
+#endif
+#endif
+#if !defined(LE_TEST_SANITIZED) && \
+    (defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__))
+#define LE_TEST_SANITIZED 1
+#endif
+
+#if !defined(_WIN32) && !defined(LE_TEST_SANITIZED)
+#define LE_TEST_HAS_ALLOC_INTERPOSER 1
+#endif
+
+#if defined(LE_TEST_HAS_ALLOC_INTERPOSER)
+#include <dlfcn.h> /* dlsym / RTLD_NEXT — the real fopen under the interposer */
+#include <stdatomic.h>
+#if defined(__APPLE__)
+#include <malloc/malloc.h> /* malloc_zone_* — the real allocator underneath */
+static void* test_real_malloc(size_t n) {
+  return malloc_zone_malloc(malloc_default_zone(), n);
+}
+static void* test_real_calloc(size_t n, size_t sz) {
+  return malloc_zone_calloc(malloc_default_zone(), n, sz);
+}
+static void* test_real_realloc(void* p, size_t n) {
+  return malloc_zone_realloc(malloc_default_zone(), p, n);
+}
+#else
+/* glibc keeps these public precisely so an interposer can reach the real
+ * implementation without recursing through its own definition. */
+extern void* __libc_malloc(size_t);
+extern void* __libc_calloc(size_t, size_t);
+extern void* __libc_realloc(void*, size_t);
+static void* test_real_malloc(size_t n) { return __libc_malloc(n); }
+static void* test_real_calloc(size_t n, size_t sz) {
+  return __libc_calloc(n, sz);
+}
+static void* test_real_realloc(void* p, size_t n) {
+  return __libc_realloc(p, n);
+}
+#endif
+
+/* Set only by the drain thread, read only by it — a thread-local, so no other
+ * thread's allocations are counted and no synchronization is needed on the
+ * hot path. (Local-exec TLS in an executable needs no allocation of its own,
+ * which would otherwise recurse straight back into these functions.) */
+static _Thread_local int tl_count_allocations = 0;
+static _Atomic int g_test_alloc_count = 0;
+static _Atomic size_t g_test_alloc_largest = 0;
+/* The stdio half — see "THE HOLE THAT ACTUALLY MATTERS" above. Same gate, own
+ * counter, because an fopen is a call and not a byte count: folding it into
+ * g_test_alloc_largest would corrupt the >= 512 KB positive control. */
+static _Atomic int g_test_stdio_open_count = 0;
+
+static void test_note_allocation(size_t n) {
+  atomic_fetch_add_explicit(&g_test_alloc_count, 1, memory_order_relaxed);
+  size_t prev =
+      atomic_load_explicit(&g_test_alloc_largest, memory_order_relaxed);
+  while (n > prev && !atomic_compare_exchange_weak_explicit(
+                         &g_test_alloc_largest, &prev, n, memory_order_relaxed,
+                         memory_order_relaxed)) {
+  }
+}
+
+void* malloc(size_t n) {
+  if (tl_count_allocations) test_note_allocation(n);
+  return test_real_malloc(n);
+}
+
+void* calloc(size_t n, size_t sz) {
+  if (tl_count_allocations) test_note_allocation(n * sz);
+  return test_real_calloc(n, sz);
+}
+
+void* realloc(void* p, size_t n) {
+  if (tl_count_allocations) test_note_allocation(n);
+  return test_real_realloc(p, n);
+}
+
+/* strdup is covered because it is the one non-malloc allocator a C file
+ * reaches for by accident; implementing it on top of the forwarder above is
+ * exact (the standard defines it as malloc + copy) and needs no per-platform
+ * symbol. */
+char* strdup(const char* s) {
+  const size_t n = strlen(s) + 1;
+  if (tl_count_allocations) test_note_allocation(n);
+  char* const p = (char*)test_real_malloc(n);
+  if (p != NULL) memcpy(p, s, n);
+  return p;
+}
+/* `free` is deliberately NOT interposed: pointers from the calls above come
+ * from the same underlying allocator the real free already expects, and the
+ * count is about allocations, not releases. */
+
+/* fopen — the half the allocator counter cannot see on macOS. Unlike malloc,
+ * there is no published "real implementation" entry point on either libc, so
+ * this forwards through dlsym(RTLD_NEXT, ...): resolve the next definition
+ * after this executable in the search order, which is libc's own. Resolved
+ * lazily on first call and cached; racing threads may each resolve it, which
+ * is harmless (dlsym is idempotent and returns the same pointer). Verified on
+ * macOS arm64 that this executable's definition is what the engine objects
+ * bind to and that RTLD_NEXT reaches the real one underneath.
+ *
+ * WHY CALLING dlsym FROM INSIDE THE INTERPOSED fopen IS SAFE, and it is the
+ * one invariant holding this whole fixture up — DO NOT break it. dlsym may
+ * allocate internally (glibc's error-string and scope bookkeeping), and it
+ * runs here while an fopen is in flight. It cannot recurse because:
+ *
+ *   1. The malloc forwarders above do NOT go through dlsym. They call
+ *      __libc_malloc / malloc_zone_malloc DIRECTLY. So a dlsym-internal
+ *      allocation lands in our malloc, is forwarded straight to the real
+ *      allocator, and returns — it never re-enters dlsym.
+ *   2. Neither glibc's nor dyld's dlsym calls fopen, so it cannot re-enter
+ *      this function either.
+ *
+ * If someone "simplifies" the malloc forwarders to dlsym(RTLD_NEXT, "malloc")
+ * for portability, (1) is gone: the first allocation calls dlsym, dlsym
+ * allocates, that allocation calls dlsym again on the not-yet-cached pointer,
+ * and the test binary deadlocks or blows the stack on its very first malloc —
+ * the classic recursive-initialization hang, with no symptom pointing back
+ * here. Reaching the real allocator without dlsym is not an optimization; it
+ * is the reason this file works. */
+typedef FILE* (*test_fopen_fn)(const char*, const char*);
+static _Atomic(test_fopen_fn) g_test_real_fopen = NULL;
+
+FILE* fopen(const char* path, const char* mode) {
+  test_fopen_fn real =
+      atomic_load_explicit(&g_test_real_fopen, memory_order_acquire);
+  if (real == NULL) {
+    real = (test_fopen_fn)dlsym(RTLD_NEXT, "fopen");
+    atomic_store_explicit(&g_test_real_fopen, real, memory_order_release);
+  }
+  if (tl_count_allocations) {
+    atomic_fetch_add_explicit(&g_test_stdio_open_count, 1,
+                              memory_order_relaxed);
+  }
+  /* Unreachable in practice; failing every open beats calling through NULL,
+   * and the positive control's non-zero assertion names the cause. */
+  if (real == NULL) return NULL;
+  return real(path, mode);
+}
+/* fclose is not interposed: it frees, and the counters are about acquisition. */
+#endif /* LE_TEST_HAS_ALLOC_INTERPOSER */
+
 /* Reads up to `cap - 1` bytes of `path` into `out` and NUL-terminates it, for
  * substring-matching a hand-rolled sidecar (no JSON library in this tree — see
  * perf_drain.c). Returns the byte count read, or 0 if the file could not be
@@ -6969,6 +8797,290 @@ static void test_perf_drain_samples_elapsed_before_draining(void) {
   CHECK(strstr(json, "\"zero_filled_frames\": 0") != NULL);
 
   le_engine_destroy(e);
+}
+
+/* THE SIDECAR'S BYTES, IN FULL. Every other sidecar assertion in this file is
+ * a strstr for one field, which would happily pass on a document whose
+ * punctuation, field order or whitespace had drifted. The recovery path reads
+ * this file with a real parser, but daw_export and the salvage flow both
+ * depend on its exact shape, and #722 rewrote how it reaches disk (a raw
+ * descriptor — open/write/close — instead of a per-cycle stdio stream) — so
+ * this pins the entire document, byte for byte, as the guard that the change
+ * was mechanical. Anything that legitimately alters the schema updates this
+ * literal, on purpose, in the same commit.
+ *
+ * NOT fsynced, on either side: an earlier revision of #722 added one and it
+ * was reverted. Nothing in perf_drain.c syncs, and the rename buys atomicity
+ * of the directory entry, not durability — see the note above that module's
+ * descriptor shims, and #727. This test says nothing about what survives a
+ * power cut. */
+static void test_perf_sidecar_bytes_are_exact(void) {
+  printf("test_perf_sidecar_bytes_are_exact\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  float out[LOOP_N];
+  process_const(e, 0.5f, LOOP_N, out); /* exactly LOOP_N captured frames */
+
+  CHECK(le_perf_disarm(e) == LE_OK); /* runs the final cycle synchronously */
+
+  char json[4096];
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+
+  /* The slug is the capture dir's basename (PID-qualified, see
+   * perf_test_dir); every other value here is fixed by the configure call and
+   * the single processed block above. */
+  const char* slug = strrchr(perf_test_dir(), '/');
+  slug = slug != NULL ? slug + 1 : perf_test_dir();
+  char expected[4096];
+  snprintf(expected, sizeof(expected),
+          "{\n"
+          "  \"slug\": \"%s\",\n"
+          "  \"sample_rate\": 48000,\n"
+          "  \"channel_layout\": {\"master_channels\": 1, "
+          "\"captured_inputs\": []},\n" /* no input monitored in this fixture */
+          "  \"capture_frames\": %d,\n"
+          "  \"overrun_count\": 0,\n"
+          "  \"zero_filled_frames\": 0,\n"
+          "  \"overrun_gaps\": [],\n"
+          "  \"layers\": [],\n"
+          "  \"finalized\": false\n"
+          "}\n",
+          slug, LOOP_N);
+  if (strcmp(json, expected) != 0) {
+    printf("  sidecar mismatch\n--- expected ---\n%s--- actual ---\n%s",
+          expected, json);
+  }
+  CHECK(strcmp(json, expected) == 0);
+
+  le_engine_destroy(e);
+}
+
+/* THE STEADY-STATE DRAIN CYCLE IS ALLOCATION-FREE (#722).
+ *
+ * An invariant, not a bug fix: the drain used to malloc + free a 512 KB
+ * sidecar buffer every cycle, and while the mmap/munmap-storm story first
+ * told about that did not survive measurement (perf_drain.c's header has the
+ * numbers), the property is worth pinning — a background writer that shares a
+ * machine with a real-time audio callback should never be taking the
+ * allocator lock on a 4 Hz schedule, and "no allocation in this loop" only
+ * stays true if a test says so. Hence an absolute assertion: across several
+ * LIVE cycles of a real armed capture — rings draining, files growing, the
+ * sidecar rebuilt and renamed each time — the drain thread must not reach the
+ * allocator once.
+ *
+ * TWO counters, because one of them is blind on macOS. g_test_alloc_count
+ * covers malloc/calloc/realloc/strdup; g_test_stdio_open_count covers fopen,
+ * whose FILE object and stream buffer are allocated INSIDE libc and therefore
+ * invisible to the first counter under Darwin's two-level namespace. A green
+ * run with only the allocator counter proves half of #722 — measured, not
+ * assumed; the interposer's own comment has the experiment. Do not delete the
+ * stdio counter as redundant: on this repo's default local run it is the only
+ * thing guarding the sidecar's move off stdio.
+ *
+ * The run opens with a POSITIVE CONTROL for both, because a zero count is
+ * otherwise indistinguishable from an interposer that is not bound: under
+ * -flto, or a toolchain that resolved the engine objects' malloc against libc
+ * first, this test would pass for the wrong reason and a reintroduced
+ * allocation would ship green. The control counts le_perf_arm, which reaches
+ * perf_drain.c's OWN calloc of the session struct and its OWN fopen of
+ * master.pcm/events.log — the same object file and the same symbol bindings
+ * the assertions depend on — and requires a non-zero count on each side plus a
+ * >= 512 KB largest, so it cannot be satisfied by some incidental small
+ * allocation elsewhere.
+ *
+ * Counting of the drain thread then starts PART-WAY THROUGH its third cycle,
+ * not at its first: the long-lived PCM streams allocate their stdio buffers
+ * lazily at their first write, a one-time cost at the start of a session
+ * rather than steady state. The arming happens in the mid-cycle hook, which
+ * fires after le_pd_drain_ring and before le_pd_catch_up, so cycle 3 is
+ * counted only from its second half onward — cycles 4 and up are the
+ * fully-counted ones, plus the final cycle, which runs on the drain thread
+ * itself at the bottom of le_pd_drain_thread_main (exactly why a thread-local
+ * flag covers it; le_perf_disarm only requests the stop and joins).
+ *
+ * SCOPE, precisely: the cycles are driven hard enough to take
+ * le_pd_drain_ring's loop-again branch (more than LE_PD_SCRATCH_SAMPLES
+ * available per cycle) and, once, le_pd_catch_up's chunked zero-fill after a
+ * deliberate ring overflow. It does NOT cover le_pd_write_staged_layer — that
+ * needs a retired overdub layer, and the layer tests below cover that path's
+ * own allocation handoff. */
+typedef struct {
+  _Atomic int cycles; /* written by the drain thread, polled by the test one */
+} perf_alloc_watch_ctx;
+
+/* Cycles to observe before disarming, and the ceiling on how long to wait for
+ * them. The wait is deliberately generous and POLLED rather than a count of
+ * fixed sleeps: the drain thread is niced now, so its nominal 10 ms poll can
+ * land at 15 ms or worse on a loaded CI runner, and a fixed 6 x 250 ms loop
+ * sat exactly on the boundary of producing enough cycles. Waiting on the
+ * observable instead means a slow machine takes longer, not fails. */
+#define LE_TEST_ALLOC_WATCH_CYCLES 8
+#define LE_TEST_ALLOC_WATCH_TIMEOUT_MS 15000
+/* Frames pushed per 25 ms tick. LE_PD_SCRATCH_SAMPLES is 2048, so ~40k frames
+ * per 250 ms cycle keeps the drain looping on full scratch buffers instead of
+ * emptying the ring in one short pop — while staying inside the ring's
+ * LE_PERF_CAPTURE_SECONDS so nothing overruns except where this test asks. */
+#define LE_TEST_ALLOC_WATCH_FRAMES_PER_TICK 4096
+
+/* Both helpers below serve only this test, so they live inside the same guard
+ * its body does — otherwise a sanitized build carries two unused functions. */
+#if defined(LE_TEST_HAS_ALLOC_INTERPOSER)
+/* Pushes `frames` mono frames through the engine in process_const-sized
+ * chunks (its input buffer is 64 frames), so a test can drive real capture
+ * volume without hand-rolling the loop each time. */
+static void push_frames_for_test(le_engine* e, float value, int frames) {
+  float out[64];
+  while (frames > 0) {
+    const int n = frames < 64 ? frames : 64;
+    process_const(e, value, n, out);
+    frames -= n;
+  }
+}
+
+static void perf_mid_cycle_watch_allocations(void* raw) {
+  perf_alloc_watch_ctx* ctx = (perf_alloc_watch_ctx*)raw;
+  const int n =
+      atomic_fetch_add_explicit(&ctx->cycles, 1, memory_order_relaxed) + 1;
+  /* Runs ON the drain thread, which is the whole point: this arms the
+   * thread-local counter for that thread only. */
+  if (n == 3) tl_count_allocations = 1;
+}
+#endif
+
+static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
+  printf("test_perf_drain_steady_state_cycle_is_allocation_free\n");
+#if !defined(LE_TEST_HAS_ALLOC_INTERPOSER)
+  /* Skip the BODY too, not just the assertion: without a live interposer the
+   * remaining ~2 s of armed capture proves nothing this suite does not
+   * already cover elsewhere. */
+  printf("  (skipped: allocator interposition unavailable on this build)\n");
+#else
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000); /* real ring: nothing may drop */
+
+  perf_alloc_watch_ctx ctx = {0};
+  le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_watch_allocations,
+                                            &ctx);
+
+  /* POSITIVE CONTROL — see the note above. This thread IS the control thread,
+   * so counting across the arm catches perf_drain.c's own session-struct
+   * calloc. */
+  tl_count_allocations = 1;
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  tl_count_allocations = 0;
+  CHECK(atomic_load(&g_test_alloc_count) > 0);
+  /* WHAT CLEARS THIS FLOOR, measured on this fixture rather than assumed,
+   * because it is a constant coupled to two unrelated sizings and a reader
+   * debugging a failure here needs to know which one moved. Two ENGINE-SIDE
+   * allocations cross the arm:
+   *   - le_perf_drain itself, 724104 bytes — sizeof the struct, which since
+   *     #722 carries json_buf (LE_PD_JSON_BUF = 512 KB) inside it;
+   *   - le_perf_arm's master ring, 524288 bytes — le_perf_ring_capacity
+   *     rounds 1 ch x 48000 x LE_PERF_CAPTURE_SECONDS up to a power of two
+   *     (131072 samples x 4 B), landing EXACTLY on this floor.
+   *
+   * HOW MANY ALLOCATIONS THE ARM ACTUALLY COUNTS IS PLATFORM-SPECIFIC, so do
+   * not read any one number as a constant. On macOS those two ARE the whole
+   * tally — two: libc-internal allocations bind to libsystem_malloc and never
+   * reach this executable's definitions, the two-level-namespace hole
+   * described above. On glibc the flip side applies: ELF interposition DOES
+   * catch libc's internals, so the two fopens' FILE objects and stream buffers
+   * are counted as well and the tally is five (instrumented and measured in
+   * gcc:13; largest is 724104 and the fopen counter reads 2 on both). Both are
+   * correct. Only the two engine-side sizes above are portable, and only the
+   * largest of them is what this floor asserts on — which is why the assertion
+   * below is on `largest` and not on a count.
+   *
+   * So the control does not depend on the change under test: the ring clears
+   * it on its own, as it did before #722. But it clears it by zero bytes, so
+   * do not read a failure here as "interposition broke" without checking
+   * whether LE_PD_JSON_BUF, LE_PERF_CAPTURE_SECONDS or this fixture's
+   * configure() moved first. Retuning the floor is the right fix in that case;
+   * its job is only to rule out an incidental small allocation satisfying the
+   * non-zero check above. */
+  CHECK(atomic_load(&g_test_alloc_largest) >= 512u * 1024u);
+  /* The stdio half of the control: le_perf_arm fopens master.pcm and
+   * events.log, so a zero here means the fopen interposer is not bound and
+   * the zero-assertion below would be meaningless. */
+  CHECK(atomic_load(&g_test_stdio_open_count) > 0);
+  atomic_store(&g_test_alloc_count, 0);
+  atomic_store(&g_test_alloc_largest, 0);
+  atomic_store(&g_test_stdio_open_count, 0);
+
+  drain(e);
+
+  /* Keep feeding real audio until enough cycles have been observed, so the
+   * counted ones have genuine work: multi-buffer ring pops, PCM writes, an
+   * events.log append, a sidecar rewrite and rename. */
+  int waited = 0;
+  int overflowed_once = 0;
+  while (atomic_load(&ctx.cycles) < LE_TEST_ALLOC_WATCH_CYCLES &&
+         waited < LE_TEST_ALLOC_WATCH_TIMEOUT_MS) {
+    push_frames_for_test(e, 0.25f, LE_TEST_ALLOC_WATCH_FRAMES_PER_TICK);
+    /* Once, mid-run: hand the ring more than it can hold in a single tick, so
+     * a cycle also runs le_pd_catch_up's chunked zero-fill. */
+    if (!overflowed_once && atomic_load(&ctx.cycles) >= 4) {
+      overflowed_once = 1;
+      push_frames_for_test(e, 0.25f, 48000 * (LE_PERF_CAPTURE_SECONDS + 1));
+    }
+    test_sleep_ms(25);
+    waited += 25;
+  }
+
+  /* CADENCE FIRST, then everything that depends on it. The overflow below is
+   * only armed once the drain thread has reached its 4th cycle, so a thread
+   * too slow to get there inside the timeout would otherwise surface as
+   * `overflowed_once != 1` — a failure of the allocation fixture, reported
+   * when nothing allocated at all. Assert the observable that actually
+   * failed, and say so in the message. */
+  const int observed_cycles = atomic_load(&ctx.cycles);
+  if (observed_cycles < LE_TEST_ALLOC_WATCH_CYCLES) {
+    printf(
+        "  drain reached only %d of %d cycles in %d ms — too slow a machine, "
+        "NOT an allocation failure\n",
+        observed_cycles, LE_TEST_ALLOC_WATCH_CYCLES,
+        LE_TEST_ALLOC_WATCH_TIMEOUT_MS);
+  }
+  CHECK(observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES);
+  CHECK(overflowed_once == 1);
+
+  CHECK(le_perf_disarm(e) == LE_OK); /* joins the drain thread */
+  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
+
+  /* LE_TEST_ALLOC_WATCH_CYCLES observed. Counting arms inside cycle 3's
+   * mid-cycle hook, which fires after that cycle's ring drain, so cycle 3 is
+   * counted from its second half only; cycles 4..LE_TEST_ALLOC_WATCH_CYCLES
+   * are counted end to end, plus the final cycle le_pd_drain_thread_main runs
+   * on its way out — 6 whole cycles at the current constants. (The negative
+   * control that reintroduces the per-cycle 512 KB malloc reports 7
+   * allocations: those 6 plus cycle 3's counted half.) */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_zero_filled_frames > 0); /* the zero-fill path really ran */
+
+  if (atomic_load(&g_test_alloc_count) != 0) {
+    printf("  drain thread allocated %d time(s), largest %zu bytes\n",
+          atomic_load(&g_test_alloc_count),
+          atomic_load(&g_test_alloc_largest));
+  }
+  CHECK(atomic_load(&g_test_alloc_count) == 0);
+  if (atomic_load(&g_test_stdio_open_count) != 0) {
+    printf("  drain thread called fopen %d time(s)\n",
+          atomic_load(&g_test_stdio_open_count));
+  }
+  CHECK(atomic_load(&g_test_stdio_open_count) == 0);
+  /* Nothing to unset: the flag lived on the drain thread, which the disarm
+   * above already joined. */
+
+  le_engine_destroy(e);
+#endif
 }
 
 /* A write failure (forced deterministically — no real full disk needed) stops
@@ -19579,6 +21691,33 @@ static void test_cache_audio_rev_bump_sites(void) {
   now = le_engine_track_audio_rev(a, 1);
   CHECK(now != prev);
 
+  /* loop-seam fold (later track, #728). The fold rewrites the head F frames
+   * AFTER finalize_new_track's bump, so it is a content write that no other
+   * row covers — without its own bump the cache would key the un-crossfaded
+   * head as current. Its own engine: the master's grid and the buffer room the
+   * overlap needs do not fit the cache harness's short loop. */
+  {
+    le_engine* b = le_engine_create();
+    CHECK(le_engine_configure(b, 48000, 1, 1, 48000) == LE_OK);
+    le_engine_record(b, 0); /* silent defining master */
+    feed_const(b, 0.0f, len, NULL, NULL);
+    le_engine_record(b, 0);
+    feed_const(b, 0.0f, 512, NULL, NULL);
+    drain(b);
+    feed_to_loop_top(b);
+    le_engine_record(b, 1); /* a non-defining take, exactly one lap */
+    drain(b);
+    feed_const(b, 0.5f, len, NULL, NULL);
+    le_engine_record(b, 1); /* finalize: bumps, and arms the overlap */
+    feed_const(b, 0.5f, 1, NULL, NULL);
+    CHECK(b->tracks[1].seam_capture > 0);
+    const uint32_t before_fold = le_engine_track_audio_rev(b, 1);
+    feed_const(b, 0.5f, 1000, NULL, NULL); /* > F: the fold completes */
+    CHECK(b->tracks[1].seam_capture == 0);
+    CHECK(le_engine_track_audio_rev(b, 1) != before_fold);
+    le_engine_destroy(b);
+  }
+
   le_engine_destroy(a);
 }
 
@@ -20870,6 +23009,8 @@ int main(void) {
   test_perf_zero_fill_counter_visible_while_armed();
   test_perf_zero_fill_counts_only_silence_actually_written();
   test_perf_drain_samples_elapsed_before_draining();
+  test_perf_sidecar_bytes_are_exact();
+  test_perf_drain_steady_state_cycle_is_allocation_free();
   test_perf_drain_disk_full_stops_cleanly();
   test_perf_drain_files_are_crash_consistent_mid_capture();
   test_perf_reconfigure_while_armed_marks_sidecar_device_changed();
@@ -20952,6 +23093,21 @@ int main(void) {
   test_master_gain_rejects_null();
   test_master_gain_resets_on_configure();
   test_xrun_count_tallies_and_resets();
+  test_cb_timing_configure_derives_budget();
+  test_cb_timing_healthy_split_duplex_reads_zero();
+  test_cb_timing_overloaded_split_duplex_reports_late();
+  test_cb_timing_durations_max_late_and_buckets();
+  test_cb_timing_oversized_block_scales_its_deadline();
+  test_cb_timing_gap_detector();
+  test_cb_timing_recovery_gap_is_not_double_counted();
+  test_cb_timing_timeline_break_survives_a_reroute();
+  test_engine_timeline_break_clears_the_gap();
+  test_cb_timing_our_own_overrun_forces_a_gap();
+  test_cb_timing_gate_matches_the_build();
+  test_cb_timing_armed_window();
+  test_backend_xrun_kinds_tally_and_reset();
+  test_callback_span_reaches_the_telemetry_pull();
+  test_perf_arm_command_resets_armed_window();
   test_device_lost_keeps_running();
   test_master_bus_frame_limiter();
   test_looper_clear();
@@ -20959,6 +23115,14 @@ int main(void) {
   test_looper_multitrack();
   test_latency_compensation();
   test_overdub_punch_no_click();
+  test_loop_seam_master_take_no_splice();
+  test_loop_seam_survives_whole_lap_overdub();
+  test_loop_seam_on_non_defining_track();
+  test_loop_seam_not_armed_with_record_offset();
+  test_seam_capture_cleared_by_reconfigure();
+  test_loop_seam_survives_undo_after_rec_dub();
+  test_loop_seam_folds_partially_backed_up_dub_shadow();
+  test_loop_seam_gap_when_dub_retires_before_the_fold();
   test_master_limiter_caps_and_transparent();
   test_overdub_feedback_decays_layers();
   test_master_seam_crossfade_no_click();
@@ -21039,6 +23203,13 @@ int main(void) {
   test_enumerate_devices_counts_are_stable();
   test_device_id_to_str();
   test_select_backend_defaults_to_miniaudio();
+  /* Order-independent by construction: the pin is injected through the
+   * platform seam's test override and restored afterwards, so this process's
+   * environment — and the seam's one-shot cache of it — is never touched. */
+  test_probe_backends_follow_the_pin();
+  test_pinned_probe_never_reaches_pulseaudio();
+  test_probing_leaks_no_fds();
+  test_probing_leaks_no_fds_when_the_server_fails_mid_connect();
   test_backend_struct_defaults();
   test_bridge_roundtrip_f32();
   test_bridge_convert_int32();

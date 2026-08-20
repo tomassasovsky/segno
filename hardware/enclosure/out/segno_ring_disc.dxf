@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461257.127453704
+2461273.1210416667
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461257.127453704
+2461273.1210416667
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-99
+98
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{4D3256FA-102E-4C13-9898-01A724CE2EB5}
+{52A106A3-48B3-4A0C-8C5A-002A1E5608F5}
   9
 $VERSIONGUID
   2
-{2ECA0468-9DA9-4DD1-B8FA-F88A2EE2A7C3}
+{461CC333-365E-48D3-998A-E4131A83604E}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -2237,7 +2237,7 @@ LAYER
 100
 AcDbSymbolTable
  70
-10
+9
   0
 LAYER
   5
@@ -2395,30 +2395,6 @@ AcDbSymbolTableRecord
 100
 AcDbLayerTableRecord
   2
-WELD
- 70
-0
- 62
-6
-  6
-Continuous
-370
--3
-390
-13
-347
-21
-  0
-LAYER
-  5
-90
-330
-1
-100
-AcDbSymbolTableRecord
-100
-AcDbLayerTableRecord
-  2
 NOTE
  70
 0
@@ -2435,7 +2411,7 @@ Continuous
   0
 LAYER
   5
-91
+90
 330
 1
 100
@@ -2459,7 +2435,7 @@ Continuous
   0
 LAYER
   5
-92
+91
 330
 1
 100
@@ -3309,7 +3285,7 @@ ACAD
   0
 APPID
   5
-96
+95
 330
 3
 100
@@ -3323,7 +3299,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-97
+96
 330
 3
 100
@@ -5435,6 +5411,26 @@ ENTITIES
   0
 CIRCLE
   5
+92
+330
+17
+100
+AcDbEntity
+  8
+CUT
+100
+AcDbCircle
+ 10
+0.0
+ 20
+0.0
+ 30
+0.0
+ 40
+15.5
+  0
+CIRCLE
+  5
 93
 330
 17
@@ -5451,31 +5447,11 @@ AcDbCircle
  30
 0.0
  40
-20.0
-  0
-CIRCLE
-  5
-94
-330
-17
-100
-AcDbEntity
-  8
-CUT
-100
-AcDbCircle
- 10
-0.0
- 20
-0.0
- 30
-0.0
- 40
-3.5
+3.6
   0
 TEXT
   5
-95
+94
 330
 17
 100
@@ -5485,9 +5461,9 @@ NOTE
 100
 AcDbText
  10
--20.0
+-15.5
  20
-26.0
+21.5
  30
 0.0
  40
@@ -5495,9 +5471,9 @@ AcDbText
   1
 Segno LED-RING CENTRE DISC  2.0mm  x1  (encoder clamps it)
  11
--20.0
+-15.5
  21
-26.0
+21.5
  31
 0.0
 100
@@ -6593,7 +6569,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-98
+97
   0
 DICTIONARYVAR
   5
@@ -6605,7 +6581,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-04T06:03:32.663338+00:00
+1.4.4 @ 2026-08-20T05:54:18.631263+00:00
   0
 VISUALSTYLE
   5
@@ -13159,7 +13135,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-98
+97
 330
 2D
 100
@@ -13167,7 +13143,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-04T06:03:32.664985+00:00
+1.4.4 @ 2026-08-20T05:54:18.633089+00:00
   0
 ENDSEC
   0

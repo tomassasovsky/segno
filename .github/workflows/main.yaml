@@ -180,7 +180,12 @@ jobs:
       - name: Install C build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libasound2-dev
+          # libpulse0 (no PulseAudio server running) is not a build dep — it is
+          # the CONDITION test_probing_leaks_no_fds needs: miniaudio dlopen()s
+          # the Pulse backend, the connect fails with no server, and that is the
+          # failure path that leaked a memfd per probe (#721). Without libpulse
+          # present the backend is skipped and the test cannot fail.
+          sudo apt-get install -y build-essential libasound2-dev libpulse0
       - name: Build + run native engine/MIDI tests
         run: bash packages/segno_engine/src/test/run_native_tests.sh
       - name: Build + run firmware/Dart protocol contract tests (both trees)
@@ -231,10 +236,47 @@ jobs:
       - name: Install C build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libasound2-dev
+          # libpulse0 (no PulseAudio server running) is not a build dep — it is
+          # the CONDITION test_probing_leaks_no_fds needs: miniaudio dlopen()s
+          # the Pulse backend, the connect fails with no server, and that is the
+          # failure path that leaked a memfd per probe (#721). Without libpulse
+          # present the backend is skipped and the test cannot fail.
+          sudo apt-get install -y build-essential libasound2-dev libpulse0
       - name: Build + run native tests under AddressSanitizer
         run: >
           EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g"
+          bash packages/segno_engine/src/test/run_native_tests.sh
+
+  # The same suites with the callback telemetry GATED OFF (#722). That gate is
+  # the feature's stated escape hatch if the instrument ever perturbs the
+  # appliance, so it has to be a configuration that builds AND passes — it is
+  # exactly what someone reaches for under pressure, and discovering then that
+  # it does not work is the worst possible time. Nothing built it before this
+  # job, so the `#if LE_CALLBACK_TELEMETRY` branches in miniaudio.h,
+  # engine_miniaudio.c, engine_telemetry.h and the test suite could rot silently
+  # while every other job stayed green.
+  #
+  # It RUNS the suites rather than only compiling them: once the timing-only
+  # assertions are behind CHECK_TIMING the gate-off suite passes, so running it
+  # costs no more than a compile and additionally pins what the gated build must
+  # still do — accumulate nothing, and keep the ungated per-kind dropout tally
+  # (which is what leaves xrun_count explainable in every build).
+  native-tests-telemetry-off:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install C build dependencies
+        run: |
+          set -eu
+          sudo apt-get update
+          # libpulse0 for the same reason as the two jobs above: without it
+          # miniaudio never loads the PulseAudio backend and the #721 fd-leak
+          # tests skip rather than run. This job is not about them, but a job
+          # that silently skips tests is worse than one that does not have them.
+          sudo apt-get install -y build-essential libasound2-dev libpulse0
+      - name: Build + run native tests with LE_CALLBACK_TELEMETRY=0
+        run: >
+          EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0"
           bash packages/segno_engine/src/test/run_native_tests.sh
 
   # The control-sequence fuzzer: the REAL native engine (device-free pump) +

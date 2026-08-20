@@ -53,12 +53,37 @@
 /* le_audio_rev_bump below; plugins never call it but the compiler parses it. */
 #undef atomic_fetch_add_explicit
 #define atomic_fetch_add_explicit(slot, v, mo) ((void)(*(slot) += (v)))
+/* engine_telemetry.h claims its gap-suppression licence with an exchange, so
+ * unlike the three above this one has to YIELD the old value rather than
+ * discard it — which no comma-expression macro can do, and GCC's statement
+ * expressions are not available under MSVC. Hence a function: a two-parameter
+ * template, so an unsuffixed literal (`0u` against a uint64_t slot) still
+ * deduces. Read-then-write without atomicity is safe for exactly the reason
+ * the rest of this shim is: no plugin TU ever reaches these call sites.
+ *
+ * The `extern "C++"` is load-bearing, not decoration. Callers reach this
+ * header from inside their own `extern "C" { #include ... }` — the VST3 test
+ * harness (vst3/test/host_harness.h) does exactly that — and a template
+ * cannot be declared with C linkage (MSVC C2894, GCC "template with C
+ * linkage"). Nesting `extern "C++"` restores C++ linkage wherever the include
+ * lands, so this does not depend on how any includer wraps it. */
+extern "C++" {
+template <typename T, typename V>
+inline T le_cxx_atomic_exchange(T* slot, V value) {
+  const T previous = *slot;
+  *slot = (T)value;
+  return previous;
+}
+}
+#undef atomic_exchange_explicit
+#define atomic_exchange_explicit(slot, v, mo) le_cxx_atomic_exchange((slot), (v))
 #endif
 
 #include "audio_ring.h"        /* le_audio_ring (performance-recording taps) */
 #include "layer_staging_ring.h" /* le_layer_staging_ring (retired-layer persistence) */
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
 #include "le_midi_clock.h"     /* le_midi_clock_gen (C1 24-PPQN clock-send emitter) */
+#include "engine_telemetry.h"  /* le_cb_timing (audio-callback telemetry, #722) */
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
 #include "segno_engine_api.h"  /* le_engine typedef, le_config, le_device_info,
@@ -684,6 +709,15 @@ typedef struct le_track {
    *   -----------------------------+---------+------------------------------
    *   record finalize (defining)   | audio   | finalize_master
    *   record finalize (later trk)  | audio   | finalize_new_track
+   *   loop-seam fold (later trk)   | audio   | mix_tracks_frame (the trailing
+   *                                |         | overlap fold, #728 — a head
+   *                                |         | rewrite F frames AFTER the
+   *                                |         | finalize above, so that row's
+   *                                |         | bump does not cover it. The
+   *                                |         | defining master's fold needs
+   *                                |         | no row: finalize_master_xfade
+   *                                |         | folds and THEN finalizes, and
+   *                                |         | finalize_master bumps.)
    *   entry into OVERDUBBING       | audio   | le_dub_session_start
    *   each retired overdub pass    | audio   | le_dub_boundary,
    *                                |         | le_dub_block_update (drain)
@@ -780,6 +814,21 @@ typedef struct le_track {
   int32_t xfade_capture;
   int32_t xfade_len;
   int32_t xfade_end_state;
+
+  /* Loop-seam continuity for the takes the deferral above does NOT cover
+   * (#728). A NON-defining track (finalize_new_track) gets no crossfade at
+   * all today, so its wrap splices two moments a whole lap apart, once per
+   * loop cycle, for as long as the take lives. Its finalize arms a trailing
+   * overlap capture: the performance keeps being written into
+   * [seam_len, seam_len + F) for `seam_capture` more frames and is then folded
+   * into the head with the SAME fade length (seam_xfade_frames) and the SAME
+   * equal-gain fold (le_seam_fold) the master finalize uses. Unlike the
+   * master's deferral the state change is NOT delayed: playback (or overdub)
+   * starts on the press exactly as before, and only the buffer is smoothed a
+   * few ms later. 0 == nothing in flight. Armed only when the overlap
+   * provably fits every live lane buffer (seam_room). */
+  int32_t seam_capture;
+  int32_t seam_len;
 
   /* Free/Song mode (B2b + B4, index Architecture §4): this track's OWN loop
    * clock, structurally identical to (and reusing) the master's
@@ -958,7 +1007,22 @@ struct le_engine {
    * published in the snapshot. All bits set on a fresh configure (default-on). */
   _Atomic uint32_t a_output_enabled_mask;
   _Atomic uint64_t a_frames;
+  /* EVERY backend dropout this session, classifiable or not -- published as
+   * le_snapshot.xrun_count. Fed by le_engine_note_backend_xrun, which bumps
+   * this BEFORE the kind is range-checked, so a dropout reported with a kind
+   * outside le_xrun_kind moves this counter while landing in no per-kind
+   * bucket. cb_timing below carries the same events broken out per kind and
+   * per window, and those buckets sum to this only for kinds THIS BUILD KNOWS
+   * -- which is every kind any shipping backend produces today (ALSA passes
+   * 0/1/2, ASIO passes 3). Until #722 the ONLY producer was the Windows ASIO
+   * overload notification, so this read a flat 0 on the appliance. */
   _Atomic uint32_t a_xruns;
+  /* Audio-callback telemetry (#722): per-callback duration vs the period
+   * deadline, the entry-to-entry gap detector, and the per-kind dropout
+   * tallies -- each in a session window and an armed window. Written from the
+   * device callback (relaxed atomics, no allocation/lock/syscall beyond the
+   * clock read); read by le_engine_get_snapshot. See engine_telemetry.h. */
+  le_cb_timing cb_timing;
   _Atomic uint32_t a_in_rms_bits;
   _Atomic uint32_t a_in_peak_bits;
   _Atomic uint32_t a_out_rms_bits;
@@ -1380,6 +1444,22 @@ struct le_engine {
  * through it (le_jack_device_name). */
 int32_t enumerate_devices(le_device_info* out, int32_t max, int32_t* count,
                           int capture);
+
+/* Opens a TRANSIENT probe context — the throwaway ma_context enumeration and
+ * loopback detection run on, never the streaming one — honouring the platform's
+ * probe-backend seam (le_platform_probe_backends).
+ *
+ * Why probes need their own answer: ma_context_init(NULL, 0, ...) walks
+ * miniaudio's default backend list in enum order, and on Linux that puts
+ * ma_backend_pulseaudio BEFORE ma_backend_alsa. On the appliance
+ * (SEGNO_ALSA_ONLY, no PulseAudio server in the image) every probe therefore
+ * attempted a Pulse connection that could only fail, once per poll — and each
+ * failed attempt leaked a memfd (#721). Everywhere else the seam returns
+ * (NULL, 0) and this is exactly the call the probe sites made before.
+ *
+ * Returns MA_SUCCESS with *ctx open (caller owns ma_context_uninit), or the
+ * miniaudio error on failure. Defined in engine_devices.c. */
+ma_result le_probe_context_init(ma_context* ctx);
 
 /* Device-resolution helpers defined in the portable core (engine.c) and shared
  * with the miniaudio backend (engine_miniaudio.c), which resolves pinned /

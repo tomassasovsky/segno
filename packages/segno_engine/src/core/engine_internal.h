@@ -29,12 +29,69 @@ const le_device_backend* le_select_backend(int32_t backend);
  * engine_private.h, keeping all atomic access in C. Not part of the FFI surface. */
 void le_engine_mark_started(le_engine* engine);
 
-/* Increments the published xrun (dropout) tally by one. Called from a device
- * backend's overload notification — e.g. the ASIO driver's kAsioOverload message
- * — so the snapshot's xrun_count reflects real device starvation. A C helper for
- * the same reason as le_engine_mark_started (C++ backend TUs avoid the _Atomic
+/* Increments the published xrun (dropout) tally by one, as an
+ * LE_XRUN_BACKEND_OVERLOAD. Called from a device backend's overload
+ * notification — the ASIO driver's kAsioOverload message. A C helper for the
+ * same reason as le_engine_mark_started (C++ backend TUs avoid the _Atomic
  * field). Relaxed atomic; safe off any thread. Not part of the FFI surface. */
 void le_engine_note_xrun(le_engine* engine);
+
+/* The general form of the above: records one backend dropout of `kind` (an
+ * le_xrun_kind) into xrun_count AND into the per-kind telemetry windows (#722).
+ * The ALSA data loop calls this through the miniaudio backend's hook for its
+ * -EPIPE recoveries and slipped-playback resyncs, which is what finally makes
+ * xrun_count non-zero on Linux. Relaxed atomics only — safe to call from the
+ * device's data-loop thread. Not part of the FFI surface. */
+void le_engine_note_backend_xrun(le_engine* engine, int32_t kind);
+
+/* Records one device-callback span, [entry_ns, exit_ns) over `frames`, taken
+ * with le_now_ns around the backend's call into le_engine_process (#722).
+ * `frames` is this callback's own block size, which is NOT its own deadline:
+ * the duplex loop splits one hardware period across several callbacks, so
+ * le_cb_timing_note sums consecutive spans into one PERIOD SERVICE and judges
+ * that total against the frames it covered. The nominal period seeded by
+ * le_engine_configure_callback_budget is the batching unit and the gap
+ * threshold; `frames` only tells the accumulator how much of one this callback
+ * carried. (Deriving a per-callback deadline from `frames` alone is exactly the
+ * false positive that fix 1be46380 removed — a 16-frame tail block would get
+ * 166 us for overhead a 64-frame block absorbs inside 666 us, and would read as
+ * late on perfectly healthy hardware.) Called ON the audio thread from the
+ * backend's data callback and RT-safe by construction (engine_telemetry.h).
+ * Exposed here (rather than poking engine->cb_timing) so a backend TU need not
+ * touch the _Atomic struct, and so native tests can feed synthetic spans. Not
+ * part of the FFI surface. */
+void le_engine_note_callback_span(le_engine* engine, uint64_t entry_ns,
+                                  uint64_t exit_ns, uint32_t frames);
+
+/* Breaks the callback TIMELINE without touching the accumulated measurements:
+ * the next callback reports no entry-to-entry gap and starts a fresh period
+ * service (#722, review finding 5). Called from the device-notification path
+ * whenever the callback stream is about to be interrupted — a stop, a device
+ * reroute, or a system audio interruption — because miniaudio reinitialises
+ * internally and resumes the data callback with the PRE-stall entry stamp still
+ * held. Without this, one macOS default-device switch mid-session manufactures
+ * a single ~200 ms gap: gap_events goes to 1 and max_gap_us stays pinned there
+ * for the rest of the device session, violating the "healthy rig reads zeros"
+ * constraint and sending the bench after a phantom stall.
+ *
+ * Safe off ANY thread: it only raises a flag the audio thread consumes, so the
+ * timeline fields keep their single-writer ownership (see engine_telemetry.h).
+ * Not part of the FFI surface. */
+void le_engine_note_callback_timeline_break(le_engine* engine);
+
+/* Opens a fresh callback-telemetry session at the negotiated `sample_rate` and
+ * NOMINAL `period_frames`: clears both windows AND the flat a_xruns tally (they
+ * are two views of the same events and must never disagree), then arms the
+ * instrument. The period is what the period-service accumulator batches to and
+ * what the gap detector is measured against — a per-block threshold would fire
+ * on the normal burst-then-wait rhythm of a split duplex loop. Called by
+ * le_engine_start once the backend reports both — deliberately NOT by
+ * le_engine_configure, which seeds inert zeros instead, so an engine that never
+ * opened a device (the native test pump) measures nothing. Control thread only,
+ * while the device is shut. Not part of the FFI surface. */
+void le_engine_configure_callback_budget(le_engine* engine,
+                                         int32_t sample_rate,
+                                         int32_t period_frames);
 
 /* Publishes "device lost" (a_device_present = 0, a_running untouched) so the
  * control layer drives reconnection. Mirrors the miniaudio device-notification
@@ -251,10 +308,19 @@ struct le_perf_drain; /* opaque; full definition in perf_drain.c */
  * (#640, #652). */
 int le_perf_drain_self_stopped(struct le_perf_drain* drain);
 
-/* Forces every subsequent PCM/sidecar write attempt (across every drain
- * thread in the process) to fail, deterministically simulating a full disk
- * without needing a real one. Disabled by default; a test must re-disable it
- * (pass 0) before the next test runs. Not part of the FFI surface. */
+/* Forces every subsequent PCM write attempt (across every drain thread in the
+ * process) to fail, deterministically simulating a full disk without needing a
+ * real one. Disabled by default; a test must re-disable it (pass 0) before the
+ * next test runs. Not part of the FFI surface.
+ *
+ * SCOPE, because getting this wrong sends a test author hunting a drain bug
+ * that is not there: only perf_drain.c's le_pd_write consults the flag, so it
+ * covers the PCM and silence-fill writes and NOTHING else. It does NOT make
+ * the SIDECAR fail — le_pd_write_sidecar goes out through a raw descriptor
+ * that never looks at the flag — and it does not make le_pd_flush fail. That
+ * exemption is deliberate and load-bearing: it is what lets a test force a PCM
+ * failure and then read the resulting `stopped_early` marker back out of a
+ * cleanly written performance.json. */
 void le_perf_drain_force_write_failure_for_test(int enabled);
 
 /* Runs `fn(ctx)` on the drain thread inside every drain cycle, at the one

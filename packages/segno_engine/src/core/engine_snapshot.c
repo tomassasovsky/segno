@@ -10,6 +10,7 @@
  * unchanged.
  */
 #include <stdint.h>
+#include <string.h> /* memset — the NULL-engine telemetry read */
 
 #include "engine_core.h"    /* le_lanes_active */
 #include "engine_fx.h"      /* le_octaver_latency */
@@ -244,6 +245,23 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     }
   }
   out->input_cond_mask = cond_mask;
+  /* The audio-callback telemetry (#722) is deliberately NOT read here — it has
+   * its own entry point below. Anything on this struct is projected into the
+   * app's render-rate state, whose equality drives the rebuild dedupe, and a
+   * counter that ticks on every audio callback would defeat it. */
+}
+
+void le_engine_get_callback_telemetry(le_engine* engine,
+                                      le_callback_telemetry* out) {
+  if (out == NULL) return;
+  if (engine == NULL) {
+    memset(out, 0, sizeof(*out));
+    return;
+  }
+  /* Pure relaxed loads — and, unlike le_engine_get_snapshot above, NO
+   * le_engine_drain_events: a diagnostic read has no business collecting
+   * retired undo layers as a side effect. */
+  le_cb_timing_read(&engine->cb_timing, out);
 }
 
 void le_engine_get_track(le_engine* engine, int32_t channel,

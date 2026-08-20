@@ -19,26 +19,109 @@
 #include <stdlib.h> /* getenv — appliance exclusive-mode check */
 #include <string.h>
 
-#include "engine_internal.h"  /* le_engine_process */
+#include "engine_internal.h"  /* le_engine_process, le_engine_note_callback_span, le_engine_note_callback_timeline_break */
 #include "engine_miniaudio.h" /* le_miniaudio_backend */
 #include "engine_platform.h"  /* le_platform_backends / _before_context_init */
 #include "engine_private.h"   /* struct le_engine, le_find_loopback, le_resolve_device_id */
+#include "engine_telemetry.h" /* le_now_ns, LE_CALLBACK_TELEMETRY (#722) */
 #include "le_device_backend.h"
 #include "segno_engine_api.h"
 #include "miniaudio.h"
 
 /* The miniaudio data callback: forwards one interleaved block straight into the
- * portable real-time core. No allocation, locking, or I/O (see engine.c). */
+ * portable real-time core. No allocation, locking, or I/O (see engine.c).
+ *
+ * THIS is the layer the callback telemetry (#722) measures, deliberately, not
+ * the inside of le_engine_process: the span taken here is the whole of what the
+ * device's callback thread spends between being handed a period and giving it
+ * back, and the entry stamps form the timeline the DEVICE actually ran on. A
+ * clock read inside le_engine_process would also be pumped by the native test
+ * harness and by the ASIO bridge's own conversion wrapper, mixing three
+ * different timelines into one gap detector. The cost added to the RT path is
+ * two monotonic clock reads (vDSO/commpage, no kernel entry) and ~10 relaxed
+ * atomic adds — well under a microsecond against a 667 us period at 64 frames /
+ * 96 kHz — and -DLE_CALLBACK_TELEMETRY=0 removes even that. */
 static void data_callback(ma_device* device, void* output, const void* input,
                           ma_uint32 frame_count) {
-  le_engine_process((le_engine*)device->pUserData, (float*)output,
-                    (const float*)input, frame_count);
+  le_engine* e = (le_engine*)device->pUserData;
+#if LE_CALLBACK_TELEMETRY
+  const uint64_t entry_ns = le_now_ns();
+  le_engine_process(e, (float*)output, (const float*)input, frame_count);
+  /* frame_count is passed because this loop delivers min(capture, playback)
+   * chunks and short reads rather than one period per callback: the telemetry
+   * sums consecutive callbacks into one period service and judges THAT (see
+   * le_cb_timing_note). */
+  le_engine_note_callback_span(e, entry_ns, le_now_ns(), frame_count);
+#else
+  le_engine_process(e, (float*)output, (const float*)input, frame_count);
+#endif
 }
 
+#if LE_CALLBACK_TELEMETRY
+/* The backend-dropout hook miniaudio's ALSA data loop calls once per -EPIPE
+ * recovery and per slipped-playback resync (the SEGNO PATCH sites in
+ * miniaudio.h). `pUserData` is ma_device.pUserData, i.e. our engine, and `kind`
+ * is an le_xrun_kind — the enum values are pinned to the integers miniaudio
+ * passes (see the hook's declaration there).
+ *
+ * This runs ON the ALSA data-loop thread, in the middle of a recovery, so it
+ * does exactly one thing: a few relaxed atomic adds. It is the answer to "does
+ * miniaudio expose underruns?" — it does not, in its public API, so the
+ * vendored copy was patched to call out rather than only ma_log a DEBUG line
+ * that nothing was listening to. */
+static void le_miniaudio_xrun_hook(void* pUserData, int kind) {
+  le_engine* e = (le_engine*)pUserData;
+  if (e == NULL) return;
+  le_engine_note_backend_xrun(e, (int32_t)kind);
+}
+
+/* ma_segno_xrun_callback is ONE process-global pointer but engines are not a
+ * singleton, so it is installed on the first device open and NEVER retracted.
+ *
+ * That is not laziness, it is the only shape with no race and no way to lose
+ * counting. Retraction has to be refcounted (engine A closing its device must
+ * not stop counting for engine B's still-open one — that would put xrun_count
+ * back to a permanent 0, the exact symptom #722 exists to end), and a refcount
+ * whose pointer write sits outside the atomic RMW can interleave into
+ * "refs == 1, hook == NULL": B installs between A's decrement and A's clear,
+ * and B then counts nothing for its whole session. Making the pointer and the
+ * count move together needs a lock around a control-path operation whose only
+ * benefit would be nulling a pointer nobody reads.
+ *
+ * Leaving it installed is free and safe: the only caller is a RUNNING ALSA data
+ * loop, which passes its own device's pUserData, so the hook never touches a
+ * stale engine — it simply is not called when no device is open. Every store
+ * writes the identical value, so repeated opens cannot race each other either.
+ *
+ * (Nothing here reaches the -DLE_CALLBACK_TELEMETRY=0 build: the vendored call
+ * sites are compiled out there, so the pointer is never read.) */
+static void le_miniaudio_install_xrun_hook(void) {
+  ma_segno_xrun_callback = le_miniaudio_xrun_hook;
+}
+#endif /* LE_CALLBACK_TELEMETRY */
+
 /* Device-state notifications from miniaudio. RT-adjacent: stores the presence
- * atomic only — never allocates, locks, or touches the device. A stopped /
- * rerouted / interrupted device flips presence to 0; (re)start / resume flips it
- * back to 1. Recovery from a 0 is the Dart layer's job (A2), not native's. */
+ * atomic and raises the telemetry timeline-break flag — never allocates, locks,
+ * or touches the device. A stopped / rerouted / interrupted device flips
+ * presence to 0; (re)start / resume flips it back to 1. Recovery from a 0 is
+ * the Dart layer's job (A2), not native's.
+ *
+ * The presence-0 cases are also where the callback telemetry's TIMELINE has to
+ * be broken (#722, review finding 5). miniaudio absorbs a reroute and an
+ * interruption INTERNALLY: it reinitialises the device and resumes the data
+ * callback without le_engine_start ever running again, so the first callback
+ * back would otherwise be measured against the entry stamp from before the
+ * hole. One macOS default-output switch mid-session is ~200 ms of silence, and
+ * that would land as a lone gap_event with max_gap_us pinned at 200000 for the
+ * rest of the session — an instrument crying wolf on a rig that is fine, which
+ * is exactly what this feature promises not to do. le_engine_start's configure
+ * was previously the ONLY reset, and none of these three paths reaches it.
+ *
+ * `stopped` is included for the same reason even though the usual route back
+ * from it does reconfigure: the flag is idempotent, costs two relaxed stores,
+ * and "the callbacks stopped coming" is precisely the condition it describes.
+ * The accumulated counts are untouched — a reroute does not undo lateness
+ * measured before it. */
 static void notification_callback(const ma_device_notification* notification) {
   if (notification == NULL || notification->pDevice == NULL) return;
   le_engine* e = (le_engine*)notification->pDevice->pUserData;
@@ -52,6 +135,7 @@ static void notification_callback(const ma_device_notification* notification) {
     case ma_device_notification_type_rerouted:
     case ma_device_notification_type_interruption_began:
       atomic_store_explicit(&e->a_device_present, 0, memory_order_relaxed);
+      le_engine_note_callback_timeline_break(e);
       break;
     default:
       break;
@@ -209,6 +293,12 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
     return LE_ERR_DEVICE;
   }
   engine->device_initialised = 1;
+#if LE_CALLBACK_TELEMETRY
+  /* Install the backend-dropout hook (#722) the moment a device exists and
+   * before it can be started, so no -EPIPE recovery is ever missed. Idempotent
+   * and never retracted — see le_miniaudio_install_xrun_hook. */
+  le_miniaudio_install_xrun_hook();
+#endif
 
   /* Negotiated parameters (they may differ from requested). Channel counts are
    * clamped to the mask width the rest of the engine routes within. */

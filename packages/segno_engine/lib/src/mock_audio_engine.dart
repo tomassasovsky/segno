@@ -182,6 +182,13 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
+  CallbackTelemetry callbackTelemetry() => nextCallbackTelemetry;
+
+  /// The value [callbackTelemetry] returns. Settable so a caller can rehearse
+  /// a reading (a late-callback window, a dropout count) without a device.
+  CallbackTelemetry nextCallbackTelemetry = CallbackTelemetry.empty;
+
+  @override
   EngineSnapshot snapshot() {
     if (_running) {
       final buffer = _activeConfig?.bufferFrames ?? 128;

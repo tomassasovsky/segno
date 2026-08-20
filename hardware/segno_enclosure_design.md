@@ -1,7 +1,7 @@
 # Segno — sheet-metal enclosure for the segno Pi loopstation
 
-A wedge-shaped welded console that houses this repo's standalone build
-(a Raspberry Pi + the V1 [`segno_pedal_main`](segno_pedal_pcb_design.md) board)
+A wedge-shaped folded-aluminium console that houses this repo's standalone build
+(a Raspberry Pi 5 + the [console board v2](kicad/console_board.py), #747)
 and **integrates ten foot pedals
 into the chassis** the way the real "Chewie II" / Sonnit reference does. Form
 (850 × 465 × 100 mm, top sloping toward the player) and layout from the reference;
@@ -34,8 +34,13 @@ validated by an in-generator **assertion suite** (see §8). Decisions came from
 | Top slope | **12.5°** | sloped length 407 mm |
 | Material | **2.0 mm 5052-H32 aluminium** | bend R 2.0, K 0.33 |
 
-**Construction = welded lower body + removable top lid.** The front wall, rear
-wall, two sides and the bottom plate are **welded** into a rigid tray; the
+**Construction = folded lower body + removable top lid.** **Nothing on this build
+is welded.** `segno_base` is ONE flat blank: the bottom plate in the centre with
+the front, rear and both side walls as flaps that fold up 90° on its four bottom
+edges, and the rear flap folding a second time into the transition shoulder. The
+four vertical corners are open butt seams closed by **riveted internal
+L-brackets**. That keeps the whole shell inside a cut + bend + powder-coat
+instant quote, with no fabrication step that needs a welder. The
 **faceplate is a removable lid**. The faceplate is **not a bare plate** — it is a
 shallow pan whose front lip, rear edge and **both sides fold down into skirt
 flanges**, and the **screws go through those skirt flanges**, never through the
@@ -44,21 +49,21 @@ top flanges** (a support ledge), and M4 screws pass through each **wall web** in
 the down-turned **lid skirt** behind it — so every fixing sits on a vertical face
 (front lip + the two sides), hidden from the playing surface. Lifting the lid takes
 the **screens, the encoder/ring PCB and the indicator LEDs** with it, while the
-**pedals stay on their welded platforms** in the lower body (the slots clear the
+**pedals stay on their printed platforms** in the lower body (the slots clear the
 pedals straight up) — so service is "back out the side + front-lip screws and lift
 the lid," and the Pi/board are reached from the open top.
 
 ```
-  REMOVABLE TOP LID                       WELDED LOWER BODY
+  REMOVABLE TOP LID                       FOLDED LOWER BODY (weld-free)
   └ faceplate pan (cutouts) + down-turned ├ front wall (12) + top flange (lid ledge)
     front/side/rear skirt flanges +       ├ rear wall (100) + I/O + vents + top flange
     screens + encoder/ring PCB + LEDs     ├ 2× side panel + top flange (lid ledge)
-    (screws through the skirts)           ├ bottom plate (welded, vented, Pi/board)
-                                          └ 10× inner pedal platform (welded) + pedals
+    (screws through the skirts)           ├ bottom plate (centre of the blank)
+                                          └ 10× printed ring + sled + pedals
 ```
 
-Joints are `WELD`-layer callouts, not modelled beads. Per-edge intent: the wall
-**bottom edges weld** to the bottom plate; the wall+side **top edges fold** to an
+Per-edge intent: the wall **bottom edges fold** up from the bottom plate (they are
+the same piece of metal, so there is no joint at all); the wall+side **top edges fold** to an
 inward flange that the lid **rests on** (support ledge, no fixings on the top face);
 the lid's **down-turned skirt flanges** take M4 screws driven horizontally through
 the **wall webs** (front lip + both sides), so no fixing ever pierces the faceplate
@@ -77,16 +82,23 @@ fully internal.
   envelope (76.35 × 109.87) + 3 mm clearance, with the slot depth divided by
   cos(slope) because the slot lives in the sloped faceplate while the pedal is
   horizontal. **No mounting holes** in the faceplate.
-- **Pedestal** (`segno_platform_front`/`_mid`, 8+2, 3D-printed): deck at
-  `platform_h(v)` (front ≈ 15.2, mid ≈ 59.3 mm) so the pedal's CASE TOP sits
-  **flush with the slot's upper (rear) rim** and only the pad stands above the
-  metal (issue #373 — the old +12 rule left the pedals reading sunken against
-  the rising slope). Perimeter strips outside the opening are relief-shaved to
-  ~0.3 under the real plate (drift-calibrated); side-screw bosses keep ~1 mm
-  under the faceplate. A 1.2 mm deck pocket locates the pedal's bottom pad
-  (the WTB-006 has no base screws — side through-screws only; retention
-  PROVISIONAL). The `PLATFORM_HEADROOM` assertion enforces this against the
-  local lid height.
+- **Pedestal = RING + SLED** since #719 (`segno_platform_front_ring` ×8,
+  `_mid_ring` ×2, and ONE `segno_platform_sled` ×10). The pedal bolts to the sled
+  on the bench, sled and pedal drop into the ring as a unit, and the **four
+  existing chassis screws** pass up through clearance holes in the ring's floor
+  and thread into the sled — clamping ring + sled + base plate in one joint, so
+  the ring needs no fastener of its own and `segno_base.dxf` does not change.
+  The ring's seat sits `CONSOLE_SLED_T − 1.0` below the old deck line, so once
+  the sled is on it the pedal's CASE TOP still lands **flush with the slot's
+  upper (rear) rim** exactly as `platform_h(v)` (front ≈ 15.2, mid ≈ 59.3 mm)
+  put it — issue #373's rule is untouched, and an assertion holds the metal base
+  to the same z to 1e-9 rather than trusting the arithmetic. Perimeter strips
+  outside the opening are relief-shaved to ~0.3 under the real plate
+  (drift-calibrated); side-screw bosses keep ~1 mm under the faceplate. The
+  bottom anti-slip pad now comes **off** (the base holes are under it), so the
+  1.2 mm pad pocket is gone and the joint clamps metal-to-plastic. The
+  `PLATFORM_HEADROOM` assertion still enforces headroom against the local lid
+  height.
 - **Layout (two rows, per the reference):** a front row of **8 evenly-spaced**
   pedals (REC/PLAY · STOP · UNDO · MODE · TRACK 1–4) and an upper pair **CLEAR /
   BANK aligned in `u` over UNDO and MODE**, placed so their **label tops align
@@ -97,8 +109,83 @@ fully internal.
 
 > The `PEDAL_*` constants are **caliper-measured from a real WTB-006**
 > (2026-07-28, issues #358/#360) — unlike the earlier ASP-1 placeholder they are
-> no longer provisional. Pedestal **retention** is the remaining PROVISIONAL
-> piece (pocket + gravity; no fastener engages the pedal).
+> no longer provisional. Pedestal **retention** was the last PROVISIONAL piece
+> (pocket + gravity; no fastener engaged the pedal) — **retired by #719**: the
+> pedal is now bolted to a sled with four M3s.
+>
+> **Base screw holes (issue #716).** The underside does carry four M3-ish holes
+> after all, in two rows — the `PEDAL_BASE_*` constants. They sit *under* the
+> anti-slip pad, so both rows are dimensioned off the **side screw axis**, the
+> only datum findable without pulling the pad: rear row = axis **+4.0 toward the
+> back**, front row = rear row **+80.0 toward the toe**, spans **55.75** (rear)
+> and **53.00** (front), symmetric about the centre-line. Bolting through these
+> is what will retire the PROVISIONAL retention above — but not before the
+> **fit-test jig** proves the pattern on a print (§8).
+>
+> **The sled (issue #719) — shipped on BOTH the mini console and the 10-pedal
+> console.** Those screws go DOWN
+> through the base, so the head lands *inside* the pedal and the pedal must be
+> open to be fastened. But the shell halves are held by one ~83 mm through-pin
+> needing ~91 mm of clear axial run, and the widest gap beside a seated pedal is
+> **12.4 mm** in either enclosure — so no wall shape fixes this; the neighbouring
+> pedal is the blocker, not the tub. The pedal can therefore only be closed on
+> the bench, which means it must be screwed down on the bench too. The deck comes
+> out as a separate **sled** (`SLED_T` 7.0) the pedal bolts to, dropped into the
+> tub as one unit and retained by a single M3 up through the tub deck. It is a
+> `SLED_CLR` 0.2 mm/side slip fit with a 0.6 mm bottom lead-in chamfer — 0.5/side
+> printed and seated but wiggled, and since the retention screw only clamps, the
+> bore fit is the **only** thing locating the pedal. The clearance lives on the
+> SLED (it derives from `SKIRT_IN_*`), so re-tuning it reprints a 19 g part
+> rather than the tray. The tub
+> deck drops by `SLED_DECK_DROP` = 6.0 so the pedal's metal base lands exactly
+> where the pad-on design put it — **nothing above the base moves**, so the
+> faceplate, the slot and the flush-at-rim rule are untouched. The bottom
+> anti-slip pad comes off (it has to; the base holes are under it), which also
+> means the joint clamps metal-to-plastic instead of through 2.2 mm of rubber.
+>
+> On the **10-pedal console** the ring is a free part, and a ring held only by
+> the faceplate keeps 0.30 mm of vertical play — the buzz `SKIRT_GAP` already
+> warns about. So it is **SANDWICHED**: the ring gets a floor, the sled lands on
+> it, and the four chassis screws pass up through clearance holes in that floor
+> into the sled. One joint clamps ring + sled + base plate; the ring carries no
+> insert and no fastener. `CONSOLE_SLED_T` 12.633 (thicker than the mini's 7.0,
+> because this sled takes M3×5 from **both** faces) leaves `RING_FLOOR` 1.6 on
+> the front row and a tall deck on the mid row — same formula, only the front is
+> tight. The four stations come from `platform_foot_xy()`, which the ring, the
+> sled and `platform_foot_holes()` all read, so **`segno_base.dxf` is unchanged**
+> — proven by diffing it to zero substantive lines after the refactor.
+>
+> **The mini tray is symmetric about `CX = Wt/2`.** It used to inherit the
+> pedals' absolute console `u` with its left edge at 0, which left the pair
+> 1.74 mm right of centre: the right tub fused into its wall while the left
+> needed a filler block, and every hard-coded x — anchors, feet, ribs, lid tabs —
+> was tuned around that. Only the *pitch* has to be faithful, so the width now
+> follows from the pitch and every x is `CX ± something`; both tubs fuse and the
+> filler is gone (195.29 wide, was 198.775). `MINI_SYM` holds it by splitting the
+> solid at `CX` and comparing the halves' **mass properties** — volume, centroid
+> and inertia tensor. Not by cutting the solid against its own mirror: when the
+> part is symmetric the two are geometrically identical, every face is
+> coincident, and OCC's boolean returns *empty*, which reads as "totally
+> asymmetric" and is the exact opposite of the truth.
+>
+> **The lid now sits flush on all four sides.** As a flat plate raked to 12.5°
+> with square-cut edges, its top face used to stand `T·sin` = 0.43 mm proud of
+> the front wall and 0.43 mm shy of the rear, and its square plan corners
+> overhung the tray's R6 fillets by `6 − 6/√2` = 1.76 mm. Both dated from the
+> first tray. Fixed in one exact operation rather than two computed bevels: the
+> lid is built `T·tan` longer at the rear, then — **in the seated frame** —
+> intersected with a vertical prism of the tray's own plan outline. Front and
+> rear come out plumb and the corners land on the tray's radius at *every*
+> height, which a fillet applied in the flat frame could not do (it would rake
+> over with the plate). `MINI_FLUSH` holds the seated bbox to the tray outline.
+>
+> **The case is a wedge in plan, not only in height.** `PEDAL_W` 76.35 is the
+> width at the **back edge**; it tapers to `PEDAL_TOE_W` 73.08 at the toe, so a
+> clearance quoted off `PEDAL_W/2` is understated by up to 1.63 mm per side.
+> Anything sitting close to a side wall must ask **`pedal_half_width(x)`** where
+> along the case it actually stands — the faceplate slot already reasons this way
+> (its real per-side clearance is ≥1.15, not 1.0), and the fit-test jig's columns,
+> scribed outline and clash stand-in all do now too.
 
 ---
 
@@ -126,10 +213,229 @@ fully internal.
 
 ## 4. Rear I/O & ventilation
 
-Rear wall (`u` = 0…846, `z` = 0…100): **9 V barrel** (Ø12) · **power/shutdown
-button** (Ø16) · **fuse** (Ø12) · **USB-A ×2** (the external audio interface +
-stick/MIDI) · **M6 earth/bond stud** · a **louvre vent block**. No audio aperture,
-no pedal-cable slot — the audio interface is **external**.
+Rear wall (`u` = 0…850, `z` = 0…90). **There is no I/O window and no bolt-on
+sub-panel** (#743): the Pi moved inboard and every connector is a panel-mount
+part fitted straight into the wall — which is a **folded face of `segno_base`,
+not a welded panel** (`segno_base` is one blank: floor + 4 walls, weld-free,
+corner brackets rivet). Losing HDMI / Ethernet / SD access from outside is
+deliberate — reflashing or a wired network means opening the case.
+
+Nine stations on one centreline at `REAR_IO_Z` (= wall mid-height, 45), left to
+right, power first and away from signal:
+
+| ref | cutout | keep-out | note |
+|---|---|---|---|
+| `PD_IN` | Ø24 D punch + 2 × Ø3.2 diagonal @ 19×24 | 30.4 | USB-C PD coupler (QIANRENON, #754) — the SAME D punch + M3 pair the TRS jacks use; the 9 V DC-099 barrel died with the 9 V architecture |
+| `POWER` | **Ø19.5** | 29.2 | APIELE 19 mm **high-round** momentary, stainless. **Unlit**; M19 nut, no screws |
+| `FUSE` | Ø12.0 | 18 | generic 5×20 screw-cap holder, 10 A / 250 V AC; panel nut, no screws |
+| `MIDI_IN` / `MIDI_OUT` | Ø15.1 + 2 × Ø3.2 @ 22.2 | 28.6 | REAN NYS325 (pitch = RS "Mounting Hole Distance 0.874 in"); **IN needs opto-isolation on the board**, not here |
+| `CTRL_1` / `CTRL_2` | **Ø24** + 2 × Ø3.2 diagonal @ 19×24 | 30.4 | **D-series** punch (MEIRIYFA), not a threaded bushing |
+| `USB3_1` / `USB3_2` | 22.5 square, **R8.84** | 28.5 | PENGLIN M24 bulkhead: a round barrel with two flats, **nut-mounted, no screws** — the square cut grips the flats; flange Ø28.5 is the keep-out, not the hole |
+
+The keep-out column is the **nut, bezel or flange a spanner has to clear**, not
+the hole — for the USB coupler that is 6.4 mm wider than its own cutout, and
+spacing on cutouts alone would have the two flanges fouling. `rear_io_layout()`
+spreads the nine across `REAR_IO_SPAN` = 360, left-justified against `EDGE`, with
+**equal clear gaps** of 15.99 mm.
+
+> **The TRS is D-series.** The chosen jack (MEIRIYFA, "fits standard D Series
+> panel mount designs") takes the Neutrik D punch — Ø24 with an M3 pair — not the
+> Ø10 round hole a threaded-bushing jack wants. Neutrik's own datasheet calls it a
+> "standardized D sized 24 mm panel cutout". This was wrong in the first cut of
+> the panel and is the reason `REAR_IO_KEEPOUT_CONTAINS` exists (below).
+>
+> **Any substitute must also be D-series.** A plain threaded-bushing 6.35 chassis
+> jack — the default in most shops — wants ~Ø10 and has nothing to clamp in a Ø24
+> punch. The genuine article is the **Neutrik NJ3FP6C**, which is also *latching*,
+> so a kicked control-pedal lead cannot pull out; it drops straight into this
+> cutout.
+
+That swap took the TRS keep-out from 16 to 30.4 and squeezed the old 290 mm strip
+to 7.2 mm gaps, so the cluster was widened to 360. That was only possible because
+`REAR_IO_U` used to do **two** jobs — placing the window *and* anchoring the
+board, Pi and buck. They are now split: `BOARD_ANCHOR_U` (175) keeps the internal
+layout exactly where it was, so a rear-panel change cannot move anything inside.
+The width comes out of the vent block, which drops 70 → 63 slots and still runs at
+14 880 mm² against a 4 000 minimum.
+
+**22.1 / 24.1 are the coupler's BODY, not the hole it wants**, so the cutout is
+body + `USB3_FIT` = **0.2 per side → 22.5 across flats, 24.5 across corners**.
+That is deliberately the tight end of a panel fit, because the errors are not
+symmetric: too tight is one hole eased with a file in a minute, while too loose
+either rattles under the Ø28.5 flange or — if the coupler turns out to be a
+snap-in — never grips, and that cannot be undone on a cut blank.
+
+The corner radius is **derived, not typed**: `_rr_from_corner_circle()` solves the
+across-flats / across-corners pair, giving **R8.836** and only 4.83 mm of straight
+edge — that cutout is much closer to a circle than to a square, which is worth
+knowing before someone "fixes" it.
+
+**The D-series fixings ARE cut, on the sourced diagonal.** The two M3 sit on
+*diagonally opposite* corners of the flange, not on a horizontal pair. The
+pattern was sourced 2026-08-18 from the QIANRENON PD coupler's own listing —
+"D-type panel mounting dimensions (19 mm × 24 mm)": hole centres at (±9.5, ∓12)
+about the bore, one per diagonal. That puts each screw centre 15.3 mm from the
+bore centre, 1.7 mm of land clear of the Ø24 bore + M3 radius, so the land gate
+(now measuring the true 2-D distance, not just Δu) passes. The widely-repeated
+flat "24 mm" pitch remains provably wrong — on a Ø24 bore it puts the centres on
+the bore edge. A D shell is point-symmetric about its bore, so a part whose holes
+run the other diagonal mounts by turning it 180°; one cut diagonal fits all of
+them. The same pair serves `PD_IN`, `CTRL_1` and `CTRL_2`.
+
+### Gates
+
+Seven, all negative-controlled. The important one is **containment**: each station's
+own cutouts must fit inside the keep-out it reserved. Without it a station can
+reserve less than it cuts and the overlap check passes *on a lie* — which is
+exactly what a Ø24 bore behind a Ø10 keep-out did. Next most useful is **land**:
+a fixing hole must leave ≥1.5 mm of metal against its own bore, which is what
+disproved the 24 mm D-series pitch. The rest: no two keep-outs overlap, none
+crosses `EDGE`, the cluster centre really is `EDGE + span/2`, the gap to the first
+vent column still fits the earth stud plus a spanner, and the widest keep-out
+leaves 4 mm of wall above and below.
+
+### Provenance — every dimension says where it came from
+
+`REAR_IO_PROVENANCE` tags each number `measured` (user's calipers), `datasheet`
+(with the source named) or `UNCONFIRMED`. `rear_io_unconfirmed()` returns the
+unsourced ones and the build prints them as a **`DO NOT CUT`** line; a gate
+refuses any rear-I/O dimension with no entry at all, so a new connector cannot be
+added without declaring where its numbers came from.
+
+Currently unconfirmed — **`D_TRS_SCREW_PITCH`** and **`MIDI_SCREW_PITCH`**, both
+fixing pitches. Every bore on the wall is now sourced.
+
+### Power button and fuse
+
+Both were the last stations with no component behind them (they predate #743 and
+were briefly mis-recorded as "datasheet: generic …" — "generic" is not a datasheet,
+and that was exactly the false authority this table exists to catch). Resolved:
+
+**Button — [APIELE 19 mm high-round momentary](https://www.amazon.com/dp/B079HTQ7XD),
+$8.99/2 = $4.50 each.** Stainless, IP65, M19×1, screw terminals, 1,000,000
+mechanical cycles, 3-year replacement warranty, **4.7★ over 1,039 reviews**. It
+ships a full dimensioned drawing: hole 19 (M19×1), hex bezel **21.9 across flats /
+25.0 across corners**, Ø14.1 dome face, 6 mm of dome proud of a 3.5 mm bezel,
+24.4 behind the panel.
+
+Chosen over the [UL+CE ZJWZJH](https://www.amazon.com/dp/B09CCPDC1C) at **half the
+price**. That part is nicer on paper — UL + CE listed, IP67/IK10, 316 head — but
+none of it earns its keep here: this switch is a **dry contact to a 3.3 V Pi
+GPIO**, not a mains switch on a wet deck, so the certification is irrelevant to
+safety and IP67-vs-IP65 is moot on an indoor rear panel. Against that, APIELE has
+1,039 reviews at 4.7 versus 9 at 3.9, and a *taller* head — more dome, more feel.
+
+> **The two constants deliberately bracket both candidates**, so the choice never
+> re-cuts the panel. `D_PWRBTN` = **19.5**: an M19×1 thread needs more than 19.0 to
+> pass, APIELE's drawing says "19" and ZJWZJH's says Ø19.5, and a Ø25 bezel covers
+> the slop either way — cutting 19.0 would jam the ZJWZJH. `PWRBTN_HEAD_D` =
+> **25.2**: across hex *corners*, ZJWZJH 25.2 / APIELE 25.0.
+
+**Fuse — a generic 5×20 screw-cap panel holder**, e.g.
+[NeoLum, 4 pcs $7.69](https://www.amazon.com/dp/B0GF33P9FF). Generic **by
+decision**: it is a small black cap on a rear panel, the one station where generic
+costs nothing to look at. Plastic body with a metal cap, which is also the right
+way round — an insulating body around a live fuse inside an earthed metal chassis
+beats a metal one. 10 A / 250 V AC, far above this job.
+
+`D_FUSE` = **12.0**, from two independent listings ("12 mm diameter aperture";
+"Installation Hole 12mm").
+
+> **That 0.5 mm is the whole point of naming the part.** The
+> [SCI R3-11](https://www.amazon.com/dp/B0752BGGRY) — the bayonet-cap holder used
+> on guitar amps, nickel hex bezel, solder lugs — wants **Ø12.5**, and the panel
+> was briefly cut for it. The error is not symmetric: a 12.5 hole around a 12.0
+> thread sits loose and lets the holder **spin when the cap is turned**. So the
+> hole follows the holder, never the other way round. If the SCI is ever wanted
+> back, `D_FUSE` goes to 12.5 and the panel must be re-cut.
+>
+> **"Generic" is a class, not a part.** 12.0 holds across the screw-cap holders
+> checked, but if a different one is bought, read its stated aperture before the
+> panel is cut — this is the cheapest station on the wall and the only one whose
+> exact part is not pinned.
+
+> **Rating.** The input is **20 V USB-C PD** (#754): the 59 W worst case is
+> ~2.95 A on the 20 V side (~3.3 A with buck efficiency), and these holders are
+> **10 A / 250 V AC** — no rating problem. (An earlier 9 V-era note here worked
+> the same conclusion from the dead architecture's numbers.)
+>
+> Fuse: **T5A slow-blow** (T5AL250V). Above the ~3.3 A coincident peak, at the
+> 5 A PD contract ceiling, well under the holder's 10 A. **Slow-blow is not optional** —
+> two bucks charging their bulk caps draw a large inrush, and a fast-blow fuse
+> will nuisance-blow at switch-on. A
+> [12-value T assortment](https://www.amazon.com/dp/B08779766V) is worth it over a
+> single value: start at T5A and step up only if real measured draw says so.
+>
+> **Nothing on this unit hard-breaks power.** The button is a GPIO input; pulling
+> the barrel plug is the only true off. Deliberate, but worth knowing.
+
+> **Fallout to settle separately:** the `nopi` build (external host, HDMI ×2 +
+> USB touch ×2) had no home but that window, so it is **retired** — an
+> external-host variant would now need its own rear-wall DXF. And `PI_RISER_H`
+> (35.30) existed only to centre the Pi's port stack in the window; it is kept
+> unchanged so this change does not move the internal stack, but it is now
+> vestigial.
+
+### The rear bay — where the Pi went (#743)
+
+Removing the window did not just change the wall; it changed what has to fit
+*behind* it. The Pi used to sit at `(BOARD_ANCHOR_U, bd − 56)`, putting its PCB
+port edge **3.5 mm** off the plate's rear edge — correct while a window existed,
+because its own USB/Ethernet stack poked through. With the window gone that stack
+faces solid folded metal, and those 3.5 mm are exactly where nine connector bodies
+and their wiring now live.
+
+`REAR_CONN_DEPTH` = **45 mm**: deepest body ≈30 (D-series TRS, fuse holder), solder
+lugs ≈5, wire bend ≈10.
+
+**Sliding it straight forward was not the answer.** It fixed the depth but parked
+the Pi on top of the main board with 4.3 mm of head, which made the bespoke 35.3 mm
+riser load-bearing — one taller connector on the board and it fails.
+
+**Moving it sideways, onto the floor under the 16" screen, is strictly better** —
+and **rotated 90°** while it is there. The Pi 5 carries USB-A ×4 + Ethernet on one
+56 mm edge and USB-C + both micro-HDMI on an 85 mm edge. Unrotated, that port edge
+faced the **rear**, which made sense pointing at a window and makes none now:
+every cable goes **left** — panel USB couplers (u 332/376), buck (u 300), 7" screen
+(u 42…196) — and only the 16" screen is overhead. Rotated, the ports face −u and the
+runs are straight; depth also drops 85 → 56, buying back rear-bay clearance.
+
+Final position `(SCREEN_16_U, bd − 106)` = **u 625.3, v 313**, hole rect 58 × 49:
+
+| | |
+|---|---|
+| PCB footprint | u 572.8…657.8, v 285…341 (85 along u, 56 along v) |
+| clear bay behind it | **78 mm** (≥45 gated) |
+| free height under the screen module | **71.4 mm** against a **44.2 mm** stack |
+| stacked over anything | **nothing** |
+
+**The stack now includes the NVMe board and the cooler.** `PI_STACK_H` = 44.2 =
+`STANDOFF_H` 15 + `PI_N07_H` 11.6 + PCB 1.6 + `PI_TALLEST` 16. The GeeekPi N07
+(B0CWD266XR) is a **bottom** board on an FPC, so it costs height, not footprint;
+its 11.6 is the N07 PCB plus the standoffs that lift the Pi over its 2280 SSD. The
+official Active Cooler is ~10 above the PCB, so the **USB-A double stack still sets
+`PI_TALLEST`**, not the cooler.
+
+That bay was simply empty: the main board, the buck and both mid-row pedestals all
+sit left of u 454. And because nothing is stacked, **the bespoke riser disappears** —
+`PI_RISER_H` drops from 35.3 to `STANDOFF_H` (15), the same plain M2.5 standoff the
+main board uses. One fastener kind instead of two, a lower stack, more air over it,
+and it now sits directly in front of the rear exhaust vents.
+
+Cost, for the record: the run to the USB couplers gets ~250 mm longer, and the 7"
+HDMI lengthens while the 16" shortens.
+
+> **The buck stays where it is, and that is correct.** It sits inside the 45 mm
+> bay, but its clearance is *vertical*: connectors are centred `REAR_IO_Z` up the
+> wall, so the lowest metal on the widest of them is at **z 29.8**, and the buck is
+> a 22.1-tall brick bolted flat to the floor — it passes 7.7 mm underneath. The Pi
+> could not do that trick on a riser, which is what forced it to move in plan.
+> Gated, so it is not a shrug.
+
+Four gates hold all of this, each negative-controlled: rear-bay depth, no stacking
+(**in both axes** — an earlier version checked only `v` and fired on a Pi 400 mm
+away in `u`), the Pi footprint staying inside the screen bay, and the stack fitting
+under the screen module.
 
 **Ventilation** (Pi 5 ≤ 12 W; Active Cooler ramps 60/67.5/75 °C): a rear exhaust
 vent block + a bottom-plate intake array give ≈ 17 000 mm² open area (`>` the
@@ -137,9 +443,14 @@ vent block + a bottom-plate intake array give ≈ 17 000 mm² open area (`>` the
 standoffs ≥ 10 mm** off the bottom plate for under-board airflow and Active-Cooler
 intake.
 
-**Grounding:** welded joints are continuous, but powder-coat is an insulator — the
-bottom-plate perimeter pads are **masked (un-coated)** for chassis bond, and the
-rear earth stud provides the bond point.
+**Grounding:** the shell is FOLDED, so walls and bottom plate are literally the
+same piece of metal — continuous by construction, no joint to bond across. The
+joints that *do* exist are the four riveted corner brackets, and those are
+mechanical: powder coat is an insulator, so a rivet through two coated faces is
+not a reliable bond. Corner-bracket **faying surfaces must be masked** along with
+the bottom-plate perimeter pads, and the rear earth stud is the bond point.
+(Previously this paragraph argued from "welded joints are continuous" — true of a
+welded shell, and not the shell that gets built.)
 
 ---
 
@@ -148,31 +459,85 @@ rear earth stud provides the bond point.
 The pedal platforms hang from the walls at the front + CLEAR/BANK rows, so the
 **rear strip of the bottom plate is the clear floor** for the electronics — and the
 16" screen above it is shallow (mounts to the faceplate, ~18 mm deep), leaving head
-height. The **Raspberry Pi and the `segno_pedal_main` board mount there on
-standoffs** (≥ `STANDOFF_H` for under-board airflow), linked over USB (they sit
-side-by-side). The **EC11 ring board** mounts to the
+height. The **Raspberry Pi and the console board v2 mount there on
+standoffs** (≥ `STANDOFF_H` for under-board airflow), linked by the keyed 2×20
+ribbon (~10 cm; they sit side-by-side). The **EC11 ring board** mounts to the
 faceplate underside behind the encoder cutout; the **screens** clamp to the
 faceplate from behind (`screen_bracket`).
 
-The **bottom plate** (`board_mounts()` drives the patterns) is **welded** to the
-wall bottom edges (part of the lower body) and carries: the **Pi** (58 × 49) and
-**`segno_pedal_main` board** (85 × 87 M3, measured from its KiCad)
+The **bottom plate** (`board_mounts()` drives the patterns) is the CENTRE of the
+folded blank — the wall bottom edges are its own fold lines, not a joint — and carries: the **Pi** (58 × 49) and
+**console board v2** (89.5 × 89.5 M3 — the number comes over the
+`console_board_mount.json` seam, gated by `BOARD_MOUNT`, not copied by hand)
 standoff holes in the rear; an **intake-vent block** in the clear gap between the
 two platform rows (air crosses the boards to the rear-wall exhaust); and 4 rubber
 feet. The electronics are reached from the **open top** once the lid is lifted.
 
+**Rubber feet (#743).** Screw-on, not adhesive — glue lets go eventually on a
+thing that gets kicked. The part is a **uxcell buffer foot, Ø18 (chassis face) ×
+Ø15 (floor) × 5 mm tall**, rubber with a **metal washer insert** so the screw
+pulls against metal rather than rubber. The screw is **not supplied** — an M4 ×
+~12 self-tapping pan head. The plate gets a plain **Ø4.5 clearance hole** and the
+screw is driven **downward from inside** the case, so its head lands on the
+plate's *top* face. That head is the whole reason the
+stations sit where they do: at `FOOT_INSET_X` = 14.3 they are **outboard of the
+pedestal tubs** (which start at x 24.6), so no ring floor and no sled needs
+relieving to clear a screw head. `foot_relief_xy()` reports any fixing that lands
+under a pedestal and the gate asserts it comes back **empty**. A second gate pins
+`FOOT_INSET_X` inside the 8.2…20.4 window between the bend relief (`RI + T`) and
+the tub edge. Stance is 817 × 329.
+
 ---
+
+### The slope convention — `v` is along the plate, so height is `v·sin` (#742)
+
+`v` on the faceplate is measured **along the slope**, not in plan: `FP_V == L_SLOPE`
+(406.64), the plate's own length, not `FACE_RUN` (397). Moving `v` along a plane
+inclined at `SLOPE_ANGLE` lifts you by **`v·sin`**.
+
+`lid_top_z` used to interpolate over `FACE_RUN` — i.e. treat an along-slope `v` as a
+horizontal run — overstating the plate by `v·(tan − sin)` = **0.00525·v**: 0.36 mm at
+the front row, 1.42 mm at the mid row, **1.95 mm** at the back of the 16" aperture.
+
+**It was masked, not missed.** `face_drift`'s own docstring named it ("*lid_top_z uses
+the tan-slope shortcut, the real plate follows sin*"), and a two-point fit
+`face_drift(v) = 1.96 − 0.00533·v` was calibrated in the Fusion doc to cancel it. That
+slope was never the plate: **−0.00533 is the tan/sin error (0.005253) to within 1.5 %.**
+The fit was measuring the bug.
+
+Re-reduce the same three measurements against a **sin** slope and they land on
+**+1.955 / +1.942 / +1.939** — a constant, to within 0.016 mm. Three independent points
+agreeing that closely is the evidence. So `FACE_SEAT = 1.95` is the real, physical
+seating offset, and `SKIRT_DRIFT_ROW1/ROW2` (1.6 / 0.5 — the same fit, duplicated)
+collapse into it.
+
+> **Nothing already made is invalidated.** Correcting both together moves `platform_h`
+> by **−0.0003 mm** at the front row and **+0.015 mm** at the mid row, and **every DXF
+> is byte-identical apart from timestamps and GUIDs**. The printed rings and sleds stay
+> valid.
+>
+> What it *does* fix is the **uncompensated** call sites — `lid_under_z` for screen
+> depth and Pi headroom never had drift added, so the interior was overstated by up to
+> 1.95 mm, in the direction that makes you think there is more room than there is.
+
+Gated at the **top** of `_check()`, before anything derived from it: `FP_V == L_SLOPE`,
+`lid_top_z` is exactly `H_FRONT + v·sin`, the top of the slope is `H_REAR`, and
+`face_drift` is **constant** — the moment it grows a `v` term again it is almost
+certainly re-absorbing a unit error, which is exactly how this hid. All four
+negative-controlled.
 
 ## 6. Sheet-metal notes
 
 - Folded edges (wall bottom flanges): 90°, inside R = `t` = 2.0, **K 0.33** → bend
-  allowance 4.18 mm. Welded edges get a weld gap, no allowance.
+  allowance 4.18 mm. The vertical corner seams are open butt joints (relief hole
+  each) closed by riveted L-brackets, so they take no allowance.
 - **PEM:** clinch hole Ø6.3 (distinct from M4 Ø4.3 clearance), ≥ 8 mm edge distance
   — the **18 mm side skirt flanges** host them, so the lid threads straight onto the
   side screws; the **wall webs** get Ø4.3 clearance, and the shallow **9 mm front lip**
   is a clearance hole + nut (too short for a clinch nut).
-- DXF layers: `CUT` (thru) · `BEND` (score) · `WELD` (callout) · `VENT` ·
-  `ENGRAVE` · `NOTE`.
+- DXF layers: `CUT` (thru) · `BEND` (score) · `VENT` · `ENGRAVE` · `NOTE`.
+  There is no `WELD` layer: it was declared in all seven DXFs and **empty in every
+  one** — a vestige of the original welded-shell plan — so it was removed.
 - Finish: deburr → powder coat (mask bond pads).
 
 ---
@@ -194,7 +559,20 @@ python3.12 -m venv .venv && .venv/bin/pip install ezdxf cadquery matplotlib  # o
 .venv/bin/python segno_enclosure.py            # check + STEP + DXF + PDF -> out/
 .venv/bin/python segno_enclosure.py --report   # report + assertions only
 .venv/bin/python segno_enclosure.py --no-step   # DXF + PDF only
+.venv/bin/python _pedal_base_fit_test.py       # base-hole fit-test jig -> out/
+.venv/bin/python _print_check.py out/segno_pedal_base_fit_test.stl   # FDM check
 ```
+
+**Base-hole fit-test jig** (`_pedal_base_fit_test.py`, issue #716) — a
+throwaway print that carries *only* four locating pins on the `PEDAL_BASE_*`
+pattern plus the two side columns that capture the horizontal screw bosses
+(same `SKIRT_BOSS_CH_*` idiom as the tray tubs). Print it, drop a pedal on it:
+all four pins in, both bosses in their channels, case sitting flat = the
+pattern is right and the pedestal decks can be bored for heat-set inserts. Its
+`SEAT` assertion intersects the jig with a seated pedal stand-in, so a jig that
+cannot accept the pedal fails in CAD instead of on the bed. Pins engage only
+3.0 mm past the pad — the hole *depth* is unmeasured, and a pin that bottoms
+out would hold the pedal proud and read exactly like a placement error.
 
 Before any output the generator runs `_check()` — **the real acceptance gate**.
 It raises (build fails) unless every geometry rule holds:
@@ -210,8 +588,8 @@ It raises (build fails) unless every geometry rule holds:
 | `PEM` | flange wide enough for the clinch nut |
 
 Outputs in `enclosure/out/` (mm): **STEP** (`segno_assembly` + per-part incl.
-`segno_platform`, `segno_bottom`), **DXF** flat patterns, **PDF** drawing sheets
-(`segno_platform` is DXF-only). Verification renders
+`segno_platform_*_ring`, `segno_platform_sled`, `segno_bottom`), **DXF** flat patterns, **PDF** drawing sheets
+(the platform parts are print-only). Verification renders
 (`out/_hero.png`, `out/_fp_top.png`) confirm 7" left / 16" right.
 
 Everything is parameterised at the top of the script — change a value, re-run, and
@@ -228,7 +606,8 @@ the assertions re-validate before re-cutting every panel.
 | M4 screws (+ ~6 nuts) | ~12 | lid skirt: 6 side (into PEM) + 6 front/rear (screw + nut) |
 | M3 standoffs (≥10 mm) | ~6 | Pi / board, airflow gap |
 | M6 earth stud + hardware | 1 | chassis bond |
-| Rubber feet | 4 | bottom |
+| Rubber feet (uxcell Ø18×15×5, screw-on) | 4 | bottom, `FOOT_INSET_X/Y`; screws not supplied |
+| M4 × 12 self-tapping pan head | 4 | foot fixings, driven from inside |
 | Screen-retention brackets | 4 + 4 | from `segno_screen_bracket` |
 | Diffuser disc (ring) + 12 THT LEDs | 1 | encoder ring |
 
