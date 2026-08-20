@@ -35,6 +35,7 @@
     "AGND",
     "AHCT",
     "Airwindows",
+    "Akko",
     "allpass",
     "ALSA",
     "alsamixer",
@@ -130,6 +131,7 @@
     "chromeless",
     "CHSV",
     "Clarett",
+    "clicky",
     "cmdline",
     "codesign",
     "colour",
@@ -825,12 +827,15 @@
     "xattr",
     "xfade",
     "xiph",
+    "xlen",
     "xorshift",
     "xrun",
     "xruns",
     "XTAL",
+    "ylen",
     "Yocto",
     "Zener",
-    "ZJWZJH"
+    "ZJWZJH",
+    "zlen"
   ]
 }
