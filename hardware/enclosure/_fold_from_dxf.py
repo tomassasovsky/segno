@@ -221,7 +221,12 @@ def fold_faceplate(path, explode=0.0):
     parts.append(screen(s16uc,               V.SCREEN_TOP_V - V.BIG_H/2,   V.BIG_W-1,   V.BIG_H-1,   16, "lid_screen16"))
     # (screen-retention clamps removed: screens are bonded to the shell, #760)
     # --- encoder knob + diffused LED-ring cover on the top plate (centred under the 7" screen)
-    eu, ev = V.COL_U, V.PEDAL_ROW2_V + yf
+    # ENC_V, not PEDAL_ROW2_V: the encoder/ring deliberately does NOT follow
+    # CLEAR/BANK rearward (it would hit the 7" screen) -- faceplate_holes() cuts
+    # RING/ENCODER at ENC_V. This preview used to stack the ring 35.5 mm behind
+    # its own hole, so the fold render and the collision audit were checking the
+    # wrong station on the one part they exist to verify (#767).
+    eu, ev = V.COL_U, V.ENC_V + yf
     parts.append(("lid_ring", place(cq.Workplane("XY").circle(V.RING_OD/2).circle(V.RING_ID/2)
                                       .extrude(2.5).translate((eu, ev, V.T)).val())))
     # metal centre disc filling the inside of the ring (the ring cutout is a full hole); the encoder
@@ -311,28 +316,37 @@ def pcb_parts():
 
 
 def rear_panels():
-    """Both swappable I/O sub-panels as thin plates bolted over the rear WINDOW. Built in
-    the panel-local (u,z) plane from V.rear_panel_holes(), then stood up onto the rear wall
-    (Y=D) centred on the window. Both are emitted; the viewer shows one per selected version."""
-    ov, th = 12.0, 2.0
-    pw, ph = V.REAR_WIN_W + 2*ov, V.REAR_WIN_H + 2*ov
-    out = []
-    for variant in ("pi", "nopi"):
-        plate = cq.Workplane("XY").box(pw, ph, th, centered=(True, True, False))
-        for c in V.rear_panel_holes(variant):
-            if c["kind"] == "circle":
-                tool = cq.Workplane("XY").circle(c["d"]/2).extrude(th+0.2).translate((c["u"], c["v"], -0.1))
-            else:
-                tool = (cq.Workplane("XY").box(c["w"], c["h"], th+0.2, centered=(True, True, False))
-                          .translate((c["u"]+c["w"]/2, c["v"]+c["h"]/2, -0.1)))
-            plate = plate.cut(tool)
-        # mount the sub-panel from INSIDE: plate against the inner wall face, connectors poke
-        # OUT through the window flush with the outer wall. rot about X (+90) maps panel-v -> Z,
-        # thickness -> -Y; seat the plate just inside the wall (Y = inner face).
-        rear_wall_y = V.D - 2*V.T
-        s = plate.val().rotate((0, 0, 0), (1, 0, 0), 90).translate((V.REAR_WIN_U, rear_wall_y - V.T, V.REAR_WIN_Z))
-        out.append((f"rearpanel_{variant}", s))
-    return out
+    """The bolt-on I/O sub-panel as a thin plate over the rear WINDOW. Built in the
+    panel-local (u,z) plane from V.rear_panel_holes(), then stood up onto the rear wall
+    (Y=D) centred on the panel blank.
+
+    REBUILT on the derived rear-panel API (#767): this used to size the plate from
+    V.REAR_WIN_W/H + a local ov=12 and emit two swappable "pi"/"nopi" variants. All
+    four REAR_WIN_* constants and the variant argument went away when the window
+    became derived and the panel came back as one part (#757/#761) -- so this whole
+    module (the fold render AND the collision audit) had been dying on an
+    AttributeError before it drew a single solid. Everything now comes from
+    V.rear_panel_outline() / V.rear_window(), which cannot drift from the metal."""
+    th = 2.0
+    pu0, pz0, pw, ph = V.rear_panel_outline()     # wall coords; holes are panel-LOCAL
+    pcu, pcz = pu0 + pw/2.0, pz0 + ph/2.0         # panel centre = the holes' origin
+    plate = cq.Workplane("XY").box(pw, ph, th, centered=(True, True, False))
+    for c in V.rear_panel_holes():
+        if c.get("layer") == "MASK":              # bare-metal bonding land, not a hole
+            continue
+        if c["kind"] == "circle":
+            tool = cq.Workplane("XY").circle(c["d"]/2).extrude(th+0.2).translate((c["u"], c["v"], -0.1))
+        else:                                     # only circle/rect come out of the panel
+            assert c["kind"] == "rect", f"rear_panels: unhandled cut kind {c['kind']!r}"
+            tool = (cq.Workplane("XY").box(c["w"], c["h"], th+0.2, centered=(True, True, False))
+                      .translate((c["u"]+c["w"]/2, c["v"]+c["h"]/2, -0.1)))
+        plate = plate.cut(tool)
+    # mount the sub-panel from INSIDE: plate against the inner wall face, connectors poke
+    # OUT through the window flush with the outer wall. rot about X (+90) maps panel-v -> Z,
+    # thickness -> -Y; seat the plate just inside the wall (Y = inner face).
+    rear_wall_y = V.D - 2*V.T
+    s = plate.val().rotate((0, 0, 0), (1, 0, 0), 90).translate((pcu, rear_wall_y - V.T, pcz))
+    return [("rearpanel", s)]
 
 
 def corner_joins():
@@ -443,9 +457,13 @@ def _intended_contact(a, b):
     """Object pairs that SHARE coordinates by design, so a small overlap there is just
     fold/seat tolerance, not a conflict: the lid laps the body, pedals pass through the
     lid slots, and each pedal rests on its own platform shelf."""
+    # Moving the ring stack onto its true station (ENC_V, #767) needed NO new entry
+    # here, and the audit got quieter rather than louder: dxf_faceplate cuts the RING
+    # aperture at the OD only (the centre land leaves the blank as segno_ring_disc),
+    # so lid_ringmetal drops into a real void -- measured lid intersection 0.0 mm^3,
+    # against 1347 mm^3 of pure fiction while it sat 35.5 mm back in solid metal.
+    # (The old rearpanel_pi/rearpanel_nopi entry went with the variants themselves.)
     t = {a.rstrip("0123456789"), b.rstrip("0123456789")}      # plat3->plat, pedal3->pedal
-    if t == {"rearpanel_pi", "rearpanel_nopi"}:               # mutually-exclusive variants
-        return True
     if "base" in (a, b) and any(x.startswith("cbracket") for x in (a, b)):
         return True                        # brackets seat against the walls by design
     return t in ({"base", "lid"}, {"lid", "pedal"}, {"pedal", "plat"})
