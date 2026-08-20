@@ -148,7 +148,10 @@ class _SessionBlock extends StatelessWidget {
 
 /// The mode pill: `REC` red, `MUTE` green, `FX` blue — a readout of
 /// [ControlState.mode], sharing the desktop `ModeIndicator`'s colour mapping
-/// so the screen and the plate never disagree. Not tappable: the MODE
+/// (owner call 2026-08-20: rec=red, mute=green is the product mapping; the
+/// pedal plate's firmware LEDs flip to match via the #714/#693 line -- until
+/// that lands the physical plate still shows the legacy rec=green/mute=amber).
+/// Not tappable: the MODE
 /// footswitch owns the cycle.
 ///
 /// The pen draws the record state (`rec` outline over `recSurface`) and the
