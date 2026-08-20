@@ -1900,16 +1900,25 @@ def _bottom_vents():
 # assembly (stand flanges), floor-flat coords (u=x, v=y world -- the floor has
 # no slope projection).
 STAND_ANCHORS = [
-    (25.8, 273.5), (25.8, 353.5), (217.8, 273.5), (217.8, 353.5),   # 7in tower sides
-    (121.8, 240.2), (121.8, 386.9),                                  # 7in tower f/r
-    (480.0, 205.0), (480.0, 327.0), (454.0, 236.0), (454.0, 296.0),  # 15.6 L
+    # 7in tower (RE-MEASURED from the tower flange holes in the verified doc,
+    # 2026-08-19: the previous frozen values predated BOTH the lit-area
+    # re-anchor (+2.75) and the tower placement correction -- they were 6.0 mm
+    # forward of the actual flange holes, caught by /code-review + a Fusion
+    # probe. These MUST track the tower: after any S7C_*/placement change,
+    # re-probe the doc's flange holes before cutting the base.)
+    (25.8, 279.5), (25.8, 359.5), (217.8, 279.5), (217.8, 359.5),   # 7in tower sides
+    (121.8, 246.1), (121.8, 392.8),                                  # 7in tower f/r
+    (480.0, 205.0), (480.0, 327.0), (454.0, 236.0), (454.0, 296.0),  # 15.6 L (doc-verified 0.1)
     (765.0, 205.0), (765.0, 327.0), (739.0, 236.0), (739.0, 296.0),  # 15.6 R
 ]
-# stand anchors: each station must clear the bottom vent field and the rear
-# feet line by >= 3 mm (a hole into a vent slot passes no other check)
+# stand anchors: each station must clear the ACTUAL bottom vent slots (derived,
+# not a frozen field box -- the old hardcoded 256..576 x 145..191 window would
+# have silently stopped covering the real field on any vent/pedal-row change)
 for (_au, _av) in STAND_ANCHORS:
-    _in_vent = (256.0 - 3.0 < _au < 576.0 + 3.0) and (145.0 - 3.0 < _av < 191.0 + 3.0)
-    assert not _in_vent, f"STAND_ANCHOR ({_au},{_av}) lands in the bottom vent field"
+    for _vc in _bottom_vents_local(W - 2*T, D - 2*T):
+        _vb = _bbox(_vc)
+        assert not (_vb[0] - 3.0 < _au < _vb[2] + 3.0 and _vb[1] - 3.0 < _av < _vb[3] + 3.0), \
+            f"STAND_ANCHOR ({_au},{_av}) lands in vent slot (u {_vb[0]:.0f}..{_vb[2]:.0f}, v {_vb[1]:.0f}..{_vb[3]:.0f})"
 
 BOARD_U = 560.0   # +48 from 512 (user call 2026-08-19: centre the cluster under
                   # the 16" screen). Electrically BETTER, not worse: CTRL_1/2 sit
@@ -4065,9 +4074,13 @@ def build_quote_packages():
     pack("segno_3dprint.zip",
          ["segno_platform_front", "segno_platform_mid",
           "segno_led_diffuser", "segno_ring_diffuser",
-          "segno_screen7_tower", "segno_screen7_fit_test",
+          "segno_screen7_tower",
           "segno_screen16_stand_L", "segno_screen16_stand_R"],
          (".step", ".stl"))
+    # segno_screen7_fit_test deliberately NOT in the vendor pack: it is a
+    # calibration jig (its verdict is already folded into the S7C_* block),
+    # and shipping it invites the vendor to quote/print a non-product part.
+    # It stays buildable for reprints after any S7C_* change.
     # Powder-coat quote pack: the Spanish sheet + every painted part's PDF.
     # Deliberately NO DXFs -- the coater cuts nothing, and a flat pattern only
     # invites confusion. Narrowed to the paint BOM -- not every DXF_PART.
