@@ -16,6 +16,7 @@
  */
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdio.h>  /* fprintf — SEGNO_ALSA_PERIODS clamp log (#736) */
 #include <stdlib.h> /* getenv — appliance exclusive-mode check */
 #include <string.h>
 
@@ -170,6 +171,45 @@ static void le_miniaudio_close(le_engine* engine) {
   le_uninit_context(engine);
 }
 
+/* SEGNO_ALSA_PERIODS -> period count. The accepted range is [2, 8]: 2 is
+ * miniaudio's default (the shipping desktop/JACK behaviour), 8 is the deepest
+ * value validated on the bench rig (#734). An out-of-range value is CLAMPED to
+ * the nearest bound and logged, never ignored: ignoring it kept the default of
+ * 2 — the shallowest buffer, and the one configuration measured to drop
+ * capture periods — so an operator sweeping upwards for headroom (say
+ * SEGNO_ALSA_PERIODS=12) silently got the worst value and watched the drops
+ * get worse (#736). Clamping keeps the request's direction; the stderr line
+ * (journal on the appliance) is the only logging channel the engine has this
+ * early in device open, and says what was asked vs what was used so a typo is
+ * visible. Non-numeric garbage parses to 0 and clamps to 2 — same depth the
+ * ignore path picked, but now it says so. Unset/empty keeps `fallback`
+ * untouched (not clamped: it is our own code's default, not operator input).
+ *
+ * Compiled on every platform (the call site is Linux-gated) so the native test
+ * suite pins the clamp on any host. */
+uint32_t le_alsa_periods_from_env(const char* value, uint32_t fallback) {
+  if (value == NULL || value[0] == '\0') return fallback;
+  /* strtol, not atoi: atoi is undefined behaviour on input that overflows
+   * int, and this is operator-typed text. strtol saturates to LONG_MIN/MAX,
+   * which the clamp below folds to the right bound either way. */
+  const long p = strtol(value, NULL, 10);
+  uint32_t used;
+  if (p < 2) {
+    used = 2u;
+  } else if (p > 8) {
+    used = 8u;
+  } else {
+    used = (uint32_t)p;
+  }
+  if (p < 2 || p > 8) {
+    fprintf(stderr,
+            "segno/alsa SEGNO_ALSA_PERIODS=\"%s\" out of range [2,8]; "
+            "using %u\n",
+            value, used);
+  }
+  return used;
+}
+
 /* Opens (but does not start) the miniaudio device. On success fills *out with
  * the negotiated parameters and leaves engine->device / engine->context live;
  * on failure releases everything and returns an le_result error. */
@@ -206,10 +246,8 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
      * keeps the shipping desktop/JACK behaviour untouched. */
     {
       const char* periods_env = getenv("SEGNO_ALSA_PERIODS");
-      if (periods_env != NULL) {
-        int p = atoi(periods_env);
-        if (p >= 2 && p <= 8) cfg.periods = (ma_uint32)p;
-      }
+      cfg.periods =
+          (ma_uint32)le_alsa_periods_from_env(periods_env, cfg.periods);
     }
 #endif
   }

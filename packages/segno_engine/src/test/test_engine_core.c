@@ -6331,6 +6331,50 @@ static void test_select_backend_defaults_to_miniaudio(void) {
   CHECK(le_miniaudio_backend.close != NULL);
 }
 
+/* ---- SEGNO_ALSA_PERIODS resolution (#736) ---- */
+
+/* An out-of-range SEGNO_ALSA_PERIODS must be CLAMPED into [2, 8], never
+ * silently ignored. Ignoring it kept the default of 2 — the shallowest buffer
+ * and the one measured to drop capture periods — so asking for a DEEPER buffer
+ * (e.g. 12) landed on the shallowest one. The invariant this pins: an
+ * out-of-range value never produces a shallower buffer than an in-range one.
+ * The helper is called with the raw env string, so every case is asserted
+ * deterministically on any host without touching this process's environment
+ * (and without a device: the parse is the unit, not the ALSA open). */
+static void test_alsa_periods_env_clamps_out_of_range(void) {
+  printf("test_alsa_periods_env_clamps_out_of_range\n");
+  /* Unset / empty: keep the caller's default, whatever it is. */
+  CHECK(le_alsa_periods_from_env(NULL, 2u) == 2u);
+  CHECK(le_alsa_periods_from_env(NULL, 3u) == 3u);
+  CHECK(le_alsa_periods_from_env("", 2u) == 2u);
+  /* In-range values are used verbatim, both bounds included. */
+  CHECK(le_alsa_periods_from_env("2", 2u) == 2u);
+  CHECK(le_alsa_periods_from_env("5", 2u) == 5u);
+  CHECK(le_alsa_periods_from_env("8", 2u) == 8u);
+  /* Above the ceiling: clamp DOWN to 8 — never fall through to the default.
+   * "12" is the exact operator scenario from #736 (reaching for more headroom
+   * past the documented ceiling of 8). */
+  CHECK(le_alsa_periods_from_env("9", 2u) == 8u);
+  CHECK(le_alsa_periods_from_env("12", 2u) == 8u);
+  CHECK(le_alsa_periods_from_env("100000", 2u) == 8u);
+  /* Beyond long range: strtol saturates (no UB, unlike atoi) and the clamp
+   * folds the saturation to the right bound. */
+  CHECK(le_alsa_periods_from_env("99999999999999999999", 2u) == 8u);
+  CHECK(le_alsa_periods_from_env("-99999999999999999999", 2u) == 2u);
+  /* Below the floor (incl. negative): clamp UP to the floor. */
+  CHECK(le_alsa_periods_from_env("1", 2u) == 2u);
+  CHECK(le_alsa_periods_from_env("0", 2u) == 2u);
+  CHECK(le_alsa_periods_from_env("-3", 2u) == 2u);
+  /* Non-numeric garbage parses to 0 and clamps to the floor — the same depth
+   * the old ignore path picked, but now logged instead of silent. */
+  CHECK(le_alsa_periods_from_env("eight", 2u) == 2u);
+  /* strtol's partial-parse behaviour is accepted as-is: leading digits win. */
+  CHECK(le_alsa_periods_from_env("6x", 2u) == 6u);
+  /* The issue's invariant, stated directly: no out-of-range value may come
+   * back shallower than any in-range value's floor. */
+  CHECK(le_alsa_periods_from_env("12", 2u) >= le_alsa_periods_from_env("2", 2u));
+}
+
 /* ---- probe-context backends (#721) ---- */
 
 /* Both probe-backend cases, asserted DETERMINISTICALLY and in-process.
@@ -23203,6 +23247,7 @@ int main(void) {
   test_enumerate_devices_counts_are_stable();
   test_device_id_to_str();
   test_select_backend_defaults_to_miniaudio();
+  test_alsa_periods_env_clamps_out_of_range();
   /* Order-independent by construction: the pin is injected through the
    * platform seam's test override and restored afterwards, so this process's
    * environment — and the seam's one-shot cache of it — is never touched. */
