@@ -1921,10 +1921,12 @@ for (_au, _av) in STAND_ANCHORS:
             f"STAND_ANCHOR ({_au},{_av}) lands in vent slot (u {_vb[0]:.0f}..{_vb[2]:.0f}, v {_vb[1]:.0f}..{_vb[3]:.0f})"
 
 BOARD_U = 560.0   # +48 from 512 (user call 2026-08-19: centre the cluster under
-                  # the 16" screen). Electrically BETTER, not worse: CTRL_1/2 sit
-                  # at u 662/706, so this SHORTENS the unshielded analog runs by
-                  # 48; the Pi (622..678) caps further travel at a 12.5 gap.
-                  # Also widens the 15.6-stand left tower strip to ~93.
+                  # the 16" screen; the Pi moved +48 WITH it -- PI_PCB_U0=670.5,
+                  # PCB 670.5..726.5 -- keeping the 10cm ribbon's ~61 gap).
+                  # Electrically BETTER: CTRL_1/2 at u 662/706, so the move
+                  # SHORTENS the unshielded analog runs by 48. Nearby limits:
+                  # Pi right edge 726.5 vs the 15.6 R-stand flange at ~733
+                  # (6.5 clear). Also widens the 15.6 L-tower strip to ~93.
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
     return [("CONSOLE_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
@@ -3198,12 +3200,16 @@ def build_diffuser_step():
 def build_ring_diffuser_step():
     """Encoder ring DIFFUSER + DISC HOLDER, one piece (3D-print WHITE PLA, x1,
     user call 2026-08-19): replaces the plain annular insert. From the top:
-    - the LENS annulus pushes into the faceplate's O58 ring window (proud);
-    - the aluminium RING DISC (O40 x 2) drops into a front-side pocket inside
-      the lens bore and sits FLUSH with the faceplate top; the EC11 clamps it
-      (bushing through the disc's O7, nut on top under the knob);
+    - the LENS annulus pushes into the faceplate's RING_OD (O46) ring window
+      (proud);
+    - the aluminium RING DISC (RING_ID = O31 x 2) drops into a front-side
+      pocket inside the lens bore and sits FLUSH with the faceplate top; the
+      EC11 clamps it (bushing through the disc's O7.2, nut under the knob);
     - a full BACK PLATE extends past the window to O58 -- the exposed front
-      ring (r 22.3..29) is the CA-GLUE land against the faceplate underside;
+      ring (window edge r23 .. plate r29) is the CA-GLUE land against the
+      faceplate underside. NOTE: the back-plate/lip radii (29.0, 22.5, 16.0,
+      14.0) are hardcoded; if RING_OD grows past ~56 the glue land vanishes
+      -- re-derive them together with any window resize;
     The NeoPixel Ring 16 is MOUNTED ON THE RING BOARD around the EC11 (as
     built) -- no nest here; its LEDs shine up through the 0.8 mm web.
     z=0 is the faceplate-underside/glue plane."""

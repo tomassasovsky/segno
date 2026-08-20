@@ -15,8 +15,11 @@ STEPs incl. the folded assembly).
 | `segno_base` | 1 | ONE folded blank: floor + 4 walls + rear transition. Weld-free (corner brackets rivet). |
 | `segno_faceplate` | 1 | Sloped lid, full-width blank. Fold conventions in the drawing NOTE (chirality matters). |
 | `segno_corner_bracket_rear` | 2 | Internal L-brackets; ONE part serves both corners (left = flipped). |
-| `segno_screen_bracket` | 8 | 4 per screen (16" + 7"). |
 | `segno_ring_disc` | 1 | Encoder LED-ring centre disc. |
+| `segno_post` | 2 | Faceplate support posts — **1.6 mm cold-rolled STEEL**, not the 2.0 Al of the shell. |
+
+(The old `segno_screen_bracket` ×8 row is gone deliberately: the screens mount
+on printed stands anchored to the base floor (#762), not on sheet brackets.)
 
 Material: **2.0 mm 5052-H32 aluminium**, K-factor 0.33, R2 tooling (bend notes
 on each drawing). Finish: black powder coat, outside faces. Front-lip M4 holes
@@ -68,10 +71,13 @@ Full lists with links: **`segno_console_shopping_list.md`** (console) and
 - Heat-set inserts: **M3 5×5 throughout** (5.0 long × 5.0 OD, pilots Ø4.5), brass —
   40× console pedestals (4 per pedestal) + 8× mini-console pedestals + 3× mini lid.
   (Short M3×3 obsolete since the #373 deck raise gave the front pedestals full pilot depth.)
-- Fasteners: 40× M3×8 (platform bolts, from below), 6× M4 (front lip + rear lap),
-  10× Ø3.2 pop rivets (corner brackets), 4× M2.5×35.3 Pi risers (stack or turn —
-  35.3 mm is derived, see `PI_RISER_H`), 4× M3×12 + standoffs 15 mm (console
-  board), 4× M4 (buck ears — two bricks, two ears each), PEM M4 nuts per drawing
+- Fasteners: 40× M3×8 (platform bolts, from below), 18× M3×8 (lid seam: front
+  lip + rear lap, into hand-tapped Ø2.5 pilots — NO clinch nuts anywhere; the
+  old "PEM M4 nuts per drawing" line is obsolete, no drawing carries PEM holes
+  or masks any more), 10× Ø3.2 pop rivets (corner brackets), 4× M2.5×35.3 Pi
+  risers (stack or turn — 35.3 mm is derived, see `PI_RISER_H`), 4× M3×12 +
+  standoffs 15 mm (console board), 4× M4 (buck ears — two bricks, two ears
+  each), 4× M4 (support post feet)
 - Cabling per **`segno_wiring.md`** (HDMI ×2, USB, the 20 V PD feed + 5 V buck
   runs, the 2×20 keyed ribbon, JST looms)
 
