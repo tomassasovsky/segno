@@ -241,7 +241,7 @@ SKIRT_GAP    = 0.0            # wall top FLUSH on the REAL faceplate underside
                               # tower can lift the lid off its flange seats -- if
                               # assembly rocks on hardware, restore 0.3 here (or
                               # sand the tub tops).
-# Like POST_FACEDRIFT: the assembled faceplate seats ABOVE lid_top_z's bare
+# The assembled faceplate seats ABOVE lid_top_z's bare
 # slope, and by a row-dependent amount -- measured in "Segno console (populated)"
 # (the manufacturing source of truth) 2026-07-28: +1.6 over row 1, +0.7 over
 # row 2. Without this the skirt gap came out 2.6/1.7 instead of 1.0.
@@ -977,23 +977,31 @@ POST_BOLT_DU = 12.0                # M4 foot bolts at +/- this in u
 POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), NOT the shell's 2.0 Al
 # foot + pad both extend FORWARD of the web (a C, all in the clear strip in front of the
 # aperture); nothing sits under the display.
-# web height: foot rests ON the base bottom plate (top at z=T, not z=0), pad ~POST_FELT
-# below the faceplate underside. The formula (floor plate T + foot POST_T + felt gap +
-# a ~1.5 mm faceplate seating drift below lid_top_z's bare slope) was calibrated against
-# "Segno console (populated)" (the MANUFACTURING source of truth) at POST_V=158, giving
-# web 40.9 mm -> foot on the floor, flush pad, 1.01 mm felt gap, no base interference.
-# POST_V has since moved twice: to 137 (post pulled forward, issue #296) and then to
-# 146.5 (Cherub slope-corrected slots, issue #360; web now ~38.3 mm) -- NOT re-checked
-# against that doc at this position; re-verify there before fabrication.
-POST_FACEDRIFT = 1.5 + 0.443   # same #760 reseat recalibration as FACE_SEAT
-# DOC CALIBRATION at POST_V=165 (2026-08-19): the warning above came true -- probed in
-# the populated doc, the lid_top_z-minus-drift formula left the pad 4.85 mm below the
-# faceplate underside (target: POST_FELT = 1.0), i.e. the constant-drift model stops
-# tracking the reseated doc away from its v=158 calibration point. POST_DOC_CAL folds
-# the measured shortfall back in (normal gap error / cos(SLOPE)). SINGLE-POINT: if
-# POST_V moves again, re-probe the doc and re-set this before cutting posts.
-POST_DOC_CAL = (4.849 - POST_FELT) / math.cos(math.radians(SLOPE_ANGLE))
-POST_H     = lid_top_z(POST_V) - T - POST_T - POST_FELT - POST_FACEDRIFT + POST_DOC_CAL
+# web height: derived from the MEASURED faceplate-underside plane of "Segno
+# console (populated)" (the MANUFACTURING source of truth) -- the same plane
+# build_screen16_stand_steps seats the monitor deck against:
+#   z_underside(y_world) = 12.437 + tan(SLOPE)*y_world   (above the base floor TOP)
+#   y_world              = cos(SLOPE)*v_plan - 2.093
+# The pad TOP (hinge line, at web top + pad-sheet POST_T) sits POST_FELT below
+# that plane; the foot rests ON the base floor top, and build_post_step() measures
+# the web from that same face -- so the bottom-plate T is already inside the datum
+# and must NOT be subtracted again (the old stack subtracted it because lid_top_z
+# is referenced to the floor's OUTER face). Earlier revisions stacked
+# lid_top_z(POST_V) - POST_FACEDRIFT + POST_DOC_CAL instead: a constant-drift
+# model that needed a fresh SINGLE-POINT doc probe at every POST_V move (the
+# 1.5+0.443 FACE_SEAT-style drift, then a 3.85 mm patch at v=165). The plane
+# derivation RETIRES both constants (#767): it reproduces the v=165 doc probe
+# to 0.026 mm and generalizes to any POST_V.
+_POST_Y_WORLD = math.cos(math.radians(SLOPE_ANGLE)) * POST_V - 2.093
+_POST_UNDER_Z = 12.437 + math.tan(math.radians(SLOPE_ANGLE)) * _POST_Y_WORLD
+POST_H     = _POST_UNDER_Z - POST_T - POST_FELT
+# PIN to the doc probe: at POST_V=165 the populated doc gave web 45.107 mm at
+# exactly the 1.0 mm felt gap (2026-08-19). This pin moves ONLY with a fresh
+# doc probe -- if it trips, the plane model and the doc have drifted apart;
+# re-probe the doc before cutting posts.
+assert abs(POST_H - 45.107) <= 0.05, (
+    f"POST_H {POST_H:.3f} drifted from the doc-probed 45.107 +/- 0.05 -- "
+    "re-probe the populated doc before cutting posts")
 _POST_VP   = POST_V * math.cos(math.radians(SLOPE_ANGLE))   # projected web depth on the flat base
 _POST_FOOT_VP = _POST_VP - POST_FOOTL/2.0                   # foot-bolt depth (forward of the web)
 
@@ -1899,18 +1907,62 @@ def _bottom_vents():
 # and the 15.6in bridge stands (4+4). Stations from the verified Fusion
 # assembly (stand flanges), floor-flat coords (u=x, v=y world -- the floor has
 # no slope projection).
-STAND_ANCHORS = [
+STAND_ANCHORS_7IN = [
     # 7in tower (RE-MEASURED from the tower flange holes in the verified doc,
     # 2026-08-19: the previous frozen values predated BOTH the lit-area
     # re-anchor (+2.75) and the tower placement correction -- they were 6.0 mm
     # forward of the actual flange holes, caught by /code-review + a Fusion
     # probe. These MUST track the tower: after any S7C_*/placement change,
-    # re-probe the doc's flange holes before cutting the base.)
+    # re-probe the doc's flange holes before cutting the base.
+    # build_screen7_tower_step() cross-checks the RELATIVE pattern against its
+    # own computed flange stations at build time (#767).)
     (25.8, 279.5), (25.8, 359.5), (217.8, 279.5), (217.8, 359.5),   # 7in tower sides
     (121.8, 246.1), (121.8, 392.8),                                  # 7in tower f/r
-    (480.0, 205.0), (480.0, 327.0), (454.0, 236.0), (454.0, 296.0),  # 15.6 L (doc-verified 0.1)
+]
+STAND_ANCHORS_156 = [
+    # 15.6in bridge stands (doc-verified 0.1; build_screen16_stand_steps()
+    # cross-checks these against its computed flange stations at build time, #767)
+    (480.0, 205.0), (480.0, 327.0), (454.0, 236.0), (454.0, 296.0),  # 15.6 L
     (765.0, 205.0), (765.0, 327.0), (739.0, 236.0), (739.0, 296.0),  # 15.6 R
 ]
+STAND_ANCHORS = STAND_ANCHORS_7IN + STAND_ANCHORS_156
+STAND_ANCHOR_TOL = 0.15   # mm; tighter than any real drift, looser than float noise
+
+
+def _check_stand_anchors(computed, frozen, who, tol=STAND_ANCHOR_TOL):
+    """Frozen base-floor stations == the stations the stand builder just computed,
+    ABSOLUTELY (both in world plan coords). Order-independent: each frozen station
+    must have exactly one computed partner inside tol."""
+    assert len(computed) == len(frozen), \
+        f"{who}: {len(computed)} computed flange holes vs {len(frozen)} frozen STAND_ANCHORS"
+    left = list(computed)
+    for fx, fy in frozen:
+        hit = [c for c in left if abs(c[0] - fx) <= tol and abs(c[1] - fy) <= tol]
+        assert hit, (f"{who}: frozen STAND_ANCHOR ({fx:.1f}, {fy:.1f}) has no computed flange hole "
+                     f"within {tol} mm -- re-probe the doc and update STAND_ANCHORS "
+                     f"(computed: {['(%.1f, %.1f)' % c for c in left]})")
+        left.remove(hit[0])
+
+
+def _check_stand_anchor_pattern(computed, frozen, who, tol=STAND_ANCHOR_TOL):
+    """Same idea for a part whose STEP is built in a LOCAL frame and placed in Fusion
+    by a translation the generator does not know: compare the RELATIVE pattern, i.e.
+    every pairwise (dx, dy) between stations. Translation-invariant by construction,
+    so it still bites on any size/spacing/count change. Both lists must be in the
+    same station ORDER (they are: the frozen list was transcribed from this loop)."""
+    assert len(computed) == len(frozen), \
+        f"{who}: {len(computed)} computed flange holes vs {len(frozen)} frozen STAND_ANCHORS"
+    n = len(frozen)
+    for i in range(n):
+        for j in range(i + 1, n):
+            cd = (computed[j][0] - computed[i][0], computed[j][1] - computed[i][1])
+            fd = (frozen[j][0] - frozen[i][0], frozen[j][1] - frozen[i][1])
+            assert abs(cd[0] - fd[0]) <= tol and abs(cd[1] - fd[1]) <= tol, (
+                f"{who}: station {i}->{j} spacing drifted -- builder ({cd[0]:+.2f}, {cd[1]:+.2f}) "
+                f"vs frozen STAND_ANCHORS ({fd[0]:+.2f}, {fd[1]:+.2f}), tol {tol} mm. "
+                "Re-probe the doc's flange holes and update STAND_ANCHORS before cutting the base.")
+
+
 # stand anchors: each station must clear the ACTUAL bottom vent slots (derived,
 # not a frozen field box -- the old hardcoded 256..576 x 145..191 window would
 # have silently stopped covering the real field on any vent/pedal-row change)
@@ -3369,6 +3421,14 @@ def build_screen16_stand_steps():
     left = lt.union(deck_half(460.0, SPLICE, +1))
     rt, ra = tower(745.0, 785.0, -1)
     right = rt.union(deck_half(SPLICE, 785.0, -1))
+    # CROSS-CHECK the frozen base-floor stations against what the stands just
+    # computed (#767). These flange holes ARE the base holes: the stands are
+    # built in world plan coords (x, y_world) with the floor's own frame, so the
+    # comparison is ABSOLUTE -- no placement transform to guess. STAND_ANCHORS
+    # used to be a pure transcription; a 6.0 mm drift got as far as /code-review
+    # once (46ab3221). Now any S16_*/splice/tower-x change that moves a flange
+    # hole trips here instead of on the cut base plate.
+    _check_stand_anchors(la + ra, STAND_ANCHORS_156, "15.6in stand")
 
     def add_vesa(d, sxs):
         for sx in sxs:
@@ -3514,6 +3574,16 @@ def build_screen7_tower_step():
         anchors.append((mcx + ax, cy_w + ay))
         flange = flange.cut(cq.Workplane("XY").center(mcx + ax, cy_w + ay)
                             .circle(3.2 / 2.0).extrude(5.0))
+    # CROSS-CHECK the frozen base-floor stations for the tower (#767). Unlike the
+    # 15.6 stands this STEP is built in a LOCAL frame (origin = the display-window
+    # centre) and placed in Fusion by a translation the generator never sees, so an
+    # absolute comparison is impossible here. The RELATIVE pattern is not: every
+    # pairwise delta between the six computed stations must match the pairwise
+    # deltas of the six frozen tower stations. That catches any S7C_*/frame/flange
+    # change that resizes or re-spaces the flange -- only a pure rigid translation
+    # of the whole tower can slip through, and that is exactly the one thing the
+    # generator cannot know.
+    _check_stand_anchor_pattern(anchors, STAND_ANCHORS_7IN, "7in tower")
     tower = tower.union(flange)
     # cable windows, both side walls
     for sx in (-1, 1):
@@ -4002,8 +4072,13 @@ def _render_parts(cq, explode=0.0):
     # screw station from the seam solver (distance down the facet from the ridge)
     lapx = FACE_RUN + D_SEAM_SCREW*math.cos(math.radians(TRANS_ANGLE))
     lapz = H_REAR - D_SEAM_SCREW*math.sin(math.radians(TRANS_ANGLE)) + T
-    for f in (0.18,0.5,0.82):                        # rear LAP screws down into the tapped transition
-        add(cq.Solid.makeCylinder(3.3,2.8,cq.Vector(lapx,(W-2*T)*f+T,lapz),nrm), SCR)
+    for u in FRONT_SCREW_U:                          # rear LAP screws down into the tapped transition:
+                                                     # the SAME 9 stations the metal carries (#760) --
+                                                     # the render used to draw 3 legacy fractional
+                                                     # stations (0.18/0.5/0.82 of the width), so every
+                                                     # render-based review saw a seam pattern the parts
+                                                     # do not have (#767).
+        add(cq.Solid.makeCylinder(3.3,2.8,cq.Vector(lapx,u+T,lapz),nrm), SCR)
     return P    # raw geometry (canonical layout is in the schedule); player view = camera choice
 
 def render_png(path, direction=(-0.32, 0.05, 1.0), explode=0.0):
