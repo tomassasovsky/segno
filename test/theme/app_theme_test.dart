@@ -82,6 +82,64 @@ void main() {
       expect(ratio(hc.warning, hc.card), greaterThanOrEqualTo(4.5));
     });
 
+    /// The three mode chips' `(label colour, fill)` token pairs, keyed by the
+    /// mode they dress — the pairs `ModeIndicator` and `_ModePill` switch over.
+    Map<String, (Color, Color)> modePairs(SurfaceTheme s) => {
+      'REC': (s.rec, s.recSurface),
+      'MUTE': (s.success, s.successSurface),
+      'FX': (s.accent, s.accentSurface),
+    };
+
+    /// Every mode chip's label contrast in [data], *as rendered*, by mode.
+    ///
+    /// Two of the three fills carry alpha, so the number is a property of what
+    /// sits behind the chip. Both chips are undecorated rows inside
+    /// `TracksView`'s `Scaffold`, with no painted surface in between — so the
+    /// backdrop is [ThemeData.scaffoldBackgroundColor], not any `SurfaceTheme`
+    /// neutral (it is darker than all of them). Measuring against `card` would
+    /// report a different, fictional number.
+    Map<String, double> modeRatios(ThemeData data) {
+      final behind = data.scaffoldBackgroundColor;
+      return modePairs(data.extension<SurfaceTheme>()!).map(
+        (mode, pair) =>
+            MapEntry(mode, ratio(pair.$1, Color.alphaBlend(pair.$2, behind))),
+      );
+    }
+
+    // #768. Every mode chip paints its mode colour as the label text on the
+    // matching fill: 14px w700 on the console pill, w800 on the desktop chip —
+    // neither is WCAG "large text", so the 4.5:1 floor of 1.4.3 applies, not
+    // the 3:1 one. Nothing measured this before #766 made the FX fill opaque,
+    // which is how FX shipped at 4.25:1 (neon) / 4.32:1 (high contrast).
+    test('every mode chip label clears AA on its own fill', () {
+      for (final data in [AppTheme.neon, AppTheme.highContrast]) {
+        for (final MapEntry(key: mode, value: measured) in modeRatios(
+          data,
+        ).entries) {
+          expect(
+            measured,
+            greaterThanOrEqualTo(4.5),
+            reason: 'the $mode chip label is below AA on its own fill',
+          );
+        }
+      }
+    });
+
+    // The regression #766 shipped was not "FX is dim" but "FX is dimmer in the
+    // flavor whose whole job is contrast" — 7.15:1 down to 4.32:1, *below* the
+    // default theme. A floor alone would not have caught that; this does.
+    test('high contrast out-contrasts the default for every mode chip', () {
+      final neon = modeRatios(AppTheme.neon);
+      final hc = modeRatios(AppTheme.highContrast);
+      for (final MapEntry(key: mode, value: measured) in neon.entries) {
+        expect(
+          hc[mode],
+          greaterThan(measured),
+          reason: 'high contrast must not read flatter than neon for $mode',
+        );
+      }
+    });
+
     test('HC meter/indicator idle tones clear 3:1 on the track tile', () {
       final looper = AppTheme.highContrast.extension<LooperTheme>()!;
       // WCAG 1.4.11: the empty-meter groove and the idle indicator are the

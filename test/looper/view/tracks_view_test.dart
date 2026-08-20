@@ -1391,8 +1391,10 @@ void main() {
       // Stated as the reading rather than the hex: the two washes sit at one
       // fill weight, and that weight is the boosted one — a hardcode cannot
       // satisfy this. `accentSurface` is exempt by design: the pen draws it
-      // FLAT (opaque #16233D / #234069), not as a wash, so its "boost" is a
-      // brighter flat value rather than a heavier alpha.
+      // FLAT (opaque in both flavors), not as a wash, so its "boost" is a
+      // brighter flat value rather than a heavier alpha. Which flat value is
+      // a contrast constraint, held in `test/theme/app_theme_test.dart`
+      // (#768), not a free choice.
       expect(rec.$4!.a, mute.$4!.a);
       expect(
         rec.$4!.a,

@@ -251,9 +251,10 @@ void main() {
       // Stated as the reading rather than the hex: the REC and MUTE washes
       // sit at one fill weight, and that weight is the boosted one. FX is
       // deliberately NOT part of the alpha claim — the pen draws
-      // `accentSurface` FLAT (opaque #16233D / #234069), not as a wash, so
-      // its high-contrast boost is a brighter flat value, not a heavier
-      // alpha (#737).
+      // `accentSurface` FLAT (opaque in both flavors), not as a wash, so its
+      // high-contrast boost is a brighter flat value, not a heavier alpha
+      // (#737). Which flat value is bounded by contrast rather than taste —
+      // `test/theme/app_theme_test.dart` holds that floor (#768).
       expect(mute.$2!.a, rec.$2!.a);
       expect(
         mute.$2!.a,

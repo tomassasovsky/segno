@@ -110,11 +110,30 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   ///
   /// [accentSurface] is deliberately **flat**, not an alpha wash like
   /// [recSurface] and [successSurface]: the pen's `accent-surface` token is
-  /// the opaque `#16233d` (adopted verbatim in the #499 reconcile), because
-  /// this token's main job is the fill of a *selected* control — tabs, rail
-  /// items, rows — which must cover whatever sits beneath it. The mode pills'
-  /// FX state therefore renders a flat fill where REC and MUTE render washes;
-  /// that difference is the design, not drift (#737).
+  /// opaque (adopted verbatim in the #499 reconcile), because this token's
+  /// main job is the fill of a *selected* control — tabs, rail items, rows —
+  /// which must cover whatever sits beneath it. The mode pills' FX state
+  /// therefore renders a flat fill where REC and MUTE render washes; that
+  /// difference is the design, not drift (#737).
+  ///
+  /// Its **lightness** is a contrast constraint, not a free choice (#768).
+  /// [accent] as label text on this fill is the dominant selected-state
+  /// pattern in the app — the mode chips' FX state, the selected pill tab and
+  /// rail item, the Signal panel's active rows, the on-screen keyboard's
+  /// selected key, the accent-tone console dialog button — and that pair has
+  /// to clear the 4.5:1 AA floor (WCAG 1.4.3) at 14px w700. Because the fill
+  /// shares [accent]'s hue, the two are separated by luminance alone: the
+  /// pen's `#16233d` / `#234069` measured 4.25:1 and 4.32:1, so both flavors
+  /// were darkened until the pair cleared. Hue and saturation are the pen's,
+  /// only the luminance moved. The readers that do NOT use [accent] stack
+  /// something lighter still ([textPrimary], [textMuted]), so those gained
+  /// contrast too. The four level-bar fills carry no text at all; their
+  /// 1.4.11 boundary is the 2–4px [accent] edge they draw beside the fill,
+  /// never the fill itself, which has never come close to 3:1 against its own
+  /// track in either flavor.
+  ///
+  /// `test/theme/app_theme_test.dart` pins the floor — brightening this token
+  /// without brightening [accent] with it will fail there.
   final Color accentSurface;
   final Color accentAlt;
 
@@ -411,7 +430,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     borderStrong: Color(0xFF3A3A40),
     accent: Color(0xFF3B82F6),
     onAccent: Color(0xFFFFFFFF),
-    accentSurface: Color(0xFF16233D),
+    // Darkened from the pen's #16233D (4.25:1 under `accent`) to clear AA on
+    // the FX chip's label — see the token's doc (#768).
+    accentSurface: Color(0xFF121C31),
     accentAlt: Color(0xFF738CF2),
     warning: Color(0xFFE0A94A),
     success: Color(0xFF30A46C),
@@ -478,7 +499,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     borderStrong: Color(0xFF8A8A8A),
     accent: Color(0xFF6BA8FF),
     onAccent: Color(0xFF000000),
-    accentSurface: Color(0xFF234069),
+    // Darkened from #234069 (4.32:1 under `accent` — below AA, in the flavor
+    // that exists for contrast) so the FX chip's label clears 4.5:1 (#768).
+    accentSurface: Color(0xFF203A5E),
     accentAlt: Color(0xFF9AB4FF),
     warning: Color(0xFFFFD27A),
     success: Color(0xFF6EE7B7),
