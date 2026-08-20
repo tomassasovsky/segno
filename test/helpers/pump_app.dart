@@ -8,7 +8,10 @@ extension PumpApp on WidgetTester {
   ///
   /// Pass [theme] to exercise a different flavor — [AppTheme.highContrast] is
   /// the one that catches hardcoded colours and alphas, since it is the only
-  /// flavor that overrides the tokens they bypass.
+  /// flavor that overrides the tokens they bypass. Note the flavor-swap
+  /// gotcha: re-pumping an already-mounted `MaterialApp` with a new theme
+  /// ANIMATES the change, so a single pumped frame still reads the old
+  /// flavor — unmount first (`pumpWidget(const SizedBox.shrink())`).
   Future<void> pumpApp(Widget widget, {ThemeData? theme}) {
     return pumpWidget(
       MaterialApp(

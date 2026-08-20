@@ -1301,68 +1301,105 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('the mode indicator wears rec red, mute green, FX blue', (
+    // The indicator's colour pair per mode — icon, label, border AND fill are
+    // all asserted: a half-applied change (say, a token border over a stale
+    // hardcoded fill — exactly the #737 defect) must not pass.
+    Future<(Color, Color, Color, Color?)> indicatorOf(
+      WidgetTester tester,
+      InteractionMode mode, {
+      ThemeData? theme,
+    }) async {
+      // Unmount first: re-pumping a mounted MaterialApp with a different
+      // theme ANIMATES the flavor change, and a single pumped frame still
+      // reads the old flavor's tokens.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpApp(
+        theme: theme,
+        Scaffold(
+          body: ModeIndicator(mode: mode, onToggle: () {}),
+        ),
+      );
+      final scope = find.byKey(const Key('tracks_mode_indicator'));
+      final icon = tester
+          .widget<Icon>(find.descendant(of: scope, matching: find.byType(Icon)))
+          .color!;
+      final label = tester
+          .widget<Text>(find.descendant(of: scope, matching: find.byType(Text)))
+          .style!
+          .color!;
+      final box =
+          tester
+                  .widget<Container>(
+                    find.descendant(
+                      of: scope,
+                      matching: find.byType(Container),
+                    ),
+                  )
+                  .decoration!
+              as BoxDecoration;
+      return (box.border!.top.color, icon, label, box.color);
+    }
+
+    testWidgets('the mode indicator reads the SurfaceTheme token pairs', (
       tester,
     ) async {
-      // #693 — the owner's call from the bench: mute reads GREEN on every
-      // surface, matching the stage status bar's pill so the two screens can
-      // never disagree about which mode is live.
-      //
-      // Icon, label AND border are all asserted: they are fed from one
-      // `color` local, and checking only the icon would let a half-applied
-      // change — new glyph colour over a stale label — pass green.
-      Future<(Color, Color, Color)> colorsOf(InteractionMode mode) async {
-        await tester.pumpApp(
-          Scaffold(
-            body: ModeIndicator(mode: mode, onToggle: () {}),
-          ),
-        );
-        final scope = find.byKey(const Key('tracks_mode_indicator'));
-        final icon = tester
-            .widget<Icon>(
-              find.descendant(of: scope, matching: find.byType(Icon)),
-            )
-            .color!;
-        final label = tester
-            .widget<Text>(
-              find.descendant(of: scope, matching: find.byType(Text)),
-            )
-            .style!
-            .color!;
-        final border =
-            ((tester
-                                .widget<Container>(
-                                  find.descendant(
-                                    of: scope,
-                                    matching: find.byType(Container),
-                                  ),
-                                )
-                                .decoration!
-                            as BoxDecoration)
-                        .border!
-                    as Border)
-                .top
-                .color;
-        return (icon, label, border);
-      }
-
-      // All three arms read SurfaceTheme now: record used to come from
-      // `LooperTheme.recordColor` (#FF1744) while the stage pill read
-      // `surface.rec` (#E5484D), so the "one shared mapping" the widget
-      // claims was not actually true. This pins the unified source.
+      // Rec red over its wash, mute green over its wash (#693 — the owner's
+      // call: mute reads green, matching the stage pill), FX accent blue over
+      // the deliberately FLAT `accentSurface` — the same token pairs the
+      // stage status bar's pill reads, so the two surfaces cannot disagree.
       final s = AppTheme.neon.extension<SurfaceTheme>()!;
+      expect(await indicatorOf(tester, InteractionMode.record), (
+        s.rec,
+        s.rec,
+        s.rec,
+        s.recSurface,
+      ));
+      expect(await indicatorOf(tester, InteractionMode.mute), (
+        s.success,
+        s.success,
+        s.success,
+        s.successSurface,
+      ));
+      expect(await indicatorOf(tester, InteractionMode.fx), (
+        s.accent,
+        s.accent,
+        s.accent,
+        s.accentSurface,
+      ));
+    });
 
-      expect(await colorsOf(InteractionMode.record), (s.rec, s.rec, s.rec));
-      expect(await colorsOf(InteractionMode.mute), (
-        s.success,
-        s.success,
-        s.success,
-      ));
-      expect(await colorsOf(InteractionMode.fx), (
-        s.accent,
-        s.accent,
-        s.accent,
-      ));
+    testWidgets('the mode indicator fill follows the high-contrast flavor', (
+      tester,
+    ) async {
+      // The #737 regression this pins: the fill was an inline
+      // `color.withValues(alpha: 0.16)`, which the dark flavor's token values
+      // round close enough to that a dark-only test cannot see the bug. High
+      // contrast is the only flavor that overrides the washes — it lifts
+      // them to 0x33 (0.2) — so it is the only flavor where a hardcoded
+      // alpha visibly pins this chip below the stage pill beside it.
+      final hc = AppTheme.highContrast;
+      final s = hc.extension<SurfaceTheme>()!;
+
+      final rec = await indicatorOf(tester, InteractionMode.record, theme: hc);
+      final mute = await indicatorOf(tester, InteractionMode.mute, theme: hc);
+      final fx = await indicatorOf(tester, InteractionMode.fx, theme: hc);
+
+      expect(rec, (s.rec, s.rec, s.rec, s.recSurface));
+      expect(mute, (s.success, s.success, s.success, s.successSurface));
+      expect(fx, (s.accent, s.accent, s.accent, s.accentSurface));
+
+      // Stated as the reading rather than the hex: the two washes sit at one
+      // fill weight, and that weight is the boosted one — a hardcode cannot
+      // satisfy this. `accentSurface` is exempt by design: the pen draws it
+      // FLAT (opaque #16233D / #234069), not as a wash, so its "boost" is a
+      // brighter flat value rather than a heavier alpha.
+      expect(rec.$4!.a, mute.$4!.a);
+      expect(
+        rec.$4!.a,
+        greaterThan(SurfaceTheme.dark.recSurface.a),
+        reason: 'high contrast must boost the wash, not pin it at 0.16',
+      );
+      expect(fx.$4!.a, 1.0, reason: 'accentSurface is flat by design');
     });
 
     testWidgets('Tab is not swallowed by the tracks key handler', (

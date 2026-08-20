@@ -107,6 +107,14 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// Accent-family surfaces (DS `accent-surface`, `accent-alt`): the tinted
   /// fill behind selected/accented content, and the lighter accent used for
   /// secondary accents on dark fills.
+  ///
+  /// [accentSurface] is deliberately **flat**, not an alpha wash like
+  /// [recSurface] and [successSurface]: the pen's `accent-surface` token is
+  /// the opaque `#16233d` (adopted verbatim in the #499 reconcile), because
+  /// this token's main job is the fill of a *selected* control — tabs, rail
+  /// items, rows — which must cover whatever sits beneath it. The mode pills'
+  /// FX state therefore renders a flat fill where REC and MUTE render washes;
+  /// that difference is the design, not drift (#737).
   final Color accentSurface;
   final Color accentAlt;
 
@@ -115,12 +123,12 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   final Color warning;
 
   /// Positive/confirmation colour (DS `success`), and its tinted wash — the
-  /// [success] sibling of [recSurface]/[accentSurface], used behind pills that
-  /// read positive (the STAGE mute-mode pill). It is a token rather than an
-  /// inline alpha so the high-contrast flavor can boost it the way it boosts
-  /// the other two; a hardcoded `success.withValues(alpha: …)` would pin mute
-  /// at the dark flavor's fill and leave it visibly weaker than the REC and FX
-  /// pills beside it.
+  /// [success] sibling of [recSurface], used behind pills that read positive
+  /// (the mode pills' MUTE state). It is a token rather than an inline
+  /// `success.withValues(alpha: …)` so the high-contrast flavor can boost it
+  /// the way it boosts [recSurface]; a hardcoded alpha would pin mute at the
+  /// dark flavor's fill and leave it visibly weaker than the REC pill beside
+  /// it (#737).
   final Color success;
   final Color successSurface;
 

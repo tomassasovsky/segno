@@ -148,15 +148,17 @@ class _SessionBlock extends StatelessWidget {
 
 /// The mode pill: `REC` red, `MUTE` green, `FX` blue — a readout of
 /// [ControlState.mode], sharing the desktop `ModeIndicator`'s colour mapping
-/// so the screen and the plate never disagree. Not tappable: the MODE
+/// (owner call 2026-08-20: rec=red, mute=green is the product mapping; the
+/// pedal plate's firmware LEDs flip to match in the same line, #714/#693, so
+/// the screen and the plate never disagree). Not tappable: the MODE
 /// footswitch owns the cycle.
 ///
 /// The pen draws the record state (`rec` outline over `recSurface`) and the
-/// FX state (`accent` over `accentSurface`); mute is `success` over the
-/// matching `successSurface` (#693 — the owner's call from the bench), since
-/// no STAGE screen draws it. All three arms read a wash TOKEN, so the
+/// FX state (`accent` over the flat `accentSurface`); mute is `success` over
+/// the matching `successSurface` (#693 — the owner's call from the bench),
+/// since no STAGE screen draws it. Every arm reads a fill TOKEN, so the
 /// high-contrast flavor lifts them together — an inline alpha here would pin
-/// mute at the dark fill while its two siblings brightened around it.
+/// mute at the dark fill while REC brightened around it (#737).
 class _ModePill extends StatelessWidget {
   const _ModePill();
 
