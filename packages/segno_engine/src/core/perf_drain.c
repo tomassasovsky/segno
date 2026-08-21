@@ -515,14 +515,36 @@ static int le_pd_mkdir_recursive(const char* path) {
   return le_pd_mkdir_one(buf);
 }
 
-/* Test-only global: forces every subsequent write attempt to fail, simulating
- * a full disk without needing a real one (engine_internal.h). Relaxed: a lone
- * on/off switch a test flips before/after driving a drain thread, not raced
- * against anything else. */
-static _Atomic int g_pd_force_write_failure = 0;
+/* Test-only global: a BYTE BUDGET for the PCM/silence-fill write path
+ * (engine_internal.h). Negative is the production value and means unlimited;
+ * 0 fails every write outright — the full-disk simulation
+ * le_perf_drain_force_write_failure_for_test has always given — and a positive
+ * N lets exactly N more bytes through and then starts failing.
+ *
+ * That positive case is why this is a budget and not the boolean it replaces:
+ * a chunk larger than the remaining budget lands PARTIALLY, which is the one
+ * disk-full shape the boolean could not produce and the one #718's desync
+ * needs (a pad whose bytes reach the file while the call reports failure).
+ * A real filling disk short-writes; a switch that fails at zero bytes does
+ * not, so the accounting that has to survive it was untested.
+ *
+ * Relaxed, and still a single load per write — the same cost as the flag it
+ * replaces. A test flips it before/after driving a drain thread (or from the
+ * mid-cycle hook, on the drain thread itself); it is not raced against
+ * anything else. */
+#define LE_PD_WRITE_BUDGET_UNLIMITED (-1)
+static _Atomic int64_t g_pd_write_budget = LE_PD_WRITE_BUDGET_UNLIMITED;
 
 void le_perf_drain_force_write_failure_for_test(int enabled) {
-  atomic_store_explicit(&g_pd_force_write_failure, enabled ? 1 : 0,
+  atomic_store_explicit(&g_pd_write_budget,
+                        enabled ? 0 : (int64_t)LE_PD_WRITE_BUDGET_UNLIMITED,
+                        memory_order_relaxed);
+}
+
+void le_perf_drain_set_write_budget_for_test(int64_t bytes) {
+  atomic_store_explicit(&g_pd_write_budget,
+                        bytes < 0 ? (int64_t)LE_PD_WRITE_BUDGET_UNLIMITED
+                                  : bytes,
                         memory_order_relaxed);
 }
 
@@ -531,12 +553,41 @@ void le_perf_drain_force_write_failure_for_test(int enabled) {
  * above, because these ARE written by the test thread while the drain thread
  * is live and reading them — plain globals there would be a data race (and
  * an invitation for the compiler to hoist the NULL check out of the cycle).
- * The ctx pointer is released and the function pointer acquired so the hook
- * never runs against a half-published context. */
+ *
+ * WHAT THE RELEASE/ACQUIRE PAIRING ACTUALLY BUYS (#718) — stated per
+ * direction, because it is an invariant in one of them and only a narrowed
+ * window in the other, and the comment this replaces claimed both.
+ *
+ * PUBLISH is the invariant: ctx is stored first and relaxed, fn second and
+ * RELEASE, so a drain thread that acquire-loads a non-NULL fn is guaranteed to
+ * see the ctx published with it. The hook never runs against a half-published
+ * context.
+ *
+ * TEARDOWN has no equivalent to be had from store order. The reader is two
+ * separate loads — `fn = load(acquire); if (fn) fn(load(ctx))` — so a drain
+ * thread that loaded a non-NULL fn BEFORE either clear became visible still
+ * loads ctx afterwards and calls fn(NULL), whichever order the two stores go
+ * in. Store order cannot retract a pointer a reader already holds; closing
+ * that would take a single atomic carrying both halves, which is more
+ * machinery than a test seam earns.
+ *
+ * What the clear order below DOES buy is the one interleaving it can reach:
+ * retiring fn FIRST means a reader whose fn load lands BETWEEN the two stores
+ * sees NULL and skips the call, where the publish order would have handed it a
+ * live fn with an already-cleared ctx. That is free, so it is taken — but the
+ * safety of teardown is caller-side, and both call sites honour it: they clear
+ * only after le_perf_disarm has joined the drain thread, so at that point
+ * there is no reader at all. */
 static _Atomic(void (*)(void*)) g_pd_mid_cycle_hook = NULL;
 static _Atomic(void*) g_pd_mid_cycle_ctx = NULL;
 
 void le_perf_drain_set_mid_cycle_hook_for_test(void (*fn)(void*), void* ctx) {
+  if (fn == NULL) {
+    /* Teardown: retire the callable first, then the context (see above). */
+    atomic_store_explicit(&g_pd_mid_cycle_hook, NULL, memory_order_release);
+    atomic_store_explicit(&g_pd_mid_cycle_ctx, ctx, memory_order_relaxed);
+    return;
+  }
   atomic_store_explicit(&g_pd_mid_cycle_ctx, ctx, memory_order_relaxed);
   atomic_store_explicit(&g_pd_mid_cycle_hook, fn, memory_order_release);
 }
@@ -616,17 +667,53 @@ int le_perf_drain_self_stopped(struct le_perf_drain* drain) {
   return atomic_load_explicit(&drain->disk_full, memory_order_acquire);
 }
 
-/* Low-level bounded write; checks the force-failure test hook so every PCM/
- * silence-fill write path fails uniformly. This is the ONLY function that
- * consults it — le_pd_flush and le_pd_write_sidecar deliberately do NOT check
- * it; see their own definitions for why (the sidecar's exemption is what makes
- * the `stopped_early` marker testable after a forced PCM failure). */
-static int le_pd_write(FILE* f, const void* data, size_t bytes) {
-  if (atomic_load_explicit(&g_pd_force_write_failure, memory_order_relaxed)) {
-    return 0;
+/* Low-level bounded write, reporting how many bytes ACTUALLY landed. Two
+ * callers want different things from that number and both are honest answers:
+ * le_pd_write below wants all-or-nothing (a short write is a failed write),
+ * while le_pd_catch_up wants the count itself, because zero bytes and some
+ * bytes leave the capture file in genuinely different states (#718).
+ *
+ * This is also the ONLY function that consults the write-budget test seam, so
+ * every PCM/silence-fill path fails uniformly — le_pd_flush and
+ * le_pd_write_sidecar deliberately do NOT check it; see their own definitions
+ * for why (the sidecar's exemption is what makes the `stopped_early` marker
+ * testable after a forced PCM failure).
+ *
+ * A short return is NOT retried, which is the same all-or-nothing verdict this
+ * path has always given — a short fwrite failed the cycle before #718 too, and
+ * all that changes here is that the bytes it DID take are now accounted for
+ * rather than dropped on the floor. Retrying is the wrong direction: the
+ * realistic causes of a short write to a regular-file stream are terminal
+ * (ENOSPC, EDQUOT, EFBIG), so a retry loop turns a full disk into a spin on
+ * the one thread that must stay off the audio callback's back. A
+ * signal-interrupted write is the single case a retry could rescue, and stdio
+ * does not hand this layer the information to tell it apart from the terminal
+ * ones; the raw-descriptor sidecar path, which does, retries EINTR explicitly
+ * (le_pd_fd_write_all). */
+static size_t le_pd_write_some(FILE* f, const void* data, size_t bytes) {
+  if (bytes == 0) return 0;
+  const int64_t budget =
+      atomic_load_explicit(&g_pd_write_budget, memory_order_relaxed);
+  if (budget != LE_PD_WRITE_BUDGET_UNLIMITED) {
+    if (budget <= 0) return 0;
+    if ((uint64_t)budget < (uint64_t)bytes) bytes = (size_t)budget;
   }
+  const size_t n = fwrite(data, 1, bytes, f);
+  if (budget != LE_PD_WRITE_BUDGET_UNLIMITED && n > 0) {
+    /* Stored, not fetch_sub'd, and clamped at 0: `bytes` was already clipped
+     * to the budget so this cannot go negative from one writer — but -1 is the
+     * UNLIMITED sentinel, and a seam that silently re-enables itself on
+     * underflow is the kind of test infrastructure that hides a real bug. */
+    int64_t left = budget - (int64_t)n;
+    if (left < 0) left = 0;
+    atomic_store_explicit(&g_pd_write_budget, left, memory_order_relaxed);
+  }
+  return n;
+}
+
+static int le_pd_write(FILE* f, const void* data, size_t bytes) {
   if (bytes == 0) return 1;
-  return fwrite(data, 1, bytes, f) == bytes;
+  return le_pd_write_some(f, data, bytes) == bytes;
 }
 
 /* Flushes a long-lived PCM file handle so its writes actually reach the OS
@@ -796,13 +883,40 @@ static int le_pd_drain_ring(le_pd_file* pf, le_audio_ring* ring, int channels,
  * not in `gap_count`.
  *
  * The counter is bumped AFTER the padding writes, by the number of frames that
- * actually reached the file. Bumping it up front double-counts on the one path
- * where the two differ: a failed write leaves `pf->written` where it was, so
- * the next cycle (and the unconditional final one) re-pads the same gap and
- * would charge for it again — a disk-full stop reporting roughly twice the
- * silence it wrote. The gap LIST can still name a span the disk refused; the
- * total stays a count of silence genuinely on disk, which is what the manifest
- * documents it as. */
+ * actually reached the file, and `pf->written` is advanced by that SAME
+ * number. Both halves of that matter, and they are the same fact stated twice:
+ * `pf->written` is this module's claim about how much of the file exists, and
+ * the counter is its claim about how much of that is silence. Neither may
+ * count a byte the disk refused, and neither may forget one it took.
+ *
+ * Bumping the counter up front breaks the first: a pad that fails would charge
+ * for silence that never reached the file — a disk-full stop reporting roughly
+ * twice the silence it wrote, once the re-pad below charges again.
+ *
+ * Leaving `pf->written` untouched on failure breaks the second, which is what
+ * #718 found. A pad is CHUNKED, and a filling disk does not fail on a chunk
+ * boundary: it short-writes. The bytes before the short return are on disk and
+ * cannot be taken back, so a cycle that abandons the whole span re-pads bytes
+ * the file already has — the next cycle (and the unconditional final one) pad
+ * from a `written` that is behind the real file length, and master.pcm ends
+ * LONGER than `elapsed`. That is not a lost tail, it is a permanent offset:
+ * every frame after the gap sits later in the file than its frame number says,
+ * so #679's salvage and daw_export lay the whole remainder of the take out
+ * against the wrong clock. Advancing by what landed makes the re-pad top up
+ * only the part that did not, which is also what keeps the counter's two
+ * cycles summing to the gap exactly once.
+ *
+ * What is NOT reconstructed: a short write can stop mid-frame (or mid-float —
+ * fwrite is byte-granular), and those trailing bytes cannot be un-written. The
+ * frame count credited is therefore a FLOOR, and the file may carry a torn
+ * partial frame at the point the disk gave out. That is the same torn tail
+ * every other write path in this module leaves at disk-full, on a capture that
+ * is self-stopping anyway; inventing a count for a frame that is only
+ * partially there would be the dishonest direction.
+ *
+ * The gap LIST can still name a span the disk refused — position is
+ * diagnostic. The total stays a count of silence genuinely on disk, which is
+ * what the manifest documents it as. */
 static int le_pd_catch_up(le_perf_drain* d, le_pd_file* pf, int channels,
                           uint64_t elapsed) {
   if (pf->written >= elapsed || channels <= 0) return 1;
@@ -816,27 +930,33 @@ static int le_pd_catch_up(le_perf_drain* d, le_pd_file* pf, int channels,
 
   static const float kZeros[1024] = {0};
   uint64_t remaining = gap * (uint64_t)channels;
-  uint64_t padded_samples = 0;
+  uint64_t padded_bytes = 0;
   int ok = 1;
   while (remaining > 0) {
     const size_t chunk = remaining < 1024 ? (size_t)remaining : 1024;
-    if (!le_pd_write(pf->f, kZeros, chunk * sizeof(float))) {
-      ok = 0;
+    const size_t want = chunk * sizeof(float);
+    const size_t got = le_pd_write_some(pf->f, kZeros, want);
+    padded_bytes += (uint64_t)got;
+    if (got != want) {
+      ok = 0; /* short or refused: whatever landed is still on disk */
       break;
     }
     remaining -= chunk;
-    padded_samples += chunk;
   }
 
-  const uint64_t padded_frames = padded_samples / (uint64_t)channels;
+  /* Floor twice, deliberately: bytes -> whole samples -> whole frames. Only a
+   * frame that is entirely on disk is a frame of the take. */
+  const uint64_t padded_frames =
+      (padded_bytes / sizeof(float)) / (uint64_t)channels;
   if (padded_frames > 0) {
     atomic_fetch_add_explicit(&d->engine->a_perf_zero_filled_frames,
                               padded_frames, memory_order_relaxed);
   }
-  if (!ok) return 0;
-
-  pf->written = elapsed;
-  return 1;
+  /* On the success path this IS `pf->written = elapsed` — every requested byte
+   * landed, so padded_frames == gap exactly. Writing it as an advance is what
+   * makes the failure path correct too. */
+  pf->written += padded_frames;
+  return ok;
 }
 
 static int le_pd_atomic_rename(const char* tmp, const char* final_path) {

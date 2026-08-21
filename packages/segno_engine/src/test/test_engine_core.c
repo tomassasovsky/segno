@@ -8808,6 +8808,138 @@ static void test_perf_zero_fill_counts_only_silence_actually_written(void) {
   le_engine_destroy(e);
 }
 
+/* #718: a pad that SHORT-writes must leave `pf->written` where the bytes
+ * actually stopped, not where it started. A filling disk does not refuse a pad
+ * on a chunk boundary — it takes part of the write and reports failure — and
+ * the bytes it took are on disk for good. The cycle that abandons the whole
+ * span therefore re-pads bytes the file already has: master.pcm ends LONGER
+ * than `elapsed`, and every frame after the gap sits later in the file than
+ * its frame number says. That is a permanent offset through the rest of the
+ * take, not a lost tail.
+ *
+ * The fixture is the tiny-ring overrun the two tests above use (rate 4 -> 7
+ * usable frames, 32 frames processed -> a 25-frame gap = 100 bytes of pad),
+ * with the write budget armed from the mid-cycle hook so the pad lands
+ * PARTIALLY:
+ *
+ *   cycle 1 — rings drain (7 real frames), hook sets a 40-byte budget, the
+ *             100-byte pad writes 40 (10 frames) and fails -> self-stop.
+ *   cycle 2 — the unconditional final cycle. The hook fires again and restores
+ *             the budget, so the re-pad SUCCEEDS. This is the cycle that
+ *             exposes the desync: it tops up 15 frames if `written` advanced,
+ *             and re-pads all 25 if it did not.
+ *
+ * Against the pre-fix code the file comes out 42 frames long for 32 elapsed.
+ * Both cycles' zero-fill totals sum to the same 25 either way, which is the
+ * point of asserting the LENGTH: #710's counter contract was already honest
+ * here, and honest accounting on a desynced file is exactly what made this
+ * survive review. */
+typedef struct {
+  le_engine* e;
+  int stage;
+} perf_short_pad_ctx;
+
+/* 40 of the pad's 100 bytes: not a multiple of the 100, so the write is short
+ * rather than refused, and a whole number of mono frames so the assertions
+ * below can be exact about which frames are on disk. */
+#define LE_TEST_SHORT_PAD_BUDGET_BYTES 40
+
+static void perf_mid_cycle_short_pad(void* raw) {
+  perf_short_pad_ctx* ctx = (perf_short_pad_ctx*)raw;
+  if (ctx->stage == 0) {
+    /* Only arm once the whole 32-frame block has been published — a cycle
+     * that fires before (or during) it would pad a different gap and make the
+     * arithmetic below a guess. Acquire, matching le_pd_drain_cycle's own
+     * load of this counter. */
+    if (atomic_load_explicit(&ctx->e->a_perf_frames, memory_order_acquire) <
+        32u) {
+      return;
+    }
+    ctx->stage = 1;
+    le_perf_drain_set_write_budget_for_test(LE_TEST_SHORT_PAD_BUDGET_BYTES);
+    return;
+  }
+  if (ctx->stage == 1) {
+    /* The final cycle, about to re-pad. Heal the disk first: a re-pad that
+     * fails too would hide the duplicate this test is looking for. */
+    ctx->stage = 2;
+    le_perf_drain_set_write_budget_for_test(-1); /* unlimited */
+  }
+}
+
+static void test_perf_zero_fill_short_write_does_not_desync_file(void) {
+  printf("test_perf_zero_fill_short_write_does_not_desync_file\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 4, 1, 1, 1000); /* tiny rate -> 7 usable ring frames */
+
+  /* A loop at 1.0 so the frames that genuinely reached the ring are
+   * distinguishable from padding, exactly as in the overrun test above. */
+  le_engine_record(e, 0);
+  float out[LOOP_N];
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  perf_short_pad_ctx ctx = {e, 0};
+  le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_short_pad, &ctx);
+
+  float big_out[32];
+  process_const(e, 0.0f, 32, big_out); /* 7 pushes succeed, 25 drop */
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_frames == 32);
+  CHECK(s.perf_overruns == 32 - 7);
+
+  /* The partial pad fails the cycle, so the thread self-stops and then runs
+   * its final cycle; the disarm below joins it, which is what guarantees that
+   * final cycle is complete before the file is read. */
+  CHECK(poll_drain_self_stopped_for_test(e->perf.drain, 2000));
+  CHECK(le_perf_disarm(e) == LE_OK);
+  /* Both seams are process-global: reset before the next test runs. */
+  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
+  le_perf_drain_set_write_budget_for_test(-1);
+
+  CHECK(ctx.stage == 2); /* both cycles ran: partial pad, then the top-up */
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/master.pcm", perf_test_dir());
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    float buf[64];
+    const size_t n = fread(buf, sizeof(float), 64, f);
+    fclose(f);
+    /* THE ASSERTION #718 IS ABOUT: exactly `elapsed` frames, not 32 + the 10
+     * frames the short write already landed. */
+    CHECK(n == 32);
+    for (size_t i = 0; i < 7 && i < n; ++i) CHECK(buf[i] == 1.0f);
+    for (size_t i = 7; i < n; ++i) CHECK(buf[i] == 0.0f);
+  }
+
+  /* Byte-honest, and honest ACROSS the two cycles: 10 frames charged by the
+   * short write plus 15 by the top-up. The gap was charged once. */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_zero_filled_frames == 25);
+
+  char json[4096];
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+  CHECK(strstr(json, "\"zero_filled_frames\": 25") != NULL);
+  /* Two gap entries: the span the short write was asked for, then the residue
+   * the final cycle topped up. Frame 17 (7 real + 10 padded) is `pf->written`
+   * having advanced, read straight off the sidecar. */
+  CHECK(strstr(json, "\"frame\": 7") != NULL);
+  CHECK(strstr(json, "\"frame\": 17") != NULL);
+
+  le_engine_destroy(e);
+}
+
 static void test_perf_drain_samples_elapsed_before_draining(void) {
   printf("test_perf_drain_samples_elapsed_before_draining\n");
   le_engine* e = le_engine_create();
@@ -23052,6 +23184,7 @@ int main(void) {
   test_perf_drain_silence_fills_overrun_gap();
   test_perf_zero_fill_counter_visible_while_armed();
   test_perf_zero_fill_counts_only_silence_actually_written();
+  test_perf_zero_fill_short_write_does_not_desync_file();
   test_perf_drain_samples_elapsed_before_draining();
   test_perf_sidecar_bytes_are_exact();
   test_perf_drain_steady_state_cycle_is_allocation_free();
