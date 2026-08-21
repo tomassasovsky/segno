@@ -41,7 +41,7 @@ is MIDI, `uart3` (GPIO8/9) is the link to the Pico 2, and GPIO24/25 are SWCLK/SW
 driven by **openocd** ([console board v2 plan:103](2026-08-17-feat-console-board-v2-plan.md)).
 The power button is J8 → J9, a flying lead to the **Pi 5's own power-button pads**,
 because *"on a Pi 5 an external button cannot be a GPIO: RP1 and the SoC are unpowered
-until the PMIC brings them up"* (`console_board.py:402`).
+until the PMIC brings them up"* (`console_board.py`, the `J8` block).
 
 What motivates the work instead:
 
@@ -123,9 +123,17 @@ offset**: `seqno` counts across the whole request, so the lost records took thei
 offsets with them; it reports the count and the request's lines instead.
 
 Errors are one `GpioException` carrying `errno`, the failing operation and an
-actionable message: `EBUSY` names the current consumer, `EACCES` names the `gpio`
-group and the udev rule, `ENOTTY` says "not a GPIO character device", and a v2 ioctl
-rejected on an old kernel says "requires Linux 5.10 or newer".
+actionable message: `EBUSY` names the current consumer and `EACCES` names the `gpio`
+group and the udev rule.
+
+`ENOTTY` needs care, because **two different causes produce it and the errno cannot
+tell them apart**: the file is not a GPIO character device at all, *or* it is one but
+the kernel predates the v2 interface. An earlier draft of this plan listed those as two
+separate messages, which is not implementable — nothing distinguishes them at the point
+of failure. So one message names both possibilities and the version boundary: *"not a
+GPIO character device, or this kernel does not know the v2 GPIO interface. That
+interface needs Linux 5.10 or newer; this package does not implement the deprecated v1
+fallback."*
 
 ### Internal structure
 
@@ -228,10 +236,19 @@ of the lines it covers.
 
 So the encoder must group lines by configuration rather than emit one attribute
 each, and pick the most common flag word as the default so it needs no attribute
-at all. Two further traps: a flags attribute **replaces** the defaults for the
-lines it covers rather than adding to them, so request-wide bits (the event
-clock) have to be OR-ed into every override; and exceeding ten must be a clear
-error naming the ceiling, not a silently truncated request.
+at all.
+
+**Grouping alone does not bound the count**, which is the easy mistake. Each
+attribute's `id` selects exactly *one* of `FLAGS`, `OUTPUT_VALUES` or `DEBOUNCE`, so
+the three kinds never share a slot: a set of lines needing both a flags override and a
+debounce period costs **two**, and any request containing an output at all spends one
+more on `OUTPUT_VALUES`. The budget is therefore *(distinct flag words − 1) + (1 if any
+output) + (distinct debounce periods)*, and it is that total which must be checked.
+
+Two further traps: a flags attribute **replaces** the defaults for the lines it covers
+rather than adding to them, so request-wide bits (the event clock) have to be OR-ed
+into every override; and exceeding ten must be a clear error naming the ceiling, not a
+silently truncated request.
 
 ### Other platforms are backends, not ports
 
@@ -392,7 +409,7 @@ CHANGELOG, `dart pub publish` as 0.1.0.
 | 32-bit ARM struct layout differs from the table | medium | no Dart-capable armv7 runner exists, so a C check under `gcc -m32` proves the fixed-width assumption instead, sharing its expected values with the Dart test |
 | `poll` strands the isolate on close | medium | `eventfd` wakeup, and `close()` waits for the isolate to exit before the fd is freed |
 | Hot restart leaks the line | medium | **not preventable from Dart** — the isolate dies with the restart while the fd does not. Mitigated only by a self-aware `EBUSY` message and a documented "full restart" |
-| Kernel < 5.10 | low | v2 ioctl fails; error says so explicitly. No v1 fallback, by decision |
+| Kernel < 5.10 | low | the v2 ioctl fails with `ENOTTY`, which is indistinguishable from "not a gpiochip" — so the single message names both causes and the version boundary. No v1 fallback, by decision |
 | Package has no in-repo consumer, so it bit-rots | **real** | accepted deliberately: it is an OSS deliverable, not Segno infrastructure. Revisit if the bare-Pi footswitch path is ever committed |
 | Owning a published package is ongoing work | real | accepted at the plan gate |
 

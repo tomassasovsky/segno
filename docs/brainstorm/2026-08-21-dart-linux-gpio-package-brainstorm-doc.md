@@ -41,9 +41,11 @@ than a preference:
 
 > On a Pi 5 an external button cannot be a GPIO: RP1 and the SoC are unpowered until
 > the PMIC brings them up, so nothing on the 40-way can wake the machine.
-> — `console_board.py:402`
+> — `console_board.py`, the `J8` block
 
-with pin 5 / GPIO3 annotated `-- NOT the power button` (`console_board.py:585`).
+with pin 5 / GPIO3 annotated `-- NOT the power button` in the same file's `PI_HDR`
+commentary. (Cited by anchor rather than line: this PR edits that file, and the line
+number moved three times across review rounds before anyone noticed it was wrong.)
 
 SWD is openocd's too, explicitly: *"The Pi reflashes the MCU with openocd over
 SWCLK/SWDIO/GND … **Requires `openocd` in the Pi image**"*
@@ -247,7 +249,11 @@ the stable kernel ABI** — more guaranteed not to break than any library wrappi
   platforms are backends, not ports** in the plan.
 - **Is `gpio-sim` present on GitHub's Ubuntu runners?** Decides whether the integration
   suite is a CI job or hardware-only. Not blocking — the fake-syscall suite is the gate.
-- **Flutter hot-restart leaks a line request.** A documented `flutter_gpiod` pain: the
-  process survives hot restart, so the fd and the kernel's line ownership survive with
-  it, and the next request fails "in use". Needs a deliberate answer — a
-  process-lifetime singleton registry, or a documented "full restart in development".
+- ~~Flutter hot-restart leaks a line request.~~ **Answered, and the obvious fix does
+  not work.** The process survives hot restart, so the fd and the kernel's line
+  ownership survive with it, and the next request fails "in use". A process-lifetime
+  registry cannot help: hot restart tears down the *isolate*, so any Dart-side map is
+  re-initialised empty at exactly the moment it would be needed. Nothing in Dart
+  outlives it; only the kernel's fd does. The answer is therefore diagnostic — an
+  `EBUSY` message that recognises its own consumer string — plus a documented "full
+  restart releases it". See the plan's **Hot restart leaks a line request**.
