@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461274.1602083333
+2461274.184409722
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461274.1602083333
+2461274.184409722
   9
 $TDUUPDATE
  40
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{D3A58EE0-23F0-4299-9129-542B52B80E24}
+{BC701C18-0ACE-4622-9F1D-C52A063AC3E7}
   9
 $VERSIONGUID
   2
-{F99E6916-CC99-4162-B568-3E759FDD7047}
+{9CE3D97B-AC61-417F-B69E-B6177F527296}
   9
 $EXTNAMES
 290
@@ -6881,7 +6881,7 @@ AcDbText
  40
 8.0
   1
-Segno TAPA SUPERIOR (segno_faceplate)  chapa 2.0 mm  CANT. 1  tapa + pestaña frontal + solapa trasera (= 143°); apoya sobre las paredes laterales del cuerpo; sin tornillos a la vista; las leyendas van en el CALCO impreso (ver segno_overlay); PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico)
+Segno TAPA SUPERIOR (segno_faceplate)  chapa 2.0 mm  CANT. 1  tapa + pestaña frontal + solapa trasera (= 143°); apoya sobre las paredes laterales del cuerpo; sin tornillos a la vista; las leyendas van en el CALCO impreso (ver segno_overlay); PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico) AJUSTE DE LA PESTAÑA FRONTAL: plegar la pestaña de modo que quede 0.3 mm de holgura entre la cara INTERIOR de la pestaña y la cara EXTERIOR de la pared frontal del cuerpo, MEDIDO DESPUÉS DE PINTAR (ambas caras se pintan, no se enmascara nada). En el CAD el ajuste es cara contra cara, por lo que la pestaña debe plegarse levemente abierta; verificar que la tapa entre sobre el cuerpo terminado antes del plegado definitivo
  11
 10.0
  21
@@ -7993,7 +7993,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-21T06:50:42.970547+00:00
+1.4.4 @ 2026-08-21T07:25:33.722920+00:00
   0
 VISUALSTYLE
   5
@@ -14555,7 +14555,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-21T06:50:42.973145+00:00
+1.4.4 @ 2026-08-21T07:25:33.725440+00:00
   0
 ENDSEC
   0

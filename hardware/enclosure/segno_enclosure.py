@@ -741,7 +741,26 @@ DD_LIP = dev_deduct(90.0 - SLOPE_ANGLE)         # lid front-lip fold (77.5 deg)
 DD_LAP = dev_deduct(SLOPE_ANGLE + TRANS_ANGLE)  # lid rear-lap fold (36.9 deg)
 DD_TR  = dev_deduct(90.0 - TRANS_ANGLE)         # wall -> flange fold (65.6 deg)
 _bd  = D - 2.0 * T                              # bottom plate flat depth (= BD)
-# lid front mold corner (lip outer face x lid outer skin), lip hugging the wall:
+# lid front mold corner (lip outer face x lid outer skin), lip hugging the wall.
+#
+# MEASURED 2026-08-21 (#775): "hugging" is literal -- in the folded assembly the
+# lip's inner face and the front wall's outer face are COINCIDENT, lid<->base
+# minimum distance 0.0000 mm at mid-wall height. Both are OUTSIDE faces, so both
+# take powder coat (~0.06-0.10 mm each): the joint is ~0.16 mm interference
+# before a single tolerance is counted, on the one seam that cannot be reworked
+# once the part is finished.
+#
+# NOT fixed by moving this corner. _cfy sets the flange LENGTH, not its standoff
+# (raising it just drops the lip tip below the base floor -- tried, reverted).
+# The standoff would have to come from shifting the floor's front bend line,
+# which re-bases every feature on the base flat, or from lengthening the lid
+# plate, which moves all the faceplate content. Both are large ripples through a
+# solver whose two halves currently agree to 15 decimals, for a 0.3 mm gap that
+# press-brake tolerance (+/-0.5 deg over a 12.19 mm lip = +/-0.11 mm) swamps
+# anyway. So this is specified as a FIT, not carried as a CAD dimension:
+# LIP_FIT_CLEAR is the number the drawing asks the shop to hold, and the owner's
+# call (2026-08-21) is a tight fit with everything coated -- no masking.
+LIP_FIT_CLEAR = 0.3    # mm, lip inner face -> wall outer face, AFTER coating
 _cfy = H_FRONT - T * math.tan(_ra) + T / math.cos(_ra)
 _cfz = -DEV90 - T
 # Front-lip flange: the lip TIP lands flush with the base's bottom face (z=0),
@@ -2233,7 +2252,7 @@ def dxf_faceplate(path):
                                                                           # stations as the front lip (#760),
                                                                           # Ø3.4 M3 clearance, concentric
                                                                           # with the flange tap pilots
-    _text(msp, 10, yr1+8, 8, f"Segno TAPA SUPERIOR (segno_faceplate)  chapa 2.0 mm  CANT. 1  tapa + pestaña frontal + solapa trasera (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}°); apoya sobre las paredes laterales del cuerpo; sin tornillos a la vista; las leyendas van en el CALCO impreso (ver segno_overlay); PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico)", "NOTE")
+    _text(msp, 10, yr1+8, 8, f"Segno TAPA SUPERIOR (segno_faceplate)  chapa 2.0 mm  CANT. 1  tapa + pestaña frontal + solapa trasera (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}°); apoya sobre las paredes laterales del cuerpo; sin tornillos a la vista; las leyendas van en el CALCO impreso (ver segno_overlay); PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico) AJUSTE DE LA PESTAÑA FRONTAL: plegar la pestaña de modo que quede {LIP_FIT_CLEAR:.1f} mm de holgura entre la cara INTERIOR de la pestaña y la cara EXTERIOR de la pared frontal del cuerpo, MEDIDO DESPUÉS DE PINTAR (ambas caras se pintan, no se enmascara nada). En el CAD el ajuste es cara contra cara, por lo que la pestaña debe plegarse levemente abierta; verificar que la tapa entre sobre el cuerpo terminado antes del plegado definitivo", "NOTE")
     doc.saveas(path)
     return {"blank": (LW, yr1)}
 
