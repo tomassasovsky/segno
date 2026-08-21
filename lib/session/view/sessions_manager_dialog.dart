@@ -270,7 +270,11 @@ class _SessionRow extends StatelessWidget {
       key: Key('sessions_card_${summary.name}'),
       title: summary.name,
       state: _dateLabel(context, summary.modifiedAt),
-      fill: isCurrent ? context.surface.accent.withValues(alpha: 0.12) : null,
+      // The open session's row is a selected row, and `accentSurface` is the
+      // token for a selected control's fill — the inline 12% wash it replaces
+      // was invisible to the high-contrast flavor, which lifts the token
+      // (#768).
+      fill: isCurrent ? context.surface.accentSurface : null,
       showDisclosure: false,
       showDivider: !isLast,
       onTap: () => unawaited(cubit.loadNamed(summary.name)),
