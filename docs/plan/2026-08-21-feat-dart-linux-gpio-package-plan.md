@@ -368,12 +368,17 @@ plainly why not to reach for it.
 
 ### PR 1 — this repo (docs only)
 
-Brainstorm + this plan, plus the doc-drift fixes they uncovered: **ten places across
-four files** claimed the power button reaches a Pi GPIO (`console_board.py` ×2, the
-v2 plan ×2, the v2 brainstorm ×4, `segno_enclosure.py` ×2), and three of the corrected
-rows also wrongly listed **5 V** on the ribbon, which `console_board.py` asserts
-against. The netlist was right throughout; only the prose was stale. Trivial
-one-liners, folded in here rather than given their own issue per `CLAUDE.md`.
+Brainstorm + this plan, plus the doc-drift fixes they uncovered. The claim that the
+power button reaches a Pi GPIO appeared in **five files** — `console_board.py`, the v2
+plan, the v2 brainstorm, `segno_enclosure.py` and `segno_enclosure_design.md` — and
+three of the corrected rows also wrongly listed **5 V** on the ribbon, which
+`console_board.py` asserts against. The netlist was right throughout; only the prose
+was stale. Trivial one-liners, folded in here rather than given their own issue per
+`CLAUDE.md`.
+
+No instance count is quoted: it was stated as three, six, nine and ten across
+successive review rounds and was wrong each time, because every round found another
+file. The file list is the record.
 
 ### PR 2 — child repo: skeleton + ABI layer
 
@@ -407,7 +412,7 @@ CHANGELOG, `dart pub publish` as 0.1.0.
 
 | # | repo | contents | depends on |
 |---|---|---|---|
-| 1 | segno | these docs + the ten doc-drift one-liners | — |
+| 1 | segno | these docs + the doc-drift one-liners (five files) | — |
 | 2 | gpio | skeleton, ffigen, `_IOC`, `Syscalls`, ABI test | — |
 | 3 | gpio | chips, lines, values, errors | 2 |
 | 4 | gpio | edge events, isolate | 3 |
@@ -419,7 +424,7 @@ CHANGELOG, `dart pub publish` as 0.1.0.
 | risk | severity | mitigation |
 |---|---|---|
 | `gpio-sim` unavailable on GitHub runners | low | fake-kernel suite carries the gate; the sim suite skips cleanly |
-| 32-bit ARM struct layout differs from the table | medium | no Dart-capable armv7 runner exists, so a C check under `gcc -m32` proves the fixed-width assumption instead, sharing its expected values with the Dart test |
+| 32-bit ARM struct layout differs from the table | medium | no Dart-capable armv7 runner exists. A C check under `gcc -m32` shares its expected values with the Dart test — but note it is **i386, not ARM EABI**: what makes the layout width-independent is `__aligned_u64` in the header, which the suite now asserts directly |
 | `poll` strands the isolate on close | medium | `eventfd` wakeup, and `close()` waits for the isolate to exit before the fd is freed |
 | Hot restart leaks the line | medium | **not preventable from Dart** — the isolate dies with the restart while the fd does not. Mitigated only by a self-aware `EBUSY` message and a documented "full restart" |
 | Kernel < 5.10 | low | the v2 ioctl fails with `ENOTTY`, which is indistinguishable from "not a gpiochip" — so the single message names both causes and the version boundary. No v1 fallback, by decision |

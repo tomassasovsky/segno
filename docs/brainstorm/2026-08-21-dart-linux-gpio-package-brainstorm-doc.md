@@ -58,9 +58,14 @@ below, and Segno's use of it is optional and secondary.
 
 ### Doc drift this uncovered — fixed alongside this doc
 
-**Ten places across four files** asserted the dead version, and they are what led the
+The claim was asserted across **five files**, listed below, and they are what led the
 first draft astray. None was load-bearing on the board (the netlist was right
-throughout), but all read as settled fact:
+throughout), but all read as settled fact.
+
+*No total is given, deliberately.* The count was stated as three, then six, then nine,
+then ten, and was wrong every time — because each review round found another instance
+and the number was a derived fact that nobody re-derived. The list is the record; a
+tally is just one more thing to go stale.
 
 - `console_board.py` — the `PWR_BTN` net comment and the `J8` section header, the
   latter contradicted by its own next paragraph seven lines later.
@@ -73,17 +78,22 @@ throughout), but all read as settled fact:
   — the power-button part selection, twice ("it drives a Pi GPIO", "a dry contact to a
   3.3 V GPIO"). Missed by two sweeps, because nobody thinks to grep an *enclosure*
   generator for an electrical claim.
+- [`hardware/segno_enclosure_design.md`](../../hardware/segno_enclosure_design.md)
+  — twice again, and one is the verbatim twin of the sentence above: the generator
+  cites this doc as its construction reference, so the two drifted together.
 
-All ten are corrected in the same change as this doc; they were one-liners, so no
-separate issue per `CLAUDE.md`. (The count said nine until a third review round: the
-enumeration had collapsed one file's two table rows into one entry — the same
-miscount-by-table-row that let the original drift survive the first sweep.)
+All are corrected in the same change as this doc; they were one-liners, so no separate
+issue per `CLAUDE.md`.
 
-Two things about how they survived, both worth more than the fixes:
+Three things about how they survived, all worth more than the fixes:
 
 1. The first sweep fixed **one occurrence per file** and left the parts tables, so each
    file went on contradicting *itself*. Grep for the claim, not for the sentence.
-2. Review of the *corrected* rows then found a second, unrelated error sitting on them:
+2. Every subsequent round found the same shape: a claim corrected in one file, its twin
+   alive in another. What finally worked was a **repo-wide grep for the claim** rather
+   than a per-file read — which is what should have happened first, and is the only
+   step that produced a clean sweep.
+3. Review of the *corrected* rows then found a second, unrelated error sitting on them:
    they listed **5 V** on the ribbon, when `PI_HDR` omits header pins 2/4 and
    `console_board.py` carries a hard assert against connecting them (it would tie the
    external buck to the Pi's PMIC rail with no ORing diode). Editing a line is not the
