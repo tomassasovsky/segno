@@ -9,10 +9,10 @@ CLI="/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"
 JAR="${FREEROUTING_JAR:-$HOME/.local/share/freerouting/freerouting-1.9.0.jar}"
 OUT="out_console"; PCB="$OUT/segno_console_board.kicad_pcb"   # ROUTED deliverable
 PLACED="$OUT/console.placed.kicad_pcb"                        # what the generator writes
-# What a fab is given: copper, mask, silk, outline. NOT Courtyard/Fab/Adhesive/Eco/
+# What a fab is given: copper, mask, paste, silk, outline. NOT Courtyard/Fab/Adhesive/Eco/
 # User, which are ours to read -- the zip shipped 27 files, and every one a CAM
 # operator has to decide about is a chance to decide wrong.
-FAB_LAYERS="F.Cu,B.Cu,F.Mask,B.Mask,F.Silkscreen,B.Silkscreen,Edge.Cuts"
+FAB_LAYERS="F.Cu,B.Cu,F.Mask,B.Mask,F.Paste,B.Paste,F.Silkscreen,B.Silkscreen,Edge.Cuts"
 
 [ -f "$JAR" ] || { echo "Freerouting jar not found at $JAR"; echo \
   "Get freerouting-1.9.0.jar from github.com/freerouting/freerouting/releases, or set FREEROUTING_JAR."; exit 1; }

@@ -319,8 +319,12 @@ for _i in range(10):
 
 PWR_NETS = {"+5V", "+3V3"}
 MIN_PWR_TRACK_W = 0.6           # see the TRACK_W note: 1.56 A of WS2812 needs it
-# Copper, mask, silk, outline -- the layers a fab needs and nothing else.
-FAB_LAYERS = "F.Cu,B.Cu,F.Mask,B.Mask,F.Silkscreen,B.Silkscreen,Edge.Cuts"
+# Copper, mask, paste, silk, outline -- the layers a fab needs and nothing else.
+# Paste is in the list because the boards that were actually manufactured were
+# built from a set that carried it (43 front stencil apertures); leaving it out
+# here made the script emit a set the committed gerbers did not match.
+FAB_LAYERS = ("F.Cu,B.Cu,F.Mask,B.Mask,F.Paste,B.Paste,"
+              "F.Silkscreen,B.Silkscreen,Edge.Cuts")
 # The board's own via geometry. Router-inserted vias are checked against it because
 # they arrive from Freerouting, not from _via(), and defaulted to 0.6/0.3 once.
 MIN_VIA_D, MIN_VIA_DRILL = 0.8, 0.4
@@ -553,6 +557,42 @@ def _silk_items(board, fps):
                     (ToMM(b.GetLeft()) - ORIGIN[0], ToMM(b.GetTop()) - ORIGIN[1],
                      ToMM(b.GetRight()) - ORIGIN[0], ToMM(b.GetBottom()) - ORIGIN[1])))
     return out
+
+
+def _silk_art(board):
+    """The segno mark (Bravura, SMuFL U+E047) and JetBrains Mono legends as
+    FILLED silkscreen polygons, front and back. The outlines live in
+    silk_art.py (generated from the fonts -- see its docstring); this only
+    turns them into PCB_SHAPE polys. The two art strips were chosen from a
+    pad+silk occupancy scan of the finished board (>=1 mm clear of every pad
+    on their own side), so they add no DRC noise. BACK_ART is mirrored about
+    the board's x centre so it reads correctly looking AT the back."""
+    from silk_art import FRONT_ART, BACK_ART
+
+    def emit(polys, layer, mirror=False):
+        for outer, holes in polys:
+            sps = pcbnew.SHAPE_POLY_SET()
+            def chain(pts):
+                c = pcbnew.SHAPE_LINE_CHAIN()
+                for x, y in pts:
+                    xx = BW - x if mirror else x
+                    c.Append(FromMM(ORIGIN[0] + xx), FromMM(ORIGIN[1] + y))
+                c.SetClosed(True)
+                return c
+            oi = sps.AddOutline(chain(outer))
+            for h in holes:
+                sps.AddHole(chain(h), oi)
+            sps.Fracture()
+            sh = pcbnew.PCB_SHAPE(board)
+            sh.SetShape(pcbnew.SHAPE_T_POLY)
+            sh.SetPolyShape(sps)
+            sh.SetFilled(True)
+            sh.SetWidth(0)
+            sh.SetLayer(layer)
+            board.Add(sh)
+
+    emit(FRONT_ART, pcbnew.F_SilkS)
+    emit(BACK_ART, pcbnew.B_SilkS, mirror=True)
 
 
 def _silk(board, text, x, y, h=1.2):
@@ -1401,6 +1441,7 @@ def build(quiet=False):
                     p.SetNet(netmap[name])
 
     _outline(board)
+    _silk_art(board)
 
     # _silk() takes the text CENTRE, not its left edge -- the title was at x 6,
     # i.e. hanging 10 mm off the left of the board, and at y 86 on an 82 mm board.
