@@ -64,8 +64,26 @@ sheet claimed "2.0 mm 5052-H32 Al, qty 1" — including the steel post, ×2.
   gone.
 
 Material: **2.0 mm 5052-H32 aluminium**, K-factor 0.33, R2 tooling (bend notes
-on each drawing). Finish: black powder coat, outside faces. Front-lip M4 holes
-are laser-cut then tapped after bending (called out on the drawing).
+on each drawing). `segno_post` is the exception: **1.6 mm cold-rolled steel**.
+Finish: black powder coat, outside faces.
+
+**Lid-seam threads (18x M3).** The Ø2.5 pilots on the base front wall and rear
+transition are laser-cut, **tapped M3 after bending**, and the threads must be
+**masked before coating or chased after it** — powder in a 2 mm-deep thread
+binds the screw, and there are only ~4 threads to lose. (The old note here said
+"front-lip M4": wrong on both counts since the #762 seam conversion — the lip
+carries Ø3.4 *clearance* holes, the base carries the taps, and the size is M3.)
+
+**Lid-to-base fit — READ THIS BEFORE FOLDING THE LID.** In CAD the lid's front
+lip lands *flat* against the front wall: lid-to-base minimum distance measures
+**0.0000 mm**. Both faces are outside faces and **nothing is masked** (owner
+call: coat everything), so as drawn the joint is roughly 0.16 mm of interference
+before any tolerance.
+
+The fix is a **fit, not a dimension**: fold the front lip slightly open so that,
+**after coating**, the lip inner face clears the front wall outer face by
+**0.3 mm** — tight, but it slips on without force. Check it against the finished
+base before setting the fold. The same note is on the lid drawing.
 
 ## 2. 3D printing (FDM)
 
