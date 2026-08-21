@@ -56,7 +56,7 @@ below, and Segno's use of it is optional and secondary.
 
 ### Doc drift this uncovered — fixed alongside this doc
 
-**Nine places across four files** asserted the dead version, and they are what led the
+**Ten places across four files** asserted the dead version, and they are what led the
 first draft astray. None was load-bearing on the board (the netlist was right
 throughout), but all read as settled fact:
 
@@ -65,14 +65,17 @@ throughout), but all read as settled fact:
 - [`2026-08-17-feat-console-board-v2-plan.md`](../plan/2026-08-17-feat-console-board-v2-plan.md)
   — the ribbon contents and the parts table, neither matching `PI_HDR`.
 - [`2026-08-17-console-board-v2-brainstorm-doc.md`](2026-08-17-console-board-v2-brainstorm-doc.md)
-  — the key-decision bullet, the board-content table, and the ribbon-signals line.
+  — the key-decision bullet, the ribbon-signals line, and **both** affected
+  board-content rows (Pi link and Power button).
 - [`hardware/enclosure/segno_enclosure.py`](../../hardware/enclosure/segno_enclosure.py)
   — the power-button part selection, twice ("it drives a Pi GPIO", "a dry contact to a
   3.3 V GPIO"). Missed by two sweeps, because nobody thinks to grep an *enclosure*
   generator for an electrical claim.
 
-All nine are corrected in the same change as this doc; they were one-liners, so no
-separate issue per `CLAUDE.md`.
+All ten are corrected in the same change as this doc; they were one-liners, so no
+separate issue per `CLAUDE.md`. (The count said nine until a third review round: the
+enumeration had collapsed one file's two table rows into one entry — the same
+miscount-by-table-row that let the original drift survive the first sweep.)
 
 Two things about how they survived, both worth more than the fixes:
 

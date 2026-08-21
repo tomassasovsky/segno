@@ -422,8 +422,7 @@ IND_PITCH = 50.0     # indicator LED pitch
 #
 # Chosen over the UL+CE ZJWZJH (B09CCPDC1C) at HALF the price: that listing's
 # UL/CE and IP67 buy nothing here -- this is a dry contact to a 3.3 V logic pad,
-# not a
-# mains switch on a wet deck -- while APIELE has 1039 reviews at 4.7 against 9 at
+# not a mains switch on a wet deck -- while APIELE has 1039 reviews at 4.7 against 9 at
 # 3.9, and a TALLER head. Both ship dimension drawings and both land inside the
 # constants below, so the choice does not touch the panel.
 #

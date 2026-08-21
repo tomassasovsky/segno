@@ -146,9 +146,22 @@ lib/src/models.dart              enums + value types
 ### ioctl numbers are computed, not hardcoded
 
 Request numbers encode the struct size, so they are computed in Dart from the
-asm-generic `_IOC` formula over `sizeOf<Struct>()`. If a hand-written or regenerated
-`ffi.Struct` ever mismatches the kernel's layout, the computed number stops matching
-and the ioctl **fails loudly** rather than scribbling past a buffer.
+asm-generic `_IOC` formula over `sizeOf<Struct>()`. If a regenerated `ffi.Struct` ever
+changes *size*, the computed number stops matching and the ioctl **fails loudly**
+rather than scribbling past a buffer.
+
+**That tripwire catches size and nothing else**, which is worth being precise about
+because it is easy to over-trust. A *size-preserving* drift — a future kernel spending
+part of a reserved `padding[]`, or two same-width fields swapping — produces an
+identical request number, the kernel accepts the call, and every field is then read
+from the wrong offset with no error anywhere. `gpio_v2_line_event` is worse still: it
+is read with `read(2)` and has no ioctl at all, so it has no tripwire whatsoever.
+
+So **field offsets are pinned separately, on both sides of the boundary**: in Dart by
+writing a sentinel into a zeroed struct and asserting where the changed bytes land
+(that offset *is* the one Dart will use against the kernel), and in C by
+compile-time `offsetof` assertions built under both `-m32` and `-m64`. Neither is
+optional.
 
 Measured against the current header, and asserted in a test:
 
@@ -268,10 +281,15 @@ required" — it is a property of the interface, not of the package.
 A known `flutter_gpiod` failure worth designing against rather than discovering: a
 Flutter hot restart tears down isolates but **not the process**, so the line fd — and
 the kernel's ownership of the line — survives, and the next request fails `EBUSY` with
-the app itself named as consumer. Answer: a process-lifetime registry keyed by
-`(chip, offsets)` that hands back the live request instead of re-requesting, plus an
-`EBUSY` message that recognises its own consumer string and says "still held from a
-previous hot restart; full restart to release".
+the app itself named as consumer. The tempting answer — a process-lifetime registry of live requests — **does not work,
+and the reason is the same one that causes the bug**: hot restart tears down the
+isolate, so any Dart-side map is re-initialised empty at exactly the moment it would
+be needed. Nothing in Dart outlives the restart; only the kernel's fd does.
+
+So the honest mitigation is diagnostic, not preventive: an `EBUSY` message that
+recognises its own consumer string and says "still held from a previous hot restart;
+a full restart releases it". Development ergonomics, documented rather than
+engineered around.
 
 ### Pi 5 chip renumbering
 
@@ -285,8 +303,14 @@ plainly why not to reach for it.
 - [ ] `dart analyze` clean; `dart format` clean; pana score reported in CI.
 - [ ] Fake-kernel suite covers: chip discovery, line info, multi-line request encoding,
       atomic get/set, reconfigure, edge decode, seqno-gap detection, every mapped errno.
-- [ ] ABI test passes on **x64, arm64 and armv7** — struct sizes and computed ioctl
-      numbers match the table above on all three.
+- [ ] ABI test passes on **x64 and arm64** — the two architectures GitHub-hosted
+      runners offer — asserting struct sizes, *field offsets*, and computed ioctl
+      numbers.
+- [ ] 32-bit is covered by a **C check, not a Dart matrix leg**: there is no
+      Dart-capable armv7 runner, so `tool/check_abi_32bit.sh` compiles the same size
+      and offset assertions under `gcc -m32`, parsing the expected values out of the
+      Dart test so the two cannot drift. It tests the same proposition far more
+      cheaply than emulating a toolchain.
 - [ ] `gpio-sim` suite passes where available, skips (not fails) where not.
 - [ ] A `blink` and a `button` example that run on a Pi 5 from a fresh `dart pub get`,
       with **no apt package installed**.
@@ -304,9 +328,9 @@ plainly why not to reach for it.
 
 ### PR 1 — this repo (docs only)
 
-Brainstorm + this plan, plus the doc-drift fixes they uncovered: **nine places across
+Brainstorm + this plan, plus the doc-drift fixes they uncovered: **ten places across
 four files** claimed the power button reaches a Pi GPIO (`console_board.py` ×2, the
-v2 plan ×2, the v2 brainstorm ×3, `segno_enclosure.py` ×2), and three of the corrected
+v2 plan ×2, the v2 brainstorm ×4, `segno_enclosure.py` ×2), and three of the corrected
 rows also wrongly listed **5 V** on the ribbon, which `console_board.py` asserts
 against. The netlist was right throughout; only the prose was stale. Trivial
 one-liners, folded in here rather than given their own issue per `CLAUDE.md`.
@@ -319,7 +343,7 @@ and checked-in `gpio_uapi.dart`, `_IOC` encoding, the `Syscalls` seam with
 
 ### PR 3 — child repo: chips, lines, values
 
-Discovery (`listChips`, `byLabel`, `byName`, `byPath`), chip/line info, `request` with
+Discovery (`GpioChip.list`, `byLabel`, `byName`, `byPath`), chip/line info, `request` with
 full `LineConfig` (direction, bias, drive, activeLow, debounce), atomic get/set,
 `reconfigure`, `GpioException` + errno mapping. Fake-kernel suite lands with it.
 
@@ -343,7 +367,7 @@ CHANGELOG, `dart pub publish` as 0.1.0.
 
 | # | repo | contents | depends on |
 |---|---|---|---|
-| 1 | segno | these docs + the nine doc-drift one-liners | — |
+| 1 | segno | these docs + the ten doc-drift one-liners | — |
 | 2 | gpio | skeleton, ffigen, `_IOC`, `Syscalls`, ABI test | — |
 | 3 | gpio | chips, lines, values, errors | 2 |
 | 4 | gpio | edge events, isolate | 3 |
@@ -355,9 +379,9 @@ CHANGELOG, `dart pub publish` as 0.1.0.
 | risk | severity | mitigation |
 |---|---|---|
 | `gpio-sim` unavailable on GitHub runners | low | fake-kernel suite carries the gate; the sim suite skips cleanly |
-| 32-bit ARM struct layout differs from the table | medium | ABI test runs on armv7 in the matrix — it is there to *prove* the fixed-width assumption, not restate it |
+| 32-bit ARM struct layout differs from the table | medium | no Dart-capable armv7 runner exists, so a C check under `gcc -m32` proves the fixed-width assumption instead, sharing its expected values with the Dart test |
 | `poll` strands the isolate on close | medium | `eventfd` wakeup, and `close()` waits for the isolate to exit before the fd is freed |
-| Hot restart leaks the line | medium | process-lifetime registry + a self-aware `EBUSY` message |
+| Hot restart leaks the line | medium | **not preventable from Dart** — the isolate dies with the restart while the fd does not. Mitigated only by a self-aware `EBUSY` message and a documented "full restart" |
 | Kernel < 5.10 | low | v2 ioctl fails; error says so explicitly. No v1 fallback, by decision |
 | Package has no in-repo consumer, so it bit-rots | **real** | accepted deliberately: it is an OSS deliverable, not Segno infrastructure. Revisit if the bare-Pi footswitch path is ever committed |
 | Owning a published package is ongoing work | real | accepted at the plan gate |
