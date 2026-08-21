@@ -170,8 +170,11 @@ def fold_base(path):
     shell = _bend_fill(shell, ((g, BD, 0), (BW-g, BD, 0)), (0, -1, 0), (0, 0, 1))   # rear-bottom
     shell = _bend_fill(shell, ((0, g, 0),  (0, BD-g, 0)),  (1,  0, 0), (0, 0, 1))   # left-bottom
     shell = _bend_fill(shell, ((BW, g, 0), (BW, BD-g, 0)), (-1, 0, 0), (0, 0, 1))   # right-bottom
-    # the rear->transition fold is only ~TRANS_ANGLE (~24 deg), a shallow brake crease;
-    # rounding it adds nothing visible and leaves a degenerate sliver, so it stays sharp.
+    # the rear->transition fold turns 90 - TRANS_ANGLE (~65.6 deg, 114.4 included) --
+    # see the rotate() above and the bend table on segno_base.pdf. (This comment used to
+    # read "only ~TRANS_ANGLE (~24 deg)", which is the flange's rake from HORIZONTAL, not
+    # the turn from the vertical wall; the #775 DFM sweep quoted the wrong number off it.)
+    # Rounding it adds nothing visible and leaves a degenerate sliver, so it stays sharp.
     return [("base", shell)]
 
 

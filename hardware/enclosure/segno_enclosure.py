@@ -28,8 +28,16 @@ Geometry is validated by an **assertion suite** (`_check()`) run before any outp
 so "the generator runs" means the geometry is valid (width budget, no overlapping
 cutouts, platform head-room, screen depth, vent free-area, bezel overlap).
 
+The DOCUMENTS are validated separately by `_verify_drawing_package()`, which runs
+on the finished files at the end of a build: through-cut layers actually render,
+every drawn fold is in a bend table, no sheet inherits a default material or
+quantity, coating masks never sit on a cutting layer, and the sheet-metal zip
+carries sheet metal only. That path used to have no checks at all, which is where
+the whole RED list of the #775 DFM sweep came from.
+
 Outputs (./out, mm): STEP (assembly + per-part), DXF flat patterns
-(CUT/BEND/ENGRAVE/VENT layers), PDF drawing sheets.
+(CUT + VENT = through-cut, BEND = fold reference, MASK = no-paint, NOTE/ENGRAVE/
+SILK = lettering), PDF drawing sheets with a bend table and title block.
 
 Run with the bundled venv (cadquery + ezdxf + matplotlib):
     .venv/bin/python segno_enclosure.py            # check + STEP + DXF + PDF
@@ -2105,9 +2113,15 @@ def _doc():
     doc.layers.add("NOTE", color=8)
     doc.layers.add("SILK", color=5)    # silkscreen (printed labels)
     # MASK is annotation, never cut: rings around the features the powder coater
-    # has to keep bare (PEM threads, the earth stud's bonding land). Excluded from
+    # has to keep bare (thread pilots, the earth stud's bonding land). Excluded from
     # every area/extents pass the same way NOTE/ENGRAVE are.
-    doc.layers.add("MASK", color=1)
+    #
+    # DASHDOT is load-bearing, not decoration (#775 R3): a plain solid CIRCLE on an
+    # unfamiliar layer is geometrically indistinguishable from a hole, and the biggest
+    # one here is Ø20 straight through the M6 earth-stud land -- cut it and the base is
+    # scrap AND the safety earth is gone. Dash-dot + red + a per-ring callout (see
+    # _mask_circle) means no operator can mistake it for cutting data.
+    doc.layers.add("MASK", color=1, linetype="DASHDOT")
     return doc
 
 def _circle(msp, x, y, d, layer="CUT"):
@@ -2115,6 +2129,24 @@ def _circle(msp, x, y, d, layer="CUT"):
 
 def _poly(msp, pts, layer="CUT", closed=True):
     msp.add_lwpolyline(pts, close=closed, dxfattribs={"layer": layer})
+
+# Feature refs that are coating masks, not holes. Named so _emit can hold the one
+# invariant that matters: a mask can never be emitted onto a cutting layer (#775 R3).
+MASK_REFS = ("PANEL_BOND", "EARTH_MASK")
+
+def _mask_circle(msp, x, y, d, what):
+    """A NO-PAINT coating-mask ring plus its own leader and callout.
+
+    Never a cut. Every mask ring in the package gets one of these instead of a bare
+    circle: the ring is dash-dot red on layer MASK, and the leader carries the words
+    "DO NOT CUT" right next to the geometry, so the warning travels with the feature
+    even if someone flattens layers or looks only at the PDF (#775 R3)."""
+    r = d / 2.0
+    _circle(msp, x, y, d, "MASK")
+    _poly(msp, [(x + r * 0.707, y + r * 0.707), (x + r + 6.0, y + r + 6.0),
+                (x + r + 30.0, y + r + 6.0)], "MASK", closed=False)
+    _text(msp, x + r + 7.0, y + r + 8.0, 4.5,
+          f"MASK DIA {d:.0f} - NO PAINT, DO NOT CUT ({what})", "MASK")
 
 def _rrect(msp, x, y, w, h, r=R_FILLET, layer="CUT"):
     r = max(0.0, min(r, w / 2.0, h / 2.0))
@@ -2136,9 +2168,14 @@ def _text(msp, x, y, h, s, layer="ENGRAVE", wf=1.0, halign="left"):
 def _emit(msp, feats, ox=0.0, oy=0.0):
     for f in feats:
         layer = f.get("layer", "CUT")
+        assert not (f.get("ref") in MASK_REFS and layer != "MASK"), \
+            f"{f.get('ref')} is a coating mask -- it must never be emitted on layer {layer}"
         x, y = f["u"] + ox, f["v"] + oy
         if f["kind"] == "circle":
-            _circle(msp, x, y, f["d"], layer)
+            if layer == "MASK":
+                _mask_circle(msp, x, y, f["d"], f.get("ref", "coating mask"))
+            else:
+                _circle(msp, x, y, f["d"], layer)
         elif f["kind"] == "ring":
             # only the OD is a real cut: the ID/shaft geometry belongs to the
             # ring_disc part (its own DXF) -- emitting the ID here put a scrap
@@ -2391,10 +2428,12 @@ def dxf_base(path):
                                                                        # cut after paint so no masking; #760)
     for c in io:                                                       # bonding land: paint is an
         if c.get("ref") == "EARTH_STUD":                               # insulator, so the ring
-            _circle(msp, c["u"], c["v"], MASK_GND_D, "MASK")           # terminal needs bare metal
+            _mask_circle(msp, c["u"], c["v"], MASK_GND_D,               # terminal needs bare metal
+                         "M6 earth stud bonding land, BOTH faces")
     _text(msp, 8, BD+Hr+Ht+22, 7,
-          "MASK (rojo / no pintar): zona de masa alrededor del perno M6 "
-          "(ambas caras). Los pilotos de rosca se roscan M3 despues de pintar.", "MASK")
+          "MASK (red dash-dot) = NO-PAINT coating mask, NOT a cut: bare-metal bonding "
+          "land around the M6 earth stud, BOTH faces. The M3 thread pilots are tapped "
+          "AFTER painting, so they need no mask.", "MASK")
 
     _text(msp, 8, BD+Hr+Ht+10, 9,
           f"Segno BASE  2.0mm  x1  bottom + front/rear/sides fold up (bend ded {bdd:.2f}); WELD-FREE: rivet the 4 corners via L-brackets; rear 2nd fold = transition (flange FULL width, seats on the relieved side-wall tops); FOLD with the DRAWN side as the INSIDE face (canonical mirror: encoder lands on the player's LEFT)",
@@ -3676,10 +3715,173 @@ def build_step(write_parts=True):
     return os.path.join(OUT, "segno_assembly.step")
 
 # ===========================================================================
+# DRAWING METADATA -- material, quantity, package, bend table   (issue #775)
+# ---------------------------------------------------------------------------
+# The geometry engine is gated by _check(); the DOCUMENT path had no assertions at
+# all, and every RED finding of the #775 DFM sweep landed in that gap. Everything a
+# sheet says about itself now comes from here, and _verify_drawing_package() reads
+# the generated files back and holds it.
+# ===========================================================================
+
+AL_SHEET  = f"{T:.1f} mm 5052-H32 aluminium"
+STEEL_CR  = f"{POST_T:.1f} mm cold-rolled steel"
+VINYL     = "printed adhesive vinyl / polycarbonate, die-cut - NOT METAL"
+
+# stem -> (material printed on the sheet, qty per console, vendor package).
+# Quantities track the cut list in hardware/MANUFACTURING.md section 1.
+# Before #775 dxf_to_pdf defaulted these and the one call site passed neither, so
+# EVERY sheet claimed "2.0 mm 5052-H32 Al | qty 1" -- including the 1.6 mm steel
+# post (x2) and the vinyl overlay.
+PKG_SHEETMETAL = "sheetmetal"   # laser + brake + powder coat
+PKG_OVERLAY    = "overlay"      # label/overlay printer, die-cut, no metal
+PART_SPECS = {
+    "segno_base":                (AL_SHEET, 1, PKG_SHEETMETAL),
+    "segno_faceplate":           (AL_SHEET, 1, PKG_SHEETMETAL),
+    "segno_rear_panel":          (AL_SHEET, 1, PKG_SHEETMETAL),
+    "segno_ring_disc":           (AL_SHEET, 1, PKG_SHEETMETAL),
+    "segno_corner_bracket_rear": (AL_SHEET, 2, PKG_SHEETMETAL),
+    "segno_post":                (STEEL_CR, 2, PKG_SHEETMETAL),
+    "segno_overlay":             (VINYL,    1, PKG_OVERLAY),
+}
+
+# Layers whose geometry is CUT CLEAN THROUGH the sheet. Both of these must render
+# black on every PDF: VENT is 127 louvres and ~5.6 m of cut path, and it used to
+# render ACI-7 white on a white sheet -- invisible on every drawing, missing from
+# every quote, and the failure tail is a Pi 5 in a sealed aluminium box (#775 R1).
+THRU_CUT_LAYERS = ("CUT", "VENT")
+# Annotation layers: text, fold references and coating masks. Never cut.
+ANNOT_LAYERS    = ("BEND", "NOTE", "ENGRAVE", "SILK", "MASK", "ACRYLIC")
+
+# The legend, as one string so it can be asserted on. It used to read
+# "CUT(thru) - BEND(score) - VENT - ENGRAVE", which tells a shop that (a) VENT is
+# some other process and (b) the fold lines want scoring: 3 380 mm of score in
+# 2 mm 5052 is a scrapped base (#775 R1 + R4).
+SHEET_LEGEND = ("CUT + VENT = THROUGH-CUT (both, same operation)   |   "
+                "BEND = FOLD LINE REFERENCE ONLY - do not cut, score, etch or mark   |   "
+                "MASK = no-paint coating mask, DO NOT CUT   |   "
+                "NOTE / ENGRAVE / SILK = lettering, not geometry")
+
+# --- bend tables -----------------------------------------------------------
+# A flat pattern with no angles is not a drawing. The base's transition fold is
+# neither 90 nor 180 deg and appeared in no document at all; guess it and the lid's
+# rear lap and its nine M3 pilots all land in the wrong plane (#775 R2).
+#
+# Row: (seq, name, axis, position mm, line length mm, fold rotation deg,
+#       direction, inside radius mm, development deduction mm)
+# "fold rotation" is the angle the flap turns THROUGH from flat; the included
+# angle printed beside it is 180 - rotation, which is what a brake operator reads
+# off a protractor. Direction is stated relative to the DRAWN face because that is
+# the only reference on a flat pattern -- each part's NOTE says which face is which.
+UP_TOWARD = "UP, toward drawn face"
+DN_AWAY   = "DOWN, away from drawn face"
+
+def _bend_tables():
+    BW, BD = W - 2*T, D - 2*T
+    lid_w  = LID_W                      # transition + both lid folds run the FULL blank width
+    ffl    = LID_FRONT_FL
+    tabs = {}
+    # Base, listed in the only fold order that is buildable on a brake: the
+    # transition while the blank is still flat, then the two long walls, then the
+    # sides last (their punch has to fit between the standing front and rear walls,
+    # which the Ø6 corner reliefs open up to 413 mm).
+    tabs["segno_base"] = [
+        (1, "rear -> transition", "y", BD + HR_FLAT, lid_w, 90.0 - TRANS_ANGLE, UP_TOWARD, RI, DD_TR),
+        (2, "front wall",         "y", 0.0,          BW,    90.0,               UP_TOWARD, RI, DEV90),
+        (3, "rear wall",          "y", BD,           BW,    90.0,               UP_TOWARD, RI, DEV90),
+        (4, "left wall",          "x", 0.0,          BD,    90.0,               UP_TOWARD, RI, DEV90),
+        (5, "right wall",         "x", BW,           BD,    90.0,               UP_TOWARD, RI, DEV90),
+    ]
+    tabs["segno_faceplate"] = [
+        (1, "front lip", "y", ffl,          lid_w, 90.0 - SLOPE_ANGLE,          DN_AWAY, RI, DD_LIP),
+        (2, "rear lap",  "y", ffl + FP_V,   lid_w, SLOPE_ANGLE + TRANS_ANGLE,   DN_AWAY, RI, DD_LAP),
+    ]
+    tabs["segno_corner_bracket_rear"] = [
+        (1, "leg / leg", "x", CORNER_LEG, CORNER_HT, 90.0, UP_TOWARD, RI, DEV90),
+    ]
+    tabs["segno_post"] = [
+        (1, "pad -> web",  "y", POST_PAD,            POST_PW, 90.0 + POST_TILT, UP_TOWARD, POST_T, 0.0),
+        (2, "web -> foot", "y", POST_PAD + POST_H,   POST_PW, 90.0,             UP_TOWARD, POST_T, 0.0),
+    ]
+    return tabs
+
+BEND_TABLES = _bend_tables()
+
+# Per-part footnote printed under the bend table. The post is the odd one out: its
+# flat is nominal segments with NO deduction applied, which is worth saying out
+# loud on the sheet rather than leaving a fabricator to assume it was developed.
+BEND_FOOTNOTES = {
+    "segno_base": (f"K-factor {KF} | bend allowance = rad(fold) x (Ri + K x T) | flat flap = outer length - deduction. "
+                   f"ROWS ARE IN FOLD ORDER - do not resequence. Sides (4,5) need a punch <= 410 mm: the 4 x DIA 6.0 corner "
+                   f"reliefs open 413 mm between the standing front and rear walls. Gauge 4 and 5 off the formed "
+                   f"front/rear wall faces (the side flange is a wedge and is not square to its bend). V12 die throughout; "
+                   f"Ri {RI:.1f} mm is mandatory - if with-grain cracking appears STOP, do not open the radius, the flat "
+                   f"must be re-developed."),
+    "segno_faceplate": (f"K-factor {KF} | bend allowance = rad(fold) x (Ri + K x T) | flat flap = outer length - deduction. "
+                        f"The front-lip bend runs across the pedal apertures (12.1 mm of backing): V12 die, segmented punch, "
+                        f"expect to straighten."),
+    "segno_corner_bracket_rear": (f"K-factor {KF} | flat flap = outer length - deduction. x2, and the second one is "
+                                  f"installed TURNED OVER - the part is near-symmetric, only the hole pattern is handed."),
+    "segno_post": (f"1.6 mm COLD-ROLLED STEEL, not the 2.0 mm aluminium of the shell. Ri {POST_T:.1f} mm (1.0 x T). "
+                   f"DEDUCTION NOT APPLIED - the flat is nominal segments (PROVISIONAL): confirm the developed length "
+                   f"against your own tooling before cutting."),
+}
+
+def _bend_table_lines(stem):
+    """The bend table as rendered text rows, header first. Empty for a flat part."""
+    rows = BEND_TABLES.get(stem, ())
+    if not rows:
+        return []
+    cols = ((" #", 4), ("FOLD LINE", 21), ("POSITION", 14), ("LENGTH", 10),
+            ("ROTATION", 14), ("INCLUDED", 14), ("DIRECTION", 28), ("Ri", 10),
+            ("DEDUCTION", 0))
+    def row(cells):
+        return "".join(c if wdt == 0 else c.ljust(wdt) for c, (_h, wdt) in zip(cells, cols))
+    out = ["BEND TABLE   ( rotation = angle the flap turns THROUGH from flat;   included = 180 - rotation )",
+           row([h for h, _w in cols])]
+    for seq, name, axis, pos, ln, rot, direction, ri, ded in rows:
+        out.append(row([f" {seq}", name, f"{axis} = {pos:8.2f}", f"{ln:8.1f}",
+                        f"{rot:8.3f} deg", f"{180.0-rot:8.3f} deg", direction,
+                        f"{ri:.1f} mm", f"{ded:.3f} mm" if ded else "none (nominal)"]))
+    return out
+
+# ===========================================================================
 # PDF drawing sheets
 # ===========================================================================
 
-def dxf_to_pdf(dxf_path, pdf_path, title="", material="2.0 mm 5052-H32 Al", qty=1):
+def _force_pdf_layer_colours(doc):
+    """Make every through-cut layer render BLACK and prove nothing else renders white.
+
+    ezdxf's matplotlib backend maps ACI 7 to white on a white sheet. `CUT` was
+    forced black here by hand; `VENT` -- 127 louvres, 18 425 mm2, ~5.6 m of cut
+    path -- was not, so it was invisible on every PDF ever generated (#775 R1).
+    Returns the layers it touched; the assert below is the actual gate."""
+    blackened = []
+    for lname in THRU_CUT_LAYERS:
+        if doc.layers.has_entry(lname):
+            doc.layers.get(lname).rgb = (0, 0, 0)
+            blackened.append(lname)
+    if doc.layers.has_entry("MASK"):
+        doc.layers.get("MASK").rgb = (220, 30, 30)
+    used = {e.dxf.layer for e in doc.modelspace()}
+    for lname in sorted(used):
+        assert lname in THRU_CUT_LAYERS + ANNOT_LAYERS, \
+            f"layer {lname!r} carries geometry but is neither a declared through-cut nor annotation layer"
+        lay = doc.layers.get(lname)
+        if lname in THRU_CUT_LAYERS:
+            assert lay.rgb == (0, 0, 0), f"through-cut layer {lname!r} would not render black"
+        else:
+            assert lay.rgb is not None or lay.color != 7, \
+                f"layer {lname!r} is ACI 7 -- it renders white on a white sheet and vanishes"
+    return blackened
+
+def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
+    """One drawing sheet: the flat pattern, a bend table, a title block and a legend.
+
+    `material` and `qty` are REQUIRED, deliberately: they used to default to
+    "2.0 mm 5052-H32 Al" / 1 and the single call site passed neither, so the 1.6 mm
+    steel post (x2) and the vinyl overlay both shipped sheets calling for 2 mm
+    aluminium, qty 1 (#775 R5/R6)."""
+    import textwrap
     import matplotlib; matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import ezdxf
@@ -3687,10 +3889,14 @@ def dxf_to_pdf(dxf_path, pdf_path, title="", material="2.0 mm 5052-H32 Al", qty=
     from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
     from ezdxf.bbox import extents
     doc = ezdxf.readfile(dxf_path)
-    doc.layers.get("CUT").rgb = (0, 0, 0)   # ACI-7 -> black on white
+    _force_pdf_layer_colours(doc)
     msp = doc.modelspace()
+    stem = stem if stem is not None else os.path.splitext(os.path.basename(dxf_path))[0]
+
     fig = plt.figure(figsize=(16, 10))
     ax = fig.add_axes([0.04, 0.10, 0.92, 0.86]); ax.set_axis_off()
+    # NB the matplotlib backend RESIZES the figure to the data aspect in finalize(),
+    # so nothing below may assume the 16x10 above -- read the size back instead.
     Frontend(RenderContext(doc), MatplotlibBackend(ax)).draw_layout(msp, finalize=True)
     ax.set_aspect("equal")
     bb = extents(e for e in msp if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
@@ -3698,11 +3904,53 @@ def dxf_to_pdf(dxf_path, pdf_path, title="", material="2.0 mm 5052-H32 Al", qty=
         x0, y0, _ = bb.extmin; x1, y1, _ = bb.extmax
         ax.annotate(f"{x1-x0:.1f}", ((x0+x1)/2, y0), ha="center", va="top", fontsize=11, color="#0a4")
         ax.annotate(f"{y1-y0:.1f}", (x0, (y0+y1)/2), ha="right", va="center", rotation=90, fontsize=11, color="#0a4")
-    fig.text(0.04, 0.045, "Segno loopstation enclosure", fontsize=12, weight="bold")
-    fig.text(0.04, 0.022,
-             f"{title}   |   {material}   |   qty {qty}   |   units mm   |   "
-             f"CUT(thru) · BEND(score) · VENT · ENGRAVE   |   bend R {RI:.1f}",
-             fontsize=9, color="#333")
+
+    # ---- bottom strip: bend table, then the title block + legend ---------------
+    # Everything here is sized against the FINISHED page width: the sheets are
+    # auto-fitted to their part, so a fixed point size that suits the 1040 mm base
+    # runs straight off the edge of the 402 mm rear panel (which is how the post
+    # sheet ended up with its title block printed over its own heading).
+    w, h = fig.get_size_inches()
+    usable_pt = w * 72.0 * 0.94
+    mono_cols = lambda fs: max(40, int(usable_pt / (0.602 * fs)))
+    fit_fs    = lambda text, want, ratio=0.55: min(want, usable_pt / (ratio * max(len(text), 1)))
+
+    table = _bend_table_lines(stem)
+    foot  = BEND_FOOTNOTES.get(stem, "")
+    ROW, FS = 0.20, 7.4                      # inches per row / point size
+    block = [(ln, FS, True) for ln in table]
+    if foot:
+        block += [("", FS, False)]
+        block += [(ln, FS - 0.9, False) for ln in textwrap.wrap(foot, mono_cols(FS - 0.9))]
+    legend = textwrap.wrap(SHEET_LEGEND, mono_cols(FS)) or [SHEET_LEGEND]
+
+    # the bend spec is PER PART -- the post is 1.6 mm steel on Ri 1.6, and a flat
+    # part has no radius at all. A blanket "bend Ri 2.0" was wrong on both.
+    radii = sorted({r[7] for r in BEND_TABLES.get(stem, ())})
+    bend_spec = ("   |   FLAT PART, no bends" if not radii else
+                 "   |   bend Ri " + " / ".join(f"{r:.1f}" for r in radii) + f" mm, K-factor {KF}")
+    tb = f"{title}   |   {material}   |   QTY {qty}   |   units mm{bend_spec}"
+
+    legend_h = 0.155 * len(legend)
+    strip = 0.62 + legend_h + (ROW * len(block) + 0.30 if block else 0.0)
+    pos  = ax.get_position()
+    y0_in, h_in = pos.y0 * h, pos.height * h
+    newh = h + strip                          # grow the PAGE, never shrink the drawing
+    fig.set_size_inches(w, newh, forward=True)
+    ax.set_position([pos.x0, (y0_in + strip) / newh, pos.width, h_in / newh])
+    fy = lambda inches: inches / newh
+    y = strip - 0.22
+    for i, (line, fs, bold) in enumerate(block):
+        fig.text(0.03, fy(y), line, family="monospace", fontsize=fs,
+                 weight="bold" if i < 2 and bold else "normal",
+                 color="#000" if bold else "#333")
+        y -= ROW
+    fig.text(0.03, fy(legend_h + 0.40), "Segno loopstation enclosure",
+             fontsize=fit_fs("Segno loopstation enclosure", 12.0), weight="bold")
+    fig.text(0.03, fy(legend_h + 0.18), tb, fontsize=fit_fs(tb, 10.0), weight="bold", color="#000")
+    for i, line in enumerate(legend):
+        fig.text(0.03, fy(legend_h - 0.115 - 0.155 * i), line,
+                 family="monospace", fontsize=FS, color="#333")
     fig.savefig(pdf_path, dpi=150); plt.close(fig)
 
 # ===========================================================================
@@ -3795,8 +4043,7 @@ def _draw_dxf(ax, dxf_path):
     from ezdxf.addons.drawing import RenderContext, Frontend
     from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
     doc = ezdxf.readfile(dxf_path)
-    doc.layers.get("CUT").rgb = (0, 0, 0)
-    doc.layers.get("MASK").rgb = (220, 30, 30)
+    _force_pdf_layer_colours(doc)          # VENT black too, not just CUT (#775 R1)
     ax.set_axis_off()
     Frontend(RenderContext(doc), MatplotlibBackend(ax)).draw_layout(doc.modelspace(), finalize=True)
     ax.set_aspect("equal")
@@ -4145,8 +4392,14 @@ def build_quote_packages():
                         z.write(p, n + ext)
         zips.append(zp)
 
-    sheet = [n for n, _ in DXF_PARTS]
+    # The sheet-metal pack carries SHEET METAL only. segno_overlay used to ride in
+    # here with a title block reading "2.0 mm 5052-H32 Al | qty 1" -- an 846 x 406.6
+    # printed vinyl graphic quoted as 0.34 m2 of aluminium, cut and powder coated for
+    # nothing, roughly a third of the metal spend (#775 R6). It now has its own pack.
+    sheet   = [n for n, _ in DXF_PARTS if PART_SPECS[n][2] == PKG_SHEETMETAL]
+    overlay = [n for n, _ in DXF_PARTS if PART_SPECS[n][2] == PKG_OVERLAY]
     pack("segno_sheetmetal.zip", sheet, (".dxf", ".pdf"))
+    pack("segno_overlay.zip", overlay, (".dxf", ".pdf"))
     pack("segno_sheetmetal_step.zip",
          ["segno_assembly", "segno_base", "segno_faceplate",
           "segno_corner_bracket_rear", "segno_ring_disc",
@@ -4167,6 +4420,133 @@ def build_quote_packages():
     # invites confusion. Narrowed to the paint BOM -- not every DXF_PART.
     pack("segno_pintura.zip", ["segno_paint_quote"] + [s for s, *_ in PAINT_BOM], (".pdf",))
     return zips
+
+
+# ===========================================================================
+# DRAWING / PACKAGE GATES   (issue #775)
+# ---------------------------------------------------------------------------
+# _check() proves the GEOMETRY. Nothing proved the DOCUMENTS, and that is exactly
+# where the DFM sweep found every one of its RED items: a through-cut layer that
+# rendered white, folds with no angle anywhere, mask rings shaped like holes, a
+# legend telling the shop to score the bend lines, a default material and quantity
+# on every sheet, and a vinyl part inside the aluminium package. These run on the
+# generated files, after the fact, so they hold whatever the generator does.
+# ===========================================================================
+
+def _dxf_bend_lines(dxf_path):
+    """Every BEND line actually drawn, as (axis, position, length)."""
+    import ezdxf
+    out = []
+    for e in ezdxf.readfile(dxf_path).modelspace():
+        if e.dxf.layer != "BEND" or e.dxftype() != "LWPOLYLINE":
+            continue
+        pts = [(pt[0], pt[1]) for pt in e.get_points()]
+        xs = [q[0] for q in pts]; ys = [q[1] for q in pts]
+        if abs(max(ys) - min(ys)) < 1e-6:
+            out.append(("y", round(min(ys), 3), round(max(xs) - min(xs), 3)))
+        elif abs(max(xs) - min(xs)) < 1e-6:
+            out.append(("x", round(min(xs), 3), round(max(ys) - min(ys), 3)))
+        else:
+            raise AssertionError(f"{os.path.basename(dxf_path)}: BEND line is neither "
+                                 f"horizontal nor vertical -- it cannot be tabled")
+    return sorted(out)
+
+def _verify_drawing_package(with_pdf=True):
+    import inspect, zipfile
+    import ezdxf
+
+    stems = [n for n, _ in DXF_PARTS]
+
+    # --- R5/R6: nothing ships on a default material or quantity ---------------
+    sig = inspect.signature(dxf_to_pdf)
+    for arg in ("material", "qty"):
+        assert sig.parameters[arg].default is inspect.Parameter.empty, \
+            f"dxf_to_pdf({arg}=...) has a default again -- a sheet can silently inherit it"
+    for stem in stems:
+        assert stem in PART_SPECS, f"{stem} has no PART_SPECS row (material/qty/package)"
+        mat, qty, pkg = PART_SPECS[stem]
+        assert mat and isinstance(qty, int) and qty >= 1, f"{stem}: bad material/qty {mat!r}/{qty!r}"
+        assert pkg in (PKG_SHEETMETAL, PKG_OVERLAY), f"{stem}: unknown package {pkg!r}"
+    assert PART_SPECS["segno_post"][0] == STEEL_CR and PART_SPECS["segno_post"][1] == 2, \
+        "the support post is 1.6 mm cold-rolled steel x2, per MANUFACTURING.md section 1"
+    assert PART_SPECS["segno_corner_bracket_rear"][1] == 2, "corner bracket is x2"
+    assert PART_SPECS["segno_overlay"][2] == PKG_OVERLAY, "the overlay is not sheet metal"
+
+    # --- R1/R4: the legend names VENT as a through-cut and never says "score" --
+    low = SHEET_LEGEND.lower()
+    assert "score" not in low or "do not cut, score" in low, \
+        "the legend must not describe BEND as a scoring operation"
+    assert "through-cut" in low and "vent" in low, \
+        "the legend must state that VENT is a through-cut like CUT"
+    assert "fold line" in low, "the legend must state that BEND is a fold reference"
+
+    for stem in stems:
+        dxf = os.path.join(OUT, stem + ".dxf")
+        if not os.path.exists(dxf):
+            continue
+        doc = ezdxf.readfile(dxf)
+        used = {e.dxf.layer for e in doc.modelspace()}
+
+        # --- R1: every through-cut layer present renders black -----------------
+        black = _force_pdf_layer_colours(doc)   # asserts internally; also proves no
+        for lname in used & set(THRU_CUT_LAYERS):   # geometry layer is left ACI-7 white
+            assert lname in black, f"{stem}: through-cut layer {lname} not forced black"
+
+        # --- R3: mask rings are annotation, never cutting data ------------------
+        masks = [e for e in doc.modelspace() if e.dxf.layer == "MASK"]
+        mask_rings = [e for e in masks if e.dxftype() == "CIRCLE"]
+        for e in mask_rings:
+            for other in doc.modelspace():
+                if other.dxf.layer not in THRU_CUT_LAYERS or other.dxftype() != "CIRCLE":
+                    continue
+                same = (abs(other.dxf.center.x - e.dxf.center.x) < 1e-6
+                        and abs(other.dxf.center.y - e.dxf.center.y) < 1e-6
+                        and abs(other.dxf.radius - e.dxf.radius) < 1e-6)
+                assert not same, (f"{stem}: a MASK ring at ({e.dxf.center.x:.3f}, "
+                                  f"{e.dxf.center.y:.3f}) is duplicated on a cut layer")
+            assert doc.layers.get("MASK").dxf.linetype == "DASHDOT", \
+                f"{stem}: MASK must be dash-dot so it cannot read as a cut contour"
+        if mask_rings:
+            says = [t for t in masks if t.dxftype() == "TEXT"
+                    and "DO NOT CUT" in t.dxf.text.upper()]
+            assert len(says) >= len(mask_rings), \
+                (f"{stem}: {len(mask_rings)} mask ring(s) but only {len(says)} "
+                 f"'DO NOT CUT' callout(s) -- every ring needs its own")
+
+        # --- R2: every drawn fold is in the bend table, and vice versa ----------
+        drawn = _dxf_bend_lines(dxf)
+        tabled = sorted((axis, round(pos, 3), round(ln, 3))
+                        for _s, _n, axis, pos, ln, *_r in BEND_TABLES.get(stem, ()))
+        assert drawn == tabled, (
+            f"{stem}: bend table does not match the drawn BEND layer.\n"
+            f"  drawn : {drawn}\n  tabled: {tabled}")
+        for _s, name, _a, _p, _l, rot, direction, ri, _d in BEND_TABLES.get(stem, ()):
+            assert 0.0 < rot < 180.0, f"{stem}/{name}: fold rotation {rot} is not a fold"
+            assert direction in (UP_TOWARD, DN_AWAY), f"{stem}/{name}: no fold direction"
+            assert ri > 0.0, f"{stem}/{name}: no inside radius"
+        if drawn:
+            assert stem in BEND_FOOTNOTES, f"{stem} has folds but no bend-table footnote"
+
+        if with_pdf:
+            assert os.path.exists(os.path.join(OUT, stem + ".pdf")), f"{stem}: no PDF sheet"
+
+    # --- R6: the sheet-metal zip carries sheet metal and nothing else ----------
+    sheet = {n for n, _ in DXF_PARTS if PART_SPECS[n][2] == PKG_SHEETMETAL}
+    other = {n for n, _ in DXF_PARTS if PART_SPECS[n][2] != PKG_SHEETMETAL}
+    zp = os.path.join(OUT, "segno_sheetmetal.zip")
+    if os.path.exists(zp):
+        with zipfile.ZipFile(zp) as z:
+            members = {os.path.splitext(n)[0] for n in z.namelist()}
+        assert members <= sheet, \
+            f"segno_sheetmetal.zip carries non-sheet-metal parts: {sorted(members - sheet)}"
+        assert not (members & other), f"non-metal part in the metal pack: {sorted(members & other)}"
+        if with_pdf:
+            assert members == sheet, f"segno_sheetmetal.zip is missing {sorted(sheet - members)}"
+    zo = os.path.join(OUT, "segno_overlay.zip")
+    if other and os.path.exists(zo):
+        with zipfile.ZipFile(zo) as z:
+            assert {os.path.splitext(n)[0] for n in z.namelist()} == other, \
+                "segno_overlay.zip must carry exactly the non-metal die-cut parts"
 
 def write_rear_io_stations():
     """Publish the rear-panel station list for the CONSOLE BOARD generator (#747).
@@ -4215,8 +4595,10 @@ def main(argv):
         print("  out/" + name + ".dxf")
         if "--no-pdf" not in argv and name not in NO_PDF:
             try:
+                mat, qty, _pkg = PART_SPECS[name]
                 dxf_to_pdf(dxf, os.path.join(OUT, name + ".pdf"),
-                           title=name.replace("segno_", "").replace("_", " ").upper())
+                           title=name.replace("segno_", "").replace("_", " ").upper(),
+                           material=mat, qty=qty, stem=name)
                 print("  out/" + name + ".pdf")
             except Exception as e:  # pragma: no cover
                 print(f"    (pdf skipped: {e})")
@@ -4252,6 +4634,9 @@ def main(argv):
         # shipped stale tower/stand/fit-test STEPs while printing EXIT=0.
     for z in build_quote_packages():
         print("Quote package: out/" + os.path.basename(z))
+    print("\nDrawing/package assertions ...", end=" ")
+    _verify_drawing_package(with_pdf="--no-pdf" not in argv)
+    print("ALL PASS")
     if "--render" in argv:
         try:
             r = render_png(os.path.join(OUT, "segno_render.png"))
