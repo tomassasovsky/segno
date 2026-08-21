@@ -8839,9 +8839,9 @@ typedef struct {
   int stage;
 } perf_short_pad_ctx;
 
-/* 40 of the pad's 100 bytes: not a multiple of the 100, so the write is short
- * rather than refused, and a whole number of mono frames so the assertions
- * below can be exact about which frames are on disk. */
+/* 40 of the pad's 100 bytes: less than the whole write, so it lands SHORT
+ * rather than being refused outright, and a whole number of mono frames so the
+ * assertions below can be exact about which frames are on disk. */
 #define LE_TEST_SHORT_PAD_BUDGET_BYTES 40
 
 static void perf_mid_cycle_short_pad(void* raw) {
