@@ -23,8 +23,16 @@ before comparing):
 | PTH.drl, NPTH.drl | **identical** |
 | Edge_Cuts | **identical** |
 | F_Paste, B_Paste | **identical** |
-| F_Mask, B_Mask | same openings — 239 front, 196 back, none extra or missing. The repo writes aperture flashes (D03); this set writes G36/G37 polygon regions. Centroids agree to a median of 0.024 mm. A KiCad export-option difference, not a design difference. |
-| F_Silkscreen, B_Silkscreen | **differs** — this set carries the silkscreen artwork |
+| F_Mask, B_Mask | **identical** (see note below) |
+| F_Silkscreen, B_Silkscreen | **identical** since #784 regenerated the art into the repo |
+
+> **Correction (2026-08-21).** The row above originally read that the mask
+> differed and blamed a KiCad export option. That was wrong. Re-exporting the
+> repo's own unmodified board reproduces the manufactured G36/G37 region form
+> byte-for-byte — master's *committed* mask gerbers were simply **stale**, left
+> in the older aperture-flash form. The opening count and positions never
+> differed (239 front, 196 back). #784 re-exported them, so every one of the
+> eleven fab layers now matches this archive exactly.
 
 So the manufactured boards are **electrically and mechanically the repo's
 design**. The only real difference is decorative silkscreen, which at the time
@@ -32,7 +40,10 @@ of the order lived on an unmerged branch (#758) that never produced gerbers.
 That is why this archive exists: without it nothing in the repo could tell you
 what is physically on the boards.
 
-**Reordering.** Send this zip. Do not regenerate and send fresh output unless
-you have first diffed it against this file — the silkscreen composer places its
-artwork by a search, so a regeneration is not guaranteed to reproduce the same
-art.
+**Reordering.** Either send this zip, or regenerate — since #784 the two are
+byte-identical across all eleven fab layers, verified twice (exporting the
+committed board, and re-applying `_silk_art()` to master's routed board). The
+composer's least-obstruction search is not a source of drift: its result is
+frozen in `silk_art.py` and re-emitting it is deterministic. Still diff against
+this file before sending anything; this archive remains the record of what the
+existing boards physically are.
