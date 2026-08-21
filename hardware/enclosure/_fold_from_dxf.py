@@ -200,7 +200,16 @@ def fold_faceplate(path, explode=0.0):
     shell = _bend_fill(shell, ((0, af, V.T), (PW, af, V.T)), (0,  1, 0), (0, -math.sin(s), -math.cos(s)))   # front-lip fold
     shell = _bend_fill(shell, ((0, ar, V.T), (PW, ar, V.T)), (0, -1, 0), (0, math.cos(sr), -math.sin(sr)))  # rear-lap fold
     bdd = V.DEV90                         # the preview folds the bend-deducted flat sharply, so
-    z0 = V.H_FRONT - bdd                  # walls land ~bdd low -> seat the lid flush on them
+    z0 = V.H_FRONT - bdd + V.face_drift()  # walls land ~bdd low -> seat the lid flush on them,
+    # ...then lift by face_drift(). FACE_SEAT is the MEASURED height (populated
+    # Fusion doc, three points agreeing to 0.016 mm) of the real assembled plate
+    # above the bare lid_top_z slope this preview folds to. Every printed part
+    # under the plate is cut to that REAL plane -- the tub tops sit on it flush
+    # (SKIRT_GAP = 0) and the sled's sloped top just under it -- so a preview lid
+    # parked 2.30 mm below reality had them all stabbing through it: 2250 mm^3 per
+    # ring, 340 per sled, ten of each. Lifting the lid to where the plate actually
+    # seats is what makes those numbers mean something; whitelisting them instead
+    # would have blinded the audit to a genuinely over-tall tub.
     def place(sld):
         return (sld.translate((0, -yf, 0))
                    .rotate((0, 0, 0), (1, 0, 0), V.SLOPE_ANGLE)
@@ -420,9 +429,21 @@ def build(explode=0.0):
         ring, seat = rings[v]
         parts.append((f"ring{i}", ring.translate((u, vh, V.T + explode))))
         parts.append((f"sled{i}", sled.translate((u, vh, V.T + seat + explode))))
+        # The pedal stand-in is a BOX in the PEDESTAL FRAME -- local +X = depth
+        # (toward the case back), local +Y = width -- and it gets the SAME 90 deg
+        # spin as the ring and the sled under it, because it is the same frame.
+        # It used to be built straight into world axes, i.e. PEDAL_D (109.87) laid
+        # across u where the pedals are pitched 101.14 apart: ten placeholders each
+        # 8.73 mm wider than the gap allows, overlapping their neighbours and
+        # ploughing 15.4 mm into their own tub walls. The metal says otherwise --
+        # the faceplate DXF leaves 22.79 mm of solid plate between adjacent pedal
+        # apertures -- so all 28 of those "collisions" were this one missing
+        # rotate(). Box, not the tapered WTB-006 shell: a bounding solid over-
+        # reports, never under-reports, which is the safe direction for a gate.
         ped = (cq.Workplane("XY").box(V.PEDAL_D, V.PEDAL_W, V.PEDAL_BODY_H,
                                       centered=(True, True, False))
-                 .translate((u, vh, V.T + seat + V.CONSOLE_SLED_T + 2*explode)).val())
+                 .val().rotate((0, 0, 0), (0, 0, 1), 90)
+                 .translate((u, vh, V.T + seat + V.CONSOLE_SLED_T + 2*explode)))
         parts.append((f"pedal{i}", ped))
     # faceplate = top layer (3); base stays at 0. explode separates the vertical layers.
     parts += fold_faceplate(os.path.join(OUT, "segno_faceplate.dxf"), explode=3*explode)
@@ -454,19 +475,36 @@ def _bbox_hit(a, b, m=0.05):
 
 
 def _intended_contact(a, b):
-    """Object pairs that SHARE coordinates by design, so a small overlap there is just
-    fold/seat tolerance, not a conflict: the lid laps the body, pedals pass through the
-    lid slots, and each pedal rests on its own platform shelf."""
-    # Moving the ring stack onto its true station (ENC_V, #767) needed NO new entry
-    # here, and the audit got quieter rather than louder: dxf_faceplate cuts the RING
-    # aperture at the OD only (the centre land leaves the blank as segno_ring_disc),
-    # so lid_ringmetal drops into a real void -- measured lid intersection 0.0 mm^3,
-    # against 1347 mm^3 of pure fiction while it sat 35.5 mm back in solid metal.
-    # (The old rearpanel_pi/rearpanel_nopi entry went with the variants themselves.)
-    t = {a.rstrip("0123456789"), b.rstrip("0123456789")}      # plat3->plat, pedal3->pedal
+    """Pairs excused from the audit. ONE entry, and it has to earn its place: every
+    exemption here is a hole in the gate, so a pair stays out unless it has been
+    MEASURED and the number explained.
+
+    Measured with the whitelist switched off entirely (thresholds warn>1e-6), the
+    complete residual is: base<->cbracket 17 mm^3 (excused below), pedal<->lid
+    6 mm^3 x10, lid<->lid_screen 3 mm^3 x2. The last two are face-contact skin --
+    a pedal passes through its slot, a screen is bonded behind its aperture -- and
+    they sit under the 10 mm^3 warn floor on their own, so they need no exemption
+    and get none: if either ever grows to 500 mm^3 that IS a defect and the gate
+    should say so.
+
+    Three set-based entries used to live here and all three are gone:
+      - {"base","lid"}: measures 0 mm^3. The lid laps the body but does not
+        interpenetrate it -- it never needed excusing.
+      - {"pedal","plat"}: "plat" objects stopped existing at #719 (ring + sled).
+        Dead name; pedal<->ring now measures 0 mm^3.
+      - {"lid","pedal"}: 6 mm^3, i.e. under the warn floor -- see above.
+    Moving the ring stack onto its true station (ENC_V, #767) needed no entry here
+    either: dxf_faceplate cuts the RING aperture at the OD only (the centre land
+    leaves the blank as segno_ring_disc), so lid_ringmetal drops into a real void.
+    """
+    # WHY: the corner L-brackets exist to be riveted FLAT onto the inner faces of
+    # the rear and side walls -- coincident faces are the function of the part, not
+    # a clash. ~1920 mm^2 of face per bracket returns 17 mm^3 of boolean skin, i.e.
+    # 0.009 mm of "penetration", which is OCC tolerance, not metal. Without this the
+    # audit would carry two permanent WARNs and stop being silent-when-clean.
     if "base" in (a, b) and any(x.startswith("cbracket") for x in (a, b)):
-        return True                        # brackets seat against the walls by design
-    return t in ({"base", "lid"}, {"lid", "pedal"}, {"pedal", "plat"})
+        return True
+    return False
 
 
 def check_collisions(parts, warn=10.0, err=500.0):
@@ -519,7 +557,12 @@ if __name__ == "__main__":
     import sys
     print("Assembling base + platforms + pedals + lid from the DXFs ...")
     parts = build(explode=0.0)
-    check_collisions(parts)
+    # THE gate (#742): the platform screw pattern in the ACTUAL base DXF vs the
+    # platforms that bolt through it. Defined since #742 and never once called --
+    # it raises, so wiring it in is the difference between a check and a comment.
+    check_platform_screws(os.path.join(OUT, "segno_base.dxf"))
+    issues = check_collisions(parts)
+    n_err = sum(1 for s, *_ in issues if s == "ERROR")
     asm = cq.Assembly()
     def colof(n):
         if "silk" in n: return cq.Color(0.97,0.97,0.98,1.0)        # white labels
@@ -583,3 +626,13 @@ if __name__ == "__main__":
     render("_fromdxf.png", parts, (-0.35,-0.7,0.55))            # assembled, FRONT (player) 3/4
     render("_fromdxf_exploded.png", exploded, (-0.4,-0.65,0.55))   # lid lifted -> pedals visible
     render("_fromdxf_profile.png", parts, (1.0,0.06,0.12))     # side elevation
+
+    # ...and FAIL. This script printed ERROR lines and exited 0 for its whole life,
+    # which is how 28 of them went unread for weeks while the metal order waited on
+    # it. The renders are written first on purpose: when the gate does bite you want
+    # the pictures of what bit. WARNs stay advisory; only ERROR (> err mm^3 of shared
+    # material) is fatal.
+    if n_err:
+        print(f"\nGATE FAILED: {n_err} collision ERROR(s) above -- two parts share "
+              f"real volume. Do NOT send this revision to the shop.")
+        sys.exit(1)
