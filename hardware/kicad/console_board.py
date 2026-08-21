@@ -565,7 +565,8 @@ R("10k", ref="R18")[1, 2] += link_rx_pi, link_rx
 # ---- J2: the Pi ribbon (2x20, SHROUDED and KEYED) ---------------------------
 # Reversed, a 2x20 puts 5 V onto GND pins -- specify a shrouded header with a
 # polarising notch and a keyed IDC socket. Cheapest mistake on the board to
-# design out. Only ~11 of the 40 ways carry anything; the rest are the Pi's own
+# design out. Only 16 of the 40 ways carry anything -- 3V3 x2, GND x8 and six
+# signals; the rest are the Pi's own
 # pins and are left alone.
 #   Pi pin 2,4  = 5V  -- DELIBERATELY NOT CONNECTED. Tying them to +5V puts the
 #                        external buck in hard parallel with the Pi 5's own PMIC

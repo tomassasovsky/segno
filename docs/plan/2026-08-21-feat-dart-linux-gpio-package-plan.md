@@ -309,8 +309,18 @@ plainly why not to reach for it.
 - [ ] 32-bit is covered by a **C check, not a Dart matrix leg**: there is no
       Dart-capable armv7 runner, so `tool/check_abi_32bit.sh` compiles the same size
       and offset assertions under `gcc -m32`, parsing the expected values out of the
-      Dart test so the two cannot drift. It tests the same proposition far more
-      cheaply than emulating a toolchain.
+      Dart test so the two cannot drift.
+
+      **Be precise about what that proves.** `-m32` is i386, not ARM EABI, and those
+      two ABIs differ in exactly the place that would matter: the natural alignment of
+      a 64-bit scalar. So an i386 pass does not, by itself, establish the ARM case.
+      What establishes it is the header: `linux/gpio.h` declares every 64-bit field
+      `__aligned_u64` (nine of them), which forces 8-byte alignment on *every* ABI —
+      the kernel does this precisely so a 32-bit process and a 64-bit kernel agree on
+      layout. The i386 run is a check that the mechanism is still in place, not the
+      reason the property holds. The suite therefore also asserts the alignment
+      directly, so that dropping `__aligned_u64` upstream fails loudly instead of
+      quietly re-introducing the divergence.
 - [ ] `gpio-sim` suite passes where available, skips (not fails) where not.
 - [ ] A `blink` and a `button` example that run on a Pi 5 from a fresh `dart pub get`,
       with **no apt package installed**.
@@ -337,7 +347,7 @@ one-liners, folded in here rather than given their own issue per `CLAUDE.md`.
 
 ### PR 2 — child repo: skeleton + ABI layer
 
-Repo bootstrap (MIT, `very_good_analysis`, CI matrix x64/arm64/armv7), `ffigen` config
+Repo bootstrap (MIT, `very_good_analysis`, CI matrix x64/arm64 plus the 32-bit C check), `ffigen` config
 and checked-in `gpio_uapi.dart`, `_IOC` encoding, the `Syscalls` seam with
 `LibcSyscalls`, and the ABI assertion test. No public API yet.
 

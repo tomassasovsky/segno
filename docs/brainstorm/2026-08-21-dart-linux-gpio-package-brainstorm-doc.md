@@ -239,9 +239,12 @@ the stable kernel ABI** — more guaranteed not to break than any library wrappi
   The package lives entirely outside this repo and Segno takes no dependency.
 - **MIT or Apache-2.0?** MIT matches the Dart ecosystem norm and `flutter_gpiod`;
   Apache-2.0 adds a patent grant. Either passes Segno's license gate.
-- **Package name.** `linux_gpio`, `gpio_cdev`, `linux_gpiod`, `dart_gpio` and
-  `libgpiod` are all free on pub.dev (`gpiod` is taken by the dead 2022 package).
-  Leaning `linux_gpio`; `gpio_cdev` mirrors the Rust crate and is more precise.
+- ~~Package name.~~ **Answered: `gpio`.** The bare name turned out to be unclaimed,
+  along with `linux_gpio`, `gpio_cdev`, `linux_gpiod` and `dart_gpio` (only `gpiod` is
+  taken, by the dead 2022 package). `gpio` was chosen over the descriptive
+  `linux_gpio` because a pub.dev package cannot be renamed, and Windows-on-ARM turns
+  out to be a real second backend rather than a hypothetical one — see **Other
+  platforms are backends, not ports** in the plan.
 - **Is `gpio-sim` present on GitHub's Ubuntu runners?** Decides whether the integration
   suite is a CI job or hardware-only. Not blocking — the fake-syscall suite is the gate.
 - **Flutter hot-restart leaks a line request.** A documented `flutter_gpiod` pain: the
