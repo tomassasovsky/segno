@@ -2,24 +2,51 @@
 
 Everything needed to build one console, grouped by vendor. All enclosure
 outputs regenerate from `enclosure/segno_enclosure.py` (run it before quoting —
-it also refreshes the three quote zips below, so they can never go stale).
+it also refreshes the vendor quote zips below, so they can never go stale).
 
 ## 1. Sheet metal (laser cut + bend + powder coat)
 
 Send **`enclosure/out/segno_sheetmetal.zip`** (DXF flat patterns + PDF drawings
 for every part) plus **`enclosure/out/segno_sheetmetal_step.zip`** (3D reference
-STEPs incl. the folded assembly).
+STEPs incl. the folded assembly). The zip carries **metal only** — the printed
+overlay is a separate package (section 4).
 
-| Part | Qty | Notes |
-|---|---|---|
-| `segno_base` | 1 | ONE folded blank: floor + 4 walls + rear transition. Weld-free (corner brackets rivet). |
-| `segno_faceplate` | 1 | Sloped lid, full-width blank. Fold conventions in the drawing NOTE (chirality matters). |
-| `segno_corner_bracket_rear` | 2 | Internal L-brackets; ONE part serves both corners (left = flipped). |
-| `segno_ring_disc` | 1 | Encoder LED-ring centre disc. |
-| `segno_post` | 2 | Faceplate support posts — **1.6 mm cold-rolled STEEL**, not the 2.0 Al of the shell. |
+| Part | Qty | Material | Notes |
+|---|---|---|---|
+| `segno_base` | 1 | 2.0 Al | ONE folded blank: floor + 4 walls + rear transition. Weld-free (corner brackets rivet). |
+| `segno_faceplate` | 1 | 2.0 Al | Sloped lid, full-width blank. Fold conventions in the drawing NOTE (chirality matters). |
+| `segno_rear_panel` | 1 | 2.0 Al | Dismountable I/O sub-panel (#751); flat, no bends. |
+| `segno_corner_bracket_rear` | 2 | 2.0 Al | Internal L-brackets; ONE part serves both corners (left = flipped). |
+| `segno_ring_disc` | 1 | 2.0 Al | Encoder LED-ring centre disc. |
+| `segno_post` | 2 | **1.6 CR steel** | Faceplate support posts — **1.6 mm cold-rolled STEEL**, not the 2.0 Al of the shell. |
 
 (The old `segno_screen_bracket` ×8 row is gone deliberately: the screens mount
 on printed stands anchored to the base floor (#762), not on sheet brackets.)
+
+This table is the source of truth for quantity and material: `PART_SPECS` in
+`segno_enclosure.py` carries the same numbers onto every PDF title block, and the
+generator asserts it. Before #775 the drawing writer defaulted both, so every
+sheet claimed "2.0 mm 5052-H32 Al, qty 1" — including the steel post, ×2.
+
+### Reading the drawings
+
+- **Every sheet with folds carries a bend table**: line position, length, fold
+  rotation, included angle, direction relative to the drawn face, inside radius
+  and the development deduction the flat was built with. The base's five rows are
+  printed **in fold order** — transition first while the blank is flat, then
+  front and rear walls, then the two sides (their punch has to fit between the
+  already-standing walls). The transition fold is **65.556° rotation / 114.444°
+  included**, neither 90 nor 180; guess it and the lid's rear lap and its nine M3
+  pilots all land in the wrong plane.
+- **`CUT` and `VENT` are one and the same operation — both cut clean through.**
+  `VENT` is 127 louvres, ~18 425 mm² and ~5.6 m of cut path. It must be in the
+  quote; the alternative is a sealed box with a Raspberry Pi 5 inside it.
+- **`BEND` lines are fold references only — do not cut, score, etch or mark them.**
+  There are 3 380 mm of them on the base alone.
+- **`MASK` is a no-paint coating mask, never a cut** — red dash-dot, and every
+  ring carries its own "DO NOT CUT" callout. The Ø20 ring on the base is the M6
+  earth-stud bonding land: cut it and the base is scrap and the safety earth is
+  gone.
 
 Material: **2.0 mm 5052-H32 aluminium**, K-factor 0.33, R2 tooling (bend notes
 on each drawing). Finish: black powder coat, outside faces. Front-lip M4 holes
@@ -53,9 +80,15 @@ and no longer matches any pedal in this design.
 
 ## 4. Printed overlay
 
-`enclosure/out/segno_overlay.dxf` + `.pdf` → die-cut adhesive vinyl/polycarbonate
-top overlay (black field, white legends, die-cut apertures). Replaces all
+Send **`enclosure/out/segno_overlay.zip`** (`segno_overlay.dxf` + `.pdf`) to a
+label/overlay printer → die-cut adhesive vinyl/polycarbonate top overlay,
+846 × 406.6 mm, black field, white legends, die-cut apertures. Replaces all
 silkscreen on the metal.
+
+**Not a metal part.** It used to ride inside `segno_sheetmetal.zip` with a title
+block reading "2.0 mm 5052-H32 Al, qty 1" — 0.34 m² of aluminium cut and powder
+coated for nothing, roughly a third of the metal spend. It now has its own
+package and its own material string.
 
 ## 5. Purchased parts
 
