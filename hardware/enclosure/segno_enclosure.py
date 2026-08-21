@@ -913,23 +913,6 @@ FRONT_SCREW_U = ([_row1_u(0) - _FS_HP]
                  + [(_row1_u(i) + _row1_u(i + 1)) / 2.0 for i in range(len(_ROW1) - 1)]
                  + [_row1_u(len(_ROW1) - 1) + _FS_HP])
 
-# LID LOCATING DOWELS (#775, owner call 2026-08-21): the lid had NO lateral
-# location at all -- the documented "down-turned side wings tuck inside the side
-# panels" was never built (LID_SIDE_LIP was defined once and never referenced,
-# and the faceplate flat carries exactly two bend lines). That left 18 screws in
-# Ø3.4-on-M3 clearance holes as the only thing positioning an 850 mm lid whose
-# edges sit FLUSH with the base sides, so any error shows as a step one side and
-# a gap the other. Two Ø4 H9 dowels through the rear lap into the transition
-# flange fix the lid in both axes BEFORE a single screw is started.
-# Dowels, not the tab-in-slot first sketched: the lap lies FLAT on the flange, so
-# a tab would have to be lanced and formed (a punch op this laser+brake package
-# cannot do) -- and dowels add no second screw SKU, which the one-tap/one-screw
-# rule cares about. They sit on the existing screw row (its edge distances are
-# already solved) at u midway between the outermost screw pairs.
-DOWEL_D  = 4.0
-DOWEL_U  = [(FRONT_SCREW_U[0] + FRONT_SCREW_U[1]) / 2.0,
-            (FRONT_SCREW_U[-2] + FRONT_SCREW_U[-1]) / 2.0]
-
 # Status-LED pedals: ALL of them (issue #366 -- the LED trial added pills over
 # REC/PLAY, STOP, UNDO and MODE; the encoder ring stays as well).
 def _has_led(label):
@@ -2229,8 +2212,6 @@ def dxf_faceplate(path):
         _circle(msp, ox + u, ffl - ((_cfy - (H_FRONT - DEV90) / 2.0 - DEV90) - DD_LIP), 3.4)  # M3 clearance
     for u in FRONT_SCREW_U:
         _circle(msp, ox + u, SEAM_LAP_V, 3.4)                             # rear lap -> transition: SAME 9
-    for du in DOWEL_U:                                                    # #775 lid location: Ø4 dowels
-        _circle(msp, ox + du, SEAM_LAP_V, DOWEL_D)                        # pair with the base flange holes
                                                                           # stations as the front lip (#760),
                                                                           # Ø3.4 M3 clearance, concentric
                                                                           # with the flange tap pilots
@@ -2427,11 +2408,6 @@ def dxf_base(path):
                                                                        # Ø2.5 M3 TAP PILOT (hand-tap, same
                                                                        # tool + screw as the front lip; taps
                                                                        # cut after paint so no masking; #760)
-    for du in DOWEL_U:                                                 # #775: Ø4 H9 dowel holes, paired
-        _circle(msp, du, BD + SEAM_TAP_V, DOWEL_D)                     # with the lid's rear lap -- these
-                                                                       # locate the lid in BOTH axes before
-                                                                       # any screw is started (the lid has
-                                                                       # no other lateral location)
     for c in io:                                                       # bonding land: paint is an
         if c.get("ref") == "EARTH_STUD":                               # insulator, so the ring
             _circle(msp, c["u"], c["v"], MASK_GND_D, "MASK")           # terminal needs bare metal

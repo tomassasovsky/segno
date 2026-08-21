@@ -89,10 +89,6 @@ Full lists with links: **`segno_console_shopping_list.md`** (console) and
 - Heat-set inserts: **M3 5×5 throughout** (5.0 long × 5.0 OD, pilots Ø4.5), brass —
   40× console pedestals (4 per pedestal) + 8× mini-console pedestals + 3× mini lid.
   (Short M3×3 obsolete since the #373 deck raise gave the front pedestals full pilot depth.)
-- **2× Ø4 m6 dowel pins, 10 long** (#775) — the lid's only lateral location.
-  Drop them through the rear lap into the transition flange to set the lid in
-  both axes, THEN start the screws. Without them the lid is positioned only by
-  clearance holes and any error shows as a step on one side, a gap on the other.
 - Fasteners: 40× M3×8 (platform bolts, from below), 18× M3×8 (lid seam: front
   lip + rear lap, into hand-tapped Ø2.5 pilots — NO clinch nuts anywhere; the
   old "PEM M4 nuts per drawing" line is obsolete, no drawing carries PEM holes
