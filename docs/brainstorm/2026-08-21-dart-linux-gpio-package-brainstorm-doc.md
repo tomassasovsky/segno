@@ -114,7 +114,7 @@ Facts from the pub.dev API and the packages' own source, not their marketing:
 - **`gpiod` is dead** — last published 2022, also `<3.0.0`, FFI to libgpiod v1 whose
   API (`gpiod_chip_get_line`) no longer exists in libgpiod v2.
 - **`dart_periphery` is the real alternative** and deserves a straight answer rather
-  than a strawman. Alive, Dart-3, BSD-3, and its underlying c-periphery genuinely
+  than a straw man. Alive, Dart-3, BSD-3, and its underlying c-periphery genuinely
   speaks cdev v2 — `gpio_config_t` carries `debounce_us`, `bias`, `drive` and an event
   clock (`c-periphery/src/gpio.h:64`). What it costs:
   - **Blocking, not streamed.** `poll(timeoutMillis)` / `readEvent()` are synchronous,
