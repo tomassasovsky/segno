@@ -22,8 +22,26 @@ STEPs incl. the folded assembly).
 on printed stands anchored to the base floor (#762), not on sheet brackets.)
 
 Material: **2.0 mm 5052-H32 aluminium**, K-factor 0.33, R2 tooling (bend notes
-on each drawing). Finish: black powder coat, outside faces. Front-lip M4 holes
-are laser-cut then tapped after bending (called out on the drawing).
+on each drawing). `segno_post` is the exception: **1.6 mm cold-rolled steel**.
+Finish: black powder coat, outside faces.
+
+**Lid-seam threads (18x M3).** The Ø2.5 pilots on the base front wall and rear
+transition are laser-cut, **tapped M3 after bending**, and the threads must be
+**masked before coating or chased after it** — powder in a 2 mm-deep thread
+binds the screw, and there are only ~4 threads to lose. (The old note here said
+"front-lip M4": wrong on both counts since the #762 seam conversion — the lip
+carries Ø3.4 *clearance* holes, the base carries the taps, and the size is M3.)
+
+**Lid-to-base fit — READ THIS BEFORE FOLDING THE LID.** In CAD the lid's front
+lip lands *flat* against the front wall: lid-to-base minimum distance measures
+**0.0000 mm**. Both faces are outside faces and **nothing is masked** (owner
+call: coat everything), so as drawn the joint is roughly 0.16 mm of interference
+before any tolerance.
+
+The fix is a **fit, not a dimension**: fold the front lip slightly open so that,
+**after coating**, the lip inner face clears the front wall outer face by
+**0.3 mm** — tight, but it slips on without force. Check it against the finished
+base before setting the fold. The same note is on the lid drawing.
 
 ## 2. 3D printing (FDM)
 
@@ -71,6 +89,10 @@ Full lists with links: **`segno_console_shopping_list.md`** (console) and
 - Heat-set inserts: **M3 5×5 throughout** (5.0 long × 5.0 OD, pilots Ø4.5), brass —
   40× console pedestals (4 per pedestal) + 8× mini-console pedestals + 3× mini lid.
   (Short M3×3 obsolete since the #373 deck raise gave the front pedestals full pilot depth.)
+- **2× Ø4 m6 dowel pins, 10 long** (#775) — the lid's only lateral location.
+  Drop them through the rear lap into the transition flange to set the lid in
+  both axes, THEN start the screws. Without them the lid is positioned only by
+  clearance holes and any error shows as a step on one side, a gap on the other.
 - Fasteners: 40× M3×8 (platform bolts, from below), 18× M3×8 (lid seam: front
   lip + rear lap, into hand-tapped Ø2.5 pilots — NO clinch nuts anywhere; the
   old "PEM M4 nuts per drawing" line is obsolete, no drawing carries PEM holes

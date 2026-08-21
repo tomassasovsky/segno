@@ -733,7 +733,26 @@ DD_LIP = dev_deduct(90.0 - SLOPE_ANGLE)         # lid front-lip fold (77.5 deg)
 DD_LAP = dev_deduct(SLOPE_ANGLE + TRANS_ANGLE)  # lid rear-lap fold (36.9 deg)
 DD_TR  = dev_deduct(90.0 - TRANS_ANGLE)         # wall -> flange fold (65.6 deg)
 _bd  = D - 2.0 * T                              # bottom plate flat depth (= BD)
-# lid front mold corner (lip outer face x lid outer skin), lip hugging the wall:
+# lid front mold corner (lip outer face x lid outer skin), lip hugging the wall.
+#
+# MEASURED 2026-08-21 (#775): "hugging" is literal -- in the folded assembly the
+# lip's inner face and the front wall's outer face are COINCIDENT, lid<->base
+# minimum distance 0.0000 mm at mid-wall height. Both are OUTSIDE faces, so both
+# take powder coat (~0.06-0.10 mm each): the joint is ~0.16 mm interference
+# before a single tolerance is counted, on the one seam that cannot be reworked
+# once the part is finished.
+#
+# NOT fixed by moving this corner. _cfy sets the flange LENGTH, not its standoff
+# (raising it just drops the lip tip below the base floor -- tried, reverted).
+# The standoff would have to come from shifting the floor's front bend line,
+# which re-bases every feature on the base flat, or from lengthening the lid
+# plate, which moves all the faceplate content. Both are large ripples through a
+# solver whose two halves currently agree to 15 decimals, for a 0.3 mm gap that
+# press-brake tolerance (+/-0.5 deg over a 12.19 mm lip = +/-0.11 mm) swamps
+# anyway. So this is specified as a FIT, not carried as a CAD dimension:
+# LIP_FIT_CLEAR is the number the drawing asks the shop to hold, and the owner's
+# call (2026-08-21) is a tight fit with everything coated -- no masking.
+LIP_FIT_CLEAR = 0.3    # mm, lip inner face -> wall outer face, AFTER coating
 _cfy = H_FRONT - T * math.tan(_ra) + T / math.cos(_ra)
 _cfz = -DEV90 - T
 # Front-lip flange: the lip TIP lands flush with the base's bottom face (z=0),
@@ -893,6 +912,23 @@ _FS_HP = (_row1_u(1) - _row1_u(0)) / 2.0
 FRONT_SCREW_U = ([_row1_u(0) - _FS_HP]
                  + [(_row1_u(i) + _row1_u(i + 1)) / 2.0 for i in range(len(_ROW1) - 1)]
                  + [_row1_u(len(_ROW1) - 1) + _FS_HP])
+
+# LID LOCATING DOWELS (#775, owner call 2026-08-21): the lid had NO lateral
+# location at all -- the documented "down-turned side wings tuck inside the side
+# panels" was never built (LID_SIDE_LIP was defined once and never referenced,
+# and the faceplate flat carries exactly two bend lines). That left 18 screws in
+# Ø3.4-on-M3 clearance holes as the only thing positioning an 850 mm lid whose
+# edges sit FLUSH with the base sides, so any error shows as a step one side and
+# a gap the other. Two Ø4 H9 dowels through the rear lap into the transition
+# flange fix the lid in both axes BEFORE a single screw is started.
+# Dowels, not the tab-in-slot first sketched: the lap lies FLAT on the flange, so
+# a tab would have to be lanced and formed (a punch op this laser+brake package
+# cannot do) -- and dowels add no second screw SKU, which the one-tap/one-screw
+# rule cares about. They sit on the existing screw row (its edge distances are
+# already solved) at u midway between the outermost screw pairs.
+DOWEL_D  = 4.0
+DOWEL_U  = [(FRONT_SCREW_U[0] + FRONT_SCREW_U[1]) / 2.0,
+            (FRONT_SCREW_U[-2] + FRONT_SCREW_U[-1]) / 2.0]
 
 # Status-LED pedals: ALL of them (issue #366 -- the LED trial added pills over
 # REC/PLAY, STOP, UNDO and MODE; the encoder ring stays as well).
@@ -2193,10 +2229,12 @@ def dxf_faceplate(path):
         _circle(msp, ox + u, ffl - ((_cfy - (H_FRONT - DEV90) / 2.0 - DEV90) - DD_LIP), 3.4)  # M3 clearance
     for u in FRONT_SCREW_U:
         _circle(msp, ox + u, SEAM_LAP_V, 3.4)                             # rear lap -> transition: SAME 9
+    for du in DOWEL_U:                                                    # #775 lid location: Ø4 dowels
+        _circle(msp, ox + du, SEAM_LAP_V, DOWEL_D)                        # pair with the base flange holes
                                                                           # stations as the front lip (#760),
                                                                           # Ø3.4 M3 clearance, concentric
                                                                           # with the flange tap pilots
-    _text(msp, 10, yr1+8, 8, f"Segno LID  2.0mm  x1  top plate + front lip + rear lap (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}deg); rests on the base side walls; no top screws; legends on printed OVERLAY (see segno_overlay); FOLD with the DRAWN side as the OUTSIDE face (canonical mirror: encoder lands on the player's LEFT)", "NOTE")
+    _text(msp, 10, yr1+8, 8, f"Segno LID  2.0mm  x1  top plate + front lip + rear lap (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}deg); rests on the base side walls; no top screws; legends on printed OVERLAY (see segno_overlay); FOLD with the DRAWN side as the OUTSIDE face (canonical mirror: encoder lands on the player's LEFT). FRONT-LIP FIT: set the lip fold to leave {LIP_FIT_CLEAR:.1f}mm clearance between the lip INNER face and the base front wall OUTER face, MEASURED AFTER COATING (both faces are coated - nothing is masked). Nominal CAD is face-to-face, so the lip must be folded slightly open; check it slips over the finished base before final set", "NOTE")
     doc.saveas(path)
     return {"blank": (LW, yr1)}
 
@@ -2389,6 +2427,11 @@ def dxf_base(path):
                                                                        # Ø2.5 M3 TAP PILOT (hand-tap, same
                                                                        # tool + screw as the front lip; taps
                                                                        # cut after paint so no masking; #760)
+    for du in DOWEL_U:                                                 # #775: Ø4 H9 dowel holes, paired
+        _circle(msp, du, BD + SEAM_TAP_V, DOWEL_D)                     # with the lid's rear lap -- these
+                                                                       # locate the lid in BOTH axes before
+                                                                       # any screw is started (the lid has
+                                                                       # no other lateral location)
     for c in io:                                                       # bonding land: paint is an
         if c.get("ref") == "EARTH_STUD":                               # insulator, so the ring
             _circle(msp, c["u"], c["v"], MASK_GND_D, "MASK")           # terminal needs bare metal

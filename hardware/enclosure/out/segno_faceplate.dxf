@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461274.0160185187
+2461274.092592593
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461274.0160185187
+2461274.092592593
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-C2
+C4
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{47BECC62-0F68-4B5C-B1DB-E8C24E54A30A}
+{8CE3C334-62E0-4379-81FC-AA87E76BA317}
   9
 $VERSIONGUID
   2
-{275F4765-FADB-4D4B-8952-F0FC54CEE6E3}
+{C47EA51B-B7F1-489D-8F03-AC314243B05B}
   9
 $EXTNAMES
 290
@@ -3285,7 +3285,7 @@ ACAD
   0
 APPID
   5
-BF
+C1
 330
 3
 100
@@ -3299,7 +3299,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-C0
+C2
 330
 3
 100
@@ -6861,9 +6861,49 @@ AcDbCircle
  40
 1.7
   0
-TEXT
+CIRCLE
   5
 BE
+330
+17
+100
+AcDbEntity
+  8
+CUT
+100
+AcDbCircle
+ 10
+70.89999999999998
+ 20
+432.32299939772054
+ 30
+0.0
+ 40
+2.0
+  0
+CIRCLE
+  5
+BF
+330
+17
+100
+AcDbEntity
+  8
+CUT
+100
+AcDbCircle
+ 10
+778.9
+ 20
+432.32299939772054
+ 30
+0.0
+ 40
+2.0
+  0
+TEXT
+  5
+C0
 330
 17
 100
@@ -6881,7 +6921,7 @@ AcDbText
  40
 8.0
   1
-Segno LID  2.0mm  x1  top plate + front lip + rear lap (= 143deg); rests on the base side walls; no top screws; legends on printed OVERLAY (see segno_overlay); FOLD with the DRAWN side as the OUTSIDE face (canonical mirror: encoder lands on the player's LEFT)
+Segno LID  2.0mm  x1  top plate + front lip + rear lap (= 143deg); rests on the base side walls; no top screws; legends on printed OVERLAY (see segno_overlay); FOLD with the DRAWN side as the OUTSIDE face (canonical mirror: encoder lands on the player's LEFT). FRONT-LIP FIT: set the lip fold to leave 0.3mm clearance between the lip INNER face and the base front wall OUTER face, MEASURED AFTER COATING (both faces are coated - nothing is masked). Nominal CAD is face-to-face, so the lip must be folded slightly open; check it slips over the finished base before final set
  11
 10.0
  21
@@ -7981,7 +8021,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-C1
+C3
   0
 DICTIONARYVAR
   5
@@ -7993,7 +8033,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-21T03:23:04.406180+00:00
+1.4.4 @ 2026-08-21T05:13:20.468600+00:00
   0
 VISUALSTYLE
   5
@@ -14547,7 +14587,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-C1
+C3
 330
 2D
 100
@@ -14555,7 +14595,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-21T03:23:04.408845+00:00
+1.4.4 @ 2026-08-21T05:13:20.471758+00:00
   0
 ENDSEC
   0
