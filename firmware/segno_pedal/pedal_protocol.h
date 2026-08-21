@@ -143,7 +143,11 @@ typedef struct pedal_frame {
   uint8_t play_mode;  /* PEDAL_MODE_*: 0 = Rec, 1 = Play, 2 = FX (v3) */
   uint8_t clear_fade; /* clear-all fade in progress */
   uint8_t goodbye;    /* shutdown frame: darken everything */
-  uint8_t performance_armed; /* D-PEDAL: blink the mode LED red when set */
+  /* D-PEDAL: the host reports performance-recording armed here; the pedal
+   * does NOT render it. It used to blink the mode LED red; armed already
+   * shows on segno's screens, and the mode LED now reports the
+   * interaction mode only (solid in every state). */
+  uint8_t performance_armed;
   uint8_t global_color;
   uint8_t active_bank; /* 0 = A, 1 = B */
   uint8_t armed_track; /* 0..7 */

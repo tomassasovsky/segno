@@ -76,23 +76,33 @@ class _ReadoutHeader extends StatelessWidget {
         const Spacer(),
         // The mode chip is the readout's most load-bearing element: it is the
         // answer to "what does stepping on a track switch do right now".
-        DecoratedBox(
-          key: const Key('readout_mode'),
-          decoration: BoxDecoration(
-            color: surface.accent.withValues(alpha: 0.18),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: AppText(
-              _modeLabel(l10n, readout.mode),
-              style: TextStyle(
-                color: surface.accent,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ),
+        //
+        // It carries the same three-way mapping as every other mode surface
+        // (#693): rec red, mute green, FX blue. It used to paint EVERY mode
+        // in one accent blue, which made the chip's colour say nothing at
+        // all — rec and FX were indistinguishable from each other.
+        //
+        // It reads the LED palette, not the chrome tokens, for the same reason
+        // the 7" readout does: `_TrackRow._tint` paints the rows directly
+        // beneath this chip from `ledRed`/`ledAmber`/`ledGreen`, and chrome
+        // `rec` #E5484D under LED `ledRed` #EF4444 puts two reds a shade apart
+        // in one column — the exact defect unifying the mode surfaces was
+        // meant to remove. When LED-palette colours share a surface, the LED
+        // palette wins.
+        //
+        // The `_` arm keeps the neutral reading rather than folding unknown
+        // tokens into a real mode's colour: like [_modeLabel], a newer main
+        // window paired with an older sub-window must degrade to "I don't
+        // know this one", never to a confident wrong colour. That covers the
+        // pre-rename legacy `'play'` token too.
+        _ModeChip(
+          color: switch (readout.mode) {
+            'record' => surface.ledRed,
+            'mute' => surface.ledGreen,
+            'fx' => surface.ledBlue,
+            _ => surface.textPrimary,
+          },
+          label: _modeLabel(l10n, readout.mode),
         ),
       ],
     );
@@ -111,6 +121,46 @@ class _ReadoutHeader extends StatelessWidget {
         'fx' => l10n.readoutModeFx,
         _ => token.toUpperCase(),
       };
+}
+
+/// The mode chip: the readout's answer to "what does stepping on a track
+/// switch do right now", in the colour that mode wears across the console.
+///
+/// The colour comes from the LED palette (`ledRed`/`ledGreen`/`ledBlue`), not
+/// the chrome tokens, because `_TrackRow._tint` paints the state rows in the
+/// same window from that palette. Chrome and LED are near-misses in both hues
+/// this window shows at once — `rec` #E5484D vs `ledRed` #EF4444, `success`
+/// #30A46C vs `ledGreen` #34D399 — and two reds a shade apart in one column
+/// read as a rendering bug, not as two different questions being answered
+/// (#693). Same rule as the 7" console readout: where LED-palette colours
+/// share a surface, the LED palette wins.
+class _ModeChip extends StatelessWidget {
+  const _ModeChip({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      key: const Key('readout_mode'),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: AppText(
+          label,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// One labelled figure in the header.

@@ -187,17 +187,29 @@ static CRGB globalColor(uint8_t color) {
 }
 
 // The tri-state mode indicator's color per decoded interaction mode (A1):
-// Rec green (ready to record), Play/mute amber, FX blue — matching the
-// chain-enabled track-LED blue. Rendered verbatim from the frame's 2-bit
-// mode; segno remains the single source of truth.
+// Rec red, Play/mute green, FX blue — matching the chain-enabled track-LED
+// blue. Rendered verbatim from the frame's 2-bit mode; segno remains the
+// single source of truth.
+//
+// Rec was green and Play/mute amber until #693. The owner's call is that mute
+// reads green on every surface, and green was already spoken for by rec — so
+// rec moves to red, which is what every screen has always drawn it as. Keep
+// this in lockstep with the app's `_modeColor` in `pedal_plate.dart`.
+// No wire byte changes: the frame carries the 2-bit mode, never a colour.
+//
+// One call site, one meaning: the MODE LED. This used to tint the ring's idle
+// sweep too, which meant a colour change here rippled across the whole plate;
+// #693 cut that, so the ring is now colored by transport activity alone. The
+// app's `_modeColor` has the same single call site, so the on-screen plate is
+// a faithful twin of this function and a widget test covers it.
 static CRGB modeColor(uint8_t mode) {
   switch (mode) {
     case PEDAL_MODE_PLAY:
-      return globalColor(PEDAL_GLOBAL_AMBER); // one definition of amber
+      return globalColor(PEDAL_GLOBAL_GREEN); // one definition of green
     case PEDAL_MODE_FX:
       return CRGB::Blue;
     default: // PEDAL_MODE_REC
-      return CRGB::Green;
+      return globalColor(PEDAL_GLOBAL_RED); // one definition of red
   }
 }
 
@@ -220,9 +232,16 @@ static const float kRingShape = 1.5f;
 static float g_ringPhase = 0.0f;       // current center, 0..kRingCount
 static unsigned long g_ringLastMs = 0; // for dt-based phase advance
 
-// How bright the ring's idle mode-colored sweep runs (A1) — dim enough to
-// read as "idle", bright enough to name the mode from across a stage.
-static const uint8_t kRingModeIdleLevel = 90;
+// The ring's idle sweep color: a dim neutral glow, matching the app's
+// `SurfaceTheme.ringGlow` so the plate and the simulator agree.
+//
+// This used to be the interaction mode's color, dimmed (A1). Dropped in #693
+// for the same "one signal, one meaning" reason the MODE LED lost its armed
+// blink: a dim RED idle ring in rec mode reads as a live take from stage
+// distance, which is the single most expensive thing this pedal could lie
+// about. Red on the ring now means recording activity, exclusively; the mode
+// is named by the MODE LED, which is always lit and always says only that.
+static const CRGB kRingIdleGlow = CRGB(0x3A, 0x3A, 0x3D);
 
 static void renderRing() {
   // Colored by the activity color segno sends in global_color: red recording /
@@ -244,14 +263,15 @@ static void renderRing() {
   // loop is cleared (nothing left to play) fall through so the hump keeps
   // advancing in the off color and the ring animates to dark.
   if (!active && g_frame.loop_length_micros > 0) return;
-  // Fold the interaction mode into the ring's color scheme (A1): with no
-  // transport activity (global color OFF) the sweep runs in a dimmed mode
-  // color instead of fading to dark, so the active mode is legible from
-  // across a stage. Activity colors (record red / overdub amber / play
-  // green / clear-fade blue) keep primacy whenever segno sends one.
+  // With no transport activity (global color OFF) the sweep runs in a dim
+  // NEUTRAL glow rather than fading to dark, so the ring still reads as alive
+  // — but it says nothing about the mode (#693; see kRingIdleGlow). Activity
+  // colors (record red / overdub amber / play green / clear-fade blue) keep
+  // primacy whenever segno sends one, and they are now the only thing that
+  // ever colors this ring.
   const CRGB sweep =
       (g_haveFrame && g_frame.global_color == PEDAL_GLOBAL_OFF)
-          ? scaled(modeColor(g_frame.play_mode), kRingModeIdleLevel)
+          ? kRingIdleGlow
           : activity;
   // Advance the center only while active, so a Stop leaves it where it was.
   g_ringPhase += (float)dt / (float)kRingMsPerRev * (float)kRingCount;
@@ -269,12 +289,6 @@ static void renderRing() {
     g_leds[kRingStart + i] = scaled(sweep, level);
   }
 }
-
-// Performance-recording armed (D-PEDAL): the mode LED (12) BLINKS red instead
-// of showing its usual transport-activity color, distinct eyes-free from
-// looper-recording's own SOLID red (PEDAL_GLOBAL_RED). Half-period matches
-// the on-screen simulator's `_BlinkingLed` (400 ms) for parity.
-static const unsigned long kBlinkHalfPeriodMs = 400;
 
 // ---- perceptual gamma correction --------------------------------------------
 
@@ -346,18 +360,22 @@ static void render() {
     for (uint8_t i = 0; i < 4; i++) {
       g_leds[kTrackLed0 + i] = ledColor(g_frame.track_leds[base + i]);
     }
-    if (g_frame.performance_armed) {
-      const bool blinkOn = (millis() / kBlinkHalfPeriodMs) % 2 == 0;
-      g_leds[kModeLed] = blinkOn ? CRGB::Red : CRGB::Black;
-    } else {
-      // LED 12 is the tri-state mode indicator (A1): rec green / play amber
-      // / fx blue from the decoded 2-bit mode. Transport activity lives on
-      // the ring; the performance-armed red BLINK above keeps precedence
-      // (D-PEDAL) — solid red stays unambiguous as looper-recording on the
-      // ring. The goodbye frame darkens everything, this LED included.
-      g_leds[kModeLed] = g_frame.goodbye ? CRGB::Black
-                                         : modeColor(g_frame.play_mode);
-    }
+    // LED 12 is the tri-state mode indicator (A1): rec red / play green / fx
+    // blue from the decoded 2-bit mode (#693). SOLID, always — this LED means
+    // the interaction mode and nothing else. The goodbye frame darkens
+    // everything, this LED included.
+    //
+    // It used to BLINK red while performance-recording was armed (D-PEDAL).
+    // That reading is gone (#693): armed state already lives on the screens —
+    // the 7" readout carries a REC block with running elapsed, permanently in
+    // view, and the stage status bar shows it too — so the pedal was
+    // duplicating it and paying for the duplicate with an ambiguous MODE LED.
+    // Once rec mode went solid red, "blinking red" vs "solid red" was the only
+    // thing separating armed from rec mode on one 5mm dot at stage distance.
+    // One signal, one meaning: the plate shows mode here and activity on the
+    // ring, and neither has to be read against the other.
+    g_leds[kModeLed] = g_frame.goodbye ? CRGB::Black
+                                       : modeColor(g_frame.play_mode);
     g_leds[kClearLed] = g_frame.clear_fade ? CRGB::Red : CRGB::Black;
     g_leds[kBankLed] = (g_frame.active_bank == 1) ? CRGB(0, 0, 80) : CRGB::Black;
   } else {

@@ -253,6 +253,11 @@ class ModeIndicator extends StatelessWidget {
     // pill brightened beside it. And the outline used to read
     // `LooperTheme.recordColor`/`fxColor` while the pill read `surface.rec`/
     // `surface.accent` — two extensions one flavor tweak could desync.
+    // `surface.rec` won because the pill is the surface the pen actually
+    // draws; `fxColor` held `surface.accent`'s value in both flavors, so that
+    // arm changed token without moving a pixel, and with this its last
+    // consumer, `LooperTheme.fxColor` was DELETED (#714) rather than left as
+    // a token a designer could retune with no effect on any pixel.
     final (color, fill, icon, modeName) = switch (mode) {
       InteractionMode.record => (
         surface.rec,

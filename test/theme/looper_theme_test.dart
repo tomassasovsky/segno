@@ -34,7 +34,6 @@ void main() {
       },
       waveformBackground: Color(0xFF000000),
       recordColor: Color(0xFFFF1744),
-      fxColor: Color(0xFF3B82F6),
       recordMeterColors: {
         LooperMeterState.playing: Color(0xFF00FF00),
         LooperMeterState.muted: Color(0xFFFFFFFF),
@@ -122,7 +121,6 @@ void main() {
         waveformColors: {},
         waveformBackground: Color(0xFF000000),
         recordColor: Color(0xFFFF1744),
-        fxColor: Color(0xFF3B82F6),
         recordMeterColors: {},
         muteMeterColors: {},
         indicatorColors: {},
