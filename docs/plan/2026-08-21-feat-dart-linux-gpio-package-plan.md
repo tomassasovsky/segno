@@ -297,9 +297,20 @@ name and the injectable syscall seam were chosen for. It is not planned work.
 Three layers, in order of how much they carry:
 
 1. **A fake kernel behind the `Syscalls` seam.** The real gate. Implements `open`,
-   `ioctl`, `read`, `close` over in-memory buffers, so request encoding, value get/set,
-   event decode, seqno-gap → `LineEventsDropped`, and every errno mapping are unit
-   tested with no hardware, on any OS including the macOS dev machine.
+   `ioctl`, `read` and `close` over in-memory buffers, so request encoding, value
+   get/set and every errno mapping are unit tested with no hardware, on any OS
+   including the macOS dev machine.
+
+   **Events need one more method on that seam, and the reason is not obvious.** The
+   event reader blocks in `poll` on a *spawned* isolate, and `Isolate.spawn` deep-copies
+   its message — so a fake injected on the main isolate arrives in the child as a
+   different object, and substituting at the syscall level simply cannot reach it. The
+   seam therefore also carries `openEvents(fd)`, which returns the event *reader* rather
+   than raw syscalls: the real implementation spawns the isolate, and the fake returns a
+   reader over a local stream and spawns nothing. That is what makes the
+   `seqno`-gap → `LineEventsDropped` tests — the differentiator — testable at all.
+   Anyone building this from the plan will hit the isolate boundary here, so it is
+   called out rather than left to be rediscovered.
 2. **ABI assertions.** Struct sizes and computed ioctl numbers against the table above,
    run on every architecture in the matrix.
 3. **`gpio-sim` integration.** The kernel's own configfs-backed GPIO simulator — what
@@ -375,11 +386,14 @@ plainly why not to reach for it.
 
 ## Implementation
 
-### PR 1 — this repo (docs only)
+### PR 1 — this repo (docs, plus comment-only generator edits)
 
 Brainstorm + this plan, plus the doc-drift fixes they uncovered. The claim that the
-power button reaches a Pi GPIO appeared in **five files** — `console_board.py`, the v2
-plan, the v2 brainstorm, `segno_enclosure.py` and `segno_enclosure_design.md` — and
+power button reaches a Pi GPIO appeared in `console_board.py`, the v2 plan, the v2
+brainstorm, `segno_enclosure.py`, `segno_enclosure_design.md` and
+`deploy/rpi/overlayfs/README.md` (that last as a `dtoverlay=gpio-shutdown`
+suggestion, which is locally correct and so carries a note rather than a correction) —
+and
 three of the corrected rows also wrongly listed **5 V** on the ribbon, which
 `console_board.py` asserts against. The netlist was right throughout; only the prose
 was stale. Trivial one-liners, folded in here rather than given their own issue per
@@ -421,7 +435,7 @@ CHANGELOG, `dart pub publish` as 0.1.0.
 
 | # | repo | contents | depends on |
 |---|---|---|---|
-| 1 | segno | these docs + the doc-drift one-liners (five files) | — |
+| 1 | segno | these docs + the doc-drift one-liners + the cspell entries they need | — |
 | 2 | gpio | skeleton, ffigen, `_IOC`, `Syscalls`, ABI test | — |
 | 3 | gpio | chips, lines, values, errors | 2 |
 | 4 | gpio | edge events, isolate | 3 |

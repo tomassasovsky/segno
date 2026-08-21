@@ -28,9 +28,9 @@ ribbon carries exactly:
 
 | Pi pins | function | who owns it in Linux |
 |---|---|---|
-| 8 / 10 (GPIO14/15) | `uart0` — MIDI IN/OUT | kernel serial driver (`/dev/ttyAMA*`) |
-| 24 / 21 (GPIO8/9) | `uart3` — LINK to the Pico 2 (`dtoverlay=uart3-pi5`) | kernel serial driver |
-| 18 / 22 (GPIO24/25) | SWCLK / SWDIO — reflash the Pico 2 | **openocd** |
+| 8 = GPIO14 TX → MIDI **OUT**; 10 = GPIO15 RX ← MIDI **IN** | `uart0` | kernel serial driver (`/dev/ttyAMA*`) |
+| 24 = GPIO8 TX → Pico; 21 = GPIO9 RX ← Pico | `uart3` (`dtoverlay=uart3-pi5`) | kernel serial driver |
+| 18 = GPIO24 SWCLK; 22 = GPIO25 SWDIO | reflash the Pico 2 | **openocd** |
 | 1, 17 / 6, 9, 14, 20, 25, 30, 34, 39 | 3V3 / GND | — |
 
 And the power button is **not on a GPIO at all**, which is the specific thing the
@@ -58,14 +58,15 @@ below, and Segno's use of it is optional and secondary.
 
 ### Doc drift this uncovered — fixed alongside this doc
 
-The claim was asserted across **five files**, listed below, and they are what led the
-first draft astray. None was load-bearing on the board (the netlist was right
-throughout), but all read as settled fact.
+The claim was asserted across the files listed below, and they are what led the first
+draft astray. None was load-bearing on the board (the netlist was right throughout),
+but all read as settled fact.
 
 *No total is given, deliberately.* The count was stated as three, then six, then nine,
-then ten, and was wrong every time — because each review round found another instance
-and the number was a derived fact that nobody re-derived. The list is the record; a
-tally is just one more thing to go stale.
+then ten, then five files — and was wrong every single time, including twice **after**
+this paragraph was written to explain why counts go wrong. It is a derived fact sitting
+beside the list it derives from, and every round found one more instance. The list is
+the record.
 
 - `console_board.py` — the `PWR_BTN` net comment and the `J8` section header, the
   latter contradicted by its own next paragraph seven lines later.
@@ -81,6 +82,9 @@ tally is just one more thing to go stale.
 - [`hardware/segno_enclosure_design.md`](../../hardware/segno_enclosure_design.md)
   — twice again, and one is the verbatim twin of the sentence above: the generator
   cites this doc as its construction reference, so the two drifted together.
+- [`deploy/rpi/overlayfs/README.md`](../../deploy/rpi/overlayfs/README.md) — a
+  `dtoverlay=gpio-shutdown` suggestion, which is the one instance that is locally
+  *correct* (see below), so it carries a note rather than a correction.
 
 All are corrected in the same change as this doc; they were one-liners, so no separate
 issue per `CLAUDE.md`.
