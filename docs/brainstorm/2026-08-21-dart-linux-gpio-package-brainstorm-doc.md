@@ -13,7 +13,7 @@ Board context: console board v2 [#747](https://github.com/tomassasovsky/segno/is
 A **standalone, generically useful Dart package** that reads and drives Linux GPIO
 lines through the `/dev/gpiochipN` character device using the **v2 userspace ABI**,
 with **no native library and no bundled binary** — `dart:ffi` straight to libc's
-`ioctl`/`read`/`epoll`. Own repository, permissive license, published to pub.dev.
+`ioctl`/`read`/`poll`. Own repository, permissive license, published to pub.dev.
 
 ## The honest motivation, stated first
 
@@ -56,17 +56,16 @@ below, and Segno's use of it is optional and secondary.
 
 ### Doc drift this uncovered — fixed alongside this doc
 
-Six places asserted the dead version, and they are what led the first draft astray.
-None was load-bearing on the board (the netlist was right throughout), but all read
-as settled fact:
+**Nine places across four files** asserted the dead version, and they are what led the
+first draft astray. None was load-bearing on the board (the netlist was right
+throughout), but all read as settled fact:
 
 - `console_board.py` — the `PWR_BTN` net comment and the `J8` section header, the
   latter contradicted by its own next paragraph seven lines later.
 - [`2026-08-17-feat-console-board-v2-plan.md`](../plan/2026-08-17-feat-console-board-v2-plan.md)
   — the ribbon contents and the parts table, neither matching `PI_HDR`.
 - [`2026-08-17-console-board-v2-brainstorm-doc.md`](2026-08-17-console-board-v2-brainstorm-doc.md)
-  — the key-decision bullet and the board-content table.
-
+  — the key-decision bullet, the board-content table, and the ribbon-signals line.
 - [`hardware/enclosure/segno_enclosure.py`](../../hardware/enclosure/segno_enclosure.py)
   — the power-button part selection, twice ("it drives a Pi GPIO", "a dry contact to a
   3.3 V GPIO"). Missed by two sweeps, because nobody thinks to grep an *enclosure*
