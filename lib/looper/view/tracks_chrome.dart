@@ -240,43 +240,35 @@ class ModeIndicator extends StatelessWidget {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final surface = context.surface;
-    // One colour pair + icon + name per mode: rec red over its wash, mute the
-    // design system's `success` green over its wash (#693 — the owner's call:
-    // mute reads green), FX accent blue over the flat `accentSurface` — the
-    // SAME token pairs the stage status bar's pill reads, so the desktop
-    // chrome and the console can never disagree about which mode is live.
+    // The colour pair comes from `SurfaceTheme.modePair` — the one place the
+    // rec=red / mute=green / fx=blue mapping lives, shared with the stage
+    // status bar's pill, so the desktop chrome and the console cannot
+    // disagree about which mode is live. This switch used to carry its own
+    // copy of that mapping and a comment claiming the two could never
+    // disagree, with nothing enforcing it (#768).
     //
-    // Both halves of each pair are TOKENS on purpose (#737). The fill was an
-    // inline `color.withValues(alpha: 0.16)`, which the high-contrast flavor
-    // cannot reach: it lifts the pill washes to a heavier weight, and the
-    // hardcode pinned this chip at the dark flavor's fill while the stage
-    // pill brightened beside it. And the outline used to read
-    // `LooperTheme.recordColor`/`fxColor` while the pill read `surface.rec`/
-    // `surface.accent` — two extensions one flavor tweak could desync.
-    // `surface.rec` won because the pill is the surface the pen actually
-    // draws; `fxColor` held `surface.accent`'s value in both flavors, so that
-    // arm changed token without moving a pixel, and with this its last
-    // consumer, `LooperTheme.fxColor` was DELETED (#714) rather than left as
-    // a token a designer could retune with no effect on any pixel.
-    final (color, fill, icon, modeName) = switch (mode) {
+    // Only what is genuinely this widget's own stays here: the icon (the
+    // stage pill draws a dot instead) and the mode name.
+    //
+    // The outline used to read `LooperTheme.recordColor`/`fxColor` while the
+    // pill read `surface.rec`/`surface.accent` — two extensions one flavor
+    // tweak could desync. `surface.rec` won because the pill is the surface
+    // the pen actually draws; `fxColor` held `surface.accent`'s value in both
+    // flavors, so that arm changed token without moving a pixel, and with
+    // this its last consumer, `LooperTheme.fxColor` was DELETED (#714) rather
+    // than left as a token a designer could retune with no effect on any
+    // pixel.
+    final (outline: color, :fill) = surface.modePair(mode);
+    final (icon, modeName) = switch (mode) {
       InteractionMode.record => (
-        surface.rec,
-        surface.recSurface,
         Icons.fiber_manual_record,
         l10n.interactionModeRec,
       ),
       InteractionMode.mute => (
-        surface.success,
-        surface.successSurface,
         Icons.volume_off_rounded,
         l10n.interactionModeMute,
       ),
-      InteractionMode.fx => (
-        surface.accent,
-        surface.accentSurface,
-        Icons.graphic_eq,
-        l10n.interactionModeFx,
-      ),
+      InteractionMode.fx => (Icons.graphic_eq, l10n.interactionModeFx),
     };
 
     return FocusableTapTarget(

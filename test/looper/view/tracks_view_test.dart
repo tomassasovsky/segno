@@ -1309,10 +1309,6 @@ void main() {
       InteractionMode mode, {
       ThemeData? theme,
     }) async {
-      // Unmount first: re-pumping a mounted MaterialApp with a different
-      // theme ANIMATES the flavor change, and a single pumped frame still
-      // reads the old flavor's tokens.
-      await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpApp(
         theme: theme,
         Scaffold(

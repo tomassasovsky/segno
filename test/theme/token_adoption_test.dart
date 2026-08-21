@@ -42,6 +42,30 @@ const _allowed = <String, String>{
 /// Colour literals that carry no palette meaning.
 final _harmless = RegExp(r'Colors\.transparent');
 
+/// An inline alpha wash of a **state** colour — `accent`, `rec` or `success`.
+///
+/// Those three are the tokens that own a matching `*Surface` fill
+/// (`accentSurface`, `recSurface`, `successSurface`), so washing them by hand
+/// is the same defect a hex is: the high-contrast flavor overrides the
+/// surface tokens and cannot reach an inline alpha, which pins the washed
+/// surface at the dark flavor's fill while every sibling brightens around it
+/// (#737). The literal sweep below could not see this class — the alpha is
+/// spelled as arithmetic on a token, not as a colour — which is how three
+/// more of them survived that fix and had to be caught by eye (#768).
+///
+/// Deliberately narrow: an alpha on a NEUTRAL (`textPrimary` dimmed to an
+/// unlit dot, `scrim` deepened for a barrier, `line` softened) is a dim, not
+/// a fill, and has no token to reach for.
+final _stateWash = RegExp(r'\.(accent|rec|success)\.withValues\(\s*alpha:');
+
+/// Files that may still wash a state colour inline, and why.
+const _allowedWash = <String, String>{
+  // Not a fill: it tints the accent as TEXT (a selected option's sub-label),
+  // and the DS has no "accent at reading weight" token to reach for. The
+  // fill tokens would be wrong here — they are backgrounds.
+  'lib/setup/setup_surface.dart': 'accent as dimmed label text, not a fill',
+};
+
 void main() {
   test('the view layer resolves colour from the theme, not from literals', () {
     // #499 stage 3c. The reskin's whole premise is that colour lives in
@@ -75,6 +99,51 @@ void main() {
           'Hardcoded colour in the view layer. Resolve it from '
           'context.surface / LooperTheme, or add the file to _allowed in this '
           'test with the design reason it is exempt.\n${offenders.join('\n')}',
+    );
+  });
+
+  test('state colours are washed by token, not by an inline alpha', () {
+    // The sibling rule to the sweep above, and the one #737 needed: a
+    // selected/active surface takes `accentSurface` / `recSurface` /
+    // `successSurface`, never `accent.withValues(alpha: …)`. See [_stateWash].
+    final offenders = <String>[];
+
+    for (final entity in Directory('lib').listSync(recursive: true)) {
+      if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      if (entity.path.startsWith('lib/theme/')) continue;
+      if (_allowedWash.containsKey(entity.path)) continue;
+
+      final lines = entity.readAsLinesSync();
+      for (var i = 0; i < lines.length; i++) {
+        if (!_stateWash.hasMatch(lines[i])) continue;
+        offenders.add('${entity.path}:${i + 1}  ${lines[i].trim()}');
+      }
+    }
+
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'Inline alpha on a state colour. Use the matching surface token '
+          '(accentSurface / recSurface / successSurface), or add the file '
+          'to _allowedWash with the reason no token fits.\n'
+          '${offenders.join('\n')}',
+    );
+  });
+
+  test('the wash allowlist does not outlive its files', () {
+    final missing = _allowedWash.keys
+        .where((p) => !File(p).existsSync())
+        .toList();
+    expect(missing, isEmpty, reason: 'no longer exist: $missing');
+
+    final clean = _allowedWash.keys
+        .where((p) => !_stateWash.hasMatch(File(p).readAsStringSync()))
+        .toList();
+    expect(
+      clean,
+      isEmpty,
+      reason: 'these no longer wash a state colour — drop them: $clean',
     );
   });
 

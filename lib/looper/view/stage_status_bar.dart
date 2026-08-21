@@ -156,9 +156,12 @@ class _SessionBlock extends StatelessWidget {
 /// The pen draws the record state (`rec` outline over `recSurface`) and the
 /// FX state (`accent` over the flat `accentSurface`); mute is `success` over
 /// the matching `successSurface` (#693 — the owner's call from the bench),
-/// since no STAGE screen draws it. Every arm reads a fill TOKEN, so the
-/// high-contrast flavor lifts them together — an inline alpha here would pin
-/// mute at the dark fill while REC brightened around it (#737).
+/// since no STAGE screen draws it. Both halves come from
+/// `SurfaceTheme.modePair`, the single home of that mapping (#768), so the
+/// desktop `ModeIndicator` cannot drift from this pill — and every arm reads
+/// a fill TOKEN, so the high-contrast flavor lifts them together, where an
+/// inline alpha would pin mute at the dark fill while REC brightened around
+/// it (#737).
 class _ModePill extends StatelessWidget {
   const _ModePill();
 
@@ -169,22 +172,11 @@ class _ModePill extends StatelessWidget {
     final mode = context.select<ControlCubit, InteractionMode>(
       (cubit) => cubit.state.mode,
     );
-    final (color, fill, label) = switch (mode) {
-      InteractionMode.record => (
-        surface.rec,
-        surface.recSurface,
-        l10n.interactionModeRec,
-      ),
-      InteractionMode.mute => (
-        surface.success,
-        surface.successSurface,
-        l10n.interactionModeMute,
-      ),
-      InteractionMode.fx => (
-        surface.accent,
-        surface.accentSurface,
-        l10n.interactionModeFx,
-      ),
+    final (outline: color, :fill) = surface.modePair(mode);
+    final label = switch (mode) {
+      InteractionMode.record => l10n.interactionModeRec,
+      InteractionMode.mute => l10n.interactionModeMute,
+      InteractionMode.fx => l10n.interactionModeFx,
     };
     return Container(
       key: const Key('stage_mode_pill'),

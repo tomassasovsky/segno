@@ -3,6 +3,7 @@ import 'dart:math' show sqrt;
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/theme/surface_theme.dart';
 
 /// Maps engine peak amplitude (`0..1`) to meter fill (`0..1`).
 ///
@@ -132,7 +133,14 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   /// ramp — not part of the state legend above.
   final Color waveformBackground;
 
-  /// Accent for the record/recording state (e.g. the mode indicator).
+  /// The STAGE record red (DS `signal-rec`): the transport's beat-indicator
+  /// dots and a track's pending-arm badge, the two surfaces that still read
+  /// it.
+  ///
+  /// It no longer dresses the mode indicator, which this doc used to name:
+  /// that chip and the stage status bar's pill both take the softer UI-chrome
+  /// red from [SurfaceTheme.modePair] (#737, #768). The two reds are distinct
+  /// by design — see [SurfaceTheme.rec].
   final Color recordColor;
 
   /// Track-meter (peak bar) colors by [LooperMeterState] in record mode.

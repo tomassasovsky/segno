@@ -191,10 +191,11 @@ void main() {
         const Stream<ControlState>.empty(),
         initialState: ControlState(mode: mode),
       );
-      // Unmount first: re-pumping the same tree reuses the element (so the
-      // pill's `context.select` keeps serving the previous mode), and a
-      // re-themed MaterialApp ANIMATES the flavor change, so a single pumped
-      // frame still reads the old flavor's tokens.
+      // Unmount first: re-pumping the same tree reuses the element, so the
+      // pill's `context.select` would keep serving the previous mode. (The
+      // flavor half of this is `pumpApp`'s job now — it unmounts itself when
+      // the theme changes, #768 — but a same-flavor mode change still needs
+      // a fresh element here.)
       await tester.pumpWidget(const SizedBox.shrink());
       await pump(tester, theme: theme);
       final box =

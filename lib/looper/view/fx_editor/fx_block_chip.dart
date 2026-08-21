@@ -69,9 +69,12 @@ class FxBlockChip extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: selected
-                ? surface.accent.withValues(alpha: 0.16)
-                : surface.cardHigh,
+            // `accentSurface`, not an inline `accent.withValues(alpha: …)`:
+            // this is the token's stated job — the fill of a SELECTED control
+            // — and the high-contrast flavor cannot reach a hardcoded alpha,
+            // so a wash here would pin this chip at the dark flavor's fill
+            // while every other selected surface brightened around it (#768).
+            color: selected ? surface.accentSurface : surface.cardHigh,
             borderRadius: BorderRadius.circular(9),
             border: Border.all(
               color: selected ? surface.accent : surface.line,
