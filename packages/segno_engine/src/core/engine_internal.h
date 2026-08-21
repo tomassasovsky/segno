@@ -323,6 +323,24 @@ int le_perf_drain_self_stopped(struct le_perf_drain* drain);
  * cleanly written performance.json. */
 void le_perf_drain_force_write_failure_for_test(int enabled);
 
+/* The same seam with a BYTE BUDGET instead of a switch: the next `bytes` bytes
+ * of PCM/silence-fill writing succeed, and everything after that fails. Pass a
+ * negative value to restore the unlimited production behaviour (the default);
+ * 0 is exactly what le_perf_drain_force_write_failure_for_test(1) sets, and
+ * the two share one global, so a test must reset whichever it used before the
+ * next test runs. Same SCOPE caveat as above — only le_pd_write_some consults
+ * it, so the sidecar and le_pd_flush stay unaffected. Not part of the FFI
+ * surface.
+ *
+ * WHY A BUDGET AND NOT A SWITCH (#718): a positive budget smaller than the
+ * write in flight produces a SHORT WRITE — bytes on disk, failure reported —
+ * which is how a real filling disk behaves and what the boolean, failing at
+ * zero bytes every time, could never reach. The zero-fill catch-up's byte
+ * accounting only differs from the all-or-nothing case there. Safe to call
+ * from the mid-cycle hook (i.e. on the drain thread), which is how a test
+ * arms it mid-pad. */
+void le_perf_drain_set_write_budget_for_test(int64_t bytes);
+
 /* Runs `fn(ctx)` on the drain thread inside every drain cycle, at the one
  * instant that matters for #710: after the capture rings have been drained
  * and before the silence-fill catch-up runs. It exists to make the cycle's
