@@ -1,6 +1,7 @@
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
+import 'package:segno/looper/model/interaction_mode.dart';
 
 /// The neutral "setup surface" design tokens (onboarding, settings, and the
 /// routing graphs) plus the routing-graph role colours, layered onto
@@ -180,6 +181,33 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
 
   /// The palette hue for [lane] (cycled past the palette length).
   Color laneColor(int lane) => lanePalette[lane % lanePalette.length];
+
+  /// The outline + fill a chrome surface paints for [mode]: rec red over its
+  /// wash, mute the design system's `success` green over its wash, FX
+  /// [accent] over the flat [accentSurface] (owner's call, 2026-08-20 on
+  /// #737/#693 — rec=red, mute=green, fx=blue is the product mapping).
+  ///
+  /// The single source for that mapping. It used to be a three-arm `switch`
+  /// copy-pasted into the desktop `ModeIndicator` and the stage status bar's
+  /// mode pill, each commented "these can never disagree" with nothing
+  /// enforcing it and a test per widget that only ever checked its own arm
+  /// (#768). A fourth mode, or a hue change, now edits one place.
+  ///
+  /// Both halves are TOKENS on purpose (#737): the fill was an inline
+  /// `colour.withValues(alpha: 0.16)`, which the high-contrast flavor cannot
+  /// reach — it lifts the washes to a heavier weight, so a hardcode pinned
+  /// one chip at the dark flavor's fill while the pill beside it brightened.
+  ///
+  /// This is the CHROME family, for the surfaces that sit close to the eye.
+  /// The two-metre readouts (`_ModeWord`, the 7" mode chip) deliberately read
+  /// the LED palette instead, so the panel throws the same hues the pedal's
+  /// own MODE LED does — see `console_readout_view.dart` for that reasoning.
+  ({Color outline, Color fill}) modePair(InteractionMode mode) =>
+      switch (mode) {
+        InteractionMode.record => (outline: rec, fill: recSurface),
+        InteractionMode.mute => (outline: success, fill: successSurface),
+        InteractionMode.fx => (outline: accent, fill: accentSurface),
+      };
 
   /// Pedal LED palette — the on-screen pedal faceplate renders the firmware's
   /// LED colors from these so they honor the high-contrast variant instead of
