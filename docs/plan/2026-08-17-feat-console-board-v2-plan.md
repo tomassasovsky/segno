@@ -50,14 +50,14 @@ existing boards are.
 | block | parts |
 |---|---|
 | MCU | Pico 2 (RP2350) on 2×20 THT headers |
-| Pi link | 2×20 **shrouded, keyed** IDC → UART ×2, SWD, 5 V, 3V3, GND (the power button is *not* on the ribbon — J8 → J9 → the Pi's own PWR pads) |
+| Pi link | 2×20 **shrouded, keyed** IDC → UART ×2, SWD, 3V3, GND. **No 5 V** (pins 2/4 deliberately absent) and **no power button** — that goes J8 → J9 → the Pi's own J2 pads |
 | MIDI IN | H11L1 at **3.3 V** → Pi `uart0` RX · 220 Ω · 1N4148 · DIN pin 2 **not** connected |
 | MIDI OUT | 74AHCT125 ← Pi `uart0` TX · 2 × 220 Ω |
 | Footswitches | 10 × JST-XH 2-pin + 100 nF RC debounce (V1 idiom) |
 | CTRL 1/2 | 2 × JST-XH 3-pin → ADC (GP26–28) with pull-up |
 | Indicators | 1 × JST-XH 3-pin, WS2812 chain via 74AHCT125 3V3→5 V |
 | Ring/encoder | 1 × JST-XH 8-pin to `ring_board` |
-| Power button | 1 × JST-XH 2-pin, passed through to the Pi's own PWR pads (J9) |
+| Power button | 1 × JST-XH 2-pin → J9 → the Pi's own J2 solder pads |
 | Power in | 1 × JST-XH 2-pin, 5 V from the external potted buck + **bulk caps** (below) |
 
 ### Power-in protection: bulk yes, series diode no

@@ -18,7 +18,7 @@ Brainstorm [`docs/brainstorm/2026-08-21-dart-linux-gpio-package-brainstorm-doc.m
 
 A new standalone package, **`gpio`** (the bare name is unclaimed on pub.dev), that
 reads and drives Linux GPIO lines over `/dev/gpiochipN` using the **v2 userspace ABI**
-— pure `dart:ffi` to libc `ioctl`/`read`/`epoll`, **no native library and no bundled
+— pure `dart:ffi` to libc `ioctl`/`read`/`poll`, **no native library and no bundled
 binary**. Own repository, **MIT**, published to pub.dev.
 
 Decisions taken at the plan gate, recorded so they are not relitigated:
@@ -72,10 +72,11 @@ FreeBSD `gpioc` or Windows backend later needs no rename and no API break — se
 
 ```dart
 // ---- discovery -------------------------------------------------------------
-List<GpioChipInfo> chips = Gpio.listChips();
 final chip = GpioChip.byLabel('pinctrl-rp1');   // primary — never an index
-final chip = GpioChip.byName('gpiochip0');
-final chip = GpioChip.byPath('/dev/gpiochip0'); // explicit, Linux-flavoured
+// ...or, when you know exactly what you want:
+//   GpioChip.byName('gpiochip0');
+//   GpioChip.byPath('/dev/gpiochip0');         // explicit, Linux-flavoured
+//   GpioChip.list();                           // every chip, caller closes them
 
 chip.info;                       // GpioChipInfo(name, label, lineCount)
 chip.lineInfo(17);               // GpioLineInfo(offset, name, consumer, direction,
@@ -105,8 +106,8 @@ await req.close();
 
 // ---- events ----------------------------------------------------------------
 req.events.listen((event) => switch (event) {
-  LineEdgeEvent(:final offset, :final edge, :final timestamp) => ...,
-  LineEventsDropped(:final offset, :final count)             => ...,
+  LineEdgeEvent(:final offset, :final edge, :final timestampNs) => ...,
+  LineEventsDropped(:final count, :final lines)              => ...,
 });
 ```
 
@@ -117,7 +118,9 @@ is microsecond-resolution, so it silently truncates the low three digits, and a
 package that argues its timestamps are good enough to measure latency with should
 not throw precision away on the way out. `LineEventsDropped` is emitted when
 a `seqno` gap proves the kernel's kfifo overflowed — **the differentiator**: no other
-Dart package can tell you an edge was lost.
+Dart package can tell you an edge was lost. It deliberately carries **no single
+offset**: `seqno` counts across the whole request, so the lost records took their
+offsets with them; it reports the count and the request's lines instead.
 
 Errors are one `GpioException` carrying `errno`, the failing operation and an
 actionable message: `EBUSY` names the current consumer, `EACCES` names the `gpio`
@@ -128,7 +131,7 @@ rejected on an old kernel says "requires Linux 5.10 or newer".
 
 ```
 lib/gpio.dart                    public surface only
-lib/src/ffi/libc.dart            open, close, read, ioctl, epoll_*, eventfd, errno
+lib/src/ffi/libc.dart            open, close, read, ioctl, poll, eventfd, errno
 lib/src/ffi/gpio_uapi.dart       ffigen output from <linux/gpio.h>, checked in
 lib/src/ffi/ioctl.dart           _IOC encoding, request numbers computed at runtime
 lib/src/syscalls.dart            abstract Syscalls seam + LibcSyscalls
@@ -175,18 +178,29 @@ on 32-bit ARM as well as arm64/x64 — but that is an assumption the CI matrix h
 
 ### The event isolate, and how it shuts down
 
-A dedicated isolate owns an `epoll` fd with every requested line-fd registered, blocks
-in `epoll_wait`, reads `gpio_v2_line_event` records and posts decoded events over a
-`SendPort`. Two consequences worth stating:
+**`poll(2)`, not `epoll`** — settled during implementation, and worth recording because
+the reasoning is not obvious. `struct epoll_event` is `__attribute__((packed))` **only
+on `__x86_64__`**: 12 bytes there, 16 on arm64 and armv7. Dart's `@Packed` cannot be
+applied per architecture, so an epoll binding would be correct on the machine it was
+written on and silently wrong on every board this package targets. `struct pollfd` is
+8 bytes with identical offsets on every Linux ABI. With two descriptors to watch,
+epoll's scaling advantage buys nothing.
+
+And v2 returns **one descriptor per request**, covering all its lines — a descriptor
+per *line* is the v1 model. So the isolate blocks on `poll` over exactly two fds: the
+request, and an `eventfd` for shutdown. It reads `gpio_v2_line_event` records and posts
+decoded events over a `SendPort`. Two consequences worth stating:
 
 - **Timestamps are the kernel's**, stamped at the interrupt. Isolate scheduling affects
   *delivery* latency — bounded and measurable — but never the timestamp. This is why
   the stream is honest enough to measure latency with.
-- **Blocking forever needs a wakeup.** `epoll_wait` with no timeout would strand the
-  isolate on `close()`. An `eventfd` is registered alongside the line fds purely so the
-  owning isolate can break the wait; closing is then deterministic rather than
-  timeout-polled. (A poll timeout would work and is simpler, but it trades a clean
-  shutdown for a wakeup every N ms on an appliance that idles.)
+- **Blocking forever needs a wakeup.** `poll` with no timeout would strand the isolate
+  on `close()`. An `eventfd` is watched alongside the request fd purely so the owner can
+  break the wait; closing is then deterministic rather than timeout-polled. (A poll
+  timeout would work and is simpler, but it trades a clean shutdown for a wakeup every
+  N ms on an appliance that idles.) `close()` must then *wait* for the isolate to leave
+  `poll`/`read` before the request fd is closed — descriptor numbers are reused
+  immediately, so a straggling read can otherwise land on an unrelated file.
 
 Synchronous FFI calls run on the calling isolate's own thread, so `errno` read
 immediately after a failing call is valid — no thread-hop hazard.
@@ -290,11 +304,11 @@ plainly why not to reach for it.
 
 ### PR 1 — this repo (docs only)
 
-Brainstorm + this plan, plus the doc-drift fixes the brainstorm uncovered
-(`console_board.py:394` header comment,
-[`console board v2 plan:53`](2026-08-17-feat-console-board-v2-plan.md) ribbon contents,
-and the #747 brainstorm's power-button bullet + board table — all three still say the
-power button reaches a Pi GPIO; the netlist is right and the prose is stale). Trivial
+Brainstorm + this plan, plus the doc-drift fixes they uncovered: **nine places across
+four files** claimed the power button reaches a Pi GPIO (`console_board.py` ×2, the
+v2 plan ×2, the v2 brainstorm ×3, `segno_enclosure.py` ×2), and three of the corrected
+rows also wrongly listed **5 V** on the ribbon, which `console_board.py` asserts
+against. The netlist was right throughout; only the prose was stale. Trivial
 one-liners, folded in here rather than given their own issue per `CLAUDE.md`.
 
 ### PR 2 — child repo: skeleton + ABI layer
@@ -311,7 +325,7 @@ full `LineConfig` (direction, bias, drive, activeLow, debounce), atomic get/set,
 
 ### PR 4 — child repo: edge events
 
-Event isolate, `epoll` + `eventfd` shutdown, event decode, `seqno`-gap →
+Event isolate, `poll` + `eventfd` shutdown, event decode, `seqno`-gap →
 `LineEventsDropped`, `EventClock` selection, deterministic `close()`. Fake-kernel event
 tests.
 
@@ -329,7 +343,7 @@ CHANGELOG, `dart pub publish` as 0.1.0.
 
 | # | repo | contents | depends on |
 |---|---|---|---|
-| 1 | segno | these docs + 3 doc-drift one-liners | — |
+| 1 | segno | these docs + the nine doc-drift one-liners | — |
 | 2 | gpio | skeleton, ffigen, `_IOC`, `Syscalls`, ABI test | — |
 | 3 | gpio | chips, lines, values, errors | 2 |
 | 4 | gpio | edge events, isolate | 3 |
@@ -342,7 +356,7 @@ CHANGELOG, `dart pub publish` as 0.1.0.
 |---|---|---|
 | `gpio-sim` unavailable on GitHub runners | low | fake-kernel suite carries the gate; the sim suite skips cleanly |
 | 32-bit ARM struct layout differs from the table | medium | ABI test runs on armv7 in the matrix — it is there to *prove* the fixed-width assumption, not restate it |
-| `epoll_wait` strands the isolate on close | medium | `eventfd` wakeup, not a poll timeout |
+| `poll` strands the isolate on close | medium | `eventfd` wakeup, and `close()` waits for the isolate to exit before the fd is freed |
 | Hot restart leaks the line | medium | process-lifetime registry + a self-aware `EBUSY` message |
 | Kernel < 5.10 | low | v2 ioctl fails; error says so explicitly. No v1 fallback, by decision |
 | Package has no in-repo consumer, so it bit-rots | **real** | accepted deliberately: it is an OSS deliverable, not Segno infrastructure. Revisit if the bare-Pi footswitch path is ever committed |

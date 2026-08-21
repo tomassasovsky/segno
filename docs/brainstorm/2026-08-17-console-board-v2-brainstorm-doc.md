@@ -66,8 +66,10 @@ a separate RP2040 LED driver*: the two firmwares merge into one program.
   of the board), the AHCT125, the opto, ~15 passives and four mounting holes. A flat
   ~130 × 90 board puts the module at 9 % of area with edge to spare. It also keeps the
   Pi's Active Cooler airflow clear and the NVMe and SD card reachable.
-  *Only ~11 signals cross the ribbon* — two UART pairs, SWD, 5 V, 3V3,
-  GND — so a 2×20 IDC is generous.
+  *Only six signals cross the ribbon* — two UART pairs and SWD — plus 3V3 and eight
+  grounds. **No 5 V**: header pins 2/4 are deliberately absent, and `console_board.py`
+  asserts it, because connecting them would tie the external buck to the Pi's PMIC
+  rail with no ORing diode. So a 2×20 IDC is generous.
 - **Footswitches stay on the MCU.** Debounce and timestamping stay out of Linux
   userspace, so jitter is bounded; the existing firmware and pedal protocol already
   work this way. (There is already an open issue about shaving ~8 ms off footswitch
@@ -102,14 +104,14 @@ a separate RP2040 LED driver*: the two firmwares merge into one program.
 | block | parts |
 |---|---|
 | MCU | Pico 2 (RP2350) on 2×20 THT headers |
-| Pi link | 2×20 IDC ribbon → UART ×2, SWD, 5 V, 3V3, GND (not the power button — see below) |
+| Pi link | 2×20 IDC ribbon → UART ×2, SWD, 3V3, GND — **no 5 V**, and not the power button |
 | MIDI IN | H11L1 at **3.3 V** → Pi uart0 RX · 220 Ω · 1N4148 · DIN pin 2 **not** connected |
 | MIDI OUT | 74AHCT125 ← Pi uart0 TX · 2 × 220 Ω |
 | Footswitches | 10 × JST-XH 2-pin, 100 nF RC debounce (as V1) |
 | CTRL 1/2 | 2 × JST-XH 3-pin → ADC with pull-up |
 | Indicators | 1 × JST-XH 3-pin, WS2812 chain via 74AHCT125 3V3→5 V |
 | Ring/encoder | 1 × JST-XH 8-pin to `ring_board` |
-| Power button | 1 × JST-XH 2-pin → the Pi's own PWR pads (J9), not a GPIO |
+| Power button | 1 × JST-XH 2-pin → J9 → the Pi's own J2 pads, not a GPIO |
 | Power in | 1 × JST-XH 2-pin, 5 V from the external buck |
 
 Level shifting follows [`segno_wiring.md` §2b](../../hardware/segno_wiring.md): the

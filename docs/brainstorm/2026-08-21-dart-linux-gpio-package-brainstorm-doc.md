@@ -67,10 +67,23 @@ as settled fact:
 - [`2026-08-17-console-board-v2-brainstorm-doc.md`](2026-08-17-console-board-v2-brainstorm-doc.md)
   — the key-decision bullet and the board-content table.
 
-All six are corrected in the same change as this doc; they were one-liners, so no
-separate issue per `CLAUDE.md`. Worth noting how they survived: the first sweep
-fixed one occurrence per file and left the parts tables, so each file went on
-contradicting *itself*. Grep for the claim, not for the sentence.
+- [`hardware/enclosure/segno_enclosure.py`](../../hardware/enclosure/segno_enclosure.py)
+  — the power-button part selection, twice ("it drives a Pi GPIO", "a dry contact to a
+  3.3 V GPIO"). Missed by two sweeps, because nobody thinks to grep an *enclosure*
+  generator for an electrical claim.
+
+All nine are corrected in the same change as this doc; they were one-liners, so no
+separate issue per `CLAUDE.md`.
+
+Two things about how they survived, both worth more than the fixes:
+
+1. The first sweep fixed **one occurrence per file** and left the parts tables, so each
+   file went on contradicting *itself*. Grep for the claim, not for the sentence.
+2. Review of the *corrected* rows then found a second, unrelated error sitting on them:
+   they listed **5 V** on the ribbon, when `PI_HDR` omits header pins 2/4 and
+   `console_board.py` carries a hard assert against connecting them (it would tie the
+   external buck to the Pi's PMIC rail with no ORing diode). Editing a line is not the
+   same as checking it.
 
 ## Why This Approach
 
@@ -81,19 +94,26 @@ Two things, and neither is a Segno requirement:
 1. **The ecosystem gap is real and verified.** There is no maintained, Dart-3,
    pure-Dart, uAPI-v2 GPIO package. Evidence below. That is a genuine hole in the Dart
    embedded-Linux story, and filling it is the stated product intent for this thread.
-2. **Segno's direct-wired path, if it is ever taken.** Three older plans and a research
-   doc name a `packages/gpio_client` as though it existed
+2. ~~Segno's direct-wired path.~~ **Struck.** Three older plans and a research doc name
+   a `packages/gpio_client` as though it existed
    ([`plan/2026-06-14-…:364`](../plan/2026-06-14-feat-native-midi-device-selection-plan.md),
    [`plan/2026-07-22-…:172`](../plan/2026-07-22-chore-rpi4b-hardware-validation-plan.md),
-   [`research/2026-07-22-…:378`](../research/2026-07-22-rpi5-embedded-boot-experience-research.md));
-   `git log --all` shows it never was. What they mean is footswitches wired straight to
-   a bare Pi header with no console board — the bench / Pi 4B-validation / DIY build.
-   That would reuse the existing `ControllerSource` seam. It is **not committed**, and
-   this package must not be designed around it.
+   [`research/2026-07-22-…:378`](../research/2026-07-22-rpi5-embedded-boot-experience-research.md)),
+   and `git log --all` shows it never was — but the reason is not that it is merely
+   pending. It was **decided against a month ago** and this doc missed it:
 
-Point 1 carries the work. Point 2 is a bonus consumer. If the answer to "do we want to
-own a pub.dev package" is no, then the honest answer to this whole thread is *don't
-build it* — nothing in Segno is blocked.
+   > **Raspberry Pi GPIO backend — DROPPED** (2026-07-22): won't be built. No
+   > `gpio_client` / libgpiod package is planned, and `ControllerSourceKind` is
+   > MIDI-only (the once-planned `gpio` variant was never added).
+   > — [`docs/PROGRESS.md:691`](../PROGRESS.md)
+
+So **point 1 is the whole case.** There is no in-repo consumer for this package, present
+or planned, and the seam it would have plugged into does not exist. That is a cleaner
+position than the one this doc started from, not a weaker one: it settles that the
+package is an open source deliverable on its own merits, and that Segno's involvement
+begins and ends with having noticed the gap. If the answer to "do we want to own a
+pub.dev package" is no, then the honest answer to this whole thread is *don't build
+it* — nothing in Segno is blocked, and nothing will be.
 
 ### Prior art — checked before designing anything, per `AGENTS.md`
 
@@ -161,12 +181,16 @@ the stable kernel ABI** — more guaranteed not to break than any library wrappi
   RP1 on PCIe, so probe order gives it a high number: older Pi 5 kernels expose the
   header as `gpiochip4`, post-mid-2024 kernels renumber it to `gpiochip0`. Any
   hardcoded index is a bug waiting for a kernel update.
-- **One event isolate, kernel timestamps.** A dedicated isolate owns an `epoll` fd with
-  every requested line-fd registered, blocks in `epoll_wait`, and posts decoded events
-  over a `SendPort`. Isolate scheduling affects *delivery* latency (bounded,
-  measurable) but never the timestamp, which the kernel stamps at the interrupt.
+- **One event isolate, kernel timestamps.** v2 returns **one descriptor per request**,
+  covering all its lines — a descriptor per *line* is the v1 model and does not exist
+  here. A dedicated isolate blocks on that single fd (plus an `eventfd` for prompt
+  shutdown) and posts decoded events over a `SendPort`. Isolate scheduling affects
+  *delivery* latency (bounded, measurable) but never the timestamp, which the kernel
+  stamps at the interrupt.
 - **Dropped events are surfaced, not swallowed.** A `seqno` gap becomes an explicit
-  event on the stream.
+  event on the stream — carrying a count and the request's lines, but **no single
+  offset**: `seqno` counts across the whole request, so the lost records took their
+  offsets with them and naming one would be a guess.
 - **ioctl request numbers computed at runtime** from the `_IOC` formula and
   `sizeOf<Struct>()`, not hardcoded — a mismatched hand-written `ffi.Struct` then
   changes the request number and fails loudly instead of scribbling on memory. Backed
@@ -208,9 +232,9 @@ the stable kernel ABI** — more guaranteed not to break than any library wrappi
 - **Do we want to own a pub.dev package at all?** The decision the whole thread now
   turns on, since the console requirement evaporated. Everything below is moot if this
   is no.
-- **Is there a Segno consumer worth naming, or is direct-wiring hypothetical?** If the
-  bare-Pi footswitch path is genuinely dead, the package has no in-repo consumer and
-  should live entirely outside this repo, with Segno taking no dependency at all.
+- ~~Is there a Segno consumer worth naming?~~ **Answered: no.**
+  [`docs/PROGRESS.md:691`](../PROGRESS.md) dropped the Pi GPIO backend on 2026-07-22.
+  The package lives entirely outside this repo and Segno takes no dependency.
 - **MIT or Apache-2.0?** MIT matches the Dart ecosystem norm and `flutter_gpiod`;
   Apache-2.0 adds a patent grant. Either passes Segno's license gate.
 - **Package name.** `linux_gpio`, `gpio_cdev`, `linux_gpiod`, `dart_gpio` and
