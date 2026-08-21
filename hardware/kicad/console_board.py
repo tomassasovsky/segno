@@ -391,9 +391,10 @@ j_ind[1] += v5
 j_ind[2] += ind_out
 j_ind[3] += gnd
 
-# ---- J8: rear power button -- passed STRAIGHT through to a Pi GPIO ----------
+# ---- J8: rear power button -- passed STRAIGHT through to the Pi's PWR pads ---
 # Not via the MCU: a clean shutdown has to work when the MCU is wedged or
-# mid-reflash, which is exactly when it is wanted.
+# mid-reflash, which is exactly when it is wanted. And not via a GPIO either --
+# see the next block; on a Pi 5 no GPIO can do this job.
 j_btn = jst(2, "J8", "PWR_BTN")
 j_btn[1] += pwr_btn
 j_btn[2] += gnd

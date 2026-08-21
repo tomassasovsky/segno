@@ -66,7 +66,7 @@ a separate RP2040 LED driver*: the two firmwares merge into one program.
   of the board), the AHCT125, the opto, ~15 passives and four mounting holes. A flat
   ~130 × 90 board puts the module at 9 % of area with edge to spare. It also keeps the
   Pi's Active Cooler airflow clear and the NVMe and SD card reachable.
-  *Only ~11 signals cross the ribbon* — two UART pairs, SWD, power button, 5 V, 3V3,
+  *Only ~11 signals cross the ribbon* — two UART pairs, SWD, 5 V, 3V3,
   GND — so a 2×20 IDC is generous.
 - **Footswitches stay on the MCU.** Debounce and timestamping stay out of Linux
   userspace, so jitter is bounded; the existing firmware and pedal protocol already
@@ -83,9 +83,12 @@ a separate RP2040 LED driver*: the two firmwares merge into one program.
   system update. Three wires and a 3-pin header. The MCU is buried under the 16"
   screen and the pedal firmware is the part most likely to keep changing — this is
   cheap now and painful to retrofit.
-- **Power button goes straight to a Pi GPIO**, not through the MCU. Clean shutdown
-  keeps working when the MCU is wedged or mid-reflash, which is exactly when it is
-  needed.
+- **Power button goes straight to the Pi's own PWR pads**, not through the MCU and not
+  through a GPIO. Clean shutdown keeps working when the MCU is wedged or mid-reflash,
+  which is exactly when it is needed — and on a Pi 5 a GPIO cannot do this job at all:
+  RP1 and the SoC are unpowered until the PMIC brings them up, so nothing on the 40-way
+  can wake the machine. The button reaches the two solder pads beside the RTC connector
+  (board J8 → J9).
 - **The external potted buck stays.** The eleUniverse 8–36 V → 5 V 10 A IP67 brick
   already feeds the Pi and both screens; the board just takes 5 V in. ~5 A of
   switching regulator on a hand-built THT board is real design work that is already
@@ -99,7 +102,7 @@ a separate RP2040 LED driver*: the two firmwares merge into one program.
 | block | parts |
 |---|---|
 | MCU | Pico 2 (RP2350) on 2×20 THT headers |
-| Pi link | 2×20 IDC ribbon → UART ×2, SWD, power button, 5 V, 3V3, GND |
+| Pi link | 2×20 IDC ribbon → UART ×2, SWD, 5 V, 3V3, GND (not the power button — see below) |
 | MIDI IN | H11L1 at **3.3 V** → Pi uart0 RX · 220 Ω · 1N4148 · DIN pin 2 **not** connected |
 | MIDI OUT | 74AHCT125 ← Pi uart0 TX · 2 × 220 Ω |
 | Footswitches | 10 × JST-XH 2-pin, 100 nF RC debounce (as V1) |

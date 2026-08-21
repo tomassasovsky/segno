@@ -50,7 +50,7 @@ existing boards are.
 | block | parts |
 |---|---|
 | MCU | Pico 2 (RP2350) on 2×20 THT headers |
-| Pi link | 2×20 **shrouded, keyed** IDC → UART ×2, SWD, power button, 5 V, 3V3, GND |
+| Pi link | 2×20 **shrouded, keyed** IDC → UART ×2, SWD, 5 V, 3V3, GND (the power button is *not* on the ribbon — J8 → J9 → the Pi's own PWR pads) |
 | MIDI IN | H11L1 at **3.3 V** → Pi `uart0` RX · 220 Ω · 1N4148 · DIN pin 2 **not** connected |
 | MIDI OUT | 74AHCT125 ← Pi `uart0` TX · 2 × 220 Ω |
 | Footswitches | 10 × JST-XH 2-pin + 100 nF RC debounce (V1 idiom) |
