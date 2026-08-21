@@ -66,8 +66,8 @@ a separate RP2040 LED driver*: the two firmwares merge into one program.
   of the board), the AHCT125, the opto, ~15 passives and four mounting holes. A flat
   ~130 × 90 board puts the module at 9 % of area with edge to spare. It also keeps the
   Pi's Active Cooler airflow clear and the NVMe and SD card reachable.
-  *Only six signals cross the ribbon* — two UART pairs and SWD — plus 3V3 and eight
-  grounds. **No 5 V**: header pins 2/4 are deliberately absent, and `console_board.py`
+  *Only six signals cross the ribbon* — two UART pairs and SWD — plus 3V3 on two pins
+  and eight grounds: **16 of the 40 ways** in total. **No 5 V**: header pins 2/4 are deliberately absent, and `console_board.py`
   asserts it, because connecting them would tie the external buck to the Pi's PMIC
   rail with no ORing diode. So a 2×20 IDC is generous.
 - **Footswitches stay on the MCU.** Debounce and timestamping stay out of Linux

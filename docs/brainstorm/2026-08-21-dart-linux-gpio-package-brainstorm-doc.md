@@ -196,11 +196,16 @@ the stable kernel ABI** — more guaranteed not to break than any library wrappi
   offset**: `seqno` counts across the whole request, so the lost records took their
   offsets with them and naming one would be a guess.
 - **ioctl request numbers computed at runtime** from the `_IOC` formula and
-  `sizeOf<Struct>()`, not hardcoded — a mismatched hand-written `ffi.Struct` then
-  changes the request number and fails loudly instead of scribbling on memory. Backed
-  by explicit size assertions, measured against the current header:
-  `gpio_v2_line_request` 592, `…_info` 256, `…_config` 272, `…_values` 16, `…_event`
-  48, `gpiochip_info` 68.
+  `sizeOf<Struct>()`, not hardcoded — a struct whose *size* drifts then changes the
+  request number and fails loudly instead of scribbling on memory. Backed by explicit
+  size assertions against the current header: `gpio_v2_line_request` 592, `…_info` 256,
+  `…_config` 272, `…_values` 16, `…_event` 48, `gpiochip_info` 68.
+
+  **But size is all it catches**, and the plan does not let that stand unqualified
+  either: a size-preserving reordering yields an identical request number and is then
+  read from the wrong offsets in silence, and `gpio_v2_line_event` has no ioctl at all.
+  Field offsets are pinned separately on both sides of the boundary. Offset pinning is
+  not optional, and this bullet used to imply it was.
 - **Testable without a Pi.** The syscall layer is an injectable seam, so package logic
   is unit-testable against a fake kernel on any machine, macOS included. An opt-in
   second suite runs against the kernel's own `gpio-sim`. The fake carries the gate;

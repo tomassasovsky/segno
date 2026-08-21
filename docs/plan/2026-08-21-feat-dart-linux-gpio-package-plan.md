@@ -97,7 +97,7 @@ final req = chip.request(
   eventClock: EventClock.monotonic,
 );
 
-req.getValue(17);                // bool
+req.getValue(17);                // bool — keyed by LINE OFFSET, see below
 req.getValues();                 // Map<int, bool> — one atomic ioctl
 req.setValue(27, true);
 req.setValues({27: true});
@@ -121,6 +121,15 @@ a `seqno` gap proves the kernel's kfifo overflowed — **the differentiator**: n
 Dart package can tell you an edge was lost. It deliberately carries **no single
 offset**: `seqno` counts across the whole request, so the lost records took their
 offsets with them; it reports the count and the request's lines instead.
+
+**The public API is keyed by line offset; the kernel's bitmaps are keyed by position
+in `offsets[]`.** This is the single easiest thing to get silently wrong, so it is
+stated rather than left to be discovered: `gpio_v2_line_values.bits` and `.mask`, and
+`ATTR_ID_OUTPUT_VALUES.values`, are indexed by **where the line sits in the request**,
+not by its offset on the chip. For a request over `[17, 27]`, `setValue(27, …)` must
+set bit **1**, not bit 27. Getting it backwards does not error — it reads or drives a
+different line, or none. Every implementation therefore keeps an offset→index map and
+never uses an offset as a bit position.
 
 Errors are one `GpioException` carrying `errno`, the failing operation and an
 actionable message: `EBUSY` names the current consumer and `EACCES` names the `gpio`
@@ -244,6 +253,10 @@ the three kinds never share a slot: a set of lines needing both a flags override
 debounce period costs **two**, and any request containing an output at all spends one
 more on `OUTPUT_VALUES`. The budget is therefore *(distinct flag words − 1) + (1 if any
 output) + (distinct debounce periods)*, and it is that total which must be checked.
+It is deliberately a slight over-estimate: the `OUTPUT_VALUES` slot is counted whenever
+the request contains an output, even where every initial value is false and the
+kernel's own default would have served. Erring high costs nothing until a request needs
+exactly eleven attributes, and erring low would truncate a request silently.
 
 Two further traps: a flags attribute **replaces** the defaults for the lines it covers
 rather than adding to them, so request-wide bits (the event clock) have to be OR-ed
