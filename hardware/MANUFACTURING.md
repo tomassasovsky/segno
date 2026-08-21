@@ -30,6 +30,21 @@ sheet claimed "2.0 mm 5052-H32 Al, qty 1" — including the steel post, ×2.
 
 ### Reading the drawings
 
+- **The sheets are written in SPANISH** (issue #778). The parts are fabricated in
+  Argentina and the shop floor reads Spanish, so every instruction a fabricator
+  acts on — part notes, bend tables and their footnotes, the layer legend, title
+  blocks, mask callouts, the tolerance block — is Spanish. What is deliberately
+  **not** translated: layer names (`CUT`, `BEND`, `VENT`, `MASK`, `NOTE`,
+  `ENGRAVE`, `SILK`) and part stems (`segno_base`, …), because they are the
+  identifiers inside the DXFs and the zips and are how a printed sheet is paired
+  to its file; numbers, units, `Ø ± °` and standard designations (5052-H32, M3,
+  K-factor, R2). The title block prints the Spanish part name **and** the stem.
+- **Every sheet-metal drawing carries a general tolerance block**
+  (`TOLERANCIAS (salvo indicación contraria)`): hole position ± 0,15 mm, hole
+  diameter ± 0,10 mm, bend angle ± 0,5°, outside/flat dimensions ± 0,3 mm, and
+  dimensions measured across a fold ± 0,5 mm. The last row is the honest one: a
+  dimension that crosses a bend stacks deduction, springback and gauge scatter,
+  and ± 0,3 mm is not holdable across the base's five folds.
 - **Every sheet with folds carries a bend table**: line position, length, fold
   rotation, included angle, direction relative to the drawn face, inside radius
   and the development deduction the flat was built with. The base's five rows are
@@ -41,10 +56,10 @@ sheet claimed "2.0 mm 5052-H32 Al, qty 1" — including the steel post, ×2.
 - **`CUT` and `VENT` are one and the same operation — both cut clean through.**
   `VENT` is 127 louvres, ~18 425 mm² and ~5.6 m of cut path. It must be in the
   quote; the alternative is a sealed box with a Raspberry Pi 5 inside it.
-- **`BEND` lines are fold references only — do not cut, score, etch or mark them.**
+- **`BEND` lines are fold references only** (`no cortar, no marcar, no rayar ni grabar`).
   There are 3 380 mm of them on the base alone.
 - **`MASK` is a no-paint coating mask, never a cut** — red dash-dot, and every
-  ring carries its own "DO NOT CUT" callout. The Ø20 ring on the base is the M6
+  ring carries its own `NO CORTAR` callout. The Ø20 ring on the base is the M6
   earth-stud bonding land: cut it and the base is scrap and the safety earth is
   gone.
 
