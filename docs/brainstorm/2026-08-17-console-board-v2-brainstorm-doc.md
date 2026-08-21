@@ -109,7 +109,7 @@ a separate RP2040 LED driver*: the two firmwares merge into one program.
 | CTRL 1/2 | 2 × JST-XH 3-pin → ADC with pull-up |
 | Indicators | 1 × JST-XH 3-pin, WS2812 chain via 74AHCT125 3V3→5 V |
 | Ring/encoder | 1 × JST-XH 8-pin to `ring_board` |
-| Power button | 1 × JST-XH 2-pin → straight through to Pi GPIO |
+| Power button | 1 × JST-XH 2-pin → the Pi's own PWR pads (J9), not a GPIO |
 | Power in | 1 × JST-XH 2-pin, 5 V from the external buck |
 
 Level shifting follows [`segno_wiring.md` §2b](../../hardware/segno_wiring.md): the

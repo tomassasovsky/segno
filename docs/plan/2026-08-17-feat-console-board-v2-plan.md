@@ -57,7 +57,7 @@ existing boards are.
 | CTRL 1/2 | 2 × JST-XH 3-pin → ADC (GP26–28) with pull-up |
 | Indicators | 1 × JST-XH 3-pin, WS2812 chain via 74AHCT125 3V3→5 V |
 | Ring/encoder | 1 × JST-XH 8-pin to `ring_board` |
-| Power button | 1 × JST-XH 2-pin, passed straight through to a Pi GPIO |
+| Power button | 1 × JST-XH 2-pin, passed through to the Pi's own PWR pads (J9) |
 | Power in | 1 × JST-XH 2-pin, 5 V from the external potted buck + **bulk caps** (below) |
 
 ### Power-in protection: bulk yes, series diode no

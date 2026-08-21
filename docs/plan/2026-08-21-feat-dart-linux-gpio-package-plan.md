@@ -41,7 +41,7 @@ is MIDI, `uart3` (GPIO8/9) is the link to the Pico 2, and GPIO24/25 are SWCLK/SW
 driven by **openocd** ([console board v2 plan:103](2026-08-17-feat-console-board-v2-plan.md)).
 The power button is J8 → J9, a flying lead to the **Pi 5's own power-button pads**,
 because *"on a Pi 5 an external button cannot be a GPIO: RP1 and the SoC are unpowered
-until the PMIC brings them up"* (`console_board.py:401`).
+until the PMIC brings them up"* (`console_board.py:402`).
 
 What motivates the work instead:
 
@@ -110,8 +110,12 @@ req.events.listen((event) => switch (event) {
 });
 ```
 
-`LineEdgeEvent` carries `offset`, `edge`, `timestamp` (kernel-stamped, `Duration` since
-the chosen clock's epoch), `seqno` and `lineSeqno`. `LineEventsDropped` is emitted when
+`LineEdgeEvent` carries `offset`, `edge`, `seqno`, `lineSeqno`, and the kernel's
+timestamp **both ways**: `timestampNs` as the raw nanoseconds the kernel supplied,
+and `timestamp` as a convenience `Duration`. Both are needed — Dart's `Duration`
+is microsecond-resolution, so it silently truncates the low three digits, and a
+package that argues its timestamps are good enough to measure latency with should
+not throw precision away on the way out. `LineEventsDropped` is emitted when
 a `seqno` gap proves the kernel's kfifo overflowed — **the differentiator**: no other
 Dart package can tell you an edge was lost.
 
@@ -145,14 +149,25 @@ and the ioctl **fails loudly** rather than scribbling past a buffer.
 
 Measured against the current header, and asserted in a test:
 
-| struct | bytes | | ioctl | value |
-|---|---|---|---|---|
-| `gpiochip_info` | 68 | | `GPIO_GET_CHIPINFO` | `0x8044b401` |
-| `gpio_v2_line_info` | 256 | | `GPIO_V2_GET_LINEINFO` | `0xc100b405` |
-| `gpio_v2_line_config` | 272 | | `GPIO_V2_GET_LINE` | `0xc250b407` |
-| `gpio_v2_line_request` | 592 | | `GPIO_V2_LINE_SET_CONFIG` | `0xc110b40d` |
-| `gpio_v2_line_values` | 16 | | `GPIO_V2_LINE_GET_VALUES` | `0xc010b40e` |
-| `gpio_v2_line_event` | 48 | | `GPIO_V2_LINE_SET_VALUES` | `0xc010b40f` |
+**One table, not two side by side.** An earlier draft put struct sizes and ioctl
+numbers in adjacent columns of one table, which reads as if each row pairs
+them — it did not, and three rows lined up wrongly. Since the `_IOC` encoding *contains*
+the argument size, a reader building the assertion from a wrongly aligned row gets a
+number the kernel rejects with `ENOTTY`. Each ioctl is therefore listed with the
+struct it actually carries:
+
+| ioctl | argument struct | bytes | value |
+|---|---|---|---|
+| `GPIO_GET_CHIPINFO` | `gpiochip_info` | 68 | `0x8044b401` |
+| `GPIO_V2_GET_LINEINFO` | `gpio_v2_line_info` | 256 | `0xc100b405` |
+| `GPIO_V2_GET_LINE` | `gpio_v2_line_request` | 592 | `0xc250b407` |
+| `GPIO_V2_LINE_SET_CONFIG` | `gpio_v2_line_config` | 272 | `0xc110b40d` |
+| `GPIO_V2_LINE_GET_VALUES` | `gpio_v2_line_values` | 16 | `0xc010b40e` |
+| `GPIO_V2_LINE_SET_VALUES` | `gpio_v2_line_values` | 16 | `0xc010b40f` |
+
+`gpio_v2_line_event` (48 bytes) is read with `read(2)` and so has no ioctl of its
+own — which also means no `_IOC` tripwire behind it, and makes asserting its size
+directly more load-bearing rather than less.
 
 The uAPI is deliberately fixed-width (`__u32`/`__u64`/fixed char arrays), so these hold
 on 32-bit ARM as well as arm64/x64 — but that is an assumption the CI matrix has to
@@ -175,6 +190,21 @@ in `epoll_wait`, reads `gpio_v2_line_event` records and posts decoded events ove
 
 Synchronous FFI calls run on the calling isolate's own thread, so `errno` read
 immediately after a failing call is valid — no thread-hop hazard.
+
+### 64 lines per request, but only 10 attribute groups
+
+`GPIO_V2_LINES_MAX` is 64, so a whole footswitch bank is one descriptor and one
+atomic `GPIO_V2_LINE_GET_VALUES`. But `GPIO_V2_LINE_NUM_ATTRS_MAX` is **10**, and
+that is the constraint that actually shapes the encoder: the request carries one
+default flag word plus at most ten *attributes*, each with a value and a bitmask
+of the lines it covers.
+
+So the encoder must group lines by configuration rather than emit one attribute
+each, and pick the most common flag word as the default so it needs no attribute
+at all. Two further traps: a flags attribute **replaces** the defaults for the
+lines it covers rather than adding to them, so request-wide bits (the event
+clock) have to be OR-ed into every override; and exceeding ten must be a clear
+error naming the ceiling, not a silently truncated request.
 
 ### Other platforms are backends, not ports
 
@@ -292,7 +322,7 @@ and the `blink` / `button` examples.
 
 ### PR 6 — child repo: publish
 
-README (permissions, `byLabel`, hot restart, the platform table below),
+README (permissions, `byLabel`, hot restart, the platform table above),
 CHANGELOG, `dart pub publish` as 0.1.0.
 
 ## PR split

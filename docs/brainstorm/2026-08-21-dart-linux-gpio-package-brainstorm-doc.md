@@ -41,9 +41,9 @@ than a preference:
 
 > On a Pi 5 an external button cannot be a GPIO: RP1 and the SoC are unpowered until
 > the PMIC brings them up, so nothing on the 40-way can wake the machine.
-> — `console_board.py:401`
+> — `console_board.py:402`
 
-with pin 5 / GPIO3 annotated `-- NOT the power button` (`console_board.py:584`).
+with pin 5 / GPIO3 annotated `-- NOT the power button` (`console_board.py:585`).
 
 SWD is openocd's too, explicitly: *"The Pi reflashes the MCU with openocd over
 SWCLK/SWDIO/GND … **Requires `openocd` in the Pi image**"*
@@ -54,22 +54,23 @@ clock edge, microseconds each, against a flash image that needs millions of them
 So this package is **not** justified by the console. It is justified on its own merits,
 below, and Segno's use of it is optional and secondary.
 
-### Doc drift this uncovered — worth fixing separately
+### Doc drift this uncovered — fixed alongside this doc
 
-Three places still assert the dead version, and they are what led the first draft
-astray. None is load-bearing on the board (the netlist is right), but all three read as
-settled fact:
+Six places asserted the dead version, and they are what led the first draft astray.
+None was load-bearing on the board (the netlist was right throughout), but all read
+as settled fact:
 
-- `console_board.py:394` — section header `J8: rear power button -- passed STRAIGHT
-  through to a Pi GPIO`, contradicted by its own next paragraph seven lines later.
-- [`docs/plan/2026-08-17-feat-console-board-v2-plan.md:53`](../plan/2026-08-17-feat-console-board-v2-plan.md)
-  — ribbon contents listed as `UART ×2, SWD, power button, 5 V, 3V3, GND`. `PI_HDR`
-  has no power-button net.
-- [`docs/brainstorm/2026-08-17-console-board-v2-brainstorm-doc.md`](2026-08-17-console-board-v2-brainstorm-doc.md)
-  — *"Power button goes straight to a Pi GPIO, not through the MCU"*, and the same
-  line in that doc's board-content table.
+- `console_board.py` — the `PWR_BTN` net comment and the `J8` section header, the
+  latter contradicted by its own next paragraph seven lines later.
+- [`2026-08-17-feat-console-board-v2-plan.md`](../plan/2026-08-17-feat-console-board-v2-plan.md)
+  — the ribbon contents and the parts table, neither matching `PI_HDR`.
+- [`2026-08-17-console-board-v2-brainstorm-doc.md`](2026-08-17-console-board-v2-brainstorm-doc.md)
+  — the key-decision bullet and the board-content table.
 
-A one-line-each fix, no issue needed per `CLAUDE.md`.
+All six are corrected in the same change as this doc; they were one-liners, so no
+separate issue per `CLAUDE.md`. Worth noting how they survived: the first sweep
+fixed one occurrence per file and left the parts tables, so each file went on
+contradicting *itself*. Grep for the claim, not for the sentence.
 
 ## Why This Approach
 
