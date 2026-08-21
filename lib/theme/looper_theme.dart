@@ -108,7 +108,6 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     required this.waveformColors,
     required this.waveformBackground,
     required this.recordColor,
-    required this.fxColor,
     required this.recordMeterColors,
     required this.muteMeterColors,
     required this.indicatorColors,
@@ -135,11 +134,6 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
 
   /// Accent for the record/recording state (e.g. the mode indicator).
   final Color recordColor;
-
-  /// Accent for FX mode (the mode chip). Matches the pedal's blue chain-state
-  /// LEDs by intent, but is an app token: the plate reads its colour from the
-  /// hardware LED palette, and the chrome must not depend on that.
-  final Color fxColor;
 
   /// Track-meter (peak bar) colors by [LooperMeterState] in record mode.
   final Map<LooperMeterState, Color> recordMeterColors;
@@ -187,7 +181,6 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     Map<LooperMeterState, Color>? waveformColors,
     Color? waveformBackground,
     Color? recordColor,
-    Color? fxColor,
     Map<LooperMeterState, Color>? recordMeterColors,
     Map<LooperMeterState, Color>? muteMeterColors,
     Map<TrackIndicator, Color>? indicatorColors,
@@ -198,7 +191,6 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     waveformColors: waveformColors ?? this.waveformColors,
     waveformBackground: waveformBackground ?? this.waveformBackground,
     recordColor: recordColor ?? this.recordColor,
-    fxColor: fxColor ?? this.fxColor,
     recordMeterColors: recordMeterColors ?? this.recordMeterColors,
     muteMeterColors: muteMeterColors ?? this.muteMeterColors,
     indicatorColors: indicatorColors ?? this.indicatorColors,
@@ -226,7 +218,6 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
           Color.lerp(waveformBackground, other.waveformBackground, t) ??
           waveformBackground,
       recordColor: Color.lerp(recordColor, other.recordColor, t) ?? recordColor,
-      fxColor: Color.lerp(fxColor, other.fxColor, t) ?? fxColor,
       recordMeterColors: _lerpColorMap(
         recordMeterColors,
         other.recordMeterColors,

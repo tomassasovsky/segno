@@ -592,8 +592,12 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 - **Performance recording — pedal firmware parity.** The pedal has no spare
   footswitch, so arm/disarm rides the existing MODE button via a
   tap-vs-long-press split (tap still toggles Rec/Play; a ≥500 ms hold
-  arms/disarms), with a blinking-red MODE LED when armed on the on-screen
-  `PedalFaceplate` simulator.
+  arms/disarms). The armed state rides the wire but is **not** rendered on the
+  pedal: it once blinked the MODE LED red, dropped in #693 because armed
+  already shows on the screens and blink-vs-solid was too fine a distinction on
+  one LED at stage distance. The MODE LED now reports the interaction mode
+  only — rec red / play green / FX blue, solid in every state — in both
+  sketches and on the on-screen `PedalFaceplate` simulator.
 - **DAW export.** New `daw_export` package (pure Dart, no Flutter/engine
   dependency) turns a completed performance capture into a real **Ableton
   Live 12 `.als`** project: one audio track per non-empty track/live-input

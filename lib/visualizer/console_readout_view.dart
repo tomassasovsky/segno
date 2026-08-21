@@ -450,8 +450,43 @@ class _ModeColumn extends StatelessWidget {
 }
 
 /// The mode word — what a footswitch press does right now — bare and
-/// stage-sized per the pen: red only while a press records, the primary
-/// text colour otherwise.
+/// stage-sized per the pen: red while a press records, green while a press
+/// mutes, blue while a press stomps a chain (#693), the primary text colour
+/// only for a token this build does not know.
+///
+/// This surface reads its colours from the **LED palette**, not from the
+/// chrome tokens the desktop uses — `ledRed`/`ledGreen`/`ledBlue` rather than
+/// `rec`/`success`/`accent`. Two reasons, both about the two-metre panel:
+/// contrast at 84px, and the fact that these are the exact colours the pedal's
+/// own MODE LED throws, so the panel and the plate say the same thing in the
+/// same hue. The stage pill and the desktop indicator sit close to the eye and
+/// keep the chrome tokens. The [_RecordPill] below this word follows the same
+/// rule, so the column has ONE red rather than two a shade apart.
+///
+/// Measured against this background (#0B0B0C):
+///
+/// | reading | token       | hex     | ratio  |
+/// | ------- | ----------- | ------- | ------ |
+/// | (was)   | textPrimary | #F3F4F7 | 17.9:1 |
+/// | mute    | success     | #30A46C |  6.2:1 |
+/// | mute    | `ledGreen`  | #34D399 | 10.2:1 |
+/// | record  | rec         | #E5484D |  5.0:1 |
+/// | record  | `ledRed`    | #EF4444 |  5.2:1 |
+/// | fx      | `ledBlue`   | #3B82F6 |  5.4:1 |
+///
+/// Note what the red and blue rows say: **no red or blue in [SurfaceTheme]
+/// clears 9:1, and none can.** Red carries only 0.2126 of relative luminance
+/// and blue 0.0722, so a hue saturated enough to still read as "record" or
+/// "fx" tops out near 5:1 against near-black — the only tokens above 9:1 are
+/// the greens and the ambers, and an amber REC would be a lie. `ledRed` is the
+/// brightest red available and is taken on that basis (a real but small gain
+/// over `rec`, 5.0 → 5.2), NOT because it clears a threshold. Making REC or FX
+/// genuinely brighter needs new tokens trading saturation for luminance — a
+/// design-system call, not a call to make here.
+///
+/// In the high-contrast flavor `rec` and `ledRed` are the same value
+/// (#FF6B6B, 7.6:1 on that flavor's black), as are `accent` and `ledBlue`, so
+/// this choice is a no-op there.
 class _ModeWord extends StatelessWidget {
   const _ModeWord({required this.mode, required this.s});
 
@@ -475,7 +510,16 @@ class _ModeWord extends StatelessWidget {
       label,
       key: const Key('console_readout_mode'),
       style: TextStyle(
-        color: mode == 'record' ? surface.rec : surface.textPrimary,
+        color: switch (mode) {
+          'record' => surface.ledRed,
+          'mute' => surface.ledGreen,
+          // FX gets its own arm rather than falling through to `_`: this is
+          // the largest mode reading on any surface, and leaving it neutral
+          // made "FX" and "a token this build does not know" the same colour
+          // on the one screen read from two metres.
+          'fx' => surface.ledBlue,
+          _ => surface.textPrimary,
+        },
         fontSize: 84 * s,
         // The pen draws weight 750; the bundled Inter tops out at the 700
         // cut, which is the nearest face.
@@ -545,6 +589,12 @@ class _BankPair extends StatelessWidget {
 /// The record light: the pen's RecPill scaled ~2.8× — dot, REC, and the
 /// capture elapsed in the red outline while a capture runs; dimmed to an
 /// idle outline otherwise.
+///
+/// Its red is `ledRed` (#EF4444, 5.2:1 on the panel's #0B0B0C), the same red
+/// the mode word above it uses — NOT the `rec` (#E5484D, 5.0:1) the desktop
+/// chrome uses. These two sit in the same column, one almost directly beneath
+/// the other, and both mean "record": two reds a shade apart there is the
+/// exact defect the desktop `ModeIndicator` was unified to remove (#693).
 class _RecordPill extends StatelessWidget {
   const _RecordPill({required this.readout, required this.s});
 
@@ -555,13 +605,21 @@ class _RecordPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final armed = readout.recordArmed;
-    final color = armed ? surface.rec : surface.borderStrong;
+    final red = surface.ledRed;
+    final color = armed ? red : surface.borderStrong;
     return Container(
       key: const Key('console_readout_record'),
       height: 88 * s,
       padding: EdgeInsets.symmetric(horizontal: 40 * s),
       alignment: Alignment.center,
       decoration: BoxDecoration(
+        // The wash stays the `recSurface` TOKEN even though the outline reads
+        // `ledRed`. Deriving it from `ledRed` at a fixed alpha looked tidier,
+        // but it dropped the armed fill from 20% to 14% in the high-contrast
+        // flavor (`0x33FF6B6B` vs an inline `0.14`) — a regression on exactly
+        // the flavor and the panel this change exists to make more legible.
+        // The hue difference it "fixes" is `rec` vs `ledRed` at 14% over
+        // `#0B0B0C`, which is not a visible reading; the alpha is.
         color: armed ? surface.recSurface : null,
         borderRadius: BorderRadius.circular(24 * s),
         border: Border.all(color: color, width: 2 * s),
@@ -577,7 +635,7 @@ class _RecordPill extends StatelessWidget {
           AppText(
             context.l10n.readoutRecordLabel,
             style: TextStyle(
-              color: armed ? surface.rec : surface.textMuted,
+              color: armed ? red : surface.textMuted,
               fontSize: 40 * s,
               fontWeight: FontWeight.w700,
               letterSpacing: 3.2 * s,
@@ -593,7 +651,7 @@ class _RecordPill extends StatelessWidget {
               // The pen draws the elapsed untracked; tabular numerals keep
               // the ticking seconds from wobbling the pill's width.
               style: TextStyle(
-                color: surface.rec,
+                color: red,
                 fontSize: 40 * s,
                 height: 1.21,
                 leadingDistribution: TextLeadingDistribution.even,

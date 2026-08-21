@@ -191,6 +191,127 @@ void main() {
       expect(find.byKey(const Key('readout_tempo')), findsOneWidget);
     });
 
+    testWidgets('the mode chip reads rec red, mute green and FX blue', (
+      tester,
+    ) async {
+      // #693. This chip used to paint EVERY mode one accent blue, so its
+      // colour said nothing: rec and FX were the same reading. All three
+      // modes now carry the mapping the rest of the console uses.
+      //
+      // From the LED palette, NOT the chrome tokens: `_TrackRow._tint` paints
+      // the state rows directly below this chip from `ledRed`/`ledAmber`/
+      // `ledGreen`, so a chrome-token chip put `rec` #E5484D above a row of
+      // `ledRed` #EF4444 — two reds a shade apart in one column, the very
+      // defect unifying the mode surfaces was meant to remove.
+      final surface = AppTheme.neon.extension<SurfaceTheme>()!;
+      Color chipColor() =>
+          (tester
+                      .widget<DecoratedBox>(
+                        find.byKey(const Key('readout_mode')),
+                      )
+                      .decoration
+                  as BoxDecoration)
+              .color!;
+      Color labelColor() => tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byKey(const Key('readout_mode')),
+              matching: find.byType(Text),
+            ),
+          )
+          .style!
+          .color!;
+
+      await pump(tester, const PerformanceReadout());
+      expect(chipColor(), surface.ledRed.withValues(alpha: 0.18));
+      expect(labelColor(), surface.ledRed);
+
+      await pump(tester, const PerformanceReadout(mode: 'mute'));
+      expect(chipColor(), surface.ledGreen.withValues(alpha: 0.18));
+      expect(labelColor(), surface.ledGreen);
+
+      await pump(tester, const PerformanceReadout(mode: 'fx'));
+      expect(chipColor(), surface.ledBlue.withValues(alpha: 0.18));
+      expect(labelColor(), surface.ledBlue);
+
+      // ...and the three readings are actually distinct.
+      expect({surface.ledRed, surface.ledGreen, surface.ledBlue}, hasLength(3));
+    });
+
+    testWidgets('the chip and the rows beneath it share one red and one '
+        'green', (tester) async {
+      // The near-miss guard. Both readings live in this one window, so the
+      // chip may not drift onto a different token family from the rows: a
+      // recording track under a RECORD chip must be one red, not two.
+      final surface = AppTheme.neon.extension<SurfaceTheme>()!;
+      Color labelColor() => tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byKey(const Key('readout_mode')),
+              matching: find.byType(Text),
+            ),
+          )
+          .style!
+          .color!;
+      // 'REC' is both a track's state word and the record chip's own label,
+      // so scope the row lookup to everything outside the chip.
+      Color stateWordColor(String word) {
+        final inChip = find
+            .descendant(
+              of: find.byKey(const Key('readout_mode')),
+              matching: find.text(word),
+            )
+            .evaluate()
+            .toSet();
+        final rows = find.text(word).evaluate().toSet()..removeAll(inChip);
+        return (rows.single.widget as Text).style!.color!;
+      }
+
+      const tracks = [
+        ReadoutTrack(name: 'DRUMS', state: 'recording'),
+        ReadoutTrack(name: 'BASS', state: 'playing'),
+      ];
+
+      await pump(tester, const PerformanceReadout(tracks: tracks));
+      expect(labelColor(), stateWordColor('REC'));
+
+      await pump(
+        tester,
+        const PerformanceReadout(mode: 'mute', tracks: tracks),
+      );
+      expect(labelColor(), stateWordColor('PLAY'));
+
+      // Named so the failure says what broke: these are the two pairs that
+      // used to be a shade apart.
+      expect(surface.ledRed, isNot(surface.rec));
+      expect(surface.ledGreen, isNot(surface.success));
+    });
+
+    testWidgets('an unknown mode token keeps the chip neutral', (tester) async {
+      // A newer main window paired with an older sub-window must not have its
+      // token folded into a real mode's colour — including the pre-rename
+      // legacy `'play'`, which is mute's old token and must NOT silently
+      // borrow mute's green from a build that no longer maps it.
+      final surface = AppTheme.neon.extension<SurfaceTheme>()!;
+      Color chipColor() =>
+          (tester
+                      .widget<DecoratedBox>(
+                        find.byKey(const Key('readout_mode')),
+                      )
+                      .decoration
+                  as BoxDecoration)
+              .color!;
+
+      for (final token in ['custom', 'play']) {
+        await pump(tester, PerformanceReadout(mode: token));
+        expect(
+          chipColor(),
+          surface.textPrimary.withValues(alpha: 0.18),
+          reason: 'unknown token $token must read neutral',
+        );
+      }
+    });
+
     testWidgets('renders an unknown mode token verbatim rather than guessing', (
       tester,
     ) async {
