@@ -28,7 +28,7 @@ Decisions taken at the plan gate, recorded so they are not relitigated:
 | build at all | **yes**, as an OSS package on its own merits |
 | repo | **separate from commit one**; not incubated under `packages/` |
 | license | **MIT** (GPL is impossible — Segno's own `license_check.yaml` would reject it) |
-| name | **`gpio`** — OS-neutral, survives a BSD or USB-bridge backend with no rename |
+| name | **`gpio`** — OS-neutral, survives a BSD or Windows backend with no rename |
 | Segno consumption | **none for now** |
 
 ## Problem Statement / Motivation
@@ -67,7 +67,8 @@ One package, one backend, no plugin machinery.
 
 Backend-neutral vocabulary throughout — `ioctl`, file descriptors and `/dev/…` never
 appear in the public surface. Linux-ness is confined to one named constructor, so a
-FreeBSD `gpioc` or USB-bridge backend later needs no rename and no API break.
+FreeBSD `gpioc` or Windows backend later needs no rename and no API break — see
+**Other platforms are backends, not ports** below.
 
 ```dart
 // ---- discovery -------------------------------------------------------------
@@ -175,6 +176,26 @@ in `epoll_wait`, reads `gpio_v2_line_event` records and posts decoded events ove
 Synchronous FFI calls run on the calling isolate's own thread, so `errno` read
 immediately after a failing call is valid — no thread-hop hazard.
 
+### Other platforms are backends, not ports
+
+An earlier draft of this plan claimed macOS and Windows simply have no GPIO. That
+is wrong for Windows, and the distinction matters for the package's shape.
+
+| target | how GPIO is reached | status |
+|---|---|---|
+| Linux | `/dev/gpiochipN`, uAPI v2 | what this package implements |
+| Android | the same character device (root + SELinux permits) | should work; untested |
+| **Windows on ARM**, including on a Pi 3/4/5 | `GpioClx` driver + **rhproxy** → WinRT `Windows.Devices.Gpio` | a real second backend |
+| FreeBSD / NetBSD | `/dev/gpiocN`, a different ioctl set | a real second backend |
+| macOS | no Mac has GPIO pins, and macOS does not run on a Pi | out of scope |
+
+Windows on a Raspberry Pi runs on the same silicon, so the pins are physically
+there — Windows simply does not expose them as a character device. Reaching them
+means the WinRT API behind rhproxy (which is what .NET's `System.Device.Gpio`
+wraps on that platform), so it is a **second backend under the same public
+types**, not a port of this one. That is precisely the case the neutral package
+name and the injectable syscall seam were chosen for. It is not planned work.
+
 ### Testable without a Pi — the crux
 
 Three layers, in order of how much they carry:
@@ -271,8 +292,8 @@ and the `blink` / `button` examples.
 
 ### PR 6 — child repo: publish
 
-README (permissions, `byLabel`, hot restart, the honest "no macOS/Windows GPIO exists"
-note), CHANGELOG, `dart pub publish` as 0.1.0.
+README (permissions, `byLabel`, hot restart, the platform table below),
+CHANGELOG, `dart pub publish` as 0.1.0.
 
 ## PR split
 
