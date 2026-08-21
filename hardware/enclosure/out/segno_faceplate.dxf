@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461274.0933680558
+2461274.1602083333
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461274.0933680558
+2461274.1602083333
   9
 $TDUUPDATE
  40
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{A101E80C-4DBF-43A0-B82B-0FB462A5DF50}
+{D3A58EE0-23F0-4299-9129-542B52B80E24}
   9
 $VERSIONGUID
   2
-{097ABBA2-64CA-449A-836B-ACE181E75828}
+{F99E6916-CC99-4162-B568-3E759FDD7047}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -6881,7 +6881,7 @@ AcDbText
  40
 8.0
   1
-Segno LID  2.0mm  x1  top plate + front lip + rear lap (= 143deg); rests on the base side walls; no top screws; legends on printed OVERLAY (see segno_overlay); FOLD with the DRAWN side as the OUTSIDE face (canonical mirror: encoder lands on the player's LEFT)
+Segno TAPA SUPERIOR (segno_faceplate)  chapa 2.0 mm  CANT. 1  tapa + pestaña frontal + solapa trasera (= 143°); apoya sobre las paredes laterales del cuerpo; sin tornillos a la vista; las leyendas van en el CALCO impreso (ver segno_overlay); PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico)
  11
 10.0
  21
@@ -7993,7 +7993,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-21T05:14:27.729525+00:00
+1.4.4 @ 2026-08-21T06:50:42.970547+00:00
   0
 VISUALSTYLE
   5
@@ -14555,7 +14555,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-21T05:14:27.732257+00:00
+1.4.4 @ 2026-08-21T06:50:42.973145+00:00
   0
 ENDSEC
   0

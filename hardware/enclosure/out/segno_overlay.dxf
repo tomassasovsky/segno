@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461274.09337963
+2461274.1602199073
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461274.09337963
+2461274.1602199073
   9
 $TDUUPDATE
  40
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{16336D84-E2F2-4B1F-9322-7F916183545F}
+{43691158-0B8C-4EEE-B758-214933506950}
   9
 $VERSIONGUID
   2
-{113AE4DE-1276-4924-B6EA-C4C856C514A0}
+{6633F90C-53B6-4E30-A52C-53E62551AB8A}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -6741,7 +6741,7 @@ AcDbText
  40
 8.0
   1
-Segno TOP OVERLAY  printed adhesive (polycarbonate/vinyl); BLACK field + WHITE legend; die-cut apertures; bonded to the faceplate (no silkscreen on metal)
+Segno CALCO SUPERIOR (segno_overlay)  CANT. 1  adhesivo impreso (policarbonato/vinilo); fondo NEGRO + leyendas BLANCAS; aberturas troqueladas; se pega sobre la tapa superior (no lleva serigrafía sobre el metal)
  11
 10.0
  21
@@ -7853,7 +7853,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-21T05:14:28.281289+00:00
+1.4.4 @ 2026-08-21T06:50:43.471106+00:00
   0
 VISUALSTYLE
   5
@@ -14415,7 +14415,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-21T05:14:28.283531+00:00
+1.4.4 @ 2026-08-21T06:50:43.473341+00:00
   0
 ENDSEC
   0

@@ -2139,14 +2139,14 @@ def _mask_circle(msp, x, y, d, what):
 
     Never a cut. Every mask ring in the package gets one of these instead of a bare
     circle: the ring is dash-dot red on layer MASK, and the leader carries the words
-    "DO NOT CUT" right next to the geometry, so the warning travels with the feature
-    even if someone flattens layers or looks only at the PDF (#775 R3)."""
+    "NO CORTAR" right next to the geometry, so the warning travels with the feature
+    even if someone flattens layers or looks only at the PDF (#775 R3, Spanish #778)."""
     r = d / 2.0
     _circle(msp, x, y, d, "MASK")
     _poly(msp, [(x + r * 0.707, y + r * 0.707), (x + r + 6.0, y + r + 6.0),
                 (x + r + 30.0, y + r + 6.0)], "MASK", closed=False)
     _text(msp, x + r + 7.0, y + r + 8.0, 4.5,
-          f"MASK DIA {d:.0f} - NO PAINT, DO NOT CUT ({what})", "MASK")
+          f"MASK Ø{d:.0f} - NO PINTAR, NO CORTAR ({what})", "MASK")
 
 def _rrect(msp, x, y, w, h, r=R_FILLET, layer="CUT"):
     r = max(0.0, min(r, w / 2.0, h / 2.0))
@@ -2233,7 +2233,7 @@ def dxf_faceplate(path):
                                                                           # stations as the front lip (#760),
                                                                           # Ø3.4 M3 clearance, concentric
                                                                           # with the flange tap pilots
-    _text(msp, 10, yr1+8, 8, f"Segno LID  2.0mm  x1  top plate + front lip + rear lap (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}deg); rests on the base side walls; no top screws; legends on printed OVERLAY (see segno_overlay); FOLD with the DRAWN side as the OUTSIDE face (canonical mirror: encoder lands on the player's LEFT)", "NOTE")
+    _text(msp, 10, yr1+8, 8, f"Segno TAPA SUPERIOR (segno_faceplate)  chapa 2.0 mm  CANT. 1  tapa + pestaña frontal + solapa trasera (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}°); apoya sobre las paredes laterales del cuerpo; sin tornillos a la vista; las leyendas van en el CALCO impreso (ver segno_overlay); PLEGAR con la cara DIBUJADA como CARA EXTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico)", "NOTE")
     doc.saveas(path)
     return {"blank": (LW, yr1)}
 
@@ -2249,7 +2249,7 @@ def dxf_overlay(path):
     for e in engr:
         _text(msp, e["u"], e["v"], e["h"], e["s"], layer="SILK",       # WHITE legend on the print
               wf=e.get("wf", 1.0), halign=e.get("halign", "left"))
-    _text(msp, 10, FP_V + 8, 8, "Segno TOP OVERLAY  printed adhesive (polycarbonate/vinyl); BLACK field + WHITE legend; die-cut apertures; bonded to the faceplate (no silkscreen on metal)", "NOTE")
+    _text(msp, 10, FP_V + 8, 8, "Segno CALCO SUPERIOR (segno_overlay)  CANT. 1  adhesivo impreso (policarbonato/vinilo); fondo NEGRO + leyendas BLANCAS; aberturas troqueladas; se pega sobre la tapa superior (no lleva serigrafía sobre el metal)", "NOTE")
     doc.saveas(path); return {}
 
 def dxf_base(path):
@@ -2395,12 +2395,14 @@ def dxf_base(path):
     for dx in (-psx/2, psx/2):
         for dy in (-psy/2, psy/2):
             _circle(msp, pcx+dx, pcy+dy, D_M3)
-    _text(msp, pcx - psx/2, pcy + psy/2 + 4, 5, f"PI_RISER x{PI_RISER_H:.0f}mm (Pi build)", "NOTE")
-    for _bn, bkx, bky, bsp in buck_mounts():       # 2x 20V->5V brick, 2 ear holes each
+    _text(msp, pcx - psx/2, pcy + psy/2 + 4, 5, f"PI_RISER separadores {PI_RISER_H:.0f} mm (versión Raspberry Pi)", "NOTE")
+    for _i, (_bn, bkx, bky, bsp) in enumerate(buck_mounts()):   # 2x 20V->5V brick, 2 ear holes each
         for dx in (-bsp/2, bsp/2):
             _circle(msp, bkx+dx, bky, D_M4)
-        _text(msp, bkx - bsp/2, bky + BUCK_BODY[1]/2 + 4, 5,
-              f"{_bn} 20V>5V 10A (B0GGHN97TK; ear pitch PROVISIONAL)", "NOTE")
+        # the two bricks sit one brick-pitch apart and their labels are far wider
+        # than that, so stack them instead of printing one over the other
+        _text(msp, bkx - bsp/2, bky + BUCK_BODY[1]/2 + 4 + 8.0*_i, 5,
+              f"{_bn} 20V>5V 10A (B0GGHN97TK; paso de orejas PROVISORIO)", "NOTE")
     for x, y in base_foot_xy():                    # M4 clearance, plain hole: the
         _circle(msp, x, y, D_FOOT)                 # head is relieved in the RING
     _emit(msp, platform_foot_holes())              # M3 holes for the 10 pedal-platform feet
@@ -2410,7 +2412,7 @@ def dxf_base(path):
         for du in (-POST_BOLT_DU, POST_BOLT_DU):   # foot forward of the web, clear of vent + display
             _circle(msp, u+du, _POST_FOOT_VP, D_M4)
     _text(msp, POST_U[0]-24, _POST_FOOT_VP + 8, 5,
-          "SUPPORT POST feet x2 (M4; issue #292)", "NOTE")
+          "Pies del POSTE DE APOYO, CANT. 2 (M4; issue #292)", "NOTE")
 
     # ---- front wall: lid front-lip screws | rear wall: I/O + transition taps ------
     for u in FRONT_SCREW_U:
@@ -2429,14 +2431,14 @@ def dxf_base(path):
     for c in io:                                                       # bonding land: paint is an
         if c.get("ref") == "EARTH_STUD":                               # insulator, so the ring
             _mask_circle(msp, c["u"], c["v"], MASK_GND_D,               # terminal needs bare metal
-                         "M6 earth stud bonding land, BOTH faces")
+                         "zona de puesta a tierra del perno M6, AMBAS CARAS")
     _text(msp, 8, BD+Hr+Ht+22, 7,
-          "MASK (red dash-dot) = NO-PAINT coating mask, NOT a cut: bare-metal bonding "
-          "land around the M6 earth stud, BOTH faces. The M3 thread pilots are tapped "
-          "AFTER painting, so they need no mask.", "MASK")
+          "MASK (rojo trazo y punto) = máscara de pintura, NO ES UN CORTE: zona de metal "
+          "desnudo para la puesta a tierra alrededor del perno M6, en AMBAS CARAS. Los "
+          "agujeros piloto M3 se roscan DESPUÉS de pintar, así que no llevan máscara.", "MASK")
 
     _text(msp, 8, BD+Hr+Ht+10, 9,
-          f"Segno BASE  2.0mm  x1  bottom + front/rear/sides fold up (bend ded {bdd:.2f}); WELD-FREE: rivet the 4 corners via L-brackets; rear 2nd fold = transition (flange FULL width, seats on the relieved side-wall tops); FOLD with the DRAWN side as the INSIDE face (canonical mirror: encoder lands on the player's LEFT)",
+          f"Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción {bdd:.2f}); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico)",
           "NOTE")
     doc.saveas(path); return {"blank": (BW + 2*h_x, BD + Hf + Hr + Ht)}
 
@@ -2452,7 +2454,7 @@ def dxf_corner_bracket(path, ht, wall_zs, side_zs, tag):
         _circle(msp, LEG - CORNER_RO, z, D_M3)                          # rear-wall leg
     for z in side_zs:
         _circle(msp, LEG + CORNER_RO, z, D_M3)                          # side-wall leg
-    _text(msp, 0, ht+6, 6, f"Segno CORNER BRACKET ({tag})  2.0mm  x2  weld-free corner join; rivet to both walls", "NOTE")
+    _text(msp, 0, ht+6, 6, f"Segno ÁNGULO DE ESQUINA (segno_corner_bracket_rear, {tag})  chapa 2.0 mm  CANT. 2  unión de esquina sin soldadura; remachar a las dos paredes", "NOTE")
     doc.saveas(path); return {}
 
 def platform_foot_u(sw):
@@ -2488,7 +2490,9 @@ def dxf_rear_panel(path):
     _poly(msp, [(-pw/2, -ph/2), (pw/2, -ph/2), (pw/2, ph/2), (-pw/2, ph/2)], "CUT")
     _emit(msp, rear_panel_holes())
     _text(msp, -pw/2 + 4, ph/2 + 6, 6,
-          "Segno REAR I/O PANEL  2.0mm  x1  9V + shutdown + fuse + 2x DIN-5 + 2x TRS + 2x USB3",
+          "Segno PANEL TRASERO DE CONECTORES (segno_rear_panel)  chapa 2.0 mm  CANT. 1  "
+          "PIEZA PLANA, sin plegados: alimentación 9V + apagado + fusible + 2 x DIN-5 + "
+          "2 x TRS + 2 x USB3",
           "NOTE")
     doc.saveas(path); return {}
 
@@ -2513,10 +2517,11 @@ def dxf_post(path):
     for du in (-POST_BOLT_DU, POST_BOLT_DU):                          # 2 M4 in the foot
         _circle(msp, pw/2.0 + du, pad + web + foot/2.0, D_M4)
     _text(msp, 5, Wd+6, 9,
-          f"Segno FACEPLATE SUPPORT POST  {POST_T:.1f}mm COLD-ROLLED STEEL (not the Al shell)  x2  "
-          f"C-fold (pad {pad:.0f} / web {web:.0f} / foot {foot:.0f} mm); pad fold {90+POST_TILT:.1f}deg "
-          f"(beds flush on the {POST_TILT:.1f}deg slope), foot fold 90deg; foot bolts to the base floor "
-          f"(M4 x2), felt cap on the pad; deduction PROVISIONAL", "NOTE")
+          f"Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de {POST_T:.1f} mm "
+          f"(NO es el aluminio del gabinete)  CANT. 2  plegado en C (apoyo {pad:.0f} / alma {web:.0f} / "
+          f"pie {foot:.0f} mm); plegado del apoyo {90+POST_TILT:.1f}° (asienta al ras sobre la pendiente "
+          f"de {POST_TILT:.1f}°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), "
+          f"fieltro sobre el apoyo; deducción PROVISORIA", "NOTE")
     doc.saveas(path); return {}
 
 # ===========================================================================
@@ -3723,9 +3728,15 @@ def build_step(write_parts=True):
 # the generated files back and holds it.
 # ===========================================================================
 
-AL_SHEET  = f"{T:.1f} mm 5052-H32 aluminium"
-STEEL_CR  = f"{POST_T:.1f} mm cold-rolled steel"
-VINYL     = "printed adhesive vinyl / polycarbonate, die-cut - NOT METAL"
+# Shop-facing text is SPANISH: the parts are fabricated in Argentina and the floor
+# reads Spanish (issue #778). What stays English is deliberate -- layer names
+# (CUT/BEND/VENT/MASK/NOTE/ENGRAVE/SILK) and part stems (segno_base, ...) are
+# identifiers shared with the DXF/STEP files and the vendor zips, and the shop
+# matches a sheet to a file by them. Numbers, units, symbols (Ø ± °) and standard
+# designations (5052-H32, M3, K, R2) are international and are left alone.
+AL_SHEET  = f"aluminio 5052-H32 de {T:.1f} mm"
+STEEL_CR  = f"acero laminado en frío de {POST_T:.1f} mm"
+VINYL     = "vinilo adhesivo impreso / policarbonato, troquelado - NO ES METAL"
 
 # stem -> (material printed on the sheet, qty per console, vendor package).
 # Quantities track the cut list in hardware/MANUFACTURING.md section 1.
@@ -3744,6 +3755,54 @@ PART_SPECS = {
     "segno_overlay":             (VINYL,    1, PKG_OVERLAY),
 }
 
+# Spanish part name for the title block. The FILE STEM still travels with it --
+# the shop pairs a printed sheet to a DXF by the stem, so translating that away
+# would break the pairing (and the zips). Name for the human, stem for the file.
+PART_TITLES_ES = {
+    "segno_base":                "CUERPO (piso + frente + laterales + trasera)",
+    "segno_faceplate":           "TAPA SUPERIOR",
+    "segno_rear_panel":          "PANEL TRASERO DE CONECTORES",
+    "segno_ring_disc":           "DISCO CENTRAL DEL ARO DE LEDS",
+    "segno_corner_bracket_rear": "ÁNGULO DE ESQUINA TRASERA",
+    "segno_post":                "POSTE DE APOYO DE LA TAPA",
+    "segno_overlay":             "CALCO SUPERIOR IMPRESO (no es metal)",
+}
+
+# --- tolerance block (issue #778) ------------------------------------------
+# A flat pattern with no tolerances is quoted at whatever the shop feels like: a
+# hole pattern that has to line up with a 9-station lid seam, two riveted corner
+# brackets and a Ø22 M6 stud cannot be left to "as cut". These are the general
+# tolerances, applied wherever a dimension is not called out individually.
+#
+# Values are what a laser + press brake shop actually holds on 2 mm 5052:
+#   posición ± 0,15   - laser positional repeatability is ~± 0,10; 0,15 leaves the
+#                       rivet/screw pairs inside the Ø3.4-on-M3 clearance.
+#   diámetro ± 0,10   - kerf variation on 2 mm; M3/M4 clearance holes tolerate it.
+#   plegado  ± 0,5°   - a good brake holds ± 0,5°; over the 45 mm post web that is
+#                       ± 0,4 mm at the pad, which the felt cap absorbs.
+#   exteriores ± 0,3  - flat/blank dimensions off the laser.
+# The fifth row is an ADDITION to the four asked for: a dimension measured ACROSS
+# a fold stacks bend deduction, springback and gauge scatter, and ± 0,3 mm is not
+# holdable across the base's five folds. Calling it out at ± 0,5 mm is honest;
+# leaving it at ± 0,3 mm invites a rejection the part does not deserve.
+# NB the tolerance block is the ONE place that writes decimals the Argentine way
+# (comma). Every other number on a sheet is generated from the model and appears
+# with a point in the DXF the shop opens next to it; switching separators between
+# the drawing and its own geometry is how a 0,15 becomes a 15.
+TOLERANCE_TITLE = "TOLERANCIAS (salvo indicación contraria)"
+TOLERANCE_ROWS = [
+    ("posición de agujeros",                "± 0,15 mm"),
+    ("diámetro de agujeros",                "± 0,10 mm"),
+    ("ángulos de plegado",                  "± 0,5°"),
+    ("dimensiones exteriores (desarrollo)", "± 0,3 mm"),
+    ("dimensiones medidas sobre un pliegue", "± 0,5 mm"),
+]
+
+def _tolerance_lines():
+    """The tolerance block as rendered text rows, heading first."""
+    wdt = max(len(k) for k, _v in TOLERANCE_ROWS) + 3
+    return [TOLERANCE_TITLE] + [f"  {k.ljust(wdt)}{v}" for k, v in TOLERANCE_ROWS]
+
 # Layers whose geometry is CUT CLEAN THROUGH the sheet. Both of these must render
 # black on every PDF: VENT is 127 louvres and ~5.6 m of cut path, and it used to
 # render ACI-7 white on a white sheet -- invisible on every drawing, missing from
@@ -3756,10 +3815,15 @@ ANNOT_LAYERS    = ("BEND", "NOTE", "ENGRAVE", "SILK", "MASK", "ACRYLIC")
 # "CUT(thru) - BEND(score) - VENT - ENGRAVE", which tells a shop that (a) VENT is
 # some other process and (b) the fold lines want scoring: 3 380 mm of score in
 # 2 mm 5052 is a scrapped base (#775 R1 + R4).
-SHEET_LEGEND = ("CUT + VENT = THROUGH-CUT (both, same operation)   |   "
-                "BEND = FOLD LINE REFERENCE ONLY - do not cut, score, etch or mark   |   "
-                "MASK = no-paint coating mask, DO NOT CUT   |   "
-                "NOTE / ENGRAVE / SILK = lettering, not geometry")
+# (Layer NAMES stay in English -- they are the identifiers inside the DXF.)
+SHEET_LEGEND = ("CUT + VENT = CORTE PASANTE (las dos capas, la misma operación)   |   "
+                "BEND = LÍNEA DE PLEGADO, SOLO REFERENCIA - no cortar, no marcar, no rayar ni grabar   |   "
+                "MASK = máscara de pintura (no pintar), NO CORTAR   |   "
+                "NOTE / ENGRAVE / SILK = texto, no es geometría")
+# The exact prohibition clause, so the guard can hold both halves of it: the words
+# must be PRESENT (BEND is not an operation) and must appear NOWHERE ELSE in the
+# legend, where they would read as an instruction to perform them.
+LEGEND_NO_SCORE = "no cortar, no marcar, no rayar ni grabar"
 
 # --- bend tables -----------------------------------------------------------
 # A flat pattern with no angles is not a drawing. The base's transition fold is
@@ -3772,8 +3836,8 @@ SHEET_LEGEND = ("CUT + VENT = THROUGH-CUT (both, same operation)   |   "
 # angle printed beside it is 180 - rotation, which is what a brake operator reads
 # off a protractor. Direction is stated relative to the DRAWN face because that is
 # the only reference on a flat pattern -- each part's NOTE says which face is which.
-UP_TOWARD = "UP, toward drawn face"
-DN_AWAY   = "DOWN, away from drawn face"
+UP_TOWARD = "ARRIBA, hacia la cara dibujada"
+DN_AWAY   = "ABAJO, opuesto a la cara dibujada"
 
 def _bend_tables():
     BW, BD = W - 2*T, D - 2*T
@@ -3785,22 +3849,22 @@ def _bend_tables():
     # sides last (their punch has to fit between the standing front and rear walls,
     # which the Ø6 corner reliefs open up to 413 mm).
     tabs["segno_base"] = [
-        (1, "rear -> transition", "y", BD + HR_FLAT, lid_w, 90.0 - TRANS_ANGLE, UP_TOWARD, RI, DD_TR),
-        (2, "front wall",         "y", 0.0,          BW,    90.0,               UP_TOWARD, RI, DEV90),
-        (3, "rear wall",          "y", BD,           BW,    90.0,               UP_TOWARD, RI, DEV90),
-        (4, "left wall",          "x", 0.0,          BD,    90.0,               UP_TOWARD, RI, DEV90),
-        (5, "right wall",         "x", BW,           BD,    90.0,               UP_TOWARD, RI, DEV90),
+        (1, "trasera -> transición", "y", BD + HR_FLAT, lid_w, 90.0 - TRANS_ANGLE, UP_TOWARD, RI, DD_TR),
+        (2, "pared frontal",         "y", 0.0,          BW,    90.0,               UP_TOWARD, RI, DEV90),
+        (3, "pared trasera",         "y", BD,           BW,    90.0,               UP_TOWARD, RI, DEV90),
+        (4, "pared izquierda",       "x", 0.0,          BD,    90.0,               UP_TOWARD, RI, DEV90),
+        (5, "pared derecha",         "x", BW,           BD,    90.0,               UP_TOWARD, RI, DEV90),
     ]
     tabs["segno_faceplate"] = [
-        (1, "front lip", "y", ffl,          lid_w, 90.0 - SLOPE_ANGLE,          DN_AWAY, RI, DD_LIP),
-        (2, "rear lap",  "y", ffl + FP_V,   lid_w, SLOPE_ANGLE + TRANS_ANGLE,   DN_AWAY, RI, DD_LAP),
+        (1, "pestaña frontal", "y", ffl,        lid_w, 90.0 - SLOPE_ANGLE,        DN_AWAY, RI, DD_LIP),
+        (2, "solapa trasera",  "y", ffl + FP_V, lid_w, SLOPE_ANGLE + TRANS_ANGLE, DN_AWAY, RI, DD_LAP),
     ]
     tabs["segno_corner_bracket_rear"] = [
-        (1, "leg / leg", "x", CORNER_LEG, CORNER_HT, 90.0, UP_TOWARD, RI, DEV90),
+        (1, "ala / ala", "x", CORNER_LEG, CORNER_HT, 90.0, UP_TOWARD, RI, DEV90),
     ]
     tabs["segno_post"] = [
-        (1, "pad -> web",  "y", POST_PAD,            POST_PW, 90.0 + POST_TILT, UP_TOWARD, POST_T, 0.0),
-        (2, "web -> foot", "y", POST_PAD + POST_H,   POST_PW, 90.0,             UP_TOWARD, POST_T, 0.0),
+        (1, "apoyo -> alma", "y", POST_PAD,          POST_PW, 90.0 + POST_TILT, UP_TOWARD, POST_T, 0.0),
+        (2, "alma -> pie",   "y", POST_PAD + POST_H, POST_PW, 90.0,             UP_TOWARD, POST_T, 0.0),
     ]
     return tabs
 
@@ -3810,20 +3874,20 @@ BEND_TABLES = _bend_tables()
 # flat is nominal segments with NO deduction applied, which is worth saying out
 # loud on the sheet rather than leaving a fabricator to assume it was developed.
 BEND_FOOTNOTES = {
-    "segno_base": (f"K-factor {KF} | bend allowance = rad(fold) x (Ri + K x T) | flat flap = outer length - deduction. "
-                   f"ROWS ARE IN FOLD ORDER - do not resequence. Sides (4,5) need a punch <= 410 mm: the 4 x DIA 6.0 corner "
-                   f"reliefs open 413 mm between the standing front and rear walls. Gauge 4 and 5 off the formed "
-                   f"front/rear wall faces (the side flange is a wedge and is not square to its bend). V12 die throughout; "
-                   f"Ri {RI:.1f} mm is mandatory - if with-grain cracking appears STOP, do not open the radius, the flat "
-                   f"must be re-developed."),
-    "segno_faceplate": (f"K-factor {KF} | bend allowance = rad(fold) x (Ri + K x T) | flat flap = outer length - deduction. "
-                        f"The front-lip bend runs across the pedal apertures (12.1 mm of backing): V12 die, segmented punch, "
-                        f"expect to straighten."),
-    "segno_corner_bracket_rear": (f"K-factor {KF} | flat flap = outer length - deduction. x2, and the second one is "
-                                  f"installed TURNED OVER - the part is near-symmetric, only the hole pattern is handed."),
-    "segno_post": (f"1.6 mm COLD-ROLLED STEEL, not the 2.0 mm aluminium of the shell. Ri {POST_T:.1f} mm (1.0 x T). "
-                   f"DEDUCTION NOT APPLIED - the flat is nominal segments (PROVISIONAL): confirm the developed length "
-                   f"against your own tooling before cutting."),
+    "segno_base": (f"Factor K {KF} | desarrollo del plegado = rad(rotación) x (Ri + K x T) | pestaña plana = longitud exterior - deducción. "
+                   f"LAS FILAS ESTÁN EN ORDEN DE PLEGADO - no reordenar. Los laterales (4, 5) necesitan un punzón <= 410 mm: los "
+                   f"4 alivios de esquina de Ø 6.0 abren 413 mm entre las paredes frontal y trasera ya levantadas. Referenciar los "
+                   f"plegados 4 y 5 contra las caras ya formadas de las paredes frontal/trasera (la pestaña lateral es una cuña y no "
+                   f"queda escuadra con su plegado). Matriz V12 en todos los plegados; el Ri {RI:.1f} mm es obligatorio - si aparecen "
+                   f"fisuras en el sentido del laminado PARAR, no abrir el radio: hay que volver a desarrollar el plano."),
+    "segno_faceplate": (f"Factor K {KF} | desarrollo del plegado = rad(rotación) x (Ri + K x T) | pestaña plana = longitud exterior - deducción. "
+                        f"El plegado de la pestaña frontal cruza las aberturas de los pedales (quedan 12.1 mm de material): matriz V12, "
+                        f"punzón segmentado, prever enderezado."),
+    "segno_corner_bracket_rear": (f"Factor K {KF} | pestaña plana = longitud exterior - deducción. CANT. 2, y la segunda se monta DADA "
+                                  f"VUELTA - la pieza es casi simétrica, sólo el patrón de agujeros es de mano."),
+    "segno_post": (f"ACERO LAMINADO EN FRÍO de 1.6 mm, no el aluminio de 2.0 mm del gabinete. Ri {POST_T:.1f} mm (1.0 x T). "
+                   f"DEDUCCIÓN NO APLICADA - el desarrollo son segmentos nominales (PROVISORIO): verificar la longitud desarrollada "
+                   f"contra el herramental propio antes de cortar."),
 }
 
 def _bend_table_lines(stem):
@@ -3831,17 +3895,21 @@ def _bend_table_lines(stem):
     rows = BEND_TABLES.get(stem, ())
     if not rows:
         return []
-    cols = ((" #", 4), ("FOLD LINE", 21), ("POSITION", 14), ("LENGTH", 10),
-            ("ROTATION", 14), ("INCLUDED", 14), ("DIRECTION", 28), ("Ri", 10),
-            ("DEDUCTION", 0))
+    # Column widths carry the Spanish, which is longer than the English they
+    # replaced: "ABAJO, opuesto a la cara dibujada" is 33 characters where
+    # "DOWN, away from drawn face" was 26, and at the old width 28 the fold
+    # direction ran straight over the Ri column.
+    cols = ((" #", 4), ("LÍNEA DE PLEGADO", 24), ("POSICIÓN", 14), ("LONGITUD", 10),
+            ("ROTACIÓN", 13), ("INCLUIDO", 13), ("SENTIDO", 36), ("Ri", 10),
+            ("DEDUCCIÓN", 0))
     def row(cells):
         return "".join(c if wdt == 0 else c.ljust(wdt) for c, (_h, wdt) in zip(cells, cols))
-    out = ["BEND TABLE   ( rotation = angle the flap turns THROUGH from flat;   included = 180 - rotation )",
+    out = ["TABLA DE PLEGADOS   ( rotación = ángulo que gira la pestaña DESDE el plano;   incluido = 180 - rotación )",
            row([h for h, _w in cols])]
     for seq, name, axis, pos, ln, rot, direction, ri, ded in rows:
         out.append(row([f" {seq}", name, f"{axis} = {pos:8.2f}", f"{ln:8.1f}",
-                        f"{rot:8.3f} deg", f"{180.0-rot:8.3f} deg", direction,
-                        f"{ri:.1f} mm", f"{ded:.3f} mm" if ded else "none (nominal)"]))
+                        f"{rot:8.3f}°", f"{180.0-rot:8.3f}°", direction,
+                        f"{ri:.1f} mm", f"{ded:.3f} mm" if ded else "sin deducción (nominal)"]))
     return out
 
 # ===========================================================================
@@ -3873,6 +3941,14 @@ def _force_pdf_layer_colours(doc):
             assert lay.rgb is not None or lay.color != 7, \
                 f"layer {lname!r} is ACI 7 -- it renders white on a white sheet and vanishes"
     return blackened
+
+SHEET_HEADING = "Segno - gabinete de controlador de audio"
+
+# Every human-readable line each sheet actually carried, keyed by stem, recorded
+# as the sheet is drawn. matplotlib PDFs subset their fonts, so there is no
+# in-process way to read the text back out of the file -- this registry is what
+# _verify_drawing_package() holds the Spanish and the tolerance block against.
+SHEET_TEXT = {}
 
 def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
     """One drawing sheet: the flat pattern, a bend table, a title block and a legend.
@@ -3918,20 +3994,28 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
     table = _bend_table_lines(stem)
     foot  = BEND_FOOTNOTES.get(stem, "")
     ROW, FS = 0.20, 7.4                      # inches per row / point size
-    block = [(ln, FS, True) for ln in table]
+    # The Spanish table rows are ~10 characters wider than the English ones were,
+    # and the sheets are auto-fitted to their part -- so size the table to the page
+    # instead of trusting a fixed 7.4 pt to keep fitting.
+    tbl_fs = min(FS, usable_pt / (0.602 * max((len(ln) for ln in table), default=1)))
+    block = [(ln, tbl_fs, True) for ln in table]
     if foot:
-        block += [("", FS, False)]
-        block += [(ln, FS - 0.9, False) for ln in textwrap.wrap(foot, mono_cols(FS - 0.9))]
-    legend = textwrap.wrap(SHEET_LEGEND, mono_cols(FS)) or [SHEET_LEGEND]
+        block += [("", tbl_fs, False)]
+        block += [(ln, tbl_fs - 0.9, False) for ln in textwrap.wrap(foot, mono_cols(tbl_fs - 0.9))]
+    # The tolerance block sits in the right-hand third beside the title block, so
+    # the legend gets the left ~58% and wraps there rather than running under it.
+    tol = _tolerance_lines() if PART_SPECS.get(stem, (None, None, None))[2] == PKG_SHEETMETAL else []
+    legend = textwrap.wrap(SHEET_LEGEND,
+                           max(40, int(mono_cols(FS) * (0.58 if tol else 1.0)))) or [SHEET_LEGEND]
 
     # the bend spec is PER PART -- the post is 1.6 mm steel on Ri 1.6, and a flat
     # part has no radius at all. A blanket "bend Ri 2.0" was wrong on both.
     radii = sorted({r[7] for r in BEND_TABLES.get(stem, ())})
-    bend_spec = ("   |   FLAT PART, no bends" if not radii else
-                 "   |   bend Ri " + " / ".join(f"{r:.1f}" for r in radii) + f" mm, K-factor {KF}")
-    tb = f"{title}   |   {material}   |   QTY {qty}   |   units mm{bend_spec}"
+    bend_spec = ("   |   PIEZA PLANA, sin plegados" if not radii else
+                 "   |   plegado Ri " + " / ".join(f"{r:.1f}" for r in radii) + f" mm, factor K {KF}")
+    tb = f"{title}   |   {material}   |   CANT. {qty}   |   medidas en mm{bend_spec}"
 
-    legend_h = 0.155 * len(legend)
+    legend_h = 0.155 * max(len(legend), len(tol))
     strip = 0.62 + legend_h + (ROW * len(block) + 0.30 if block else 0.0)
     pos  = ax.get_position()
     y0_in, h_in = pos.y0 * h, pos.height * h
@@ -3945,12 +4029,33 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
                  weight="bold" if i < 2 and bold else "normal",
                  color="#000" if bold else "#333")
         y -= ROW
-    fig.text(0.03, fy(legend_h + 0.40), "Segno loopstation enclosure",
-             fontsize=fit_fs("Segno loopstation enclosure", 12.0), weight="bold")
-    fig.text(0.03, fy(legend_h + 0.18), tb, fontsize=fit_fs(tb, 10.0), weight="bold", color="#000")
+    # With a tolerance block on the right, the heading and the title-block line get
+    # the left 58% of the page and are sized to it -- at full width the title block
+    # ran straight under the tolerance rows.
+    # 0.62, not the 0.55 fit_fs uses: these two lines are BOLD, and the Spanish
+    # title block is long enough that the optimistic ratio walked it off the right
+    # edge of the narrow overlay sheet.
+    room = 0.58 if tol else 1.0
+    bold_fs = lambda text, want: min(want, usable_pt * room / (0.62 * max(len(text), 1)))
+    fig.text(0.03, fy(legend_h + 0.40), SHEET_HEADING,
+             fontsize=bold_fs(SHEET_HEADING, 12.0), weight="bold")
+    fig.text(0.03, fy(legend_h + 0.18), tb, fontsize=bold_fs(tb, 10.0),
+             weight="bold", color="#000")
     for i, line in enumerate(legend):
         fig.text(0.03, fy(legend_h - 0.115 - 0.155 * i), line,
                  family="monospace", fontsize=FS, color="#333")
+    # ---- tolerance block, right of the title block (issue #778) --------------
+    # Sized to the right-hand third of the FINISHED page, same reason the title
+    # block is: a fixed point size that fits the 1152 pt base sheet walks off the
+    # edge of a narrower one.
+    if tol:
+        tol_fs = min(FS, (0.33 * w * 72.0) / (0.602 * max(len(t) for t in tol)))
+        for i, line in enumerate(tol):
+            fig.text(0.635, fy(legend_h + 0.40 - 0.155 * i), line, family="monospace",
+                     fontsize=tol_fs, weight="bold" if i == 0 else "normal",
+                     color="#000" if i == 0 else "#333")
+    SHEET_TEXT[stem] = ([ln for ln, _f, _b in block] + [SHEET_HEADING, tb]
+                        + list(legend) + list(tol))
     fig.savefig(pdf_path, dpi=150); plt.close(fig)
 
 # ===========================================================================
@@ -3963,19 +4068,19 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
 # stale the way a hand-typed parts table does.
 # ===========================================================================
 
-AL_2MM = "Aluminio 2,0 mm"
-ST_16  = "Acero laminado en frio 1,6 mm"
+AL_2MM = "Aluminio 5052-H32 2,0 mm"
+ST_16  = "Acero laminado en frío 1,6 mm"
 
-PAINT_FINISH = "Negro texturado mate (RAL 9005) - a confirmar contra cupon de muestra"
+PAINT_FINISH = "Negro texturado mate (RAL 9005) - a confirmar contra cupón de muestra"
 
 # dxf stem, label (ES), qty per unit, material, remark (ES).
 # segno_overlay is a printed adhesive graphic, NOT metal -- it is never painted.
 # There is no screen bracket part: the screens are bonded to the shell. The
 # bracket fallback was deleted outright in the #760 audit (user call 2026-08-18).
 PAINT_BOM = [
-    ("segno_base",               "Cuerpo: piso + frente + laterales + trasera", 1, AL_2MM, "Pieza mas grande"),
-    ("segno_faceplate",          "Tapa superior (faceplate)",                   1, AL_2MM, "Cara vista principal"),
-    ("segno_corner_bracket_rear","Angulo de esquina trasera",                   2, AL_2MM, "Interno"),
+    ("segno_base",               "Cuerpo: piso + frente + laterales + trasera", 1, AL_2MM, "Pieza más grande"),
+    ("segno_faceplate",          "Tapa superior",                               1, AL_2MM, "Cara vista principal"),
+    ("segno_corner_bracket_rear","Ángulo de esquina trasera",                   2, AL_2MM, "Interno"),
     ("segno_ring_disc",          "Disco central del aro de LEDs",               1, AL_2MM, "Interno"),
     ("segno_post",               "Poste de apoyo de la tapa",                   2, ST_16,  "ACERO: otro pretratamiento"),
 ]
@@ -4061,22 +4166,22 @@ def paint_quote_pdf(path):
     with PdfPages(path) as pdf:
         # ---- page 1: what has to be painted -------------------------------
         fig = plt.figure(figsize=(11.7, 8.3))   # A4 landscape
-        fig.text(0.06, 0.995, "Segno - gabinete de controlador de audio", va="top",
+        fig.text(0.06, 0.995, SHEET_HEADING, va="top",
                  fontsize=17, weight="bold")
-        fig.text(0.06, 0.945, "Pedido de cotizacion: pintura en polvo termoconvertible",
+        fig.text(0.06, 0.945, "Pedido de cotización: pintura en polvo (termolaqueado)",
                  va="top", fontsize=12, color="#444")
         y = 0.885
         for k, v in (("Envolvente del equipo armado",
                       f"{W:.0f} x {D:.0f} x {H_REAR:.0f} mm (lo que tiene que entrar al horno)"),
-                     ("Material del cuerpo", "Aluminio 2,0 mm (aleacion 1050 o 5052 segun proveedor de corte)"),
-                     ("Terminacion pedida", PAINT_FINISH),
+                     ("Material del cuerpo", "Aluminio 5052-H32 de 2,0 mm (chapa cortada por láser)"),
+                     ("Terminación pedida", PAINT_FINISH),
                      ("Superficie total a pintar", f"{grand:.2f} m2 por equipo (ambas caras, sin contar cantos)"),
-                     ("Cantidad", "1 unidad prototipo; despues por lotes")):
+                     ("Cantidad", "1 unidad prototipo; después por lotes")):
             fig.text(0.06, y, k, fontsize=9.5, color="#666")
             fig.text(0.30, y, v, fontsize=10.5, weight="bold")
             y -= 0.042
 
-        hdr = (f"{'Pieza':<42}{'Cant':>5}{'Material':>31}{'Tamano (mm)':>20}"
+        hdr = (f"{'Pieza':<42}{'CANT.':>6}{'Material':>31}{'Tamaño (mm)':>20}"
                f"{'1 cara m2':>11}{'Total m2':>10}")
         y -= 0.030
         fig.text(0.06, y, hdr, **mono, weight="bold")
@@ -4085,7 +4190,7 @@ def paint_quote_pdf(path):
         for r in rows:
             y -= 0.030
             sz = ("%.0f x %.0f x %.0f" % r["size"]) if r["size"] else "-"
-            fig.text(0.06, y, f"{r['label']:<42}{r['qty']:>5}{r['mat']:>31}"
+            fig.text(0.06, y, f"{r['label']:<42}{r['qty']:>6}{r['mat']:>31}"
                               f"{sz:>20}{r['one']:>11.4f}{r['total']:>10.4f}", **mono)
             y -= 0.018
             fig.text(0.075, y, r["remark"], fontsize=7.6, color="#777", style="italic")
@@ -4093,20 +4198,20 @@ def paint_quote_pdf(path):
         fig.text(0.06, y, "-" * len(hdr), **mono, color="#999")
         for mat, m2 in sorted(tot.items()):
             y -= 0.030
-            fig.text(0.06, y, f"{'Subtotal ' + mat:<109}{m2:>10.4f}", **mono, weight="bold")
+            fig.text(0.06, y, f"{'Subtotal ' + mat:<110}{m2:>10.4f}", **mono, weight="bold")
         y -= 0.032
-        fig.text(0.06, y, f"{'TOTAL por equipo':<109}{grand:>10.4f}",
+        fig.text(0.06, y, f"{'TOTAL por equipo':<110}{grand:>10.4f}",
                  **mono, weight="bold", color="#0a4")
 
         notes = [
             "Notas para el aplicador:",
-            "  1. La superficie es NETA: contorno exterior menos aperturas (ranuras de pedales, pantallas, ventilaciones). No incluye cantos.",
-            "  2. Las piezas llegan cortadas y plegadas, sin ningun recubrimiento ni aceite protector. Pretratamiento para aluminio a cargo del aplicador.",
-            "  3. Los postes son ACERO laminado en frio, no aluminio: van en linea aparte porque llevan otro pretratamiento.",
-            "  4. Enmascarado: ver las paginas siguientes. Solo la zona de masa alrededor del perno M6 sin pintura, en ambas caras (los pilotos de tornillo se roscan despues de pintar).",
-            "  5. Las aperturas de pantalla son ajustadas: la pelicula come decimas por cara. Si el espesor supera 100 um avisar antes de aplicar.",
+            "  1. La superficie es NETA: contorno exterior menos aberturas (ranuras de pedales, pantallas, ranuras de ventilación). No incluye cantos.",
+            "  2. Las piezas llegan cortadas y plegadas, sin ningún recubrimiento ni aceite protector. Pretratamiento para aluminio a cargo del aplicador.",
+            "  3. Los postes son ACERO laminado en frío, no aluminio: van en línea aparte porque llevan otro pretratamiento.",
+            "  4. Enmascarado: ver las páginas siguientes. Sólo la zona de puesta a tierra alrededor del perno M6 va sin pintura, en ambas caras (los agujeros piloto se roscan M3 después de pintar).",
+            "  5. Las aberturas de pantalla son ajustadas: la película come décimas por cara. Si el espesor supera 100 um avisar antes de aplicar.",
             "  6. El aluminio es blando: colgar para pintar, no apoyar sobre las caras vistas.",
-            "  7. La tapa figura con su tamano PLANO (850 x 407 x 2): plegada suma la pestana frontal de 12 mm y la solapa trasera.",
+            "  7. La tapa figura con su tamaño en DESARROLLO (850 x 407 x 2): plegada suma la pestaña frontal de 12 mm y la solapa trasera.",
         ]
         # anchored, not flowed: the table above grows with the BOM and the notes
         # must not walk off the bottom of the sheet when it does
@@ -4120,11 +4225,11 @@ def paint_quote_pdf(path):
         # ---- masking / detail pages ---------------------------------------
         sheets = [
             ("segno_base", "CUERPO - plano de enmascarado",
-             "Rojo = NO PINTAR. Zona de masa de 20 mm alrededor del perno M6, en ambas "
-             "caras. Los pilotos de la transicion se roscan M3 despues de pintar."),
-            ("segno_faceplate", "TAPA SUPERIOR - aperturas criticas",
-             "Sin enmascarado. Las dos aperturas grandes son de pantalla y quedan ajustadas "
-             "contra el display: contemplar el espesor de pelicula."),
+             "Rojo = NO PINTAR. Zona de puesta a tierra de 20 mm alrededor del perno M6, en "
+             "ambas caras. Los agujeros piloto de la transición se roscan M3 después de pintar."),
+            ("segno_faceplate", "TAPA SUPERIOR - aberturas críticas",
+             "Sin enmascarado. Las dos aberturas grandes son de pantalla y quedan ajustadas "
+             "contra el display: contemplar el espesor de película."),
         ]
         for stem, title, note in sheets:
             dxf = os.path.join(OUT, stem + ".dxf")
@@ -4135,8 +4240,9 @@ def paint_quote_pdf(path):
             _draw_dxf(ax, dxf)
             fig.text(0.04, 0.965, title, fontsize=14, weight="bold")
             fig.text(0.04, 0.055, note, fontsize=9.5, color="#b00")
-            fig.text(0.04, 0.025, "Segno loopstation enclosure   |   medidas en mm   |   "
-                                  "patron plano (la pieza se entrega plegada)", fontsize=8, color="#555")
+            fig.text(0.04, 0.025, f"{SHEET_HEADING}   |   medidas en mm   |   "
+                                  "desarrollo / patrón plano (la pieza se entrega plegada)",
+                     fontsize=8, color="#555")
             pdf.savefig(fig); plt.close(fig)
     return path
 
@@ -4357,7 +4463,7 @@ def dxf_ring_disc(path):
     doc = _doc(); msp = doc.modelspace()
     _circle(msp, 0, 0, RING_ID)                 # outline: OD = ring inner diameter
     _circle(msp, 0, 0, D_ENC)                   # encoder bush hole (centre)
-    _text(msp, -RING_ID/2, RING_ID/2 + 6, 5, "Segno LED-RING CENTRE DISC  2.0mm  x1  (encoder clamps it)", "NOTE")
+    _text(msp, -RING_ID/2, RING_ID/2 + 6, 5, "Segno DISCO CENTRAL DEL ARO DE LEDS (segno_ring_disc)  chapa 2.0 mm  CANT. 1  PIEZA PLANA, sin plegados (queda sujeto por la tuerca del encoder; el agujero central es el paso del buje)", "NOTE")
     doc.saveas(path); return {}
 
 # ===========================================================================
@@ -4473,13 +4579,35 @@ def _verify_drawing_package(with_pdf=True):
     assert PART_SPECS["segno_overlay"][2] == PKG_OVERLAY, "the overlay is not sheet metal"
 
     # --- R1/R4: the legend names VENT as a through-cut and never says "score" --
+    # Same intent as when the legend was English, held against the Spanish (#778):
+    # BEND must be a fold REFERENCE, VENT must be named a through-cut, and the
+    # marking verbs may appear only inside the prohibition clause.
     low = SHEET_LEGEND.lower()
-    assert "score" not in low or "do not cut, score" in low, \
-        "the legend must not describe BEND as a scoring operation"
-    assert "through-cut" in low and "vent" in low, \
+    assert LEGEND_NO_SCORE in low, \
+        "the legend must forbid cutting/marking/scoring the fold lines"
+    for verb in ("marcar", "rayar", "grabar"):
+        assert low.count(verb) == LEGEND_NO_SCORE.count(verb), \
+            f"the legend mentions {verb!r} outside the prohibition clause -- " \
+            f"that reads as an instruction to do it to the BEND lines"
+    assert "solo referencia" in low, \
+        "the legend must say the BEND layer is reference only"
+    assert "corte pasante" in low and "vent" in low, \
         "the legend must state that VENT is a through-cut like CUT"
-    assert "fold line" in low, "the legend must state that BEND is a fold reference"
+    assert "línea de plegado" in low, "the legend must state that BEND is a fold reference"
 
+    # --- #778: the sheets speak Spanish, and the accents survive the pipeline ---
+    for stem in stems:
+        assert stem in PART_TITLES_ES and PART_TITLES_ES[stem], \
+            f"{stem} has no Spanish title-block name (PART_TITLES_ES)"
+    for stem, (mat, _q, _p) in PART_SPECS.items():
+        assert not any(w in mat.lower() for w in ("aluminium", "steel", "vinyl")), \
+            f"{stem}: material {mat!r} is still English"
+    assert TOLERANCE_TITLE.startswith("TOLERANCIAS")
+    for _k, v in TOLERANCE_ROWS:
+        assert "," in v and "." not in v, \
+            f"tolerance {v!r} must use the comma decimal separator on the Spanish sheet"
+
+    all_notes = []
     for stem in stems:
         dxf = os.path.join(OUT, stem + ".dxf")
         if not os.path.exists(dxf):
@@ -4508,10 +4636,10 @@ def _verify_drawing_package(with_pdf=True):
                 f"{stem}: MASK must be dash-dot so it cannot read as a cut contour"
         if mask_rings:
             says = [t for t in masks if t.dxftype() == "TEXT"
-                    and "DO NOT CUT" in t.dxf.text.upper()]
+                    and "NO CORTAR" in t.dxf.text.upper()]
             assert len(says) >= len(mask_rings), \
                 (f"{stem}: {len(mask_rings)} mask ring(s) but only {len(says)} "
-                 f"'DO NOT CUT' callout(s) -- every ring needs its own")
+                 f"'NO CORTAR' callout(s) -- every ring needs its own")
 
         # --- R2: every drawn fold is in the bend table, and vice versa ----------
         drawn = _dxf_bend_lines(dxf)
@@ -4527,8 +4655,52 @@ def _verify_drawing_package(with_pdf=True):
         if drawn:
             assert stem in BEND_FOOTNOTES, f"{stem} has folds but no bend-table footnote"
 
+        # --- #778: the DXF's own shop text is Spanish and round-trips its accents -
+        # ezdxf writes R2018 as UTF-8; re-reading the saved file and finding the
+        # accented characters intact is the proof that nothing on the way out
+        # mojibaked them or silently fell back to ASCII.
+        notes = [e.dxf.text for e in doc.modelspace()
+                 if e.dxftype() == "TEXT" and e.dxf.layer in ("NOTE", "MASK")]
+        assert notes, f"{stem}: no NOTE/MASK text on the flat pattern at all"
+        joined = " ".join(notes)
+        all_notes.append(joined)
+        assert "CANT." in joined and stem in joined, \
+            (f"{stem}: the part note lost its Spanish quantity or its file stem -- "
+             f"the shop pairs the printed sheet to the DXF by that stem")
+        for english in (" x1 ", " x2 ", "2.0mm", "DO NOT CUT", "FOLD with",
+                        "weld-free", "NO PAINT"):
+            assert english.lower() not in joined.lower(), \
+                f"{stem}: untranslated shop text {english!r} is still on the drawing"
+
         if with_pdf:
             assert os.path.exists(os.path.join(OUT, stem + ".pdf")), f"{stem}: no PDF sheet"
+            # --- #778: every SHEET-METAL sheet carries the tolerance block ------
+            assert stem in SHEET_TEXT, \
+                f"{stem}: a PDF exists but the sheet recorded no text -- it bypassed dxf_to_pdf"
+            sheet = SHEET_TEXT[stem]
+            assert SHEET_LEGEND.split("|")[0].strip() in " ".join(sheet), \
+                f"{stem}: the sheet carries no layer legend"
+            title_line = next(t for t in sheet if t.startswith(PART_TITLES_ES[stem]))
+            assert stem in title_line and "CANT." in title_line and "medidas en mm" in title_line, \
+                f"{stem}: title block lost its file stem, quantity or units: {title_line!r}"
+            if PART_SPECS[stem][2] == PKG_SHEETMETAL:
+                assert TOLERANCE_TITLE in sheet, \
+                    f"{stem}: sheet-metal drawing with no tolerance block"
+                for k, v in TOLERANCE_ROWS:
+                    assert any(k in ln and v in ln for ln in sheet), \
+                        f"{stem}: tolerance block is missing the {k!r} row"
+
+    # --- #778: the accents made it through ezdxf's UTF-8 write and back --------
+    # If the DXF encoding ever regresses to a code page, or someone "fixes" the
+    # Spanish by stripping its accents, these exact phrases stop matching. They
+    # are the ones a fabricator acts on, so they are the ones worth pinning.
+    if all_notes:
+        blob = "\n".join(all_notes)
+        for probe in ("espejado canónico", "deducción", "transición", "pestaña frontal",
+                      "máscara de pintura", "ACERO LAMINADO EN FRÍO", "AMBAS CARAS"):
+            assert probe in blob, \
+                (f"{probe!r} is not in the drawing text -- either the wording changed "
+                 f"or the DXF encoding mangled its accents")
 
     # --- R6: the sheet-metal zip carries sheet metal and nothing else ----------
     sheet = {n for n, _ in DXF_PARTS if PART_SPECS[n][2] == PKG_SHEETMETAL}
@@ -4597,7 +4769,7 @@ def main(argv):
             try:
                 mat, qty, _pkg = PART_SPECS[name]
                 dxf_to_pdf(dxf, os.path.join(OUT, name + ".pdf"),
-                           title=name.replace("segno_", "").replace("_", " ").upper(),
+                           title=f"{PART_TITLES_ES[name]}  [{name}]",
                            material=mat, qty=qty, stem=name)
                 print("  out/" + name + ".pdf")
             except Exception as e:  # pragma: no cover

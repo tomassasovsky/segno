@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461274.09337963
+2461274.1602199073
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461274.09337963
+2461274.1602199073
   9
 $TDUUPDATE
  40
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{FEAC2BFE-DA09-4E75-BA59-FB907EDCAC09}
+{65A23998-A5D6-4816-BF56-AA7A19F223EA}
   9
 $VERSIONGUID
   2
-{B6697DC7-D571-40D1-B1CA-03AD6EA4E4DC}
+{59DDD4D0-3310-496A-9CA8-A683B53D7711}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -9939,7 +9939,7 @@ AcDbText
  40
 5.0
   1
-PI_RISER x12mm (Pi build)
+PI_RISER separadores 12 mm (versión Raspberry Pi)
  11
 674.0
  21
@@ -10009,7 +10009,7 @@ AcDbText
  40
 5.0
   1
-BUCK_PI 20V>5V 10A (B0GGHN97TK; ear pitch PROVISIONAL)
+BUCK_PI 20V>5V 10A (B0GGHN97TK; paso de orejas PROVISORIO)
  11
 344.1
  21
@@ -10073,17 +10073,17 @@ AcDbText
  10
 419.9
  20
-391.85
+399.85
  30
 0.0
  40
 5.0
   1
-BUCK_AUX 20V>5V 10A (B0GGHN97TK; ear pitch PROVISIONAL)
+BUCK_AUX 20V>5V 10A (B0GGHN97TK; paso de orejas PROVISORIO)
  11
 419.9
  21
-391.85
+399.85
  31
 0.0
 100
@@ -11349,7 +11349,7 @@ AcDbText
  40
 5.0
   1
-SUPPORT POST feet x2 (M4; issue #292)
+Pies del POSTE DE APOYO, CANT. 2 (M4; issue #292)
  11
 601.0
  21
@@ -11683,7 +11683,7 @@ AcDbText
  40
 4.5
   1
-MASK DIA 12 - NO PAINT, DO NOT CUT (PANEL_BOND)
+MASK Ø12 - NO PINTAR, NO CORTAR (PANEL_BOND)
  11
 443.2857142857142
  21
@@ -15325,7 +15325,7 @@ AcDbText
  40
 4.5
   1
-MASK DIA 20 - NO PAINT, DO NOT CUT (M6 earth stud bonding land, BOTH faces)
+MASK Ø20 - NO PINTAR, NO CORTAR (zona de puesta a tierra del perno M6, AMBAS CARAS)
  11
 426.2857142857142
  21
@@ -15355,7 +15355,7 @@ AcDbText
  40
 7.0
   1
-MASK (red dash-dot) = NO-PAINT coating mask, NOT a cut: bare-metal bonding land around the M6 earth stud, BOTH faces. The M3 thread pilots are tapped AFTER painting, so they need no mask.
+MASK (rojo trazo y punto) = máscara de pintura, NO ES UN CORTE: zona de metal desnudo para la puesta a tierra alrededor del perno M6, en AMBAS CARAS. Los agujeros piloto M3 se roscan DESPUÉS de pintar, así que no llevan máscara.
  11
 8.0
  21
@@ -15385,7 +15385,7 @@ AcDbText
  40
 9.0
   1
-Segno BASE  2.0mm  x1  bottom + front/rear/sides fold up (bend ded 1.91); WELD-FREE: rivet the 4 corners via L-brackets; rear 2nd fold = transition (flange FULL width, seats on the relieved side-wall tops); FOLD with the DRAWN side as the INSIDE face (canonical mirror: encoder lands on the player's LEFT)
+Segno CUERPO (segno_base)  chapa 2.0 mm  CANT. 1  piso + frente/trasera/laterales plegados hacia arriba (deducción 1.91); SIN SOLDADURA: las 4 esquinas se remachan con ángulos internos; el 2do plegado de la trasera es la transición (pestaña de ANCHO COMPLETO, apoya sobre los laterales aliviados); PLEGAR con la cara DIBUJADA como CARA INTERIOR (espejado canónico: el encoder queda a la IZQUIERDA del músico)
  11
 8.0
  21
@@ -16497,7 +16497,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-21T05:14:28.456370+00:00
+1.4.4 @ 2026-08-21T06:50:43.668559+00:00
   0
 VISUALSTYLE
   5
@@ -23059,7 +23059,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-08-21T05:14:28.462101+00:00
+1.4.4 @ 2026-08-21T06:50:43.674238+00:00
   0
 ENDSEC
   0
