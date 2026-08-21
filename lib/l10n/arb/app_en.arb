@@ -121,7 +121,11 @@
     },
     "pedalFirmwareGateFailedBody": "Your pedal still works on its previous firmware. Segno will try again next time it starts.",
     "@pedalFirmwareGateFailedBody": {
-        "description": "Reassurance shown when the pedal firmware flash failed."
+        "description": "Failed-gate body when the flash never began writing (class not-started) — the only case where this reassurance is true."
+    },
+    "pedalFirmwareGateFailedInterruptedBody": "The update stopped partway through, so your pedal's switches and lights stay off until it is completed. Segno can't finish it automatically yet — the pedal's firmware may need to be flashed again from a computer.",
+    "@pedalFirmwareGateFailedInterruptedBody": {
+        "description": "Failed-gate body when the write began and did not finish (class interrupted): the pedal may be parked in its bootloader, so no 'still on its previous firmware' comfort — and no promise of automatic recovery until the recovery path (slice 3 of #670) ships."
     },
     "pedalFirmwareGateContinue": "Continue",
     "@pedalFirmwareGateContinue": {
