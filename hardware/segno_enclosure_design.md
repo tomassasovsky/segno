@@ -370,7 +370,8 @@ beats a metal one. 10 A / 250 V AC, far above this job.
 > **Nothing on this unit hard-breaks power.** The button is a momentary contact on
 > the Pi's own PWR pads — *not* a GPIO input, which on a Pi 5 could not do this job
 > at all (RP1 and the SoC are unpowered until the PMIC brings them up); pulling
-> the barrel plug is the only true off. Deliberate, but worth knowing.
+> the USB-C PD inlet is the only true off (the 9 V barrel died with the 9 V
+> architecture — see `PD_IN` above). Deliberate, but worth knowing.
 
 > **Fallout to settle separately:** the `nopi` build (external host, HDMI ×2 +
 > USB touch ×2) had no home but that window, so it is **retired** — an

@@ -79,3 +79,11 @@ next boot, so an interrupted save self-heals. For a graceful stop (e.g. a wired
 power button), `sudo systemctl poweroff` unmounts `/var/lib/segno` cleanly; wire
 a momentary button to `dtoverlay=gpio-shutdown` in `config.txt` if a physical
 power-off is wanted.
+
+> **Not the console's arrangement.** `gpio-shutdown` can power a *running* Pi
+> down from a GPIO, which is all this overlayfs path needs. It cannot bring one
+> back up: on a Pi 5, RP1 and the SoC are unpowered until the PMIC acts, so no
+> GPIO can wake the machine. The floor console therefore wires its button to the
+> Pi's own PWR pads instead — see
+> [`hardware/kicad/console_board.py`](../../../hardware/kicad/console_board.py),
+> the `J8` block.

@@ -135,14 +135,23 @@ Errors are one `GpioException` carrying `errno`, the failing operation and an
 actionable message: `EBUSY` names the current consumer and `EACCES` names the `gpio`
 group and the udev rule.
 
-`ENOTTY` needs care, because **two different causes produce it and the errno cannot
-tell them apart**: the file is not a GPIO character device at all, *or* it is one but
-the kernel predates the v2 interface. An earlier draft of this plan listed those as two
-separate messages, which is not implementable — nothing distinguishes them at the point
-of failure. So one message names both possibilities and the version boundary: *"not a
-GPIO character device, or this kernel does not know the v2 GPIO interface. That
-interface needs Linux 5.10 or newer; this package does not implement the deprecated v1
-fallback."*
+**The too-old-kernel case is `EINVAL`, not `ENOTTY`** — and getting this backwards
+misdirects exactly the person the message exists for. `ENOTTY` comes from the VFS when
+a file has no ioctl handler at all: the path is not a gpiochip. A kernel that predates
+v2 *does* have the handler; it simply does not recognise the request, and
+`gpio_ioctl`'s `default:` branch answers **`-EINVAL`** (`gpiolib-cdev.c`).
+
+Two earlier drafts of this plan got this wrong in opposite directions — first splitting
+`ENOTTY` into two messages, then merging them on the claim that the causes were
+indistinguishable. Both rested on the same unchecked assumption about which errno
+appears. The causes *are* distinguishable, by errno and by the fact that
+`GPIO_GET_CHIPINFO` has already succeeded before any v2 ioctl is issued. So:
+
+* `ENOTTY` → *"not a GPIO character device. Check the path really is a
+  `/dev/gpiochip*` node."* No version claim; it is irrelevant here.
+* `EINVAL` → leads with the version, because by this point the chip has opened and
+  reported its info, which makes "it is a gpiochip but rejected this request" strong
+  evidence of a pre-5.10 kernel. Bad arguments follow as the alternative.
 
 ### Internal structure
 
@@ -427,7 +436,7 @@ CHANGELOG, `dart pub publish` as 0.1.0.
 | 32-bit ARM struct layout differs from the table | medium | no Dart-capable armv7 runner exists. A C check under `gcc -m32` shares its expected values with the Dart test — but note it is **i386, not ARM EABI**: what makes the layout width-independent is `__aligned_u64` in the header, which the suite now asserts directly |
 | `poll` strands the isolate on close | medium | `eventfd` wakeup, and `close()` waits for the isolate to exit before the fd is freed |
 | Hot restart leaks the line | medium | **not preventable from Dart** — the isolate dies with the restart while the fd does not. Mitigated only by a self-aware `EBUSY` message and a documented "full restart" |
-| Kernel < 5.10 | low | the v2 ioctl fails with `ENOTTY`, which is indistinguishable from "not a gpiochip" — so the single message names both causes and the version boundary. No v1 fallback, by decision |
+| Kernel < 5.10 | low | the v2 ioctl fails with **`EINVAL`** (`gpio_ioctl`'s `default:` branch), *not* `ENOTTY` — and since the chip has already opened and reported its info by then, the `EINVAL` message leads with the version. No v1 fallback, by decision |
 | Package has no in-repo consumer, so it bit-rots | **real** | accepted deliberately: it is an OSS deliverable, not Segno infrastructure. Revisit if the bare-Pi footswitch path is ever committed |
 | Owning a published package is ongoing work | real | accepted at the plan gate |
 

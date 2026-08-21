@@ -90,9 +90,15 @@ Three things about how they survived, all worth more than the fixes:
 1. The first sweep fixed **one occurrence per file** and left the parts tables, so each
    file went on contradicting *itself*. Grep for the claim, not for the sentence.
 2. Every subsequent round found the same shape: a claim corrected in one file, its twin
-   alive in another. What finally worked was a **repo-wide grep for the claim** rather
-   than a per-file read — which is what should have happened first, and is the only
-   step that produced a clean sweep.
+   alive in another. A **repo-wide grep for the claim** found far more than per-file
+   reading did, and should have been step one — but even it reported "clean" while a
+   sixth instance survived in
+   [`deploy/rpi/overlayfs/README.md`](../../deploy/rpi/overlayfs/README.md), because
+   that one says *"`dtoverlay=gpio-shutdown`"* and never the word GPIO next to
+   "button". A grep matches the phrasing you imagined, not the claim. (That instance is
+   also the one case where the advice is locally *correct* — `gpio-shutdown` really can
+   power a running Pi down from a GPIO; it just cannot wake one — so it now carries a
+   note rather than a correction.)
 3. Review of the *corrected* rows then found a second, unrelated error sitting on them:
    they listed **5 V** on the ribbon, when `PI_HDR` omits header pins 2/4 and
    `console_board.py` carries a hard assert against connecting them (it would tie the
