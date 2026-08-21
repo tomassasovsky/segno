@@ -36,6 +36,10 @@ class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   Stream<double> flashPedalFirmware() => const Stream.empty();
   @override
+  Future<PedalFlashFailureClass?> lastPedalFlashFailure() async => null;
+  @override
+  Future<void> abortPedalFlash() async {}
+  @override
   String get channel => 'experimental';
   @override
   Future<void> setChannel(String channel) async {}

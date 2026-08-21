@@ -1,4 +1,5 @@
 import 'package:pub_semver/pub_semver.dart';
+import 'package:update_repository/src/pedal_flash_failure.dart';
 import 'package:update_repository/src/update_manifest.dart';
 
 /// The per-platform half of the update system, behind a single interface so the
@@ -63,4 +64,24 @@ abstract interface class PlatformUpdateBackend {
   /// Flashes the published pedal firmware, emitting progress in `[0, 1]`.
   /// Throws with the failure text if the flash does not complete.
   Stream<double> flashPedalFirmware();
+
+  /// How far the last failed flash got, from the marker the flasher persists,
+  /// or `null` when there is no legible record.
+  ///
+  /// Read after [flashPedalFirmware] fails, to decide what the failed dialog
+  /// may honestly claim: [PedalFlashFailureClass.notStarted] means the pedal
+  /// still runs its previous firmware; [PedalFlashFailureClass.interrupted]
+  /// means it may be parked in its bootloader. `null` means the marker is
+  /// missing or unparseable — treat it as [PedalFlashFailureClass.interrupted],
+  /// because comfort that cannot be proven must not be offered.
+  Future<PedalFlashFailureClass?> lastPedalFlashFailure();
+
+  /// Terminates a still-running pedal flash, if any, and only returns once it
+  /// is dead (SIGTERM, then SIGKILL after a short grace on the appliance).
+  ///
+  /// Called when the flash stream stalls or the caller is torn down: a
+  /// half-abandoned privileged flasher left alive would fight the next attempt
+  /// over the bootloader port, and its eventual marker write could race the
+  /// new attempt's. No-op when nothing is running.
+  Future<void> abortPedalFlash();
 }

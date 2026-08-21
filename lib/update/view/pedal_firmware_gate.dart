@@ -4,6 +4,7 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/update/cubit/pedal_firmware_cubit.dart';
+import 'package:update_repository/update_repository.dart';
 
 /// Covers [child] while the pedal's firmware is being flashed.
 ///
@@ -77,6 +78,16 @@ class _GateBody extends StatelessWidget {
   static const double _ringSize = 31;
   static const double _ringStroke = 2;
 
+  /// The failed body branches on how far the flash got (#670): the comforting
+  /// "still works on its previous firmware" is only TRUE when the write never
+  /// began. Anything else — including an unknown class — gets the honest
+  /// interrupted copy: once avrdude was handed the bootloader port, the pedal
+  /// may be parked in Caterina with the old firmware already gone.
+  String _failedBody(AppLocalizations l10n) =>
+      state.failureClass == PedalFlashFailureClass.notStarted
+      ? l10n.pedalFirmwareGateFailedBody
+      : l10n.pedalFirmwareGateFailedInterruptedBody;
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -136,8 +147,10 @@ class _GateBody extends StatelessWidget {
               const SizedBox(height: 12),
               AppText(
                 failed
-                    ? l10n.pedalFirmwareGateFailedBody
-                    : l10n.pedalFirmwareGateBody(state.version ?? ''),
+                    ? _failedBody(l10n)
+                    : l10n.pedalFirmwareGateBody(
+                        state.version ?? '',
+                      ),
                 textAlign: TextAlign.center,
                 style: bodyStyle,
               ),
