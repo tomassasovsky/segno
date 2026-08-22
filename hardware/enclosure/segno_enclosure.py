@@ -393,8 +393,17 @@ D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
 # EC11 anti-rotation tab: NO keyway in the disc (user call 2026-08-19: the
 # slot looked bad -- the tab gets snapped off the EC11 instead; the nut alone
 # clamps the disc).
-RING_OD   = 46.0     # diffused-annulus ring window OD -- sized over the Adafruit
-RING_ID   = 31.0     # NeoPixel Ring 16 (44.5/31.7, LEDs on r~19), which is and
+KNOB_D      = 50.0   # encoder knob: fills the Ring 24's O52.3 ID (see
+KNOB_H      = 13.0   # build_encoder_knob_step). NOT free parameters -- KNOB_D
+KNOB_NUT_D  = 22.0   # is sized against RING_ID and KNOB_NUT_* against the EC11
+KNOB_NUT_H  = 4.5    # nut; change either and re-run the interference check.
+KNOB_BORE_D = 6.1
+KNOB_FLUTES = 36
+KNOB_FLUTE_R = 24.415
+KNOB_FLUTE_H = 10.8
+KNOB_TOP_FILLET = 1.6
+RING_OD   = 67.0     # diffused-annulus ring window OD -- sized over the Adafruit
+RING_ID   = 51.5     # NeoPixel Ring 16 (44.5/31.7, LEDs on r~19), which is and
                      # always was the ring hardware, mounted ON the ring board
                      # around the EC11. (The old 58/40 window and its '12 THT
                      # LEDs' note were wrong -- user correction 2026-08-19;
@@ -921,15 +930,60 @@ FRONT_SCREW_U = ([_row1_u(0) - _FS_HP]
                  + [(_row1_u(i) + _row1_u(i + 1)) / 2.0 for i in range(len(_ROW1) - 1)]
                  + [_row1_u(len(_ROW1) - 1) + _FS_HP])
 
-# Status-LED pedals: ALL of them (issue #366 -- the LED trial added pills over
-# REC/PLAY, STOP, UNDO and MODE; the encoder ring stays as well).
-def _has_led(label):
-    return True
+# Status-LED pedals. #366 gave a pill to ALL ten; the four TRANSPORT pedals lose
+# theirs again (owner call 2026-08-21): REC/PLAY, STOP, UNDO and MODE are fixed
+# functions, not mappable, so a per-pedal status light has nothing to report --
+# their state is already on the screens. The six that keep a pill are the four
+# TRACKs (which show arm/record/play per lane) plus CLEAR and BANK. The encoder
+# ring is unaffected.
+NO_LED_PEDALS = ("REC/PLAY", "STOP", "UNDO", "MODE")
 
-# Silkscreen label text per control (REC/PLAY stacks on two lines; tracks show the number).
+def _has_led(label):
+    return label not in NO_LED_PEDALS
+
+# Legends. Two transport controls read as SYMBOLS rather than words (owner call
+# 2026-08-21): "REC/PLAY" was a two-line block eating the tallest label slot on
+# the plate for what is one button, and a record dot beside a play triangle says
+# it in a fraction of the space; STOP becomes the universal square. Symbols are
+# emitted as GEOMETRY (see SILK_SYMBOLS / _silk_symbol_geometry), not glyphs --
+# the legend is a printed vinyl overlay, and a filled shape is unambiguous where
+# a font substitution on the vendor's RIP would not be.
+SILK_SYMBOLS = {"REC/PLAY": "rec_play", "STOP": "stop"}
+
+def _silk_symbol_geometry(kind, u, v, h):
+    """Filled legend symbols, returned as {"kind": "poly"/"disc"} entries in the
+    ENGRAVE stream. u,v = centre; h = cap height, so a symbol sits on the same
+    optical baseline as the word labels it replaces.
+
+    rec_play: record DOT + play TRIANGLE, side by side, reading left to right in
+              the order the one button cycles.
+    stop:     the universal filled square, drawn slightly smaller than h because
+              a square reads visually larger than a circle of the same height.
+    """
+    out = []
+    if kind == "rec_play":
+        d = h * 0.78                       # dot diameter
+        tw, th = h * 0.72, h * 0.82        # triangle width / height
+        gap = h * 0.34
+        total = d + gap + tw
+        x0 = u - total / 2.0
+        out.append({"kind": "disc", "u": x0 + d / 2.0, "v": v, "d": d})
+        tx = x0 + d + gap
+        out.append({"kind": "poly", "pts": [(tx, v - th / 2.0),
+                                            (tx, v + th / 2.0),
+                                            (tx + tw, v)]})
+    elif kind == "stop":
+        a = h * 0.70
+        out.append({"kind": "poly", "pts": [(u - a/2, v - a/2), (u + a/2, v - a/2),
+                                            (u + a/2, v + a/2), (u - a/2, v + a/2)]})
+    else:
+        raise ValueError("unknown silk symbol: %r" % (kind,))
+    return out
+
+
 def _silk_lines(label):
-    if label == "REC/PLAY":
-        return ["REC/", "PLAY"]
+    if label in SILK_SYMBOLS:
+        return []                 # drawn as geometry, not text
     if label.startswith("TRACK"):
         return []                 # tracks are identified by the meter screen, no silk text
     return [label]
@@ -1048,6 +1102,10 @@ def faceplate_holes():
         # EXACTLY the pill width (LED_SLOT_W) so labels and LED pills read as one
         # family of bars: common cap height, width factor forces the advance.
         lines = _silk_lines(label)
+        if label in SILK_SYMBOLS:                      # transport symbol, drawn as geometry
+            v_sym = v + FSW_SLOT_D/2 + (LED_GAP + 12.0 if led else 8.0) + SILK_H*SILK_CAP/2.0
+            engr.extend(_silk_symbol_geometry(SILK_SYMBOLS[label], u, v_sym, SILK_H))
+            continue
         if not lines:                                  # tracks carry no silk text
             continue
         v_lbl = v + FSW_SLOT_D/2 + (LED_GAP + 12.0 if led else 8.0)  # labelled pills get extra air
@@ -2146,6 +2204,27 @@ def _doc():
 def _circle(msp, x, y, d, layer="CUT"):
     msp.add_circle((x, y), d / 2.0, dxfattribs={"layer": layer})
 
+def _silk_fill(msp, kind, spec):
+    """SOLID-fill a SILK symbol so it prints as artwork, not as a hairline outline.
+
+    Glyphs on this layer are TEXT -- the printer's RIP fills them. The transport
+    symbols (see _silk_symbol_geometry) are plain geometry, so without a hatch an
+    overlay printer would trace the outline and leave the middle black: an empty
+    ring where the record dot belongs. The outline entity stays as well, so the
+    shape survives in readers that ignore hatches.
+    """
+    h = msp.add_hatch(color=5, dxfattribs={"layer": "SILK"})
+    h.set_solid_fill()
+    if kind == "circle":
+        cx, cy, r = spec
+        h.paths.add_edge_path().add_arc((cx, cy), r, 0.0, 360.0)
+    elif kind == "poly":
+        h.paths.add_polyline_path(spec, is_closed=True)
+    else:
+        raise ValueError("unknown silk fill kind: %r" % (kind,))
+    return h
+
+
 def _poly(msp, pts, layer="CUT", closed=True):
     msp.add_lwpolyline(pts, close=closed, dxfattribs={"layer": layer})
 
@@ -2266,8 +2345,16 @@ def dxf_overlay(path):
     cuts, engr = faceplate_holes()
     _emit(msp, cuts, ox=0, oy=0)                                        # die-cut apertures (match the metal)
     for e in engr:
-        _text(msp, e["u"], e["v"], e["h"], e["s"], layer="SILK",       # WHITE legend on the print
-              wf=e.get("wf", 1.0), halign=e.get("halign", "left"))
+        k = e.get("kind")
+        if k == "disc":                                                # symbol legends are SHAPES
+            _circle(msp, e["u"], e["v"], e["d"], layer="SILK")         # (see _silk_symbol_geometry)
+            _silk_fill(msp, "circle", (e["u"], e["v"], e["d"] / 2.0))  # ...printed SOLID, like a glyph
+        elif k == "poly":
+            _poly(msp, e["pts"], "SILK")
+            _silk_fill(msp, "poly", e["pts"])
+        else:
+            _text(msp, e["u"], e["v"], e["h"], e["s"], layer="SILK",   # WHITE legend on the print
+                  wf=e.get("wf", 1.0), halign=e.get("halign", "left"))
     _text(msp, 10, FP_V + 8, 8, "Segno CALCO SUPERIOR (segno_overlay)  CANT. 1  adhesivo impreso (policarbonato/vinilo); fondo NEGRO + leyendas BLANCAS; aberturas troqueladas; se pega sobre la tapa superior (no lleva serigrafía sobre el metal)", "NOTE")
     doc.saveas(path); return {}
 
@@ -3287,7 +3374,7 @@ def build_mini_console():
     return outp
 
 def build_diffuser_step():
-    """LED pill diffuser INSERT (3D-print in WHITE PLA, x10 per console):
+    """LED pill diffuser INSERT (3D-print in WHITE PLA, x6 per console):
     a stadium lens that pushes into the faceplate slot FROM THE INSIDE until its
     shoulder flange seats on the sheet's underside; the lens stands LED_INS_PROUD
     above the outer skin. The single-LED module (hardware/led_strip/ puck or an
@@ -3312,21 +3399,60 @@ def build_diffuser_step():
     return step
 
 
+def build_encoder_knob_step():
+    """ENCODER KNOB (3D-print, x1) -- O50 x 13, the knob that fills the Ring 24.
+
+    Owner call 2026-08-22: with the ring window opened to the Ring 24's O67,
+    the old small knob left a wide bare gap inside the lit annulus. This one
+    fills it -- O50 against the ring's O52.3 ID, so it reads as the ring's hub
+    with a ~1 mm dark gap and no bare disc showing.
+
+    Reproduced from the approved model, all six numbers measured off it:
+      body O50 x 13, 0.6 bottom chamfer, 1.6 top edge fillet;
+      36 grip flutes, r0.9 on a 24.415 bolt circle (10 deg pitch), z 0..10.8;
+      O22 x 4.5 NUT RELIEF from below -- without it the knob fouls the EC11's
+      mounting nut and never seats (measured 0.022/0.027 cm3 of interference
+      before it was added);
+      O6.1 shaft bore, z 4.5..12.0, BLIND -- 1 mm of cap so the top is unbroken.
+    z=0 is the knob's underside (it rides on the EC11 nut, not the faceplate).
+    """
+    import cadquery as cq
+    r_out, h = KNOB_D / 2.0, KNOB_H
+    k = cq.Workplane("XY").circle(r_out).extrude(h)
+    flutes = (cq.Workplane("XY").pushPoints(
+                  [(KNOB_FLUTE_R * math.cos(math.radians(a)),
+                    KNOB_FLUTE_R * math.sin(math.radians(a)))
+                   for a in range(0, 360, 360 // KNOB_FLUTES)])
+              .circle(0.9).extrude(KNOB_FLUTE_H))
+    k = k.cut(flutes)
+    k = k.faces(">Z").edges().fillet(KNOB_TOP_FILLET)   # the domed top edge
+    k = k.faces("<Z").edges().chamfer(0.6)              # elephant-foot relief
+    k = k.faces("<Z").workplane().circle(KNOB_NUT_D / 2.0).cutBlind(-KNOB_NUT_H)
+    k = k.cut(cq.Workplane("XY").workplane(offset=KNOB_NUT_H)
+              .circle(KNOB_BORE_D / 2.0).extrude(12.0 - KNOB_NUT_H))
+    step = os.path.join(OUT, "segno_encoder_knob.step")
+    cq.exporters.export(k.val(), step)
+    cq.exporters.export(k.val(), os.path.join(OUT, "segno_encoder_knob.stl"))
+    return step
+
+
 def build_ring_diffuser_step():
     """Encoder ring DIFFUSER + DISC HOLDER, one piece (3D-print WHITE PLA, x1,
     user call 2026-08-19): replaces the plain annular insert. From the top:
-    - the LENS annulus pushes into the faceplate's RING_OD (O46) ring window
+    - the LENS annulus pushes into the faceplate's RING_OD (O67) ring window
       (proud);
-    - the aluminium RING DISC (RING_ID = O31 x 2) drops into a front-side
+    - the aluminium RING DISC (RING_ID = O51.5 x 2) drops into a front-side
       pocket inside the lens bore and sits FLUSH with the faceplate top; the
       EC11 clamps it (bushing through the disc's O7.2, nut under the knob);
-    - a full BACK PLATE extends past the window to O58 -- the exposed front
-      ring (window edge r23 .. plate r29) is the CA-GLUE land against the
-      faceplate underside. NOTE: the back-plate/lip radii (29.0, 22.5, 16.0,
-      14.0) are hardcoded; if RING_OD grows past ~56 the glue land vanishes
-      -- re-derive them together with any window resize;
-    The NeoPixel Ring 16 is MOUNTED ON THE RING BOARD around the EC11 (as
-    built) -- no nest here; its LEDs shine up through the 0.8 mm web.
+    - a full BACK PLATE extends past the window to O75 -- the exposed front
+      ring (window edge r33.5 .. plate r37.5) is the CA-GLUE land against the
+      faceplate underside, 4.0 mm wide. NOTE: the back-plate/lip radii (37.5,
+      32.0, 25.6, 24.2) are hardcoded and were RE-DERIVED for the Ring 24;
+      they do not scale themselves -- re-derive them again with any window
+      resize, and keep plate_r > RING_OD/2 or the glue land vanishes.
+    The NeoPixel RING 24 (65.5 OD / 52.3 ID / 3.2 thick, the ring the owner
+    has) is MOUNTED ON THE RING BOARD around the EC11 -- no nest here; its
+    LEDs shine up through the 0.8 mm web.
     z=0 is the faceplate-underside/glue plane."""
     import cadquery as cq
     ro = (RING_OD - LED_INS_CLR) / 2.0
@@ -3335,13 +3461,13 @@ def build_ring_diffuser_step():
     lens = (cq.Workplane("XY").circle(ro).circle(ri)
             .extrude(T + LED_INS_PROUD))
     lens = lens.edges(">Z").chamfer(0.3)
-    ins = lens.union(cq.Workplane("XY").circle(29.0).circle(14.0)
+    ins = lens.union(cq.Workplane("XY").circle(37.5).circle(24.2)
                      .extrude(-plate_t))
     # disc lip: the disc rests on the inner lip at z=0, flush with the sheet
     # top when glued (disc top = T). Thin the web over the LED circle so the
     # board-mounted ring glows through 0.8 mm of white PLA.
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
-                  .circle(22.5).circle(16.0).extrude(plate_t - 0.8))
+                  .circle(32.0).circle(25.6).extrude(plate_t - 0.8))
     step = os.path.join(OUT, "segno_ring_diffuser.step")
     cq.exporters.export(ins.val(), step)
     cq.exporters.export(ins.val(), os.path.join(OUT, "segno_ring_diffuser.stl"))
@@ -3838,7 +3964,8 @@ ANNOT_LAYERS    = ("BEND", "NOTE", "ENGRAVE", "SILK", "MASK", "ACRYLIC")
 SHEET_LEGEND = ("CUT + VENT = CORTE PASANTE (las dos capas, la misma operación)   |   "
                 "BEND = LÍNEA DE PLEGADO, SOLO REFERENCIA - no cortar, no marcar, no rayar ni grabar   |   "
                 "MASK = máscara de pintura (no pintar), NO CORTAR   |   "
-                "NOTE / ENGRAVE / SILK = texto, no es geometría")
+                "NOTE / ENGRAVE = texto, no es geometría   |   "
+                "SILK = ARTE IMPRESO: texto + símbolos rellenos (imprimir en blanco, NO CORTAR)")
 # The exact prohibition clause, so the guard can hold both halves of it: the words
 # must be PRESENT (BEND is not an operation) and must appear NOWHERE ELSE in the
 # legend, where they would read as an instruction to perform them.
@@ -4353,7 +4480,14 @@ def layout_svg(path):
         elif c["kind"] == "ring":
             e.append(f'<circle cx="{X(c["u"]):.1f}" cy="{Yf(c["v"]):.1f}" r="{c["od"]/2:.1f}" fill="none" stroke="#a855f7" stroke-width="3"/>')
     for lab in engr:
-        e.append(f'<text x="{X(lab["u"]+16):.1f}" y="{Yf(lab["v"])+10:.1f}" fill="#9fb0c8" font-size="8" text-anchor="middle">{lab["s"]}</text>')
+        k = lab.get("kind")
+        if k == "disc":                       # symbol legends (see _silk_symbol_geometry)
+            e.append(f'<circle cx="{X(lab["u"]):.1f}" cy="{Yf(lab["v"]):.1f}" r="{lab["d"]/2:.1f}" fill="#9fb0c8"/>')
+        elif k == "poly":
+            pts = " ".join(f'{X(px):.1f},{Yf(pv):.1f}' for px, pv in lab["pts"])
+            e.append(f'<polygon points="{pts}" fill="#9fb0c8"/>')
+        else:
+            e.append(f'<text x="{X(lab["u"]+16):.1f}" y="{Yf(lab["v"])+10:.1f}" fill="#9fb0c8" font-size="8" text-anchor="middle">{lab["s"]}</text>')
     # rear panel
     e.append(f'<text x="{M}" y="{rear_base-12:.1f}" fill="#94a3b8" font-size="12" font-weight="600">REAR I/O PANEL — {W:.0f} x {REAR_WALL_H:.0f} mm (lowered; transition shoulder carries the lid-lap screws)</text>')
     e.append(f'<rect x="{M}" y="{rear_base:.1f}" width="{fw:.1f}" height="{REAR_WALL_H:.1f}" rx="6" fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>')
@@ -4533,6 +4667,7 @@ def build_quote_packages():
     pack("segno_3dprint.zip",
          ["segno_platform_front", "segno_platform_mid",
           "segno_led_diffuser", "segno_ring_diffuser",
+          "segno_encoder_knob",
           "segno_screen7_tower",
           "segno_screen16_stand_L", "segno_screen16_stand_R"],
          (".step", ".stl"))
@@ -4802,9 +4937,11 @@ def main(argv):
     if "--no-step" not in argv:
         try:
             d = build_diffuser_step()
-            print("\nLED diffuser insert (3D print, x10): out/" + os.path.basename(d) + " (+ .stl)")
+            print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
+            kb = build_encoder_knob_step()
+            print("Encoder knob (3D print, x1): out/" + os.path.basename(kb) + " (+ .stl)")
             s = build_post_step()
             print("Faceplate support post (base-anchored, x2): out/" + os.path.basename(s))
             tw = build_screen7_tower_step()

@@ -93,8 +93,9 @@ Send **`enclosure/out/segno_3dprint.zip`** (STEP + STL for each part).
 |---|---|---|---|
 | `segno_platform_front` | 8 | **BLACK** PETG/ASA, ≥40% infill | Pedal pedestal TUB, 115.4×88.8 (deck 13.2, walls to ~37 with sloped top ~0.3 under the faceplate; deck raised for flush-at-rim seating, issue #373 — pedal case top flush with the slot's upper rim, pad above the metal). Perimeter strips outside the slot opening are relief-shaved to the same under-plate plane. Wall inner faces tucked 0.4 behind the slot cut line, so from above only faceplate shows and the reveal reads as a dark channel. Full-height boss drop-in channels in the side walls; 12-wide rear cable notch. Heat-set pilots Ø4.5 from below — the taller deck now takes the standard **M3 5×5 inserts** (4 per pedestal; short M3×3 no longer needed); 1.2-deep pad pocket in the deck. |
 | `segno_platform_mid` | 2 | **BLACK** PETG/ASA, ≥40% infill | Tall CLEAR/BANK tub (deck 57.3, walls to 81.1 — row 2 rearward for label-top alignment #366, deck raised for flush-at-rim seating #373), hollow with boss columns — standard **M3 5×5 inserts** (4 per pedestal) + the same pocket, channels, notch and perimeter relief. |
-| `segno_led_diffuser` | 10 | **White PLA** | Pill lens, pushes into the faceplate slot from inside. One per pedal (#366). |
-| `segno_ring_diffuser` | 1 | **White PLA** | Annular lens for the encoder LED ring. |
+| `segno_led_diffuser` | 6 | **White PLA** | Pill lens, pushes into the faceplate slot from inside. One per *mappable* pedal — TRACK1-4, CLEAR, BANK. REC/PLAY, STOP, UNDO and MODE have no LED: they are fixed transport, so there is nothing to indicate. |
+| `segno_ring_diffuser` | 1 | **White PLA** | Annular lens for the encoder LED ring. Cut for the **Ring 24** (Ø67 window); its back-plate radii are hardcoded, not derived — re-derive them with any window resize. |
+| `segno_encoder_knob` | 1 | PETG/ASA, any colour | Ø50 × 13 encoder knob, 36 grip flutes. Fills the Ring 24's Ø52.3 bore so the lit annulus reads as a hub. The Ø22 × 4.5 underside relief is **not optional** — without it the knob fouls the EC11 nut and never seats. |
 
 The Cherub WTB-006 has **no base screws** (one horizontal through-screw per
 side): retention = the deck pocket + gravity + foot pressure, **PROVISIONAL**.
@@ -108,7 +109,7 @@ and no longer matches any pedal in this design.
 | **Console board v2** (`console_board.py`, #747) | `kicad/out_console/segno_console_board_gerbers.zip` (run `route_console_board.sh` to produce) + `kicad/fab/segno_console_board_bom.csv` | 1 | **The console's control board** — Pico 2, MIDI front end, all pedal/panel headers. |
 | Main board (`segno_pedal_main`, THT) | `kicad/fab/segno_pedal_main_gerbers.zip` + `_bom.csv` + `_cpl.csv` | 1 | The manufactured V1 — **standalone pedal product only**; the console does not use it. LCSC part map: `kicad/fab/segno_combined_bom_lcsc.csv`. |
 | Encoder ring PCB | `kicad/fab/segno_pedal_ring_gerbers.zip` | 1 | Shared by both products. R1/R2 (the 5 V encoder pull-ups) are deleted — do not stuff them; bias comes from the MCU side on both products. |
-| LED puck (single WS2812B) | `led_strip/segno_led_strip_gerbers.zip` | 10 | 16×8 mm, castellated; or buy off-the-shelf WS2812B modules instead (see `led_strip/README.md`). One per pedal (#366). |
+| LED puck (single WS2812B) | `led_strip/segno_led_strip_gerbers.zip` | 6 | 16×8 mm, castellated; or buy off-the-shelf WS2812B modules instead (see `led_strip/README.md`). One per *mappable* pedal — the four fixed-transport pedals carry none. |
 
 
 ## 4. Printed overlay
@@ -133,7 +134,8 @@ Full lists with links: **`segno_console_shopping_list.md`** (console) and
 - 5V bucks: **eleUniverse 8–36V→5V 10A IP67** (Amazon B0GGHN97TK) **×2** —
   BUCK_PI + BUCK_AUX, fed 20 V from the USB-C PD inlet (#754); the 9 V brick
   is gone
-- 1× NeoPixel Ring 16 (authentic Adafruit, 44.5 mm OD — clones are 68 mm and won't fit)
+- 1× NeoPixel **Ring 24** — 65.5 mm OD / 52.3 mm ID / 3.2 mm thick (the ring the owner has;
+  the faceplate window and `segno_ring_diffuser` are cut for THESE numbers, not the Ring 16's 44.5 mm)
 - Heat-set inserts: **M3 5×5 throughout** (5.0 long × 5.0 OD, pilots Ø4.5), brass —
   40× console pedestals (4 per pedestal) + 8× mini-console pedestals + 3× mini lid.
   (Short M3×3 obsolete since the #373 deck raise gave the front pedestals full pilot depth.)
