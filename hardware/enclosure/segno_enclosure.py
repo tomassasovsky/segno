@@ -884,6 +884,10 @@ FRONT_GAP    = SCREEN_TOP_V - BIG_H - (PEDAL_ROW1_V + FSW_SLOT_D / 2.0)
 # (measured in the "Segno console (populated)" doc; Arial-class bold ~0.717): the
 # silk `h` parameter is an em size, so glyph caps top out at v_lbl + SILK_H*SILK_CAP.
 SILK_CAP     = 0.7168
+# Play-triangle height as a fraction of SILK_H. Named because ROW1_LEGEND_TOP
+# below depends on it: the triangle is the tallest glyph in row 1, so the ring
+# placement moves if this changes. Don't inline it back into the glyph.
+SILK_TRI_H   = 0.82
 # Vertical offset of a pedal label above its slot, measured from the slot's rear
 # edge. Pedals WITH a pill clear the pill first; pedals without one sit on the
 # pill's BOTTOM LINE, so the whole row shares one baseline -- that line is what
@@ -906,8 +910,18 @@ PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - LABEL_DV_LED - FSW_SLOT_D / 2.
 # So the ring is placed off the CLEARANCE now, not off a line that has nothing to
 # do with it: the gap is the number that actually matters, it is stated once, and
 # the ring re-places itself if RING_OD ever changes again.
-RING_S7_GAP  = 26.7          # air between the ring window and the 7" aperture
-ENC_V        = (SCREEN_TOP_V - SMALL_H) - RING_S7_GAP - RING_OD / 2.0
+# The rule is CENTRED, not clearance-from-one-side: the ring sits midway between
+# the top of the row-1 legend band and the bottom of the 7" aperture, so the air
+# above and below it is equal and stays equal when either bound moves. Hanging it
+# off a single gap to the screen (what this was) leaves the other side to chance,
+# and by eye it still sat high (owner call 2026-08-22).
+#
+# The band top is the play triangle's tip -- it is the tallest thing in row 1,
+# taller than the cap height of UNDO/MODE, so it is what the eye reads as the
+# edge of the legend band.
+ROW1_LEGEND_TOP = (PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + LABEL_DV_PLAIN
+                   + SILK_H * (SILK_CAP / 2.0 + SILK_TRI_H / 2.0))
+ENC_V        = (ROW1_LEGEND_TOP + (SCREEN_TOP_V - SMALL_H)) / 2.0
 
 # Front row of 8, EVENLY spaced across the faceplate (no 4+4 grouping).
 _ROW1 = ["REC/PLAY", "STOP", "UNDO", "MODE", "TRACK1", "TRACK2", "TRACK3", "TRACK4"]
@@ -983,7 +997,7 @@ def _silk_symbol_geometry(kind, u, v, h):
     out = []
     if kind == "rec_play":
         d = h * 0.78                       # dot diameter
-        tw, th = h * 0.72, h * 0.82        # triangle width / height
+        tw, th = h * 0.72, h * SILK_TRI_H  # triangle width / height
         gap = h * 0.20                     # tighter than the old 0.34 -- the plus
         pw = h * 0.36                      # goes BETWEEN the two, and the group
         pt = h * 0.10                      # still has to fit inside the pedal
