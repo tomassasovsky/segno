@@ -394,7 +394,7 @@ D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
 # slot looked bad -- the tab gets snapped off the EC11 instead; the nut alone
 # clamps the disc).
 KNOB_D      = 50.0   # encoder knob: fills the Ring 24's O52.3 ID (see
-KNOB_H      = 13.0   # build_encoder_knob_step). NOT free parameters -- KNOB_D
+KNOB_H      = 18.0   # build_encoder_knob_step). NOT free parameters -- KNOB_D
 KNOB_NUT_D  = 22.0   # is sized against RING_ID and KNOB_NUT_* against the EC11
 KNOB_NUT_H  = 4.5    # nut; change either and re-run the interference check.
 KNOB_BORE_D = 6.1
@@ -3446,8 +3446,12 @@ def build_encoder_knob_step():
     fills it -- O50 against the ring's O52.3 ID, so it reads as the ring's hub
     with a ~1 mm dark gap and no bare disc showing.
 
-    Reproduced from the approved model, all six numbers measured off it:
-      body O50 x 13, 0.6 bottom chamfer, 1.6 top edge fillet;
+    Reproduced from the approved model, every number measured off it:
+      body O50 x 18, 0.6 bottom chamfer, 1.6 top edge fillet;
+      HEIGHT: 18, not 13. The scratch STEP this was first built from was 13 tall
+      while the Fusion component the owner actually reviewed was 18 -- identical
+      in every other feature (relief, bore, flutes and fillet all at the same z),
+      so the barrel is simply 5 mm longer. 18 is the reviewed one and wins.
       36 grip flutes, r0.9 on a 24.415 bolt circle (10 deg pitch), z 0..10.8;
       O22 x 4.5 NUT RELIEF from below -- without it the knob fouls the EC11's
       mounting nut and never seats (measured 0.022/0.027 cm3 of interference
