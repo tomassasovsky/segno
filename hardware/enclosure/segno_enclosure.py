@@ -885,14 +885,16 @@ FRONT_GAP    = SCREEN_TOP_V - BIG_H - (PEDAL_ROW1_V + FSW_SLOT_D / 2.0)
 # silk `h` parameter is an em size, so glyph caps top out at v_lbl + SILK_H*SILK_CAP.
 SILK_CAP     = 0.7168
 # Vertical offset of a pedal label above its slot, measured from the slot's rear
-# edge. Pedals WITH a pill clear the pill first (LED_GAP + 12). Pedals without
-# one used to sit at 8.0, which put their baseline 2 mm ABOVE the bottom edge of
-# the pills beside them in the same row -- the row read as two misaligned bands.
-# 6.0 puts the baseline exactly on the pill's bottom line (pill centre sits at
-# +9.0 and is LED_SLOT_H tall, so its bottom edge is +6.0), which is the line the
-# eye actually follows across the row (owner call 2026-08-22).
+# edge. Pedals WITH a pill clear the pill first; pedals without one sit on the
+# pill's BOTTOM LINE, so the whole row shares one baseline -- that line is what
+# the eye follows across the row, and at the old 8.0 the plain labels floated
+# 1 mm under it and the row read as two bands (owner call 2026-08-22).
+#
+# DERIVED, not a literal: the pill centre is LED_GAP above the slot and the pill
+# is LED_SLOT_H tall, so its bottom edge is LED_GAP - LED_SLOT_H/2. Write 9.0
+# here and it silently stops matching the moment either of those changes.
 LABEL_DV_LED   = LED_GAP + 12.0
-LABEL_DV_PLAIN = 6.0
+LABEL_DV_PLAIN = LED_GAP - LED_SLOT_H / 2.0
 PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - LABEL_DV_LED - FSW_SLOT_D / 2.0
 # The encoder + LED ring do NOT follow the pedals rearward: the ring would hit the
 # 7" screen. It used to be pinned to the OLD row-2 centre (the 16"-screen-bottom

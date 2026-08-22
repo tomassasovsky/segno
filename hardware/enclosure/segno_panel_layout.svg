@@ -24,12 +24,12 @@
 <text x="669.3" y="176.1" fill="#4a7f96" font-size="12" text-anchor="middle">16" TOUCH - main UI</text>
 <circle cx="163.6" cy="225.3" r="33.5" fill="none" stroke="#a855f7" stroke-width="3"/>
 <circle cx="163.6" cy="225.3" r="3.6" fill="#cbd5e1"/>
-<circle cx="94.5" cy="310.1" r="9.8" fill="#9fb0c8"/>
-<polygon points="112.5,314.6 115.0,314.6 115.0,311.3 118.2,311.3 118.2,308.8 115.0,308.8 115.0,305.6 112.5,305.6 112.5,308.8 109.2,308.8 109.2,311.3 112.5,311.3" fill="#9fb0c8"/>
-<polygon points="123.2,320.3 123.2,299.8 141.2,310.1" fill="#9fb0c8"/>
-<polygon points="205.4,318.8 222.9,318.8 222.9,301.3 205.4,301.3" fill="#9fb0c8"/>
-<text x="331.3" y="329.0" fill="#9fb0c8" font-size="8" text-anchor="middle">UNDO</text>
-<text x="432.4" y="329.0" fill="#9fb0c8" font-size="8" text-anchor="middle">MODE</text>
+<circle cx="94.5" cy="307.1" r="9.8" fill="#9fb0c8"/>
+<polygon points="112.5,311.6 115.0,311.6 115.0,308.3 118.2,308.3 118.2,305.8 115.0,305.8 115.0,302.6 112.5,302.6 112.5,305.8 109.2,305.8 109.2,308.3 112.5,308.3" fill="#9fb0c8"/>
+<polygon points="123.2,317.3 123.2,296.8 141.2,307.1" fill="#9fb0c8"/>
+<polygon points="205.4,315.8 222.9,315.8 222.9,298.3 205.4,298.3" fill="#9fb0c8"/>
+<text x="331.3" y="326.0" fill="#9fb0c8" font-size="8" text-anchor="middle">UNDO</text>
+<text x="432.4" y="326.0" fill="#9fb0c8" font-size="8" text-anchor="middle">MODE</text>
 <text x="331.3" y="107.6" fill="#9fb0c8" font-size="8" text-anchor="middle">CLEAR</text>
 <text x="432.4" y="107.6" fill="#9fb0c8" font-size="8" text-anchor="middle">BANK</text>
 <text x="44" y="526.6" fill="#94a3b8" font-size="12" font-weight="600">REAR I/O PANEL — 850 x 90 mm (lowered; transition shoulder carries the lid-lap screws)</text>
