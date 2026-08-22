@@ -417,11 +417,12 @@ IND_PITCH = 50.0     # indicator LED pitch
 # rather than hidden behind an optimistic comment.
 # Power button: APIELE 19 mm HIGH ROUND momentary (B079HTQ7XD). Stainless, IP65,
 # M19x1, 1e6 mechanical cycles, screw terminals, 3-year warranty. MOMENTARY, which
-# the soft-shutdown wiring requires -- it drives a Pi GPIO, it does not break power.
+# the soft-shutdown wiring requires -- it drives the Pi's own PWR pads (not a
+# GPIO; a Pi 5 cannot wake from one), it does not break power.
 #
 # Chosen over the UL+CE ZJWZJH (B09CCPDC1C) at HALF the price: that listing's
-# UL/CE and IP67 buy nothing here -- this is a dry contact to a 3.3 V GPIO, not a
-# mains switch on a wet deck -- while APIELE has 1039 reviews at 4.7 against 9 at
+# UL/CE and IP67 buy nothing here -- this is a dry contact to a 3.3 V logic pad,
+# not a mains switch on a wet deck -- while APIELE has 1039 reviews at 4.7 against 9 at
 # 3.9, and a TALLER head. Both ship dimension drawings and both land inside the
 # constants below, so the choice does not touch the panel.
 #

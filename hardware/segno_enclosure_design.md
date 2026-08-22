@@ -320,8 +320,9 @@ ships a full dimensioned drawing: hole 19 (M19×1), hex bezel **21.9 across flat
 
 Chosen over the [UL+CE ZJWZJH](https://www.amazon.com/dp/B09CCPDC1C) at **half the
 price**. That part is nicer on paper — UL + CE listed, IP67/IK10, 316 head — but
-none of it earns its keep here: this switch is a **dry contact to a 3.3 V Pi
-GPIO**, not a mains switch on a wet deck, so the certification is irrelevant to
+none of it earns its keep here: this switch is a **dry contact to the Pi's own
+3.3 V power-button pads**, not a mains switch on a wet deck, so the certification is
+irrelevant to
 safety and IP67-vs-IP65 is moot on an indoor rear panel. Against that, APIELE has
 1,039 reviews at 4.7 versus 9 at 3.9, and a *taller* head — more dome, more feel.
 
@@ -366,8 +367,11 @@ beats a metal one. 10 A / 250 V AC, far above this job.
 > [12-value T assortment](https://www.amazon.com/dp/B08779766V) is worth it over a
 > single value: start at T5A and step up only if real measured draw says so.
 >
-> **Nothing on this unit hard-breaks power.** The button is a GPIO input; pulling
-> the barrel plug is the only true off. Deliberate, but worth knowing.
+> **Nothing on this unit hard-breaks power.** The button is a momentary contact on
+> the Pi's own PWR pads — *not* a GPIO input, which on a Pi 5 could not do this job
+> at all (RP1 and the SoC are unpowered until the PMIC brings them up); pulling
+> the USB-C PD inlet is the only true off (the 9 V barrel died with the 9 V
+> architecture — see `PD_IN` above). Deliberate, but worth knowing.
 
 > **Fallout to settle separately:** the `nopi` build (external host, HDMI ×2 +
 > USB touch ×2) had no home but that window, so it is **retired** — an
