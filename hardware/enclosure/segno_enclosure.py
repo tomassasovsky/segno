@@ -410,15 +410,12 @@ KNOB_BORE_TOP = 12.0   # blind bore: stops 6 mm short of the top face
 KNOB_NUT_D    = 22.0   # underside relief over the EC11 mounting nut (assumed)
 KNOB_NUT_H    = 4.5
 KNOB_TOP_FILLET = 1.6
-RING_OD   = 67.0     # diffused-annulus ring window OD -- sized over the Adafruit
-RING_ID   = 51.5     # NeoPixel Ring 16 (44.5/31.7, LEDs on r~19), which is and
-                     # always was the ring hardware, mounted ON the ring board
-                     # around the EC11. (The old 58/40 window and its '12 THT
-                     # LEDs' note were wrong -- user correction 2026-08-19;
-                     # band widened 44/33 -> 46/31 same day: 'looks small'.)
-N_IND     = 10       # indicator LED pills -- ALL 10 pedals (issue #366). Firmware
-                     # chain contract is still indicatorLeds[7]; widening it to 10
-                     # is an open firmware change, flagged on the issue.
+RING_OD   = 67.0     # diffused-annulus ring window, sized over the NeoPixel
+RING_ID   = 51.5     # RING 24 (O65.5 / O52.3 / 3.2) -- the ring the owner fitted,
+                     # mounted ON the ring board around the EC11. It replaced a
+                     # Ring 16 (44.5/31.7) in 2026-08-22; the ring BOARD has not
+                     # caught up (it is O60 with its module pads on a O42.1
+                     # circle, both Ring-16 numbers) -- see #794.
 IND_PITCH = 50.0     # indicator LED pitch
 
 # --- rear I/O -----------------------------------------------------------------
