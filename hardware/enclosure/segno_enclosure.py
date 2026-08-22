@@ -884,10 +884,28 @@ FRONT_GAP    = SCREEN_TOP_V - BIG_H - (PEDAL_ROW1_V + FSW_SLOT_D / 2.0)
 # (measured in the "Segno console (populated)" doc; Arial-class bold ~0.717): the
 # silk `h` parameter is an em size, so glyph caps top out at v_lbl + SILK_H*SILK_CAP.
 SILK_CAP     = 0.7168
-PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - (LED_GAP + 12.0) - FSW_SLOT_D / 2.0
+# Vertical offset of a pedal label above its slot, measured from the slot's rear
+# edge. Pedals WITH a pill clear the pill first (LED_GAP + 12). Pedals without
+# one used to sit at 8.0, which put their baseline 2 mm ABOVE the bottom edge of
+# the pills beside them in the same row -- the row read as two misaligned bands.
+# 6.0 puts the baseline exactly on the pill's bottom line (pill centre sits at
+# +9.0 and is LED_SLOT_H tall, so its bottom edge is +6.0), which is the line the
+# eye actually follows across the row (owner call 2026-08-22).
+LABEL_DV_LED   = LED_GAP + 12.0
+LABEL_DV_PLAIN = 6.0
+PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - LABEL_DV_LED - FSW_SLOT_D / 2.0
 # The encoder + LED ring do NOT follow the pedals rearward: the ring would hit the
-# 7" screen. It stays on the OLD row-2 centre (the 16"-screen-bottom line).
-ENC_V        = (SCREEN_TOP_V - BIG_H) + FSW_SLOT_D / 2.0
+# 7" screen. It used to be pinned to the OLD row-2 centre (the 16"-screen-bottom
+# line), which held while the ring was the Ring 16's O46 -- that left 26.7 mm of
+# air under the 7" aperture. The Ring 24's O67 grew the radius by 10.5 mm and ate
+# the gap down to 16.2 (12.2 to the diffuser's glue land), which is why the ring
+# started reading as crowded up against the screen.
+#
+# So the ring is placed off the CLEARANCE now, not off a line that has nothing to
+# do with it: the gap is the number that actually matters, it is stated once, and
+# the ring re-places itself if RING_OD ever changes again.
+RING_S7_GAP  = 26.7          # air between the ring window and the 7" aperture
+ENC_V        = (SCREEN_TOP_V - SMALL_H) - RING_S7_GAP - RING_OD / 2.0
 
 # Front row of 8, EVENLY spaced across the faceplate (no 4+4 grouping).
 _ROW1 = ["REC/PLAY", "STOP", "UNDO", "MODE", "TRACK1", "TRACK2", "TRACK3", "TRACK4"]
@@ -964,11 +982,24 @@ def _silk_symbol_geometry(kind, u, v, h):
     if kind == "rec_play":
         d = h * 0.78                       # dot diameter
         tw, th = h * 0.72, h * 0.82        # triangle width / height
-        gap = h * 0.34
-        total = d + gap + tw
+        gap = h * 0.20                     # tighter than the old 0.34 -- the plus
+        pw = h * 0.36                      # goes BETWEEN the two, and the group
+        pt = h * 0.10                      # still has to fit inside the pedal
+        total = d + gap + pw + gap + tw
         x0 = u - total / 2.0
         out.append({"kind": "disc", "u": x0 + d / 2.0, "v": v, "d": d})
-        tx = x0 + d + gap
+        # The PLUS is deliberately smaller than the dot and the triangle: it is a
+        # conjunction between them, not a third transport symbol competing with
+        # them (owner call 2026-08-22). One 12-point cross, not two overlapping
+        # bars -- the overlap would be a self-intersecting fill boundary.
+        px = x0 + d + gap + pw / 2.0
+        a, b = pw / 2.0, pt / 2.0
+        out.append({"kind": "poly", "pts": [
+            (px - b, v - a), (px + b, v - a), (px + b, v - b),
+            (px + a, v - b), (px + a, v + b), (px + b, v + b),
+            (px + b, v + a), (px - b, v + a), (px - b, v + b),
+            (px - a, v + b), (px - a, v - b), (px - b, v - b)]})
+        tx = x0 + d + gap + pw + gap
         out.append({"kind": "poly", "pts": [(tx, v - th / 2.0),
                                             (tx, v + th / 2.0),
                                             (tx + tw, v)]})
@@ -1103,12 +1134,12 @@ def faceplate_holes():
         # family of bars: common cap height, width factor forces the advance.
         lines = _silk_lines(label)
         if label in SILK_SYMBOLS:                      # transport symbol, drawn as geometry
-            v_sym = v + FSW_SLOT_D/2 + (LED_GAP + 12.0 if led else 8.0) + SILK_H*SILK_CAP/2.0
+            v_sym = v + FSW_SLOT_D/2 + (LABEL_DV_LED if led else LABEL_DV_PLAIN) + SILK_H*SILK_CAP/2.0
             engr.extend(_silk_symbol_geometry(SILK_SYMBOLS[label], u, v_sym, SILK_H))
             continue
         if not lines:                                  # tracks carry no silk text
             continue
-        v_lbl = v + FSW_SLOT_D/2 + (LED_GAP + 12.0 if led else 8.0)  # labelled pills get extra air
+        v_lbl = v + FSW_SLOT_D/2 + (LABEL_DV_LED if led else LABEL_DV_PLAIN)
         infos = []                                     # (text, width-factor, displayed width)
         for ln in lines:
             est_w = SILK_H * len(ln) * SILK_CW         # natural width at the common height
