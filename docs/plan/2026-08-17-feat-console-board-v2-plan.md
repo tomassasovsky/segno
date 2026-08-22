@@ -50,21 +50,21 @@ existing boards are.
 | block | parts |
 |---|---|
 | MCU | Pico 2 (RP2350) on 2×20 THT headers |
-| Pi link | 2×20 **shrouded, keyed** IDC → UART ×2, SWD, power button, 5 V, 3V3, GND |
+| Pi link | 2×20 **shrouded, keyed** IDC → UART ×2, SWD, 3V3, GND. **No 5 V** (pins 2/4 deliberately absent) and **no power button** — that goes J8 → J9 → the Pi's own J2 pads |
 | MIDI IN | H11L1 at **3.3 V** → Pi `uart0` RX · 220 Ω · 1N4148 · DIN pin 2 **not** connected |
 | MIDI OUT | 74AHCT125 ← Pi `uart0` TX · 2 × 220 Ω |
 | Footswitches | 10 × JST-XH 2-pin + 100 nF RC debounce (V1 idiom) |
 | CTRL 1/2 | 2 × JST-XH 3-pin → ADC (GP26–28) with pull-up |
 | Indicators | 1 × JST-XH 3-pin, WS2812 chain via 74AHCT125 3V3→5 V |
 | Ring/encoder | 1 × JST-XH 8-pin to `ring_board` |
-| Power button | 1 × JST-XH 2-pin, passed straight through to a Pi GPIO |
-| Power in | 1 × JST-XH 2-pin, 5 V from the external potted buck + **bulk caps** (below) |
+| Power button | 1 × JST-XH 2-pin → J9 → the Pi's own J2 solder pads |
+| Power in | 1 × JST-XH 2-pin, 5 V from **BUCK_AUX** (#754) + **bulk caps** (below) |
 
 ### Power-in protection: bulk yes, series diode no
 
 V1 guards its 9 V input with a Schottky, a TVS and 100 µF (`main_board.py:199-211`)
 because that is a **barrel jack** a user can plug anything into. This board takes 5 V
-from a fixed internal potted buck over a **keyed** JST, so that threat model does not
+from a fixed internal buck (BUCK_AUX) over a **keyed** JST, so that threat model does not
 transfer. What does transfer is **bulk capacitance**: 22 WS2812s draw ~1.3 A of
 transients, and a series Schottky on that rail would burn ~0.4 W and eat headroom the
 LEDs want. So: **bulk electrolytic on `+5V_LED` at the injection point, plus local
