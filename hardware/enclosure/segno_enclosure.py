@@ -2213,8 +2213,14 @@ def _silk_fill(msp, kind, spec):
     ring where the record dot belongs. The outline entity stays as well, so the
     shape survives in readers that ignore hatches.
     """
-    h = msp.add_hatch(color=5, dxfattribs={"layer": "SILK"})
-    h.set_solid_fill()
+    # color=256 is BYLAYER, and it has to be the NAMED argument -- add_hatch
+    # overwrites dxfattribs["color"] with it. A HATCH left at add_hatch's ACI 7
+    # default renders WHITE on a white sheet and the symbol prints as a bare
+    # outline: the same bug that hid the VENT louvres (#775 R1), one level down
+    # at the entity. Do NOT "tidy up" by adding set_solid_fill() back either --
+    # add_hatch already sets solid_fill and the SOLID pattern, and that call
+    # would reset the colour to 7 all over again.
+    h = msp.add_hatch(color=256, dxfattribs={"layer": "SILK"})
     if kind == "circle":
         cx, cy, r = spec
         h.paths.add_edge_path().add_arc((cx, cy), r, 0.0, 360.0)
@@ -4086,6 +4092,15 @@ def _force_pdf_layer_colours(doc):
         else:
             assert lay.rgb is not None or lay.color != 7, \
                 f"layer {lname!r} is ACI 7 -- it renders white on a white sheet and vanishes"
+    # Same trap one level down: an ENTITY may carry its own ACI 7 and vanish on a
+    # layer that is itself fine. Only the through-cut layers are forced black
+    # above, so an explicit 7 anywhere else is the invisible case.
+    for e in doc.modelspace():
+        if e.dxf.layer in THRU_CUT_LAYERS:
+            continue
+        assert e.dxf.hasattr("color") is False or e.dxf.color != 7, \
+            f"{e.dxftype()} on layer {e.dxf.layer!r} carries ACI 7 -- it renders " \
+            f"white on a white sheet and vanishes from the PDF"
     return blackened
 
 SHEET_HEADING = "Segno - gabinete de controlador de audio"
