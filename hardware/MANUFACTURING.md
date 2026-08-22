@@ -95,7 +95,6 @@ Send **`enclosure/out/segno_3dprint.zip`** (STEP + STL for each part).
 | `segno_platform_mid` | 2 | **BLACK** PETG/ASA, ≥40% infill | Tall CLEAR/BANK tub (deck 57.3, walls to 81.1 — row 2 rearward for label-top alignment #366, deck raised for flush-at-rim seating #373), hollow with boss columns — standard **M3 5×5 inserts** (4 per pedestal) + the same pocket, channels, notch and perimeter relief. |
 | `segno_led_diffuser` | 6 | **White PLA** | Pill lens, pushes into the faceplate slot from inside. One per *mappable* pedal — TRACK1-4, CLEAR, BANK. REC/PLAY, STOP, UNDO and MODE have no LED: they are fixed transport, so there is nothing to indicate. |
 | `segno_ring_diffuser` | 1 | **White PLA** | Annular lens for the encoder LED ring. Cut for the **Ring 24** (Ø67 window); its back-plate radii are hardcoded, not derived — re-derive them with any window resize. |
-| `segno_encoder_knob` | 1 | PETG/ASA, any colour | Ø50 × 13 encoder knob, 36 grip flutes. Fills the Ring 24's Ø52.3 bore so the lit annulus reads as a hub. The Ø22 × 4.5 underside relief is **not optional** — without it the knob fouls the EC11 nut and never seats. |
 
 The Cherub WTB-006 has **no base screws** (one horizontal through-screw per
 side): retention = the deck pocket + gravity + foot pressure, **PROVISIONAL**.
@@ -134,6 +133,12 @@ Full lists with links: **`segno_console_shopping_list.md`** (console) and
 - 5V bucks: **eleUniverse 8–36V→5V 10A IP67** (Amazon B0GGHN97TK) **×2** —
   BUCK_PI + BUCK_AUX, fed 20 V from the USB-C PD inlet (#754); the 9 V brick
   is gone
+- 1× **encoder knob, Ø50 × 18, Ø6 bore, black aluminium, plain (un-knurled) barrel** —
+  the ring window and `segno_ring_diffuser` are sized around this Ø50. `out/segno_encoder_knob.step`
+  is a REFERENCE model of it for the assembly, deliberately **not** in the 3D-print pack.
+  Check one thing with calipers before the faceplate is cut: the model assumes a Ø22 × 4.5
+  underside relief clearing the EC11 nut. If the real knob's underside is solid it will sit
+  ~3 mm proud of where the model puts it.
 - 1× NeoPixel **Ring 24** — 65.5 mm OD / 52.3 mm ID / 3.2 mm thick (the ring the owner has;
   the faceplate window and `segno_ring_diffuser` are cut for THESE numbers, not the Ring 16's 44.5 mm)
 - Heat-set inserts: **M3 5×5 throughout** (5.0 long × 5.0 OD, pilots Ø4.5), brass —

@@ -49,6 +49,11 @@ from __future__ import annotations
 import math
 import os
 import sys
+import time
+
+# When this run began. The packager holds every shipped file against it so a
+# hand-made leftover cannot ride along in a vendor zip -- see pack().
+_RUN_STARTED = time.time()
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "out")
@@ -393,14 +398,17 @@ D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
 # EC11 anti-rotation tab: NO keyway in the disc (user call 2026-08-19: the
 # slot looked bad -- the tab gets snapped off the EC11 instead; the nut alone
 # clamps the disc).
-KNOB_D      = 50.0   # encoder knob: fills the Ring 24's O52.3 ID (see
-KNOB_H      = 18.0   # build_encoder_knob_step). NOT free parameters -- KNOB_D
-KNOB_NUT_D  = 22.0   # is sized against RING_ID and KNOB_NUT_* against the EC11
-KNOB_NUT_H  = 4.5    # nut; change either and re-run the interference check.
-KNOB_BORE_D = 6.1
-KNOB_FLUTES = 36
-KNOB_FLUTE_R = 24.415
-KNOB_FLUTE_H = 10.8
+# Encoder knob -- a PURCHASED part: O50 x 18 x O6 bore, black aluminium, plain
+# barrel (the owner's chosen knob). These are the VENDOR's numbers, not design
+# freedom: KNOB_D is what the ring window was sized around and KNOB_BORE_D is the
+# EC11's 6 mm shaft. The only modelled guess is the nut relief -- see
+# build_encoder_knob_step.
+KNOB_D        = 50.0
+KNOB_H        = 18.0
+KNOB_BORE_D   = 6.0
+KNOB_BORE_TOP = 12.0   # blind bore: stops 6 mm short of the top face
+KNOB_NUT_D    = 22.0   # underside relief over the EC11 mounting nut (assumed)
+KNOB_NUT_H    = 4.5
 KNOB_TOP_FILLET = 1.6
 RING_OD   = 67.0     # diffused-annulus ring window OD -- sized over the Adafruit
 RING_ID   = 51.5     # NeoPixel Ring 16 (44.5/31.7, LEDs on r~19), which is and
@@ -3452,41 +3460,56 @@ def build_diffuser_step():
     return step
 
 
+def build_ring_disc_step():
+    """3D reference solid for the LED-ring centre disc, generated from the SAME
+    constants as its DXF.
+
+    It used to be a hand-made file that the packager simply picked up off disk
+    and shipped: by 2026-08-22 that file was O40 x 2 while the DXF the shop
+    actually cuts had moved to RING_ID = O51.5 -- an 11.5 mm disagreement inside
+    one vendor zip, and nothing in the build noticed for three ring resizes.
+    Generating it here is the whole point; do not go back to a checked-in file.
+    """
+    import cadquery as cq
+    d = (cq.Workplane("XY").circle(RING_ID / 2.0).circle(D_ENC / 2.0).extrude(T))
+    step = os.path.join(OUT, "segno_ring_disc.step")
+    cq.exporters.export(d.val(), step)
+    return step
+
+
 def build_encoder_knob_step():
-    """ENCODER KNOB (3D-print, x1) -- O50 x 13, the knob that fills the Ring 24.
+    """ENCODER KNOB -- **PURCHASED**, not printed. O50 x 18, O6 bore, black
+    aluminium, PLAIN SIDES (owner's chosen part, 2026-08-22).
 
-    Owner call 2026-08-22: with the ring window opened to the Ring 24's O67,
-    the old small knob left a wide bare gap inside the lit annulus. This one
-    fills it -- O50 against the ring's O52.3 ID, so it reads as the ring's hub
-    with a ~1 mm dark gap and no bare disc showing.
+    This is a REFERENCE model of a bought part, not a thing anyone fabricates
+    from this repo. It exists so the assembly, the ring-window sizing and the
+    collision audit have the real knob in them; the STEP is deliberately NOT in
+    the 3D-print vendor pack, and MANUFACTURING.md lists it under purchased
+    parts. Do not "restore" the grip flutes an earlier revision had -- the part
+    the owner bought has a smooth barrel, and modelling notches that are not
+    there would quietly overstate the clearance to the ring window.
 
-    Reproduced from the approved model, every number measured off it:
+    Why it is O50: the Ring 24's window is O67 and its ID is O52.3, so a O50 hub
+    fills the middle and leaves a ~1 mm dark gap inside the lit annulus.
+
       body O50 x 18, 0.6 bottom chamfer, 1.6 top edge fillet;
-      HEIGHT: 18, not 13. The scratch STEP this was first built from was 13 tall
-      while the Fusion component the owner actually reviewed was 18 -- identical
-      in every other feature (relief, bore, flutes and fillet all at the same z),
-      so the barrel is simply 5 mm longer. 18 is the reviewed one and wins.
-      36 grip flutes, r0.9 on a 24.415 bolt circle (10 deg pitch), z 0..10.8;
-      O22 x 4.5 NUT RELIEF from below -- without it the knob fouls the EC11's
-      mounting nut and never seats (measured 0.022/0.027 cm3 of interference
-      before it was added);
-      O6.1 shaft bore, z 4.5..12.0, BLIND -- 1 mm of cap so the top is unbroken.
+      O22 x 4.5 NUT RELIEF from below -- ASSUMED, not measured off the vendor
+      part: it is what lets the knob clear the EC11's mounting nut, and without
+      some relief there the knob fouls the nut and never seats (0.022/0.027 cm3
+      of interference measured before it was added). If the real knob has a
+      solid underside, it will sit ~3 mm proud of where this model puts it --
+      worth a caliper check on the part before the faceplate is cut.
+      O6 shaft bore for the EC11's 6 mm shaft, BLIND -- the top is unbroken.
     z=0 is the knob's underside (it rides on the EC11 nut, not the faceplate).
     """
     import cadquery as cq
     r_out, h = KNOB_D / 2.0, KNOB_H
     k = cq.Workplane("XY").circle(r_out).extrude(h)
-    flutes = (cq.Workplane("XY").pushPoints(
-                  [(KNOB_FLUTE_R * math.cos(math.radians(a)),
-                    KNOB_FLUTE_R * math.sin(math.radians(a)))
-                   for a in range(0, 360, 360 // KNOB_FLUTES)])
-              .circle(0.9).extrude(KNOB_FLUTE_H))
-    k = k.cut(flutes)
     k = k.faces(">Z").edges().fillet(KNOB_TOP_FILLET)   # the domed top edge
-    k = k.faces("<Z").edges().chamfer(0.6)              # elephant-foot relief
+    k = k.faces("<Z").edges().chamfer(0.6)
     k = k.faces("<Z").workplane().circle(KNOB_NUT_D / 2.0).cutBlind(-KNOB_NUT_H)
     k = k.cut(cq.Workplane("XY").workplane(offset=KNOB_NUT_H)
-              .circle(KNOB_BORE_D / 2.0).extrude(12.0 - KNOB_NUT_H))
+              .circle(KNOB_BORE_D / 2.0).extrude(KNOB_BORE_TOP - KNOB_NUT_H))
     step = os.path.join(OUT, "segno_encoder_knob.step")
     cq.exporters.export(k.val(), step)
     cq.exporters.export(k.val(), os.path.join(OUT, "segno_encoder_knob.stl"))
@@ -4714,6 +4737,18 @@ def build_quote_packages():
                 for ext in exts:
                     p = os.path.join(OUT, n + ext)
                     if os.path.exists(p):
+                        # FRESHNESS GATE. Everything a vendor pack ships must have
+                        # been written by THIS run. segno_ring_disc.step was a
+                        # hand-made file the packager just picked up: it sat at
+                        # O40 x 2 while its own DXF moved to O51.5, and shipped
+                        # that way through three ring resizes because nothing
+                        # checked. A stale solid next to a live flat is worse than
+                        # no solid at all -- the shop cannot tell which one lies.
+                        age = _RUN_STARTED - os.path.getmtime(p)
+                        assert age <= 0, (
+                            f"{n}{ext} is STALE -- it was not regenerated by this "
+                            f"run ({age:.0f}s older) but {zname} would ship it. "
+                            f"Give it a builder, or drop it from the pack.")
                         z.write(p, n + ext)
         zips.append(zp)
 
@@ -4725,15 +4760,18 @@ def build_quote_packages():
     overlay = [n for n, _ in DXF_PARTS if PART_SPECS[n][2] == PKG_OVERLAY]
     pack("segno_sheetmetal.zip", sheet, (".dxf", ".pdf"))
     pack("segno_overlay.zip", overlay, (".dxf", ".pdf"))
+    # segno_base and segno_corner_bracket_rear are deliberately NOT here. Nothing
+    # generates a per-part STEP for either (see build_assembly_step: the base is
+    # ONE folded blank and the assembly STEP is where its 3D form lives), so the
+    # files that used to satisfy this list were 17-day-old leftovers the packer
+    # picked up off disk and shipped next to DXFs that had moved on. The
+    # freshness gate in pack() now refuses that outright.
     pack("segno_sheetmetal_step.zip",
-         ["segno_assembly", "segno_base", "segno_faceplate",
-          "segno_corner_bracket_rear", "segno_ring_disc",
-          "segno_post"],
+         ["segno_assembly", "segno_faceplate", "segno_ring_disc", "segno_post"],
          (".step",))
     pack("segno_3dprint.zip",
          ["segno_platform_front", "segno_platform_mid",
           "segno_led_diffuser", "segno_ring_diffuser",
-          "segno_encoder_knob",
           "segno_screen7_tower",
           "segno_screen16_stand_L", "segno_screen16_stand_R"],
          (".step", ".stl"))
@@ -5006,8 +5044,10 @@ def main(argv):
             print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
+            rd = build_ring_disc_step()
+            print("Ring centre disc (2.0 Al, x1): out/" + os.path.basename(rd))
             kb = build_encoder_knob_step()
-            print("Encoder knob (3D print, x1): out/" + os.path.basename(kb) + " (+ .stl)")
+            print("Encoder knob (PURCHASED O50x18x6 alu -- reference model only,\n  deliberately not in the 3D-print pack): out/" + os.path.basename(kb))
             s = build_post_step()
             print("Faceplate support post (base-anchored, x2): out/" + os.path.basename(s))
             tw = build_screen7_tower_step()
