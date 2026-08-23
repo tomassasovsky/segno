@@ -3513,7 +3513,14 @@ def build_pedal_name_tiles():
             f"pedal tile {label!r}: glyph {bb.xlen:.2f} x {bb.ylen:.2f} overflows "
             f"the {TILE_L} x {TILE_W} tile")
         stem = "segno_pedal_tile_" + label.replace("/", "_")
-        cq.exporters.export(part.val(), os.path.join(OUT, stem + ".step"))
+        # STEP keeps the body and the glyphs as TWO SOLIDS -- that is the colour
+        # split, so a CAD assembly can paint them black/white per body instead of
+        # per face (800 face assignments across ten tiles is slow enough to time
+        # out) and a multi-material slicer can read the split directly.
+        two = cq.Compound.makeCompound([body.val(), glyph.val()])
+        cq.exporters.export(two, os.path.join(OUT, stem + ".step"))
+        # STL is the fused single mesh: that is what a single-extruder,
+        # filament-change print wants.
         cq.exporters.export(part.val(), os.path.join(OUT, stem + ".stl"))
         made.append(stem)
     return made
