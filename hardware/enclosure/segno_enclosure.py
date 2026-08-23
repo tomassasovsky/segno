@@ -3457,6 +3457,68 @@ def build_diffuser_step():
     return step
 
 
+# --- pedal name tiles (#795) -------------------------------------------------
+# The WTB-006's top pad has a 54.55 x 20 window through it, and the pad is a
+# uniform 2.2 slab lying on a case top tilted to match -- so the window is a
+# parallel-sided 2.2 deep pocket and a FLAT tile fits it.
+TILE_L      = 54.05   # 0.25/side clearance in the 54.55 window
+TILE_W      = 19.50   # ...and in the 20
+TILE_BODY_T = 1.8     # black body
+TILE_TEXT_T = 0.4     # white glyph layer; 1.8 + 0.4 = the 2.2 pocket, so the
+                      # LETTERS finish flush with the pad and the black field
+                      # sits 0.4 below it, out of the scuff line
+TILE_TEXT_H = 11.85   # cadquery em size -- caps land ~8.8; sized so the widest
+                      # label (TRACK3, 42.64 at em 11) keeps ~4 mm each side
+TILE_SYM_H  = 14.0    # symbol em: play triangle 0.82*h = 11.5 tall
+
+
+def build_pedal_name_tiles():
+    """One drop-in name tile per pedal, for the pad window.
+
+    PRINT FACE-DOWN with a filament change at z = TILE_TEXT_T. The glyphs stand
+    proud of the body, so face-down they are the first 0.4 mm off the bed: print
+    that in WHITE, swap to BLACK for the rest, flip, done. One extruder, crisp
+    glyph edges, and the letters get the bed finish.
+
+    The text comes from PEDALS and SILK_SYMBOLS -- the same source as the
+    faceplate legends -- so REC/PLAY and STOP carry the dot+plus+triangle and the
+    square here too, and the two can never drift apart.
+    """
+    import cadquery as cq
+    made = []
+    for label, _u, _v in PEDALS:
+        body = (cq.Workplane("XY")
+                .box(TILE_L, TILE_W, TILE_BODY_T, centered=(True, True, False)))
+        if label in SILK_SYMBOLS:
+            glyph = None
+            for e in _silk_symbol_geometry(SILK_SYMBOLS[label], 0.0, 0.0, TILE_SYM_H):
+                w = cq.Workplane("XY").workplane(offset=TILE_BODY_T)
+                if e["kind"] == "disc":
+                    solid = w.center(e["u"], e["v"]).circle(e["d"] / 2.0).extrude(TILE_TEXT_T)
+                else:
+                    solid = w.polyline(e["pts"]).close().extrude(TILE_TEXT_T)
+                glyph = solid if glyph is None else glyph.union(solid)
+        else:
+            glyph = (cq.Workplane("XY").workplane(offset=TILE_BODY_T)
+                     .text(label, TILE_TEXT_H, TILE_TEXT_T))
+        # Centre on the INK, not on the font's advance box: cadquery's text()
+        # centres the latter, which leaves the glyphs up to 0.5 mm off and the
+        # baseline 0.33 high. Measure what was actually drawn and re-centre it.
+        gb = glyph.val().BoundingBox()
+        glyph = glyph.translate((-(gb.xmin + gb.xmax) / 2.0,
+                                 -(gb.ymin + gb.ymax) / 2.0, 0))
+        part = body.union(glyph)
+        bb = part.val().BoundingBox()
+        assert bb.xlen <= TILE_L + 1e-6 and bb.ylen <= TILE_W + 1e-6, (
+            f"pedal tile {label!r}: glyph {bb.xlen:.2f} x {bb.ylen:.2f} overflows "
+            f"the {TILE_L} x {TILE_W} tile")
+        stem = "segno_pedal_tile_" + label.replace("/", "_")
+        cq.exporters.export(part.val(), os.path.join(OUT, stem + ".step"))
+        cq.exporters.export(part.val(), os.path.join(OUT, stem + ".stl"))
+        made.append(stem)
+    return made
+
+
 def build_ring_disc_step():
     """3D reference solid for the LED-ring centre disc, generated from the SAME
     constants as its DXF.
@@ -4768,7 +4830,8 @@ def build_quote_packages():
          (".step",))
     pack("segno_3dprint.zip",
          ["segno_platform_front", "segno_platform_mid",
-          "segno_led_diffuser", "segno_ring_diffuser",
+          "segno_led_diffuser", "segno_ring_diffuser"]
+         + ["segno_pedal_tile_" + l.replace("/", "_") for l, _u, _v in PEDALS] + [
           "segno_screen7_tower",
           "segno_screen16_stand_L", "segno_screen16_stand_R"],
          (".step", ".stl"))
@@ -5041,6 +5104,10 @@ def main(argv):
             print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
+            tiles = build_pedal_name_tiles()
+            print("Pedal name tiles (3D print, x%d -- print FACE-DOWN, filament\n"
+                  "  change at z=%.1f: white glyphs then black body): out/%s.step ..."
+                  % (len(tiles), TILE_TEXT_T, tiles[0]))
             rd = build_ring_disc_step()
             print("Ring centre disc (2.0 Al, x1): out/" + os.path.basename(rd))
             kb = build_encoder_knob_step()
