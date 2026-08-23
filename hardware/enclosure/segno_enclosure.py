@@ -3470,8 +3470,13 @@ TILE_BODY_T = 1.8     # black body
 TILE_TEXT_T = 0.4     # white glyph layer; 1.8 + 0.4 = the 2.2 pocket, so the
                       # LETTERS finish flush with the pad and the black field
                       # sits 0.4 below it, out of the scuff line
-TILE_MARGIN = 4.0     # clear tile around the glyph block
-TILE_FONT   = "Helvetica Neue Thin"   # thin strokes, ~half the ink of the default
+TILE_MARGIN = 6.0     # clear tile around the glyph block
+TILE_FONT   = "Helvetica Neue Light"  # THIN-looking but printable. At the tile's
+                      # 7.9 mm glyph height, Helvetica Neue *Thin* measures 0.39 mm
+                      # of stroke -- under a 0.4 nozzle, so a slicer drops or gaps
+                      # it. Light holds 0.61. The two asks (thinner AND smaller)
+                      # collide at the nozzle; this is where they meet. Measured,
+                      # not guessed -- see the stroke check when regenerating.
 TILE_SYM_H  = 14.0    # symbol em: play triangle 0.82*h = 11.5 tall
 
 # What each pedal's tile SAYS. The track pedals carry only their number -- the
@@ -3497,9 +3502,20 @@ def build_pedal_name_tiles():
     for label, _u, _v in PEDALS:
         body = (cq.Workplane("XY")
                 .box(TILE_L, TILE_W, TILE_BODY_T, centered=(True, True, False)))
+        fit_l, fit_w = TILE_L - 2*TILE_MARGIN, TILE_W - 2*TILE_MARGIN
         if label in SILK_SYMBOLS:
+            # fit the symbol group to the SAME box the words get, so a symbol
+            # tile and a word tile read at one size
+            probe = _silk_symbol_geometry(SILK_SYMBOLS[label], 0.0, 0.0, 10.0)
+            pxs = [p2[0] for e2 in probe if e2["kind"] == "poly" for p2 in e2["pts"]]
+            pys = [p2[1] for e2 in probe if e2["kind"] == "poly" for p2 in e2["pts"]]
+            for e2 in probe:
+                if e2["kind"] == "disc":
+                    pxs += [e2["u"] - e2["d"]/2, e2["u"] + e2["d"]/2]
+                    pys += [e2["v"] - e2["d"]/2, e2["v"] + e2["d"]/2]
+            sym_h = 10.0 * min(fit_l / (max(pxs)-min(pxs)), fit_w / (max(pys)-min(pys)))
             glyph = None
-            for e in _silk_symbol_geometry(SILK_SYMBOLS[label], 0.0, 0.0, TILE_SYM_H):
+            for e in _silk_symbol_geometry(SILK_SYMBOLS[label], 0.0, 0.0, sym_h):
                 w = cq.Workplane("XY").workplane(offset=TILE_BODY_T)
                 if e["kind"] == "disc":
                     solid = w.center(e["u"], e["v"]).circle(e["d"] / 2.0).extrude(TILE_TEXT_T)
@@ -3511,7 +3527,6 @@ def build_pedal_name_tiles():
             # TILE_MARGIN on every side. A fixed em would either shrink the words
             # to fit or leave a single digit swimming in the window.
             txt = TILE_TEXT.get(label, label)
-            fit_l, fit_w = TILE_L - 2*TILE_MARGIN, TILE_W - 2*TILE_MARGIN
             probe = (cq.Workplane("XY").text(txt, 10.0, TILE_TEXT_T, font=TILE_FONT)
                      .val().BoundingBox())
             em = 10.0 * min(fit_l / probe.xlen, fit_w / probe.ylen)
