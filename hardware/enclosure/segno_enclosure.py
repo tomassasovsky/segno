@@ -3461,15 +3461,23 @@ def build_diffuser_step():
 # The WTB-006's top pad has a 54.55 x 20 window through it, and the pad is a
 # uniform 2.2 slab lying on a case top tilted to match -- so the window is a
 # parallel-sided 2.2 deep pocket and a FLAT tile fits it.
-TILE_L      = 54.05   # 0.25/side clearance in the 54.55 window
-TILE_W      = 19.50   # ...and in the 20
+# The tile FILLS the window: at 0.25/side the pedal's own case colour showed
+# through the gap around it. 0.05/side is below what FDM resolves, so this is a
+# press fit into a compliant rubber window -- which also retains it.
+TILE_L      = 54.45   # window is 54.55
+TILE_W      = 19.90   # window is 20.00
 TILE_BODY_T = 1.8     # black body
 TILE_TEXT_T = 0.4     # white glyph layer; 1.8 + 0.4 = the 2.2 pocket, so the
                       # LETTERS finish flush with the pad and the black field
                       # sits 0.4 below it, out of the scuff line
-TILE_TEXT_H = 11.85   # cadquery em size -- caps land ~8.8; sized so the widest
-                      # label (TRACK3, 42.64 at em 11) keeps ~4 mm each side
+TILE_MARGIN = 4.0     # clear tile around the glyph block
+TILE_FONT   = "Helvetica Neue Thin"   # thin strokes, ~half the ink of the default
 TILE_SYM_H  = 14.0    # symbol em: play triangle 0.82*h = 11.5 tall
+
+# What each pedal's tile SAYS. The track pedals carry only their number -- the
+# word is redundant next to three identical neighbours, and a lone digit can be
+# set far larger in the same window.
+TILE_TEXT = {"TRACK1": "1", "TRACK2": "2", "TRACK3": "3", "TRACK4": "4"}
 
 
 def build_pedal_name_tiles():
@@ -3499,8 +3507,16 @@ def build_pedal_name_tiles():
                     solid = w.polyline(e["pts"]).close().extrude(TILE_TEXT_T)
                 glyph = solid if glyph is None else glyph.union(solid)
         else:
+            # Auto-fit: scale each label to the largest em that still clears
+            # TILE_MARGIN on every side. A fixed em would either shrink the words
+            # to fit or leave a single digit swimming in the window.
+            txt = TILE_TEXT.get(label, label)
+            fit_l, fit_w = TILE_L - 2*TILE_MARGIN, TILE_W - 2*TILE_MARGIN
+            probe = (cq.Workplane("XY").text(txt, 10.0, TILE_TEXT_T, font=TILE_FONT)
+                     .val().BoundingBox())
+            em = 10.0 * min(fit_l / probe.xlen, fit_w / probe.ylen)
             glyph = (cq.Workplane("XY").workplane(offset=TILE_BODY_T)
-                     .text(label, TILE_TEXT_H, TILE_TEXT_T))
+                     .text(txt, em, TILE_TEXT_T, font=TILE_FONT))
         # Centre on the INK, not on the font's advance box: cadquery's text()
         # centres the latter, which leaves the glyphs up to 0.5 mm off and the
         # baseline 0.33 high. Measure what was actually drawn and re-centre it.
