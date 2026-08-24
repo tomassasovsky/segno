@@ -51,6 +51,29 @@ local_conf_header:
     # browns the board out instead of politely refusing the current.
     RPI_EXTRA_CONFIG:append = "\nusb_max_current_enable=1"
 
+  rpi5-fan: |
+    # Fan curve, chosen for a stage instrument rather than a desktop (#801).
+    #
+    # The stock Pi 5 curve first trips at 50 C. This image pins
+    # cpufreq.default_governor=performance for audio latency, so the CPU never
+    # downclocks and 50 C is crossed during ordinary playing — meaning the stock
+    # curve spins the fan up during a loud passage and lets it fall away during a
+    # quiet one. A fan that surges in time with the music is far more distracting,
+    # and far harder for a gate to reject, than one that simply hums.
+    #
+    # So: hold the lowest speed essentially always (trip 0 at 30 C, which the
+    # board is above the moment it boots), then do nothing until 68 C — well past
+    # normal operating temperature — and reach full speed at 78 C, before the
+    # 80 C soft throttle rather than at it. Temps in millidegrees, speed 0-255.
+    #
+    # PROVISIONAL. These are reasoned starting values, not measured ones: the
+    # steady-state temperature of this board, under this governor, inside the
+    # enclosure, is not known yet. #801 carries the bench measurement.
+    RPI_EXTRA_CONFIG:append = "\ndtparam=fan_temp0=30000\ndtparam=fan_temp0_hyst=5000\ndtparam=fan_temp0_speed=70"
+    RPI_EXTRA_CONFIG:append = "\ndtparam=fan_temp1=68000\ndtparam=fan_temp1_hyst=8000\ndtparam=fan_temp1_speed=125"
+    RPI_EXTRA_CONFIG:append = "\ndtparam=fan_temp2=74000\ndtparam=fan_temp2_hyst=5000\ndtparam=fan_temp2_speed=180"
+    RPI_EXTRA_CONFIG:append = "\ndtparam=fan_temp3=78000\ndtparam=fan_temp3_hyst=5000\ndtparam=fan_temp3_speed=255"
+
   rpi5-pcie: |
     # The Pi 5's PCIe lane — and therefore the M.2 slot the rootfs lives on — is
     # OFF unless config.txt asks for it. Without dtparam=pciex1 the firmware can
