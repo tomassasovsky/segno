@@ -56,6 +56,11 @@ on:
         type: choice
         options: [rpi5, rpi4]
         default: rpi5
+      publish:
+        description: Publish a Release and sync the mirror (no = build the image only)
+        type: choice
+        options: ['yes', 'no']
+        default: 'yes'
 
 permissions:
   contents: write        # create releases
@@ -334,7 +339,13 @@ jobs:
           # Already gzipped; a second pass costs minutes and saves nothing.
           compression-level: 0
 
+      # `publish: no` builds the image and stops. Everything above this point is
+      # local to the runner; everything below is outward-facing — a Release the
+      # update mirror serves to whatever is polling that channel. A bench build
+      # that only needs the .wic should not move the channel deployed devices
+      # follow. `inputs` is absent on push/tag, so those still publish.
       - name: Publish GitHub Release
+        if: github.event.inputs.publish != 'no'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: appliance-${{ needs.determine-meta.outputs.channel }}-${{ needs.determine-meta.outputs.version }}
@@ -354,6 +365,7 @@ jobs:
       # the previous tag as "up to date". Retry until the channel manifest
       # actually carries EXPECTED_VERSION.
       - name: Trigger segno mirror sync
+        if: github.event.inputs.publish != 'no'
         env:
           SEGNO_SYNC_TOKEN: ${{ secrets.SEGNO_SYNC_TOKEN }}
           SEGNO_SYNC_URL: https://segno.aquiles.dev/hooks/sync
