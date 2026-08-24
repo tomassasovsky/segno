@@ -106,21 +106,39 @@ sync
 (or `bmaptool copy --bmap segno-appliance-*.wic.bmap segno-appliance-*.wic.gz /dev/rdisk5`,
 which skips the unwritten blocks.)
 
-### Pi 5 / NVMe: set the boot order once, per board
+### Pi 5: the EEPROM settings no image can carry
 
-The Pi 5 bootloader does **not** try NVMe by default — flash the drive all you
-like, the firmware never looks at it. From a Raspberry Pi OS SD card, once:
+The bootloader EEPROM lives on the **board**, not on the drive. Nothing in the
+`.wic` can set it, and reflashing never changes it. Do this once per board, from
+whatever OS is on it now:
 
 ```bash
-sudo rpi-eeprom-config --edit      # BOOT_ORDER=0xf416
+sudo rpi-eeprom-config --edit
 ```
 
-`0xf416` reads right-to-left: `6`=NVMe, `1`=SD, `4`=USB, `f`=restart the loop.
+```
+BOOT_ORDER=0xf416
+PSU_MAX_CURRENT=5000
+```
 
-Two more things that are easy to get wrong: the M.2 carrier's PCIe ribbon seats
-in **two** places (both ends latch), and `dtparam=pciex1` must be in `config.txt`
-or the kernel never enumerates the controller even though the firmware booted
-from it — the image sets that for you.
+- **`BOOT_ORDER=0xf416`** — right-to-left: `6`=NVMe, `1`=SD, `4`=USB,
+  `f`=restart the loop. Without it the firmware never looks at the NVMe, and a
+  perfectly good image is indistinguishable from a broken one.
+- **`PSU_MAX_CURRENT=5000`** — declares a 5 A supply. A Pi 5 that can't confirm
+  one budgets **600 mA across all USB ports combined**, which this console blows
+  through with a hub, a touch controller, the pedal and the Scarlett. See
+  [#740](https://github.com/tomassasovsky/segno/issues/740). Only set this behind
+  a real 5 V/5 A supply — on a 3 A brick a loaded bus browns the board out.
+
+The image side of the same two concerns is already baked into
+`kas-segno-rpi5.yml`: `usb_max_current_enable=1` (stops the firmware capping USB
+when it can't identify the supply — the EEPROM value above is the stronger half)
+and `dtparam=pciex1`, without which the kernel never enumerates the NVMe
+controller even though the firmware booted from it.
+
+One mechanical trap while you're in there: the M.2 carrier's PCIe ribbon latches
+at **both** ends, and a half-seated one enumerates intermittently rather than
+failing outright.
 
 ## Iterating
 
