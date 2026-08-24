@@ -311,14 +311,11 @@ jobs:
                 || find "$YOCTO_WORK_DIR" -name "segno-kiosk-image-$machine*.wic" | sort | tail -1)
           [ -n "$wic" ] && [ -f "$wic" ] || { echo "::error::no .wic found for $machine"; exit 1; }
 
-          # Sanity gate: tryboot-cmdline.bbclass rewrites root=XXX inside the
-          # image after do_image_wic. If the placeholder survived, the card
-          # boots to a kernel panic with no rootfs — catch it here, not on the
-          # bench. `strings` over the FAT slots is enough to see it.
-          if strings "$wic" | grep -q 'root=XXX'; then
-            echo "::error::root=XXX placeholder left in the image — do_update_tryboot_cmdline did not run"
-            exit 1
-          fi
+          # No root=XXX gate here on purpose. Scanning the whole image with
+          # `strings` also reads freed FAT clusters, so a stale copy of the
+          # pre-rewrite cmdline.txt would fail a perfectly good build two hours
+          # in. do_update_tryboot_cmdline reads each slot back through mtools
+          # instead — the live file, not the free space around it.
 
           name="segno-appliance-$version-$board"
           # gzip -1, not bzip2/zstd: present on every runner, and fast enough on

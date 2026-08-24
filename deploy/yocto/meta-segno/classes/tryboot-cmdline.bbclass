@@ -28,18 +28,40 @@ def get_partitions(wic_image):
     return vfat_partitions
 
 
+def read_cmdline(partition):
+    import subprocess
+
+    return subprocess.check_output(
+        ["mtype", "-i", partition, "::cmdline.txt"], text=True)
+
+
 def update_cmdline(partition, root):
     import subprocess
 
-    cmdline_data = subprocess.check_output([
-        "mtype", "-i", partition, "::cmdline.txt"
-    ], text=True)
+    cmdline_data = read_cmdline(partition)
+
+    # A plain str.replace on a missing placeholder writes the file back
+    # unchanged and reports success — the image then boots to a kernel panic
+    # with no rootfs and nothing anywhere saying why. Demand the placeholder.
+    if "root=XXX" not in cmdline_data:
+        bb.fatal(f"no root=XXX placeholder in {partition}'s cmdline.txt — "
+                 f"CMDLINE_ROOT_PARTITION should be XXX (see "
+                 f"recipes-bsp/bootfiles/rpi-cmdline.bbappend). Got: "
+                 f"{cmdline_data.strip()!r}")
 
     new_cmdline = cmdline_data.replace("root=XXX", f"root={root}")
 
     subprocess.run([
         "mcopy", "-Do", "-i", partition, "-", "::cmdline.txt"
     ], input=new_cmdline, text=True, check=True)
+
+    # Read the slot back rather than trusting the write. mcopy reports success
+    # on a FAT it did not actually update in place, and every failure mode here
+    # is invisible until the board is on the bench refusing to boot.
+    written = read_cmdline(partition)
+    if f"root={root}" not in written or "root=XXX" in written:
+        bb.fatal(f"cmdline.txt in {partition} did not take root={root} — "
+                 f"reads back as {written.strip()!r}")
 
 def update_bmap(wic_image):
     import subprocess
