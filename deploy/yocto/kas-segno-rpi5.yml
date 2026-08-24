@@ -66,10 +66,22 @@ local_conf_header:
     # normal operating temperature — and reach full speed at 78 C, before the
     # 80 C soft throttle rather than at it. Temps in millidegrees, speed 0-255.
     #
-    # PROVISIONAL. These are reasoned starting values, not measured ones: the
-    # steady-state temperature of this board, under this governor, inside the
-    # enclosure, is not known yet. #801 carries the bench measurement.
-    RPI_EXTRA_CONFIG:append = "\ndtparam=fan_temp0=30000\ndtparam=fan_temp0_hyst=5000\ndtparam=fan_temp0_speed=70"
+    # Measured on the bench Pi 5, 2026-08-24, starting each step from a dead
+    # stop so the numbers reflect stiction rather than sustained running:
+    #
+    #   PWM  30 -> 0 RPM (STALLS)   40 -> 542   50 -> 855   60 -> 1116
+    #        70 -> 1417   80 -> 1735   100 -> 2388   255 -> 5564
+    #
+    # Trip 0 is 50, not the 40 the fan technically starts at. Running at the
+    # measured stall threshold is how a unit ends up silently not cooling a year
+    # later, when dust and a stiffer bearing move that threshold — and the
+    # failure is invisible, because a stalled fan and a quiet one look identical
+    # from across a room. 50 buys margin and is still far quieter than the 70
+    # first guessed (855 vs 1417 RPM; fan noise climbs steeply with speed).
+    #
+    # Still unmeasured: steady-state temperature under this governor inside the
+    # enclosure, which is what says whether trip 1 sits in the right place. #801.
+    RPI_EXTRA_CONFIG:append = "\ndtparam=fan_temp0=30000\ndtparam=fan_temp0_hyst=5000\ndtparam=fan_temp0_speed=50"
     RPI_EXTRA_CONFIG:append = "\ndtparam=fan_temp1=68000\ndtparam=fan_temp1_hyst=8000\ndtparam=fan_temp1_speed=125"
     RPI_EXTRA_CONFIG:append = "\ndtparam=fan_temp2=74000\ndtparam=fan_temp2_hyst=5000\ndtparam=fan_temp2_speed=180"
     RPI_EXTRA_CONFIG:append = "\ndtparam=fan_temp3=78000\ndtparam=fan_temp3_hyst=5000\ndtparam=fan_temp3_speed=255"
