@@ -1,4 +1,11 @@
-# Appliance (Pi 4B) update release pipeline — #304.
+# Appliance update release pipeline — #304.
+#
+# Two boards (#799): raspberrypi4-64 booting from SD, raspberrypi5 booting from
+# NVMe. They carry different RAUC `compatible` strings, so a bundle built for one
+# is refused by the other. `workflow_dispatch` picks the board and defaults to
+# rpi5; push/tag triggers stay on rpi4 so the published channels keep serving the
+# board that is already deployed. Flip that default in one deliberate commit when
+# the Pi 5 becomes the shipping board.
 # Builds the signed RAUC .raucb + a channel manifest and publishes them to a GitHub
 # Release; CI then POSTs /hooks/sync so segno.aquiles.dev mirrors immediately
 # (poll remains the fallback).
@@ -44,6 +51,11 @@ on:
         type: choice
         options: [github, self-hosted]
         default: github
+      board:
+        description: Target board
+        type: choice
+        options: [rpi5, rpi4]
+        default: rpi5
 
 permissions:
   contents: write        # create releases
@@ -54,6 +66,9 @@ jobs:
     outputs:
       channel: ${{ steps.meta.outputs.channel }}
       version: ${{ steps.meta.outputs.version }}
+      board: ${{ steps.meta.outputs.board }}
+      machine: ${{ steps.meta.outputs.machine }}
+      kas: ${{ steps.meta.outputs.kas }}
     steps:
       - uses: actions/checkout@v7
 
@@ -87,9 +102,23 @@ jobs:
             version="${base}-experimental.${{ github.run_number }}"
           fi
 
+          # Board: dispatch chooses, everything else stays on the deployed
+          # board. `inputs` is absent on push/tag, so this can't silently switch
+          # which hardware the published channel serves.
+          board="${{ github.event.inputs.board }}"
+          [ -n "$board" ] || board=rpi4
+          case "$board" in
+            rpi4) machine=raspberrypi4-64 ;;
+            rpi5) machine=raspberrypi5 ;;
+            *) echo "unknown board: $board" >&2; exit 1 ;;
+          esac
+
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Building channel=$channel version=$version"
+          echo "board=$board" >> "$GITHUB_OUTPUT"
+          echo "machine=$machine" >> "$GITHUB_OUTPUT"
+          echo "kas=deploy/yocto/kas-segno-$board.yml" >> "$GITHUB_OUTPUT"
+          echo "Building channel=$channel version=$version board=$board machine=$machine"
 
   build-app:
     needs: determine-meta
@@ -196,7 +225,9 @@ jobs:
           key: yocto-sstate-${{ runner.os }}-${{ hashFiles('deploy/yocto/**') }}
           restore-keys: yocto-sstate-${{ runner.os }}-
 
-      - name: Build the signed RAUC bundle
+      # segno-kiosk-image is already a dependency of the bundle, but name it
+      # explicitly: the .wic is a deliverable now, not a build by-product.
+      - name: Build the image + the signed RAUC bundle
         env:
           # kas-container refuses to run bitbake as root unless told to. The
           # GitHub-hosted runner's job user isn't root, so this is a no-op
@@ -209,16 +240,17 @@ jobs:
           chmod +x kas-container
           mkdir -p "$YOCTO_WORK_DIR"
           KAS_WORK_DIR="$YOCTO_WORK_DIR" KAS_CONTAINER_ENGINE=docker \
-            ./kas-container shell deploy/yocto/kas-segno-rpi4.yml \
-            -c "SEGNO_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} SEGNO_UPDATE_CHANNEL=${{ needs.determine-meta.outputs.channel }} bitbake segno-update-bundle"
+            ./kas-container shell ${{ needs.determine-meta.outputs.kas }} \
+            -c "SEGNO_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} SEGNO_UPDATE_CHANNEL=${{ needs.determine-meta.outputs.channel }} bitbake segno-update-bundle segno-kiosk-image"
 
       - name: Collect bundle + write manifest
         id: artifacts
         run: |
           set -eu
           out=release-artifacts; mkdir -p "$out"
-          raucb=$(readlink -f "$YOCTO_WORK_DIR"/*/tmp/deploy/images/raspberrypi4-64/segno-update-bundle-raspberrypi4-64.raucb 2>/dev/null \
-                  || find "$YOCTO_WORK_DIR" -name 'segno-update-bundle-raspberrypi4-64-*.raucb' | sort | tail -1)
+          machine='${{ needs.determine-meta.outputs.machine }}'
+          raucb=$(readlink -f "$YOCTO_WORK_DIR"/*/tmp/deploy/images/"$machine"/segno-update-bundle-"$machine".raucb 2>/dev/null \
+                  || find "$YOCTO_WORK_DIR" -name "segno-update-bundle-$machine-*.raucb" | sort | tail -1)
           bundle="segno-appliance-${{ needs.determine-meta.outputs.version }}.raucb"
           cp "$raucb" "$out/$bundle"
           sha=$(sha256sum "$out/$bundle" | cut -d' ' -f1)
@@ -253,6 +285,54 @@ jobs:
           # Pretty-print if jq is on the runner; never fail the release over a
           # log nicety, two hours into the build.
           jq . "$out/manifest.json" || cat "$out/manifest.json"
+
+      # The flashable image. A .raucb only ever lands on a device that is
+      # already running Segno; a fresh board with a blank disk needs the .wic
+      # (#799). Kept as a workflow artifact rather than a release asset so the
+      # OTA manifest contract and the release size stay exactly as they were —
+      # promote it to a release asset only if first-boot flashing becomes a
+      # user-facing flow rather than a bench one.
+      - name: Collect the flashable .wic
+        id: wic
+        run: |
+          set -eu
+          machine='${{ needs.determine-meta.outputs.machine }}'
+          version='${{ needs.determine-meta.outputs.version }}'
+          board='${{ needs.determine-meta.outputs.board }}'
+          out=image-artifacts; mkdir -p "$out"
+          img="$YOCTO_WORK_DIR"/*/tmp/deploy/images/"$machine"
+
+          wic=$(readlink -f $img/segno-kiosk-image-"$machine".wic 2>/dev/null \
+                || find "$YOCTO_WORK_DIR" -name "segno-kiosk-image-$machine*.wic" | sort | tail -1)
+          [ -n "$wic" ] && [ -f "$wic" ] || { echo "::error::no .wic found for $machine"; exit 1; }
+
+          # Sanity gate: tryboot-cmdline.bbclass rewrites root=XXX inside the
+          # image after do_image_wic. If the placeholder survived, the card
+          # boots to a kernel panic with no rootfs — catch it here, not on the
+          # bench. `strings` over the FAT slots is enough to see it.
+          if strings "$wic" | grep -q 'root=XXX'; then
+            echo "::error::root=XXX placeholder left in the image — do_update_tryboot_cmdline did not run"
+            exit 1
+          fi
+
+          name="segno-appliance-$version-$board"
+          # gzip -1, not bzip2/zstd: present on every runner, and fast enough on
+          # a mostly-zero 8 GiB image. macOS `gunzip` reads it with no install.
+          gzip -1 -c "$wic" > "$out/$name.wic.gz"
+          # The block map lets `bmaptool copy` skip the unwritten ~2/3 of the
+          # image. Regenerated by the same task that patched cmdline.txt.
+          cp "$wic".bmap "$out/$name.wic.bmap" 2>/dev/null \
+            || echo "::warning::no .bmap alongside the .wic; flash with dd instead of bmaptool"
+          sha256sum "$out"/* | tee "$out/SHA256SUMS"
+          ls -lh "$out"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: segno-image-${{ needs.determine-meta.outputs.board }}-${{ needs.determine-meta.outputs.version }}
+          path: image-artifacts
+          retention-days: 14
+          # Already gzipped; a second pass costs minutes and saves nothing.
+          compression-level: 0
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3

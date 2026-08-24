@@ -1,38 +1,70 @@
-# Tier 3a — minimal Yocto/weston image running the prebuilt GTK bundle
+# Segno appliance — Yocto/weston image
 
-Scaffold for the **Tier 3a spike** ([#284](https://github.com/tomassasovsky/segno/issues/284),
-child of #271): build a lean Yocto image for a **Raspberry Pi 4** that runs the
-**exact** aarch64 Flutter GTK bundle validated on Tier 2 (Pi OS), under **weston**,
-and measure boot-to-interactive. Plan: [`docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md`](../../docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md).
+The image the floor console boots: a lean Yocto build running the **prebuilt**
+aarch64 Flutter GTK bundle under weston, with RAUC A/B updates over the Raspberry
+Pi firmware's `tryboot`.
 
-> **UNTESTED SCAFFOLD.** These recipes encode the research decisions but have **not**
-> been run through a Yocto build or booted on hardware — the whole spike is
-> `blocked-verify`. Expect to iterate the recipes on the build host. The likely
-> first snag is **ABI matching** (our prebuilt GTK3/Mesa embedder vs the image's
-> libs) — `ldd /opt/segno/segno` on the device is the moment of truth.
+Two boards, one layer:
+
+| kas project | MACHINE | Boots from | `SEGNO_BOOT_DISK` |
+|---|---|---|---|
+| `kas-segno-rpi4.yml` | `raspberrypi4-64` | SD card | `mmcblk0` |
+| `kas-segno-rpi5.yml` | `raspberrypi5` | NVMe in the M.2 slot | `nvme0n1` |
+
+Everything the two share lives in **`kas-segno-common.yml`** — put changes there
+unless they are genuinely board-specific. The boot device is a single variable
+threaded through the WIC layout, the RAUC slot table and the per-slot
+`cmdline.txt`, so those three cannot drift apart.
+
+Origin: the Tier 3a spike ([#284](https://github.com/tomassasovsky/segno/issues/284),
+child of #271). Pi 5 + NVMe: [#799](https://github.com/tomassasovsky/segno/issues/799).
+Plan: [`docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md`](../../docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md).
 
 ## What's here
 
 ```
-kas-segno-rpi4.yml          kas project: poky + meta-openembedded + meta-raspberrypi (walnascar), MACHINE=raspberrypi4-64
+kas-segno-common.yml        shared: poky + meta-openembedded + meta-raspberrypi + meta-rauc (walnascar, commit-pinned)
+kas-segno-rpi4.yml          raspberrypi4-64, SD
+kas-segno-rpi5.yml          raspberrypi5, NVMe (+ dtparam=pciex1)
 meta-segno/
   conf/layer.conf
-  recipes-core/images/segno-kiosk-image.bb          core-image-weston + our bundle + GTK3/Mesa/ALSA
-  recipes-segno/segno-bundle/segno-bundle.bb         install the PREBUILT bundle (no source build) + launcher + systemd unit
-  recipes-graphics/weston-init/weston-init.bbappend  weston.ini: kiosk-shell + dual HDMI outputs
+  classes/tryboot-cmdline.bbclass                    rewrites root= per boot slot inside the .wic
+  wic/segno-tryboot.wks.in                           A/B layout template (${SEGNO_BOOT_DISK})
+  recipes-core/images/segno-kiosk-image.bb           core-image-weston + our bundle + GTK3/Mesa/ALSA
+  recipes-core/images/segno-update-bundle.bb         the signed .raucb
+  recipes-core/rauc/                                 slot table (templated) + keyring
+  recipes-bsp/rauc-rpi-backend/                      tryboot bootloader backend
+  recipes-segno/segno-bundle/                        installs the PREBUILT bundle + launcher + units
+  recipes-graphics/weston-init/weston-init.bbappend  weston.ini: kiosk-shell + dual outputs
 ```
 
 **No meta-flutter** — it has no GTK embedder (that's what 3b/ivi-homescreen is for).
-3a is a stock weston image plus our prebuilt bundle. **ALSA-only** (no PipeWire/JACK
-→ no `pw-jack` needed; the engine falls straight to ALSA).
+This is a stock weston image plus our prebuilt bundle. **ALSA-only** (no
+PipeWire/JACK → no `pw-jack`; the engine drives ALSA directly).
 
-## Build (from an Apple-Silicon Mac)
+## Getting an image
 
-Needs Docker Desktop (or colima/podman). Give the VM **≥120 GB disk, ≥16 GB RAM, 4–6
+### The easy way — CI
+
+`appliance-release.yml` builds both the `.raucb` and the flashable `.wic`.
+Dispatch it, pick the board, and download the image artifact:
+
+```bash
+gh workflow run appliance-release.yml -f channel=experimental -f runner=self-hosted -f board=rpi5
+```
+
+The run publishes a `segno-image-<board>-<version>` artifact holding
+`*.wic.gz`, its `.bmap` and `SHA256SUMS`. `board` defaults to **rpi5** on
+dispatch; push/tag triggers stay on rpi4 so the published OTA channels keep
+serving the board that is already deployed.
+
+### The local way — kas-container
+
+Needs Docker Desktop (or colima/podman) with **≥120 GB disk, ≥16 GB RAM, 4–6
 cores**. First build is **~2–5 h**.
 
-1. **Build the aarch64 bundle** and stage it where the container can see it (under the
-   repo, so kas's mount picks it up):
+1. **Build the aarch64 bundle** and stage it where the container can see it
+   (under the repo, so kas's mount picks it up):
    ```bash
    deploy/rpi/build/build-arm64-bundle.sh
    mkdir -p deploy/yocto/prebuilt
@@ -49,30 +81,57 @@ cores**. First build is **~2–5 h**.
 
 3. **Build:**
    ```bash
-   ./kas-container build deploy/yocto/kas-segno-rpi4.yml
+   ./kas-container build deploy/yocto/kas-segno-rpi5.yml
    ```
    Keep BitBake's `tmp/`/`sstate`/`downloads` **off** any `/Users` bind mount
    (VirtioFS is a perf cliff); kas-container's default in-container build dir is fine.
 
-4. **Flash** the `.wic.bz2` (from `build/tmp/deploy/images/raspberrypi4-64/`) — Etcher
-   has a bug where compressed `.wic.bz2` yields an **unbootable** card, so **decompress
-   first**:
-   ```bash
-   bunzip2 -k segno-kiosk-image-*.wic.bz2
-   diskutil list                      # find the SD, e.g. /dev/disk4
-   diskutil unmountDisk /dev/disk4
-   sudo dd if=segno-kiosk-image-*.wic of=/dev/rdisk4 bs=4m
-   ```
-   (or `bmaptool copy --bmap image.wic.bmap image.wic.bz2 /dev/rdisk4`.)
+## Flashing
 
-5. **Boot on the Pi 4** and validate (see the plan's Phase 5). Iterate app-only
-   changes by `rsync`-ing the bundle to `/opt/segno` on the running Pi instead of
-   reflashing.
+The image is ~8.4 GiB whatever the target size — two 3 GiB rootfs slots, two boot
+slots, a 2 GiB `/data` seed. `segno-data-grow` expands `/data` to fill the media
+on first boot, so a 1 TB NVMe ends up with ~990 GiB of user space.
+
+Decompress **first**: Etcher has a bug where a compressed image yields an
+unbootable card.
+
+```bash
+gunzip -k segno-appliance-*.wic.gz
+diskutil list                      # find the target, e.g. /dev/disk5
+diskutil unmountDisk /dev/disk5
+sudo dd if=segno-appliance-*.wic of=/dev/rdisk5 bs=4m status=progress
+sync
+```
+
+(or `bmaptool copy --bmap segno-appliance-*.wic.bmap segno-appliance-*.wic.gz /dev/rdisk5`,
+which skips the unwritten blocks.)
+
+### Pi 5 / NVMe: set the boot order once, per board
+
+The Pi 5 bootloader does **not** try NVMe by default — flash the drive all you
+like, the firmware never looks at it. From a Raspberry Pi OS SD card, once:
+
+```bash
+sudo rpi-eeprom-config --edit      # BOOT_ORDER=0xf416
+```
+
+`0xf416` reads right-to-left: `6`=NVMe, `1`=SD, `4`=USB, `f`=restart the loop.
+
+Two more things that are easy to get wrong: the M.2 carrier's PCIe ribbon seats
+in **two** places (both ends latch), and `dtparam=pciex1` must be in `config.txt`
+or the kernel never enumerates the controller even though the firmware booted
+from it — the image sets that for you.
+
+## Iterating
+
+App-only changes don't need a reflash — `rsync` the bundle to `/opt/segno` on the
+running unit. OS changes go out as a `.raucb` through the normal update flow.
 
 ## When to bail to a cloud builder
 
 The local container route usually works, but two things can make it painful:
 **arm64-host recipe breakage** (any vendor layer shipping prebuilt x86_64 host
 binaries) and the **Docker-on-macOS filesystem tax**. If either costs more than it
-saves, build on a **cloud/native x86_64 Linux** host — the reference arch Yocto/
-meta-raspberrypi/meta-flutter CI validate against.
+saves, build on the self-hosted Proxmox runner (`-f runner=self-hosted`) or a
+native x86_64 Linux host — the reference arch Yocto/meta-raspberrypi CI validate
+against.
