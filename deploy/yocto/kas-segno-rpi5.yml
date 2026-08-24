@@ -7,13 +7,16 @@
 # lives in kas-segno-common.yml — put changes there unless they are genuinely
 # board-specific. See README.md for the full flow.
 #
-# DEVICE-SIDE PREREQUISITE, not shipped in this image: the Pi 5's bootloader
-# EEPROM must try NVMe before the SD card, or the firmware never reaches the
-# flashed drive. From a Raspberry Pi OS SD (once, per board):
+# DEVICE-SIDE PREREQUISITES, not shippable in this image. The bootloader EEPROM
+# lives on the board, not on the drive, so nothing written here can set it — and
+# an image that cannot be reached is indistinguishable from one that is broken.
+# From the OS currently on the board (once, per board):
 #
-#   sudo rpi-eeprom-config --edit     # BOOT_ORDER=0xf416
+#   sudo rpi-eeprom-config --edit
+#     BOOT_ORDER=0xf416      # else the firmware never looks at the NVMe
+#     PSU_MAX_CURRENT=5000   # else USB is capped, see usb_max_current_enable below
 #
-# 0xf416 reads right-to-left: 6=NVMe, 1=SD, 4=USB, f=restart the loop.
+# BOOT_ORDER reads right-to-left: 6=NVMe, 1=SD, 4=USB, f=restart the loop.
 header:
   version: 14
   includes:
@@ -32,6 +35,21 @@ local_conf_header:
     # itself onto a Pi 5 would brick the slot it landed in, so the two products
     # carry different strings and RAUC refuses the mismatch.
     SEGNO_RAUC_COMPATIBLE = "segno-raspberrypi5"
+
+  rpi5-power: |
+    # Lift the USB current cap. A Pi 5 that cannot confirm its supply is 5 A
+    # budgets 600 mA across ALL USB ports; this console runs a hub, a touch
+    # controller, the pedal and a Scarlett off that budget. #740 has the
+    # interface enumerating and dropping off the bus 358 times in 85 minutes
+    # with EPROTO faults, and names a marginal shared supply as a prime
+    # suspect — 600 mA would explain it exactly.
+    #
+    # This is HALF the fix and the weaker half. The firmware still needs
+    # PSU_MAX_CURRENT=5000 in the EEPROM (see the header) to believe the supply;
+    # this flag only stops it from capping when it cannot tell. Both want a real
+    # 5 V/5 A supply behind them — set on a 3 A brick, a heavily loaded bus
+    # browns the board out instead of politely refusing the current.
+    RPI_EXTRA_CONFIG:append = "\nusb_max_current_enable=1"
 
   rpi5-pcie: |
     # The Pi 5's PCIe lane — and therefore the M.2 slot the rootfs lives on — is
