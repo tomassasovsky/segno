@@ -53,11 +53,23 @@ python do_update_tryboot_cmdline() {
     wic_image = get_wic_image(d)
     vfat_partitions = get_partitions(wic_image)
 
-    update_cmdline(vfat_partitions[1], "/dev/mmcblk0p5")
-    update_cmdline(vfat_partitions[2], "/dev/mmcblk0p6")
+    # Same variable the WIC layout and the RAUC slot table are built from, so a
+    # board change cannot leave root= pointing at the other board's device. Both
+    # supported disks partition as <disk>pN (mmcblk0p5, nvme0n1p5) — a device
+    # that numbers as <disk>N (sdaN) would need the separator parameterised too.
+    disk = d.getVar("SEGNO_BOOT_DISK")
+    if not disk:
+        bb.fatal("SEGNO_BOOT_DISK is unset — set it in the board's kas project "
+                 "(deploy/yocto/kas-segno-rpi{4,5}.yml).")
+
+    update_cmdline(vfat_partitions[1], f"/dev/{disk}p5")
+    update_cmdline(vfat_partitions[2], f"/dev/{disk}p6")
 
     update_bmap(wic_image)
 }
+
+# The task bakes SEGNO_BOOT_DISK into the image, so a board switch must re-run it.
+do_update_tryboot_cmdline[vardeps] += "SEGNO_BOOT_DISK"
 
 addtask do_update_tryboot_cmdline after do_image_wic before do_image_complete
 

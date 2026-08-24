@@ -1,0 +1,45 @@
+# kas project: the Segno appliance image for the raspberrypi5, booting from an
+# NVMe SSD in the M.2 slot of the carrier board (#799).
+#
+#   ./kas-container build deploy/yocto/kas-segno-rpi5.yml
+#
+# The Pi 4 / SD variant is kas-segno-rpi4.yml. Everything the two boards share
+# lives in kas-segno-common.yml — put changes there unless they are genuinely
+# board-specific. See README.md for the full flow.
+#
+# DEVICE-SIDE PREREQUISITE, not shipped in this image: the Pi 5's bootloader
+# EEPROM must try NVMe before the SD card, or the firmware never reaches the
+# flashed drive. From a Raspberry Pi OS SD (once, per board):
+#
+#   sudo rpi-eeprom-config --edit     # BOOT_ORDER=0xf416
+#
+# 0xf416 reads right-to-left: 6=NVMe, 1=SD, 4=USB, f=restart the loop.
+header:
+  version: 14
+  includes:
+    - kas-segno-common.yml
+
+machine: raspberrypi5
+
+local_conf_header:
+  segno-board: |
+    # The block device the image is flashed to and boots from. Threaded through
+    # the WIC layout, the RAUC slot table and the per-slot cmdline.txt so the
+    # three can never disagree — see meta-segno/wic/segno-tryboot.wks.in.
+    SEGNO_BOOT_DISK = "nvme0n1"
+
+    # RAUC compatible string. Deliberately per-board: a Pi 4 bundle installing
+    # itself onto a Pi 5 would brick the slot it landed in, so the two products
+    # carry different strings and RAUC refuses the mismatch.
+    SEGNO_RAUC_COMPATIBLE = "segno-raspberrypi5"
+
+  rpi5-pcie: |
+    # The Pi 5's PCIe lane — and therefore the M.2 slot the rootfs lives on — is
+    # OFF unless config.txt asks for it. Without dtparam=pciex1 the firmware can
+    # still boot from NVMe, but the kernel never enumerates the controller and
+    # the root device it was told to mount does not exist.
+    #
+    # Gen 3 is above the officially qualified Gen 2 rate. It is what the carrier
+    # is sold for and what the drive can do; drop this line first if the NVMe
+    # link proves flaky under load.
+    RPI_EXTRA_CONFIG:append = "\ndtparam=pciex1\ndtparam=pciex1_gen=3"
