@@ -1,5 +1,8 @@
 #include "audio_ring.h"
 
+#include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -9,8 +12,26 @@
 
 static int is_power_of_two(size_t n) { return n >= 2 && (n & (n - 1)) == 0; }
 
+static int le_audio_ring_init(le_audio_ring* ring, float* buffer,
+                              size_t capacity) {
+  if (ring == NULL || buffer == NULL || !is_power_of_two(capacity)) {
+    return 0;
+  }
+  ring->buffer = buffer;
+  ring->capacity = capacity;
+  ring->mask = capacity - 1;
+  atomic_store_explicit(&ring->head, 0, memory_order_relaxed);
+  atomic_store_explicit(&ring->tail, 0, memory_order_relaxed);
+  return 1;
+}
+
 int le_audio_ring_alloc(le_audio_ring* ring, size_t capacity) {
   if (ring == NULL || !is_power_of_two(capacity)) return 0;
+  /* is_power_of_two admits anything up to SIZE_MAX/2, so the byte count could
+   * wrap and hand mmap a tiny mapping that le_audio_ring_init would then index
+   * far past — from the audio thread. No caller can reach this today; the check
+   * is one comparison against a wild write on the real-time path. */
+  if (capacity > SIZE_MAX / sizeof(float)) return 0;
   const size_t bytes = capacity * sizeof(float);
   float* buffer = NULL;
 #if defined(__linux__)
@@ -28,11 +49,19 @@ int le_audio_ring_alloc(le_audio_ring* ring, size_t capacity) {
                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (mapped == MAP_FAILED) return 0;
   if (madvise(mapped, bytes, MADV_DONTFORK) != 0) {
-    /* Without it the ring is back to being CoW'd on every fork, which is the
-     * defect this function exists to remove — refuse rather than arm a capture
-     * that will click. */
-    munmap(mapped, bytes);
-    return 0;
+    /* Degrade, do not refuse. The mapping is perfectly good memory; all that is
+     * lost is the fork protection, which puts this build back where the
+     * unpatched one was — a capture with occasional dropouts. Failing the
+     * allocation instead would fail the ARM, and on an instrument whose whole
+     * purpose is recording a performance, "you cannot record" is a worse
+     * outcome than "recording clicks". Said out loud on stderr (the journal, on
+     * the appliance) so a bench session is never left wondering why the clicks
+     * came back. */
+    fprintf(stderr,
+            "segno/audio_ring: MADV_DONTFORK refused (errno %d); this ring is "
+            "copy-on-write and every fork will cost the audio thread a fault "
+            "per page (#804)\n",
+            errno);
   }
   buffer = (float*)mapped;
 #else
@@ -43,38 +72,26 @@ int le_audio_ring_alloc(le_audio_ring* ring, size_t capacity) {
    * back untouched pages, and the first lap of a fresh ring would otherwise be
    * faulted in by the audio callback one page at a time. */
   memset(buffer, 0, bytes);
-  if (!le_audio_ring_init(ring, buffer, capacity)) {
-#if defined(__linux__)
-    munmap(buffer, bytes);
-#else
-    free(buffer);
-#endif
-    return 0;
-  }
+  le_audio_ring_init(ring, buffer, capacity);
   return 1;
 }
 
 void le_audio_ring_release(le_audio_ring* ring) {
   if (ring == NULL || ring->buffer == NULL) return;
 #if defined(__linux__)
-  munmap(ring->buffer, ring->capacity * sizeof(float));
+  /* A failed unmap means the struct below is about to destroy the only pointer
+   * that could ever have freed this mapping, so it does not pass quietly. */
+  if (munmap(ring->buffer, ring->capacity * sizeof(float)) != 0) {
+    fprintf(stderr, "segno/audio_ring: munmap failed (errno %d), leaking %zu "
+                    "bytes of capture ring\n",
+            errno, ring->capacity * sizeof(float));
+  }
 #else
   free(ring->buffer);
 #endif
   *ring = (le_audio_ring){0};
 }
 
-int le_audio_ring_init(le_audio_ring* ring, float* buffer, size_t capacity) {
-  if (ring == NULL || buffer == NULL || !is_power_of_two(capacity)) {
-    return 0;
-  }
-  ring->buffer = buffer;
-  ring->capacity = capacity;
-  ring->mask = capacity - 1;
-  atomic_store_explicit(&ring->head, 0, memory_order_relaxed);
-  atomic_store_explicit(&ring->tail, 0, memory_order_relaxed);
-  return 1;
-}
 
 int le_audio_ring_push_frame(le_audio_ring* ring, const float* samples,
                             size_t n) {
