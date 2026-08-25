@@ -49,8 +49,14 @@ typedef enum le_perf_log_code {
   LE_PLOG_RECORD_START = 300, /* a track actually began recording (immediate or
                                * a quantized ARM firing at the loop top). generic
                                * arm: arg_i = channel (arg_f unused). */
-  LE_PLOG_RECORD_END = 301,   /* a track left RECORDING (stop, punch-out, or
-                               * overdub toggle). generic arm: arg_i = channel. */
+  LE_PLOG_RECORD_END = 301,   /* a track left RECORDING HAVING CAPTURED
+                               * SOMETHING (stop, punch-out, or overdub
+                               * toggle). generic arm: arg_i = channel. A take
+                               * that captured nothing logs LE_PLOG_RECORD_ABORT
+                               * (314) instead and never a 301 — perf_render.c
+                               * keys its disarm-image anchor off this code, so
+                               * a fourth way out of RECORDING belongs here only
+                               * if content exists by the time it fires. */
   LE_PLOG_LOOP_LENGTH_LOCKED = 302, /* the master loop length was (re)established
                                      * — first record finalize, or a session
                                      * commit/import. generic arm: arg_i =
@@ -100,6 +106,15 @@ typedef enum le_perf_log_code {
                                         * index, type = enabled (0/1). */
   LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED = 313, /* generic arm: arg_i = input,
                                               * arg_f = enabled (0.0/1.0). */
+  LE_PLOG_RECORD_ABORT = 314, /* a take left RECORDING having captured NOTHING
+                               * (finalize_new_track's void branch: armed, then
+                               * stopped before a single frame was written, so
+                               * the track goes back to EMPTY). generic arm:
+                               * arg_i = channel. Its own code, not a 301, so
+                               * that perf_render.c's disarm-image anchor —
+                               * which keys on RECORD_END — never sees it
+                               * (#264). The derivation lives at that anchor,
+                               * next to the rule it protects. */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's

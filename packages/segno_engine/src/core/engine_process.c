@@ -969,8 +969,12 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
     store_i32(&t->a_multiple, 1);
     store_i32(&t->a_sync_divisor, 0);
     t->record_pos = 0;
+    /* RECORD_ABORT, not RECORD_END (#264): nothing was captured, so this take
+     * has no content and no disarm image of its own. Why that distinction is
+     * load-bearing lives with the rule it protects — perf_render.c's
+     * RECORD_END scan, and LE_PLOG_RECORD_ABORT's own declaration. */
     le_plog_push(e, frame,
-                (le_command){.code = LE_PLOG_RECORD_END, .arg_i = ch});
+                (le_command){.code = LE_PLOG_RECORD_ABORT, .arg_i = ch});
     return;
   }
   /* A mute deferred during the take lands with the finalize (and blocks a

@@ -8021,6 +8021,10 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * on-disk format, not just the in-memory ring. ---- */
 #define LE_TEST_EVENTS_HEADER_BYTES 12
 #define LE_TEST_EVENTS_ENTRY_BYTES 28
+/* The version perf_drain.c writes today. 2 = an aborted take logs
+ * LE_PLOG_RECORD_ABORT; 1 = it logged a RECORD_END (every capture written
+ * before #264). See the format doc's "What `version` means". */
+#define LE_TEST_EVENTS_VERSION 2
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -8063,6 +8067,36 @@ static int find_log_entry(const unsigned char* buf, size_t count, int from,
     if (out->cmd.code == code) return (int)i;
   }
   return -1;
+}
+
+/* How many entries carry `code` on generic-arm channel `channel`. The
+ * RECORD_START/END/ABORT transport facts are per-channel, so "there is one"
+ * is only an assertion worth making per channel — find_log_entry's first-match
+ * scan would happily accept another track's. */
+static int count_log_entries_for_channel(const unsigned char* buf, size_t count,
+                                         int32_t code, int32_t channel) {
+  int n = 0;
+  le_perf_log_entry entry;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code == code && entry.cmd.arg_i == channel) ++n;
+  }
+  return n;
+}
+
+/* The frame of the first entry carrying `code` on channel `channel`, or
+ * UINT64_MAX if there is none. */
+static uint64_t frame_of_log_entry_for_channel(const unsigned char* buf,
+                                               size_t count, int32_t code,
+                                               int32_t channel) {
+  le_perf_log_entry entry;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code == code && entry.cmd.arg_i == channel) {
+      return entry.frame;
+    }
+  }
+  return UINT64_MAX;
 }
 
 /* ---- retired-layer manifest test helpers (part 5, D-LAYER) — the sidecar's
@@ -9622,7 +9656,7 @@ static void test_perf_events_log_table_round_trip_and_frame_accuracy(void) {
   CHECK(memcmp(buf, "PLEV", 4) == 0);
   uint32_t version;
   memcpy(&version, buf + 4, 4);
-  CHECK(version == 1);
+  CHECK(version == LE_TEST_EVENTS_VERSION);
   int32_t sample_rate;
   memcpy(&sample_rate, buf + 8, 4);
   CHECK(sample_rate == 48000);
@@ -15318,9 +15352,9 @@ static void test_write_raw_pcm_mono(const char* path, const float* samples,
   fclose(f);
 }
 
-static void test_write_log_header(FILE* f, int32_t sample_rate) {
+static void test_write_log_header(FILE* f, int32_t sample_rate,
+                                  uint32_t version) {
   fwrite("PLEV", 1, 4, f);
-  const uint32_t version = 1;
   fwrite(&version, 4, 1, f);
   fwrite(&sample_rate, 4, 1, f);
 }
@@ -15385,14 +15419,11 @@ static void test_wait_for_render(le_engine* e, int max_polls) {
   }
 }
 
-/* Acceptance: a scripted log (record -> play -> mute -> volume ride -> stop)
- * renders a dry stem whose boundaries land at the exact logged frames. The
- * non-content events (mute/volume/stop) must not corrupt the timeline — the
- * dry stem is unity-gain loop content only (volume/mute are automation for
- * the .als generator, parts 9-10, not baked into stem audio). */
-static void test_perf_render_scripted_log_boundaries(void) {
-  printf("test_perf_render_scripted_log_boundaries\n");
-  const char* dir = render_test_dir("scripted");
+/* Shared body for the scripted-log acceptance, parameterized by the events.log
+ * header VERSION so the same fixture proves both of them render. */
+static void run_perf_render_scripted_log_case(const char* name,
+                                              uint32_t log_version) {
+  const char* dir = render_test_dir(name);
   const int32_t sr = 4800;
   const int32_t loop_len = 4;
   const uint64_t capture_frames = 20;
@@ -15421,7 +15452,7 @@ static void test_perf_render_scripted_log_boundaries(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, log_version);
     test_write_log_entry(
         lf, 2, (le_command){.code = LE_CMD_PLAY, .arg_i = 0, .arg_f = 0});
     test_write_log_entry(
@@ -15459,6 +15490,24 @@ static void test_perf_render_scripted_log_boundaries(void) {
   }
 
   le_engine_destroy(e);
+}
+
+/* Acceptance: a scripted log (record -> play -> mute -> volume ride -> stop)
+ * renders a dry stem whose boundaries land at the exact logged frames. The
+ * non-content events (mute/volume/stop) must not corrupt the timeline — the
+ * dry stem is unity-gain loop content only (volume/mute are automation for
+ * the .als generator, parts 9-10, not baked into stem audio).
+ *
+ * Run at BOTH header versions. le_pr_load_log checks the magic and skips the
+ * version bytes, and this pins that as deliberate rather than accidental: a
+ * version-1 capture (written before #264, where an aborted take logged a
+ * RECORD_END) still renders — with whatever semantics it was written under —
+ * instead of being refused. The field is descriptive, not a gate; the format
+ * doc's "What `version` means" says what each value implies for a reader. */
+static void test_perf_render_scripted_log_boundaries(void) {
+  printf("test_perf_render_scripted_log_boundaries\n");
+  run_perf_render_scripted_log_case("scripted", LE_TEST_EVENTS_VERSION);
+  run_perf_render_scripted_log_case("scriptedv1", 1);
 }
 
 /* Shared body for the overdub-pass stitching contract, parameterized by loop
@@ -15537,7 +15586,7 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     test_write_log_entry(
         lf, retire_frame,
         (le_command){.code = LE_PLOG_LAYER_RETIRED,
@@ -15647,7 +15696,7 @@ static void test_perf_render_fresh_recorded_while_armed(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     test_write_log_entry(
         lf, record_end,
         (le_command){.code = LE_PLOG_RECORD_END, .arg_i = 1, .arg_f = 0});
@@ -15711,7 +15760,7 @@ static void test_perf_render_progress_and_cancel(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     fclose(lf);
   }
 
@@ -15777,7 +15826,7 @@ static void test_perf_render_concurrent_with_live_engine(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     fclose(lf);
   }
 
@@ -15841,7 +15890,7 @@ static void test_perf_render_partial_success(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     fclose(lf);
   }
 
@@ -15967,7 +16016,7 @@ static void test_perf_render_wet_fx_sweep(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     /* fx.index packs (slot << 8 | param); fx.type carries the float value
      * bit-cast to int32 (LE_PLOG_SET_LANE_FX_PARAM, perf_log_ring.h). */
     uint32_t drive_bits;
@@ -16043,7 +16092,7 @@ static void test_perf_render_dry_write_fail_excludes_from_master(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     fclose(lf);
   }
 
@@ -16140,7 +16189,7 @@ static void test_perf_render_multi_channel_dry_fail_isolated(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     fclose(lf);
   }
 
@@ -16244,7 +16293,7 @@ static void test_perf_render_wet_multi_slot_and_count_shrink(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     test_write_log_entry(
         lf, shrink_frame,
         (le_command){.code = LE_CMD_SET_LANE_FX_COUNT,
@@ -16580,6 +16629,211 @@ static void test_perf_render_fresh_multiloop_second_track_phase(void) {
     for (uint64_t f = 0; f < capture_frames; ++f) {
       CHECK(fabsf(offline[f] - live[f]) < 1e-4f);
     }
+  }
+
+  le_engine_destroy(e);
+}
+
+/* #264 (P0): an ABORTED EMPTY take must not claim the disarm image.
+ *
+ * perf_render.c anchors the disarm-snapshot image on the first RECORD_END it
+ * sees on a still-content-free channel. A take that captured nothing logged one
+ * of those too, so an abort placed the REAL take's audio at the ABORT frame
+ * and — the lookup then marking the channel content-bearing — swallowed the
+ * segment belonging to the finalize that actually produced it.
+ *
+ * The timeline of the midloop fixture above, with two press pairs inserted on
+ * the loop top, and it pins three separate things:
+ *
+ *   - Channel 1 (abort, THEN a real take) renders exactly as the midloop
+ *     fixture does: silent until its real finalize at frame 11, then the image
+ *     at the MASTER phase, checked sample-for-sample. The bug class here is "a
+ *     segment landed at the wrong frame", and an image anchored one frame late
+ *     or at the wrong loop phase survives an "is anything non-silent after the
+ *     finalize" probe — so the guard against over-correcting has to be as tight
+ *     as the guard against under-correcting.
+ *   - Channel 2 aborts and is NEVER recorded again, leaving a RECORD_START with
+ *     no partner — the shape no other fixture has, and the one where channel
+ *     1's later real START cannot shadow the abort's. The manifest deliberately
+ *     offers channel 2 a loud disarm image; nothing may place it.
+ *   - events.log really carries LE_PLOG_RECORD_ABORT for both. Code 314 is
+ *     written by exactly one line in engine_process.c, and deleting that line
+ *     outright — logging nothing at all for an abort — renders an identical
+ *     stem, so the render assertions alone leave the on-disk vocabulary the
+ *     format doc advertises to external readers completely unpinned. */
+static void test_perf_render_aborted_take_does_not_claim_disarm_image(void) {
+  printf("test_perf_render_aborted_take_does_not_claim_disarm_image\n");
+  const char* dir = render_test_dir("abortedtake");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  /* Track 0's finalize: LOOP_LENGTH_LOCKED, and the master phase reset that
+   * every later segment's phase is measured from. */
+  const uint64_t master_lock_frame = 4;
+  float out[64];
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, 1000);
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+
+  /* Track 0 defines the master; finalize applies at capture frame 4. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+
+  /* THE ABORTS, and they have to land ON the loop top. record_pos is the write
+   * POSITION seeded at the press so writes stay phase-locked to the master —
+   * not a count of captured frames — so finalize_new_track's `record_pos <= 0`
+   * void branch is only reachable when the press lands at master position 0.
+   * The master finalize just applied, which is exactly that instant, and
+   * drain() is a zero-frame process: it applies the queued commands without
+   * advancing the capture clock, so all four presses resolve at frame 4. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 2) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 2) == LE_OK);
+  drain(e);
+  le_snapshot aborted;
+  le_engine_get_snapshot(e, &aborted);
+  CHECK(aborted.tracks[1].state == LE_TRACK_EMPTY); /* they really were void */
+  CHECK(aborted.tracks[2].state == LE_TRACK_EMPTY);
+  const uint64_t abort_frame = (uint64_t)aborted.perf_frames;
+  CHECK(abort_frame == master_lock_frame);
+
+  /* Play on to master position 1, then channel 1's REAL take: press at frame 9
+   * (position 1), two frames captured, finalize press at frame 11 (position
+   * 3) — the midloop fixture's take, verbatim. */
+  process_const(e, 0.0f, 4, out);
+  process_const(e, 0.0f, 1, out);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 0.3f, 2, out);
+  le_snapshot before_end;
+  le_engine_get_snapshot(e, &before_end);
+  const uint64_t real_end_frame = (uint64_t)before_end.perf_frames;
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+
+  process_const(e, 0.0f, 8, out);
+
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  const uint64_t capture_frames = (uint64_t)snap.perf_frames;
+  CHECK(capture_frames == 19);
+  CHECK(real_end_frame == 11);
+  CHECK(abort_frame < real_end_frame); /* the fixture is the right shape */
+
+  /* Channel 1's settled image, loop-position-indexed against the running
+   * master: [0, 0.3, 0.3, 0]. Channel 2 has none — it is EMPTY — so its
+   * "disarm image" is a hand-built loud one the renderer must refuse to place.
+   * Distinct values per position so a misplacement cannot alias to silence. */
+  float lane0[8] = {0};
+  float lane1[8] = {0};
+  CHECK(le_engine_export_track_lane(e, 0, 0, lane0, 8) == loop_len);
+  CHECK(le_engine_export_track_lane(e, 1, 0, lane1, 8) == loop_len);
+  CHECK(fabsf(lane1[0]) < 1e-6f);
+  CHECK(fabsf(lane1[1] - 0.3f) < 1e-6f);
+  CHECK(fabsf(lane1[2] - 0.3f) < 1e-6f);
+  CHECK(fabsf(lane1[3]) < 1e-6f);
+  const float lane2[4] = {0.9f, 0.8f, 0.7f, 0.6f};
+
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane0, loop_len, sr);
+  snprintf(wav_path, sizeof(wav_path), "%s/track1-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane1, loop_len, sr);
+  snprintf(wav_path, sizeof(wav_path), "%s/track2-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane2, loop_len, sr);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  /* The on-disk vocabulary, before anything is rendered from it. */
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  static unsigned char log_buf[16384];
+  const size_t log_bytes =
+      read_binary_file_for_test(log_path, log_buf, sizeof(log_buf));
+  CHECK(log_bytes >= LE_TEST_EVENTS_HEADER_BYTES);
+  uint32_t log_version = 0;
+  memcpy(&log_version, log_buf + 4, 4);
+  /* 314 only means "aborted take" from version 2 on — a file that carries the
+   * code has to declare the vocabulary that defines it. */
+  CHECK(log_version == LE_TEST_EVENTS_VERSION);
+  const size_t entries = log_entry_count(log_bytes);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                      1) == 1);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                      2) == 1);
+  CHECK(frame_of_log_entry_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                       1) == abort_frame);
+  CHECK(frame_of_log_entry_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                       2) == abort_frame);
+  /* And an abort is not ALSO an END: channel 1's single RECORD_END is the real
+   * finalize's, and channel 2 — which only ever aborted — has none at all. */
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_END,
+                                      1) == 1);
+  CHECK(frame_of_log_entry_for_channel(log_buf, entries, LE_PLOG_RECORD_END,
+                                       1) == real_end_frame);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_END,
+                                      2) == 0);
+  /* Both STARTs are there. Channel 1's abort START is shadowed by its later
+   * real one (le_pr_find_record_start takes the LATEST at or before the end
+   * frame); channel 2's is the unpaired one. */
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_START,
+                                      1) == 2);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_START,
+                                      2) == 1);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+           "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+           "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+           "\"limiterCeiling\": 0.99, \"tracks\": []}, "
+           "\"disarmSnapshot\": {\"tracks\": ["
+           "{\"channel\": 0, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"track0-lane0.wav\", \"effects\": []}]}, "
+           "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"track1-lane0.wav\", \"effects\": []}]}, "
+           "{\"channel\": 2, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"track2-lane0.wav\", \"effects\": []}]}]}, "
+           "\"layers\": []}",
+           sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+
+  /* Channel 1: silent for every frame before the real finalize — against the
+   * pre-fix code the abort's RECORD_END anchored the image at `abort_frame`,
+   * so those frames were the take's audio playing before it was recorded —
+   * and from the finalize on, the image at the MASTER phase,
+   * lane1[(f - lock) % 4], the same criterion the midloop fixture uses. Not
+   * "something is non-silent": a one-frame-late or wrong-phase anchor reads a
+   * DIFFERENT sample here and fails loudly. */
+  float stem1[64] = {0};
+  CHECK(test_read_stem(dir, 1, stem1, 64) == (int32_t)capture_frames);
+  for (uint64_t f = 0; f < real_end_frame; ++f) {
+    CHECK(fabsf(stem1[f]) < 1e-6f);
+  }
+  for (uint64_t f = real_end_frame; f < capture_frames; ++f) {
+    const float want = lane1[(f - master_lock_frame) % (uint64_t)loop_len];
+    CHECK(fabsf(stem1[f] - want) < 1e-6f);
+  }
+
+  /* Channel 2: armed, voided, never recorded again. No RECORD_END exists on
+   * it, so the disarm image the manifest offers has nothing to anchor to and
+   * the whole stem stays silent — the aborted take produced no content, and a
+   * stem is what the performer heard. */
+  float stem2[64] = {0};
+  CHECK(test_read_stem(dir, 2, stem2, 64) == (int32_t)capture_frames);
+  for (uint64_t f = 0; f < capture_frames; ++f) {
+    CHECK(fabsf(stem2[f]) < 1e-6f);
   }
 
   le_engine_destroy(e);
@@ -20509,7 +20763,7 @@ static void run_perf_render_fx_enable_case(const char* name, int32_t code) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     if (code == LE_PLOG_SET_LANE_FX_ENABLED) {
       test_write_log_entry(lf, 16,
                           (le_command){.code = LE_PLOG_SET_LANE_FX_ENABLED,
@@ -23610,6 +23864,7 @@ int main(void) {
   test_perf_render_wet_plugin_passthrough();
   test_perf_render_fresh_midloop_second_track_phase();
   test_perf_render_fresh_multiloop_second_track_phase();
+  test_perf_render_aborted_take_does_not_claim_disarm_image();
   test_perf_render_golden_master_parity();
   test_perf_render_quantized_round_down_truncation_log_frame();
   test_looper_mode_defaults_and_persistence();
