@@ -1,43 +1,56 @@
 # Segno floor-console boot splash. The segno lockup (Bravura mark + Apple Chancery
 # "segno" wordmark, pre-rendered from the smooth glyph vectors) centred on the
-# console near-black (#08080A), with a gentle luminance shimmer and a determinate
-# progress bar driven by the real boot progress. No breathe, no text banners, no
-# Pi rainbow.
+# console near-black (#08080A), with a determinate progress bar driven by the real
+# boot progress. Static — no breathe, no shimmer, no text banners, no Pi rainbow.
 
 Window.SetBackgroundTopColor(0.031, 0.031, 0.039);
 Window.SetBackgroundBottomColor(0.031, 0.031, 0.039);
 sw = Window.GetWidth();
 sh = Window.GetHeight();
 
-lockup.image = Image("segno-lockup.png");
+# --- lockup -----------------------------------------------------------------
+# Scale by SCREEN HEIGHT, never native size. The source art is 940x1264 — taller
+# than a 1080p screen — so drawing it unscaled overflowed the display entirely,
+# and would be far worse on the 7" panel. A height fraction lands the same
+# proportion on every output the console drives.
+#
+# 0.18 is deliberately restrained: a boot splash should read as a mark on a dark
+# field, not as a poster. Both displays show the same apparent size.
+lockup.src   = Image("segno-lockup.png");
+lockup.h     = Math.Int(sh * 0.18);
+lockup.w     = Math.Int(lockup.h * lockup.src.GetWidth() / lockup.src.GetHeight());
+lockup.image = lockup.src.Scale(lockup.w, lockup.h);
 lockup.sprite = Sprite();
 lockup.sprite.SetImage(lockup.image);
-lockup.sprite.SetX((sw - lockup.image.GetWidth()) / 2);
-lockup.sprite.SetY((sh - lockup.image.GetHeight()) / 2 - sh * 0.04);
+lockup.sprite.SetX(Math.Int((sw - lockup.w) / 2));
+# Optical centre, not geometric: a mark sitting dead-centre reads as low.
+lockup.sprite.SetY(Math.Int(sh * 0.42 - lockup.h / 2));
 lockup.sprite.SetZ(10);
+lockup.sprite.SetOpacity(1.0);
 
-# --- progress bar (hairline track + fill) ---
+# --- progress bar (hairline track + fill) ------------------------------------
+# Sits below the lockup with a clear gap rather than pinned near the bottom edge.
 bar.pixel = Image("segno-bar-pixel.png");
-bar.w = Math.Int(sw * 0.20);
-bar.h = 3;
+bar.w = Math.Int(sw * 0.16);
+bar.h = Math.Int(sh / 270);          # ~4px at 1080p, ~2px on the small panel
+if (bar.h < 2) bar.h = 2;
 bar.x = Math.Int((sw - bar.w) / 2);
-bar.y = Math.Int(sh * 0.86);
+bar.y = Math.Int(sh * 0.66);
+
 bar.track = Sprite();
 bar.track.SetImage(bar.pixel.Scale(bar.w, bar.h));
 bar.track.SetX(bar.x);
 bar.track.SetY(bar.y);
 bar.track.SetOpacity(0.10);
 bar.track.SetZ(8);
+
 bar.fill = Sprite();
 bar.fill.SetZ(9);
 bar.progress = 0;
 
-tick = 0;
+# The lockup is set once, above, and never touched again — the refresh callback
+# only advances the fill. Nothing on this screen pulses.
 fun refresh_cb() {
-    tick++;
-    # shimmer: slow luminance pulse (~2.8s) on the lockup
-    lockup.sprite.SetOpacity(0.86 + 0.14 * Math.Sin(tick * 0.045));
-    # progress fill
     fw = Math.Int(bar.w * bar.progress);
     if (fw < 2) fw = 2;
     bar.fill.SetImage(bar.pixel.Scale(fw, bar.h));

@@ -1,0 +1,48 @@
+# Segno appliance disk layout — RAUC A/B via Raspberry Pi firmware tryboot (Phase 1, #303).
+#
+# A .wks.in template, not a .wks: ${SEGNO_BOOT_DISK} is the board's boot device
+# (mmcblk0 on the Pi 4's SD, nvme0n1 on the Pi 5's M.2 — set in the kas project,
+# exported to wic via WICVARS). The RAUC slot table and the per-slot cmdline.txt
+# are built from the same variable, so the three cannot drift apart.
+#
+# MBR/msdos with 6 partitions -> the last three become logical inside an extended
+# partition, so the effective device map is:
+#   p1 tryboot   (FAT, selector: autoboot.txt only, --active)  -> /boot
+#   p2 bootA     (FAT, kernel/dtb/config.txt/cmdline.txt for slot A)
+#   p3 bootB     (FAT, ... slot B)
+#   [p4 extended container]
+#   p5 rootA     (ext4)   <- RAUC rootfs.0
+#   p6 rootB     (ext4)   <- RAUC rootfs.1
+#   p7 data      (ext4, persistent /data — untouched by updates)
+# system.conf + tryboot-cmdline.bbclass are locked to this numbering (rootfs=p5/p6).
+#
+# rootfs slots are fixed-size (equal, with headroom) so a future/larger update
+# still fits the inactive slot. data is seeded at 2 GiB so the flashable .wic
+# stays small — an ~8.4 GiB image, whatever the media; segno-data-grow (systemd
+# oneshot in segno-bundle) expands p4+p7 to fill the disk on first boot / after
+# OTA onto larger media. That is what claims the rest of a 1 TB NVMe.
+# --use-label on every partition that lands in fstab. Without it wic builds the
+# device name itself, and it gets NVMe wrong:
+#
+#   scripts/lib/wic/plugins/imager/direct.py
+#     prefix = 'p' if part.disk.startswith('mmcblk') else ''
+#     device_name = "/dev/%s%s%d" % (part.disk, prefix, part.realnum)
+#
+# The 'p' separator is special-cased for mmcblk ONLY, so nvme0n1 + partition 1
+# becomes /dev/nvme0n11 rather than /dev/nvme0n1p1. Every fstab mount then waits
+# 90s for a device that cannot appear, Local File Systems fails, and the board
+# drops to emergency mode with no network and no compositor — which is exactly
+# what the first Pi 5 boot did (#802). Invisible on the Pi 4 because mmcblk0 hits
+# the special case.
+#
+# Mounting by label sidesteps the construction entirely and is what
+# segno-data-grow already does for /data. The two rootfs slots are deliberately
+# left alone: they are mounted from root= on the kernel cmdline, never fstab.
+part /boot/tryboot --source tryboot-partition --ondisk ${SEGNO_BOOT_DISK} --fstype=vfat --label tryboot --use-label --active --align 4096 --size 10
+part /boot/bootA   --source bootimg-partition --ondisk ${SEGNO_BOOT_DISK} --fstype=vfat --label bootA   --use-label --align 4096 --size 100
+part /boot/bootB   --source bootimg-partition --ondisk ${SEGNO_BOOT_DISK} --fstype=vfat --label bootB   --use-label --align 4096 --size 100
+part /             --source rootfs            --ondisk ${SEGNO_BOOT_DISK} --fstype=ext4 --label rootA   --align 4096 --fixed-size 3072
+part /             --source rootfs            --ondisk ${SEGNO_BOOT_DISK} --fstype=ext4 --label rootB   --align 4096 --fixed-size 3072
+part /data         --ondisk ${SEGNO_BOOT_DISK} --fstype=ext4 --label data --use-label --align 4096 --size 2048
+
+bootloader --ptable msdos

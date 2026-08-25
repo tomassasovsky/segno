@@ -1,4 +1,13 @@
-# Appliance (Pi 4B) update release pipeline — #304.
+# Appliance update release pipeline — #304.
+#
+# The shipping board is the **raspberrypi5**, booting from NVMe (owner's call,
+# 2026-08-25). raspberrypi4-64 (SD) is retired; its kas project is kept so the
+# layer stays honestly board-parameterised and the Pi 4 remains buildable on
+# request, but nothing publishes for it and push/tag triggers do not build it.
+#
+# The two boards carry different RAUC `compatible` strings, so a bundle built for
+# one is refused by the other — which is why the publish guard below still cares
+# which board it is about to put on a channel.
 # Builds the signed RAUC .raucb + a channel manifest and publishes them to a GitHub
 # Release; CI then POSTs /hooks/sync so segno.aquiles.dev mirrors immediately
 # (poll remains the fallback).
@@ -44,6 +53,16 @@ on:
         type: choice
         options: [github, self-hosted]
         default: github
+      board:
+        description: Target board
+        type: choice
+        options: [rpi5, rpi4]
+        default: rpi5
+      publish:
+        description: Publish a Release and sync the mirror (no = build the image only)
+        type: choice
+        options: ['no', 'yes']
+        default: 'no'
 
 permissions:
   contents: write        # create releases
@@ -54,6 +73,9 @@ jobs:
     outputs:
       channel: ${{ steps.meta.outputs.channel }}
       version: ${{ steps.meta.outputs.version }}
+      board: ${{ steps.meta.outputs.board }}
+      machine: ${{ steps.meta.outputs.machine }}
+      kas: ${{ steps.meta.outputs.kas }}
     steps:
       - uses: actions/checkout@v7
 
@@ -87,9 +109,38 @@ jobs:
             version="${base}-experimental.${{ github.run_number }}"
           fi
 
+          # Board: dispatch chooses; push/tag build the shipping board, which is
+          # rpi5. `inputs` is absent on push/tag, hence the explicit default.
+          board="${{ github.event.inputs.board }}"
+          [ -n "$board" ] || board=rpi5
+          case "$board" in
+            rpi4) machine=raspberrypi4-64 ;;
+            rpi5) machine=raspberrypi5 ;;
+            *) echo "unknown board: $board" >&2; exit 1 ;;
+          esac
+
+          # manifest.json carries version/bundle/sha256/channel and NO board
+          # field, and segno-update-ctl selects purely on semver_newer — so a
+          # channel can only ever serve ONE board safely. That board is rpi5.
+          # Publishing any other makes every polling unit fetch it, fail rauc's
+          # compatible check, and re-fail on every poll forever, because the
+          # manifest version stays permanently newer.
+          #
+          # Checked here rather than beside the publish step so it costs seconds
+          # instead of failing after a ~2h build, and phrased as `!= no` to match
+          # the publish steps themselves — `== yes` would silently stop guarding
+          # push/tag triggers if their forced board ever changed again.
+          if [ "${{ github.event.inputs.publish }}" != "no" ] && [ "$board" != "rpi5" ]; then
+            echo "::error::refusing to publish a $board bundle. manifest.json has no board discriminator and segno-update-ctl selects on version alone, so every unit polling this channel would fetch it, fail its RAUC compatible check, and re-fail forever. rpi5 is the shipping board; build anything else with publish=no, or give the manifest a board field and teach the client to filter on it."
+            exit 1
+          fi
+
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Building channel=$channel version=$version"
+          echo "board=$board" >> "$GITHUB_OUTPUT"
+          echo "machine=$machine" >> "$GITHUB_OUTPUT"
+          echo "kas=deploy/yocto/kas-segno-$board.yml" >> "$GITHUB_OUTPUT"
+          echo "Building channel=$channel version=$version board=$board machine=$machine"
 
   build-app:
     needs: determine-meta
@@ -186,6 +237,62 @@ jobs:
             echo "YOCTO_WORK_DIR=$HOME/yocto-build" >> "$GITHUB_ENV"
           fi
 
+      # A build that fills its host takes more than the build down with it.
+      # On 2026-08-25 an unbounded deploy directory helped exhaust the runner
+      # host's LVM thin pool; the pool entered out-of-data-space mode, an
+      # unrelated backup volume on the same pool failed its fsck, and the
+      # hypervisor dropped into emergency mode — taking Portainer and the
+      # runner VM with it. Recovery needed physical console access (#817).
+      #
+      # Two guards, both cheap: prune what accumulates, and refuse to start a
+      # build that cannot fit rather than discovering the limit by hitting it.
+      # Self-hosted only. A GitHub-hosted runner is ephemeral and nowhere near
+      # 80 GB free, so this would fail every push- and tag-triggered release
+      # with advice ("free space on the runner") that is unactionable there.
+      - name: Prune old images + pre-flight disk check
+        if: inputs.runner == 'self-hosted'
+        env:
+          MIN_FREE_GB: "80"
+        run: |
+          set -eu
+          mkdir -p "$YOCTO_WORK_DIR"
+
+          # Each build leaves a timestamped ~8.3 GB .wic behind forever; the
+          # rootfs.wic symlink points at the newest and the rest are dead
+          # weight. Keep the two newest per machine.
+          #
+          # Collect into an array and bail when it is empty. With nullglob a
+          # non-matching "$d"*.wic vanishes ENTIRELY, so `ls -t` would run with
+          # no arguments, list $PWD — the repo checkout — and feed its 3rd-newest
+          # entries onward to rm. A deploy dir left behind by a build that died
+          # after do_deploy but before do_image_wic reaches exactly that state.
+          # `--` stops a leading-dash filename being read as an option.
+          shopt -s nullglob
+          for d in "$YOCTO_WORK_DIR"/*/tmp/deploy/images/*/; do
+            # Real images only: the rootfs.wic SYMLINK also matches the glob and
+            # is always newest by mtime, so counting it would silently turn
+            # "keep the two newest" into "keep one" (the link's target).
+            wics=()
+            for w in "$d"*.wic; do [ -h "$w" ] || wics+=( "$w" ); done
+            [ ${#wics[@]} -gt 2 ] || continue
+            while IFS= read -r f; do
+              [ -n "$f" ] || continue
+              echo "pruning $(basename "$f") ($(du -h "$f" | cut -f1))"
+              rm -f -- "$f" "$f.bmap"
+            done < <(ls -t -- "${wics[@]}" | tail -n +3)
+          done
+
+          avail=$(df -BG --output=avail "$YOCTO_WORK_DIR" | tail -1 | tr -dc '0-9')
+          echo "free at $YOCTO_WORK_DIR: ${avail} GB (minimum ${MIN_FREE_GB} GB)"
+
+          # A new MACHINE is not an incremental cost: a different tune shares
+          # almost no sstate, so it builds a second complete tree. That is what
+          # made the Pi 5 port (#799) expensive on a host nobody had re-sized.
+          if [ "$avail" -lt "$MIN_FREE_GB" ]; then
+            echo "::error::only ${avail} GB free at $YOCTO_WORK_DIR, need ${MIN_FREE_GB} GB. Free space on the runner before retrying — do not let the build take the host down."
+            exit 1
+          fi
+
       - name: Restore Yocto sstate + downloads (GitHub-hosted only)
         if: inputs.runner != 'self-hosted'
         uses: actions/cache@v6
@@ -196,7 +303,9 @@ jobs:
           key: yocto-sstate-${{ runner.os }}-${{ hashFiles('deploy/yocto/**') }}
           restore-keys: yocto-sstate-${{ runner.os }}-
 
-      - name: Build the signed RAUC bundle
+      # segno-kiosk-image is already a dependency of the bundle, but name it
+      # explicitly: the .wic is a deliverable now, not a build by-product.
+      - name: Build the image + the signed RAUC bundle
         env:
           # kas-container refuses to run bitbake as root unless told to. The
           # GitHub-hosted runner's job user isn't root, so this is a no-op
@@ -209,16 +318,27 @@ jobs:
           chmod +x kas-container
           mkdir -p "$YOCTO_WORK_DIR"
           KAS_WORK_DIR="$YOCTO_WORK_DIR" KAS_CONTAINER_ENGINE=docker \
-            ./kas-container shell deploy/yocto/kas-segno-rpi4.yml \
-            -c "SEGNO_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} SEGNO_UPDATE_CHANNEL=${{ needs.determine-meta.outputs.channel }} bitbake segno-update-bundle"
+            ./kas-container shell ${{ needs.determine-meta.outputs.kas }} \
+            -c "SEGNO_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} SEGNO_UPDATE_CHANNEL=${{ needs.determine-meta.outputs.channel }} bitbake segno-update-bundle segno-kiosk-image"
+
+      # Make growth visible in the run log, so it is noticed here rather than
+      # by a hypervisor falling over.
+      - name: Report disk consumed
+        if: always()
+        run: |
+          set +e
+          echo "free after build: $(df -BG --output=avail "$YOCTO_WORK_DIR" | tail -1 | tr -dc '0-9') GB"
+          du -sh "$YOCTO_WORK_DIR" 2>/dev/null | tail -1
+          du -sh "$YOCTO_WORK_DIR"/*/tmp/deploy/images/*/ 2>/dev/null | tail -5
 
       - name: Collect bundle + write manifest
         id: artifacts
         run: |
           set -eu
           out=release-artifacts; mkdir -p "$out"
-          raucb=$(readlink -f "$YOCTO_WORK_DIR"/*/tmp/deploy/images/raspberrypi4-64/segno-update-bundle-raspberrypi4-64.raucb 2>/dev/null \
-                  || find "$YOCTO_WORK_DIR" -name 'segno-update-bundle-raspberrypi4-64-*.raucb' | sort | tail -1)
+          machine='${{ needs.determine-meta.outputs.machine }}'
+          raucb=$(readlink -e "$YOCTO_WORK_DIR"/*/tmp/deploy/images/"$machine"/segno-update-bundle-"$machine".raucb 2>/dev/null \
+                  || find "$YOCTO_WORK_DIR" -name "segno-update-bundle-$machine-*.raucb" | sort | tail -1)
           bundle="segno-appliance-${{ needs.determine-meta.outputs.version }}.raucb"
           cp "$raucb" "$out/$bundle"
           sha=$(sha256sum "$out/$bundle" | cut -d' ' -f1)
@@ -254,7 +374,63 @@ jobs:
           # log nicety, two hours into the build.
           jq . "$out/manifest.json" || cat "$out/manifest.json"
 
+      # The flashable image. A .raucb only ever lands on a device that is
+      # already running Segno; a fresh board with a blank disk needs the .wic
+      # (#799). Kept as a workflow artifact rather than a release asset so the
+      # OTA manifest contract and the release size stay exactly as they were —
+      # promote it to a release asset only if first-boot flashing becomes a
+      # user-facing flow rather than a bench one.
+      - name: Collect the flashable .wic
+        id: wic
+        run: |
+          set -eu
+          machine='${{ needs.determine-meta.outputs.machine }}'
+          version='${{ needs.determine-meta.outputs.version }}'
+          board='${{ needs.determine-meta.outputs.board }}'
+          out=image-artifacts; mkdir -p "$out"
+          img="$YOCTO_WORK_DIR"/*/tmp/deploy/images/"$machine"
+
+          # -e, not -f: readlink -f exits 0 when only the FINAL component is
+          # missing, so an absent symlink still "succeeds" and the || find
+          # fallback never runs — dead in exactly the case it exists for.
+          # walnascar names the link segno-kiosk-image-<machine>.rootfs.wic
+          # (the prune step above depends on the same fact).
+          wic=$(readlink -e $img/segno-kiosk-image-"$machine".rootfs.wic 2>/dev/null \
+                || find "$YOCTO_WORK_DIR" -type f -name "segno-kiosk-image-$machine*.wic" | sort | tail -1)
+          [ -n "$wic" ] && [ -f "$wic" ] || { echo "::error::no .wic found for $machine"; exit 1; }
+
+          # No root=XXX gate here on purpose. Scanning the whole image with
+          # `strings` also reads freed FAT clusters, so a stale copy of the
+          # pre-rewrite cmdline.txt would fail a perfectly good build two hours
+          # in. do_update_tryboot_cmdline reads each slot back through mtools
+          # instead — the live file, not the free space around it.
+
+          name="segno-appliance-$version-$board"
+          # gzip -1, not bzip2/zstd: present on every runner, and fast enough on
+          # a mostly-zero 8 GiB image. macOS `gunzip` reads it with no install.
+          gzip -1 -c "$wic" > "$out/$name.wic.gz"
+          # The block map lets `bmaptool copy` skip the unwritten ~2/3 of the
+          # image. Regenerated by the same task that patched cmdline.txt.
+          cp "$wic".bmap "$out/$name.wic.bmap" 2>/dev/null \
+            || echo "::warning::no .bmap alongside the .wic; flash with dd instead of bmaptool"
+          sha256sum "$out"/* | tee "$out/SHA256SUMS"
+          ls -lh "$out"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: segno-image-${{ needs.determine-meta.outputs.board }}-${{ needs.determine-meta.outputs.version }}
+          path: image-artifacts
+          retention-days: 14
+          # Already gzipped; a second pass costs minutes and saves nothing.
+          compression-level: 0
+
+      # `publish: no` builds the image and stops. Everything above this point is
+      # local to the runner; everything below is outward-facing — a Release the
+      # update mirror serves to whatever is polling that channel. A bench build
+      # that only needs the .wic should not move the channel deployed devices
+      # follow. `inputs` is absent on push/tag, so those still publish.
       - name: Publish GitHub Release
+        if: github.event.inputs.publish != 'no'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: appliance-${{ needs.determine-meta.outputs.channel }}-${{ needs.determine-meta.outputs.version }}
@@ -274,6 +450,7 @@ jobs:
       # the previous tag as "up to date". Retry until the channel manifest
       # actually carries EXPECTED_VERSION.
       - name: Trigger segno mirror sync
+        if: github.event.inputs.publish != 'no'
         env:
           SEGNO_SYNC_TOKEN: ${{ secrets.SEGNO_SYNC_TOKEN }}
           SEGNO_SYNC_URL: https://segno.aquiles.dev/hooks/sync

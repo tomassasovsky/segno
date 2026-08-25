@@ -28,18 +28,40 @@ def get_partitions(wic_image):
     return vfat_partitions
 
 
+def read_cmdline(partition):
+    import subprocess
+
+    return subprocess.check_output(
+        ["mtype", "-i", partition, "::cmdline.txt"], text=True)
+
+
 def update_cmdline(partition, root):
     import subprocess
 
-    cmdline_data = subprocess.check_output([
-        "mtype", "-i", partition, "::cmdline.txt"
-    ], text=True)
+    cmdline_data = read_cmdline(partition)
+
+    # A plain str.replace on a missing placeholder writes the file back
+    # unchanged and reports success — the image then boots to a kernel panic
+    # with no rootfs and nothing anywhere saying why. Demand the placeholder.
+    if "root=XXX" not in cmdline_data:
+        bb.fatal(f"no root=XXX placeholder in {partition}'s cmdline.txt — "
+                 f"CMDLINE_ROOT_PARTITION should be XXX (see "
+                 f"recipes-bsp/bootfiles/rpi-cmdline.bbappend). Got: "
+                 f"{cmdline_data.strip()!r}")
 
     new_cmdline = cmdline_data.replace("root=XXX", f"root={root}")
 
     subprocess.run([
         "mcopy", "-Do", "-i", partition, "-", "::cmdline.txt"
     ], input=new_cmdline, text=True, check=True)
+
+    # Read the slot back rather than trusting the write. mcopy reports success
+    # on a FAT it did not actually update in place, and every failure mode here
+    # is invisible until the board is on the bench refusing to boot.
+    written = read_cmdline(partition)
+    if f"root={root}" not in written or "root=XXX" in written:
+        bb.fatal(f"cmdline.txt in {partition} did not take root={root} — "
+                 f"reads back as {written.strip()!r}")
 
 def update_bmap(wic_image):
     import subprocess
@@ -53,11 +75,23 @@ python do_update_tryboot_cmdline() {
     wic_image = get_wic_image(d)
     vfat_partitions = get_partitions(wic_image)
 
-    update_cmdline(vfat_partitions[1], "/dev/mmcblk0p5")
-    update_cmdline(vfat_partitions[2], "/dev/mmcblk0p6")
+    # Same variable the WIC layout and the RAUC slot table are built from, so a
+    # board change cannot leave root= pointing at the other board's device. Both
+    # supported disks partition as <disk>pN (mmcblk0p5, nvme0n1p5) — a device
+    # that numbers as <disk>N (sdaN) would need the separator parameterised too.
+    disk = d.getVar("SEGNO_BOOT_DISK")
+    if not disk:
+        bb.fatal("SEGNO_BOOT_DISK is unset — set it in the board's kas project "
+                 "(deploy/yocto/kas-segno-rpi{4,5}.yml).")
+
+    update_cmdline(vfat_partitions[1], f"/dev/{disk}p5")
+    update_cmdline(vfat_partitions[2], f"/dev/{disk}p6")
 
     update_bmap(wic_image)
 }
+
+# The task bakes SEGNO_BOOT_DISK into the image, so a board switch must re-run it.
+do_update_tryboot_cmdline[vardeps] += "SEGNO_BOOT_DISK"
 
 addtask do_update_tryboot_cmdline after do_image_wic before do_image_complete
 
