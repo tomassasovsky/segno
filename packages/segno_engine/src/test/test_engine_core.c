@@ -8867,6 +8867,160 @@ static void perf_mid_cycle_short_pad(void* raw) {
   }
 }
 
+/* #790: the same short-write accounting gap as #718, one function over.
+ *
+ * #718 fixed the PAD (le_pd_catch_up). le_pd_drain_ring still used the
+ * all-or-nothing le_pd_write, so a short write there put bytes on disk and
+ * returned before `pf->written` moved — and the final cycle's catch-up then
+ * padded a gap that included frames whose bytes were already in the file.
+ *
+ * STEREO, and a budget that is deliberately NOT a whole number of frames,
+ * because those are the two ways the credit can be wrong and a mono
+ * whole-frame fixture sees neither: mono cannot catch a credit in SAMPLES
+ * (dropping the divide by `channels` desyncs every stereo capture by a factor
+ * of two and leaves a mono test unchanged), and a budget landing exactly on a
+ * frame boundary cannot catch a torn tail left at EOF for the pad to append
+ * behind. 12 bytes of a 256-byte drain is one stereo frame plus 4 orphans:
+ *
+ *   credit 1 frame, rewind the 4, pad 31 -> 256 bytes (the fix)
+ *   credit 3 (samples, not frames)       -> 240
+ *   credit 1 but leave the 4 orphans     -> 260, and half a frame out from
+ *                                           there to the end of the take
+ *   credit 0 (pre-fix)                   -> 268
+ *
+ * DRIVEN ENTIRELY FROM THE MID-CYCLE HOOK, on the drain thread, so the fixture
+ * has no timing window in it at all. The hook fires after the rings drain and
+ * before the catch-up, so it cannot arm a budget for the drain of its OWN
+ * cycle — but it can arm one for the next cycle's, and it is the only place in
+ * this suite that can name "the cycle after this one" at all. Arming from the
+ * test thread instead leaves a 250 ms window in which a cycle can fire, drain
+ * an empty ring, and be healed before any short write happened, leaving every
+ * assertion below measuring the fast path.
+ *
+ *   cycle 1 — exists, and nothing more. Its log drain is what clears any
+ *             arm-time events.log entries at the unlimited budget: entries
+ *             share this budget and cost 28 bytes each, so one left pending
+ *             would eat the 12 bytes cycle 3's drain is supposed to spend.
+ *   cycle 2 — arm 12 bytes, then publish 32 stereo frames the way the audio
+ *             thread does (ring push, THEN a_perf_frames, release). This
+ *             cycle's `elapsed` was sampled before the push, so its catch-up
+ *             pads nothing and writes nothing.
+ *   cycle 3 — drains all 32 frames, lands 12 of 256 bytes, fails. The hook
+ *             heals the disk so the final pass can pad; this cycle's own pad
+ *             is skipped (the cycle has already failed).
+ *   final   — the unconditional last pass. The ring is empty, so the catch-up
+ *             alone decides the length: it tops up 31 frames if `written`
+ *             advanced by the one that landed, and 32 if it did not. */
+typedef struct {
+  le_engine* e;
+  int stage;
+  uint64_t pushed;
+} perf_short_ring_ctx;
+
+/* 12 of the 256 bytes the drain wants: short, not refused, and one stereo
+ * frame plus a torn 4 — see the table above for what each wrong credit
+ * produces. */
+#define LE_TEST_SHORT_RING_BUDGET_BYTES 12
+#define LE_TEST_SHORT_RING_FRAMES 32
+/* Exactly representable, so the landed frame can be compared for equality and
+ * told apart from the silence padded behind it. */
+#define LE_TEST_SHORT_RING_MARK 0.25f
+
+static void perf_mid_cycle_short_ring(void* raw) {
+  perf_short_ring_ctx* ctx = (perf_short_ring_ctx*)raw;
+  if (ctx->stage == 0) {
+    ctx->stage = 1; /* cycle 1: let it run a full pass, log drain included */
+    return;
+  }
+  if (ctx->stage == 1) {
+    /* Cycle 2: starve the NEXT cycle's ring drain, then hand it the audio.
+     * Nothing writes in between — this cycle's catch-up has nothing to pad
+     * (its `elapsed` predates the push) and both log rings are empty. */
+    ctx->stage = 2;
+    le_perf_drain_set_write_budget_for_test(LE_TEST_SHORT_RING_BUDGET_BYTES);
+    const float frame[2] = {LE_TEST_SHORT_RING_MARK, LE_TEST_SHORT_RING_MARK};
+    for (int i = 0; i < LE_TEST_SHORT_RING_FRAMES; ++i) {
+      if (!le_audio_ring_push_frame(&ctx->e->perf.master_ring, frame, 2)) break;
+      ctx->pushed++;
+    }
+    /* RELEASE, and after the pushes, exactly like the real tap in
+     * engine_process.c: the stand-in models the publishing edge too, not just
+     * the statement order. */
+    atomic_fetch_add_explicit(&ctx->e->a_perf_frames, ctx->pushed,
+                              memory_order_release);
+    return;
+  }
+  if (ctx->stage == 2) {
+    /* Cycle 3, whose ring drain just short-wrote. Heal the disk before the
+     * final pass pads: a pad that failed too would hide the desync this test
+     * is looking for. */
+    ctx->stage = 3;
+    le_perf_drain_set_write_budget_for_test(-1); /* unlimited */
+  }
+}
+
+static void test_perf_ring_short_write_does_not_desync_file(void) {
+  printf("test_perf_ring_short_write_does_not_desync_file\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 48000); /* stereo master, roomy ring */
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  CHECK(e->perf.master_channels == 2); /* the divisor under test is 2, not 1 */
+
+  perf_short_ring_ctx ctx = {e, 0, 0};
+  le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_short_ring, &ctx);
+
+  /* Four cycles of LE_PD_FLUSH_MS is a second; a poll, not a sleep, so the
+   * timeout is only the ceiling. */
+  CHECK(poll_drain_self_stopped_for_test(e->perf.drain, 5000));
+  CHECK(le_perf_disarm(e) == LE_OK); /* joins after the thread's final pass */
+  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
+  le_perf_drain_set_write_budget_for_test(-1); /* before other tests run */
+
+  CHECK(ctx.stage == 3); /* the drain short-wrote, and only THEN was it healed */
+  CHECK(ctx.pushed == (uint64_t)LE_TEST_SHORT_RING_FRAMES); /* roomy ring */
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_frames == LE_TEST_SHORT_RING_FRAMES);
+  CHECK(s.perf_overruns == 0); /* nothing was dropped: this is NOT #710's case */
+  /* THE SPLIT, which the byte length alone cannot see: one frame of audio
+   * landed before the disk gave out and 31 were padded behind it. A fixture
+   * that decayed into landing nothing would still produce a 32-frame file, and
+   * would read 32 here. */
+  CHECK(s.perf_zero_filled_frames == LE_TEST_SHORT_RING_FRAMES - 1);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/master.pcm", perf_test_dir());
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    float got[LE_TEST_SHORT_RING_FRAMES * 2];
+    const size_t samples =
+        fread(got, sizeof(float), sizeof(got) / sizeof(got[0]), f);
+    CHECK(fseek(f, 0, SEEK_END) == 0);
+    const long bytes = ftell(f);
+    fclose(f);
+    printf("  master.pcm %ld bytes = %ld stereo frames (elapsed %d)\n", bytes,
+           bytes / (long)(2 * sizeof(float)), LE_TEST_SHORT_RING_FRAMES);
+    /* Exactly elapsed, and frame-aligned: the 4 orphan bytes were overwritten
+     * by the pad rather than shifting the whole rest of the take half a frame
+     * late. */
+    CHECK(bytes == LE_TEST_SHORT_RING_FRAMES * 2 * (long)sizeof(float));
+    CHECK(samples == (size_t)(LE_TEST_SHORT_RING_FRAMES * 2));
+    CHECK(got[0] == LE_TEST_SHORT_RING_MARK); /* the frame that landed... */
+    CHECK(got[1] == LE_TEST_SHORT_RING_MARK);
+    int padded_is_silent = 1;
+    for (size_t i = 2; i < samples; ++i) {
+      if (got[i] != 0.0f) padded_is_silent = 0;
+    }
+    CHECK(padded_is_silent); /* ...and the 31 that were padded behind it */
+  }
+
+  le_engine_destroy(e);
+}
+
 static void test_perf_zero_fill_short_write_does_not_desync_file(void) {
   printf("test_perf_zero_fill_short_write_does_not_desync_file\n");
   le_engine* e = le_engine_create();
@@ -23185,6 +23339,7 @@ int main(void) {
   test_perf_zero_fill_counter_visible_while_armed();
   test_perf_zero_fill_counts_only_silence_actually_written();
   test_perf_zero_fill_short_write_does_not_desync_file();
+  test_perf_ring_short_write_does_not_desync_file();
   test_perf_drain_samples_elapsed_before_draining();
   test_perf_sidecar_bytes_are_exact();
   test_perf_drain_steady_state_cycle_is_allocation_free();

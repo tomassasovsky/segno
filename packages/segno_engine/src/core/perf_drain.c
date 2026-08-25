@@ -847,9 +847,64 @@ static int le_pd_drain_layer_staging(le_perf_drain* d) {
   return ok;
 }
 
+/* THE SHORT-WRITE CREDIT, in one place because it is one rule (#718, #790).
+ * Turns the bytes a write actually LANDED into the frames the file now holds:
+ * advances `pf->written`, rewinds over the torn remainder, and returns the
+ * count, so a caller that also reports on it (le_pd_catch_up's silence counter)
+ * reports the same number the file got. `channels` must be > 0 — both callers
+ * reject that before they write anything.
+ *
+ * FLOORS to whole frames. fwrite is byte-granular, so a disk that gives out
+ * mid-write stops wherever it stops: mid-frame, and even mid-float. Only a
+ * frame that is entirely on disk is a frame of the take, and inventing a count
+ * for one that is half there would be the dishonest direction.
+ *
+ * REWINDS what it floored off, rather than leaving it at EOF. A torn partial
+ * frame at the end of the file is harmless only while nothing appends after
+ * it, and something does: the disk can free up between the cycle that failed
+ * and the final one — which is exactly what the fixtures simulate — and the
+ * catch-up then starts its padding part-way into a frame. From there every
+ * sample is read against the wrong channel and the file length is no longer a
+ * whole number of frames, which is a permanent misalignment of the rest of the
+ * take, not a lost tail. The capture files are opened "wb", not append, so
+ * seeking back over the residue costs nothing and the next write overwrites
+ * it.
+ *
+ * The file is NOT truncated, only the position moved, so the residue does
+ * survive in one case: the final pass pads from `pf->written` and always has
+ * at least one frame to pad after a short write, so the only way nothing
+ * overwrites the residue is a disk still full then — the case where nothing
+ * could be written anyway. Same if the seek itself fails, which a genuinely
+ * full disk can do (fseek flushes the stream). Neither is papered over:
+ * `pf->written` is floored either way, so this module never claims a frame the
+ * file does not hold, and a reader floors the length on the frame size exactly
+ * as this does. */
+static uint64_t le_pd_whole_frames_landed(le_pd_file* pf, uint64_t landed,
+                                          int channels) {
+  const uint64_t frame_bytes = (uint64_t)channels * sizeof(float);
+  const uint64_t frames = landed / frame_bytes;
+  const uint64_t torn = landed - frames * frame_bytes;
+  if (torn > 0) fseek(pf->f, -(long)torn, SEEK_CUR);
+  pf->written += frames;
+  return frames;
+}
+
 /* Drains everything currently available from `ring` (a le_audio_ring of
  * `channels`-wide frames) into `pf`'s file, looping until the ring reports
- * less than a full scratch buffer (i.e. it is now empty). */
+ * less than a full scratch buffer (i.e. it is now empty).
+ *
+ * ADVANCES `pf->written` ON THE FAILURE PATH TOO, by whatever the short write
+ * landed (#790) — which is why this cannot use the all-or-nothing le_pd_write
+ * any more. The popped frames are gone from the ring either way, so no audio
+ * is re-written; what IS retried is this function itself, on the drain
+ * thread's unconditional final pass, and the catch-up that follows it pads
+ * from `pf->written`. Leaving it behind the bytes already on disk is what made
+ * master.pcm come out LONGER than `elapsed` by the residue — the same shape as
+ * the pad's own gap (#718), milder only because there is no whole gap to
+ * duplicate here.
+ *
+ * Returns 0 on any write failure, short or refused, which self-stops the
+ * capture — see le_pd_write_some for why a short write is not retried. */
 static int le_pd_drain_ring(le_pd_file* pf, le_audio_ring* ring, int channels,
                            float* scratch, size_t scratch_samples) {
   if (channels <= 0) return 1;
@@ -858,10 +913,15 @@ static int le_pd_drain_ring(le_pd_file* pf, le_audio_ring* ring, int channels,
     const size_t popped =
         le_audio_ring_pop(ring, scratch, max_frames * (size_t)channels);
     if (popped == 0) return 1;
-    if (!le_pd_write(pf->f, scratch, popped * sizeof(float))) return 0;
-    const size_t popped_frames = popped / (size_t)channels;
-    pf->written += popped_frames;
-    if (popped_frames < max_frames) return 1;
+    const size_t bytes = popped * sizeof(float);
+    const size_t got = le_pd_write_some(pf->f, scratch, bytes);
+    const uint64_t frames =
+        le_pd_whole_frames_landed(pf, (uint64_t)got, channels);
+    if (got != bytes) return 0;
+    /* Past that return got == bytes, so `frames` IS popped/channels — the
+     * loop's "the ring had less than a full scratch buffer left" test, with no
+     * second division to keep in step with the first. */
+    if (frames < (uint64_t)max_frames) return 1;
   }
 }
 
@@ -906,13 +966,12 @@ static int le_pd_drain_ring(le_pd_file* pf, le_audio_ring* ring, int channels,
  * only the part that did not, which is also what keeps the counter's two
  * cycles summing to the gap exactly once.
  *
- * What is NOT reconstructed: a short write can stop mid-frame (or mid-float —
- * fwrite is byte-granular), and those trailing bytes cannot be un-written. The
- * frame count credited is therefore a FLOOR, and the file may carry a torn
- * partial frame at the point the disk gave out. That is the same torn tail
- * every other write path in this module leaves at disk-full, on a capture that
- * is self-stopping anyway; inventing a count for a frame that is only
- * partially there would be the dishonest direction.
+ * What happens to a TORN tail — a short write stopping mid-frame, or even
+ * mid-float — is le_pd_whole_frames_landed's business, not this function's:
+ * the count is floored and the residue is rewound so the next append still
+ * lands on a frame boundary. The rule lives there because it is the same rule
+ * le_pd_drain_ring needs (#718 and #790 are one bug in two functions), and its
+ * reasoning is written out once, above it.
  *
  * The gap LIST can still name a span the disk refused — position is
  * diagnostic. The total stays a count of silence genuinely on disk, which is
@@ -944,18 +1003,16 @@ static int le_pd_catch_up(le_perf_drain* d, le_pd_file* pf, int channels,
     remaining -= chunk;
   }
 
-  /* Floor twice, deliberately: bytes -> whole samples -> whole frames. Only a
-   * frame that is entirely on disk is a frame of the take. */
+  /* Credits `pf->written` as well as returning the count — on the success path
+   * that IS `pf->written = elapsed`, since every requested byte landed and
+   * padded_frames == gap exactly; it is an ADVANCE so the failure path is
+   * right too. */
   const uint64_t padded_frames =
-      (padded_bytes / sizeof(float)) / (uint64_t)channels;
+      le_pd_whole_frames_landed(pf, padded_bytes, channels);
   if (padded_frames > 0) {
     atomic_fetch_add_explicit(&d->engine->a_perf_zero_filled_frames,
                               padded_frames, memory_order_relaxed);
   }
-  /* On the success path this IS `pf->written = elapsed` — every requested byte
-   * landed, so padded_frames == gap exactly. Writing it as an advance is what
-   * makes the failure path correct too. */
-  pf->written += padded_frames;
   return ok;
 }
 
