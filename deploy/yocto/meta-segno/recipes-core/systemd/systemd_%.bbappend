@@ -30,4 +30,12 @@
 # dynamic symbol table already names them. If a backtrace ever lands inside a
 # stripped static function and stops being readable, minidebuginfo is the
 # upgrade, and it is one DISTRO_FEATURES entry away.
-PACKAGECONFIG:append:pn-systemd = " coredump elfutils"
+#
+# Plain `:append`, no `:pn-systemd`. A systemd_%.bbappend can only ever apply to
+# systemd_<version>.bb, so pn-systemd is already in OVERRIDES by the time this
+# is parsed and the qualifier buys nothing. It costs something, though: pn- is
+# the local.conf/distro idiom, and carried in recipe space it invites the line
+# to be copied into an include or a differently-named recipe, where it would
+# evaluate to nothing at all. A PACKAGECONFIG that looks set and is not is
+# exactly the shape of #430.
+PACKAGECONFIG:append = " coredump elfutils"

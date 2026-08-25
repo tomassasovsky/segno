@@ -1,0 +1,22 @@
+# Makes the silent half of #438 loud: the bind mounts can fail and journald
+# will write a healthy-looking journal into tmpfs anyway.
+#
+# After the flush, not before it — what this inspects is the state journald
+# actually settled into, which is the thing `journalctl -b -1` will or will not
+# find after the next reboot.
+[Unit]
+Description=Segno: verify the journal and coredumps really landed on /data
+After=systemd-journal-flush.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount
+# Deliberately no Requires= on the mounts. This unit exists to REPORT a mount
+# that did not happen, so it has to run precisely when they are not there.
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Exits non-zero when log storage is not persistent, which is the point: the
+# unit then shows up in `systemctl --failed` for the rest of the boot instead
+# of the problem showing up as an empty `journalctl -b -1` weeks later.
+ExecStart=/usr/bin/segno-log-check
+
+[Install]
+WantedBy=multi-user.target

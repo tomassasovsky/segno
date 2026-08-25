@@ -7,6 +7,14 @@
 #
 # Unlike the journal mount, this path has no symlink in it, so the unit name is
 # the plain escaped path.
+#
+# NOT PROVEN ON HARDWARE, unlike the journal half of #438 (which has a bench
+# figure on its own mount unit). core_pattern on the shipped image is
+# `|/bin/false` and stays that way until systemd is rebuilt with the
+# coredump/elfutils PACKAGECONFIG, so nothing here yet shows that a fault
+# produced a core on /data or that the core was symbolized — only that the mount
+# lands, in the right order, with the right ownership. #822 carries the
+# on-device check to run once an image with the rebuilt systemd is installed.
 [Unit]
 Description=Segno: coredump storage on /data (survives reboot and OS update)
 DefaultDependencies=no
