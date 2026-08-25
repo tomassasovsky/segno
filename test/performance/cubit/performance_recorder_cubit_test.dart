@@ -1251,6 +1251,18 @@ void main() {
         await pumpEventQueue();
 
         expect(cubit.state, isA<PerformanceRecorderArmed>());
+
+        // And a volume the platform cannot measure at all must still arm —
+        // through the real default seam, not an injected stand-in. A
+        // regression that turned that null into a 0 would otherwise refuse
+        // every arm on the device while passing every test here.
+        await cubit.toggleArm();
+        await pumpEventQueue();
+        engine.freeBytes = null;
+        await cubit.toggleArm();
+        await pumpEventQueue();
+
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
       },
     );
 

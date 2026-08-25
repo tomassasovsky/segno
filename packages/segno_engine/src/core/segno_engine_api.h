@@ -2198,7 +2198,13 @@ LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
  * Answering it in C also keeps the struct layout in C. `statvfs` is shaped
  * differently on glibc and on macOS, and a Dart-side layout guess would not
  * fail loudly — it would report a plausible wrong number and stop a take that
- * had room. */
+ * had room.
+ *
+ * ALL THREE PLATFORMS ANSWER, which is a deliberate widening: the `df` this
+ * replaced returned "cannot answer" on Windows, so the free-space floor (#640)
+ * has never applied there. It does now. That is the behaviour the floor was
+ * written for, but it is a change on a platform the click work did not
+ * otherwise touch, so it is stated here rather than left to be discovered. */
 LE_EXPORT int32_t le_perf_volume_free_bytes(const char* path,
                                             uint64_t* out_bytes);
 

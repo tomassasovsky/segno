@@ -1455,6 +1455,15 @@ class NativeAudioEngine implements AudioEngine {
     return EngineResult.fromCode(_bindings.le_perf_disarm(_engine));
   }
 
+  /// No `_checkAlive()`, deliberately: this is the one call on this class that
+  /// never touches the engine handle — it is a question about a directory — so
+  /// it stays valid after [dispose].
+  ///
+  /// It is also SYNCHRONOUS, unlike the `df` subprocess it replaced. On a local
+  /// volume `statvfs` is microseconds and this is strictly less blocking than
+  /// the fork it replaced (which stalled this same isolate for 1.8-3.1 ms); on
+  /// a network mount whose server has gone away it can block for that mount's
+  /// timeout. The appliance's capture volume is local NVMe.
   @override
   int? volumeFreeBytes(String path) {
     if (path.isEmpty) return null;
