@@ -9179,6 +9179,98 @@ static void perf_mid_cycle_short_pad(void* raw) {
   }
 }
 
+/* #790: the same short-write accounting gap as #718, one function over.
+ *
+ * #718 fixed the PAD (le_pd_catch_up). le_pd_drain_ring still used the
+ * all-or-nothing le_pd_write, so a short write there put bytes on disk and
+ * returned before `pf->written` moved — and the final cycle's catch-up then
+ * padded a gap that included frames whose bytes were already in the file.
+ *
+ * The fixture isolates the RING DRAIN rather than the pad, which is the whole
+ * difficulty: the mid-cycle hook fires AFTER the rings drain and BEFORE the
+ * catch-up, so it cannot arm a budget for the drain of its own cycle. Instead
+ * the budget is armed from the test thread between arm and the first push —
+ * a cycle that fires in that window drains nothing and pads nothing, so there
+ * is no race — and it is sized to short-write the very first ring drain.
+ *
+ *   cycle 1 — 32 frames in the ring, budget 12 bytes: the drain writes 3 of 32
+ *             frames and fails, so the cycle self-stops and the pad is skipped.
+ *   final   — the hook has healed the budget. The ring is already empty, so the
+ *             catch-up alone decides the length: it tops up 29 frames if
+ *             `written` advanced, and 32 if it did not.
+ *
+ * Against the pre-fix code the file comes out 35 frames long for 32 elapsed. */
+typedef struct {
+  int stage;
+} perf_short_ring_ctx;
+
+/* 12 bytes = 3 mono float frames of the 128 the first drain wants: short, not
+ * refused, and a whole number of frames so the arithmetic above is exact. */
+#define LE_TEST_SHORT_RING_BUDGET_BYTES 12
+
+static void perf_mid_cycle_heal_budget(void* raw) {
+  perf_short_ring_ctx* ctx = (perf_short_ring_ctx*)raw;
+  if (ctx->stage == 0) {
+    /* The cycle whose ring drain just short-wrote. Heal the disk before the
+     * final cycle's catch-up, or a pad that fails too would hide the desync
+     * this test is looking for. */
+    ctx->stage = 1;
+    le_perf_drain_set_write_budget_for_test(-1); /* unlimited */
+  }
+}
+
+static void test_perf_ring_short_write_does_not_desync_file(void) {
+  printf("test_perf_ring_short_write_does_not_desync_file\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000); /* mono master, roomy ring */
+
+  le_engine_record(e, 0);
+  float out[LOOP_N];
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  perf_short_ring_ctx ctx = {0};
+  le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_heal_budget, &ctx);
+  /* Armed AFTER arm (so the events.log header is already paid for) and BEFORE
+   * the push, so the first drain that sees audio sees the budget. */
+  le_perf_drain_set_write_budget_for_test(LE_TEST_SHORT_RING_BUDGET_BYTES);
+
+  float big_out[32];
+  process_const(e, 0.0f, 32, big_out); /* all 32 fit the ring: no overrun */
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_frames == 32);
+  CHECK(s.perf_overruns == 0); /* the ring is roomy: this is NOT #710's case */
+
+  CHECK(poll_drain_self_stopped_for_test(e->perf.drain, 2000));
+  CHECK(le_perf_disarm(e) == LE_OK);
+  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
+  le_perf_drain_set_write_budget_for_test(-1);
+
+  CHECK(ctx.stage == 1); /* the short drain happened and the budget was healed */
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/master.pcm", perf_test_dir());
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    CHECK(fseek(f, 0, SEEK_END) == 0);
+    const long bytes = ftell(f);
+    fclose(f);
+    printf("  master.pcm %ld bytes = %ld frames (elapsed 32)\n", bytes,
+           bytes / (long)sizeof(float));
+    /* Exactly elapsed: the 3 frames the short write landed, plus 29 padded. */
+    CHECK(bytes == 32 * (long)sizeof(float));
+  }
+
+  le_engine_destroy(e);
+}
+
 static void test_perf_zero_fill_short_write_does_not_desync_file(void) {
   printf("test_perf_zero_fill_short_write_does_not_desync_file\n");
   le_engine* e = le_engine_create();
@@ -23503,6 +23595,7 @@ int main(void) {
   test_perf_zero_fill_counter_visible_while_armed();
   test_perf_zero_fill_counts_only_silence_actually_written();
   test_perf_zero_fill_short_write_does_not_desync_file();
+  test_perf_ring_short_write_does_not_desync_file();
   test_perf_drain_samples_elapsed_before_draining();
   test_perf_sidecar_bytes_are_exact();
   test_perf_drain_steady_state_cycle_is_allocation_free();
