@@ -3047,13 +3047,22 @@ static void test_loop_seam_survives_whole_lap_overdub(void) {
  *
  * WHAT #731 SAYS THE CAUSE IS, AND WHY THAT IS WRONG. The issue says "the loop
  * head keeps a lap of layered material that the loop tail never got". It does
- * not: the arithmetic below reproduces the measured step exactly, and removing
- * the punch-in ramp entirely does not change it by a single digit.
+ * not: the arithmetic below reproduces the measured step exactly, and the
+ * punch-in ramp is no part of it. Writing x(i) = 0.5*sin(i * 2*pi*36.25/48000)
+ * for the oscillator feed_osc feeds, and F for the declick fade:
  *
- *   b[4799] = sin(4799) + sin(4799+N)          = +0.14812
- *   b[0]    = ramp(0)*sin(0) + sin(0+N)        = -0.35355   (ramp(0) = 0)
- *   step                                        =  0.50168
- *   with no ramp at all: b[0] = sin(0)+sin(N)  = -0.35355   (sin(0) == 0)
+ *   loop[4799] = x(4799) + x(9599)             = +0.148123
+ *   loop[0]    = ramp(0)*x(0) + x(4800)        = -0.353553
+ *   step                                        =  0.501676
+ *
+ * THE RAMP CANNOT BE WHAT MAKES THE STEP, and the CHECK on loop[0] below is
+ * that argument rather than a claim about it: whatever shape ramp() has over
+ * [0, F), at the punch-in it multiplies x(0) = 0.5*sin(0), which is zero. So
+ * loop position 0 holds the second pass's contribution ALONE — x(4800), to
+ * better than a float ulp — and deleting the ramp outright would leave every
+ * digit of the step exactly where it is. (Nothing else touches position 0
+ * either: the punch-out fade tail runs over [0, F) too, but it tapers an input
+ * the player has already stopped feeding, so it adds zero.)
  *
  * The step is simply the overdub's OWN WRAP SEAM: a signal that is not
  * loop-periodic, layered across the loop point, with no continuation to fold.
@@ -3074,9 +3083,10 @@ static void test_loop_seam_survives_whole_lap_overdub(void) {
  * docs/plan/2026-08-25-fix-punch-out-splice-plan.md.
  *
  * Pinned here so the number is reproducible and so a fix can be measured
- * against it. FLIP THE ASSERTION TO `score < 25.0` WHEN #731 LANDS. */
-static void test_overdub_punch_out_player_stops_still_splices_731(void) {
-  printf("test_overdub_punch_out_player_stops_still_splices_731\n");
+ * against it. The assertions at the bottom are DELIBERATELY INVERTED — read
+ * the note there before touching them. */
+static void test_loop_seam_on_punch_out_with_player_stopped(void) {
+  printf("test_loop_seam_on_punch_out_with_player_stopped\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1, 48000);
   const int N = 4800;
@@ -3101,16 +3111,70 @@ static void test_overdub_punch_out_player_stops_still_splices_731(void) {
 
   feed_to_loop_top(e); /* so capture index == loop position */
   float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * N));
+  /* A failed allocation has to land as a reported failure: feed_const writes
+   * straight through this pointer, so falling through would segfault and take
+   * every later test's result down with the diagnosis. */
+  CHECK(loop != NULL);
+  if (loop == NULL) {
+    le_engine_destroy(e);
+    return;
+  }
   int n = 0;
   feed_const(e, 0.0f, 2 * N, loop, &n);
+  /* splice_score is bounded by the n it is handed; the wrap and head
+   * arithmetic below indexes loop[N] and loop[N - 1] directly, so a short
+   * capture would read uninitialized heap instead of failing. */
+  CHECK(n == 2 * N);
+  if (n < 2 * N) {
+    free(loop);
+    le_engine_destroy(e);
+    return;
+  }
 
   double step = 0.0;
   double med = 0.0;
   const double score = splice_score(loop, n, &step, &med);
   const double wrap = fabs((double)loop[N] - (double)loop[N - 1]);
+  /* x(N) — the second pass's contribution at loop position 0, with no ramp
+   * term at all. osc.inc is fixed at construction; only its phase advanced. */
+  const double head_no_ramp = 0.5 * sin((double)N * osc.inc);
   printf("  wrap @%d: %.5f (%.1fx)   worst anywhere: %.5f  score=%.1fx\n", N,
          wrap, med > 0 ? wrap / med : 0.0, step, score);
-  CHECK(score > 100.0); /* the defect, pinned — see the note above */
+  printf("  head=%.6f  ramp-free x(%d)=%.6f  diff=%.1e\n", (double)loop[0], N,
+         head_no_ramp, fabs((double)loop[0] - head_no_ramp));
+
+  /* Three assertions, each catching what the other two cannot.
+   *
+   * loop[0] — the ramp counterfactual from the header, as arithmetic rather
+   * than prose. Measured deviation from the ramp-free value is 6.1e-9, i.e. the
+   * capture IS the correctly-rounded float of it (ulp is 3.0e-8 in [0.25,
+   * 0.5)); 1e-7 leaves a few ulps for libm's last bit and nothing more. If the
+   * punch-in ramp ever contributed at position 0, this is what would move.
+   *
+   * wrap — the absolute step, the one number the analysis above derives. 1e-6
+   * is ~17 float ulps at this amplitude (ulp(0.5) = 5.96e-8), which is clear
+   * of the rounding in the layer mix and still pins every printed digit. The
+   * score cannot stand in for it: score is a RATIO, so editing the fixture's
+   * amplitude or frequency moves the score with the step unchanged, and a
+   * change that moved the step would slip past unless it moved the ratio too.
+   *
+   * score — the step as a multiple of the loop's median adjacent delta, the
+   * form #731 quotes and the form a fix will be judged in. Two-sided on
+   * purpose: measured 389.8x, and the fixture is deterministic to the float
+   * ulp the wrap CHECK pins, so this +/-5% band is not measurement tolerance.
+   * It is the width at which a PARTIAL fix (say 120x) and a REGRESSION (say
+   * 2000x) each fail, instead of both reading as "defect unchanged".
+   *
+   * WHEN #731 LANDS: replace all three with CHECK(score < 25.0). 25.0 is not a
+   * number picked for the occasion — it is the bound every other seam test in
+   * this file already holds for "continuous, not spliced", and they measure
+   * 1.6x to 2.1x against it while the known #728 retire-before-the-fold gap
+   * measures 204x. A fix that landed between 25x and 389x would have moved the
+   * step without removing the splice. */
+  CHECK(fabs((double)loop[0] - head_no_ramp) < 1e-7);
+  CHECK(fabs(wrap - 0.50167599) < 1e-6);
+  CHECK(score > 370.0);
+  CHECK(score < 410.0);
   free(loop);
 
   le_engine_destroy(e);
@@ -23370,9 +23434,9 @@ int main(void) {
   test_looper_multitrack();
   test_latency_compensation();
   test_overdub_punch_no_click();
-  test_overdub_punch_out_player_stops_still_splices_731();
   test_loop_seam_master_take_no_splice();
   test_loop_seam_survives_whole_lap_overdub();
+  test_loop_seam_on_punch_out_with_player_stopped();
   test_loop_seam_on_non_defining_track();
   test_loop_seam_not_armed_with_record_offset();
   test_seam_capture_cleared_by_reconfigure();

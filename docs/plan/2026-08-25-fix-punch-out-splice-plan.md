@@ -77,7 +77,17 @@ against `dub_slot` / `a_live`, at the point `le_seam_fold` already runs.
 
 ## What is landed
 
-`test_overdub_punch_out_player_stops_still_splices_731` pins the defect at
-389.8x with the arithmetic that explains it, so the fix can be measured against
-the same number. **Its assertion is deliberately inverted** (`score > 100`) and
-says so — flip it to `< 25` when the fix lands.
+`test_loop_seam_on_punch_out_with_player_stopped` pins the defect with the
+arithmetic that explains it, so the fix can be measured against the same
+numbers. **Its assertions are deliberately inverted** and say so:
+
+- `loop[0]` against the ramp-free prediction `x(4800)`, to 1e-7 — the
+  counterfactual above as arithmetic rather than as a claim.
+- the wrap step at `0.50167599`, to 1e-6 (~17 float ulps at this amplitude) —
+  the absolute number this analysis derives.
+- the score inside `370x .. 410x` — two-sided, because the measured 389.8x is
+  deterministic to that same float ulp, so a partial fix landing at 120x and a
+  regression to 2000x must each fail rather than both read as unchanged.
+
+When the fix lands, all three become `score < 25` — the bound the file's other
+seam tests already hold (they measure 1.6x to 2.1x).
