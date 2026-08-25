@@ -423,6 +423,8 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_saved_tests.sh
       - name: Run mark-good tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
+      - name: Run log-persistence tests
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_log_persist_tests.sh
 
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
