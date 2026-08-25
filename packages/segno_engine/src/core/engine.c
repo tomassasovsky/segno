@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "audio_ring.h" /* le_audio_ring_release (capture-ring teardown) */
 #include "engine_cache.h" /* le_cache_init/shutdown (wet-cache lifecycle) */
 #include "engine_core.h" /* shared low-level helpers: le_push, valid_channel, ... */
 #include "../host/plugin_slot.h" /* le_plugin_slot_destroy (teardown of slots) */
@@ -292,9 +293,9 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * cancel+join it first so a reconfigure never orphans its worker thread
    * (uncancellable, unpollable, and leaked once the handle is lost). */
   le_perf_render_cancel(engine);
-  free(engine->perf.master_ring.buffer);
+  le_audio_ring_release(&engine->perf.master_ring);
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    free(engine->perf.monitor_ring[c].buffer);
+    le_audio_ring_release(&engine->perf.monitor_ring[c]);
   }
   /* Layers staged after the drain thread died (its self-stop on a write
    * failure precedes the final drain cycle) are still heap-owned by this
@@ -897,9 +898,9 @@ void le_engine_destroy(le_engine* engine) {
   /* Same reasoning as the reconfigure teardown above: cancel+join any active
    * render before this engine (and its perf.render handle) is freed. */
   le_perf_render_cancel(engine);
-  free(engine->perf.master_ring.buffer);
+  le_audio_ring_release(&engine->perf.master_ring);
   for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
-    free(engine->perf.monitor_ring[c].buffer);
+    le_audio_ring_release(&engine->perf.monitor_ring[c]);
   }
   le_platform_on_engine_teardown(); /* Linux restores PipeWire's dynamic quantum */
   free(engine);

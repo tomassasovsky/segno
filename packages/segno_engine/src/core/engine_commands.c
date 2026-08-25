@@ -26,7 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "audio_ring.h"  /* le_audio_ring_init (performance-recording rings) */
+#include "audio_ring.h"  /* le_audio_ring_alloc/release (capture rings) */
 #include "engine_cache.h" /* le_cache_tick (wet-cache scheduler heartbeat) */
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
 #include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
@@ -2139,12 +2139,10 @@ static int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]) {
  * thread (the command was never pushed, or push failed) — plain control-thread
  * cleanup, not a quiescent teardown, since nothing was published. */
 static void le_perf_free_unpublished(le_engine* e, uint32_t monitors_done) {
-  free(e->perf.master_ring.buffer);
-  e->perf.master_ring = (le_audio_ring){0};
+  le_audio_ring_release(&e->perf.master_ring);
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (monitors_done & (1u << c)) {
-      free(e->perf.monitor_ring[c].buffer);
-      e->perf.monitor_ring[c] = (le_audio_ring){0};
+      le_audio_ring_release(&e->perf.monitor_ring[c]);
     }
   }
 }
@@ -2178,9 +2176,9 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
 
   const int32_t sr = engine->sample_rate > 0 ? engine->sample_rate : 48000;
   const size_t master_cap = le_perf_ring_capacity(found, sr);
-  float* master_buf = (float*)malloc(master_cap * sizeof(float));
-  if (master_buf == NULL) return LE_ERR_INVALID;
-  le_audio_ring_init(&engine->perf.master_ring, master_buf, master_cap);
+  if (!le_audio_ring_alloc(&engine->perf.master_ring, master_cap)) {
+    return LE_ERR_INVALID;
+  }
   engine->perf.master_channels = found;
   engine->perf.master_out_ch[0] = out_ch[0];
   engine->perf.master_out_ch[1] = out_ch[1];
@@ -2207,12 +2205,10 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   const size_t monitor_cap = le_perf_ring_capacity(2, sr);
   for (int32_t c = 0; c < monitor_ch_limit; ++c) {
     if (!load_i32(&engine->monitors[c].a_enabled)) continue;
-    float* buf = (float*)malloc(monitor_cap * sizeof(float));
-    if (buf == NULL) {
+    if (!le_audio_ring_alloc(&engine->perf.monitor_ring[c], monitor_cap)) {
       le_perf_free_unpublished(engine, input_mask);
       return LE_ERR_INVALID;
     }
-    le_audio_ring_init(&engine->perf.monitor_ring[c], buf, monitor_cap);
     input_mask |= (1u << c);
   }
   engine->perf.input_mask = input_mask;
@@ -2386,12 +2382,10 @@ int32_t le_perf_disarm(le_engine* engine) {
   le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DISARM);
   engine->perf.drain = NULL;
 
-  free(engine->perf.master_ring.buffer);
-  engine->perf.master_ring = (le_audio_ring){0};
+  le_audio_ring_release(&engine->perf.master_ring);
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (engine->perf.input_mask & (1u << c)) {
-      free(engine->perf.monitor_ring[c].buffer);
-      engine->perf.monitor_ring[c] = (le_audio_ring){0};
+      le_audio_ring_release(&engine->perf.monitor_ring[c]);
     }
   }
   engine->perf.input_mask = 0;
