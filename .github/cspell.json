@@ -776,6 +776,7 @@
     "UART",
     "udevadm",
     "udevd",
+    "ulps",
     "unacked",
     "unbindable",
     "unbonded",

@@ -3064,17 +3064,21 @@ static void test_loop_seam_master_take_no_splice(void) {
   le_engine_destroy(e);
 }
 
-/* #728: overdubbing whole laps over the master must not splice the wrap. Each
- * overdub lap writes the head a whole lap before it writes the tail, so this
- * is the case that looked most likely to break — it does not, because the
- * write is read-before-write: every head sample the wrap resolves to was
- * layered exactly one frame after the tail sample preceding it. The punch-in
- * and punch-out both land ON the loop top here (what quantized rec/dub does
- * every time), and the input stays live through the punch-out fade tail, which
- * is what the tail needs to taper into (same contract as
- * test_overdub_punch_no_click). Stopping dead on the punch-out instead is a
- * SEPARATE defect — the tail then keeps a lap the head never got — measured
- * and filed on its own; it is not what this test covers. */
+/* #728: overdubbing whole laps over the master must not splice the wrap. The
+ * punch-in and punch-out both land ON the loop top here (what quantized
+ * rec/dub does every time), and the input stays live through the punch-out
+ * fade tail. Every loop position gets exactly two overdub writes — head and
+ * tail alike, and stopping the input at the punch-out would not change that —
+ * so lap counts are NOT what this test hangs on. What keeps the wrap
+ * continuous is the fade tail itself: the player's still-live input keeps
+ * writing into [0, F) after the punch-out, and that write happens to BE the
+ * continuation of position len-1 — #728's fold, done accidentally, by the
+ * performer. The 2.1x measured here is that accident holding, not a designed
+ * contract. Stopping dead on the punch-out instead removes the accidental
+ * fold and exposes the overdub's own wrap seam — a generational content
+ * mismatch at the fold, not a lap-count imbalance — measured and pinned by
+ * test_loop_seam_on_punch_out_with_player_stopped (#731) below; it is not
+ * what this test covers. */
 static void test_loop_seam_survives_whole_lap_overdub(void) {
   printf("test_loop_seam_survives_whole_lap_overdub\n");
   le_engine* e = le_engine_create();
@@ -3113,6 +3117,197 @@ static void test_loop_seam_survives_whole_lap_overdub(void) {
   printf("  overdubbed master seam: step=%.5f median-delta=%.6f score=%.1fx\n",
          step, med, score);
   CHECK(score < 25.0);
+  free(loop);
+
+  le_engine_destroy(e);
+}
+
+/* #731, CHARACTERIZATION — this asserts the DEFECT, not a fix.
+ *
+ * The same whole-lap overdub as test_loop_seam_survives_whole_lap_overdub,
+ * except the player STOPS DEAD on the punch-out instead of playing through the
+ * fade tail — which is the normal thing to do, since punching out is how you
+ * stop layering.
+ *
+ * WHAT #731 SAYS THE CAUSE IS, AND WHY THAT IS WRONG. The issue says "the loop
+ * head keeps a lap of layered material that the loop tail never got". It does
+ * not: the arithmetic below reproduces the measured step exactly, and the
+ * punch-in ramp is no part of it. Writing x(i) = 0.5*sin(i * 2*pi*36.25/48000)
+ * for the oscillator feed_osc feeds, and F for the declick fade:
+ *
+ *   loop[4799] = x(4799) + x(9599)             = +0.148123
+ *   loop[0]    = ramp(0)*x(0) + x(4800)        = -0.353553
+ *   step                                        =  0.501676
+ *
+ * THE RAMP CANNOT BE WHAT MAKES THE STEP HERE, and the CHECK on loop[0] below
+ * is that argument rather than a claim about it: whatever shape ramp() has
+ * over [0, F), at the punch-in it multiplies x(0) = 0.5*sin(0), which is
+ * zero. So loop position 0 holds the second pass's contribution ALONE —
+ * x(4800), to better than a float ulp. (Nothing else touches position 0
+ * either: the punch-out fade tail runs over [0, F) too, but it tapers an
+ * input the player has already stopped feeding, so it adds zero.) Note what
+ * this does NOT say: ramp(0) is not 0 — engine_process.c advances od_gain
+ * BEFORE the write, so the first overdubbed frame is written at od_step
+ * (1/480 @ 48k) — and the ramp dropping out of the arithmetic is a property
+ * of THIS FIXTURE, whose oscillator sits at phase 0 at the punch-in. In
+ * general the punch-in ramp IS load-bearing (it suppresses the head's oldest
+ * generation at the punch point) and must not be read as droppable.
+ *
+ * The step is simply the overdub's OWN WRAP SEAM: a signal that is not
+ * loop-periodic, layered across the loop point, with no continuation to fold
+ * — a generational content mismatch at the fold, not a lap-count imbalance.
+ * The control test scores 2.1x only because the player's still-live input
+ * through the punch-out fade tail happens to ACT as a continuation fold.
+ *
+ * That kills #731's RATIONALE, and its first option with it. "Crossfade the
+ * loop's tail into its head" needs either a continuation (there is none — the
+ * player stopped) or a shorter loop (the length must stay a multiple of the
+ * base). And an envelope justified by "head and tail must end with the same
+ * number of laps" fixes nothing FOR THAT REASON, because they already do —
+ * but the mechanism that option names, a loop-position-aware envelope, is
+ * exactly the chosen fix, applied to the LAYER rather than the punch-out
+ * gain: layer = live - shadow, tapered over [0, F) and [len - F, len),
+ * exactly as #730 gives a stopped-early take, so the layer is a
+ * self-contained one-shot inside the loop and the underlying loop's own
+ * continuity is untouched. That needs the pre-pass undo shadow, on the audio
+ * thread, in the layer machinery — see
+ * docs/plan/2026-08-25-fix-punch-out-splice-plan.md.
+ *
+ * Pinned here so the number is reproducible and so a fix can be measured
+ * against it. The assertions at the bottom are DELIBERATELY INVERTED — read
+ * the note there before touching them. */
+static void test_loop_seam_on_punch_out_with_player_stopped(void) {
+  printf("test_loop_seam_on_punch_out_with_player_stopped\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+
+  /* Silent defining master, so the only content at the seam is the overdub's. */
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  /* Two whole overdub passes, punched in and out ON the loop top. */
+  le_engine_record(e, 0); /* -> OVERDUBBING */
+  drain(e);
+  feed_osc(e, &osc, 2 * N, NULL, NULL);
+  le_engine_record(e, 0);               /* punch out -> PLAYING */
+  feed_const(e, 0.0f, 512, NULL, NULL); /* the player stops dead */
+  drain(e);
+  settle_layers(e);
+
+  feed_to_loop_top(e); /* so capture index == loop position */
+  float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * N));
+  /* A failed allocation has to land as a reported failure: feed_const writes
+   * straight through this pointer, so falling through would segfault and take
+   * every later test's result down with the diagnosis. */
+  CHECK(loop != NULL);
+  if (loop == NULL) {
+    le_engine_destroy(e);
+    return;
+  }
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, loop, &n);
+  /* splice_score is bounded by the n it is handed; the wrap and head
+   * arithmetic below indexes loop[N] and loop[N - 1] directly, so a short
+   * capture would read uninitialized heap instead of failing. */
+  CHECK(n == 2 * N);
+  if (n < 2 * N) {
+    free(loop);
+    le_engine_destroy(e);
+    return;
+  }
+
+  double step = 0.0;
+  double med = 0.0;
+  const double score = splice_score(loop, n, &step, &med);
+  const double wrap = fabs((double)loop[N] - (double)loop[N - 1]);
+  double peak = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const double a = fabs((double)loop[i]);
+    if (a > peak) peak = a;
+  }
+  /* x(N) — the second pass's contribution at loop position 0, with no ramp
+   * term at all. osc.inc is fixed at construction; only its phase advanced. */
+  const double head_no_ramp = 0.5 * sin((double)N * osc.inc);
+  printf("  wrap @%d: %.5f (%.1fx)   worst anywhere: %.5f  score=%.1fx\n", N,
+         wrap, med > 0 ? wrap / med : 0.0, step, score);
+  printf("  head=%.6f  ramp-free x(%d)=%.6f  diff=%.1e  peak=%.4f\n",
+         (double)loop[0], N, head_no_ramp, fabs((double)loop[0] - head_no_ramp),
+         peak);
+
+  /* Six assertions, each catching what the others cannot.
+   *
+   * loop[0] — the ramp counterfactual from the header, as arithmetic rather
+   * than prose. Measured deviation from the ramp-free value is 6.1e-9, i.e. the
+   * capture IS the correctly-rounded float of it (ulp is 3.0e-8 in [0.25,
+   * 0.5)); 1e-7 leaves a few ulps for libm's last bit and nothing more. If the
+   * punch-in ramp ever contributed at position 0, this is what would move.
+   *
+   * wrap — the absolute step, the one number the analysis above derives. 1e-6
+   * is ~17 float ulps at this amplitude (ulp(0.5) = 5.96e-8), which is clear
+   * of the rounding in the layer mix and still pins every printed digit. The
+   * score cannot stand in for it: score is a RATIO, so editing the fixture's
+   * amplitude or frequency moves the score with the step unchanged, and a
+   * change that moved the step would slip past unless it moved the ratio too.
+   *
+   * med and wrap/med — the splice must be AT THE LOOP SEAM this test names,
+   * measured against a loop that still carries the overdubbed audio. The
+   * global score alone cannot say either: splice_score returns 1e9 for a
+   * median of 0, so a layer wiped to silence with one blip anywhere would
+   * "score like a splice", and an unrelated >100x artifact elsewhere in the
+   * lap keeps the global ratio high with the seam itself repaired. The med
+   * guard rejects the wiped-loop degenerate case; the wrap/med ratio then
+   * pins the seam step itself as the outlier, in the same units the file's
+   * other seam tests use.
+   *
+   * peak — audio either way, never corruption (the bound the file's other
+   * defect pin, test_loop_seam_gap_when_dub_retires_before_the_fold, also
+   * holds). Derived from THIS fixture, not copied from that one: two
+   * full-gain 0.5-amplitude passes offset by N*inc = 2*pi*3.625 sum to
+   * amplitude 2*0.5*|cos(pi*0.625)| = 0.38268 over the steady region, but
+   * the loop's true peak sits in the ramped head [0, F), where the
+   * attenuated first pass leaves the second pass's near-crest exposed:
+   * max |ramp(i)*x(i) + x(i+N)| = 0.42898, at i = 90 (measured 0.4290).
+   * 0.45 sits above that deterministic value, below the 0.5 single-pass
+   * amplitude that caps any legitimate content in this fixture, and far
+   * below where duplicated or unscaled writes land (0.5 .. 1.0).
+   *
+   * score — the step as a multiple of the loop's median adjacent delta, the
+   * form #731 quotes and the form a fix will be judged in. Two-sided on
+   * purpose: measured 389.8x, and the fixture is deterministic to the float
+   * ulp the wrap CHECK pins, so this +/-5% band is not measurement tolerance.
+   * It is the width at which a PARTIAL fix (say 120x) and a REGRESSION (say
+   * 2000x) each fail, instead of both reading as "defect unchanged".
+   *
+   * WHEN #731 LANDS: the defect pins (loop[0], wrap, wrap/med, the score
+   * band) flip to CHECK(score < 25.0); the med guard and the peak bound
+   * stay, and a content floor is ADDED — CHECK(peak > 0.35) (the 0.38268
+   * steady two-pass amplitude survives a seam-local taper) or
+   * CHECK(med > 6e-4) (half the expected 0.0013). Without it the flipped
+   * form passes on a "fix" that attenuates the layer to near-silence:
+   * score is scale-invariant (~2x on smooth near-zero content), a
+   * denormal-positive median satisfies med > 0, and a near-zero peak
+   * satisfies any upper bound. The absolute wrap/loop[0] pins being
+   * dropped by the flip are what guaranteed content until now. 25.0 is not a number picked for the occasion — it is the bound
+   * every other seam test in this file already holds for "continuous, not
+   * spliced", and they measure 1.6x to 2.1x against it while the known #728
+   * retire-before-the-fold gap measures 204x. Between the pre-fix floor
+   * (>370x, and >100x on wrap/med) and the post-fix ceiling (<25x) is a
+   * DELIBERATE dead band: a partial fix landing anywhere in 25x..370x fails
+   * BOTH forms of the test — it moved the step without removing the splice —
+   * and must not be read as a flaky bound to widen. */
+  CHECK(fabs((double)loop[0] - head_no_ramp) < 1e-7);
+  CHECK(fabs(wrap - 0.50167599) < 1e-6);
+  CHECK(med > 0.0);
+  CHECK(wrap / med > 100.0);
+  CHECK(peak < 0.45);
+  CHECK(score > 370.0);
+  CHECK(score < 410.0);
   free(loop);
 
   le_engine_destroy(e);
@@ -23809,6 +24004,7 @@ int main(void) {
   test_overdub_punch_no_click();
   test_loop_seam_master_take_no_splice();
   test_loop_seam_survives_whole_lap_overdub();
+  test_loop_seam_on_punch_out_with_player_stopped();
   test_loop_seam_on_non_defining_track();
   test_loop_seam_not_armed_with_record_offset();
   test_seam_capture_cleared_by_reconfigure();
