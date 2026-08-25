@@ -645,6 +645,22 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
   if (end_state == LE_TRACK_OVERDUBBING) le_dub_session_start(e, t);
 }
 
+/* One-pole coefficient for a `seconds` time constant at `sr`, as one
+ * definition rather than two copies of the same arithmetic and the same clamp.
+ *
+ * SATURATES RATHER THAN DEGRADING GRACEFULLY, and the caller should know it:
+ * below 1/seconds samples per second the coefficient would exceed 1.0 and is
+ * clamped there, which is a one-sample jump — i.e. no smoothing at all. For the
+ * limiter's 2 ms attack that threshold is 500 Hz, so every real rate is far
+ * clear of it, but several native fixtures configure the engine at sr=4 or
+ * sr=1000 and a test written at the low end cannot observe smoothing however
+ * the coefficient is spelled. */
+static inline float le_one_pole_coeff(float seconds, float sr) {
+  if (seconds <= 0.0f || sr <= 0.0f) return 1.0f;
+  const float c = 1.0f / (seconds * sr);
+  return c > 1.0f ? 1.0f : c;
+}
+
 /* Seam-crossfade overlap length (~10 ms): the frames captured past the loop
  * point and folded into the head. Also the minimum half-loop the master must
  * span to be eligible (it needs head + tail room plus steady audio between). */
@@ -2753,20 +2769,42 @@ static inline void master_bus_frame(le_engine* e, float* out, uint32_t f,
     if (peak > limiter_ceiling && peak > 0.0f) target = limiter_ceiling / peak;
     if (target < e->lim_gain) {
       e->lim_gain += (target - e->lim_gain) * lim_attack;
-      if (e->lim_gain < target) e->lim_gain = target; /* never past it */
+      /* Rounding only: (1-a)*gain + a*target with a <= 1 and target < gain is
+       * already >= target by construction. */
+      if (e->lim_gain < target) e->lim_gain = target;
     } else {
       e->lim_gain += (target - e->lim_gain) * lim_release;
+      /* SNAP, so "rests at 1.0" is true rather than nearly true. A one-pole
+       * approaches unity asymptotically and never arrives, so without this the
+       * first transient of a set would leave every later sample scaled by
+       * 0.9999999 for the rest of the session — quietly ending the
+       * bit-transparency this path claims, and with it the exactness the
+       * offline master-parity check compares against.
+       *
+       * 1e-3 is not a taste threshold, it is above where the one-pole STALLS in
+       * float. The update stops making progress once (1 - gain) * release drops
+       * below half an ulp at 1.0 (~3e-8), i.e. at 1 - gain ~= 7e-5 at 48 kHz and
+       * ~3e-4 at 192 kHz — so anything tighter than that never fires at all and
+       * the snap silently does nothing. The cost of snapping this early is a
+       * one-sample gain move of at most 0.001 (0.0087 dB) on material that is by
+       * definition under the ceiling: three orders of magnitude below the step
+       * this whole change exists to remove, and measured as such in
+       * test_master_limiter_settles_into_scaling_then_unity. */
+      if (target >= 1.0f && e->lim_gain > 1.0f - 1e-3f) e->lim_gain = 1.0f;
     }
-    if (e->lim_gain != 1.0f) {
-      for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] *= e->lim_gain;
-    }
+    /* One pass: scale, then hold at the ceiling. A multiply by an exactly-1.0
+     * gain is bit-exact, so this stays transparent below the ceiling without
+     * needing a branch to skip it — and the clamp then reads exactly the sample
+     * the multiply just wrote, instead of walking the frame a third time. */
+    const float gain = e->lim_gain;
     for (int c = 0; c < ch_out; ++c) {
-      float* const sample = &out[f * ch_out + c];
-      if (*sample > limiter_ceiling) {
-        *sample = limiter_ceiling;
-      } else if (*sample < -limiter_ceiling) {
-        *sample = -limiter_ceiling;
+      float v = out[f * ch_out + c] * gain;
+      if (v > limiter_ceiling) {
+        v = limiter_ceiling;
+      } else if (v < -limiter_ceiling) {
+        v = -limiter_ceiling;
       }
+      out[f * ch_out + c] = v;
     }
   }
 
@@ -4312,10 +4350,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * backstop clips for more of the transient. */
   const float lim_sr =
       (float)(e->sample_rate > 0 ? e->sample_rate : 48000);
-  float lim_release = 1.0f / (0.05f * lim_sr);
-  if (lim_release > 1.0f) lim_release = 1.0f;
-  float lim_attack = 1.0f / (0.002f * lim_sr);
-  if (lim_attack > 1.0f) lim_attack = 1.0f;
+  const float lim_release = le_one_pole_coeff(0.05f, lim_sr);
+  const float lim_attack = le_one_pole_coeff(0.002f, lim_sr);
 
   const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
   /* Overdub punch declick: ramp the layered input in/out over ~10 ms so a punch
