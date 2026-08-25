@@ -34,6 +34,17 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// [PerformanceRepository.renderProgress] after a disarm. [now] supplies
   /// the double-press-guard clock; injectable for deterministic tests.
   ///
+  /// [freeSpaceBytes] answers "how much room is left on this volume", and
+  /// defaults to [PerformanceRepository.freeSpaceBytes] — a `statvfs` through
+  /// the engine. It used to shell out to `df`, and that turned out to be the
+  /// single most expensive thing on the appliance's real-time path: a capture
+  /// re-checks its volume every twenty ticks, `Process.run` is fork() + exec(),
+  /// and fork() holds the process's `mmap_lock` for write for milliseconds
+  /// while it copies a 1.7 GB address space's page tables. On the Pi 5 bench
+  /// every audible dropout landed within 3 ms of one of those forks (#806).
+  /// Still injectable, and still narrow — the tests that model a filling disk
+  /// pass their own function and are unaffected.
+  ///
   /// [currentTempoBpm] resolves the REAL tempo to stamp the `.als` export
   /// with (`_writeDawExports` → `DawManifestReader.read`'s `tempoBpm`
   /// argument), read fresh at each export rather than captured once — a
@@ -70,7 +81,9 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
        _armedTickInterval = armedTickInterval,
        _renderPollInterval = renderPollInterval,
        _now = now,
-       _freeSpaceBytes = freeSpaceBytes ?? _dfFreeSpaceBytes,
+       _freeSpaceBytes =
+           freeSpaceBytes ??
+           ((String path) async => performance.freeSpaceBytes(path)),
        _currentTempoBpm = currentTempoBpm,
        _currentChains = currentChains,
        super(const PerformanceRecorderIdle()) {
@@ -165,25 +178,6 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// over the manifest's marker, which only the engine's own self-stop writes.
   PerformanceStopReason? _stopReason;
   bool _loaded = false;
-
-  /// Best-effort free-space check on [path]'s volume via `df` — `null` (no
-  /// warning) on any platform or failure this can't read, since the warning
-  /// is non-blocking and this must never fail `arm`.
-  static Future<int?> _dfFreeSpaceBytes(String path) async {
-    if (!Platform.isMacOS && !Platform.isLinux) return null;
-    try {
-      final result = await Process.run('df', ['-k', path]);
-      if (result.exitCode != 0) return null;
-      final lines = (result.stdout as String).trim().split('\n');
-      if (lines.length < 2) return null;
-      final fields = lines.last.trim().split(RegExp(r'\s+'));
-      if (fields.length < 4) return null;
-      final availableKb = int.tryParse(fields[3]);
-      return availableKb == null ? null : availableKb * 1024;
-    } on ProcessException {
-      return null;
-    }
-  }
 
   /// Silently salvages any capture a crash left unfinalized (D-SALVAGE,
   /// #679): [PerformanceRepository.runBootRecovery] finalizes + renders each

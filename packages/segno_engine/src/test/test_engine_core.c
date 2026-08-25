@@ -8183,6 +8183,30 @@ static int nth_layer_filename_for_test(const char* json, int n, char* out,
   return 1;
 }
 
+/* #806: the free-space check a capture makes every few seconds used to be a
+ * `df` subprocess, and fork() on the appliance costs the real-time audio thread
+ * milliseconds. This is the replacement — a plain question about a directory,
+ * with no engine and no child process. */
+static void test_perf_volume_free_bytes(void) {
+  printf("test_perf_volume_free_bytes\n");
+  uint64_t bytes = 12345;
+
+  CHECK(le_perf_volume_free_bytes(NULL, &bytes) == LE_ERR_INVALID);
+  CHECK(le_perf_volume_free_bytes("", &bytes) == LE_ERR_INVALID);
+  CHECK(le_perf_volume_free_bytes(".", NULL) == LE_ERR_INVALID);
+
+  /* A path the filesystem cannot answer for is LE_ERR_DEVICE, not a zero that
+   * the caller would read as "full" and refuse to arm on. */
+  bytes = 12345;
+  CHECK(le_perf_volume_free_bytes("/no/such/directory/for/segno",
+                                  &bytes) == LE_ERR_DEVICE);
+  CHECK(bytes == 0); /* cleared even on failure, so a stale read cannot leak */
+
+  bytes = 0;
+  CHECK(le_perf_volume_free_bytes(".", &bytes) == LE_OK);
+  CHECK(bytes > 0); /* the volume the tests build on is not full */
+}
+
 static void test_perf_arm_requires_configure(void) {
   printf("test_perf_arm_requires_configure\n");
   le_engine* e = le_engine_create();
@@ -23243,6 +23267,7 @@ int main(void) {
   test_two_monitored_inputs_dont_interfere();
   test_monitor_disable_and_excluded();
   test_monitor_and_playback_sum();
+  test_perf_volume_free_bytes();
   test_perf_arm_requires_configure();
   test_perf_reconfigure_while_armed_resets_cleanly();
   test_perf_arm_rejects_no_enabled_output();
