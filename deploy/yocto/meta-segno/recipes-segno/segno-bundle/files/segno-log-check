@@ -1,12 +1,13 @@
 #!/bin/sh
 # Say out loud when the persistent journal did not actually land on /data (#438).
 #
-# The failure this exists to catch is silent by construction. Storage=persistent
-# makes journald create /var/log/journal and write to it whether or not the bind
-# mount underneath it succeeded, and /var/log on this image is a symlink into
-# tmpfs. So if segno-log-dirs.service failed — no data partition, /data
-# read-only after an unclean shutdown, data.mount failed — journald writes a
-# healthy-looking journal into RAM instead. `journalctl` reports success,
+# The failure this exists to catch is silent by construction. Storage=auto (the
+# journald drop-in) narrows it — journald only goes persistent when
+# /var/log/journal exists, and the bind mount is what brings it into existence —
+# but does not close it: systemd creates a mount unit's Where= directory just
+# before mounting, so a mount attempt that failed AFTER that mkdir leaves an
+# empty directory on the tmpfs that /var/log symlinks into, and journald writes
+# a healthy-looking journal into RAM there. `journalctl` reports success,
 # `journalctl -b -1` is empty after the next reboot, and the next unexplained
 # shutdown is unknowable for the same reason as the last one, now with an
 # apparent fix in the way.
@@ -71,10 +72,11 @@ check_on_data() {
 check_on_data "the journal" "$JOURNAL_DIR"
 check_on_data "coredump storage" "$COREDUMP_DIR"
 
-# The mount can be right and the journal still be volatile: journald only moves
-# to disk when Storage= tells it to, so a drop-in that failed to land looks
-# exactly like a mount that failed to land. A persistent journal has a
-# machine-id directory holding system.journal.
+# The mount can be right and the journal still be volatile: journald only
+# moves to disk when Storage= allows it and the flush actually ran, so a
+# Storage=volatile override or a flush that never happened looks exactly like
+# a mount that failed to land. A persistent journal has a machine-id directory
+# holding system.journal.
 if [ -n "$(dev_of "$JOURNAL_DIR")" ] &&
     ! ls "$JOURNAL_DIR"/*/system.journal >/dev/null 2>&1; then
     note "no system.journal under $JOURNAL_DIR; journald is not writing there"

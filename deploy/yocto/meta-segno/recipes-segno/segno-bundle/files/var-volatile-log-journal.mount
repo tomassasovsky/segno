@@ -17,11 +17,25 @@
 [Unit]
 Description=Segno: journal storage on /data (survives reboot and OS update)
 DefaultDependencies=no
-Requires=data.mount segno-log-dirs.service
+Requires=data.mount
+# Wants, not Requires: segno-log-dirs.service failing (say, chgrp on a broken
+# image) must not take this mount down with it — on every boot after the first
+# the directories already exist and the bind mount can land on its own. The
+# oneshot still fails loudly in `systemctl --failed`; it just stops being a
+# single point of failure for BOTH mounts.
+Wants=segno-log-dirs.service
 After=data.mount segno-log-dirs.service
 Before=systemd-journal-flush.service local-fs.target
 Conflicts=umount.target
 Before=umount.target
+# The Before=systemd-journal-flush.service above puts this job on early boot's
+# critical path. Without a job timeout, a missing/slow /data device would hold
+# the flush (and local-fs.target) for DefaultTimeoutStartSec — ~90 s of dark
+# screen on an appliance. 10 s is an eternity for a partition on the same SD
+# card the rootfs just booted from; past it, cancel the job and let boot
+# proceed on runtime-only logging (Storage=auto keeps that visible, and
+# segno-log-check reports it).
+JobTimeoutSec=10
 
 [Mount]
 What=/data/log/journal
