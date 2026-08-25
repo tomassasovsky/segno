@@ -27917,16 +27917,36 @@ static ma_result ma_device_init_by_type__alsa(ma_device* pDevice, const ma_devic
          * the capture side, which really does use it, and never reached the side
          * that was underrunning.
          *
-         * Half the ring, floored at the two periods full-duplex needs. The cost is
-         * exactly the added frames in output latency, which is the honest price of
-         * a cushion and is now something the caller controls by choosing `periods`
-         * — which is what that knob already looks like it does. */
+         * Half the ring, floored at the two periods full-duplex needs. Two things
+         * that floor implies, both easy to misread:
+         *
+         * - It is a NO-OP at four periods and below — half of four periods IS two
+         *   periods — so nothing changes until periods >= 5. The engine's own
+         *   default of 2 (engine_miniaudio.c), every ALSA host that never raised
+         *   the count, and any bench run at 2 or 3 all keep stock behaviour
+         *   exactly, and a "retest at 2" measures the OLD cushion.
+         * - It lengthens every slip-resync. The self-heal in ma_device_write__alsa
+         *   drops + prepares the playback stream and lets ALSA auto-start it again
+         *   at THIS threshold, so the silence per resync IS the threshold: 256
+         *   frames (2.67 ms at 96 kHz / 64) at eight periods where it was 128. The
+         *   trade is deliberate — a deeper cushion is harder to underrun through,
+         *   so this buys fewer resyncs at the price of a longer gap when one still
+         *   happens.
+         *
+         * The steady-state cost is exactly the added frames in output latency: two
+         * periods at eight, i.e. +1.33 ms at 96 kHz / 64. It is now something the
+         * caller controls by choosing `periods` — which is what that knob already
+         * looks like it does.
+         *
+         * internalPeriods is what ALSA NEGOTIATED (set_periods_near wrote it back
+         * above), not what was requested, so this is half of the ring that actually
+         * exists. No test pins any of this: it needs a real ALSA device and the
+         * suite's host is macOS. The marker registry in README.md is what catches a
+         * re-vendor dropping it. */
         ma_uint32 startThreshold = internalPeriodSizeInFrames * 2;
-        {
-            const ma_uint32 halfRing = (internalPeriodSizeInFrames * internalPeriods) / 2;
-            if (halfRing > startThreshold) {
-                startThreshold = halfRing;
-            }
+        const ma_uint32 halfRing = (internalPeriodSizeInFrames * internalPeriods) / 2;
+        if (halfRing > startThreshold) {
+            startThreshold = halfRing;
         }
         resultALSA = ((ma_snd_pcm_sw_params_set_start_threshold_proc)pDevice->pContext->alsa.snd_pcm_sw_params_set_start_threshold)(pPCM, pSWParams, startThreshold);
         if (resultALSA < 0) {
@@ -28480,7 +28500,12 @@ static ma_result ma_device_write__alsa(ma_device* pDevice, const void* pFrames, 
      * Detect that here and resync: drop + prepare the playback stream so it restarts
      * empty, then let the (by now steadily-running) data loop re-prime it to the
      * start threshold on a fresh, correct phase. One short reset instead of a
-     * session-long artifact, and it is self-correcting on any future slip too. */
+     * session-long artifact, and it is self-correcting on any future slip too.
+     *
+     * The gap that reset costs is that start threshold, which #809 moved: it is
+     * half the ring above four periods (see ma_device_init_by_type__alsa), so at
+     * SEGNO_ALSA_PERIODS=8 this resyncs through 256 frames of silence rather than
+     * 128. The deeper cushion is what makes the slip rarer in the first place. */
     if (pDevice->pContext->alsa.snd_pcm_avail != NULL) {
         ma_uint32 bufFrames = pDevice->playback.internalPeriods * pDevice->playback.internalPeriodSizeInFrames;
         ma_snd_pcm_state_t st = ((ma_snd_pcm_state_proc)pDevice->pContext->alsa.snd_pcm_state)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback);
