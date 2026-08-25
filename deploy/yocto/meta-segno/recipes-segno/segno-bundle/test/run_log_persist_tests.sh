@@ -198,11 +198,18 @@ echo "every file do_install writes is named in FILES"
 # /etc paths were installed and never added to FILES:${PN}. The default
 # ${sysconfdir} glob still packaged them, so nothing broke — the recipe just
 # stopped describing what it owns.
+#
+# The recipe writes most destinations on the continuation line of a two-line
+# install, so the sed joins continuations first: reading the file line by line
+# saw 35 of the 46 destinations and skipped every two-line one — which is
+# precisely the style a new /etc drop-in would be added in, so the guard would
+# have reported green for the very finding it was written to catch.
 while read -r dest; do
     [ -n "$dest" ] || continue
     check "FILES names $dest" yes "$(in_files "$dest")"
 done <<EOF
-$(grep -E '^[[:space:]]*install -m [0-7]+ ' "$BB" |
+$(sed -e :a -e '/\\$/N; s/\\\n//; ta' "$BB" |
+    grep -E '^[[:space:]]*install -m [0-7]+ ' |
     grep -oE '\$\{D\}\$\{(sysconfdir|systemd_system_unitdir|bindir)\}[^ ]*' |
     sed 's|\${D}||' | sort -u)
 EOF
