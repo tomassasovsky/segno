@@ -3032,6 +3032,65 @@ static void test_take_stops_early_no_silence_cut(void) {
   le_engine_destroy(e);
 }
 
+/* One #730 fixture run at a chosen take length; returns the worst step in the
+ * looped output. Split out so the taper's 4F threshold can be measured on both
+ * sides of itself rather than asserted from the constant. */
+static double take_worst_step_for_length(int recorded) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+  osc.phase = 3.14159265358979323846 / 2.0; /* start at the peak */
+
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  le_engine_record(e, 1);
+  drain(e);
+  feed_osc(e, &osc, recorded, NULL, NULL);
+  le_engine_record(e, 1);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  settle_layers(e);
+
+  feed_to_loop_top(e);
+  float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * N));
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, loop, &n);
+  double step = 0.0;
+  double med = 0.0;
+  (void)splice_score(loop, n, &step, &med);
+  free(loop);
+  le_engine_destroy(e);
+  return step;
+}
+
+/* #730's threshold, measured rather than asserted from the constant. Below 4F
+ * (~40 ms at 48 kHz) a take is left exactly as recorded — a transient either
+ * way, and reshaping one the performer asked for is worse than the step. Above
+ * it the joins are closed.
+ *
+ * This exists because the constant has already been wrong once during
+ * development: borrowing seam_room's 2F let a take be ENTIRELY envelope. Both
+ * sides are checked so that lowering it again fails here instead of silently
+ * turning short takes back into swells. */
+static void test_take_taper_threshold_leaves_short_takes_alone(void) {
+  printf("test_take_taper_threshold_leaves_short_takes_alone\n");
+  const int f = 48000 / 100; /* seam_xfade_frames at 48 kHz */
+
+  const double just_under = take_worst_step_for_length(4 * f - 400);
+  const double comfortably_over = take_worst_step_for_length(4 * f + 2000);
+  printf("  %d frames (< 4F): worst step %.5f    %d frames (> 4F): %.5f\n",
+         4 * f - 400, just_under, 4 * f + 2000, comfortably_over);
+
+  CHECK(just_under > 0.05);        /* left alone: the joins are still there */
+  CHECK(comfortably_over < 0.01);  /* tapered: both joins closed */
+}
+
 /* #728 control: the defining master's OWN take already wraps continuously —
  * finalize_master_xfade folds the captured overlap into the head. Pins both
  * the behaviour and the detector: if this one ever scores like a splice, the
@@ -5773,6 +5832,48 @@ static void test_quantize_div_start_fires_on_loop_locked_grid(void) {
 /* D8 record END, round-down: a finalize press 3.49 quarter units into the
  * capture truncates at unit 3 — the tail past the boundary behind is dropped
  * (zeroed) and the track finalizes immediately at that boundary. */
+/* #730: the material does not always start at position 0, and the fade has to
+ * follow it. Grid-quantized record-start (D8) delays capture to the next grid
+ * unit, so the take sits at [375, 1500) inside a 3000-frame loop with silence on
+ * BOTH sides of it.
+ *
+ * The quantize tests elsewhere only BRACKET this — they assert silence at 374
+ * and full amplitude at 400 — which passes just as well if the fade were at
+ * position 0 (the first draft's bug: it faded silence and left both real steps).
+ * This measures the ramp itself. */
+static void test_take_taper_follows_a_quantized_record_start(void) {
+  printf("test_take_taper_follows_a_quantized_record_start\n");
+  le_engine* e = qa_make_grid_engine();
+  le_snapshot s;
+  const int f = 1000 / 100; /* seam_xfade_frames at this fixture's rate */
+
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  qa_advance_to(e, 0.0f, 1);
+  le_engine_record(e, 1);
+  drain(e);
+  qa_advance_to(e, 0.0f, 375); /* capture begins at 375, not 0 */
+  qa_advance_to(e, 2.0f, 375 + 1125);
+  le_engine_record(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].length_frames == 3000);
+
+  static float dst[3000];
+  qa_advance_to(e, 0.0f, 0);
+  qa_capture_out(e, dst, 3000);
+
+  /* The ramp is AT the material's start, not at the buffer's. */
+  CHECK(fabsf(dst[374]) < 1e-6f);            /* silence right before it */
+  CHECK(fabsf(dst[375]) < 1e-6f);            /* first material sample: ramp 0 */
+  CHECK(dst[375 + f / 2] > 0.5f);            /* mid-ramp: on its way up */
+  CHECK(dst[375 + f / 2] < 2.0f - 1e-6f);    /* but not there yet */
+  CHECK(fabsf(dst[375 + f] - 2.0f) < 1e-6f); /* full amplitude past the ramp */
+  printf("  ramp at the take's start: %.4f %.4f %.4f\n", dst[375],
+         dst[375 + f / 2], dst[375 + f]);
+
+  le_engine_destroy(e);
+}
+
 static void test_quantize_div_record_end_rounds_down(void) {
   printf("test_quantize_div_record_end_rounds_down\n");
   le_engine* e = qa_make_grid_engine();
@@ -23403,6 +23504,7 @@ int main(void) {
   test_latency_compensation();
   test_overdub_punch_no_click();
   test_take_stops_early_no_silence_cut();
+  test_take_taper_threshold_leaves_short_takes_alone();
   test_loop_seam_master_take_no_splice();
   test_loop_seam_survives_whole_lap_overdub();
   test_loop_seam_on_non_defining_track();
@@ -23474,6 +23576,7 @@ int main(void) {
   test_beat_boundary_on_block_edge();
   test_loop_subdiv_ratio_and_boundaries();
   test_quantize_div_start_fires_on_loop_locked_grid();
+  test_take_taper_follows_a_quantized_record_start();
   test_quantize_div_record_end_rounds_down();
   test_quantize_div_record_end_rounds_up();
   test_quantize_div_record_end_min_one_unit();
