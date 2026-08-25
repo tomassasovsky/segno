@@ -45,29 +45,31 @@ typedef struct le_audio_ring {
   _Atomic size_t tail; /* producer index (audio thread writes) */
 } le_audio_ring;
 
-/* Claims `capacity` samples of storage the ring owns, and initialises `ring`
- * over it. `capacity` must be a power of two and >= 2. Returns 1 on success, 0
- * on invalid arguments or if the storage could not be claimed.
+/* Claims `capacity` samples of storage the ring owns and initialises `ring` over
+ * it. `capacity` must be a power of two, >= 2, and small enough that its byte
+ * count does not overflow. Returns 1 on success, 0 otherwise.
+ *
+ * A ring only ever owns its own storage — there is deliberately no constructor
+ * over caller-supplied memory, so `le_audio_ring_release` can never be handed
+ * something it did not claim.
  *
  * On Linux the storage is its own anonymous mapping marked MADV_DONTFORK, so
  * fork() skips the vma outright and never write-protects the parent's pages —
- * see the header note above for why that matters. Everywhere else it is plain
- * malloc, which is what those platforms already had. Either way the pages are
- * touched here, on the CONTROL thread, so the audio thread does not fault them
- * in on its first lap either.
+ * see the header note above for why that matters. If the kernel refuses the
+ * madvise, the ring is still returned: the mapping is good memory and all that
+ * is lost is the fork protection, which is a capture with dropouts rather than
+ * no capture at all. It says so on stderr. Everywhere else this is plain
+ * malloc, which is what those platforms already had.
  *
- * Pair with le_audio_ring_release. Rings initialised with le_audio_ring_init
- * over caller-owned memory must NOT be released. */
+ * Either way the pages are touched HERE, on the calling (control) thread, so
+ * the audio thread does not fault them in on its first lap. That makes this
+ * call proportional to `capacity` — about a millisecond per 2 MB ring on the
+ * appliance — which is why it belongs in arm and not anywhere hotter. */
 int le_audio_ring_alloc(le_audio_ring* ring, size_t capacity);
 
-/* Releases storage claimed by le_audio_ring_alloc and zeroes `ring`. A no-op on
- * a zeroed ring, so teardown paths can call it unconditionally. */
+/* Releases the storage and zeroes `ring`. A no-op on a zeroed ring, so teardown
+ * paths can call it unconditionally. */
 void le_audio_ring_release(le_audio_ring* ring);
-
-/* Initialises `ring` to use `buffer` of `capacity` samples. `capacity` must be a
- * power of two and >= 2. Does not allocate; the caller owns `buffer`'s lifetime.
- * Returns 1 on success, 0 on invalid arguments. */
-int le_audio_ring_init(le_audio_ring* ring, float* buffer, size_t capacity);
 
 /* Producer side: writes `n` contiguous samples as one all-or-nothing unit, so a
  * stereo/mono capture frame is never split across a fill/drop boundary. Returns
