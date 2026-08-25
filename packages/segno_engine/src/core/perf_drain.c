@@ -893,9 +893,23 @@ static int le_pd_drain_ring(le_pd_file* pf, le_audio_ring* ring, int channels,
     const size_t popped =
         le_audio_ring_pop(ring, scratch, max_frames * (size_t)channels);
     if (popped == 0) return 1;
-    if (!le_pd_write(pf->f, scratch, popped * sizeof(float))) return 0;
+    /* Credit what LANDED, not what was attempted (#790). The all-or-nothing
+     * le_pd_write this used returned before `written` moved, so a short write
+     * left bytes on disk that this module did not believe were there — and the
+     * final cycle's catch-up then padded a gap that included them, leaving
+     * master.pcm longer than `elapsed` by the residue. Same shape as the pad's
+     * own gap (#718), milder only because the popped frames are gone from the
+     * ring, so nothing is re-written and no whole gap duplicates.
+     *
+     * The division truncates a torn sub-frame tail rather than reconstructing
+     * it, which is #789's answer to the same question: at disk-full the capture
+     * is self-stopping, and a partial frame at the very end of a take that is
+     * about to stop is not worth carrying machinery for. */
+    const size_t bytes = popped * sizeof(float);
+    const size_t got = le_pd_write_some(pf->f, scratch, bytes);
+    pf->written += (got / sizeof(float)) / (size_t)channels;
+    if (got != bytes) return 0;
     const size_t popped_frames = popped / (size_t)channels;
-    pf->written += popped_frames;
     if (popped_frames < max_frames) return 1;
   }
 }
