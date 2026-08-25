@@ -220,6 +220,44 @@ jobs:
             echo "YOCTO_WORK_DIR=$HOME/yocto-build" >> "$GITHUB_ENV"
           fi
 
+      # A build that fills its host takes more than the build down with it.
+      # On 2026-08-25 an unbounded deploy directory helped exhaust the runner
+      # host's LVM thin pool; the pool entered out-of-data-space mode, an
+      # unrelated backup volume on the same pool failed its fsck, and the
+      # hypervisor dropped into emergency mode — taking Portainer and the
+      # runner VM with it. Recovery needed physical console access (#817).
+      #
+      # Two guards, both cheap: prune what accumulates, and refuse to start a
+      # build that cannot fit rather than discovering the limit by hitting it.
+      - name: Prune old images + pre-flight disk check
+        env:
+          MIN_FREE_GB: "80"
+        run: |
+          set -eu
+          mkdir -p "$YOCTO_WORK_DIR"
+
+          # Each build leaves a timestamped ~8.3 GB .wic behind forever; the
+          # rootfs.wic symlink points at the newest and the rest are dead
+          # weight. Keep the two newest per machine.
+          shopt -s nullglob
+          for d in "$YOCTO_WORK_DIR"/*/tmp/deploy/images/*/; do
+            for f in $(ls -t "$d"*.wic 2>/dev/null | tail -n +3); do
+              echo "pruning $(basename "$f") ($(du -h "$f" | cut -f1))"
+              rm -f "$f" "$f.bmap"
+            done
+          done
+
+          avail=$(df -BG --output=avail "$YOCTO_WORK_DIR" | tail -1 | tr -dc '0-9')
+          echo "free at $YOCTO_WORK_DIR: ${avail} GB (minimum ${MIN_FREE_GB} GB)"
+
+          # A new MACHINE is not an incremental cost: a different tune shares
+          # almost no sstate, so it builds a second complete tree. That is what
+          # made the Pi 5 port (#799) expensive on a host nobody had re-sized.
+          if [ "$avail" -lt "$MIN_FREE_GB" ]; then
+            echo "::error::only ${avail} GB free at $YOCTO_WORK_DIR, need ${MIN_FREE_GB} GB. Free space on the runner before retrying — do not let the build take the host down."
+            exit 1
+          fi
+
       - name: Restore Yocto sstate + downloads (GitHub-hosted only)
         if: inputs.runner != 'self-hosted'
         uses: actions/cache@v6
@@ -247,6 +285,16 @@ jobs:
           KAS_WORK_DIR="$YOCTO_WORK_DIR" KAS_CONTAINER_ENGINE=docker \
             ./kas-container shell ${{ needs.determine-meta.outputs.kas }} \
             -c "SEGNO_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} SEGNO_UPDATE_CHANNEL=${{ needs.determine-meta.outputs.channel }} bitbake segno-update-bundle segno-kiosk-image"
+
+      # Make growth visible in the run log, so it is noticed here rather than
+      # by a hypervisor falling over.
+      - name: Report disk consumed
+        if: always()
+        run: |
+          set +e
+          echo "free after build: $(df -BG --output=avail "$YOCTO_WORK_DIR" | tail -1 | tr -dc '0-9') GB"
+          du -sh "$YOCTO_WORK_DIR" 2>/dev/null | tail -1
+          du -sh "$YOCTO_WORK_DIR"/*/tmp/deploy/images/*/ 2>/dev/null | tail -5
 
       - name: Collect bundle + write manifest
         id: artifacts
