@@ -27909,8 +27909,8 @@ static ma_result ma_device_init_by_type__alsa(ma_device* pDevice, const ma_devic
          * period — the playback ring's occupancy then settles at whatever it
          * started with and stays there, so the CUSHION against a late writer is two
          * periods no matter what the caller asked for. Measured on the appliance at
-         * SEGNO_ALSA_PERIODS=8, 96 kHz / 64 frames: a 512-frame buffer carrying
-         * 64-128 frames, i.e. 384 frames of the ring never used at all.
+         * SEGNO_ALSA_PERIODS=8, 96 kHz / 64 frames: appl_ptr - hw_ptr sampled 90-129
+         * frames of a 512-frame ring, i.e. 512 - 129 = 383 frames never used at all.
          *
          * That is why raising the buffer depth from 192 to 512 "changed nothing"
          * during the #710 click hunt: on this path it could not have. Depth reached

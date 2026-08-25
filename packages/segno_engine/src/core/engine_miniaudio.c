@@ -236,7 +236,13 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
 #if defined(__linux__)
     /* Appliance tunable: buffer depth (period count) for the direct-ALSA duplex.
      * miniaudio starts capture immediately but leaves playback to auto-start once
-     * start_threshold (= 2 periods) is buffered, on a buffer only `periods` deep.
+     * start_threshold is buffered, on a buffer only `periods` deep. Upstream pins
+     * that threshold at 2 periods however deep the ring is; the SEGNO patch (#809)
+     * in ma_device_init_by_type__alsa raises it to half the ring, still floored at
+     * the two periods full-duplex needs — so it only moves at all from `periods`
+     * >= 5, and is 4 periods at the appliance's shipped 8. That is what makes this
+     * knob buy a playback cushion and not capture depth alone.
+     *
      * At tiny periods (64 frames) a 2-period buffer runs the playback write side
      * right at the underrun edge: on an unlucky startup phase the capture->playback
      * monitoring delay oscillates near-empty and sounds "robotic" (no XRUN — it
