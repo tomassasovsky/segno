@@ -27938,6 +27938,21 @@ static ma_result ma_device_init_by_type__alsa(ma_device* pDevice, const ma_devic
          * caller controls by choosing `periods` — which is what that knob already
          * looks like it does.
          *
+         * KNOWN HOLE, left open on purpose: the -EPIPE (underrun) recovery in
+         * ma_device_write__alsa does not come back through this threshold. After
+         * snd_pcm_recover, upstream calls snd_pcm_start() explicitly — its comment
+         * explains why: writei sometimes never auto-restarts — and an explicit
+         * start ignores start_threshold, so playback restarts on a near-empty ring
+         * and the capture-driven loop then holds occupancy at about one period for
+         * the rest of the session. A real underrun therefore quietly reverts the
+         * cushion this patch bought, until the next stop/start or slip-resync
+         * re-primes through the threshold. Not patched here: it is upstream
+         * behaviour with its own rationale, and this change is bench-verified only
+         * (blocked-verify) — widening it further without the device would be
+         * guesswork. It is rare (an underrun through a 4-period cushion) and the
+         * #722 hook reports every occurrence, so a session in that degraded state
+         * is at least a visible one.
+         *
          * internalPeriods is what ALSA NEGOTIATED (set_periods_near wrote it back
          * above), not what was requested, so this is half of the ring that actually
          * exists. No test pins any of this: it needs a real ALSA device and the

@@ -125,11 +125,11 @@ export SEGNO_RT_AUDIO=1
 # before shipping, not something to infer from the 96kHz/64 figure.
 #
 # The capture side is unchanged and still gets the depth: miniaudio assigns the
-# same `periods` to both descriptors, back to back in `ma_device_init`
-# (miniaudio.h:42096 playback, :42112 capture). Those line numbers shift every
-# time a patch lands above them, so grep for the pair instead: `pConfig->periods`
-# returns 3 hits, and the two adjacent ones inside `ma_device_init` are these.
-# NOT `periodCount = pConfig->periods` — the assignments are column-aligned in
+# same `periods` to both descriptors (playback then capture), back to back in
+# `ma_device_init`. No line numbers on purpose — they shift every time a patch
+# lands above them — grep for the pair instead: `pConfig->periods` returns 3
+# hits, and the two adjacent ones inside `ma_device_init` are these. NOT
+# `periodCount = pConfig->periods` — the assignments are column-aligned in
 # upstream's style, so that string matches nothing.
 #
 # Each playback slip-resync also now restarts through the higher threshold, so
@@ -142,15 +142,16 @@ export SEGNO_RT_AUDIO=1
 #
 # 8 is also the ceiling, which the engine's own "swept live on the device"
 # wording (the comment above the override in engine_miniaudio.c) should not be
-# read to deny. The engine accepts the override only in [2,8]
-# (packages/segno_engine/src/core/engine_miniaudio.c:127); an out-of-range value
-# is silently IGNORED, not clamped, leaving the default 2 from line 111 — the
-# single worst configuration on record here. So "8 held" is not the top of a
-# sweep, it is the deepest buffer the engine can be asked for, and 4 through 7
-# were never tried. The concrete failure this note prevents: capture drops
-# reappear on a new interface, someone reads "go deeper" and sets
-# SEGNO_ALSA_PERIODS=12, silently gets 2, and concludes buffer depth was never
-# the issue.
+# read to deny. The engine clamps the override into [2,8]
+# (`le_alsa_periods_from_env` in engine_miniaudio.c, #736): an out-of-range
+# value is folded to the nearest bound with a line on stderr saying so. So "8
+# held" is not the top of a sweep, it is the deepest buffer the engine can be
+# asked for, and 4 through 7 were never tried. The concrete failure this note
+# prevents: capture drops reappear on a new interface, someone reads "go
+# deeper" and sets SEGNO_ALSA_PERIODS=12, actually runs the same 8 that was
+# already failing (the clamp's stderr line is easy to miss in the journal), and
+# concludes buffer depth was never the issue — when past 8 was simply never
+# reachable.
 #
 # 8 has NOT been re-derived since #809, and the reasoning that picked it no
 # longer holds in full: it rested on the depth being free on the monitor side,
