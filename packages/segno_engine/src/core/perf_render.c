@@ -738,6 +738,25 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
     }
   }
 
+  /* The disarm image's anchor, and the one rule the whole RECORD_END/
+   * RECORD_ABORT split exists to protect: disarmSnapshot's lane-0 image is
+   * placed at the FIRST RECORD_END on this channel while the channel is still
+   * content-free. That is a heuristic — ordinal position plus a content flag —
+   * not an identity: nothing here says "the finalize that produced this
+   * image", because performance.json does not record which take the settled
+   * image is the result of.
+   *
+   * So it holds only as long as no finalize path can log a RECORD_END before
+   * content exists. finalize_new_track's void branch did exactly that, and an
+   * abort borrowing this anchor placed the REAL take's audio at the abort
+   * frame and — the lookup then marking the channel content-bearing —
+   * swallowed the finalize that followed (#264). That branch now logs
+   * LE_PLOG_RECORD_ABORT, which this scan never sees, and RECORD_END's
+   * declaration in perf_log_ring.h carries the resulting carve-out.
+   *
+   * A future finalize path that ends a take before content exists re-breaks
+   * this identically and silently. Replacing the heuristic with an explicit
+   * take identity carried in the manifest is tracked as #819. */
   for (int i = 0; i < log_count; ++i) {
     const le_pr_log_entry* e = &log[i];
     if (e->cmd.code == LE_PLOG_RECORD_END && e->cmd.arg_i == channel &&
