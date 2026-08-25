@@ -127,8 +127,10 @@ export SEGNO_RT_AUDIO=1
 # The capture side is unchanged and still gets the depth: miniaudio assigns the
 # same `periods` to both descriptors, back to back in `ma_device_init`
 # (miniaudio.h:42096 playback, :42112 capture). Those line numbers shift every
-# time a patch lands above them — grep `periodCount = pConfig->periods` for the
-# pair; that is the reference that survives. Each playback slip-resync also now
+# time a patch lands above them, so grep for the pair instead: `pConfig->periods`
+# returns 3 hits, and the two adjacent ones inside `ma_device_init` are these.
+# NOT `periodCount = pConfig->periods` — the assignments are column-aligned in
+# upstream's style, so that string matches nothing. Each playback slip-resync also now
 # restarts through the higher threshold, so its silent gap is 256 frames rather
 # than 128 at 8 periods — fewer resyncs (the cushion is harder to underrun
 # through), longer gap each.
