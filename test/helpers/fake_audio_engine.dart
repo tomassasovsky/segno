@@ -859,6 +859,13 @@ class FakeAudioEngine implements AudioEngine {
     return perfDisarmResult;
   }
 
+  @override
+  int? volumeFreeBytes(String path) => freeBytes;
+
+  /// What [volumeFreeBytes] reports; `null` models a platform that cannot
+  /// answer.
+  int? freeBytes = 1 << 40;
+
   /// Result returned by [renderBegin].
   EngineResult renderBeginResult = EngineResult.ok;
 

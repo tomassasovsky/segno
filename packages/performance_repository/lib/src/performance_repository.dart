@@ -180,6 +180,18 @@ class PerformanceRepository {
   /// native fields while armed). Deleted once finalize folds it in.
   static const String _armSnapshotFileName = 'arm-snapshot.json';
 
+  /// Free bytes on the volume holding [path], or `null` when the platform
+  /// cannot answer.
+  ///
+  /// A capture re-checks the volume it is filling, and used to do it by running
+  /// `df` — which forks the whole app, twelve times a minute, for the length of
+  /// a take. On the appliance that is milliseconds of `mmap_lock` held for
+  /// write while a 1.7 GB address space's page tables are copied, and the
+  /// real-time
+  /// audio thread sleeps behind it (#806). The engine answers the same question
+  /// with a `statvfs` and no child process.
+  int? freeSpaceBytes(String path) => _engine.volumeFreeBytes(path);
+
   /// The repository-owned capture phase, replaying the current value to a new
   /// listener before live updates (mirrors `LooperRepository.looperState`).
   Stream<PerformanceCaptureStatus> get captureStatus async* {

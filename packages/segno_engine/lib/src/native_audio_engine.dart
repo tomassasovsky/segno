@@ -1456,6 +1456,24 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  int? volumeFreeBytes(String path) {
+    if (path.isEmpty) return null;
+    final pathPtr = path.toNativeUtf8();
+    final outPtr = calloc<Uint64>();
+    try {
+      final code = _bindings.le_perf_volume_free_bytes(
+        pathPtr.cast(),
+        outPtr,
+      );
+      if (!EngineResult.fromCode(code).isOk) return null;
+      return outPtr.value;
+    } finally {
+      calloc.free(outPtr);
+      malloc.free(pathPtr);
+    }
+  }
+
+  @override
   EngineResult renderBegin(String captureDir) {
     _checkAlive();
     final dirPtr = captureDir.toNativeUtf8();

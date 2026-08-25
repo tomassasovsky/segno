@@ -92,11 +92,37 @@
 #include <sched.h>    /* SCHED_OTHER, sched_get_priority_min */
 #include <sys/stat.h> /* mkdir */
 #include <time.h>     /* nanosleep */
+#include <sys/statvfs.h> /* statvfs (le_perf_volume_free_bytes) */
 #include <unistd.h>   /* write, close */
 #if defined(__linux__)
 #include <sys/resource.h> /* setpriority, PRIO_PROCESS */
 #endif
 #endif
+
+/* Free bytes on the volume holding `path` — segno_engine_api.h has the why,
+ * including why the caller no longer shells out to `df` for it.
+ *
+ * f_bavail, not f_bfree: the reserved blocks a filesystem keeps for root are
+ * not room a capture may use, and reporting them would let a take arm onto a
+ * volume it cannot actually fill. */
+int32_t le_perf_volume_free_bytes(const char* path, uint64_t* out_bytes) {
+  if (path == NULL || path[0] == '\0' || out_bytes == NULL) {
+    return LE_ERR_INVALID;
+  }
+  *out_bytes = 0;
+#if defined(_WIN32)
+  ULARGE_INTEGER avail;
+  avail.QuadPart = 0;
+  if (!GetDiskFreeSpaceExA(path, &avail, NULL, NULL)) return LE_ERR_DEVICE;
+  *out_bytes = (uint64_t)avail.QuadPart;
+  return LE_OK;
+#else
+  struct statvfs st;
+  if (statvfs(path, &st) != 0) return LE_ERR_DEVICE;
+  *out_bytes = (uint64_t)st.f_bavail * (uint64_t)st.f_frsize;
+  return LE_OK;
+#endif
+}
 
 /* ---- tuning ---- */
 #define LE_PD_FLUSH_MS 250   /* drain + sidecar flush cadence */

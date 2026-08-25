@@ -137,6 +137,21 @@ void main() {
     expect(await repo.exportsRoot(), '${tempDir.path}/exports');
   });
 
+  group('freeSpaceBytes (#806)', () {
+    // A capture re-checks the volume it is filling. Asking the engine keeps
+    // that a syscall; the `df` it replaced was a fork() of the whole app,
+    // twelve times a minute, for the length of a take.
+    test('reports what the engine measured', () {
+      engine.freeBytes = 4096;
+      expect(repo.freeSpaceBytes('/data'), 4096);
+    });
+
+    test('passes a platform that cannot answer straight through as null', () {
+      engine.freeBytes = null;
+      expect(repo.freeSpaceBytes('/data'), isNull);
+    });
+  });
+
   group('arm', () {
     test('creates the slugged bundle directory and arms the engine', () async {
       final result = await repo.arm();
