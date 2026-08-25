@@ -114,10 +114,15 @@ class SettingsRepository {
   /// The period count changes the ALSA playback start threshold (#809), which
   /// changes real output latency — so a record-offset calibration measured
   /// under one period count is stale under another, for the same device /
-  /// sample-rate / buffer triple. Folding it into the key invalidates those
-  /// stale offsets deliberately: the appliance (which ships
-  /// `SEGNO_ALSA_PERIODS=8`) re-measures instead of silently reusing a
-  /// pre-#809 offset.
+  /// sample-rate / buffer triple. Folding it into the key separates those
+  /// offsets. A pre-#809 calibration under the legacy (period-less) key is
+  /// not discarded but **migrated** on first read — see
+  /// [loadLatencyOffsetFrames] — because nothing on the appliance would ever
+  /// re-measure it: both auto-measure triggers in the bootstrap are
+  /// structurally false on Linux (the console pins its capture device, and
+  /// `le_platform_excluded_input_mask` always returns 0 there), so a
+  /// discarded offset would simply mean *no* compensation, an error of the
+  /// full hardware round trip.
   ///
   /// `null` means "knob not engaged" and keeps the legacy key shape, so every
   /// desktop calibration (and Linux with the variable unset, where #809 is a
@@ -143,20 +148,76 @@ class SettingsRepository {
     return parsed.clamp(2, 8);
   }
 
+  String _legacyLatencyKey(String device, int sampleRate, int bufferFrames) =>
+      'latency_offset.$device.$sampleRate.$bufferFrames';
+
   String _latencyKey(String device, int sampleRate, int bufferFrames) {
-    final base = 'latency_offset.$device.$sampleRate.$bufferFrames';
+    final base = _legacyLatencyKey(device, sampleRate, bufferFrames);
     // Appended only when the ALSA periods knob is engaged, so desktop keys
     // keep their historical shape and stay valid (see [_alsaPeriods]).
     return _alsaPeriods == null ? base : '$base.p$_alsaPeriods';
   }
 
+  /// How many frames #809 added to real output latency versus the legacy
+  /// (pre-#809, period-less) configuration, for this period count and buffer.
+  ///
+  /// The patched ALSA start threshold (miniaudio.h, SEGNO PATCH #809) is
+  /// `max(2 * period, (period * periods) ~/ 2)`; stock was `2 * period`. The
+  /// steady-state output latency moves by exactly the threshold delta —
+  /// that is the PR's own premise ("the steady-state cost is exactly the
+  /// added frames in output latency") — so:
+  ///
+  ///   delta = max(0, (bufferFrames * periods) ~/ 2 - 2 * bufferFrames)
+  ///
+  /// which is 0 for periods <= 4 and, e.g., `2 * bufferFrames` at the
+  /// appliance's shipped 8. `period` here is [bufferFrames]: the engine
+  /// requests `periodSizeInFrames = buffer_frames` (engine_miniaudio.c) and
+  /// the key stores that same requested value. Caveat, accepted: the
+  /// threshold itself uses the NEGOTIATED internalPeriodSize/internalPeriods,
+  /// while this uses the requested buffer and the clamped requested period
+  /// count — they match on the appliance's Scarlett (per the launcher's
+  /// hw_params note), which is the only place the knob ships engaged.
+  int _startThresholdDeltaFrames(int bufferFrames) {
+    final halfRing = bufferFrames * _alsaPeriods! ~/ 2;
+    final legacyThreshold = 2 * bufferFrames;
+    return halfRing > legacyThreshold ? halfRing - legacyThreshold : 0;
+  }
+
   /// Loads the saved record-offset (frames) for the given device profile, or
   /// `null` if none has been stored.
+  ///
+  /// When the ALSA periods knob is engaged and the period-qualified key is
+  /// empty, a calibration stored under the legacy key is migrated: returned
+  /// shifted by [_startThresholdDeltaFrames] and persisted under the
+  /// qualified key. Discarding it instead would leave the appliance with NO
+  /// offset forever — no auto re-measure exists on Linux (see
+  /// [_alsaPeriods]) — and the shift is exact because #809 changes output
+  /// latency by precisely the threshold delta. This is a one-time value
+  /// migration for calibrations on shipped hardware, not a compatibility
+  /// code path (AGENTS.md): the legacy key is never read again once the
+  /// qualified key exists. It runs even at delta 0 (periods <= 4, where #809
+  /// is a no-op): the qualified key still materialises so the legacy entry
+  /// stays a pristine pre-#809 baseline — subsequent saves land on the
+  /// qualified key, never overwrite the legacy one, and a later period-count
+  /// change migrates from the baseline again with its own delta. The legacy
+  /// entry is left in place for exactly that reason, and so a downgrade to a
+  /// pre-#809 build still finds its own correct value.
   Future<int?> loadLatencyOffsetFrames({
     required String device,
     required int sampleRate,
     required int bufferFrames,
-  }) => _store.getInt(_latencyKey(device, sampleRate, bufferFrames));
+  }) async {
+    final key = _latencyKey(device, sampleRate, bufferFrames);
+    final stored = await _store.getInt(key);
+    if (stored != null || _alsaPeriods == null) return stored;
+    final legacy = await _store.getInt(
+      _legacyLatencyKey(device, sampleRate, bufferFrames),
+    );
+    if (legacy == null) return null;
+    final migrated = legacy + _startThresholdDeltaFrames(bufferFrames);
+    await _store.setInt(key, migrated);
+    return migrated;
+  }
 
   /// Saves the record-offset (frames) for the given device profile.
   Future<void> saveLatencyOffsetFrames({

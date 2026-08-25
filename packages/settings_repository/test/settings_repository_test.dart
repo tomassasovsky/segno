@@ -134,28 +134,12 @@ void main() {
     });
 
     test(
-      'a legacy offset is invisible under a period count, and vice versa',
+      'a period-qualified offset is invisible to the legacy key',
       () async {
-        // The deliberate invalidation from #809: the period count moves the
-        // playback start threshold, so an offset calibrated without it (or
-        // under a different count) must not be reused.
-        await repository.saveLatencyOffsetFrames(
-          device: 'Scarlett',
-          sampleRate: 96000,
-          bufferFrames: 64,
-          frames: 480,
-        );
-
+        // The period count moves the playback start threshold (#809), so an
+        // offset calibrated under a period count must not leak into the
+        // legacy (period-less) profile.
         final appliance = SettingsRepository(store: store, alsaPeriods: 8);
-        expect(
-          await appliance.loadLatencyOffsetFrames(
-            device: 'Scarlett',
-            sampleRate: 96000,
-            bufferFrames: 64,
-          ),
-          isNull,
-        );
-
         await appliance.saveLatencyOffsetFrames(
           device: 'Scarlett',
           sampleRate: 96000,
@@ -168,8 +152,104 @@ void main() {
             sampleRate: 96000,
             bufferFrames: 64,
           ),
-          480,
+          isNull,
         );
+      },
+    );
+  });
+
+  group('latency offset migration (legacy -> period-qualified)', () {
+    // #809 shifts real output latency by exactly the start-threshold delta:
+    // max(0, bufferFrames * periods ~/ 2 - 2 * bufferFrames). A pre-#809
+    // calibration is therefore not discarded (nothing re-measures on the
+    // appliance) but shifted by that delta and persisted under the qualified
+    // key on first read.
+    Future<int?> load(SettingsRepository repo) => repo.loadLatencyOffsetFrames(
+      device: 'Scarlett',
+      sampleRate: 96000,
+      bufferFrames: 64,
+    );
+
+    test(
+      'legacy present and p8 absent returns legacy + delta and persists it',
+      () async {
+        // p8 @ 64 frames: halfRing 256 - legacy threshold 128 = 128 frames.
+        store.values['latency_offset.Scarlett.96000.64'] = 480;
+
+        final appliance = SettingsRepository(store: store, alsaPeriods: 8);
+        expect(await load(appliance), 608);
+        expect(store.values, {
+          // Downgrade path: the legacy entry is untouched, so a pre-#809
+          // build still finds the value that is correct for it.
+          'latency_offset.Scarlett.96000.64': 480,
+          'latency_offset.Scarlett.96000.64.p8': 608,
+        });
+
+        // The qualified key now exists, so later reads use it verbatim.
+        expect(await load(appliance), 608);
+      },
+    );
+
+    test('an existing period-qualified value wins over legacy', () async {
+      store.values['latency_offset.Scarlett.96000.64'] = 480;
+      store.values['latency_offset.Scarlett.96000.64.p8'] = 240;
+
+      final appliance = SettingsRepository(store: store, alsaPeriods: 8);
+      expect(await load(appliance), 240);
+      expect(store.values['latency_offset.Scarlett.96000.64'], 480);
+    });
+
+    test('legacy absent returns null and persists nothing', () async {
+      final appliance = SettingsRepository(store: store, alsaPeriods: 8);
+      expect(await load(appliance), isNull);
+      expect(store.values, isEmpty);
+    });
+
+    test('desktop (no alsaPeriods) never migrates', () async {
+      store.values['latency_offset.Scarlett.96000.64'] = 480;
+
+      expect(await load(repository), 480);
+      // No qualified key materialised, and the value is unshifted.
+      expect(store.values, {'latency_offset.Scarlett.96000.64': 480});
+    });
+
+    test('delta tracks the start-threshold change per period count', () async {
+      // threshold = max(2 * period, period * periods ~/ 2); legacy = 2 *
+      // period. At 64-frame periods: p8 -> +128, p6 -> +64, and p4 / p2 sit
+      // on the two-period floor -> +0.
+      store.values['latency_offset.Scarlett.96000.64'] = 480;
+      const expected = {8: 608, 6: 544, 4: 480, 2: 480};
+
+      for (final MapEntry(key: periods, value: migrated) in expected.entries) {
+        final appliance = SettingsRepository(
+          store: store,
+          alsaPeriods: periods,
+        );
+        expect(await load(appliance), migrated, reason: 'p$periods');
+        expect(
+          store.values['latency_offset.Scarlett.96000.64.p$periods'],
+          migrated,
+          reason: 'p$periods persists under its own key',
+        );
+      }
+      expect(store.values['latency_offset.Scarlett.96000.64'], 480);
+    });
+
+    test(
+      'a delta-0 migration still materialises the qualified key',
+      () async {
+        // At periods <= 4 the shift is 0 (#809 is a no-op there), but the
+        // qualified key must still be written: subsequent saves then land on
+        // the p4 key instead of overwriting the legacy entry, which stays a
+        // pristine pre-#809 baseline for any later period-count migration.
+        store.values['latency_offset.Scarlett.96000.64'] = 480;
+
+        final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+        expect(await load(appliance), 480);
+        expect(store.values, {
+          'latency_offset.Scarlett.96000.64': 480,
+          'latency_offset.Scarlett.96000.64.p4': 480,
+        });
       },
     );
   });
