@@ -1223,6 +1223,49 @@ void main() {
       },
     );
 
+    test(
+      'defaults to the repository, which asks the engine — never a subprocess '
+      '(#806)',
+      () async {
+        // The default used to run `df`, i.e. fork() the whole app, every
+        // twenty armed ticks. On the appliance that is milliseconds of
+        // mmap_lock held for write and an audible dropout in the monitor.
+        // Built WITHOUT a freeSpaceBytes override, so this exercises the real
+        // default path end to end.
+        engine.freeBytes = PerformanceRecorderCubit.lowDiskThresholdBytes - 1;
+        final cubit = PerformanceRecorderCubit(
+          performance: performance,
+          armedTickInterval: const Duration(milliseconds: 10),
+          renderPollInterval: const Duration(milliseconds: 10),
+          now: () => clock,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.toggleArm();
+        await pumpEventQueue();
+
+        expect((cubit.state as PerformanceRecorderIdle).lowDiskBlocked, isTrue);
+
+        engine.freeBytes = PerformanceRecorderCubit.lowDiskThresholdBytes * 2;
+        await cubit.toggleArm();
+        await pumpEventQueue();
+
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
+
+        // And a volume the platform cannot measure at all must still arm —
+        // through the real default seam, not an injected stand-in. A
+        // regression that turned that null into a 0 would otherwise refuse
+        // every arm on the device while passing every test here.
+        await cubit.toggleArm();
+        await pumpEventQueue();
+        engine.freeBytes = null;
+        await cubit.toggleArm();
+        await pumpEventQueue();
+
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
+      },
+    );
+
     test('arms normally when the volume has room', () async {
       final cubit = build(
         freeSpaceBytes: (_) async =>

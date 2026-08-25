@@ -3209,6 +3209,46 @@ class SegnoEngineBindings {
   late final _le_perf_disarm = _le_perf_disarmPtr
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
+  /// Free bytes on the volume holding `path`, into `*out_bytes`. Returns LE_OK,
+  /// LE_ERR_INVALID (null/empty `path` or null `out_bytes`), or LE_ERR_DEVICE if
+  /// the platform refused to answer (a path that does not exist, a filesystem that
+  /// cannot report). Engine-free: it is a question about a directory, not about a
+  /// running capture, so it is also the check made BEFORE arming one.
+  ///
+  /// It is here rather than in the caller because the caller is Dart, which has no
+  /// free-space API at all — and the shell-out that filled that gap turned out to
+  /// be the most expensive thing on the appliance's real-time path. `Process.run`
+  /// is fork() + exec(), fork() holds mmap_lock for write for milliseconds while it
+  /// copies a 1.7 GB address space's page tables, and under PREEMPT_RT the audio
+  /// thread's next page fault sleeps behind it. A capture re-checked its volume
+  /// every 4.75 s, so a take forked the whole app twelve times a minute; every
+  /// audible dropout measured on the Pi 5 bench landed within 3 ms of one (#806).
+  ///
+  /// Answering it in C also keeps the struct layout in C. `statvfs` is shaped
+  /// differently on glibc and on macOS, and a Dart-side layout guess would not
+  /// fail loudly — it would report a plausible wrong number and stop a take that
+  /// had room.
+  int le_perf_volume_free_bytes(
+    ffi.Pointer<ffi.Char> path,
+    ffi.Pointer<ffi.Uint64> out_bytes,
+  ) {
+    return _le_perf_volume_free_bytes(
+      path,
+      out_bytes,
+    );
+  }
+
+  late final _le_perf_volume_free_bytesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Uint64>)
+        >
+      >('le_perf_volume_free_bytes');
+  late final _le_perf_volume_free_bytes = _le_perf_volume_free_bytesPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Uint64>)
+      >();
+
   /// Starts an offline render of the finalized capture at `capture_dir`: spawns
   /// a worker thread that writes `stems/dry/track<channel>.wav` +
   /// `stems/wet/track<channel>.wav` under `capture_dir` for every non-empty

@@ -583,6 +583,13 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult perfArm(String captureDir) => EngineResult.ok;
   @override
   EngineResult perfDisarm() => EngineResult.ok;
+
+  @override
+  int? volumeFreeBytes(String path) => freeBytes;
+
+  /// What [volumeFreeBytes] reports; `null` models a platform that cannot
+  /// answer.
+  int? freeBytes = 1 << 40;
   @override
   EngineResult renderBegin(String captureDir) => EngineResult.ok;
   @override
