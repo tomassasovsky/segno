@@ -16183,6 +16183,122 @@ static void test_perf_render_wet_plugin_passthrough(void) {
  * must match live playback sample-exactly — image[(f - 4) % 4], the master
  * phase — and the offline master must hold parity with the live-captured
  * master.pcm, the same criterion as the golden gate below. */
+/* #264 (P0): an ABORTED EMPTY take must not claim the disarm image.
+ *
+ * The renderer anchors the disarm-snapshot image on the first RECORD_END it
+ * sees on a still-content-free channel. A take that captured nothing logged one
+ * of those too, so an abort placed the REAL take's audio at the ABORT frame and
+ * — because the lookup then marks the channel content-bearing — swallowed the
+ * segment belonging to the finalize that actually produced it.
+ *
+ * Same shape as the midloop fixture below, with one press pair inserted: arm
+ * channel 1 and stop it in the same block, so record_pos is still 0 and
+ * finalize_new_track takes its void branch. */
+static void test_perf_render_aborted_take_does_not_claim_disarm_image(void) {
+  printf("test_perf_render_aborted_take_does_not_claim_disarm_image\n");
+  const char* dir = render_test_dir("abortedtake");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  float out[64];
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, 1000);
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+
+  /* Track 0 defines the master; finalize applies at capture frame 4. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+
+  /* THE ABORT, and it has to land ON the loop top. record_pos is the write
+   * POSITION seeded at the press so writes stay phase-locked to the master —
+   * not a count of captured frames — so finalize_new_track's `record_pos <= 0`
+   * void branch is only reachable when the press lands at master position 0.
+   * The master finalize just applied, which is exactly that instant. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_snapshot aborted;
+  le_engine_get_snapshot(e, &aborted);
+  CHECK(aborted.tracks[1].state == LE_TRACK_EMPTY); /* it really was void */
+  const uint64_t abort_frame = (uint64_t)aborted.perf_frames;
+
+  /* Play on to master position 1, then the REAL take: two frames of content. */
+  process_const(e, 0.0f, 4, out);
+  process_const(e, 0.0f, 1, out);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 0.3f, 2, out);
+  le_snapshot before_end;
+  le_engine_get_snapshot(e, &before_end);
+  const uint64_t real_end_frame = (uint64_t)before_end.perf_frames;
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+
+  process_const(e, 0.0f, 8, out);
+
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  const uint64_t capture_frames = (uint64_t)snap.perf_frames;
+  printf("  abort at %llu, real finalize at %llu, capture %llu frames\n",
+         (unsigned long long)abort_frame, (unsigned long long)real_end_frame,
+         (unsigned long long)capture_frames);
+  CHECK(abort_frame < real_end_frame); /* the fixture is the right shape */
+
+  float lane0[8] = {0};
+  float lane1[8] = {0};
+  CHECK(le_engine_export_track_lane(e, 0, 0, lane0, 8) == loop_len);
+  CHECK(le_engine_export_track_lane(e, 1, 0, lane1, 8) == loop_len);
+
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane0, loop_len, sr);
+  snprintf(wav_path, sizeof(wav_path), "%s/track1-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane1, loop_len, sr);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char manifest[1600];
+  snprintf(manifest, sizeof(manifest),
+           "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+           "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+           "\"limiterCeiling\": 0.99, \"tracks\": []}, "
+           "\"disarmSnapshot\": {\"tracks\": ["
+           "{\"channel\": 0, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"track0-lane0.wav\", \"effects\": []}]}, "
+           "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"track1-lane0.wav\", \"effects\": []}]}]}, "
+           "\"layers\": []}",
+           sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+
+  /* The whole assertion: track 1's stem is SILENT for every frame before the
+   * real finalize. Against the pre-fix code the aborted take's RECORD_END
+   * anchored the image at `abort_frame`, so the frames between the two are the
+   * take's audio playing before it was ever recorded. */
+  float stem1[64] = {0};
+  CHECK(test_read_stem(dir, 1, stem1, 64) == (int32_t)capture_frames);
+  for (uint64_t f = 0; f < real_end_frame; ++f) {
+    CHECK(fabsf(stem1[f]) < 1e-6f);
+  }
+  /* And the real take's segment is still there afterwards — the fix must not
+   * simply drop the image. */
+  int any_content = 0;
+  for (uint64_t f = real_end_frame; f < capture_frames; ++f) {
+    if (fabsf(stem1[f]) > 1e-6f) any_content = 1;
+  }
+  CHECK(any_content);
+
+  le_engine_destroy(e);
+}
+
 static void test_perf_render_fresh_midloop_second_track_phase(void) {
   printf("test_perf_render_fresh_midloop_second_track_phase\n");
   const char* dir = render_test_dir("midloop2nd");
@@ -23453,6 +23569,7 @@ int main(void) {
   test_perf_render_multi_channel_dry_fail_isolated();
   test_perf_render_wet_multi_slot_and_count_shrink();
   test_perf_render_wet_plugin_passthrough();
+  test_perf_render_aborted_take_does_not_claim_disarm_image();
   test_perf_render_fresh_midloop_second_track_phase();
   test_perf_render_fresh_multiloop_second_track_phase();
   test_perf_render_golden_master_parity();

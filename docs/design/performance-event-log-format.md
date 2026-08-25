@@ -144,7 +144,7 @@ control-side-only concepts:
 | Code                            | Value | Arm     | Payload                                                   |
 |----------------------------------|-------|---------|------------------------------------------------------------|
 | `LE_PLOG_RECORD_START`            | 300   | generic | `arg_i` = channel. A track actually began recording — immediate press or a deferred quantized/sound-triggered fire, both logged at the frame it actually happened. |
-| `LE_PLOG_RECORD_END`              | 301   | generic | `arg_i` = channel. A track left RECORDING (stop, punch-out, or the record/dub toggle into overdub). |
+| `LE_PLOG_RECORD_END`              | 301   | generic | `arg_i` = channel. A track left RECORDING **having captured something**. Stop, punch-out, or the record/dub toggle into overdub. A take that captured nothing logs `LE_PLOG_RECORD_ABORT` instead — see 314. |
 | `LE_PLOG_LOOP_LENGTH_LOCKED`      | 302   | generic | `arg_i` = length in frames. The master loop length was (re-)established — the live-record finalize path or `LE_CMD_COMMIT_SESSION`'s session-import path. |
 | `LE_PLOG_LAYER_RETIRED`           | 303   | evt     | `{channel, slot, generation}`, mirroring `LE_EVT_LAYER_RETIRED`'s payload. A completed overdub pass retired. |
 | `LE_PLOG_UNDO`                    | 304   | generic | `arg_i` = channel. Every undo path — the common in-track swap or the to-EMPTY edge case — logs this one code. |
@@ -157,6 +157,7 @@ control-side-only concepts:
 | `LE_PLOG_SET_LANE_FX_CHAIN_ENABLED` | 311 | lanef   | `channel`, `lane`, `value` = enabled (0.0/1.0) — `LE_CMD_SET_LANE_MUTE`'s shape. Control-side emission. **Replayed in the lane wet pass.** |
 | `LE_PLOG_SET_MONITOR_FX_ENABLED`  | 312   | fx      | `channel` = input index, `lane` = -1, `index` = fx slot, `type` = enabled (0/1) — 307's addressing convention. Logged for the manifest/reader, **not replayed in the lane pass** (mirrors `LE_PLOG_SET_MONITOR_FX_PARAM`'s treatment). |
 | `LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED` | 313 | generic | `arg_i` = input index, `arg_f` = enabled (0.0/1.0) — the monitor volume/mute shape. Logged for the manifest/reader, **not replayed in the lane pass**. |
+| `LE_PLOG_RECORD_ABORT`            | 314   | generic | `arg_i` = channel. A take left RECORDING having captured **nothing** — armed and stopped on the loop top, so the track goes back to EMPTY. Its own code rather than a `RECORD_END` because the offline renderer anchors the disarm image on the first `RECORD_END` on a still-content-free channel: an abort that borrowed that anchor placed the real take's audio at the abort frame and swallowed the finalize that followed (#264). An aborted take is not a take. |
 
 The replayed lane chain seeds all enable bits to 1 at arm: the arm manifest
 carries no arm-time enabled state until part 3 of the FX-v3 epic adds it (a

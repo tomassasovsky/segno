@@ -100,6 +100,21 @@ typedef enum le_perf_log_code {
                                         * index, type = enabled (0/1). */
   LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED = 313, /* generic arm: arg_i = input,
                                               * arg_f = enabled (0.0/1.0). */
+  LE_PLOG_RECORD_ABORT = 314, /* a take left RECORDING having captured NOTHING
+                               * (the void-take branch of finalize_new_track:
+                               * armed, then stopped before a single frame was
+                               * written, so the track goes back to EMPTY).
+                               * generic arm: arg_i = channel.
+                               *
+                               * Its own code rather than a RECORD_END, because
+                               * the offline renderer treats the first
+                               * RECORD_END on a content-free channel as the
+                               * anchor for the disarm image — and an aborted
+                               * take that borrowed that anchor placed the REAL
+                               * take's audio at the abort frame and swallowed
+                               * the finalize that followed (#264). An aborted
+                               * take is not a take, and the log now says so
+                               * rather than leaving the reader to infer it. */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's
