@@ -59,8 +59,8 @@ on:
       publish:
         description: Publish a Release and sync the mirror (no = build the image only)
         type: choice
-        options: ['yes', 'no']
-        default: 'yes'
+        options: ['no', 'yes']
+        default: 'no'
 
 permissions:
   contents: write        # create releases
@@ -229,7 +229,11 @@ jobs:
       #
       # Two guards, both cheap: prune what accumulates, and refuse to start a
       # build that cannot fit rather than discovering the limit by hitting it.
+      # Self-hosted only. A GitHub-hosted runner is ephemeral and nowhere near
+      # 80 GB free, so this would fail every push- and tag-triggered release
+      # with advice ("free space on the runner") that is unactionable there.
       - name: Prune old images + pre-flight disk check
+        if: inputs.runner == 'self-hosted'
         env:
           MIN_FREE_GB: "80"
         run: |
@@ -239,12 +243,22 @@ jobs:
           # Each build leaves a timestamped ~8.3 GB .wic behind forever; the
           # rootfs.wic symlink points at the newest and the rest are dead
           # weight. Keep the two newest per machine.
+          #
+          # Collect into an array and bail when it is empty. With nullglob a
+          # non-matching "$d"*.wic vanishes ENTIRELY, so `ls -t` would run with
+          # no arguments, list $PWD — the repo checkout — and feed its 3rd-newest
+          # entries onward to rm. A deploy dir left behind by a build that died
+          # after do_deploy but before do_image_wic reaches exactly that state.
+          # `--` stops a leading-dash filename being read as an option.
           shopt -s nullglob
           for d in "$YOCTO_WORK_DIR"/*/tmp/deploy/images/*/; do
-            for f in $(ls -t "$d"*.wic 2>/dev/null | tail -n +3); do
+            wics=( "$d"*.wic )
+            [ ${#wics[@]} -gt 2 ] || continue
+            while IFS= read -r f; do
+              [ -n "$f" ] || continue
               echo "pruning $(basename "$f") ($(du -h "$f" | cut -f1))"
-              rm -f "$f" "$f.bmap"
-            done
+              rm -f -- "$f" "$f.bmap"
+            done < <(ls -t -- "${wics[@]}" | tail -n +3)
           done
 
           avail=$(df -BG --output=avail "$YOCTO_WORK_DIR" | tail -1 | tr -dc '0-9')
@@ -302,7 +316,7 @@ jobs:
           set -eu
           out=release-artifacts; mkdir -p "$out"
           machine='${{ needs.determine-meta.outputs.machine }}'
-          raucb=$(readlink -f "$YOCTO_WORK_DIR"/*/tmp/deploy/images/"$machine"/segno-update-bundle-"$machine".raucb 2>/dev/null \
+          raucb=$(readlink -e "$YOCTO_WORK_DIR"/*/tmp/deploy/images/"$machine"/segno-update-bundle-"$machine".raucb 2>/dev/null \
                   || find "$YOCTO_WORK_DIR" -name "segno-update-bundle-$machine-*.raucb" | sort | tail -1)
           bundle="segno-appliance-${{ needs.determine-meta.outputs.version }}.raucb"
           cp "$raucb" "$out/$bundle"
@@ -355,7 +369,10 @@ jobs:
           out=image-artifacts; mkdir -p "$out"
           img="$YOCTO_WORK_DIR"/*/tmp/deploy/images/"$machine"
 
-          wic=$(readlink -f $img/segno-kiosk-image-"$machine".wic 2>/dev/null \
+          # -e, not -f: readlink -f exits 0 when only the FINAL component is
+          # missing, so an absent symlink still "succeeds" and the || find
+          # fallback never runs — dead in exactly the case it exists for.
+          wic=$(readlink -e $img/segno-kiosk-image-"$machine".wic 2>/dev/null \
                 || find "$YOCTO_WORK_DIR" -name "segno-kiosk-image-$machine*.wic" | sort | tail -1)
           [ -n "$wic" ] && [ -f "$wic" ] || { echo "::error::no .wic found for $machine"; exit 1; }
 
@@ -383,6 +400,20 @@ jobs:
           retention-days: 14
           # Already gzipped; a second pass costs minutes and saves nothing.
           compression-level: 0
+
+      # manifest.json carries version/bundle/sha256/channel and NO board field,
+      # and segno-update-ctl selects purely on semver_newer. So publishing an
+      # rpi5 bundle into a channel a deployed Pi 4 polls makes that Pi 4
+      # download it, have `rauc install` reject the compatible mismatch, and
+      # then re-fail on every subsequent poll forever, because the manifest
+      # version stays permanently newer. Refuse rather than rely on whoever is
+      # dispatching to remember. Lift this once the manifest gains a board
+      # discriminator and the client filters on it.
+      - name: Refuse to publish a board the manifest cannot discriminate
+        if: github.event.inputs.publish == 'yes' && needs.determine-meta.outputs.board != 'rpi4'
+        run: |
+          echo "::error::refusing to publish a ${{ needs.determine-meta.outputs.board }} bundle. manifest.json has no board field and segno-update-ctl selects on version alone, so a deployed Pi 4 would fetch this and fail its compatible check on every poll, permanently. Build it with publish=no, or add a board discriminator to the manifest and the client first."
+          exit 1
 
       # `publish: no` builds the image and stops. Everything above this point is
       # local to the runner; everything below is outward-facing — a Release the
