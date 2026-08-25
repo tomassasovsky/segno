@@ -30,8 +30,26 @@ unlike `performance.json`, which is atomically replaced each cycle.
 | Offset | Size | Field         | Notes                                   |
 |--------|------|---------------|------------------------------------------|
 | 0      | 4    | magic         | ASCII `"PLEV"` (Perf Log EVents)          |
-| 4      | 4    | version       | `uint32`, little/native-endian; `1` today |
+| 4      | 4    | version       | `uint32`, little/native-endian; `2` today — see below |
 | 8      | 4    | sample_rate   | `int32`, the session's sample rate        |
+
+#### What `version` means
+
+The version covers the **code vocabulary** as well as the record layout, so it
+moves whenever a reader's interpretation of an existing code changes — not only
+when the 28-byte record does.
+
+| Version | Meaning |
+|---------|---------|
+| `1`      | The original vocabulary. An **aborted** take — armed, then stopped having captured nothing — was logged as `LE_PLOG_RECORD_END`, so a version-1 capture is subject to #264: a reader that anchors on the first `RECORD_END` can place a track's settled image at the abort frame instead of at the finalize that produced it. |
+| `2`      | An aborted take logs `LE_PLOG_RECORD_ABORT` (314). A `RECORD_END` in a version-2 file always means content was captured. |
+
+Neither reader in this repo (`perf_render.c`'s `le_pr_load_log`, the Dart
+`EventLogReader`) gates on the field — both check the magic and skip these four
+bytes — and that is deliberate: a capture already on disk still renders, with
+whatever semantics it was written under, rather than being refused. The field
+exists so a reader *can* tell the two apart, because the absence of a `314` in a
+file is otherwise indistinguishable from a writer that never knew about `314`.
 
 ### Entry (28 bytes each, one per logged event)
 
@@ -144,7 +162,7 @@ control-side-only concepts:
 | Code                            | Value | Arm     | Payload                                                   |
 |----------------------------------|-------|---------|------------------------------------------------------------|
 | `LE_PLOG_RECORD_START`            | 300   | generic | `arg_i` = channel. A track actually began recording — immediate press or a deferred quantized/sound-triggered fire, both logged at the frame it actually happened. |
-| `LE_PLOG_RECORD_END`              | 301   | generic | `arg_i` = channel. A track left RECORDING (stop, punch-out, or the record/dub toggle into overdub). |
+| `LE_PLOG_RECORD_END`              | 301   | generic | `arg_i` = channel. A track left RECORDING **having captured something**. Stop, punch-out, or the record/dub toggle into overdub. A take that captured nothing logs `LE_PLOG_RECORD_ABORT` instead — see 314. In a version-1 file this code carries both meanings. |
 | `LE_PLOG_LOOP_LENGTH_LOCKED`      | 302   | generic | `arg_i` = length in frames. The master loop length was (re-)established — the live-record finalize path or `LE_CMD_COMMIT_SESSION`'s session-import path. |
 | `LE_PLOG_LAYER_RETIRED`           | 303   | evt     | `{channel, slot, generation}`, mirroring `LE_EVT_LAYER_RETIRED`'s payload. A completed overdub pass retired. |
 | `LE_PLOG_UNDO`                    | 304   | generic | `arg_i` = channel. Every undo path — the common in-track swap or the to-EMPTY edge case — logs this one code. |
@@ -157,6 +175,7 @@ control-side-only concepts:
 | `LE_PLOG_SET_LANE_FX_CHAIN_ENABLED` | 311 | lanef   | `channel`, `lane`, `value` = enabled (0.0/1.0) — `LE_CMD_SET_LANE_MUTE`'s shape. Control-side emission. **Replayed in the lane wet pass.** |
 | `LE_PLOG_SET_MONITOR_FX_ENABLED`  | 312   | fx      | `channel` = input index, `lane` = -1, `index` = fx slot, `type` = enabled (0/1) — 307's addressing convention. Logged for the manifest/reader, **not replayed in the lane pass** (mirrors `LE_PLOG_SET_MONITOR_FX_PARAM`'s treatment). |
 | `LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED` | 313 | generic | `arg_i` = input index, `arg_f` = enabled (0.0/1.0) — the monitor volume/mute shape. Logged for the manifest/reader, **not replayed in the lane pass**. |
+| `LE_PLOG_RECORD_ABORT`            | 314   | generic | `arg_i` = channel. A take left RECORDING having captured **nothing** — armed and stopped on the loop top, so the track goes back to EMPTY. An aborted take is not a take: it produced no content and has no settled image of its own, and a reader must not treat it as a finalize. Its own code rather than a `RECORD_END` because the offline renderer keys its disarm-image anchor off 301 (#264); `perf_render.c`'s `RECORD_END` scan holds that derivation. Present from header version 2 on. |
 
 The replayed lane chain seeds all enable bits to 1 at arm: the arm manifest
 carries no arm-time enabled state until part 3 of the FX-v3 epic adds it (a
@@ -184,6 +203,16 @@ per-frame loop. Likewise a deferred seam-crossfade finalize
 after the `LE_CMD_STOP` that requested it. A downstream consumer that only
 needs "when did recording actually start/stop" should read the transport
 facts, not try to infer them from the raw commands.
+
+A consumer pairing those facts into takes must not assume every
+`RECORD_START` is terminated by a `RECORD_END`: an aborted take — armed,
+then stopped having captured nothing — terminates with `LE_PLOG_RECORD_ABORT`
+(314) instead. A `START`↔`ABORT` pair is not a take and delimits no region —
+it produced no content and has no settled image — so pair it only to close
+the `START` and then discard it; never render it, and never let it consume
+the audio belonging to a later real take on the same channel.
+(In a version-1 file the abort was logged as `RECORD_END`, so this pairing
+rule is only available from header version 2 on — see the version table.)
 
 ## Frame-tagging semantics
 

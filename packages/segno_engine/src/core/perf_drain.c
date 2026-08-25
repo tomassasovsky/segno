@@ -732,12 +732,27 @@ static int le_pd_write(FILE* f, const void* data, size_t bytes) {
 static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
 
 /* Writes events.log's 12-byte header once, right after the file is created:
- * magic "PLEV", a uint32 version (bump if the entry layout ever changes), and
- * the session's sample rate (so a reader can convert frame -> seconds without
- * cross-referencing the sidecar). */
+ * magic "PLEV", a uint32 version, and the session's sample rate (so a reader
+ * can convert frame -> seconds without cross-referencing the sidecar).
+ *
+ * The version describes the CODE VOCABULARY as well as the entry layout, so
+ * bump it whenever a reader's interpretation of an existing code changes, not
+ * only when the 28-byte record does:
+ *   1 — the original vocabulary. An aborted take (armed, stopped with nothing
+ *       captured) was logged as LE_PLOG_RECORD_END, so a version-1 capture is
+ *       subject to #264: the renderer can anchor the disarm image at the abort
+ *       frame instead of at the real finalize.
+ *   2 — an aborted take logs LE_PLOG_RECORD_ABORT (314). A RECORD_END in a
+ *       version-2 file always means content was captured.
+ * Without the bump, "no 314 in this file" is indistinguishable from "the
+ * writer did not know about 314". No reader in this repo gates on the field —
+ * le_pr_load_log and daw_export's EventLogReader both check the magic and skip
+ * these four bytes — deliberately: refusing to render a capture already on
+ * disk helps nobody. The field is there so a reader CAN tell, not so this
+ * codebase can reject. */
 static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
   static const char magic[4] = {'P', 'L', 'E', 'V'};
-  const uint32_t version = 1;
+  const uint32_t version = 2;
   if (!le_pd_write(f, magic, sizeof(magic))) return 0;
   if (!le_pd_write(f, &version, sizeof(version))) return 0;
   if (!le_pd_write(f, &sample_rate, sizeof(sample_rate))) return 0;
