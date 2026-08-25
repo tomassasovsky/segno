@@ -3206,7 +3206,14 @@ static void test_loop_seam_on_punch_out_with_player_stopped(void) {
    *
    * WHEN #731 LANDS: the defect pins (loop[0], wrap, wrap/med, the score
    * band) flip to CHECK(score < 25.0); the med guard and the peak bound
-   * stay. 25.0 is not a number picked for the occasion — it is the bound
+   * stay, and a content floor is ADDED — CHECK(peak > 0.35) (the 0.38268
+   * steady two-pass amplitude survives a seam-local taper) or
+   * CHECK(med > 6e-4) (half the expected 0.0013). Without it the flipped
+   * form passes on a "fix" that attenuates the layer to near-silence:
+   * score is scale-invariant (~2x on smooth near-zero content), a
+   * denormal-positive median satisfies med > 0, and a near-zero peak
+   * satisfies any upper bound. The absolute wrap/loop[0] pins being
+   * dropped by the flip are what guaranteed content until now. 25.0 is not a number picked for the occasion — it is the bound
    * every other seam test in this file already holds for "continuous, not
    * spliced", and they measure 1.6x to 2.1x against it while the known #728
    * retire-before-the-fold gap measures 204x. Between the pre-fix floor

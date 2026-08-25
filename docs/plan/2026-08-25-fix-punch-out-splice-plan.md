@@ -101,9 +101,10 @@ two sites where an overdub session's pass actually finishes:
   fires once `state != OVERDUBBING && od_gain == 0` — the od_gain fade tail has
   fully decayed — and today arms a partial pass's drain walk.
 
-NOT at `le_seam_fold`'s call site: its only caller (the trailing-overlap
-capture in `mix_tracks_frame`, engine_process.c) fires F frames after a track
-FINALIZES, before the overdub in question even exists.
+NOT at `le_seam_fold`'s call sites: it has two (the trailing-overlap capture
+in `mix_tracks_frame`, and `finalize_master_xfade`), and both are finalize-time
+— they fire around a track FINALIZING, before the overdub in question even
+exists.
 
 ## What is landed
 
@@ -130,7 +131,15 @@ numbers. **Its defect assertions are deliberately inverted** and say so:
 
 When the fix lands, the defect pins flip to `score < 25` — the bound the
 file's other seam tests already hold (they measure 1.6x to 2.1x) — while the
-median guard and the peak bound stay. Everything between 25x and 370x is a
+median guard and the peak bound stay, **and a content floor is added**:
+`CHECK(peak > 0.35)` (the 0.38268 steady two-pass amplitude survives any
+seam-local taper) or equivalently `CHECK(med > 6e-4)` (half the expected
+0.0013). Without a floor, the flipped form passes on a "fix" that attenuates
+the layer to near-silence — score is a scale-invariant ratio, so smooth
+near-zero content reads ~2x, a denormal-positive median satisfies `med > 0`,
+and a near-zero peak satisfies any upper bound. The absolute wrap/loop[0] pins
+that protect the defect form are exactly the ones the flip drops, so the floor
+is what replaces their content-guarantee. Everything between 25x and 370x is a
 deliberate dead band: a partial fix landing inside it fails both forms of the
 test, and must be read as "moved the step without removing the splice", not as
 a bound to widen.
