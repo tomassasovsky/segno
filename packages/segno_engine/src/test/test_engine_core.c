@@ -2756,6 +2756,88 @@ static void test_master_limiter_attack_is_not_a_step(void) {
   CHECK(smoothed < instant * 0.2);
 }
 
+/* #725: what the smoothed attack settles INTO, which the step test above does
+ * not measure — it watches the first few milliseconds and stops.
+ *
+ * The brickwall backstop is a backstop. If the gain never actually arrived at
+ * ceiling/peak, the limiter would degenerate into a hard clipper that flat-tops
+ * every loud passage for as long as it lasts, which is a far worse artefact than
+ * the click the smoothing removed. The observable that separates the two is a
+ * channel BELOW the ceiling: a clipper leaves it untouched, a limiter scales it
+ * along with everything else.
+ *
+ * The second half is the transparency claim, which the smoothing put at risk. A
+ * one-pole release approaches unity asymptotically and never reaches it, so
+ * without the snap every sample for the rest of the session would leave here
+ * multiplied by 0.999999-something. "Rests at 1.0" is asserted as bit equality
+ * for exactly that reason — a tolerance would pass either way. */
+static void test_master_limiter_settles_into_scaling_then_unity(void) {
+  printf("test_master_limiter_settles_into_scaling_then_unity\n");
+  le_engine* e = make_configured_engine();
+  const int sr = 48000;
+  const float ceiling = 0.99f;
+  const float attack = 1.0f / (0.002f * (float)sr);
+  const float release = 1.0f / (0.05f * (float)sr);
+  /* Sustained, not a transient: constant levels, so the frame peak — and with it
+   * the limiter's target — is the same every frame and the gain has something
+   * fixed to converge on. */
+  const float loud = 2.0f;
+  const float under = 0.5f; /* already below the ceiling; only a GAIN moves it */
+
+  float last0 = 0.0f;
+  float last1 = 0.0f;
+  for (int i = 0; i < sr / 10; ++i) { /* 100 ms, ~50 attack time constants */
+    float out[2] = {loud, under};
+    float sumsq = 0.0f;
+    float peak = 0.0f;
+    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling, attack,
+                                        release, &sumsq, &peak);
+    CHECK(out[0] <= ceiling + 1e-6f);
+    last0 = out[0];
+    last1 = out[1];
+  }
+  const float settled = ceiling / loud;
+  printf("  sustained: loud %.4f, under-ceiling channel %.4f (clipping would "
+         "leave it at %.4f)\n",
+         (double)last0, (double)last1, (double)under);
+  /* Scaling, not clipping: the channel that never touched the ceiling came down
+   * with the rest of the mix. */
+  CHECK(fabs((double)last1 - (double)(under * settled)) < 1e-4);
+  CHECK(fabs((double)last1 - (double)under) > 0.1);
+  /* And the loud channel sits AT the ceiling by gain, so the clamp has nothing
+   * left to do. */
+  CHECK(fabs((double)last0 - (double)ceiling) < 1e-4);
+
+  /* Release: quiet material, well under the ceiling, until the gain is back. */
+  const float quiet = 0.1f;
+  int exact_at = -1;
+  double worst_release_delta = 0.0;
+  float prev = last0;
+  for (int i = 0; i < sr * 2; ++i) {
+    float out[2] = {quiet, quiet};
+    float sumsq = 0.0f;
+    float peak = 0.0f;
+    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling, attack,
+                                        release, &sumsq, &peak);
+    if (i > 0) {
+      const double d = fabs((double)out[0] - (double)prev);
+      if (d > worst_release_delta) worst_release_delta = d;
+    }
+    prev = out[0];
+    if (exact_at < 0 && out[0] == quiet && out[1] == quiet) exact_at = i;
+  }
+  printf("  bit-exact again %d ms after the loud passage ended; worst step on "
+         "the way %.8f\n",
+         exact_at < 0 ? -1 : exact_at * 1000 / sr, worst_release_delta);
+  /* Bit equality, not a tolerance: the asymptote alone would satisfy any
+   * tolerance while never being transparent. */
+  CHECK(exact_at >= 0);
+  /* The snap that buys that equality is a gain discontinuity, so measure it
+   * rather than assuming it is small: at most 1e-3 of gain on a 0.1 signal. */
+  CHECK(worst_release_delta < (double)quiet * 2e-3);
+  le_engine_destroy(e);
+}
+
 static void test_looper_clear(void) {
   printf("test_looper_clear\n");
   le_engine* e = make_configured_engine();
@@ -23391,6 +23473,7 @@ int main(void) {
   test_device_lost_keeps_running();
   test_master_bus_frame_limiter();
   test_master_limiter_attack_is_not_a_step();
+  test_master_limiter_settles_into_scaling_then_unity();
   test_looper_clear();
   test_looper_requires_configure();
   test_looper_multitrack();
