@@ -1,0 +1,27 @@
+# Creates the /data directories the journal and coredump bind mounts need,
+# before either of them tries to mount (#438).
+#
+# A .mount unit creates its own mountpoint (Where=) but never its source
+# (What=), so without this the first boot after a flash mounts nothing and the
+# journal silently stays in RAM — the exact failure this work exists to end.
+#
+# DefaultDependencies=no and the explicit ordering keep it in the very early
+# window between /data appearing and journald's flush.
+[Unit]
+Description=Segno: create the persistent log directories on /data
+DefaultDependencies=no
+Requires=data.mount
+After=data.mount
+Before=var-volatile-log-journal.mount var-lib-systemd-coredump.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# 2755: setgid so files inherit the directory's group, which is what journald
+# expects of /var/log/journal.
+ExecStart=/bin/mkdir -p /data/log/journal /data/log/coredump
+ExecStart=/bin/chmod 2755 /data/log/journal
+ExecStart=/bin/chmod 0755 /data/log/coredump
+
+[Install]
+WantedBy=local-fs.target

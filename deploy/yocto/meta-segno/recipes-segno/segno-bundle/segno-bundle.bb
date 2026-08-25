@@ -59,7 +59,12 @@ SRC_URI = "file://segno.service \
            file://segno-wifi-regdom.service \
            file://wifi-country-default \
            file://brcmfmac.conf \
-           file://update-channel"
+           file://update-channel \
+           file://journald-segno.conf \
+           file://coredump-segno.conf \
+           file://segno-log-dirs.service \
+           file://var-volatile-log-journal.mount \
+           file://var-lib-systemd-coredump.mount"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
 # files land in ${UNPACKDIR}, which do_install references directly.
@@ -112,7 +117,7 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via segno-update-ctl).
 # So segno-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service boot.mount data.mount"
+SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service boot.mount data.mount segno-log-dirs.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount"
 
 FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${bindir}/segno-data-grow \
@@ -198,6 +203,18 @@ do_install() {
     # /data = persistent app data (survives updates).
     install -m 0644 ${UNPACKDIR}/boot.mount ${D}${systemd_system_unitdir}/boot.mount
     install -m 0644 ${UNPACKDIR}/data.mount ${D}${systemd_system_unitdir}/data.mount
+
+    # Crash evidence on /data (#438): the journal and coredump storage bind
+    # mounts, the oneshot that creates their source directories, and the
+    # journald/coredump policy drop-ins. Nothing here writes to the A/B rootfs,
+    # so an OS update cannot take the evidence with it.
+    install -m 0644 ${UNPACKDIR}/segno-log-dirs.service ${D}${systemd_system_unitdir}/segno-log-dirs.service
+    install -m 0644 ${UNPACKDIR}/var-volatile-log-journal.mount ${D}${systemd_system_unitdir}/var-volatile-log-journal.mount
+    install -m 0644 ${UNPACKDIR}/var-lib-systemd-coredump.mount ${D}${systemd_system_unitdir}/var-lib-systemd-coredump.mount
+    install -d ${D}${sysconfdir}/systemd/journald.conf.d
+    install -m 0644 ${UNPACKDIR}/journald-segno.conf ${D}${sysconfdir}/systemd/journald.conf.d/10-segno.conf
+    install -d ${D}${sysconfdir}/systemd/coredump.conf.d
+    install -m 0644 ${UNPACKDIR}/coredump-segno.conf ${D}${sysconfdir}/systemd/coredump.conf.d/10-segno.conf
 
     # OTA update client: timer-driven check that polls the channel manifest on
     # segno.aquiles.dev and rauc-installs newer signed bundles (deferred activation).
