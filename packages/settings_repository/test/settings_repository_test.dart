@@ -106,6 +106,109 @@ void main() {
         expect(store.values, hasLength(1));
       },
     );
+
+    test('without alsaPeriods the key keeps its historical shape', () async {
+      // Pins the exact stored key: every pre-existing desktop calibration
+      // lives under this shape, and folding the ALSA period count into the
+      // key (#809) must not disturb it when the knob is not engaged.
+      await repository.saveLatencyOffsetFrames(
+        device: 'Scarlett',
+        sampleRate: 48000,
+        bufferFrames: 128,
+        frames: 480,
+      );
+
+      expect(store.values, {'latency_offset.Scarlett.48000.128': 480});
+    });
+
+    test('with alsaPeriods the key carries the period count', () async {
+      final appliance = SettingsRepository(store: store, alsaPeriods: 8);
+      await appliance.saveLatencyOffsetFrames(
+        device: 'Scarlett',
+        sampleRate: 96000,
+        bufferFrames: 64,
+        frames: 240,
+      );
+
+      expect(store.values, {'latency_offset.Scarlett.96000.64.p8': 240});
+    });
+
+    test(
+      'a legacy offset is invisible under a period count, and vice versa',
+      () async {
+        // The deliberate invalidation from #809: the period count moves the
+        // playback start threshold, so an offset calibrated without it (or
+        // under a different count) must not be reused.
+        await repository.saveLatencyOffsetFrames(
+          device: 'Scarlett',
+          sampleRate: 96000,
+          bufferFrames: 64,
+          frames: 480,
+        );
+
+        final appliance = SettingsRepository(store: store, alsaPeriods: 8);
+        expect(
+          await appliance.loadLatencyOffsetFrames(
+            device: 'Scarlett',
+            sampleRate: 96000,
+            bufferFrames: 64,
+          ),
+          isNull,
+        );
+
+        await appliance.saveLatencyOffsetFrames(
+          device: 'Scarlett',
+          sampleRate: 96000,
+          bufferFrames: 64,
+          frames: 240,
+        );
+        expect(
+          await repository.loadLatencyOffsetFrames(
+            device: 'Scarlett',
+            sampleRate: 96000,
+            bufferFrames: 64,
+          ),
+          480,
+        );
+      },
+    );
+  });
+
+  group('alsaPeriodsFromEnvironment', () {
+    test('unset or empty means the knob is not engaged', () {
+      expect(SettingsRepository.alsaPeriodsFromEnvironment(null), isNull);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment(''), isNull);
+    });
+
+    test('in-range values pass through', () {
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('2'), 2);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('5'), 5);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('8'), 8);
+    });
+
+    test('out-of-range values clamp to [2, 8], mirroring the engine', () {
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('0'), 2);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('1'), 2);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('-3'), 2);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('9'), 8);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('12'), 8);
+      expect(
+        SettingsRepository.alsaPeriodsFromEnvironment('99999999999999999999'),
+        8,
+      );
+      expect(
+        SettingsRepository.alsaPeriodsFromEnvironment('-99999999999999999999'),
+        2,
+      );
+    });
+
+    test('non-numeric input parses like strtol: no digits reads as 0', () {
+      // strtol("abc") is 0, which the engine clamps to 2; "6junk" parses its
+      // leading digits. The key must record what the engine actually uses.
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('abc'), 2);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('6junk'), 6);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment(' 7'), 7);
+    });
   });
 
   group('track names', () {

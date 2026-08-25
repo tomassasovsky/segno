@@ -98,12 +98,57 @@ class StoredAudioConfig {
 /// display names, and big-picture view preferences.
 class SettingsRepository {
   /// Creates a [SettingsRepository] backed by [store].
-  const SettingsRepository({required KeyValueStore store}) : _store = store;
+  ///
+  /// [alsaPeriods] is the effective ALSA period count the engine runs with,
+  /// or `null` where that knob is not engaged (any non-Linux platform, or
+  /// Linux without `SEGNO_ALSA_PERIODS` set). Derive it with
+  /// [alsaPeriodsFromEnvironment]; the composition root passes it in.
+  const SettingsRepository({required KeyValueStore store, int? alsaPeriods})
+    : _store = store,
+      _alsaPeriods = alsaPeriods;
 
   final KeyValueStore _store;
 
-  String _latencyKey(String device, int sampleRate, int bufferFrames) =>
-      'latency_offset.$device.$sampleRate.$bufferFrames';
+  /// The effective ALSA period count, part of the latency-calibration key.
+  ///
+  /// The period count changes the ALSA playback start threshold (#809), which
+  /// changes real output latency — so a record-offset calibration measured
+  /// under one period count is stale under another, for the same device /
+  /// sample-rate / buffer triple. Folding it into the key invalidates those
+  /// stale offsets deliberately: the appliance (which ships
+  /// `SEGNO_ALSA_PERIODS=8`) re-measures instead of silently reusing a
+  /// pre-#809 offset.
+  ///
+  /// `null` means "knob not engaged" and keeps the legacy key shape, so every
+  /// desktop calibration (and Linux with the variable unset, where #809 is a
+  /// no-op) stays valid.
+  final int? _alsaPeriods;
+
+  /// Derives the effective ALSA period count from the raw
+  /// `SEGNO_ALSA_PERIODS` environment value, mirroring the engine's own
+  /// parser (`le_alsa_periods_from_env` in engine_miniaudio.c) so the key
+  /// records what the engine actually runs with, not what was typed.
+  ///
+  /// Returns `null` for unset/empty (the engine keeps its default — the knob
+  /// is not engaged). Otherwise parses the leading integer the way `strtol`
+  /// does (no digits => 0, overflow saturates) and clamps into `[2, 8]`.
+  static int? alsaPeriodsFromEnvironment(String? value) {
+    if (value == null || value.isEmpty) return null;
+    final digits = RegExp('^[+-]?[0-9]+').firstMatch(value.trimLeft());
+    if (digits == null) return 2;
+    // A run of digits too long for a Dart int can only be far out of [2, 8]:
+    // saturate to the bound on its sign, as the engine's strtol + clamp does.
+    final parsed =
+        int.tryParse(digits[0]!) ?? (digits[0]!.startsWith('-') ? 0 : 8);
+    return parsed.clamp(2, 8);
+  }
+
+  String _latencyKey(String device, int sampleRate, int bufferFrames) {
+    final base = 'latency_offset.$device.$sampleRate.$bufferFrames';
+    // Appended only when the ALSA periods knob is engaged, so desktop keys
+    // keep their historical shape and stay valid (see [_alsaPeriods]).
+    return _alsaPeriods == null ? base : '$base.p$_alsaPeriods';
+  }
 
   /// Loads the saved record-offset (frames) for the given device profile, or
   /// `null` if none has been stored.
