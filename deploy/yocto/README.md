@@ -4,12 +4,15 @@ The image the floor console boots: a lean Yocto build running the **prebuilt**
 aarch64 Flutter GTK bundle under weston, with RAUC A/B updates over the Raspberry
 Pi firmware's `tryboot`.
 
-Two boards, one layer:
+The shipping board is the **Raspberry Pi 5**, booting from NVMe. The Pi 4 is
+retired (owner's call, 2026-08-25): its kas project is kept so the layer stays
+honestly board-parameterised and the board remains buildable on request, but
+nothing publishes for it and push/tag triggers do not build it.
 
-| kas project | MACHINE | Boots from | `SEGNO_BOOT_DISK` |
-|---|---|---|---|
-| `kas-segno-rpi4.yml` | `raspberrypi4-64` | SD card | `mmcblk0` |
-| `kas-segno-rpi5.yml` | `raspberrypi5` | NVMe in the M.2 slot | `nvme0n1` |
+| kas project | MACHINE | Boots from | `SEGNO_BOOT_DISK` | |
+|---|---|---|---|---|
+| `kas-segno-rpi5.yml` | `raspberrypi5` | NVMe in the M.2 slot | `nvme0n1` | **shipping** |
+| `kas-segno-rpi4.yml` | `raspberrypi4-64` | SD card | `mmcblk0` | retired |
 
 Everything the two share lives in **`kas-segno-common.yml`** — put changes there
 unless they are genuinely board-specific. The boot device is a single variable
@@ -50,13 +53,14 @@ PipeWire/JACK → no `pw-jack`; the engine drives ALSA directly).
 Dispatch it, pick the board, and download the image artifact:
 
 ```bash
-gh workflow run appliance-release.yml -f channel=experimental -f runner=self-hosted -f board=rpi5
+gh workflow run appliance-release.yml -f channel=experimental -f runner=self-hosted -f board=rpi5 -f publish=no
 ```
 
 The run publishes a `segno-image-<board>-<version>` artifact holding
-`*.wic.gz`, its `.bmap` and `SHA256SUMS`. `board` defaults to **rpi5** on
-dispatch; push/tag triggers stay on rpi4 so the published OTA channels keep
-serving the board that is already deployed.
+`*.wic.gz`, its `.bmap` and `SHA256SUMS`. `board` defaults to **rpi5** everywhere, and `publish`
+defaults to **no** so a bench build cannot move the OTA channel. Publishing any
+board other than rpi5 is refused outright: `manifest.json` has no board field and
+the client selects on version alone, so a channel can serve exactly one board.
 
 ### The local way — kas-container
 

@@ -1,5 +1,9 @@
 # kas project: the Segno appliance image for the raspberrypi4-64, booting from
-# the SD card. This is the board the Tier 3a spike (#284) was validated on and
+# the SD card. RETIRED as of 2026-08-25 — the shipping board is the Pi 5
+# (kas-segno-rpi5.yml). Kept because it is what keeps the layer honestly
+# board-parameterised: SEGNO_BOOT_DISK exists precisely so no board's device
+# names are hardcoded, and a second board is what proves that. Still builds on
+# request; nothing publishes for it. This is the board the Tier 3a spike (#284) was validated on and
 # where A/B tryboot updates were first proven end to end (2026-07-25).
 #
 #   ./kas-container build deploy/yocto/kas-segno-rpi4.yml
