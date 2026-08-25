@@ -2700,13 +2700,14 @@ static inline void master_fx_frame(le_engine* e, float* out, uint32_t f,
 }
 
 /* Master bus for one output frame: global gain, then the feed-forward peak
- * limiter (instant attack / smooth release, bit-transparent below the ceiling),
- * then output metering. Accumulates *out_sumsq and tracks *frame_out_peak (both
- * start at the caller's per-block / per-frame seed). */
+ * limiter (smoothed attack / smooth release / brickwall backstop, bit-transparent
+ * below the ceiling), then output metering. Accumulates *out_sumsq and tracks
+ * *frame_out_peak (both start at the caller's per-block / per-frame seed). */
 static inline void master_bus_frame(le_engine* e, float* out, uint32_t f,
                                     int ch_out, float master_gain, int limiter_on,
-                                    float limiter_ceiling, float lim_release,
-                                    float* out_sumsq, float* frame_out_peak) {
+                                    float limiter_ceiling, float lim_attack,
+                                    float lim_release, float* out_sumsq,
+                                    float* frame_out_peak) {
   /* Apply the global master gain post-mix, before metering and the loop-viz
    * tap, so meters and the waveform reflect what the listener actually hears.
    * The latency-calibration pulse path bypasses this (it `continue`s the frame),
@@ -2716,11 +2717,32 @@ static inline void master_bus_frame(le_engine* e, float* out, uint32_t f,
   }
 
   /* Master peak limiter (feed-forward, no lookahead): find this frame's peak,
-   * compute the gain that would pin it to the ceiling, and apply it. Instant
-   * attack — if the needed gain is below the current one, clamp down this very
-   * frame so nothing exceeds the ceiling (no overshoot); smooth release back
-   * toward unity. Below the ceiling the gain rests at 1.0, so the path is
-   * bit-transparent when nothing is clipping. */
+   * compute the gain that would pin it to the ceiling, and approach it.
+   *
+   * SMOOTHED ATTACK, not instant (#725). Instant attack set lim_gain = target in
+   * a single sample, which is a one-sample gain step applied to EVERY channel of
+   * the whole mix at an arbitrary offset — click-shaped by construction, and
+   * clustering with transients because that is when it fires. Worse, it
+   * modulates the sustained content too, not just the sample that crossed: a
+   * quiet pad under a loud snare gets the same step. A one-pole attack removes
+   * the discontinuity; the cost is that the gain has not finished falling while
+   * it is still moving, so samples during the attack would exceed the ceiling.
+   *
+   * The BRICKWALL BACKSTOP is what pays that cost, and it is a deliberately
+   * different trade from what it replaces. It touches only the samples that
+   * actually exceed the ceiling, for the few frames the attack is still moving,
+   * instead of scaling everything. Clipping the tip of a transient is bounded
+   * distortion on the part of the signal that was already at the limit; a gain
+   * step is broadband and audible on the part that was not. The ceiling contract
+   * is unchanged: no sample leaves here above it.
+   *
+   * NOT LOOKAHEAD, which is the other way to remove the step. Lookahead buys a
+   * clean attack at the cost of exactly its own length in added output latency,
+   * and this is a live looper: the performer hears themselves through this bus
+   * while playing. Latency is the one thing the master bus may not spend.
+   *
+   * Below the ceiling the gain rests at 1.0 and the clamp is a no-op, so the
+   * path stays bit-transparent when nothing is clipping. */
   if (limiter_on) {
     float peak = 0.0f;
     for (int c = 0; c < ch_out; ++c) {
@@ -2730,12 +2752,21 @@ static inline void master_bus_frame(le_engine* e, float* out, uint32_t f,
     float target = 1.0f;
     if (peak > limiter_ceiling && peak > 0.0f) target = limiter_ceiling / peak;
     if (target < e->lim_gain) {
-      e->lim_gain = target; /* instant attack: no sample over the ceiling */
+      e->lim_gain += (target - e->lim_gain) * lim_attack;
+      if (e->lim_gain < target) e->lim_gain = target; /* never past it */
     } else {
       e->lim_gain += (target - e->lim_gain) * lim_release;
     }
     if (e->lim_gain != 1.0f) {
       for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] *= e->lim_gain;
+    }
+    for (int c = 0; c < ch_out; ++c) {
+      float* const sample = &out[f * ch_out + c];
+      if (*sample > limiter_ceiling) {
+        *sample = limiter_ceiling;
+      } else if (*sample < -limiter_ceiling) {
+        *sample = -limiter_ceiling;
+      }
     }
   }
 
@@ -4217,10 +4248,11 @@ static inline void mix_tracks_frame(
 void le_engine_master_bus_frame_for_test(le_engine* e, float* out, uint32_t f,
                                          int ch_out, float master_gain,
                                          int limiter_on, float limiter_ceiling,
-                                         float lim_release, float* out_sumsq,
+                                         float lim_attack, float lim_release,
+                                         float* out_sumsq,
                                          float* frame_out_peak) {
   master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
-                   lim_release, out_sumsq, frame_out_peak);
+                   lim_attack, lim_release, out_sumsq, frame_out_peak);
 }
 
 /* ---- the real-time DSP core ---- */
@@ -4273,11 +4305,17 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const uint32_t click_mask =
       atomic_load_explicit(&e->a_click_mask, memory_order_relaxed);
   const float click_vol = load_f32(&e->a_click_volume_bits);
-  /* ~50 ms release toward unity once the signal drops below the ceiling. */
-  float lim_release = 1.0f / (0.05f * (float)(e->sample_rate > 0
-                                                  ? e->sample_rate
-                                                  : 48000));
+  /* ~50 ms release toward unity once the signal drops below the ceiling, and a
+   * ~2 ms attack down toward the needed gain (#725). Both are per-block so the
+   * RT path never divides per frame. 2 ms is the trade: shorter and the gain
+   * move starts to look like the step it replaces, longer and the brickwall
+   * backstop clips for more of the transient. */
+  const float lim_sr =
+      (float)(e->sample_rate > 0 ? e->sample_rate : 48000);
+  float lim_release = 1.0f / (0.05f * lim_sr);
   if (lim_release > 1.0f) lim_release = 1.0f;
+  float lim_attack = 1.0f / (0.002f * lim_sr);
+  if (lim_attack > 1.0f) lim_attack = 1.0f;
 
   const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
   /* Overdub punch declick: ramp the layered input in/out over ~10 ms so a punch
@@ -4543,7 +4581,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * above. Dormant click cost: the click_on ternary here plus click_frame's
      * fused compare. */
     master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
-                     lim_release, &out_sumsq, &frame_out_peak);
+                     lim_attack, lim_release, &out_sumsq, &frame_out_peak);
     perf_tap_master_frame(e, out, f, ch_out);
     const int click_on =
         click_mode != LE_CLICK_OFF ? le_click_gate(e, click_mode, tc, st) : 0;

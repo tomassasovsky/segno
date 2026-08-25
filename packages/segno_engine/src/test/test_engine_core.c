@@ -2625,8 +2625,8 @@ static void test_master_bus_frame_limiter(void) {
   out[1] = -0.5f;
   sumsq = 0.0f;
   peak = 0.0f;
-  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, 0.001f,
-                                      &sumsq, &peak);
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, 1.0f,
+                                      0.001f, &sumsq, &peak);
   CHECK(fabsf(out[0] - 0.5f) < 1e-6f);
   CHECK(fabsf(out[1] + 0.5f) < 1e-6f);
   CHECK(fabsf(peak - 0.5f) < 1e-6f); /* metering reads the output */
@@ -2636,8 +2636,8 @@ static void test_master_bus_frame_limiter(void) {
   out[1] = 0.0f;
   sumsq = 0.0f;
   peak = 0.0f;
-  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, 0.001f,
-                                      &sumsq, &peak);
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, 1.0f,
+                                      0.001f, &sumsq, &peak);
   CHECK(out[0] <= 0.99f + 1e-4f);
   CHECK(peak <= 0.99f + 1e-4f);
 
@@ -2646,11 +2646,114 @@ static void test_master_bus_frame_limiter(void) {
   out[1] = 1.0f;
   sumsq = 0.0f;
   peak = 0.0f;
-  le_engine_master_bus_frame_for_test(e, out, 0, 2, 0.5f, 0, 0.99f, 0.001f,
-                                      &sumsq, &peak);
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 0.5f, 0, 0.99f, 1.0f,
+                                      0.001f, &sumsq, &peak);
   CHECK(fabsf(out[0] - 0.5f) < 1e-6f);
 
   le_engine_destroy(e);
+}
+
+/* #725: the limiter's gain move must not itself be a click.
+ *
+ * The signal is a slow 100 Hz sine whose amplitude ramps gently through the
+ * ceiling, so the SIGNAL's own sample-to-sample delta stays small throughout —
+ * any large delta in the output is the limiter's gain move, not the material.
+ * That is what makes this a measurement of the limiter rather than of a
+ * transient.
+ *
+ * With instant attack, lim_gain jumped from 1.0 to ceiling/peak in one sample
+ * and scaled every channel by it: a step. With the one-pole attack it moves over
+ * ~2 ms, and the brickwall backstop takes the overshoot instead — which touches
+ * only the samples already at the limit.
+ *
+ * The bound is stated as a multiple of the signal's own worst delta, so it does
+ * not silently pass if the fixture's amplitude or frequency is ever retuned. */
+/* One run of the #725 fixture at a given attack coefficient. Channel 0 carries a
+ * QUIET steady sine and nothing else; channel 1 is silent until a sudden loud
+ * burst pushes the frame peak far past the ceiling. The limiter takes its peak
+ * across channels and applies the resulting gain to ALL of them, so whatever it
+ * does to channel 0 is a gain move and nothing else — channel 0 never contains a
+ * transient of its own. Returns the worst sample-to-sample delta seen on channel
+ * 0, and the quiet sine's own worst delta through `out_worst_quiet`. */
+static double limiter_quiet_channel_worst_delta(float lim_attack,
+                                                double* out_worst_quiet) {
+  le_engine* e = make_configured_engine();
+  const int sr = 48000;
+  const int n = sr / 10; /* 100 ms */
+  /* n/2 lands exactly on a zero crossing of the 100 Hz sine (480 frames per
+   * cycle, 2400 = 5 whole cycles), where a gain step multiplied by ~0 is
+   * invisible. A quarter cycle later the quiet channel is at its PEAK, which
+   * is where a broadband gain step actually shows. */
+  const int burst_at = n / 2 + 120;
+  const float ceiling = 0.99f;
+  const float release = 1.0f / (0.05f * (float)sr);
+  const double inc = 2.0 * 3.14159265358979323846 * 100.0 / (double)sr;
+
+  double worst_out = 0.0;
+  double worst_quiet = 0.0;
+  float prev_out = 0.0f;
+  float prev_quiet = 0.0f;
+  for (int i = 0; i < n; ++i) {
+    const float quiet = 0.2f * (float)sin(inc * (double)i);
+    /* A 5 ms burst well over the ceiling, on the OTHER channel. */
+    const float loud =
+        (i >= burst_at && i < burst_at + sr / 200) ? 2.0f : 0.0f;
+    float out[2];
+    out[0] = quiet;
+    out[1] = loud;
+    float sumsq = 0.0f;
+    float peak = 0.0f;
+    le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, ceiling,
+                                        lim_attack, release, &sumsq, &peak);
+    if (i > 0) {
+      const double d_out = fabs((double)out[0] - (double)prev_out);
+      const double d_quiet = fabs((double)quiet - (double)prev_quiet);
+      if (d_out > worst_out) worst_out = d_out;
+      if (d_quiet > worst_quiet) worst_quiet = d_quiet;
+    }
+    prev_out = out[0];
+    prev_quiet = quiet;
+    /* The ceiling contract, unchanged by the smoothing. */
+    CHECK(out[0] <= ceiling + 1e-6f);
+    CHECK(out[1] <= ceiling + 1e-6f);
+    CHECK(out[1] >= -ceiling - 1e-6f);
+  }
+  le_engine_destroy(e);
+  if (out_worst_quiet != NULL) *out_worst_quiet = worst_quiet;
+  return worst_out;
+}
+
+/* #725: the limiter's gain move must not itself be a click.
+ *
+ * The fixture is the defect stated literally — a quiet pad under a loud snare.
+ * Channel 0 holds only a quiet steady sine; channel 1 gets a sudden burst far
+ * over the ceiling. The limiter takes its peak across channels and scales all of
+ * them, so any step on channel 0 is the gain move, not the material: channel 0
+ * has no transient of its own to blame.
+ *
+ * Both coefficients are run, so this demonstrates the fix rather than asserting
+ * the state after it. */
+static void test_master_limiter_attack_is_not_a_step(void) {
+  printf("test_master_limiter_attack_is_not_a_step\n");
+  const float shipped = 1.0f / (0.002f * 48000.0f); /* the ~2 ms attack */
+
+  double quiet_delta = 0.0;
+  const double instant = limiter_quiet_channel_worst_delta(1.0f, &quiet_delta);
+  const double smoothed = limiter_quiet_channel_worst_delta(shipped, NULL);
+
+  printf("  the quiet channel's own worst delta: %.6f\n", quiet_delta);
+  printf("  instant attack: worst delta on it %.6f (%.1fx)\n", instant,
+         quiet_delta > 0 ? instant / quiet_delta : 0.0);
+  printf("  ~2 ms attack:   worst delta on it %.6f (%.1fx)\n", smoothed,
+         quiet_delta > 0 ? smoothed / quiet_delta : 0.0);
+
+  /* What shipped: one sample scaled the whole mix, so a channel carrying only a
+   * quiet sine took a step many times its own largest movement. */
+  CHECK(instant > quiet_delta * 10.0);
+  /* What ships now: the gain move cannot exceed the material it is riding. */
+  CHECK(smoothed <= quiet_delta * 1.05);
+  /* And it is a large improvement, not a rounding difference. */
+  CHECK(smoothed < instant * 0.2);
 }
 
 static void test_looper_clear(void) {
@@ -23287,6 +23390,7 @@ int main(void) {
   test_perf_arm_command_resets_armed_window();
   test_device_lost_keeps_running();
   test_master_bus_frame_limiter();
+  test_master_limiter_attack_is_not_a_step();
   test_looper_clear();
   test_looper_requires_configure();
   test_looper_multitrack();
