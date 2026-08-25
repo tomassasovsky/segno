@@ -32,7 +32,11 @@ ExecStart=/bin/mkdir -p /data/log/journal /data/log/coredump
 #
 # The group ships with the systemd package, so a chgrp failure here means the
 # image is broken; the unit failing (rather than swallowing it) is what keeps
-# that from being another silent one.
+# that from being another silent one. Failing is all it does, though: the bind
+# mounts pull this unit in with Wants=, not Requires=, so on any boot where
+# the directories already exist a failure here shows up in
+# `systemctl --failed` without also taking the journal and coredump mounts
+# down with it.
 ExecStart=/bin/chgrp systemd-journal /data/log/journal
 ExecStart=/bin/chmod 2755 /data/log/journal
 # No setgid on the coredump directory: cores are written and read as root, so

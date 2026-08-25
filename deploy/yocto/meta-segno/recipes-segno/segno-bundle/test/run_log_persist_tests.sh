@@ -193,6 +193,21 @@ check "journald drop-in installed under journald.conf.d" yes \
 check "coredump drop-in installed under coredump.conf.d" yes \
     "$(grep -qF '${sysconfdir}/systemd/coredump.conf.d/10-segno.conf' "$BB" && echo yes || echo no)"
 
+echo "the policy that keeps the RAM fallback visible and boot un-held"
+# Storage=persistent would make journald build a healthy-looking journal on
+# the tmpfs whenever the bind mount fails; auto ties "persistent" to the mount
+# having landed. And both bind mounts sit Before= early-boot units, so without
+# a job timeout a missing /data holds boot for DefaultTimeoutStartSec (~90 s).
+check "journald drop-in says Storage=auto" yes \
+    "$(grep -qx 'Storage=auto' "$FILES_DIR/journald-segno.conf" && echo yes || echo no)"
+for unit_path in "$FILES_DIR"/var-*.mount; do
+    unit=$(basename "$unit_path")
+    check "$unit bounds its boot-path job (JobTimeoutSec=)" yes \
+        "$(grep -q '^JobTimeoutSec=' "$unit_path" && echo yes || echo no)"
+    check "$unit does not hard-Require the log-dirs oneshot" yes \
+        "$(grep -E '^Requires=' "$unit_path" | grep -q 'segno-log-dirs' && echo no || echo yes)"
+done
+
 echo "every file do_install writes is named in FILES"
 # The regression in the recipe's own inventory that #810 review caught: two
 # /etc paths were installed and never added to FILES:${PN}. The default

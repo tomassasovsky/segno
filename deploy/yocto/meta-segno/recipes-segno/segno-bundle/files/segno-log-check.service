@@ -1,5 +1,6 @@
-# Makes the silent half of #438 loud: the bind mounts can fail and journald
-# will write a healthy-looking journal into tmpfs anyway.
+# Makes the silent half of #438 loud: a bind mount can fail late enough to
+# leave its mountpoint directory behind on the tmpfs, and journald
+# (Storage=auto) will then write a healthy-looking journal into RAM anyway.
 #
 # After the flush, not before it — what this inspects is the state journald
 # actually settled into, which is the thing `journalctl -b -1` will or will not
