@@ -12,6 +12,17 @@
  * all-or-nothing unit so a stereo/mono capture frame is never torn across a
  * fill/drop boundary: on a full ring it drops the whole frame and returns 0
  * rather than partially writing it.
+ *
+ * WHERE THE STORAGE COMES FROM IS PART OF THE CONTRACT, not an implementation
+ * detail (#804). A capture ring is written by the audio callback, one frame at
+ * a time, for the whole length of a take — so on Linux it must not be ordinary
+ * malloc memory. Any fork() in the host process write-protects every writable
+ * anonymous page of the parent for copy-on-write, and the app forks (`df`,
+ * the Wi-Fi/Bluetooth/update helpers) while a capture is armed; the SCHED_FIFO
+ * callback then pays a CoW page fault per page as it sweeps the ring, and under
+ * PREEMPT_RT that fault takes mmap_lock as a SLEEPING lock, so the audio thread
+ * blocks in state D behind whichever ordinary thread is mid-fork.
+ * le_audio_ring_alloc is where that is dealt with, once, for every ring.
  */
 #ifndef SEGNO_AUDIO_RING_H
 #define SEGNO_AUDIO_RING_H
@@ -34,10 +45,31 @@ typedef struct le_audio_ring {
   _Atomic size_t tail; /* producer index (audio thread writes) */
 } le_audio_ring;
 
-/* Initialises `ring` to use `buffer` of `capacity` samples. `capacity` must be a
- * power of two and >= 2. Does not allocate; the caller owns `buffer`'s lifetime.
- * Returns 1 on success, 0 on invalid arguments. */
-int le_audio_ring_init(le_audio_ring* ring, float* buffer, size_t capacity);
+/* Claims `capacity` samples of storage the ring owns and initialises `ring` over
+ * it. `capacity` must be a power of two, >= 2, and small enough that its byte
+ * count does not overflow. Returns 1 on success, 0 otherwise.
+ *
+ * A ring only ever owns its own storage — there is deliberately no constructor
+ * over caller-supplied memory, so `le_audio_ring_release` can never be handed
+ * something it did not claim.
+ *
+ * On Linux the storage is its own anonymous mapping marked MADV_DONTFORK, so
+ * fork() skips the vma outright and never write-protects the parent's pages —
+ * see the header note above for why that matters. If the kernel refuses the
+ * madvise, the ring is still returned: the mapping is good memory and all that
+ * is lost is the fork protection, which is a capture with dropouts rather than
+ * no capture at all. It says so on stderr. Everywhere else this is plain
+ * malloc, which is what those platforms already had.
+ *
+ * Either way the pages are touched HERE, on the calling (control) thread, so
+ * the audio thread does not fault them in on its first lap. That makes this
+ * call proportional to `capacity` — about a millisecond per 2 MB ring on the
+ * appliance — which is why it belongs in arm and not anywhere hotter. */
+int le_audio_ring_alloc(le_audio_ring* ring, size_t capacity);
+
+/* Releases the storage and zeroes `ring`. A no-op on a zeroed ring, so teardown
+ * paths can call it unconditionally. */
+void le_audio_ring_release(le_audio_ring* ring);
 
 /* Producer side: writes `n` contiguous samples as one all-or-nothing unit, so a
  * stereo/mono capture frame is never split across a fill/drop boundary. Returns
