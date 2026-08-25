@@ -252,6 +252,84 @@ static void test_audio_ring_wraps_around(void) {
   }
 }
 
+/* #804: a capture ring is written by the audio callback for the whole length of
+ * a take, so its storage must survive a fork() in the host process without
+ * costing that thread a page fault. On Linux le_audio_ring_alloc maps it
+ * privately and marks it MADV_DONTFORK; this asserts the flag actually landed,
+ * by reading the mapping's own VmFlags out of smaps — the same `dc` the kernel
+ * shows for VM_DONTCOPY. Without it the ring is CoW'd on every fork and the
+ * SCHED_FIFO thread re-faults every page of it on the next lap, which is the
+ * defect the function exists to remove.
+ *
+ * Linux-only by nature: MADV_DONTFORK has no macOS or Windows counterpart and
+ * neither platform runs the appliance. The allocate/use/release contract below
+ * it is checked everywhere. */
+#if defined(__linux__)
+static int smaps_mapping_is_dontcopy(const void* addr) {
+  FILE* f = fopen("/proc/self/smaps", "r");
+  if (f == NULL) return -1; /* no procfs: inconclusive, not a failure */
+  char line[512];
+  int in_range = 0;
+  int found = -1;
+  const unsigned long want = (unsigned long)(uintptr_t)addr;
+  while (fgets(line, sizeof(line), f) != NULL) {
+    unsigned long lo = 0;
+    unsigned long hi = 0;
+    char perms[8];
+    /* A mapping HEADER is "<lo>-<hi> <perms> ..."; every other smaps line is a
+     * "Name: value" field, and no field name parses as <hex>-<hex>. */
+    if (sscanf(line, "%lx-%lx %7s", &lo, &hi, perms) == 3) {
+      in_range = (want >= lo && want < hi);
+      if (in_range) found = 0; /* mapping located; flags not seen yet */
+    } else if (in_range && strncmp(line, "VmFlags:", 8) == 0) {
+      found = strstr(line, " dc") != NULL;
+      break;
+    }
+  }
+  fclose(f);
+  return found;
+}
+#endif
+
+static void test_audio_ring_alloc_owns_fork_safe_storage(void) {
+  printf("test_audio_ring_alloc_owns_fork_safe_storage\n");
+  le_audio_ring ring;
+
+  CHECK(le_audio_ring_alloc(NULL, 1024) == 0);  /* null ring */
+  CHECK(le_audio_ring_alloc(&ring, 6) == 0);    /* not a power of two */
+  CHECK(le_audio_ring_alloc(&ring, 1) == 0);    /* too small */
+
+  /* Big enough to span several pages on any page size this runs on, so the
+   * madvise below covers more than the one page a token allocation would. */
+  const size_t cap = 1u << 18; /* 256K samples = 1 MB */
+  CHECK(le_audio_ring_alloc(&ring, cap) == 1);
+  CHECK(ring.buffer != NULL);
+  CHECK(ring.capacity == cap);
+
+  /* Pre-faulted and zeroed by the allocator, both ends of the span. */
+  CHECK(ring.buffer[0] == 0.0f);
+  CHECK(ring.buffer[cap - 1] == 0.0f);
+
+#if defined(__linux__)
+  const int dc = smaps_mapping_is_dontcopy(ring.buffer);
+  CHECK(dc != 0); /* -1 = no procfs (inconclusive); 1 = VM_DONTCOPY set */
+#endif
+
+  /* Still an ordinary ring. */
+  float frame[2] = {1.0f, 2.0f};
+  CHECK(le_audio_ring_push_frame(&ring, frame, 2) == 1);
+  float out[2] = {0.0f, 0.0f};
+  CHECK(le_audio_ring_pop(&ring, out, 2) == 2);
+  CHECK(out[0] == 1.0f);
+  CHECK(out[1] == 2.0f);
+
+  le_audio_ring_release(&ring);
+  CHECK(ring.buffer == NULL);
+  CHECK(ring.capacity == 0);
+  le_audio_ring_release(&ring); /* idempotent: teardown paths call it blind */
+  le_audio_ring_release(NULL);
+}
+
 static void test_engine_lifecycle_without_device(void) {
   printf("test_engine_lifecycle_without_device\n");
   le_engine* engine = le_engine_create();
@@ -23222,6 +23300,7 @@ int main(void) {
   test_audio_ring_push_frame_all_or_nothing();
   test_audio_ring_reports_full();
   test_audio_ring_wraps_around();
+  test_audio_ring_alloc_owns_fork_safe_storage();
   test_engine_lifecycle_without_device();
   test_null_safety();
   test_loop_clock();
