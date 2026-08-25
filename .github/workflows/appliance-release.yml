@@ -119,6 +119,22 @@ jobs:
             *) echo "unknown board: $board" >&2; exit 1 ;;
           esac
 
+          # manifest.json carries version/bundle/sha256/channel and NO board
+          # field, and segno-update-ctl selects purely on semver_newer — so a
+          # channel can only ever serve ONE board safely. That board is rpi5.
+          # Publishing any other makes every polling unit fetch it, fail rauc's
+          # compatible check, and re-fail on every poll forever, because the
+          # manifest version stays permanently newer.
+          #
+          # Checked here rather than beside the publish step so it costs seconds
+          # instead of failing after a ~2h build, and phrased as `!= no` to match
+          # the publish steps themselves — `== yes` would silently stop guarding
+          # push/tag triggers if their forced board ever changed again.
+          if [ "${{ github.event.inputs.publish }}" != "no" ] && [ "$board" != "rpi5" ]; then
+            echo "::error::refusing to publish a $board bundle. manifest.json has no board discriminator and segno-update-ctl selects on version alone, so every unit polling this channel would fetch it, fail its RAUC compatible check, and re-fail forever. rpi5 is the shipping board; build anything else with publish=no, or give the manifest a board field and teach the client to filter on it."
+            exit 1
+          fi
+
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "board=$board" >> "$GITHUB_OUTPUT"
@@ -374,7 +390,7 @@ jobs:
           # missing, so an absent symlink still "succeeds" and the || find
           # fallback never runs — dead in exactly the case it exists for.
           wic=$(readlink -e $img/segno-kiosk-image-"$machine".wic 2>/dev/null \
-                || find "$YOCTO_WORK_DIR" -name "segno-kiosk-image-$machine*.wic" | sort | tail -1)
+                || find "$YOCTO_WORK_DIR" -type f -name "segno-kiosk-image-$machine*.wic" | sort | tail -1)
           [ -n "$wic" ] && [ -f "$wic" ] || { echo "::error::no .wic found for $machine"; exit 1; }
 
           # No root=XXX gate here on purpose. Scanning the whole image with
@@ -401,20 +417,6 @@ jobs:
           retention-days: 14
           # Already gzipped; a second pass costs minutes and saves nothing.
           compression-level: 0
-
-      # manifest.json carries version/bundle/sha256/channel and NO board field,
-      # and segno-update-ctl selects purely on semver_newer — so a channel can
-      # only ever serve ONE board safely. That board is rpi5. Publishing any
-      # other one makes every polling unit fetch it, fail rauc's compatible
-      # check, and re-fail on every subsequent poll forever, because the
-      # manifest version stays permanently newer. Refuse rather than rely on
-      # whoever is dispatching to remember. Lift this only once the manifest
-      # gains a board discriminator and the client filters on it.
-      - name: Refuse to publish a board the manifest cannot discriminate
-        if: github.event.inputs.publish == 'yes' && needs.determine-meta.outputs.board != 'rpi5'
-        run: |
-          echo "::error::refusing to publish a ${{ needs.determine-meta.outputs.board }} bundle. manifest.json has no board field and segno-update-ctl selects on version alone, so every unit polling this channel would fetch it regardless of board, fail its RAUC compatible check, and re-fail on every subsequent poll — permanently, because the manifest version stays newer. rpi5 is the shipping board; build anything else with publish=no, or give the manifest a board discriminator and teach the client to filter on it."
-          exit 1
 
       # `publish: no` builds the image and stops. Everything above this point is
       # local to the runner; everything below is outward-facing — a Release the

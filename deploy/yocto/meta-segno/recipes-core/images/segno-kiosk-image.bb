@@ -36,7 +36,7 @@ IMAGE_INSTALL:append = " \
 # tryboot-cmdline.bbclass edits cmdline.txt inside the .wic (mtools) and regenerates
 # the bmap (bmaptool) — both are native build tools its task needs.
 do_update_tryboot_cmdline[depends] += "mtools-native:do_populate_sysroot bmaptool-native:do_populate_sysroot"
-# plymouth boot splash (segno mark, static mark, determinate progress) covers the black screen from
+# plymouth boot splash (segno mark, static, determinate progress) covers the black screen from
 # power-on until weston/segno render. plymouth-segno-theme sets itself active.
 # Keep psplash (the other splash, pulled in by the base image) out so the two don't
 # fight over the framebuffer — plymouth owns the splash.

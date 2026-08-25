@@ -57,8 +57,9 @@ gh workflow run appliance-release.yml -f channel=experimental -f runner=self-hos
 ```
 
 The run publishes a `segno-image-<board>-<version>` artifact holding
-`*.wic.gz`, its `.bmap` and `SHA256SUMS`. `board` defaults to **rpi5** everywhere, and `publish`
-defaults to **no** so a bench build cannot move the OTA channel. Publishing any
+`*.wic.gz`, its `.bmap` and `SHA256SUMS`. `board` defaults to **rpi5** everywhere, and on dispatch `publish`
+defaults to **no**, so a bench build cannot move the OTA channel. Note push to
+`experimental` and `v*` tags still publish — that is what they are for. Publishing any
 board other than rpi5 is refused outright: `manifest.json` has no board field and
 the client selects on version alone, so a channel can serve exactly one board.
 
