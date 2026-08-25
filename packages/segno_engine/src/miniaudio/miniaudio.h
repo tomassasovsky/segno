@@ -27901,7 +27901,34 @@ static ma_result ma_device_init_by_type__alsa(ma_device* pDevice, const ma_devic
         Subtle detail here with the start threshold. When in playback-only mode (no full-duplex) we can set the start threshold to
         the size of a period. But for full-duplex we need to set it such that it is at least two periods.
         */
-        resultALSA = ((ma_snd_pcm_sw_params_set_start_threshold_proc)pDevice->pContext->alsa.snd_pcm_sw_params_set_start_threshold)(pPCM, pSWParams, internalPeriodSizeInFrames*2);
+        /* SEGNO PATCH (#809): scale the start threshold with the ring, instead of
+         * pinning it at two periods however deep the ring is.
+         *
+         * Stock miniaudio starts playback at `period * 2` regardless of the period
+         * COUNT. On a capture-driven duplex loop — read a period, process, write a
+         * period — the playback ring's occupancy then settles at whatever it
+         * started with and stays there, so the CUSHION against a late writer is two
+         * periods no matter what the caller asked for. Measured on the appliance at
+         * SEGNO_ALSA_PERIODS=8, 96 kHz / 64 frames: a 512-frame buffer carrying
+         * 64-128 frames, i.e. 384 frames of the ring never used at all.
+         *
+         * That is why raising the buffer depth from 192 to 512 "changed nothing"
+         * during the #710 click hunt: on this path it could not have. Depth reached
+         * the capture side, which really does use it, and never reached the side
+         * that was underrunning.
+         *
+         * Half the ring, floored at the two periods full-duplex needs. The cost is
+         * exactly the added frames in output latency, which is the honest price of
+         * a cushion and is now something the caller controls by choosing `periods`
+         * — which is what that knob already looks like it does. */
+        ma_uint32 startThreshold = internalPeriodSizeInFrames * 2;
+        {
+            const ma_uint32 halfRing = (internalPeriodSizeInFrames * internalPeriods) / 2;
+            if (halfRing > startThreshold) {
+                startThreshold = halfRing;
+            }
+        }
+        resultALSA = ((ma_snd_pcm_sw_params_set_start_threshold_proc)pDevice->pContext->alsa.snd_pcm_sw_params_set_start_threshold)(pPCM, pSWParams, startThreshold);
         if (resultALSA < 0) {
             ma_free(pSWParams, &pDevice->pContext->allocationCallbacks);
             ((ma_snd_pcm_close_proc)pDevice->pContext->alsa.snd_pcm_close)(pPCM);
