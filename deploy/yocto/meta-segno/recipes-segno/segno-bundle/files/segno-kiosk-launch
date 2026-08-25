@@ -89,21 +89,30 @@ export SEGNO_RT_AUDIO=1
 # that has never been retuned one period is 1.33ms and every millisecond figure
 # above doubles — redo the arithmetic rather than quoting these numbers.
 #
-# That extra capacity costs approximately nothing in steady-state monitor
-# latency, which is not obvious and is worth stating with its mechanism. ALSA
-# starts playback at start_threshold, and miniaudio hardcodes that to two
-# periods (miniaudio.h:27840 passes internalPeriodSizeInFrames*2), independent
-# of the period COUNT — so raising `periods` deepens the ring without moving the
-# point at which playback begins. The duplex loop is capture-driven
-# read-then-blocking-write, so occupancy stays pinned near that threshold rather
-# than filling the ring. Measured live at periods=8: start_threshold 128 (= 2
-# periods) and appl_ptr - hw_ptr sampled 90-129 frames of the 512-frame ring
-# (delay 210-249). Everything in this paragraph is the PLAYBACK side, where the
-# hazard is underrun and the extra periods sit unused rather than adding delay.
-# The overrun headroom they buy is on the CAPTURE side, which is the side case 2
-# actually needed: miniaudio assigns the same `periods` to both descriptors
-# (miniaudio.h:41940 playback, :41956 capture), so raising it deepens the
-# capture ring too.
+# WHAT THIS COSTS IN LATENCY CHANGED WITH #809, and the old note is kept below
+# because it explains a #710 result that would otherwise look like a
+# coincidence. ALSA starts playback at start_threshold; miniaudio hardcoded that
+# to two periods independent of the period COUNT, so raising `periods` deepened
+# the ring WITHOUT moving the point playback begins. The duplex loop is
+# capture-driven read-then-blocking-write, so occupancy settled at that
+# threshold and stayed there: measured live at periods=8, start_threshold 128
+# (= 2 periods) and appl_ptr - hw_ptr sampled 90-129 frames of a 512-frame ring
+# — 384 frames never used at all. That is exactly why #710's "buffer depth 192
+# -> 512 changed nothing" was not luck: depth reached the CAPTURE side, which
+# really does use it, and never reached the side that was underrunning.
+#
+# The SEGNO patch now starts playback at half the ring (floored at the two
+# periods full-duplex needs), so `periods` controls the cushion on both sides —
+# which is what this knob already looked like it did. At 8 periods that is 256
+# frames rather than 128, i.e. roughly +1.3 ms of monitor latency at 96 kHz/64,
+# bought deliberately: the #804 click hunt found the monitor underrunning on
+# stalls of 2-3 ms against a cushion of 1.3, and a cushion that cannot be raised
+# is not a tuning knob.
+#
+# The capture side is unchanged and still gets the depth: miniaudio assigns the
+# same `periods` to both descriptors (miniaudio.h:41940 playback, :41956
+# capture).
+#
 # Evidence honestly stated: only the periods=8 state was measured on the unit —
 # no periods=3 comparison was taken — so this rests on that measurement plus the
 # start-threshold mechanism above, not on a before/after.
