@@ -204,6 +204,16 @@ after the `LE_CMD_STOP` that requested it. A downstream consumer that only
 needs "when did recording actually start/stop" should read the transport
 facts, not try to infer them from the raw commands.
 
+A consumer pairing those facts into takes must not assume every
+`RECORD_START` is terminated by a `RECORD_END`: an aborted take — armed,
+then stopped having captured nothing — terminates with `LE_PLOG_RECORD_ABORT`
+(314) instead. A `START`↔`ABORT` pair is not a take and delimits no region —
+it produced no content and has no settled image — so pair it only to close
+the `START` and then discard it; never render it, and never let it consume
+the audio belonging to a later real take on the same channel.
+(In a version-1 file the abort was logged as `RECORD_END`, so this pairing
+rule is only available from header version 2 on — see the version table.)
+
 ## Frame-tagging semantics
 
 - Entries from `log_ring` (audio-thread-applied commands) are tagged with the
