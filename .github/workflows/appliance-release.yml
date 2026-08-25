@@ -269,7 +269,11 @@ jobs:
           # `--` stops a leading-dash filename being read as an option.
           shopt -s nullglob
           for d in "$YOCTO_WORK_DIR"/*/tmp/deploy/images/*/; do
-            wics=( "$d"*.wic )
+            # Real images only: the rootfs.wic SYMLINK also matches the glob and
+            # is always newest by mtime, so counting it would silently turn
+            # "keep the two newest" into "keep one" (the link's target).
+            wics=()
+            for w in "$d"*.wic; do [ -h "$w" ] || wics+=( "$w" ); done
             [ ${#wics[@]} -gt 2 ] || continue
             while IFS= read -r f; do
               [ -n "$f" ] || continue
@@ -389,7 +393,9 @@ jobs:
           # -e, not -f: readlink -f exits 0 when only the FINAL component is
           # missing, so an absent symlink still "succeeds" and the || find
           # fallback never runs — dead in exactly the case it exists for.
-          wic=$(readlink -e $img/segno-kiosk-image-"$machine".wic 2>/dev/null \
+          # walnascar names the link segno-kiosk-image-<machine>.rootfs.wic
+          # (the prune step above depends on the same fact).
+          wic=$(readlink -e $img/segno-kiosk-image-"$machine".rootfs.wic 2>/dev/null \
                 || find "$YOCTO_WORK_DIR" -type f -name "segno-kiosk-image-$machine*.wic" | sort | tail -1)
           [ -n "$wic" ] && [ -f "$wic" ] || { echo "::error::no .wic found for $machine"; exit 1; }
 

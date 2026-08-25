@@ -117,9 +117,13 @@ local_conf_header:
     DISTRO_FEATURES:append = " wayland opengl systemd pam"
 
   segno: |
-    # SEGNO_BOOT_DISK is set per board (kas-segno-rpi{4,5}.yml). wic only expands
-    # variables inside a .wks.in that are listed in WICVARS, so declare it here
-    # rather than in either board file — both need it, identically.
+    # SEGNO_BOOT_DISK is set per board (kas-segno-rpi{4,5}.yml). The .wks.in is
+    # expanded by bitbake's d.expand at image-recipe parse, which sees any
+    # datastore variable — WICVARS is NOT what expands it (it only feeds wic's
+    # .env for source plugins). Kept anyway as belt-and-braces: it costs
+    # nothing, and if a future wic source plugin ever wants the value, it is
+    # already exported. Declared here rather than per board — both need it,
+    # identically.
     WICVARS:append = " SEGNO_BOOT_DISK"
 
     # Install the prebuilt bundle recipe into the image. The recipe defaults
