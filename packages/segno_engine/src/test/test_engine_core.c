@@ -165,23 +165,23 @@ static void test_ring_wraps_around(void) {
 
 /* ---- le_audio_ring (performance-recording capture ring) ---- */
 
-static void test_audio_ring_init_rejects_bad_capacity(void) {
-  printf("test_audio_ring_init_rejects_bad_capacity\n");
-  float storage[8];
+static void test_audio_ring_alloc_rejects_bad_capacity(void) {
+  printf("test_audio_ring_alloc_rejects_bad_capacity\n");
   le_audio_ring ring;
-  CHECK(le_audio_ring_init(&ring, storage, 8) == 1); /* power of two */
-  CHECK(le_audio_ring_init(&ring, storage, 6) == 0); /* not power of two */
-  CHECK(le_audio_ring_init(&ring, storage, 1) == 0); /* too small */
-  CHECK(le_audio_ring_init(&ring, storage, 0) == 0); /* zero */
-  CHECK(le_audio_ring_init(NULL, storage, 8) == 0);  /* null ring */
-  CHECK(le_audio_ring_init(&ring, NULL, 8) == 0);    /* null buffer */
+  CHECK(le_audio_ring_alloc(&ring, 8) == 1); /* power of two */
+  le_audio_ring_release(&ring);
+  CHECK(le_audio_ring_alloc(&ring, 6) == 0); /* not power of two */
+  CHECK(le_audio_ring_alloc(&ring, 1) == 0); /* too small */
+  CHECK(le_audio_ring_alloc(&ring, 0) == 0); /* zero */
+  CHECK(le_audio_ring_alloc(NULL, 8) == 0);  /* null ring */
+  /* A capacity whose byte count would wrap: refused, not mapped short. */
+  CHECK(le_audio_ring_alloc(&ring, (SIZE_MAX >> 1) + 1) == 0);
 }
 
 static void test_audio_ring_push_pop_fifo(void) {
   printf("test_audio_ring_push_pop_fifo\n");
-  float storage[8];
   le_audio_ring ring;
-  le_audio_ring_init(&ring, storage, 8);
+  CHECK(le_audio_ring_alloc(&ring, 8) == 1);
 
   float out[8];
   CHECK(le_audio_ring_pop(&ring, out, 8) == 0); /* empty */
@@ -196,13 +196,13 @@ static void test_audio_ring_push_pop_fifo(void) {
     CHECK(out[i * 2 + 1] == (float)i + 0.5f);
   }
   CHECK(le_audio_ring_pop(&ring, out, 8) == 0); /* drained */
+  le_audio_ring_release(&ring);
 }
 
 static void test_audio_ring_push_frame_all_or_nothing(void) {
   printf("test_audio_ring_push_frame_all_or_nothing\n");
-  float storage[4]; /* usable slots == capacity - 1 == 3 samples */
-  le_audio_ring ring;
-  le_audio_ring_init(&ring, storage, 4);
+  le_audio_ring ring; /* usable slots == capacity - 1 == 3 samples */
+  CHECK(le_audio_ring_alloc(&ring, 4) == 1);
 
   float mono[1] = {1.0f};
   CHECK(le_audio_ring_push_frame(&ring, mono, 1) == 1); /* 1/3 used */
@@ -218,13 +218,13 @@ static void test_audio_ring_push_frame_all_or_nothing(void) {
   CHECK(le_audio_ring_pop(&ring, out, 4) == 2); /* exactly the two mono pushes */
   CHECK(out[0] == 1.0f);
   CHECK(out[1] == 1.0f);
+  le_audio_ring_release(&ring);
 }
 
 static void test_audio_ring_reports_full(void) {
   printf("test_audio_ring_reports_full\n");
-  float storage[4];
   le_audio_ring ring;
-  le_audio_ring_init(&ring, storage, 4);
+  CHECK(le_audio_ring_alloc(&ring, 4) == 1);
 
   float v = 1.0f;
   CHECK(le_audio_ring_push_frame(&ring, &v, 1) == 1);
@@ -235,13 +235,13 @@ static void test_audio_ring_reports_full(void) {
   float out[1];
   CHECK(le_audio_ring_pop(&ring, out, 1) == 1);
   CHECK(le_audio_ring_push_frame(&ring, &v, 1) == 1); /* room again after a pop */
+  le_audio_ring_release(&ring);
 }
 
 static void test_audio_ring_wraps_around(void) {
   printf("test_audio_ring_wraps_around\n");
-  float storage[4];
   le_audio_ring ring;
-  le_audio_ring_init(&ring, storage, 4);
+  CHECK(le_audio_ring_alloc(&ring, 4) == 1);
 
   float out[1];
   for (int i = 0; i < 100; ++i) {
@@ -250,6 +250,86 @@ static void test_audio_ring_wraps_around(void) {
     CHECK(le_audio_ring_pop(&ring, out, 1) == 1);
     CHECK(out[0] == v);
   }
+  le_audio_ring_release(&ring);
+}
+
+/* #804: a capture ring is written by the audio callback for the whole length of
+ * a take, so its storage must survive a fork() in the host process without
+ * costing that thread a page fault. On Linux le_audio_ring_alloc maps it
+ * privately and marks it MADV_DONTFORK; this asserts the flag actually landed,
+ * by reading the mapping's own VmFlags out of smaps — the same `dc` the kernel
+ * shows for VM_DONTCOPY. Without it the ring is CoW'd on every fork and the
+ * SCHED_FIFO thread re-faults every page of it on the next lap, which is the
+ * defect the function exists to remove.
+ *
+ * Linux-only by nature: MADV_DONTFORK has no macOS or Windows counterpart and
+ * neither platform runs the appliance. The allocate/use/release contract below
+ * it is checked everywhere. */
+#if defined(__linux__)
+static int smaps_mapping_is_dontcopy(const void* addr) {
+  FILE* f = fopen("/proc/self/smaps", "r");
+  if (f == NULL) return -1; /* no procfs at all: inconclusive, not a failure */
+  char line[512];
+  int in_range = 0;
+  int found = -2; /* smaps readable, mapping not located yet — a FAILURE if it
+                   * stays that way: it means the parse stopped matching, and a
+                   * test that cannot find the mapping is asserting nothing. */
+  const unsigned long want = (unsigned long)(uintptr_t)addr;
+  while (fgets(line, sizeof(line), f) != NULL) {
+    unsigned long lo = 0;
+    unsigned long hi = 0;
+    char perms[8];
+    /* A mapping HEADER is "<lo>-<hi> <perms> ..."; every other smaps line is a
+     * "Name: value" field, and no field name parses as <hex>-<hex>. */
+    if (sscanf(line, "%lx-%lx %7s", &lo, &hi, perms) == 3) {
+      in_range = (want >= lo && want < hi);
+      if (in_range) found = 0; /* mapping located; flags not seen yet */
+    } else if (in_range && strncmp(line, "VmFlags:", 8) == 0) {
+      found = strstr(line, " dc") != NULL;
+      break;
+    }
+  }
+  fclose(f);
+  return found;
+}
+#endif
+
+static void test_audio_ring_alloc_owns_fork_safe_storage(void) {
+  printf("test_audio_ring_alloc_owns_fork_safe_storage\n");
+  le_audio_ring ring;
+
+  /* Big enough to span several pages on any page size this runs on, so the
+   * madvise below covers more than the one page a token allocation would. */
+  const size_t cap = 1u << 18; /* 256K samples = 1 MB */
+  CHECK(le_audio_ring_alloc(&ring, cap) == 1);
+  CHECK(ring.buffer != NULL);
+  CHECK(ring.capacity == cap);
+
+  /* Pre-faulted and zeroed by the allocator, both ends of the span. */
+  CHECK(ring.buffer[0] == 0.0f);
+  CHECK(ring.buffer[cap - 1] == 0.0f);
+
+#if defined(__linux__)
+  const int dc = smaps_mapping_is_dontcopy(ring.buffer);
+  CHECK(dc == 1 || dc == -1); /* 1 = VM_DONTCOPY set; -1 = no procfs at all.
+                               * 0 (present, unset) and -2 (never located) both
+                               * fail — the second is how a silently broken
+                               * parse would otherwise pass. */
+#endif
+
+  /* Still an ordinary ring. */
+  float frame[2] = {1.0f, 2.0f};
+  CHECK(le_audio_ring_push_frame(&ring, frame, 2) == 1);
+  float out[2] = {0.0f, 0.0f};
+  CHECK(le_audio_ring_pop(&ring, out, 2) == 2);
+  CHECK(out[0] == 1.0f);
+  CHECK(out[1] == 2.0f);
+
+  le_audio_ring_release(&ring);
+  CHECK(ring.buffer == NULL);
+  CHECK(ring.capacity == 0);
+  le_audio_ring_release(&ring); /* idempotent: teardown paths call it blind */
+  le_audio_ring_release(NULL);
 }
 
 static void test_engine_lifecycle_without_device(void) {
@@ -23217,11 +23297,12 @@ int main(void) {
   test_ring_push_pop_fifo();
   test_ring_reports_full();
   test_ring_wraps_around();
-  test_audio_ring_init_rejects_bad_capacity();
+  test_audio_ring_alloc_rejects_bad_capacity();
   test_audio_ring_push_pop_fifo();
   test_audio_ring_push_frame_all_or_nothing();
   test_audio_ring_reports_full();
   test_audio_ring_wraps_around();
+  test_audio_ring_alloc_owns_fork_safe_storage();
   test_engine_lifecycle_without_device();
   test_null_safety();
   test_loop_clock();

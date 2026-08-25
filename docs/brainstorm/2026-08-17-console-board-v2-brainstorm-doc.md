@@ -66,8 +66,10 @@ a separate RP2040 LED driver*: the two firmwares merge into one program.
   of the board), the AHCT125, the opto, ~15 passives and four mounting holes. A flat
   ~130 × 90 board puts the module at 9 % of area with edge to spare. It also keeps the
   Pi's Active Cooler airflow clear and the NVMe and SD card reachable.
-  *Only ~11 signals cross the ribbon* — two UART pairs, SWD, power button, 5 V, 3V3,
-  GND — so a 2×20 IDC is generous.
+  *Only six signals cross the ribbon* — two UART pairs and SWD — plus 3V3 on two pins
+  and eight grounds: **16 of the 40 ways** in total. **No 5 V**: header pins 2/4 are deliberately absent, and `console_board.py`
+  asserts it, because connecting them would tie the external buck to the Pi's PMIC
+  rail with no ORing diode. So a 2×20 IDC is generous.
 - **Footswitches stay on the MCU.** Debounce and timestamping stay out of Linux
   userspace, so jitter is bounded; the existing firmware and pedal protocol already
   work this way. (There is already an open issue about shaving ~8 ms off footswitch
@@ -83,13 +85,19 @@ a separate RP2040 LED driver*: the two firmwares merge into one program.
   system update. Three wires and a 3-pin header. The MCU is buried under the 16"
   screen and the pedal firmware is the part most likely to keep changing — this is
   cheap now and painful to retrofit.
-- **Power button goes straight to a Pi GPIO**, not through the MCU. Clean shutdown
-  keeps working when the MCU is wedged or mid-reflash, which is exactly when it is
-  needed.
-- **The external potted buck stays.** The eleUniverse 8–36 V → 5 V 10 A IP67 brick
-  already feeds the Pi and both screens; the board just takes 5 V in. ~5 A of
-  switching regulator on a hand-built THT board is real design work that is already
-  solved.
+- **Power button goes straight to the Pi's own PWR pads**, not through the MCU and not
+  through a GPIO. Clean shutdown keeps working when the MCU is wedged or mid-reflash,
+  which is exactly when it is needed — and on a Pi 5 a GPIO cannot do this job at all:
+  RP1 and the SoC are unpowered until the PMIC brings them up, so nothing on the 40-way
+  can wake the machine. The button reaches the two solder pads beside the RTC connector
+  (board J8 → J9).
+- **The board makes no 5 V of its own.** It takes 5 V in on J3 and nothing more — ~5 A
+  of switching regulator on a hand-built THT board is real design work that is already
+  solved elsewhere. *(Written when that "elsewhere" was an external eleUniverse
+  8–36 V brick. Superseded by #754: one 20 V USB-C PD contract at the rear panel feeds
+  **BUCK_PI** and **BUCK_AUX**, and J3 hangs off BUCK_AUX — see
+  [`segno_wiring.md` §2](../../hardware/segno_wiring.md). The decision this bullet
+  records is unchanged; only the upstream supply moved.)*
 - **The ring/encoder board stays separate.** `ring_board.py` is unchanged — EC11 +
   12 WS2812 behind the faceplate's ring window, reached by one 8-pin JST cable. It
   physically cannot join a board on the floor.
@@ -99,15 +107,15 @@ a separate RP2040 LED driver*: the two firmwares merge into one program.
 | block | parts |
 |---|---|
 | MCU | Pico 2 (RP2350) on 2×20 THT headers |
-| Pi link | 2×20 IDC ribbon → UART ×2, SWD, power button, 5 V, 3V3, GND |
+| Pi link | 2×20 IDC ribbon → UART ×2, SWD, 3V3, GND — **no 5 V**, and not the power button |
 | MIDI IN | H11L1 at **3.3 V** → Pi uart0 RX · 220 Ω · 1N4148 · DIN pin 2 **not** connected |
 | MIDI OUT | 74AHCT125 ← Pi uart0 TX · 2 × 220 Ω |
 | Footswitches | 10 × JST-XH 2-pin, 100 nF RC debounce (as V1) |
 | CTRL 1/2 | 2 × JST-XH 3-pin → ADC with pull-up |
 | Indicators | 1 × JST-XH 3-pin, WS2812 chain via 74AHCT125 3V3→5 V |
 | Ring/encoder | 1 × JST-XH 8-pin to `ring_board` |
-| Power button | 1 × JST-XH 2-pin → straight through to Pi GPIO |
-| Power in | 1 × JST-XH 2-pin, 5 V from the external buck |
+| Power button | 1 × JST-XH 2-pin → J9 → the Pi's own J2 pads, not a GPIO |
+| Power in | 1 × JST-XH 2-pin, 5 V from **BUCK_AUX** (#754) |
 
 Level shifting follows [`segno_wiring.md` §2b](../../hardware/segno_wiring.md): the
 5 V → 3.3 V direction is the dangerous one and gets a divider; the 3.3 V → 5 V

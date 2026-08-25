@@ -146,7 +146,7 @@ link_rx_pi = Net("LINK_RX_PI")   # two nets that cross power domains -- see belo
 midi_tx = Net("MIDI_TX")   # Pi uart0 TX -> AHCT125 -> DIN OUT
 midi_rx = Net("MIDI_RX")   # opto (3V3) -> Pi uart0 RX
 midi_out_buf = Net("MIDI_OUT_BUF")
-pwr_btn = Net("PWR_BTN")   # rear button -> straight through to a Pi GPIO
+pwr_btn = Net("PWR_BTN")   # rear button -> the Pi's own PWR pads, NOT a GPIO
 swclk, swdio = Net("SWCLK"), Net("SWDIO")
 ring_data, ring_buf, ring_out = Net("RING_DATA"), Net("RING_DATA_BUF"), Net("RING_DATA_OUT")
 ind_data, ind_buf, ind_out = Net("IND_DATA"), Net("IND_DATA_BUF"), Net("IND_DATA_OUT")
@@ -391,9 +391,10 @@ j_ind[1] += v5
 j_ind[2] += ind_out
 j_ind[3] += gnd
 
-# ---- J8: rear power button -- passed STRAIGHT through to a Pi GPIO ----------
+# ---- J8: rear power button -- passed STRAIGHT through to the Pi's PWR pads ---
 # Not via the MCU: a clean shutdown has to work when the MCU is wedged or
-# mid-reflash, which is exactly when it is wanted.
+# mid-reflash, which is exactly when it is wanted. And not via a GPIO either --
+# see the next block; on a Pi 5 no GPIO can do this job.
 j_btn = jst(2, "J8", "PWR_BTN")
 j_btn[1] += pwr_btn
 j_btn[2] += gnd
@@ -564,7 +565,8 @@ R("10k", ref="R18")[1, 2] += link_rx_pi, link_rx
 # ---- J2: the Pi ribbon (2x20, SHROUDED and KEYED) ---------------------------
 # Reversed, a 2x20 puts 5 V onto GND pins -- specify a shrouded header with a
 # polarising notch and a keyed IDC socket. Cheapest mistake on the board to
-# design out. Only ~11 of the 40 ways carry anything; the rest are the Pi's own
+# design out. Only 16 of the 40 ways carry anything -- 3V3 x2, GND x8 and six
+# signals; the rest are the Pi's own
 # pins and are left alone.
 #   Pi pin 2,4  = 5V  -- DELIBERATELY NOT CONNECTED. Tying them to +5V puts the
 #                        external buck in hard parallel with the Pi 5's own PMIC
