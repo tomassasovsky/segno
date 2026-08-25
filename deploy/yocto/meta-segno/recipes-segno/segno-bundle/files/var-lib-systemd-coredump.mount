@@ -1,0 +1,26 @@
+# Coredumps on /data (#438).
+#
+# systemd-coredump writes to /var/lib/systemd/coredump, which on this image is
+# the A/B rootfs: a core there survives a reboot but not an OS update, and it
+# competes for a 3 GB partition with the OS itself. /data is 897 GB and is never
+# touched by an update.
+#
+# Unlike the journal mount, this path has no symlink in it, so the unit name is
+# the plain escaped path.
+[Unit]
+Description=Segno: coredump storage on /data (survives reboot and OS update)
+DefaultDependencies=no
+Requires=data.mount segno-log-dirs.service
+After=data.mount segno-log-dirs.service
+Before=local-fs.target
+Conflicts=umount.target
+Before=umount.target
+
+[Mount]
+What=/data/log/coredump
+Where=/var/lib/systemd/coredump
+Type=none
+Options=bind
+
+[Install]
+WantedBy=local-fs.target
