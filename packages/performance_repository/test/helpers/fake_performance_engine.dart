@@ -194,6 +194,13 @@ class FakePerformanceEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  @override
+  int? volumeFreeBytes(String path) => freeBytes;
+
+  /// What [volumeFreeBytes] reports; `null` models a platform that cannot
+  /// answer.
+  int? freeBytes = 1 << 40;
+
   int renderBeginCalls = 0;
   String? lastRenderCaptureDir;
   EngineResult renderBeginResult = EngineResult.ok;

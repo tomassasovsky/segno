@@ -1007,6 +1007,14 @@ class MockAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// What [volumeFreeBytes] reports. `null` models a platform that cannot
+  /// answer; set a number to model a volume with that much room left.
+  int? volumeFreeBytesValue = 1 << 40; // 1 TiB: plenty, by default
+
+  @override
+  int? volumeFreeBytes(String path) =>
+      path.isEmpty ? null : volumeFreeBytesValue;
+
   /// The `captureDir` passed to the most recent [renderBegin] call, for test
   /// assertions. `null` until the first render.
   String? lastRenderCaptureDir;
