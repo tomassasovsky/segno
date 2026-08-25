@@ -945,6 +945,20 @@ abstract interface class EnginePerformanceCapture {
   /// the engine is disposed.
   EngineResult perfDisarm();
 
+  /// Free bytes on the volume holding [path], or `null` if the platform could
+  /// not answer (a path that does not exist, a filesystem that cannot report).
+  ///
+  /// This is a question about a directory, not about a running capture, so it
+  /// is also the check made before arming one. It lives on the engine because
+  /// Dart has no free-space API, and the `df` subprocess that filled that gap
+  /// turned out to be the single most expensive thing on the appliance's
+  /// real-time path: `Process.run` is fork() + exec(), fork() holds the
+  /// process's mmap_lock for write for milliseconds while it copies a 1.7 GB
+  /// address space's page tables, and under PREEMPT_RT the audio thread's next
+  /// page fault sleeps behind it. Every audible dropout measured on the Pi 5
+  /// bench landed within 3 ms of one (#806).
+  int? volumeFreeBytes(String path);
+
   /// Starts an offline render of the finalized capture at [captureDir]: a
   /// worker thread reconstructs each non-empty track's full-length DRY stem
   /// (part 7 — wet stems are part 8) by replaying `events.log` against the
