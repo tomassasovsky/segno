@@ -11,4 +11,4 @@
 /// panel, per-track readiness indicators default off, channel numbers centre,
 /// and the on-screen undo/redo buttons are removed. Default (false) keeps the
 /// full on-screen chrome.
-const kConsoleMode = bool.fromEnvironment('SEGNO_CONSOLE');
+const kConsoleMode = true; // bool.fromEnvironment('SEGNO_CONSOLE');

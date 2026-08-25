@@ -725,9 +725,12 @@ static void le_seam_fold(le_track* t, int32_t len, int32_t F) {
  * only one of the three that keeps exactly what was played, where it was
  * played; it just has to stop clicking on the way in and out.
  *
- * Mutually exclusive with the #728 seam fold by construction: that arms only
- * when record_pos - offset == len, i.e. exactly when the take FILLED the loop
- * and there is no trailing silence, which is the case this returns early on.
+ * COMPLEMENTARY to the #728 seam fold, not mutually exclusive with it. The fold
+ * arms on the TAIL alone (record_pos - offset == len), so a grid-quantized take
+ * that fills its rounded length gets the fold at the wrap and still has silence
+ * before its material. This runs unconditionally and decides each end on its
+ * own; when the take fills the loop end to end both ends decline and the fold
+ * owns the wrap by itself.
  *
  * THE MATERIAL DOES NOT ALWAYS START AT 0, which is the thing that makes this
  * a span rather than a suffix. Grid-quantized record-start (D8) delays capture
@@ -737,20 +740,35 @@ static void le_seam_fold(le_track* t, int32_t len, int32_t F) {
  * exactly where they were. record_start is what the buffer actually knows.
  *
  * Runs synchronously at finalize, before the state store and therefore before
- * le_dub_session_start, so — unlike #728's deferred fold — no in-flight undo
- * shadow can have captured a pre-taper head yet. Every later backup-on-write
- * copies an already-tapered live slot, so this needs no shadow twin. */
-static void le_take_taper_ends(const le_engine* e, le_track* t, int32_t len) {
-  const int32_t off = load_i32(&e->a_record_offset);
-  const int32_t shift = off > 0 ? off : 0;
+ * le_dub_session_start, so the pass this take is about to start cannot have
+ * captured a pre-taper head: every one of its backup-on-write copies reads an
+ * already-tapered live slot. That is why there is no shadow twin here, unlike
+ * #728's deferred fold. What the ordering does NOT prove is anything about a
+ * PREVIOUS pass still draining on this track — the same corner #728 documents
+ * as its retire-before-the-fold gap. A capture re-arms the track, so reaching
+ * this with an older shadow still live is not a sequence anything produces
+ * today; it is stated as the limit of the argument rather than left implied. */
+static void le_take_taper_ends(const le_engine* e, le_track* t, int32_t len,
+                               int32_t shift) {
   int32_t start = t->record_start - shift;
   int32_t end = t->record_pos - shift;
   if (start < 0) start = 0;
   if (end > len) end = len;
   if (end <= start) return;
-  /* Fills the loop end to end: there is no silence to fade into, and the wrap
-   * belongs to #728's continuation fold rather than to an envelope. */
-  if (start == 0 && end >= len) return;
+  /* Either end of the material meets silence as soon as it does not fill the
+   * loop, and BOTH do — which is easy to get wrong by reasoning about the
+   * buffer instead of about playback order. At start > 0 the material is
+   * preceded by leading silence; at start == 0 it is preceded by the loop's own
+   * TAIL, which is silence exactly when end < len. The mirror holds at the other
+   * end. So the two conditions collapse to one: anything short of filling the
+   * loop needs both fades.
+   *
+   * The interesting case that condition adds is a grid-quantized take that DOES
+   * fill its rounded length (silence before it, none after). An earlier version
+   * ran this only when the #728 seam fold did not arm — and arming is decided by
+   * the tail alone, so that take got the fold at its wrap and kept a raw step at
+   * its leading join. */
+  if (start == 0 && end == len) return;
   const int32_t f = seam_xfade_frames(e);
   /* FOUR fades of room, not two, so at most half the material is envelope.
    *
@@ -760,7 +778,8 @@ static void le_take_taper_ends(const le_engine* e, le_track* t, int32_t len) {
    * would leave 3 ms flat and turn a stab into a swell. That is reshaping the
    * performance, not de-clicking it. Below 4F (~40 ms) the content is left
    * exactly as recorded: a take that short is a transient either way, and
-   * silently rewriting one the performer asked for is worse than the step. */
+   * silently rewriting one the performer asked for is worse than the step.
+   * test_take_taper_threshold_leaves_short_takes_alone pins both sides. */
   if (f <= 0 || end - start < 4 * f) return;
   const int32_t n = le_lanes_active(t);
   for (int32_t l = 0; l < n; ++l) {
@@ -770,6 +789,9 @@ static void le_take_taper_ends(const le_engine* e, le_track* t, int32_t len) {
     /* Same (pointer, cap) immutability argument as le_seam_fold: the live slot
      * cannot be resized under the audio thread. */
     if (b == NULL || ln->pool_cap[live] < len) continue;
+    /* 2*f multiplies per lane, so this scales with lane count and sample rate:
+     * at 96 kHz f is 960, and a 4-lane track spends ~7.7k float multiplies
+     * inside the finalize block. Bounded, once per take, on a press. */
     for (int32_t i = 0; i < f; ++i) {
       const float x = (float)i / (float)f; /* 0..1 across the fade */
       b[start + i] *= x;                   /* in, from the silence before it */
@@ -1134,15 +1156,18 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
    *     Pinned by test_loop_seam_not_armed_with_record_offset. */
   const int32_t new_len = load_i32(&t->lanes[0].a_len);
   const int32_t seam_f = seam_room(e, t, new_len);
-  if (seam_f > 0 && t->record_pos - load_i32(&e->a_record_offset) == new_len) {
+  /* ONE read of the offset for both decisions below. They disagree if it is
+   * loaded twice and a calibration lands between them — the arming test would
+   * use one value and the fade positions another, putting the fade somewhere
+   * the material is not. */
+  const int32_t rec_off = load_i32(&e->a_record_offset);
+  if (seam_f > 0 && t->record_pos - rec_off == new_len) {
     t->seam_len = new_len;
     t->seam_capture = seam_f;
-  } else {
-    /* The take did not fill its length, so there is no continuation to fold and
-     * the loop is [material][silence]. Taper both ends of the material instead
-     * (#730). */
-    le_take_taper_ends(e, t, new_len);
   }
+  /* Unconditional, and complementary to the fold above: it arms on the tail
+   * alone, while a take can have silence at either end independently (#730). */
+  le_take_taper_ends(e, t, new_len, rec_off > 0 ? rec_off : 0);
   le_audio_rev_bump(t); /* [R1] record finalize: fresh content */
   store_i32(&t->a_state, end_state);
   t->record_pos = 0;

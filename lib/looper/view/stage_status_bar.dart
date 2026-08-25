@@ -401,7 +401,6 @@ class _TempoClock extends StatelessWidget {
       leadingDistribution: TextLeadingDistribution.even,
     );
     return Row(
-      key: const Key('stage_tempo_clock'),
       mainAxisSize: MainAxisSize.min,
       children: [
         if (clock.hasTempo) ...[
@@ -412,36 +411,36 @@ class _TempoClock extends StatelessWidget {
               style: mono,
             ),
             const SizedBox(width: 10),
-          ],
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            spacing: 5,
-            children: [
-              for (var beat = 0; beat < clock.tsNum; beat++)
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: beat == clock.currentBeat
-                        ? surface.textPrimary
-                        : unlitDot,
-                    shape: BoxShape.circle,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 5,
+              children: [
+                for (var beat = 0; beat < clock.tsNum; beat++)
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: beat == clock.currentBeat
+                          ? surface.textPrimary
+                          : unlitDot,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const SizedBox.square(dimension: 7),
                   ),
-                  child: const SizedBox.square(dimension: 7),
-                ),
-            ],
-          ),
-          const SizedBox(width: 10),
+              ],
+            ),
+            const SizedBox(width: 10),
+            AppText(
+              l10n.stageTempoBpm(clock.bpm.toStringAsFixed(1)),
+              key: const Key('stage_tempo_bpm'),
+              style: mono,
+            ),
+            const SizedBox(width: 10),
+          ],
           AppText(
-            l10n.stageTempoBpm(clock.bpm.toStringAsFixed(1)),
-            key: const Key('stage_tempo_bpm'),
+            _format(elapsedSeconds),
+            key: const Key('stage_clock'),
             style: mono,
           ),
-          const SizedBox(width: 10),
         ],
-        AppText(
-          _format(elapsedSeconds),
-          key: const Key('stage_clock'),
-          style: mono,
-        ),
       ],
     );
   }
