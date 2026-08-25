@@ -3038,6 +3038,84 @@ static void test_loop_seam_survives_whole_lap_overdub(void) {
   le_engine_destroy(e);
 }
 
+/* #731, CHARACTERIZATION — this asserts the DEFECT, not a fix.
+ *
+ * The same whole-lap overdub as test_loop_seam_survives_whole_lap_overdub,
+ * except the player STOPS DEAD on the punch-out instead of playing through the
+ * fade tail — which is the normal thing to do, since punching out is how you
+ * stop layering.
+ *
+ * WHAT #731 SAYS THE CAUSE IS, AND WHY THAT IS WRONG. The issue says "the loop
+ * head keeps a lap of layered material that the loop tail never got". It does
+ * not: the arithmetic below reproduces the measured step exactly, and removing
+ * the punch-in ramp entirely does not change it by a single digit.
+ *
+ *   b[4799] = sin(4799) + sin(4799+N)          = +0.14812
+ *   b[0]    = ramp(0)*sin(0) + sin(0+N)        = -0.35355   (ramp(0) = 0)
+ *   step                                        =  0.50168
+ *   with no ramp at all: b[0] = sin(0)+sin(N)  = -0.35355   (sin(0) == 0)
+ *
+ * The step is simply the overdub's OWN WRAP SEAM: a signal that is not
+ * loop-periodic, layered across the loop point, with no continuation to fold.
+ * The control test scores 2.1x only because the player's still-live input
+ * through the punch-out fade tail happens to ACT as a continuation fold.
+ *
+ * That kills both options #731 proposes. "Crossfade the loop's tail into its
+ * head" needs either a continuation (there is none — the player stopped) or a
+ * shorter loop (the length must stay a multiple of the base). "Make the
+ * punch-out envelope loop-position-aware so head and tail end with the same
+ * number of laps" fixes nothing, because they already do.
+ *
+ * The fix that follows from the real cause is an ENVELOPE ON THE LAYER, exactly
+ * as #730 gives a stopped-early take one: layer = live - shadow, tapered over
+ * [0, F) and [len - F, len), so the layer is a self-contained one-shot inside
+ * the loop and the underlying loop's own continuity is untouched. That needs
+ * the pre-pass undo shadow, on the audio thread, in the layer machinery — see
+ * docs/plan/2026-08-25-fix-punch-out-splice-plan.md.
+ *
+ * Pinned here so the number is reproducible and so a fix can be measured
+ * against it. FLIP THE ASSERTION TO `score < 25.0` WHEN #731 LANDS. */
+static void test_overdub_punch_out_player_stops_still_splices_731(void) {
+  printf("test_overdub_punch_out_player_stops_still_splices_731\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+
+  /* Silent defining master, so the only content at the seam is the overdub's. */
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  /* Two whole overdub passes, punched in and out ON the loop top. */
+  le_engine_record(e, 0); /* -> OVERDUBBING */
+  drain(e);
+  feed_osc(e, &osc, 2 * N, NULL, NULL);
+  le_engine_record(e, 0);               /* punch out -> PLAYING */
+  feed_const(e, 0.0f, 512, NULL, NULL); /* the player stops dead */
+  drain(e);
+  settle_layers(e);
+
+  feed_to_loop_top(e); /* so capture index == loop position */
+  float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * N));
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, loop, &n);
+
+  double step = 0.0;
+  double med = 0.0;
+  const double score = splice_score(loop, n, &step, &med);
+  const double wrap = fabs((double)loop[N] - (double)loop[N - 1]);
+  printf("  wrap @%d: %.5f (%.1fx)   worst anywhere: %.5f  score=%.1fx\n", N,
+         wrap, med > 0 ? wrap / med : 0.0, step, score);
+  CHECK(score > 100.0); /* the defect, pinned — see the note above */
+  free(loop);
+
+  le_engine_destroy(e);
+}
+
 /* #728 (b): a NON-defining track (recorded over an existing master) wraps
  * through finalize_new_track, which never folds the seam at all — so its head
  * and tail hold input a whole lap apart and every playback wrap splices. */
@@ -23292,6 +23370,7 @@ int main(void) {
   test_looper_multitrack();
   test_latency_compensation();
   test_overdub_punch_no_click();
+  test_overdub_punch_out_player_stops_still_splices_731();
   test_loop_seam_master_take_no_splice();
   test_loop_seam_survives_whole_lap_overdub();
   test_loop_seam_on_non_defining_track();
