@@ -29,12 +29,17 @@ Before=systemd-journal-flush.service local-fs.target
 Conflicts=umount.target
 Before=umount.target
 # The Before=systemd-journal-flush.service above puts this job on early boot's
-# critical path. Without a job timeout, a missing/slow /data device would hold
-# the flush (and local-fs.target) for DefaultTimeoutStartSec — ~90 s of dark
-# screen on an appliance. 10 s is an eternity for a partition on the same SD
-# card the rootfs just booted from; past it, cancel the job and let boot
-# proceed on runtime-only logging (Storage=auto keeps that visible, and
-# segno-log-check reports it).
+# critical path. This timeout bounds only THIS bind-mount job: past 10 s the
+# job is cancelled and boot proceeds on runtime-only logging (Storage=auto
+# keeps that visible, and segno-log-check reports it). 10 s is an eternity for
+# a bind of a partition on the disk the rootfs just booted from.
+#
+# What it does NOT bound, stated so nobody credits it with more: if the /data
+# DEVICE itself is absent, data.mount (pre-existing, not this PR's) still
+# waits ~90 s of DefaultDeviceTimeoutSec on dev-disk-by\x2dlabel-data.device
+# before local-fs.target proceeds. That stall predates this unit and is
+# data.mount's to fix; bounding it here would change behaviour this PR does
+# not own (segno.service hard-requires /data).
 JobTimeoutSec=10
 
 [Mount]
