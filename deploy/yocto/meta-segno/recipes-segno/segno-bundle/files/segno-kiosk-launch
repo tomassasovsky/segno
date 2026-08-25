@@ -130,10 +130,11 @@ export SEGNO_RT_AUDIO=1
 # time a patch lands above them, so grep for the pair instead: `pConfig->periods`
 # returns 3 hits, and the two adjacent ones inside `ma_device_init` are these.
 # NOT `periodCount = pConfig->periods` — the assignments are column-aligned in
-# upstream's style, so that string matches nothing. Each playback slip-resync also now
-# restarts through the higher threshold, so its silent gap is 256 frames rather
-# than 128 at 8 periods — fewer resyncs (the cushion is harder to underrun
-# through), longer gap each.
+# upstream's style, so that string matches nothing.
+#
+# Each playback slip-resync also now restarts through the higher threshold, so
+# its silent gap is 256 frames rather than 128 at 8 periods — fewer resyncs (the
+# cushion is harder to underrun through), longer gap each.
 #
 # Evidence honestly stated: only the periods=8 state was measured on the unit —
 # no periods=3 comparison was taken — so this rests on that measurement plus the
