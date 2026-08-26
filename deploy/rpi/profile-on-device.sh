@@ -27,7 +27,10 @@
 set -euo pipefail
 
 BUNDLE="${1:-}"
-HOST="${2:-root@raspberrypi4-64.local}"
+# The appliance's hostname is "segno" (#496). The image ships no mDNS, so this
+# default only resolves if the router serves DHCP hostnames — pass user@<ip>
+# otherwise.
+HOST="${2:-root@segno}"
 PORT="${SEGNO_VM_PORT:-8181}"
 REMOTE_DIR=/data/profile
 
