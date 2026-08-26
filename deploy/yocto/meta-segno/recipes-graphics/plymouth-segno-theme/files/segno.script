@@ -9,15 +9,17 @@ sw = Window.GetWidth();
 sh = Window.GetHeight();
 
 # --- lockup -----------------------------------------------------------------
-# Scale by SCREEN HEIGHT, never native size. The source art is 940x1264 — taller
-# than a 1080p screen — so drawing it unscaled overflowed the display entirely,
-# and would be far worse on the 7" panel. A height fraction lands the same
-# proportion on every output the console drives.
+# Scale by SCREEN HEIGHT, never native size (drawing the art unscaled once
+# overflowed both displays — #803). A height fraction lands the same proportion
+# on every output the console drives.
 #
-# 0.18 is deliberately restrained: a boot splash should read as a mark on a dark
-# field, not as a poster. Both displays show the same apparent size.
+# The art is the MARK ALONE (940x657). The full lockup's wordmark was
+# unreadable at splash size on the real panel, so it was cut rather than
+# enlarged — owner's call, 2026-08-26: a boot splash reads as a mark on a dark
+# field, and the product's name is on the case, not the boot screen. 0.15 keeps
+# the bare mark at roughly the visual weight the lockup's mark had.
 lockup.src   = Image("segno-lockup.png");
-lockup.h     = Math.Int(sh * 0.18);
+lockup.h     = Math.Int(sh * 0.15);
 lockup.w     = Math.Int(lockup.h * lockup.src.GetWidth() / lockup.src.GetHeight());
 lockup.image = lockup.src.Scale(lockup.w, lockup.h);
 lockup.sprite = Sprite();
