@@ -118,6 +118,21 @@ void main() {
       expect(find.text('Bridge idea 3'), findsOneWidget);
     });
 
+    testWidgets('keeps trailing readouts visible for a long session name', (
+      tester,
+    ) async {
+      final longName = List.filled(200, 'Bridge').join(' ');
+      whenListen(
+        session,
+        const Stream<SessionState>.empty(),
+        initialState: SessionState(currentSessionName: longName),
+      );
+      await pump(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('stage_tempo_clock')), findsOneWidget);
+    });
+
     testWidgets('falls back to Unsaved in italic with no session open', (
       tester,
     ) async {
