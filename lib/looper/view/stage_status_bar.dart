@@ -51,7 +51,7 @@ class StageStatusBar extends StatelessWidget {
         SizedBox(width: 2),
         // Flexible so a long session name gives way (ellipsized) instead of
         // pushing the readouts off the fixed panel.
-        _SessionBlock(),
+        Flexible(child: _SessionBlock()),
         SizedBox(width: _gap),
         _ModePill(),
         SizedBox(width: _gap),
