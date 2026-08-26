@@ -20,9 +20,13 @@
 #             already runs it, so it is safe to call unconditionally.
 #   reconcile-staged
 #             Clear /data/.ota-staged-version when it cannot be applied: already
-#             running that version, or the inactive rootfs slot is boot-bad
-#             (failed tryboot / rollback). Without this, Check Now treats the
-#             published build as "already staged" forever after a rollback.
+#             running that version, or the marker was written in an earlier
+#             boot and the staged version is still not the one running — the
+#             tryboot did not take. That covers boot-bad rollbacks AND the
+#             #307 health gate's designed outcome: a slot that boots fine but
+#             never gets committed, which RAUC never calls bad. Without this,
+#             Check Now treats the published build as "already staged" forever
+#             after a rollback.
 #
 # Version model matches segno-ota-check (semver, see its comparator comment):
 # install only when the manifest advertises a version newer than the running
@@ -33,8 +37,16 @@ BASE_URL="${SEGNO_UPDATE_BASE:-https://segno.aquiles.dev/updates/appliance}"
 CHANNEL_OVERRIDE_FILE="${SEGNO_CHANNEL_OVERRIDE_FILE:-/data/segno/update-channel}"
 CHANNEL_FILE="${SEGNO_CHANNEL_FILE:-/etc/segno/update-channel}"
 CUR_FILE="${SEGNO_VERSION_FILE:-/etc/segno/build-version}"
-STAGED_FILE="/data/.ota-staged-version"   # on /data so it survives OS updates
-PENDING_FLAG="/run/segno-update-pending"  # tmpfs marker: "reboot to activate"
+STAGED_FILE="${SEGNO_STAGED_FILE:-/data/.ota-staged-version}"  # on /data so it survives OS updates
+# The boot id current when the marker was written, kept NEXT TO the marker
+# rather than inside it: both the app and segno-ota-check parse the marker's
+# whole content as a semver, so the marker format cannot grow a second field.
+STAGED_BOOT_FILE="${SEGNO_STAGED_BOOT_ID_FILE:-/data/.ota-staged-boot-id}"
+BOOT_ID_FILE="${SEGNO_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
+# tmpfs marker: "reboot to activate". Overridable because a redirection onto a
+# missing /run is FATAL in a POSIX sh (`:` is a special builtin), `|| true` or
+# not — the test harness has no /run to point it at.
+PENDING_FLAG="${SEGNO_PENDING_FLAG:-/run/segno-update-pending}"
 
 # What firmware the attached pedal is running, as last written by this script.
 # On /data, NOT /etc: /etc lives in the A/B slot image, so an OS update would
@@ -180,6 +192,16 @@ semver_newer() {
     [ "$old_tag" = "$new_tag" ] && [ "$new_num" -gt "$old_num" ]
 }
 
+# Records which boot the staged marker was written in, so reconcile-staged can
+# later tell "reboot still pending" (same boot id) from "the tryboot did not
+# take" (a reboot happened and the staged version is still not the one
+# running). Best-effort like the marker itself; an unreadable boot id leaves an
+# empty record, which reconcile treats as "not this boot" once a real boot id
+# is readable there.
+record_staged_boot_id() {
+    tr -d '[:space:]' <"$BOOT_ID_FILE" >"$STAGED_BOOT_FILE" 2>/dev/null || true
+}
+
 do_install() {
     command -v rauc >/dev/null 2>&1 || { log "rauc not installed"; return 1; }
     channel=$(resolve_channel)
@@ -240,6 +262,7 @@ do_install() {
     fi
 
     echo "$version" > "$STAGED_FILE" 2>/dev/null || true
+    record_staged_boot_id
     : > "$PENDING_FLAG" 2>/dev/null || true
     progress 100
     log "staged v$version to the inactive slot; reboot to apply"
@@ -640,41 +663,48 @@ do_flash_pedal() {
     log "pedal flashed to $fw_version (protocol v$fw_proto)"
 }
 
-# True when any inactive rootfs slot is marked boot-bad (failed tryboot).
-inactive_rootfs_bad() {
-    command -v rauc >/dev/null 2>&1 || return 1
-    command -v jq >/dev/null 2>&1 || return 1
-    rauc status --output-format=json 2>/dev/null \
-        | jq -e '
-            .slots[] | .[]
-            | select(.class=="rootfs" and .state=="inactive" and .boot_status=="bad")
-          ' >/dev/null 2>&1
-}
+clear_staged_marker() { rm -f "$STAGED_FILE" "$STAGED_BOOT_FILE"; }
 
+# Whether the staged tryboot "took" is recorded directly (the boot id written
+# next to the marker at staging time) rather than inferred from RAUC's
+# boot_status: the #307 health gate rolls a slot back BY DESIGN when it boots
+# fine but never gets committed, and RAUC has no reason to call such a slot
+# bad — so "inactive slot boot-bad" misses the expected rollback shape.
 do_reconcile_staged() {
     if [ ! -f "$STAGED_FILE" ]; then
+        # A boot-id record without its marker is residue (e.g. a marker
+        # cleared by an image that predates the record) — sweep it.
+        rm -f "$STAGED_BOOT_FILE"
         echo '{"cleared":false}'
         return 0
     fi
     staged=$(tr -d '[:space:]' <"$STAGED_FILE" 2>/dev/null || true)
     current=$(tr -d '[:space:]' <"$CUR_FILE" 2>/dev/null || echo "0.0.0")
     [ -n "$staged" ] || {
-        rm -f "$STAGED_FILE"
+        clear_staged_marker
         echo '{"cleared":true,"reason":"empty"}'
         return 0
     }
     # Successfully running the staged build — drop the marker.
     if [ "$staged" = "$current" ]; then
-        rm -f "$STAGED_FILE"
+        clear_staged_marker
         log "cleared staged=$staged (already running)"
         echo '{"cleared":true,"reason":"already-running"}'
         return 0
     fi
-    # Rolled back after tryboot: inactive slot bad + staged still ahead of current.
-    if inactive_rootfs_bad && semver_newer "$current" "$staged"; then
-        rm -f "$STAGED_FILE"
-        log "cleared staged=$staged after failed tryboot (inactive rootfs bad)"
-        echo '{"cleared":true,"reason":"inactive-slot-bad"}'
+    # Not running the staged version. Same boot id as when it was staged means
+    # the applying reboot simply has not happened yet — keep the marker. A
+    # different one means a reboot DID happen and did not bring the staged
+    # slot up: the tryboot did not take (boot-bad rollback or an uncommitted
+    # health-gate rollback alike). A marker with no recorded boot id was
+    # written by an image older than this one — i.e. before this boot — so the
+    # same rule clears it with no special case.
+    staged_boot=$(tr -d '[:space:]' <"$STAGED_BOOT_FILE" 2>/dev/null || true)
+    booted=$(tr -d '[:space:]' <"$BOOT_ID_FILE" 2>/dev/null || true)
+    if [ -n "$booted" ] && [ "$staged_boot" != "$booted" ]; then
+        clear_staged_marker
+        log "cleared staged=$staged (staged in a previous boot; tryboot did not take)"
+        echo '{"cleared":true,"reason":"tryboot-not-taken"}'
         return 0
     fi
     echo '{"cleared":false}'
