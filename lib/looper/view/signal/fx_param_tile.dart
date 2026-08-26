@@ -27,6 +27,17 @@ abstract final class FxParamTileMetrics {
   /// Name + box + indicator, with the two 5px gaps between them.
   static const double height = 59;
 
+  /// The floor the name line's auto-shrink stops at, as a fraction of mono 9.
+  ///
+  /// A name wider than the tile scales down until it fits rather than
+  /// ellipsizing — "RETROALIMENTACIÓN" (the Spanish `Feedback`, #500) is 17
+  /// mono characters against a [width] that seats 14, and a legend whose job
+  /// is to say which knob this is cannot do it cut off mid-word. The floor
+  /// keeps the shrink honest: past it (a plugin reporting a paragraph as a
+  /// parameter name) the name ellipsizes at the floor size instead of scaling
+  /// into an unreadable smear, and the sheet header still carries it whole.
+  static const double nameMinScale = 0.75;
+
   static const double _gap = 5;
   static const double _boxRadius = 7;
 }
@@ -60,8 +71,10 @@ class _FxParamCell extends StatelessWidget {
     this.muted = false,
   });
 
-  /// The parameter's name. Ellipsizes at roughly ten characters; the full name
-  /// is in the sheet header, which is where you are when you need to read it.
+  /// The parameter's name. Auto-shrinks (to [FxParamTileMetrics.nameMinScale]
+  /// at most) when it outgrows the tile, and only past that ellipsizes; the
+  /// full name is in the sheet header, which is where you are when you need to
+  /// read it at length.
   final String name;
 
   /// The 36px control body.
@@ -87,14 +100,39 @@ class _FxParamCell extends StatelessWidget {
           // cell's wrapper already announces the name, so left in, a reader
           // hears "VINTAGE" and then "Vintage of Octaver".
           ExcludeSemantics(
-            child: Text(
-              // Uppercased for the same reason the DS specimens are, and the
-              // rotary caption was before it: at mono 9 in 78px this is a
-              // legend, and caps keep a dense grid's names scanning as one row.
-              spacedParamName(name),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: signalMono(color: surface.textSecondary, size: 9),
+            // A name wider than the tile shrinks to fit instead of truncating
+            // (#500): the Spanish built-in names run to 17 mono characters
+            // against a width that seats 14, and maxLines: 1 + ellipsis cut
+            // them mid-word. `scaleDown` never enlarges, so a fitting name
+            // renders at mono 9 exactly as before; the ConstrainedBox caps how
+            // far the shrink can go — text past the cap ellipsizes rather than
+            // scaling below [FxParamTileMetrics.nameMinScale] of the 9pt face.
+            // The Align keeps the fit box shrink-wrapped: under the column's
+            // stretch a bare FittedBox takes the tile's full width and grows
+            // its height to match the child's aspect ratio, moving the row.
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth:
+                        FxParamTileMetrics.width /
+                        FxParamTileMetrics.nameMinScale,
+                  ),
+                  child: Text(
+                    // Uppercased for the same reason the DS specimens are, and
+                    // the rotary caption was before it: at mono 9 in 78px this
+                    // is a legend, and caps keep a dense grid's names scanning
+                    // as one row.
+                    spacedParamName(name),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: signalMono(color: surface.textSecondary, size: 9),
+                  ),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: FxParamTileMetrics._gap),
