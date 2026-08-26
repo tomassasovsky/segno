@@ -90,7 +90,7 @@ Four candidates were parked on the epic. Assessment of each:
    exactly the kind of modal surprise the pedal design has avoided (compare
    the FX-mode undo inertness note at `control_cubit.dart:977`, which exists
    for the same reason). A pedal affordance can be revisited when protocol v4
-   (#535) reshapes the plate; nothing here forecloses it.
+   (#763) reshapes the plate; nothing here forecloses it.
 4. **Dedicated persistent button.** Rejected: permanent chrome for an action
    that is meaningful only in the seconds after a clear-all.
 
@@ -148,4 +148,4 @@ track's `clearRestore` is set, not just while the toast shows.
 - No group/batched history model; no "redo clear-all" beyond what per-track
   redo already gives.
 - No pedal-plate changes — explicitly deferred to the protocol-v4 work
-  (#535).
+  (#763).
