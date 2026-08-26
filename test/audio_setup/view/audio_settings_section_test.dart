@@ -88,6 +88,9 @@ void main() {
     when(() => repository.monitorChanges).thenAnswer(
       (_) => const Stream<int>.empty(),
     );
+    when(() => repository.monitorParamChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
+    );
     when(repository.allMonitors).thenReturn(const {});
     when(repository.allLaneChains).thenReturn(const {});
     when(repository.allTrackChains).thenReturn(const {});

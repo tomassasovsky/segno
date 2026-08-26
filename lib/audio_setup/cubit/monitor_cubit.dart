@@ -53,6 +53,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     // Announcements that arrive before the restore are held, not read — see
     // [_readMonitor].
     _monitorWatch = _repository.monitorChanges.listen(_readMonitor);
+    _paramWatch = _repository.monitorParamChanges.listen(_readMonitorParams);
   }
 
   final LooperRepository _repository;
@@ -80,6 +81,11 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// leave the console drawing it as running, with the first tap writing the
   /// state it was already in and looking inert.
   late final StreamSubscription<int> _monitorWatch;
+
+  /// Follows the repository's throttled (≤10 Hz, D-SYNC cadence) parameter
+  /// announces, so a CC sweeping an input-stage param moves the console knob
+  /// as it moves the audio — not at the next structural announce (#605).
+  late final StreamSubscription<int> _paramWatch;
 
   /// Whether [_restore] has pushed the saved monitors into the repository.
   bool _restored = false;
@@ -209,6 +215,32 @@ class MonitorCubit extends Cubit<MonitorState> {
     }
     emit(state.withInput(applied));
     unawaited(_persistMonitor(applied));
+  }
+
+  /// Re-reads only [input]'s chain, following a throttled param announce.
+  ///
+  /// Deliberately does NOT persist, unlike [_readMonitor]: a swept value
+  /// arrives here up to ten times a second for the length of the sweep, and
+  /// the editor-sync poll — the other follower of live param motion — does
+  /// not persist either. The value is not lost to settings: any structural
+  /// announce, and every edit made through this cubit, saves the chain with
+  /// whatever params it carries by then.
+  ///
+  /// A param write cannot change the chain's shape, so no editor timers are
+  /// cancelled; the whole chain is still re-read (not one value) because the
+  /// repository's copy is the truth and a chain is what state carries.
+  void _readMonitorParams(int input) {
+    if (isClosed) return;
+    // Dropped, not held (unlike [_readMonitor]'s pre-restore announces): the
+    // restore is about to push the SAVED chain over the repository's, so a
+    // pre-restore swept value is gone by the time a held read would run.
+    if (!_restored) return;
+    final applied = _repository.monitorEffects(input);
+    // An empty read here is "nothing to follow", not a clear: a param write
+    // requires a non-empty chain, so empty means the engine is not running
+    // (or a unit-test fake) — emitting it would wipe the console's chain.
+    if (applied.isEmpty) return;
+    emit(state.withInput(state.forInput(input).copyWith(effects: applied)));
   }
 
   /// Whether two chains hold the same entries in the same slots — what an
@@ -639,6 +671,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     _editorTimers.clear();
     unawaited(_catalogWatch?.cancel());
     unawaited(_monitorWatch.cancel());
+    unawaited(_paramWatch.cancel());
     return super.close();
   }
 }

@@ -72,6 +72,9 @@ void main() {
       () => repository.monitorChanges,
     ).thenAnswer((_) => monitorChanges.stream);
     when(
+      () => repository.monitorParamChanges,
+    ).thenAnswer((_) => const Stream<int>.empty());
+    when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     when(() => repository.state).thenReturn(_rig);
