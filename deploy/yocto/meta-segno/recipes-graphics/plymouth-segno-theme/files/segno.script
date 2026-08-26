@@ -1,7 +1,8 @@
-# Segno floor-console boot splash. The segno lockup (Bravura mark + Apple Chancery
-# "segno" wordmark, pre-rendered from the smooth glyph vectors) centred on the
-# console near-black (#08080A), with a determinate progress bar driven by the real
-# boot progress. Static — no breathe, no shimmer, no text banners, no Pi rainbow.
+# Segno floor-console boot splash. The segno MARK alone (Bravura glyph,
+# pre-rendered from the smooth vectors — the wordmark was cut: unreadable at
+# splash size on the real panel, owner's call 2026-08-26), centred on the
+# console near-black (#08080A), with a determinate progress bar driven by the
+# real boot progress. Static — no breathe, no shimmer, no text, no Pi rainbow.
 
 Window.SetBackgroundTopColor(0.031, 0.031, 0.039);
 Window.SetBackgroundBottomColor(0.031, 0.031, 0.039);
@@ -16,8 +17,10 @@ sh = Window.GetHeight();
 # The art is the MARK ALONE (940x657). The full lockup's wordmark was
 # unreadable at splash size on the real panel, so it was cut rather than
 # enlarged — owner's call, 2026-08-26: a boot splash reads as a mark on a dark
-# field, and the product's name is on the case, not the boot screen. 0.15 keeps
-# the bare mark at roughly the visual weight the lockup's mark had.
+# field, and the product's name is on the case, not the boot screen. At 0.15
+# the bare mark renders ~60% taller than the mark portion of the old 0.18
+# lockup (0.141*sh vs 0.088*sh of actual glyph) — deliberate: the mark now
+# carries the whole composition, and the owner approved the size on the panel.
 lockup.src   = Image("segno-lockup.png");
 lockup.h     = Math.Int(sh * 0.15);
 lockup.w     = Math.Int(lockup.h * lockup.src.GetWidth() / lockup.src.GetHeight());
