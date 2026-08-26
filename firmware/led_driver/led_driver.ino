@@ -16,7 +16,30 @@
 
 // --- Wiring -----------------------------------------------------------------
 static const uint8_t LED_PIN = 2;       // WS2812 data (GP2) via a level shifter.
-static const uint16_t RING_LEDS = 12;   // Loop-position ring.
+static const uint16_t RING_LEDS = 24;   // Loop-position ring (NeoPixel Ring 24:
+                                        // O65.5 / O52.3 / 3.2, the fitted part).
+                                        // This was 12 while the hardware was 24:
+                                        // the head then swept pixels 0..11 and
+                                        // half the ring stayed dark, one loop
+                                        // reading as half a turn (#793).
+// Comet tail length in pixels, head included. 16 of 24 lights two thirds of the
+// ring: with gamma correction the far end is nearly dark, so a long tail reads as
+// a smooth wake rather than as "most of the ring is on".
+static const uint16_t RING_TRAIL = 16;
+
+// Direction the head travels, seen from the FRONT of the panel. WS2812 index
+// order runs whichever way the ring board's chain happens to be laid out and then
+// gets mirrored again by which face you view it from, so this is not something
+// the code can infer -- it is a property of the fitted part. Clockwise is the
+// owner's call (2026-08-22); flip this if bring-up shows it running backwards.
+// UNVERIFIED on hardware, like the rest of this file.
+static const bool RING_CLOCKWISE = true;
+
+// Map a logical head-relative step onto a physical pixel index.
+static inline uint16_t ringIndex(uint16_t head, uint16_t back) {
+  const uint16_t fwd = (uint16_t)((head + RING_LEDS - back) % RING_LEDS);
+  return RING_CLOCKWISE ? (uint16_t)((RING_LEDS - 1) - fwd) : fwd;
+}
 static const uint16_t TRACK_LEDS = 8;   // Per-track indicators.
 static const uint16_t NUM_LEDS = RING_LEDS + TRACK_LEDS;
 
@@ -41,29 +64,50 @@ static uint8_t g_trackCount = 0;
 static uint8_t g_tracks[TRACK_LEDS];
 static unsigned long g_frameMs = 0;  // millis() when the last frame arrived
 
-// Colors can be gamma-corrected (strip.gamma32) so brightness reads perceptually
+// Colors are gamma-corrected (strip.gamma32) so brightness reads perceptually
 // even: a WS2812's duty cycle is linear but the eye's response is not, so without
 // it the ring's dim head and the amber mix look top-heavy. gamma32(0) == 0, so
-// "off" stays off. It is a compile-time toggle, OFF by default: define
-// LED_GAMMA_CORRECTION=1 (an Arduino build flag / -D, or edit the line below) to
-// enable it; with it off the raw colors are sent through unmodified.
+// "off" stays off.
+//
+// DEFAULT FLIPPED TO ON (2026-08-22, with the comet tail). It mattered little for
+// a single lit pixel -- there was nothing to compare it against -- but the tail is
+// exactly the case this was written for. A linear PWM ramp of 8 steps is perceived
+// as roughly 1.00, .94, .87, .79, .70, .60, .47, .30: the first five look the SAME
+// brightness and the whole fade happens in the last two pixels. Corrected, the
+// emitted ramp is 1.00, .71, .47, .29, .16, .08, .03, .004, which is what the eye
+// reads as an even fade. Define LED_GAMMA_CORRECTION=0 to go back to raw values.
 #ifndef LED_GAMMA_CORRECTION
-#define LED_GAMMA_CORRECTION 0
+#define LED_GAMMA_CORRECTION 1
 #endif
 
-static uint32_t colorOf(uint8_t code) {
-  uint32_t c;
+static uint32_t rawColorOf(uint8_t code) {
   switch (code) {
-    case 1: c = strip.Color(0, 160, 0); break;   // green
-    case 2: c = strip.Color(180, 0, 0); break;   // red
-    case 3: c = strip.Color(180, 90, 0); break;  // amber
-    default: return 0;                            // off
+    case 1: return strip.Color(0, 160, 0);   // green
+    case 2: return strip.Color(180, 0, 0);   // red
+    case 3: return strip.Color(180, 90, 0);  // amber
+    default: return 0;                       // off
   }
+}
+
+static uint32_t finish(uint32_t c) {
 #if LED_GAMMA_CORRECTION
   return strip.gamma32(c);
 #else
   return c;
 #endif
+}
+
+static uint32_t colorOf(uint8_t code) { return finish(rawColorOf(code)); }
+
+// Scale a RAW colour to num/den, then gamma-correct. The order matters: gamma is
+// the eye's curve, so scaling an already-corrected value applies the curve twice
+// and the trail collapses to almost nothing after two or three pixels. Always
+// dim first, correct last -- which is why rawColorOf and finish are separate.
+static uint32_t dimmed(uint32_t c, uint16_t num, uint16_t den) {
+  const uint8_t r = (uint8_t)((((c >> 16) & 0xFF) * num) / den);
+  const uint8_t g = (uint8_t)((((c >> 8) & 0xFF) * num) / den);
+  const uint8_t b = (uint8_t)(((c & 0xFF) * num) / den);
+  return finish(strip.Color(r, g, b));
 }
 
 // Parse one STATE frame from a buffer that starts at the byte after the length
@@ -127,21 +171,33 @@ static void pumpLink() {
 
 static void render() {
   strip.clear();
-  // Ring: light a head LED at the loop position when running, in the global
-  // colour; otherwise a dim idle dot at the top.
+  // Ring: a comet at the loop position when running, in the global colour;
+  // otherwise a dim idle dot at pixel 0.
   if (g_running && g_loopUs > 0) {
     const uint32_t loopMs = g_loopUs / 1000;
     const uint32_t pos = loopMs > 0 ? ((millis() - g_frameMs) % loopMs) : 0;
     const uint16_t head = loopMs > 0 ? (pos * RING_LEDS) / loopMs : 0;
     // While running, a global of 'off' still shows a moving green head so the
     // ring is never dark mid-loop.
-    strip.setPixelColor(head % RING_LEDS, colorOf(g_global == 0 ? 1 : g_global));
+    const uint32_t base = rawColorOf(g_global == 0 ? 1 : g_global);
+    // A COMET, not a single dot: the head at full brightness with a tail of
+    // RING_TRAIL pixels fading behind it. The WEIGHTS are linear; the light is
+    // not, because dimmed() gamma-corrects -- that is the point, see the
+    // LED_GAMMA_CORRECTION note. A lone lit pixel on a 24-LED
+    // ring reads as a blink rather than motion -- there is nothing to see the
+    // direction or the speed against. The tail is what makes the loop position
+    // legible at a glance (owner call 2026-08-22).
+    //
+    // i = 0 IS the head, so the weights run RING_TRAIL/RING_TRAIL down to
+    // 1/RING_TRAIL and never reach zero: the dimmest pixel still shows.
+    for (uint16_t i = 0; i < RING_TRAIL && i < RING_LEDS; i++) {
+      strip.setPixelColor(ringIndex(head, i),
+                          dimmed(base, (uint16_t)(RING_TRAIL - i), RING_TRAIL));
+    }
   } else {
-#if LED_GAMMA_CORRECTION
-    strip.setPixelColor(0, strip.gamma32(strip.Color(10, 10, 10)));
-#else
-    strip.setPixelColor(0, strip.Color(10, 10, 10));
-#endif
+    // Through ringIndex too, so the idle dot sits where pixel 0 actually is
+    // rather than wherever the chain happens to start.
+    strip.setPixelColor(ringIndex(0, 0), finish(strip.Color(10, 10, 10)));
   }
   // Per-track indicators.
   for (uint8_t i = 0; i < TRACK_LEDS; i++) {
