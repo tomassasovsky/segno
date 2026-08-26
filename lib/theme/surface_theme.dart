@@ -34,6 +34,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.accentSurface,
     required this.accentAlt,
     required this.warning,
+    required this.warningTint,
+    required this.warningLine,
     required this.success,
     required this.successSurface,
     required this.rec,
@@ -141,6 +143,15 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// The caution colour for non-blocking notices (e.g. "no active outputs"),
   /// brightened in the high-contrast variant so it stays legible (WCAG 1.4.3).
   final Color warning;
+
+  /// The [warning] siblings of [recTint]/[recLine]: the tinted wash and the
+  /// border of an amber standing-condition banner (the pen's MIDI-lost strip
+  /// on `STAGE / device-lost`). Tokens rather than inline
+  /// `warning.withValues(alpha: …)` for the same reason as the rec family —
+  /// the high-contrast flavor boosts the alphas along with the hue, which a
+  /// hardcoded wash would pin at the dark flavor's weight.
+  final Color warningTint;
+  final Color warningLine;
 
   /// Positive/confirmation colour (DS `success`), and its tinted wash — the
   /// [success] sibling of [recSurface], used behind pills that read positive
@@ -288,6 +299,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? accentSurface,
     Color? accentAlt,
     Color? warning,
+    Color? warningTint,
+    Color? warningLine,
     Color? success,
     Color? successSurface,
     Color? rec,
@@ -335,6 +348,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     accentSurface: accentSurface ?? this.accentSurface,
     accentAlt: accentAlt ?? this.accentAlt,
     warning: warning ?? this.warning,
+    warningTint: warningTint ?? this.warningTint,
+    warningLine: warningLine ?? this.warningLine,
     success: success ?? this.success,
     successSurface: successSurface ?? this.successSurface,
     rec: rec ?? this.rec,
@@ -388,6 +403,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       accentSurface: c(accentSurface, other.accentSurface),
       accentAlt: c(accentAlt, other.accentAlt),
       warning: c(warning, other.warning),
+      warningTint: c(warningTint, other.warningTint),
+      warningLine: c(warningLine, other.warningLine),
       success: c(success, other.success),
       successSurface: c(successSurface, other.successSurface),
       rec: c(rec, other.rec),
@@ -463,6 +480,8 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     accentSurface: Color(0xFF121C31),
     accentAlt: Color(0xFF738CF2),
     warning: Color(0xFFE0A94A),
+    warningTint: Color(0x14E0A94A),
+    warningLine: Color(0x5CE0A94A),
     success: Color(0xFF30A46C),
     successSurface: Color(0x2430A46C),
     rec: Color(0xFFE5484D),
@@ -532,6 +551,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     accentSurface: Color(0xFF203A5E),
     accentAlt: Color(0xFF9AB4FF),
     warning: Color(0xFFFFD27A),
+    // The rec family's high-contrast boost (0x21→0x2E, 0x66→0x99), applied to
+    // the brightened warning hue.
+    warningTint: Color(0x2EFFD27A),
+    warningLine: Color(0x99FFD27A),
     success: Color(0xFF6EE7B7),
     successSurface: Color(0x336EE7B7),
     rec: Color(0xFFFF6B6B),

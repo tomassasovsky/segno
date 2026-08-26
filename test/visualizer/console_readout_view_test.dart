@@ -474,6 +474,84 @@ void main() {
       final third = tester.widget<Text>(find.text('120')).style!.fontSize!;
       expect(third, moreOrLessEquals(full / 3));
     });
+
+    group('connectivity echo (#453)', () {
+      const deviceKey = Key('console_readout_deviceLost');
+      const midiKey = Key('console_readout_midiLost');
+
+      SurfaceTheme surface(WidgetTester tester) => Theme.of(
+        tester.element(find.byType(ConsoleReadoutView)),
+      ).extension<SurfaceTheme>()!;
+
+      BoxDecoration decorationOf(WidgetTester tester, Key key) =>
+          tester
+                  .widget<Container>(
+                    find
+                        .descendant(
+                          of: find.byKey(key),
+                          matching: find.byType(Container),
+                        )
+                        .first,
+                  )
+                  .decoration!
+              as BoxDecoration;
+
+      testWidgets('absent while nothing is lost', (tester) async {
+        await pump(tester, readout);
+
+        expect(find.byKey(deviceKey), findsNothing);
+        expect(find.byKey(midiKey), findsNothing);
+      });
+
+      testWidgets(
+        'echoes the device-lost line in the rec family while the flag holds',
+        (tester) async {
+          await pump(tester, const PerformanceReadout(deviceLost: true));
+
+          expect(find.byKey(deviceKey), findsOneWidget);
+          expect(find.byKey(midiKey), findsNothing);
+          // The line resolves from this window's own l10n — only the boolean
+          // rides the wire.
+          final l10n = AppLocalizations.of(
+            tester.element(find.byKey(deviceKey)),
+          );
+          expect(find.text(l10n.deviceLostBanner), findsOneWidget);
+
+          final s = surface(tester);
+          expect(decorationOf(tester, deviceKey).color, s.recTint);
+        },
+      );
+
+      testWidgets('echoes the MIDI loss in the warning family', (
+        tester,
+      ) async {
+        await pump(tester, const PerformanceReadout(midiLost: true));
+
+        expect(find.byKey(midiKey), findsOneWidget);
+        final l10n = AppLocalizations.of(tester.element(find.byKey(midiKey)));
+        expect(find.text(l10n.midiLostBanner), findsOneWidget);
+
+        final s = surface(tester);
+        expect(decorationOf(tester, midiKey).color, s.warningTint);
+      });
+
+      testWidgets('stacks both echoes device-first, above the strip', (
+        tester,
+      ) async {
+        await pump(
+          tester,
+          const PerformanceReadout(deviceLost: true, midiLost: true),
+        );
+
+        final deviceTop = tester.getTopLeft(find.byKey(deviceKey)).dy;
+        final midiTop = tester.getTopLeft(find.byKey(midiKey)).dy;
+        final stripTop = tester
+            .getTopLeft(find.byKey(const Key('console_readout_waveform')))
+            .dy;
+        expect(deviceTop, lessThan(midiTop));
+        expect(midiTop, lessThan(stripTop));
+      });
+    });
   });
 }
 

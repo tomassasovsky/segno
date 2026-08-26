@@ -86,13 +86,21 @@
     "updateBannerUpdateAction": "Update…",
     "updateBannerDismissAction": "Not now",
     "audioDeviceFallbackName": "Audio device",
-    "deviceDisconnectedBanner": "{deviceName} disconnected — trying to reconnect…",
-    "@deviceDisconnectedBanner": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
+    "deviceLostBanner": "Audio interface disconnected — the engine is stopped and nothing is heard",
+    "@deviceLostBanner": {
+        "description": "Standing red banner on the stage while the pinned audio interface is absent (pen: STAGE / device-lost)."
+    },
+    "deviceLostBannerAction": "Choose device",
+    "@deviceLostBannerAction": {
+        "description": "Action on the device-lost banner — opens the tray's Audio domain on the Device tab."
+    },
+    "midiLostBanner": "MIDI controller disconnected — mappings are idle until it returns",
+    "@midiLostBanner": {
+        "description": "Standing amber banner on the stage while the pinned MIDI controller is absent (pen: STAGE / device-lost)."
+    },
+    "midiLostBannerAction": "Control",
+    "@midiLostBannerAction": {
+        "description": "Action on the MIDI-lost banner — opens the tray's Control domain."
     },
     "deviceReconnectedSnackbar": "{deviceName} reconnected",
     "@deviceReconnectedSnackbar": {
@@ -999,14 +1007,6 @@
     "midiRequiredCcsHint": "CC 80 record · 81 stop · 82 undo · 83 clear",
     "midiActivityActive": "MIDI activity",
     "midiActivityIdle": "Waiting for MIDI input",
-    "midiDisconnectedBanner": "MIDI controller \"{deviceName}\" disconnected — it will reconnect when plugged in.",
-    "@midiDisconnectedBanner": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
     "midiReconnectedSnackbar": "MIDI controller \"{deviceName}\" reconnected.",
     "@midiReconnectedSnackbar": {
         "placeholders": {

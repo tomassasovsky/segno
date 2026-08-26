@@ -333,6 +333,8 @@ List<Color> _colors(SurfaceTheme s) => [
   s.accentSurface,
   s.accentAlt,
   s.warning,
+  s.warningTint,
+  s.warningLine,
   s.success,
   s.successSurface,
   s.rec,

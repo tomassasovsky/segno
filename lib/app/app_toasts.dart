@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:toastification/toastification.dart';
 
 /// Stable toast ids used by the app shell (and widget tests).
+///
+/// Lost-device / lost-MIDI ids are gone on purpose (#453): those are standing
+/// CONDITIONS, surfaced by the persistent `ConnectivityBanners` on the stage,
+/// not events — toasts here are for the *restored* events only.
 abstract final class AppToastId {
-  static const deviceLost = 'app_deviceLost_banner';
   static const deviceRestored = 'app_deviceRestored_snackbar';
-  static const midiLost = 'app_midiLost_banner';
   static const midiRestored = 'app_midiRestored_snackbar';
   static const audioRecovery = 'app_audioRecovery_banner';
   static const update = 'app_update_banner';
@@ -25,6 +27,14 @@ final Map<String, ToastificationItem> _active = {};
 /// and silently a no-op. Reset it in `setUp`.
 @visibleForTesting
 void resetAppToastsForTest() => _active.clear();
+
+/// Whether a toast with [id] is currently registered.
+///
+/// The test seam for toast assertions: toastification renders into an overlay
+/// the widget-test harness does not reliably provide, so "the snack showed"
+/// is asserted against this registry rather than against widget keys.
+@visibleForTesting
+bool debugAppToastActive(String id) => _active.containsKey(id);
 
 void dismissAppToast(String id) {
   final item = _active.remove(id);

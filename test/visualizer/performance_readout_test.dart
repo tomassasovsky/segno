@@ -25,6 +25,8 @@ void main() {
     elapsedSeconds: 71,
     recordArmed: true,
     recordSeconds: 12,
+    deviceLost: true,
+    midiLost: true,
   );
 
   group('PerformanceReadout wire format', () {
@@ -63,6 +65,10 @@ void main() {
       expect(decoded.elapsedSeconds, 0);
       expect(decoded.recordArmed, isFalse);
       expect(decoded.recordSeconds, 0);
+      // A pre-#453 sender never wrote the loss flags: nothing is lost until
+      // a sender says so.
+      expect(decoded.deviceLost, isFalse);
+      expect(decoded.midiLost, isFalse);
       expect(
         PerformanceReadout.fromMap(const {'tempoBpm': 0.0}).hasTempo,
         isFalse,

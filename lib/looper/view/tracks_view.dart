@@ -15,6 +15,7 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/cache_telemetry_scope.dart';
+import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_status_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
@@ -178,6 +179,13 @@ class _TracksViewState extends State<TracksView> {
                                   ),
                                   const SizedBox(height: 14),
                                 ],
+                                // Standing loss conditions hold the stage
+                                // for as long as they are true — the pen's
+                                // `STAGE / device-lost`, at the run's top on
+                                // console and desktop alike. The widget
+                                // carries its own bottom gap, so an empty
+                                // stack adds no space here.
+                                const ConnectivityBanners(),
                                 // With no first-run gate, a stopped engine
                                 // lands here; a full-width affordance opens
                                 // settings to (re)start it.

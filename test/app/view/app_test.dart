@@ -18,6 +18,11 @@ import 'package:segno/control/control.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/update/view/updates_settings_section.dart';
 import 'package:segno/visualizer/visualizer.dart';
+// Engine-typed fixtures fed to the fake engine use the `le` prefix, as in
+// audio_bootstrap_test.
+import 'package:segno_engine/segno_engine.dart'
+    as le
+    show EngineSnapshot, LatencyState;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
@@ -402,15 +407,95 @@ void main() {
       expect(find.byType(SettingsPage), findsNothing);
     });
 
-    // The device-lost and MIDI-lost BANNER tests were removed with the toast
-    // rewrite that came in with the Control Center branch: those notifications
-    // are toasts now, so the banner keys they asserted no longer exist.
-    //
-    // Deliberately not re-expressed as toast tests here. A toast auto-hides,
-    // and "your interface is unplugged" is an ongoing STATE rather than an
-    // event — restoring a persistent surface for it is tracked separately, and
-    // the test should be written against whatever that surface turns out to be
-    // rather than against the stopgap.
+    // The successor to the device-lost BANNER tests the toast rewrite
+    // deleted (the closeout's D1 deferral): loss is a standing surface again
+    // — `ConnectivityBanners` on the stage (#453) — so the coverage is
+    // finally written against the real thing, end to end through the engine's
+    // own `devicePresent` diff rather than against any stopgap.
+    testWidgets(
+      'a lost pinned device holds the stage banner — no toast — rides the '
+      'readout, and leaves with a restored snack',
+      (tester) async {
+        const deviceBanner = Key('connectivity_banner_device');
+        le.EngineSnapshot snapshot({required bool devicePresent}) =>
+            le.EngineSnapshot(
+              isRunning: true,
+              sampleRate: 48000,
+              bufferFrames: 128,
+              framesProcessed: 0,
+              xrunCount: 0,
+              inputRms: 0,
+              inputPeak: 0,
+              outputRms: 0,
+              latencyState: le.LatencyState.idle,
+              measuredLatencyMs: -1,
+              devicePresent: devicePresent,
+            );
+
+        // A repository whose refresh the test drives by hand, started with a
+        // PINNED device before the app builds — `AudioSetupCubit` hydrates
+        // the pinned id from `lastEngineConfig`, and only a pinned device is
+        // supervised at all.
+        final ticker = StreamController<void>.broadcast();
+        addTearDown(() => unawaited(ticker.close()));
+        final pinned = LooperRepository(engine: engine, ticker: ticker.stream);
+        addTearDown(pinned.dispose);
+        engine.nextSnapshot = snapshot(devicePresent: true);
+        pinned.startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+
+        final windowService = _RecordingWindowService();
+        await tester.pumpWidget(
+          App(
+            repository: pinned,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midiDeviceRepository,
+            settings: settings,
+            waveformWindow: windowService,
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            exportDirectory: () async => '.',
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Present on the first tick: no condition, no banner.
+        ticker.add(null);
+        await tester.pump();
+        expect(find.byKey(deviceBanner), findsNothing);
+
+        // Unplug. The standing red banner appears...
+        engine.nextSnapshot = snapshot(devicePresent: false);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+        expect(find.byKey(deviceBanner), findsOneWidget);
+
+        // ...outlives every toast timeout, and the retired lost-toast id
+        // never registers (D1: the banner REPLACES the lost toast).
+        await tester.pump(const Duration(seconds: 30));
+        expect(find.byKey(deviceBanner), findsOneWidget);
+        expect(debugAppToastActive('app_deviceLost_banner'), isFalse);
+
+        // The 7" readout carries the same condition on the next push tick.
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(windowService.readouts.last.deviceLost, isTrue);
+
+        // Replug: the banner leaves on its own; restored stays a snack toast
+        // (an event, not a condition).
+        engine.nextSnapshot = snapshot(devicePresent: true);
+        ticker.add(null);
+        await tester.pump();
+        await tester.pump();
+        expect(find.byKey(deviceBanner), findsNothing);
+        expect(debugAppToastActive(AppToastId.deviceRestored), isTrue);
+        await tester.pump(const Duration(milliseconds: 40));
+        expect(windowService.readouts.last.deviceLost, isFalse);
+
+        // Let the snack's auto-close and removal animations run out so no
+        // timer outlives the test.
+        await tester.pump(const Duration(seconds: 10));
+      },
+    );
 
     /// Takes the failure toast back down before this test's tree goes away.
     ///
