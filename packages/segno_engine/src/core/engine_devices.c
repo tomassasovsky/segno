@@ -237,22 +237,51 @@ typedef struct le_channel_cache_entry {
 static le_channel_cache_entry g_channel_cache[LE_CHANNEL_CACHE_MAX];
 static int g_channel_cache_count = 0;
 
-static int32_t device_channels(ma_context* ctx, const ma_device_id* id,
-                               const char* key, int capture) {
+/* The memo's decision core, with the expensive query indirected through `query`
+ * (called with `env`; returns the channel count, 0 = failed/UNKNOWN) so the TTL
+ * rules are unit-testable with scripted answers on a box with no devices at
+ * all. The live path enters through device_channels below.
+ *
+ * ONLY a positive answer is memoised. A failed query (channels == 0) is never
+ * cached: it returns UNKNOWN and is re-asked on the very next sighting, so a
+ * device reporting a transient 0 (e.g. ma_context_get_device_info momentarily
+ * failing mid CoreAudio hotplug/reconfigure) self-corrects on the next ~1 Hz
+ * poll instead of being pinned at UNKNOWN for up to a TTL window.
+ *
+ * This is the only path that reaches the memo — device_info_copy's miniaudio
+ * enumeration, i.e. macOS/Windows and the Linux JACK/Pulse routes. #649 briefly
+ * memoised failures here too (defense against ALSA's PCM-hint clutter: dozens
+ * of plugin pseudo-devices that fail their ~38 ms query permanently, re-paid on
+ * every 1 Hz pass, ~950 ms per tick on a Pi). But the route fix in
+ * le_linux_enum_route_pick sends that jack-less/pulse-less config to
+ * le_alsa_enumerate_cards — whose own le_alsa_channels_cached memo never enters
+ * this function — so no clutter-shaped list reaches this table any more. The
+ * negative cache therefore bought nothing on the miniaudio path while adding a
+ * staleness window, so it is dropped and the pre-#649 self-correcting rule
+ * restored. */
+static int32_t channel_memo(const char* key, int capture,
+                            int32_t (*query)(void* env), void* env) {
   for (int i = 0; i < g_channel_cache_count; ++i) {
     le_channel_cache_entry* hit = &g_channel_cache[i];
     if (hit->capture != capture || strcmp(hit->id, key) != 0) continue;
     if (--hit->trust > 0) return hit->channels;
     hit->trust = LE_CHANNEL_CACHE_TTL;
-    const int32_t fresh = query_device_channels(ctx, id, capture);
+    const int32_t fresh = query(env);
     /* A failed re-read keeps what was already known: 0 means UNKNOWN, and a
-     * transient failure must not blank a count the device has answered. */
+     * transient failure must not blank a count the device has answered. Every
+     * cached entry is positive (only positives are inserted below), so this
+     * only ever protects a real count against a momentary 0. */
     if (fresh > 0) hit->channels = fresh;
     return hit->channels;
   }
-  const int32_t channels = query_device_channels(ctx, id, capture);
+  const int32_t channels = query(env);
   /* Only a real answer is remembered — caching a failure would pin the device
-   * at UNKNOWN for the rest of the process. */
+   * at UNKNOWN until its trust expired, blinding the readout to a device that
+   * would have answered on the next poll. Positive entries are unbounded only
+   * in theory: the table is keyed by real device ids in two directions, so in
+   * practice it holds at most the host's actual playback+capture device count,
+   * far under LE_CHANNEL_CACHE_MAX (128), and a full table simply degrades to
+   * the always-query path with no correctness loss. */
   if (channels > 0 && g_channel_cache_count < LE_CHANNEL_CACHE_MAX) {
     const int index = g_channel_cache_count++;
     le_channel_cache_entry* entry = &g_channel_cache[index];
@@ -265,6 +294,33 @@ static int32_t device_channels(ma_context* ctx, const ma_device_id* id,
     entry->trust = index % LE_CHANNEL_CACHE_TTL + 1;
   }
   return channels;
+}
+
+int32_t le_channel_memo_for_test(const char* key, int capture,
+                                 int32_t (*query)(void* env), void* env) {
+  return channel_memo(key, capture, query, env);
+}
+
+/* Adapter marshalling the live miniaudio query through channel_memo's
+ * indirection. */
+typedef struct le_channel_query_env {
+  ma_context* ctx;
+  const ma_device_id* id;
+  int capture;
+} le_channel_query_env;
+
+static int32_t channel_query_thunk(void* env) {
+  const le_channel_query_env* q = (const le_channel_query_env*)env;
+  return query_device_channels(q->ctx, q->id, q->capture);
+}
+
+static int32_t device_channels(ma_context* ctx, const ma_device_id* id,
+                               const char* key, int capture) {
+  le_channel_query_env env;
+  env.ctx = ctx;
+  env.id = id;
+  env.capture = capture;
+  return channel_memo(key, capture, channel_query_thunk, &env);
 }
 
 static void device_info_copy(le_device_info* dst, const ma_device_info* src,
@@ -286,6 +342,45 @@ static void device_info_copy(le_device_info* dst, const ma_device_info* src,
   } else {
     dst->output_channels = device_channels(ctx, &src->id, dst->id, 0);
   }
+}
+
+/* Which enumerator the Linux platform seam should try first (engine_platform.h
+ * has the enum). Pure policy — the dlopen probes feeding it live in
+ * engine_linux.c — kept in the portable core so the table is compiled and
+ * unit-tested on every OS.
+ *
+ * The invariant this table protects is id ↔ backend consistency: an enumerated
+ * id must resolve (le_resolve_device_id, a strcmp against the open context's
+ * own enumeration below) on the backend the device will actually OPEN on,
+ * which le_platform_backends orders JACK → PulseAudio → ALSA. Row by row:
+ *
+ *  - alsa_only (appliance): ALSA cards, unchanged — the open is pinned to the
+ *    ALSA backend and the card ids are its tokens.
+ *  - libjack present: JACK enumeration; the open lands on JACK and the ids are
+ *    JACK node names. (If JACK then declines at runtime — server down, no
+ *    ports — the seam returns 0 and miniaudio takes it, as before #649.)
+ *  - no libjack, libpulse present: decline to miniaudio — its default probe
+ *    order reaches Pulse, the open also lands on Pulse, ids match, and Pulse
+ *    enumeration has none of the ALSA hint-clutter pathology.
+ *  - NEITHER library (#649): ALSA cards. This is the only configuration whose
+ *    device opens on the ALSA backend without SEGNO_ALSA_ONLY, and the cards
+ *    ids (":<card>,<dev>") are by construction the tokens miniaudio's
+ *    simplified ALSA enumeration yields for the same hardware (the header
+ *    comment on le_alsa_enumerate_cards), so resolution still pins. Before
+ *    #649 this row fell to miniaudio's full ALSA probe: the whole PCM hint
+ *    namespace, ~38 ms per mostly-failing channel query, ~950 ms per 1 Hz
+ *    poll tick on a Pi — versus ~0.15 ms reading /proc/asound/cards.
+ *
+ * Every ALSA_CARDS row still has the portable miniaudio backstop behind it:
+ * cards enumeration declines when no card has a PCM in the asked direction
+ * (unplugged interface, HDMI-only box), and enumerate_devices then runs the
+ * miniaudio path — the pinned appliance behaviour (see the comment there). */
+le_linux_enum_route le_linux_enum_route_pick(int alsa_only, int jack_present,
+                                             int pulse_present) {
+  if (alsa_only) return LE_LINUX_ENUM_ALSA_CARDS;
+  if (jack_present) return LE_LINUX_ENUM_JACK;
+  if (pulse_present) return LE_LINUX_ENUM_MINIAUDIO;
+  return LE_LINUX_ENUM_ALSA_CARDS; /* the #649 fall-through */
 }
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and

@@ -49,6 +49,12 @@ void le_platform_set_alsa_only_for_test(int state) {
   (void)state;
 }
 
+void le_platform_set_enum_libs_for_test(int jack_present, int pulse_present) {
+  /* No libjack/libpulse probes on Windows; enumeration never routes on them. */
+  (void)jack_present;
+  (void)pulse_present;
+}
+
 int le_platform_enumerate_devices(le_device_info* out, int32_t max,
                                   int32_t* count, int capture) {
   /* Defer to miniaudio's WASAPI enumeration (already the right list). */

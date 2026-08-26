@@ -6690,6 +6690,71 @@ static void test_enumerate_devices_counts_are_stable(void) {
   }
 }
 
+/* ---- channel-count memo: failures are NOT cached (#649 follow-up) ----
+ *
+ * Drives the memo's decision core (le_channel_memo_for_test) with scripted
+ * query answers, because the case under test — a device that FAILS its channel
+ * query — cannot be produced on demand by any real device on a CI box. The
+ * keys are shapes no backend emits, so the live table is shared safely.
+ *
+ * channel_memo is reached only by device_info_copy's miniaudio enumeration
+ * (macOS/Windows and the Linux JACK/Pulse routes); the Linux ALSA-cards route
+ * has its own le_alsa_channels_cached memo and never enters this function.
+ * #649 briefly memoised a failure here for one TTL window as defense against
+ * ALSA's PCM-hint clutter, but the same PR's route fix made that clutter
+ * unreachable through this path — so the negative cache only added a staleness
+ * window on the miniaudio path (a transient 0 pinned at UNKNOWN for up to a TTL
+ * window). This test pins the restored self-correcting rule: a 0 is re-queried
+ * on the very next sighting, never memoised, while a positive answer still is. */
+static int32_t memo_scripted_query(void* env) {
+  int32_t* script = (int32_t*)env; /* [0] = answer to give, [1] = call tally */
+  ++script[1];
+  return script[0];
+}
+
+static void test_channel_memo_failure_not_cached(void) {
+  printf("test_channel_memo_failure_not_cached\n");
+  int32_t script[2] = {0, 0};
+  const char* key = "for-test:failure-not-cached";
+
+  /* A transient/persistent 0 is queried EVERY sighting — never cached. Before
+   * this fix (#864's negative cache) the first 0 would have been memoised and
+   * the loop would have queried only ~3 times over 3*TTL sightings. */
+  for (int i = 0; i < 3 * LE_CHANNEL_CACHE_TTL; ++i) {
+    CHECK(le_channel_memo_for_test(key, 1, memo_scripted_query, script) == 0);
+  }
+  CHECK(script[1] == 3 * LE_CHANNEL_CACHE_TTL);
+
+  /* Because no negative entry was ever inserted, a device that starts answering
+   * heals IMMEDIATELY on its next sighting (a hit-on-stale-0 would only heal
+   * after a trust countdown; here there is nothing stale to wait out). */
+  script[0] = 6;
+  CHECK(le_channel_memo_for_test(key, 1, memo_scripted_query, script) == 6);
+  const int32_t calls_after_first_answer = script[1];
+  CHECK(calls_after_first_answer == 3 * LE_CHANNEL_CACHE_TTL + 1);
+
+  /* The positive answer IS memoised: the next sighting answers from the table
+   * without a query, and a later transient 0 never blanks the known count. */
+  script[0] = 0;
+  for (int i = 0; i < 2 * LE_CHANNEL_CACHE_TTL; ++i) {
+    CHECK(le_channel_memo_for_test(key, 1, memo_scripted_query, script) == 6);
+  }
+  /* Over 2*TTL sightings a memoised entry re-reads at most twice (its trust
+   * countdown, reseeded to TTL, falls due at most twice in that span), versus
+   * the 2*TTL queries an uncached path would have paid — proof the positive
+   * result is genuinely cached. */
+  CHECK(script[1] <= calls_after_first_answer + 2);
+
+  /* Direction is part of the key: the other direction of the same id starts
+   * from its own miss, not from the capture entry, and its failing query is
+   * likewise never cached. */
+  script[0] = 0;
+  const int32_t calls_before = script[1];
+  CHECK(le_channel_memo_for_test(key, 0, memo_scripted_query, script) == 0);
+  CHECK(le_channel_memo_for_test(key, 0, memo_scripted_query, script) == 0);
+  CHECK(script[1] == calls_before + 2);
+}
+
 /* The device-id serializer (engine_platform.h) turns a backend id into a
  * printable token used to match a user-selected device back to its native id.
  * On the char-string backends (CoreAudio/ALSA/PulseAudio) it copies verbatim;
@@ -6876,6 +6941,107 @@ static void test_pinned_probe_never_reaches_pulseaudio(void) {
     CHECK(ctx.backend == ma_backend_alsa);
     ma_context_uninit(&ctx);
   }
+  le_platform_set_alsa_only_for_test(-1);
+#endif
+}
+
+/* ---- Linux enumeration routing (#649) ----
+ *
+ * The route table is pure policy hoisted into the portable core precisely so
+ * this truth table runs on every OS; what only Linux CI exercises is the seam
+ * BEHIND it — the real dlopen presence probes and the enumerators the routes
+ * lead to (the behavioural test below is Linux-only for that reason). */
+static void test_linux_enum_route_table(void) {
+  printf("test_linux_enum_route_table\n");
+  /* The appliance pin wins over everything. le_platform_enumerate_devices
+   * never even probes the desktop libraries under the pin, but the table must
+   * agree whatever values it is handed. */
+  CHECK(le_linux_enum_route_pick(1, 0, 0) == LE_LINUX_ENUM_ALSA_CARDS);
+  CHECK(le_linux_enum_route_pick(1, 1, 0) == LE_LINUX_ENUM_ALSA_CARDS);
+  CHECK(le_linux_enum_route_pick(1, 0, 1) == LE_LINUX_ENUM_ALSA_CARDS);
+  CHECK(le_linux_enum_route_pick(1, 1, 1) == LE_LINUX_ENUM_ALSA_CARDS);
+  /* libjack present: JACK enumeration, regardless of libpulse — the open
+   * would land on JACK, so only JACK node ids can resolve. */
+  CHECK(le_linux_enum_route_pick(0, 1, 0) == LE_LINUX_ENUM_JACK);
+  CHECK(le_linux_enum_route_pick(0, 1, 1) == LE_LINUX_ENUM_JACK);
+  /* libpulse without libjack: miniaudio — probe and open both land on Pulse. */
+  CHECK(le_linux_enum_route_pick(0, 0, 1) == LE_LINUX_ENUM_MINIAUDIO);
+  /* Neither library: the #649 fall-through — the ALSA cards list, not
+   * miniaudio's ~950 ms full ALSA probe. */
+  CHECK(le_linux_enum_route_pick(0, 0, 0) == LE_LINUX_ENUM_ALSA_CARDS);
+}
+
+/* The seam behind the route table, driven through both test overrides so every
+ * branch is exact on any Linux box regardless of what the CI image has
+ * installed. Also pins #649's "appliance path unchanged" acceptance criterion:
+ * under SEGNO_ALSA_ONLY the desktop-library probes are short-circuited, so
+ * pinning the libraries PRESENT and ABSENT must produce byte-identical
+ * results. */
+static void test_enum_seam_fallthrough_and_appliance_pin(void) {
+  printf("test_enum_seam_fallthrough_and_appliance_pin\n");
+#if !defined(__linux__)
+  printf("  (skipped: the enumeration route seam only exists on Linux)\n");
+#else
+  enum { MAXD = 32 };
+  static le_device_info a[MAXD]; /* static: keep 2x32 device infos off the
+                                    test's stack */
+  static le_device_info b[MAXD];
+  int32_t count = 0;
+
+  le_platform_set_alsa_only_for_test(0);
+
+  /* libpulse present, no libjack: the seam must DECLINE — miniaudio owns this
+   * configuration (probe and open both land on Pulse). A cards list here
+   * would hand out ids the Pulse open context could never resolve. */
+  le_platform_set_enum_libs_for_test(0, 1);
+  count = 77;
+  CHECK(le_platform_enumerate_devices(a, MAXD, &count, /*capture=*/0) == 0);
+  CHECK(count == 0);
+
+  /* Neither library: the #649 fall-through answers from /proc/asound/cards.
+   * On a box with a card every id is a ":<card>,<dev>" token — by
+   * construction what miniaudio's simplified ALSA enumeration yields for the
+   * same hardware, which is the id-consistency invariant. A soundless CI box
+   * has no cards, the cards path declines, and the pinned miniaudio backstop
+   * must still answer — asserted through the portable entry point. */
+  le_platform_set_enum_libs_for_test(0, 0);
+  for (int capture = 0; capture <= 1; ++capture) {
+    count = -1;
+    const int handled = le_platform_enumerate_devices(a, MAXD, &count, capture);
+    CHECK(handled == 0 || handled == 1);
+    if (handled == 1) {
+      CHECK(count > 0 && count <= MAXD);
+      for (int32_t i = 0; i < count; ++i) {
+        CHECK(a[i].id[0] == ':'); /* a cards token, never a JACK node name */
+        CHECK(strlen(a[i].name) > 0);
+      }
+    } else {
+      CHECK(count == 0);
+    }
+    int32_t full_count = -1;
+    CHECK((capture ? le_enumerate_capture_devices(b, MAXD, &full_count)
+                   : le_enumerate_playback_devices(b, MAXD, &full_count)) ==
+          LE_OK);
+    CHECK(full_count >= 0 && full_count <= MAXD);
+  }
+
+  /* Appliance pin: byte-identical whatever the desktop libraries claim. */
+  le_platform_set_alsa_only_for_test(1);
+  for (int capture = 0; capture <= 1; ++capture) {
+    memset(a, 0, sizeof(a));
+    memset(b, 0, sizeof(b));
+    int32_t count_a = -1;
+    int32_t count_b = -1;
+    le_platform_set_enum_libs_for_test(1, 1);
+    const int ra = le_platform_enumerate_devices(a, MAXD, &count_a, capture);
+    le_platform_set_enum_libs_for_test(0, 0);
+    const int rb = le_platform_enumerate_devices(b, MAXD, &count_b, capture);
+    CHECK(ra == rb);
+    CHECK(count_a == count_b);
+    CHECK(memcmp(a, b, sizeof(a)) == 0);
+  }
+
+  le_platform_set_enum_libs_for_test(-1, -1);
   le_platform_set_alsa_only_for_test(-1);
 #endif
 }
@@ -24997,6 +25163,7 @@ int main(void) {
   test_detect_loopback_runs();
   test_enumerate_devices_runs();
   test_enumerate_devices_counts_are_stable();
+  test_channel_memo_failure_not_cached();
   test_device_id_to_str();
   test_select_backend_defaults_to_miniaudio();
   test_alsa_periods_env_clamps_out_of_range();
@@ -25005,6 +25172,8 @@ int main(void) {
    * environment — and the seam's one-shot cache of it — is never touched. */
   test_probe_backends_follow_the_pin();
   test_pinned_probe_never_reaches_pulseaudio();
+  test_linux_enum_route_table();
+  test_enum_seam_fallthrough_and_appliance_pin();
   test_probing_leaks_no_fds();
   test_probing_leaks_no_fds_when_the_server_fails_mid_connect();
   test_backend_struct_defaults();

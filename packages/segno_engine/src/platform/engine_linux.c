@@ -669,15 +669,84 @@ static int le_jack_enumerate_devices(le_device_info* out, int32_t max,
   return 1;
 }
 
+/* ---- library-presence probes (#649) ----
+ *
+ * le_linux_enum_route_pick (engine_devices.c, where the id-consistency
+ * rationale lives) needs to know which of libjack/libpulse exist BEFORE any
+ * enumerator runs: "libjack absent" routes differently from "libjack present
+ * but the server declined" (only the former may fall through to the ALSA
+ * cards list), and le_jack_enumerate_devices collapses both into a 0 return.
+ *
+ * A probe is one dlopen/dlclose pair — the same call le_jack_enumerate_devices
+ * already makes on every tick — and is deliberately NOT cached across ticks:
+ * a session that gains PipeWire/JACK mid-run (a package install starting the
+ * service) must switch to JACK ids on the next poll, because the OPEN backend
+ * order (le_platform_backends) would reach JACK too, and cards ids cannot
+ * resolve there. dlopen of an absent library fails in microseconds against
+ * the ld.so cache; of a present one it bumps a refcount. Nothing here runs
+ * under the appliance pin (see le_platform_enumerate_devices).
+ *
+ * Test-only overrides, same pattern and reason as g_alsa_only_override: >= 0
+ * pins the answer, < 0 probes for real. */
+static int g_jack_present_override = -1;
+static int g_pulse_present_override = -1;
+
+static int le_lib_present(const char* soname, const char* fallback) {
+  void* lib = dlopen(soname, RTLD_NOW | RTLD_LOCAL);
+  if (lib == NULL) lib = dlopen(fallback, RTLD_NOW | RTLD_LOCAL);
+  if (lib == NULL) return 0;
+  dlclose(lib);
+  return 1;
+}
+
+static int le_jack_present(void) {
+  if (g_jack_present_override >= 0) return g_jack_present_override;
+  return le_lib_present("libjack.so.0", "libjack.so");
+}
+
+static int le_pulse_present(void) {
+  if (g_pulse_present_override >= 0) return g_pulse_present_override;
+  /* The same sonames miniaudio's PulseAudio backend dlopens, so "present" here
+   * means "the open would land on Pulse", mirroring the backend order. */
+  return le_lib_present("libpulse.so.0", "libpulse.so");
+}
+
+void le_platform_set_enum_libs_for_test(int jack_present, int pulse_present) {
+  g_jack_present_override = jack_present;
+  g_pulse_present_override = pulse_present;
+}
+
 int le_platform_enumerate_devices(le_device_info* out, int32_t max,
                                   int32_t* count, int capture) {
-  /* Appliance (direct ALSA, no JACK): list real sound cards cleanly. Desktop
-   * Linux runs under PipeWire/JACK, so use the JACK enumeration there (clean
-   * names + only real interfaces). Either way, no ALSA PCM-hint clutter. */
-  if (le_alsa_only()) {
-    return le_alsa_enumerate_cards(out, max, count, capture);
+  /* The pin is read first and short-circuits the library probes, so the
+   * appliance tick is byte-identical to what it was before #649: one
+   * le_alsa_enumerate_cards call, no dlopen traffic.
+   * test_enum_seam_fallthrough_and_appliance_pin pins this. */
+  const int alsa_only = le_alsa_only();
+  const le_linux_enum_route route = le_linux_enum_route_pick(
+      alsa_only, alsa_only ? 0 : le_jack_present(),
+      alsa_only ? 0 : le_pulse_present());
+  switch (route) {
+    case LE_LINUX_ENUM_ALSA_CARDS:
+      /* Appliance pin, or the pure-ALSA desktop fall-through (#649) — the
+       * route table in engine_devices.c argues why the cards ids resolve on
+       * the ALSA backend the open lands on. Declines (0) when no card has a
+       * PCM in this direction, and the portable miniaudio backstop takes it —
+       * the pinned unplugged-appliance behaviour (enumerate_devices). */
+      return le_alsa_enumerate_cards(out, max, count, capture);
+    case LE_LINUX_ENUM_JACK:
+      /* Clean names + only real interfaces on PipeWire/JACK desktops. Still
+       * declines at runtime (server down, zero hardware ports) to miniaudio —
+       * that is a JACK-present host, so the cards fall-through must NOT catch
+       * it: its open could land on JACK, where cards ids cannot resolve. */
+      return le_jack_enumerate_devices(out, max, count, capture);
+    case LE_LINUX_ENUM_MINIAUDIO:
+    default:
+      /* libpulse without libjack: miniaudio's probe and the open both land on
+       * Pulse, ids match, and Pulse enumeration has no hint-clutter cost. */
+      *count = 0;
+      return 0;
   }
-  return le_jack_enumerate_devices(out, max, count, capture);
 }
 
 void le_platform_backends(const ma_backend** out_list, ma_uint32* out_count) {
