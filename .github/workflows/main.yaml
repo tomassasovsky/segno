@@ -279,6 +279,36 @@ jobs:
           EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0"
           bash packages/segno_engine/src/test/run_native_tests.sh
 
+  # ThreadSanitizer over the DEDICATED concurrency binary only (#739).
+  # test_engine_races.c races the exact thread pairs engine_telemetry.h's
+  # writer-ownership note describes — break-raise vs the callback loop, the
+  # multi-writer xrun tally vs the arm-path window reset, a control-thread read
+  # vs a running callback loop. TSAN deliberately does NOT cover the full
+  # native suite: test_engine_core.c drives the engine from single-threaded
+  # pumps, so sanitizing it would spend minutes producing a green light that
+  # checks nothing — the failure mode #739 exists to avoid. The races binary
+  # also runs unsanitized inside native-tests above, because its break-raise
+  # handshake asserts a functional liveness property (a raised break is always
+  # consumed, and each consume is a real timeline reset) that no sanitizer
+  # expresses; this job adds the machine check that every cross-thread access
+  # really is the relaxed atomic the ownership note claims.
+  native-tests-tsan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install C build dependencies
+        run: |
+          sudo apt-get update
+          # No libasound2-dev / libpulse0 here: the races binary builds from
+          # the header-only telemetry plus pthreads, and NATIVE_TESTS_ONLY
+          # skips the suites that link the audio backends.
+          sudo apt-get install -y build-essential
+      - name: Build + run the telemetry race tests under ThreadSanitizer
+        run: >
+          NATIVE_TESTS_ONLY=races
+          EXTRA_CFLAGS="-fsanitize=thread -g"
+          bash packages/segno_engine/src/test/run_native_tests.sh
+
   # The control-sequence fuzzer: the REAL native engine (device-free pump) +
   # the real repository/bloc/cubits, driven by seeded random event sequences
   # and checked against the control-surface invariant spec
