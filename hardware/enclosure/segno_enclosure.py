@@ -236,7 +236,15 @@ CONSOLE_SLED_T = 12.633   # thicker than the mini's, because this sled takes M3x
                           # mini's only takes them from one. Derived as the FRONT
                           # row's metal-base height less RING_FLOOR; _check() holds
                           # that, so the three numbers cannot drift apart.
-RING_FLOOR = 1.6 + 0.443  # front-row ring floor (+#760 reseat recal). The mid row's "floor" is the tall
+# Reseat recalibration (#760): the lid now seats on the SEAM-SOLVER anchor, a
+# plane 2.0 mm forward of the frame the 2026-07-28 platform measurements were
+# taken against -- i.e. 2*tan(SLOPE_ANGLE) HIGHER. Frozen at the measured
+# 3-decimal figure (= round(2*math.tan(math.radians(SLOPE_ANGLE)), 3) = 0.443,
+# which lands within 0.02 mm of both rows' re-measured drops); kept a literal so
+# the platform heights stay bit-for-bit what is already printed/cut. The full
+# story is at FACE_SEAT. One named source now, not a constant pasted per site.
+RESEAT_CAL = 0.443
+RING_FLOOR = 1.6 + RESEAT_CAL  # front-row ring floor (+#760 reseat recal). The mid row's "floor" is the tall
                           # pedestal deck it already had -- same formula, and only
                           # the front row is tight enough for this to bind.
 # Light-baffle TUB around the pedal: the pedestal's walls rise from the deck to
@@ -275,9 +283,9 @@ SKIRT_GAP    = 0.0            # wall top FLUSH on the REAL faceplate underside
 # 2026-07-28 measurements were taken against sat 2.0 mm rearward (the old doc
 # frame), i.e. 2*tan(SLOPE) = 0.443 mm LOWER than the real seat. Re-measured in
 # the reseated doc: pedals 0.46 (row 1) / 0.423 (row 2) below the slot rims --
-# the uniform +0.443 recalibration lands within 0.02 mm of both. Platforms
+# the uniform +RESEAT_CAL recalibration lands within 0.02 mm of both. Platforms
 # printed before this are 0.44 mm short.
-FACE_SEAT = 1.95 + 0.443
+FACE_SEAT = 1.95 + RESEAT_CAL
 
 SKIRT_DRIFT_ROW1 = FACE_SEAT   # was 1.6 -- the same #742 fit; see FACE_SEAT
 SKIRT_DRIFT_ROW2 = FACE_SEAT   # was 0.5 -- ditto; both rows share one constant now
@@ -733,6 +741,15 @@ def dev_deduct(angle_deg):
 DEV90 = dev_deduct(90.0)              # = 1.911 for T2/RI2/K0.33 (issue #237: the old
                                       # T + K*T = 2.66 over-deducted every 90 deg bend
                                       # ~0.75mm, leaving all walls short of nominal)
+# Front-lip screw HEIGHT on the flat pattern, shared by both encodings of the
+# joint: the base's front wall (tap pilot, dxf_base._fscrew_flat) and the lid's
+# front lip (clearance, dxf_faceplate). One tap, one screw SKU, one height --
+# it centres the hole on the developed 9 mm front wall. Was written twice, once
+# as (H_FRONT-bdd)*0.5 and once as (H_FRONT-DEV90)/2.0 (bdd == DEV90, so bit-
+# identical); the assert pins it so the next H_FRONT change is a conscious one.
+FRONT_SCREW_Z = (H_FRONT - DEV90) / 2.0
+assert abs(FRONT_SCREW_Z - 5.045) <= 0.01, \
+    f"FRONT_SCREW_Z {FRONT_SCREW_Z:.4f} drifted from the frozen 5.045 mm"
 # The lap must STOP SHORT of the wall->flange bend knuckle: the flange's outer
 # surface starts curving (RI+T)*tan(fold/2) = 2.58 before the outside mold
 # corner, so the lap tip stops there plus a margin -- as LONG as possible while
@@ -873,7 +890,11 @@ PEDAL_AP_DEV = (DEV90 + T) / math.cos(_ra) - DD_LIP
 # sloped plate a bigger gap drops the slot's front rim BELOW the pedal floor
 # (each mm of gap lowers the lip by tan(SLOPE)). At 1.93mm the floor sits
 # +0.16mm on the lip -- visually flush, exactly the approved relation now that
-# the pedal rides +0.443 on the reseated plate. Rear clearance stays nominal. (#760)
+# the pedal rides +RESEAT_CAL on the reseated plate. Rear clearance stays nominal. (#760)
+# NOTE: this front-gap term is the SAME reseat concept, but frozen at 2-decimal
+# 0.43, not RESEAT_CAL's 0.443. Folding it in would shift the slot's front rim
+# ~0.013 mm and is a real geometry change -- out of scope for this zero-delta
+# dedup. Reconcile 0.43 vs RESEAT_CAL in the #762 caliper batch, not here.
 FSW_FRONT_EXTRA = 0.43 / math.cos(_ra)
 # 7" screen, LED ring and encoder share ONE vertical centre-line (COL_U, defined
 # with the pedal layout below): the gap between pedals 1 and 2.
@@ -2381,10 +2402,10 @@ def dxf_faceplate(path):
     # legends are NOT silkscreened on the metal -- they live on a printed adhesive overlay
     # (dxf_overlay / segno_overlay). Keeps the metal a plain cut+bend+powder part (cheap).
     for u in FRONT_SCREW_U:
-        # lip hole HEIGHT matched to the wall hole (z = (H_FRONT-DEV90)/2 + DEV90
+        # lip hole HEIGHT matched to the wall hole (z = FRONT_SCREW_Z + DEV90
         # = 6.955): station from the lid's front mold corner = _cfy - z, flat from
         # the fold line = station - DD_LIP. The old ffl/2 sat 0.74 high. (#760)
-        _circle(msp, ox + u, ffl - ((_cfy - (H_FRONT - DEV90) / 2.0 - DEV90) - DD_LIP), 3.4)  # M3 clearance
+        _circle(msp, ox + u, ffl - ((_cfy - FRONT_SCREW_Z - DEV90) - DD_LIP), 3.4)  # M3 clearance
     for u in FRONT_SCREW_U:
         _circle(msp, ox + u, SEAM_LAP_V, 3.4)                             # rear lap -> transition: SAME 9
                                                                           # stations as the front lip (#760),
@@ -2449,7 +2470,8 @@ def dxf_base(path):
     # behind the full-drop lip); the screws drop to M3 -- 4 full threads when
     # hand-tapped in the T2 sheet (Ø2.5 pilot below), with drill-to-Ø5.1 +
     # M3 rivnut as the per-station repair path.
-    _fscrew_flat = (H_FRONT - bdd) * 0.5     # lip screws keep their ORIGINAL height
+    _fscrew_flat = FRONT_SCREW_Z             # lip screws keep their ORIGINAL height
+                                             # (= (H_FRONT - bdd)*0.5; bdd == DEV90)
     Hr = HR_FLAT                             # rear web from the seam solver: the flange
     Ht = HT_FLAT                             # outer lands ONE SHEET below the lap outer
     rrel = T + 1.0                          # small bend-relief radius at each corner
