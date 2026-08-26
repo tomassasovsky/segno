@@ -383,6 +383,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->outstanding_count = 0;
     tr->queued_undo = 0;
     tr->empty_len = 0;
+    tr->pending_lane_trim = 0; /* #595: no un-route pending a post-drain trim */
     tr->state_cmds_posted = 0;
     tr->pending_target = LE_TRACK_EMPTY;
     store_i32(&tr->a_state_acks, 0);

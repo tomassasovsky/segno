@@ -306,6 +306,11 @@ static void le_mark_state_cmd(le_track* t, int32_t target) {
  * the internal callers discard it, le_engine_cancel_arm reports it. */
 static int32_t le_cancel_arm(le_engine* engine, int32_t channel);
 
+/* #595: trailing-lane reclaim, defined below but called from the event drain
+ * (le_engine_drain_events) as well as the un-route itself. */
+static void le_trim_trailing_lanes(le_engine* engine, int32_t channel,
+                                   int32_t unrouted_lane);
+
 /* Applies undo taps that were queued while a layer was in flight (control
  * thread, called from the event drain once the flight flag cleared). Each
  * queued tap peels one layer; past the last stacked layer it falls through to
@@ -516,6 +521,19 @@ void le_engine_drain_events(le_engine* engine) {
       if (evt.code == LE_EVT_LAYER_RETIRED) le_handle_retired(engine, &evt);
     }
     le_apply_queued_undo(engine, ch);
+  }
+  /* #595: post-drain trailing-lane reclaim. An un-route latched
+   * pending_lane_trim; now that this drain follows the audio thread applying
+   * the block's commands, every un-routed lane's routing is published, so one
+   * trim pass (unrouted_lane == -1, judging purely by published routing) frees
+   * the whole trailing run a burst of un-routes left stranded — the immediate
+   * trim in le_engine_set_lane_input could only reclaim the last of the burst.
+   * Cleared after the single attempt: a decline while capturing does not
+   * re-latch it, mirroring the immediate path's "the next un-route retries". */
+  for (int32_t ch = 0; ch < engine->track_count; ++ch) {
+    if (!engine->tracks[ch].pending_lane_trim) continue;
+    engine->tracks[ch].pending_lane_trim = 0;
+    le_trim_trailing_lanes(engine, ch, -1);
   }
   /* Loop-stage wet cache (FX v3 part 2): one scheduler pass per drain —
    * collect finished renders, publish [B5], chunked enqueue copies,
@@ -2082,10 +2100,14 @@ int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
  * (undo shadow / redo — the engine-owned a_recoverable, NOT the track-shared
  * length) is never dropped, so the shrink-then-regrow reset in
  * le_engine_set_lane_count can no longer eat a take undo could have brought
- * back. The just-un-routed lane's command may still be in the ring, so it is
- * treated as un-routed by index; sibling lanes are judged by their published
- * routing. Declines silently while the track captures or a layer is in
- * flight (the same guard le_engine_set_lane_count enforces) — the next
+ * back. Called two ways: from the un-route itself with unrouted_lane set to
+ * the just-freed index — whose command may still be in the ring, so it is
+ * forced to -1 here while sibling lanes are judged by their published routing;
+ * and from the event drain with unrouted_lane == -1, once every queued command
+ * has applied and all routing is published, so a whole trailing run of a burst
+ * of un-routes reclaims together (no index reads -1 spuriously, since valid
+ * lane indices are >= 0). Declines silently while the track captures or a layer
+ * is in flight (the same guard le_engine_set_lane_count enforces) — the next
  * un-route simply retries. */
 static void le_trim_trailing_lanes(le_engine* engine, int32_t channel,
                                    int32_t unrouted_lane) {
@@ -2124,11 +2146,23 @@ int32_t le_engine_set_lane_input(le_engine* engine, int32_t channel,
   /* #595: an accepted un-route may free trailing lane slots — reclaim them so
    * a track routed and un-routed repeatedly never strands at LE_MAX_LANES.
    * Only an explicit -1 triggers (a rejected/excluded channel the handler
-   * maps to -1 is not the user freeing the lane). */
+   * maps to -1 is not the user freeing the lane).
+   *
+   * Two trim moments, one predicate. This immediate pass reclaims the
+   * just-un-routed slot right away (its command may still be in the ring, so
+   * it is treated as -1 by index). But sibling un-routes pushed earlier in the
+   * SAME audio block are also still in the ring and read as routed, so a burst
+   * would strand every trailing slot but the last. The pending flag re-runs
+   * the trim from the event drain (le_engine_drain_events), after the block's
+   * commands apply and routing publishes, so the whole trailing run frees once
+   * the drain settles. Setting it is gated on the same explicit-un-route
+   * predicate, so an out-of-range / excluded route that the handler maps to -1
+   * is never swept by the drain pass either. */
   if (rc == LE_OK && input_channel < 0 &&
       atomic_load_explicit(&engine->a_configured, memory_order_acquire) &&
       channel >= 0 && channel < engine->track_count) {
     le_trim_trailing_lanes(engine, channel, lane);
+    engine->tracks[channel].pending_lane_trim = 1;
   }
   return rc;
 }

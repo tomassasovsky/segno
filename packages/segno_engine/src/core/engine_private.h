@@ -679,6 +679,16 @@ typedef struct le_track {
   int outstanding_count;
   int queued_undo;   /* undo taps deferred until the in-flight layer retires */
   int32_t empty_len; /* len to restore on redo-from-empty (0 = none) */
+  /* #595: an explicit un-route since the last drain asked for a trailing-lane
+   * reclaim. The immediate trim in le_engine_set_lane_input can only reclaim
+   * the just-un-routed slot — a sibling un-route pushed in the same audio
+   * block is still in the ring and reads as routed, so a burst strands the
+   * earlier slots. This flag re-runs the trim from the event drain once the
+   * commands have applied and routing is published, so the whole trailing run
+   * frees. Set on an accepted explicit un-route, cleared after the drain's one
+   * trim attempt (a decline while capturing does not re-latch it — the next
+   * un-route does, mirroring the immediate path). */
+  int32_t pending_lane_trim;
   /* Posted-but-unapplied state-flip accounting. UNDO_TO_EMPTY /
    * REDO_FROM_EMPTY / CLEAR change a_state on the audio thread; until they
    * apply, control-side decisions (a record press racing a redo would memset

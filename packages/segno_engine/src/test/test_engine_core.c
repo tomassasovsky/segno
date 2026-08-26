@@ -24214,6 +24214,61 @@ static void test_unroute_trims_trailing_lanes_only(void) {
   le_engine_destroy(e);
 }
 
+/* A BURST of un-routes within one audio block reclaims the WHOLE trailing run
+ * once the drain settles — not just the last of the burst. Every un-route
+ * command sits in the ring until a process block applies it, so at the moment
+ * each un-route lands the sibling un-routes still read as routed and the
+ * immediate trim stops early (here it can only free lane 3's slot). The event
+ * drain re-runs the trim after the block applied and routing published, so the
+ * whole trailing run frees. */
+static void test_unroute_burst_reclaims_all_trailing_on_drain(void) {
+  printf("test_unroute_burst_reclaims_all_trailing_on_drain\n");
+  le_engine* e = make_reclaim_engine(4);
+  /* Three un-routes with NO process between them: all three commands queue in
+   * the same block, so each immediate trim judges its siblings by their still
+   * -routed published routing. Only the last (lane 3) reclaims on the spot.
+   * The count is read straight off the track here (le_lanes_active) rather than
+   * through the snapshot — le_engine_get_snapshot drains events, which would
+   * prematurely run (and clear) the deferred trim before the routing below has
+   * published. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 2, -1) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 3, -1) == LE_OK);
+  CHECK(le_lanes_active(&e->tracks[0]) == 3); /* immediate trim freed lane 3 */
+  /* Apply the queued commands on the audio thread (routing publishes) WITHOUT
+   * draining events, then drive the event drain: its deferred pass reclaims the
+   * lanes the burst stranded, now that every un-route reads -1. */
+  drain(e);
+  le_engine_drain_events(e);
+  CHECK(reclaim_lane_count(e) == 1); /* lanes 1 and 2 reclaimed too */
+  CHECK(reclaim_lane_input(e, 0) == 0);
+  /* Idempotent: a second drain with nothing pending leaves the count alone. */
+  le_engine_drain_events(e);
+  CHECK(reclaim_lane_count(e) == 1);
+  le_engine_destroy(e);
+}
+
+/* A recoverable trailing lane fences the DEFERRED burst trim exactly as it
+ * fences the immediate one (#594): the drain pass judges by the engine-owned
+ * recoverable flag, so a burst that un-routes onto a still-restorable lane
+ * reclaims nothing. */
+static void test_unroute_burst_recoverable_lane_fences_drain_trim(void) {
+  printf("test_unroute_burst_recoverable_lane_fences_drain_trim\n");
+  le_engine* e = make_reclaim_engine(3);
+  reclaim_record(e); /* lanes 0, 1, 2 all latch recoverable */
+  CHECK(lane_recoverable(e, 2) == 1);
+  /* Burst un-route of lanes 1 and 2 in one block; lane 2 stays recoverable
+   * (an un-route does not drop it — undo could bring the take back). */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 2, -1) == LE_OK);
+  drain(e);
+  le_engine_drain_events(e);
+  /* The trailing lane 2 is recoverable, so the run never starts: no reclaim. */
+  CHECK(reclaim_lane_count(e) == 3);
+  CHECK(lane_recoverable(e, 2) == 1);
+  le_engine_destroy(e);
+}
+
 /* The #594 regression, pinned at the engine: no sequence of route / record /
  * clear / undo / un-route may lose audio that undo could have restored. The
  * un-route of a recorded lane never shrinks the count, so the grow-side
@@ -24867,6 +24922,8 @@ int main(void) {
   test_recoverable_survives_clear_restore_dies_with_plain_clear();
   test_recoverable_undo_to_empty_redo_lifecycle();
   test_unroute_trims_trailing_lanes_only();
+  test_unroute_burst_reclaims_all_trailing_on_drain();
+  test_unroute_burst_recoverable_lane_fences_drain_trim();
   test_unroute_never_trims_recoverable_lane();
   test_unroute_trim_declines_while_capturing();
   test_lane_count_shrink_evicts_wet_cache();
