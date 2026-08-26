@@ -6,6 +6,7 @@ import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_fingerprint.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
+import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
@@ -949,6 +950,24 @@ class MockAudioEngine implements AudioEngine {
 
   @override
   int monitorFxFingerprint({required int input}) => FxFingerprint.offset;
+
+  /// Per-lane cache states this mock reports, keyed by `(channel, lane)`.
+  /// There is no cache in the mock engine, so a test that cares about the
+  /// debug telemetry seeds this directly; anything unseeded reads as
+  /// [LaneCacheState.live], which is also what a real engine with caching
+  /// disabled reports.
+  final Map<(int, int), LaneCacheState> seededLaneCacheStates = {};
+
+  @override
+  Map<(int, int), LaneCacheState> laneCacheStates() {
+    final states = <(int, int), LaneCacheState>{};
+    for (var t = 0; t < _tracks.length; t++) {
+      for (var l = 0; l < kMaxLanes; l++) {
+        states[(t, l)] = seededLaneCacheStates[(t, l)] ?? LaneCacheState.live;
+      }
+    }
+    return states;
+  }
 
   @override
   Float32List readVisual() => Float32List(0);

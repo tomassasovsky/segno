@@ -3057,6 +3057,46 @@ class SegnoEngineBindings {
         )
       >();
 
+  /// Fills out[channel * LE_MAX_LANES + lane] for EVERY lane of every active
+  /// track behind a single drain + scheduler tick — the batch form of
+  /// le_engine_get_lane_cache for a poller that wants all lanes at once. The
+  /// per-lane accessor costs a full drain per call, so an 8-track poll through it
+  /// runs 16-32 control-thread sweeps per tick; this runs exactly one (#418).
+  /// [capacity] is the number of le_lane_cache_info slots at [out] and must be at
+  /// least track_count * LE_MAX_LANES (LE_MAX_TRACKS * LE_MAX_LANES always
+  /// suffices). Returns the number of slots filled, or LE_ERR_INVALID. Control
+  /// thread.
+  int le_engine_get_all_lane_caches(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_lane_cache_info> out,
+    int capacity,
+  ) {
+    return _le_engine_get_all_lane_caches(
+      engine,
+      out,
+      capacity,
+    );
+  }
+
+  late final _le_engine_get_all_lane_cachesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_lane_cache_info>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_get_all_lane_caches');
+  late final _le_engine_get_all_lane_caches = _le_engine_get_all_lane_cachesPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_lane_cache_info>,
+          int,
+        )
+      >();
+
   /// Sets the wet-cache memory budget in BYTES (stereo entries at 2x frames,
   /// toggled pairs, and in-flight enqueue copies all count against it). 0
   /// disables caching and frees every entry (every lane plays live); negative is
@@ -3228,6 +3268,12 @@ class SegnoEngineBindings {
   /// differently on glibc and on macOS, and a Dart-side layout guess would not
   /// fail loudly — it would report a plausible wrong number and stop a take that
   /// had room.
+  ///
+  /// ALL THREE PLATFORMS ANSWER, which is a deliberate widening: the `df` this
+  /// replaced returned "cannot answer" on Windows, so the free-space floor (#640)
+  /// has never applied there. It does now. That is the behaviour the floor was
+  /// written for, but it is a change on a platform the click work did not
+  /// otherwise touch, so it is stated here rather than left to be discovered.
   int le_perf_volume_free_bytes(
     ffi.Pointer<ffi.Char> path,
     ffi.Pointer<ffi.Uint64> out_bytes,

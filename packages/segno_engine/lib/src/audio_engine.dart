@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:segno_engine/src/audio_device.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
+import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
@@ -606,6 +607,20 @@ abstract interface class EffectsControl {
   /// flags a cache-vs-engine drift. An empty / out-of-range chain hashes to the
   /// FNV-1a offset basis.
   int laneFxFingerprint({required int channel, required int lane});
+
+  /// Every lane's Loop-stage wet-cache state, keyed by `(channel, lane)` —
+  /// debug telemetry only (R27), never a signal-path fact (see
+  /// [LaneCacheState]).
+  ///
+  /// One batched engine sweep: the native call drains events and runs a
+  /// single scheduler pass for the WHOLE map, where reading lanes one at a
+  /// time would run that drain per lane — 16-32 extra control-thread sweeps
+  /// per poll on an 8-track rig (#418). Polling this also drives the cache
+  /// forward, so it is still real work: gate it on somebody actually looking
+  /// (`LooperRepository.cacheTelemetryEnabled` is that gate for the app).
+  /// Returns an empty map when the engine cannot report (e.g. not
+  /// configured).
+  Map<(int, int), LaneCacheState> laneCacheStates();
 
   // ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ----
   //

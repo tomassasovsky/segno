@@ -2104,6 +2104,19 @@ LE_EXPORT int32_t le_engine_get_lane_cache(le_engine* engine, int32_t channel,
                                            int32_t lane,
                                            le_lane_cache_info* out);
 
+/* Fills out[channel * LE_MAX_LANES + lane] for EVERY lane of every active
+ * track behind a single drain + scheduler tick — the batch form of
+ * le_engine_get_lane_cache for a poller that wants all lanes at once. The
+ * per-lane accessor costs a full drain per call, so an 8-track poll through it
+ * runs 16-32 control-thread sweeps per tick; this runs exactly one (#418).
+ * [capacity] is the number of le_lane_cache_info slots at [out] and must be at
+ * least track_count * LE_MAX_LANES (LE_MAX_TRACKS * LE_MAX_LANES always
+ * suffices). Returns the number of slots filled, or LE_ERR_INVALID. Control
+ * thread. */
+LE_EXPORT int32_t le_engine_get_all_lane_caches(le_engine* engine,
+                                                le_lane_cache_info* out,
+                                                int32_t capacity);
+
 /* Sets the wet-cache memory budget in BYTES (stereo entries at 2x frames,
  * toggled pairs, and in-flight enqueue copies all count against it). 0
  * disables caching and frees every entry (every lane plays live); negative is
