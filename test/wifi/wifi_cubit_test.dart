@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/wifi/wifi_cubit.dart';
+import 'package:segno/wifi/wifi_join_failure.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 class _FakeWifiClient implements WifiClient {
@@ -24,6 +25,11 @@ class _FakeWifiClient implements WifiClient {
 
   /// When true, every [connect] refuses the way the supplicant does.
   bool connectFails;
+
+  /// Scripted refusals: each [connect] throws the next entry until the list
+  /// is exhausted, then succeeds. Lets a test shape the exact stack wording
+  /// (iwd race vs wrong password) and count re-activations.
+  final List<Error> connectErrors = [];
   WifiStatus statusValue;
   List<WifiNetwork> networks;
   final connects = <(String, String?)>[];
@@ -60,6 +66,7 @@ class _FakeWifiClient implements WifiClient {
     connects.add((ssid, psk));
     final gate = connectGate;
     if (gate != null) await gate.future;
+    if (connectErrors.isNotEmpty) throw connectErrors.removeAt(0);
     if (connectFails) throw StateError('authentication failed');
     statusValue = WifiStatus(
       supported: true,
@@ -284,6 +291,257 @@ void main() {
         expect(cubit.state, before);
       },
     );
+  });
+
+  // The #824 boot race reached the owner as "wrong password" and taught them
+  // to forget the network and re-type a correct key — destroying the
+  // evidence. A backend/transient failure must re-activate, bounded, and must
+  // never classify as credentials; only a genuine rejection may (#829).
+  group('a backend failure is not a wrong password', () {
+    const iwdRace =
+        'ProcessException: Activation: (wifi) Network.Connect failed: '
+        'GDBus.Error:net.connman.iwd.Failed';
+    const noSecrets =
+        'Error: Connection activation failed: (7) Secrets were required, '
+        'but not provided.';
+    const zeroBackoff = [Duration.zero, Duration.zero];
+
+    blocTest<WifiCubit, WifiState>(
+      'an iwd backend refusal re-activates with backoff and, exhausted, '
+      'surfaces as transient — never as credentials',
+      build: () => WifiCubit(
+        repository: _repo(
+          _FakeWifiClient()
+            ..connectErrors.addAll([
+              StateError(iwdRace),
+              StateError(iwdRace),
+              StateError(iwdRace),
+            ]),
+        ),
+        retryDelays: zeroBackoff,
+      ),
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.connect('MyHouseWTF_es_2.4G');
+      },
+      verify: (cubit) {
+        expect(cubit.state.errorKind, WifiJoinErrorKind.transient);
+        expect(cubit.state.failedSsid, 'MyHouseWTF_es_2.4G');
+        expect(cubit.state.retrying, isFalse);
+        expect(cubit.state.connectingSsid, isNull);
+      },
+    );
+
+    test(
+      'the bounded retry issues one re-activation per backoff slot',
+      () async {
+        final client = _FakeWifiClient()
+          ..connectErrors.addAll([
+            StateError(iwdRace),
+            StateError(iwdRace),
+            StateError(iwdRace),
+          ]);
+        final cubit = WifiCubit(
+          repository: _repo(client),
+          retryDelays: zeroBackoff,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.load();
+        await cubit.connect('Studio 5G');
+
+        // Initial attempt + one per delay — then it stops. No infinite loop.
+        expect(client.connects.length, 3);
+      },
+    );
+
+    test(
+      'a transient failure that recovers on retry connects silently',
+      () async {
+        final client = _FakeWifiClient()
+          ..connectErrors.add(StateError(iwdRace));
+        final cubit = WifiCubit(
+          repository: _repo(client),
+          retryDelays: zeroBackoff,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.load();
+        final states = <WifiState>[];
+        final sub = cubit.stream.listen(states.add);
+        addTearDown(() => unawaited(sub.cancel()));
+        await cubit.connect('Studio 5G');
+
+        expect(client.connects.length, 2);
+        expect(cubit.state.status.connected, isTrue);
+        expect(cubit.state.errorMessage, isNull);
+        // The retry announced itself while in flight.
+        expect(states.any((s) => s.retrying), isTrue);
+        expect(cubit.state.retrying, isFalse);
+      },
+    );
+
+    blocTest<WifiCubit, WifiState>(
+      'no-secrets on an autonomous saved-network join is the #824 race: '
+      'transient, retried, and never the password prompt',
+      build: () => WifiCubit(
+        repository: _repo(
+          _FakeWifiClient()
+            ..connectErrors.addAll([
+              StateError(noSecrets),
+              StateError(noSecrets),
+              StateError(noSecrets),
+            ]),
+        ),
+        retryDelays: zeroBackoff,
+      ),
+      // No psk: a saved/open network join carries no fresh password.
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.connect('MyHouseWTF_es_2.4G');
+      },
+      verify: (cubit) {
+        expect(cubit.state.errorKind, WifiJoinErrorKind.transient);
+        expect(cubit.state.errorKind, isNot(WifiJoinErrorKind.credentials));
+      },
+    );
+
+    blocTest<WifiCubit, WifiState>(
+      'the same no-secrets right after the user typed a password is a '
+      'credentials rejection: no retry, straight to the prompt path',
+      build: () => WifiCubit(
+        repository: _repo(
+          _FakeWifiClient()..connectErrors.add(StateError(noSecrets)),
+        ),
+        retryDelays: zeroBackoff,
+      ),
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.connect('Studio 5G', psk: 'typed-just-now');
+      },
+      verify: (cubit) {
+        expect(cubit.state.errorKind, WifiJoinErrorKind.credentials);
+        expect(cubit.state.failedSsid, 'Studio 5G');
+      },
+    );
+
+    test('a credentials rejection does not re-activate', () async {
+      final client = _FakeWifiClient()
+        ..connectErrors.add(StateError('authentication failed'));
+      final cubit = WifiCubit(
+        repository: _repo(client),
+        retryDelays: zeroBackoff,
+      );
+      addTearDown(cubit.close);
+
+      await cubit.load();
+      await cubit.connect('Studio 5G', psk: 'wrong-password');
+
+      expect(client.connects.length, 1);
+      expect(cubit.state.errorKind, WifiJoinErrorKind.credentials);
+    });
+
+    test('cancelConnect during the backoff stops the retry loop', () async {
+      final client = _FakeWifiClient()..connectErrors.add(StateError(iwdRace));
+      final cubit = WifiCubit(
+        repository: _repo(client),
+        retryDelays: const [Duration(milliseconds: 50)],
+      );
+      addTearDown(cubit.close);
+
+      await cubit.load();
+      final pending = cubit.connect('Studio 5G');
+      await pumpEventQueue();
+      expect(cubit.state.retrying, isTrue);
+
+      await cubit.cancelConnect();
+      await pending;
+
+      // The queued re-activation never fired.
+      expect(client.connects.length, 1);
+      expect(cubit.state.connectingSsid, isNull);
+      expect(cubit.state.retrying, isFalse);
+    });
+
+    test(
+      'cancel then re-tap of the SAME network mid-backoff leaves exactly one '
+      'live loop — the abandoned one neither re-activates nor emits',
+      () async {
+        final client = _FakeWifiClient()
+          ..connectErrors.add(StateError(iwdRace));
+        final cubit = WifiCubit(
+          repository: _repo(client),
+          retryDelays: const [Duration(milliseconds: 50)],
+        );
+        addTearDown(cubit.close);
+
+        await cubit.load();
+        final first = cubit.connect('Studio 5G');
+        await pumpEventQueue();
+        expect(cubit.state.retrying, isTrue);
+
+        await cubit.cancelConnect();
+        // Same SSID, inside the old join's backoff window — the marker alone
+        // could not tell the two joins apart.
+        final second = cubit.connect('Studio 5G');
+        await pumpEventQueue();
+        expect(cubit.state.status.connected, isTrue);
+
+        // Let the abandoned loop's timer fire, then prove it went silent:
+        // no third activation, and no emit over the successful join.
+        await first;
+        await second;
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        expect(client.connects.length, 2);
+        expect(cubit.state.status.connected, isTrue);
+        expect(cubit.state.errorMessage, isNull);
+        expect(cubit.state.retrying, isFalse);
+      },
+    );
+
+    test(
+      'cancelConnect while the helper call is in flight cannot leave '
+      '`retrying` stuck — the abandoned catch never emits',
+      () async {
+        final client = _FakeWifiClient()
+          ..connectErrors.add(StateError(iwdRace))
+          ..connectGate = Completer<void>();
+        final cubit = WifiCubit(
+          repository: _repo(client),
+          retryDelays: const [Duration(milliseconds: 50)],
+        );
+        addTearDown(cubit.close);
+
+        await cubit.load();
+        final pending = cubit.connect('Studio 5G');
+        await pumpEventQueue();
+        await cubit.cancelConnect();
+        // The helper call now fails into the abandoned loop's catch.
+        client.connectGate!.complete();
+        await pending;
+
+        expect(cubit.state.retrying, isFalse);
+        expect(cubit.state.connectingSsid, isNull);
+        expect(cubit.state.errorMessage, isNull);
+        expect(client.connects.length, 1);
+      },
+    );
+
+    test('closing the cubit during the backoff stops the retry loop', () async {
+      final client = _FakeWifiClient()..connectErrors.add(StateError(iwdRace));
+      final cubit = WifiCubit(
+        repository: _repo(client),
+        retryDelays: const [Duration(milliseconds: 50)],
+      );
+
+      await cubit.load();
+      final pending = cubit.connect('Studio 5G');
+      await pumpEventQueue();
+      await cubit.close();
+
+      await expectLater(pending, completes);
+      expect(client.connects.length, 1);
+    });
   });
 
   // Closing mid-flight is the network tray's ordinary shape: the helper calls

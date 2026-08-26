@@ -10,8 +10,10 @@ class WifiState extends Equatable {
     this.scanning = false,
     this.busy = false,
     this.connectingSsid,
+    this.retrying = false,
     this.disconnecting = false,
     this.errorMessage,
+    this.errorKind,
     this.failedSsid,
   });
 
@@ -33,11 +35,22 @@ class WifiState extends Equatable {
   /// SSID currently being joined, if any.
   final String? connectingSsid;
 
+  /// True while [connectingSsid] is a bounded re-activation after a
+  /// backend/transient failure, so the banner can say "retrying" instead of
+  /// pretending this is a first attempt (#829).
+  final bool retrying;
+
   /// True while disconnect (or forget-of-active) is in flight.
   final bool disconnecting;
 
   /// Last error message, if any.
   final String? errorMessage;
+
+  /// How the failure behind [errorMessage] classified — credentials versus
+  /// backend/transient — so the UI never presents an iwd race as a wrong
+  /// password (#824, #829). Null for non-join errors; cleared with the
+  /// message.
+  final WifiJoinErrorKind? errorKind;
 
   /// The SSID [errorMessage] is about.
   ///
@@ -54,8 +67,10 @@ class WifiState extends Equatable {
     bool? scanning,
     bool? busy,
     String? connectingSsid,
+    bool? retrying,
     bool? disconnecting,
     String? errorMessage,
+    WifiJoinErrorKind? errorKind,
     String? failedSsid,
     bool clearError = false,
     bool clearConnectingSsid = false,
@@ -68,8 +83,11 @@ class WifiState extends Equatable {
     connectingSsid: clearConnectingSsid
         ? null
         : (connectingSsid ?? this.connectingSsid),
+    // Retrying describes an in-flight join; it cannot outlive the marker.
+    retrying: !clearConnectingSsid && (retrying ?? this.retrying),
     disconnecting: disconnecting ?? this.disconnecting,
     errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+    errorKind: clearError ? null : (errorKind ?? this.errorKind),
     failedSsid: clearError ? null : (failedSsid ?? this.failedSsid),
   );
 
@@ -81,8 +99,10 @@ class WifiState extends Equatable {
     scanning,
     busy,
     connectingSsid,
+    retrying,
     disconnecting,
     errorMessage,
+    errorKind,
     failedSsid,
   ];
 }

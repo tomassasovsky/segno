@@ -29,6 +29,13 @@ class _FaceWifiClient implements WifiClient {
   String? lastPsk;
   bool failNextConnect = false;
 
+  /// While positive, each [connect] throws [connectError] and decrements —
+  /// so a test can shape a backend race that outlasts the retry budget, or
+  /// one that recovers.
+  int failConnects = 0;
+  Error connectError = StateError('authentication failed');
+  int connectAttempts = 0;
+
   @override
   bool get isSupported => true;
 
@@ -50,6 +57,11 @@ class _FaceWifiClient implements WifiClient {
 
   @override
   Future<void> connect(String ssid, {String? psk}) async {
+    connectAttempts++;
+    if (failConnects > 0) {
+      failConnects--;
+      throw connectError;
+    }
     if (failNextConnect) {
       failNextConnect = false;
       throw StateError('authentication failed');
@@ -418,6 +430,79 @@ void main() {
       expect(find.byType(Dialog), findsNothing);
       expect(find.text('could not join Cafe Free'), findsOneWidget);
     });
+
+    testWidgets(
+      'a backend failure retries and never asks for the password — the #824 '
+      'race must not teach the owner to forget the network',
+      (tester) async {
+        final client = _FaceWifiClient()
+          ..connectedSsid = ''
+          ..failConnects = 3
+          ..connectError = StateError(
+            'Activation: (wifi) Network.Connect failed: '
+            'GDBus.Error:net.connman.iwd.Failed',
+          );
+        await pumpFace(tester, wifi: client);
+
+        // HomeNet is saved: the row opens in place, the chip joins.
+        await tester.tap(find.byKey(const Key('wifi_network_HomeNet')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('wifi_connect')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        // First failure: the console says it is retrying, not re-asking.
+        expect(find.text('Network error — retrying HomeNet…'), findsOneWidget);
+        expect(find.byKey(const Key('wifi_join_sheet')), findsNothing);
+
+        // Ride out the bounded backoff (2s, then 5s) — no pumpAndSettle here,
+        // it would race the pending retry timers.
+        await tester.pump(const Duration(seconds: 2));
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pump(const Duration(milliseconds: 300));
+
+        // Exhausted: a neutral network error, still not a password problem.
+        expect(client.connectAttempts, 3);
+        expect(
+          find.text('Couldn’t join — network error, not a password problem.'),
+          findsOneWidget,
+        );
+        expect(find.byKey(const Key('wifi_join_sheet')), findsNothing);
+
+        // Try again re-activates with what the console holds — no prompt.
+        await tester.tap(find.text('Try again'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('wifi_join_sheet')), findsNothing);
+        expect(client.joined, ['HomeNet']);
+        expect(client.lastPsk, isNull);
+      },
+    );
+
+    testWidgets(
+      'a genuine key rejection on a saved network routes Try again back to '
+      'the passphrase sheet — the known answer is known wrong',
+      (tester) async {
+        final client = _FaceWifiClient()
+          ..connectedSsid = ''
+          ..failConnects = 1
+          ..connectError = StateError('segno-wifi-ctl: 4-way handshake failed');
+        await pumpFace(tester, wifi: client);
+
+        await tester.tap(find.byKey(const Key('wifi_network_HomeNet')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('wifi_connect')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Couldn’t join — check the password and try again.'),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.text('Try again'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('wifi_join_sheet')), findsOneWidget);
+      },
+    );
   });
 
   group('Bluetooth face', () {
