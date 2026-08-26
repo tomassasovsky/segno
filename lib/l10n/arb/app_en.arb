@@ -1972,6 +1972,10 @@
     "@wifiConnectFailedGeneric": {
         "description": "Fallback error when WiFi connect fails for an unknown reason."
     },
+    "wifiConnectFailedBackend": "Couldn’t join — network error, not a password problem.",
+    "@wifiConnectFailedBackend": {
+        "description": "Shown when a join fails for backend/transient reasons (iwd race, NM no-secrets on a saved network) after automatic retries — explicitly not a credentials problem, so the owner does not forget the network and re-type the password (#829)."
+    },
     "wifiSsidLabel": "Network",
     "@wifiSsidLabel": {
         "description": "WiFi SSID table label."
@@ -2185,6 +2189,15 @@
     "wifiJoiningBanner": "Joining {ssid}…",
     "@wifiJoiningBanner": {
         "description": "In-flight banner at the top of the WiFi list while a join is running.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiRetryingBanner": "Network error — retrying {ssid}…",
+    "@wifiRetryingBanner": {
+        "description": "In-flight banner while the console automatically re-activates a join after a backend/transient failure (#829). Never worded as a password problem.",
         "placeholders": {
             "ssid": {
                 "type": "String"
