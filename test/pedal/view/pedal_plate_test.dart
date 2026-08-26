@@ -249,6 +249,107 @@ void main() {
     expect(painter.progress, isNull);
   });
 
+  testWidgets('a Stop with a loop loaded freezes the playhead in place', (
+    tester,
+  ) async {
+    PedalLedRingPainter ringPainter() =>
+        tester
+                .widget<CustomPaint>(
+                  find.byKey(const Key('pedalFaceplate_ring')),
+                )
+                .painter!
+            as PedalLedRingPainter;
+
+    // Playing: the playhead sweeps once per loop.
+    await pumpPlate(
+      tester,
+      frame: _frame().copyWith(
+        mode: PedalMode.play,
+        globalColor: GlobalColor.green,
+        loopLengthMicros: 1000000,
+      ),
+    );
+    // Let the sweep advance off the top so a freeze has something to hold.
+    await tester.pump(const Duration(milliseconds: 250));
+    final frozenAt = ringPainter().progress;
+    expect(frozenAt, isNotNull);
+    expect(frozenAt, greaterThan(0));
+
+    // Stop, loop still loaded (global off = freeze). The playhead must hold
+    // exactly where it was, not snap back to the top nor keep moving.
+    await pumpPlate(
+      tester,
+      frame: _frame().copyWith(loopLengthMicros: 1000000),
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(ringPainter().progress, isNotNull);
+    expect(ringPainter().progress, moreOrLessEquals(frozenAt!, epsilon: 1e-6));
+  });
+
+  testWidgets('recording the first take breathes green, no red ring fill', (
+    tester,
+  ) async {
+    // First take: activity is red, but no loop has closed yet
+    // (loopLengthMicros == 0). The ring must still breathe green with no
+    // playhead — the red activity does not flood the ring.
+    await pumpPlate(
+      tester,
+      frame: _frame().copyWith(
+        mode: PedalMode.rec,
+        globalColor: GlobalColor.red,
+      ),
+    );
+    final painter =
+        tester
+                .widget<CustomPaint>(
+                  find.byKey(const Key('pedalFaceplate_ring')),
+                )
+                .painter!
+            as PedalLedRingPainter;
+    expect(painter.progress, isNull);
+    expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(
+      (tester
+                  .widget<CustomPaint>(
+                    find.byKey(const Key('pedalFaceplate_ring')),
+                  )
+                  .painter!
+              as PedalLedRingPainter)
+          .breathe,
+      greaterThan(0),
+    );
+  });
+
+  testWidgets('a goodbye frame blacks the ring out and drops the glow', (
+    tester,
+  ) async {
+    await pumpPlate(
+      tester,
+      frame: PedalStateFrame.blank(goodbye: true),
+    );
+    final painter =
+        tester
+                .widget<CustomPaint>(
+                  find.byKey(const Key('pedalFaceplate_ring')),
+                )
+                .painter!
+            as PedalLedRingPainter;
+    expect(painter.goodbye, isTrue);
+    expect(painter.offColor, SurfaceTheme.dark.ledOff);
+
+    // The encoder bezel powers down too: a dim rim, no green glow.
+    final bezel =
+        tester
+                .widget<Container>(
+                  find.byKey(const Key('pedalFaceplate_encoder')),
+                )
+                .decoration!
+            as BoxDecoration;
+    expect((bezel.border! as Border).top.color, SurfaceTheme.dark.line);
+    expect(bezel.boxShadow, anyOf(isNull, isEmpty));
+  });
+
   testWidgets('the MODE LED reflects the frame mode color', (tester) async {
     await pumpPlate(tester, frame: _frame().copyWith(mode: PedalMode.fx));
     final led = tester.widget<Container>(

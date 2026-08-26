@@ -40,6 +40,11 @@ const _smallH = 88.0; // 7" aperture height
 /// The u of front-row pedal [i] (`0..7`), evenly spaced inside the edge margin.
 double _pedalU(int i) => 69.0 + (777.0 - 69.0) * i / 7.0;
 
+/// Smoothstep easing, `t*t*(3-2t)` — the verbatim curve the firmware's
+/// renderRing() applies to its idle-breathe triangle, so both twins ease the
+/// same way.
+double _smoothstep(double t) => t * t * (3 - 2 * t);
+
 /// Renders the Segno top plate to scale from injected state alone — the two
 /// screen apertures (a 7" waveform on the left, the main looper screen on the
 /// right), the encoder + LED ring, and the footswitches. Pure
@@ -225,9 +230,11 @@ class PedalPlate extends StatelessWidget {
                   _ringOd,
                   _Encoder(
                     baseColor: surface.ledGreen,
+                    offColor: surface.ledOff,
                     headColor: _modeColor(surface, frame.mode),
                     loopLengthMicros: frame.loopLengthMicros,
                     frozen: ringFrozen,
+                    goodbye: frame.isGoodbye,
                     onTurn: onTurn,
                     l10n: l10n,
                   ),
@@ -708,23 +715,33 @@ class _Led extends StatelessWidget {
 /// Twin of firmware `renderRing()`: green fill; a breathe while no loop is
 /// loaded; once looping, a playhead sweeps once per loop in the mode colour
 /// (rec red / mute green / FX blue). A Stop with a loop still loaded freezes
-/// the playhead.
+/// the playhead, and a goodbye frame blacks the ring out entirely — the very
+/// first thing renderRing() does (`goodbye` → all LEDs Black).
 class _Encoder extends StatefulWidget {
   const _Encoder({
     required this.baseColor,
+    required this.offColor,
     required this.headColor,
     required this.loopLengthMicros,
     required this.frozen,
+    required this.goodbye,
     required this.onTurn,
     required this.l10n,
   });
 
   final Color baseColor;
+
+  /// Unlit-LED colour, shown on every ring dot while [goodbye] blacks it out.
+  final Color offColor;
   final Color headColor;
   final int loopLengthMicros;
 
   /// Stop with a loop still loaded: hold the playhead where it is.
   final bool frozen;
+
+  /// Shutdown frame: black the ring out and drop the encoder glow, mirroring
+  /// both firmware sketches (`goodbye` → CRGB::Black) and the MODE LED.
+  final bool goodbye;
   final void Function(int delta) onTurn;
   final AppLocalizations l10n;
 
@@ -735,12 +752,14 @@ class _Encoder extends StatefulWidget {
 class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
   static const double _dragPerDetent = 6;
 
-  // Full breathe cycle (dim → bright → dim). Matches firmware kBreatheMs.
-  static const Duration _breatheCycle = Duration(milliseconds: 2400);
+  // Half a breathe cycle: `repeat(reverse: true)` runs a dim→bright leg then a
+  // bright→dim leg, so the full dim→bright→dim cycle is twice this — the
+  // firmware's kBreatheMs (2400 ms). The linear ramp is a triangle; smoothstep
+  // ([_smoothstep]) then shapes it into the eased breathe both twins show.
+  static const Duration _breatheHalfCycle = Duration(milliseconds: 1200);
 
   late final AnimationController _sweep;
   late final AnimationController _breathe;
-  late final CurvedAnimation _breatheCurve;
 
   // Residual drag, so a slow drag still crosses detents instead of truncating
   // sub-detent deltas to zero.
@@ -750,8 +769,7 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _sweep = AnimationController(vsync: this);
-    _breathe = AnimationController(vsync: this, duration: _breatheCycle);
-    _breatheCurve = CurvedAnimation(parent: _breathe, curve: Curves.easeInOut);
+    _breathe = AnimationController(vsync: this, duration: _breatheHalfCycle);
     _syncMotion();
   }
 
@@ -759,13 +777,22 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
   void didUpdateWidget(_Encoder oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.loopLengthMicros != widget.loopLengthMicros ||
-        oldWidget.frozen != widget.frozen) {
+        oldWidget.frozen != widget.frozen ||
+        oldWidget.goodbye != widget.goodbye) {
       _syncMotion();
     }
   }
 
   void _syncMotion() {
+    if (widget.goodbye) {
+      // Shutdown: the ring is black, so nothing animates.
+      _breathe.stop();
+      _sweep.stop();
+      return;
+    }
     if (widget.frozen) {
+      // Stop with a loop still loaded: hold the playhead exactly where it is,
+      // so a later resume picks up in place (like the firmware's g_ringPhase).
       _breathe.stop();
       _sweep.stop();
       return;
@@ -773,7 +800,7 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
     if (widget.loopLengthMicros > 0) {
       _breathe.stop();
       _sweep.duration = Duration(microseconds: widget.loopLengthMicros);
-      if (!_sweep.isAnimating) unawaited(_sweep.repeat());
+      if (!_sweep.isAnimating) _resumeSweep();
     } else {
       _sweep
         ..stop()
@@ -782,9 +809,28 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
     }
   }
 
+  /// Resumes the playhead from where a freeze left it, then loops. The
+  /// firmware's g_ringPhase free-runs and never snaps back to the top on a
+  /// Stop→Play, so neither should the on-screen twin: finish the current
+  /// revolution from the held value, then `repeat()` from the top forever.
+  void _resumeSweep() {
+    final from = _sweep.value;
+    if (from == 0) {
+      unawaited(_sweep.repeat());
+      return;
+    }
+    unawaited(
+      _sweep.forward(from: from).then((_) {
+        // Only fall into the perpetual loop if we're still playing the same
+        // loop; a freeze or clear in the meantime already retargeted us.
+        if (!mounted || widget.frozen || widget.loopLengthMicros == 0) return;
+        unawaited(_sweep.repeat());
+      }),
+    );
+  }
+
   @override
   void dispose() {
-    _breatheCurve.dispose();
     _sweep.dispose();
     _breathe.dispose();
     super.dispose();
@@ -839,8 +885,14 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: surface.surface,
-                border: Border.all(color: widget.baseColor, width: 4),
-                boxShadow: [BoxShadow(color: widget.baseColor, blurRadius: 8)],
+                // Goodbye powers the ring down: a dim rim, no green glow.
+                border: Border.all(
+                  color: widget.goodbye ? surface.line : widget.baseColor,
+                  width: 4,
+                ),
+                boxShadow: widget.goodbye
+                    ? null
+                    : [BoxShadow(color: widget.baseColor, blurRadius: 8)],
               ),
               child: Stack(
                 alignment: Alignment.center,
@@ -852,13 +904,15 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
                         key: const Key('pedalFaceplate_ring'),
                         painter: PedalLedRingPainter(
                           baseColor: widget.baseColor,
+                          offColor: widget.offColor,
                           headColor: widget.headColor,
+                          goodbye: widget.goodbye,
                           progress: widget.loopLengthMicros > 0
                               ? _sweep.value
                               : null,
                           breathe: widget.loopLengthMicros == 0
                               ? (_breathe.isAnimating
-                                    ? _breatheCurve.value
+                                    ? _smoothstep(_breathe.value)
                                     : 0.55)
                               : 0,
                         ),
@@ -893,12 +947,15 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
 /// breathes together at [breathe] (`0..1`). Once a loop runs, [progress]
 /// (`0..1`, clockwise from the top) is the playhead: that LED takes
 /// [headColor] (rec red / mute green / FX blue) and its neighbours fade in
-/// [baseColor]. [progress] is `null` while breathing.
+/// [baseColor]. [progress] is `null` while breathing. A [goodbye] frame blacks
+/// the whole ring to [offColor], ignoring [progress] and [breathe].
 class PedalLedRingPainter extends CustomPainter {
   /// Creates a [PedalLedRingPainter].
   PedalLedRingPainter({
     required this.baseColor,
+    required this.offColor,
     required this.headColor,
+    required this.goodbye,
     required this.progress,
     required this.breathe,
   });
@@ -906,8 +963,14 @@ class PedalLedRingPainter extends CustomPainter {
   /// Fill colour for every LED that is not the playhead.
   final Color baseColor;
 
+  /// Unlit-LED colour, filling every dot while [goodbye] is set.
+  final Color offColor;
+
   /// Colour of the playhead LED (first LED in the sweep).
   final Color headColor;
+
+  /// Shutdown frame: every LED is off, as both firmware sketches render it.
+  final bool goodbye;
 
   /// Playhead position `0..1`, or `null` while the idle breathe is showing.
   final double? progress;
@@ -926,6 +989,10 @@ class PedalLedRingPainter extends CustomPainter {
     final ringR = size.shortestSide / 2 - dotR - 6;
     final head = progress == null ? -1.0 : progress! * _count;
     final breathing = progress == null;
+    // The playhead LED is the nearest one, rounded — exactly the firmware's
+    // `headIdx = (uint8_t)(g_ringPhase + 0.5f)`, so a half-integer playhead
+    // still lights one head LED instead of momentarily lighting none.
+    final headIdx = breathing ? -1 : head.round() % _count;
 
     for (var i = 0; i < _count; i++) {
       final angle = -math.pi / 2 + i / _count * 2 * math.pi;
@@ -933,7 +1000,10 @@ class PedalLedRingPainter extends CustomPainter {
 
       final Color color;
       final double alpha;
-      if (breathing) {
+      if (goodbye) {
+        color = offColor;
+        alpha = 1;
+      } else if (breathing) {
         color = baseColor;
         alpha = _breatheFloor + (1 - _breatheFloor) * breathe;
       } else {
@@ -942,9 +1012,9 @@ class PedalLedRingPainter extends CustomPainter {
         var d = (i - head).abs();
         if (d > _count / 2) d = _count - d;
         final lit = (1 - d / 2).clamp(0.0, 1.0);
-        // The nearest LED is the "first in line" — mode colour; the rest stay
-        // on the green fill.
-        color = d < 0.5 ? headColor : baseColor;
+        // The rounded-nearest LED is the "first in line" — mode colour; the
+        // rest stay on the green fill.
+        color = i == headIdx ? headColor : baseColor;
         alpha = _baseGlow + (1 - _baseGlow) * lit;
         if (lit > 0.5) {
           canvas.drawCircle(
@@ -968,7 +1038,9 @@ class PedalLedRingPainter extends CustomPainter {
   bool shouldRepaint(PedalLedRingPainter old) =>
       old.progress != progress ||
       old.breathe != breathe ||
+      old.goodbye != goodbye ||
       old.baseColor != baseColor ||
+      old.offColor != offColor ||
       old.headColor != headColor;
 }
 
