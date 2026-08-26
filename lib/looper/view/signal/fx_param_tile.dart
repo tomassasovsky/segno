@@ -91,14 +91,14 @@ class _FxParamCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final style = signalMono(color: surface.textSecondary, size: 9);
-    final scaler = MediaQuery.textScalerOf(context);
-    // Exactly what one line of [style] measures: with a `height` multiplier
-    // set, a line is `height x fontSize`, scaled. Stated rather than measured
-    // so the name row's height is the same number on every font and engine
-    // version — the row must never claim more than the single line the
-    // pre-#500 layout reserved, or the value box below loses the slack it
-    // absorbs at raised text scales and overflows.
-    final nameLineHeight = scaler.scale(style.fontSize!) * style.height!;
+    // How much wider the name's glyphs actually get under the ambient text
+    // scaler, measured at this style's own size — not `scaler.scale(cap)`,
+    // which asks the scaler about a 104px "font" and under a nonlinear scaler
+    // (Android) grows slower than the 9pt glyphs it is supposed to keep up
+    // with, ellipsizing at raised scales names that fit whole at 1.0.
+    final glyphScale =
+        MediaQuery.textScalerOf(context).scale(style.fontSize!) /
+        style.fontSize!;
     return SizedBox(
       width: FxParamTileMetrics.width,
       height: FxParamTileMetrics.height,
@@ -117,34 +117,48 @@ class _FxParamCell extends StatelessWidget {
             // far the shrink can go — text past the cap ellipsizes rather than
             // scaling below [FxParamTileMetrics.nameMinScale] of the face. The
             // cap scales with the text so the fits-whole set is the same set
-            // of names at every text scale. The SizedBox pins the row to the
-            // one-line height the layout has always reserved: the fit box can
-            // only shrink its child into that box, never grow the row and
-            // squeeze the value box below.
-            child: SizedBox(
-              height: nameLineHeight,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: scaler.scale(
-                      FxParamTileMetrics.width /
-                          FxParamTileMetrics.nameMinScale,
+            // of names at every text scale.
+            //
+            // The invisible prototype sets the row's HEIGHT: exactly what one
+            // line of [style] measures under the ambient text behaviors, on
+            // whatever font and engine is rendering — the number a formula
+            // cannot state, because the app's height behavior hands the first
+            // ascent and last descent back to the font's own metrics. The fit
+            // box fills that row, so its child (one line of the same style)
+            // matches it in height and only ever scales for WIDTH; the row
+            // can never grow past the line the pre-#500 layout reserved and
+            // squeeze the value box below into overflowing.
+            child: Stack(
+              children: [
+                Opacity(
+                  opacity: 0,
+                  child: Text('X', maxLines: 1, style: style),
+                ),
+                Positioned.fill(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth:
+                            FxParamTileMetrics.width /
+                            FxParamTileMetrics.nameMinScale *
+                            glyphScale,
+                      ),
+                      child: Text(
+                        // Uppercased for the same reason the DS specimens
+                        // are, and the rotary caption was before it: at mono
+                        // 9 in 78px this is a legend, and caps keep a dense
+                        // grid's names scanning as one row.
+                        spacedParamName(name),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: style,
+                      ),
                     ),
                   ),
-                  child: Text(
-                    // Uppercased for the same reason the DS specimens are, and
-                    // the rotary caption was before it: at mono 9 in 78px this
-                    // is a legend, and caps keep a dense grid's names scanning
-                    // as one row.
-                    spacedParamName(name),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: style,
-                  ),
                 ),
-              ),
+              ],
             ),
           ),
           const SizedBox(height: FxParamTileMetrics._gap),

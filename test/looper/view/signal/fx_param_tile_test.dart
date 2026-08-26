@@ -67,13 +67,72 @@ void main() {
           ),
         ),
       );
-      expect(tester.takeException(), isNull, reason: 'at scale $scale');
+      final e = tester.takeException();
+      if (e != null) {
+        // The one-line summary ("overflowed by N pixels") cannot say WHICH
+        // flex, and this has already failed on an engine version the author
+        // machine does not run. Dump what CI saw so its log is enough.
+        debugPrint('=== tile render tree at scale $scale ===');
+        debugPrint(
+          tester
+              .renderObject(find.byKey(const Key('tile')))
+              .toStringDeep(minLevel: DiagnosticLevel.fine),
+        );
+      }
+      expect(e, isNull, reason: 'at scale $scale');
       expect(
         tester.getSize(find.byKey(const Key('tile'))).height,
         FxParamTileMetrics.height,
         reason: 'the grid stays a grid at scale $scale',
       );
     }
+  });
+
+  testWidgets('a fitting name paints at exactly its laid-out size', (
+    tester,
+  ) async {
+    // The shrink-to-fit must be WIDTH-driven only: a name that fits the tile
+    // renders precisely as the pre-#500 single-line Text did. The first cut
+    // of the fit pinned the row to a computed `fontSize x height` — 9.9 —
+    // while the engine measures the line at 10.0, so the height ratio 0.99
+    // silently rescaled every caption in the grid, fitting or not. Painted
+    // extent vs layout extent is the assertion that catches that class of
+    // bug: any residual scale shows up as a mismatch.
+    const spec = PluginParamInfo(
+      id: 0,
+      name: 'DRIVE', // Fits the 78px tile even at 1em-per-glyph test metrics.
+      unit: '',
+      min: 0,
+      max: 1,
+      def: 0.5,
+      stepCount: 0,
+      flags: 0x01,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.neon,
+        home: AppTextDefaults(
+          child: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: FxParamTile(
+                spec: spec,
+                value: 0.5,
+                valueText: '50%',
+                onTap: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final caption = find.text('DRIVE');
+    final laidOut = tester.renderObject<RenderParagraph>(caption).size;
+    // getRect runs the paragraph's corners through its paint transform, so a
+    // FittedBox scale — however slight — lands in the difference.
+    final painted = tester.getRect(caption);
+    expect(painted.height, moreOrLessEquals(laidOut.height));
+    expect(painted.width, moreOrLessEquals(laidOut.width));
   });
 
   group('spanish param names', () {
