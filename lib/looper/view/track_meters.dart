@@ -1,3 +1,4 @@
+import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -23,7 +24,17 @@ class TrackMeterRow extends StatelessWidget {
     final l10n = context.l10n;
     final looper = Theme.of(context).extension<LooperTheme>()!;
 
-    final tracks = context.watch<LooperBloc>().state.tracks;
+    // NOT `context.watch<LooperBloc>()`: `LooperState` carries live audio —
+    // per-track `rms`/`peak`/`playheadFrames` and `transport
+    // .masterPositionFrames` — so it changes on every poll tick while audio
+    // flows, and watching it here rebuilt the whole row on every tick: one
+    // track's level moving rebuilt all of the tiles. This selector holds only
+    // the row's structure (which channels exist), so a level tick no longer
+    // reaches the row; the live per-track data is subscribed one level down,
+    // in [_MeterSlot] — the same split #646 applied to `TracksView` (#654).
+    final channels = context.select<LooperBloc, _MeterChannels>(
+      (bloc) => _MeterChannels.of(bloc.state),
+    );
     final names = context.watch<TracksCubit>().state;
     // Mode / cursor / bank are the shared control overlay — this row sits on
     // the pedal's own screen, so it follows exactly what the footswitch sets.
@@ -33,24 +44,95 @@ class TrackMeterRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final track in tracks)
-          if (overlay.bankContains(track.channel))
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3),
-                child: _TrackMeter(
-                  track: track,
-                  looper: looper,
-                  mode: mode,
-                  selected: track.channel == overlay.cursor,
-                  name: l10n.displayTrackName(
-                    names.nameOf(track.channel),
-                    track.channel,
-                  ),
-                ),
-              ),
+        for (final channel in channels.channels)
+          if (overlay.bankContains(channel))
+            _MeterSlot(
+              channel: channel,
+              looper: looper,
+              mode: mode,
+              selected: channel == overlay.cursor,
+              name: l10n.displayTrackName(names.nameOf(channel), channel),
             ),
       ],
+    );
+  }
+}
+
+/// The slice of [LooperState] that [TrackMeterRow]'s own layout depends on:
+/// which channels exist, nothing else.
+///
+/// Deliberately excludes everything a moving meter touches — `rms`, `peak`,
+/// `playheadFrames`, `masterPositionFrames`. Those change on every poll tick
+/// while audio flows, and including any of them here would put the whole row
+/// back on the rebuild path this class exists to keep it off (#646, #654).
+///
+/// [channels] is every track's channel, not just the active bank's: the bank
+/// filter lives on [ControlCubit], so filtering here would rebuild the row
+/// whenever the bank changed for no benefit. It is compared element-wise, so a
+/// fresh list of equal channels is still equal.
+class _MeterChannels extends Equatable {
+  const _MeterChannels({required this.channels});
+
+  factory _MeterChannels.of(LooperState state) => _MeterChannels(
+    channels: [for (final track in state.tracks) track.channel],
+  );
+
+  final List<int> channels;
+
+  @override
+  List<Object?> get props => [channels];
+}
+
+/// One [_TrackMeter], subscribed to nothing but its own [channel]'s [Track].
+///
+/// This is where the live audio data is allowed back in. Selecting per channel
+/// means track 0's meter moving rebuilds track 0's tile and nothing else —
+/// where watching [LooperBloc] in [TrackMeterRow] rebuilt every tile in the
+/// row on every tick (#654). `Track` is Equatable with the level fields in its
+/// props, so the select dedups when this channel's levels are unchanged.
+class _MeterSlot extends StatelessWidget {
+  const _MeterSlot({
+    required this.channel,
+    required this.looper,
+    required this.mode,
+    required this.selected,
+    required this.name,
+  });
+
+  final int channel;
+  final LooperTheme looper;
+  final InteractionMode mode;
+  final bool selected;
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final track = context.select<LooperBloc, Track?>(
+      (bloc) => bloc.state.tracks.cast<Track?>().firstWhere(
+        (t) => t?.channel == channel,
+        orElse: () => null,
+      ),
+    );
+    // Defence only: `channels` is derived from the same `tracks` list, and any
+    // change to it changes [_MeterChannels], so the row rebuilds in the same
+    // frame and this should be unreachable. Returning a bare SizedBox rather
+    // than an Expanded matters if it ever is reached — an empty Expanded would
+    // hold its flex share and leave a gap instead of letting the surviving
+    // tiles widen.
+    if (track == null) return const SizedBox.shrink();
+    // The Expanded lives here, not at the call site, so the null case above
+    // can opt out of the row's flex entirely.
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: _TrackMeter(
+          track: track,
+          looper: looper,
+          mode: mode,
+          selected: selected,
+          name: name,
+        ),
+      ),
     );
   }
 }
