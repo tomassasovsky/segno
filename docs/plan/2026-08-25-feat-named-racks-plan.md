@@ -115,7 +115,7 @@ the late flip is its designed behaviour.
 The pen-era proposal had session bundles embed the racks they reference; the
 settled 2026-08-10 call is reference-only with a graceful missing-rack state.
 **Recommendation: reference-only now** (it is the settled call); embedding
-becomes an explicit non-goal, revisitable as an export option.
+becomes an explicit non-goal, one to revisit as an export option.
 
 ## Implementation outline
 
