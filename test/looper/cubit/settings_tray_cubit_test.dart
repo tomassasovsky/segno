@@ -12,20 +12,13 @@ import '../../helpers/helpers.dart';
 
 class _FakeBrightnessClient implements BrightnessClient {
   bool supported = true;
-  double current = 0.8;
   final sets = <double>[];
 
   @override
   Future<bool> isSupported() async => supported;
 
   @override
-  Future<double> get() async => current;
-
-  @override
-  Future<void> set(double value) async {
-    sets.add(value);
-    current = value;
-  }
+  Future<void> set(double value) async => sets.add(value);
 }
 
 void main() {
