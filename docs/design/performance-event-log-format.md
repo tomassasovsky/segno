@@ -134,6 +134,7 @@ bytes are that command's union, unchanged, so a reader already familiar with
 | `LE_CMD_UNDO_TO_EMPTY`                | 39    | —           | No*     | Logged as `LE_PLOG_UNDO` (the to-EMPTY edge case) |
 | `LE_CMD_REDO_FROM_EMPTY`              | 40    | —           | No*     | Logged as `LE_PLOG_REDO` (the from-EMPTY edge case) |
 | `LE_CMD_PERF_ARM` / `LE_CMD_PERF_DISARM` | 41/42 | —        | No      | Meta — arming/disarming the session isn't part of what it captures |
+| `LE_CMD_SET_ONE_SHOT`                 | 47    | —           | No      | The setter changes no output at the moment it applies. Its audible consequence — the auto-stop at the track's own loop wrap (Free/Song, `advance_track_clock_frame`) — logs a **synthetic `LE_CMD_STOP`** (`arg_i` = channel) at the exact wrap frame (#420), so a replay stops the track where a listener heard it stop. No `LE_PLOG_RECORD_END` accompanies a wrap mid-overdub, matching a manual Stop on an OVERDUBBING track — `RECORD_END` means "left RECORDING", and the dub pass's end is logged by its `LE_PLOG_LAYER_RETIRED`. |
 | `LE_CMD_SET_TRACK_FX`                 | 49    | fx          | No      | No replay — manifest-only; stems stay per-stage dry-of-downstream (part 9), arm manifest carries track/master chains (part 3) |
 | `LE_CMD_SET_TRACK_FX_COUNT`           | 50    | fxcount     | No      | ” (same manifest-only verdict) |
 | `LE_CMD_SET_MASTER_FX`                | 51    | fx          | No      | ” |

@@ -19044,6 +19044,129 @@ static void test_one_shot_persists_across_mode_switch_fires_on_first_wrap(
   le_engine_destroy(e);
 }
 
+static void test_one_shot_wrap_logs_synthetic_stop(void) {
+  printf("test_one_shot_wrap_logs_synthetic_stop\n");
+  /* #420: the One Shot auto-stop at the free-clock wrap is the same audible
+   * transition as a manual Stop press, so it must land in events.log the
+   * same way -- a synthetic LE_CMD_STOP at the exact wrap frame (the same
+   * replays-match-what-a-listener-heard rule as le_unpark_stopped's
+   * synthetic LE_CMD_PLAY). Without it a replay hears the track playing
+   * forever past the wrap. */
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  drain(e);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  fm_record_track(e, 0, 300);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  /* Just short of the lap, then the wrap frame alone in its own 1-frame
+   * buffer: its buffer-base perf-frame count IS the wrap frame's tag, so
+   * the expected frame needs no lap arithmetic. */
+  tg_advance(e, 299);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  const uint64_t wrap_frame =
+      atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+
+  /* Exactly one STOP on this channel -- the synthetic one; no Stop press
+   * was ever issued -- and it carries the wrap frame, sample-accurately. */
+  CHECK(count_log_entries_for_channel(buf, count, LE_CMD_STOP, 0) == 1);
+  CHECK(frame_of_log_entry_for_channel(buf, count, LE_CMD_STOP, 0) ==
+        wrap_frame);
+  /* The defining take's finalize is the only RECORD_END -- the wrap added
+   * none (the track was PLAYING, no capture ended). */
+  CHECK(count_log_entries_for_channel(buf, count, LE_PLOG_RECORD_END, 0) ==
+        1);
+
+  le_engine_destroy(e);
+}
+
+static void test_one_shot_wrap_mid_overdub_logs_stop_no_record_end(void) {
+  printf("test_one_shot_wrap_mid_overdub_logs_stop_no_record_end\n");
+  /* #420, the OVERDUBBING variant, pinning the contract decision: a One
+   * Shot wrap mid-overdub logs the synthetic LE_CMD_STOP and deliberately
+   * NO LE_PLOG_RECORD_END -- exactly what a manual Stop press on an
+   * OVERDUBBING track produces (handle_stop's PLAYING/OVERDUBBING branch
+   * pushes none; RECORD_END means "left RECORDING", perf_log_ring.h). The
+   * dub pass's end reaches the log as its LE_PLOG_LAYER_RETIRED instead,
+   * via the same ordinary retire machinery a manual stop drains through
+   * (test_one_shot_overdubbing_track_stops_cleanly_at_wrap). */
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  drain(e);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  fm_record_track(e, 0, 300);
+  tg_advance(e, 100);
+  le_engine_record(e, 0); /* PLAYING -> OVERDUBBING, punch in */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  /* Cross the loop top while still overdubbing; bracket the advance so the
+   * logged stop frame can be pinned inside it. */
+  const uint64_t before =
+      atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+  tg_advance(e, 300);
+  const uint64_t after =
+      atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED); /* fired mid-overdub */
+
+  /* Let the in-flight layer retire while still armed, so its retire event
+   * lands in this capture's log. */
+  settle_layers(e);
+  drain(e);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+  le_perf_log_entry entry;
+
+  /* The synthetic STOP, inside the advance that crossed the top. */
+  CHECK(count_log_entries_for_channel(buf, count, LE_CMD_STOP, 0) == 1);
+  const uint64_t stop_frame =
+      frame_of_log_entry_for_channel(buf, count, LE_CMD_STOP, 0);
+  CHECK(stop_frame >= before && stop_frame < after);
+
+  /* Still exactly one RECORD_END -- the defining take's finalize. The wrap
+   * ended an overdub, not a RECORDING, so it added none (a manual Stop
+   * press mid-overdub logs none either). */
+  CHECK(count_log_entries_for_channel(buf, count, LE_PLOG_RECORD_END, 0) ==
+        1);
+
+  /* The dub pass's end IS logged -- as its layer retiring. */
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_LAYER_RETIRED, &entry) >= 0);
+  CHECK(entry.cmd.evt.channel == 0);
+
+  le_engine_destroy(e);
+}
+
 /* ---- B3: primary track (D18), Sync mode (D16) ----
  *
  * D18: a_primary_track (-1 = none) persists through a crowned track's
@@ -24284,6 +24407,8 @@ int main(void) {
   test_one_shot_dormant_in_multi_mode();
   test_one_shot_overdubbing_track_stops_cleanly_at_wrap();
   test_one_shot_persists_across_mode_switch_fires_on_first_wrap();
+  test_one_shot_wrap_logs_synthetic_stop();
+  test_one_shot_wrap_mid_overdub_logs_stop_no_record_end();
 
   test_primary_track_default_none();
   test_crown_primary_rejects_invalid_channel();
