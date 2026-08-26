@@ -33,6 +33,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.onAccent,
     required this.accentSurface,
     required this.accentAlt,
+    required this.fx,
+    required this.fxSurface,
+    required this.fxWash,
     required this.warning,
     required this.success,
     required this.successSurface,
@@ -113,15 +116,15 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// [recSurface] and [successSurface]: the pen's `accent-surface` token is
   /// opaque (adopted verbatim in the #499 reconcile), because this token's
   /// main job is the fill of a *selected* control — tabs, rail items, rows —
-  /// which must cover whatever sits beneath it. The mode pills' FX state
-  /// therefore renders a flat fill where REC and MUTE render washes; that
+  /// which must cover whatever sits beneath it. [fxSurface] (the FX mode's
+  /// fill) is flat for the same reason, where REC and MUTE render washes; that
   /// difference is the design, not drift (#737).
   ///
   /// Its **lightness** is a contrast constraint, not a free choice (#768).
   /// [accent] as label text on this fill is the dominant selected-state
-  /// pattern in the app — the mode chips' FX state, the selected pill tab and
-  /// rail item, the Signal panel's active rows, the on-screen keyboard's
-  /// selected key, the accent-tone console dialog button — and that pair has
+  /// pattern in the app — the selected pill tab and rail item, the Signal
+  /// panel's active rows, the on-screen keyboard's selected key, the
+  /// accent-tone console dialog button — and that pair has
   /// to clear the 4.5:1 AA floor (WCAG 1.4.3) at 14px w700. Because the fill
   /// shares [accent]'s hue, the two are separated by luminance alone: the
   /// pen's `#16233d` / `#234069` measured 4.25:1 and 4.32:1, so both flavors
@@ -137,6 +140,29 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// without brightening [accent] with it will fail there.
   final Color accentSurface;
   final Color accentAlt;
+
+  /// The FX-mode accent family (DS `fx`, `fx-surface`, `fx-wash`) — the purple
+  /// the performance stage and its chrome adopt in FX mode (owner's call,
+  /// 2026-08-26 on #692: rec=red, mute=green, **fx=purple**, replacing the blue
+  /// [accent] FX previously borrowed). Kept distinct from [accent] on purpose:
+  /// [accent] is the app-wide selected-control blue (tabs, rails, rows), so
+  /// recolouring it would have turned every selection purple. FX is a MODE, not
+  /// a selection, and reads as its own hue.
+  ///
+  /// [fx] is the label/outline colour; [fxSurface] is the **flat** fill the FX
+  /// mode chip and the FX stage paint behind it (flat, not an alpha wash, for
+  /// the same #737 reason [accentSurface] is — a mode fill must cover what it
+  /// sits on, and the high-contrast flavor overrides it wholesale); [fxWash] is
+  /// the translucent tint the stage dressing lays over a tile so the entry run
+  /// reads as an FX-mode panel rather than bare chrome.
+  ///
+  /// The [fx]-on-[fxSurface] pair carries the FX chip's 14px w700 label, so it
+  /// clears the 4.5:1 AA floor (WCAG 1.4.3) in both flavors — the pair pinned
+  /// in `test/theme/app_theme_test.dart`. High contrast is where FX slipped
+  /// under AA before (#768/#770), so its pair is checked there too.
+  final Color fx;
+  final Color fxSurface;
+  final Color fxWash;
 
   /// The caution colour for non-blocking notices (e.g. "no active outputs"),
   /// brightened in the high-contrast variant so it stays legible (WCAG 1.4.3).
@@ -183,9 +209,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   Color laneColor(int lane) => lanePalette[lane % lanePalette.length];
 
   /// The outline + fill a chrome surface paints for [mode]: rec red over its
-  /// wash, mute the design system's `success` green over its wash, FX
-  /// [accent] over the flat [accentSurface] (owner's call, 2026-08-20 on
-  /// #737/#693 — rec=red, mute=green, fx=blue is the product mapping).
+  /// wash, mute the design system's `success` green over its wash, FX [fx]
+  /// purple over the flat [fxSurface] (owner's calls: rec=red / mute=green
+  /// 2026-08-20 on #737/#693, fx=purple 2026-08-26 on #692 — replacing the blue
+  /// [accent] FX used to borrow, which read as "just another selection").
   ///
   /// The single source for that mapping. It used to be a three-arm `switch`
   /// copy-pasted into the desktop `ModeIndicator` and the stage status bar's
@@ -206,7 +233,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       switch (mode) {
         InteractionMode.record => (outline: rec, fill: recSurface),
         InteractionMode.mute => (outline: success, fill: successSurface),
-        InteractionMode.fx => (outline: accent, fill: accentSurface),
+        InteractionMode.fx => (outline: fx, fill: fxSurface),
       };
 
   /// Pedal LED palette — the on-screen pedal faceplate renders the firmware's
@@ -287,6 +314,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? onAccent,
     Color? accentSurface,
     Color? accentAlt,
+    Color? fx,
+    Color? fxSurface,
+    Color? fxWash,
     Color? warning,
     Color? success,
     Color? successSurface,
@@ -334,6 +364,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     onAccent: onAccent ?? this.onAccent,
     accentSurface: accentSurface ?? this.accentSurface,
     accentAlt: accentAlt ?? this.accentAlt,
+    fx: fx ?? this.fx,
+    fxSurface: fxSurface ?? this.fxSurface,
+    fxWash: fxWash ?? this.fxWash,
     warning: warning ?? this.warning,
     success: success ?? this.success,
     successSurface: successSurface ?? this.successSurface,
@@ -387,6 +420,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       onAccent: c(onAccent, other.onAccent),
       accentSurface: c(accentSurface, other.accentSurface),
       accentAlt: c(accentAlt, other.accentAlt),
+      fx: c(fx, other.fx),
+      fxSurface: c(fxSurface, other.fxSurface),
+      fxWash: c(fxWash, other.fxWash),
       warning: c(warning, other.warning),
       success: c(success, other.success),
       successSurface: c(successSurface, other.successSurface),
@@ -462,6 +498,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     // the FX chip's label — see the token's doc (#768).
     accentSurface: Color(0xFF121C31),
     accentAlt: Color(0xFF738CF2),
+    // #692: FX mode = purple. `fx` on the flat `fxSurface` measures 4.74:1
+    // (>= AA for the 14px w700 chip label); on bg-base 5.32:1; and as the
+    // dressing's `fx`-on-`fxWash`-over-bg 4.60:1. All three pinned in
+    // app_theme_test.dart.
+    fx: Color(0xFFA06BE0),
+    fxSurface: Color(0xFF1E1430),
+    fxWash: Color(0x24A06BE0),
     warning: Color(0xFFE0A94A),
     success: Color(0xFF30A46C),
     successSurface: Color(0x2430A46C),
@@ -531,6 +574,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     // that exists for contrast) so the FX chip's label clears 4.5:1 (#768).
     accentSurface: Color(0xFF203A5E),
     accentAlt: Color(0xFF9AB4FF),
+    // #692: the FX purple, lifted for the high-contrast flavor — `fx` on
+    // `fxSurface` measures 6.83:1, on black 10.53:1 (this is the flavor where
+    // FX slipped under AA before, #768/#770, so it is checked explicitly). The
+    // wash carries the heavier HC alpha, matching `recSurface`/`successSurface`.
+    fx: Color(0xFFC9A8FF),
+    fxSurface: Color(0xFF33245A),
+    fxWash: Color(0x33C9A8FF),
     warning: Color(0xFFFFD27A),
     success: Color(0xFF6EE7B7),
     successSurface: Color(0x336EE7B7),

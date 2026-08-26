@@ -9,6 +9,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/rename_track_dialog.dart';
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
@@ -76,7 +77,14 @@ class TrackColumn extends StatelessWidget {
     // bar color is one table lookup on the track's meter state (muted included;
     // see LooperTheme.meterColors).
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
-    final barColor = looper.meterColor(meterState, mode: mode);
+    final isFx = mode == InteractionMode.fx;
+    // FX mode recedes the meter to 40% alpha so the chain dressing reads on top
+    // of it (#692). The meter stays TRUTHFUL — it is taken pre-chain, so it is
+    // the same fill and hue the other modes show — it just steps back to let
+    // the chain identity own the tile. The other modes paint it at full weight.
+    final barColor = isFx
+        ? looper.meterColor(meterState, mode: mode).withValues(alpha: 0.4)
+        : looper.meterColor(meterState, mode: mode);
     // Crown badge (D18, B5c): visible only in Sync/Band (Wave-view style,
     // per the brainstorm) — an inert, empty slot in every other mode so the
     // column layout never shifts when the mode changes.
@@ -292,16 +300,19 @@ class TrackColumn extends StatelessWidget {
                         frozen: track.state == TrackState.stopped,
                       ),
                     ),
-                    // The ONLY on-screen cue that an FX-mode tap landed: the
-                    // meter is taken pre-chain by the engine, so bypassing a
-                    // chain changes neither the fill nor its colour, and
-                    // without this the tap is invisible and gets repeated.
-                    if (mode == InteractionMode.fx && !track.chainEnabled)
-                      Positioned(
-                        top: 4,
-                        left: 4,
-                        right: 4,
-                        child: _ChainOffPill(label: l10n.signalChainOff),
+                    // FX mode re-dresses the tile in place (#692): the receded
+                    // meter keeps reporting transport state behind a chain
+                    // identity — a dominant power pill and the chain's entries
+                    // in signal order (or NO CHAIN when the track has none).
+                    // This is the on-screen twin of the tile's semantic label
+                    // and of the pedal's chain LED; the meter alone shows
+                    // nothing about the chain, since it is taken pre-chain.
+                    if (isFx)
+                      Positioned.fill(
+                        child: _FxChainDressing(
+                          effects: track.effects,
+                          chainEnabled: track.chainEnabled,
+                        ),
                       ),
                   ],
                 ),
@@ -536,41 +547,212 @@ class _PendingArmBadge extends StatelessWidget {
   }
 }
 
-/// The FX-mode "chain bypassed" pill drawn over a track's meter.
+/// The FX-mode re-dressing drawn over a track's (receded) meter (#692).
 ///
-/// The tracks surface has no other channel for chain state — the meter is
-/// taken pre-chain by the engine, so a bypass changes nothing visible — and
-/// this is the tile's twin of the pedal's dark chain LED and the Signal
-/// page's own chain-off chip (whose wording it reuses).
-class _ChainOffPill extends StatelessWidget {
-  const _ChainOffPill({required this.label});
+/// Candidate A of the #692 spike: FX mode does not swap the stage, it
+/// re-dresses each tile IN PLACE — geometry, the 1–8 key parity and the
+/// footswitch map all stay frozen, so the performer's spatial map is untouched.
+/// What changes is the tile's *content*: a dominant power pill states the whole
+/// chain's on/off, and the chain's entries read beneath it in signal order. An
+/// empty track says NO CHAIN instead — there is nothing to power.
+///
+/// It carries no semantics ([ExcludeSemantics]) and no hit target
+/// ([IgnorePointer]): [TrackColumn]'s tile already names the chain state for a
+/// screen reader, and the FX-mode tap that toggles the chain has to fall
+/// through to the tile beneath this overlay.
+class _FxChainDressing extends StatelessWidget {
+  const _FxChainDressing({required this.effects, required this.chainEnabled});
 
-  final String label;
+  /// The track's Track-stage chain entries, in processing order.
+  final List<TrackEffect> effects;
+
+  /// Whether the whole chain is engaged (drives the power pill).
+  final bool chainEnabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: effects.isEmpty
+              // Nothing loaded: no power pill (there is nothing to power), just
+              // the invitation to build one — the pen's empty LEAD tile.
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AppText(
+                        l10n.stageFxNoChain,
+                        key: const Key('tracks_tileFxNoChain'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: context.surface.textTertiary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      AppText(
+                        l10n.stageFxNoChainHint,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: context.surface.textMuted,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : Column(
+                  children: [
+                    _FxPowerPill(enabled: chainEnabled),
+                    const Spacer(),
+                    _FxEntryRun(effects: effects, chainEnabled: chainEnabled),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The dominant per-tile power pill: the one element that states the whole
+/// chain's on/off at stage distance (grafted from candidate B). `ON` fills with
+/// the flat [SurfaceTheme.fxSurface] behind an [SurfaceTheme.fx] label — a mode
+/// fill, never an inline wash of `fx` (the high-contrast flavor could not reach
+/// that; #737) — while `OFF` is stroked: the same outline over the bare,
+/// receded meter, so the engaged state reads as the heavier one.
+class _FxPowerPill extends StatelessWidget {
+  const _FxPowerPill({required this.enabled});
+
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    final l10n = context.l10n;
     return Container(
-      key: const Key('tracks_tileChainOff'),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      key: const Key('tracks_tileFxPower'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
-        color: surface.background.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: surface.warning),
+        color: enabled ? surface.fxSurface : Colors.transparent,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: surface.fx, width: enabled ? 1.5 : 1),
       ),
-      // The tile's own semantic label already reads the chain state, so this
-      // stays out of the tree a screen reader walks.
-      child: ExcludeSemantics(
+      child: AppText(
+        enabled ? l10n.stageFxChainOn : l10n.stageFxChainOff,
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: surface.fx,
+          fontSize: 14,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 2,
+        ),
+      ),
+    );
+  }
+}
+
+/// The chain's entries as chips joined by arrows, in signal order — the surface
+/// where #601's per-entry dim/strikethrough idiom will mark bypassed entries.
+///
+/// Today the whole run dims together with [chainEnabled]: a switched-off chain
+/// is still there to name, and dimming it says so without hiding the rig. The
+/// per-ENTRY seam is deliberate: [_FxEntryChip] already takes a `bypassed` flag
+/// (always `false` until #601 wires per-entry state), so that slice changes one
+/// argument here and nothing else.
+class _FxEntryRun extends StatelessWidget {
+  const _FxEntryRun({required this.effects, required this.chainEnabled});
+
+  final List<TrackEffect> effects;
+
+  final bool chainEnabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    // Interleave entry chips with arrow separators, in processing order.
+    final children = <Widget>[];
+    for (var i = 0; i < effects.length; i++) {
+      if (i > 0) {
+        children.add(
+          AppText(
+            '→',
+            style: TextStyle(color: surface.fx, fontSize: 12),
+          ),
+        );
+      }
+      children.add(
+        // #601 seam: `bypassed` is passed explicitly false today; that slice
+        // computes it per entry and this is the one line it edits.
+        _FxEntryChip(label: fxBlockName(l10n, effects[i]), bypassed: false),
+      );
+    }
+    return Opacity(
+      // A switched-off chain reads at the disabled dim (R26) — present, named,
+      // but visibly not running — rather than vanishing.
+      opacity: chainEnabled ? 1 : surface.disabledOpacity,
+      child: Container(
+        key: const Key('tracks_tileFxEntryRun'),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        decoration: BoxDecoration(
+          // The FX-mode wash, so the run reads as an FX panel rather than bare
+          // chrome. A token (#737): the HC flavor overrides it wholesale.
+          color: surface.fxWash,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 5,
+          runSpacing: 4,
+          children: children,
+        ),
+      ),
+    );
+  }
+}
+
+/// One entry in the stage-tile chain run — the entry's name in a compact chip.
+///
+/// [bypassed] is the #601 seam: when that slice lands it will dim/strike a
+/// single bypassed entry here without touching the whole-chain path above.
+class _FxEntryChip extends StatelessWidget {
+  const _FxEntryChip({required this.label, required this.bypassed});
+
+  final String label;
+
+  final bool bypassed;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Opacity(
+      opacity: bypassed ? surface.disabledOpacity : 1,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: surface.fxSurface,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: surface.fx),
+        ),
         child: AppText(
           label,
-          textAlign: TextAlign.center,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: surface.warning,
-            fontSize: 9,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.5,
+            color: surface.fx,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            decoration: bypassed ? TextDecoration.lineThrough : null,
           ),
         ),
       ),

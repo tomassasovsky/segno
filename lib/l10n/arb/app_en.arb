@@ -749,6 +749,22 @@
     "@signalChainOn": {
         "description": "The Signal panel's chain-power pill while the chain is running."
     },
+    "stageFxChainOn": "ON",
+    "@stageFxChainOn": {
+        "description": "The dominant power pill on an FX-mode stage tile while the track's FX chain is engaged. Short and upper-case for reading at stage distance; distinct from the Signal panel's 'Chain on' (a different surface)."
+    },
+    "stageFxChainOff": "OFF",
+    "@stageFxChainOff": {
+        "description": "The dominant power pill on an FX-mode stage tile while the track's FX chain is bypassed."
+    },
+    "stageFxNoChain": "NO CHAIN",
+    "@stageFxNoChain": {
+        "description": "The FX-mode stage tile title for a track that has no effects loaded at all — there is nothing to power on or off."
+    },
+    "stageFxNoChainHint": "build one in Signal",
+    "@stageFxNoChainHint": {
+        "description": "The hint under NO CHAIN on an empty FX-mode stage tile, pointing the player at the Signal tab where a chain is assembled."
+    },
     "signalShowAllLanes": "All lanes",
     "signalShowRecordedLanes": "Recorded lanes",
     "signalInherited": "Inherited",

@@ -87,7 +87,9 @@ void main() {
     Map<String, (Color, Color)> modePairs(SurfaceTheme s) => {
       'REC': (s.rec, s.recSurface),
       'MUTE': (s.success, s.successSurface),
-      'FX': (s.accent, s.accentSurface),
+      // #692: FX is its own purple pair now, not the blue `accent`/
+      // `accentSurface` it used to borrow.
+      'FX': (s.fx, s.fxSurface),
     };
 
     /// Every mode chip's label contrast in [data], *as rendered*, by mode.
@@ -138,6 +140,46 @@ void main() {
           reason: 'high contrast must not read flatter than neon for $mode',
         );
       }
+    });
+
+    // #692: FX mode is purple, and it dresses more than the mode chip — the
+    // stage transform paints `fx` as text/outline on three different backdrops
+    // (the flat `fxSurface` fill, the stage's own bg-base, and the tile
+    // dressing's `fxWash` laid over bg-base). Each carries the FX chip / power
+    // pill / entry-run label at 14px w700, so each has to clear the 4.5:1 AA
+    // floor (WCAG 1.4.3) in BOTH flavors — the high-contrast one especially,
+    // since that is where FX slipped under AA before (#768/#770). The exact
+    // measured figures are the pen's `c/stage-fx` note (dark 4.74 / 5.32 /
+    // 4.60, HC 6.83 / 10.53).
+    test('the FX purple clears AA on every surface it labels', () {
+      for (final s in [SurfaceTheme.dark, SurfaceTheme.highContrast]) {
+        // Flat fill behind the FX mode chip and the power pill.
+        expect(
+          ratio(s.fx, s.fxSurface),
+          greaterThanOrEqualTo(4.5),
+          reason: 'FX label is below AA on its own flat fill',
+        );
+        // The stage takes bg-base in FX mode; `fx` labels sit straight on it.
+        expect(
+          ratio(s.fx, s.background),
+          greaterThanOrEqualTo(4.5),
+          reason: 'FX label is below AA on the stage surface',
+        );
+        // The tile dressing lays `fxWash` over bg-base; the entry run reads on
+        // the composite, so that is what the floor applies to.
+        final washOverBg = Color.alphaBlend(s.fxWash, s.background);
+        expect(
+          ratio(s.fx, washOverBg),
+          greaterThanOrEqualTo(4.5),
+          reason: 'FX entry run is below AA on the wash-over-stage composite',
+        );
+      }
+      // Pin the flat-fill figures to the pen's note so a retune that still
+      // clears the floor but drifts from the approved values is caught.
+      const dark = SurfaceTheme.dark;
+      const hc = SurfaceTheme.highContrast;
+      expect(ratio(dark.fx, dark.fxSurface), closeTo(4.74, 0.05));
+      expect(ratio(hc.fx, hc.fxSurface), closeTo(6.83, 0.05));
     });
 
     test('HC meter/indicator idle tones clear 3:1 on the track tile', () {
@@ -332,6 +374,9 @@ List<Color> _colors(SurfaceTheme s) => [
   s.onAccent,
   s.accentSurface,
   s.accentAlt,
+  s.fx,
+  s.fxSurface,
+  s.fxWash,
   s.warning,
   s.success,
   s.successSurface,
