@@ -1295,6 +1295,8 @@
     "midiLearnLearn": "Aprender",
     "midiLearnRelearn": "Reaprender",
     "midiLearnClear": "Quitar",
+    "midiSimulate": "Simular",
+    "midiSimulateGlobal": "Simular entrada",
     "midiLearnCancel": "Cancelar",
     "midiLearnListening": "Escuchando… mové el control que querés usar.",
     "midiLearnReplacePrompt": "{control} ya controla otra asignación. ¿Reemplazarla?",

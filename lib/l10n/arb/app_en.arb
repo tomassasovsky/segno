@@ -1803,6 +1803,14 @@
     "midiLearnLearn": "Learn",
     "midiLearnRelearn": "Relearn",
     "midiLearnClear": "Remove",
+    "midiSimulate": "Simulate",
+    "@midiSimulate": {
+        "description": "Action pill on an open mapping row that runs the mapping's own synthetic sweep/press through the pipeline, so it can be proven with no controller attached (#519)."
+    },
+    "midiSimulateGlobal": "Simulate input",
+    "@midiSimulateGlobal": {
+        "description": "Status-card button that feeds a synthetic controller event where a real one would land — a listening learn capture, else the open mapping row (#519)."
+    },
     "midiLearnCancel": "Cancel",
     "midiLearnListening": "Listening… move the control you want to use.",
     "midiLearnReplacePrompt": "{control} already drives another mapping. Replace it?",

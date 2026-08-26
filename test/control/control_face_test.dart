@@ -65,6 +65,7 @@ void main() {
   late SettingsTrayCubit tray;
   late SettingsRepository settings;
   late _FakeControllerSource source;
+  late SimulatedControllerSource simulated;
   late List<TrackEffect> masterChain;
 
   setUp(() {
@@ -95,6 +96,7 @@ void main() {
     when(
       () => looper.masterChainEnvelope(),
     ).thenReturn(const FxChainEnvelope());
+    when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
 
     midiDevices = _MockMidiDevices();
     connections = StreamController<MidiConnection>.broadcast();
@@ -136,7 +138,8 @@ void main() {
     // exactly the app-wiring bug this slice fixed. Over a source a test can
     // feed, so a capture can be completed rather than only started.
     source = _FakeControllerSource();
-    final controller = ControllerRepository(sources: [source]);
+    simulated = SimulatedControllerSource();
+    final controller = ControllerRepository(sources: [source, simulated]);
     addTearDown(controller.dispose);
     control = ControlCubit(
       looper: looper,
@@ -145,7 +148,11 @@ void main() {
       performance: performance,
       controller: controller,
       midiDevices: midiDevices,
+      simulatedSource: simulated,
       keepAliveInterval: Duration.zero,
+      // Brisk enough that a pumped duration drains a synthetic sweep (#519).
+      simulateTick: const Duration(milliseconds: 1),
+      simulateSweepLeg: const Duration(milliseconds: 2),
     );
     midi = MidiSetupCubit(repository: midiDevices);
     tray = SettingsTrayCubit(settings: settings);
@@ -913,6 +920,95 @@ void main() {
             .widget<ConsoleActionChip>(find.byKey(const Key('midi_remove')))
             .onPressed,
         isNotNull,
+      );
+    });
+
+    testWidgets('the Simulate pill leads the open row, before Relearn/Remove', (
+      tester,
+    ) async {
+      // Nothing plugged in: Simulate must still be live — proving a mapping
+      // with no controller attached is its whole point (#519).
+      await pump(tester);
+      await control.setControllerBindings(mappings());
+      await showMidi(tester);
+
+      final sweep = control.state.controllerBindings.bindings
+          .whereType<ContinuousBinding>()
+          .single;
+      await tester.tap(
+        find.byKey(Key('midi_mapping_${sweep.trigger}_${sweep.target}')),
+      );
+      await tester.pumpAndSettle();
+
+      final simulate = find.byKey(const Key('midi_simulate'));
+      expect(simulate, findsOneWidget);
+      expect(
+        tester.widget<ConsoleActionChip>(simulate).onPressed,
+        isNotNull,
+        reason: 'live with no device — that is the feature',
+      );
+      // First in the strip: to the left of Relearn, which is left of Remove.
+      final simulateX = tester.getTopLeft(simulate).dx;
+      final relearnX = tester
+          .getTopLeft(find.byKey(const Key('midi_relearn')))
+          .dx;
+      final removeX = tester
+          .getTopLeft(find.byKey(const Key('midi_remove')))
+          .dx;
+      expect(simulateX, lessThan(relearnX));
+      expect(relearnX, lessThan(removeX));
+    });
+
+    testWidgets('tapping Simulate drives the pipeline with no device', (
+      tester,
+    ) async {
+      await pump(tester); // no connection
+      await control.setControllerBindings(mappings());
+      await showMidi(tester);
+
+      final sweep = control.state.controllerBindings.bindings
+          .whereType<ContinuousBinding>()
+          .single; // the master-gain sweep
+      await tester.tap(
+        find.byKey(Key('midi_mapping_${sweep.trigger}_${sweep.target}')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('midi_simulate')));
+      // Drain the synthetic sweep on the fake clock.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      // The synthetic sweep reached the rig — with nothing plugged in.
+      verify(() => looper.setMasterGain(any())).called(greaterThan(0));
+    });
+
+    testWidgets('the global Simulate button dims with nowhere to route', (
+      tester,
+    ) async {
+      await pump(tester, connection: connected);
+      await control.setControllerBindings(mappings());
+      await showMidi(tester);
+
+      final global = find.byKey(const Key('midi_simulate_global'));
+      expect(global, findsOneWidget);
+      // Nothing is open and no capture is listening: it has nowhere to send a
+      // synthetic event, so it renders inert.
+      expect(tester.widget<ConsoleActionChip>(global).onPressed, isNull);
+
+      // Open a mapping row: now the global button routes to it.
+      final sweep = control.state.controllerBindings.bindings
+          .whereType<ContinuousBinding>()
+          .single;
+      await tester.tap(
+        find.byKey(Key('midi_mapping_${sweep.trigger}_${sweep.target}')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<ConsoleActionChip>(global).onPressed,
+        isNotNull,
+        reason: 'an open row is a route',
       );
     });
   });

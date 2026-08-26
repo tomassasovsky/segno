@@ -287,6 +287,18 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
     final name = connection.selectedName;
     final live = connection.status == MidiConnectionStatus.connected;
 
+    // The global "Simulate input" routes where a real event would land: a
+    // listening learn capture first, else the open mapping row. With neither it
+    // has nowhere to go, so it renders dimmed rather than firing into the void.
+    final control = context.watch<ControlCubit>();
+    final openKey = _openKey;
+    final canSimulate =
+        control.state.controllerLearn != null ||
+        (openKey != null &&
+            control.state.controllerBindings.bindings.any(
+              (binding) => binding.key == openKey,
+            ));
+
     final (
       String message,
       ConsoleBannerTone tone,
@@ -342,6 +354,26 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
                   ),
                 )
               : const SizedBox(width: double.infinity),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(
+            kConsoleRowInset,
+          ).copyWith(top: kConsoleBlockGap, bottom: kConsoleBlockGap),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              ConsoleActionChip(
+                key: const Key('midi_simulate_global'),
+                label: l10n.midiSimulateGlobal,
+                accent: true,
+                onPressed: canSimulate
+                    ? () => context.read<ControlCubit>().simulateStatusRow(
+                        _openKey,
+                      )
+                    : null,
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -841,6 +873,18 @@ class _MappingRow extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                ConsoleActionChip(
+                  key: const Key('midi_simulate'),
+                  label: l10n.midiSimulate,
+                  accent: true,
+                  // No `connected` gate — proving a mapping with NOTHING
+                  // attached is the whole point. Inert only when the target is
+                  // stale: there is nothing for the synthetic event to move.
+                  onPressed: stale
+                      ? null
+                      : () => cubit.simulateMapping(binding),
+                ),
+                const SizedBox(width: 10),
                 ConsoleActionChip(
                   key: const Key('midi_relearn'),
                   label: l10n.midiLearnRelearn,

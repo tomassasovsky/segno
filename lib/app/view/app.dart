@@ -62,6 +62,7 @@ class App extends StatelessWidget {
     required this.sessionRepository,
     required this.performanceRepository,
     required this.exportDirectory,
+    this.simulatedControllerSource,
     this.pedalRepository,
     this.pedalSimulator,
     this.displayCount,
@@ -103,6 +104,12 @@ class App extends StatelessWidget {
 
   /// The shared controller repository (MIDI → looper actions).
   final ControllerRepository controllerRepository;
+
+  /// The push seam behind "Simulate input" (#519), registered in
+  /// [controllerRepository]'s sources. Handed to [ControlCubit] so a mapping
+  /// can prove itself with no controller attached. `null` (the default) in a
+  /// test that wires no simulation — the affordance is then inert.
+  final SimulatedControllerSource? simulatedControllerSource;
 
   /// The MIDI input device repository (owns the foot-controller lifecycle). It
   /// borrows the long-lived native MIDI source from [controllerRepository] and
@@ -425,6 +432,7 @@ class App extends StatelessWidget {
                 // that owns controller intent.
                 controller: context.read<ControllerRepository>(),
                 midiDevices: context.read<MidiDeviceRepository>(),
+                simulatedSource: simulatedControllerSource,
               );
               unawaited(cubit.load()); // boot-default mode restore
               return cubit;
