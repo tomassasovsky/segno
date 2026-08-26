@@ -9741,8 +9741,8 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
      * depends on outrunning the drain — under load it loses that race
      * (#823) — so NO assertion depends on it: the zero-fill proof runs off
      * the hook's forced gap, and this burst's real drops only add to the
-     * same counter. The note printed after the snapshot below keeps the
-     * coverage visible when the race is lost. Latched best-effort; a
+     * same counter. The notes printed after the snapshot below keep the
+     * coverage visible whenever it sat a run out. Latched best-effort; a
      * starved poll that watches cycles jump past the window skips it,
      * costing that run the burst's coverage and nothing else. */
     if (!burst_pushed_once && atomic_load(&ctx.cycles) >= 4) {
@@ -9766,7 +9766,8 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   }
   CHECK(observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES);
 
-  const int disarmed = (le_perf_disarm(e) == LE_OK); /* joins the drain thread */
+  /* Joins the drain thread. */
+  const int disarmed = (le_perf_disarm(e) == LE_OK);
   CHECK(disarmed);
   le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
 
@@ -9783,28 +9784,44 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   /* The zero-fill really ran, and completely: the whole forced gap must come
    * back as padded frames (the final pass's top-up makes the floor exact),
    * with the burst's real drops, when it won its race, only adding on top.
-   * Gated on cadence: without cycle 4 there IS no forced gap, and that
-   * failure is already reported above as what it is. */
-  if (observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES) {
+   * Gated on cadence (without cycle 4 there IS no forced gap) AND on the
+   * disarm having joined (the floor's exactness needs the final pass, which
+   * a failed disarm never ran) — both of those failures are already
+   * reported above as what they are. */
+  if (disarmed && observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES) {
     CHECK(s.perf_zero_filled_frames >= LE_TEST_ALLOC_GAP_FRAMES);
   }
-  if (s.perf_overruns == 0) {
+  /* Two distinct ways the production-geometry drop coverage can silently sit
+   * out a run: the latch never armed (a starved poll watched cycles jump
+   * past the window), or the burst ran but lost its race with the drain.
+   * perf_overruns alone cannot tell the second from steady-tick drops under
+   * a stretched cycle, so report the latch separately. */
+  if (!burst_pushed_once) {
+    printf(
+        "  note: the overflow burst was never pushed this run — "
+        "production-geometry drop coverage did not execute\n");
+  } else if (s.perf_overruns == 0) {
     printf(
         "  note: the burst never overflowed the ring this run — "
         "production-geometry drop coverage did not execute\n");
   }
 
-  if (atomic_load(&g_test_alloc_count) != 0) {
-    printf("  drain thread allocated %d time(s), largest %zu bytes\n",
-          atomic_load(&g_test_alloc_count),
-          atomic_load(&g_test_alloc_largest));
+  /* The two no-allocation verdicts need the drain thread joined: with a
+   * failed disarm the counters are still live and the disarm CHECK above has
+   * already reported the fixture failure. */
+  if (disarmed) {
+    if (atomic_load(&g_test_alloc_count) != 0) {
+      printf("  drain thread allocated %d time(s), largest %zu bytes\n",
+            atomic_load(&g_test_alloc_count),
+            atomic_load(&g_test_alloc_largest));
+    }
+    CHECK(atomic_load(&g_test_alloc_count) == 0);
+    if (atomic_load(&g_test_stdio_open_count) != 0) {
+      printf("  drain thread called fopen %d time(s)\n",
+            atomic_load(&g_test_stdio_open_count));
+    }
+    CHECK(atomic_load(&g_test_stdio_open_count) == 0);
   }
-  CHECK(atomic_load(&g_test_alloc_count) == 0);
-  if (atomic_load(&g_test_stdio_open_count) != 0) {
-    printf("  drain thread called fopen %d time(s)\n",
-          atomic_load(&g_test_stdio_open_count));
-  }
-  CHECK(atomic_load(&g_test_stdio_open_count) == 0);
   /* Nothing to unset: the flag lived on the drain thread, which the disarm
    * above already joined. */
 
@@ -9814,7 +9831,11 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   /* else: leak the engine. A failed disarm leaves the drain thread alive, and
    * a hook call already in flight may still read ctx->e — freeing it here
    * would turn one reported CHECK failure into a use-after-free. The static
-   * ctx above survives for the same reason. */
+   * ctx above survives for the same reason. Collateral to know about when
+   * reading such a run: the rogue thread keeps writing master.pcm/events.log
+   * and rewriting performance.json in the SHARED perf_test_dir() every
+   * flush, so later perf tests' file assertions may fail as fallout of THIS
+   * disarm failure, not on their own account. */
 #endif
 }
 
