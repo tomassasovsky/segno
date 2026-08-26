@@ -9,7 +9,7 @@ const double kMinDisplayBrightness = 0.1;
 /// Where the brightness starts, and what a double tap on the capsule puts it
 /// back to. Matches `DisplayBrightnessCubit`'s own initial state and the tray
 /// state's — one number, so "default" cannot come to mean two things.
-const double kDefaultDisplayBrightness = 0.8;
+const double kDefaultDisplayBrightness = 1;
 
 /// Clamps [brightness] into `[kMinDisplayBrightness, 1.0]`.
 double clampDisplayBrightness(double brightness) =>

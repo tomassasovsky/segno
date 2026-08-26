@@ -563,13 +563,15 @@ void main() {
       // 100% — sits hard against the capsule's left edge and shifts under the
       // thumb dragging it.
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      final at80 = find.text(l10n.trayBrightnessPercent(80));
-      expect(tester.widget<Text>(at80).textAlign, TextAlign.center);
+      final readout = find.text(
+        l10n.trayBrightnessPercent((kDefaultDisplayBrightness * 100).round()),
+      );
+      expect(tester.widget<Text>(readout).textAlign, TextAlign.center);
 
       final capsule = tester.getRect(
         find.byKey(const Key('settingsTray_brightness')),
       );
-      final text = tester.getRect(at80);
+      final text = tester.getRect(readout);
       expect(text.center.dx, closeTo(capsule.center.dx, 0.5));
     });
 
@@ -800,7 +802,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('exposes the state default (0.8) as an 80% semantics value', (
+    testWidgets('exposes the state default as a 100% semantics value', (
       tester,
     ) async {
       final handle = tester.ensureSemantics();
@@ -817,7 +819,7 @@ void main() {
         isSemantics(
           isSlider: true,
           label: 'Brightness',
-          value: '80%',
+          value: '${(kDefaultDisplayBrightness * 100).round()}%',
           hasIncreaseAction: true,
           hasDecreaseAction: true,
         ),
@@ -837,7 +839,7 @@ void main() {
       await tester.drag(slider, const Offset(0, 100));
       await tester.pump();
 
-      expect(cubit.state.brightness, lessThan(0.8));
+      expect(cubit.state.brightness, lessThan(kDefaultDisplayBrightness));
     });
 
     testWidgets('dragging up (toward the top) raises the value', (
@@ -938,7 +940,7 @@ void main() {
         await tester.tapAt(Offset(box.center.dx, box.top + box.height * 3 / 4));
         await tester.pump();
 
-        // The second tap's own spot, NOT the 0.8 default: two taps further
+        // The second tap's own spot, NOT the default: two taps further
         // apart than kDoubleTapSlop are never one double tap, and reading
         // them as a reset would throw the second one's position away. This
         // is the gate the old Slider-wrapping widget could not pass — its
@@ -984,9 +986,9 @@ void main() {
       await tester.tapAt(spot);
       await tester.pump();
 
-      // A 0.325 → 0.8 snap is a visible jump on a screen someone may be
-      // squinting at BECAUSE the brightness is wrong. The same confirmation
-      // ConsoleValueBar gives.
+      // A 0.325 → full-brightness snap is a visible jump on a screen someone
+      // may be squinting at BECAUSE the brightness is wrong. The same
+      // confirmation ConsoleValueBar gives.
       expect(haptics, isNotEmpty);
     });
 

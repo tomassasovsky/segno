@@ -835,8 +835,8 @@ void main() {
   });
 
   group('brightness', () {
-    test('defaults to 0.8 when unset', () async {
-      expect(await repository.loadBrightness(), 0.8);
+    test('defaults to full brightness (1.0) when unset', () async {
+      expect(await repository.loadBrightness(), 1.0);
     });
 
     test('round-trips a saved preference and clamps', () async {

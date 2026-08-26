@@ -160,10 +160,9 @@ class _BrightnessCapsuleState extends State<BrightnessCapsule>
                   },
                   onTapUp: (_) {
                     if (spendReset()) {
-                      // A snap toward 0.8 can be a small visible move on a
-                      // screen someone is squinting at BECAUSE it is too dim
-                      // or too bright. The same confirmation the value bars
-                      // give.
+                      // A snap to full brightness can be a small visible move
+                      // on a screen someone is squinting at BECAUSE it is too
+                      // dim. The same confirmation the value bars give.
                       unawaited(HapticFeedback.selectionClick());
                       widget.onChanged(kDefaultDisplayBrightness);
                     }
