@@ -1,0 +1,88 @@
+#!/bin/sh
+# segno-wifi-retry -- give the saved WiFi network the second chance the boot
+# race denies it (#824).
+#
+# At boot, iwd can autoconnect off its own store in the window before
+# NetworkManager asserts control of wlan0. NM then kicks iwd off and starts its
+# own activation, which lands inside iwd's teardown and fails -- and NM maps
+# that backend failure to 'no-secrets', the one failure class it never retries.
+# Result: a console with a perfectly good saved network sits offline until a
+# human opens the Network tab, and the UI's wrong-password framing teaches them
+# to destroy the evidence by re-typing the password.
+#
+# This oneshot is the mechanism-independent half of the fix: shortly after
+# boot, if wlan0 is disconnected and a saved WiFi profile exists, re-activate
+# it -- exactly the "human pokes it" action, minus the human. It does not
+# depend on WHY the first attempt failed, so it also covers whatever the next
+# race turns out to be. The root-cause work (sweeping iwd's store of stale
+# non-mirrored networks; honest error mapping in the UI) stays with #824.
+#
+# Deliberately quiet and bounded: three attempts, then give up loudly (the
+# unit lands in systemctl --failed, and #810's persistent journal keeps the
+# whole story). Never touches profiles, never writes secrets, no-ops on a
+# console that is already online or has nothing saved.
+
+set -u
+
+TAG=segno-wifi-retry
+ATTEMPTS=3
+SETTLE=8      # seconds after start before the first check
+BETWEEN=5     # seconds between attempts
+
+log() { echo "$TAG: $*"; }
+
+command -v nmcli >/dev/null 2>&1 || { log "nmcli not present; nothing to do"; exit 0; }
+
+sleep "$SETTLE"
+
+# The owner turned WiFi off? Their call wins -- three doomed attempts and a
+# permanently red unit every boot would fight the Control Center toggle.
+if [ "$(nmcli radio wifi 2>/dev/null)" = "disabled" ]; then
+  log "wifi radio is off; respecting it"
+  exit 0
+fi
+
+for i in $(seq 1 "$ATTEMPTS"); do
+  # Already online on any WiFi device? Done.
+  if nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null \
+      | grep -q "^[^:]*:wifi:connected$"; then
+    log "wifi already connected; no retry needed"
+    exit 0
+  fi
+
+  # The most recently used saved WiFi profile, by UUID. UUIDs contain no
+  # colons, so nmcli's \:-escaping of names (which breaks awk -F: and quoting
+  # into `connection up`) never enters the picture. TIMESTAMP is the last
+  # successful activation, so a bench unit with several remembered networks
+  # retries the one the owner used last.
+  listing=$(nmcli -t -f UUID,TYPE,TIMESTAMP connection show 2>/dev/null)
+  if [ -z "$listing" ]; then
+    # NM briefly unresponsive is retryable -- do not mistake it for "nothing
+    # saved" and burn the whole budget on a clean exit.
+    log "attempt $i/$ATTEMPTS: NetworkManager not answering; will retry"
+    [ "$i" -lt "$ATTEMPTS" ] && sleep "$BETWEEN"
+    continue
+  fi
+
+  uuid=$(printf "%s\n" "$listing" \
+    | awk -F: '$2 == "802-11-wireless" { print $3 "\t" $1 }' \
+    | sort -rn | head -1 | cut -f2)
+
+  if [ -z "$uuid" ]; then
+    log "no saved wifi profile; nothing to retry"
+    exit 0
+  fi
+
+  log "attempt $i/$ATTEMPTS: activating $uuid"
+  # -w 20 bounds each attempt: worst case 8 + 3*20 + 2*5 = 78 s, honestly
+  # inside the unit's TimeoutStartSec=120 (nmcli's default 90 s wait was not:
+  # 8 + 3*90 + 2*5 = 288 s, and systemd would have killed attempt 2 mid-way).
+  if nmcli -w 20 connection up uuid "$uuid" >/dev/null 2>&1; then
+    log "$uuid activated on attempt $i"
+    exit 0
+  fi
+  [ "$i" -lt "$ATTEMPTS" ] && sleep "$BETWEEN"
+done
+
+log "gave up after $ATTEMPTS attempts"
+exit 1
