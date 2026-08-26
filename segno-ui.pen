@@ -4004,7 +4004,7 @@
       "clip": true,
       "width": 1920,
       "height": 1080,
-      "fill": "#0b0b0c",
+      "fill": "$fx-surface",
       "cornerRadius": 17,
       "stroke": "#2a2a2e",
       "strokeWidth": 1,
@@ -4141,7 +4141,7 @@
                   "id": "uHy9g",
                   "name": "button",
                   "context": "button",
-                  "fill": "#16233d",
+                  "fill": "$fx-surface",
                   "cornerRadius": 10,
                   "stroke": "#3b82f6",
                   "strokeWidth": 1,
@@ -4158,7 +4158,7 @@
                       "id": "tIqK2",
                       "name": "span",
                       "context": "span",
-                      "fill": "#3b82f6",
+                      "fill": "$fx",
                       "width": 11,
                       "height": 11
                     },
@@ -4167,7 +4167,7 @@
                       "id": "ElyvE",
                       "name": "FX",
                       "context": "span",
-                      "fill": "#3b82f6",
+                      "fill": "$fx",
                       "content": "FX",
                       "lineHeight": 1.14,
                       "textAlign": "center",
@@ -4405,7 +4405,7 @@
                       "id": "R3WRr",
                       "name": "div",
                       "context": "div",
-                      "fill": "#4cda4a",
+                      "fill": "#4cda4a66",
                       "width": "fill_container",
                       "height": 753.47
                     },
@@ -4527,6 +4527,169 @@
                       "fontSize": 26,
                       "fontWeight": "800",
                       "letterSpacing": 0.26
+                    },
+                    {
+                      "type": "frame",
+                      "id": "qzSNN",
+                      "layoutPosition": "absolute",
+                      "x": 0,
+                      "y": 0,
+                      "name": "FX dressing",
+                      "width": 467,
+                      "height": 994,
+                      "layout": "vertical",
+                      "gap": 22,
+                      "padding": [
+                        0,
+                        20,
+                        150,
+                        20
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "rW1HU",
+                          "name": "Chain name",
+                          "fill": "$text-primary",
+                          "content": "CRUSH BUS",
+                          "fontFamily": "$font-ui",
+                          "fontSize": 30,
+                          "fontWeight": "700",
+                          "letterSpacing": 0.5
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Zpara",
+                          "name": "Entry run",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "kErIY",
+                              "name": "Entry Drive",
+                              "fill": "$bg-control",
+                              "cornerRadius": 8,
+                              "stroke": "$border-subtle",
+                              "strokeWidth": 1,
+                              "padding": [
+                                8,
+                                14
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "UmqYz",
+                                  "name": "Entry label",
+                                  "fill": "$text-primary",
+                                  "content": "Drive",
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 18,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "w5NNxM",
+                              "name": "arrow",
+                              "fill": "$text-muted",
+                              "content": "→",
+                              "fontFamily": "$font-ui",
+                              "fontSize": 16,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "rp4qa",
+                              "name": "Entry Crush",
+                              "fill": "$bg-control",
+                              "cornerRadius": 8,
+                              "stroke": "$border-subtle",
+                              "strokeWidth": 1,
+                              "padding": [
+                                8,
+                                14
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "DKfJn",
+                                  "name": "Entry label",
+                                  "fill": "$text-primary",
+                                  "content": "Crush",
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 18,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "OHaqL",
+                              "name": "arrow",
+                              "fill": "$text-muted",
+                              "content": "→",
+                              "fontFamily": "$font-ui",
+                              "fontSize": 16,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "OLOlo",
+                              "name": "Entry Filter",
+                              "fill": "$bg-control",
+                              "cornerRadius": 8,
+                              "stroke": "$border-subtle",
+                              "strokeWidth": 1,
+                              "padding": [
+                                8,
+                                14
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "dPMRp",
+                                  "name": "Entry label",
+                                  "fill": "$text-primary",
+                                  "content": "Filter",
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 18,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "I5vklI",
+                          "name": "State ON",
+                          "fill": "$fx",
+                          "cornerRadius": "$radius-pill",
+                          "padding": [
+                            16,
+                            46
+                          ],
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "lr8R9",
+                              "name": "State label",
+                              "fill": "$text-on-accent",
+                              "content": "ON",
+                              "fontFamily": "$font-ui",
+                              "fontSize": 40,
+                              "fontWeight": "800",
+                              "letterSpacing": 1.4
+                            }
+                          ]
+                        }
+                      ]
                     }
                   ]
                 },
@@ -4572,7 +4735,7 @@
                       "id": "Skw9p",
                       "name": "div",
                       "context": "div",
-                      "fill": "#4cda4a",
+                      "fill": "#4cda4a66",
                       "width": "fill_container",
                       "height": 755
                     },
@@ -4694,6 +4857,134 @@
                       "fontSize": 26,
                       "fontWeight": "800",
                       "letterSpacing": 0.26
+                    },
+                    {
+                      "type": "frame",
+                      "id": "PPBXc",
+                      "layoutPosition": "absolute",
+                      "x": 0,
+                      "y": 0,
+                      "name": "FX dressing",
+                      "width": 467,
+                      "height": 994,
+                      "layout": "vertical",
+                      "gap": 22,
+                      "padding": [
+                        0,
+                        20,
+                        150,
+                        20
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "C0wImw",
+                          "name": "Chain name",
+                          "fill": "$text-primary",
+                          "content": "SUB DRIVE",
+                          "fontFamily": "$font-ui",
+                          "fontSize": 30,
+                          "fontWeight": "700",
+                          "letterSpacing": 0.5
+                        },
+                        {
+                          "type": "frame",
+                          "id": "d16ozN",
+                          "name": "Entry run",
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "kIStE",
+                              "name": "Entry Comp",
+                              "fill": "$bg-control",
+                              "cornerRadius": 8,
+                              "stroke": "$border-subtle",
+                              "strokeWidth": 1,
+                              "padding": [
+                                8,
+                                14
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "IG8Sv",
+                                  "name": "Entry label",
+                                  "fill": "$text-primary",
+                                  "content": "Comp",
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 18,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "g0Afw",
+                              "name": "arrow",
+                              "fill": "$text-muted",
+                              "content": "→",
+                              "fontFamily": "$font-ui",
+                              "fontSize": 16,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "QGBLR",
+                              "name": "Entry Drive",
+                              "fill": "$bg-control",
+                              "cornerRadius": 8,
+                              "stroke": "$border-subtle",
+                              "strokeWidth": 1,
+                              "padding": [
+                                8,
+                                14
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "DnHWg",
+                                  "name": "Entry label",
+                                  "fill": "$text-primary",
+                                  "content": "Drive",
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 18,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "VB2yb",
+                          "name": "State ON",
+                          "fill": "$fx",
+                          "cornerRadius": "$radius-pill",
+                          "padding": [
+                            16,
+                            46
+                          ],
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "z18WU",
+                              "name": "State label",
+                              "fill": "$text-on-accent",
+                              "content": "ON",
+                              "fontFamily": "$font-ui",
+                              "fontSize": 40,
+                              "fontWeight": "800",
+                              "letterSpacing": 1.4
+                            }
+                          ]
+                        }
+                      ]
                     }
                   ]
                 },
@@ -4739,7 +5030,7 @@
                       "id": "BIwF2",
                       "name": "div",
                       "context": "div",
-                      "fill": "#ffffff",
+                      "fill": "#ffffff66",
                       "width": "fill_container",
                       "height": 600.16
                     },
@@ -4880,6 +5171,171 @@
                       "fontSize": 26,
                       "fontWeight": "800",
                       "letterSpacing": 0.26
+                    },
+                    {
+                      "type": "frame",
+                      "id": "gKVVq",
+                      "layoutPosition": "absolute",
+                      "x": 0,
+                      "y": 0,
+                      "name": "FX dressing",
+                      "width": 467,
+                      "height": 994,
+                      "layout": "vertical",
+                      "gap": 22,
+                      "padding": [
+                        0,
+                        20,
+                        150,
+                        20
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "D5ZNfM",
+                          "name": "Chain name",
+                          "fill": "$text-secondary",
+                          "content": "SHIMMER VERB",
+                          "fontFamily": "$font-ui",
+                          "fontSize": 30,
+                          "fontWeight": "700",
+                          "letterSpacing": 0.5
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Cc5cT",
+                          "name": "Entry run",
+                          "opacity": 0.5,
+                          "gap": 8,
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "f21Gc2",
+                              "name": "Entry Chorus",
+                              "fill": "$bg-control",
+                              "cornerRadius": 8,
+                              "stroke": "$border-subtle",
+                              "strokeWidth": 1,
+                              "padding": [
+                                8,
+                                14
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "JWwBQ",
+                                  "name": "Entry label",
+                                  "fill": "$text-primary",
+                                  "content": "Chorus",
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 18,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "FkOOK",
+                              "name": "arrow",
+                              "fill": "$text-muted",
+                              "content": "→",
+                              "fontFamily": "$font-ui",
+                              "fontSize": 16,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "KkW7E",
+                              "name": "Entry Verb",
+                              "fill": "$bg-control",
+                              "cornerRadius": 8,
+                              "stroke": "$border-subtle",
+                              "strokeWidth": 1,
+                              "padding": [
+                                8,
+                                14
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "KPpYR",
+                                  "name": "Entry label",
+                                  "fill": "$text-primary",
+                                  "content": "Verb",
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 18,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "text",
+                              "id": "dw8Et",
+                              "name": "arrow",
+                              "fill": "$text-muted",
+                              "content": "→",
+                              "fontFamily": "$font-ui",
+                              "fontSize": 16,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "PUF1T",
+                              "name": "Entry Delay",
+                              "fill": "$bg-control",
+                              "cornerRadius": 8,
+                              "stroke": "$border-subtle",
+                              "strokeWidth": 1,
+                              "padding": [
+                                8,
+                                14
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "QzDI2",
+                                  "name": "Entry label",
+                                  "fill": "$text-primary",
+                                  "content": "Delay",
+                                  "fontFamily": "$font-ui",
+                                  "fontSize": 18,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "y7I8t",
+                          "name": "State OFF",
+                          "cornerRadius": "$radius-pill",
+                          "stroke": "$border-strong",
+                          "strokeWidth": 2,
+                          "padding": [
+                            16,
+                            46
+                          ],
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "A4eQ5M",
+                              "name": "State label",
+                              "fill": "$text-muted",
+                              "content": "OFF",
+                              "fontFamily": "$font-ui",
+                              "fontSize": 40,
+                              "fontWeight": "800",
+                              "letterSpacing": 1.4
+                            }
+                          ]
+                        }
+                      ]
                     }
                   ]
                 },
@@ -4933,6 +5389,49 @@
                       "fontSize": 26,
                       "fontWeight": "800",
                       "letterSpacing": 0.26
+                    },
+                    {
+                      "type": "frame",
+                      "id": "ZjMey",
+                      "layoutPosition": "absolute",
+                      "x": 0,
+                      "y": 0,
+                      "name": "FX dressing",
+                      "width": 467,
+                      "height": 994,
+                      "layout": "vertical",
+                      "gap": 22,
+                      "padding": [
+                        0,
+                        20,
+                        150,
+                        20
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "X3Ufq",
+                          "name": "No chain",
+                          "fill": "$text-muted",
+                          "content": "NO CHAIN",
+                          "fontFamily": "$font-ui",
+                          "fontSize": 28,
+                          "fontWeight": "700",
+                          "letterSpacing": 1
+                        },
+                        {
+                          "type": "text",
+                          "id": "PXM3C",
+                          "name": "Hint",
+                          "fill": "$text-muted",
+                          "content": "build one in Signal",
+                          "fontFamily": "$font-ui",
+                          "fontSize": 18,
+                          "fontWeight": "normal"
+                        }
+                      ]
                     }
                   ]
                 }
@@ -195935,7 +196434,7 @@
       "fill": "#9ea3b0",
       "textGrowth": "fixed-width",
       "width": 1800,
-      "content": "The mode chip turns accent; the pedal is addressing effects.",
+      "content": "#692 direction (owner, 2026-08-26): candidate A — transform in place — wins. Tile geometry, 1–8 key parity and the footswitch map stay frozen; the stage takes the FX surface; each tile re-dresses with chain identity. Grafted from candidate B: the per-chain power pill (the dominant state element per tile) and the entry-run line (entries in signal order). A won on spatial stability and reading distance; B was rejected because it re-maps the performer's space mid-song and duplicates Signal's editing-scale detail one tab away. The entry-run line is where #601's dim/strikethrough idiom applies to bypassed entries (tile 3 shows the whole-chain-off dim). Meters stay truthful (pre-chain) at 40% alpha — more present than the spike's 20%. FX mode colour is PURPLE, no longer accent blue: $fx #a06be0 + $fx-surface #1e1430 (flat, per #737) + $fx-wash #a06be024. WCAG (4.5:1 floor, 14px w700): fx on fx-surface 4.74:1, fx on bg-base 5.32:1, fx on stage black 5.67:1, fx on wash-over-bg 4.60:1. High-contrast flavor (where #768/#770 slipped): fx-hc #c9a8ff on fx-surface-hc #33245a 6.83:1, on black 10.53:1. The Dart theme change — SurfaceTheme modePair FX arm → purple across all three flavors (default/neon share SurfaceTheme.dark, plus highContrast), and every FX accent use on this surface — is owed by the #692 build.",
       "fontFamily": "Inter",
       "fontSize": 13,
       "fontWeight": "normal"
@@ -297708,6 +298207,18 @@
     "success-surface": {
       "type": "color",
       "value": "#30a46c24"
+    },
+    "fx": {
+      "type": "color",
+      "value": "#a06be0"
+    },
+    "fx-surface": {
+      "type": "color",
+      "value": "#1e1430"
+    },
+    "fx-wash": {
+      "type": "color",
+      "value": "#a06be024"
     }
   },
   "fileToken": "3574272e-02e8-49d8-87ea-b28681dc3a9f"
