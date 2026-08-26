@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:segno/appliance/software_brightness.dart';
+import 'package:segno/common/console_surface.dart';
 import 'package:segno/theme/theme.dart';
 
 /// One arrow-key press: `+1` up, `-1` down.
@@ -19,6 +22,15 @@ class _NudgeIntent extends Intent {
 /// you push its top edge up and down. A thumb would be a second thing to aim
 /// at on a control whose whole surface is already the target, and at 79px
 /// wide on a floor console the surface is the point.
+///
+/// A double tap — the same spot twice, inside the window — snaps back to
+/// [kDefaultDisplayBrightness], the gesture every other console control with
+/// a default got in #617 and this one missed (#623). It missed because the
+/// old widget wrapped a Material `Slider`, whose drag recognizer resolves the
+/// arena on pointer-DOWN and forced the reset onto a raw `Listener` that
+/// reported no faithful position. This capsule owns its gestures outright, so
+/// its `onTapDown` positions come from its own render box and the shared
+/// [ConsoleResetTap] window works here unmodified — dy where the bars use dx.
 class BrightnessCapsule extends StatefulWidget {
   /// Creates a [BrightnessCapsule].
   const BrightnessCapsule({
@@ -64,8 +76,12 @@ class BrightnessCapsule extends StatefulWidget {
   State<BrightnessCapsule> createState() => _BrightnessCapsuleState();
 }
 
-class _BrightnessCapsuleState extends State<BrightnessCapsule> {
+class _BrightnessCapsuleState extends State<BrightnessCapsule>
+    with ConsoleResetTap<BrightnessCapsule> {
   final _focus = FocusNode(debugLabel: 'BrightnessCapsule');
+
+  @override
+  bool get hasReset => true;
 
   @override
   void dispose() {
@@ -137,6 +153,24 @@ class _BrightnessCapsuleState extends State<BrightnessCapsule> {
                     // Focus on tap, so the arrow keys reach it without a
                     // Tab-hunt on a desktop build.
                     _focus.requestFocus();
+                    // The second tap of a pair means "put it back", not "put
+                    // it here" — arming skips the tap's own position.
+                    if (armReset(d.localPosition.dy)) return;
+                    _setFromLocal(d.localPosition.dy, height);
+                  },
+                  onTapUp: (_) {
+                    if (spendReset()) {
+                      // A snap to full brightness can be a small visible move
+                      // on a screen someone is squinting at BECAUSE it is too
+                      // dim. The same confirmation the value bars give.
+                      unawaited(HapticFeedback.selectionClick());
+                      widget.onChanged(kDefaultDisplayBrightness);
+                    }
+                  },
+                  onTapCancel: dropReset,
+                  onVerticalDragStart: (d) {
+                    // A drag is not the first half of a double tap.
+                    closeResetWindow();
                     _setFromLocal(d.localPosition.dy, height);
                   },
                   onVerticalDragUpdate: (d) =>

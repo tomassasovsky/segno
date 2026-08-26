@@ -467,9 +467,11 @@ class SettingsRepository {
 
   static const String _brightnessKey = 'ui.brightness';
 
-  /// Console display brightness (`0..1`). Defaults to `0.8` when unset.
+  /// Console display brightness (`0..1`). Defaults to `1.0` when unset —
+  /// the same number as the app's `kDefaultDisplayBrightness`, which this
+  /// package cannot import (it must not depend on the app).
   Future<double> loadBrightness() async =>
-      (await _store.getDouble(_brightnessKey) ?? 0.8).clamp(0.0, 1.0);
+      (await _store.getDouble(_brightnessKey) ?? 1.0).clamp(0.0, 1.0);
 
   /// Saves console display brightness (`0..1`).
   Future<void> saveBrightness(double value) =>

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc_test/bloc_test.dart';
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
 import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
 import 'package:segno/common/pen_icons.dart';
@@ -561,13 +563,15 @@ void main() {
       // 100% — sits hard against the capsule's left edge and shifts under the
       // thumb dragging it.
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      final at80 = find.text(l10n.trayBrightnessPercent(80));
-      expect(tester.widget<Text>(at80).textAlign, TextAlign.center);
+      final readout = find.text(
+        l10n.trayBrightnessPercent((kDefaultDisplayBrightness * 100).round()),
+      );
+      expect(tester.widget<Text>(readout).textAlign, TextAlign.center);
 
       final capsule = tester.getRect(
         find.byKey(const Key('settingsTray_brightness')),
       );
-      final text = tester.getRect(at80);
+      final text = tester.getRect(readout);
       expect(text.center.dx, closeTo(capsule.center.dx, 0.5));
     });
 
@@ -798,7 +802,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('exposes the state default (0.8) as an 80% semantics value', (
+    testWidgets('exposes the state default as a 100% semantics value', (
       tester,
     ) async {
       final handle = tester.ensureSemantics();
@@ -815,7 +819,7 @@ void main() {
         isSemantics(
           isSlider: true,
           label: 'Brightness',
-          value: '80%',
+          value: '${(kDefaultDisplayBrightness * 100).round()}%',
           hasIncreaseAction: true,
           hasDecreaseAction: true,
         ),
@@ -835,7 +839,7 @@ void main() {
       await tester.drag(slider, const Offset(0, 100));
       await tester.pump();
 
-      expect(cubit.state.brightness, lessThan(0.8));
+      expect(cubit.state.brightness, lessThan(kDefaultDisplayBrightness));
     });
 
     testWidgets('dragging up (toward the top) raises the value', (
@@ -869,6 +873,123 @@ void main() {
       // clamped to 0.1..1 by construction, so a range assertion here
       // passes whatever the tap does.
       expect(cubit.state.brightness, closeTo(0.55, 0.001));
+    });
+
+    testWidgets('a double tap snaps brightness back to its default', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+      await openBrightness(tester);
+
+      final box = tester.getRect(
+        find.byKey(const Key('settingsTray_brightness')),
+      );
+      // Three quarters DOWN the capsule — 0.325, nowhere near the default,
+      // so the reset is distinguishable from the taps that ask for it.
+      final spot = Offset(box.center.dx, box.top + box.height * 3 / 4);
+      await tester.tapAt(spot);
+      await tester.pump();
+      expect(cubit.state.brightness, closeTo(0.325, 0.001));
+
+      // The same tap twice, inside the double-tap window.
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tapAt(spot);
+      await tester.pump();
+
+      expect(
+        cubit.state.brightness,
+        closeTo(kDefaultDisplayBrightness, 0.001),
+      );
+    });
+
+    testWidgets(
+      'a single tap keeps the tapped value once the window lapses — no reset',
+      (tester) async {
+        cubit.open();
+        await pump(tester);
+        await tester.pumpAndSettle();
+        await openBrightness(tester);
+
+        final box = tester.getRect(
+          find.byKey(const Key('settingsTray_brightness')),
+        );
+        await tester.tapAt(Offset(box.center.dx, box.top + box.height * 3 / 4));
+        // Let the double-tap window lapse rather than leaving a live timer.
+        await tester.pump(kDoubleTapTimeout * 2);
+
+        expect(cubit.state.brightness, closeTo(0.325, 0.001));
+      },
+    );
+
+    testWidgets(
+      'two taps far apart are two adjustments, not a reset — the second one '
+      'lands where it was aimed',
+      (tester) async {
+        cubit.open();
+        await pump(tester);
+        await tester.pumpAndSettle();
+        await openBrightness(tester);
+
+        final box = tester.getRect(
+          find.byKey(const Key('settingsTray_brightness')),
+        );
+        await tester.tapAt(Offset(box.center.dx, box.top + box.height / 4));
+        await tester.pump(const Duration(milliseconds: 40));
+        await tester.tapAt(Offset(box.center.dx, box.top + box.height * 3 / 4));
+        await tester.pump();
+
+        // The second tap's own spot, NOT the default: two taps further
+        // apart than kDoubleTapSlop are never one double tap, and reading
+        // them as a reset would throw the second one's position away. This
+        // is the gate the old Slider-wrapping widget could not pass — its
+        // Listener reported one constant position for every tap (#623).
+        expect(cubit.state.brightness, closeTo(0.325, 0.001));
+        await tester.pump(kDoubleTapTimeout * 2);
+      },
+    );
+
+    testWidgets('the reset confirms itself under the finger', (tester) async {
+      final haptics = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'HapticFeedback.vibrate') {
+            haptics.add(call.arguments as String? ?? '');
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+
+      cubit.open();
+      await pump(tester);
+      await tester.pumpAndSettle();
+      await openBrightness(tester);
+
+      final box = tester.getRect(
+        find.byKey(const Key('settingsTray_brightness')),
+      );
+      final spot = Offset(box.center.dx, box.top + box.height * 3 / 4);
+      await tester.tapAt(spot);
+      await tester.pump(kDoubleTapTimeout * 2);
+      expect(haptics, isEmpty);
+
+      await tester.tapAt(spot);
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tapAt(spot);
+      await tester.pump();
+
+      // A 0.325 → full-brightness snap is a visible jump on a screen someone
+      // may be squinting at BECAUSE the brightness is wrong. The same
+      // confirmation ConsoleValueBar gives.
+      expect(haptics, isNotEmpty);
     });
 
     testWidgets('the arrow-up key increases the value by the 5% step', (
