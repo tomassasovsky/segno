@@ -9570,12 +9570,12 @@ static void test_perf_sidecar_bytes_are_exact(void) {
  *
  * SCOPE, precisely: the cycles are driven hard enough to take
  * le_pd_drain_ring's loop-again branch (more than LE_PD_SCRATCH_SAMPLES
- * available per cycle) and, once, le_pd_catch_up's chunked zero-fill from an
- * un-backed gap cycle 4's hook forces directly (#823) — with a best-effort
- * real ring-overflow burst layered on top for production-geometry coverage.
- * It does NOT cover le_pd_write_staged_layer — that needs a retired overdub
- * layer, and the layer tests below cover that path's own allocation
- * handoff. */
+ * available per cycle) and, once, le_pd_catch_up's chunked zero-fill — from
+ * an un-backed gap that cycle 4's hook forces directly (#823), with a
+ * best-effort real ring-overflow burst layered on top for
+ * production-geometry coverage. It does NOT cover le_pd_write_staged_layer
+ * — that needs a retired overdub layer, and the layer tests below cover
+ * that path's own allocation handoff. */
 typedef struct {
   le_engine* e;       /* for the cycle-4 forced gap in the hook below */
   _Atomic int cycles; /* written by the drain thread, polled by the test one */
@@ -9594,11 +9594,13 @@ typedef struct {
  * emptying the ring in one short pop — while staying inside the ring's
  * LE_PERF_CAPTURE_SECONDS so nothing overruns except where this test asks. */
 #define LE_TEST_ALLOC_WATCH_FRAMES_PER_TICK 4096
-/* The forced gap, in frames: a handful of le_pd_catch_up's 1024-sample
- * kZeros chunks, so the CHUNKED loop demonstrably runs (a single chunk
- * would still satisfy a bare > 0 check after a bail-early regression).
- * Deliberately NO relationship to ring capacity — an un-backed gap of any
- * size pads; only the chunk size matters here. */
+/* The forced gap, in frames: four of le_pd_catch_up's 1024-sample kZeros
+ * chunks on this mono fixture, so padding it takes the chunk loop, not one
+ * memcpy. (The >= floor below pins that the WHOLE gap comes back as
+ * zero-fill; catch-up is re-entered every cycle, so it does NOT pin how
+ * many chunks any single call wrote.) Deliberately NO relationship to ring
+ * capacity — an un-backed gap of any size pads; only the chunk size
+ * matters here. */
 #define LE_TEST_ALLOC_GAP_FRAMES 4096
 
 /* Both helpers below serve only this test, so they live inside the same guard
@@ -9628,13 +9630,20 @@ static void perf_mid_cycle_watch_allocations(void* raw) {
    * HERE, on the drain thread, because it then happens iff cycles reach 4 —
    * which the cadence CHECK already demands — where a main-thread bump (or
    * the racing burst alone) can be skipped or lost under load (#823). This
-   * cycle's catch-up sampled elapsed before the ring drain (#718), so the
-   * pad lands in cycle 5, fully inside the counted window. Side effect,
-   * deliberate and unasserted: every later frame tag and the sidecar's
-   * capture_frames run LE_TEST_ALLOC_GAP_FRAMES ahead of the audio actually
-   * pushed. Relaxed, unlike the short-ring stand-in's release: that one
-   * publishes frames it really pushed; this bump publishes no data, and the
-   * elapsed load it feeds runs on this same thread. */
+   * cycle's catch-up sampled elapsed before the ring drain (#710's
+   * load-bearing order), so padding starts in cycle 5 at the earliest; a
+   * mid-run cycle can pad less than the residue when its own pops overshoot
+   * the sampled elapsed, and it is the unconditional FINAL pass — same
+   * thread, counter still armed, no concurrent producer left — that closes
+   * the gap exactly. That top-up is what makes the >= floor below precise,
+   * so the final pass is load-bearing for it. Side effect, deliberate and
+   * unasserted: every later frame tag and the sidecar's capture_frames run
+   * LE_TEST_ALLOC_GAP_FRAMES ahead of the audio actually pushed. Relaxed,
+   * unlike the short-ring stand-in's release: that one publishes frames it
+   * really pushed, while this bump publishes no data — and being an RMW it
+   * continues the release sequence headed by the real tap's release
+   * fetch_add, so the drain's acquire load still synchronizes with the
+   * audio side exactly as before. */
   if (n == 4) {
     atomic_fetch_add_explicit(&ctx->e->a_perf_frames,
                               (uint64_t)LE_TEST_ALLOC_GAP_FRAMES,
@@ -9652,11 +9661,19 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   printf("  (skipped: allocator interposition unavailable on this build)\n");
 #else
   le_engine* e = le_engine_create();
-  /* Real ring: the steady per-tick pushes must never drop; the one
-   * deliberate burst below is the only thing allowed to. */
+  /* Real ring, sized so the steady per-tick pushes do not drop at the
+   * nominal 250 ms cadence (~800 ms of backlog headroom). A drain cycle
+   * stretched past that CAN still drop them — the 15 s budget tolerates
+   * cycles up to ~1.9 s — which is harmless here: nothing asserts on
+   * perf_overruns, and drops only add zero-fill on top of the forced gap. */
   le_engine_configure(e, 48000, 1, 1, 1000);
 
-  perf_alloc_watch_ctx ctx = {e, 0};
+  /* Static, not stack: if le_perf_disarm ever failed, the drain thread — and
+   * with it this hook — could outlive the test function's frame. See the
+   * matching leak-not-free at the bottom. */
+  static perf_alloc_watch_ctx ctx;
+  ctx.e = e;
+  atomic_store(&ctx.cycles, 0);
   le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_watch_allocations,
                                             &ctx);
 
@@ -9717,14 +9734,17 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
     push_frames_for_test(e, 0.25f, LE_TEST_ALLOC_WATCH_FRAMES_PER_TICK);
     /* Once, mid-run: hand the ring more than it can hold in a single tick.
      * COVERAGE, not the zero-fill proof: this is the suite's one
-     * production-geometry ring-full drive against the live drain thread
-     * (the tiny-ring overrun tests all run at sample_rate 4), worth keeping
-     * under the ASAN job. Whether it actually drops depends on outrunning
-     * the drain — under load it loses that race (#823) — so NO assertion
-     * depends on it: the zero-fill proof runs off the hook's forced gap,
-     * and this burst's real drops only add to the same counter. Latched
-     * best-effort; a starved poll that watches cycles jump past the window
-     * skips it, costing that run the burst's coverage and nothing else. */
+     * production-geometry ring-full drive against the live drain thread —
+     * the tiny-ring overrun tests all run at sample_rate 4. (Plain native
+     * runs only: the ASAN job compiles this whole test out, since the
+     * interposer is disabled under sanitizers.) Whether it actually drops
+     * depends on outrunning the drain — under load it loses that race
+     * (#823) — so NO assertion depends on it: the zero-fill proof runs off
+     * the hook's forced gap, and this burst's real drops only add to the
+     * same counter. The note printed after the snapshot below keeps the
+     * coverage visible when the race is lost. Latched best-effort; a
+     * starved poll that watches cycles jump past the window skips it,
+     * costing that run the burst's coverage and nothing else. */
     if (!burst_pushed_once && atomic_load(&ctx.cycles) >= 4) {
       burst_pushed_once = 1;
       push_frames_for_test(e, 0.25f, 48000 * (LE_PERF_CAPTURE_SECONDS + 1));
@@ -9746,22 +9766,33 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   }
   CHECK(observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES);
 
-  CHECK(le_perf_disarm(e) == LE_OK); /* joins the drain thread */
+  const int disarmed = (le_perf_disarm(e) == LE_OK); /* joins the drain thread */
+  CHECK(disarmed);
   le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
 
   /* LE_TEST_ALLOC_WATCH_CYCLES observed. Counting arms inside cycle 3's
    * mid-cycle hook, which fires after that cycle's ring drain, so cycle 3 is
    * counted from its second half only; cycles 4..LE_TEST_ALLOC_WATCH_CYCLES
    * are counted end to end, plus the final cycle le_pd_drain_thread_main runs
-   * on its way out — 6 whole cycles at the current constants. (The negative
-   * control that reintroduces the per-cycle 512 KB malloc reports 7
-   * allocations: those 6 plus cycle 3's counted half.) */
+   * on its way out — at least 6 whole cycles at the current constants, more
+   * whenever the poll loop overshoots its exit. (The negative control that
+   * reintroduces the per-cycle 512 KB malloc reports at least 7 allocations:
+   * those plus cycle 3's counted half.) */
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
-  /* The CHUNKED zero-fill really ran: at least the hook's forced gap — four
-   * kZeros chunks, so a bail-after-one-chunk regression cannot pass — and
-   * the burst's real drops, when it won its race, only add on top. */
-  CHECK(s.perf_zero_filled_frames >= LE_TEST_ALLOC_GAP_FRAMES);
+  /* The zero-fill really ran, and completely: the whole forced gap must come
+   * back as padded frames (the final pass's top-up makes the floor exact),
+   * with the burst's real drops, when it won its race, only adding on top.
+   * Gated on cadence: without cycle 4 there IS no forced gap, and that
+   * failure is already reported above as what it is. */
+  if (observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES) {
+    CHECK(s.perf_zero_filled_frames >= LE_TEST_ALLOC_GAP_FRAMES);
+  }
+  if (s.perf_overruns == 0) {
+    printf(
+        "  note: the burst never overflowed the ring this run — "
+        "production-geometry drop coverage did not execute\n");
+  }
 
   if (atomic_load(&g_test_alloc_count) != 0) {
     printf("  drain thread allocated %d time(s), largest %zu bytes\n",
@@ -9777,7 +9808,13 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   /* Nothing to unset: the flag lived on the drain thread, which the disarm
    * above already joined. */
 
-  le_engine_destroy(e);
+  if (disarmed) {
+    le_engine_destroy(e);
+  }
+  /* else: leak the engine. A failed disarm leaves the drain thread alive, and
+   * a hook call already in flight may still read ctx->e — freeing it here
+   * would turn one reported CHECK failure into a use-after-free. The static
+   * ctx above survives for the same reason. */
 #endif
 }
 
