@@ -90,6 +90,15 @@ class _FxParamCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    final style = signalMono(color: surface.textSecondary, size: 9);
+    final scaler = MediaQuery.textScalerOf(context);
+    // Exactly what one line of [style] measures: with a `height` multiplier
+    // set, a line is `height x fontSize`, scaled. Stated rather than measured
+    // so the name row's height is the same number on every font and engine
+    // version — the row must never claim more than the single line the
+    // pre-#500 layout reserved, or the value box below loses the slack it
+    // absorbs at raised text scales and overflows.
+    final nameLineHeight = scaler.scale(style.fontSize!) * style.height!;
     return SizedBox(
       width: FxParamTileMetrics.width,
       height: FxParamTileMetrics.height,
@@ -106,20 +115,23 @@ class _FxParamCell extends StatelessWidget {
             // them mid-word. `scaleDown` never enlarges, so a fitting name
             // renders at mono 9 exactly as before; the ConstrainedBox caps how
             // far the shrink can go — text past the cap ellipsizes rather than
-            // scaling below [FxParamTileMetrics.nameMinScale] of the 9pt face.
-            // The Align keeps the fit box shrink-wrapped: under the column's
-            // stretch a bare FittedBox takes the tile's full width and grows
-            // its height to match the child's aspect ratio, moving the row.
-            child: Align(
-              alignment: Alignment.centerLeft,
+            // scaling below [FxParamTileMetrics.nameMinScale] of the face. The
+            // cap scales with the text so the fits-whole set is the same set
+            // of names at every text scale. The SizedBox pins the row to the
+            // one-line height the layout has always reserved: the fit box can
+            // only shrink its child into that box, never grow the row and
+            // squeeze the value box below.
+            child: SizedBox(
+              height: nameLineHeight,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth:
-                        FxParamTileMetrics.width /
-                        FxParamTileMetrics.nameMinScale,
+                  constraints: BoxConstraints(
+                    maxWidth: scaler.scale(
+                      FxParamTileMetrics.width /
+                          FxParamTileMetrics.nameMinScale,
+                    ),
                   ),
                   child: Text(
                     // Uppercased for the same reason the DS specimens are, and
@@ -129,7 +141,7 @@ class _FxParamCell extends StatelessWidget {
                     spacedParamName(name),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: signalMono(color: surface.textSecondary, size: 9),
+                    style: style,
                   ),
                 ),
               ),
