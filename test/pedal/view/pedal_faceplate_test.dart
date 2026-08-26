@@ -155,7 +155,9 @@ void main() {
     );
     if (bind) {
       await cubit.selectOutput(_onScreenPedal);
-      await tester.pumpAndSettle();
+      // The live plate's idle ring breathes on a repeating ticker, so
+      // pumpAndSettle never returns. One pump flushes the bind.
+      await tester.pump();
     }
     return (cubit, sim);
   }
@@ -171,7 +173,7 @@ void main() {
         expect(find.byKey(_recPlayKey), findsNothing);
 
         await cubit.selectOutput(_onScreenPedal);
-        await tester.pumpAndSettle();
+        await tester.pump();
         // Bound: the plate, with the main screen embedded and switches present.
         expect(find.byKey(const Key('pedalFaceplate')), findsOneWidget);
         expect(find.byKey(_recPlayKey), findsOneWidget);
@@ -277,16 +279,6 @@ void main() {
       expect(find.text('5'), findsNothing); // no visible track label
     });
 
-    testWidgets('the ring shows the global activity color', (tester) async {
-      final (_, sim) = await pumpFaceplate(tester);
-      sim.send(PedalCodec.encodeFrame(_frame(globalColor: GlobalColor.red)));
-      await tester.pump();
-
-      final ring = tester.widget<Container>(find.byKey(_encoderKey));
-      final border = (ring.decoration! as BoxDecoration).border! as Border;
-      expect(border.top.color, SurfaceTheme.dark.ledRed);
-    });
-
     Color ringBorderColor(WidgetTester tester) =>
         ((tester.widget<Container>(find.byKey(_encoderKey)).decoration!
                         as BoxDecoration)
@@ -295,36 +287,101 @@ void main() {
             .top
             .color;
 
-    testWidgets('the ring animates to off once the loop is cleared', (
-      tester,
-    ) async {
-      final (_, sim) = await pumpFaceplate(tester);
+    PedalLedRingPainter ringPainter(WidgetTester tester) =>
+        tester
+                .widget<CustomPaint>(
+                  find.byKey(const Key('pedalFaceplate_ring')),
+                )
+                .painter!
+            as PedalLedRingPainter;
 
-      // Playing: the ring is lit in the activity colour.
+    testWidgets('idle ring breathes in green with no playhead', (tester) async {
+      final (_, sim) = await pumpFaceplate(tester);
+      sim.send(PedalCodec.encodeFrame(_frame()));
+      await tester.pump();
+
+      expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
+      final painter = ringPainter(tester);
+      expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
+      expect(painter.progress, isNull);
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(ringPainter(tester).breathe, greaterThan(0));
+    });
+
+    testWidgets('REC mode looping: green ring, red playhead', (tester) async {
+      final (_, sim) = await pumpFaceplate(tester);
       sim.send(
         PedalCodec.encodeFrame(
-          _frame(globalColor: GlobalColor.green, loopLengthMicros: 1000000),
+          _frame(
+            globalColor: GlobalColor.red,
+            loopLengthMicros: 1000000,
+          ),
         ),
       );
       await tester.pump();
-      expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
 
-      // Cleared: activity off with no loop left — the ring goes dark (off).
-      sim.send(PedalCodec.encodeFrame(_frame()));
-      await tester.pump();
-      expect(ringBorderColor(tester), SurfaceTheme.dark.ledOff);
+      expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
+      final painter = ringPainter(tester);
+      expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
+      expect(painter.headColor, SurfaceTheme.dark.ledRed);
+      expect(painter.progress, isNotNull);
     });
 
-    testWidgets('a stop with a loop still loaded keeps the ring glow', (
+    testWidgets('MUTE mode looping: green ring, green playhead', (
+      tester,
+    ) async {
+      final (_, sim) = await pumpFaceplate(tester);
+      sim.send(
+        PedalCodec.encodeFrame(
+          _frame(
+            globalColor: GlobalColor.green,
+            loopLengthMicros: 1000000,
+            mode: PedalMode.play,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
+      final painter = ringPainter(tester);
+      expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
+      expect(painter.headColor, SurfaceTheme.dark.ledGreen);
+      expect(painter.progress, isNotNull);
+    });
+
+    testWidgets(
+      'the ring returns to a green breathe once the loop is cleared',
+      (
+        tester,
+      ) async {
+        final (_, sim) = await pumpFaceplate(tester);
+
+        sim.send(
+          PedalCodec.encodeFrame(
+            _frame(globalColor: GlobalColor.green, loopLengthMicros: 1000000),
+          ),
+        );
+        await tester.pump();
+        expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
+        expect(ringPainter(tester).progress, isNotNull);
+
+        sim.send(PedalCodec.encodeFrame(_frame()));
+        await tester.pump();
+        expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
+        expect(ringPainter(tester).progress, isNull);
+      },
+    );
+
+    testWidgets('a stop with a loop still loaded keeps the green ring', (
       tester,
     ) async {
       final (_, sim) = await pumpFaceplate(tester);
 
-      // Off but a loop remains (a Stop, not a Clear): the ring keeps its idle
-      // glow rather than going fully dark.
+      // Off but a loop remains (a Stop, not a Clear): freeze, still green.
       sim.send(PedalCodec.encodeFrame(_frame(loopLengthMicros: 1000000)));
       await tester.pump();
-      expect(ringBorderColor(tester), SurfaceTheme.dark.ringGlow);
+      expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
+      expect(ringPainter(tester).progress, isNotNull);
     });
 
     testWidgets('the BANK LED lights on bank B', (tester) async {

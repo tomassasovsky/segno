@@ -71,8 +71,9 @@ static uint8_t g_sysexLen = 0;
 static bool g_inSysex = false;
 
 // Timestamp of the last loop-top pulse (0xFA) from segno. Currently unused:
-// v1's ring (see renderRing()) is a fixed-cadence sweep independent of loop
-// length. Reserved for a possible future loop-synced rendering mode.
+// v1's ring (see renderRing()) breathes when idle and sweeps a playhead
+// independent of loop length. Reserved for a possible future loop-synced
+// rendering mode.
 static unsigned long g_lastLoopTopMs = 0;
 
 // ---- button / encoder debounce state ----------------------------------------
@@ -197,11 +198,9 @@ static CRGB globalColor(uint8_t color) {
 // this in lockstep with the app's `_modeColor` in `pedal_plate.dart`.
 // No wire byte changes: the frame carries the 2-bit mode, never a colour.
 //
-// One call site, one meaning: the MODE LED. This used to tint the ring's idle
-// sweep too, which meant a colour change here rippled across the whole plate;
-// #693 cut that, so the ring is now colored by transport activity alone. The
-// app's `_modeColor` has the same single call site, so the on-screen plate is
-// a faithful twin of this function and a widget test covers it.
+// Two call sites, one meaning: the MODE LED, and the ring playhead once a
+// loop is running. The idle ring breathes in green with no distinguished
+// playhead — a red idle tick would read as a live take from stage distance.
 static CRGB modeColor(uint8_t mode) {
   switch (mode) {
     case PEDAL_MODE_PLAY:
@@ -218,75 +217,66 @@ static CRGB scaled(CRGB c, uint8_t level) {
   return c;
 }
 
-// A smooth brightness hump rotates around the ring: brightness =
-// 1 - (d/kRingWidth)^kRingShape, clamped to 0, where d is the circular distance
-// (in LEDs) from an advancing center. Independent of loop length. A Stop that
-// leaves a loop loaded FREEZES the ring in place (the phase stops advancing) so
-// the last playhead position stays lit; clearing the loop instead keeps the
-// hump advancing in the now-off color, so the ring animates to dark rather than
-// freezing a lit pixel. It never shows a blue idle dot. Tune: kRingMsPerRev
-// (lower = faster), kRingWidth (LEDs lit each side), kRingShape (2 = parabola).
+// The looping ring is a green fill with a brightness hump around the playhead.
+// The playhead LED ("first in line") takes the interaction-mode colour: rec
+// red, mute green, FX blue. Tune: kRingMsPerRev (lower = faster), kRingWidth
+// (LEDs lit each side), kRingShape (parabola-ish), kBreatheMs (idle pulse).
+// Independent of loop length. A Stop that leaves a loop loaded FREEZES the
+// playhead. With no loop, every LED breathes together in green — no red tick,
+// so idle rec mode cannot read as a live take (#693).
 static const unsigned long kRingMsPerRev = 700;
+static const unsigned long kBreatheMs = 2400;
 static const float kRingWidth = 5.5f;
 static const float kRingShape = 1.5f;
+static const uint8_t kRingBaseLevel = 77; // ~30%, matches the app's _baseGlow
 static float g_ringPhase = 0.0f;       // current center, 0..kRingCount
 static unsigned long g_ringLastMs = 0; // for dt-based phase advance
 
-// The ring's idle sweep color: a dim neutral glow, matching the app's
-// `SurfaceTheme.ringGlow` so the plate and the simulator agree.
-//
-// This used to be the interaction mode's color, dimmed (A1). Dropped in #693
-// for the same "one signal, one meaning" reason the MODE LED lost its armed
-// blink: a dim RED idle ring in rec mode reads as a live take from stage
-// distance, which is the single most expensive thing this pedal could lie
-// about. Red on the ring now means recording activity, exclusively; the mode
-// is named by the MODE LED, which is always lit and always says only that.
-static const CRGB kRingIdleGlow = CRGB(0x3A, 0x3A, 0x3D);
-
 static void renderRing() {
-  // Colored by the activity color segno sends in global_color: red recording /
-  // amber overdubbing / green playing.
-  const CRGB activity = g_haveFrame ? globalColor(g_frame.global_color)
-                                    : CRGB::Black;
-  const bool goodbye = g_haveFrame && g_frame.goodbye;
-  const bool active = g_haveFrame && !goodbye &&
-                      (activity.r || activity.g || activity.b) &&
-                      g_frame.global_color != PEDAL_GLOBAL_BLUE;
   const unsigned long now = millis();
   const unsigned long dt = now - g_ringLastMs;
   g_ringLastMs = now;
-  if (goodbye) { // shutdown frame: darken the ring
+  if (!g_haveFrame || g_frame.goodbye) {
     for (uint8_t i = 0; i < kRingCount; i++) g_leds[kRingStart + i] = CRGB::Black;
     return;
   }
-  // A Stop with a loop still loaded freezes the ring where it was. Once the
-  // loop is cleared (nothing left to play) fall through so the hump keeps
-  // advancing in the off color and the ring animates to dark.
-  if (!active && g_frame.loop_length_micros > 0) return;
-  // With no transport activity (global color OFF) the sweep runs in a dim
-  // NEUTRAL glow rather than fading to dark, so the ring still reads as alive
-  // — but it says nothing about the mode (#693; see kRingIdleGlow). Activity
-  // colors (record red / overdub amber / play green / clear-fade blue) keep
-  // primacy whenever segno sends one, and they are now the only thing that
-  // ever colors this ring.
-  const CRGB sweep =
-      (g_haveFrame && g_frame.global_color == PEDAL_GLOBAL_OFF)
-          ? kRingIdleGlow
-          : activity;
-  // Advance the center only while active, so a Stop leaves it where it was.
+  const CRGB activity = globalColor(g_frame.global_color);
+  const bool looping = g_frame.loop_length_micros > 0;
+  const bool active = (activity.r || activity.g || activity.b) &&
+                      g_frame.global_color != PEDAL_GLOBAL_BLUE;
+  // A Stop with a loop still loaded freezes the playhead where it was.
+  if (looping && !active) return;
+
+  const CRGB base = CRGB::Green;
+  const CRGB head = modeColor(g_frame.play_mode);
+
+  if (!looping) {
+    unsigned long p = now % kBreatheMs;
+    const unsigned long half = kBreatheMs / 2;
+    float t = (p < half) ? (p / (float)half)
+                         : (1.0f - (p - half) / (float)half); // 0..1..0
+    t = t * t * (3.0f - 2.0f * t); // smoothstep
+    const uint8_t level = (uint8_t)((0.15f + 0.85f * t) * 255.0f + 0.5f);
+    const CRGB c = scaled(base, level);
+    for (uint8_t i = 0; i < kRingCount; i++) g_leds[kRingStart + i] = c;
+    return;
+  }
+
   g_ringPhase += (float)dt / (float)kRingMsPerRev * (float)kRingCount;
   while (g_ringPhase >= (float)kRingCount) g_ringPhase -= (float)kRingCount;
+  uint8_t headIdx = (uint8_t)(g_ringPhase + 0.5f);
+  if (headIdx >= kRingCount) headIdx = 0;
   for (uint8_t i = 0; i < kRingCount; i++) {
     float d = fabsf((float)i - g_ringPhase);
     if (d > kRingCount / 2.0f) d = kRingCount - d; // wrap the short way round
     const float dn = d / kRingWidth;
-    uint8_t level = 0;
+    uint8_t level = kRingBaseLevel;
     if (dn < 1.0f) {
       float b = 1.0f - powf(dn, kRingShape);
       if (b < 0.0f) b = 0.0f;
-      level = (uint8_t)(b * 255.0f + 0.5f);
+      level = (uint8_t)(kRingBaseLevel + (255 - kRingBaseLevel) * b + 0.5f);
     }
-    g_leds[kRingStart + i] = scaled(sweep, level);
+    g_leds[kRingStart + i] = scaled((i == headIdx) ? head : base, level);
   }
 }
 
@@ -372,8 +362,8 @@ static void render() {
     // duplicating it and paying for the duplicate with an ambiguous MODE LED.
     // Once rec mode went solid red, "blinking red" vs "solid red" was the only
     // thing separating armed from rec mode on one 5mm dot at stage distance.
-    // One signal, one meaning: the plate shows mode here and activity on the
-    // ring, and neither has to be read against the other.
+    // One signal, one meaning: the plate shows mode here and the playhead
+    // colour on the ring, and neither has to be read against the other.
     g_leds[kModeLed] = g_frame.goodbye ? CRGB::Black
                                        : modeColor(g_frame.play_mode);
     g_leds[kClearLed] = g_frame.clear_fade ? CRGB::Red : CRGB::Black;

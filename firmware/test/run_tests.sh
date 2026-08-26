@@ -86,17 +86,17 @@ for fn in ledColor globalColor modeColor scaled; do
   fi
 done
 
-# The ring's idle glow is a bare constant rather than a function, and it is
-# exactly the kind of value that gets tuned in one copy only.
-for sym in kRingIdleGlow; do
+# Shared ring timing / floor values that get tuned in one copy only. The
+# 16-LED ring's kRingWidth is intentionally different and is not gated here.
+for spec in "unsigned long kBreatheMs" "uint8_t kRingBaseLevel"; do
   # `|| true`: grep exits 1 when it matches nothing, which under `set -e`
   # would abort the script before the `<missing>` diagnostic below could name
   # the constant -- i.e. exactly the drift this block exists to report would
   # fail CI with no message at all.
-  p="$(grep -h "^static const CRGB $sym" "$PRIMARY_INO" | normalize || true)"
-  m="$(grep -h "^static const CRGB $sym" "$MIRROR_INO" | normalize || true)"
+  p="$(grep -h "^static const $spec" "$PRIMARY_INO" | normalize || true)"
+  m="$(grep -h "^static const $spec" "$MIRROR_INO" | normalize || true)"
   if [ -z "$p" ] || [ "$p" != "$m" ]; then
-    echo "FAIL: $sym differs (or is missing) between the two sketches." >&2
+    echo "FAIL: $spec differs (or is missing) between the two sketches." >&2
     echo "  $PRIMARY_INO: ${p:-<missing>}" >&2
     echo "  $MIRROR_INO: ${m:-<missing>}" >&2
     exit 1

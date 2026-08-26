@@ -131,7 +131,89 @@ void main() {
     expect(isClosed(), isTrue);
   });
 
-  testWidgets('the ring animates to off once the loop is cleared', (
+  testWidgets('the idle ring breathes in green with no playhead', (
+    tester,
+  ) async {
+    await pumpPlate(tester);
+    final painter =
+        tester
+                .widget<CustomPaint>(
+                  find.byKey(const Key('pedalFaceplate_ring')),
+                )
+                .painter!
+            as PedalLedRingPainter;
+    expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
+    expect(painter.headColor, SurfaceTheme.dark.ledRed); // default rec mode
+    expect(painter.progress, isNull);
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(
+      tester
+              .widget<CustomPaint>(find.byKey(const Key('pedalFaceplate_ring')))
+              .painter!
+          as PedalLedRingPainter,
+      isA<PedalLedRingPainter>().having(
+        (p) => p.breathe,
+        'breathe',
+        greaterThan(0),
+      ),
+    );
+  });
+
+  testWidgets('REC mode looping: green ring, red playhead', (tester) async {
+    await pumpPlate(
+      tester,
+      frame: _frame().copyWith(
+        mode: PedalMode.rec,
+        globalColor: GlobalColor.red,
+        loopLengthMicros: 1000000,
+      ),
+    );
+    Color ringBorderColor() =>
+        ((tester
+                            .widget<Container>(
+                              find.byKey(const Key('pedalFaceplate_encoder')),
+                            )
+                            .decoration!
+                        as BoxDecoration)
+                    .border!
+                as Border)
+            .top
+            .color;
+    expect(ringBorderColor(), SurfaceTheme.dark.ledGreen);
+    final painter =
+        tester
+                .widget<CustomPaint>(
+                  find.byKey(const Key('pedalFaceplate_ring')),
+                )
+                .painter!
+            as PedalLedRingPainter;
+    expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
+    expect(painter.headColor, SurfaceTheme.dark.ledRed);
+    expect(painter.progress, isNotNull);
+  });
+
+  testWidgets('MUTE mode looping: green ring, green playhead', (tester) async {
+    await pumpPlate(
+      tester,
+      frame: _frame().copyWith(
+        mode: PedalMode.play,
+        globalColor: GlobalColor.green,
+        loopLengthMicros: 1000000,
+      ),
+    );
+    final painter =
+        tester
+                .widget<CustomPaint>(
+                  find.byKey(const Key('pedalFaceplate_ring')),
+                )
+                .painter!
+            as PedalLedRingPainter;
+    expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
+    expect(painter.headColor, SurfaceTheme.dark.ledGreen);
+    expect(painter.progress, isNotNull);
+  });
+
+  testWidgets('the ring returns to a green breathe once the loop is cleared', (
     tester,
   ) async {
     Color ringBorderColor(WidgetTester tester) =>
@@ -155,9 +237,16 @@ void main() {
     );
     expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
 
-    // Rebuild cleared (activity off, no loop left): the ring goes dark.
     await pumpPlate(tester, frame: _frame());
-    expect(ringBorderColor(tester), SurfaceTheme.dark.ledOff);
+    expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
+    final painter =
+        tester
+                .widget<CustomPaint>(
+                  find.byKey(const Key('pedalFaceplate_ring')),
+                )
+                .painter!
+            as PedalLedRingPainter;
+    expect(painter.progress, isNull);
   });
 
   testWidgets('the MODE LED reflects the frame mode color', (tester) async {

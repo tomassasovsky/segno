@@ -155,24 +155,30 @@ class _PlatePicker extends StatelessWidget {
           : l10n.a11yPedalAssignSelected(current.name),
       child: AspectRatio(
         aspectRatio: 846 / 406.6,
-        child: PedalPlate(
-          // A DARK frame, not the live one: this plate is a diagram of the
-          // hardware, and mirroring the running rig's LEDs here would read as
-          // state the user can edit from this screen.
-          frame: PedalStateFrame.blank(),
-          trackNames: context.watch<TracksCubit>().state.names,
-          // Select on the PRESS edge and swallow the release: a picker, not a
-          // control surface — nothing here may reach the engine.
-          onPress: (button, {required down}) {
-            if (down) onSelect(button);
-          },
-          onTurn: (_) {},
-          mode: mode,
-          l10n: l10n,
-          mainScreen: const SizedBox.shrink(),
-          waveformScreen: const SizedBox.shrink(),
-          onClose: () {},
-          selected: {?current},
+        child: TickerMode(
+          // Diagram, not a live plate — a breathing idle ring here would
+          // look like transport state the user can edit, and it would also
+          // keep widget tests from ever reaching pumpAndSettle.
+          enabled: false,
+          child: PedalPlate(
+            // A DARK frame, not the live one: this plate is a diagram of the
+            // hardware, and mirroring the running rig's LEDs here would read as
+            // state the user can edit from this screen.
+            frame: PedalStateFrame.blank(),
+            trackNames: context.watch<TracksCubit>().state.names,
+            // Select on the PRESS edge and swallow the release: a picker, not a
+            // control surface — nothing here may reach the engine.
+            onPress: (button, {required down}) {
+              if (down) onSelect(button);
+            },
+            onTurn: (_) {},
+            mode: mode,
+            l10n: l10n,
+            mainScreen: const SizedBox.shrink(),
+            waveformScreen: const SizedBox.shrink(),
+            onClose: () {},
+            selected: {?current},
+          ),
         ),
       ),
     );

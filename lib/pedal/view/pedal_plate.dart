@@ -42,7 +42,7 @@ double _pedalU(int i) => 69.0 + (777.0 - 69.0) * i / 7.0;
 
 /// Renders the Segno top plate to scale from injected state alone — the two
 /// screen apertures (a 7" waveform on the left, the main looper screen on the
-/// right), the encoder + activity ring, and the footswitches. Pure
+/// right), the encoder + LED ring, and the footswitches. Pure
 /// presentation: no transport, cubit, or bloc dependency, so it pumps from a
 /// [PedalStateFrame] and a handful of callbacks alone.
 ///
@@ -98,11 +98,13 @@ class PedalPlate extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final bankBase = frame.activeBank * _trackButtons.length;
-    // Once the loop is cleared (activity off with nothing left to play) the
-    // ring animates fully dark: the hump makes one last pass in the off color
-    // and settles, instead of parking on a lit idle ring.
-    final ringCleared =
-        frame.globalColor == GlobalColor.off && frame.loopLengthMicros == 0;
+    // A Stop with a loop still loaded freezes the playhead; idle (no loop)
+    // breathes instead. `global_color` off/blue is the freeze signal — the
+    // same test the firmware's renderRing() uses.
+    final ringFrozen =
+        frame.loopLengthMicros > 0 &&
+        (frame.globalColor == GlobalColor.off ||
+            frame.globalColor == GlobalColor.blue);
     return LayoutBuilder(
       builder: (context, constraints) {
         final scale = math.min(
@@ -215,18 +217,17 @@ class PedalPlate extends StatelessWidget {
                   _bigH,
                   _ScreenBezel(child: mainScreen),
                 ),
-                // Encoder + activity ring (between REC/PLAY and STOP).
+                // Encoder + LED ring (between REC/PLAY and STOP).
                 box(
                   _colU,
                   _row2V,
                   _ringOd,
                   _ringOd,
                   _Encoder(
-                    ringColor: ringCleared
-                        ? surface.ledOff
-                        : _ringColor(surface, frame.globalColor),
+                    baseColor: surface.ledGreen,
+                    headColor: _modeColor(surface, frame.mode),
                     loopLengthMicros: frame.loopLengthMicros,
-                    cleared: ringCleared,
+                    frozen: ringFrozen,
                     onTurn: onTurn,
                     l10n: l10n,
                   ),
@@ -702,25 +703,28 @@ class _Led extends StatelessWidget {
   }
 }
 
-/// The rotary encoder + its 12-LED activity ring. Drag or scroll turns it; the
-/// ring's color is the global activity color, and a bright pixel sweeps around
-/// the twelve LEDs once per loop (like the firmware advancing the ring on each
-/// loop top).
+/// The rotary encoder + its 12-LED ring. Drag or scroll turns it.
+///
+/// Twin of firmware `renderRing()`: green fill; a breathe while no loop is
+/// loaded; once looping, a playhead sweeps once per loop in the mode colour
+/// (rec red / mute green / FX blue). A Stop with a loop still loaded freezes
+/// the playhead.
 class _Encoder extends StatefulWidget {
   const _Encoder({
-    required this.ringColor,
+    required this.baseColor,
+    required this.headColor,
     required this.loopLengthMicros,
-    required this.cleared,
+    required this.frozen,
     required this.onTurn,
     required this.l10n,
   });
 
-  final Color ringColor;
+  final Color baseColor;
+  final Color headColor;
   final int loopLengthMicros;
 
-  /// The loop was just cleared: the hump makes one last pass (at `_idleSweep`)
-  /// in the off color, so the ring animates to dark instead of parking lit.
-  final bool cleared;
+  /// Stop with a loop still loaded: hold the playhead where it is.
+  final bool frozen;
   final void Function(int delta) onTurn;
   final AppLocalizations l10n;
 
@@ -728,15 +732,15 @@ class _Encoder extends StatefulWidget {
   State<_Encoder> createState() => _EncoderState();
 }
 
-class _EncoderState extends State<_Encoder>
-    with SingleTickerProviderStateMixin {
+class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
   static const double _dragPerDetent = 6;
 
-  // Steady rotation used when there is no loop to time the sweep to (e.g. while
-  // the ring winds off after a clear). Matches the firmware's kRingMsPerRev.
-  static const Duration _idleSweep = Duration(milliseconds: 700);
+  // Full breathe cycle (dim → bright → dim). Matches firmware kBreatheMs.
+  static const Duration _breatheCycle = Duration(milliseconds: 2400);
 
   late final AnimationController _sweep;
+  late final AnimationController _breathe;
+  late final CurvedAnimation _breatheCurve;
 
   // Residual drag, so a slow drag still crosses detents instead of truncating
   // sub-detent deltas to zero.
@@ -746,39 +750,43 @@ class _EncoderState extends State<_Encoder>
   void initState() {
     super.initState();
     _sweep = AnimationController(vsync: this);
-    _syncSweep();
+    _breathe = AnimationController(vsync: this, duration: _breatheCycle);
+    _breatheCurve = CurvedAnimation(parent: _breathe, curve: Curves.easeInOut);
+    _syncMotion();
   }
 
   @override
   void didUpdateWidget(_Encoder oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.loopLengthMicros != widget.loopLengthMicros ||
-        oldWidget.cleared != widget.cleared) {
-      _syncSweep();
+        oldWidget.frozen != widget.frozen) {
+      _syncMotion();
     }
   }
 
-  // One revolution per loop; on clear the hump makes one last idle-rate pass
-  // and settles dark (a single forward pass, not a repeat, so it animates off
-  // rather than parking a lit ring — and still settles for pumpAndSettle);
-  // otherwise parked.
-  void _syncSweep() {
+  void _syncMotion() {
+    if (widget.frozen) {
+      _breathe.stop();
+      _sweep.stop();
+      return;
+    }
     if (widget.loopLengthMicros > 0) {
+      _breathe.stop();
       _sweep.duration = Duration(microseconds: widget.loopLengthMicros);
       if (!_sweep.isAnimating) unawaited(_sweep.repeat());
-    } else if (widget.cleared) {
-      _sweep.duration = _idleSweep;
-      unawaited(_sweep.forward());
     } else {
       _sweep
         ..stop()
         ..value = 0;
+      if (!_breathe.isAnimating) unawaited(_breathe.repeat(reverse: true));
     }
   }
 
   @override
   void dispose() {
+    _breatheCurve.dispose();
     _sweep.dispose();
+    _breathe.dispose();
     super.dispose();
   }
 
@@ -831,23 +839,28 @@ class _EncoderState extends State<_Encoder>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: surface.surface,
-                border: Border.all(color: widget.ringColor, width: 4),
-                boxShadow: [BoxShadow(color: widget.ringColor, blurRadius: 8)],
+                border: Border.all(color: widget.baseColor, width: 4),
+                boxShadow: [BoxShadow(color: widget.baseColor, blurRadius: 8)],
               ),
               child: Stack(
                 alignment: Alignment.center,
                 children: [
                   Positioned.fill(
                     child: AnimatedBuilder(
-                      animation: _sweep,
+                      animation: Listenable.merge([_sweep, _breathe]),
                       builder: (context, _) => CustomPaint(
                         key: const Key('pedalFaceplate_ring'),
-                        painter: _LedRingPainter(
-                          color: widget.ringColor,
-                          progress:
-                              widget.loopLengthMicros > 0 || widget.cleared
+                        painter: PedalLedRingPainter(
+                          baseColor: widget.baseColor,
+                          headColor: widget.headColor,
+                          progress: widget.loopLengthMicros > 0
                               ? _sweep.value
                               : null,
+                          breathe: widget.loopLengthMicros == 0
+                              ? (_breathe.isAnimating
+                                    ? _breatheCurve.value
+                                    : 0.55)
+                              : 0,
                         ),
                       ),
                     ),
@@ -873,48 +886,76 @@ class _EncoderState extends State<_Encoder>
   }
 }
 
-/// Paints the encoder's 12-LED activity ring (the 12× WS2812 ring board on the
-/// hardware). Every LED idles at a dim glow in the activity [color]; while a
-/// loop runs the pixel nearest [progress] (`0..1`, clockwise from the top)
-/// burns bright and its neighbours fade off either side, so a highlight sweeps
-/// once per loop. [progress] is `null` when parked — then all twelve just idle.
-class _LedRingPainter extends CustomPainter {
-  _LedRingPainter({required this.color, required this.progress});
+/// Paints the encoder's 12-LED ring (the 12× WS2812 ring board on the
+/// hardware). Twin of firmware `renderRing()`.
+///
+/// The ring is always [baseColor] (green). While no loop is loaded, every LED
+/// breathes together at [breathe] (`0..1`). Once a loop runs, [progress]
+/// (`0..1`, clockwise from the top) is the playhead: that LED takes
+/// [headColor] (rec red / mute green / FX blue) and its neighbours fade in
+/// [baseColor]. [progress] is `null` while breathing.
+class PedalLedRingPainter extends CustomPainter {
+  /// Creates a [PedalLedRingPainter].
+  PedalLedRingPainter({
+    required this.baseColor,
+    required this.headColor,
+    required this.progress,
+    required this.breathe,
+  });
 
-  final Color color;
+  /// Fill colour for every LED that is not the playhead.
+  final Color baseColor;
+
+  /// Colour of the playhead LED (first LED in the sweep).
+  final Color headColor;
+
+  /// Playhead position `0..1`, or `null` while the idle breathe is showing.
   final double? progress;
 
+  /// Idle breathe amount `0..1` (ignored while [progress] is set).
+  final double breathe;
+
   static const _count = 12;
-  static const _baseGlow = 0.30; // idle LED alpha
+  static const _baseGlow = 0.30; // looping LED floor
+  static const _breatheFloor = 0.15;
 
   @override
   void paint(Canvas canvas, Size size) {
     final centre = Offset(size.width / 2, size.height / 2);
     final dotR = size.shortestSide * 0.05;
     final ringR = size.shortestSide / 2 - dotR - 6;
-    // Playhead position in LED units (0..12); negative parks the sweep.
     final head = progress == null ? -1.0 : progress! * _count;
+    final breathing = progress == null;
 
     for (var i = 0; i < _count; i++) {
       final angle = -math.pi / 2 + i / _count * 2 * math.pi;
       final at = centre + Offset(math.cos(angle), math.sin(angle)) * ringR;
 
-      // Wrapping distance from the playhead, so the bright pixel and its glow
-      // fall off symmetrically and wrap cleanly at the top of the ring.
-      var d = (i - head).abs();
-      if (d > _count / 2) d = _count - d;
-      final lit = head < 0 ? 0.0 : (1 - d / 2).clamp(0.0, 1.0);
-
-      if (lit > 0.5) {
-        canvas.drawCircle(
-          at,
-          dotR * 2.2,
-          Paint()
-            ..color = color.withValues(alpha: 0.35 * lit)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
-        );
+      final Color color;
+      final double alpha;
+      if (breathing) {
+        color = baseColor;
+        alpha = _breatheFloor + (1 - _breatheFloor) * breathe;
+      } else {
+        // Wrapping distance from the playhead, so the bright pixel and its
+        // glow fall off symmetrically and wrap cleanly at the top of the ring.
+        var d = (i - head).abs();
+        if (d > _count / 2) d = _count - d;
+        final lit = (1 - d / 2).clamp(0.0, 1.0);
+        // The nearest LED is the "first in line" — mode colour; the rest stay
+        // on the green fill.
+        color = d < 0.5 ? headColor : baseColor;
+        alpha = _baseGlow + (1 - _baseGlow) * lit;
+        if (lit > 0.5) {
+          canvas.drawCircle(
+            at,
+            dotR * 2.2,
+            Paint()
+              ..color = color.withValues(alpha: 0.35 * lit)
+              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+          );
+        }
       }
-      final alpha = _baseGlow + (1 - _baseGlow) * lit;
       canvas.drawCircle(
         at,
         dotR,
@@ -924,8 +965,11 @@ class _LedRingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_LedRingPainter old) =>
-      old.progress != progress || old.color != color;
+  bool shouldRepaint(PedalLedRingPainter old) =>
+      old.progress != progress ||
+      old.breathe != breathe ||
+      old.baseColor != baseColor ||
+      old.headColor != headColor;
 }
 
 /// How long a keyboard / screen-reader long-press holds a switch down.
@@ -951,46 +995,21 @@ Color _ledColor(SurfaceTheme surface, PedalTrackLed led) => switch (led) {
   PedalTrackLed.blue => surface.ledBlue,
 };
 
-/// The tri-state MODE indicator's color (A1), one per interaction mode —
-/// the on-screen twin of the firmware's `modeColor`.
+/// The tri-state MODE colour (A1), one per interaction mode — the on-screen
+/// twin of the firmware's `modeColor`. Rec red, mute green, FX blue (#693).
 ///
-/// Rec red, mute green, FX blue (#693, owner's call from the bench). This
-/// used to read rec GREEN and mute AMBER, which put the plate at odds with
-/// every screen: the console's mode pill has always drawn rec in red, and the
-/// owner's call is that mute reads green everywhere. Recolouring mute alone
-/// was not possible — green was already spoken for by rec, and collapsing the
-/// two would have made the pedal's two BOOT modes (`record` and `mute`)
-/// indistinguishable on the one indicator that names them. So rec moves to
-/// red in the same stroke, which is where the screens had it all along.
+/// Two call sites, one meaning: the MODE LED, and the ring's playhead LED
+/// once a loop is running. The idle ring breathes in green with no
+/// distinguished playhead — a red idle tick would read as a live take from
+/// stage distance, the same lie #693 killed on the whole-ring fill.
 ///
-/// The wire is untouched: the frame carries the 2-bit mode, never a colour,
-/// so this is a rendering change on both sides. Keep it in lockstep with the
-/// firmware's `modeColor`.
-///
-/// Both sides now have exactly ONE call site for this mapping: the MODE LED.
-/// The firmware's `modeColor()` used to also tint the ring's idle sweep, so
-/// the plate carried a mode reading this widget could not show; #693 dropped
-/// that in both sketches in favour of the neutral `kRingIdleGlow` (the app's
-/// [SurfaceTheme.ringGlow]), because a dim red idle ring in rec mode reads as
-/// a live take from stage distance. The ring renders straight from
-/// `_ringColor(frame.globalColor)` here and from the activity colour there —
-/// mode-blind on both.
-///
-/// The MODE LED is also SOLID in every state on both sides. The armed blink is
+/// The MODE LED is SOLID in every state on both sides. The armed blink is
 /// gone (armed shows on the screens); `PedalStateFrame.performanceArmed` still
 /// crosses the wire and is deliberately not read for display.
 Color _modeColor(SurfaceTheme surface, PedalMode mode) => switch (mode) {
   PedalMode.rec => surface.ledRed,
   PedalMode.play => surface.ledGreen,
   PedalMode.fx => surface.ledBlue,
-};
-
-Color _ringColor(SurfaceTheme surface, GlobalColor color) => switch (color) {
-  GlobalColor.off => surface.ringGlow,
-  GlobalColor.green => surface.ledGreen,
-  GlobalColor.red => surface.ledRed,
-  GlobalColor.amber => surface.ledAmber,
-  GlobalColor.blue => surface.ledBlue,
 };
 
 /// The screen-reader reading of a track LED, PER ACTIVE MODE — the same byte
