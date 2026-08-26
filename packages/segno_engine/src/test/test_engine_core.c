@@ -9742,7 +9742,7 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
      * (#823) — so NO assertion depends on it: the zero-fill proof runs off
      * the hook's forced gap, and this burst's real drops only add to the
      * same counter. The notes printed after the snapshot below keep the
-     * coverage visible whenever it sat a run out. Latched best-effort; a
+     * coverage visible in the cases they can distinguish. Latched best-effort; a
      * starved poll that watches cycles jump past the window skips it,
      * costing that run the burst's coverage and nothing else. */
     if (!burst_pushed_once && atomic_load(&ctx.cycles) >= 4) {
@@ -9769,7 +9769,13 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   /* Joins the drain thread. */
   const int disarmed = (le_perf_disarm(e) == LE_OK);
   CHECK(disarmed);
-  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
+  /* Clear only after a JOINED disarm — the seam's own contract. An
+   * unconditional clear here could hand NULL to a hook call already past
+   * its fn load on a still-live thread; leaving the hook installed is safe
+   * instead, because the static ctx and the leaked engine both outlive it. */
+  if (disarmed) {
+    le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
+  }
 
   /* LE_TEST_ALLOC_WATCH_CYCLES observed. Counting arms inside cycle 3's
    * mid-cycle hook, which fires after that cycle's ring drain, so cycle 3 is
