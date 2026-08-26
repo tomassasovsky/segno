@@ -9683,26 +9683,35 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
    * counted ones have genuine work: multi-buffer ring pops, PCM writes, an
    * events.log append, a sidecar rewrite and rename. */
   int waited = 0;
-  int overflowed_once = 0;
+  int gap_forced_once = 0;
   while (atomic_load(&ctx.cycles) < LE_TEST_ALLOC_WATCH_CYCLES &&
          waited < LE_TEST_ALLOC_WATCH_TIMEOUT_MS) {
     push_frames_for_test(e, 0.25f, LE_TEST_ALLOC_WATCH_FRAMES_PER_TICK);
-    /* Once, mid-run: hand the ring more than it can hold in a single tick, so
-     * a cycle also runs le_pd_catch_up's chunked zero-fill. */
-    if (!overflowed_once && atomic_load(&ctx.cycles) >= 4) {
-      overflowed_once = 1;
-      push_frames_for_test(e, 0.25f, 48000 * (LE_PERF_CAPTURE_SECONDS + 1));
+    /* Once, mid-run: open a pop-vs-elapsed gap wider than the ring, so a
+     * cycle also runs le_pd_catch_up's chunked zero-fill. Advance the
+     * elapsed count DIRECTLY (the short-ring test's stand-in for the real
+     * tap's publishing edge) rather than pushing that much audio: a push
+     * only drops — and thus only forces a zero-fill — if this thread
+     * outruns the drain thread, and on a loaded machine it loses that race
+     * often enough to flake the zero-fill assertion below (#823). A gap no
+     * push ever backs is un-losable: whichever cycle samples it must pad. */
+    if (!gap_forced_once && atomic_load(&ctx.cycles) >= 4) {
+      gap_forced_once = 1;
+      atomic_fetch_add_explicit(
+          &e->a_perf_frames,
+          (uint64_t)(48000 * (LE_PERF_CAPTURE_SECONDS + 1)),
+          memory_order_release);
     }
     test_sleep_ms(25);
     waited += 25;
   }
 
-  /* CADENCE FIRST, then everything that depends on it. The overflow below is
-   * only armed once the drain thread has reached its 4th cycle, so a thread
-   * too slow to get there inside the timeout would otherwise surface as
-   * `overflowed_once != 1` — a failure of the allocation fixture, reported
-   * when nothing allocated at all. Assert the observable that actually
-   * failed, and say so in the message. */
+  /* CADENCE FIRST, then everything that depends on it. The forced gap above
+   * is only armed once the drain thread has reached its 4th cycle, so a
+   * thread too slow to get there inside the timeout would otherwise surface
+   * as `gap_forced_once != 1` — a failure of the allocation fixture,
+   * reported when nothing allocated at all. Assert the observable that
+   * actually failed, and say so in the message. */
   const int observed_cycles = atomic_load(&ctx.cycles);
   if (observed_cycles < LE_TEST_ALLOC_WATCH_CYCLES) {
     printf(
@@ -9712,7 +9721,7 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
         LE_TEST_ALLOC_WATCH_TIMEOUT_MS);
   }
   CHECK(observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES);
-  CHECK(overflowed_once == 1);
+  CHECK(gap_forced_once == 1);
 
   CHECK(le_perf_disarm(e) == LE_OK); /* joins the drain thread */
   le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
