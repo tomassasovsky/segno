@@ -447,7 +447,7 @@ void main() {
       );
       expect(violation(dark, 'ring-length-iff-loops'), isNotNull);
 
-      // A defining recording (capturing, no grid yet) with a dark ring: fine.
+      // A defining recording (capturing, no grid yet) with no length: fine.
       final defining = ControlContext(
         looper: looper(
           tracks: tracksWith(const Track(state: TrackState.recording)),

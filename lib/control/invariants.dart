@@ -265,10 +265,11 @@ final List<ControlInvariant> controlInvariants = [
     return null;
   }),
   ControlInvariant('ring-length-iff-loops', (c) {
-    // The ring shows a length only when there is BOTH something holding (or
+    // The ring reports a length only when there is BOTH something holding (or
     // capturing) a loop AND an established grid: a defining recording has no
-    // length until it finalizes (dark ring), and an undone-to-empty ghost
-    // grid with zero content must not render either.
+    // length until it finalizes, and an undone-to-empty ghost grid with zero
+    // content must not report one either. (The playhead still sweeps during
+    // that defining take — length on the wire and ring motion are separate.)
     final anyLoop = c.looper.tracks.any((t) => t.hasContent || t.isCapturing);
     final want = anyLoop && c.looper.transport.masterLengthFrames > 0;
     final lit = c.frame.loopLengthMicros > 0;

@@ -41,8 +41,8 @@ const _smallH = 88.0; // 7" aperture height
 double _pedalU(int i) => 69.0 + (777.0 - 69.0) * i / 7.0;
 
 /// Smoothstep easing, `t*t*(3-2t)` — the verbatim curve the firmware's
-/// renderRing() applies to its idle-breathe triangle, so both twins ease the
-/// same way.
+/// renderRing() applies to its standby-breathe triangle, so both twins ease
+/// the same way.
 double _smoothstep(double t) => t * t * (3 - 2 * t);
 
 /// Renders the Segno top plate to scale from injected state alone — the two
@@ -103,13 +103,18 @@ class PedalPlate extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final bankBase = frame.activeBank * _trackButtons.length;
-    // A Stop with a loop still loaded freezes the playhead; idle (no loop)
-    // breathes instead. `global_color` off/blue is the freeze signal — the
-    // same test the firmware's renderRing() uses.
+    // A Stop with a loop still loaded freezes the playhead; standby (no
+    // activity, no loop) breathes. `global_color` off/blue is the freeze /
+    // standby signal — the same test the firmware's renderRing() uses. Any
+    // other colour (red/green/amber) means activity, so the playhead sweeps
+    // even during the first take, before a loop length exists.
     final ringFrozen =
         frame.loopLengthMicros > 0 &&
         (frame.globalColor == GlobalColor.off ||
             frame.globalColor == GlobalColor.blue);
+    final ringActive =
+        frame.globalColor != GlobalColor.off &&
+        frame.globalColor != GlobalColor.blue;
     return LayoutBuilder(
       builder: (context, constraints) {
         final scale = math.min(
@@ -234,6 +239,7 @@ class PedalPlate extends StatelessWidget {
                     headColor: _modeColor(surface, frame.mode),
                     loopLengthMicros: frame.loopLengthMicros,
                     frozen: ringFrozen,
+                    active: ringActive,
                     goodbye: frame.isGoodbye,
                     onTurn: onTurn,
                     l10n: l10n,
@@ -712,11 +718,12 @@ class _Led extends StatelessWidget {
 
 /// The rotary encoder + its 12-LED ring. Drag or scroll turns it.
 ///
-/// Twin of firmware `renderRing()`: green fill; a breathe while no loop is
-/// loaded; once looping, a playhead sweeps once per loop in the mode colour
-/// (rec red / mute green / FX blue). A Stop with a loop still loaded freezes
-/// the playhead, and a goodbye frame blacks the ring out entirely — the very
-/// first thing renderRing() does (`goodbye` → all LEDs Black).
+/// Twin of firmware `renderRing()`: green fill; a breathe in standby; once
+/// activity starts (recording, overdub, playback) a playhead sweeps in the
+/// mode colour (rec red / mute green / FX blue). A Stop with a loop still
+/// loaded freezes the playhead, and a goodbye frame blacks the ring out
+/// entirely — the very first thing renderRing() does (`goodbye` → all LEDs
+/// Black).
 class _Encoder extends StatefulWidget {
   const _Encoder({
     required this.baseColor,
@@ -724,6 +731,7 @@ class _Encoder extends StatefulWidget {
     required this.headColor,
     required this.loopLengthMicros,
     required this.frozen,
+    required this.active,
     required this.goodbye,
     required this.onTurn,
     required this.l10n,
@@ -738,6 +746,10 @@ class _Encoder extends StatefulWidget {
 
   /// Stop with a loop still loaded: hold the playhead where it is.
   final bool frozen;
+
+  /// Recording, overdubbing, or playing — sweep a playhead even when
+  /// [loopLengthMicros] is still 0 (the first take has no grid yet).
+  final bool active;
 
   /// Shutdown frame: black the ring out and drop the encoder glow, mirroring
   /// both firmware sketches (`goodbye` → CRGB::Black) and the MODE LED.
@@ -757,6 +769,11 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
   // firmware's kBreatheMs (2400 ms). The linear ramp is a triangle; smoothstep
   // ([_smoothstep]) then shapes it into the eased breathe both twins show.
   static const Duration _breatheHalfCycle = Duration(milliseconds: 1200);
+
+  // Firmware `kRingMsPerRev`: the playhead's period while a loop length is
+  // not yet known (the first take). Once [loopLengthMicros] is set, the
+  // on-screen twin instead sweeps once per loop.
+  static const Duration _fallbackSweep = Duration(milliseconds: 700);
 
   late final AnimationController _sweep;
   late final AnimationController _breathe;
@@ -778,6 +795,7 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.loopLengthMicros != widget.loopLengthMicros ||
         oldWidget.frozen != widget.frozen ||
+        oldWidget.active != widget.active ||
         oldWidget.goodbye != widget.goodbye) {
       _syncMotion();
     }
@@ -797,9 +815,11 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
       _sweep.stop();
       return;
     }
-    if (widget.loopLengthMicros > 0) {
+    if (widget.active) {
       _breathe.stop();
-      _sweep.duration = Duration(microseconds: widget.loopLengthMicros);
+      _sweep.duration = widget.loopLengthMicros > 0
+          ? Duration(microseconds: widget.loopLengthMicros)
+          : _fallbackSweep;
       if (!_sweep.isAnimating) _resumeSweep();
     } else {
       _sweep
@@ -823,7 +843,7 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
       _sweep.forward(from: from).then((_) {
         // Only fall into the perpetual loop if we're still playing the same
         // loop; a freeze or clear in the meantime already retargeted us.
-        if (!mounted || widget.frozen || widget.loopLengthMicros == 0) return;
+        if (!mounted || widget.frozen || !widget.active) return;
         unawaited(_sweep.repeat());
       }),
     );
@@ -907,14 +927,14 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
                           offColor: widget.offColor,
                           headColor: widget.headColor,
                           goodbye: widget.goodbye,
-                          progress: widget.loopLengthMicros > 0
+                          progress: widget.active || widget.loopLengthMicros > 0
                               ? _sweep.value
                               : null,
-                          breathe: widget.loopLengthMicros == 0
-                              ? (_breathe.isAnimating
+                          breathe: widget.active || widget.loopLengthMicros > 0
+                              ? 0
+                              : (_breathe.isAnimating
                                     ? _smoothstep(_breathe.value)
-                                    : 0.55)
-                              : 0,
+                                    : 0.55),
                         ),
                       ),
                     ),
@@ -943,8 +963,8 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
 /// Paints the encoder's 12-LED ring (the 12× WS2812 ring board on the
 /// hardware). Twin of firmware `renderRing()`.
 ///
-/// The ring is always [baseColor] (green). While no loop is loaded, every LED
-/// breathes together at [breathe] (`0..1`). Once a loop runs, [progress]
+/// The ring is always [baseColor] (green). In standby, every LED breathes
+/// together at [breathe] (`0..1`). Once activity starts, [progress]
 /// (`0..1`, clockwise from the top) is the playhead: that LED takes
 /// [headColor] (rec red / mute green / FX blue) and its neighbours fade in
 /// [baseColor]. [progress] is `null` while breathing. A [goodbye] frame blacks
@@ -972,7 +992,7 @@ class PedalLedRingPainter extends CustomPainter {
   /// Shutdown frame: every LED is off, as both firmware sketches render it.
   final bool goodbye;
 
-  /// Playhead position `0..1`, or `null` while the idle breathe is showing.
+  /// Playhead position `0..1`, or `null` while the standby breathe is showing.
   final double? progress;
 
   /// Idle breathe amount `0..1` (ignored while [progress] is set).
@@ -1071,9 +1091,8 @@ Color _ledColor(SurfaceTheme surface, PedalTrackLed led) => switch (led) {
 /// twin of the firmware's `modeColor`. Rec red, mute green, FX blue (#693).
 ///
 /// Two call sites, one meaning: the MODE LED, and the ring's playhead LED
-/// once a loop is running. The idle ring breathes in green with no
-/// distinguished playhead — a red idle tick would read as a live take from
-/// stage distance, the same lie #693 killed on the whole-ring fill.
+/// once activity starts. Standby breathes in green with no distinguished
+/// playhead.
 ///
 /// The MODE LED is SOLID in every state on both sides. The armed blink is
 /// gone (armed shows on the screens); `PedalStateFrame.performanceArmed` still

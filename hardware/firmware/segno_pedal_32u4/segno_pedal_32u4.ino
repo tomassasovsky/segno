@@ -13,7 +13,7 @@
 //     inputs (USB + DIN) are read for bidirectional sync; outbound events and the
 //     identity reply go to BOTH.
 //   * LEDs: TWO WS2812 strips instead of one 19-LED strip —
-//       - RING (D15): the off-the-shelf 16-LED NeoPixel ring (idle
+//       - RING (D15): the off-the-shelf 16-LED NeoPixel ring (standby
 //         breathe, mode-colored playhead; see renderRing()).
 //       - INDICATOR (D16): a 7-LED strip: [mode, Tr1, Tr2, Tr3, Tr4, clear, bank].
 //   * Pin map matches main_board.py / the THT plan §1 (footswitches D2–D10/D14).
@@ -37,7 +37,7 @@
 
 // ---- hardware layout — matches main_board.py / the THT plan -----------------
 
-// RING strip: the 16-LED NeoPixel ring on D15 (idle breathe / playhead;
+// RING strip: the 16-LED NeoPixel ring on D15 (standby breathe / playhead;
 // see renderRing()).
 static const uint8_t kRingPin = 15;
 static const uint8_t kRingCount = 16;
@@ -97,7 +97,7 @@ static uint8_t g_sysex[40];
 static uint8_t g_sysexLen = 0;
 static bool g_inSysex = false;
 // Timestamp of the last loop-top pulse (PEDAL_LOOP_TOP). Currently unused:
-// the ring (see renderRing()) breathes when idle and sweeps a playhead
+// the ring (see renderRing()) breathes in standby and sweeps a playhead
 // independent of loop length. Reserved for a possible future loop-synced
 // rendering mode.
 static unsigned long g_lastLoopTopMs = 0;
@@ -297,9 +297,9 @@ static CRGB globalColor(uint8_t color) {
 // this in lockstep with the app's `_modeColor` in `pedal_plate.dart`.
 // No wire byte changes: the frame carries the 2-bit mode, never a colour.
 //
-// Two call sites, one meaning: the MODE LED, and the ring playhead once a
-// loop is running. The idle ring breathes in green with no distinguished
-// playhead — a red idle tick would read as a live take from stage distance.
+// Two call sites, one meaning: the MODE LED, and the ring playhead once
+// activity starts (recording, overdub, playback). Standby breathes green
+// with no playhead.
 static CRGB modeColor(uint8_t mode) {
   switch (mode) {
     case PEDAL_MODE_PLAY: return globalColor(PEDAL_GLOBAL_GREEN); // one green
@@ -314,8 +314,9 @@ static CRGB scaled(CRGB c, uint8_t level) {
 }
 
 // Green fill with a brightness hump around the playhead (see the UNO build).
-// Widths tuned for the 16-LED ring. The playhead LED takes the mode colour;
-// idle (no loop) breathes in green. A Stop that leaves a loop loaded freezes
+// Widths tuned for the 16-LED ring. The playhead LED takes the mode colour.
+// Breathe is standby only: any activity (including the first take, which has
+// no length yet) sweeps a playhead. A Stop that leaves a loop loaded freezes
 // the playhead.
 static const unsigned long kRingMsPerRev = 700;
 static const unsigned long kBreatheMs = 2400;
@@ -337,12 +338,14 @@ static void renderRing() {
   const bool looping = g_frame.loop_length_micros > 0;
   const bool active = (activity.r || activity.g || activity.b) &&
                       g_frame.global_color != PEDAL_GLOBAL_BLUE;
-  if (looping && !active) return; // Stop freezes the playhead
-
   const CRGB base = CRGB::Green;
   const CRGB head = modeColor(g_frame.play_mode);
 
-  if (!looping) {
+  // Standby (no activity): freeze the playhead if a loop is still loaded,
+  // otherwise breathe. Any activity — including the first take, which has
+  // no length yet — falls through to the sweep.
+  if (!active) {
+    if (looping) return;
     unsigned long p = now % kBreatheMs;
     const unsigned long half = kBreatheMs / 2;
     float t = (p < half) ? (p / (float)half)
@@ -492,7 +495,7 @@ static void render() {
   }
 
   // A recent encoder turn takes over the ring as a volume meter; otherwise it
-  // shows the ring (idle breathe / looping playhead). Signed compare is
+  // shows the ring (standby breathe / active playhead). Signed compare is
   // millis()-wrap safe.
   if ((long)(g_gainShownUntilMs - millis()) > 0) {
     renderVolumeBar();

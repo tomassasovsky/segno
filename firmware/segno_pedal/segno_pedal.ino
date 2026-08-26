@@ -71,7 +71,7 @@ static uint8_t g_sysexLen = 0;
 static bool g_inSysex = false;
 
 // Timestamp of the last loop-top pulse (0xFA) from segno. Currently unused:
-// v1's ring (see renderRing()) breathes when idle and sweeps a playhead
+// v1's ring (see renderRing()) breathes in standby and sweeps a playhead
 // independent of loop length. Reserved for a possible future loop-synced
 // rendering mode.
 static unsigned long g_lastLoopTopMs = 0;
@@ -198,9 +198,9 @@ static CRGB globalColor(uint8_t color) {
 // this in lockstep with the app's `_modeColor` in `pedal_plate.dart`.
 // No wire byte changes: the frame carries the 2-bit mode, never a colour.
 //
-// Two call sites, one meaning: the MODE LED, and the ring playhead once a
-// loop is running. The idle ring breathes in green with no distinguished
-// playhead — a red idle tick would read as a live take from stage distance.
+// Two call sites, one meaning: the MODE LED, and the ring playhead once
+// activity starts (recording, overdub, playback). Standby breathes green
+// with no playhead.
 static CRGB modeColor(uint8_t mode) {
   switch (mode) {
     case PEDAL_MODE_PLAY:
@@ -220,10 +220,10 @@ static CRGB scaled(CRGB c, uint8_t level) {
 // The looping ring is a green fill with a brightness hump around the playhead.
 // The playhead LED ("first in line") takes the interaction-mode colour: rec
 // red, mute green, FX blue. Tune: kRingMsPerRev (lower = faster), kRingWidth
-// (LEDs lit each side), kRingShape (parabola-ish), kBreatheMs (idle pulse).
-// Independent of loop length. A Stop that leaves a loop loaded FREEZES the
-// playhead. With no loop, every LED breathes together in green — no red tick,
-// so idle rec mode cannot read as a live take (#693).
+// (LEDs lit each side), kRingShape (parabola-ish), kBreatheMs (standby pulse).
+// Independent of loop length. Breathe is standby only: any activity (including
+// the first take, which has no length yet) sweeps a playhead. A Stop that
+// leaves a loop loaded FREEZES the playhead.
 static const unsigned long kRingMsPerRev = 700;
 static const unsigned long kBreatheMs = 2400;
 static const float kRingWidth = 5.5f;
@@ -244,13 +244,14 @@ static void renderRing() {
   const bool looping = g_frame.loop_length_micros > 0;
   const bool active = (activity.r || activity.g || activity.b) &&
                       g_frame.global_color != PEDAL_GLOBAL_BLUE;
-  // A Stop with a loop still loaded freezes the playhead where it was.
-  if (looping && !active) return;
-
   const CRGB base = CRGB::Green;
   const CRGB head = modeColor(g_frame.play_mode);
 
-  if (!looping) {
+  // Standby (no activity): freeze the playhead if a loop is still loaded,
+  // otherwise breathe. Any activity — including the first take, which has
+  // no length yet — falls through to the sweep.
+  if (!active) {
+    if (looping) return;
     unsigned long p = now % kBreatheMs;
     const unsigned long half = kBreatheMs / 2;
     float t = (p < half) ? (p / (float)half)

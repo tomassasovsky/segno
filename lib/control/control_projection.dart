@@ -122,10 +122,11 @@ PedalStateFrame projectFrame(
     for (var channel = 0; channel < PedalStateFrame.trackCount; channel++)
       projectTrackLed(looper, overlay, channel, boundChains: boundChains),
   ];
-  // global_color is the ring's freeze/active signal: off when idle (breathe)
-  // or stopped with a loop loaded (freeze), otherwise lit so the playhead
-  // sweeps. Fill is always green; the playhead LED takes the interaction
-  // mode (rec red / mute green / FX blue). Track LEDs still carry
+  // global_color is the ring's freeze/active signal: off when standby
+  // (breathe) or stopped with a loop loaded (freeze), otherwise lit so the
+  // playhead sweeps — including the first take, which has no length yet.
+  // Fill is always green; the playhead LED takes the interaction mode
+  // (rec red / mute green / FX blue). Track LEDs still carry
   // recording/overdub/play.
   final anyRecording = looper.tracks.any(
     (t) => t.state == TrackState.recording,

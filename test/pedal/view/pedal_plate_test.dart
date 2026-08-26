@@ -286,12 +286,10 @@ void main() {
     expect(ringPainter().progress, moreOrLessEquals(frozenAt!, epsilon: 1e-6));
   });
 
-  testWidgets('recording the first take breathes green, no red ring fill', (
-    tester,
-  ) async {
-    // First take: activity is red, but no loop has closed yet
-    // (loopLengthMicros == 0). The ring must still breathe green with no
-    // playhead — the red activity does not flood the ring.
+  testWidgets('recording the first take sweeps a red playhead', (tester) async {
+    // First take: activity is red, no loop has closed yet
+    // (loopLengthMicros == 0). Breathe is standby only — a live take
+    // must sweep a mode-coloured playhead, not keep pulsing.
     await pumpPlate(
       tester,
       frame: _frame().copyWith(
@@ -306,9 +304,11 @@ void main() {
                 )
                 .painter!
             as PedalLedRingPainter;
-    expect(painter.progress, isNull);
+    expect(painter.progress, isNotNull);
     expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
-    await tester.pump(const Duration(milliseconds: 600));
+    expect(painter.headColor, SurfaceTheme.dark.ledRed);
+    expect(painter.breathe, 0);
+    await tester.pump(const Duration(milliseconds: 350));
     expect(
       (tester
                   .widget<CustomPaint>(
@@ -316,7 +316,7 @@ void main() {
                   )
                   .painter!
               as PedalLedRingPainter)
-          .breathe,
+          .progress,
       greaterThan(0),
     );
   });

@@ -32,9 +32,10 @@ confirm them.
       feedback) — these are separate pickers.
 - [ ] **Pass:** footswitches drive record/play/stop/undo/mode/track/clear/bank;
       the encoder drives master volume; the on-screen selection mirrors the pedal.
-- [ ] Confirm LED feedback: idle ring breathes green; looping ring is green
-      with a rec-red / mute-green playhead; per-track LEDs; goodbye-frame on
-      shutdown.
+- [ ] Confirm LED feedback: standby ring breathes green; once recording or
+      playing, the ring is green with a rec-red / mute-green playhead
+      (including the first take, before a loop length exists); per-track LEDs;
+      goodbye-frame on shutdown.
 - [ ] Replug mid-session: exactly one binding, take intact, no double events.
 
 ## 4. LED gamma appearance on the 9 V rail (PR #158)
