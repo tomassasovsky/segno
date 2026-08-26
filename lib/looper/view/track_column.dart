@@ -31,11 +31,28 @@ class TrackColumn extends StatelessWidget {
     this.looperMode = LooperMode.multi,
     this.isPrimary = false,
     this.onCrownPrimary,
+    this.fxTarget,
     super.key,
   });
 
   /// The track this column renders.
   final Track track;
+
+  /// The FX stage the footswitch bound to this cell attaches to, in FX mode.
+  ///
+  /// FX mode identifies a cell CHAIN-FIRST — by the FX stage its bound chain
+  /// targets, never by the column's track (#692): a footswitch may toggle a
+  /// chain on any stage (an input monitor, a lane, another track's bus, the
+  /// Master insert), so the cell names the chain it drives, not the track it
+  /// happens to sit above.
+  ///
+  /// Null defaults to this column's own Track-stage chain — what the on-screen
+  /// stage's per-column tap currently toggles ([LooperTrackChainToggled]) — so
+  /// the identity still reads `TRACK n · …`, chain-first, exactly like any
+  /// other target. The chain's entries and power state are always taken from
+  /// [track] (the polled snapshot the stage renders); [fxTarget] renames the
+  /// cell, it does not re-source the chain.
+  final FxAddress? fxTarget;
 
   /// The track's resolved display name.
   final String name;
@@ -85,6 +102,22 @@ class TrackColumn extends StatelessWidget {
     final barColor = isFx
         ? looper.meterColor(meterState, mode: mode).withValues(alpha: 0.4)
         : looper.meterColor(meterState, mode: mode);
+    // The FX-mode cell identity, chain-first (#692): the FX stage the bound
+    // chain sits on, then the chain's own name — the track name is deliberately
+    // absent, since the cell drives an FX control that need not belong to this
+    // column's track. The stage defaults to this column's own Track chain (what
+    // the per-column tap toggles), so a track chain still reads `TRACK n · …`,
+    // named like every other target rather than borrowing the track's name. The
+    // chain name is the head of the entries the polled snapshot carries; an
+    // empty chain has no name and the cell falls back to the bare stage label.
+    final fxAddress =
+        fxTarget ?? FxAddress(stage: FxStage.track, index: track.channel);
+    final fxTargetLabel = _stageFxTargetLabel(l10n, fxAddress);
+    final fxChainName =
+        track.effects.isEmpty ? null : fxBlockName(l10n, track.effects.first);
+    final fxCellLabel = fxChainName == null
+        ? fxTargetLabel
+        : l10n.stageFxCellLabel(fxTargetLabel, fxChainName.toUpperCase());
     // Crown badge (D18, B5c): visible only in Sync/Band (Wave-view style,
     // per the brainstorm) — an inert, empty slot in every other mode so the
     // column layout never shifts when the mode changes.
@@ -250,18 +283,18 @@ class TrackColumn extends StatelessWidget {
               // keys): record/overdub in record mode, mute/unmute in mute
               // mode, FX-chain on/off in FX mode — one interaction mode for
               // every surface, touch included.
-              // FX mode adds the CHAIN state to the label — the meter and the
-              // indicator report transport state and say nothing about the
-              // chain — while KEEPING the transport word the other modes
-              // carry, which the meter otherwise conveys by colour alone
-              // (WCAG 1.4.1).
+              // FX mode names the cell chain-first — its bound chain's target
+              // identity (#692), not the track — and adds the CHAIN state,
+              // which the meter and indicator (transport only) never report,
+              // while KEEPING the transport word the other modes carry, which
+              // the meter otherwise conveys by colour alone (WCAG 1.4.1).
               semanticLabel: switch (mode) {
                 InteractionMode.record => l10n.a11yTrackTile(name, stateWord),
                 InteractionMode.mute => l10n.a11yTrackTileMute(name, stateWord),
                 InteractionMode.fx =>
                   track.chainEnabled
-                      ? l10n.a11yTrackTileFxOn(name, stateWord)
-                      : l10n.a11yTrackTileFxOff(name, stateWord),
+                      ? l10n.a11yTrackTileFxOn(fxCellLabel, stateWord)
+                      : l10n.a11yTrackTileFxOff(fxCellLabel, stateWord),
               },
               selected: selected,
               borderRadius: 8,
@@ -301,12 +334,14 @@ class TrackColumn extends StatelessWidget {
                       ),
                     ),
                     // FX mode re-dresses the tile in place (#692): the receded
-                    // meter keeps reporting transport state behind a chain
-                    // identity — a dominant power pill and the chain's entries
-                    // in signal order (or NO CHAIN when the track has none).
-                    // This is the on-screen twin of the tile's semantic label
-                    // and of the pedal's chain LED; the meter alone shows
-                    // nothing about the chain, since it is taken pre-chain.
+                    // meter keeps reporting transport state behind the bound
+                    // chain's power pill and its entries in signal order (or NO
+                    // CHAIN when the chain is empty). The cell's chain-first
+                    // `TARGET · CHAIN` identity is named in the label slot
+                    // below the tile, replacing the track name. This is the
+                    // on-screen twin of the tile's semantic label and of the
+                    // pedal's chain LED; the meter alone shows nothing about
+                    // the chain, since it is taken pre-chain.
                     if (isFx)
                       Positioned.fill(
                         child: _FxChainDressing(
@@ -328,28 +363,38 @@ class TrackColumn extends StatelessWidget {
             redoDepth: track.redoDepth,
           ),
           const SizedBox(height: kConsoleMode ? 2 : 10),
-          FocusableTapTarget(
-            key: Key('tracks_name_${track.channel}'),
-            semanticLabel: l10n.a11yRenameTrack(name),
-            onTap: () => showRenameTrackDialog(
-              context: context,
-              cubit: context.read<TracksCubit>(),
-              channel: track.channel,
-              current: name,
+          // The label below the tile identifies the cell. In every mode BUT FX
+          // that is the track name (tap to rename). In FX mode the cell is not
+          // the track — it drives a bound FX chain — so the label becomes the
+          // chain-first `TARGET · CHAIN` identity instead (#692); borrowing the
+          // track's name here would re-assert exactly the track-as-FX-control
+          // conflation the chain-first identity removes.
+          if (isFx)
+            _FxCellIdentity(label: fxCellLabel)
+          else
+            FocusableTapTarget(
+              key: Key('tracks_name_${track.channel}'),
+              semanticLabel: l10n.a11yRenameTrack(name),
+              onTap: () => showRenameTrackDialog(
+                context: context,
+                cubit: context.read<TracksCubit>(),
+                channel: track.channel,
+                current: name,
+              ),
+              child: kConsoleMode
+                  // Fixed console name size: uniform height across columns,
+                  // tuned so a 6-char name (e.g. GUITAR) reaches ~60% of the
+                  // column width on the 16" panel. Hard-coded (not
+                  // width-relative).
+                  ? AppText(
+                      name,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: nameStyle?.copyWith(fontSize: 47.3, height: 1),
+                    )
+                  : nameText,
             ),
-            child: kConsoleMode
-                // Fixed console name size: uniform height across columns, tuned
-                // so a 6-char name (e.g. GUITAR) reaches ~60% of the column
-                // width on the 16" panel. Hard-coded (not width-relative).
-                ? AppText(
-                    name,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: nameStyle?.copyWith(fontSize: 47.3, height: 1),
-                  )
-                : nameText,
-          ),
           // A discrete arm/readiness strip, shown only when the view preference
           // is on. When off the widget is absent and the tile reflows.
           if (context.select<TracksCubit, bool>(
@@ -547,14 +592,31 @@ class _PendingArmBadge extends StatelessWidget {
   }
 }
 
+/// The track-name-free FX stage prefix of an FX-mode cell identity (#692).
+///
+/// Names the stage the bound chain sits on — `INPUT n` / `TRACK n` / `LANE n`
+/// / `MASTER` — WITHOUT the rig's own track naming that `fxStageLabel` (the
+/// pedal-assignment label) threads in: an FX-mode cell must never borrow the
+/// track's name as its identity, even when the bound chain happens to target a
+/// track. Indices are 1-based, matching every other jack name the rig gives.
+String _stageFxTargetLabel(AppLocalizations l10n, FxAddress address) =>
+    switch (address.stage) {
+      FxStage.input => l10n.stageFxTargetInput(address.index + 1),
+      FxStage.loop => l10n.stageFxTargetLane(address.lane ?? 0),
+      FxStage.track => l10n.stageFxTargetTrack(address.index + 1),
+      FxStage.master => l10n.stageFxTargetMaster,
+    };
+
 /// The FX-mode re-dressing drawn over a track's (receded) meter (#692).
 ///
 /// Candidate A of the #692 spike: FX mode does not swap the stage, it
 /// re-dresses each tile IN PLACE — geometry, the 1–8 key parity and the
 /// footswitch map all stay frozen, so the performer's spatial map is untouched.
-/// What changes is the tile's *content*: a dominant power pill states the whole
-/// chain's on/off, and the chain's entries read beneath it in signal order. An
-/// empty track says NO CHAIN instead — there is nothing to power.
+/// What changes is the tile's *identity and content*: it is named chain-first
+/// by its bound chain's `TARGET · CHAIN` (never the track), a dominant power
+/// pill states the whole chain's on/off, and the chain's entries read beneath
+/// in signal order. An empty chain keeps the target name but says NO CHAIN
+/// instead of a pill — there is nothing to power.
 ///
 /// It carries no semantics ([ExcludeSemantics]) and no hit target
 /// ([IgnorePointer]): [TrackColumn]'s tile already names the chain state for a
@@ -563,7 +625,7 @@ class _PendingArmBadge extends StatelessWidget {
 class _FxChainDressing extends StatelessWidget {
   const _FxChainDressing({required this.effects, required this.chainEnabled});
 
-  /// The track's Track-stage chain entries, in processing order.
+  /// The bound chain's entries, in processing order.
   final List<TrackEffect> effects;
 
   /// Whether the whole chain is engaged (drives the power pill).
@@ -578,7 +640,8 @@ class _FxChainDressing extends StatelessWidget {
           padding: const EdgeInsets.all(8),
           child: effects.isEmpty
               // Nothing loaded: no power pill (there is nothing to power), just
-              // the invitation to build one — the pen's empty LEAD tile.
+              // the invitation to build one. The cell's chain-first identity
+              // (its bound-chain target) is named in the label below the tile.
               ? Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -614,6 +677,40 @@ class _FxChainDressing extends StatelessWidget {
                     _FxEntryRun(effects: effects, chainEnabled: chainEnabled),
                   ],
                 ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The chain-first cell identity, `TARGET · CHAIN`, drawn in the label slot
+/// below the tile in FX mode — where the track name sits in every other mode.
+///
+/// Names the FX stage the footswitch's bound chain attaches to and the chain
+/// itself — the FX control the cell drives — NOT the track in the column
+/// (#692). It is the on-screen twin of the tile's FX semantic label. Carries
+/// no rename affordance (the name is not the identity here) and no semantics
+/// of its own: the tile's FX label already announces this same identity.
+class _FxCellIdentity extends StatelessWidget {
+  const _FxCellIdentity({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeSemantics(
+      child: AppText(
+        label,
+        key: const Key('tracks_tileFxTarget'),
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: context.surface.fx,
+          fontSize: kConsoleMode ? 22 : 15,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.5,
+          height: 1,
         ),
       ),
     );

@@ -328,9 +328,9 @@
     "@shortcutArm": {
         "description": "Legend description for the A shortcut."
     },
-    "shortcutSelectTrack": "Select a track (mute it in mute mode, toggle its FX chain in FX mode)",
+    "shortcutSelectTrack": "Select a track (mute it in mute mode; in FX mode, toggle the FX chain bound to that key)",
     "@shortcutSelectTrack": {
-        "description": "Legend description for the 1–8 number-key shortcuts."
+        "description": "Legend description for the 1–8 number-key shortcuts. The FX clause names the bound chain, not the track: in FX mode a key toggles the FX chain assigned to it, which may target any FX stage, not necessarily its own track (#692)."
     },
     "shortcutBank": "Switch bank A / B",
     "@shortcutBank": {
@@ -390,11 +390,11 @@
             }
         }
     },
-    "a11yTrackTileFxOn": "{name}, {state}, FX chain on, activate to switch it off",
+    "a11yTrackTileFxOn": "{target}, {state}, FX chain on, activate to switch it off",
     "@a11yTrackTileFxOn": {
-        "description": "Accessibility label for a track tile in FX mode while that track's FX chain is engaged. Carries the transport state word like the record and mute labels (the meter shows it in colour only, WCAG 1.4.1) plus the chain state, which nothing else on the tile reports.",
+        "description": "Accessibility label for a stage cell in FX mode while its bound FX chain is engaged. Leads with the chain-first target identity (the FX stage the bound chain sits on, e.g. 'MASTER · REVERB'), NOT the column's track name — the cell drives an FX chain, not the track (#692). Carries the transport state word like the record and mute labels (the meter shows it in colour only, WCAG 1.4.1) plus the chain state, which nothing else on the tile reports.",
         "placeholders": {
-            "name": {
+            "target": {
                 "type": "String"
             },
             "state": {
@@ -402,11 +402,11 @@
             }
         }
     },
-    "a11yTrackTileFxOff": "{name}, {state}, FX chain off, activate to switch it on",
+    "a11yTrackTileFxOff": "{target}, {state}, FX chain off, activate to switch it on",
     "@a11yTrackTileFxOff": {
-        "description": "Accessibility label for a track tile in FX mode while that track's FX chain is bypassed.",
+        "description": "Accessibility label for a stage cell in FX mode while its bound FX chain is bypassed. Leads with the chain-first target identity, never the column's track name (#692).",
         "placeholders": {
-            "name": {
+            "target": {
                 "type": "String"
             },
             "state": {
@@ -764,6 +764,33 @@
     "stageFxNoChainHint": "build one in Signal",
     "@stageFxNoChainHint": {
         "description": "The hint under NO CHAIN on an empty FX-mode stage tile, pointing the player at the Signal tab where a chain is assembled."
+    },
+    "stageFxCellLabel": "{target} · {chain}",
+    "@stageFxCellLabel": {
+        "description": "The chain-first identity of an FX-mode stage cell: the FX stage the footswitch's bound chain attaches to, a middle dot, then the chain's own name. Names the FX control the cell drives — never the track in that column, which the cell no longer claims (#692).",
+        "placeholders": {
+            "target": { "type": "String", "example": "MASTER" },
+            "chain": { "type": "String", "example": "REVERB" }
+        }
+    },
+    "stageFxTargetInput": "INPUT {number}",
+    "@stageFxTargetInput": {
+        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a hardware input's monitor chain. 1-based, upper-case for stage distance. Carries no track name (the bound chain need not belong to the column's track).",
+        "placeholders": { "number": { "type": "int", "example": "1" } }
+    },
+    "stageFxTargetTrack": "TRACK {number}",
+    "@stageFxTargetTrack": {
+        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a track's bus chain. 1-based. Always shown chain-first (never the track's name), even when the bound chain targets the column's own track (#692).",
+        "placeholders": { "number": { "type": "int", "example": "3" } }
+    },
+    "stageFxTargetLane": "LANE {lane}",
+    "@stageFxTargetLane": {
+        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a loop lane's record-route chain.",
+        "placeholders": { "lane": { "type": "int", "example": "2" } }
+    },
+    "stageFxTargetMaster": "MASTER",
+    "@stageFxTargetMaster": {
+        "description": "The FX-stage prefix of an FX-mode cell whose bound chain is the single Master insert."
     },
     "signalShowAllLanes": "All lanes",
     "signalShowRecordedLanes": "Recorded lanes",

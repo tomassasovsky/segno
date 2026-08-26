@@ -19,6 +19,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/track_column.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -461,6 +462,11 @@ void main() {
       seed(LooperState(tracks: [chainedTrack]));
       await pump(tester);
 
+      // The cell is named CHAIN-FIRST (#692): its bound chain's target and the
+      // chain itself — TRACK 1 (its own Track-stage chain, the default target)
+      // and the head effect — never the track's own name as the cell identity.
+      expect(find.byKey(const Key('tracks_tileFxTarget')), findsOneWidget);
+      expect(find.text('TRACK 1 · DRIVE'), findsOneWidget);
       // The dominant power pill states the whole chain's on/off…
       expect(find.byKey(const Key('tracks_tileFxPower')), findsOneWidget);
       expect(find.text('ON'), findsOneWidget);
@@ -510,6 +516,10 @@ void main() {
 
       expect(find.byKey(const Key('tracks_tileFxNoChain')), findsOneWidget);
       expect(find.text('NO CHAIN'), findsOneWidget);
+      // An empty chain still names its target (the footswitch drives it either
+      // way), just the bare stage with no chain name appended.
+      expect(find.byKey(const Key('tracks_tileFxTarget')), findsOneWidget);
+      expect(find.text('TRACK 1'), findsOneWidget);
       // There is no chain to power, so the pill is absent entirely.
       expect(find.byKey(const Key('tracks_tileFxPower')), findsNothing);
       expect(find.byKey(const Key('tracks_tileFxEntryRun')), findsNothing);
@@ -547,6 +557,9 @@ void main() {
       expect(find.byKey(const Key('tracks_tileFxPower')), findsNothing);
       expect(find.byKey(const Key('tracks_tileFxEntryRun')), findsNothing);
       expect(find.text('ON'), findsNothing);
+      // The chain-first identity is an FX-mode dressing too: gone with the
+      // rest, and the track name label returns to identify the column.
+      expect(find.byKey(const Key('tracks_tileFxTarget')), findsNothing);
       // The tile itself — its key, its tap target — is untouched.
       expect(find.byKey(const Key('tracks_tile_0')), findsOneWidget);
     });
@@ -562,6 +575,111 @@ void main() {
 
       await tester.tap(find.byKey(const Key('tracks_tile_0')));
       verify(() => bloc.add(const LooperTrackChainToggled(0))).called(1);
+    });
+  });
+
+  group('FX-mode cell identity is chain-first, never the track (#692)', () {
+    // These pump a TrackColumn DIRECTLY so the bound chain's FX target can be
+    // injected — the on-screen stage wires every column to its own Track
+    // chain, so a non-track target (e.g. Master) cannot reach the cell through
+    // TracksView, but the cell must still name it and never the column's track.
+    Future<void> pumpColumn(
+      WidgetTester tester, {
+      required Track track,
+      required String name,
+      required InteractionMode mode,
+      FxAddress? fxTarget,
+    }) {
+      seed(LooperState(tracks: [track]));
+      return tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.neon,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: MultiRepositoryProvider(
+            providers: [
+              RepositoryProvider<LooperRepository>.value(value: repository),
+            ],
+            child: MultiBlocProvider(
+              providers: [
+                BlocProvider<LooperBloc>.value(value: bloc),
+                BlocProvider<TracksCubit>.value(value: tracks),
+                BlocProvider<ControlCubit>.value(value: control),
+              ],
+              child: Scaffold(
+                body: Center(
+                  child: SizedBox(
+                    width: 200,
+                    height: 600,
+                    child: TrackColumn(
+                      track: track,
+                      name: name,
+                      selected: false,
+                      mode: mode,
+                      onUndo: (_) {},
+                      onRedo: (_) {},
+                      fxTarget: fxTarget,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets("a chain on the column's own track reads TRACK n · CHAIN, "
+        'not the track name', (tester) async {
+      await pumpColumn(
+        tester,
+        // A custom name distinct from its stage label, so borrowing it as the
+        // identity would be visible — the default name is itself "TRACK n".
+        name: 'GUITAR',
+        mode: InteractionMode.fx,
+        track: Track(
+          channel: 2,
+          effects: [BuiltInEffect(type: TrackEffectType.filter)],
+        ),
+      );
+
+      // Chain-first: the default Track-stage target (TRACK 3, 1-based) and the
+      // chain's head effect — never GUITAR as the cell identity.
+      expect(find.text('TRACK 3 · FILTER'), findsOneWidget);
+      expect(find.text('GUITAR'), findsNothing);
+    });
+
+    testWidgets('a bound chain targeting a NON-track stage reads that stage, '
+        'not the column track', (tester) async {
+      await pumpColumn(
+        tester,
+        name: 'GUITAR',
+        mode: InteractionMode.fx,
+        // The footswitch over the GUITAR column is bound to the MASTER insert's
+        // chain: the cell must say MASTER, never TRACK 1 / GUITAR.
+        fxTarget: const FxAddress(stage: FxStage.master),
+        track: Track(effects: [BuiltInEffect(type: TrackEffectType.reverb)]),
+      );
+
+      expect(find.text('MASTER · REVERB'), findsOneWidget);
+      expect(find.text('GUITAR'), findsNothing);
+      expect(find.textContaining('TRACK'), findsNothing);
+    });
+
+    testWidgets('leaving FX mode brings the track name back as the identity', (
+      tester,
+    ) async {
+      await pumpColumn(
+        tester,
+        name: 'GUITAR',
+        mode: InteractionMode.record,
+        track: Track(effects: [BuiltInEffect(type: TrackEffectType.reverb)]),
+      );
+
+      // Outside FX mode the column is the track again: its name identifies it,
+      // and no chain-first identity is drawn.
+      expect(find.text('GUITAR'), findsOneWidget);
+      expect(find.byKey(const Key('tracks_tileFxTarget')), findsNothing);
     });
   });
 
