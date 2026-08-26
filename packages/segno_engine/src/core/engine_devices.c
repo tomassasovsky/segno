@@ -242,17 +242,23 @@ static int g_channel_cache_count = 0;
  * rules are unit-testable with scripted answers on a box with no devices at
  * all. The live path enters through device_channels below.
  *
- * A FAILURE is memoised too, for one TTL window (#649, defense-in-depth): an
- * entry with channels == 0 answers UNKNOWN from the table and is re-asked only
- * when its trust countdown expires, exactly like a positive entry. Before #649
- * failures were never cached, and ALSA's hint clutter — dozens of plugin
- * pseudo-devices that fail their ~38 ms query permanently — made every
- * enumeration pass re-pay every failure, forever (~950 ms per tick on a Pi).
- * The route fix in le_linux_enum_route_pick makes that list unreachable; this
- * caps the steady-state cost of the next clutter-shaped surprise at one
- * expensive pass per TTL window. The old rule's point still holds in its
- * sharpened form: no failure is ever cached PERMANENTLY — the countdown
- * guarantees a re-read — and a device that later answers overwrites the 0. */
+ * ONLY a positive answer is memoised. A failed query (channels == 0) is never
+ * cached: it returns UNKNOWN and is re-asked on the very next sighting, so a
+ * device reporting a transient 0 (e.g. ma_context_get_device_info momentarily
+ * failing mid CoreAudio hotplug/reconfigure) self-corrects on the next ~1 Hz
+ * poll instead of being pinned at UNKNOWN for up to a TTL window.
+ *
+ * This is the only path that reaches the memo — device_info_copy's miniaudio
+ * enumeration, i.e. macOS/Windows and the Linux JACK/Pulse routes. #649 briefly
+ * memoised failures here too (defense against ALSA's PCM-hint clutter: dozens
+ * of plugin pseudo-devices that fail their ~38 ms query permanently, re-paid on
+ * every 1 Hz pass, ~950 ms per tick on a Pi). But the route fix in
+ * le_linux_enum_route_pick sends that jack-less/pulse-less config to
+ * le_alsa_enumerate_cards — whose own le_alsa_channels_cached memo never enters
+ * this function — so no clutter-shaped list reaches this table any more. The
+ * negative cache therefore bought nothing on the miniaudio path while adding a
+ * staleness window, so it is dropped and the pre-#649 self-correcting rule
+ * restored. */
 static int32_t channel_memo(const char* key, int capture,
                             int32_t (*query)(void* env), void* env) {
   for (int i = 0; i < g_channel_cache_count; ++i) {
@@ -262,20 +268,27 @@ static int32_t channel_memo(const char* key, int capture,
     hit->trust = LE_CHANNEL_CACHE_TTL;
     const int32_t fresh = query(env);
     /* A failed re-read keeps what was already known: 0 means UNKNOWN, and a
-     * transient failure must not blank a count the device has answered. (For a
-     * negative entry there is nothing to blank — it stays 0 until a query
-     * finally answers.) */
+     * transient failure must not blank a count the device has answered. Every
+     * cached entry is positive (only positives are inserted below), so this
+     * only ever protects a real count against a momentary 0. */
     if (fresh > 0) hit->channels = fresh;
     return hit->channels;
   }
   const int32_t channels = query(env);
-  if (g_channel_cache_count < LE_CHANNEL_CACHE_MAX) {
+  /* Only a real answer is remembered — caching a failure would pin the device
+   * at UNKNOWN until its trust expired, blinding the readout to a device that
+   * would have answered on the next poll. Positive entries are unbounded only
+   * in theory: the table is keyed by real device ids in two directions, so in
+   * practice it holds at most the host's actual playback+capture device count,
+   * far under LE_CHANNEL_CACHE_MAX (128), and a full table simply degrades to
+   * the always-query path with no correctness loss. */
+  if (channels > 0 && g_channel_cache_count < LE_CHANNEL_CACHE_MAX) {
     const int index = g_channel_cache_count++;
     le_channel_cache_entry* entry = &g_channel_cache[index];
     strncpy(entry->id, key, sizeof(entry->id) - 1);
     entry->id[sizeof(entry->id) - 1] = '\0';
     entry->capture = capture;
-    entry->channels = channels; /* 0 = a failure, remembered for one window */
+    entry->channels = channels;
     /* Seeded from the insertion index so entries fall due on different
      * sightings rather than the whole table re-reading on one poll. */
     entry->trust = index % LE_CHANNEL_CACHE_TTL + 1;

@@ -6551,70 +6551,69 @@ static void test_enumerate_devices_counts_are_stable(void) {
   }
 }
 
-/* ---- channel-count memo: negative TTL (#649) ----
+/* ---- channel-count memo: failures are NOT cached (#649 follow-up) ----
  *
  * Drives the memo's decision core (le_channel_memo_for_test) with scripted
  * query answers, because the case under test — a device that FAILS its channel
- * query persistently — cannot be produced on demand by any real device on a CI
- * box. The keys are shapes no backend emits, so the live table is shared
- * safely.
+ * query — cannot be produced on demand by any real device on a CI box. The
+ * keys are shapes no backend emits, so the live table is shared safely.
  *
- * What #649 changed: a failure is now memoised like a success, for one TTL
- * window. Before, failures were never cached, and a list of permanently
- * unanswerable devices (ALSA's PCM-hint clutter) re-paid every ~38 ms failure
- * on every 1 Hz enumeration pass, forever. The invariant that must survive the
- * change is the memo's founding rule in sharpened form: no failure is ever
- * cached PERMANENTLY — the per-entry trust countdown guarantees a re-read
- * within TTL sightings, and a device that finally answers overwrites the 0. */
+ * channel_memo is reached only by device_info_copy's miniaudio enumeration
+ * (macOS/Windows and the Linux JACK/Pulse routes); the Linux ALSA-cards route
+ * has its own le_alsa_channels_cached memo and never enters this function.
+ * #649 briefly memoised a failure here for one TTL window as defense against
+ * ALSA's PCM-hint clutter, but the same PR's route fix made that clutter
+ * unreachable through this path — so the negative cache only added a staleness
+ * window on the miniaudio path (a transient 0 pinned at UNKNOWN for up to a TTL
+ * window). This test pins the restored self-correcting rule: a 0 is re-queried
+ * on the very next sighting, never memoised, while a positive answer still is. */
 static int32_t memo_scripted_query(void* env) {
   int32_t* script = (int32_t*)env; /* [0] = answer to give, [1] = call tally */
   ++script[1];
   return script[0];
 }
 
-static void test_channel_memo_negative_ttl(void) {
-  printf("test_channel_memo_negative_ttl\n");
+static void test_channel_memo_failure_not_cached(void) {
+  printf("test_channel_memo_failure_not_cached\n");
   int32_t script[2] = {0, 0};
-  const char* key = "for-test:negative-ttl";
+  const char* key = "for-test:failure-not-cached";
 
-  /* Miss: the failure is queried once, published as UNKNOWN, and memoised. */
-  CHECK(le_channel_memo_for_test(key, 1, memo_scripted_query, script) == 0);
-  CHECK(script[1] == 1);
-
-  /* 3*TTL further sightings. The entry was seeded with trust
-   * t0 = index % TTL + 1 ∈ [1, TTL] (index unknowable here — it depends on
-   * how many devices earlier tests enumerated), then re-reads every TTL: the
-   * re-reads land at sightings t0, t0+TTL, t0+2*TTL, and t0+3*TTL > 3*TTL for
-   * every possible t0 — so EXACTLY three re-reads whatever the seed was, and
-   * every other sighting answers from the table. Before #649 this loop cost
-   * 3*TTL queries: the clutter pathology in miniature. */
+  /* A transient/persistent 0 is queried EVERY sighting — never cached. Before
+   * this fix (#864's negative cache) the first 0 would have been memoised and
+   * the loop would have queried only ~3 times over 3*TTL sightings. */
   for (int i = 0; i < 3 * LE_CHANNEL_CACHE_TTL; ++i) {
     CHECK(le_channel_memo_for_test(key, 1, memo_scripted_query, script) == 0);
   }
-  CHECK(script[1] == 1 + 3);
+  CHECK(script[1] == 3 * LE_CHANNEL_CACHE_TTL);
 
-  /* No failure outlives its TTL: once the device starts answering, the next
-   * re-read — at most TTL sightings away — replaces the 0 with the count. */
+  /* Because no negative entry was ever inserted, a device that starts answering
+   * heals IMMEDIATELY on its next sighting (a hit-on-stale-0 would only heal
+   * after a trust countdown; here there is nothing stale to wait out). */
   script[0] = 6;
-  int32_t got = 0;
-  for (int i = 0; i < LE_CHANNEL_CACHE_TTL && got == 0; ++i) {
-    got = le_channel_memo_for_test(key, 1, memo_scripted_query, script);
-  }
-  CHECK(got == 6);
+  CHECK(le_channel_memo_for_test(key, 1, memo_scripted_query, script) == 6);
+  const int32_t calls_after_first_answer = script[1];
+  CHECK(calls_after_first_answer == 3 * LE_CHANNEL_CACHE_TTL + 1);
 
-  /* The healed entry lives under the positive rules: re-read on schedule, but
-   * a transient failure never blanks a count the device has answered. */
+  /* The positive answer IS memoised: the next sighting answers from the table
+   * without a query, and a later transient 0 never blanks the known count. */
   script[0] = 0;
   for (int i = 0; i < 2 * LE_CHANNEL_CACHE_TTL; ++i) {
     CHECK(le_channel_memo_for_test(key, 1, memo_scripted_query, script) == 6);
   }
+  /* Over 2*TTL sightings a memoised entry re-reads at most twice (its trust
+   * countdown, reseeded to TTL, falls due at most twice in that span), versus
+   * the 2*TTL queries an uncached path would have paid — proof the positive
+   * result is genuinely cached. */
+  CHECK(script[1] <= calls_after_first_answer + 2);
 
   /* Direction is part of the key: the other direction of the same id starts
-   * from its own miss, not from the capture entry. */
-  script[0] = 4;
+   * from its own miss, not from the capture entry, and its failing query is
+   * likewise never cached. */
+  script[0] = 0;
   const int32_t calls_before = script[1];
-  CHECK(le_channel_memo_for_test(key, 0, memo_scripted_query, script) == 4);
-  CHECK(script[1] == calls_before + 1);
+  CHECK(le_channel_memo_for_test(key, 0, memo_scripted_query, script) == 0);
+  CHECK(le_channel_memo_for_test(key, 0, memo_scripted_query, script) == 0);
+  CHECK(script[1] == calls_before + 2);
 }
 
 /* The device-id serializer (engine_platform.h) turns a backend id into a
@@ -24500,7 +24499,7 @@ int main(void) {
   test_detect_loopback_runs();
   test_enumerate_devices_runs();
   test_enumerate_devices_counts_are_stable();
-  test_channel_memo_negative_ttl();
+  test_channel_memo_failure_not_cached();
   test_device_id_to_str();
   test_select_backend_defaults_to_miniaudio();
   test_alsa_periods_env_clamps_out_of_range();
