@@ -1,0 +1,67 @@
+#!/bin/sh
+# segno-wifi-retry -- give the saved WiFi network the second chance the boot
+# race denies it (#824).
+#
+# At boot, iwd can autoconnect off its own store in the window before
+# NetworkManager asserts control of wlan0. NM then kicks iwd off and starts its
+# own activation, which lands inside iwd's teardown and fails -- and NM maps
+# that backend failure to 'no-secrets', the one failure class it never retries.
+# Result: a console with a perfectly good saved network sits offline until a
+# human opens the Network tab, and the UI's wrong-password framing teaches them
+# to destroy the evidence by re-typing the password.
+#
+# This oneshot is the mechanism-independent half of the fix: shortly after
+# boot, if wlan0 is disconnected and a saved WiFi profile exists, re-activate
+# it -- exactly the "human pokes it" action, minus the human. It does not
+# depend on WHY the first attempt failed, so it also covers whatever the next
+# race turns out to be. The root-cause work (sweeping iwd's store of stale
+# non-mirrored networks; honest error mapping in the UI) stays with #824.
+#
+# Deliberately quiet and bounded: three attempts, then give up loudly (the
+# unit lands in systemctl --failed, and #810's persistent journal keeps the
+# whole story). Never touches profiles, never writes secrets, no-ops on a
+# console that is already online or has nothing saved.
+
+set -u
+
+TAG=segno-wifi-retry
+ATTEMPTS=3
+SETTLE=8      # seconds after start before the first check
+BETWEEN=5     # seconds between attempts
+
+log() { echo "$TAG: $*"; }
+
+command -v nmcli >/dev/null 2>&1 || { log "nmcli not present; nothing to do"; exit 0; }
+
+sleep "$SETTLE"
+
+for i in $(seq 1 "$ATTEMPTS"); do
+  # Already online on any WiFi device? Done.
+  if nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null \
+      | grep -q "^[^:]*:wifi:connected$"; then
+    log "wifi already connected; no retry needed"
+    exit 0
+  fi
+
+  # The most recently used saved WiFi profile, if any. TIMESTAMP sorts the
+  # candidates so a bench unit with several remembered networks retries the
+  # one the owner used last.
+  profile=$(nmcli -t -f NAME,TYPE,TIMESTAMP connection show 2>/dev/null \
+    | awk -F: '$2 == "802-11-wireless" { print $3 "\t" $1 }' \
+    | sort -rn | head -1 | cut -f2-)
+
+  if [ -z "$profile" ]; then
+    log "no saved wifi profile; nothing to retry"
+    exit 0
+  fi
+
+  log "attempt $i/$ATTEMPTS: activating '$profile'"
+  if nmcli connection up "$profile" >/dev/null 2>&1; then
+    log "'$profile' activated on attempt $i"
+    exit 0
+  fi
+  [ "$i" -lt "$ATTEMPTS" ] && sleep "$BETWEEN"
+done
+
+log "gave up after $ATTEMPTS attempts; '$profile' would not activate"
+exit 1

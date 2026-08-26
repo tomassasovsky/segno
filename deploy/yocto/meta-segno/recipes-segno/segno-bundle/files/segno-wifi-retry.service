@@ -1,0 +1,19 @@
+[Unit]
+Description=Segno: retry the saved WiFi network after the boot race (#824)
+# After NM is up; the script itself waits a settle period, so by the time it
+# checks, the racy first auto-activation has either succeeded or failed.
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+# The settle sleep lives in the script, bounded well under this.
+TimeoutStartSec=120
+ExecStart=/usr/bin/segno-wifi-retry
+# A give-up is a real signal (saved profile that will not activate) -- let it
+# land in `systemctl --failed` where segno-log-check and the persistent
+# journal (#810) make it diagnosable, but never block or degrade boot:
+# oneshot failure outside the critical path costs nothing else.
+
+[Install]
+WantedBy=multi-user.target

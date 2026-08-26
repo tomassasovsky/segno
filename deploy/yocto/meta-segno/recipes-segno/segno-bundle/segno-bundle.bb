@@ -57,6 +57,8 @@ SRC_URI = "file://segno.service \
            file://99-segno-wifi.conf \
            file://segno-wifi-regdom \
            file://segno-wifi-regdom.service \
+           file://segno-wifi-retry \
+           file://segno-wifi-retry.service \
            file://wifi-country-default \
            file://brcmfmac.conf \
            file://update-channel"
@@ -112,7 +114,7 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via segno-update-ctl).
 # So segno-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service boot.mount data.mount"
+SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service segno-wifi-retry.service boot.mount data.mount"
 
 FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${bindir}/segno-data-grow \
@@ -121,6 +123,7 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${bindir}/segno-wifi-ctl \
                 ${bindir}/segno-nm-persist \
                 ${bindir}/segno-wifi-regdom \
+                ${bindir}/segno-wifi-retry \
                 ${bindir}/segno-ssh-persist \
                 ${bindir}/segno-bt-persist \
                 ${bindir}/segno-mark-good \
@@ -242,6 +245,9 @@ do_install() {
     install -m 0755 ${UNPACKDIR}/segno-wifi-regdom ${D}${bindir}/segno-wifi-regdom
     install -m 0644 ${UNPACKDIR}/segno-wifi-regdom.service \
         ${D}${systemd_system_unitdir}/segno-wifi-regdom.service
+    install -m 0755 ${UNPACKDIR}/segno-wifi-retry ${D}${bindir}/segno-wifi-retry
+    install -m 0644 ${UNPACKDIR}/segno-wifi-retry.service \
+        ${D}${systemd_system_unitdir}/segno-wifi-retry.service
     install -d ${D}${sysconfdir}/segno
     install -m 0644 ${UNPACKDIR}/wifi-country-default \
         ${D}${sysconfdir}/segno/wifi-country
