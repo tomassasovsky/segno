@@ -1,5 +1,6 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:segno/wifi/wifi_join_failure.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
 part 'wifi_state.dart';
@@ -7,11 +8,22 @@ part 'wifi_state.dart';
 /// Drives the console WiFi UI: status, scan, join, disconnect, forget, radio.
 class WifiCubit extends Cubit<WifiState> {
   /// Creates a [WifiCubit] over [repository].
-  WifiCubit({required WifiRepository repository})
-    : _repository = repository,
-      super(const WifiState());
+  ///
+  /// [retryDelays] is the backoff schedule for re-activating after a
+  /// backend/transient join failure — one entry per automatic retry.
+  /// Injectable so tests do not sit through real seconds.
+  WifiCubit({
+    required WifiRepository repository,
+    List<Duration> retryDelays = const [
+      Duration(seconds: 2),
+      Duration(seconds: 5),
+    ],
+  }) : _repository = repository,
+       _retryDelays = retryDelays,
+       super(const WifiState());
 
   final WifiRepository _repository;
+  final List<Duration> _retryDelays;
 
   /// Loads status (and whether the stack is supported).
   Future<void> load() async {
@@ -72,48 +84,80 @@ class WifiCubit extends Cubit<WifiState> {
   }
 
   /// Joins [ssid] with optional [psk].
+  ///
+  /// A backend/transient failure (see [classifyWifiJoinFailure]) is retried
+  /// here with backoff — bounded by the cubit's retry schedule, never forever
+  /// — because a #824-shaped race is fixed by a second activation, not by a
+  /// new password. Only a genuine credential rejection surfaces as one.
   Future<void> connect(String ssid, {String? psk}) async {
     if (!state.supported) return;
+    // A password typed moments ago is the context that makes a `no-secrets`
+    // failure plausibly about the password (#829).
+    final interactive = psk != null && psk.isNotEmpty;
     emit(
       state.copyWith(
         busy: true,
         connectingSsid: ssid,
+        retrying: false,
         disconnecting: false,
         clearError: true,
       ),
     );
-    try {
-      await _repository.connect(ssid, psk: psk);
-      final status = await _repository.status();
-      if (isClosed) return;
-      emit(
-        state.copyWith(
-          status: status,
-          busy: false,
-          clearConnectingSsid: true,
-          disconnecting: false,
-        ),
-      );
-    } on Object catch (e) {
-      var status = state.status;
+    var attempt = 0;
+    while (true) {
       try {
-        status = await _repository.status();
-      } on Object {
-        // Keep the last known status if refresh fails.
+        await _repository.connect(ssid, psk: psk);
+        final status = await _repository.status();
+        if (isClosed) return;
+        emit(
+          state.copyWith(
+            status: status,
+            busy: false,
+            clearConnectingSsid: true,
+            disconnecting: false,
+          ),
+        );
+        return;
+      } on Object catch (e) {
+        final kind = classifyWifiJoinFailure(
+          raw: '$e',
+          interactive: interactive,
+        );
+        final retryable =
+            kind == WifiJoinErrorKind.transient ||
+            kind == WifiJoinErrorKind.timeout;
+        if (retryable && attempt < _retryDelays.length) {
+          if (isClosed) return;
+          emit(state.copyWith(retrying: true));
+          await Future<void>.delayed(_retryDelays[attempt]);
+          // The delay is an await: the tray may have closed, or the user may
+          // have cancelled or started a different join meanwhile.
+          if (isClosed || state.connectingSsid != ssid) return;
+          attempt++;
+          continue;
+        }
+        var status = state.status;
+        try {
+          status = await _repository.status();
+        } on Object {
+          // Keep the last known status if refresh fails.
+        }
+        // Guarded here rather than at the top of the catch: the refresh above
+        // is itself an await, so it re-opens the race.
+        if (isClosed) return;
+        emit(
+          state.copyWith(
+            status: status,
+            busy: false,
+            clearConnectingSsid: true,
+            disconnecting: false,
+            errorMessage: '$e',
+            errorKind: kind,
+            failedSsid: ssid,
+          ),
+        );
+        return;
       }
-      // Guarded here rather than at the top of the catch: the refresh above is
-      // itself an await, so it re-opens the race.
-      if (isClosed) return;
-      emit(
-        state.copyWith(
-          status: status,
-          busy: false,
-          clearConnectingSsid: true,
-          disconnecting: false,
-          errorMessage: '$e',
-          failedSsid: ssid,
-        ),
-      );
     }
   }
 
