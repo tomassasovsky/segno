@@ -84,41 +84,84 @@ export SEGNO_RT_AUDIO=1
 # "retest at 2" is chasing 0.67ms, not ~1.3ms.
 #
 # The 64 in that arithmetic is this unit's saved setting, not an image default:
-# buffer_frames is persisted per unit on /data by the app, which ships
-# bufferFrames=128 (lib/audio_setup/cubit/audio_setup_state.dart:64). On a unit
-# that has never been retuned one period is 1.33ms and every millisecond figure
-# above doubles — redo the arithmetic rather than quoting these numbers.
+# rate and buffer_frames are persisted per unit on /data by the app, which ships
+# 48000 / 128 frames (lib/audio_setup/cubit/audio_setup_state.dart:63-64). On a
+# unit that has never been retuned one period is therefore 128/48000 = 2.67ms —
+# the frames double AND the rate halves, so every millisecond figure above is
+# 4x, not 2x. Redo the arithmetic rather than quoting these numbers.
 #
-# That extra capacity costs approximately nothing in steady-state monitor
-# latency, which is not obvious and is worth stating with its mechanism. ALSA
-# starts playback at start_threshold, and miniaudio hardcodes that to two
-# periods (miniaudio.h:27840 passes internalPeriodSizeInFrames*2), independent
-# of the period COUNT — so raising `periods` deepens the ring without moving the
-# point at which playback begins. The duplex loop is capture-driven
-# read-then-blocking-write, so occupancy stays pinned near that threshold rather
-# than filling the ring. Measured live at periods=8: start_threshold 128 (= 2
-# periods) and appl_ptr - hw_ptr sampled 90-129 frames of the 512-frame ring
-# (delay 210-249). Everything in this paragraph is the PLAYBACK side, where the
-# hazard is underrun and the extra periods sit unused rather than adding delay.
-# The overrun headroom they buy is on the CAPTURE side, which is the side case 2
-# actually needed: miniaudio assigns the same `periods` to both descriptors
-# (miniaudio.h:41940 playback, :41956 capture), so raising it deepens the
-# capture ring too.
+# WHAT THIS COSTS IN LATENCY CHANGED WITH #809, and the old note is kept below
+# because it explains a #710 result that would otherwise look like a
+# coincidence. ALSA starts playback at start_threshold; miniaudio hardcoded that
+# to two periods independent of the period COUNT, so raising `periods` deepened
+# the ring WITHOUT moving the point playback begins. The duplex loop is
+# capture-driven read-then-blocking-write, so occupancy settled at that
+# threshold and stayed there: measured live at periods=8, start_threshold 128
+# (= 2 periods) and appl_ptr - hw_ptr sampled 90-129 frames of a 512-frame ring
+# — 512 - 129 = 383 frames never used at all. That is exactly why #710's
+# "buffer depth 192 -> 512 changed nothing" was not luck: depth reached the
+# CAPTURE side, which really does use it, and never reached the side that was
+# underrunning.
+#
+# The SEGNO patch now starts playback at half the ring, floored at the two
+# periods full-duplex needs, so `periods` controls the cushion on both sides —
+# which is what this knob already looked like it did. That floor also means the
+# patch does NOTHING at 4 periods and below (half of 4 periods IS 2 periods):
+# the separately tracked "retest at 2" therefore measures the OLD cushion, and
+# reads as though it measured the new one unless you know that.
+#
+# At 8 periods the threshold is 4 periods instead of 2, so the added playback
+# latency is exactly two periods — and a period is not the same thing on every
+# unit, which is the whole point of the paragraph above:
+#
+#   this unit, saved 96kHz/64:     128 -> 256 frames = +1.33ms
+#   never retuned, 48kHz/128:      256 -> 512 frames = +5.33ms
+#
+# The first is bought deliberately: the #804 click hunt found the monitor
+# underrunning on stalls of 2-3ms against a cushion of 1.33ms, and a cushion
+# that cannot be raised is not a tuning knob. The second is a different trade
+# and has NOT been played — this is a live looper and the performer monitors
+# through this bus, so 5.33ms of added monitor latency is something to hear
+# before shipping, not something to infer from the 96kHz/64 figure.
+#
+# The capture side is unchanged and still gets the depth: miniaudio assigns the
+# same `periods` to both descriptors (playback then capture), back to back in
+# `ma_device_init`. No line numbers on purpose — they shift every time a patch
+# lands above them — grep for the pair instead: `pConfig->periods` returns 3
+# hits, and the two adjacent ones inside `ma_device_init` are these. NOT
+# `periodCount = pConfig->periods` — the assignments are column-aligned in
+# upstream's style, so that string matches nothing.
+#
+# Each playback slip-resync also now restarts through the higher threshold, so
+# its silent gap is 256 frames rather than 128 at 8 periods — fewer resyncs (the
+# cushion is harder to underrun through), longer gap each.
+#
 # Evidence honestly stated: only the periods=8 state was measured on the unit —
 # no periods=3 comparison was taken — so this rests on that measurement plus the
 # start-threshold mechanism above, not on a before/after.
 #
 # 8 is also the ceiling, which the engine's own "swept live on the device"
 # wording (the comment above the override in engine_miniaudio.c) should not be
-# read to deny. The engine accepts the override only in [2,8]
-# (packages/segno_engine/src/core/engine_miniaudio.c:127); an out-of-range value
-# is silently IGNORED, not clamped, leaving the default 2 from line 111 — the
-# single worst configuration on record here. So "8 held" is not the top of a
-# sweep, it is the deepest buffer the engine can be asked for, and 4 through 7
-# were never tried. The concrete failure this note prevents: capture drops
-# reappear on a new interface, someone reads "go deeper" and sets
-# SEGNO_ALSA_PERIODS=12, silently gets 2, and concludes buffer depth was never
-# the issue.
+# read to deny. The engine clamps the override into [2,8]
+# (`le_alsa_periods_from_env` in engine_miniaudio.c, #736): an out-of-range
+# value is folded to the nearest bound with a line on stderr saying so. So "8
+# held" is not the top of a sweep, it is the deepest buffer the engine can be
+# asked for, and 4 through 7 were never tried. The concrete failure this note
+# prevents: capture drops reappear on a new interface, someone reads "go
+# deeper" and sets SEGNO_ALSA_PERIODS=12, actually runs the same 8 that was
+# already failing (the clamp's stderr line is easy to miss in the journal), and
+# concludes buffer depth was never the issue — when past 8 was simply never
+# reachable.
+#
+# 8 has NOT been re-derived since #809, and the reasoning that picked it no
+# longer holds in full: it rested on the depth being free on the monitor side,
+# which was true only while the start threshold was pinned at two periods. One
+# knob now sets capture depth AND playback latency and they cannot be traded
+# independently. It stays at 8 because the capture-drop measurement that chose
+# it still stands and there is no bench measurement to re-derive it against —
+# inventing one would be worse than saying so. The sweep that would settle it
+# (occupancy, delay, cold starts and a full take at 2/4/5/6/8, at both this
+# unit's 96kHz/64 and the shipped 48kHz/128) is #818, device-gated.
 #
 # What would make 8 wrong: a different interface or SoC (the underrun edge is a
 # property of this Scarlett + Pi 4 pair), or an engine change that removes the

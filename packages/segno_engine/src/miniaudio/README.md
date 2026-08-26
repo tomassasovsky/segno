@@ -31,27 +31,43 @@ where they are, this tells you why they must survive an upgrade.
 **On upgrade: re-apply every cluster below, or prove upstream fixed it.** A
 plain drop-in replacement silently reverts all of them.
 
-The 20 markers split 9 / 4 / 7 across the three clusters below. If you are
+The 21 markers split 10 / 4 / 7 across the three clusters below. If you are
 auditing by hand, that split is the number to check against — a cluster that
 comes up short is a patch that did not survive.
 
-### 1. ALSA duplex data-loop hardening (appliance) — 9 markers
+### 1. ALSA duplex hardening (appliance) — 10 markers
 
 One `ma_bool8` state field (`segnoCaptureFlushPending`) added to the ALSA device
-struct, plus eight code sites across `ma_device_start__alsa`,
-`ma_device_wait__alsa`, `ma_device_read__alsa` and `ma_device_write__alsa` (two
-markers each in `read`/`write`, for the arm/flush and the two xrun retries).
-Together they make the direct-ALSA appliance path survive a real USB interface:
+struct, plus nine code sites across `ma_device_init_by_type__alsa`,
+`ma_device_start__alsa`, `ma_device_wait__alsa`, `ma_device_read__alsa` and
+`ma_device_write__alsa` (two markers each in `read`/`write`, for the arm/flush
+and the two xrun retries). Together they make the direct-ALSA appliance path
+survive a real USB interface:
 
 - a one-shot flush of the startup capture backlog on the first read;
 - waiting on ALSA's own `snd_pcm_wait()` rather than the cached poll descriptors;
 - a direction-dependent readiness threshold;
 - xrun recovery that **retries** instead of tearing down the data loop, on both
   the capture (overrun) and playback (underrun) sides;
-- self-healing a playback stream that has slipped behind the hardware pointer.
+- self-healing a playback stream that has slipped behind the hardware pointer;
+- a playback `start_threshold` of **half the ring**, floored at the two periods
+  full-duplex needs, instead of upstream's fixed two periods (#809) — so a
+  caller asking for more `periods` gets a deeper cushion on the playback side
+  and not only on the capture side.
 
-**Covered by tests?** Not directly — this is device-loop behaviour that needs
-real hardware. It is bench-verified on the appliance.
+That last one is the only marker in this cluster outside the data loop: it sits
+in `ma_device_init_by_type__alsa`, in the `sw_params` block. It couples to the
+slip-resync above — a resync restarts through that threshold, so raising it
+lengthens each resync's silent gap — and the two carry cross-references to each
+other. Note it is a no-op below 5 periods, where the two-period floor still
+wins, so a `periods=2` host cannot tell whether it survived an upgrade.
+
+**Covered by tests?** Not directly — this is ALSA device behaviour that needs
+real hardware. It is bench-verified on the appliance. For the start threshold
+that is the whole story: it lives inside a vendored 90k-line header, in a
+function that only runs against a real ALSA device, so nothing on this repo's
+macOS test host can reach it. **This registry is its coverage** — the marker
+count below is the only thing that fails when a re-vendor drops it.
 
 ### 2. PulseAudio failure-path `pa_context` leak (#721) — 4 markers
 
@@ -152,7 +168,7 @@ first.
 ## Auditing an upgrade
 
 ```sh
-grep -c "SEGNO PATCH" packages/segno_engine/src/miniaudio/miniaudio.h   # expect 20
+grep -c "SEGNO PATCH" packages/segno_engine/src/miniaudio/miniaudio.h   # expect 21
 ```
 
-with 9 in the ALSA cluster, 4 in the Pulse one and 7 in the dropout hook.
+with 10 in the ALSA cluster, 4 in the Pulse one and 7 in the dropout hook.

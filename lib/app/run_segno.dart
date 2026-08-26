@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
@@ -113,7 +115,19 @@ Future<void> runSegno(
   // share one transport graph.
   final (repo: pedalRepository, sim: pedalSimulator) =
       createSimAwarePedalRepository(midiSource);
-  final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
+  final settings = SettingsRepository(
+    store: SharedPreferencesKeyValueStore(),
+    // The ALSA period count is part of the latency-calibration key: #809 made
+    // it move the playback start threshold, so a record offset measured under
+    // one period count is stale under another. Only the Linux engine reads
+    // SEGNO_ALSA_PERIODS, so elsewhere (and with it unset) this is null and
+    // the key keeps its historical shape — desktop calibrations stay valid.
+    alsaPeriods: Platform.isLinux
+        ? SettingsRepository.alsaPeriodsFromEnvironment(
+            Platform.environment['SEGNO_ALSA_PERIODS'],
+          )
+        : null,
+  );
   // In-app updates. The backend is inert until the appliance/desktop backends
   // are wired, so the update UI stays hidden on unsupported builds.
   final updates = UpdateRepository(backend: createPlatformUpdateBackend());
