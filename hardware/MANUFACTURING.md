@@ -4,6 +4,13 @@ Everything needed to build one console, grouped by vendor. All enclosure
 outputs regenerate from `enclosure/segno_enclosure.py` (run it before quoting —
 it also refreshes the vendor quote zips below, so they can never go stale).
 
+The zips are **not tracked in git** (#236): they are per-quote artifacts,
+rebuilt with a freshness gate by `build_quote_packages()`. **On each real
+vendor order, freeze the record**: regenerate, let the freshness gate pass,
+send, then attach the exact zips sent to a git tag / GitHub Release for that
+order. The tag is the immutable record of what the vendor received; the
+working tree never is.
+
 ## 1. Sheet metal (laser cut + bend + powder coat)
 
 Send **`enclosure/out/segno_sheetmetal.zip`** (DXF flat patterns + PDF drawings
