@@ -239,6 +239,9 @@ void main() {
         expect(decoded.trackChains, isEmpty);
         expect(decoded.masterEffects, isEmpty);
         expect(decoded.masterChainEnabled, isTrue);
+        // No tempo field either (#281): a pre-field capture reads back null,
+        // the exporter's cue to fall back to the live tempo as before.
+        expect(decoded.tempoBpm, isNull);
         // Everything the legacy schema DID describe is intact, defaulted to
         // audible — the pre-FX-v3 world had no other possibility.
         final lane = decoded.tracks.single.lanes.single;
@@ -246,6 +249,44 @@ void main() {
         final laneFx = lane.effects.single as BuiltInEffect;
         expect(laneFx.enabled, isTrue);
         expect(laneFx.slotId, isNull);
+      },
+    );
+
+    test(
+      'round-trips the arm-time tempo, and omits the key when none was '
+      'locked in (#281)',
+      () {
+        const withTempo = PerformanceArmSnapshot(
+          clockFrame: 0,
+          masterLengthFrames: 480,
+          masterGain: 1,
+          limiterEnabled: false,
+          limiterCeiling: 0.99,
+          latencyOffsetFrames: 0,
+          tempoBpm: 87.5,
+        );
+        expect(withTempo.toJson()['tempoBpm'], 87.5);
+        expect(
+          PerformanceArmSnapshot.fromJson(withTempo.toJson()).tempoBpm,
+          87.5,
+        );
+
+        const noTempo = PerformanceArmSnapshot(
+          clockFrame: 0,
+          masterLengthFrames: 480,
+          masterGain: 1,
+          limiterEnabled: false,
+          limiterCeiling: 0.99,
+          latencyOffsetFrames: 0,
+        );
+        // Absent, not zero: "no tempo set" and "written before the field
+        // existed" both read back null and resolve identically downstream
+        // (the exporter's live-tempo fallback).
+        expect(noTempo.toJson().containsKey('tempoBpm'), isFalse);
+        expect(
+          PerformanceArmSnapshot.fromJson(noTempo.toJson()).tempoBpm,
+          isNull,
+        );
       },
     );
 
@@ -400,6 +441,38 @@ void main() {
       );
       expect(manifest.stoppedEarly, 'disk_full');
     });
+
+    test(
+      "tempoBpm surfaces the arm snapshot's capture-time tempo, and null "
+      'when the snapshot is absent or predates the field (#281)',
+      () {
+        const withTempo = PerformanceManifest(
+          slug: 's',
+          finalized: true,
+          native: {},
+          armSnapshot: PerformanceArmSnapshot(
+            clockFrame: 0,
+            masterLengthFrames: 480,
+            masterGain: 1,
+            limiterEnabled: false,
+            limiterCeiling: 0.99,
+            latencyOffsetFrames: 0,
+            tempoBpm: 132,
+          ),
+        );
+        expect(withTempo.tempoBpm, 132);
+        // Round-trips through the sidecar's own JSON, since the getter is
+        // what a re-export reads back off disk.
+        expect(PerformanceManifest.fromJson(withTempo.toJson()).tempoBpm, 132);
+
+        const noSnapshot = PerformanceManifest(
+          slug: 's',
+          finalized: true,
+          native: {},
+        );
+        expect(noSnapshot.tempoBpm, isNull);
+      },
+    );
 
     test('defaults native-derived fields when absent', () {
       const manifest = PerformanceManifest(

@@ -887,7 +887,8 @@ void main() {
 
     test(
       'reExport() also threads the real tempo (same _writeDawExports path '
-      'as a fresh completion)',
+      'as a fresh completion) when the manifest carries none — the capture '
+      'armed with no tempo set, so the live callback is the fallback (#281)',
       () async {
         engine.renderStatuses = const [
           PerformanceRenderTrackStatus(channel: 0, succeeded: true),
@@ -911,6 +912,55 @@ void main() {
         await pumpEventQueue();
 
         expect(readAls(dir), contains('<Manual Value="140.0"/>'));
+      },
+    );
+
+    test(
+      "the manifest's own capture-time tempo beats the live callback: a "
+      're-export after the live tempo changed keeps the tempo the take was '
+      'actually played at (#281)',
+      () async {
+        engine
+          ..renderStatuses = const [
+            PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+          ]
+          // The tempo locked in (D6) when this capture armed — arm() reads
+          // it off the engine snapshot and persists it into the manifest.
+          ..nextSnapshot = const EngineSnapshot(
+            isRunning: true,
+            sampleRate: 48000,
+            bufferFrames: 128,
+            framesProcessed: 0,
+            xrunCount: 0,
+            inputRms: 0,
+            inputPeak: 0,
+            outputRms: 0,
+            latencyState: LatencyState.idle,
+            measuredLatencyMs: -1,
+            tempoBpm: 96,
+          );
+        var live = 140.0;
+        final cubit = build(currentTempoBpm: () => live);
+        addTearDown(cubit.close);
+        final dir = await armWithLog(performance);
+        await pumpEventQueue();
+        clock = clock.add(const Duration(seconds: 5));
+
+        await cubit.toggleArm();
+        await waitForCompleted(cubit);
+        // Even the fresh completion stamps the manifest's tempo — the live
+        // transport already differed by render time.
+        expect(readAls(dir), contains('<Manual Value="96.0"/>'));
+
+        // The live tempo moves on again; a re-export must NOT follow it —
+        // the fallback to the callback is only for manifests carrying no
+        // tempo at all (legacy bundles, or no tempo set at capture — the
+        // previous test's scenario).
+        live = 150.0;
+        await cubit.reExport();
+        await pumpEventQueue();
+
+        expect(readAls(dir), contains('<Manual Value="96.0"/>'));
       },
     );
   });

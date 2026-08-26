@@ -307,6 +307,12 @@ class PerformanceRepository {
       limiterEnabled: chains.limiterEnabled,
       limiterCeiling: chains.limiterCeiling,
       latencyOffsetFrames: snapshot.recordOffsetFrames,
+      // The tempo locked in (D6) at the arm instant, so a re-export long
+      // after the live tempo has moved on still stamps the take's own tempo
+      // (#281). `0` is the engine's "no tempo set" — recorded as absent,
+      // since it resolves the same way a legacy snapshot does (the
+      // exporter's live-tempo fallback).
+      tempoBpm: snapshot.tempoBpm > 0 ? snapshot.tempoBpm : null,
       tracks: tracks,
       monitors: _monitorsJson(chains),
       // The bus stages (FX v3, R20/R3): recorded so a replay can rebuild the

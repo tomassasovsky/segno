@@ -45,8 +45,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// Still injectable, and still narrow — the tests that model a filling disk
   /// pass their own function and are unaffected.
   ///
-  /// [currentTempoBpm] resolves the REAL tempo to stamp the `.als` export
-  /// with (`_writeDawExports` → `DawManifestReader.read`'s `tempoBpm`
+  /// [currentTempoBpm] resolves the live tempo the `.als` export falls back
+  /// to (`_writeDawExports` → `DawManifestReader.read`'s `tempoBpm`
   /// argument), read fresh at each export rather than captured once — a
   /// narrow function dependency (matching [now]/[freeSpaceBytes]'s own
   /// pattern here) rather than this cubit taking a `LooperRepository`
@@ -54,12 +54,13 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// to "unknown" (`0`), which `daw_export`'s own fallback resolves to 120
   /// BPM — this cubit's composition root
   /// (`lib/app/view/app.dart`) wires the live `LooperRepository`'s
-  /// `state.transport.tempoBpm` in production. This is the tempo active
-  /// *at export time*, not necessarily the exact tempo throughout an older
-  /// capture (`performance.json` does not itself persist a tempo — out of
-  /// this scope) — correct for the common case of exporting right after a
-  /// capture finalizes, since D6 locks tempo/signature while any
-  /// grid-recorded content exists.
+  /// `state.transport.tempoBpm` in production. A *fallback* only, since
+  /// #281: `performance.json` now persists the tempo locked in (D6) at arm
+  /// time (`PerformanceArmSnapshot.tempoBpm`), and `_writeDawExports`
+  /// prefers that — so a [reExport] of an old capture keeps the tempo it was
+  /// actually played at even after the live tempo has moved on. The callback
+  /// covers the manifests that carry none: bundles written before the field
+  /// existed, and captures armed with no tempo set at all.
   ///
   /// [currentChains] resolves the REAL lane/monitor effect chains and
   /// master-limiter state to stamp into the arm snapshot
@@ -650,7 +651,17 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     // failure precisely by whether this throws, and swallowing it there would
     // report a failed re-export as a success. The capture-completion path
     // guards at its own call site instead — see [_finishRender].
-    final project = DawManifestReader.read(dir, tempoBpm: _currentTempoBpm());
+    // The tempo actually locked in during THIS capture wins over the live
+    // transport's (#281): by re-export time the live tempo may have long
+    // moved on, and stamping it onto an old take's .als would misrepresent
+    // the performance. `null` — a bundle written before the manifest carried
+    // a tempo, or a capture that had no tempo set at all — falls back to the
+    // live callback, exactly the pre-field behavior.
+    final capturedTempoBpm = _readManifest(dir)?.tempoBpm;
+    final project = DawManifestReader.read(
+      dir,
+      tempoBpm: capturedTempoBpm ?? _currentTempoBpm(),
+    );
     if (project != null) {
       await File('$dir/project.als').writeAsBytes(buildAls(project));
     }
@@ -671,7 +682,11 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       return PerformanceManifest.fromJson(
         jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>,
       );
-    } on FormatException {
+    } on Object {
+      // Corrupt OR wrong-shaped: well-formed JSON with wrong-typed fields
+      // raises [Error]s from the decode casts, not [FormatException] — the
+      // same catch-everything posture `PerformanceRepository`'s own sidecar
+      // reads take. Either way there is nothing readable to report.
       return null;
     }
   }

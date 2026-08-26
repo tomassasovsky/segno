@@ -196,6 +196,36 @@ void main() {
     });
 
     test(
+      "persists the engine snapshot's tempo in the arm-time snapshot, and "
+      'omits it when no tempo was set (#281)',
+      () async {
+        engine.tempoBpm = 87.5;
+
+        await repo.arm();
+        final dir = repo.armedDirectory!;
+
+        final armJson =
+            jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+                as Map<String, dynamic>;
+        expect(armJson['tempoBpm'], 87.5);
+        expect(PerformanceArmSnapshot.fromJson(armJson).tempoBpm, 87.5);
+
+        // A second capture with the tempo since reset to "none" (0) writes
+        // no tempo key at all — absent and unset resolve identically for a
+        // reader (the exporter's live-tempo fallback).
+        await repo.disarmAndFinalize();
+        engine.tempoBpm = 0;
+        clock = clock.add(const Duration(minutes: 1));
+        await repo.arm();
+        final secondDir = repo.armedDirectory!;
+        final secondJson =
+            jsonDecode(File('$secondDir/arm-snapshot.json').readAsStringSync())
+                as Map<String, dynamic>;
+        expect(secondJson.containsKey('tempoBpm'), isFalse);
+      },
+    );
+
+    test(
       "marks a mid-overdub track's lanes as deferred, no PCM export",
       () async {
         engine.markCapturing(0);
@@ -725,6 +755,28 @@ void main() {
         expect(manifest.armSnapshot!.tracks.single.channel, 0);
         // Native fields survive the merge untouched.
         expect(manifest.sampleRate, 48000);
+      },
+    );
+
+    test(
+      'the finalized manifest carries the tempo locked in at ARM time, not '
+      'whatever the engine reads by disarm (#281)',
+      () async {
+        engine.tempoBpm = 98;
+        await armAndSeedNative(engine, repo);
+        final dir = repo.armedDirectory!;
+        // The live tempo moves on mid-capture — the manifest must keep the
+        // arm-instant value a re-export stamps the .als with.
+        engine.tempoBpm = 140;
+
+        await repo.disarm();
+
+        final manifest = PerformanceManifest.fromJson(
+          jsonDecode(File('$dir/performance.json').readAsStringSync())
+              as Map<String, dynamic>,
+        );
+        expect(manifest.tempoBpm, 98);
+        expect(manifest.armSnapshot!.tempoBpm, 98);
       },
     );
 
