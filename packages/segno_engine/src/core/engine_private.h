@@ -332,6 +332,18 @@ typedef struct le_lane {
                                     * the full max_loop_frames. */
   _Atomic int32_t a_live;     /* pool index the audio thread plays/records */
   _Atomic int32_t a_len;      /* recorded length (== the track's length) */
+  /* #595: 1 once THIS lane captured real audio that could still come back —
+   * latched by the audio thread when a capture writes the lane (RECORDING /
+   * OVERDUBBING with an in-range input), re-latched by session import, and
+   * cleared only when nothing on the lane is reachable any more: control-side
+   * when the track's whole history dies (le_track_drop_recoverable_if_dead —
+   * no live take, no undo/restore shadow, no redo), or by le_lane_reset.
+   * The trailing-lane trim's gate. a_len can NOT stand in for this: the
+   * shared write head publishes the same growing length onto every active
+   * lane (hazard 1 of #594), and a cleared-with-restore take reads len 0
+   * while its audio is still one undo away. Safety direction: a stale 1 only
+   * declines a trim; a wrong 0 lets the trim eat a restorable take. */
+  _Atomic int32_t a_recoverable;
   _Atomic uint32_t a_rms_bits;
   _Atomic uint32_t a_peak_bits;
 

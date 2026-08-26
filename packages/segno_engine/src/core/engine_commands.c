@@ -247,6 +247,23 @@ static void le_undo_swap(le_track* t) {
   store_i32(&t->a_redo_depth, t->redo_count);
 }
 
+/* #595: drops every lane's recoverable flag once NOTHING on this track can
+ * come back — no live take (len 0), no undo history (which includes a clear
+ * restore point: the shadow that keeps a wiped-looking take one undo away),
+ * and no redo. Anything short of all three keeps the flags: a stale 1 only
+ * declines a lane trim, a wrong 0 lets the trim eat a restorable take (the
+ * #594 failure), so every guard errs toward keeping. Called after the history
+ * mutations that can only shrink the ways back (redo invalidation, restore-
+ * point drops, the plain clear); per-lane granularity comes from the SET side
+ * (only writing lanes ever latch), not from here. */
+static void le_track_drop_recoverable_if_dead(le_track* t) {
+  if (load_i32(&t->lanes[0].a_len) > 0) return;
+  if (t->undo_count > 0 || t->redo_count > 0) return;
+  for (int l = 0; l < LE_MAX_LANES; ++l) {
+    store_i32(&t->lanes[l].a_recoverable, 0);
+  }
+}
+
 /* Clears a track's redo history (control thread) — a fresh action (punch-in,
  * new recording, session import) invalidates the resurrect path, including the
  * undone-to-empty length. */
@@ -254,6 +271,7 @@ static void le_clear_redo(le_track* t) {
   t->redo_count = 0;
   t->empty_len = 0;
   store_i32(&t->a_redo_depth, 0);
+  le_track_drop_recoverable_if_dead(t); /* #595: the resurrect path died */
 }
 
 
@@ -268,6 +286,7 @@ static void le_drop_clear_history(le_track* t) {
   if (!le_history_is_cleared(t)) return;
   t->undo_count = 0;
   le_publish_undo_depth(t);
+  le_track_drop_recoverable_if_dead(t); /* #595: the way back is gone */
 }
 
 /* le_effective_state — the track's effective state for control-side decisions
@@ -948,6 +967,12 @@ static int32_t le_clear_track(le_engine* engine, int32_t channel,
   t->dub_generation++;
   le_mark_state_cmd(t, LE_TRACK_EMPTY);
   le_track_set_len(t, 0); /* coherent snapshot before the audio thread applies */
+  /* #595: after the length publish, not before — a plain clear (no restore
+   * point kept) leaves len 0 / undo 0 / redo 0, and only then may the lanes'
+   * recoverable flags drop. An undoable clear keeps its restore point on the
+   * undo stack, so the helper keeps the flags — the erased take is still one
+   * undo away. */
+  le_track_drop_recoverable_if_dead(t);
   engine->armed[channel] = 0;
   return LE_OK;
 }
@@ -2040,7 +2065,50 @@ int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
     }
   }
   t->lane_count = count;
+  /* #595 (D3): evict the freed lanes' wet-cache entries NOW, not on the next
+   * scheduler tick — a shrink-then-regrow otherwise meets le_lane_reset's
+   * engine defaults with a stale cached render still published for the lane
+   * index (#594's cache-desync hazard, engine side). The tick's deactivated-
+   * lane reclaim stays as the backstop for a render that lands after this. */
+  if (count < old) le_cache_evict_lanes(engine, channel, count, old);
   return LE_OK;
+}
+
+/* #595: automatic trailing-lane reclaim, run when an un-route lands. Shrinks
+ * the lane count past the longest TRAILING run of lanes that are both
+ * un-routed and non-recoverable — holes in the middle stay exactly where they
+ * are (compacting would move a recorded take onto another source, the rule
+ * #594 exists to protect), and a lane whose audio is still live or restorable
+ * (undo shadow / redo — the engine-owned a_recoverable, NOT the track-shared
+ * length) is never dropped, so the shrink-then-regrow reset in
+ * le_engine_set_lane_count can no longer eat a take undo could have brought
+ * back. The just-un-routed lane's command may still be in the ring, so it is
+ * treated as un-routed by index; sibling lanes are judged by their published
+ * routing. Declines silently while the track captures or a layer is in
+ * flight (the same guard le_engine_set_lane_count enforces) — the next
+ * un-route simply retries. */
+static void le_trim_trailing_lanes(le_engine* engine, int32_t channel,
+                                   int32_t unrouted_lane) {
+  le_track* t = &engine->tracks[channel];
+  const int32_t st = le_effective_state(t);
+  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+      atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
+    return;
+  }
+  const int32_t old = le_lanes_active(t);
+  int32_t keep = old;
+  while (keep > 1) {
+    le_lane* ln = &t->lanes[keep - 1];
+    /* An out-of-range default (le_lane_reset routes lane l to hardware input
+     * l, which a smaller device does not have) reads >= 0 and counts as
+     * routed — a declined trim, the safe direction. */
+    const int32_t in = keep - 1 == unrouted_lane
+                           ? -1
+                           : load_i32(&ln->a_input_channel);
+    if (in >= 0 || load_i32(&ln->a_recoverable)) break;
+    keep--;
+  }
+  if (keep < old) (void)le_engine_set_lane_count(engine, channel, keep);
 }
 
 /* The four lane setters address the lane by (channel, lane), carried as named
@@ -2049,9 +2117,20 @@ int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
 int32_t le_engine_set_lane_input(le_engine* engine, int32_t channel,
                                  int32_t lane, int32_t input_channel) {
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
-  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_INPUT,
-                                          .lanei = {channel, lane,
-                                                    input_channel}});
+  const int32_t rc = le_push_cmd(engine, (le_command){.code =
+                                                          LE_CMD_SET_LANE_INPUT,
+                                                      .lanei = {channel, lane,
+                                                                input_channel}});
+  /* #595: an accepted un-route may free trailing lane slots — reclaim them so
+   * a track routed and un-routed repeatedly never strands at LE_MAX_LANES.
+   * Only an explicit -1 triggers (a rejected/excluded channel the handler
+   * maps to -1 is not the user freeing the lane). */
+  if (rc == LE_OK && input_channel < 0 &&
+      atomic_load_explicit(&engine->a_configured, memory_order_acquire) &&
+      channel >= 0 && channel < engine->track_count) {
+    le_trim_trailing_lanes(engine, channel, lane);
+  }
+  return rc;
 }
 
 int32_t le_engine_set_lane_output(le_engine* engine, int32_t channel,

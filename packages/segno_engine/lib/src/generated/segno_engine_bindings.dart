@@ -4642,6 +4642,15 @@ final class le_lane_snapshot extends ffi.Struct {
   /// 0..1
   @ffi.Float()
   external double peak;
+
+  /// Trailing (#595): 0/1 — this lane captured audio that is still live or
+  /// restorable (clear-restore shadow / redo stack). THE per-lane "holds
+  /// content" signal: length_frames is track-shared (the write head publishes
+  /// the same growing length onto every active lane), so it cannot answer
+  /// whether a specific lane's slot is safe to reclaim. Drops to 0 only once
+  /// nothing on the lane can come back.
+  @ffi.Int32()
+  external int recoverable;
 }
 
 /// Per-track state published in le_snapshot.tracks.

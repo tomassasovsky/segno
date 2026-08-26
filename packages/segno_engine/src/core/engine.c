@@ -158,6 +158,7 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
   ln->pending_mute = 0;
   store_i32(&ln->a_live, 0);
   store_i32(&ln->a_len, 0);
+  store_i32(&ln->a_recoverable, 0); /* #595: a reset lane holds nothing */
   store_f32(&ln->a_rms_bits, 0.0f);
   store_f32(&ln->a_peak_bits, 0.0f);
   store_i32(&ln->a_fx_count, 0);
