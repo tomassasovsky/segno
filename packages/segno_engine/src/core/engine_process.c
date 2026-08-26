@@ -3060,6 +3060,20 @@ static inline void advance_track_clock_frame(le_engine* e, int32_t ch,
   if (le_loop_clock_tick(&t->free_clock)) {
     t->free_iteration++;
     if (load_i32(&t->a_one_shot)) {
+      /* Synthetic LE_CMD_STOP (#420): this auto-stop is the same audible
+       * transition as a manual Stop press, which apply_command logs before
+       * handle_stop runs — without an entry here a perf-log replay hears
+       * the track playing forever past the wrap. Same replays-match-what-a-
+       * listener-heard rule as le_unpark_stopped's synthetic LE_CMD_PLAY
+       * and le_capture_start_unmute's synthetic LE_CMD_SET_LANE_MUTE.
+       * Deliberately NO LE_PLOG_RECORD_END for a wrap mid-overdub: a manual
+       * Stop on an OVERDUBBING track pushes none either — RECORD_END means
+       * "left RECORDING" (perf_log_ring.h), a state this function's guard
+       * never admits, and the dub pass's end is already logged when its
+       * layer retires (LE_PLOG_LAYER_RETIRED) — so emitting one would make
+       * the wrap's log DIFFER from a manual stop's and hand perf_render's
+       * RECORD_START/END pairing an unpaired END. */
+      le_plog_push(e, frame, (le_command){.code = LE_CMD_STOP, .arg_i = ch});
       store_i32(&t->a_state, LE_TRACK_STOPPED);
       le_consume_pending_mutes(e, t, LE_TRACK_STOPPED, 1, frame);
     }
