@@ -199,7 +199,7 @@ static CRGB globalColor(uint8_t color) {
 // No wire byte changes: the frame carries the 2-bit mode, never a colour.
 //
 // One call site: the MODE LED (LED 12 on the UNO strip / first of the 7-LED
-// indicator strip on the 32u4). The ring is green-only — a brightness hump,
+// indicator strip on the 32u4). The ring is green-only — a comet trail,
 // never a mode colour.
 static CRGB modeColor(uint8_t mode) {
   switch (mode) {
@@ -217,20 +217,19 @@ static CRGB scaled(CRGB c, uint8_t level) {
   return c;
 }
 
-// The looping ring is a green fill with a brightness hump around the playhead.
-// Tune: kRingMsPerRev (lower = faster), kRingWidth (LEDs lit each side),
-// kRingShape (parabola-ish), kBreatheMs (standby pulse). Independent of loop
-// length. Breathe is standby only: any activity (including the first take,
-// which has no length yet) sweeps a playhead. A Stop that leaves a loop
-// loaded FREEZES the playhead. Mode (rec red / mute green / FX blue) lives
-// on the MODE LED, not on this ring.
+// Green comet: fadeToBlackBy trail + a single full-bright head that steps
+// once around the ring. Tune: kRingMsPerRev (lower = faster spin), kRingFade
+// (higher = shorter trail; 70 keeps ~186/256 each step). kBreatheMs is the
+// standby pulse. Independent of loop length. Breathe is standby only: any
+// activity (including the first take, which has no length yet) runs the
+// comet. A Stop that leaves a loop loaded FREEZES the trail. Mode (rec red /
+// mute green / FX blue) lives on the MODE LED, not on this ring.
 static const unsigned long kRingMsPerRev = 700;
 static const unsigned long kBreatheMs = 2400;
-static const float kRingWidth = 5.5f;
-static const float kRingShape = 1.5f;
-static const uint8_t kRingBaseLevel = 77; // ~30%, matches the app's _baseGlow
-static float g_ringPhase = 0.0f;       // current center, 0..kRingCount
-static unsigned long g_ringLastMs = 0; // for dt-based phase advance
+static const uint8_t kRingFade = 70;
+static uint8_t g_ringPos = 0;
+static unsigned long g_ringAccMs = 0;
+static unsigned long g_ringLastMs = 0;
 
 static void renderRing() {
   const unsigned long now = millis();
@@ -246,9 +245,9 @@ static void renderRing() {
                       g_frame.global_color != PEDAL_GLOBAL_BLUE;
   const CRGB base = CRGB::Green;
 
-  // Standby (no activity): freeze the playhead if a loop is still loaded,
+  // Standby (no activity): freeze the comet if a loop is still loaded,
   // otherwise breathe. Any activity — including the first take, which has
-  // no length yet — falls through to the sweep.
+  // no length yet — falls through to the comet.
   if (!active) {
     if (looping) return;
     unsigned long p = now % kBreatheMs;
@@ -262,27 +261,21 @@ static void renderRing() {
     return;
   }
 
-  g_ringPhase += (float)dt / (float)kRingMsPerRev * (float)kRingCount;
-  while (g_ringPhase >= (float)kRingCount) g_ringPhase -= (float)kRingCount;
-  for (uint8_t i = 0; i < kRingCount; i++) {
-    float d = fabsf((float)i - g_ringPhase);
-    if (d > kRingCount / 2.0f) d = kRingCount - d; // wrap the short way round
-    const float dn = d / kRingWidth;
-    uint8_t level = kRingBaseLevel;
-    if (dn < 1.0f) {
-      float b = 1.0f - powf(dn, kRingShape);
-      if (b < 0.0f) b = 0.0f;
-      level = (uint8_t)(kRingBaseLevel + (255 - kRingBaseLevel) * b + 0.5f);
-    }
-    g_leds[kRingStart + i] = scaled(base, level);
+  const unsigned long stepMs = kRingMsPerRev / kRingCount;
+  g_ringAccMs += dt;
+  while (g_ringAccMs >= stepMs) {
+    g_ringAccMs -= stepMs;
+    fadeToBlackBy(&g_leds[kRingStart], kRingCount, kRingFade);
+    g_leds[kRingStart + g_ringPos] = base;
+    if (++g_ringPos >= kRingCount) g_ringPos = 0;
   }
 }
 
 // ---- perceptual gamma correction --------------------------------------------
 
 // A WS2812's duty cycle is linear but the eye's brightness response is not, so a
-// linear ramp looks top-heavy: the dim steps of the ring's rotating brightness
-// hump crowd together while the bright end barely changes. We map every channel
+// linear ramp looks top-heavy: the dim steps of the ring's comet trail
+// crowd together while the bright end barely changes. We map every channel
 // through a gamma 2.8 curve at OUTPUT time (g_leds -> g_out) so the ramp reads
 // evenly. Doing it into a SEPARATE display buffer — not in place — matters: the
 // frozen-playhead ring holds its last logical frame without redrawing, so an

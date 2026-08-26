@@ -298,7 +298,7 @@ static CRGB globalColor(uint8_t color) {
 // No wire byte changes: the frame carries the 2-bit mode, never a colour.
 //
 // One call site: the MODE LED (first of the 7-LED indicator strip on D16).
-// The ring is green-only — a brightness hump, never a mode colour.
+// The ring is green-only — a comet trail, never a mode colour.
 static CRGB modeColor(uint8_t mode) {
   switch (mode) {
     case PEDAL_MODE_PLAY: return globalColor(PEDAL_GLOBAL_GREEN); // one green
@@ -312,17 +312,17 @@ static CRGB scaled(CRGB c, uint8_t level) {
   return c;
 }
 
-// Green fill with a brightness hump around the playhead (see the UNO build).
-// Widths tuned for the 16-LED ring. The ring is green-only; mode colour lives
-// on the MODE LED (first of the 7-LED strip on D16). Breathe is standby only:
-// any activity (including the first take, which has no length yet) sweeps a
-// playhead. A Stop that leaves a loop loaded freezes the playhead.
+// Green comet (see the UNO build): fadeToBlackBy trail + a single full-bright
+// head. The physical index is mirrored so it rotates CLOCKWISE against this
+// ring's DIN-chain wiring. Mode colour lives on the MODE LED (first of the
+// 7-LED strip on D16). Breathe is standby only: any activity (including the
+// first take, which has no length yet) runs the comet. A Stop that leaves a
+// loop loaded freezes the trail.
 static const unsigned long kRingMsPerRev = 700;
 static const unsigned long kBreatheMs = 2400;
-static const float kRingWidth = 7.0f;  // ~5.5 * 16/12, scaled for 16 LEDs
-static const float kRingShape = 1.5f;
-static const uint8_t kRingBaseLevel = 77; // ~30%, matches the app's _baseGlow
-static float g_ringPhase = 0.0f;
+static const uint8_t kRingFade = 70;
+static uint8_t g_ringPos = 0;
+static unsigned long g_ringAccMs = 0;
 static unsigned long g_ringLastMs = 0;
 
 static void renderRing() {
@@ -339,9 +339,9 @@ static void renderRing() {
                       g_frame.global_color != PEDAL_GLOBAL_BLUE;
   const CRGB base = CRGB::Green;
 
-  // Standby (no activity): freeze the playhead if a loop is still loaded,
+  // Standby (no activity): freeze the comet if a loop is still loaded,
   // otherwise breathe. Any activity — including the first take, which has
-  // no length yet — falls through to the sweep.
+  // no length yet — falls through to the comet.
   if (!active) {
     if (looping) return;
     unsigned long p = now % kBreatheMs;
@@ -355,27 +355,19 @@ static void renderRing() {
     return;
   }
 
-  g_ringPhase += (float)dt / (float)kRingMsPerRev * (float)kRingCount;
-  while (g_ringPhase >= (float)kRingCount) g_ringPhase -= (float)kRingCount;
-  for (uint8_t i = 0; i < kRingCount; i++) {
-    float d = fabsf((float)i - g_ringPhase);
-    if (d > kRingCount / 2.0f) d = kRingCount - d; // wrap the short way round
-    const float dn = d / kRingWidth;
-    uint8_t level = kRingBaseLevel;
-    if (dn < 1.0f) {
-      float b = 1.0f - powf(dn, kRingShape);
-      if (b < 0.0f) b = 0.0f;
-      level = (uint8_t)(kRingBaseLevel + (255 - kRingBaseLevel) * b + 0.5f);
-    }
-    // Map the rotating hump's logical index to the mirrored physical LED so it
-    // rotates CLOCKWISE against this ring's DIN-chain wiring order.
-    g_ring[(kRingCount - 1) - i] = scaled(base, level);
+  const unsigned long stepMs = kRingMsPerRev / kRingCount;
+  g_ringAccMs += dt;
+  while (g_ringAccMs >= stepMs) {
+    g_ringAccMs -= stepMs;
+    fadeToBlackBy(g_ring, kRingCount, kRingFade);
+    g_ring[(kRingCount - 1) - g_ringPos] = base;
+    if (++g_ringPos >= kRingCount) g_ringPos = 0;
   }
 }
 
 // The ring as a volume meter: a green (low) -> red (full) level bar of the local
 // gain echo, shown for kGainShowMs after each encoder turn. Fills clockwise (the
-// same sense as the ring's rotating hump); the top LED dims for the fractional part.
+// same sense as the ring's comet); the top LED dims for the fractional part.
 static void renderVolumeBar() {
   // Authoritative gain from the frame; fall back to the local echo pre-bind.
   const float gain = g_haveFrame ? (g_frame.master_gain / 255.0f) : g_localGain;
@@ -392,8 +384,8 @@ static void renderVolumeBar() {
 // ---- perceptual gamma correction --------------------------------------------
 
 // A WS2812's duty cycle is linear but the eye's brightness response is not, so a
-// linear ramp looks top-heavy: the dim steps of the ring's rotating brightness
-// hump (and the volume-meter fade) crowd together while the bright end barely
+// linear ramp looks top-heavy: the dim steps of the ring's comet trail
+// (and the volume-meter fade) crowd together while the bright end barely
 // changes. We map every channel through a gamma 2.8 curve at OUTPUT time
 // (g_ring/g_ind -> g_ringOut/g_indOut) so the ramp reads evenly. Doing it into
 // SEPARATE display buffers — not in place — matters: the frozen ring
@@ -494,7 +486,7 @@ static void render() {
   // millis()-wrap safe.
   if ((long)(g_gainShownUntilMs - millis()) > 0) {
     renderVolumeBar();
-    g_ringLastMs = millis(); // keep the hump's dt small when the bar lapses
+    g_ringLastMs = millis(); // keep the comet's dt small when the bar lapses
   } else {
     renderRing();
   }

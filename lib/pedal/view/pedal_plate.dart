@@ -717,12 +717,10 @@ class _Led extends StatelessWidget {
 
 /// The rotary encoder + its 12-LED ring. Drag or scroll turns it.
 ///
-/// Twin of firmware `renderRing()`: green fill; a breathe in standby; once
-/// activity starts (recording, overdub, playback) a green playhead sweeps.
-/// Mode colour (rec red / mute green / FX blue) lives on the MODE LED, not
-/// on this ring. A Stop with a loop still loaded freezes the playhead, and a
-/// goodbye frame blacks the ring out entirely — the very first thing
-/// renderRing() does (`goodbye` → all LEDs Black).
+/// Twin of firmware `renderRing()`: a breathe in standby; once activity
+/// starts, a green comet (head + decaying trail) sweeps the ring. Mode
+/// colour lives on the MODE LED, not here. A Stop with a loop still loaded
+/// freezes the trail, and a goodbye frame blacks the ring out.
 class _Encoder extends StatefulWidget {
   const _Encoder({
     required this.baseColor,
@@ -959,12 +957,11 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
 /// Paints the encoder's 12-LED ring (the 12× WS2812 ring board on the
 /// hardware). Twin of firmware `renderRing()`.
 ///
-/// The ring is always [baseColor] (green). In standby, every LED breathes
-/// together at [breathe] (`0..1`). Once activity starts, [progress]
-/// (`0..1`, clockwise from the top) is the playhead: a brightness hump on
-/// the same green fill. [progress] is `null` while breathing. A [goodbye]
-/// frame blacks the whole ring to [offColor], ignoring [progress] and
-/// [breathe]. Mode colour lives on the MODE LED, not here.
+/// The ring is [baseColor] (green). In standby, every LED breathes together
+/// at [breathe] (`0..1`). Once activity starts, [progress] (`0..1`, clockwise
+/// from the top) is a FastLED-style comet: one full-bright head with a
+/// `fadeToBlackBy(70)` trail behind it. [progress] is `null` while breathing.
+/// A [goodbye] frame blacks the whole ring to [offColor].
 class PedalLedRingPainter extends CustomPainter {
   /// Creates a [PedalLedRingPainter].
   PedalLedRingPainter({
@@ -975,7 +972,7 @@ class PedalLedRingPainter extends CustomPainter {
     required this.breathe,
   });
 
-  /// Fill colour for every LED.
+  /// Fill colour of the comet (and of the standby breathe).
   final Color baseColor;
 
   /// Unlit-LED colour, filling every dot while [goodbye] is set.
@@ -991,7 +988,8 @@ class PedalLedRingPainter extends CustomPainter {
   final double breathe;
 
   static const _count = 12;
-  static const _baseGlow = 0.30; // looping LED floor
+  // Firmware `fadeToBlackBy(..., 70)` keeps 186/256 of each channel per step.
+  static const double _fadeKeep = 186 / 256;
   static const _breatheFloor = 0.15;
 
   @override
@@ -999,8 +997,9 @@ class PedalLedRingPainter extends CustomPainter {
     final centre = Offset(size.width / 2, size.height / 2);
     final dotR = size.shortestSide * 0.05;
     final ringR = size.shortestSide / 2 - dotR - 6;
-    final head = progress == null ? -1.0 : progress! * _count;
     final breathing = progress == null;
+    // Discrete head, matching firmware's integer ringPosition++.
+    final headIdx = breathing ? -1 : (progress! * _count).floor() % _count;
 
     for (var i = 0; i < _count; i++) {
       final angle = -math.pi / 2 + i / _count * 2 * math.pi;
@@ -1015,19 +1014,18 @@ class PedalLedRingPainter extends CustomPainter {
         color = baseColor;
         alpha = _breatheFloor + (1 - _breatheFloor) * breathe;
       } else {
-        // Wrapping distance from the playhead, so the bright pixel and its
-        // glow fall off symmetrically and wrap cleanly at the top of the ring.
-        var d = (i - head).abs();
-        if (d > _count / 2) d = _count - d;
-        final lit = (1 - d / 2).clamp(0.0, 1.0);
+        // Steps behind the head, wrapping the short way around in the
+        // direction of travel (increasing index = clockwise).
+        final behind = (headIdx - i + _count) % _count;
+        final lit = math.pow(_fadeKeep, behind).toDouble();
         color = baseColor;
-        alpha = _baseGlow + (1 - _baseGlow) * lit;
-        if (lit > 0.5) {
+        alpha = lit;
+        if (behind == 0) {
           canvas.drawCircle(
             at,
             dotR * 2.2,
             Paint()
-              ..color = color.withValues(alpha: 0.35 * lit)
+              ..color = color.withValues(alpha: 0.35)
               ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
           );
         }

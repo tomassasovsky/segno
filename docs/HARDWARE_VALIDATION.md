@@ -33,8 +33,8 @@ confirm them.
 - [ ] **Pass:** footswitches drive record/play/stop/undo/mode/track/clear/bank;
       the encoder drives master volume; the on-screen selection mirrors the pedal.
 - [ ] Confirm LED feedback: standby ring breathes green; once recording or
-      playing, the ring is green with a green playhead (including the first
-      take, before a loop length exists); MODE LED is rec-red / mute-green /
+      playing, a green comet sweeps the ring (including the first take,
+      before a loop length exists); MODE LED is rec-red / mute-green /
       FX-blue; per-track LEDs; goodbye-frame on shutdown.
 - [ ] Replug mid-session: exactly one binding, take intact, no double events.
 

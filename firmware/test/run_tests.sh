@@ -86,9 +86,8 @@ for fn in ledColor globalColor modeColor scaled; do
   fi
 done
 
-# Shared ring timing / floor values that get tuned in one copy only. The
-# 16-LED ring's kRingWidth is intentionally different and is not gated here.
-for spec in "unsigned long kBreatheMs" "uint8_t kRingBaseLevel"; do
+# Shared ring timing / comet fade that get tuned in one copy only.
+for spec in "unsigned long kBreatheMs" "uint8_t kRingFade"; do
   # `|| true`: grep exits 1 when it matches nothing, which under `set -e`
   # would abort the script before the `<missing>` diagnostic below could name
   # the constant -- i.e. exactly the drift this block exists to report would
