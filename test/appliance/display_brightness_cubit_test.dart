@@ -15,9 +15,6 @@ class _FakeBrightnessClient implements BrightnessClient {
   Future<bool> isSupported() async => supported;
 
   @override
-  Future<double> get() async => 0.8;
-
-  @override
   Future<void> set(double value) async => sets.add(value);
 }
 

@@ -23,18 +23,6 @@ class SystemBrightnessClient implements BrightnessClient {
   }
 
   @override
-  Future<double> get() async {
-    if (!_helperPresent) return 0.8;
-    final json = await _runJson(['get']);
-    if (json is Map) {
-      final pct = json['percent'];
-      final n = pct is num ? pct.toDouble() : double.tryParse('$pct') ?? 80;
-      return (n / 100).clamp(0.0, 1.0);
-    }
-    return 0.8;
-  }
-
-  @override
   Future<void> set(double value) async {
     if (!_helperPresent) return;
     final pct = (value.clamp(0.0, 1.0) * 100).round();
