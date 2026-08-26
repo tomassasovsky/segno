@@ -27,7 +27,8 @@ abstract final class FxParamTileMetrics {
   /// Name + box + indicator, with the two 5px gaps between them.
   static const double height = 59;
 
-  /// The floor the name line's auto-shrink stops at, as a fraction of mono 9.
+  /// The floor the name line's auto-shrink stops at, as a fraction of the
+  /// glyphs' current-scale size.
   ///
   /// A name wider than the tile scales down until it fits rather than
   /// ellipsizing — "RETROALIMENTACIÓN" (the Spanish `Feedback`, #500) is 17
@@ -36,6 +37,10 @@ abstract final class FxParamTileMetrics {
   /// keeps the shrink honest: past it (a plugin reporting a paragraph as a
   /// parameter name) the name ellipsizes at the floor size instead of scaling
   /// into an unreadable smear, and the sheet header still carries it whole.
+  ///
+  /// The floor is a fraction of the glyphs as the text scaler drew them, so
+  /// the painted floor rises with the system text scale; the CHARACTER count
+  /// that fits whole is what varies — scaled-up glyphs hit the cap sooner.
   static const double nameMinScale = 0.75;
 
   static const double _gap = 5;
@@ -90,15 +95,6 @@ class _FxParamCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final style = signalMono(color: surface.textSecondary, size: 9);
-    // How much wider the name's glyphs actually get under the ambient text
-    // scaler, measured at this style's own size — not `scaler.scale(cap)`,
-    // which asks the scaler about a 104px "font" and under a nonlinear scaler
-    // (Android) grows slower than the 9pt glyphs it is supposed to keep up
-    // with, ellipsizing at raised scales names that fit whole at 1.0.
-    final glyphScale =
-        MediaQuery.textScalerOf(context).scale(style.fontSize!) /
-        style.fontSize!;
     return SizedBox(
       width: FxParamTileMetrics.width,
       height: FxParamTileMetrics.height,
@@ -112,53 +108,45 @@ class _FxParamCell extends StatelessWidget {
             // A name wider than the tile shrinks to fit instead of truncating
             // (#500): the Spanish built-in names run to 17 mono characters
             // against a width that seats 14, and maxLines: 1 + ellipsis cut
-            // them mid-word. `scaleDown` never enlarges, so a fitting name
-            // renders at mono 9 exactly as before; the ConstrainedBox caps how
-            // far the shrink can go — text past the cap ellipsizes rather than
-            // scaling below [FxParamTileMetrics.nameMinScale] of the face. The
-            // cap scales with the text so the fits-whole set is the same set
-            // of names at every text scale.
+            // them mid-word. No vertical pinning anywhere: a fitting name lays
+            // out at its own intrinsic size — `scaleDown` never enlarges, so
+            // it renders exactly as the plain Text before it did, on any font,
+            // at any text scale. An overlong one first ellipsizes at the cap
+            // (child-layout px, the same coordinate space the tile width lives
+            // in), then scales down by width to fit — which SHRINKS its
+            // height below one intrinsic line, so the shrink can only ever
+            // hand the value box below more room, never take it. The floor of
+            // that shrink is [FxParamTileMetrics.nameMinScale] of the glyphs
+            // as drawn at the current text scale; past the cap the ellipsis
+            // returns, at the floor size, not below it.
             //
-            // The invisible prototype sets the row's HEIGHT: exactly what one
-            // line of [style] measures under the ambient text behaviors, on
-            // whatever font and engine is rendering — the number a formula
-            // cannot state, because the app's height behavior hands the first
-            // ascent and last descent back to the font's own metrics. The fit
-            // box fills that row, so its child (one line of the same style)
-            // matches it in height and only ever scales for WIDTH; the row
-            // can never grow past the line the pre-#500 layout reserved and
-            // squeeze the value box below into overflowing.
-            child: Stack(
-              children: [
-                Opacity(
-                  opacity: 0,
-                  child: Text('X', maxLines: 1, style: style),
-                ),
-                Positioned.fill(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth:
-                            FxParamTileMetrics.width /
-                            FxParamTileMetrics.nameMinScale *
-                            glyphScale,
-                      ),
-                      child: Text(
-                        // Uppercased for the same reason the DS specimens
-                        // are, and the rotary caption was before it: at mono
-                        // 9 in 78px this is a legend, and caps keep a dense
-                        // grid's names scanning as one row.
-                        spacedParamName(name),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: style,
-                      ),
-                    ),
+            // The Align hands the fit box loose width: under the column's
+            // stretch a bare FittedBox takes the tile's full width and grows
+            // its height to preserve a short name's aspect ratio, inflating
+            // the row.
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth:
+                        FxParamTileMetrics.width /
+                        FxParamTileMetrics.nameMinScale,
+                  ),
+                  child: Text(
+                    // Uppercased for the same reason the DS specimens are,
+                    // and the rotary caption was before it: at mono 9 in 78px
+                    // this is a legend, and caps keep a dense grid's names
+                    // scanning as one row.
+                    spacedParamName(name),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: signalMono(color: surface.textSecondary, size: 9),
                   ),
                 ),
-              ],
+              ),
             ),
           ),
           const SizedBox(height: FxParamTileMetrics._gap),
@@ -235,10 +223,25 @@ class _FxParamBox extends StatelessWidget {
         color: bordered ? context.surface.cardHigh : null,
         borderRadius: BorderRadius.circular(FxParamTileMetrics._boxRadius),
       ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: children,
+      // `scaleDown`, so while the readout fits this is exactly the Center it
+      // replaces — laid out at intrinsic size, painted 1:1. The box is the
+      // tile's shock absorber: it takes whatever height the name row leaves,
+      // and on a font whose natural line towers over the test font's 1em —
+      // flutter_tester on Linux resolves the app's families to real system
+      // fonts — two lines of readout at text scale 1.5 measure more than the
+      // WHOLE box. That overflowed a red bar under every tile in the grid
+      // before the readout learned to give: past the slack it now scales
+      // down instead. The inner ConstrainedBox keeps the width story what it
+      // always was — readouts still ellipsize at the tile width rather than
+      // shrinking into a smear sideways, so only HEIGHT ever drives the fit.
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: FxParamTileMetrics.width),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: children,
+          ),
         ),
       ),
     );
