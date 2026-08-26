@@ -45,26 +45,20 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// Still injectable, and still narrow — the tests that model a filling disk
   /// pass their own function and are unaffected.
   ///
-  /// [currentTempoBpm] resolves the REAL tempo to stamp the `.als` export
-  /// with (`_writeDawExports` → `DawManifestReader.read`'s `tempoBpm`
-  /// argument), read fresh at each export rather than captured once — a
-  /// narrow function dependency (matching [now]/[freeSpaceBytes]'s own
-  /// pattern here) rather than this cubit taking a `LooperRepository`
-  /// dependency outright, since only this one `double` is needed. Defaults
-  /// to "unknown" (`0`), which `daw_export`'s own fallback resolves to 120
-  /// BPM — this cubit's composition root
-  /// (`lib/app/view/app.dart`) wires the live `LooperRepository`'s
-  /// `state.transport.tempoBpm` in production. This is the tempo active
-  /// *at export time*, not necessarily the exact tempo throughout an older
-  /// capture (`performance.json` does not itself persist a tempo — out of
-  /// this scope) — correct for the common case of exporting right after a
-  /// capture finalizes, since D6 locks tempo/signature while any
-  /// grid-recorded content exists.
+  /// The `.als` export's tempo needs no dependency here at all (#281):
+  /// `performance.json` persists the tempo D6 had locked in by disarm
+  /// (`PerformanceDisarmSnapshot.tempoBpm`, arm-time copy for crash
+  /// salvage), and `DawManifestReader.read` resolves it from the manifest
+  /// itself — falling back to its own fixed 120 BPM for a bundle carrying
+  /// none (written before the field existed, or captured with no tempo set),
+  /// where the live transport tempo at export time would be an arbitrary
+  /// value unrelated to the take anyway.
   ///
   /// [currentChains] resolves the REAL lane/monitor effect chains and
   /// master-limiter state to stamp into the arm snapshot
-  /// ([PerformanceRepository.arm]'s `chains`), read fresh at each arm — the
-  /// same narrow function dependency as [currentTempoBpm], since the mapping
+  /// ([PerformanceRepository.arm]'s `chains`), read fresh at each arm — a
+  /// narrow function dependency (matching [now]/[freeSpaceBytes]'s own
+  /// pattern here), since the mapping
   /// from the live rig lives in the session feature rather than in this cubit.
   /// Defaults to the empty snapshot (what every call site passed before this
   /// was wired); the composition root (`lib/app/view/app.dart`) supplies
@@ -75,7 +69,6 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     Duration renderPollInterval = const Duration(milliseconds: 200),
     DateTime Function() now = DateTime.now,
     Future<int?> Function(String path)? freeSpaceBytes,
-    double Function() currentTempoBpm = _unknownTempoBpm,
     PerformanceChains Function() currentChains = _noChains,
   }) : _performance = performance,
        _armedTickInterval = armedTickInterval,
@@ -84,16 +77,10 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
        _freeSpaceBytes =
            freeSpaceBytes ??
            ((String path) async => performance.freeSpaceBytes(path)),
-       _currentTempoBpm = currentTempoBpm,
        _currentChains = currentChains,
        super(const PerformanceRecorderIdle()) {
     _statusSubscription = _performance.captureStatus.listen(_onStatus);
   }
-
-  /// The default `currentTempoBpm`: `0` ("unknown"), which `daw_export`
-  /// resolves to its own 120 BPM fallback — the same outcome as today, for
-  /// any caller that does not wire a real tempo source.
-  static double _unknownTempoBpm() => 0;
 
   /// The default `currentChains`: an empty rig, which is what
   /// [PerformanceRepository.arm] already assumes when given nothing.
@@ -141,7 +128,6 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   final PerformanceRepository _performance;
   final DateTime Function() _now;
   final Future<int?> Function(String path) _freeSpaceBytes;
-  final double Function() _currentTempoBpm;
   final PerformanceChains Function() _currentChains;
 
   /// How often [PerformanceRecorderArmed.elapsed] refreshes while armed.
@@ -650,7 +636,11 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     // failure precisely by whether this throws, and swallowing it there would
     // report a failed re-export as a success. The capture-completion path
     // guards at its own call site instead — see [_finishRender].
-    final project = DawManifestReader.read(dir, tempoBpm: _currentTempoBpm());
+    // Tempo comes from the manifest itself (#281): DawManifestReader.read
+    // resolves the capture's own persisted disarm-time (arm-time for a
+    // crash salvage) tempo, falling back to its fixed 120 BPM for a bundle
+    // carrying none.
+    final project = DawManifestReader.read(dir);
     if (project != null) {
       await File('$dir/project.als').writeAsBytes(buildAls(project));
     }

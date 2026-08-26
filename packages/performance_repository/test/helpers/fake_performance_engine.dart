@@ -33,6 +33,10 @@ class FakePerformanceEngine implements AudioEngine {
   double masterGain = 1;
   int recordOffsetFrames = 0;
 
+  /// Tempo the snapshot reports; `0` models "no tempo set" (the engine's
+  /// own at-rest default).
+  double tempoBpm = 0;
+
   bool perfArmed = false;
   String? lastPerfCaptureDir;
   EngineResult perfArmResult = EngineResult.ok;
@@ -108,6 +112,7 @@ class FakePerformanceEngine implements AudioEngine {
     masterPositionFrames: masterPositionFrames,
     masterGain: masterGain,
     recordOffsetFrames: recordOffsetFrames,
+    tempoBpm: tempoBpm,
     isPerfArmed: perfArmed,
     perfFrames: perfFrames,
     perfOverruns: perfOverruns,
