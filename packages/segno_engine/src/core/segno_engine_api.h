@@ -605,6 +605,13 @@ typedef struct le_lane_snapshot {
   int32_t length_frames; /* frames captured into this lane's buffer */
   float rms;             /* 0..1 */
   float peak;            /* 0..1 */
+  /* Trailing (#595): 0/1 — this lane captured audio that is still live or
+   * restorable (clear-restore shadow / redo stack). THE per-lane "holds
+   * content" signal: length_frames is track-shared (the write head publishes
+   * the same growing length onto every active lane), so it cannot answer
+   * whether a specific lane's slot is safe to reclaim. Drops to 0 only once
+   * nothing on the lane can come back. */
+  int32_t recoverable;
 } le_lane_snapshot;
 
 /* Per-track state published in le_snapshot.tracks.

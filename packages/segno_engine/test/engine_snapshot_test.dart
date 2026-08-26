@@ -328,7 +328,8 @@ void main() {
           ..muted = 1
           ..length_frames = 48000
           ..rms = 0.3
-          ..peak = 0.45;
+          ..peak = 0.45
+          ..recoverable = 1;
 
         final lane = LaneSnapshot.fromNative(ptr.ref);
         expect(lane.inputChannel, 1);
@@ -338,16 +339,18 @@ void main() {
         expect(lane.lengthFrames, 48000);
         expect(lane.rms, closeTo(0.3, 1e-6));
         expect(lane.peak, closeTo(0.45, 1e-6));
+        expect(lane.recoverable, isTrue);
       } finally {
         calloc.free(ptr);
       }
     });
 
-    test('empty lane records no input', () {
+    test('empty lane records no input and holds nothing recoverable', () {
       const lane = LaneSnapshot.empty();
       expect(lane.inputChannel, -1);
       expect(lane.lengthFrames, 0);
       expect(lane.muted, isFalse);
+      expect(lane.recoverable, isFalse);
     });
 
     LaneSnapshot build({
@@ -356,6 +359,7 @@ void main() {
       double volume = 1,
       bool muted = false,
       double peak = 0.2,
+      bool recoverable = false,
     }) => LaneSnapshot(
       inputChannel: inputChannel,
       outputMask: outputMask,
@@ -364,6 +368,7 @@ void main() {
       lengthFrames: 100,
       rms: 0.1,
       peak: peak,
+      recoverable: recoverable,
     );
 
     test('equal lanes are equal and share a hashCode', () {
@@ -377,6 +382,7 @@ void main() {
       expect(build(), isNot(equals(build(volume: 0.5))));
       expect(build(), isNot(equals(build(muted: true))));
       expect(build(), isNot(equals(build(peak: 0.9))));
+      expect(build(), isNot(equals(build(recoverable: true))));
     });
   });
 

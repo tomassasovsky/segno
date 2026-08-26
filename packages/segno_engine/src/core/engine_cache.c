@@ -919,6 +919,34 @@ void le_cache_shutdown(le_engine* engine) {
   free(c);
 }
 
+void le_cache_evict_lanes(le_engine* engine, int32_t channel, int32_t from,
+                          int32_t to) {
+  if (engine == NULL || channel < 0 || channel >= engine->track_count) return;
+  if (from < 0) from = 0;
+  if (to > LE_MAX_LANES) to = LE_MAX_LANES;
+  struct le_fx_cache* c = engine->cache;
+  for (int32_t l = from; l < to; ++l) {
+    le_lane* ln = &engine->tracks[channel].lanes[l];
+    if (c != NULL) {
+      for (int i = 0; i < LE_CACHE_ENTRIES_PER_LANE; ++i) {
+        le_cache_drop_entry(engine, c, channel, l, i);
+      }
+      /* The lane's key identity dies with its entries: a re-grown lane is
+       * reset to defaults and must re-register (and re-settle) from scratch.
+       * job_pending is deliberately left alone — an in-flight render is
+       * collected and then reclaimed by the tick's deactivated-lane sweep. */
+      c->lanes[channel][l].has_key = 0;
+      if (!c->lanes[channel][l].job_pending) {
+        c->lanes[channel][l].state = LE_CACHE_LIVE;
+      }
+    }
+    /* Belt and braces: no published entry may outlive the shrink even if the
+     * bookkeeping lost track of it (retraction only — the entry object stays
+     * owned by the tables/graveyard above). */
+    atomic_store_explicit(&ln->a_wet, NULL, memory_order_release);
+  }
+}
+
 void le_cache_tick(le_engine* engine) {
   struct le_fx_cache* c = engine->cache;
   if (c == NULL) return;

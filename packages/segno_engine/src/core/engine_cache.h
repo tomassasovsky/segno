@@ -51,6 +51,17 @@ void le_cache_shutdown(le_engine* engine);
  * le_engine_drain_events, i.e. on the UI's snapshot-poll cadence. */
 void le_cache_tick(le_engine* engine);
 
+/* #595 (D3): immediately retracts and reclaims the cached entries of lanes
+ * [from, to) on [channel] — the lane-count shrink seam. The freed lanes'
+ * published wet pointers are retracted (the ordinary graveyard/quiescent
+ * discipline, never a raw free) so a later re-grow meets le_lane_reset's
+ * defaults with no stale render still published under the lane index. The
+ * tick's deactivated-lane reclaim remains the backstop for a render that
+ * completes after this call. Control thread; safe with a NULL/never-init
+ * cache. */
+void le_cache_evict_lanes(le_engine* engine, int32_t channel, int32_t from,
+                          int32_t to);
+
 #ifdef __cplusplus
 }
 #endif
