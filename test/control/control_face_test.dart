@@ -1011,5 +1011,56 @@ void main() {
         reason: 'an open row is a route',
       );
     });
+
+    testWidgets('a stale open row disables both Simulate controls', (
+      tester,
+    ) async {
+      await pump(tester, connection: connected);
+      // A mapping whose target decodes but no longer resolves — the empty track
+      // chain has no such slot.
+      const stale = FxParamTarget(
+        address: FxAddress(stage: FxStage.track),
+        slotId: 'gone',
+        param: 0,
+      );
+      await control.setControllerBindings(
+        ControllerBindingSet([
+          ContinuousBinding(
+            trigger: const MappingTrigger(
+              kind: ControllerSourceKind.midiCc,
+              id: 11,
+              midiChannel: 0,
+            ),
+            target: stale.canonicalString(),
+          ),
+        ]),
+      );
+      await showMidi(tester);
+
+      final binding = control.state.controllerBindings.bindings.single;
+      await tester.tap(
+        find.byKey(Key('midi_mapping_${binding.trigger}_${binding.target}')),
+      );
+      await tester.pumpAndSettle();
+
+      // The row's own pill is inert on a stale target — and the global button
+      // must agree, rather than firing into a mapping that resolves to nothing.
+      expect(
+        tester
+            .widget<ConsoleActionChip>(find.byKey(const Key('midi_simulate')))
+            .onPressed,
+        isNull,
+        reason: 'the stale row pill is disabled',
+      );
+      expect(
+        tester
+            .widget<ConsoleActionChip>(
+              find.byKey(const Key('midi_simulate_global')),
+            )
+            .onPressed,
+        isNull,
+        reason: 'the global button must not fire into a stale-only route',
+      );
+    });
   });
 }
