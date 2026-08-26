@@ -308,7 +308,7 @@ void main() {
       expect(ringPainter(tester).breathe, greaterThan(0));
     });
 
-    testWidgets('recording the first take sweeps a green playhead', (
+    testWidgets('recording the first take sweeps a red comet', (
       tester,
     ) async {
       final (_, sim) = await pumpFaceplate(tester);
@@ -322,11 +322,12 @@ void main() {
       expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
       final painter = ringPainter(tester);
       expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
+      expect(painter.activityColor, SurfaceTheme.dark.ledRed);
       expect(painter.progress, isNotNull);
       expect(painter.breathe, 0);
     });
 
-    testWidgets('REC mode looping: green ring, green playhead', (tester) async {
+    testWidgets('REC mode looping: red comet', (tester) async {
       final (_, sim) = await pumpFaceplate(tester);
       sim.send(
         PedalCodec.encodeFrame(
@@ -340,13 +341,11 @@ void main() {
 
       expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
       final painter = ringPainter(tester);
-      expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
+      expect(painter.activityColor, SurfaceTheme.dark.ledRed);
       expect(painter.progress, isNotNull);
     });
 
-    testWidgets('MUTE mode looping: green ring, green playhead', (
-      tester,
-    ) async {
+    testWidgets('playing: green comet', (tester) async {
       final (_, sim) = await pumpFaceplate(tester);
       sim.send(
         PedalCodec.encodeFrame(
@@ -361,8 +360,24 @@ void main() {
 
       expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
       final painter = ringPainter(tester);
-      expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
+      expect(painter.activityColor, SurfaceTheme.dark.ledGreen);
       expect(painter.progress, isNotNull);
+    });
+
+    testWidgets('overdubbing: amber comet', (tester) async {
+      final (_, sim) = await pumpFaceplate(tester);
+      sim.send(
+        PedalCodec.encodeFrame(
+          _frame(
+            globalColor: GlobalColor.amber,
+            loopLengthMicros: 1000000,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(ringPainter(tester).activityColor, SurfaceTheme.dark.ledAmber);
+      expect(ringPainter(tester).progress, isNotNull);
     });
 
     testWidgets(

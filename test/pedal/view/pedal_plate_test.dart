@@ -158,7 +158,7 @@ void main() {
     );
   });
 
-  testWidgets('REC mode looping: green ring, green playhead', (tester) async {
+  testWidgets('REC mode looping: red comet, MODE LED red', (tester) async {
     await pumpPlate(
       tester,
       frame: _frame().copyWith(
@@ -187,10 +187,11 @@ void main() {
                 .painter!
             as PedalLedRingPainter;
     expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
+    expect(painter.activityColor, SurfaceTheme.dark.ledRed);
     expect(painter.progress, isNotNull);
   });
 
-  testWidgets('MUTE mode looping: green ring, green playhead', (tester) async {
+  testWidgets('playing: green comet', (tester) async {
     await pumpPlate(
       tester,
       frame: _frame().copyWith(
@@ -206,7 +207,27 @@ void main() {
                 )
                 .painter!
             as PedalLedRingPainter;
-    expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
+    expect(painter.activityColor, SurfaceTheme.dark.ledGreen);
+    expect(painter.progress, isNotNull);
+  });
+
+  testWidgets('overdubbing: amber comet', (tester) async {
+    await pumpPlate(
+      tester,
+      frame: _frame().copyWith(
+        mode: PedalMode.rec,
+        globalColor: GlobalColor.amber,
+        loopLengthMicros: 1000000,
+      ),
+    );
+    final painter =
+        tester
+                .widget<CustomPaint>(
+                  find.byKey(const Key('pedalFaceplate_ring')),
+                )
+                .painter!
+            as PedalLedRingPainter;
+    expect(painter.activityColor, SurfaceTheme.dark.ledAmber);
     expect(painter.progress, isNotNull);
   });
 
@@ -283,13 +304,10 @@ void main() {
     expect(ringPainter().progress, moreOrLessEquals(frozenAt!, epsilon: 1e-6));
   });
 
-  testWidgets('recording the first take sweeps a green playhead', (
-    tester,
-  ) async {
-    // First take: activity is red on the MODE LED, no loop has closed yet
-    // (loopLengthMicros == 0). Breathe is standby only — a live take
-    // must sweep a green playhead, not keep pulsing and not paint rec-red
-    // onto the ring.
+  testWidgets('recording the first take sweeps a red comet', (tester) async {
+    // First take: global_color is red, no loop has closed yet. Breathe is
+    // standby only — a live take must sweep a red comet, not keep pulsing.
+    // The MODE LED is also red (interaction mode), independently.
     await pumpPlate(
       tester,
       frame: _frame().copyWith(
@@ -306,6 +324,7 @@ void main() {
             as PedalLedRingPainter;
     expect(painter.progress, isNotNull);
     expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
+    expect(painter.activityColor, SurfaceTheme.dark.ledRed);
     expect(painter.breathe, 0);
     expect(
       (tester

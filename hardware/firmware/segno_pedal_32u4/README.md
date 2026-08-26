@@ -48,8 +48,9 @@ A/B/SW, **D0/D1** DIN MIDI in/out, **A3** spare. Switches read **active-low**
 Two WS2812 strips, each rendered from segno's state frame:
 
 - **Ring (D15)** — the off-the-shelf **16-LED NeoPixel ring**. Standby breathes
-  green; once a take or loop is active a green comet (`fadeToBlackBy` trail)
-  rotates **clockwise**, and freezes on Stop. It also doubles as a
+  green; once a take or loop is active a comet (`fadeToBlackBy` trail) in
+  **global_color** (red recording / amber overdub / green play) rotates
+  **clockwise**, and freezes on Stop. It also doubles as a
   **volume meter**: whenever the master gain changes, the ring shows a green→red
   level bar for ~1.2 s, then reverts. The gain is **authoritative from the state
   frame** (payload byte 16, `master_gain`), so the meter matches the engine

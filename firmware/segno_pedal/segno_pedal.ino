@@ -199,8 +199,8 @@ static CRGB globalColor(uint8_t color) {
 // No wire byte changes: the frame carries the 2-bit mode, never a colour.
 //
 // One call site: the MODE LED (LED 12 on the UNO strip / first of the 7-LED
-// indicator strip on the 32u4). The ring is green-only — a comet trail,
-// never a mode colour.
+// indicator strip on the 32u4). The ring comet takes global_color (activity),
+// not this mode mapping.
 static CRGB modeColor(uint8_t mode) {
   switch (mode) {
     case PEDAL_MODE_PLAY:
@@ -217,13 +217,14 @@ static CRGB scaled(CRGB c, uint8_t level) {
   return c;
 }
 
-// Green comet: fadeToBlackBy trail + a single full-bright head that steps
+// Comet: fadeToBlackBy trail + a single full-bright head that steps
 // once around the ring. Tune: kRingMsPerRev (lower = faster spin), kRingFade
 // (higher = shorter trail; 70 keeps ~186/256 each step). kBreatheMs is the
 // standby pulse. Independent of loop length. Breathe is standby only: any
 // activity (including the first take, which has no length yet) runs the
-// comet. A Stop that leaves a loop loaded FREEZES the trail. Mode (rec red /
-// mute green / FX blue) lives on the MODE LED, not on this ring.
+// comet. A Stop that leaves a loop loaded FREEZES the trail. The comet
+// takes global_color (rec red / overdub amber / play green). Interaction
+// mode (rec red / mute green / FX blue) lives on the MODE LED, not here.
 static const unsigned long kRingMsPerRev = 700;
 static const unsigned long kBreatheMs = 2400;
 static const uint8_t kRingFade = 70;
@@ -266,7 +267,7 @@ static void renderRing() {
   while (g_ringAccMs >= stepMs) {
     g_ringAccMs -= stepMs;
     fadeToBlackBy(&g_leds[kRingStart], kRingCount, kRingFade);
-    g_leds[kRingStart + g_ringPos] = base;
+    g_leds[kRingStart + g_ringPos] = activity;
     if (++g_ringPos >= kRingCount) g_ringPos = 0;
   }
 }

@@ -125,8 +125,8 @@ PedalStateFrame projectFrame(
   // global_color is the ring's freeze/active signal: off when standby
   // (breathe) or stopped with a loop loaded (freeze), otherwise lit so the
   // playhead sweeps — including the first take, which has no length yet.
-  // Fill is always green; a comet (head + trail) is the playhead. Mode colour
-  // (rec red / mute green / FX blue) lives on the MODE LED, not the ring.
+  // The comet takes this colour: rec red / overdub amber / play green.
+  // Interaction mode (rec red / mute green / FX blue) lives on the MODE LED.
   // Track LEDs still carry recording/overdub/play.
   final anyRecording = looper.tracks.any(
     (t) => t.state == TrackState.recording,

@@ -236,6 +236,7 @@ class PedalPlate extends StatelessWidget {
                   _Encoder(
                     baseColor: surface.ledGreen,
                     offColor: surface.ledOff,
+                    activityColor: _activityColor(surface, frame.globalColor),
                     loopLengthMicros: frame.loopLengthMicros,
                     frozen: ringFrozen,
                     active: ringActive,
@@ -718,13 +719,13 @@ class _Led extends StatelessWidget {
 /// The rotary encoder + its 12-LED ring. Drag or scroll turns it.
 ///
 /// Twin of firmware `renderRing()`: a breathe in standby; once activity
-/// starts, a green comet (head + decaying trail) sweeps the ring. Mode
-/// colour lives on the MODE LED, not here. A Stop with a loop still loaded
-/// freezes the trail, and a goodbye frame blacks the ring out.
+/// starts, a comet in [activityColor] (rec red / overdub amber / play green)
+/// sweeps the ring. Interaction mode lives on the MODE LED, not here.
 class _Encoder extends StatefulWidget {
   const _Encoder({
     required this.baseColor,
     required this.offColor,
+    required this.activityColor,
     required this.loopLengthMicros,
     required this.frozen,
     required this.active,
@@ -737,6 +738,9 @@ class _Encoder extends StatefulWidget {
 
   /// Unlit-LED colour, shown on every ring dot while [goodbye] blacks it out.
   final Color offColor;
+
+  /// Comet colour from `global_color`: rec red / overdub amber / play green.
+  final Color activityColor;
   final int loopLengthMicros;
 
   /// Stop with a loop still loaded: hold the playhead where it is.
@@ -920,6 +924,7 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
                         painter: PedalLedRingPainter(
                           baseColor: widget.baseColor,
                           offColor: widget.offColor,
+                          activityColor: widget.activityColor,
                           goodbye: widget.goodbye,
                           progress: widget.active || widget.loopLengthMicros > 0
                               ? _sweep.value
@@ -957,26 +962,30 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
 /// Paints the encoder's 12-LED ring (the 12× WS2812 ring board on the
 /// hardware). Twin of firmware `renderRing()`.
 ///
-/// The ring is [baseColor] (green). In standby, every LED breathes together
-/// at [breathe] (`0..1`). Once activity starts, [progress] (`0..1`, clockwise
-/// from the top) is a FastLED-style comet: one full-bright head with a
-/// `fadeToBlackBy(70)` trail behind it. [progress] is `null` while breathing.
-/// A [goodbye] frame blacks the whole ring to [offColor].
+/// The ring breathes [baseColor] (green) in standby. Once activity starts,
+/// [progress] (`0..1`, clockwise from the top) is a FastLED-style comet in
+/// [activityColor] (rec red / overdub amber / play green): one full-bright
+/// head with a `fadeToBlackBy(70)` trail. [progress] is `null` while
+/// breathing. A [goodbye] frame blacks the whole ring to [offColor].
 class PedalLedRingPainter extends CustomPainter {
   /// Creates a [PedalLedRingPainter].
   PedalLedRingPainter({
     required this.baseColor,
     required this.offColor,
+    required this.activityColor,
     required this.goodbye,
     required this.progress,
     required this.breathe,
   });
 
-  /// Fill colour of the comet (and of the standby breathe).
+  /// Standby breathe colour (green).
   final Color baseColor;
 
   /// Unlit-LED colour, filling every dot while [goodbye] is set.
   final Color offColor;
+
+  /// Comet colour from `global_color`.
+  final Color activityColor;
 
   /// Shutdown frame: every LED is off, as both firmware sketches render it.
   final bool goodbye;
@@ -1018,7 +1027,7 @@ class PedalLedRingPainter extends CustomPainter {
         // direction of travel (increasing index = clockwise).
         final behind = (headIdx - i + _count) % _count;
         final lit = math.pow(_fadeKeep, behind).toDouble();
-        color = baseColor;
+        color = activityColor;
         alpha = lit;
         if (behind == 0) {
           canvas.drawCircle(
@@ -1044,7 +1053,8 @@ class PedalLedRingPainter extends CustomPainter {
       old.breathe != breathe ||
       old.goodbye != goodbye ||
       old.baseColor != baseColor ||
-      old.offColor != offColor;
+      old.offColor != offColor ||
+      old.activityColor != activityColor;
 }
 
 /// How long a keyboard / screen-reader long-press holds a switch down.
@@ -1070,11 +1080,20 @@ Color _ledColor(SurfaceTheme surface, PedalTrackLed led) => switch (led) {
   PedalTrackLed.blue => surface.ledBlue,
 };
 
+/// Ring comet colour from `global_color` (rec red / overdub amber / play green).
+Color _activityColor(SurfaceTheme surface, GlobalColor color) =>
+    switch (color) {
+      GlobalColor.red => surface.ledRed,
+      GlobalColor.amber => surface.ledAmber,
+      GlobalColor.green => surface.ledGreen,
+      GlobalColor.off || GlobalColor.blue => surface.ledGreen,
+    };
+
 /// The tri-state MODE colour (A1), one per interaction mode — the on-screen
 /// twin of the firmware's `modeColor`. Rec red, mute green, FX blue (#693).
 ///
 /// One call site: the MODE LED (the first of the 7-LED indicator strip). The
-/// ring is green-only.
+/// ring comet takes [GlobalColor] (activity), not this mapping.
 ///
 /// The MODE LED is SOLID in every state on both sides. The armed blink is
 /// gone (armed shows on the screens); `PedalStateFrame.performanceArmed` still
