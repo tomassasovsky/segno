@@ -446,6 +446,9 @@ void main() {
     when(() => looper.monitorChanges).thenAnswer(
       (_) => const Stream<int>.empty(),
     );
+    when(() => looper.monitorParamChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
+    );
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
     when(() => looper.state).thenReturn(
       LooperState(

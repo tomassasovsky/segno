@@ -39,6 +39,9 @@ void main() {
       () => repository.monitorChanges,
     ).thenAnswer((_) => const Stream<int>.empty());
     when(
+      () => repository.monitorParamChanges,
+    ).thenAnswer((_) => const Stream<int>.empty());
+    when(
       () => repository.setMonitorInputMode(
         input: any(named: 'input'),
         mode: any(named: 'mode'),
@@ -376,6 +379,139 @@ void main() {
         );
       },
     );
+  });
+
+  group('following the param stream', () {
+    late StreamController<int> params;
+
+    setUp(() {
+      params = StreamController<int>.broadcast();
+      addTearDown(params.close);
+      when(
+        () => repository.monitorParamChanges,
+      ).thenAnswer((_) => params.stream);
+      when(() => repository.monitorMode(any())).thenReturn(MonitorMode.off);
+      when(() => repository.monitorOutput(any())).thenReturn(0x3);
+      when(() => repository.monitorVolume(any())).thenReturn(1);
+      when(() => repository.monitorMuted(any())).thenReturn(false);
+      when(() => repository.monitorChainEnabled(any())).thenReturn(true);
+    });
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a swept param reaches the knob without a structural change',
+      build: build,
+      skip: 1,
+      act: (cubit) async {
+        await cubit.load();
+        // What a CC bound to an `FxStage.input` param does: it writes
+        // straight to the repository at controller rate, and the repository
+        // announces on the throttled param stream — never the structural one.
+        when(() => repository.monitorEffects(0)).thenReturn([
+          BuiltInEffect(
+            type: TrackEffectType.drive,
+            params: const [0.7, 0.5],
+          ),
+        ]);
+        params.add(0);
+        await Future<void>.delayed(Duration.zero);
+      },
+      expect: () => [
+        isA<MonitorState>().having(
+          (s) => (s.forInput(0).effects.single as BuiltInEffect).params.first,
+          'swept param',
+          0.7,
+        ),
+      ],
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'a param-only announce persists nothing and writes nothing back',
+      build: build,
+      act: (cubit) async {
+        await cubit.load();
+        when(() => repository.monitorEffects(0)).thenReturn([
+          BuiltInEffect(
+            type: TrackEffectType.drive,
+            params: const [0.7, 0.5],
+          ),
+        ]);
+        params.add(0);
+        // Long enough for a persist to have landed, were one issued.
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      },
+      verify: (_) async {
+        // The deliberate half of #605: a swept value arrives at up to 10 Hz
+        // for the length of the sweep, and the editor-sync poll (the other
+        // follower of live param motion) does not persist either. The value
+        // still reaches settings with the next structural announce or edit.
+        expect(await settings.loadMonitorEffects(0), isNull);
+        // And never back to the engine — the repository is where it came
+        // from.
+        verifyNever(
+          () => repository.setMonitorEffectParam(
+            input: any(named: 'input'),
+            index: any(named: 'index'),
+            param: any(named: 'param'),
+            value: any(named: 'value'),
+          ),
+        );
+        verifyNever(
+          () => repository.setMonitorEffects(
+            input: any(named: 'input'),
+            effects: any(named: 'effects'),
+          ),
+        );
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'an announce with nothing applied does not wipe the console chain',
+      build: build,
+      skip: 1,
+      act: (cubit) async {
+        await cubit.load();
+        cubit.addEffect(0);
+        // The repository reports no chain (engine not running / a fake): a
+        // param announce must not read that emptiness as a clear.
+        when(() => repository.monitorEffects(0)).thenReturn(const []);
+        params.add(0);
+        await Future<void>.delayed(Duration.zero);
+      },
+      expect: () => [
+        isA<MonitorState>().having(
+          (s) => s.forInput(0).effects,
+          'effects',
+          hasLength(1),
+        ),
+      ],
+    );
+
+    test('an announce before the restore is dropped, not read', () async {
+      final cubit = build();
+      addTearDown(cubit.close);
+      when(() => repository.monitorEffects(0)).thenReturn([
+        BuiltInEffect(type: TrackEffectType.drive, params: const [0.7, 0.5]),
+      ]);
+
+      // The restore has not marked the repository authoritative yet — and by
+      // the time it does, it has pushed the SAVED chain over this one, so
+      // there is nothing a held read could recover.
+      params.add(0);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(cubit.state.inputs, isEmpty);
+    });
+
+    test('a closed cubit stops listening', () async {
+      final cubit = build();
+      await cubit.load();
+      await cubit.close();
+
+      params.add(0);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(params.hasListener, isFalse);
+    });
   });
 
   group('MonitorCubit', () {

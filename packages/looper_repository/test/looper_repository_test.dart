@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 // The audio-config + effect types are domain types here (from the barrel); the
@@ -6601,8 +6602,8 @@ void main() {
 
       // Deliberate, and load-bearing: these arrive at controller rate from a
       // mapped CC, and the listener persists what it reads — announcing would
-      // write five settings keys per frame of a sweep. #605 owns the cadence
-      // question; until then this stays quiet on purpose.
+      // write five settings keys per frame of a sweep. Param writes announce
+      // on their own throttled stream instead: `monitorParamChanges` (#605).
       repo.setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.4);
       await Future<void>.delayed(Duration.zero);
 
@@ -6678,6 +6679,172 @@ void main() {
         );
       },
     );
+  });
+
+  group('monitorParamChanges', () {
+    // The throttle is a real Timer, so these run under fake time: `elapse`
+    // is the only honest way to cross the 100 ms window without a wall-clock
+    // wait, and `flushMicrotasks` is what delivers a broadcast add.
+    LooperRepository buildWithChain(FakeAsync async) {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+      async.flushMicrotasks();
+      return repo;
+    }
+
+    test('a param write announces its input', () {
+      fakeAsync((async) {
+        final repo = buildWithChain(async);
+        final seen = <int>[];
+        repo.monitorParamChanges.listen(seen.add);
+
+        repo.setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.4);
+        async.flushMicrotasks();
+
+        // Immediately — the knob starts moving on the sweep's first frame,
+        // not one throttle window late.
+        expect(seen, [0]);
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+      });
+    });
+
+    test('a burst inside the window coalesces to first plus trailing', () {
+      fakeAsync((async) {
+        final repo = buildWithChain(async);
+        final seen = <int>[];
+        repo.monitorParamChanges.listen(seen.add);
+
+        // A sweep: many controller frames inside one throttle window.
+        for (var i = 0; i < 20; i++) {
+          repo.setMonitorEffectParam(
+            input: 0,
+            index: 0,
+            param: 0,
+            value: i / 20,
+          );
+        }
+        async.flushMicrotasks();
+        expect(seen, [0], reason: 'the window holds everything after the 1st');
+
+        async
+          ..elapse(LooperRepository.monitorParamAnnounceInterval)
+          ..flushMicrotasks();
+        // One trailing announce carries the sweep's last value; a listener
+        // re-reads the chain, so the announce needs no payload.
+        expect(seen, [0, 0]);
+        expect(
+          (repo.monitorEffects(0).single as BuiltInEffect).params.first,
+          closeTo(19 / 20, 1e-9),
+        );
+
+        // And a clean window ends silent — no announce without a write.
+        async
+          ..elapse(LooperRepository.monitorParamAnnounceInterval * 2)
+          ..flushMicrotasks();
+        expect(seen, [0, 0]);
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+      });
+    });
+
+    test('a sweep longer than one window announces at the cadence', () {
+      fakeAsync((async) {
+        final repo = buildWithChain(async);
+        final seen = <int>[];
+        repo.monitorParamChanges.listen(seen.add);
+
+        // 350 ms of continuous sweeping at ~100 fps.
+        for (var t = 0; t < 35; t++) {
+          repo.setMonitorEffectParam(
+            input: 0,
+            index: 0,
+            param: 0,
+            value: t / 35,
+          );
+          async
+            ..elapse(const Duration(milliseconds: 10))
+            ..flushMicrotasks();
+        }
+
+        // ≤10 Hz: the leading announce plus one per full window — never one
+        // per write.
+        expect(seen.length, inInclusiveRange(3, 5));
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+      });
+    });
+
+    test('windows are per input, and rejected writes stay silent', () {
+      fakeAsync((async) {
+        final repo = buildWithChain(async)
+          ..setMonitorEffects(
+            input: 3,
+            effects: [BuiltInEffect(type: TrackEffectType.delay)],
+          );
+        async.flushMicrotasks();
+        final seen = <int>[];
+        repo.monitorParamChanges.listen(seen.add);
+
+        repo
+          ..setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.1)
+          // Input 3's window is its own — input 0's open one must not hold it.
+          ..setMonitorEffectParam(input: 3, index: 0, param: 0, value: 0.2)
+          // Out of range: the write did nothing, so nothing to announce.
+          ..setMonitorEffectParam(input: 0, index: 9, param: 0, value: 0.3)
+          ..setMonitorEffectParam(input: 7, index: 0, param: 0, value: 0.3);
+        async.flushMicrotasks();
+
+        expect(seen, [0, 3]);
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+      });
+    });
+
+    test('a structural write does not announce on the param stream', () {
+      fakeAsync((async) {
+        final repo = buildWithChain(async);
+        final seen = <int>[];
+        repo.monitorParamChanges.listen(seen.add);
+
+        repo
+          ..setMonitorMute(input: 0, muted: true)
+          ..setMonitorChainEnabled(input: 0, enabled: false)
+          ..setMonitorEffects(
+            input: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.delay)],
+          );
+        async.flushMicrotasks();
+
+        expect(seen, isEmpty);
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+      });
+    });
+
+    test('a disposed repository announces nothing, even mid-window', () {
+      fakeAsync((async) {
+        final repo = buildWithChain(async);
+        final seen = <int>[];
+        repo.monitorParamChanges.listen(seen.add);
+
+        // Leave a dirty window open across the dispose: the trailing timer
+        // must be cancelled, not left to fire into a closed controller.
+        repo
+          ..setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.1)
+          ..setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.2);
+        unawaited(repo.dispose());
+        async
+          ..elapse(LooperRepository.monitorParamAnnounceInterval * 2)
+          ..flushMicrotasks();
+
+        expect(seen, [0]); // the leading announce, and nothing after
+      });
+    });
   });
 
   group('monitor mode (tri-state)', () {
