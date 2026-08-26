@@ -28,8 +28,10 @@ abstract interface class ApplianceEnv {
   /// failure.
   Future<void> reboot();
 
-  /// Clears a staged-version marker that cannot be applied (failed tryboot /
-  /// already running). No-op when the helper is absent. Never throws.
+  /// Clears a staged-version marker that cannot be applied: a tryboot that
+  /// did not take (rolled back, whether boot-bad or simply never committed),
+  /// or already running the staged version. No-op when the helper is absent.
+  /// Never throws.
   Future<void> reconcileStaged();
 
   /// Runs the helper's `pedal-pending` verb: the firmware version a flash is

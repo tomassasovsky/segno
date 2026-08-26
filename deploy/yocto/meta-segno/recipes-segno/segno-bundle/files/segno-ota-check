@@ -18,8 +18,18 @@ BASE_URL="${SEGNO_UPDATE_BASE:-https://segno.aquiles.dev/updates/appliance}"
 CHANNEL_OVERRIDE_FILE="${SEGNO_CHANNEL_OVERRIDE_FILE:-/data/segno/update-channel}"
 CHANNEL_FILE="${SEGNO_CHANNEL_FILE:-/etc/segno/update-channel}"
 CUR_FILE="${SEGNO_VERSION_FILE:-/etc/segno/build-version}"
-STAGED_FILE="/data/.ota-staged-version"      # on /data so it survives OS updates
-PENDING_FLAG="/run/segno-update-pending"     # tmpfs marker: "reboot to activate"
+STAGED_FILE="${SEGNO_STAGED_FILE:-/data/.ota-staged-version}"  # on /data so it survives OS updates
+# The boot id current when the marker was written (see segno-update-ctl, which
+# owns the reconcile logic reading this). MUST be recorded on every path that
+# writes the marker: a marker staged this boot whose boot id is missing looks
+# to reconcile-staged like a stale one and would be cleared before the
+# applying reboot ever happens.
+STAGED_BOOT_FILE="${SEGNO_STAGED_BOOT_ID_FILE:-/data/.ota-staged-boot-id}"
+BOOT_ID_FILE="${SEGNO_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
+# tmpfs marker: "reboot to activate". Overridable because a redirection onto a
+# missing /run is FATAL in a POSIX sh (`:` is a special builtin), `|| true` or
+# not — the test harness has no /run to point it at.
+PENDING_FLAG="${SEGNO_PENDING_FLAG:-/run/segno-update-pending}"
 WORK="$(mktemp -d /tmp/segno-ota.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -115,6 +125,7 @@ fi
 # keyring and refuses anything it can't validate. No reboot here (deferred).
 if rauc install "$bfile"; then
     echo "$version" > "$STAGED_FILE" 2>/dev/null || true
+    tr -d '[:space:]' <"$BOOT_ID_FILE" >"$STAGED_BOOT_FILE" 2>/dev/null || true
     : > "$PENDING_FLAG" 2>/dev/null || true
     log "installed v$version to inactive slot; reboot pending (deferred activation)"
 else
