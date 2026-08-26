@@ -22676,6 +22676,55 @@ static void test_cache_audio_rev_bump_sites(void) {
   le_engine_destroy(a);
 }
 
+/* The batch accessor (le_engine_get_all_lane_caches, #418) exists so a poller
+ * reading every lane pays for ONE drain + scheduler tick instead of one per
+ * lane. The one-drain half is structural (a single le_engine_drain_events
+ * call before the fill loop); what a test can and must pin is that the sweep
+ * reports exactly what the per-lane accessor reports for every slot — with a
+ * real CACHED lane in the mix, so the equality is not vacuously all-LIVE. */
+static void test_cache_batch_matches_per_lane(void) {
+  printf("test_cache_batch_matches_per_lane\n");
+  le_engine* e = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(e, CACHE_LOOP, 1.0f);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  drain(e);
+  le_lane_cache_info reg;
+  le_engine_get_lane_cache(e, 0, 0, &reg); /* register the new key */
+  pump_frames(e, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(e, 0, 0, LE_CACHE_CACHED, 3000));
+
+  le_lane_cache_info batch[LE_MAX_TRACKS * LE_MAX_LANES];
+  /* Rejections fill nothing. */
+  CHECK(le_engine_get_all_lane_caches(NULL, batch,
+                                      LE_MAX_TRACKS * LE_MAX_LANES) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_get_all_lane_caches(e, NULL, LE_MAX_TRACKS * LE_MAX_LANES) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_get_all_lane_caches(e, batch, LE_MAX_LANES - 1) ==
+        LE_ERR_INVALID);
+
+  const int32_t n =
+      le_engine_get_all_lane_caches(e, batch, LE_MAX_TRACKS * LE_MAX_LANES);
+  CHECK(n > 0 && n % LE_MAX_LANES == 0 && n <= LE_MAX_TRACKS * LE_MAX_LANES);
+  /* The cached lane is in the sweep — the comparison below is not all-LIVE. */
+  CHECK(batch[0].state == LE_CACHE_CACHED);
+  /* Steady state (no frames pumped between the calls), so the extra drains
+   * the per-lane calls run cannot move any answer: every slot must match. */
+  for (int32_t i = 0; i < n; ++i) {
+    le_lane_cache_info one;
+    CHECK(le_engine_get_lane_cache(e, i / LE_MAX_LANES, i % LE_MAX_LANES,
+                                   &one) == LE_OK);
+    CHECK(one.state == batch[i].state);
+    CHECK(one.reason == batch[i].reason);
+    CHECK(one.engaged == batch[i].engaged);
+    CHECK(one.entry_frames == batch[i].entry_frames);
+    CHECK(one.renders == batch[i].renders);
+    CHECK(one.audio_rev == batch[i].audio_rev);
+  }
+  le_engine_destroy(e);
+}
+
 /* ---- per-input conditioning stage (input conditioning, S1) ----
  *
  * The stage (HPF + hum notches + downward expander, engine_cond.c) runs once
@@ -24375,6 +24424,7 @@ int main(void) {
   test_cache_job_queue_full_degrades_then_retries();
   test_cache_destroy_during_active_render();
   test_cache_audio_rev_bump_sites();
+  test_cache_batch_matches_per_lane();
 
   test_cond_setters_validate();
   test_cond_bypass_bitexact();

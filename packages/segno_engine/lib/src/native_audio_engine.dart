@@ -10,6 +10,7 @@ import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/ffi_strings.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
+import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
@@ -67,6 +68,7 @@ class NativeAudioEngine implements AudioEngine {
     _telemetryPtr = calloc<le_callback_telemetry>();
     _trackPtr = calloc<le_track_snapshot>();
     _lanePtr = calloc<le_lane_snapshot>();
+    _cachesPtr = calloc<le_lane_cache_info>(LE_MAX_TRACKS * LE_MAX_LANES);
     _vizPtr = calloc<Float>(LE_VIZ_POINTS);
   }
 
@@ -88,6 +90,7 @@ class NativeAudioEngine implements AudioEngine {
   late final Pointer<le_callback_telemetry> _telemetryPtr;
   late final Pointer<le_track_snapshot> _trackPtr;
   late final Pointer<le_lane_snapshot> _lanePtr;
+  late final Pointer<le_lane_cache_info> _cachesPtr;
   late final Pointer<Float> _vizPtr;
   bool _disposed = false;
 
@@ -1205,6 +1208,28 @@ class NativeAudioEngine implements AudioEngine {
   int laneFxFingerprint({required int channel, required int lane}) =>
       _bindings.le_engine_lane_fx_fingerprint(_engine, channel, lane);
 
+  @override
+  Map<(int, int), LaneCacheState> laneCacheStates() {
+    _checkAlive();
+    // One native call, one drain + scheduler tick for the whole sweep — never
+    // le_engine_get_lane_cache in a loop, which drains per lane (#418).
+    final filled = _bindings.le_engine_get_all_lane_caches(
+      _engine,
+      _cachesPtr,
+      LE_MAX_TRACKS * LE_MAX_LANES,
+    );
+    // A rejected call (e.g. unconfigured engine) fills nothing; report
+    // "nothing observed" rather than reading whatever the buffer holds.
+    if (filled <= 0) return const {};
+    final states = <(int, int), LaneCacheState>{};
+    for (var i = 0; i < filled; i++) {
+      states[(i ~/ LE_MAX_LANES, i % LE_MAX_LANES)] = LaneCacheState.fromNative(
+        _cachesPtr[i].state,
+      );
+    }
+    return states;
+  }
+
   // ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ----
 
   @override
@@ -1566,6 +1591,7 @@ class NativeAudioEngine implements AudioEngine {
       ..free(_snapshotPtr)
       ..free(_trackPtr)
       ..free(_lanePtr)
+      ..free(_cachesPtr)
       ..free(_vizPtr);
   }
 }
