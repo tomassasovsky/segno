@@ -308,7 +308,7 @@ void main() {
       expect(ringPainter(tester).breathe, greaterThan(0));
     });
 
-    testWidgets('recording the first take sweeps a red playhead', (
+    testWidgets('recording the first take sweeps a green playhead', (
       tester,
     ) async {
       final (_, sim) = await pumpFaceplate(tester);
@@ -322,12 +322,11 @@ void main() {
       expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
       final painter = ringPainter(tester);
       expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
-      expect(painter.headColor, SurfaceTheme.dark.ledRed);
       expect(painter.progress, isNotNull);
       expect(painter.breathe, 0);
     });
 
-    testWidgets('REC mode looping: green ring, red playhead', (tester) async {
+    testWidgets('REC mode looping: green ring, green playhead', (tester) async {
       final (_, sim) = await pumpFaceplate(tester);
       sim.send(
         PedalCodec.encodeFrame(
@@ -342,7 +341,6 @@ void main() {
       expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
       final painter = ringPainter(tester);
       expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
-      expect(painter.headColor, SurfaceTheme.dark.ledRed);
       expect(painter.progress, isNotNull);
     });
 
@@ -364,7 +362,6 @@ void main() {
       expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
       final painter = ringPainter(tester);
       expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
-      expect(painter.headColor, SurfaceTheme.dark.ledGreen);
       expect(painter.progress, isNotNull);
     });
 

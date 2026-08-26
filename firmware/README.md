@@ -86,7 +86,7 @@ Set in `segno_pedal.ino` to match the original "aquiles LoopStation" wiring
 
 | index | role |
 |-------|------|
-| 0–11 | the 12-LED loop-position ring (green fill; standby breathe; playhead LED in the mode colour once activity starts) |
+| 0–11 | the 12-LED loop-position ring (green fill; standby breathe; green playhead once activity starts) |
 | 12 | global / mode color |
 | 13–16 | the active bank's 4 track indicators (Tr1–Tr4) |
 | 17 | clear-fade indicator |

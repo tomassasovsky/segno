@@ -198,9 +198,9 @@ static CRGB globalColor(uint8_t color) {
 // this in lockstep with the app's `_modeColor` in `pedal_plate.dart`.
 // No wire byte changes: the frame carries the 2-bit mode, never a colour.
 //
-// Two call sites, one meaning: the MODE LED, and the ring playhead once
-// activity starts (recording, overdub, playback). Standby breathes green
-// with no playhead.
+// One call site: the MODE LED (LED 12 on the UNO strip / first of the 7-LED
+// indicator strip on the 32u4). The ring is green-only — a brightness hump,
+// never a mode colour.
 static CRGB modeColor(uint8_t mode) {
   switch (mode) {
     case PEDAL_MODE_PLAY:
@@ -218,12 +218,12 @@ static CRGB scaled(CRGB c, uint8_t level) {
 }
 
 // The looping ring is a green fill with a brightness hump around the playhead.
-// The playhead LED ("first in line") takes the interaction-mode colour: rec
-// red, mute green, FX blue. Tune: kRingMsPerRev (lower = faster), kRingWidth
-// (LEDs lit each side), kRingShape (parabola-ish), kBreatheMs (standby pulse).
-// Independent of loop length. Breathe is standby only: any activity (including
-// the first take, which has no length yet) sweeps a playhead. A Stop that
-// leaves a loop loaded FREEZES the playhead.
+// Tune: kRingMsPerRev (lower = faster), kRingWidth (LEDs lit each side),
+// kRingShape (parabola-ish), kBreatheMs (standby pulse). Independent of loop
+// length. Breathe is standby only: any activity (including the first take,
+// which has no length yet) sweeps a playhead. A Stop that leaves a loop
+// loaded FREEZES the playhead. Mode (rec red / mute green / FX blue) lives
+// on the MODE LED, not on this ring.
 static const unsigned long kRingMsPerRev = 700;
 static const unsigned long kBreatheMs = 2400;
 static const float kRingWidth = 5.5f;
@@ -245,7 +245,6 @@ static void renderRing() {
   const bool active = (activity.r || activity.g || activity.b) &&
                       g_frame.global_color != PEDAL_GLOBAL_BLUE;
   const CRGB base = CRGB::Green;
-  const CRGB head = modeColor(g_frame.play_mode);
 
   // Standby (no activity): freeze the playhead if a loop is still loaded,
   // otherwise breathe. Any activity — including the first take, which has
@@ -265,8 +264,6 @@ static void renderRing() {
 
   g_ringPhase += (float)dt / (float)kRingMsPerRev * (float)kRingCount;
   while (g_ringPhase >= (float)kRingCount) g_ringPhase -= (float)kRingCount;
-  uint8_t headIdx = (uint8_t)(g_ringPhase + 0.5f);
-  if (headIdx >= kRingCount) headIdx = 0;
   for (uint8_t i = 0; i < kRingCount; i++) {
     float d = fabsf((float)i - g_ringPhase);
     if (d > kRingCount / 2.0f) d = kRingCount - d; // wrap the short way round
@@ -277,7 +274,7 @@ static void renderRing() {
       if (b < 0.0f) b = 0.0f;
       level = (uint8_t)(kRingBaseLevel + (255 - kRingBaseLevel) * b + 0.5f);
     }
-    g_leds[kRingStart + i] = scaled((i == headIdx) ? head : base, level);
+    g_leds[kRingStart + i] = scaled(base, level);
   }
 }
 
@@ -363,8 +360,7 @@ static void render() {
     // duplicating it and paying for the duplicate with an ambiguous MODE LED.
     // Once rec mode went solid red, "blinking red" vs "solid red" was the only
     // thing separating armed from rec mode on one 5mm dot at stage distance.
-    // One signal, one meaning: the plate shows mode here and the playhead
-    // colour on the ring, and neither has to be read against the other.
+    // One signal, one meaning: this LED is the interaction mode.
     g_leds[kModeLed] = g_frame.goodbye ? CRGB::Black
                                        : modeColor(g_frame.play_mode);
     g_leds[kClearLed] = g_frame.clear_fade ? CRGB::Red : CRGB::Black;

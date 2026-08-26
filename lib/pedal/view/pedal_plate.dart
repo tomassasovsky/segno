@@ -236,7 +236,6 @@ class PedalPlate extends StatelessWidget {
                   _Encoder(
                     baseColor: surface.ledGreen,
                     offColor: surface.ledOff,
-                    headColor: _modeColor(surface, frame.mode),
                     loopLengthMicros: frame.loopLengthMicros,
                     frozen: ringFrozen,
                     active: ringActive,
@@ -719,16 +718,15 @@ class _Led extends StatelessWidget {
 /// The rotary encoder + its 12-LED ring. Drag or scroll turns it.
 ///
 /// Twin of firmware `renderRing()`: green fill; a breathe in standby; once
-/// activity starts (recording, overdub, playback) a playhead sweeps in the
-/// mode colour (rec red / mute green / FX blue). A Stop with a loop still
-/// loaded freezes the playhead, and a goodbye frame blacks the ring out
-/// entirely — the very first thing renderRing() does (`goodbye` → all LEDs
-/// Black).
+/// activity starts (recording, overdub, playback) a green playhead sweeps.
+/// Mode colour (rec red / mute green / FX blue) lives on the MODE LED, not
+/// on this ring. A Stop with a loop still loaded freezes the playhead, and a
+/// goodbye frame blacks the ring out entirely — the very first thing
+/// renderRing() does (`goodbye` → all LEDs Black).
 class _Encoder extends StatefulWidget {
   const _Encoder({
     required this.baseColor,
     required this.offColor,
-    required this.headColor,
     required this.loopLengthMicros,
     required this.frozen,
     required this.active,
@@ -741,7 +739,6 @@ class _Encoder extends StatefulWidget {
 
   /// Unlit-LED colour, shown on every ring dot while [goodbye] blacks it out.
   final Color offColor;
-  final Color headColor;
   final int loopLengthMicros;
 
   /// Stop with a loop still loaded: hold the playhead where it is.
@@ -925,7 +922,6 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
                         painter: PedalLedRingPainter(
                           baseColor: widget.baseColor,
                           offColor: widget.offColor,
-                          headColor: widget.headColor,
                           goodbye: widget.goodbye,
                           progress: widget.active || widget.loopLengthMicros > 0
                               ? _sweep.value
@@ -965,29 +961,25 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
 ///
 /// The ring is always [baseColor] (green). In standby, every LED breathes
 /// together at [breathe] (`0..1`). Once activity starts, [progress]
-/// (`0..1`, clockwise from the top) is the playhead: that LED takes
-/// [headColor] (rec red / mute green / FX blue) and its neighbours fade in
-/// [baseColor]. [progress] is `null` while breathing. A [goodbye] frame blacks
-/// the whole ring to [offColor], ignoring [progress] and [breathe].
+/// (`0..1`, clockwise from the top) is the playhead: a brightness hump on
+/// the same green fill. [progress] is `null` while breathing. A [goodbye]
+/// frame blacks the whole ring to [offColor], ignoring [progress] and
+/// [breathe]. Mode colour lives on the MODE LED, not here.
 class PedalLedRingPainter extends CustomPainter {
   /// Creates a [PedalLedRingPainter].
   PedalLedRingPainter({
     required this.baseColor,
     required this.offColor,
-    required this.headColor,
     required this.goodbye,
     required this.progress,
     required this.breathe,
   });
 
-  /// Fill colour for every LED that is not the playhead.
+  /// Fill colour for every LED.
   final Color baseColor;
 
   /// Unlit-LED colour, filling every dot while [goodbye] is set.
   final Color offColor;
-
-  /// Colour of the playhead LED (first LED in the sweep).
-  final Color headColor;
 
   /// Shutdown frame: every LED is off, as both firmware sketches render it.
   final bool goodbye;
@@ -1009,10 +1001,6 @@ class PedalLedRingPainter extends CustomPainter {
     final ringR = size.shortestSide / 2 - dotR - 6;
     final head = progress == null ? -1.0 : progress! * _count;
     final breathing = progress == null;
-    // The playhead LED is the nearest one, rounded — exactly the firmware's
-    // `headIdx = (uint8_t)(g_ringPhase + 0.5f)`, so a half-integer playhead
-    // still lights one head LED instead of momentarily lighting none.
-    final headIdx = breathing ? -1 : head.round() % _count;
 
     for (var i = 0; i < _count; i++) {
       final angle = -math.pi / 2 + i / _count * 2 * math.pi;
@@ -1032,9 +1020,7 @@ class PedalLedRingPainter extends CustomPainter {
         var d = (i - head).abs();
         if (d > _count / 2) d = _count - d;
         final lit = (1 - d / 2).clamp(0.0, 1.0);
-        // The rounded-nearest LED is the "first in line" — mode colour; the
-        // rest stay on the green fill.
-        color = i == headIdx ? headColor : baseColor;
+        color = baseColor;
         alpha = _baseGlow + (1 - _baseGlow) * lit;
         if (lit > 0.5) {
           canvas.drawCircle(
@@ -1060,8 +1046,7 @@ class PedalLedRingPainter extends CustomPainter {
       old.breathe != breathe ||
       old.goodbye != goodbye ||
       old.baseColor != baseColor ||
-      old.offColor != offColor ||
-      old.headColor != headColor;
+      old.offColor != offColor;
 }
 
 /// How long a keyboard / screen-reader long-press holds a switch down.
@@ -1090,9 +1075,8 @@ Color _ledColor(SurfaceTheme surface, PedalTrackLed led) => switch (led) {
 /// The tri-state MODE colour (A1), one per interaction mode — the on-screen
 /// twin of the firmware's `modeColor`. Rec red, mute green, FX blue (#693).
 ///
-/// Two call sites, one meaning: the MODE LED, and the ring's playhead LED
-/// once activity starts. Standby breathes in green with no distinguished
-/// playhead.
+/// One call site: the MODE LED (the first of the 7-LED indicator strip). The
+/// ring is green-only.
 ///
 /// The MODE LED is SOLID in every state on both sides. The armed blink is
 /// gone (armed shows on the screens); `PedalStateFrame.performanceArmed` still

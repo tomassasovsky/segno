@@ -128,7 +128,7 @@ abstract final class PedalCodec {
   /// loop-top pulse: segno sends one byte at each loop top. The firmware
   /// currently only records the pulse's arrival time (`g_lastLoopTopMs`) and
   /// does not use it to drive the ring — v1's ring breathes in standby and
-  /// sweeps a mode-colored playhead independent of loop length (see
+  /// sweeps a green playhead independent of loop length (see
   /// `renderRing()` in segno_pedal.ino). The pulse is reserved for a possible
   /// future loop-synced rendering mode. A single real-time byte survives the
   /// firmware's FastLED interrupt gap far better than multi-byte SysEx.

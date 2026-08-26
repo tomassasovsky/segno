@@ -14,7 +14,7 @@
 //     identity reply go to BOTH.
 //   * LEDs: TWO WS2812 strips instead of one 19-LED strip —
 //       - RING (D15): the off-the-shelf 16-LED NeoPixel ring (standby
-//         breathe, mode-colored playhead; see renderRing()).
+//         breathe, green playhead; see renderRing()).
 //       - INDICATOR (D16): a 7-LED strip: [mode, Tr1, Tr2, Tr3, Tr4, clear, bank].
 //   * Pin map matches main_board.py / the THT plan §1 (footswitches D2–D10/D14).
 //
@@ -297,9 +297,8 @@ static CRGB globalColor(uint8_t color) {
 // this in lockstep with the app's `_modeColor` in `pedal_plate.dart`.
 // No wire byte changes: the frame carries the 2-bit mode, never a colour.
 //
-// Two call sites, one meaning: the MODE LED, and the ring playhead once
-// activity starts (recording, overdub, playback). Standby breathes green
-// with no playhead.
+// One call site: the MODE LED (first of the 7-LED indicator strip on D16).
+// The ring is green-only — a brightness hump, never a mode colour.
 static CRGB modeColor(uint8_t mode) {
   switch (mode) {
     case PEDAL_MODE_PLAY: return globalColor(PEDAL_GLOBAL_GREEN); // one green
@@ -314,10 +313,10 @@ static CRGB scaled(CRGB c, uint8_t level) {
 }
 
 // Green fill with a brightness hump around the playhead (see the UNO build).
-// Widths tuned for the 16-LED ring. The playhead LED takes the mode colour.
-// Breathe is standby only: any activity (including the first take, which has
-// no length yet) sweeps a playhead. A Stop that leaves a loop loaded freezes
-// the playhead.
+// Widths tuned for the 16-LED ring. The ring is green-only; mode colour lives
+// on the MODE LED (first of the 7-LED strip on D16). Breathe is standby only:
+// any activity (including the first take, which has no length yet) sweeps a
+// playhead. A Stop that leaves a loop loaded freezes the playhead.
 static const unsigned long kRingMsPerRev = 700;
 static const unsigned long kBreatheMs = 2400;
 static const float kRingWidth = 7.0f;  // ~5.5 * 16/12, scaled for 16 LEDs
@@ -339,7 +338,6 @@ static void renderRing() {
   const bool active = (activity.r || activity.g || activity.b) &&
                       g_frame.global_color != PEDAL_GLOBAL_BLUE;
   const CRGB base = CRGB::Green;
-  const CRGB head = modeColor(g_frame.play_mode);
 
   // Standby (no activity): freeze the playhead if a loop is still loaded,
   // otherwise breathe. Any activity — including the first take, which has
@@ -359,8 +357,6 @@ static void renderRing() {
 
   g_ringPhase += (float)dt / (float)kRingMsPerRev * (float)kRingCount;
   while (g_ringPhase >= (float)kRingCount) g_ringPhase -= (float)kRingCount;
-  uint8_t headIdx = (uint8_t)(g_ringPhase + 0.5f);
-  if (headIdx >= kRingCount) headIdx = 0;
   for (uint8_t i = 0; i < kRingCount; i++) {
     float d = fabsf((float)i - g_ringPhase);
     if (d > kRingCount / 2.0f) d = kRingCount - d; // wrap the short way round
@@ -373,8 +369,7 @@ static void renderRing() {
     }
     // Map the rotating hump's logical index to the mirrored physical LED so it
     // rotates CLOCKWISE against this ring's DIN-chain wiring order.
-    g_ring[(kRingCount - 1) - i] =
-        scaled((i == headIdx) ? head : base, level);
+    g_ring[(kRingCount - 1) - i] = scaled(base, level);
   }
 }
 
@@ -520,8 +515,7 @@ static void render() {
     // duplicating it and paying for the duplicate with an ambiguous MODE LED.
     // Once rec mode went solid red, "blinking red" vs "solid red" was the only
     // thing separating armed from rec mode on one 5mm dot at stage distance.
-    // One signal, one meaning: the plate shows mode here and the playhead
-    // colour on the ring, and neither has to be read against the other.
+    // One signal, one meaning: this LED is the interaction mode.
     g_ind[kIndMode] = g_frame.goodbye ? CRGB::Black
                                       : modeColor(g_frame.play_mode);
     g_ind[kIndClear] = g_frame.clear_fade ? CRGB::Red : CRGB::Black;

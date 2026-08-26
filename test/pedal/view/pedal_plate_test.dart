@@ -143,7 +143,6 @@ void main() {
                 .painter!
             as PedalLedRingPainter;
     expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
-    expect(painter.headColor, SurfaceTheme.dark.ledRed); // default rec mode
     expect(painter.progress, isNull);
     await tester.pump(const Duration(milliseconds: 600));
     expect(
@@ -159,7 +158,7 @@ void main() {
     );
   });
 
-  testWidgets('REC mode looping: green ring, red playhead', (tester) async {
+  testWidgets('REC mode looping: green ring, green playhead', (tester) async {
     await pumpPlate(
       tester,
       frame: _frame().copyWith(
@@ -188,7 +187,6 @@ void main() {
                 .painter!
             as PedalLedRingPainter;
     expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
-    expect(painter.headColor, SurfaceTheme.dark.ledRed);
     expect(painter.progress, isNotNull);
   });
 
@@ -209,7 +207,6 @@ void main() {
                 .painter!
             as PedalLedRingPainter;
     expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
-    expect(painter.headColor, SurfaceTheme.dark.ledGreen);
     expect(painter.progress, isNotNull);
   });
 
@@ -286,10 +283,13 @@ void main() {
     expect(ringPainter().progress, moreOrLessEquals(frozenAt!, epsilon: 1e-6));
   });
 
-  testWidgets('recording the first take sweeps a red playhead', (tester) async {
-    // First take: activity is red, no loop has closed yet
+  testWidgets('recording the first take sweeps a green playhead', (
+    tester,
+  ) async {
+    // First take: activity is red on the MODE LED, no loop has closed yet
     // (loopLengthMicros == 0). Breathe is standby only — a live take
-    // must sweep a mode-coloured playhead, not keep pulsing.
+    // must sweep a green playhead, not keep pulsing and not paint rec-red
+    // onto the ring.
     await pumpPlate(
       tester,
       frame: _frame().copyWith(
@@ -306,8 +306,17 @@ void main() {
             as PedalLedRingPainter;
     expect(painter.progress, isNotNull);
     expect(painter.baseColor, SurfaceTheme.dark.ledGreen);
-    expect(painter.headColor, SurfaceTheme.dark.ledRed);
     expect(painter.breathe, 0);
+    expect(
+      (tester
+                  .widget<Container>(
+                    find.byKey(const Key('pedalFaceplate_led_mode')),
+                  )
+                  .decoration!
+              as BoxDecoration)
+          .color,
+      SurfaceTheme.dark.ledRed,
+    );
     await tester.pump(const Duration(milliseconds: 350));
     expect(
       (tester
