@@ -6,7 +6,7 @@
     "background_color": "#060607",
     "theme_color": "#060607",
     "description": "Segno — a cross-platform desktop loopstation with a native low-latency audio engine",
-    "orientation": "portrait-primary",
+    "orientation": "landscape",
     "prefer_related_applications": false,
     "icons": [
         {
