@@ -860,8 +860,9 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
                         painter: _LedRingPainter(
                           color: widget.ringColor,
                           baseColor: widget.baseColor,
-                          progress:
-                              widget.breathing || widget.loopLengthMicros == 0
+                          // No loop length (incl. standby, which breathes)
+                          // parks the sweep; a known loop drives the playhead.
+                          progress: widget.loopLengthMicros == 0
                               ? null
                               : _sweep.value,
                           breathe: widget.breathing

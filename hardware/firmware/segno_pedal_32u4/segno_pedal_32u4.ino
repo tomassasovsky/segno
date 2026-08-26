@@ -351,10 +351,12 @@ static void renderRing() {
     return;
   }
   if (!active && g_frame.loop_length_micros > 0) return; // Stop freezes the ring
-  // Standby (no activity, no loop): breathe the whole ring green so it reads as
-  // alive at rest, instead of the idle glow sweep. The triangle is eased with
-  // the same smoothstep the on-screen twin uses.
-  if (!active) {
+  // Standby (bound, no activity, no loop): breathe the whole ring green so it
+  // reads as alive at rest, instead of the idle glow sweep. Gated on
+  // g_haveFrame so an unbound pedal stays dark (as it did before the breathe),
+  // rather than pulsing with nothing connected. The triangle is eased with the
+  // same smoothstep the on-screen twin uses.
+  if (g_haveFrame && !active) {
     const unsigned long p = now % kBreatheMs;
     const unsigned long half = kBreatheMs / 2;
     float t = (p < half) ? (p / (float)half)
