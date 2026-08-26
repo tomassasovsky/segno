@@ -273,6 +273,7 @@ class LaneSnapshot {
     required this.lengthFrames,
     required this.rms,
     required this.peak,
+    this.recoverable = false,
   });
 
   /// An empty lane recording no input.
@@ -283,7 +284,8 @@ class LaneSnapshot {
       muted = false,
       lengthFrames = 0,
       rms = 0,
-      peak = 0;
+      peak = 0,
+      recoverable = false;
 
   /// Projects a native `le_lane_snapshot` into a [LaneSnapshot].
   factory LaneSnapshot.fromNative(le_lane_snapshot native) => LaneSnapshot(
@@ -294,6 +296,7 @@ class LaneSnapshot {
     lengthFrames: native.length_frames,
     rms: native.rms,
     peak: native.peak,
+    recoverable: native.recoverable != 0,
   );
 
   /// Hardware input channel this lane records (`-1` = none).
@@ -317,6 +320,16 @@ class LaneSnapshot {
   /// Peak level for the most recent block, in `0..1`.
   final double peak;
 
+  /// Whether this lane holds captured audio that is still live or restorable
+  /// (clear-restore shadow / redo stack) — the engine-owned per-lane "holds
+  /// content" signal (#595).
+  ///
+  /// [lengthFrames] cannot answer this: the engine's shared write head
+  /// publishes the same growing length onto every active lane of a track, so
+  /// a lane that recorded nothing still reads the full loop length — and a
+  /// cleared-with-restore take reads `0` while its audio is one undo away.
+  final bool recoverable;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -328,7 +341,8 @@ class LaneSnapshot {
           muted == other.muted &&
           lengthFrames == other.lengthFrames &&
           rms == other.rms &&
-          peak == other.peak;
+          peak == other.peak &&
+          recoverable == other.recoverable;
 
   @override
   int get hashCode => Object.hash(
@@ -339,6 +353,7 @@ class LaneSnapshot {
     lengthFrames,
     rms,
     peak,
+    recoverable,
   );
 }
 

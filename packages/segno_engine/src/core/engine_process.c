@@ -4601,8 +4601,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   for (int t = 0; t < tc; ++t) {
     /* Lane buffers are mono: one loop sample accumulated per frame. The shared
      * write head publishes the same growing length onto every active lane. */
-    const int recording =
-        load_i32(&e->tracks[t].a_state) == LE_TRACK_RECORDING;
+    const int32_t tstate = load_i32(&e->tracks[t].a_state);
+    const int recording = tstate == LE_TRACK_RECORDING;
+    /* #595: an overdub writes the lanes too (backup-on-write + layer sum). */
+    const int capturing = recording || tstate == LE_TRACK_OVERDUBBING;
     const int32_t rp = e->tracks[t].record_pos;
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &e->tracks[t].lanes[l];
@@ -4610,6 +4612,19 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                 frames ? sqrtf(lane_sumsq[t][l] / (float)frames) : 0.0f);
       store_f32(&ln->a_peak_bits, lane_peak[t][l]);
       if (recording) store_i32(&ln->a_len, rp > 0 ? rp : 0);
+      /* #595: latch "this lane captured audio it could still give back" on
+       * exactly the WRITING lanes — the in-range-input predicate mirrors the
+       * per-frame capture in mix_tracks_frame (an out-of-range or unrouted
+       * lane writes nothing and must not read recoverable: a_len alone can't
+       * tell, the shared write head grows it on every active lane). Reads the
+       * same a_input_channel that loop read this block — commands drain
+       * before the frame loop, so the value cannot have moved. Once per
+       * block, store-once (the load guard keeps the steady state read-only).
+       * Cleared only on the control thread (history death / lane reset). */
+      if (capturing && !load_i32(&ln->a_recoverable)) {
+        const int32_t ic = load_i32(&ln->a_input_channel);
+        if (ic >= 0 && ic < ch_in) store_i32(&ln->a_recoverable, 1);
+      }
     }
     store_f32(&e->tracks[t].a_trk_rms_bits,
               frames ? sqrtf(trk_sumsq[t] / (float)frames) : 0.0f);

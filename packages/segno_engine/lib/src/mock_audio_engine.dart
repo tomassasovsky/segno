@@ -1169,6 +1169,12 @@ class _MockLane {
   int outputMask = 0x3;
   double volume = 1;
   bool muted = false;
+
+  /// The engine-owned "holds restorable audio" flag (#595). The mock never
+  /// records, so it stays `false` — exposed so [TrackSnapshot.lanes] carries
+  /// the field with the same default shape the native snapshot publishes for
+  /// a lane that captured nothing.
+  bool recoverable = false;
 }
 
 class _MockTrack {
@@ -1202,6 +1208,7 @@ class _MockTrack {
           lengthFrames: 0,
           rms: 0,
           peak: 0,
+          recoverable: _lanes[i].recoverable,
         ),
     ];
     final lane0 = lanes.isEmpty ? const LaneSnapshot.empty() : lanes.first;

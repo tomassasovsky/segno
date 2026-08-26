@@ -114,6 +114,11 @@ int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
     memset(ln->pool[live] + span, 0, (cap - span) * sizeof(float));
   }
   store_i32(&ln->a_len, frames);
+  /* #595: imported content IS captured audio — the recoverable flag rides the
+   * session round-trip (export only ever covers lanes that recorded, so this
+   * is the load half of that round-trip). Keeps the trailing trim off the
+   * lane if it is later un-routed. */
+  store_i32(&ln->a_recoverable, 1);
   le_audio_rev_bump(t); /* [R1] session load: imported content replaces all */
   return LE_OK;
 }
@@ -206,6 +211,7 @@ int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
   }
   /* Every layer of a lane shares the loop length; set it idempotently. */
   store_i32(&ln->a_len, frames);
+  store_i32(&ln->a_recoverable, 1); /* #595: see le_engine_import_track_lane */
   return LE_OK;
 }
 

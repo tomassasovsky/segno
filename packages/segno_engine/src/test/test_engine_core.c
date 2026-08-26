@@ -24040,6 +24040,373 @@ static void test_halfband_lengths_and_arg_guards(void) {
    * write, so only the reject side is probed here). */
 }
 
+/* ---- #595 lane slot reclaim: per-lane recoverable + trailing trim ----
+ *
+ * The engine-owned answer to "may this lane's slot be reclaimed": a per-lane
+ * recoverable flag latched by the audio thread on capture and dropped only
+ * when nothing on the lane can come back, gating an automatic trailing-only
+ * trim on un-route. Pins both #594 hazards at engine level: length_frames is
+ * track-shared (so it must never gate a trim), and a shrink evicts the freed
+ * lanes' wet-cache entries so a re-grow meets defaults on both sides. */
+
+/* Processes [frames] frames on a [ch_in]-input engine with input channel c
+ * held at (c + 1), discarding the output. frames * channels must fit 64. */
+static void reclaim_pump(le_engine* e, int ch_in, int frames) {
+  float in[64];
+  float out[64];
+  for (int f = 0; f < frames; ++f) {
+    for (int c = 0; c < ch_in; ++c) in[f * ch_in + c] = (float)(c + 1);
+  }
+  le_engine_process(e, out, in, (uint32_t)frames);
+}
+
+/* A 4-in/2-out engine whose track 0 owns [lanes] lanes, lane l recording
+ * input l and playing to output 0 (so lane sums are observable on out 0). */
+static le_engine* make_reclaim_engine(int lanes) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 4, 2, 1000);
+  le_engine_set_lane_count(e, 0, lanes);
+  for (int l = 0; l < lanes; ++l) {
+    le_engine_set_lane_input(e, 0, l, l);
+    le_engine_set_lane_output(e, 0, l, 0x1);
+  }
+  drain(e);
+  return e;
+}
+
+/* Records one LOOP_N loop (lane l captures constant l + 1) and finalizes. */
+static void reclaim_record(le_engine* e) {
+  le_engine_record(e, 0);
+  reclaim_pump(e, 4, LOOP_N);
+  le_engine_record(e, 0);
+  drain(e);
+}
+
+static int32_t lane_recoverable(le_engine* e, int32_t lane) {
+  le_lane_snapshot ls;
+  le_engine_get_lane(e, 0, lane, &ls);
+  return ls.recoverable;
+}
+
+static int32_t reclaim_lane_input(le_engine* e, int32_t lane) {
+  le_lane_snapshot ls;
+  le_engine_get_lane(e, 0, lane, &ls);
+  return ls.input_channel;
+}
+
+static int32_t reclaim_lane_count(le_engine* e) {
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  return s.tracks[0].lane_count;
+}
+
+/* Recording latches recoverable on exactly the WRITING lanes, and the
+ * snapshot exposes it per lane — while length_frames, being track-shared
+ * (#594 hazard 1), reads the full loop length even on the lane that recorded
+ * nothing. */
+static void test_recoverable_latches_on_writing_lanes_only(void) {
+  printf("test_recoverable_latches_on_writing_lanes_only\n");
+  le_engine* e = make_reclaim_engine(3);
+  /* Route lane 2 at an input the device does not have: the handler maps it
+   * to "records nothing", but the REQUEST was not an un-route, so no trim
+   * fires — the lane stays active through the take and simply writes no
+   * audio. */
+  CHECK(le_engine_set_lane_input(e, 0, 2, 9) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 3);
+  reclaim_record(e);
+  CHECK(lane_recoverable(e, 0) == 1);
+  CHECK(lane_recoverable(e, 1) == 1);
+  CHECK(lane_recoverable(e, 2) == 0);
+  /* Hazard 1 pinned: the shared write head published the loop length onto
+   * the non-writing lane too — length can never gate a reclaim. */
+  le_lane_snapshot ls;
+  le_engine_get_lane(e, 0, 2, &ls);
+  CHECK(ls.length_frames == LOOP_N);
+  /* Out-of-range lane: the default snapshot reports not-recoverable. */
+  le_engine_get_lane(e, 0, LE_MAX_LANES + 1, &ls);
+  CHECK(ls.recoverable == 0);
+  le_engine_destroy(e);
+}
+
+/* Clear-with-restore keeps every lane recoverable (the erased take is one
+ * undo away); the restore round-trip keeps it; a plain clear — no way back —
+ * drops it. */
+static void test_recoverable_survives_clear_restore_dies_with_plain_clear(
+    void) {
+  printf("test_recoverable_survives_clear_restore_dies_with_plain_clear\n");
+  le_engine* e = make_reclaim_engine(2);
+  reclaim_record(e);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].clear_restore == 1);
+  CHECK(s.tracks[0].length_frames == 0);
+  CHECK(lane_recoverable(e, 0) == 1); /* wiped-looking, still restorable */
+  CHECK(lane_recoverable(e, 1) == 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* restore the take */
+  drain(e);
+  CHECK(lane_recoverable(e, 0) == 1);
+  CHECK(lane_recoverable(e, 1) == 1);
+  CHECK(le_engine_clear(e, 0) == LE_OK); /* plain: nothing can come back */
+  drain(e);
+  CHECK(lane_recoverable(e, 0) == 0);
+  CHECK(lane_recoverable(e, 1) == 0);
+  le_engine_destroy(e);
+}
+
+/* Undo-to-empty keeps recoverable while redo can resurrect; a fresh recording
+ * (which invalidates the redo branch) drops it on the lanes that do not
+ * re-record — and only then does an un-route reclaim the slot. */
+static void test_recoverable_undo_to_empty_redo_lifecycle(void) {
+  printf("test_recoverable_undo_to_empty_redo_lifecycle\n");
+  le_engine* e = make_reclaim_engine(2);
+  reclaim_record(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* undo the base take -> EMPTY */
+  drain(e);
+  CHECK(lane_recoverable(e, 0) == 1); /* redo can bring both back */
+  CHECK(lane_recoverable(e, 1) == 1);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  drain(e);
+  CHECK(lane_recoverable(e, 1) == 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* empty again, redo armed */
+  drain(e);
+  /* Un-routing the redo-protected lane must NOT trim it (#594: the trim
+   * predicate is the engine's recoverable, not the visible emptiness). */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 2);
+  /* A fresh take kills the redo branch: lane 0 re-latches (it records), the
+   * un-routed lane 1 does not — its old audio is now truly unreachable. */
+  reclaim_record(e);
+  CHECK(lane_recoverable(e, 0) == 1);
+  CHECK(lane_recoverable(e, 1) == 0);
+  /* NOW the un-route reclaims the slot. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 1);
+  le_engine_destroy(e);
+}
+
+/* The trim is TRAILING-ONLY: a mid-list hole stays a hole (in place — never
+ * compacted onto another source), and the trailing run may later extend
+ * through it once everything behind it frees. */
+static void test_unroute_trims_trailing_lanes_only(void) {
+  printf("test_unroute_trims_trailing_lanes_only\n");
+  le_engine* e = make_reclaim_engine(4);
+  /* Mid-list un-route: lanes 2 and 3 are still routed -> no trim. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 4);
+  /* Trailing un-route: only lane 3 goes; lane 2 (routed) fences the run and
+   * the hole at lane 1 stays exactly where it was. */
+  CHECK(le_engine_set_lane_input(e, 0, 3, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 3);
+  CHECK(reclaim_lane_input(e, 1) == -1); /* the hole, un-moved */
+  CHECK(reclaim_lane_input(e, 2) == 2);  /* not compacted over the hole */
+  /* Freeing the fence extends the trailing run through the old hole. */
+  CHECK(le_engine_set_lane_input(e, 0, 2, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 1);
+  CHECK(reclaim_lane_input(e, 0) == 0);
+  le_engine_destroy(e);
+}
+
+/* A BURST of un-routes within one audio block reclaims the WHOLE trailing run
+ * once the drain settles — not just the last of the burst. Every un-route
+ * command sits in the ring until a process block applies it, so at the moment
+ * each un-route lands the sibling un-routes still read as routed and the
+ * immediate trim stops early (here it can only free lane 3's slot). The event
+ * drain re-runs the trim after the block applied and routing published, so the
+ * whole trailing run frees. */
+static void test_unroute_burst_reclaims_all_trailing_on_drain(void) {
+  printf("test_unroute_burst_reclaims_all_trailing_on_drain\n");
+  le_engine* e = make_reclaim_engine(4);
+  /* Three un-routes with NO process between them: all three commands queue in
+   * the same block, so each immediate trim judges its siblings by their still
+   * -routed published routing. Only the last (lane 3) reclaims on the spot.
+   * The count is read straight off the track here (le_lanes_active) rather than
+   * through the snapshot — le_engine_get_snapshot drains events, which would
+   * prematurely run (and clear) the deferred trim before the routing below has
+   * published. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 2, -1) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 3, -1) == LE_OK);
+  CHECK(le_lanes_active(&e->tracks[0]) == 3); /* immediate trim freed lane 3 */
+  /* Apply the queued commands on the audio thread (routing publishes) WITHOUT
+   * draining events, then drive the event drain: its deferred pass reclaims the
+   * lanes the burst stranded, now that every un-route reads -1. */
+  drain(e);
+  le_engine_drain_events(e);
+  CHECK(reclaim_lane_count(e) == 1); /* lanes 1 and 2 reclaimed too */
+  CHECK(reclaim_lane_input(e, 0) == 0);
+  /* Idempotent: a second drain with nothing pending leaves the count alone. */
+  le_engine_drain_events(e);
+  CHECK(reclaim_lane_count(e) == 1);
+  le_engine_destroy(e);
+}
+
+/* A recoverable trailing lane fences the DEFERRED burst trim exactly as it
+ * fences the immediate one (#594): the drain pass judges by the engine-owned
+ * recoverable flag, so a burst that un-routes onto a still-restorable lane
+ * reclaims nothing. */
+static void test_unroute_burst_recoverable_lane_fences_drain_trim(void) {
+  printf("test_unroute_burst_recoverable_lane_fences_drain_trim\n");
+  le_engine* e = make_reclaim_engine(3);
+  reclaim_record(e); /* lanes 0, 1, 2 all latch recoverable */
+  CHECK(lane_recoverable(e, 2) == 1);
+  /* Burst un-route of lanes 1 and 2 in one block; lane 2 stays recoverable
+   * (an un-route does not drop it — undo could bring the take back). */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 2, -1) == LE_OK);
+  drain(e);
+  le_engine_drain_events(e);
+  /* The trailing lane 2 is recoverable, so the run never starts: no reclaim. */
+  CHECK(reclaim_lane_count(e) == 3);
+  CHECK(lane_recoverable(e, 2) == 1);
+  le_engine_destroy(e);
+}
+
+/* The #594 regression, pinned at the engine: no sequence of route / record /
+ * clear / undo / un-route may lose audio that undo could have restored. The
+ * un-route of a recorded lane never shrinks the count, so the grow-side
+ * le_lane_reset can never run over a restorable take via the trim. */
+static void test_unroute_never_trims_recoverable_lane(void) {
+  printf("test_unroute_never_trims_recoverable_lane\n");
+  le_engine* e = make_reclaim_engine(2);
+  float zin[4 * LOOP_N] = {0};
+  float out[2 * LOOP_N];
+  reclaim_record(e); /* lane 0 = 1.0, lane 1 = 2.0, both -> out 0 */
+  /* Un-route the recorded lane 1: recoverable, so the count must hold. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 2);
+  /* Its audio still plays: 1.0 + 2.0 summed on out 0. */
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+  }
+  /* Clear with restore, un-route again while wiped-looking: still declined
+   * (the restore shadow holds), and the undo brings the take back whole. */
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 2);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+  }
+  le_engine_destroy(e);
+}
+
+/* The trim declines while the track captures (the same guard
+ * le_engine_set_lane_count enforces) and simply lands on the next un-route;
+ * a re-grown lane comes back with recoverable cleared (le_lane_reset). */
+static void test_unroute_trim_declines_while_capturing(void) {
+  printf("test_unroute_trim_declines_while_capturing\n");
+  le_engine* e = make_reclaim_engine(2);
+  /* An idle un-route of a fresh trailing lane reclaims it on the spot. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 1);
+  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK); /* re-grow for the test */
+  /* Park lane 1 on an input the device does not have (no trim: the request
+   * was not an un-route) so the capture below never latches it. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, 9) == LE_OK);
+  drain(e);
+  le_engine_record(e, 0); /* defining capture */
+  reclaim_pump(e, 4, 2);  /* RECORDING is published now */
+  /* Mid-capture un-route: the guard declines the trim outright, even though
+   * lane 1 is trailing, free, and non-recoverable. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  CHECK(reclaim_lane_count(e) == 2);
+  reclaim_pump(e, 4, LOOP_N - 2);
+  le_engine_record(e, 0); /* finalize */
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 2); /* a declined trim never re-runs itself */
+  CHECK(lane_recoverable(e, 1) == 0);
+  /* The next un-route lands the reclaim. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 1);
+  CHECK(lane_recoverable(e, 0) == 1);
+  /* le_lane_reset's half of the lifecycle: a re-grown lane holds nothing. */
+  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK);
+  CHECK(lane_recoverable(e, 1) == 0);
+  le_engine_destroy(e);
+}
+
+/* D3: shrinking the lane count evicts the freed lanes' wet-cache entries AT
+ * the shrink (the engine_cache.c seam), not on the next scheduler tick — no
+ * tick runs between the set_lane_count call and the asserts, so a pass here
+ * pins the seam itself, with the tick's deactivated-lane reclaim left as the
+ * backstop it always was. */
+static void test_lane_count_shrink_evicts_wet_cache(void) {
+  printf("test_lane_count_shrink_evicts_wet_cache\n");
+  le_engine* e = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  le_engine_set_lane_count(e, 0, 2);
+  le_engine_set_lane_input(e, 0, 1, 0); /* both lanes record input 0 */
+  le_engine_set_lane_output(e, 0, 1, 0x1);
+  drain(e);
+  cache_record_loop(e, CACHE_LOOP, 1.0f);
+  CHECK(le_engine_set_lane_fx(e, 0, 1, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 1, 1) == LE_OK);
+  drain(e);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(e, 0, 1, &info); /* register the key */
+  pump_frames(e, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(e, 0, 1, LE_CACHE_CACHED, 3000));
+  /* Only lane 1 carries an entry (lane 0's chain is empty)... */
+  le_engine_get_lane_cache(e, 0, 0, &info);
+  CHECK(info.entry_frames == 0);
+  le_engine_get_lane_cache(e, 0, 1, &info);
+  CHECK(info.entry_frames == CACHE_LOOP);
+  CHECK(le_engine_fx_cache_used_bytes(e) > 0);
+  /* ...so the shrink must take the accounting to zero, tick-free. */
+  CHECK(le_engine_set_lane_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_fx_cache_used_bytes(e) == 0);
+  le_engine_get_lane_cache(e, 0, 1, &info);
+  CHECK(info.entry_frames == 0);
+  /* Re-grow: reset lane, no cached identity, nothing recoverable — engine
+   * defaults meet a caller that also evicted its side (#594 hazard 2). */
+  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK);
+  CHECK(lane_recoverable(e, 1) == 0);
+  le_engine_get_lane_cache(e, 0, 1, &info);
+  CHECK(info.entry_frames == 0);
+  le_engine_destroy(e);
+}
+
+/* Session load re-latches recoverable on every lane it fills — the load half
+ * of the save/load round-trip (export only covers lanes that captured) — so
+ * imported takes are trim-protected exactly like recorded ones. */
+static void test_session_import_round_trips_recoverable(void) {
+  printf("test_session_import_round_trips_recoverable\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  float pcm[LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) pcm[i] = 1.0f;
+  CHECK(le_engine_import_track_lane(e, 0, 0, pcm, LOOP_N) == LE_OK);
+  CHECK(le_engine_import_track_lane(e, 0, 1, pcm, LOOP_N) == LE_OK);
+  CHECK(le_engine_commit_session(e, LOOP_N) == LE_OK);
+  drain(e);
+  CHECK(lane_recoverable(e, 0) == 1);
+  CHECK(lane_recoverable(e, 1) == 1);
+  CHECK(reclaim_lane_count(e) == 2);
+  /* Un-routing an imported lane must not trim it away. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 2);
+  /* A lane grown fresh beside them has nothing to give back. */
+  CHECK(le_engine_set_lane_count(e, 0, 3) == LE_OK);
+  CHECK(lane_recoverable(e, 2) == 0);
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== segno_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -24550,6 +24917,17 @@ int main(void) {
   test_cache_destroy_during_active_render();
   test_cache_audio_rev_bump_sites();
   test_cache_batch_matches_per_lane();
+
+  test_recoverable_latches_on_writing_lanes_only();
+  test_recoverable_survives_clear_restore_dies_with_plain_clear();
+  test_recoverable_undo_to_empty_redo_lifecycle();
+  test_unroute_trims_trailing_lanes_only();
+  test_unroute_burst_reclaims_all_trailing_on_drain();
+  test_unroute_burst_recoverable_lane_fences_drain_trim();
+  test_unroute_never_trims_recoverable_lane();
+  test_unroute_trim_declines_while_capturing();
+  test_lane_count_shrink_evicts_wet_cache();
+  test_session_import_round_trips_recoverable();
 
   test_cond_setters_validate();
   test_cond_bypass_bitexact();
