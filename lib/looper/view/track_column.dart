@@ -113,8 +113,9 @@ class TrackColumn extends StatelessWidget {
     final fxAddress =
         fxTarget ?? FxAddress(stage: FxStage.track, index: track.channel);
     final fxTargetLabel = _stageFxTargetLabel(l10n, fxAddress);
-    final fxChainName =
-        track.effects.isEmpty ? null : fxBlockName(l10n, track.effects.first);
+    final fxChainName = track.effects.isEmpty
+        ? null
+        : fxBlockName(l10n, track.effects.first);
     final fxCellLabel = fxChainName == null
         ? fxTargetLabel
         : l10n.stageFxCellLabel(fxTargetLabel, fxChainName.toUpperCase());
