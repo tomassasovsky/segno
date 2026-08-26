@@ -431,6 +431,19 @@ typedef enum le_command_code {
                                      * value (clamped by the audio thread on
                                      * apply). */
 
+  /* Immediate finalize (#405): ends track arg_i's live RECORDING take NOW —
+   * or does nothing. Unlike LE_CMD_RECORD, whose meaning depends on the state
+   * it lands on (start / finalize / punch-in / punch-out), this command
+   * re-checks its precondition on the audio thread and is a strict no-op
+   * anywhere else, so a state change in the one-block window between
+   * le_engine_finalize_take's control-side guards and the apply can never
+   * turn it into a capture start or a punch-in/out. During a count-in it
+   * cancels the count-in (global transport state — the addressed channel is
+   * irrelevant) and logs LE_PLOG_RECORD_ABORT for the counting channel. Not
+   * itself perf-logged (like LE_CMD_ARM/DISARM: the transport fact it causes
+   * — LE_PLOG_RECORD_END / LE_PLOG_RECORD_ABORT — is what is logged). */
+  LE_CMD_FINALIZE_TAKE = 56,
+
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
   LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
@@ -1487,6 +1500,39 @@ LE_EXPORT int32_t le_engine_set_track_quantize(le_engine* engine,
  * "make sure nothing fires later" — the app's FX-mode entry, which hands the
  * user a surface with no transport controls — needs this, not that. */
 LE_EXPORT int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel);
+
+/* Finalizes track [channel]'s live NON-DEFINING recording take NOW,
+ * unconditionally — the counterpart to le_engine_cancel_arm above: cancel_arm
+ * kills the PENDING (an arm that has not fired), this kills the LIVE (a take
+ * already capturing). The finalize is exactly what a quantize-off record
+ * press does today — never off-grid: the length rounds UP to whole base
+ * loops, the unfilled tail is the digital silence the capture prep wrote,
+ * with the stopped-early seam treatment applied — but it skips the quantize
+ * deferral, the auto-record arm toggle, and the shared arm machinery
+ * entirely, so it can neither arm a take nor cancel (or consume) anyone
+ * else's arm, and it never continues into overdub (rec/dub is a record-press
+ * meaning; the take settles to PLAYING).
+ *
+ * Refuses (LE_ERR_INVALID) unless the take is safe to end here:
+ * - the track is not RECORDING (EMPTY, PLAYING, OVERDUBBING, STOPPED, or a
+ *   parked transport — nothing starts, nothing punches in or out);
+ * - the take is the DEFINING one (nothing else holds the grid): ending it
+ *   would let this call set the session's bar length mid-gesture, so the
+ *   defining take keeps running and the caller falls back to
+ *   capture-survives;
+ * - the channel still has a live pending arm (any trigger): the arm belongs
+ *   to another command and must be retired first (le_engine_cancel_arm) —
+ *   finalizing under it would leave it to fire onto the settled loop later.
+ *
+ * The one exception to the RECORDING guard: while a count-in is running the
+ * call is accepted for ANY valid channel and cancels the count-in outright —
+ * the count-in is global transport state that has captured nothing, and its
+ * abort is logged as LE_PLOG_RECORD_ABORT for the counting channel.
+ *
+ * Like cancel_arm, LE_OK means the command actually reached the ring; the
+ * audio thread re-checks the RECORDING/non-defining precondition on apply,
+ * so a state change racing the post degrades to a no-op, never to a start. */
+LE_EXPORT int32_t le_engine_finalize_take(le_engine* engine, int32_t channel);
 
 /* ---- tempo grid ----
  * Grid state + locks (A1) and the click + count-in built on them (A2); the
