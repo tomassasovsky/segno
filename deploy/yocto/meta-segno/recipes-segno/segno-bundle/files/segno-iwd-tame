@@ -1,0 +1,39 @@
+#!/bin/sh
+# segno-iwd-tame -- make iwd's known-network store passive before iwd starts
+# (#824).
+#
+# NM mirrors each WiFi profile into /var/lib/iwd so iwd has the PSK at connect
+# time (deleting the mirror breaks activation outright -- bench-verified). But
+# NM writes the mirror with AutoConnect=true, and iwd acts on that flag during
+# its startup scan, in the window before NM manages the device -- connecting
+# on its own, getting kicked off, and racing NM's activation into a failure
+# NM reports as 'no-secrets' and never retries (#824's fatal boot).
+#
+# Force AutoConnect=false in every mirror, every boot, BEFORE iwd starts. iwd
+# then never self-connects; NM's explicit activation ignores the flag
+# (bench-verified: 0 'Unsolicited' events and a 1-second connect on the same
+# boot). NM rewrites the flag to true at activation -- harmless, because this
+# runs again next boot, upstream of the only reader that matters.
+#
+# Never touches secrets, never deletes files, no-ops on an empty store.
+
+set -u
+TAG=segno-iwd-tame
+DIR=/var/lib/iwd
+
+[ -d "$DIR" ] || { echo "$TAG: no $DIR; nothing to do"; exit 0; }
+
+count=0
+for f in "$DIR"/*.psk "$DIR"/*.open "$DIR"/*.8021x; do
+  [ -f "$f" ] || continue
+  if grep -q "^AutoConnect=" "$f"; then
+    sed -i "s/^AutoConnect=.*/AutoConnect=false/" "$f"
+  elif grep -q "^\[Settings\]" "$f"; then
+    sed -i "/^\[Settings\]/a AutoConnect=false" "$f"
+  else
+    printf "\n[Settings]\nAutoConnect=false\n" >> "$f"
+  fi
+  count=$((count + 1))
+done
+echo "$TAG: tamed $count known network(s)"
+exit 0

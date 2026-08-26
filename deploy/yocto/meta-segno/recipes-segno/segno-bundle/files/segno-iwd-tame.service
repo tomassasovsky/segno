@@ -1,0 +1,14 @@
+[Unit]
+Description=Segno: make iwd's known-network store passive before iwd starts (#824)
+DefaultDependencies=no
+Before=iwd.service
+# Ordering only, never a requirement: a failure here must not keep the radio
+# down -- worst case is one boot with the old race odds.
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/segno-iwd-tame
+
+[Install]
+WantedBy=iwd.service
