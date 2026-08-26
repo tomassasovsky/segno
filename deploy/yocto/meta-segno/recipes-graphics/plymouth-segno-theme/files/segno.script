@@ -25,19 +25,25 @@ lockup.image = lockup.src.Scale(lockup.w, lockup.h);
 lockup.sprite = Sprite();
 lockup.sprite.SetImage(lockup.image);
 lockup.sprite.SetX(Math.Int((sw - lockup.w) / 2));
-# Optical centre, not geometric: a mark sitting dead-centre reads as low.
-lockup.sprite.SetY(Math.Int(sh * 0.42 - lockup.h / 2));
+# Dead centre, both axes — owner's call on the real panel (2026-08-26). The
+# optical-centre offset made sense under the full lockup, whose wordmark
+# weighted the bottom; the bare mark reads high with it. The progress bar is
+# anchored to the SCREEN below, never to the mark, so it cannot tug the
+# centring.
+lockup.sprite.SetY(Math.Int((sh - lockup.h) / 2));
 lockup.sprite.SetZ(10);
 lockup.sprite.SetOpacity(1.0);
 
 # --- progress bar (hairline track + fill) ------------------------------------
-# Sits below the lockup with a clear gap rather than pinned near the bottom edge.
+# Anchored to the screen (75% height), independent of the mark: clear of the
+# centred mark's bottom edge (50% + h/2 ≈ 57.5%) with room to spare, and low
+# enough to read as chrome rather than part of the composition.
 bar.pixel = Image("segno-bar-pixel.png");
 bar.w = Math.Int(sw * 0.16);
 bar.h = Math.Int(sh / 270);          # ~4px at 1080p, ~2px on the small panel
 if (bar.h < 2) bar.h = 2;
 bar.x = Math.Int((sw - bar.w) / 2);
-bar.y = Math.Int(sh * 0.66);
+bar.y = Math.Int(sh * 0.75);
 
 bar.track = Sprite();
 bar.track.SetImage(bar.pixel.Scale(bar.w, bar.h));
