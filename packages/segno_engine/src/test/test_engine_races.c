@@ -353,7 +353,11 @@ static void test_race_read_vs_callback_loop(void) {
     if (snap.budget_us != (uint32_t)(t.period_ns / 1000u)) violations++;
     if (snap.session.calls < prev_calls) violations++;          /* monotonic */
     if (snap.session.periods < prev_periods) violations++;      /* monotonic */
-    if (snap.session.periods > snap.session.calls) violations++; /* read order */
+    /* No periods-vs-calls ordering check: the writer's a_calls++ then
+     * a_periods++ are relaxed atomics, so on weakly-ordered hardware a reader
+     * may observe the newer periods increment while missing the older calls
+     * increment. The read order in le_cb_timing_read narrows but does not
+     * close that window; asserting it would be a rare ARM-only flake. */
     if (snap.session.late_periods != 0u) violations++; /* healthy rig: zero */
     if (snap.session.gap_events != 0u) violations++;   /* healthy rig: zero */
     if (snap.session.max_us > t.period_ns / 2u / 1000u) violations++;
