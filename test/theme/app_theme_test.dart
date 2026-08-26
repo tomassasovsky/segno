@@ -143,14 +143,14 @@ void main() {
     });
 
     // #692: FX mode is purple, and it dresses more than the mode chip — the
-    // stage transform paints `fx` as text/outline on three different backdrops
-    // (the flat `fxSurface` fill, the stage's own bg-base, and the tile
-    // dressing's `fxWash` laid over bg-base). Each carries the FX chip / power
-    // pill / entry-run label at 14px w700, so each has to clear the 4.5:1 AA
-    // floor (WCAG 1.4.3) in BOTH flavors — the high-contrast one especially,
-    // since that is where FX slipped under AA before (#768/#770). The exact
-    // measured figures are the pen's `c/stage-fx` note (dark 4.74 / 5.32 /
-    // 4.60, HC 6.83 / 10.53).
+    // stage transform paints `fx` as text/outline on two real backdrops: the
+    // flat `fxSurface` fill (the FX mode chip and the tile power pill), and the
+    // tile dressing's `fxWash` laid over the tile behind the entry run. Each
+    // carries the FX chip / power pill / entry-run label at 14px w700, so each
+    // has to clear the 4.5:1 AA floor (WCAG 1.4.3) in BOTH flavors — the
+    // high-contrast one especially, since that is where FX slipped under AA
+    // before (#768/#770). The exact measured figures are the pen's `c/stage-fx`
+    // note (dark 4.74 / 5.32 / 4.60, HC 6.83 / 10.53).
     test('the FX purple clears AA on every surface it labels', () {
       for (final s in [SurfaceTheme.dark, SurfaceTheme.highContrast]) {
         // Flat fill behind the FX mode chip and the power pill.
@@ -159,19 +159,24 @@ void main() {
           greaterThanOrEqualTo(4.5),
           reason: 'FX label is below AA on its own flat fill',
         );
-        // The stage takes bg-base in FX mode; `fx` labels sit straight on it.
+        // A conservative lower bound: `fx` also clears AA straight on the
+        // plain bg-base neutral. No FX text sits on the bare stage (the stage
+        // in FX mode is `fxSurface`, not `background` — tracks_view.dart), but
+        // pinning the darkest neutral guards the hue against a future retune
+        // regardless of which surface ends up behind it.
         expect(
           ratio(s.fx, s.background),
           greaterThanOrEqualTo(4.5),
-          reason: 'FX label is below AA on the stage surface',
+          reason: 'FX purple is below AA even on the plain bg-base neutral',
         );
-        // The tile dressing lays `fxWash` over bg-base; the entry run reads on
-        // the composite, so that is what the floor applies to.
+        // The tile dressing lays `fxWash` over the tile; measured over bg-base
+        // (the darkest neutral it composites over, so the tighter bound — the
+        // real tile is blacker still), the entry run reads on the composite.
         final washOverBg = Color.alphaBlend(s.fxWash, s.background);
         expect(
           ratio(s.fx, washOverBg),
           greaterThanOrEqualTo(4.5),
-          reason: 'FX entry run is below AA on the wash-over-stage composite',
+          reason: 'FX entry run is below AA on the wash-over-neutral composite',
         );
       }
       // Pin the flat-fill figures to the pen's note so a retune that still
