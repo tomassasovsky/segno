@@ -539,8 +539,67 @@ class LooperRepository {
     }
   }
 
+  /// Whether each poll also reads every lane's wet-cache state into
+  /// [Lane.cacheState] (R27 debug telemetry).
+  ///
+  /// Starts off, and stays off until a caller turns it on. While off, every
+  /// lane reports a `null` cache state — honestly "not observed" rather than
+  /// "live".
+  ///
+  /// The read itself is one batched engine sweep ([AudioEngine.laneCacheStates]
+  /// — a single drain + scheduler pass for ALL lanes, #418), so the residual
+  /// cost of leaving this on is one extra sweep per poll on top of the one
+  /// `snapshot()` already runs. Still gated, because telemetry nobody renders
+  /// should cost nothing: the app scopes it to "the Signal surface is showing
+  /// AND the track-indicator preference is on" (`CacheTelemetryScope`), so
+  /// the appliance — where the xrun budget is tight — never pays even that
+  /// sweep outside the one screen that draws it.
+  bool get cacheTelemetryEnabled => _cacheTelemetryEnabled;
+  bool _cacheTelemetryEnabled = false;
+
+  /// The last-refreshed per-lane cache states, keyed by `(channel, lane)`, or
+  /// empty while telemetry is off.
+  ///
+  /// [_project] reads THIS rather than the engine, and only [_poll] (plus the
+  /// toggle below) refreshes it. That split matters: `_project` also runs from
+  /// [_reproject], which fires on every local edit — including each frame of a
+  /// dragged FX knob — and re-reading telemetry there would put an engine
+  /// drain inside the very gesture `_reproject` exists to keep responsive.
+  /// A debug glyph can be one poll tick stale; a knob cannot be janky.
+  final Map<(int, int), LaneCacheState> _laneCacheStates = {};
+
+  /// Re-reads every lane's cache state in one batched engine sweep, or clears
+  /// the map when telemetry is off. The only place the engine read happens.
+  void _refreshCacheTelemetry() {
+    _laneCacheStates.clear();
+    if (!_cacheTelemetryEnabled) return;
+    _laneCacheStates.addAll(_engine.laneCacheStates());
+  }
+
+  /// Turns per-lane wet-cache telemetry on or off (see [cacheTelemetryEnabled])
+  /// and republishes immediately, so the glyph appears or clears on the toggle
+  /// rather than at the next tick.
+  ///
+  /// **Single-owner:** this is a plain last-writer-wins switch, not a
+  /// refcounted resource. Exactly one surface is expected to drive it — today
+  /// the app's `CacheTelemetryScope`, which ANDs the track-indicator
+  /// preference with "the Signal surface is showing" over its own lifecycle.
+  /// A second independent caller would fight the first; give the switch an
+  /// ownership model before adding one.
+  void setCacheTelemetryEnabled({required bool enabled}) {
+    if (enabled == _cacheTelemetryEnabled) return;
+    _cacheTelemetryEnabled = enabled;
+    // Populate (or drop) the states before republishing, so the toggle shows
+    // the real thing immediately instead of a tick of empty glyphs.
+    _refreshCacheTelemetry();
+    // _reproject, not _poll: this is an out-of-band republish like every other
+    // local edit, and it must not run the periodic poll's device supervision.
+    _reproject();
+  }
+
   void _poll() {
     final snapshot = _engine.snapshot();
+    _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
     // A measurement auto-sets the engine's offset (it never flows through
     // setRecordOffset), so mirror it into the remembered value here — otherwise
@@ -733,6 +792,9 @@ class LooperRepository {
                 chainEnabled: laneChainEnabled(i, l),
                 inheritedFrom: _laneChainMeta[(i, l)] ?? const [],
                 inputChainDiverges: laneChainDivergesFromInput(i, l),
+                // From the last refresh, never a fresh engine read — see
+                // [_laneCacheStates] for why _project must stay cheap.
+                cacheState: _laneCacheStates[(i, l)],
               ),
           ],
           effects: _trackEffects[i] ?? const [],

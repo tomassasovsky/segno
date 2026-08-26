@@ -14,6 +14,7 @@ import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
+import 'package:segno/looper/view/cache_telemetry_scope.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_status_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
@@ -119,113 +120,119 @@ class _TracksViewState extends State<TracksView> {
             unawaited(cubit.load());
             return cubit;
           },
-          child: Stack(
-            children: [
-              // Its own commands, built from a context UNDER the tray cubit
-              // just created: the outer `commands` predates the provider, and
-              // `G` reads the cubit to open the tray at Signal.
-              Builder(
-                builder: (context) => Focus(
-                  autofocus: true,
-                  onKeyEvent: TracksCommands(context).handleKey,
-                  child: GestureDetector(
-                    key: const Key('tracks_settings_secondaryTap'),
-                    behavior: HitTestBehavior.translucent,
-                    onSecondaryTapUp: (_) => unawaited(openSegnoSettings()),
-                    child: Scaffold(
-                      body: SafeArea(
-                        child: Padding(
-                          // Console/kiosk mode hides the on-screen toolbar (the
-                          // foot pedals drive transport/mode/clear) and tightens
-                          // the layout for the fixed panel; desktop builds keep
-                          // the full chrome.
-                          // Console: the pen's `STAGE / stage` insets the run
-                          // 10 from the left, right and bottom, under a status
-                          // bar that starts at 24. Desktop keeps its own
-                          // chrome and its own 18.
-                          padding: kConsoleMode
-                              ? const EdgeInsets.fromLTRB(10, 8, 10, 10)
-                              : const EdgeInsets.all(18),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // The pen's `STAGE / stage` status bar: 16
-                              // under the 8 top inset puts the strip at 24,
-                              // and the run starts 10 below it — the pen's
-                              // own 24/64/74 verticals.
-                              if (kConsoleMode) ...[
-                                const SizedBox(height: 16),
-                                const StageStatusBar(),
-                                const SizedBox(height: 10),
-                              ],
-                              if (!kConsoleMode) ...[
-                                TracksToolbar(
-                                  mode: mode,
-                                  activeBank: overlay.activeBank,
-                                  anyActive: chrome.anyActive,
-                                  playStopEnabled: chrome.playStopEnabled,
-                                  transportEnabled: chrome.transportEnabled,
-                                  onToggleMode: commands.toggleMode,
-                                  onPlayStopAll: () => commands.togglePlayAll(
-                                    playing: chrome.anyActive,
+          // The scope wraps the whole stack (tray included): it listens to
+          // the SettingsTrayCubit created just above, and its dispose bounds
+          // the wet-cache telemetry to this screen's lifetime (#418).
+          child: CacheTelemetryScope(
+            child: Stack(
+              children: [
+                // Its own commands, built from a context UNDER the tray cubit
+                // just created: the outer `commands` predates the provider, and
+                // `G` reads the cubit to open the tray at Signal.
+                Builder(
+                  builder: (context) => Focus(
+                    autofocus: true,
+                    onKeyEvent: TracksCommands(context).handleKey,
+                    child: GestureDetector(
+                      key: const Key('tracks_settings_secondaryTap'),
+                      behavior: HitTestBehavior.translucent,
+                      onSecondaryTapUp: (_) => unawaited(openSegnoSettings()),
+                      child: Scaffold(
+                        body: SafeArea(
+                          child: Padding(
+                            // Console/kiosk mode hides the on-screen toolbar
+                            // (the foot pedals drive transport/mode/clear) and
+                            // tightens the layout for the fixed panel; desktop
+                            // builds keep the full chrome.
+                            // Console: the pen's `STAGE / stage` insets the
+                            // run 10 from the left, right and bottom, under a
+                            // status bar that starts at 24. Desktop keeps its
+                            // own chrome and its own 18.
+                            padding: kConsoleMode
+                                ? const EdgeInsets.fromLTRB(10, 8, 10, 10)
+                                : const EdgeInsets.all(18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // The pen's `STAGE / stage` status bar: 16
+                                // under the 8 top inset puts the strip at 24,
+                                // and the run starts 10 below it — the pen's
+                                // own 24/64/74 verticals.
+                                if (kConsoleMode) ...[
+                                  const SizedBox(height: 16),
+                                  const StageStatusBar(),
+                                  const SizedBox(height: 10),
+                                ],
+                                if (!kConsoleMode) ...[
+                                  TracksToolbar(
+                                    mode: mode,
+                                    activeBank: overlay.activeBank,
+                                    anyActive: chrome.anyActive,
+                                    playStopEnabled: chrome.playStopEnabled,
+                                    transportEnabled: chrome.transportEnabled,
+                                    onToggleMode: commands.toggleMode,
+                                    onPlayStopAll: () => commands.togglePlayAll(
+                                      playing: chrome.anyActive,
+                                    ),
+                                    onClearAll: commands.clearAll,
                                   ),
-                                  onClearAll: commands.clearAll,
-                                ),
-                                const SizedBox(height: 14),
-                              ],
-                              // With no first-run gate, a stopped engine lands
-                              // here; a full-width affordance opens settings to
-                              // (re)start it.
-                              if (!chrome.isConnected) ...[
-                                const AudioNotRunningBanner(),
-                                const SizedBox(height: 14),
-                              ],
-                              Expanded(
-                                child: Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  // The pen's four columns sit 10 apart, and
-                                  // the run's own inset holds it off the
-                                  // screen edges. Padding each column instead
-                                  // doubled the inner gap to 16 and put half
-                                  // of it outside the run as well.
-                                  spacing: kConsoleMode ? 10 : 16,
-                                  children: [
-                                    // _TrackSlot supplies its own Expanded, so
-                                    // a slot with no track takes no flex and
-                                    // its siblings widen -- matching what the
-                                    // old `for (track in state.tracks)` did by
-                                    // simply emitting fewer children.
-                                    for (final channel in chrome.channels)
-                                      if (overlay.bankContains(channel))
-                                        _TrackSlot(
-                                          channel: channel,
-                                          name: l10n.displayTrackName(
-                                            tracksState.nameOf(channel),
-                                            channel,
+                                  const SizedBox(height: 14),
+                                ],
+                                // With no first-run gate, a stopped engine
+                                // lands here; a full-width affordance opens
+                                // settings to (re)start it.
+                                if (!chrome.isConnected) ...[
+                                  const AudioNotRunningBanner(),
+                                  const SizedBox(height: 14),
+                                ],
+                                Expanded(
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    // The pen's four columns sit 10 apart, and
+                                    // the run's own inset holds it off the
+                                    // screen edges. Padding each column instead
+                                    // doubled the inner gap to 16 and put half
+                                    // of it outside the run as well.
+                                    spacing: kConsoleMode ? 10 : 16,
+                                    children: [
+                                      // _TrackSlot supplies its own Expanded,
+                                      // so a slot with no track takes no flex
+                                      // and its siblings widen -- matching what
+                                      // the old `for (track in state.tracks)`
+                                      // did by simply emitting fewer children.
+                                      for (final channel in chrome.channels)
+                                        if (overlay.bankContains(channel))
+                                          _TrackSlot(
+                                            channel: channel,
+                                            name: l10n.displayTrackName(
+                                              tracksState.nameOf(channel),
+                                              channel,
+                                            ),
+                                            selected: channel == overlay.cursor,
+                                            mode: mode,
+                                            onUndo: commands.undo,
+                                            onRedo: commands.redo,
+                                            looperMode: chrome.looperMode,
+                                            isPrimary:
+                                                channel == chrome.primaryTrack,
+                                            onCrownPrimary:
+                                                commands.crownPrimary,
                                           ),
-                                          selected: channel == overlay.cursor,
-                                          mode: mode,
-                                          onUndo: commands.undo,
-                                          onRedo: commands.redo,
-                                          looperMode: chrome.looperMode,
-                                          isPrimary:
-                                              channel == chrome.primaryTrack,
-                                          onCrownPrimary: commands.crownPrimary,
-                                        ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              const SettingsTray(),
-            ],
+                const SettingsTray(),
+              ],
+            ),
           ),
         ),
       ),
