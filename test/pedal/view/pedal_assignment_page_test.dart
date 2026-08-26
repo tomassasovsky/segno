@@ -108,10 +108,12 @@ void main() {
   /// full-width plate, so a row control is off-screen at the default surface
   /// size.
   Future<void> tapVisible(WidgetTester tester, Finder finder) async {
+    // The plate's standby ring breathes forever, so pumpAndSettle never
+    // returns; a bounded pump flushes the scroll and the tap's rebuild.
     await tester.ensureVisible(finder);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 350));
     await tester.tap(finder);
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 350));
   }
 
   /// Taps footswitch [button] on the embedded plate.
@@ -167,8 +169,7 @@ void main() {
       await select(tester, PedalButton.recPlay);
 
       await tapVisible(tester, find.byKey(const Key('assign_target_picker')));
-      await tester.tap(find.text('TRACK 4 chain').last);
-      await tester.pumpAndSettle();
+      await tapVisible(tester, find.text('TRACK 4 chain').last);
 
       final binding = control.state.globalBindings.lookup(
         PedalButton.recPlay,
@@ -338,8 +339,7 @@ void main() {
         await bindThenBreak(tester);
 
         await tapVisible(tester, find.text(tester.l10n.pedalAssignRebind));
-        await tester.tap(find.text('TRACK 6 chain').last);
-        await tester.pumpAndSettle();
+        await tapVisible(tester, find.text('TRACK 6 chain').last);
 
         expect(
           control.state.globalBindings
@@ -389,7 +389,7 @@ void main() {
     // NOT awaited: the push future completes only when the route is POPPED,
     // so awaiting it here would hang until the test timed out.
     unawaited(showPedalAssignmentPage(context));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 350));
 
     // Two in the tree — the one pumped above (now offstage behind the opaque
     // route) and the pushed route's own. The pushed one builds at all only

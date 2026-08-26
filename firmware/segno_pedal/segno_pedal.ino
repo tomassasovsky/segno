@@ -227,6 +227,8 @@ static CRGB scaled(CRGB c, uint8_t level) {
 // freezing a lit pixel. It never shows a blue idle dot. Tune: kRingMsPerRev
 // (lower = faster), kRingWidth (LEDs lit each side), kRingShape (2 = parabola).
 static const unsigned long kRingMsPerRev = 700;
+// Standby breathe: the full dim->bright->dim period, in ms.
+static const unsigned long kBreatheMs = 2400;
 static const float kRingWidth = 5.5f;
 static const float kRingShape = 1.5f;
 static float g_ringPhase = 0.0f;       // current center, 0..kRingCount
@@ -263,6 +265,20 @@ static void renderRing() {
   // loop is cleared (nothing left to play) fall through so the hump keeps
   // advancing in the off color and the ring animates to dark.
   if (!active && g_frame.loop_length_micros > 0) return;
+  // Standby (no activity, no loop): breathe the whole ring green so it reads as
+  // alive at rest, instead of the idle glow sweep. The triangle is eased with
+  // the same smoothstep the on-screen twin uses.
+  if (!active) {
+    const unsigned long p = now % kBreatheMs;
+    const unsigned long half = kBreatheMs / 2;
+    float t = (p < half) ? (p / (float)half)
+                         : (1.0f - (p - half) / (float)half); // 0..1..0
+    t = t * t * (3.0f - 2.0f * t);                            // smoothstep
+    const uint8_t level = (uint8_t)((0.15f + 0.85f * t) * 255.0f + 0.5f);
+    const CRGB c = scaled(CRGB::Green, level);
+    for (uint8_t i = 0; i < kRingCount; i++) g_leds[kRingStart + i] = c;
+    return;
+  }
   // With no transport activity (global color OFF) the sweep runs in a dim
   // NEUTRAL glow rather than fading to dark, so the ring still reads as alive
   // — but it says nothing about the mode (#693; see kRingIdleGlow). Activity
