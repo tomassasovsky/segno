@@ -3,11 +3,15 @@ import 'package:toastification/toastification.dart';
 
 /// Stable toast ids used by the app shell (and widget tests).
 ///
-/// Lost-device / lost-MIDI ids are gone on purpose (#453): those are standing
-/// CONDITIONS, surfaced by the persistent `ConnectivityBanners` on the stage,
-/// not events — toasts here are for the *restored* events only.
+/// The lost-*device* id is gone on purpose (#453): a lost audio interface is a
+/// standing CONDITION — the engine stops, nothing is heard — surfaced by the
+/// persistent `ConnectivityBanners` on the stage, not a toast. A lost *MIDI*
+/// controller is the opposite: the loops keep playing, so it is a low-stakes
+/// event that flashes a transient toast ([midiLost]) and leaves no standing
+/// bar. Both hardware returns are *restored* events, each a short snack.
 abstract final class AppToastId {
   static const deviceRestored = 'app_deviceRestored_snackbar';
+  static const midiLost = 'app_midiLost_toast';
   static const midiRestored = 'app_midiRestored_snackbar';
   static const audioRecovery = 'app_audioRecovery_banner';
   static const update = 'app_update_banner';

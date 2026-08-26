@@ -179,7 +179,6 @@ class PerformanceReadout extends Equatable {
     this.recordArmed = false,
     this.recordSeconds = 0,
     this.deviceLost = false,
-    this.midiLost = false,
   });
 
   /// Rebuilds a readout from [map] as pushed across the window channel.
@@ -214,7 +213,6 @@ class PerformanceReadout extends Equatable {
       recordArmed: map['recordArmed'] as bool? ?? false,
       recordSeconds: map['recordSeconds'] as int? ?? 0,
       deviceLost: map['deviceLost'] as bool? ?? false,
-      midiLost: map['midiLost'] as bool? ?? false,
     );
   }
 
@@ -279,10 +277,6 @@ class PerformanceReadout extends Equatable {
   /// name: the echoed line is the pen's fixed copy.
   final bool deviceLost;
 
-  /// The pinned MIDI controller is absent (#453) — the amber sibling of
-  /// [deviceLost].
-  final bool midiLost;
-
   /// Channel-encodable form.
   Map<String, Object?> toMap() => {
     'tracks': [for (final track in tracks) track.toMap()],
@@ -301,7 +295,6 @@ class PerformanceReadout extends Equatable {
     'recordArmed': recordArmed,
     'recordSeconds': recordSeconds,
     'deviceLost': deviceLost,
-    'midiLost': midiLost,
   };
 
   @override
@@ -322,6 +315,5 @@ class PerformanceReadout extends Equatable {
     recordArmed,
     recordSeconds,
     deviceLost,
-    midiLost,
   ];
 }

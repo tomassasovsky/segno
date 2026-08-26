@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/audio_setup/audio_tab.dart';
-import 'package:segno/control/control_tab.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/tracks_tab.dart';
 import 'package:segno/network/network_tab.dart';
@@ -75,23 +74,6 @@ void main() {
         const SettingsTrayState(
           dragProgress: 1,
           destination: SettingsTrayDestination.audio,
-        ),
-      ],
-    );
-
-    blocTest<SettingsTrayCubit, SettingsTrayState>(
-      'openControl opens at Control and leaves its tab alone — the '
-      'MIDI-lost banner action (#453)',
-      build: buildCubit,
-      act: (cubit) => cubit
-        ..showControlTab(ControlTab.midi)
-        ..openControl(),
-      expect: () => [
-        const SettingsTrayState(controlTab: ControlTab.midi),
-        const SettingsTrayState(
-          dragProgress: 1,
-          destination: SettingsTrayDestination.control,
-          controlTab: ControlTab.midi,
         ),
       ],
     );

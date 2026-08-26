@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_mode.dart';
 import 'package:segno/common/console_surface.dart';
@@ -8,28 +7,37 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
-/// The stage's standing loss conditions, drawn to the pen's
-/// `STAGE / device-lost`: device-lost in the record red — the engine is
-/// stopped, which is the loudest fact the console has — and MIDI-lost in the
-/// warning amber, because the loops keep playing without it. Both at once
-/// stack in severity order, device first, flush as the pen draws them.
+/// The stage's one standing loss condition: the pinned audio interface is
+/// gone, so the engine is stopped and nothing is heard — the loudest fact the
+/// console has. Drawn to the pen's `STAGE / device-lost` in the record red.
 ///
 /// A banner and never a toast or a dialog (`c/device-lost`): a toast is for
-/// an *event*, these are *conditions* — each banner holds the screen exactly
-/// as long as its condition holds and leaves on its own the moment the
-/// hardware returns, and a dialog would steal the transport mid-song. The
-/// lost-toasts this surface replaces were the D1 stopgap (#453).
+/// an *event*, this is a *condition* — the banner holds the screen exactly as
+/// long as the interface is absent and leaves on its own the moment it
+/// returns, and a dialog would steal the transport mid-song.
 ///
-/// Each banner carries the one action that ends it: **Choose device** opens
-/// the tray's Audio domain on the Device tab, **Control** opens the Control
-/// domain — navigation through [SettingsTrayCubit], no new routing. Mounted
-/// by `TracksView` on console AND desktop builds: the condition is exactly as
-/// true in a window as on the panel.
+/// **It stands in for the engine-stopped banner, never beside it.** When the
+/// engine is stopped *because* the device is gone, this is the only banner on
+/// the stage: `TracksView` suppresses the generic `AudioNotRunningBanner`
+/// while the loss condition holds, so the two never say "engine stopped"
+/// twice (#453). A stopped engine with a device still present keeps the
+/// generic banner as before.
+///
+/// The MIDI controller is deliberately NOT here: losing it is low-stakes —
+/// the loops keep playing — so it surfaces as a transient toast, not a
+/// standing bar (see `_showMidiConnectivityToast` in `app.dart`).
+///
+/// The banner carries the one action that ends it: **Open setup** opens the
+/// tray's Audio domain on the Device tab — navigation through
+/// [SettingsTrayCubit], no new routing. The action hugs the message rather
+/// than floating to the far edge, so the sentence and the button read as one
+/// unit. Mounted by `TracksView` on console AND desktop builds: the condition
+/// is exactly as true in a window as on the panel.
 class ConnectivityBanners extends StatelessWidget {
   /// Creates a [ConnectivityBanners].
   const ConnectivityBanners({super.key});
 
-  /// The gap under the stack: the pen's 10 on the console stage (the run's
+  /// The gap under the banner: the pen's 10 on the console stage (the run's
   /// own rhythm), 14 on desktop where the surrounding chrome — the toolbar
   /// gap and the not-running banner's — steps by 14.
   static const double _gapBelow = kConsoleMode ? 10 : 14;
@@ -40,55 +48,32 @@ class ConnectivityBanners extends StatelessWidget {
     final deviceLost = context.select<AudioSetupCubit, bool>(
       (cubit) => cubit.state.deviceConnectivity == DeviceConnectivity.lost,
     );
-    final midiLost = context.select<MidiSetupCubit, bool>(
-      (cubit) => cubit.state.connection.connectivity == MidiConnectivity.lost,
-    );
-    if (!deviceLost && !midiLost) return const SizedBox.shrink();
+    if (!deviceLost) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (deviceLost)
-          _LostBanner(
-            key: const Key('connectivity_banner_device'),
-            message: l10n.deviceLostBanner,
-            actionLabel: l10n.deviceLostBannerAction,
-            actionKey: const Key('connectivity_banner_device_action'),
-            severity: _LostSeverity.device,
-            onAction: context.read<SettingsTrayCubit>().openAudioDevice,
-          ),
-        if (midiLost)
-          _LostBanner(
-            key: const Key('connectivity_banner_midi'),
-            message: l10n.midiLostBanner,
-            actionLabel: l10n.midiLostBannerAction,
-            actionKey: const Key('connectivity_banner_midi_action'),
-            severity: _LostSeverity.midi,
-            onAction: context.read<SettingsTrayCubit>().openControl,
-          ),
+        _LostBanner(
+          key: const Key('connectivity_banner_device'),
+          message: l10n.deviceLostBanner,
+          actionLabel: l10n.deviceLostBannerAction,
+          actionKey: const Key('connectivity_banner_device_action'),
+          onAction: context.read<SettingsTrayCubit>().openAudioDevice,
+        ),
         const SizedBox(height: _gapBelow),
       ],
     );
   }
 }
 
-/// Which loss a strip states — and with it the whole colour family.
-enum _LostSeverity {
-  /// The pinned audio interface is absent: record red, the engine is stopped.
-  device,
-
-  /// The pinned MIDI controller is absent: warning amber, loops keep playing.
-  midi,
-}
-
-/// One strip of the stack: the pen's `Banner` component as `STAGE /
-/// device-lost` instantiates it — tinted fill, 1px line border, radius 11,
-/// the 8px dot, the sentence, and the single action button.
+/// The device-lost strip: the pen's `Banner` component as `STAGE /
+/// device-lost` instantiates it — record-red tinted fill, 1px rec line
+/// border, radius 11, the 8px dot, the sentence, and the single action button
+/// hugging it.
 class _LostBanner extends StatelessWidget {
   const _LostBanner({
     required this.message,
     required this.actionLabel,
     required this.actionKey,
-    required this.severity,
     required this.onAction,
     super.key,
   });
@@ -96,41 +81,36 @@ class _LostBanner extends StatelessWidget {
   final String message;
   final String actionLabel;
   final Key actionKey;
-  final _LostSeverity severity;
   final VoidCallback onAction;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final (dot, tint, line) = switch (severity) {
-      _LostSeverity.device => (
-        surface.rec,
-        surface.recTint,
-        surface.recLine,
-      ),
-      _LostSeverity.midi => (
-        surface.warning,
-        surface.warningTint,
-        surface.warningLine,
-      ),
-    };
     return Container(
       // The pen's [11, 15] padding around a 38-tall action button.
       padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 15),
       decoration: BoxDecoration(
-        color: tint,
+        color: surface.recTint,
         borderRadius: BorderRadius.circular(11),
-        border: Border.all(color: line),
+        border: Border.all(color: surface.recLine),
       ),
       child: Row(
         children: [
           Container(
             width: 8,
             height: 8,
-            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: surface.rec,
+              shape: BoxShape.circle,
+            ),
           ),
           const SizedBox(width: 10),
-          Expanded(
+          // Loose, not `Expanded`: the sentence sizes to its own content so
+          // the button sits right after it rather than being flung to the
+          // far edge with a wall of dead space between (`c/device-lost`). It
+          // still shrinks and ellipsises before it would overflow a narrow
+          // stage.
+          Flexible(
             child: AppText(
               message,
               maxLines: 2,

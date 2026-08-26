@@ -21,9 +21,6 @@ class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
 
-class _MockMidiSetupCubit extends MockCubit<MidiSetupState>
-    implements MidiSetupCubit {}
-
 void main() {
   group('LooperPage', () {
     testWidgets('wires its blocs and renders the Tracks view', (
@@ -50,19 +47,13 @@ void main() {
         const Stream<PedalState>.empty(),
         initialState: const PedalState(),
       );
-      // The connectivity banners inside the Tracks view read both setup
-      // cubits (#453); app-wide in the real shell, above this page.
+      // The device-lost banner inside the Tracks view reads the audio
+      // setup cubit (#453); app-wide in the real shell, above this page.
       final audioSetup = _MockAudioSetupCubit();
       whenListen(
         audioSetup,
         const Stream<AudioSetupState>.empty(),
         initialState: const AudioSetupState(),
-      );
-      final midiSetup = _MockMidiSetupCubit();
-      whenListen(
-        midiSetup,
-        const Stream<MidiSetupState>.empty(),
-        initialState: const MidiSetupState(),
       );
       addTearDown(repository.dispose);
       addTearDown(controllerRepository.dispose);
@@ -113,7 +104,6 @@ void main() {
                 ),
               ),
               BlocProvider<AudioSetupCubit>.value(value: audioSetup),
-              BlocProvider<MidiSetupCubit>.value(value: midiSetup),
             ],
             child: LooperPage(exportDirectory: () async => '.'),
           ),

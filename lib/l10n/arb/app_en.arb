@@ -86,21 +86,21 @@
     "updateBannerUpdateAction": "Update…",
     "updateBannerDismissAction": "Not now",
     "audioDeviceFallbackName": "Audio device",
-    "deviceLostBanner": "Audio interface disconnected — the engine is stopped and nothing is heard",
+    "deviceLostBanner": "No audio device — nothing is heard",
     "@deviceLostBanner": {
-        "description": "Standing red banner on the stage while the pinned audio interface is absent (pen: STAGE / device-lost)."
+        "description": "Standing red banner on the stage while the pinned audio interface is absent — the engine is stopped (pen: STAGE / device-lost)."
     },
-    "deviceLostBannerAction": "Choose device",
+    "deviceLostBannerAction": "Open setup",
     "@deviceLostBannerAction": {
-        "description": "Action on the device-lost banner — opens the tray's Audio domain on the Device tab."
+        "description": "Inline action on the device-lost banner — opens the tray's Audio domain on the Device tab."
     },
-    "midiLostBanner": "MIDI controller disconnected — mappings are idle until it returns",
-    "@midiLostBanner": {
-        "description": "Standing amber banner on the stage while the pinned MIDI controller is absent (pen: STAGE / device-lost)."
+    "midiLostToastTitle": "MIDI controller disconnected",
+    "@midiLostToastTitle": {
+        "description": "Title of the transient toast shown when the pinned MIDI controller is lost (pen: STAGE / midi-lost-toast)."
     },
-    "midiLostBannerAction": "Control",
-    "@midiLostBannerAction": {
-        "description": "Action on the MIDI-lost banner — opens the tray's Control domain."
+    "midiLostToastBody": "Mappings idle until it returns — loops keep playing",
+    "@midiLostToastBody": {
+        "description": "Body of the MIDI-lost toast — the loss is low-stakes because the loops keep playing."
     },
     "deviceReconnectedSnackbar": "{deviceName} reconnected",
     "@deviceReconnectedSnackbar": {

@@ -75,26 +75,19 @@ class ConsoleReadoutView extends StatelessWidget {
               // a clipped descender is a worse fidelity loss than one.
               _ReadoutHeader(readout, s),
               SizedBox(height: 28 * s),
-              // The stage's standing loss conditions, echoed here because the
-              // performer is looking down, not at the main screen
-              // (`c/device-lost`, #453). Same idiom, readout-scale type;
-              // stacked flush in severity order like the stage's own pair,
-              // device first. No action — the readout's only touch affordance
-              // stays the MIX pill.
-              if (readout.deviceLost)
+              // The stage's one standing loss condition — the audio interface
+              // is gone — echoed here because the performer is looking down,
+              // not at the main screen (`c/device-lost`, #453). Same idiom,
+              // readout-scale type. No action — the readout's only touch
+              // affordance stays the MIX pill. MIDI loss is a transient toast
+              // on the main window, never a standing echo here.
+              if (readout.deviceLost) ...[
                 _ConnectivityEcho(
                   key: const Key('console_readout_deviceLost'),
-                  severity: _EchoSeverity.device,
                   s: s,
                 ),
-              if (readout.midiLost)
-                _ConnectivityEcho(
-                  key: const Key('console_readout_midiLost'),
-                  severity: _EchoSeverity.midi,
-                  s: s,
-                ),
-              if (readout.deviceLost || readout.midiLost)
                 SizedBox(height: 28 * s),
+              ],
               // The strip takes all remaining height — the pen's 766, 71% of
               // the frame — on the waveform's own dark, the pen's radius.
               // The MIX pill rides absolutely over the bars in the strip's
@@ -184,43 +177,22 @@ class _MixPill extends StatelessWidget {
   }
 }
 
-/// Which loss the echo states — and with it the colour family, exactly the
-/// stage banner's mapping (device = rec red, MIDI = warning amber).
-enum _EchoSeverity {
-  /// The pinned audio interface is absent.
-  device,
-
-  /// The pinned MIDI controller is absent.
-  midi,
-}
-
-/// One echoed loss line: the stage banner's tinted strip re-drawn at the
-/// readout's proportional scale — dot, sentence, no action. Copy resolves
-/// from this window's own l10n; the wire carries only the booleans.
+/// The echoed device-loss line: the stage banner's tinted rec strip re-drawn
+/// at the readout's proportional scale — dot, sentence, no action. Copy
+/// resolves from this window's own l10n; the wire carries only the boolean.
 class _ConnectivityEcho extends StatelessWidget {
-  const _ConnectivityEcho({required this.severity, required this.s, super.key});
+  const _ConnectivityEcho({required this.s, super.key});
 
-  final _EchoSeverity severity;
   final double s;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
     final l10n = context.l10n;
-    final (dot, tint, line, message) = switch (severity) {
-      _EchoSeverity.device => (
-        surface.rec,
-        surface.recTint,
-        surface.recLine,
-        l10n.deviceLostBanner,
-      ),
-      _EchoSeverity.midi => (
-        surface.warning,
-        surface.warningTint,
-        surface.warningLine,
-        l10n.midiLostBanner,
-      ),
-    };
+    final dot = surface.rec;
+    final tint = surface.recTint;
+    final line = surface.recLine;
+    final message = l10n.deviceLostBanner;
     return Container(
       padding: EdgeInsets.symmetric(vertical: 17 * s, horizontal: 24 * s),
       decoration: BoxDecoration(

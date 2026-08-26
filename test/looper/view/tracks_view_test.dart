@@ -40,9 +40,6 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
 
-class _MockMidiSetupCubit extends MockCubit<MidiSetupState>
-    implements MidiSetupCubit {}
-
 /// The rebuild probe for the `rebuild scope` group: a widget `TracksView.build`
 /// creates unconditionally, in console and desktop layouts alike.
 final Finder _chromeProbe = find.byKey(
@@ -59,7 +56,6 @@ void main() {
   late PerformanceRepository performance;
   late PerformanceRecorderCubit performanceRecorder;
   late AudioSetupCubit audioSetup;
-  late MidiSetupCubit midiSetup;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -69,12 +65,6 @@ void main() {
       audioSetup,
       const Stream<AudioSetupState>.empty(),
       initialState: const AudioSetupState(),
-    );
-    midiSetup = _MockMidiSetupCubit();
-    whenListen(
-      midiSetup,
-      const Stream<MidiSetupState>.empty(),
-      initialState: const MidiSetupState(),
     );
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
@@ -177,9 +167,9 @@ void main() {
               create: (_) =>
                   MonitorCubit(repository: repository, settings: settings),
             ),
-            // The connectivity banners read both setup cubits (#453).
+            // The device-lost banner and the not-running gate read the
+            // audio setup cubit (#453).
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
-            BlocProvider<MidiSetupCubit>.value(value: midiSetup),
           ],
           child: const TracksView(),
         ),

@@ -500,15 +500,17 @@ void main() {
         await pump(tester, readout);
 
         expect(find.byKey(deviceKey), findsNothing);
-        expect(find.byKey(midiKey), findsNothing);
       });
 
       testWidgets(
-        'echoes the device-lost line in the rec family while the flag holds',
+        'echoes the device-lost line in the rec family, above the strip, '
+        'while the flag holds',
         (tester) async {
           await pump(tester, const PerformanceReadout(deviceLost: true));
 
           expect(find.byKey(deviceKey), findsOneWidget);
+          // MIDI loss is a transient toast on the main window, never echoed
+          // here as a standing line.
           expect(find.byKey(midiKey), findsNothing);
           // The line resolves from this window's own l10n — only the boolean
           // rides the wire.
@@ -519,37 +521,25 @@ void main() {
 
           final s = surface(tester);
           expect(decorationOf(tester, deviceKey).color, s.recTint);
+
+          // It sits above the waveform strip, as the stage banner sits above
+          // the run.
+          final deviceTop = tester.getTopLeft(find.byKey(deviceKey)).dy;
+          final stripTop = tester
+              .getTopLeft(find.byKey(const Key('console_readout_waveform')))
+              .dy;
+          expect(deviceTop, lessThan(stripTop));
         },
       );
 
-      testWidgets('echoes the MIDI loss in the warning family', (
+      testWidgets('a lost MIDI controller raises no readout echo', (
         tester,
       ) async {
-        await pump(tester, const PerformanceReadout(midiLost: true));
+        await pump(tester, readout);
 
-        expect(find.byKey(midiKey), findsOneWidget);
-        final l10n = AppLocalizations.of(tester.element(find.byKey(midiKey)));
-        expect(find.text(l10n.midiLostBanner), findsOneWidget);
-
-        final s = surface(tester);
-        expect(decorationOf(tester, midiKey).color, s.warningTint);
-      });
-
-      testWidgets('stacks both echoes device-first, above the strip', (
-        tester,
-      ) async {
-        await pump(
-          tester,
-          const PerformanceReadout(deviceLost: true, midiLost: true),
-        );
-
-        final deviceTop = tester.getTopLeft(find.byKey(deviceKey)).dy;
-        final midiTop = tester.getTopLeft(find.byKey(midiKey)).dy;
-        final stripTop = tester
-            .getTopLeft(find.byKey(const Key('console_readout_waveform')))
-            .dy;
-        expect(deviceTop, lessThan(midiTop));
-        expect(midiTop, lessThan(stripTop));
+        // The wire no longer carries a MIDI-loss boolean; nothing on the
+        // readout ever draws one.
+        expect(find.byKey(midiKey), findsNothing);
       });
     });
   });

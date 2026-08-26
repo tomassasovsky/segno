@@ -123,7 +123,7 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   );
 
   /// Opens the tray at the Audio domain's Device tab — the device-lost
-  /// banner's **Choose device** action (#453). The one caller that may set a
+  /// banner's **Open setup** action (#453). The one caller that may set a
   /// domain's tab from outside it: the banner's whole point is the picker,
   /// and landing on whichever tab Audio was left on would bury it.
   void openAudioDevice() => emit(
@@ -131,17 +131,6 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
       dragProgress: 1,
       destination: SettingsTrayDestination.audio,
       audioTab: AudioTab.device,
-    ),
-  );
-
-  /// Opens the tray at the Control domain — the MIDI-lost banner's
-  /// **Control** action (#453). Leaves the domain's own tab alone (the
-  /// [showNetworkTab] rule): both Control tabs answer "what is driving this
-  /// box", and the banner names the domain, not a tab.
-  void openControl() => emit(
-    state.copyWith(
-      dragProgress: 1,
-      destination: SettingsTrayDestination.control,
     ),
   );
 

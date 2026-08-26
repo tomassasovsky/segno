@@ -8,7 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:midi_client/midi_client.dart' show MidiControllerSource;
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app.dart';
 import 'package:segno/app/app_toasts.dart';
@@ -135,6 +137,10 @@ class _RecordingWindowService implements WaveformWindowService {
     String selectedTrack,
   ) => pushCalls++;
 }
+
+/// A MIDI source whose enumeration the test drives by hand, so a pinned
+/// controller can be made to vanish and return through `refresh()`.
+class _MockMidiSource extends Mock implements MidiControllerSource {}
 
 void main() {
   group('App', () {
@@ -493,6 +499,77 @@ void main() {
 
         // Let the snack's auto-close and removal animations run out so no
         // timer outlives the test.
+        await tester.pump(const Duration(seconds: 10));
+      },
+    );
+
+    testWidgets(
+      'a lost MIDI controller flashes a transient toast and raises no '
+      'standing bar; its return is a snack',
+      (tester) async {
+        // A lost MIDI controller is low-stakes — the loops keep playing — so
+        // it is a transient toast, NOT the persistent banner a lost audio
+        // interface gets (#453). Driven end to end through the repository's
+        // own hotplug diff.
+        const dev = MidiDevice(id: 'fcb1010', name: 'FCB1010');
+        var enumerated = const <MidiDevice>[dev];
+        final source = _MockMidiSource();
+        when(source.enumerate).thenAnswer((_) => enumerated);
+        when(() => source.activity).thenAnswer(
+          (_) => const Stream<RawControllerInput>.empty(),
+        );
+        when(() => source.open(any())).thenReturn(0);
+        when(source.close).thenReturn(0);
+
+        final midi = MidiDeviceRepository(
+          source: source,
+          settings: settings,
+          pollInterval: Duration.zero,
+        );
+        addTearDown(midi.dispose);
+        // Pin the controller present before the app builds, so the shell's
+        // MidiSetupCubit subscribes to a healthy connection.
+        await midi.select('fcb1010');
+
+        final windowService = _RecordingWindowService();
+        await tester.pumpWidget(
+          App(
+            repository: repository,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midi,
+            settings: settings,
+            waveformWindow: windowService,
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            exportDirectory: () async => '.',
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Unplug: the transient lost toast registers...
+        enumerated = const [];
+        midi.refresh();
+        await tester.pump();
+        await tester.pump();
+        expect(debugAppToastActive(AppToastId.midiLost), isTrue);
+
+        // ...and never a standing bar. MIDI has no persistent surface, on
+        // either the stage or the readout.
+        expect(find.byKey(const Key('connectivity_banner_midi')), findsNothing);
+        expect(
+          find.byKey(const Key('connectivity_banner_device')),
+          findsNothing,
+        );
+
+        // Replug: the lost toast is gone and the return is a snack.
+        enumerated = const [dev];
+        midi.refresh();
+        await tester.pump();
+        await tester.pump();
+        expect(debugAppToastActive(AppToastId.midiLost), isFalse);
+        expect(debugAppToastActive(AppToastId.midiRestored), isTrue);
+
+        // Drain the toast timers so none outlives the test.
         await tester.pump(const Duration(seconds: 10));
       },
     );

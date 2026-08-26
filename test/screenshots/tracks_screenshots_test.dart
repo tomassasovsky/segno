@@ -10,7 +10,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -42,9 +41,6 @@ class _MockTransportClockCubit extends MockCubit<TransportClockState>
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
-
-class _MockMidiSetupCubit extends MockCubit<MidiSetupState>
-    implements MidiSetupCubit {}
 
 Future<void> _loadFont(String family, List<String> paths) async {
   final loader = FontLoader(family);
@@ -111,23 +107,16 @@ void main() {
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
   late AudioSetupCubit audioSetup;
-  late MidiSetupCubit midiSetup;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
-    // Nothing lost by default; the device-lost scene below re-stubs both.
+    // Nothing lost by default; the device-lost scene below re-stubs audio.
     audioSetup = _MockAudioSetupCubit();
     whenListen(
       audioSetup,
       const Stream<AudioSetupState>.empty(),
       initialState: const AudioSetupState(),
-    );
-    midiSetup = _MockMidiSetupCubit();
-    whenListen(
-      midiSetup,
-      const Stream<MidiSetupState>.empty(),
-      initialState: const MidiSetupState(),
     );
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
@@ -231,9 +220,9 @@ void main() {
                 create: (_) =>
                     MonitorCubit(repository: repository, settings: settings),
               ),
-              // The connectivity banners read both setup cubits (#453).
+              // The device-lost banner and the not-running gate read the
+              // audio setup cubit (#453).
               BlocProvider<AudioSetupCubit>.value(value: audioSetup),
-              BlocProvider<MidiSetupCubit>.value(value: midiSetup),
             ],
             child: const TracksView(),
           ),
@@ -301,10 +290,13 @@ void main() {
   );
 
   testWidgets(
-    'console main window with both loss banners (STAGE / device-lost)',
+    'console main window with the device-lost banner (STAGE / device-lost)',
     (tester) async {
-      // Both standing loss conditions at once: the pen's severity stack —
-      // device red first, MIDI amber flush under it, above the track run.
+      // The one standing loss condition: the pinned interface is gone, so the
+      // red banner holds the stage above the track run. It STANDS IN for the
+      // "engine stopped" bar (#453) — the two never stack — so a device-gone
+      // engine shows this banner alone, not both. MIDI loss is a transient
+      // toast, never a banner here.
       whenListen(
         audioSetup,
         const Stream<AudioSetupState>.empty(),
@@ -313,22 +305,10 @@ void main() {
           connectivityDeviceName: 'Scarlett 2i2',
         ),
       );
-      whenListen(
-        midiSetup,
-        const Stream<MidiSetupState>.empty(),
-        initialState: const MidiSetupState(
-          connection: MidiConnection(
-            selectedId: 'fcb1010',
-            selectedName: 'FCB1010',
-            connectivity: MidiConnectivity.lost,
-            connectivityDeviceName: 'FCB1010',
-          ),
-        ),
-      );
       seed(
         const LooperState(
-          // The engine reports the device gone, so the "not running"
-          // affordance sits under the banners exactly as it would live.
+          // The engine reports the device gone, so the generic "not running"
+          // affordance is suppressed and only the device-lost banner shows.
           tracks: [
             Track(state: TrackState.playing, lengthFrames: 96000),
             Track(channel: 1),
