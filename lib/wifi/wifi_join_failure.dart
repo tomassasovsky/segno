@@ -40,12 +40,18 @@ enum WifiJoinErrorKind {
 /// | 4-way handshake / psk may be wrong    | either      | credentials |
 /// | wrong password / invalid passphrase   | either      | credentials |
 /// | authentication failed                 | either      | credentials |
+/// | no-secrets / secrets were required    | yes         | credentials |
 /// | `net.connman.iwd.Failed`/`.Aborted`   | either      | transient   |
 /// | iwd Invalid exchange / connect-failed | either      | transient   |
-/// | no-secrets / secrets were required    | yes         | credentials |
 /// | no-secrets / secrets were required    | no          | transient   |
 /// | timed out / took too long             | either      | timeout     |
 /// | anything else                         | either      | unknown     |
+///
+/// An interactive `no-secrets` outranks the iwd backend patterns on purpose:
+/// a journal line can carry both (`Network.Connect failed: …iwd.Failed` ends
+/// as `no-secrets`), and for a user who just typed a password the cautious
+/// reading is the password one — re-asking costs a prompt, silently retrying
+/// a wrong key costs the whole backoff budget.
 ///
 /// Why `no-secrets` splits on context: this console runs no secret agent, so
 /// NM ends *any* failed activation it cannot re-ask about as `no-secrets` —
@@ -75,6 +81,17 @@ WifiJoinErrorKind classifyWifiJoinFailure({
     return WifiJoinErrorKind.credentials;
   }
 
+  // NM's `no-secrets` family: about the password only when one was just
+  // typed; otherwise it is NM's agent-less dead end for a backend failure.
+  // Checked before the iwd patterns so a line carrying both (an iwd.Failed
+  // activation that NM ends as `no-secrets`) still reads as credentials for
+  // a user who just typed a password — the most cautious of the two.
+  final secretsFamily =
+      has('no secrets') || has('no-secrets') || has('secrets were required');
+  if (interactive && secretsFamily) {
+    return WifiJoinErrorKind.credentials;
+  }
+
   // The iwd backend refused or aborted mid-flight — the #824 shape. The key
   // was never tested, so this is never a password problem.
   if (has('net.connman.iwd.failed') ||
@@ -84,12 +101,8 @@ WifiJoinErrorKind classifyWifiJoinFailure({
     return WifiJoinErrorKind.transient;
   }
 
-  // NM's `no-secrets` family: about the password only when one was just
-  // typed; otherwise it is NM's agent-less dead end for a backend failure.
-  if (has('no secrets') || has('no-secrets') || has('secrets were required')) {
-    return interactive
-        ? WifiJoinErrorKind.credentials
-        : WifiJoinErrorKind.transient;
+  if (secretsFamily) {
+    return WifiJoinErrorKind.transient;
   }
 
   if (has('timed out') || has('took too long')) {

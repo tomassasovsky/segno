@@ -122,6 +122,26 @@ void main() {
       );
     });
 
+    test(
+      'a line carrying BOTH iwd.Failed and the secrets family reads as '
+      'credentials when interactive — the cautious call for a user who just '
+      'typed a password — and transient otherwise',
+      () {
+        const both =
+            'Activation: (wifi) Network.Connect failed: '
+            'GDBus.Error:net.connman.iwd.Failed — Connection activation '
+            'failed: Secrets were required, but not provided.';
+        expect(
+          classifyWifiJoinFailure(raw: both, interactive: true),
+          WifiJoinErrorKind.credentials,
+        );
+        expect(
+          classifyWifiJoinFailure(raw: both, interactive: false),
+          WifiJoinErrorKind.transient,
+        );
+      },
+    );
+
     test('unrecognized text stays unknown', () {
       expect(
         classifyWifiJoinFailure(

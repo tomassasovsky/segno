@@ -25,6 +25,13 @@ class WifiCubit extends Cubit<WifiState> {
   final WifiRepository _repository;
   final List<Duration> _retryDelays;
 
+  /// Generation stamp for [connect]. Each new join (and each cancel) bumps
+  /// it; a loop that wakes from an await holding a stale stamp is abandoned —
+  /// it must neither re-activate nor emit. Without this, cancelling and
+  /// re-tapping the *same* SSID inside the backoff window would leave two
+  /// live retry loops racing each other's activations and terminal emits.
+  int _connectGen = 0;
+
   /// Loads status (and whether the stack is supported).
   Future<void> load() async {
     emit(
@@ -94,6 +101,12 @@ class WifiCubit extends Cubit<WifiState> {
     // A password typed moments ago is the context that makes a `no-secrets`
     // failure plausibly about the password (#829).
     final interactive = psk != null && psk.isNotEmpty;
+    // This call owns the join until a newer connect (or a cancel) bumps the
+    // generation. Every await below re-checks it: a stale loop must neither
+    // re-activate nor emit — even for the same SSID, where the old
+    // marker-based check could not tell the two joins apart.
+    final gen = ++_connectGen;
+    bool abandoned() => isClosed || gen != _connectGen;
     emit(
       state.copyWith(
         busy: true,
@@ -107,8 +120,9 @@ class WifiCubit extends Cubit<WifiState> {
     while (true) {
       try {
         await _repository.connect(ssid, psk: psk);
+        if (abandoned()) return;
         final status = await _repository.status();
-        if (isClosed) return;
+        if (abandoned()) return;
         emit(
           state.copyWith(
             status: status,
@@ -119,6 +133,9 @@ class WifiCubit extends Cubit<WifiState> {
         );
         return;
       } on Object catch (e) {
+        // The throw came out of an await too: a join cancelled while the
+        // helper call was in flight ends here, and must end silently.
+        if (abandoned()) return;
         final kind = classifyWifiJoinFailure(
           raw: '$e',
           interactive: interactive,
@@ -127,12 +144,12 @@ class WifiCubit extends Cubit<WifiState> {
             kind == WifiJoinErrorKind.transient ||
             kind == WifiJoinErrorKind.timeout;
         if (retryable && attempt < _retryDelays.length) {
-          if (isClosed) return;
           emit(state.copyWith(retrying: true));
           await Future<void>.delayed(_retryDelays[attempt]);
-          // The delay is an await: the tray may have closed, or the user may
-          // have cancelled or started a different join meanwhile.
-          if (isClosed || state.connectingSsid != ssid) return;
+          // The marker check still matters alongside the generation: another
+          // action (load, forget, radio) may have cleared the join without
+          // starting a new one.
+          if (abandoned() || state.connectingSsid != ssid) return;
           attempt++;
           continue;
         }
@@ -144,7 +161,7 @@ class WifiCubit extends Cubit<WifiState> {
         }
         // Guarded here rather than at the top of the catch: the refresh above
         // is itself an await, so it re-opens the race.
-        if (isClosed) return;
+        if (abandoned()) return;
         emit(
           state.copyWith(
             status: status,
@@ -168,6 +185,9 @@ class WifiCubit extends Cubit<WifiState> {
   /// made is the only thing still true afterwards.
   Future<void> cancelConnect() async {
     if (state.connectingSsid == null) return;
+    // Abandon the join's loop wherever it is — mid-helper-call or mid-backoff
+    // — so it can never re-activate or emit over whatever comes next.
+    _connectGen++;
     emit(state.copyWith(clearConnectingSsid: true, clearError: true));
     await disconnect();
   }

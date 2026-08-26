@@ -463,6 +463,70 @@ void main() {
       expect(cubit.state.retrying, isFalse);
     });
 
+    test(
+      'cancel then re-tap of the SAME network mid-backoff leaves exactly one '
+      'live loop — the abandoned one neither re-activates nor emits',
+      () async {
+        final client = _FakeWifiClient()
+          ..connectErrors.add(StateError(iwdRace));
+        final cubit = WifiCubit(
+          repository: _repo(client),
+          retryDelays: const [Duration(milliseconds: 50)],
+        );
+        addTearDown(cubit.close);
+
+        await cubit.load();
+        final first = cubit.connect('Studio 5G');
+        await pumpEventQueue();
+        expect(cubit.state.retrying, isTrue);
+
+        await cubit.cancelConnect();
+        // Same SSID, inside the old join's backoff window — the marker alone
+        // could not tell the two joins apart.
+        final second = cubit.connect('Studio 5G');
+        await pumpEventQueue();
+        expect(cubit.state.status.connected, isTrue);
+
+        // Let the abandoned loop's timer fire, then prove it went silent:
+        // no third activation, and no emit over the successful join.
+        await first;
+        await second;
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        expect(client.connects.length, 2);
+        expect(cubit.state.status.connected, isTrue);
+        expect(cubit.state.errorMessage, isNull);
+        expect(cubit.state.retrying, isFalse);
+      },
+    );
+
+    test(
+      'cancelConnect while the helper call is in flight cannot leave '
+      '`retrying` stuck — the abandoned catch never emits',
+      () async {
+        final client = _FakeWifiClient()
+          ..connectErrors.add(StateError(iwdRace))
+          ..connectGate = Completer<void>();
+        final cubit = WifiCubit(
+          repository: _repo(client),
+          retryDelays: const [Duration(milliseconds: 50)],
+        );
+        addTearDown(cubit.close);
+
+        await cubit.load();
+        final pending = cubit.connect('Studio 5G');
+        await pumpEventQueue();
+        await cubit.cancelConnect();
+        // The helper call now fails into the abandoned loop's catch.
+        client.connectGate!.complete();
+        await pending;
+
+        expect(cubit.state.retrying, isFalse);
+        expect(cubit.state.connectingSsid, isNull);
+        expect(cubit.state.errorMessage, isNull);
+        expect(client.connects.length, 1);
+      },
+    );
+
     test('closing the cubit during the backoff stops the retry loop', () async {
       final client = _FakeWifiClient()..connectErrors.add(StateError(iwdRace));
       final cubit = WifiCubit(
