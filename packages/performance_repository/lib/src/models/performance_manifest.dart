@@ -161,6 +161,7 @@ class PerformanceArmSnapshot {
     required this.limiterEnabled,
     required this.limiterCeiling,
     required this.latencyOffsetFrames,
+    this.tempoBpm = 0,
     this.tracks = const [],
     this.monitors = const [],
     this.trackChains = const [],
@@ -183,6 +184,7 @@ class PerformanceArmSnapshot {
         limiterEnabled: json['limiterOn'] as bool,
         limiterCeiling: (json['limiterCeiling'] as num).toDouble(),
         latencyOffsetFrames: (json['latencyOffsetFrames'] as num).toInt(),
+        tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
         fxStagesVersion:
             (json['fxStagesVersion'] as num?)?.toInt() ?? legacyFxStagesVersion,
         tracks: [
@@ -231,6 +233,17 @@ class PerformanceArmSnapshot {
   /// The active device profile's latency offset in frames at arm time.
   final int latencyOffsetFrames;
 
+  /// Denominator-note beats per minute the engine read at the arm instant;
+  /// `0` = unset, stored verbatim exactly like `Session.tempoBpm` (the same
+  /// engine value A7 threads into the session manifest's v4 `tempoBpm`), and
+  /// what a pre-#281 snapshot reads back as. The **crash-salvage fallback**,
+  /// not the authoritative export tempo: D6's tempo lock only engages once
+  /// grid content exists, so a tempo dialed in (or derived by the first
+  /// loop) after an arm-over-empty-grid is only knowable at disarm —
+  /// [PerformanceDisarmSnapshot.tempoBpm] carries that read, and a capture
+  /// that crashed before its disarm pass falls back to this one.
+  final double tempoBpm;
+
   /// Every track's state at arm time.
   final List<PerformanceTrackSnapshot> tracks;
 
@@ -267,6 +280,7 @@ class PerformanceArmSnapshot {
     'limiterOn': limiterEnabled,
     'limiterCeiling': limiterCeiling,
     'latencyOffsetFrames': latencyOffsetFrames,
+    'tempoBpm': tempoBpm,
     if (fxStagesVersion != legacyFxStagesVersion)
       'fxStagesVersion': fxStagesVersion,
     'tracks': [for (final t in tracks) t.toJson()],
@@ -286,22 +300,33 @@ class PerformanceArmSnapshot {
 @immutable
 class PerformanceDisarmSnapshot {
   /// Creates a [PerformanceDisarmSnapshot].
-  const PerformanceDisarmSnapshot({this.tracks = const []});
+  const PerformanceDisarmSnapshot({this.tempoBpm = 0, this.tracks = const []});
 
   /// Rebuilds a [PerformanceDisarmSnapshot] from a decoded JSON map.
   factory PerformanceDisarmSnapshot.fromJson(Map<String, dynamic> json) =>
       PerformanceDisarmSnapshot(
+        tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
         tracks: [
           for (final t in (json['tracks'] as List<dynamic>? ?? const []))
             PerformanceTrackSnapshot.fromJson(t as Map<String, dynamic>),
         ],
       );
 
+  /// Denominator-note beats per minute the engine read at disarm; `0` =
+  /// unset, stored verbatim (session-manifest parity), and what a pre-#281
+  /// snapshot reads back as. The **authoritative** export tempo: D6's tempo
+  /// lock only engages once grid content exists, so the arm-time read
+  /// ([PerformanceArmSnapshot.tempoBpm]) can predate a tempo dialed in — or
+  /// derived by the first loop — during the take, while by disarm the lock
+  /// has engaged in every case where the take has a grid at all.
+  final double tempoBpm;
+
   /// Every track's state at disarm time.
   final List<PerformanceTrackSnapshot> tracks;
 
   /// Serializes this snapshot to a JSON map.
   Map<String, dynamic> toJson() => {
+    'tempoBpm': tempoBpm,
     'tracks': [for (final t in tracks) t.toJson()],
   };
 }

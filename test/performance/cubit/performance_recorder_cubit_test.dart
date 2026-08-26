@@ -100,7 +100,6 @@ void main() {
   PerformanceRecorderCubit build({
     DateTime Function()? now,
     Future<int?> Function(String path)? freeSpaceBytes,
-    double Function()? currentTempoBpm,
     PerformanceChains Function()? currentChains,
     Duration armedTickInterval = const Duration(milliseconds: 10),
   }) => PerformanceRecorderCubit(
@@ -109,7 +108,6 @@ void main() {
     renderPollInterval: const Duration(milliseconds: 10),
     now: now ?? (() => clock),
     freeSpaceBytes: freeSpaceBytes ?? (_) async => null,
-    currentTempoBpm: currentTempoBpm ?? () => 0,
     currentChains: currentChains ?? PerformanceChains.new,
   );
 
@@ -833,7 +831,7 @@ void main() {
     );
   });
 
-  group('.als real tempo threading', () {
+  group('.als capture-tempo threading (#281)', () {
     /// Decompresses `project.als` (gzipped XML, `als_builder.dart`) and
     /// returns it as a string — the same decode `als_builder_test.dart`
     /// itself uses — so a test here can assert on the actual emitted
@@ -842,16 +840,36 @@ void main() {
       GZipCodec().decode(File('$dir/project.als').readAsBytesSync()),
     );
 
+    /// A minimal running-engine snapshot reporting [bpm] — what the
+    /// repository reads at arm AND at disarm, so a test scripts the tempo
+    /// each of those passes sees by swapping this between them.
+    EngineSnapshot snapshotWithTempo(double bpm) => EngineSnapshot(
+      isRunning: true,
+      sampleRate: 48000,
+      bufferFrames: 128,
+      framesProcessed: 0,
+      xrunCount: 0,
+      inputRms: 0,
+      inputPeak: 0,
+      outputRms: 0,
+      latencyState: LatencyState.idle,
+      measuredLatencyMs: -1,
+      tempoBpm: bpm,
+    );
+
     test(
-      'a real, non-default currentTempoBpm reaches the exported .als '
-      "(end-to-end: this cubit's constructor dependency -> "
+      "the capture's own persisted tempo reaches the exported .als "
+      '(end-to-end: engine snapshot -> repository manifest -> '
       '_writeDawExports -> DawManifestReader.read -> DawProject -> '
-      'buildAls), not just the daw_export library level',
+      "buildAls), and reExport() re-reads the same manifest — an old take's "
+      'tempo can never drift after the fact',
       () async {
-        engine.renderStatuses = const [
-          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-        ];
-        final cubit = build(currentTempoBpm: () => 96.0);
+        engine
+          ..renderStatuses = const [
+            PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+          ]
+          ..nextSnapshot = snapshotWithTempo(96);
+        final cubit = build();
         addTearDown(cubit.close);
         final dir = await armWithLog(performance);
         await pumpEventQueue();
@@ -859,58 +877,63 @@ void main() {
 
         await cubit.toggleArm();
         await waitForCompleted(cubit);
+        expect(readAls(dir), contains('<Manual Value="96.0"/>'));
+
+        // Re-export long after: whatever the live transport reads now is
+        // irrelevant — the manifest is the only tempo source (#281).
+        engine.nextSnapshot = snapshotWithTempo(150);
+        await cubit.reExport();
+        await pumpEventQueue();
 
         expect(readAls(dir), contains('<Manual Value="96.0"/>'));
       },
     );
 
     test(
-      'an unset (0, the default) currentTempoBpm still exports — falling '
-      "back to daw_export's own 120 BPM default, exactly like before this "
-      'wiring existed',
+      'the DISARM-time tempo wins over the arm-time read: arm over an empty '
+      'grid at 96, dial in 132 before the first loop, and the export stamps '
+      "132 — D6's lock only engages once grid content exists (#281)",
       () async {
-        engine.renderStatuses = const [
-          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-        ];
-        final cubit = build(); // default currentTempoBpm: () => 0
+        engine
+          ..renderStatuses = const [
+            PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+          ]
+          ..nextSnapshot = snapshotWithTempo(96);
+        final cubit = build();
         addTearDown(cubit.close);
         final dir = await armWithLog(performance);
         await pumpEventQueue();
+        // The tempo the take actually settled on — only the disarm-time
+        // pass can see it. 132, not 120, so a pass here can never be the
+        // fallback masquerading as the disarm value.
+        engine.nextSnapshot = snapshotWithTempo(132);
         clock = clock.add(const Duration(seconds: 5));
 
         await cubit.toggleArm();
         await waitForCompleted(cubit);
 
-        expect(readAls(dir), contains('<Manual Value="120.0"/>'));
+        expect(readAls(dir), contains('<Manual Value="132.0"/>'));
       },
     );
 
     test(
-      'reExport() also threads the real tempo (same _writeDawExports path '
-      'as a fresh completion)',
+      'a capture with no tempo set (the default snapshot, 0-as-unset) still '
+      "exports — at daw_export's own fixed 120 BPM fallback, the same "
+      'outcome a legacy pre-#281 bundle resolves to',
       () async {
         engine.renderStatuses = const [
           PerformanceRenderTrackStatus(channel: 0, succeeded: true),
         ];
-        var tempo = 0.0;
-        final cubit = build(currentTempoBpm: () => tempo);
+        final cubit = build(); // EngineSnapshot.initial(): tempoBpm 0
         addTearDown(cubit.close);
         final dir = await armWithLog(performance);
         await pumpEventQueue();
         clock = clock.add(const Duration(seconds: 5));
+
         await cubit.toggleArm();
         await waitForCompleted(cubit);
+
         expect(readAls(dir), contains('<Manual Value="120.0"/>'));
-
-        // Tempo becomes known only after the fact (e.g. the user dialed it
-        // in after this capture finished) — reExport() must pick up the
-        // CURRENT value, proving it reads the callback fresh rather than a
-        // value captured once at cubit construction.
-        tempo = 140.0;
-        await cubit.reExport();
-        await pumpEventQueue();
-
-        expect(readAls(dir), contains('<Manual Value="140.0"/>'));
       },
     );
   });
