@@ -1586,6 +1586,145 @@ static void test_record_press_on_pending_arm_starts_when_parked(void) {
   le_engine_destroy(e);
 }
 
+/* le_engine_finalize_take (#405) is cancel_arm's counterpart for the LIVE
+ * take — and a strict refusal everywhere else. Where le_engine_record's
+ * meaning depends on the state it lands on (start / finalize / punch-in /
+ * punch-out), this primitive can only ever END a capture: every state that
+ * is not a live non-defining RECORDING take refuses with LE_ERR_INVALID and
+ * changes nothing. The refusals below are the exact counter-cases to the
+ * three wrong record-press meanings. */
+static void test_finalize_take_refuses_all_non_recording_states(void) {
+  printf("test_finalize_take_refuses_all_non_recording_states\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* EMPTY with the transport parked: the exact shape where a record press
+   * STARTS a capture (test_record_press_on_pending_arm_starts_when_parked
+   * above) — the refusal, and "nothing starts", is the point. */
+  CHECK(le_engine_finalize_take(e, 0) == LE_ERR_INVALID);
+  drain(e);
+  process_const(e, 0.5f, 8, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].length_frames == 0);
+
+  record_base_loop(e, 1.0f); /* track 0 defines the master and plays */
+
+  /* PLAYING: a record press would punch IN to overdub; this refuses. */
+  CHECK(le_engine_finalize_take(e, 0) == LE_ERR_INVALID);
+  drain(e);
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  /* OVERDUBBING is out of scope (the punch-out is a record-press meaning;
+   * an overdub is bounded and rides on under FX exactly as it does under
+   * Mute): refuse, and the dub keeps running. */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
+  drain(e);
+  CHECK(le_engine_finalize_take(e, 0) == LE_ERR_INVALID);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  /* Guards, cancel_arm's shape. */
+  CHECK(le_engine_finalize_take(e, -1) == LE_ERR_INVALID);
+  CHECK(le_engine_finalize_take(e, 99) == LE_ERR_INVALID);
+  CHECK(le_engine_finalize_take(NULL, 0) == LE_ERR_INVALID);
+  le_engine* raw = le_engine_create();
+  CHECK(le_engine_finalize_take(raw, 0) == LE_ERR_NOT_RUNNING);
+  le_engine_destroy(raw);
+
+  le_engine_destroy(e);
+}
+
+/* The DEFINING take is refused: nothing else holds the grid, so finalizing
+ * here would let the call — in the app, a mode switch — set the session's
+ * bar length to wherever the player happened to be mid-gesture. The capture
+ * survives, untouched: the documented fallback. */
+static void test_finalize_take_refuses_the_defining_take(void) {
+  printf("test_finalize_take_refuses_the_defining_take\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.7f, 3, out); /* live, mid-gesture, no master anywhere */
+  CHECK(le_engine_finalize_take(e, 0) == LE_ERR_INVALID);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING); /* still capturing */
+  CHECK(s.master_length_frames == 0);             /* no grid was set */
+
+  /* The capture survived INTACT: finishing it by hand yields the full span
+   * — 8 frames, not the 3 the refusal point had seen. */
+  process_const(e, 0.7f, 5, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.master_length_frames == 8);
+
+  le_engine_destroy(e);
+}
+
+/* B3b for the new primitive: finalize_take can neither consume nor cancel a
+ * pending arm — its own channel's or anyone else's. A live arm on the
+ * addressed channel refuses the call (retire it first via cancel_arm, which
+ * is exactly what the app's FX entry does before finalizing); the arm then
+ * still fires exactly as queued. */
+static void test_finalize_take_leaves_pending_arms_untouched(void) {
+  printf("test_finalize_take_leaves_pending_arms_untouched\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f); /* master = LOOP_N, track 0 playing */
+  le_engine_set_quantize(e, 1);
+
+  /* A live take on 1, started by its own quantized arm firing at the top. */
+  process_const(e, 0.0f, 1, out);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* arm the start */
+  process_const(e, 0.5f, LOOP_N, out);    /* crosses the top: fires */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  /* A second press queues the quantized loop-top FINALIZE: a live arm on
+   * this very channel. Refused, not consumed. */
+  process_const(e, 0.5f, 1, out); /* off the top so the arm stays pending */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 1);
+  CHECK(le_engine_finalize_take(e, 1) == LE_ERR_INVALID);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 1);                /* untouched */
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING); /* take still live */
+
+  /* And the arm still does ITS job: the next loop top fires the queued
+   * finalize exactly as if the primitive had never been called. */
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].pending == 0);
+
+  /* A pending PUNCH-IN arm on a playing track is someone else's future take:
+   * refused (not RECORDING), and the arm is left pending. */
+  process_const(e, 0.0f, 1, out); /* off the top */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* arm punch-in on playing 0 */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending == 1);
+  CHECK(le_engine_finalize_take(e, 0) == LE_ERR_INVALID);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending == 1);
+
+  le_engine_destroy(e);
+}
+
 /* Commands pushed while the device is stopped/lost must NOT replay onto the
  * next configuration — le_engine_configure re-initialises the command ring, so
  * a reconnect can't fire a surprise recording from a stale press. */
@@ -8299,7 +8438,7 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
 /* The version perf_drain.c writes today. 2 = an aborted take logs
  * LE_PLOG_RECORD_ABORT; 1 = it logged a RECORD_END (every capture written
  * before #264). See the format doc's "What `version` means". */
-#define LE_TEST_EVENTS_VERSION 2
+#define LE_TEST_EVENTS_VERSION 3
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -17210,6 +17349,161 @@ static void test_perf_render_aborted_take_does_not_claim_disarm_image(void) {
   le_engine_destroy(e);
 }
 
+/* le_engine_finalize_take (#405), the happy path: quantize ON, master
+ * present, transport active, a live non-defining take — and the finalize
+ * lands at the CALL frame, not the loop top. The quantize-ON setup is the
+ * plan's mutation check: an implementation routed through le_engine_record
+ * would ARM a loop-top finalize here instead of ending the take, and every
+ * assertion below would fail. The length is never off-grid: 5 captured
+ * frames round UP to 2 whole base loops, the unfilled tail staying the
+ * prepared digital silence — exactly what a quantize-off record press does.
+ * events.log carries the one START..END pair, END at the call frame, and no
+ * ABORT (content existed). */
+static void test_finalize_take_ends_live_take_at_call_frame(void) {
+  printf("test_finalize_take_ends_live_take_at_call_frame\n");
+  const char* dir = render_test_dir("fintake");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  float out[64];
+  le_snapshot s;
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, 1000);
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+
+  /* Track 0 defines the master: 4 frames, locked at capture frame 4. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+
+  le_engine_set_quantize(e, 1); /* the discriminating condition */
+
+  /* A live take on 1, started at the loop top by its own quantized arm. */
+  process_const(e, 0.0f, 1, out);         /* frame 5, master position 1 */
+  CHECK(le_engine_record(e, 1) == LE_OK); /* arm the start */
+  process_const(e, 0.3f, 3, out);         /* crosses the top: fires */
+  process_const(e, 0.3f, 5, out);         /* runs into the second lap */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[1].pending == 0);
+  const uint64_t call_frame = (uint64_t)s.perf_frames;
+  CHECK(call_frame == 13); /* mid-loop, well off the top */
+
+  /* THE CALL — and the take is over before another frame is processed. */
+  CHECK(le_engine_finalize_take(e, 1) == LE_OK);
+  drain(e); /* zero-frame: applies at capture frame 13, not the loop top */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].pending == 0);           /* nothing armed, nothing left */
+  CHECK(s.tracks[1].length_frames == 8);     /* rounded UP to whole loops */
+  CHECK(s.tracks[1].multiple == 2);
+
+  /* Cross two more loop tops: nothing deferred ever fires; the loop holds. */
+  process_const(e, 0.0f, 16, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].length_frames == 8);
+
+  /* On-grid content: the captured audio, then the prepared silence tail. */
+  float pcm[8] = {0};
+  CHECK(le_engine_export_track_lane(e, 1, 0, pcm, 8) == 8);
+  CHECK(fabsf(pcm[1] - 0.3f) < 1e-6f);
+  CHECK(fabsf(pcm[7]) < 1e-6f);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  static unsigned char log_buf[16384];
+  const size_t log_bytes =
+      read_binary_file_for_test(log_path, log_buf, sizeof(log_buf));
+  CHECK(log_bytes >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t entries = log_entry_count(log_bytes);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_START,
+                                      1) == 1);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_END,
+                                      1) == 1);
+  CHECK(frame_of_log_entry_for_channel(log_buf, entries, LE_PLOG_RECORD_END,
+                                       1) == call_frame);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                      1) == 0);
+
+  le_engine_destroy(e);
+}
+
+/* le_engine_finalize_take mid count-in (#405 decision 3): nothing has been
+ * captured (the track is still EMPTY — it only becomes RECORDING at the
+ * count-in's downbeat commit), so the call cancels the count-in outright,
+ * for ANY addressed channel (the count-in is global transport state, same
+ * rule as the D9 press-cancel), and the abort is logged as RECORD_ABORT for
+ * the COUNTING channel. Never a RECORD_END, and no RECORD_START ever
+ * preceded it — the unpaired-ABORT shape events.log header version 3
+ * declares. */
+static void test_finalize_take_aborts_count_in(void) {
+  printf("test_finalize_take_aborts_count_in\n");
+  const char* dir = render_test_dir("fintakecountin");
+  le_snapshot s;
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 1000, 1, 1, 20000);
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK); /* 500 frames per beat */
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK);   /* 4 beats = 2000 frames */
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  tg_advance(e, 1);
+
+  CHECK(le_engine_record(e, 1) == LE_OK); /* the defining press: counts in */
+  tg_advance(e, 500);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY); /* nothing captured yet */
+  const uint64_t call_frame = (uint64_t)s.perf_frames;
+
+  /* FX entry mid-count, addressed to a DIFFERENT channel than the counting
+   * one: accepted — the cancel is channel-agnostic by design. */
+  CHECK(le_engine_finalize_take(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.count_in_beats_left == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+
+  /* Well past the would-be downbeat: the deferred defining record died with
+   * the count — back to a clean idle rig, exactly the D9 cancel. */
+  tg_advance(e, 4000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.master_length_frames == 0);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  static unsigned char log_buf[16384];
+  const size_t log_bytes =
+      read_binary_file_for_test(log_path, log_buf, sizeof(log_buf));
+  CHECK(log_bytes >= LE_TEST_EVENTS_HEADER_BYTES);
+  uint32_t log_version = 0;
+  memcpy(&log_version, log_buf + 4, 4);
+  /* An unpaired ABORT only means "cancelled count-in" from version 3 on — a
+   * file that carries the shape has to declare the vocabulary defining it. */
+  CHECK(log_version == LE_TEST_EVENTS_VERSION);
+  const size_t entries = log_entry_count(log_bytes);
+  /* The abort names the COUNTING channel (1), not the addressed one (0). */
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                      1) == 1);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                      0) == 0);
+  CHECK(frame_of_log_entry_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                       1) == call_frame);
+  /* Unpaired, and never an END: no capture ever started, none ever ended. */
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_START,
+                                      1) == 0);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_END,
+                                      1) == 0);
+
+  le_engine_destroy(e);
+}
+
 /* Acceptance (the hard gate): drives a REAL engine through a scripted
  * performance under the fixed golden-parity protocol — arm from silence, no
  * monitor inputs, no plugin slots — with overdubbing intentionally absent
@@ -24211,6 +24505,9 @@ int main(void) {
   test_cancel_arm_retires_a_pending_arm();
   test_cancel_arm_reports_a_refused_push();
   test_record_press_on_pending_arm_starts_when_parked();
+  test_finalize_take_refuses_all_non_recording_states();
+  test_finalize_take_refuses_the_defining_take();
+  test_finalize_take_leaves_pending_arms_untouched();
   test_configure_drops_stale_commands();
   test_undo_layers_quantized_and_live_regrows();
   test_undo_layer_slot_regrows_for_longer_loop();
@@ -24411,6 +24708,8 @@ int main(void) {
   test_perf_render_fresh_midloop_second_track_phase();
   test_perf_render_fresh_multiloop_second_track_phase();
   test_perf_render_aborted_take_does_not_claim_disarm_image();
+  test_finalize_take_ends_live_take_at_call_frame();
+  test_finalize_take_aborts_count_in();
   test_perf_render_golden_master_parity();
   test_perf_render_quantized_round_down_truncation_log_frame();
   test_looper_mode_defaults_and_persistence();

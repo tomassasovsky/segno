@@ -244,6 +244,25 @@ abstract interface class LooperTransport {
   /// capture instead. Callers that mean "nothing may fire later" want this.
   EngineResult cancelArm({required int channel});
 
+  /// Finalizes track [channel]'s live NON-defining recording take NOW,
+  /// unconditionally — [cancelArm]'s counterpart for the LIVE take (#405):
+  /// cancelArm kills the pending (an arm that has not fired), this kills the
+  /// live (a take already capturing). The finalize is exactly a quantize-off
+  /// [record] press's — never off-grid: the length rounds up to whole base
+  /// loops and the unfilled tail stays silence — but it skips the quantize
+  /// deferral, the auto-record arm toggle, and the shared arm machinery
+  /// entirely, so it can neither arm a take nor cancel anyone else's arm,
+  /// and it never continues into overdub (the take settles to playing).
+  ///
+  /// Refuses unless the track holds a live non-defining recording take with
+  /// no live pending arm. In particular the DEFINING take — the one
+  /// establishing the loop length — is refused: ending it would let this
+  /// call set the session's bar length mid-gesture, so it keeps running and
+  /// the caller must treat the refusal as "the capture survives". While a
+  /// count-in is running the call is instead accepted for any channel and
+  /// cancels the count-in outright (nothing has been captured).
+  EngineResult finalizeTake({required int channel});
+
   /// Fixes track [channel]'s loop length to [multiple] whole base loops, or `0`
   /// to inherit the global default ([setDefaultMultiple]). Applies to the next
   /// recording.

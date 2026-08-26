@@ -2379,6 +2379,26 @@ class LooperRepository {
     return _engine.cancelArm(channel: channel);
   }
 
+  /// Finalizes track [channel]'s live non-defining recording take NOW —
+  /// [cancelArm]'s counterpart for the LIVE take (#405): the cancel retires
+  /// an arm that has not fired, this ends a take already capturing, exactly
+  /// as a quantize-off record press would (rounded up to whole base loops,
+  /// the tail staying silence — never off-grid) and without touching any
+  /// arm machinery.
+  ///
+  /// The engine refuses for the DEFINING take (ending it would let a mode
+  /// switch set the session's bar length mid-gesture) and while a pending
+  /// arm is live on the channel; callers treat a refusal as "the capture
+  /// survives". A running count-in is cancelled outright instead, whatever
+  /// channel is addressed. No [record]-style snapshot side effects here: the
+  /// take is already running, so its record-time lane FX snapshot was pushed
+  /// when it started — and nothing to remember across a restart (a live take
+  /// does not survive one).
+  EngineResult finalizeTake({required int channel}) {
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.finalizeTake(channel: channel);
+  }
+
   /// Fixes track [channel]'s loop length to [multiple] base loops (`0` = auto).
   /// Remembered and re-applied on every (re)start.
   EngineResult setTrackMultiple({required int channel, required int multiple}) {

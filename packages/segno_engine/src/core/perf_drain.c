@@ -779,6 +779,12 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  *       frame instead of at the real finalize.
  *   2 — an aborted take logs LE_PLOG_RECORD_ABORT (314). A RECORD_END in a
  *       version-2 file always means content was captured.
+ *   3 — a RECORD_ABORT may appear UNPAIRED: a count-in cancelled by the
+ *       immediate-finalize primitive (#405, handle_finalize_take) logs 314
+ *       for the counting channel even though no RECORD_START ever preceded
+ *       it (the count-in's commit is what logs the start). In a version-2
+ *       file every 314 closes an open START; from 3 on, a reader must treat
+ *       an ABORT with no open START as a no-op, not a malformed file.
  * Without the bump, "no 314 in this file" is indistinguishable from "the
  * writer did not know about 314". No reader in this repo gates on the field —
  * le_pr_load_log and daw_export's EventLogReader both check the magic and skip
@@ -787,7 +793,7 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  * codebase can reject. */
 static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
   static const char magic[4] = {'P', 'L', 'E', 'V'};
-  const uint32_t version = 2;
+  const uint32_t version = 3;
   if (!le_pd_write(f, magic, sizeof(magic))) return 0;
   if (!le_pd_write(f, &version, sizeof(version))) return 0;
   if (!le_pd_write(f, &sample_rate, sizeof(sample_rate))) return 0;

@@ -1463,6 +1463,46 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
   }
 }
 
+/* Applies LE_CMD_FINALIZE_TAKE (le_engine_finalize_take, #405): ends the
+ * addressed track's live take NOW — or does nothing. The control side already
+ * refused every wrong state; this re-check makes the guarantee hold across
+ * the one-block window between that guard and this apply, where a
+ * fixed-multiple auto-finalize, an arm firing, or a count-in commit could
+ * have moved the state. Where LE_CMD_RECORD's meaning depends on the state it
+ * lands on, every branch here either ends a capture or does nothing:
+ * - count-in running: cancel it back to idle (global transport state; the
+ *   addressed channel is irrelevant, matching the D9 press-cancel) and log
+ *   LE_PLOG_RECORD_ABORT for the counting channel — the take-in-gestation
+ *   died having captured nothing, and without the row an events.log reader
+ *   would see a count-in that silently evaporated. No RECORD_START ever
+ *   preceded it (the commit is what logs the start), so this is the one
+ *   place an unpaired ABORT can originate — events.log header version 3.
+ * - RECORDING, non-defining (clock.length > 0): finalize_new_track, the exact
+ *   quantize-off second-press finalize — round UP to whole base loops, the
+ *   silence tail seam-treated (#730), RECORD_END logged there. Always to
+ *   PLAYING, never rec/dub's continue-into-overdub: FX mode's transport is
+ *   inert, so the punch-out would be unreachable.
+ * - RECORDING, defining (clock.length == 0): refuse — a mode switch must
+ *   never set the session's grid. This is the race backstop for a count-in
+ *   commit landing in the same block: capture-survives, exactly the
+ *   documented defining-take fallback.
+ * - anything else: strict no-op. */
+static void handle_finalize_take(le_engine* e, int32_t ch, uint64_t frame) {
+  if (e->count_in_total > 0) {
+    const int32_t counting_ch = e->count_in_channel;
+    le_count_in_reset(e);
+    le_plog_push(
+        e, frame,
+        (le_command){.code = LE_PLOG_RECORD_ABORT, .arg_i = counting_ch});
+    return;
+  }
+  if (!valid_channel(e, ch)) return;
+  le_track* t = &e->tracks[ch];
+  if (load_i32(&t->a_state) != LE_TRACK_RECORDING) return;
+  if (e->clock.length == 0) return; /* the defining take keeps running */
+  finalize_new_track(e, t, LE_TRACK_PLAYING, frame);
+}
+
 static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
   /* A stop press during a count-in cancels it (D9). The stop then proceeds
@@ -1724,7 +1764,11 @@ static void le_truncate_capture_tail(le_engine* e, le_track* t, int32_t drop) {
  * sample-accurately from inside the per-frame loop below); LE_CMD_DUB_SHADOW
  * (internal shadow-pool bookkeeping, not itself an audible change);
  * LE_CMD_PERF_ARM/LE_CMD_PERF_DISARM (meta — arming/disarming the capture
- * session isn't part of what the session captures). A command that changes
+ * session isn't part of what the session captures);
+ * LE_CMD_FINALIZE_TAKE (the ARM/DISARM rationale from the other side: the
+ * command is finalize intent, and the transport fact it causes — RECORD_END,
+ * or RECORD_ABORT for a cancelled count-in — is what is logged, from
+ * finalize_new_track / handle_finalize_take). A command that changes
  * output but isn't logged here is a standing review-checklist item (the
  * umbrella plan). */
 static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
@@ -1755,6 +1799,15 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         store_i32(&e->tracks[cmd->arg_i].a_pending, 0);
       }
       handle_record(e, cmd->arg_i, frame);
+      break;
+    case LE_CMD_FINALIZE_TAKE:
+      /* Not logged verbatim (the ARM/DISARM rationale in the audited-subset
+       * note above): the transport fact it causes — RECORD_END, or
+       * RECORD_ABORT for a cancelled count-in — is logged where it lands.
+       * Deliberately does NOT touch pending_record/a_pending: this command
+       * can never consume anyone's arm (the control side refuses while one
+       * is live). */
+      handle_finalize_take(e, cmd->arg_i, frame);
       break;
     case LE_CMD_ARM:
       if (valid_channel(e, cmd->arg_i)) {
