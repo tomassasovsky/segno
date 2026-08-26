@@ -585,4 +585,17 @@ class FakePerformanceEngine implements AudioEngine {
     cancelledArms.add(channel);
     return EngineResult.ok;
   }
+
+  /// Channels passed to [finalizeTake], in call order.
+  final List<int> finalizedTakes = [];
+
+  /// The result [finalizeTake] returns — override with
+  /// [EngineResult.invalid] to model the engine refusing (a defining take).
+  EngineResult finalizeTakeResult = EngineResult.ok;
+
+  @override
+  EngineResult finalizeTake({required int channel}) {
+    finalizedTakes.add(channel);
+    return finalizeTakeResult;
+  }
 }

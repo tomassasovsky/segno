@@ -898,6 +898,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult finalizeTake({required int channel}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_finalize_take(_engine, channel),
+    );
+  }
+
+  @override
   EngineResult setTrackMultiple({required int channel, required int multiple}) {
     _checkAlive();
     return EngineResult.fromCode(

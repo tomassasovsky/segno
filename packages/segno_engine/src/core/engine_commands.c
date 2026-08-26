@@ -1279,6 +1279,51 @@ int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel) {
   return le_cancel_arm(engine, channel);
 }
 
+int32_t le_engine_finalize_take(le_engine* engine, int32_t channel) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  le_engine_drain_events(engine);
+  /* A running count-in is global transport state that has captured nothing:
+   * the call is accepted for any valid channel and posts the abort. The audio
+   * thread's count-in branch (handle_finalize_take) does the teardown and
+   * logs LE_PLOG_RECORD_ABORT for the counting channel — and if the count-in
+   * commits in the one-block window before this applies, the command lands on
+   * a DEFINING recording and the apply-side guard refuses it, so the race
+   * degrades to capture-survives, never to a finalize that sets the grid. */
+  if (load_i32(&engine->a_counting_in)) {
+    return le_push(engine, LE_CMD_FINALIZE_TAKE, channel, 0.0f);
+  }
+  le_track* t = &engine->tracks[channel];
+  if (le_effective_state(t) != LE_TRACK_RECORDING) return LE_ERR_INVALID;
+  /* The DEFINING take (nothing else holds the grid) is refused: finalizing it
+   * here would let this call — in the app, a mode switch — set the session's
+   * bar length to wherever the player happened to be mid-gesture. Same
+   * question le_engine_record answers when it decides whether a fresh take
+   * redefines the grid, asked from the other side; the master-length check is
+   * the belt for the internal-CLEAR window where the published master has not
+   * caught up with a grid redefinition already riding the ring. */
+  if (load_i32(&engine->a_master_len) <= 0 ||
+      !le_grid_still_needed(engine, channel)) {
+    return LE_ERR_INVALID;
+  }
+  /* A LIVE pending arm on this channel — any trigger — belongs to another
+   * command (B3b: armed[]/armed_trigger[] is shared across every arm-capable
+   * command) and is refused, not consumed: the caller must retire it first
+   * (le_engine_cancel_arm, which the app's FX entry already runs before this).
+   * Finalizing under it would leave the arm to fire onto the settled loop as
+   * a punch-in the user never asked for. A spent arm (already fired; the
+   * published pending flag reads 0) is no obstacle — and armed[] is left
+   * untouched either way, so this command provably cannot cancel anyone's
+   * arm. */
+  if (engine->armed[channel] && load_i32(&t->a_pending) != 0) {
+    return LE_ERR_INVALID;
+  }
+  return le_push(engine, LE_CMD_FINALIZE_TAKE, channel, 0.0f);
+}
+
 int32_t le_engine_set_track_quantize(le_engine* engine, int32_t channel,
                                      int32_t mode) {
   if (engine == NULL) return LE_ERR_INVALID;

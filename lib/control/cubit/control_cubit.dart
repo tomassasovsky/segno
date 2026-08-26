@@ -464,15 +464,21 @@ class ControlCubit extends Cubit<ControlState> {
   /// (`LooperRepository.cancelArm`), so no engine setting can turn it into a
   /// press with different meaning.
   ///
-  /// A LIVE capture, though, survives FX exactly as it survives Mute: the mode
-  /// toggle stays a view change, not a transport action, and the take ends
-  /// when the user cycles back to Rec and hits Rec/Play (or Stop). Ending it
-  /// here was tried and withdrawn — the only tool available is a record press,
-  /// which under quantize does not finalize at all but ARMS a loop-top
-  /// finalize, so the take ran on past the mode change and FX was entered with
-  /// a fresh arm, the exact state this entry clears. A finalize that ignores
-  /// quantize needs an engine primitive that does not exist yet; until it
-  /// does, "the capture survives" is the honest contract and matches Mute.
+  /// Entering FX then ENDS every live non-defining capture at the entry
+  /// gesture (#405, `LooperRepository.finalizeTake`): the engine's immediate
+  /// finalize ends the take exactly as a quantize-off record press would —
+  /// rounded up to whole base loops, the tail staying silence, never
+  /// off-grid — instead of letting a forgotten take grow toward the
+  /// recording cap in a mode whose transport controls are all inert. (A
+  /// record press could never do this: under quantize it ARMS a loop-top
+  /// finalize instead — the withdrawn A5 attempt.) The DEFINING take — the
+  /// one establishing the loop length — is the exception: the engine REFUSES
+  /// it, because a mode switch must not be the gesture that sets the
+  /// session's bar length, and the refusal is silently accepted — that
+  /// capture survives into FX exactly as it survives Mute, ending when the
+  /// user cycles back to Rec. A count-in in progress is aborted outright
+  /// (nothing has been captured yet). Overdubs are out of scope: bounded and
+  /// cycling, they ride on under FX exactly as under Mute.
   ///
   /// Any mode entry clears the stored mute-mode intent (the invalidation
   /// table).
@@ -516,8 +522,25 @@ class ControlCubit extends Cubit<ControlState> {
         // Read LIVE engine truth, not the polled snapshot: an arm cancelled or
         // fired moments ago still reads `pending` for up to one poll, and the
         // cancel is cheap enough that a stale read costs only a no-op.
-        for (final track in _looper.state.tracks) {
+        final looper = _looper.state;
+        for (final track in looper.tracks) {
           if (track.pending) _looper.cancelArm(channel: track.channel);
+        }
+        // Then end every live non-defining take at the entry gesture (#405).
+        // AFTER the arm sweep by construction: the primitive refuses while a
+        // pending arm is live on the channel, and the sweep is what retires
+        // them. Refusals are silently accepted — that IS the defining-take
+        // fallback (the capture survives, as documented above). RECORDING
+        // only: an overdub rides on, exactly as under Mute.
+        if (looper.transport.countingIn) {
+          // A count-in is global transport state (no track is capturing yet),
+          // so the addressed channel is irrelevant — any channel cancels it.
+          _looper.finalizeTake(channel: 0);
+        }
+        for (final track in looper.tracks) {
+          if (track.state == TrackState.recording) {
+            _looper.finalizeTake(channel: track.channel);
+          }
         }
         emit(
           state.copyWith(

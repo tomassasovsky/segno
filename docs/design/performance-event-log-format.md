@@ -30,7 +30,7 @@ unlike `performance.json`, which is atomically replaced each cycle.
 | Offset | Size | Field         | Notes                                   |
 |--------|------|---------------|------------------------------------------|
 | 0      | 4    | magic         | ASCII `"PLEV"` (Perf Log EVents)          |
-| 4      | 4    | version       | `uint32`, little/native-endian; `2` today — see below |
+| 4      | 4    | version       | `uint32`, little/native-endian; `3` today — see below |
 | 8      | 4    | sample_rate   | `int32`, the session's sample rate        |
 
 #### What `version` means
@@ -43,6 +43,7 @@ when the 28-byte record does.
 |---------|---------|
 | `1`      | The original vocabulary. An **aborted** take — armed, then stopped having captured nothing — was logged as `LE_PLOG_RECORD_END`, so a version-1 capture is subject to #264: a reader that anchors on the first `RECORD_END` can place a track's settled image at the abort frame instead of at the finalize that produced it. |
 | `2`      | An aborted take logs `LE_PLOG_RECORD_ABORT` (314). A `RECORD_END` in a version-2 file always means content was captured. |
+| `3`      | A `RECORD_ABORT` may appear **unpaired**: a count-in cancelled by the immediate-finalize primitive (#405, `LE_CMD_FINALIZE_TAKE`) logs 314 for the counting channel even though no `RECORD_START` ever preceded it (the count-in's commit is what logs the start). In a version-2 file every 314 closes an open `START`; from 3 on, a reader must treat an ABORT with no open `START` as a no-op, not a malformed file. |
 
 Neither reader in this repo (`perf_render.c`'s `le_pr_load_log`, the Dart
 `EventLogReader`) gates on the field — both check the magic and skip these four
@@ -139,6 +140,7 @@ bytes are that command's union, unchanged, so a reader already familiar with
 | `LE_CMD_SET_TRACK_FX_COUNT`           | 50    | fxcount     | No      | ” (same manifest-only verdict) |
 | `LE_CMD_SET_MASTER_FX`                | 51    | fx          | No      | ” |
 | `LE_CMD_SET_MASTER_FX_COUNT`          | 52    | fxcount     | No      | ” |
+| `LE_CMD_FINALIZE_TAKE`                | 56    | —           | No      | The `ARM`/`DISARM` rationale from the other side: finalize *intent*, and the transport fact it causes is what's logged — `LE_PLOG_RECORD_END` from the finalize it triggers, or `LE_PLOG_RECORD_ABORT` (unpaired, header version 3) when it cancels a count-in. A refused/no-op apply logs nothing: nothing audible happened. |
 
 The track/master FX **param and enabled setters** (direct-atomic, no ring
 command) push nothing either — deliberately NOT mirroring the lane family's
@@ -176,7 +178,7 @@ control-side-only concepts:
 | `LE_PLOG_SET_LANE_FX_CHAIN_ENABLED` | 311 | lanef   | `channel`, `lane`, `value` = enabled (0.0/1.0) — `LE_CMD_SET_LANE_MUTE`'s shape. Control-side emission. **Replayed in the lane wet pass.** |
 | `LE_PLOG_SET_MONITOR_FX_ENABLED`  | 312   | fx      | `channel` = input index, `lane` = -1, `index` = fx slot, `type` = enabled (0/1) — 307's addressing convention. Logged for the manifest/reader, **not replayed in the lane pass** (mirrors `LE_PLOG_SET_MONITOR_FX_PARAM`'s treatment). |
 | `LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED` | 313 | generic | `arg_i` = input index, `arg_f` = enabled (0.0/1.0) — the monitor volume/mute shape. Logged for the manifest/reader, **not replayed in the lane pass**. |
-| `LE_PLOG_RECORD_ABORT`            | 314   | generic | `arg_i` = channel. A take left RECORDING having captured **nothing** — armed and stopped on the loop top, so the track goes back to EMPTY. An aborted take is not a take: it produced no content and has no settled image of its own, and a reader must not treat it as a finalize. Its own code rather than a `RECORD_END` because the offline renderer keys its disarm-image anchor off 301 (#264); `perf_render.c`'s `RECORD_END` scan holds that derivation. Present from header version 2 on. |
+| `LE_PLOG_RECORD_ABORT`            | 314   | generic | `arg_i` = channel. A take died having captured **nothing**: it left RECORDING void (armed and stopped on the loop top, so the track goes back to EMPTY) — or, from header version 3, a count-in was cancelled by `LE_CMD_FINALIZE_TAKE` (#405), in which case `arg_i` is the counting channel and no `RECORD_START` ever preceded it (the ABORT is unpaired). An aborted take is not a take: it produced no content and has no settled image of its own, and a reader must not treat it as a finalize. Its own code rather than a `RECORD_END` because the offline renderer keys its disarm-image anchor off 301 (#264); `perf_render.c`'s `RECORD_END` scan holds that derivation. Present from header version 2 on. |
 
 The replayed lane chain seeds all enable bits to 1 at arm: the arm manifest
 carries no arm-time enabled state until part 3 of the FX-v3 epic adds it (a
@@ -214,6 +216,9 @@ the `START` and then discard it; never render it, and never let it consume
 the audio belonging to a later real take on the same channel.
 (In a version-1 file the abort was logged as `RECORD_END`, so this pairing
 rule is only available from header version 2 on — see the version table.)
+From header version 3, an `ABORT` may also arrive with **no open `START` at
+all** — a count-in cancelled before its downbeat (`LE_CMD_FINALIZE_TAKE`,
+#405). An unpaired `ABORT` closes nothing and must simply be skipped.
 
 ## Frame-tagging semantics
 

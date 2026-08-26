@@ -869,6 +869,24 @@ void main() {
       expect(engine.cancelledArms, [3]);
     });
 
+    test('finalizeTake reaches the engine while running, is a no-op when '
+        'stopped (a live take cannot outlive the engine capturing it), and '
+        'surfaces the engine refusal untranslated — the caller reads it as '
+        '"the capture survives" (#405)', () {
+      final repo = buildRepo();
+      expect(repo.finalizeTake(channel: 3), EngineResult.ok);
+      expect(engine.finalizedTakes, isEmpty); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(repo.finalizeTake(channel: 3), EngineResult.ok);
+      expect(engine.finalizedTakes, [3]);
+
+      // The defining-take refusal is a contract, not an error to swallow.
+      engine.finalizeTakeResult = EngineResult.invalid;
+      expect(repo.finalizeTake(channel: 3), EngineResult.invalid);
+      expect(engine.finalizedTakes, [3, 3]);
+    });
+
     test('per-track quantize overrides are deferred then re-applied', () {
       final repo = buildRepo()
         ..setTrackQuantize(channel: 1, enabled: true)
