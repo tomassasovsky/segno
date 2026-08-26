@@ -11,6 +11,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:segno/app/app_toasts.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
@@ -23,6 +24,7 @@ import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:toastification/toastification.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -58,6 +60,10 @@ void main() {
   late AudioSetupCubit audioSetup;
 
   setUp(() {
+    // The toast registry is module-level and survives between tests; a stale
+    // entry would make the next identical toast a silent duplicate.
+    resetAppToastsForTest();
+    addTearDown(() => dismissAppToast(AppToastId.undoClearAll));
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
     audioSetup = _MockAudioSetupCubit();
@@ -73,12 +79,12 @@ void main() {
     // The FX-chain announcement reads the repository's remembered intent —
     // the same value the bloc's toggle handler negates.
     when(() => repository.trackChainEnabled(any())).thenReturn(true);
-    when(() => repository.monitorChanges).thenAnswer(
-      (_) => const Stream<int>.empty(),
-    );
-    when(() => repository.monitorParamChanges).thenAnswer(
-      (_) => const Stream<int>.empty(),
-    );
+    when(
+      () => repository.monitorChanges,
+    ).thenAnswer((_) => const Stream<int>.empty());
+    when(
+      () => repository.monitorParamChanges,
+    ).thenAnswer((_) => const Stream<int>.empty());
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
@@ -137,62 +143,84 @@ void main() {
     whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
   }
 
+  // The post-clear-all toast renders into a toastification overlay, which
+  // needs the app's Navigator above it (hence wrapping MaterialApp, not its
+  // child). Inert for the tests that never raise a toast.
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
-    MaterialApp(
-      theme: AppTheme.neon,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: MultiRepositoryProvider(
-        providers: [
-          RepositoryProvider<LooperRepository>.value(value: repository),
-          RepositoryProvider<PerformanceRepository>.value(value: performance),
-          RepositoryProvider<SettingsRepository>.value(value: settings),
-        ],
-        child: MultiBlocProvider(
+    ToastificationWrapper(
+      child: MaterialApp(
+        theme: AppTheme.neon,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: MultiRepositoryProvider(
           providers: [
-            BlocProvider<LooperBloc>.value(value: bloc),
-            BlocProvider<TracksCubit>.value(value: tracks),
-            BlocProvider<ControlCubit>.value(value: control),
-            BlocProvider<SessionCubit>.value(value: session),
-            BlocProvider<PerformanceRecorderCubit>.value(
-              value: performanceRecorder,
-            ),
-            // The tray's Signal domain draws input cards, so opening it needs
-            // the same cubits the app provides around it.
-            BlocProvider<InputsCubit>(
-              create: (_) =>
-                  InputsCubit(settings: settings, repository: repository),
-            ),
-            BlocProvider<MonitorCubit>(
-              create: (_) =>
-                  MonitorCubit(repository: repository, settings: settings),
-            ),
-            // The device-lost banner and the not-running gate read the
-            // audio setup cubit (#453).
-            BlocProvider<AudioSetupCubit>.value(value: audioSetup),
+            RepositoryProvider<LooperRepository>.value(value: repository),
+            RepositoryProvider<PerformanceRepository>.value(value: performance),
+            RepositoryProvider<SettingsRepository>.value(value: settings),
           ],
-          child: const TracksView(),
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider<LooperBloc>.value(value: bloc),
+              BlocProvider<TracksCubit>.value(value: tracks),
+              BlocProvider<ControlCubit>.value(value: control),
+              BlocProvider<SessionCubit>.value(value: session),
+              BlocProvider<PerformanceRecorderCubit>.value(
+                value: performanceRecorder,
+              ),
+              // The tray's Signal domain draws input cards, so opening it needs
+              // the same cubits the app provides around it.
+              BlocProvider<InputsCubit>(
+                create: (_) =>
+                    InputsCubit(settings: settings, repository: repository),
+              ),
+              BlocProvider<MonitorCubit>(
+                create: (_) =>
+                    MonitorCubit(repository: repository, settings: settings),
+              ),
+              // The device-lost banner and the not-running gate read the
+              // audio setup cubit (#453).
+              BlocProvider<AudioSetupCubit>.value(value: audioSetup),
+            ],
+            child: const TracksView(),
+          ),
         ),
       ),
     ),
   );
 
-  testWidgets(
-    'every tap target on the performance surface is labeled '
-    '(labeledTapTargetGuideline)',
-    (tester) async {
-      // The regression net for the Big Picture's hand-labeling: any tappable
-      // node added without a semantic name — an icon-only IconButton with no
-      // tooltip, a bare GestureDetector, a FocusableTapTarget with no label —
-      // fails this. Locks in the transport controls, track tiles, mode toggle,
-      // and bank switch.
-      final handle = tester.ensureSemantics();
-      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
-      await pump(tester);
-      await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
-      handle.dispose();
-    },
-  );
+  // A clear-all on a rig with content now raises the undo toast, which mounts a
+  // frame late and, once shown, holds a ~6s auto-close timer plus toast
+  // animation timers. Any test that clears content must drain them or the zone
+  // fails on a pending timer after teardown (the leak the first attempt hit).
+  //
+  // Dismissing cancels the auto-close timer, but `pumpAndSettle` stops at the
+  // end of the exit animation and leaves the bare Timer `toastification`
+  // schedules to retire the overlay entry still pending — enough to trip the
+  // post-teardown timer check, and enough to leave the global manager's
+  // overlay dead so the NEXT test's toast renders into nothing and is never
+  // found. Pump a fixed span past that teardown timer instead (the same
+  // global-`toastification` trap `app_test.dart` documents around its own
+  // failure toast).
+  Future<void> settleToasts(WidgetTester tester) async {
+    await tester.pumpAndSettle(); // mount + finish the entrance animation
+    dismissAppToast(AppToastId.undoClearAll); // cancels the auto-close timer
+    // Past the removal animation and the overlay teardown it schedules.
+    await tester.pump(const Duration(seconds: 10));
+  }
+
+  testWidgets('every tap target on the performance surface is labeled '
+      '(labeledTapTargetGuideline)', (tester) async {
+    // The regression net for the Big Picture's hand-labeling: any tappable
+    // node added without a semantic name — an icon-only IconButton with no
+    // tooltip, a bare GestureDetector, a FocusableTapTarget with no label —
+    // fails this. Locks in the transport controls, track tiles, mode toggle,
+    // and bank switch.
+    final handle = tester.ensureSemantics();
+    seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+    await pump(tester);
+    await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+    handle.dispose();
+  });
 
   testWidgets('renders a tile per track', (tester) async {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
@@ -292,9 +320,7 @@ void main() {
     await tester.tap(find.byKey(const Key('tracks_tile_1')));
     // One interaction mode for every surface: touch does what the pedal's
     // track stomp and the number keys do.
-    verify(
-      () => bloc.add(const LooperTrackChainToggled(1)),
-    ).called(1);
+    verify(() => bloc.add(const LooperTrackChainToggled(1))).called(1);
     verifyNever(() => bloc.add(const LooperRecordPressed(1)));
     verifyNever(() => bloc.add(const LooperMuteToggled(1)));
   });
@@ -307,9 +333,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
     await tester.pump();
 
-    verify(
-      () => bloc.add(const LooperTrackChainToggled(1)),
-    ).called(1);
+    verify(() => bloc.add(const LooperTrackChainToggled(1))).called(1);
     verifyNever(() => bloc.add(const LooperMuteToggled(1)));
     expect(control.state.cursor, 1); // the digit still selects
   });
@@ -600,9 +624,7 @@ void main() {
       seed(
         // LooperMode.multi is TransportState's default — explicit here only
         // for readability (this is a Multi-mode test).
-        const LooperState(
-          tracks: [Track(), Track(channel: 1)],
-        ),
+        const LooperState(tracks: [Track(), Track(channel: 1)]),
       );
       await pump(tester);
 
@@ -654,51 +676,43 @@ void main() {
       expect(find.byKey(const Key('tracks_crown_0')), findsOneWidget);
     });
 
-    testWidgets(
-      'tapping a non-primary track crowns it (dispatches '
-      'LooperCrownPrimaryPressed)',
-      (tester) async {
-        seed(
-          const LooperState(
-            transport: TransportState(
-              looperMode: LooperMode.sync,
-              primaryTrack: 0,
-            ),
-            tracks: [Track(), Track(channel: 1)],
+    testWidgets('tapping a non-primary track crowns it (dispatches '
+        'LooperCrownPrimaryPressed)', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(
+            looperMode: LooperMode.sync,
+            primaryTrack: 0,
           ),
-        );
-        await pump(tester);
+          tracks: [Track(), Track(channel: 1)],
+        ),
+      );
+      await pump(tester);
 
-        await tester.tap(find.byKey(const Key('tracks_crown_1')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('tracks_crown_1')));
+      await tester.pumpAndSettle();
 
-        verify(
-          () => bloc.add(const LooperCrownPrimaryPressed(1)),
-        ).called(1);
-      },
-    );
+      verify(() => bloc.add(const LooperCrownPrimaryPressed(1))).called(1);
+    });
 
-    testWidgets(
-      "the current primary track's own badge is inert — no un-crown "
-      'gesture exists (D18)',
-      (tester) async {
-        seed(
-          const LooperState(
-            transport: TransportState(
-              looperMode: LooperMode.sync,
-              primaryTrack: 0,
-            ),
-            tracks: [Track()],
+    testWidgets("the current primary track's own badge is inert — no un-crown "
+        'gesture exists (D18)', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(
+            looperMode: LooperMode.sync,
+            primaryTrack: 0,
           ),
-        );
-        await pump(tester);
+          tracks: [Track()],
+        ),
+      );
+      await pump(tester);
 
-        await tester.tap(find.byKey(const Key('tracks_crown_0')));
-        await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('tracks_crown_0')));
+      await tester.pumpAndSettle();
 
-        verifyNever(() => bloc.add(const LooperCrownPrimaryPressed(0)));
-      },
-    );
+      verifyNever(() => bloc.add(const LooperCrownPrimaryPressed(0)));
+    });
   });
 
   group('keyboard', () {
@@ -767,6 +781,7 @@ void main() {
       // and re-armed on the engine directly.
       verify(() => repository.clear()).called(1);
       verify(() => repository.setMute(muted: false)).called(1);
+      await settleToasts(tester); // clearing content raises the undo toast
     });
 
     testWidgets('F toggles fullscreen without error', (tester) async {
@@ -1230,10 +1245,7 @@ void main() {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
 
-      expect(
-        find.byKey(const Key('tracks_audioNotRunning')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('tracks_audioNotRunning')), findsOneWidget);
     });
 
     testWidgets('is hidden once the engine is connected', (tester) async {
@@ -1257,9 +1269,7 @@ void main() {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
 
-      final node = tester.getSemantics(
-        find.byKey(const Key('tracks_tile_0')),
-      );
+      final node = tester.getSemantics(find.byKey(const Key('tracks_tile_0')));
       // Colour-only meter state (1.4.1) is named in the accessible label, and
       // the tile carries a button role (4.1.2).
       expect(node.label, contains('empty'));
@@ -1862,6 +1872,7 @@ void main() {
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       // The button shares the keyboard path's announcement (anti-drift).
       expect(announcements, contains(l10n.a11yAllCleared));
+      await settleToasts(tester); // clearing content raises the undo toast
     });
 
     testWidgets('clear all dispatches instantly (no dialog)', (tester) async {
@@ -1871,6 +1882,7 @@ void main() {
       await tester.tap(find.byKey(const Key('tracks_clearAll')));
       // Clear-all is a ControlIntents action straight to the engine.
       verify(() => repository.clear()).called(1);
+      await settleToasts(tester); // clearing content raises the undo toast
     });
 
     testWidgets('both are disabled when the engine is disconnected', (
@@ -1941,9 +1953,7 @@ void main() {
         // Nothing would sound, so Play All is disabled...
         expect(
           tester
-              .widget<IconButton>(
-                find.byKey(const Key('tracks_playStopAll')),
-              )
+              .widget<IconButton>(find.byKey(const Key('tracks_playStopAll')))
               .onPressed,
           isNull,
         );
@@ -2192,6 +2202,112 @@ void main() {
       verify(() => bloc.add(const LooperRedoPressed(0))).called(1);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    });
+
+    testWidgets(
+      'Cmd/Ctrl+Shift+C restores every track holding a clear restore point',
+      (tester) async {
+        seed(
+          const LooperState(
+            tracks: [
+              Track(clearRestore: true),
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+              Track(channel: 2, clearRestore: true),
+            ],
+          ),
+        );
+        when(
+          () => repository.undo(channel: any(named: 'channel')),
+        ).thenReturn(EngineResult.ok);
+        await pump(tester);
+
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+
+        // The whole rig comes back: exactly the pending-clear channels.
+        verify(() => repository.undo()).called(1);
+        verify(() => repository.undo(channel: 2)).called(1);
+        verifyNever(() => repository.undo(channel: 1));
+      },
+    );
+
+    testWidgets(
+      'Cmd/Ctrl+Shift+C is inert when no clear restore point is pending',
+      (tester) async {
+        seed(
+          const LooperState(
+            tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
+          ),
+        );
+        when(
+          () => repository.undo(channel: any(named: 'channel')),
+        ).thenReturn(EngineResult.ok);
+        await pump(tester);
+
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+
+        verifyNever(() => repository.undo(channel: any(named: 'channel')));
+      },
+    );
+  });
+
+  group('undo-clear-all toast', () {
+    testWidgets(
+      'a clear-all raises a toast whose action restores the whole rig',
+      (tester) async {
+        seed(
+          const LooperState(
+            tracks: [
+              Track(
+                state: TrackState.playing,
+                lengthFrames: 48000,
+                clearRestore: true,
+              ),
+            ],
+          ),
+        );
+        when(
+          () => repository.undo(channel: any(named: 'channel')),
+        ).thenReturn(EngineResult.ok);
+        await pump(tester);
+
+        // Every surface's clear-all lands in ControlCubit.clearAll, which
+        // fires the cue the view listens for. pumpAndSettle so the toast's
+        // entrance animation completes and it is present to find.
+        await control.clearAll();
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key(AppToastId.undoClearAll)), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key(AppToastId.undoClearAllAction)));
+        // The action restores the rig and dismisses its own toast. Pump past
+        // the exit animation AND the bare Timer `toastification` schedules to
+        // retire the overlay entry, so nothing outlives the test (the leak the
+        // first attempt hit) and the global overlay is clean for the next one.
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 10));
+
+        verify(() => repository.undo()).called(1);
+        expect(find.byKey(const Key(AppToastId.undoClearAll)), findsNothing);
+      },
+    );
+
+    testWidgets('an empty-rig clear-all shows no toast', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      // Nothing to restore, so clearAll never fires the cue — no toast, no
+      // lingering timer.
+      await control.clearAll();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key(AppToastId.undoClearAll)), findsNothing);
     });
   });
 

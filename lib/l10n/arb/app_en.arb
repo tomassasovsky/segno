@@ -356,6 +356,10 @@
     "@shortcutRedo": {
         "description": "Legend description for the Cmd/Ctrl+Y shortcut."
     },
+    "shortcutUndoClearAll": "Undo clear all",
+    "@shortcutUndoClearAll": {
+        "description": "Legend description for the Cmd/Ctrl+Shift+C shortcut that restores every track cleared by a clear-all."
+    },
     "shortcutSaveSession": "Save the open session",
     "@shortcutSaveSession": {
         "description": "Legend description for the Cmd/Ctrl+S shortcut."
@@ -638,6 +642,18 @@
     "clearAllTooltip": "Clear all (C)",
     "@clearAllTooltip": {
         "description": "Tooltip for the top-bar button that clears every track. The parenthetical names the keyboard shortcut."
+    },
+    "undoClearAllToast": "Cleared all tracks",
+    "@undoClearAllToast": {
+        "description": "Title of the toast shown right after a clear-all, offering to undo it. Its action button restores every cleared track."
+    },
+    "undoClearAllAction": "Undo",
+    "@undoClearAllAction": {
+        "description": "Label of the action button on the clear-all toast that restores every cleared track."
+    },
+    "a11yUndoClearAll": "Restored all cleared tracks",
+    "@a11yUndoClearAll": {
+        "description": "Announced when the whole-rig undo-clear-all restores every track a clear-all cleared."
     },
     "fullscreenTooltip": "Fullscreen (F)",
     "@fullscreenTooltip": {

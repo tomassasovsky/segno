@@ -5,6 +5,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
@@ -45,6 +46,36 @@ class TracksView extends StatefulWidget {
 }
 
 class _TracksViewState extends State<TracksView> {
+  @override
+  void dispose() {
+    dismissAppToast(AppToastId.undoClearAll);
+    super.dispose();
+  }
+
+  /// Shows the post-clear-all toast whose action restores the whole rig. The
+  /// action routes through the shared [TracksCommands.undoClearAll] so the
+  /// toast and `⌘⇧C` can never drift, and dismisses the toast on tap. Short
+  /// auto-close: the toast is the discoverable moment, `⌘⇧C` the permanence.
+  void _showUndoClearAllToast() {
+    if (!mounted) return;
+    final l10n = context.l10n;
+    showAppToast(
+      id: AppToastId.undoClearAll,
+      autoCloseDuration: const Duration(seconds: 6),
+      title: Text(l10n.undoClearAllToast),
+      actions: [
+        TextButton(
+          key: const Key(AppToastId.undoClearAllAction),
+          onPressed: () {
+            TracksCommands(context).undoClearAll();
+            dismissAppToast(AppToastId.undoClearAll);
+          },
+          child: Text(l10n.undoClearAllAction),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -107,6 +138,16 @@ class _TracksViewState extends State<TracksView> {
                 (current is PerformanceRecorderCompleted &&
                     previous is! PerformanceRecorderCompleted),
             listener: onPerformanceRecorderState,
+          ),
+          BlocListener<ControlCubit, ControlState>(
+            // Any surface that clears the rig — the pedal's CLEAR, the `C`
+            // key, the chrome button — lands in `ControlCubit.clearAll`, which
+            // bumps `clearAllPulse` when a cleared take can come back. Fire the
+            // undo toast on that pulse; a clear with nothing to restore never
+            // bumps it, so the toast stays silent for an empty-rig CLEAR.
+            listenWhen: (previous, current) =>
+                current.clearAllPulse != previous.clearAllPulse,
+            listener: (context, state) => _showUndoClearAllToast(),
           ),
         ],
         child: BlocProvider(

@@ -1597,6 +1597,104 @@ void main() {
       );
     });
 
+    group('undoClearAll', () {
+      test(
+        'undoes every track holding a clear restore point, and only those',
+        () {
+          setEngine(
+            _tracksWith(const [
+              Track(clearRestore: true),
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+              Track(channel: 2, clearRestore: true),
+              // Peelable layer, not a clear restore point.
+              Track(
+                channel: 3,
+                state: TrackState.playing,
+                lengthFrames: 48000,
+                undoDepth: 2,
+              ),
+            ]),
+          );
+
+          cubit.undoClearAll();
+
+          // Exactly the two pending-clear channels are restored.
+          verify(() => looper.undo()).called(1);
+          verify(() => looper.undo(channel: 2)).called(1);
+          verifyNever(() => looper.undo(channel: 1));
+          verifyNever(() => looper.undo(channel: 3));
+          for (var channel = 4; channel < 8; channel++) {
+            verifyNever(() => looper.undo(channel: channel));
+          }
+        },
+      );
+
+      test('is a no-op when no track holds a clear restore point', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 48000,
+              undoDepth: 3,
+            ),
+          ]),
+        );
+
+        cubit.undoClearAll();
+
+        verifyNever(() => looper.undo(channel: any(named: 'channel')));
+        verifyNever(() => looper.undo());
+      });
+
+      test(
+        'does not re-home the overlay (unlike clearAll)',
+        () {
+          setEngine(_tracksWith(const [Track(channel: 2, clearRestore: true)]));
+          cubit
+            ..toggleMode() // leave record mode
+            ..selectTrack(5); // move the cursor off home
+          final before = cubit.state;
+
+          cubit.undoClearAll();
+
+          // Recovery restores the rig the user had — cursor and mode included.
+          expect(cubit.state.mode, before.mode);
+          expect(cubit.state.cursor, before.cursor);
+        },
+      );
+
+      test(
+        'clearAll bumps clearAllPulse when a content track is cleared',
+        () async {
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          final before = cubit.state.clearAllPulse;
+
+          await cubit.clearAll();
+
+          // The pulse is the cue the tracks view's undo toast listens for.
+          expect(cubit.state.clearAllPulse, before + 1);
+        },
+      );
+
+      test(
+        'clearAll leaves clearAllPulse untouched when nothing to restore',
+        () async {
+          setEngine(_emptyTracks());
+          final before = cubit.state.clearAllPulse;
+
+          await cubit.clearAll();
+
+          expect(cubit.state.clearAllPulse, before);
+        },
+      );
+    });
+
     group('performance recording (D-PEDAL)', () {
       test(
         'togglePerformanceRecord arms the repository when unarmed, then '
