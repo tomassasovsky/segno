@@ -9570,11 +9570,14 @@ static void test_perf_sidecar_bytes_are_exact(void) {
  *
  * SCOPE, precisely: the cycles are driven hard enough to take
  * le_pd_drain_ring's loop-again branch (more than LE_PD_SCRATCH_SAMPLES
- * available per cycle) and, once, le_pd_catch_up's chunked zero-fill after a
- * deliberate ring overflow. It does NOT cover le_pd_write_staged_layer — that
- * needs a retired overdub layer, and the layer tests below cover that path's
- * own allocation handoff. */
+ * available per cycle) and, once, le_pd_catch_up's chunked zero-fill from an
+ * un-backed gap cycle 4's hook forces directly (#823) — with a best-effort
+ * real ring-overflow burst layered on top for production-geometry coverage.
+ * It does NOT cover le_pd_write_staged_layer — that needs a retired overdub
+ * layer, and the layer tests below cover that path's own allocation
+ * handoff. */
 typedef struct {
+  le_engine* e;       /* for the cycle-4 forced gap in the hook below */
   _Atomic int cycles; /* written by the drain thread, polled by the test one */
 } perf_alloc_watch_ctx;
 
@@ -9591,6 +9594,12 @@ typedef struct {
  * emptying the ring in one short pop — while staying inside the ring's
  * LE_PERF_CAPTURE_SECONDS so nothing overruns except where this test asks. */
 #define LE_TEST_ALLOC_WATCH_FRAMES_PER_TICK 4096
+/* The forced gap, in frames: a handful of le_pd_catch_up's 1024-sample
+ * kZeros chunks, so the CHUNKED loop demonstrably runs (a single chunk
+ * would still satisfy a bare > 0 check after a bail-early regression).
+ * Deliberately NO relationship to ring capacity — an un-backed gap of any
+ * size pads; only the chunk size matters here. */
+#define LE_TEST_ALLOC_GAP_FRAMES 4096
 
 /* Both helpers below serve only this test, so they live inside the same guard
  * its body does — otherwise a sanitized build carries two unused functions. */
@@ -9614,6 +9623,23 @@ static void perf_mid_cycle_watch_allocations(void* raw) {
   /* Runs ON the drain thread, which is the whole point: this arms the
    * thread-local counter for that thread only. */
   if (n == 3) tl_count_allocations = 1;
+  /* Cycle 4: open a pop-vs-elapsed gap with no frames behind it — the
+   * counted-but-never-enqueued state a real overrun leaves behind. Forced
+   * HERE, on the drain thread, because it then happens iff cycles reach 4 —
+   * which the cadence CHECK already demands — where a main-thread bump (or
+   * the racing burst alone) can be skipped or lost under load (#823). This
+   * cycle's catch-up sampled elapsed before the ring drain (#718), so the
+   * pad lands in cycle 5, fully inside the counted window. Side effect,
+   * deliberate and unasserted: every later frame tag and the sidecar's
+   * capture_frames run LE_TEST_ALLOC_GAP_FRAMES ahead of the audio actually
+   * pushed. Relaxed, unlike the short-ring stand-in's release: that one
+   * publishes frames it really pushed; this bump publishes no data, and the
+   * elapsed load it feeds runs on this same thread. */
+  if (n == 4) {
+    atomic_fetch_add_explicit(&ctx->e->a_perf_frames,
+                              (uint64_t)LE_TEST_ALLOC_GAP_FRAMES,
+                              memory_order_relaxed);
+  }
 }
 #endif
 
@@ -9626,9 +9652,11 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   printf("  (skipped: allocator interposition unavailable on this build)\n");
 #else
   le_engine* e = le_engine_create();
-  le_engine_configure(e, 48000, 1, 1, 1000); /* real ring: nothing may drop */
+  /* Real ring: the steady per-tick pushes must never drop; the one
+   * deliberate burst below is the only thing allowed to. */
+  le_engine_configure(e, 48000, 1, 1, 1000);
 
-  perf_alloc_watch_ctx ctx = {0};
+  perf_alloc_watch_ctx ctx = {e, 0};
   le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_watch_allocations,
                                             &ctx);
 
@@ -9683,35 +9711,31 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
    * counted ones have genuine work: multi-buffer ring pops, PCM writes, an
    * events.log append, a sidecar rewrite and rename. */
   int waited = 0;
-  int gap_forced_once = 0;
+  int burst_pushed_once = 0;
   while (atomic_load(&ctx.cycles) < LE_TEST_ALLOC_WATCH_CYCLES &&
          waited < LE_TEST_ALLOC_WATCH_TIMEOUT_MS) {
     push_frames_for_test(e, 0.25f, LE_TEST_ALLOC_WATCH_FRAMES_PER_TICK);
-    /* Once, mid-run: open a pop-vs-elapsed gap wider than the ring, so a
-     * cycle also runs le_pd_catch_up's chunked zero-fill. Advance the
-     * elapsed count DIRECTLY (the short-ring test's stand-in for the real
-     * tap's publishing edge) rather than pushing that much audio: a push
-     * only drops — and thus only forces a zero-fill — if this thread
-     * outruns the drain thread, and on a loaded machine it loses that race
-     * often enough to flake the zero-fill assertion below (#823). A gap no
-     * push ever backs is un-losable: whichever cycle samples it must pad. */
-    if (!gap_forced_once && atomic_load(&ctx.cycles) >= 4) {
-      gap_forced_once = 1;
-      atomic_fetch_add_explicit(
-          &e->a_perf_frames,
-          (uint64_t)(48000 * (LE_PERF_CAPTURE_SECONDS + 1)),
-          memory_order_release);
+    /* Once, mid-run: hand the ring more than it can hold in a single tick.
+     * COVERAGE, not the zero-fill proof: this is the suite's one
+     * production-geometry ring-full drive against the live drain thread
+     * (the tiny-ring overrun tests all run at sample_rate 4), worth keeping
+     * under the ASAN job. Whether it actually drops depends on outrunning
+     * the drain — under load it loses that race (#823) — so NO assertion
+     * depends on it: the zero-fill proof runs off the hook's forced gap,
+     * and this burst's real drops only add to the same counter. Latched
+     * best-effort; a starved poll that watches cycles jump past the window
+     * skips it, costing that run the burst's coverage and nothing else. */
+    if (!burst_pushed_once && atomic_load(&ctx.cycles) >= 4) {
+      burst_pushed_once = 1;
+      push_frames_for_test(e, 0.25f, 48000 * (LE_PERF_CAPTURE_SECONDS + 1));
     }
     test_sleep_ms(25);
     waited += 25;
   }
 
-  /* CADENCE FIRST, then everything that depends on it. The forced gap above
-   * is only armed once the drain thread has reached its 4th cycle, so a
-   * thread too slow to get there inside the timeout would otherwise surface
-   * as `gap_forced_once != 1` — a failure of the allocation fixture,
-   * reported when nothing allocated at all. Assert the observable that
-   * actually failed, and say so in the message. */
+  /* CADENCE FIRST: a drain thread too slow to reach its cycle target inside
+   * the timeout is reported as exactly that, not as whichever downstream
+   * assertion happens to notice first. */
   const int observed_cycles = atomic_load(&ctx.cycles);
   if (observed_cycles < LE_TEST_ALLOC_WATCH_CYCLES) {
     printf(
@@ -9721,7 +9745,6 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
         LE_TEST_ALLOC_WATCH_TIMEOUT_MS);
   }
   CHECK(observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES);
-  CHECK(gap_forced_once == 1);
 
   CHECK(le_perf_disarm(e) == LE_OK); /* joins the drain thread */
   le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
@@ -9735,7 +9758,10 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
    * allocations: those 6 plus cycle 3's counted half.) */
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
-  CHECK(s.perf_zero_filled_frames > 0); /* the zero-fill path really ran */
+  /* The CHUNKED zero-fill really ran: at least the hook's forced gap — four
+   * kZeros chunks, so a bail-after-one-chunk regression cannot pass — and
+   * the burst's real drops, when it won its race, only add on top. */
+  CHECK(s.perf_zero_filled_frames >= LE_TEST_ALLOC_GAP_FRAMES);
 
   if (atomic_load(&g_test_alloc_count) != 0) {
     printf("  drain thread allocated %d time(s), largest %zu bytes\n",
