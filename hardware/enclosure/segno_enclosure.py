@@ -4820,10 +4820,17 @@ DXF_PARTS = [
 ]
 NO_PDF = set()   # every sheet part ships with a PDF drawing
 
-def build_quote_packages():
+def build_quote_packages(with_step=True, with_pdf=True):
     """Refresh the manufacturer zips from the CURRENT outputs so they can never
     go stale (a hand-built segno_sheetmetal.zip once shipped three-week-old
-    flats). Three packs: laser/bend sheet metal, reference STEPs, 3D prints."""
+    flats). Three packs: laser/bend sheet metal, reference STEPs, 3D prints.
+
+    with_step/with_pdf mirror which builders actually ran THIS run: the
+    freshness gate in pack() (rightly) refuses to ship anything this run did
+    not write, so a --no-step / --no-pdf / no-cadquery run must skip the packs
+    (or the extensions) whose builders were skipped — otherwise the gate turns
+    every documented partial invocation into a crash after all its useful work
+    (found in review of #792)."""
     import zipfile
     zips = []
 
@@ -4855,14 +4862,21 @@ def build_quote_packages():
     # nothing, roughly a third of the metal spend (#775 R6). It now has its own pack.
     sheet   = [n for n, _ in DXF_PARTS if PART_SPECS[n][2] == PKG_SHEETMETAL]
     overlay = [n for n, _ in DXF_PARTS if PART_SPECS[n][2] == PKG_OVERLAY]
-    pack("segno_sheetmetal.zip", sheet, (".dxf", ".pdf"))
-    pack("segno_overlay.zip", overlay, (".dxf", ".pdf"))
+    flat_exts = (".dxf", ".pdf") if with_pdf else (".dxf",)
+    pack("segno_sheetmetal.zip", sheet, flat_exts)
+    pack("segno_overlay.zip", overlay, flat_exts)
     # segno_base and segno_corner_bracket_rear are deliberately NOT here. Nothing
     # generates a per-part STEP for either (see build_assembly_step: the base is
     # ONE folded blank and the assembly STEP is where its 3D form lives), so the
     # files that used to satisfy this list were 17-day-old leftovers the packer
     # picked up off disk and shipped next to DXFs that had moved on. The
     # freshness gate in pack() now refuses that outright.
+    if not with_step:
+        print("(quote packs: STEP/STL packs skipped -- no STEP builders ran)")
+        if with_pdf:
+            pack("segno_pintura.zip",
+                 ["segno_paint_quote"] + [s for s, *_ in PAINT_BOM], (".pdf",))
+        return zips
     pack("segno_sheetmetal_step.zip",
          ["segno_assembly", "segno_faceplate", "segno_ring_disc", "segno_post"],
          (".step",))
@@ -4880,7 +4894,9 @@ def build_quote_packages():
     # Powder-coat quote pack: the Spanish sheet + every painted part's PDF.
     # Deliberately NO DXFs -- the coater cuts nothing, and a flat pattern only
     # invites confusion. Narrowed to the paint BOM -- not every DXF_PART.
-    pack("segno_pintura.zip", ["segno_paint_quote"] + [s for s, *_ in PAINT_BOM], (".pdf",))
+    if with_pdf:
+        pack("segno_pintura.zip",
+             ["segno_paint_quote"] + [s for s, *_ in PAINT_BOM], (".pdf",))
     return zips
 
 
@@ -5136,6 +5152,7 @@ def main(argv):
             print("\nPaint quote sheet: out/segno_paint_quote.pdf")
         except Exception as e:  # pragma: no cover
             print(f"\n(paint quote skipped: {e})")
+    steps_built = "--no-step" not in argv
     if "--no-step" not in argv:
         try:
             d = build_diffuser_step()
@@ -5165,10 +5182,12 @@ def main(argv):
             print("\n3D STEP:\n  " + os.path.relpath(p, HERE) + " (+ per-part .step)")
         except ImportError as e:  # pragma: no cover -- no cadquery in this env
             print(f"\n(STEP skipped: {e})")
+            steps_built = False
         # anything else is a real build failure: let it crash the run. The old
         # blanket `except Exception` swallowed a NameError here for weeks and
         # shipped stale tower/stand/fit-test STEPs while printing EXIT=0.
-    for z in build_quote_packages():
+    for z in build_quote_packages(with_step=steps_built,
+                                  with_pdf="--no-pdf" not in argv):
         print("Quote package: out/" + os.path.basename(z))
     print("\nDrawing/package assertions ...", end=" ")
     _verify_drawing_package(with_pdf="--no-pdf" not in argv)

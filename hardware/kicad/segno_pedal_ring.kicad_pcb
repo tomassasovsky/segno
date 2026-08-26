@@ -1115,7 +1115,7 @@
 		(layer "F.Cu")
 		(uuid "b5a85b13-3928-4028-8d97-8b157b222ccc")
 		(at 36 36)
-		(descr "NeoPixel Ring 24 module, O65.5 OD / O52.3 ID / 3.2 thick -- the fitted part (#794). DOCUMENTATION ONLY: no pads. The module connects through J2 (WirePads_1x04) by flying wires; the Ring-16-era pin-mount pads (J3/ModuleMountPads_4) do NOT line up with this ring and are not used. No 3D model: the Ring 16's NeoPixel_PCB.wrl is the wrong diameter and a wrongly-sized model is worse than none.")
+		(descr "NeoPixel Ring 24 module, O65.5 OD / O52.3 ID / 3.2 thick -- the fitted part (#794). DOCUMENTATION ONLY: no pads. The module PIN-MOUNTS on J3 (ModuleMountPads_Ring24, re-cut for this ring at r=31.59 -- see MANUFACTURING.md); J2 (WirePads_1x04) remains as a flying-wire fallback. No 3D model: the Ring 16's NeoPixel_PCB.wrl is the wrong diameter and a wrongly-sized model is worse than none.")
 		(property "Reference" "RING1"
 			(at 0 -35 0)
 			(layer "F.SilkS")

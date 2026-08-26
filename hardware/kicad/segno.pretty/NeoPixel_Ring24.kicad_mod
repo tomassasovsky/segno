@@ -3,7 +3,7 @@
 	(generator "manual")
 	(layer "F.Cu")
 	(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
-	(descr "NeoPixel Ring 24 module, O65.5 OD / O52.3 ID / 3.2 thick -- the fitted part (#794). DOCUMENTATION ONLY: no pads. The module connects through J2 (WirePads_1x04) by flying wires; the Ring-16-era pin-mount pads (J3/ModuleMountPads_4) do NOT line up with this ring and are not used. No 3D model: the Ring 16's NeoPixel_PCB.wrl is the wrong diameter and a wrongly-sized model is worse than none.")
+	(descr "NeoPixel Ring 24 module, O65.5 OD / O52.3 ID / 3.2 thick -- the fitted part (#794). DOCUMENTATION ONLY: no pads. The module PIN-MOUNTS on J3 (ModuleMountPads_Ring24, re-cut for this ring at r=31.59 -- see MANUFACTURING.md); J2 (WirePads_1x04) remains as a flying-wire fallback. No 3D model: the Ring 16's NeoPixel_PCB.wrl is the wrong diameter and a wrongly-sized model is worse than none.")
 	(property "Reference" "RING1" (at 0 -35 0) (layer "F.SilkS") hide (effects (font (size 1 1)(thickness 0.15))))
 	(property "Value" "NeoPixel24" (at 0 35 0) (layer "F.Fab") hide (effects (font (size 1 1)(thickness 0.15))))
 	(fp_circle (center 0 0) (end 32.75 0) (stroke (width 0.12)(type solid))(fill none)(layer "Dwgs.User"))
