@@ -123,6 +123,19 @@ class LooperRepository {
   /// Broadcasts the input whose monitor-owned state a caller just changed.
   final StreamController<int> _monitorChanges =
       StreamController<int>.broadcast();
+
+  /// Broadcasts the input whose monitor chain just took a PARAMETER write,
+  /// throttled to [monitorParamAnnounceInterval] — see [monitorParamChanges].
+  final StreamController<int> _monitorParamChanges =
+      StreamController<int>.broadcast();
+
+  /// Per-input open throttle windows for [_monitorParamChanged]: while an
+  /// input's timer runs, further param writes only mark it dirty.
+  final Map<int, Timer> _paramAnnounceWindows = {};
+
+  /// Inputs written again inside their open window; each gets one trailing
+  /// announce when the window closes, so a sweep's LAST value always lands.
+  final Set<int> _paramAnnounceDirty = {};
   StreamSubscription<void>? _tickerSub;
   Timer? _pollTimer;
   LooperState? _last;
@@ -373,15 +386,60 @@ class LooperRepository {
   /// power, the mode, mask, volume, mute, a relink, and a rebind that
   /// rewrote the chain. A parameter write does not: those arrive at
   /// controller rate from a mapped CC, and a listener that persists what it
-  /// reads would write settings on every frame of a sweep. Following a
-  /// swept param needs the ≤10 Hz cadence the editor poll already uses
-  /// (#605).
+  /// reads would write settings on every frame of a sweep. Param writes get
+  /// their own throttled stream instead — [monitorParamChanges] (#605).
   Stream<int> get monitorChanges => _monitorChanges.stream;
+
+  /// The parameter-announce cadence: the same ≤10 Hz ceiling as the editor
+  /// sync poll (D-SYNC), which exists for exactly this class of problem.
+  static const Duration monitorParamAnnounceInterval = Duration(
+    milliseconds: 100,
+  );
+
+  /// Broadcasts the input whose monitor chain just took a parameter write —
+  /// [setMonitorEffectParam], the one monitor write [monitorChanges] stays
+  /// silent on — throttled to [monitorParamAnnounceInterval].
+  ///
+  /// A CC mapped to an input-stage param writes here at controller rate
+  /// (`ControlValueResolver` routes an `FxStage.input` target straight to the
+  /// repository), and without an announce the audio moves while the console
+  /// knob does not — until the next structural announce makes a listener
+  /// re-read the chain and the knob jumps (#605). This stream is what lets
+  /// the knob follow.
+  ///
+  /// Deliberately DISTINCT from [monitorChanges] so a listener can treat the
+  /// two differently: a structural announce is worth persisting, a swept
+  /// value is not — the editor-sync poll does not persist either, and a
+  /// persist-per-announce here would still write settings ten times a second
+  /// for the length of a sweep.
+  ///
+  /// Throttle shape: the first write announces immediately (the knob starts
+  /// moving on the first frame, not 100 ms late), writes inside the open
+  /// window coalesce, and a dirty window closes with one trailing announce —
+  /// so a burst produces its first and last values, never a stale rest.
+  Stream<int> get monitorParamChanges => _monitorParamChanges.stream;
 
   /// Announces a change to monitor [input]. Every monitor setter ends here.
   void _monitorChanged(int input) {
     if (_monitorChanges.isClosed) return;
     _monitorChanges.add(input);
+  }
+
+  /// Announces a parameter write to monitor [input]'s chain, coalescing to at
+  /// most one announce per [monitorParamAnnounceInterval] per input.
+  void _monitorParamChanged(int input) {
+    if (_monitorParamChanges.isClosed) return;
+    if (_paramAnnounceWindows.containsKey(input)) {
+      _paramAnnounceDirty.add(input);
+      return;
+    }
+    _monitorParamChanges.add(input);
+    _paramAnnounceWindows[input] = Timer(monitorParamAnnounceInterval, () {
+      _paramAnnounceWindows.remove(input);
+      // Trailing announce re-arms the window, so a sweep longer than one
+      // window keeps announcing at the cadence rather than once per sweep.
+      if (_paramAnnounceDirty.remove(input)) _monitorParamChanged(input);
+    });
   }
 
   /// Fires once per completed [applySession]: the rig that was on the engine
@@ -3271,6 +3329,10 @@ class LooperRepository {
     // owns them and emits optimistically), so there is nothing to re-emit.
     _monitorEffects[input] = List<TrackEffect>.of(effects)
       ..[index] = fx.copyWith(params: params);
+    // The throttled param announce, not [_monitorChanged]: this is the write
+    // that arrives at controller rate, and the structural stream's listeners
+    // persist what they read (#605).
+    _monitorParamChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMonitorInputFxParam(
       input: input,
@@ -3637,7 +3699,13 @@ class LooperRepository {
   Future<void> _stopPollingAndClose() async {
     _stopPolling();
     _stopReconnectPolling();
+    for (final window in _paramAnnounceWindows.values) {
+      window.cancel();
+    }
+    _paramAnnounceWindows.clear();
+    _paramAnnounceDirty.clear();
     await _monitorChanges.close();
+    await _monitorParamChanges.close();
     await _rigReplaced.close();
     await _controller.close();
   }
