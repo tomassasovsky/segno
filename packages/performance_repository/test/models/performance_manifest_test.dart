@@ -239,9 +239,10 @@ void main() {
         expect(decoded.trackChains, isEmpty);
         expect(decoded.masterEffects, isEmpty);
         expect(decoded.masterChainEnabled, isTrue);
-        // No tempo field either (#281): a pre-field capture reads back null,
-        // the exporter's cue to fall back to the live tempo as before.
-        expect(decoded.tempoBpm, isNull);
+        // No tempo field either (#281): a pre-field capture reads back the
+        // 0-as-unset sentinel — the exporter's cue that there is no tempo
+        // evidence here, same as a capture that never set one.
+        expect(decoded.tempoBpm, 0);
         // Everything the legacy schema DID describe is intact, defaulted to
         // audible — the pre-FX-v3 world had no other possibility.
         final lane = decoded.tracks.single.lanes.single;
@@ -253,8 +254,8 @@ void main() {
     );
 
     test(
-      'round-trips the arm-time tempo, and omits the key when none was '
-      'locked in (#281)',
+      'stores the arm-time tempo verbatim — 0 = unset, session-manifest '
+      'parity — and reads an absent key back as 0 (#281)',
       () {
         const withTempo = PerformanceArmSnapshot(
           clockFrame: 0,
@@ -271,6 +272,9 @@ void main() {
           87.5,
         );
 
+        // Unset is a literal 0, written verbatim like Session.tempoBpm —
+        // readers guard with `> 0`, so 0 and a pre-field absent key resolve
+        // identically (no tempo evidence).
         const noTempo = PerformanceArmSnapshot(
           clockFrame: 0,
           masterLengthFrames: 480,
@@ -279,14 +283,8 @@ void main() {
           limiterCeiling: 0.99,
           latencyOffsetFrames: 0,
         );
-        // Absent, not zero: "no tempo set" and "written before the field
-        // existed" both read back null and resolve identically downstream
-        // (the exporter's live-tempo fallback).
-        expect(noTempo.toJson().containsKey('tempoBpm'), isFalse);
-        expect(
-          PerformanceArmSnapshot.fromJson(noTempo.toJson()).tempoBpm,
-          isNull,
-        );
+        expect(noTempo.toJson()['tempoBpm'], 0);
+        expect(PerformanceArmSnapshot.fromJson(noTempo.toJson()).tempoBpm, 0);
       },
     );
 
@@ -337,6 +335,7 @@ void main() {
   group('PerformanceDisarmSnapshot', () {
     test('round-trips through JSON', () {
       const snapshot = PerformanceDisarmSnapshot(
+        tempoBpm: 132,
         tracks: [
           PerformanceTrackSnapshot(
             channel: 3,
@@ -349,7 +348,20 @@ void main() {
       );
       final decoded = PerformanceDisarmSnapshot.fromJson(snapshot.toJson());
       expect(decoded.tracks.single.channel, 3);
+      // The authoritative export tempo (#281) — the arm-time read can
+      // predate D6's lock engaging, this one cannot.
+      expect(decoded.tempoBpm, 132);
     });
+
+    test(
+      'reads a pre-#281 snapshot (no tempoBpm key) back as 0-as-unset',
+      () {
+        final decoded = PerformanceDisarmSnapshot.fromJson(const {
+          'tracks': <dynamic>[],
+        });
+        expect(decoded.tempoBpm, 0);
+      },
+    );
   });
 
   group('PerformanceLayerEntry', () {
@@ -441,38 +453,6 @@ void main() {
       );
       expect(manifest.stoppedEarly, 'disk_full');
     });
-
-    test(
-      "tempoBpm surfaces the arm snapshot's capture-time tempo, and null "
-      'when the snapshot is absent or predates the field (#281)',
-      () {
-        const withTempo = PerformanceManifest(
-          slug: 's',
-          finalized: true,
-          native: {},
-          armSnapshot: PerformanceArmSnapshot(
-            clockFrame: 0,
-            masterLengthFrames: 480,
-            masterGain: 1,
-            limiterEnabled: false,
-            limiterCeiling: 0.99,
-            latencyOffsetFrames: 0,
-            tempoBpm: 132,
-          ),
-        );
-        expect(withTempo.tempoBpm, 132);
-        // Round-trips through the sidecar's own JSON, since the getter is
-        // what a re-export reads back off disk.
-        expect(PerformanceManifest.fromJson(withTempo.toJson()).tempoBpm, 132);
-
-        const noSnapshot = PerformanceManifest(
-          slug: 's',
-          finalized: true,
-          native: {},
-        );
-        expect(noSnapshot.tempoBpm, isNull);
-      },
-    );
 
     test('defaults native-derived fields when absent', () {
       const manifest = PerformanceManifest(

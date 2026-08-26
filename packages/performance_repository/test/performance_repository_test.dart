@@ -196,8 +196,8 @@ void main() {
     });
 
     test(
-      "persists the engine snapshot's tempo in the arm-time snapshot, and "
-      'omits it when no tempo was set (#281)',
+      "persists the engine snapshot's tempo verbatim in the arm-time "
+      'crash-survival snapshot (#281)',
       () async {
         engine.tempoBpm = 87.5;
 
@@ -209,19 +209,6 @@ void main() {
                 as Map<String, dynamic>;
         expect(armJson['tempoBpm'], 87.5);
         expect(PerformanceArmSnapshot.fromJson(armJson).tempoBpm, 87.5);
-
-        // A second capture with the tempo since reset to "none" (0) writes
-        // no tempo key at all — absent and unset resolve identically for a
-        // reader (the exporter's live-tempo fallback).
-        await repo.disarmAndFinalize();
-        engine.tempoBpm = 0;
-        clock = clock.add(const Duration(minutes: 1));
-        await repo.arm();
-        final secondDir = repo.armedDirectory!;
-        final secondJson =
-            jsonDecode(File('$secondDir/arm-snapshot.json').readAsStringSync())
-                as Map<String, dynamic>;
-        expect(secondJson.containsKey('tempoBpm'), isFalse);
       },
     );
 
@@ -759,15 +746,18 @@ void main() {
     );
 
     test(
-      'the finalized manifest carries the tempo locked in at ARM time, not '
-      'whatever the engine reads by disarm (#281)',
+      'the disarm snapshot RE-READS the engine tempo — arm over an empty '
+      'grid at 96, dial in 120 before the first loop, and the finalized '
+      'manifest carries 120 as its authoritative tempo, keeping the stale '
+      'arm-time 96 only as the crash-salvage fallback (D6, #281)',
       () async {
-        engine.tempoBpm = 98;
+        engine.tempoBpm = 96;
         await armAndSeedNative(engine, repo);
         final dir = repo.armedDirectory!;
-        // The live tempo moves on mid-capture — the manifest must keep the
-        // arm-instant value a re-export stamps the .als with.
-        engine.tempoBpm = 140;
+        // D6's tempo lock only engages once grid content exists, so a tempo
+        // set (or re-derived by the first loop) after an arm-over-empty-grid
+        // was never visible to the arm-time read.
+        engine.tempoBpm = 120;
 
         await repo.disarm();
 
@@ -775,8 +765,8 @@ void main() {
           jsonDecode(File('$dir/performance.json').readAsStringSync())
               as Map<String, dynamic>,
         );
-        expect(manifest.tempoBpm, 98);
-        expect(manifest.armSnapshot!.tempoBpm, 98);
+        expect(manifest.disarmSnapshot!.tempoBpm, 120);
+        expect(manifest.armSnapshot!.tempoBpm, 96);
       },
     );
 
@@ -1049,6 +1039,32 @@ void main() {
         );
         expect(manifest.armSnapshot, isNotNull);
         expect(manifest.finalized, isTrue);
+      },
+    );
+
+    test(
+      "a crash-salvaged manifest keeps the arm snapshot's tempo as the only "
+      'tempo evidence — there is no disarm pass to re-read it (#281)',
+      () async {
+        engine.tempoBpm = 96;
+        await repo.arm(); // writes arm-snapshot.json, never disarmed
+        final dir = repo.armedDirectory!;
+        writeNativeSidecar(dir);
+
+        await repo.recoverCapture(dir);
+
+        final manifest = PerformanceManifest.fromJson(
+          jsonDecode(File('$dir/performance.json').readAsStringSync())
+              as Map<String, dynamic>,
+        );
+        expect(manifest.armSnapshot!.tempoBpm, 96);
+        expect(
+          manifest.disarmSnapshot,
+          isNull,
+          reason:
+              'no live engine at salvage time — daw_export falls back to '
+              "the arm snapshot's tempo for exactly this case",
+        );
       },
     );
 

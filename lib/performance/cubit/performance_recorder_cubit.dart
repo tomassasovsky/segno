@@ -45,27 +45,20 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// Still injectable, and still narrow — the tests that model a filling disk
   /// pass their own function and are unaffected.
   ///
-  /// [currentTempoBpm] resolves the live tempo the `.als` export falls back
-  /// to (`_writeDawExports` → `DawManifestReader.read`'s `tempoBpm`
-  /// argument), read fresh at each export rather than captured once — a
-  /// narrow function dependency (matching [now]/[freeSpaceBytes]'s own
-  /// pattern here) rather than this cubit taking a `LooperRepository`
-  /// dependency outright, since only this one `double` is needed. Defaults
-  /// to "unknown" (`0`), which `daw_export`'s own fallback resolves to 120
-  /// BPM — this cubit's composition root
-  /// (`lib/app/view/app.dart`) wires the live `LooperRepository`'s
-  /// `state.transport.tempoBpm` in production. A *fallback* only, since
-  /// #281: `performance.json` now persists the tempo locked in (D6) at arm
-  /// time (`PerformanceArmSnapshot.tempoBpm`), and `_writeDawExports`
-  /// prefers that — so a [reExport] of an old capture keeps the tempo it was
-  /// actually played at even after the live tempo has moved on. The callback
-  /// covers the manifests that carry none: bundles written before the field
-  /// existed, and captures armed with no tempo set at all.
+  /// The `.als` export's tempo needs no dependency here at all (#281):
+  /// `performance.json` persists the tempo D6 had locked in by disarm
+  /// (`PerformanceDisarmSnapshot.tempoBpm`, arm-time copy for crash
+  /// salvage), and `DawManifestReader.read` resolves it from the manifest
+  /// itself — falling back to its own fixed 120 BPM for a bundle carrying
+  /// none (written before the field existed, or captured with no tempo set),
+  /// where the live transport tempo at export time would be an arbitrary
+  /// value unrelated to the take anyway.
   ///
   /// [currentChains] resolves the REAL lane/monitor effect chains and
   /// master-limiter state to stamp into the arm snapshot
-  /// ([PerformanceRepository.arm]'s `chains`), read fresh at each arm — the
-  /// same narrow function dependency as [currentTempoBpm], since the mapping
+  /// ([PerformanceRepository.arm]'s `chains`), read fresh at each arm — a
+  /// narrow function dependency (matching [now]/[freeSpaceBytes]'s own
+  /// pattern here), since the mapping
   /// from the live rig lives in the session feature rather than in this cubit.
   /// Defaults to the empty snapshot (what every call site passed before this
   /// was wired); the composition root (`lib/app/view/app.dart`) supplies
@@ -76,7 +69,6 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     Duration renderPollInterval = const Duration(milliseconds: 200),
     DateTime Function() now = DateTime.now,
     Future<int?> Function(String path)? freeSpaceBytes,
-    double Function() currentTempoBpm = _unknownTempoBpm,
     PerformanceChains Function() currentChains = _noChains,
   }) : _performance = performance,
        _armedTickInterval = armedTickInterval,
@@ -85,16 +77,10 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
        _freeSpaceBytes =
            freeSpaceBytes ??
            ((String path) async => performance.freeSpaceBytes(path)),
-       _currentTempoBpm = currentTempoBpm,
        _currentChains = currentChains,
        super(const PerformanceRecorderIdle()) {
     _statusSubscription = _performance.captureStatus.listen(_onStatus);
   }
-
-  /// The default `currentTempoBpm`: `0` ("unknown"), which `daw_export`
-  /// resolves to its own 120 BPM fallback — the same outcome as today, for
-  /// any caller that does not wire a real tempo source.
-  static double _unknownTempoBpm() => 0;
 
   /// The default `currentChains`: an empty rig, which is what
   /// [PerformanceRepository.arm] already assumes when given nothing.
@@ -142,7 +128,6 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   final PerformanceRepository _performance;
   final DateTime Function() _now;
   final Future<int?> Function(String path) _freeSpaceBytes;
-  final double Function() _currentTempoBpm;
   final PerformanceChains Function() _currentChains;
 
   /// How often [PerformanceRecorderArmed.elapsed] refreshes while armed.
@@ -651,17 +636,11 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     // failure precisely by whether this throws, and swallowing it there would
     // report a failed re-export as a success. The capture-completion path
     // guards at its own call site instead — see [_finishRender].
-    // The tempo actually locked in during THIS capture wins over the live
-    // transport's (#281): by re-export time the live tempo may have long
-    // moved on, and stamping it onto an old take's .als would misrepresent
-    // the performance. `null` — a bundle written before the manifest carried
-    // a tempo, or a capture that had no tempo set at all — falls back to the
-    // live callback, exactly the pre-field behavior.
-    final capturedTempoBpm = _readManifest(dir)?.tempoBpm;
-    final project = DawManifestReader.read(
-      dir,
-      tempoBpm: capturedTempoBpm ?? _currentTempoBpm(),
-    );
+    // Tempo comes from the manifest itself (#281): DawManifestReader.read
+    // resolves the capture's own persisted disarm-time (arm-time for a
+    // crash salvage) tempo, falling back to its fixed 120 BPM for a bundle
+    // carrying none.
+    final project = DawManifestReader.read(dir);
     if (project != null) {
       await File('$dir/project.als').writeAsBytes(buildAls(project));
     }
@@ -682,11 +661,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
       return PerformanceManifest.fromJson(
         jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>,
       );
-    } on Object {
-      // Corrupt OR wrong-shaped: well-formed JSON with wrong-typed fields
-      // raises [Error]s from the decode casts, not [FormatException] — the
-      // same catch-everything posture `PerformanceRepository`'s own sidecar
-      // reads take. Either way there is nothing readable to report.
+    } on FormatException {
       return null;
     }
   }

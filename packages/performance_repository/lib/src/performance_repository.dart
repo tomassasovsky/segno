@@ -307,12 +307,11 @@ class PerformanceRepository {
       limiterEnabled: chains.limiterEnabled,
       limiterCeiling: chains.limiterCeiling,
       latencyOffsetFrames: snapshot.recordOffsetFrames,
-      // The tempo locked in (D6) at the arm instant, so a re-export long
-      // after the live tempo has moved on still stamps the take's own tempo
-      // (#281). `0` is the engine's "no tempo set" — recorded as absent,
-      // since it resolves the same way a legacy snapshot does (the
-      // exporter's live-tempo fallback).
-      tempoBpm: snapshot.tempoBpm > 0 ? snapshot.tempoBpm : null,
+      // The engine tempo at the arm instant, verbatim (0 = unset, matching
+      // the session manifest's own sentinel). The crash-salvage fallback
+      // only — the disarm snapshot re-reads it authoritatively, because
+      // D6's tempo lock may not even have engaged yet this early (#281).
+      tempoBpm: snapshot.tempoBpm,
       tracks: tracks,
       monitors: _monitorsJson(chains),
       // The bus stages (FX v3, R20/R3): recorded so a replay can rebuild the
@@ -409,6 +408,14 @@ class PerformanceRepository {
   Future<EngineResult> _finalizeArmed(String dir) async {
     _setStatus(PerformanceCaptureStatus.finalizing);
     final disarmSnapshot = PerformanceDisarmSnapshot(
+      // Re-read here, not copied from the arm snapshot: D6's tempo lock
+      // only engages once grid content exists, so a tempo dialed in — or
+      // derived by the first loop — after an arm-over-empty-grid is only
+      // knowable now. This is the authoritative tempo a DAW export stamps;
+      // the arm-time copy serves crash salvage, which never gets this pass
+      // (#281). Read before perfDisarm below, while the engine is still the
+      // live session's.
+      tempoBpm: _engine.snapshot().tempoBpm,
       tracks: _captureSettledLanes(
         dir,
         chains: const PerformanceChains(),

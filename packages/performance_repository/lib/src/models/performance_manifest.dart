@@ -161,7 +161,7 @@ class PerformanceArmSnapshot {
     required this.limiterEnabled,
     required this.limiterCeiling,
     required this.latencyOffsetFrames,
-    this.tempoBpm,
+    this.tempoBpm = 0,
     this.tracks = const [],
     this.monitors = const [],
     this.trackChains = const [],
@@ -184,7 +184,7 @@ class PerformanceArmSnapshot {
         limiterEnabled: json['limiterOn'] as bool,
         limiterCeiling: (json['limiterCeiling'] as num).toDouble(),
         latencyOffsetFrames: (json['latencyOffsetFrames'] as num).toInt(),
-        tempoBpm: (json['tempoBpm'] as num?)?.toDouble(),
+        tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
         fxStagesVersion:
             (json['fxStagesVersion'] as num?)?.toInt() ?? legacyFxStagesVersion,
         tracks: [
@@ -233,16 +233,16 @@ class PerformanceArmSnapshot {
   /// The active device profile's latency offset in frames at arm time.
   final int latencyOffsetFrames;
 
-  /// Denominator-note beats per minute locked in (D6) at arm time, or `null`
-  /// when no tempo was set — or when the snapshot predates the field (#281).
-  /// Threaded from `EngineSnapshot.tempoBpm` the same way A7 threads tempo
-  /// into the session manifest's v4 `tempoBpm`, so a re-export of an old
-  /// capture stamps the tempo the take was actually played at rather than
-  /// whatever the live transport happens to read by then. Both `null` cases
-  /// resolve identically downstream — the exporter's live-tempo fallback —
-  /// which is why an unset tempo (`0` at the engine) is recorded as absent
-  /// rather than as a literal zero.
-  final double? tempoBpm;
+  /// Denominator-note beats per minute the engine read at the arm instant;
+  /// `0` = unset, stored verbatim exactly like `Session.tempoBpm` (the same
+  /// engine value A7 threads into the session manifest's v4 `tempoBpm`), and
+  /// what a pre-#281 snapshot reads back as. The **crash-salvage fallback**,
+  /// not the authoritative export tempo: D6's tempo lock only engages once
+  /// grid content exists, so a tempo dialed in (or derived by the first
+  /// loop) after an arm-over-empty-grid is only knowable at disarm —
+  /// [PerformanceDisarmSnapshot.tempoBpm] carries that read, and a capture
+  /// that crashed before its disarm pass falls back to this one.
+  final double tempoBpm;
 
   /// Every track's state at arm time.
   final List<PerformanceTrackSnapshot> tracks;
@@ -280,7 +280,7 @@ class PerformanceArmSnapshot {
     'limiterOn': limiterEnabled,
     'limiterCeiling': limiterCeiling,
     'latencyOffsetFrames': latencyOffsetFrames,
-    if (tempoBpm != null) 'tempoBpm': tempoBpm,
+    'tempoBpm': tempoBpm,
     if (fxStagesVersion != legacyFxStagesVersion)
       'fxStagesVersion': fxStagesVersion,
     'tracks': [for (final t in tracks) t.toJson()],
@@ -300,22 +300,33 @@ class PerformanceArmSnapshot {
 @immutable
 class PerformanceDisarmSnapshot {
   /// Creates a [PerformanceDisarmSnapshot].
-  const PerformanceDisarmSnapshot({this.tracks = const []});
+  const PerformanceDisarmSnapshot({this.tempoBpm = 0, this.tracks = const []});
 
   /// Rebuilds a [PerformanceDisarmSnapshot] from a decoded JSON map.
   factory PerformanceDisarmSnapshot.fromJson(Map<String, dynamic> json) =>
       PerformanceDisarmSnapshot(
+        tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
         tracks: [
           for (final t in (json['tracks'] as List<dynamic>? ?? const []))
             PerformanceTrackSnapshot.fromJson(t as Map<String, dynamic>),
         ],
       );
 
+  /// Denominator-note beats per minute the engine read at disarm; `0` =
+  /// unset, stored verbatim (session-manifest parity), and what a pre-#281
+  /// snapshot reads back as. The **authoritative** export tempo: D6's tempo
+  /// lock only engages once grid content exists, so the arm-time read
+  /// ([PerformanceArmSnapshot.tempoBpm]) can predate a tempo dialed in — or
+  /// derived by the first loop — during the take, while by disarm the lock
+  /// has engaged in every case where the take has a grid at all.
+  final double tempoBpm;
+
   /// Every track's state at disarm time.
   final List<PerformanceTrackSnapshot> tracks;
 
   /// Serializes this snapshot to a JSON map.
   Map<String, dynamic> toJson() => {
+    'tempoBpm': tempoBpm,
     'tracks': [for (final t in tracks) t.toJson()],
   };
 }
@@ -441,13 +452,6 @@ class PerformanceManifest {
   /// The disarm-time snapshot, or `null` for a capture recovered from a crash
   /// (there is no live engine left to take a second pass from).
   final PerformanceDisarmSnapshot? disarmSnapshot;
-
-  /// The tempo locked in at arm time (denominator-note BPM), or `null` when
-  /// the capture had no tempo set — or when the bundle predates the field
-  /// (#281). Carried by [armSnapshot]; surfaced here because the manifest is
-  /// what a re-export reads, and `null` is its cue to fall back to the live
-  /// tempo exactly as it did before the field existed.
-  double? get tempoBpm => armSnapshot?.tempoBpm;
 
   /// The negotiated sample rate, from the native fields.
   int get sampleRate => (native['sample_rate'] as num?)?.toInt() ?? 0;
