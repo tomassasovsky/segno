@@ -890,6 +890,105 @@ class SettingsRepository {
   Future<void> saveMonitorEffects(int input, String encoded) =>
       _store.setString(_monitorFxKey(input), encoded);
 
+  // ---- per-input conditioning + loop-close restoration (#697) ----
+  //
+  // Input-scoped, like the `monitor_*.N` family — a fact about the instrument
+  // plugged into a socket, not about the interface (unlike `latency_offset.*`).
+  // Every load returns `null` when its key was never written, so the caller
+  // owns the default (see `InputConditioningCubit` — the plan's default table:
+  // stage off, HPF 40 Hz, hum 50 Hz × 4 harmonics, expander -55 dB / 2.0 /
+  // 150 ms, restore flags 0). The conditioning params are stored in their real
+  // units (Hz / dB / ms / ratio), matching the engine's `le_cond_param` surface.
+
+  String _inputCondEnabledKey(int input) => 'input_cond.$input';
+  String _inputCondHpfKey(int input) => 'input_cond_hpf.$input';
+  String _inputCondHumKey(int input) => 'input_cond_hum.$input';
+  String _inputCondHumHarmonicsKey(int input) =>
+      'input_cond_hum_harmonics.$input';
+  String _inputCondExpThreshKey(int input) => 'input_cond_exp_thresh.$input';
+  String _inputCondExpRatioKey(int input) => 'input_cond_exp_ratio.$input';
+  String _inputCondExpReleaseKey(int input) => 'input_cond_exp_release.$input';
+  String _inputRestoreKey(int input) => 'input_restore.$input';
+
+  /// Loads hardware [input]'s conditioning-stage on/off flag, or `null` if it
+  /// was never saved (the caller defaults to off).
+  Future<bool?> loadInputConditioningEnabled(int input) =>
+      _store.getBool(_inputCondEnabledKey(input));
+
+  /// Saves hardware [input]'s conditioning-stage on/off flag.
+  Future<void> saveInputConditioningEnabled(
+    int input, {
+    required bool enabled,
+  }) => _store.setBool(_inputCondEnabledKey(input), value: enabled);
+
+  /// Loads hardware [input]'s conditioning high-pass cutoff in Hz (`0` = HPF
+  /// section off), or `null` if never saved (the caller defaults to `40`).
+  Future<double?> loadInputConditioningHpfHz(int input) =>
+      _store.getDouble(_inputCondHpfKey(input));
+
+  /// Saves hardware [input]'s conditioning high-pass cutoff in Hz.
+  Future<void> saveInputConditioningHpfHz(int input, double hz) =>
+      _store.setDouble(_inputCondHpfKey(input), hz);
+
+  /// Loads hardware [input]'s conditioning mains-hum base frequency in Hz
+  /// (`0` = hum section off), or `null` if never saved (the caller defaults to
+  /// `50`).
+  Future<int?> loadInputConditioningHumHz(int input) =>
+      _store.getInt(_inputCondHumKey(input));
+
+  /// Saves hardware [input]'s conditioning mains-hum base frequency in Hz.
+  Future<void> saveInputConditioningHumHz(int input, int hz) =>
+      _store.setInt(_inputCondHumKey(input), hz);
+
+  /// Loads hardware [input]'s conditioning hum-notch count (base included,
+  /// `1..8`), or `null` if never saved (the caller defaults to `4`).
+  Future<int?> loadInputConditioningHumHarmonics(int input) =>
+      _store.getInt(_inputCondHumHarmonicsKey(input));
+
+  /// Saves hardware [input]'s conditioning hum-notch count.
+  Future<void> saveInputConditioningHumHarmonics(int input, int count) =>
+      _store.setInt(_inputCondHumHarmonicsKey(input), count);
+
+  /// Loads hardware [input]'s conditioning expander threshold in dB, or `null`
+  /// if never saved (the caller defaults to `-55`).
+  Future<double?> loadInputConditioningExpThresholdDb(int input) =>
+      _store.getDouble(_inputCondExpThreshKey(input));
+
+  /// Saves hardware [input]'s conditioning expander threshold in dB.
+  Future<void> saveInputConditioningExpThresholdDb(int input, double db) =>
+      _store.setDouble(_inputCondExpThreshKey(input), db);
+
+  /// Loads hardware [input]'s conditioning expander ratio (`1:N`), or `null`
+  /// if never saved (the caller defaults to `2.0`).
+  Future<double?> loadInputConditioningExpRatio(int input) =>
+      _store.getDouble(_inputCondExpRatioKey(input));
+
+  /// Saves hardware [input]'s conditioning expander ratio.
+  Future<void> saveInputConditioningExpRatio(int input, double ratio) =>
+      _store.setDouble(_inputCondExpRatioKey(input), ratio);
+
+  /// Loads hardware [input]'s conditioning expander release in ms, or `null`
+  /// if never saved (the caller defaults to `150`).
+  Future<double?> loadInputConditioningExpReleaseMs(int input) =>
+      _store.getDouble(_inputCondExpReleaseKey(input));
+
+  /// Saves hardware [input]'s conditioning expander release in ms.
+  Future<void> saveInputConditioningExpReleaseMs(int input, double ms) =>
+      _store.setDouble(_inputCondExpReleaseKey(input), ms);
+
+  /// Loads hardware [input]'s loop-close restoration opt-in as a flag bitmask
+  /// (`1` = denoise, `2` = declip), or `null` if never saved (the caller
+  /// defaults to `0` — no restoration). The offline restoration worker itself
+  /// is engine-side; this is the per-input opt-in the Dart trigger policy
+  /// reads.
+  Future<int?> loadInputRestore(int input) =>
+      _store.getInt(_inputRestoreKey(input));
+
+  /// Saves hardware [input]'s loop-close restoration opt-in [flags] bitmask
+  /// (`1` = denoise, `2` = declip).
+  Future<void> saveInputRestore(int input, int flags) =>
+      _store.setInt(_inputRestoreKey(input), flags);
+
   // ---- structural output gate ----
 
   /// Loads hardware [output]'s gate flag on [device]. `null` means the key was

@@ -17,6 +17,7 @@ export 'src/audio_engine.dart'
         EnginePluginHosting,
         EngineResult,
         EngineRouting,
+        InputConditioningControl,
         LooperModeControl,
         LooperTransport,
         MasterBusControl,
@@ -41,6 +42,7 @@ export 'src/engine_snapshot.dart'
         kMaxLanes,
         kMaxMonitoredInputs;
 export 'src/fx_fingerprint.dart' show FxFingerprint;
+export 'src/input_conditioning_param.dart' show InputConditioningParam;
 export 'src/lane_cache.dart' show LaneCacheState;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/mock_audio_engine.dart' show MockAudioEngine, MockPluginSlotHandle;
