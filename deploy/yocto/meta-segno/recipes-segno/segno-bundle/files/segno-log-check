@@ -1,0 +1,93 @@
+#!/bin/sh
+# Say out loud when the persistent journal did not actually land on /data (#438).
+#
+# The failure this exists to catch is silent by construction. Storage=auto (the
+# journald drop-in) narrows it — journald only goes persistent when
+# /var/log/journal exists, and the bind mount is what brings it into existence —
+# but does not close it: systemd creates a mount unit's Where= directory just
+# before mounting, so a mount attempt that failed AFTER that mkdir leaves an
+# empty directory on the tmpfs that /var/log symlinks into, and journald writes
+# a healthy-looking journal into RAM there. `journalctl` reports success,
+# `journalctl -b -1` is empty after the next reboot, and the next unexplained
+# shutdown is unknowable for the same reason as the last one, now with an
+# apparent fix in the way.
+#
+# So this compares the DEVICE behind each bind mount against the device behind
+# /data. Same device means the evidence is on the data partition; anything else
+# is reported three ways: to the journal (readable at least until this boot
+# ends), to `systemctl --failed` by exiting non-zero, and to
+# /run/segno-log-degraded, which is the tmpfs-marker idiom this image already
+# uses for boot state (segno-ota-check's /run/segno-update-pending).
+#
+# Every path is injectable so the decision can be tested without a device — see
+# test/run_log_persist_tests.sh.
+set -u
+
+MOUNTINFO="${SEGNO_MOUNTINFO:-/proc/self/mountinfo}"
+DATA_DIR="${SEGNO_DATA_DIR:-/data}"
+JOURNAL_DIR="${SEGNO_JOURNAL_DIR:-/var/volatile/log/journal}"
+COREDUMP_DIR="${SEGNO_COREDUMP_DIR:-/var/lib/systemd/coredump}"
+MARKER="${SEGNO_LOG_MARKER:-/run/segno-log-degraded}"
+
+log() { echo "segno-log-check: $*" >&2; }
+
+problems=""
+note() {
+    problems="${problems}${problems:+
+}$1"
+    log "$1"
+}
+
+# mountinfo field 3 is the mount's device (major:minor), field 5 the mount
+# point. Comparing the device rather than merely finding the mount point is
+# what separates "bound to /data" from "still the tmpfs underneath": a bind
+# mount reports the device of the filesystem its source came from.
+dev_of() {
+    [ -r "$MOUNTINFO" ] || return 0
+    awk -v target="$1" '$5 == target { print $3; exit }' "$MOUNTINFO"
+}
+
+if [ ! -r "$MOUNTINFO" ]; then
+    note "cannot read $MOUNTINFO, so nothing about log storage can be trusted"
+fi
+
+data_dev=$(dev_of "$DATA_DIR")
+[ -n "$data_dev" ] || note "$DATA_DIR is not mounted"
+
+# Each bind mount, against /data. No device at all means the path is not a
+# mount point, which on this image means the journal is on the tmpfs and the
+# cores are on the A/B rootfs — gone at the next boot and the next update
+# respectively.
+check_on_data() {
+    what=$1
+    dir=$2
+    dev=$(dev_of "$dir")
+    if [ -z "$dev" ]; then
+        note "$what is not mounted at $dir; it is on whatever filesystem lies under it, not on $DATA_DIR"
+    elif [ "$dev" != "$data_dev" ]; then
+        note "$what at $dir is on device $dev, not on $DATA_DIR (device $data_dev)"
+    fi
+}
+
+check_on_data "the journal" "$JOURNAL_DIR"
+check_on_data "coredump storage" "$COREDUMP_DIR"
+
+# The mount can be right and the journal still be volatile: journald only
+# moves to disk when Storage= allows it and the flush actually ran, so a
+# Storage=volatile override or a flush that never happened looks exactly like
+# a mount that failed to land. A persistent journal has a machine-id directory
+# holding system.journal.
+if [ -n "$(dev_of "$JOURNAL_DIR")" ] &&
+    ! ls "$JOURNAL_DIR"/*/system.journal >/dev/null 2>&1; then
+    note "no system.journal under $JOURNAL_DIR; journald is not writing there"
+fi
+
+if [ -n "$problems" ]; then
+    printf '%s\n' "$problems" > "$MARKER" 2>/dev/null ||
+        log "could not even write the marker $MARKER"
+    log "log storage is NOT persistent: this boot's evidence dies with the boot"
+    exit 1
+fi
+
+rm -f "$MARKER"
+log "journal and coredumps are on $DATA_DIR"

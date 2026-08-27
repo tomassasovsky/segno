@@ -341,6 +341,12 @@ and a Pi 5 are available:
 - [ ] **≥2 h thermal soak** (audio + dual-display + GPU, closed enclosure):
       `vcgencmd get_throttled` stays `0x0`, no xrun-rate regression; record
       results here.
+- [ ] **Re-run the ≥2 h audio soak on an image with the persistent journal**
+      (#438 / PR #810): journald now writes to the same ext4 + jbd2 journal on
+      `/data` as the recorder's takes, so the soak must show no new xruns or
+      write-latency spikes with logging active. Until this passes on hardware,
+      the persistent-journal change is wired but **not verified**
+      (`autonomy:blocked-verify`).
 - [ ] Stompable footswitch panel survives stage-abuse testing.
 
 ## Pi 4B validation pass (substitute gear: SD + monitor + TV)
