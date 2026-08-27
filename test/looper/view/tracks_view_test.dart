@@ -62,8 +62,12 @@ void main() {
 
   setUp(() {
     // The toast registry is module-level and survives between tests; a stale
-    // entry would make the next identical toast a silent duplicate.
+    // entry would make the next identical toast a silent duplicate. The
+    // `toastification` singleton leaks too, across files, under
+    // `--optimization` (#875) — reset both so this test's toasts get a live
+    // overlay regardless of what ran before.
     resetAppToastsForTest();
+    resetToastificationForTest();
     addTearDown(() => dismissAppToast(AppToastId.undoClearAll));
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
