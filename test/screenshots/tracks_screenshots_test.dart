@@ -332,17 +332,59 @@ void main() {
     skip: !hasScreenshotFonts || !kConsoleMode,
   );
 
-  // #692: the FX-mode stage transform — the whole stage takes the FX purple,
-  // meters recede to 40%, and each tile re-dresses with a power pill and its
-  // chain's entries (or NO CHAIN). Same seed as the nominal decal, in FX mode
-  // and with two real chains, so the decal shows the transform end to end.
+  // #692 (owner pivot 2026-08-27): FX mode is an OVERLAY, not the in-place
+  // tile transform. The four columns render EXACTLY as normal under a dim
+  // scrim, and each footswitch's bound chain floats as a per-pedal ON/OFF
+  // control (default style C, the slim per-column footer). Each track switch is
+  // bound to its own Track-stage chain here, so the decal shows a bound chain
+  // per column — ON, an OFF (bypassed) chain, and an empty NO-CHAIN column —
+  // the overlay end to end (#884: the bound chain is what the stage names).
   testWidgets(
-    'console main window — FX mode transform (#692)',
+    'console main window — FX mode overlay (#692)',
     (tester) async {
       const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
       for (var i = 0; i < names.length; i++) {
         await tracks.rename(i, names[i]);
       }
+      // The overlay resolves each footswitch's bound chain from the live rig,
+      // so the repository's chain lookups mirror the seeded tracks.
+      final ch0 = [
+        BuiltInEffect(type: TrackEffectType.drive),
+        BuiltInEffect(type: TrackEffectType.reverb),
+      ];
+      final ch1 = [BuiltInEffect(type: TrackEffectType.filter)];
+      final ch2 = [BuiltInEffect(type: TrackEffectType.tremolo)];
+      when(() => repository.allTrackChains()).thenReturn({
+        0: FxChainEnvelope(entries: ch0),
+        1: FxChainEnvelope(chainEnabled: false, entries: ch1),
+        2: FxChainEnvelope(entries: ch2),
+        3: const FxChainEnvelope(),
+      });
+      when(() => repository.trackEffects(0)).thenReturn(ch0);
+      when(() => repository.trackEffects(1)).thenReturn(ch1);
+      when(() => repository.trackEffects(2)).thenReturn(ch2);
+      when(() => repository.trackEffects(3)).thenReturn(const []);
+      when(() => repository.trackChainEnabled(0)).thenReturn(true);
+      when(() => repository.trackChainEnabled(1)).thenReturn(false);
+      when(() => repository.trackChainEnabled(2)).thenReturn(true);
+      when(() => repository.trackChainEnabled(3)).thenReturn(true);
+      const trackButtons = [
+        PedalButton.track1,
+        PedalButton.track2,
+        PedalButton.track3,
+        PedalButton.track4,
+      ];
+      await control.setGlobalBindings(
+        PedalBindingSet([
+          for (var i = 0; i < trackButtons.length; i++)
+            PedalBinding(
+              key: PedalBindingKey(button: trackButtons[i], bank: 0),
+              target: FxChainTarget(
+                FxAddress(stage: FxStage.track, index: i),
+              ).canonicalString(),
+            ),
+        ]),
+      );
       control.setMode(InteractionMode.fx);
       seed(
         LooperState(
