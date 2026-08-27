@@ -16,6 +16,8 @@ const Map<int, String> _kBuiltInEffectNames = {
   5: 'Octaver',
   6: 'Echo',
   7: 'Reverb',
+  // 8 is the hosted-plugin row, rendered by its own branch in _renderEffect.
+  9: 'Chorus',
 };
 
 /// The `type` code a chain entry carrying a `plugin` key uses — matches

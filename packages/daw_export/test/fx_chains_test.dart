@@ -78,6 +78,43 @@ void main() {
       expect(text, contains('2. Reverb (params: 0.50, 0.50, 0.35, 0.00)'));
     });
 
+    // Chorus (9) can never resolve to a device chain — it has no shipped Segno
+    // VST3 — so this text is the ONLY record of it in an export. Naming it
+    // matters more here than for a type the .als can carry itself.
+    test('names an effect numbered above the VST3-backed range', () {
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'lanes': [
+                  {
+                    'lane': 0,
+                    'deferred': false,
+                    'effects': [
+                      {
+                        'type': 9,
+                        'params': [0.25, 0.5, 0.4, 0.0],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          'disarmSnapshot': {'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
+
+      final text = FxChainsWriter.render(dir.path);
+      expect(text, contains('1. Chorus (params: 0.25, 0.50, 0.40, 0.00)'));
+      expect(text, isNot(contains('Unknown')));
+    });
+
     test('renders a lane with no effects explicitly', () {
       File('${dir.path}/performance.json').writeAsStringSync(
         jsonEncode({
