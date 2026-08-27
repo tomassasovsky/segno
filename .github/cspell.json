@@ -24,7 +24,7 @@
     "**/third_party/signalsmith-stretch/**",
     "**/third_party/vst3sdk/**"
   ],
-              "words": [
+                "words": [
     "Ableton",
     "accum",
     "aconnect",
@@ -86,6 +86,7 @@
     "behavioural",
     "Biacco",
     "bigpicture",
+    "binfmt",
     "biquad",
     "bitbake",
     "BITEXACT",
@@ -317,6 +318,7 @@
     "fxpreset",
     "gapless",
     "Gbps",
+    "gdbstub",
     "Geeek",
     "generalise",
     "generalised",
@@ -633,6 +635,7 @@
     "protoboard",
     "Proxmox",
     "psola",
+    "ptrace",
     "pubspecs",
     "PULLUP",
     "pulseaudio",
