@@ -588,6 +588,7 @@ void main() {
       required String name,
       required InteractionMode mode,
       FxAddress? fxTarget,
+      Map<int, String> inputNames = const {},
     }) {
       seed(LooperState(tracks: [track]));
       return tester.pumpWidget(
@@ -618,6 +619,7 @@ void main() {
                       onUndo: (_) {},
                       onRedo: (_) {},
                       fxTarget: fxTarget,
+                      inputNames: inputNames,
                     ),
                   ),
                 ),
@@ -663,6 +665,46 @@ void main() {
       expect(find.text('MASTER · REVERB'), findsOneWidget);
       expect(find.text('GUITAR'), findsNothing);
       expect(find.textContaining('TRACK'), findsNothing);
+    });
+
+    testWidgets('a NAMED input reads its name over a smaller INPUT n, chain '
+        'in the chips', (tester) async {
+      await pumpColumn(
+        tester,
+        name: 'TRACK 5',
+        mode: InteractionMode.fx,
+        // A footswitch bound to input socket 0's monitor chain, and the player
+        // has named that socket "Guitar".
+        fxTarget: const FxAddress(stage: FxStage.input),
+        inputNames: const {0: 'Guitar'},
+        track: Track(effects: [BuiltInEffect(type: TrackEffectType.filter)]),
+      );
+
+      // Two tiers: the socket's own name on the primary line, a smaller
+      // INPUT 1 beneath it. The chain is NOT jammed into the identity — it
+      // reads from the entry-run chip.
+      expect(find.text('GUITAR'), findsOneWidget); // primary, uppercased
+      expect(find.byKey(const Key('tracks_tileFxTargetSub')), findsOneWidget);
+      expect(find.text('INPUT 1'), findsOneWidget); // sub-label
+      expect(find.text('Filter'), findsOneWidget); // chain, in the chips
+      // The identity line carries no "· CHAIN" for a named input.
+      expect(find.textContaining('·'), findsNothing);
+    });
+
+    testWidgets('an UNNAMED input reads a single INPUT n line', (tester) async {
+      await pumpColumn(
+        tester,
+        name: 'TRACK 5',
+        mode: InteractionMode.fx,
+        fxTarget: const FxAddress(stage: FxStage.input, index: 1),
+        // No name for socket 1.
+        track: Track(effects: [BuiltInEffect(type: TrackEffectType.filter)]),
+      );
+
+      // Single line, the generic stage label — no name, no second tier.
+      expect(find.text('INPUT 2'), findsOneWidget);
+      expect(find.byKey(const Key('tracks_tileFxTargetSub')), findsNothing);
+      expect(find.text('Filter'), findsOneWidget); // chain, in the chips
     });
 
     testWidgets('leaving FX mode brings the track name back as the identity', (

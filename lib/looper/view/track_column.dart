@@ -32,6 +32,7 @@ class TrackColumn extends StatelessWidget {
     this.isPrimary = false,
     this.onCrownPrimary,
     this.fxTarget,
+    this.inputNames = const {},
     super.key,
   });
 
@@ -53,6 +54,14 @@ class TrackColumn extends StatelessWidget {
   /// [track] (the polled snapshot the stage renders); [fxTarget] renames the
   /// cell, it does not re-source the chain.
   final FxAddress? fxTarget;
+
+  /// The player's own names for hardware inputs, keyed by socket index (the
+  /// input-rename feature; `InputsState.names`).
+  ///
+  /// Only consulted when [fxTarget] is an Input-stage chain: a named socket
+  /// makes the cell read `GUITAR 1 · …` instead of `INPUT 1 · …` (owner's
+  /// call). Empty — the default — always yields the generic `INPUT n`.
+  final Map<int, String> inputNames;
 
   /// The track's resolved display name.
   final String name;
@@ -108,17 +117,41 @@ class TrackColumn extends StatelessWidget {
     // column's track. The stage defaults to this column's own Track chain (what
     // the per-column tap toggles), so a track chain still reads `TRACK n · …`,
     // named like every other target rather than borrowing the track's name. The
-    // chain name is the head of the entries the polled snapshot carries; an
-    // empty chain has no name and the cell falls back to the bare stage label.
+    // chain name is the head of the entries the polled snapshot carries.
     final fxAddress =
         fxTarget ?? FxAddress(stage: FxStage.track, index: track.channel);
-    final fxTargetLabel = _stageFxTargetLabel(l10n, fxAddress);
+    final fxStageLabel = _stageFxTargetLabel(l10n, fxAddress);
     final fxChainName = track.effects.isEmpty
         ? null
         : fxBlockName(l10n, track.effects.first);
-    final fxCellLabel = fxChainName == null
-        ? fxTargetLabel
-        : l10n.stageFxCellLabel(fxTargetLabel, fxChainName.toUpperCase());
+    // A NAMED input is the ONE two-tier identity (owner's call): the socket's
+    // own name on top, a smaller `INPUT n` sub-label under it, and the chain in
+    // the entry-run chips below (not jammed into the identity line). Every
+    // other stage — and an UNNAMED input — is a single `TARGET · CHAIN` line,
+    // or the bare stage when the chain is empty.
+    final fxInputName = fxAddress.stage == FxStage.input
+        ? (inputNames[fxAddress.index] ?? '')
+        : '';
+    final String fxIdentityPrimary;
+    final String? fxIdentitySub;
+    if (fxInputName.isNotEmpty) {
+      fxIdentityPrimary = fxInputName.toUpperCase();
+      fxIdentitySub = fxStageLabel;
+    } else if (fxAddress.stage == FxStage.input || fxChainName == null) {
+      // Unnamed input, or an empty chain on any stage: the bare stage label.
+      fxIdentityPrimary = fxStageLabel;
+      fxIdentitySub = null;
+    } else {
+      fxIdentityPrimary = l10n.stageFxCellLabel(
+        fxStageLabel,
+        fxChainName.toUpperCase(),
+      );
+      fxIdentitySub = null;
+    }
+    // The screen-reader identity flattens the two tiers into one phrase.
+    final fxCellLabel = fxIdentitySub == null
+        ? fxIdentityPrimary
+        : '$fxIdentityPrimary $fxIdentitySub';
     // Crown badge (D18, B5c): visible only in Sync/Band (Wave-view style,
     // per the brainstorm) — an inert, empty slot in every other mode so the
     // column layout never shifts when the mode changes.
@@ -351,7 +384,8 @@ class TrackColumn extends StatelessWidget {
                     if (isFx)
                       Positioned.fill(
                         child: _FxChainDressing(
-                          identityLabel: fxCellLabel,
+                          identityPrimary: fxIdentityPrimary,
+                          identitySub: fxIdentitySub,
                           effects: track.effects,
                           chainEnabled: track.chainEnabled,
                         ),
@@ -597,13 +631,14 @@ class _PendingArmBadge extends StatelessWidget {
   }
 }
 
-/// The track-name-free FX stage prefix of an FX-mode cell identity (#692).
+/// The generic FX stage label of an FX-mode cell — the stage the bound chain
+/// sits on: `INPUT n` / `TRACK n` / `LANE n` / `MASTER` (#692).
 ///
-/// Names the stage the bound chain sits on — `INPUT n` / `TRACK n` / `LANE n`
-/// / `MASTER` — WITHOUT the rig's own track naming that `fxStageLabel` (the
-/// pedal-assignment label) threads in: an FX-mode cell must never borrow the
-/// track's name as its identity, even when the bound chain happens to target a
-/// track. Indices are 1-based, matching every other jack name the rig gives.
+/// Indices are 1-based, matching every other jack name the rig gives. This is
+/// name-free by design: TRACK never borrows the column's track name (the
+/// conflation fix), and LANE / MASTER carry no name. A NAMED input's own name
+/// is layered on TOP of this in [TrackColumn] as a two-tier identity (the name
+/// over this `INPUT n` sub-label); this helper always returns the generic form.
 String _stageFxTargetLabel(AppLocalizations l10n, FxAddress address) =>
     switch (address.stage) {
       FxStage.input => l10n.stageFxTargetInput(address.index + 1),
@@ -636,14 +671,19 @@ String _stageFxTargetLabel(AppLocalizations l10n, FxAddress address) =>
 /// through to the tile beneath this overlay.
 class _FxChainDressing extends StatelessWidget {
   const _FxChainDressing({
-    required this.identityLabel,
+    required this.identityPrimary,
+    required this.identitySub,
     required this.effects,
     required this.chainEnabled,
   });
 
-  /// The cell's chain-first identity — `TARGET · CHAIN` (e.g.
-  /// `MASTER · REVERB`), or the bare stage `TARGET` when the chain is empty.
-  final String identityLabel;
+  /// The cell's primary identity line — `TARGET · CHAIN` (e.g.
+  /// `MASTER · REVERB`), the bare stage `TARGET`, or a NAMED input's own name.
+  final String identityPrimary;
+
+  /// The smaller, dimmer second identity tier, or null for a single-line
+  /// identity. Only a named input carries one: its `INPUT n` under the name.
+  final String? identitySub;
 
   /// The bound chain's entries, in processing order.
   final List<TrackEffect> effects;
@@ -678,7 +718,8 @@ class _FxChainDressing extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _FxCellIdentity(
-                        label: identityLabel,
+                        primary: identityPrimary,
+                        sub: identitySub,
                         enabled: chainEnabled,
                       ),
                       // Inter-element gaps opened to the pen's proportions:
@@ -738,40 +779,72 @@ class _FxNoChain extends StatelessWidget {
   }
 }
 
-/// The chain-first cell identity, `TARGET · CHAIN` — the dominant focal text of
-/// an FX-mode cell, in the UI sans, sitting at the top of the centered group.
+/// The cell identity — the dominant focal text of an FX-mode cell, in the UI
+/// sans, at the top of the centered group.
 ///
-/// Names the FX stage the footswitch's bound chain attaches to and the chain
-/// itself — the FX control the cell drives — NOT the track in the column
-/// (#692). It is the on-screen twin of the tile's FX semantic label. Near-white
-/// ([SurfaceTheme.textPrimary]) when engaged; a flat, OPAQUE muted grey
-/// ([SurfaceTheme.textSecondary]) when bypassed — never a translucent white,
-/// which over the green meter tints green. Carries no semantics of its own: the
-/// tile's FX label already announces this same identity.
+/// Usually a single [primary] line: `TARGET · CHAIN` (e.g. `MASTER · REVERB`),
+/// a bare stage `TARGET`, or — for a NAMED input — the socket's own name, with
+/// a smaller, dimmer [sub] tier (`INPUT n`) directly beneath it. Names the FX
+/// control the cell drives, NOT the track in the column (#692). The [primary]
+/// line is near-white ([SurfaceTheme.textPrimary]) when engaged and a flat,
+/// OPAQUE muted grey ([SurfaceTheme.textSecondary]) when bypassed — never a
+/// translucent white, which over the green meter tints green; the [sub] line is
+/// always the muted grey. Carries no semantics of its own: the tile's FX label
+/// already announces this same identity.
 class _FxCellIdentity extends StatelessWidget {
-  const _FxCellIdentity({required this.label, required this.enabled});
+  const _FxCellIdentity({
+    required this.primary,
+    required this.sub,
+    required this.enabled,
+  });
 
-  final String label;
+  final String primary;
+
+  final String? sub;
 
   final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return AppText(
-      label,
-      key: const Key('tracks_tileFxTarget'),
-      textAlign: TextAlign.center,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontFamily: SurfaceTheme.displayFont,
-        color: enabled ? surface.textPrimary : surface.textSecondary,
-        fontSize: kConsoleMode ? 30 : 19,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.5,
-        height: 1,
-      ),
+    final subLabel = sub;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppText(
+          primary,
+          key: const Key('tracks_tileFxTarget'),
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: SurfaceTheme.displayFont,
+            color: enabled ? surface.textPrimary : surface.textSecondary,
+            fontSize: kConsoleMode ? 30 : 19,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
+            height: 1,
+          ),
+        ),
+        if (subLabel != null) ...[
+          const SizedBox(height: kConsoleMode ? 6 : 4),
+          AppText(
+            subLabel,
+            key: const Key('tracks_tileFxTargetSub'),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: SurfaceTheme.displayFont,
+              color: surface.textMuted,
+              fontSize: kConsoleMode ? 18 : 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1,
+              height: 1,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

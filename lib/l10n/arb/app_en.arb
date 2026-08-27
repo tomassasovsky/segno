@@ -775,7 +775,7 @@
     },
     "stageFxTargetInput": "INPUT {number}",
     "@stageFxTargetInput": {
-        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a hardware input's monitor chain. 1-based, upper-case for stage distance. Carries no track name (the bound chain need not belong to the column's track).",
+        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a hardware input's monitor chain, when that input has no user-assigned name. 1-based, upper-case for stage distance. Carries no track name (the bound chain need not belong to the column's track).",
         "placeholders": { "number": { "type": "int", "example": "1" } }
     },
     "stageFxTargetTrack": "TRACK {number}",
