@@ -23,6 +23,34 @@ static int env_int(const char *k, int dflt) {
   return (v && *v) ? atoi(v) : dflt;
 }
 
+/* Trace the EGL setup path too: if no frame ever appears, knowing how far
+ * Qt got (initialize -> surface -> make-current -> swap) is what tells you
+ * whether rendering never started or never completed. */
+unsigned int eglInitialize(void *dpy, int *maj, int *min) {
+  static unsigned int (*real)(void *, int *, int *);
+  if (!real) real = dlsym(RTLD_NEXT, "eglInitialize");
+  unsigned int r = real(dpy, maj, min);
+  fprintf(stderr, "[fbshim] eglInitialize -> %u\n", r);
+  return r;
+}
+
+void *eglCreateWindowSurface(void *dpy, void *cfg, void *win, const int *attr) {
+  static void *(*real)(void *, void *, void *, const int *);
+  if (!real) real = dlsym(RTLD_NEXT, "eglCreateWindowSurface");
+  void *s = real(dpy, cfg, win, attr);
+  fprintf(stderr, "[fbshim] eglCreateWindowSurface -> %p\n", s);
+  return s;
+}
+
+unsigned int eglMakeCurrent(void *dpy, void *d, void *r, void *ctx) {
+  static unsigned int (*real)(void *, void *, void *, void *);
+  if (!real) real = dlsym(RTLD_NEXT, "eglMakeCurrent");
+  unsigned int rc = real(dpy, d, r, ctx);
+  static int once;
+  if (!once++) fprintf(stderr, "[fbshim] eglMakeCurrent -> %u\n", rc);
+  return rc;
+}
+
 unsigned int eglSwapBuffers(void *dpy, void *surface) {
   static unsigned int (*real)(void *, void *);
   static void (*readpixels)(int, int, int, int, unsigned, unsigned, void *);

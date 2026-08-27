@@ -10,10 +10,10 @@ ROOTFS=~/Downloads/LooperX_1.0.2_extracted/rootfs ./run.sh 60
 
 ## Status
 
-The app **boots and reaches its audio engine** — graphics, MIDI and ALSA are all
-satisfied and `InputFXThread CPU affinity: 0..3` appears, which is the DSP
-engine's own threads starting. It then segfaults before rendering a frame, so
-no UI has been captured yet. See "Where it stops".
+The app **boots, initializes audio, and runs without crashing** (with one
+binary patch, described below). It does **not** render: `eglInitialize`
+succeeds but `eglCreateWindowSurface` is never called, so Qt never creates its
+QQuickView and no frame has been captured yet.
 
 ## Why each substitution exists
 
@@ -37,50 +37,47 @@ at all.
 Do **not** pass `--privileged`: it breaks library resolution against the
 bind-mounted rootfs, and nothing here needs it.
 
-## The fatal crash, as far as it is understood
+## Crashes found and fixed
 
-`-strace` pins the sequence:
+Each was located with `qemu-arm-static -strace` plus qemu's gdbstub, then the
+faulting PC resolved by hand (gdb shows `?? ()`): library bases come from
+correlating `openat`/`mmap2` pairs in the trace, and **the main binary loads at
+`0x40000000`**, so `binary offset = PC - 0x40000000` disassembles directly.
 
-```
-sched_setscheduler(23, 2, ...) = -1 errno=1 (Operation not permitted)
---- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=0x702d7562} ---
-```
-
-The app asks for `SCHED_RR` on an engine thread and is refused, then
-immediately faults. `si_code=1` is SEGV_MAPERR and `si_addr=0x702d7562` is
-**ASCII bytes** (`p`, `-`, `u`, `b`) — a string being dereferenced as a
-pointer, i.e. a garbage or type-confused pointer rather than a plain null.
-
-Granting `CAP_SYS_NICE` makes the EPERM go away but **does not** fix the crash,
-so the scheduling failure is a symptom sharing a cause rather than the cause.
-Creating the content trees the app expects
-(`/media/hg03-content/Resources/Audio`, `Resources/Audio`, the `usb_mnt`
-folders) does not fix it either.
-
-The strongest remaining hypothesis is still the empty audio-device identity:
-the app logs `Failed to fetch the audio device ""` shortly before, and an empty
-name flowing into a lookup is exactly the shape that yields a bogus pointer.
+1. **A buffer-pool clear walked off the end of its array.** `null` advertises
+   `RATE [1..4294967295]`, `BUFFER_SIZE [1..4294967295]` and
+   `CHANNELS [1..1073741823]`, and wrapping it in `plug` does **not** help --
+   plug converts rather than constrains, so the client still sees the wide
+   ranges. The app sized a pool from them, allocated ~20 buffers, then cleared
+   ~10000 entries, `memset`-ing whatever heap followed. Fixed by clamping the
+   `hw_params` getters in `alsashim.c` to a plausible interface.
+2. **A gain loop over four channel buffers held two garbage pointers.** A
+   `vldr`/`vmul`/`vstmia` loop over `ip, r0, r1, r2` where `r1`/`r2` contained
+   UTF-16 text from adjacent heap. The device must report **4 channels** -- the
+   HG08 has four inputs. Hence `RIG_CHANS = 4`.
+3. **A main-thread null-singleton retry loop.** A call at binary offset
+   `0x42a504` passes a file-local static pointer (slot `0x241bed4`, no dynamic
+   relocation) that is never constructed, and the callee dereferences it at
+   `+0x68`. The app's own SIGSEGV handler recovers and retries forever, so
+   startup never completes. NOPing that `bl` stops the loop entirely
+   (`[ALARM]` count drops to 0) and lets startup continue.
 
 ## Where it stops
 
-```
-Device Identifier ( Line: 95 ): Can't find file: ""
-void airHost::updateAudioDeviceChanged(bool) Failed to fetch the audio device "" from the device manager.
-InputFXThread CPU affinity: 1 [ALARM] Caught Segmentation fault signal, ...
-qemu: uncaught target signal 11 (Segmentation fault)
-```
+`eglInitialize -> 1`, but `eglCreateWindowSurface` is never called and Qt emits
+**no** `qt.scenegraph` or `qt.quick` output at all -- the QQuickView is never
+created. The app is past audio init (`RtAudio: AUDIO THREAD CPU affinity` and
+`ChordDetectorThread` both start) and no longer crashes, so something else
+gates UI creation.
 
-Note the device name is **empty**, not wrong — the lookup produced `""` and the
-app then built an empty file path from it. So the miss is upstream of the file:
-the device manager never resolved a device identity for our synthetic card.
+`Failed to fetch the audio device ""` reappears once the null-singleton call is
+patched out, which suggests that call **was** the device-identity resolution:
+skipping it is a workaround, not a fix. Making it succeed is the most promising
+next step.
 
-The app has a `KnownDevices` table and looks for a `DeviceConfiguration.json`
-that exists neither on disk in the rootfs nor in its Qt resources, so it is
-either generated at runtime or expected somewhere not yet created.
-
-`[ALARM] Caught Segmentation fault` is the app's own handler — it survives
-several of these before one becomes fatal, so the crash is recoverable state
-being hit repeatedly rather than a single hard fault.
+Note that `main.qml`'s root is an `Item`, not a `Window` -- the view is created
+in C++, and its geometry is gated on `hwInfo.isRadxa` (800x1280 portrait on the
+device, 1280x800 otherwise).
 
 ## Two ways to run it
 
@@ -98,10 +95,15 @@ being hit repeatedly rather than a single hard fault.
   `sched_setscheduler(SCHED_RR)` is refused with EPERM (see below).
 - `qemu-arm-static -strace` is the most useful tool here by far — it gives the
   syscall trace and the faulting address without needing symbols.
-- Symbolizing is still unsolved: gdb sees `?? ()` because it has no module
-  bases, and `/proc/<qemu-pid>/maps` captured at the wrong moment shows only
-  qemu itself. Reconstructing bases from the `openat`/`mmap2` pairs in an
-  `-strace` log is the obvious next attempt.
+- **Symbolizing works.** The main binary loads at `0x40000000`, so
+  `arm-none-eabi-objdump -d --start-address=$((PC-0x40000000))` disassembles the
+  faulting instruction directly.
+- **Qt logging**: `-E QT_LOGGING_RULES=...` gets mangled by the shell. The app
+  probes `/usr/qt/qtlogging.ini` -- write the rules there instead.
+- **There is a startup race.** Without `-strace` the app dies; with `-strace`
+  on stderr (slow, through the Docker pipe) it survives. `-D file` is too fast
+  to help and `--cpus=1` does not help, so it is syscall latency, not
+  parallelism.
 - **How far it gets depends on whether the PCM opens.** With `LOOPERX_PCM`
   pointing at a working device the app starts `InputFXThread` and dies; with it
   pointing at a nonexistent device (so `snd_pcm_open` fails) it gets *further* —

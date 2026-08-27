@@ -34,6 +34,14 @@ static const char *CARD_NAME = "HG08";
 static int ctl_sentinel;
 #define CTL ((void *)&ctl_sentinel)
 
+/* LOOPERX_NO_AUDIO=1 makes the rig present NO sound cards at all, so RtAudio
+ * finds zero devices and the app never starts its engine. Useful to reach the
+ * UI when the engine path is the thing crashing. */
+static int no_audio(void) {
+  const char *e = getenv("LOOPERX_NO_AUDIO");
+  return e && *e && *e != '0';
+}
+
 static const char *subst_pcm(void) {
   const char *e = getenv("LOOPERX_PCM");
   return (e && *e) ? e : "null";
@@ -43,7 +51,7 @@ static const char *subst_pcm(void) {
 
 int snd_card_next(int *rcard) {
   if (!rcard) return -ENODEV_;
-  *rcard = (*rcard < 0) ? 0 : -1; /* card 0, then end of list */
+  *rcard = (!no_audio() && *rcard < 0) ? 0 : -1; /* card 0, then end of list */
   return 0;
 }
 
@@ -68,7 +76,7 @@ int snd_card_get_longname(int card, char **name) {
 int snd_ctl_open(void **ctl, const char *name, int mode) {
   (void)name;
   (void)mode;
-  if (!ctl) return -ENODEV_;
+  if (!ctl || no_audio()) return -ENODEV_;
   *ctl = CTL;
   return 0;
 }
@@ -197,10 +205,68 @@ int snd_pcm_unlink(void *pcm) {
   return 0;
 }
 
+/* ---- hw_params: make the device look like real hardware ------------------
+ *
+ * alsa-lib's `null` advertises everything: RATE [1 .. 4294967295],
+ * BUFFER_SIZE [1 .. 4294967295], CHANNELS [1 .. 1073741823]. Wrapping it in a
+ * `plug` does NOT help, because plug converts rather than constrains -- the
+ * client still sees the wide ranges and sizes itself from them.
+ *
+ * The app reads these maxima to size a pool of DSP buffers, allocates a few
+ * dozen, and then clears the pool using a count derived from the advertised
+ * numbers -- walking ~10000 entries off the end of a ~20 entry array and
+ * memset()ing whatever heap follows. Clamping the getters to a plausible
+ * audio interface is what stops that.
+ */
+#define RIG_RATE 48000u
+#define RIG_CHANS 4u  /* the HG08 has four inputs (Input 1..4 in its UI) */
+#define RIG_PERIOD 256ul
+#define RIG_PERIODS 4u
+#define RIG_BUFFER (RIG_PERIOD * RIG_PERIODS)
+
+#define GET_U(name, value)                                    \
+  int name(const void *p, unsigned int *v) {                  \
+    (void)p;                                                  \
+    if (v) *v = (value);                                      \
+    return 0;                                                 \
+  }
+#define GET_UL(name, value)                                   \
+  int name(const void *p, unsigned long *v) {                 \
+    (void)p;                                                  \
+    if (v) *v = (value);                                      \
+    return 0;                                                 \
+  }
+#define GET_U_DIR(name, value)                                \
+  int name(const void *p, unsigned int *v, int *d) {          \
+    (void)p;                                                  \
+    if (v) *v = (value);                                      \
+    if (d) *d = 0;                                            \
+    return 0;                                                 \
+  }
+#define GET_UL_DIR(name, value)                               \
+  int name(const void *p, unsigned long *v, int *d) {         \
+    (void)p;                                                  \
+    if (v) *v = (value);                                      \
+    if (d) *d = 0;                                            \
+    return 0;                                                 \
+  }
+
+GET_U(snd_pcm_hw_params_get_channels_min, RIG_CHANS)
+GET_U(snd_pcm_hw_params_get_channels_max, RIG_CHANS)
+GET_U_DIR(snd_pcm_hw_params_get_rate_min, RIG_RATE)
+GET_U_DIR(snd_pcm_hw_params_get_rate_max, RIG_RATE)
+GET_UL_DIR(snd_pcm_hw_params_get_period_size_min, RIG_PERIOD)
+GET_UL_DIR(snd_pcm_hw_params_get_period_size_max, RIG_PERIOD)
+GET_U_DIR(snd_pcm_hw_params_get_periods_min, RIG_PERIODS)
+GET_U_DIR(snd_pcm_hw_params_get_periods_max, RIG_PERIODS)
+GET_UL(snd_pcm_hw_params_get_buffer_size_min, RIG_BUFFER)
+GET_UL(snd_pcm_hw_params_get_buffer_size_max, RIG_BUFFER)
+
 int snd_pcm_open(void **pcm, const char *name, int stream, int mode) {
   static int (*real)(void **, const char *, int, int);
   if (!real) real = dlsym(RTLD_NEXT, "snd_pcm_open");
   if (!real) return -ENODEV_;
+  if (no_audio()) return -ENODEV_;
   const char *sub = subst_pcm();
   fprintf(stderr, "[alsashim] snd_pcm_open(%s) -> %s\n", name ? name : "(null)",
           sub);
