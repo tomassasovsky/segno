@@ -24,7 +24,7 @@
     "**/third_party/signalsmith-stretch/**",
     "**/third_party/vst3sdk/**"
   ],
-    "words": [
+      "words": [
     "Ableton",
     "accum",
     "aconnect",
@@ -139,6 +139,7 @@
     "chmaps",
     "chokepoint",
     "choosable",
+    "Chor",
     "chromeless",
     "CHSV",
     "Clarett",
@@ -302,6 +303,7 @@
     "fwrite",
     "fxcount",
     "FXDEVICES",
+    "fxpreset",
     "gapless",
     "Gbps",
     "Geeek",

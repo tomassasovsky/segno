@@ -229,6 +229,63 @@ good news (a filter-based cab is cheaper than an IR loader) but it means the
 eleven cabinet voicings are ours to author, not to copy. Deciding how they
 are modeled and measured is a direction call, not a taste one.
 
+## How a .fxpreset actually lands (and what Chorus is)
+
+A `.fxpreset` is a **whole rack**, not an effect. `Ed's Rack / Vocal Chorus`
+carries 52 parameters spanning compressor, 4-band EQ, wah, overdrive, amp+cab,
+chorus, octaver, delay and reverb. So a preset imports as a segno **chain** — an
+ordered list of `TrackEffect` entries — never as a single entry.
+
+Chorus is one *block* inside that chain. Its slice of the preset is four keys:
+
+```
+Chor       = 1.0     -> the chain entry's `enabled` bit
+Chor Rate  = 0.127   -> params[0]
+Chor Depth = 0.443   -> params[1]
+Chor Mix   = 0.401   -> params[2]
+```
+
+The module on/off key becomes the per-slot enable bit, not a parameter — which
+is why 19 of 26 modules fit the current 4-wide parameter row (B1).
+
+### Nothing imports until a rack is fully covered
+
+An importer that silently drops the blocks segno lacks would produce a chain
+labelled "Vocal Chorus" that sounds nothing like it. So the import gate is
+per-rack: a rack becomes importable when **every** block in its schema exists.
+
+Coverage today, after Chorus (segno can express Overdrive/Distort → drive,
+LPF → filter, Delay → delay, Dub Delay → echo, the three reverbs → reverb,
+Octaver → octaver, Pumper → tremolo, Chorus → chorus):
+
+| rack | expressible | still missing |
+|---|---|---|
+| Rhythmic | 4 / 6 | **EQ, Slicer** |
+| Ed's | 5 / 9 | Amp+Cab, Compressor, EQ, Wah |
+| Dub | 3 / 6 | Compressor, Doubler, EQ |
+| Lo-Fi | 3 / 6 | Degrade, EQ, Vinyl |
+| Studio | 3 / 7 | Compressor, EQ, Mod, Pitch Shift |
+| Drum | 2 / 5 | Compressor, EQ, Transient |
+| Guitar | 2 / 7 | Amp+Cab, Mod, Spring, Wah, Whammy |
+| Vocal | 2 / 7 | Compressor, Doubler, EQ, HP/Gate, Pitch Shift |
+| Vocal Tuner | 2 / 8 | Compressor, Doubler, EQ, HP/Gate, Harmonizer, Smart Tune |
+
+### Build order, by how many racks each block unblocks
+
+EQ (8 racks), Compressor (6), Doubler (3), then Amp+Cab / Wah / Mod /
+Pitch Shift / HP/Gate (2 each), then Slicer, Degrade, Vinyl, Transient,
+Spring, Whammy, Harmonizer, Smart Tune (1 each).
+
+### The near-term target: make Rhythmic Rack importable
+
+**Rhythmic is two blocks from the finish line — EQ and Slicer.** Landing those
+makes it the first fully importable rack and lets the preset importer be built
+and proven end to end against 10 real presets, instead of waiting on all
+twenty-one modules. EQ is the right next module on both counts: it unblocks
+eight racks, and it is half of the shortest path to a working import.
+
+Note EQ is also the first module that needs B1's widen, so that lands with it.
+
 ## Risks
 
 - **Phase 2's blast radius reaches `daw_export`.** Widening the parameter
