@@ -776,10 +776,19 @@ class SettingsRepository {
   String _monitorLaneFxKey(int input, int lane) =>
       'monitor_lane_fx.$input.$lane';
 
-  // Structural output gate. Absence of a key means ENABLED (default-on); only
-  // explicitly-disabled outputs are written, so no fixed bound is needed and
-  // the set is self-cleaning when devices change.
-  String _outputEnabledKey(int output) => 'output_enabled.$output';
+  // Structural output gate. Keyed per DEVICE and socket, like [_inputNameKey]
+  // and [_latencyKey]: the flag is a fact about a physical socket, and sockets
+  // belong to devices — Out 3/4 disabled as one interface's phones pair must
+  // not silence another interface whose Out 3/4 feed the PA. Absence of a key
+  // means ENABLED (default-on); only explicitly-disabled outputs are written,
+  // so no fixed bound is needed and the set is self-cleaning when devices
+  // change.
+  String _outputEnabledKey(String device, int output) =>
+      'output_enabled.$device.$output';
+
+  // The pre-device-keyed shape (#569). Never written any more; read once by
+  // [loadOutputEnabled]'s adoption migration and then removed.
+  String _legacyOutputEnabledKey(int output) => 'output_enabled.$output';
 
   /// Loads hardware [input]'s LEGACY single-route monitor routing as
   /// `(enabled, outputMask)`, or `null` if it was never saved. Read only by the
@@ -883,20 +892,41 @@ class SettingsRepository {
 
   // ---- structural output gate ----
 
-  /// Loads hardware [output]'s gate flag. `null` means the key was never
-  /// written, which (default-on) the caller reads as ENABLED; `false` is the
-  /// only value ever stored (an explicitly-disabled output).
-  Future<bool?> loadOutputEnabled(int output) =>
-      _store.getBool(_outputEnabledKey(output));
+  /// Loads hardware [output]'s gate flag on [device]. `null` means the key was
+  /// never written, which (default-on) the caller reads as ENABLED; `false` is
+  /// the only value ever stored (an explicitly-disabled output).
+  ///
+  /// A value stored under the legacy global key (`output_enabled.N`, pre
+  /// device keying) is adopted by the first device that reads it: written
+  /// under that device's key and removed. One-way and once — the global flag
+  /// described whichever rig was patched when it was written, and the device
+  /// in front of the player when the migration runs is the best owner it has.
+  /// Any other interface starts default-on, which is the per-device point.
+  Future<bool?> loadOutputEnabled({
+    required String device,
+    required int output,
+  }) async {
+    final stored = await _store.getBool(_outputEnabledKey(device, output));
+    if (stored != null) return stored;
+    final legacy = await _store.getBool(_legacyOutputEnabledKey(output));
+    if (legacy == null) return null;
+    await _store.setBool(_outputEnabledKey(device, output), value: legacy);
+    await _store.remove(_legacyOutputEnabledKey(output));
+    return legacy;
+  }
 
-  /// Persists hardware [output]'s gate. Default-on: an enabled output REMOVES
-  /// the key (so absence == enabled and the set self-cleans); a disabled output
-  /// writes `false`.
-  Future<void> saveOutputEnabled(int output, {required bool enabled}) async {
+  /// Persists hardware [output]'s gate on [device]. Default-on: an enabled
+  /// output REMOVES the key (so absence == enabled and the set self-cleans);
+  /// a disabled output writes `false`.
+  Future<void> saveOutputEnabled({
+    required String device,
+    required int output,
+    required bool enabled,
+  }) async {
     if (enabled) {
-      await _store.remove(_outputEnabledKey(output));
+      await _store.remove(_outputEnabledKey(device, output));
     } else {
-      await _store.setBool(_outputEnabledKey(output), value: false);
+      await _store.setBool(_outputEnabledKey(device, output), value: false);
     }
   }
 

@@ -489,8 +489,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         output: event.output,
         enabled: event.enabled,
       );
+      // Keyed to the open device (the latency-offset precedent): the gate is
+      // a fact about this interface's socket, not about "output N" anywhere.
       unawaited(
-        _settings?.saveOutputEnabled(event.output, enabled: event.enabled),
+        _settings?.saveOutputEnabled(
+          device: _repository.state.status.deviceName,
+          output: event.output,
+          enabled: event.enabled,
+        ),
       );
     });
     on<LooperSessionLoaded>((_, _) => _resyncSessionChains());

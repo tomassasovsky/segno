@@ -61,7 +61,11 @@ void main() {
   late SettingsTrayCubit tray;
   late StreamController<int> monitorChanges;
 
-  setUpAll(() => registerFallbackValue(MonitorMode.off));
+  setUpAll(() {
+    registerFallbackValue(MonitorMode.off);
+    // For the guard tests' `any(that: ...)` event matchers.
+    registerFallbackValue(const LooperOutputEnabledToggled(0, enabled: true));
+  });
 
   setUp(() {
     bloc = _MockLooperBloc();
@@ -707,6 +711,120 @@ void main() {
 
       verify(
         () => bloc.add(const LooperOutputEnabledToggled(3, enabled: true)),
+      ).called(1);
+    });
+
+    testWidgets('switching off a non-last output asks nothing', (
+      tester,
+    ) async {
+      // Three outputs live (_rig is 0x7): out 1 off leaves two — reversible
+      // by ear, so the guard must not become friction.
+      await pump(tester, stage: FxStage.master);
+
+      await tester.tap(find.byKey(const Key('signal_output_switch_1')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('signal_last_output_dialog')), findsNothing);
+      verify(
+        () => bloc.add(const LooperOutputEnabledToggled(1, enabled: false)),
+      ).called(1);
+    });
+
+    testWidgets('the last live output intercepts the off with the confirm', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        stage: FxStage.master,
+        state: const LooperState(
+          outputEnabledMask: 0x1,
+          status: EngineStatus(inputChannels: 2, outputChannels: 4),
+        ),
+      );
+      final l10n = l10nOf(tester);
+
+      await tester.tap(find.byKey(const Key('signal_output_switch_0')));
+      await tester.pumpAndSettle();
+
+      // The dialog INTERCEPTS the write: nothing has been dispatched yet.
+      expect(
+        find.byKey(const Key('signal_last_output_dialog')),
+        findsOneWidget,
+      );
+      expect(find.text(l10n.signalLastOutputTitle), findsOneWidget);
+      expect(
+        find.text(l10n.signalLastOutputBody(l10n.outputChannelLabel(1))),
+        findsOneWidget,
+      );
+      verifyNever(() => bloc.add(any(that: isA<LooperOutputEnabledToggled>())));
+    });
+
+    testWidgets('Keep it on closes the dialog and writes nothing', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        stage: FxStage.master,
+        state: const LooperState(
+          outputEnabledMask: 0x1,
+          status: EngineStatus(inputChannels: 2, outputChannels: 4),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('signal_output_switch_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_last_output_keep')));
+      await tester.pumpAndSettle();
+
+      // Intercept, not undo: the write never happened, so there is nothing
+      // to roll back and the switch never flickered.
+      expect(find.byKey(const Key('signal_last_output_dialog')), findsNothing);
+      verifyNever(() => bloc.add(any(that: isA<LooperOutputEnabledToggled>())));
+    });
+
+    testWidgets('Switch off confirms exactly one toggle and closes', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        stage: FxStage.master,
+        state: const LooperState(
+          outputEnabledMask: 0x1,
+          status: EngineStatus(inputChannels: 2, outputChannels: 4),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('signal_output_switch_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('signal_last_output_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('signal_last_output_dialog')), findsNothing);
+      verify(
+        () => bloc.add(const LooperOutputEnabledToggled(0, enabled: false)),
+      ).called(1);
+    });
+
+    testWidgets('turning one on from all-off needs no ceremony', (
+      tester,
+    ) async {
+      // The all-off state stays reachable (confirmed tap, device swap), and
+      // the way OUT of it must never be gated.
+      await pump(
+        tester,
+        stage: FxStage.master,
+        state: const LooperState(
+          outputEnabledMask: 0,
+          status: EngineStatus(inputChannels: 2, outputChannels: 4),
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('signal_output_switch_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('signal_last_output_dialog')), findsNothing);
+      verify(
+        () => bloc.add(const LooperOutputEnabledToggled(0, enabled: true)),
       ).called(1);
     });
 

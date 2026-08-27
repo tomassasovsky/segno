@@ -873,20 +873,39 @@ void main() {
         () => settings.saveLaneEffects(any(), any(), any()),
       ).thenAnswer((_) async {});
       when(
-        () => settings.saveOutputEnabled(any(), enabled: any(named: 'enabled')),
+        () => settings.saveOutputEnabled(
+          device: any(named: 'device'),
+          output: any(named: 'output'),
+          enabled: any(named: 'enabled'),
+        ),
       ).thenAnswer((_) async {});
     });
 
     blocTest<LooperBloc, LooperState>(
       'LooperOutputEnabledToggled forwards to the repo and persists the gate',
-      build: () => LooperBloc(repository: repository, settings: settings),
+      build: () {
+        // The gate is persisted against the OPEN device (#569), so the save
+        // must carry the interface's name, not just the output index.
+        when(() => repository.state).thenReturn(
+          const LooperState(
+            status: EngineStatus(deviceName: 'Scarlett 18i20'),
+          ),
+        );
+        return LooperBloc(repository: repository, settings: settings);
+      },
       act: (bloc) =>
           bloc.add(const LooperOutputEnabledToggled(1, enabled: false)),
       verify: (_) {
         verify(
           () => repository.setOutputEnabled(output: 1, enabled: false),
         ).called(1);
-        verify(() => settings.saveOutputEnabled(1, enabled: false)).called(1);
+        verify(
+          () => settings.saveOutputEnabled(
+            device: 'Scarlett 18i20',
+            output: 1,
+            enabled: false,
+          ),
+        ).called(1);
       },
     );
 
