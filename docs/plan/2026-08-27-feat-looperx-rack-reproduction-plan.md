@@ -258,20 +258,85 @@ eight racks, and it is half of the shortest path to a working import.
 
 Note EQ is also the first module that needs B1's widen, so that lands with it.
 
+## Phase order
+
+**This is the important revision.** The goal is not "import the presets" — it
+is "get each effect as close to the original as possible". That makes the
+presets *test vectors*, not the deliverable, and it changes the critical path.
+
+Without a reference, every effect is written to a recovered spec and judged by
+ear. With one, each becomes **system identification** — the standard way
+outboard gear is cloned: excite the original with known signals, measure the
+response, fit an implementation, verify numerically. That is exactly the gap
+between "similar" and "as close as possible", so the rig comes first.
+
+| # | phase | gate | depends on |
+|---|---|---|---|
+| 0 | **Measurement rig** — drive the emulated device, capture reference audio (#891) | `merge-gate` | — |
+| 1 | **Fidelity harness** — render our effect, score it against the reference | `merge-gate` | 0 |
+| 2 | Widen `LE_FX_PARAMS` 4 → 16, landing with EQ | `merge-gate` | — |
+| 3 | Effects, each fitted and verified: EQ, Compressor, Doubler, Amp+Cab, Wah, Mod, Pitch Shift, HP/Gate, then the singles | `merge-gate` | 0, 1, 2 |
+| 4 | Widen `LE_FX_MAX` 8 → 16 (Ed's Rack is 9 blocks) | `merge-gate` | 3 |
+| 5 | Preset import — near-mechanical once the DSP matches | `merge-gate` | 3 |
+| 6 | Content layer: icons, enum vocabularies, taxonomy | `merge-gate` | naming call |
+
+Phase 2 does not depend on the rig and can run alongside it. Chorus (#888)
+shipped before the rig existed and is spec-based; it gets a fidelity pass in
+Phase 3 like everything else — a small, deliberate cost of having started
+before measuring.
+
+### Why the rig is file-driven, not device-driven
+
+Two unknowns made the rig look risky — getting audio in, and driving a
+touchscreen UI headless. Both have file-shaped answers:
+
+- **Parameters never go through the UI.** A `.fxpreset` is plain JSON on the
+  USB-visible filesystem (`unpack_new_presets` writes to
+  `$mnt_path/FX Presets/`), so probe presets are authored directly.
+- **Preset selection and transport** are reachable over the device's own MIDI
+  control surface: `/Engine/PresetCtrl/Rigs/SendPresetIndex` selects a preset
+  and footswitches are plain notes on channel 0
+  (`MidiAssignments/HG08_Control_Surface_MIDI_1_Assignments.qml`). Bounce is a
+  footswitch page (`Pages/Footswitches/Bounce.qml`), so render-to-file is
+  reachable.
+- **Audio out is therefore a bounce**, not an audio device.
+
+Note what the MIDI surface does *not* reach: individual FX parameters. That is
+why probe presets, not MIDI, carry the parameter sweep.
+
+The residual unknown is getting a stimulus *in* — audio import is a
+touchscreen dialog. Fallbacks in order: import via the USB image the app
+already mounts; construct a loop on disk directly (the layer-stream writer is
+named in the binary); or ALSA with a file plugin.
+
+### What identification can and cannot reach
+
+- **Linear — EQ, filters, delay, spring, chorus/mod timing:** an impulse plus
+  a sine sweep recover magnitude, phase and tap times essentially exactly.
+  Expect a near-null match.
+- **Dynamics — compressor, gate, transient, pumper:** steps and level-swept
+  tones recover threshold, ratio, knee, attack and release directly.
+- **Nonlinear — amp, cab, overdrive, distort, degrade:** multi-level sweeps
+  recover the static curve plus its surrounding filters. Very close, not
+  exact, and the most work.
+- **Stochastic — vinyl noise:** cannot null-test; match statistically.
+- **Pitch-tracking — Smart Tune, Harmonizer, Whammy:** depends on their
+  detector's internals. Match the musical envelope (scale handling, latency,
+  formant treatment); do not promise sample accuracy.
+
 ## Risks
 
-- **Phase 2's blast radius reaches `daw_export`.** Widening the parameter
-  array changes the VST3 parameter mapping in `segno_vst3_plugins.dart` and
-  the ALS builder. A session exported before Phase 2 must still open after
-  it; that is a persistence-compatibility problem, not just a constant.
-- **Phase 4 ships mixed-fidelity presets.** Discrete parameters decode
-  exactly; continuous ones are voiced by ear against ranges we choose. That
-  is a documentation obligation, not a defect — but a preset labelled
-  "Ed's Rack / Vocal Chorus" must not imply a numeric port of one.
-- **Twenty-one modules is a multi-quarter programme.** The phase table exists
-  so it delivers value continuously — every 3x phase is usable on its own,
-  independent of whether the factory presets ever import.
+- **The rig is a spike and may not land.** If stimulus audio cannot be got in,
+  the fallback is today's position: spec-based re-implementation voiced by
+  ear. Give it a fixed budget rather than letting it block Phase 2.
+- **Phase 2's blast radius reaches `daw_export`.** Widening the parameter array
+  changes the VST3 parameter mapping in `segno_vst3_plugins.dart` and the ALS
+  builder. A session exported before Phase 2 must still open after it.
+- **Twenty-one effects is a multi-quarter programme.** The phase table exists
+  so it delivers continuously — every effect in Phase 3 is usable on its own,
+  independent of whether a factory preset ever imports.
 
 ## Next step
 
-Phase 1 — Chorus, end to end.
+Phase 0 — the measurement rig (#891). Everything else is guesswork until it
+exists, and guesswork is what "as close as possible" rules out.
