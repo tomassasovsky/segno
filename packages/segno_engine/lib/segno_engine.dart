@@ -35,6 +35,7 @@ export 'src/engine_snapshot.dart'
         LatencyState,
         LooperMode,
         TempoSource,
+        TrackRestoreState,
         TrackSnapshot,
         TrackState,
         XrunKind,

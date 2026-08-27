@@ -47,6 +47,7 @@
 #include "engine_fx.h" /* LE_FX_ENABLE_RAMP_MS (FX enable-flag tests) */
 #include "engine_cache.h" /* LE_CACHE_SETTLE_MS (wet-cache tests) */
 #include "engine_internal.h"
+#include "engine_restore.h" /* le_restore_commit_layer (#697 S9 restore tests) */
 #include "engine_private.h"   /* LE_POOL_SLOTS (per-pass undo pool cap) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
 #include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
@@ -24793,6 +24794,349 @@ static void test_halfband_lengths_and_arg_guards(void) {
    * write, so only the reject side is probed here). */
 }
 
+/* ---- Offline loop-close restoration worker (#697 S9) --------------------
+ *
+ * The engine half of #697's restoration: le_engine_restore_track queues a
+ * background pass (de-clip + optional RNNoise) over a track's captured lanes
+ * and publishes the repaired audio as one lockstep undo layer, so a plain
+ * le_engine_undo reverts to the raw take and the RT audio thread is untouched.
+ * These tests drive the worker deterministically the way the wet-cache tests
+ * do — le_engine_get_snapshot both drains the event ring (running
+ * le_restore_tick) and reads the per-track restore_state, so polling it in a
+ * spin advances the copy -> queue -> render -> publish pipeline to completion.
+ * Fidelity is asserted against a clean reference sine (the same technique the
+ * S8 de-clip tests use); the raw-vs-restored / undo roundtrip and the two
+ * rev/gate guards are exercised directly and deterministically. */
+
+enum { kRestoreLen = 9600 };
+static float g_rs_clean[kRestoreLen];
+static float g_rs_clipped[kRestoreLen];
+static float g_rs_live[kRestoreLen];
+static float g_rs_pre[kRestoreLen];
+
+/* Fills g_rs_clean with amp * sin and g_rs_clipped with its +/-0.999 twin;
+ * returns the longest at-rail run (so a test can assert the AR path is hit). */
+static int restore_build_clipped_sine(double freq, double amp, double sr) {
+  int run = 0;
+  int longest = 0;
+  for (int i = 0; i < kRestoreLen; ++i) {
+    float c = (float)(amp * sin(2.0 * M_PI * freq * (double)i / sr));
+    g_rs_clean[i] = c;
+    if (c > 0.999f) c = 0.999f;
+    if (c < -0.999f) c = -0.999f;
+    g_rs_clipped[i] = c;
+    if (c >= 0.999f || c <= -0.999f) {
+      if (++run > longest) longest = run;
+    } else {
+      run = 0;
+    }
+  }
+  return longest;
+}
+
+/* Counts samples flattened EXACTLY at the +/-0.999 rail in [skip, n - skip):
+ * de-clip reconstructs those peaks back ABOVE the rail, so this drops sharply
+ * after a repair (a >= 0.999 count would not — the repair's floor keeps every
+ * once-clipped sample at or above the rail it sat on). */
+static int restore_rail_count(const float* buf, int n, int skip) {
+  int c = 0;
+  for (int i = skip; i < n - skip; ++i) {
+    if (buf[i] == 0.999f || buf[i] == -0.999f) ++c;
+  }
+  return c;
+}
+
+static le_engine* restore_engine(void) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 20000);
+  return e;
+}
+
+/* Records a defining loop from [pcm] ([len] frames) and settles it to PLAYING
+ * (the same finalize-through-crossfade shape cache_record_loop uses; the
+ * overlap is fed silence, so only the first few ms of the head are folded and
+ * every interior measurement window is untouched). */
+static void restore_record(le_engine* e, const float* pcm, int len) {
+  le_engine_record(e, 0);
+  int off = 0;
+  while (off < len) {
+    float in[64];
+    float out[64];
+    int n = len - off;
+    if (n > 64) n = 64;
+    for (int i = 0; i < n; ++i) in[i] = pcm[off + i];
+    le_engine_process(e, out, in, (uint32_t)n);
+    off += n;
+  }
+  le_engine_record(e, 0);
+  drain(e);
+  pump_frames(e, 0.0f, 600); /* crossfade overlap -> finalize -> PLAYING */
+}
+
+/* Spins (draining via the snapshot poll on each turn) until track [ch] reports
+ * restore_state 0 (idle). Returns 1 on idle, 0 on timeout. */
+static int restore_wait_idle(le_engine* e, int32_t ch, int timeout_ms) {
+  le_snapshot s;
+  for (int k = 0; k < timeout_ms; ++k) {
+    le_engine_get_snapshot(e, &s);
+    if (s.tracks[ch].restore_state == 0) return 1;
+    test_sleep_ms(1);
+  }
+  return 0;
+}
+
+static int32_t restore_track_state(le_engine* e, int32_t ch) {
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  return s.tracks[ch].restore_state;
+}
+
+/* The end-to-end worker path repairs a clipped captured lane: a hard-clipped
+ * sine is recorded, restored on the background worker, and the published live
+ * buffer has its peaks reconstructed (SNR up, rail samples down) — proving the
+ * copy -> worker DSP -> undo-layer publish pipeline actually lands. */
+static void test_restore_worker_repairs_clipped_lane(void) {
+  printf("test_restore_worker_repairs_clipped_lane\n");
+  const int longest = restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  CHECK(longest > 16); /* AR path exercised */
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+
+  /* Pre-restore live buffer == the recorded clipped take (interior). */
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+  const int rail_pre = restore_rail_count(g_rs_pre, kRestoreLen, 1200);
+  CHECK(rail_pre > 0);
+  const double snr_pre = declip_snr_db(g_rs_clean, g_rs_pre, kRestoreLen, 1200);
+
+  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_OK);
+  CHECK(restore_wait_idle(e, 0, 5000) == 1);
+
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  const int rail_post = restore_rail_count(g_rs_live, kRestoreLen, 1200);
+  const double snr_post = declip_snr_db(g_rs_clean, g_rs_live, kRestoreLen, 1200);
+  float peak_post = 0.0f;
+  for (int i = 1200; i < kRestoreLen - 1200; ++i) {
+    if (g_rs_live[i] > peak_post) peak_post = g_rs_live[i];
+  }
+  CHECK(rail_post < rail_pre / 2); /* most flat-topped runs reconstructed away */
+  CHECK(peak_post > 1.01f);         /* the repair went back above the rail */
+  CHECK(snr_post > snr_pre + 6.0);  /* measurably closer to the clean sine */
+  CHECK(declip_all_finite(g_rs_live, kRestoreLen) == 1);
+
+  /* The raw take is one undo away (the plan's retention model). */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth >= 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0); /* back to raw */
+
+  le_engine_destroy(e);
+}
+
+/* The commit publishes the restored PCM as a lockstep undo layer and reverts
+ * cleanly (undo -> raw, redo -> restored), and the rev guard [B5] declines a
+ * commit whose take moved. Driven through le_restore_commit_layer directly so
+ * the publish/undo/redo roundtrip and the rev check are fully deterministic. */
+static void test_restore_commit_undo_redo_and_rev_guard(void) {
+  printf("test_restore_commit_undo_redo_and_rev_guard\n");
+  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+
+  /* A synthetic "restored" buffer: a constant the raw take never holds. */
+  static float synth[kRestoreLen];
+  for (int i = 0; i < kRestoreLen; ++i) synth[i] = 0.25f;
+  float* restored[LE_MAX_LANES] = {0};
+  restored[0] = synth;
+
+  const uint32_t rev = le_engine_track_audio_rev(e, 0);
+  /* Stale rev is refused, the take is untouched. */
+  CHECK(le_restore_commit_layer(e, 0, 0x1u, rev + 1u, kRestoreLen, restored) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
+
+  /* Matching rev publishes; the live buffer becomes the restored PCM. */
+  CHECK(le_restore_commit_layer(e, 0, 0x1u, rev, kRestoreLen, restored) == LE_OK);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  for (int i = 0; i < kRestoreLen; ++i) CHECK(g_rs_live[i] == 0.25f);
+  /* The publish bumped the revision (the wet-cache invalidation half). */
+  CHECK(le_engine_track_audio_rev(e, 0) != rev);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth >= 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* raw take back */
+  drain(e);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
+  CHECK(le_engine_redo(e, 0) == LE_OK); /* restored take back */
+  drain(e);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  for (int i = 0; i < kRestoreLen; ++i) CHECK(g_rs_live[i] == 0.25f);
+
+  le_engine_destroy(e);
+}
+
+/* A content revision bump between enqueue and the first copy tick discards the
+ * job outright (the copy-step seqlock guard), and the take is never touched. */
+static void test_restore_enqueue_rev_bump_discards(void) {
+  printf("test_restore_enqueue_rev_bump_discards\n");
+  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+
+  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_OK);
+  /* Bump the revision before any drain runs the chunked enqueue copy: the copy
+   * step's rev re-check must discard the job. */
+  le_audio_rev_bump(&e->tracks[0]);
+  CHECK(restore_wait_idle(e, 0, 2000) == 1); /* job released, back to idle */
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0); /* untouched */
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 0); /* nothing published */
+
+  le_engine_destroy(e);
+}
+
+/* Restoration is asynchronous and off the RT path: after the trigger the live
+ * buffer is unchanged, pumping audio (the RT thread) does not advance or apply
+ * it, and only the control-side snapshot poll drives it to completion. */
+static void test_restore_runs_off_rt_thread(void) {
+  printf("test_restore_runs_off_rt_thread\n");
+  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+
+  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_OK);
+  /* Pump audio WITHOUT draining: the RT callback never runs restoration, so the
+   * copy pipeline cannot advance and the take stays raw. */
+  pump_frames(e, 0.0f, 4096);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0); /* not yet applied */
+
+  /* Now let the control side drive it; it lands. */
+  CHECK(restore_wait_idle(e, 0, 5000) == 1);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) != 0); /* applied */
+
+  le_engine_destroy(e);
+}
+
+/* Disabled / declined requests are no-ops: empty flags and an empty lane mask
+ * are rejected, restoration is refused while capturing, and a refused call
+ * leaves the take bit-exact. */
+static void test_restore_noop_when_disabled(void) {
+  printf("test_restore_noop_when_disabled\n");
+  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+
+  CHECK(le_engine_restore_track(e, 0, 0x1u, 0u) == LE_ERR_INVALID);  /* no flags */
+  CHECK(le_engine_restore_track(e, 0, 0u, LE_RESTORE_DECLIP) ==
+        LE_ERR_INVALID);                                             /* no lanes */
+  CHECK(le_engine_restore_track(e, 9, 0x1u, LE_RESTORE_DECLIP) ==
+        LE_ERR_INVALID);                                             /* bad track */
+  CHECK(le_engine_cancel_restore(e, 0) == LE_ERR_INVALID); /* nothing in flight */
+
+  /* None of the declines above touched the take. */
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
+
+  /* Refused while capturing (a fresh overdub pass): restoration must decline
+   * rather than race the write head. (The overdub itself does move the take,
+   * so the bit-exact compare is done above, before this.) */
+  le_engine_record(e, 0);
+  pump_frames(e, 0.5f, 256);
+  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_ERR_INVALID);
+  le_engine_record(e, 0);
+  drain(e);
+  pump_frames(e, 0.0f, 600);
+
+  le_engine_destroy(e);
+}
+
+/* Cancel drops an in-flight pass without publishing; a second request is
+ * refused while one is already in flight (one job engine-wide). */
+static void test_restore_cancel_and_single_job(void) {
+  printf("test_restore_cancel_and_single_job\n");
+  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+
+  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_OK);
+  /* One job engine-wide: a second request while busy is refused. */
+  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_ERR_INVALID);
+  CHECK(restore_track_state(e, 0) != 0); /* in flight */
+  CHECK(le_engine_cancel_restore(e, 0) == LE_OK);
+  CHECK(restore_wait_idle(e, 0, 5000) == 1);
+
+  /* Cancel-before-commit leaves the raw take in place. (A cancel that lands
+   * after the worker already published is a benign race — not asserted — but a
+   * cancel driven synchronously here always precedes the collect tick.) */
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
+
+  le_engine_destroy(e);
+}
+
+/* Denoise-enabled restoration at 48 kHz (RNNoise passthrough rate) completes,
+ * publishes finite audio, and stays undo-reversible — the worker's denoise leg
+ * runs end to end without wedging or NaN-poisoning the take. */
+static void test_restore_denoise_completes_finite(void) {
+  printf("test_restore_denoise_completes_finite\n");
+  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+
+  CHECK(le_engine_restore_track(e, 0, 0x1u,
+                                LE_RESTORE_DECLIP | LE_RESTORE_DENOISE) == LE_OK);
+  CHECK(restore_wait_idle(e, 0, 8000) == 1);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(declip_all_finite(g_rs_live, kRestoreLen) == 1);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) != 0); /* the pass ran */
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth >= 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
+
+  le_engine_destroy(e);
+}
+
 /* ---- #595 lane slot reclaim: per-lane recoverable + trailing trim ----
  *
  * The engine-owned answer to "may this lane's slot be reclaimed": a per-lane
@@ -25727,6 +26071,13 @@ int main(void) {
   test_halfband_roundtrip_transparent_and_aligned();
   test_halfband_rejects_out_of_band();
   test_halfband_lengths_and_arg_guards();
+  test_restore_worker_repairs_clipped_lane();
+  test_restore_commit_undo_redo_and_rev_guard();
+  test_restore_enqueue_rev_bump_discards();
+  test_restore_runs_off_rt_thread();
+  test_restore_noop_when_disabled();
+  test_restore_cancel_and_single_job();
+  test_restore_denoise_completes_finite();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

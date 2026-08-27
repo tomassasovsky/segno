@@ -178,7 +178,8 @@ void main() {
           ..input_mask = 0x2
           ..output_mask = 0x5
           ..length_preset_bars = 8
-          ..settled_take_id = 4;
+          ..settled_take_id = 4
+          ..restore_state = 2;
 
         final track = TrackSnapshot.fromNative(ptr.ref);
         expect(track.state, TrackState.playing);
@@ -194,6 +195,7 @@ void main() {
         expect(track.outputMask, 0x5);
         expect(track.lengthPresetBars, 8);
         expect(track.settledTakeId, 4);
+        expect(track.restoreState, TrackRestoreState.running);
         // No lanes supplied => empty list, so the derived count is 0.
         expect(track.lanes, isEmpty);
         expect(track.laneCount, 0);
@@ -244,6 +246,26 @@ void main() {
       expect(TrackState.fromCode(3), TrackState.playing);
       expect(TrackState.fromCode(4), TrackState.stopped);
       expect(TrackState.fromCode(99), TrackState.empty);
+    });
+
+    test('maps every TrackRestoreState code', () {
+      expect(TrackRestoreState.fromCode(0), TrackRestoreState.idle);
+      expect(TrackRestoreState.fromCode(1), TrackRestoreState.queued);
+      expect(TrackRestoreState.fromCode(2), TrackRestoreState.running);
+      expect(TrackRestoreState.fromCode(99), TrackRestoreState.idle);
+    });
+
+    test('defaults restoreState to idle when the native field is zero', () {
+      final ptr = calloc<le_track_snapshot>();
+      try {
+        ptr.ref.state = 3; // calloc zeroes restore_state
+        expect(
+          TrackSnapshot.fromNative(ptr.ref).restoreState,
+          TrackRestoreState.idle,
+        );
+      } finally {
+        calloc.free(ptr);
+      }
     });
   });
 
@@ -308,6 +330,23 @@ void main() {
         settledTakeId: 2,
       );
       expect(a.settledTakeId, 0);
+      expect(a, isNot(equals(b)));
+      expect(a.hashCode, isNot(b.hashCode));
+    });
+
+    test('a differing restore state breaks equality', () {
+      final a = build();
+      const b = TrackSnapshot(
+        state: TrackState.playing,
+        volume: 0.5,
+        muted: false,
+        lengthFrames: 100,
+        undoDepth: 0,
+        rms: 0.1,
+        peak: 0.2,
+        restoreState: TrackRestoreState.running,
+      );
+      expect(a.restoreState, TrackRestoreState.idle);
       expect(a, isNot(equals(b)));
       expect(a.hashCode, isNot(b.hashCode));
     });
@@ -527,10 +566,7 @@ void main() {
       final ptr = calloc<le_snapshot>();
       try {
         ptr.ref.sync_tempo = 0;
-        expect(
-          EngineSnapshot.fromNative(ptr.ref, const []).syncTempo,
-          isFalse,
-        );
+        expect(EngineSnapshot.fromNative(ptr.ref, const []).syncTempo, isFalse);
       } finally {
         calloc.free(ptr);
       }
@@ -553,10 +589,7 @@ void main() {
       final ptr = calloc<le_snapshot>();
       try {
         ptr.ref.running = 0;
-        expect(
-          EngineSnapshot.fromNative(ptr.ref, const []).isRunning,
-          isFalse,
-        );
+        expect(EngineSnapshot.fromNative(ptr.ref, const []).isRunning, isFalse);
       } finally {
         calloc.free(ptr);
       }
@@ -714,10 +747,7 @@ void main() {
     });
 
     test('activeBackend participates in equality', () {
-      expect(
-        build(),
-        isNot(equals(build(activeBackend: AudioBackend.asio))),
-      );
+      expect(build(), isNot(equals(build(activeBackend: AudioBackend.asio))));
     });
 
     test('masterGain participates in equality', () {
@@ -753,10 +783,7 @@ void main() {
     });
 
     test('tempoSource participates in equality', () {
-      expect(
-        build(),
-        isNot(equals(build(tempoSource: TempoSource.manual))),
-      );
+      expect(build(), isNot(equals(build(tempoSource: TempoSource.manual))));
     });
 
     test('tsNum participates in equality', () {

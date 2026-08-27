@@ -684,6 +684,13 @@ typedef struct le_track_snapshot {
    * it against the RECORD_END payloads to anchor the settled image by identity
    * rather than by "first RECORD_END on the channel". */
   int32_t settled_take_id;
+  /* Trailing (#697 S9, offline loop-close restoration): 0 idle, 1 queued (the
+   * enqueue copy is in flight or the job is waiting for the worker), 2 running
+   * (the worker's de-clip/denoise DSP is in flight). A completed pass publishes
+   * its result as an ordinary undo layer, so undo_depth/clear_restore carry the
+   * revert affordance — this field is only the in-progress indicator. See
+   * le_engine_restore_track. */
+  int32_t restore_state;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -2014,6 +2021,45 @@ LE_EXPORT int32_t le_engine_set_input_conditioning_param(le_engine* engine,
                                                          int32_t input,
                                                          int32_t param,
                                                          float value);
+
+/* ---- Offline loop-close restoration (input conditioning, S9) ---- *
+ * The restoration counterpart to the live conditioning stage above: after a
+ * loop closes, a background worker repairs the CAPTURED lanes — de-clip
+ * (reconstruct the peaks a converter flattened) then optional RNNoise denoise
+ * — and publishes the result as one lockstep undo layer, so a plain
+ * le_engine_undo reverts to the raw take. It runs entirely off the RT audio
+ * thread (a copy-at-enqueue worker mirroring the wet cache), so it never adds
+ * playback latency, and it is opt-in per input via the flags below. Policy
+ * lives in the app: the engine only restores what it is asked to, when it is
+ * asked. Progress surfaces through le_track_snapshot.restore_state. */
+typedef enum le_restore_flags {
+  LE_RESTORE_DECLIP = 1,  /* de-clip pass (restore_declip.c), at the full rate */
+  LE_RESTORE_DENOISE = 2, /* RNNoise denoise — passthrough at 48 kHz, a 2:1
+                           * half-band resample at 96 kHz, skipped at other
+                           * rates (de-clip still runs). */
+} le_restore_flags;
+
+/* Queues an offline restoration pass over track [channel]'s captured lanes
+ * (control thread). [lane_mask] selects which lanes to repair (bit l = lane l,
+ * restricted to the track's active lanes); [flags] is a bitwise-OR of
+ * le_restore_flags. The pass runs on a background worker and publishes its
+ * result as one undo layer once complete — never touching the RT audio
+ * thread's latency. Returns LE_OK once the job is queued, or LE_ERR_INVALID
+ * for a null/out-of-range handle, empty flags or lane mask, a track that is
+ * RECORDING/OVERDUBBING or has an overdub layer in flight, a track with no
+ * captured content, or a restoration already in flight (one job engine-wide).
+ * A queued pass whose take moves before it commits (a new overdub, an undo)
+ * is discarded, never published. */
+LE_EXPORT int32_t le_engine_restore_track(le_engine* engine, int32_t channel,
+                                          uint32_t lane_mask, uint32_t flags);
+
+/* Cancels an in-flight restoration on track [channel] (control thread): a job
+ * still copying is dropped immediately; one already on the worker aborts at
+ * its next lane boundary and its result is discarded rather than published.
+ * Returns LE_OK when a matching job was found and signalled, or LE_ERR_INVALID
+ * for a null/out-of-range handle or when no restoration for [channel] is in
+ * flight. */
+LE_EXPORT int32_t le_engine_cancel_restore(le_engine* engine, int32_t channel);
 
 /* ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ---- *
  * Each track owns ONE Track-stage chain, downstream of its per-lane chains.
