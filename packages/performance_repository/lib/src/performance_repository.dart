@@ -423,6 +423,7 @@ class PerformanceRepository {
         dir,
         chains: const PerformanceChains(),
         writeChains: false,
+        stampTakeId: true,
       ),
     );
 
@@ -913,10 +914,15 @@ class PerformanceRepository {
   /// track. A track currently capturing (recording/overdubbing) contributes
   /// `deferred: true` lane entries instead of exporting (D-SNAP) — its buffer
   /// is being written by the audio thread and exporting it would tear.
+  /// [stampTakeId] writes each track's settled take id onto its lane-0 entry
+  /// as `takeId` (#819). Only the DISARM pass sets it: the offline renderer
+  /// consumes `takeId` solely from `disarmSnapshot.tracks`, so an arm-time
+  /// manifest stays byte-identical to a build without take ids.
   List<PerformanceTrackSnapshot> _captureSettledLanes(
     String dir, {
     required PerformanceChains chains,
     required bool writeChains,
+    bool stampTakeId = false,
   }) {
     final snapshot = _engine.snapshot();
     final tracks = <PerformanceTrackSnapshot>[];
@@ -963,11 +969,12 @@ class PerformanceRepository {
             pcmFile: filename,
             effects: laneChain?.effects ?? const [],
             chainEnabled: laneChain?.chainEnabled ?? true,
-            // Take identity (#819): lane 0 carries the track's settled take id
-            // so the offline renderer can anchor this disarm image by identity.
-            // Presence-keyed (written only when > 0), so it is inert on an
-            // arm-time snapshot whose settled take predates the capture.
-            takeId: laneIndex == 0 ? track.settledTakeId : 0,
+            // Take identity (#819): lane 0 of the DISARM pass carries the
+            // track's settled take id so the offline renderer can anchor this
+            // disarm image by identity. Presence-keyed (written only when > 0);
+            // never stamped on the arm pass, which the renderer never reads it
+            // from — see [stampTakeId].
+            takeId: stampTakeId && laneIndex == 0 ? track.settledTakeId : 0,
           ),
         );
       }

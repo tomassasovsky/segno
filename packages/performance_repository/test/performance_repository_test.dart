@@ -196,6 +196,44 @@ void main() {
     });
 
     test(
+      'the arm-time manifest never carries takeId, even for a lane whose '
+      'settled take id is > 0 (#819) — only the disarm pass stamps it, and '
+      'the renderer reads it only from the disarm snapshot',
+      () async {
+        // A pre-recorded loop settled BEFORE arm still has a settled take id
+        // in the snapshot; the arm pass must not persist it.
+        engine.seedLane(
+          0,
+          0,
+          Float32List.fromList([1, 1, 1, 1]),
+          settledTakeId: 5,
+        );
+
+        await repo.arm();
+        final dir = repo.armedDirectory!;
+
+        final raw =
+            jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+                as Map<String, dynamic>;
+        final rawTracks = raw['tracks'] as List<dynamic>;
+        final rawT0 =
+            rawTracks.firstWhere(
+                  (t) => (t as Map<String, dynamic>)['channel'] == 0,
+                )
+                as Map<String, dynamic>;
+        final rawLane0 =
+            (rawT0['lanes'] as List<dynamic>).first as Map<String, dynamic>;
+        expect(rawLane0.containsKey('takeId'), isFalse);
+        expect(
+          PerformanceArmSnapshot.fromJson(
+            raw,
+          ).tracks.single.lanes.single.takeId,
+          0,
+        );
+      },
+    );
+
+    test(
       "persists the engine snapshot's tempo verbatim in the arm-time "
       'crash-survival snapshot (#281)',
       () async {
