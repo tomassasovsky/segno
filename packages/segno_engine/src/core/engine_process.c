@@ -619,10 +619,17 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
   t->start_iter = 0;
   /* This track leaves RECORDING here regardless of end_state — even the
    * OVERDUBBING case is a record-to-overdub toggle, not a continuation of the
-   * same recording. */
-  le_plog_push(e, frame,
-              (le_command){.code = LE_PLOG_RECORD_END,
-                           .arg_i = (int32_t)(t - e->tracks)});
+   * same recording. The take id (#819) both rides the RECORD_END payload and
+   * publishes to a_settled_take_id, so the snapshot names this exact take as
+   * the settled one. */
+  {
+    const int32_t fm_ch = (int32_t)(t - e->tracks);
+    le_plog_push(e, frame,
+                (le_command){.code = LE_PLOG_RECORD_END,
+                             .take = {.channel = fm_ch,
+                                      .take_id = t->take_seq}});
+    store_i32(&t->a_settled_take_id, t->take_seq);
+  }
   /* A6/D17: an N-bars length preset that finalizes WITHOUT its auto-finalize
    * target having been armed (click was off, or click was on but no tempo
    * existed at record start — le_arm_length_preset_target) derives tempo from
@@ -1058,7 +1065,12 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
   le_audio_rev_bump(t); /* [R1] record finalize: fresh content */
   store_i32(&t->a_state, end_state);
   t->record_pos = 0;
-  le_plog_push(e, frame, (le_command){.code = LE_PLOG_RECORD_END, .arg_i = ch});
+  /* Take id (#819): logged in the RECORD_END payload and published as the
+   * settled take so the disarm manifest can anchor by identity. */
+  le_plog_push(e, frame,
+               (le_command){.code = LE_PLOG_RECORD_END,
+                            .take = {.channel = ch, .take_id = t->take_seq}});
+  store_i32(&t->a_settled_take_id, t->take_seq);
   if (end_state == LE_TRACK_OVERDUBBING) le_dub_session_start(e, t);
 }
 /* ---- per-pass undo layer capture (audio thread) ----
@@ -1419,7 +1431,9 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
       /* The transport fact: this track actually began recording THIS frame —
        * whether from an immediate press (frame == the buffer-start tag from
        * apply_command) or a deferred quantized/sound-triggered fire (frame ==
-       * the exact sample index from inside the per-frame loop). */
+       * the exact sample index from inside the per-frame loop). Its take id is
+       * bumped here (#819): one new monotonic id per take begun on this track. */
+      t->take_seq++;
       le_plog_push(e, frame,
                   (le_command){.code = LE_PLOG_RECORD_START, .arg_i = ch});
       /* Auto-unmute + unpark: a capture never starts silent, and starting one
@@ -2573,6 +2587,22 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       le_cb_timing_reset_armed(&e->cb_timing);
       e->perf.armed = 1;
       atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
+      /* Transport fact (#262): the master loop phase at THIS frame — capture
+       * frame 0 (le_perf_arm reset a_perf_frames to 0 before posting this
+       * command, so `frame` is 0 here). Logged AFTER e->perf.armed flips so
+       * le_plog_push does not no-op. This is the exact anchor the offline
+       * renderer's arm image needs; the control thread's armSnapshot.clockFrame
+       * was sampled an unbounded I/O gap earlier and is race-stale. Carries the
+       * loop iteration too, so a multi-loop arm image's sub-cycle is resolved
+       * (#260). Free/Song or armed-from-silence: clock.length == 0, so all
+       * three fields read 0 (no master phase to anchor). */
+      le_plog_push(e, frame,
+                   (le_command){.code = LE_PLOG_PERF_ARMED,
+                                .perf_arm = {
+                                    .position = e->clock.position,
+                                    .master_len = e->clock.length,
+                                    .iteration = (int32_t)e->loop_iteration,
+                                }});
       break;
     case LE_CMD_PERF_DISARM:
       /* Stop touching the rings for good before le_perf_disarm's quiescent
@@ -2920,6 +2950,7 @@ static void le_count_in_commit(le_engine* e, uint64_t frame) {
   le_loop_clock_reset(&e->clock);
   store_i32(&t->a_state, LE_TRACK_RECORDING);
   le_arm_length_preset_target(e, t); /* A6: may arm an N-bars target */
+  t->take_seq++; /* #819: the count-in's downbeat begins a new take */
   le_plog_push(e, frame,
                (le_command){.code = LE_PLOG_RECORD_START, .arg_i = ch});
   le_capture_start_unmute(e, t, frame);
@@ -3205,6 +3236,7 @@ static inline void advance_transport_frame(le_engine* e, int tc,
       }
     }
     if (any_active) {
+      e->transport_held = 0; /* #262: transport is running; re-arm the hold edge */
       const int wrapped = le_loop_clock_tick(&e->clock);
       if (wrapped) e->loop_iteration++;
       /* Grid-armed fire check. The loop top (wrap) is every division's
@@ -3277,6 +3309,17 @@ static inline void advance_transport_frame(le_engine* e, int tc,
        * next play starts from the beginning rather than looping in silence.
        * Resetting each track's start_iter keeps multi-loop tracks aligned to
        * their first segment on the next play. */
+      /* Transport fact (#262), edge-triggered: log the hold once, at the frame
+       * it begins, carrying the position the clock is pinned FROM (read BEFORE
+       * the reset below). Subsequent held frames find the latch set and stay
+       * silent. Lets the renderer see a clock the engine froze mid-capture
+       * rather than silently running its phase math forward. */
+      if (!e->transport_held) {
+        le_plog_push(e, frame,
+                     (le_command){.code = LE_PLOG_TRANSPORT_HELD,
+                                  .arg_i = e->clock.position});
+        e->transport_held = 1;
+      }
       e->clock.position = 0;
       e->loop_iteration = 0;
       for (int t = 0; t < tc; ++t) e->tracks[t].start_iter = 0;

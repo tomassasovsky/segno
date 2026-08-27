@@ -34,6 +34,32 @@ void main() {
       expect(decoded.pcmFile, isNull);
       expect(decoded.effects, isEmpty);
     });
+
+    test('carries a positive takeId through JSON (#819)', () {
+      const lane = PerformanceLaneSnapshot(
+        lane: 0,
+        lengthFrames: 480,
+        deferred: false,
+        pcmFile: 'loops/track1-lane0.wav',
+        takeId: 3,
+      );
+      final json = lane.toJson();
+      expect(json['takeId'], 3);
+      expect(PerformanceLaneSnapshot.fromJson(json).takeId, 3);
+    });
+
+    test('omits takeId when zero and reads an absent takeId as zero', () {
+      const lane = PerformanceLaneSnapshot(
+        lane: 0,
+        lengthFrames: 480,
+        deferred: false,
+        pcmFile: 'loops/track1-lane0.wav',
+      );
+      final json = lane.toJson();
+      // Presence-keyed: a byte-identical shape to a build without take ids.
+      expect(json.containsKey('takeId'), isFalse);
+      expect(PerformanceLaneSnapshot.fromJson(json).takeId, 0);
+    });
   });
 
   group('PerformanceTrackSnapshot', () {
@@ -61,8 +87,6 @@ void main() {
   group('PerformanceArmSnapshot', () {
     test('round-trips through JSON, including monitors', () {
       const snapshot = PerformanceArmSnapshot(
-        clockFrame: 100,
-        masterLengthFrames: 48000,
         masterGain: 0.9,
         limiterEnabled: true,
         limiterCeiling: 0.95,
@@ -88,8 +112,10 @@ void main() {
         ],
       );
       final decoded = PerformanceArmSnapshot.fromJson(snapshot.toJson());
-      expect(decoded.clockFrame, 100);
-      expect(decoded.masterLengthFrames, 48000);
+      // The old master-phase anchor keys are gone (#262) — the renderer reads
+      // the arm phase from events.log's LE_PLOG_PERF_ARMED fact.
+      expect(snapshot.toJson().containsKey('clockFrame'), isFalse);
+      expect(snapshot.toJson().containsKey('masterLenFrames'), isFalse);
       expect(decoded.masterGain, 0.9);
       expect(decoded.limiterEnabled, isTrue);
       expect(decoded.limiterCeiling, 0.95);
@@ -113,8 +139,6 @@ void main() {
       'flags (R20/R3)',
       () {
         final snapshot = PerformanceArmSnapshot(
-          clockFrame: 0,
-          masterLengthFrames: 480,
           masterGain: 1,
           limiterEnabled: false,
           limiterCeiling: 0.99,
@@ -258,8 +282,6 @@ void main() {
       'parity — and reads an absent key back as 0 (#281)',
       () {
         const withTempo = PerformanceArmSnapshot(
-          clockFrame: 0,
-          masterLengthFrames: 480,
           masterGain: 1,
           limiterEnabled: false,
           limiterCeiling: 0.99,
@@ -276,8 +298,6 @@ void main() {
         // readers guard with `> 0`, so 0 and a pre-field absent key resolve
         // identically (no tempo evidence).
         const noTempo = PerformanceArmSnapshot(
-          clockFrame: 0,
-          masterLengthFrames: 480,
           masterGain: 1,
           limiterEnabled: false,
           limiterCeiling: 0.99,
@@ -292,8 +312,6 @@ void main() {
       'omits the bus fields and every engaged flag when at their defaults',
       () {
         const snapshot = PerformanceArmSnapshot(
-          clockFrame: 0,
-          masterLengthFrames: 0,
           masterGain: 1,
           limiterEnabled: false,
           limiterCeiling: 0.99,

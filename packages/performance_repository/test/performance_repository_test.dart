@@ -196,6 +196,44 @@ void main() {
     });
 
     test(
+      'the arm-time manifest never carries takeId, even for a lane whose '
+      'settled take id is > 0 (#819) — only the disarm pass stamps it, and '
+      'the renderer reads it only from the disarm snapshot',
+      () async {
+        // A pre-recorded loop settled BEFORE arm still has a settled take id
+        // in the snapshot; the arm pass must not persist it.
+        engine.seedLane(
+          0,
+          0,
+          Float32List.fromList([1, 1, 1, 1]),
+          settledTakeId: 5,
+        );
+
+        await repo.arm();
+        final dir = repo.armedDirectory!;
+
+        final raw =
+            jsonDecode(File('$dir/arm-snapshot.json').readAsStringSync())
+                as Map<String, dynamic>;
+        final rawTracks = raw['tracks'] as List<dynamic>;
+        final rawT0 =
+            rawTracks.firstWhere(
+                  (t) => (t as Map<String, dynamic>)['channel'] == 0,
+                )
+                as Map<String, dynamic>;
+        final rawLane0 =
+            (rawT0['lanes'] as List<dynamic>).first as Map<String, dynamic>;
+        expect(rawLane0.containsKey('takeId'), isFalse);
+        expect(
+          PerformanceArmSnapshot.fromJson(
+            raw,
+          ).tracks.single.lanes.single.takeId,
+          0,
+        );
+      },
+    );
+
+    test(
       "persists the engine snapshot's tempo verbatim in the arm-time "
       'crash-survival snapshot (#281)',
       () async {
@@ -798,6 +836,79 @@ void main() {
           File('$dir/${disarmTrack.lanes.single.pcmFile}').existsSync(),
           isTrue,
         );
+      },
+    );
+
+    test(
+      'the settled take id crosses the snapshot onto the disarm lane-0 entry '
+      "as takeId (#819) — the renderer's take-identity anchor",
+      () async {
+        await armAndSeedNative(engine, repo);
+        final dir = repo.armedDirectory!;
+        // Two settled tracks recorded during the capture, each carrying the
+        // engine snapshot's monotonic settled take id (channel 1's is not 1 —
+        // a clear-then-re-record bumped it, exactly the case the old first-END
+        // ordinal proxy mis-anchored).
+        engine
+          ..seedLane(0, 0, Float32List.fromList([0.5, 0.5]), settledTakeId: 1)
+          ..seedLane(1, 0, Float32List.fromList([0.4, 0.4]), settledTakeId: 3);
+
+        await repo.disarm();
+
+        final manifest = PerformanceManifest.fromJson(
+          jsonDecode(File('$dir/performance.json').readAsStringSync())
+              as Map<String, dynamic>,
+        );
+        final t0 = manifest.disarmSnapshot!.tracks.firstWhere(
+          (t) => t.channel == 0,
+        );
+        final t1 = manifest.disarmSnapshot!.tracks.firstWhere(
+          (t) => t.channel == 1,
+        );
+        expect(t0.lanes.single.takeId, 1);
+        expect(t1.lanes.single.takeId, 3);
+        // And it is presence-keyed on the raw JSON, on lane 0 only.
+        final raw =
+            jsonDecode(File('$dir/performance.json').readAsStringSync())
+                as Map<String, dynamic>;
+        final rawTracks =
+            (raw['disarmSnapshot'] as Map<String, dynamic>)['tracks']
+                as List<dynamic>;
+        final rawT1 =
+            rawTracks.firstWhere(
+                  (t) => (t as Map<String, dynamic>)['channel'] == 1,
+                )
+                as Map<String, dynamic>;
+        final rawLane0 =
+            (rawT1['lanes'] as List<dynamic>).first as Map<String, dynamic>;
+        expect(rawLane0['takeId'], 3);
+      },
+    );
+
+    test(
+      'a settled lane with no take id (0) omits takeId from the manifest',
+      () async {
+        await armAndSeedNative(engine, repo);
+        final dir = repo.armedDirectory!;
+        // settledTakeId defaults to 0 — a pre-take-id / never-finalized track.
+        engine.seedLane(3, 0, Float32List.fromList([0.2, 0.2]));
+
+        await repo.disarm();
+
+        final raw =
+            jsonDecode(File('$dir/performance.json').readAsStringSync())
+                as Map<String, dynamic>;
+        final rawTracks =
+            (raw['disarmSnapshot'] as Map<String, dynamic>)['tracks']
+                as List<dynamic>;
+        final rawT3 =
+            rawTracks.firstWhere(
+                  (t) => (t as Map<String, dynamic>)['channel'] == 3,
+                )
+                as Map<String, dynamic>;
+        final rawLane0 =
+            (rawT3['lanes'] as List<dynamic>).first as Map<String, dynamic>;
+        expect(rawLane0.containsKey('takeId'), isFalse);
       },
     );
 

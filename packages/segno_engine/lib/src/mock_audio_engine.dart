@@ -1198,6 +1198,11 @@ class _MockTrack {
   /// doc).
   bool oneShot = false;
 
+  /// The currently-settled take id (#819). The mock does not simulate the
+  /// audio thread's take lifecycle, so this stays at its default `0` unless a
+  /// test sets it directly to exercise the disarm-image take-identity seam.
+  int settledTakeId = 0;
+
   _MockLane laneAt(int lane) => _lanes[lane.clamp(0, kMaxLanes - 1)];
 
   TrackSnapshot snapshot() {
@@ -1228,6 +1233,7 @@ class _MockTrack {
       outputMask: lane0.outputMask,
       lengthPresetBars: lengthPresetBars,
       oneShot: oneShot,
+      settledTakeId: settledTakeId,
       lanes: lanes,
     );
   }

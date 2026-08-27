@@ -30,7 +30,7 @@ unlike `performance.json`, which is atomically replaced each cycle.
 | Offset | Size | Field         | Notes                                   |
 |--------|------|---------------|------------------------------------------|
 | 0      | 4    | magic         | ASCII `"PLEV"` (Perf Log EVents)          |
-| 4      | 4    | version       | `uint32`, little/native-endian; `3` today — see below |
+| 4      | 4    | version       | `uint32`, little/native-endian; `4` today — see below |
 | 8      | 4    | sample_rate   | `int32`, the session's sample rate        |
 
 #### What `version` means
@@ -44,13 +44,15 @@ when the 28-byte record does.
 | `1`      | The original vocabulary. An **aborted** take — armed, then stopped having captured nothing — was logged as `LE_PLOG_RECORD_END`, so a version-1 capture is subject to #264: a reader that anchors on the first `RECORD_END` can place a track's settled image at the abort frame instead of at the finalize that produced it. |
 | `2`      | An aborted take logs `LE_PLOG_RECORD_ABORT` (314). A `RECORD_END` in a version-2 file always means content was captured. |
 | `3`      | A `RECORD_ABORT` may appear **unpaired**: a count-in cancelled by the immediate-finalize primitive (#405, `LE_CMD_FINALIZE_TAKE`) logs 314 for the counting channel even though no `RECORD_START` ever preceded it (the count-in's commit is what logs the start). In a version-2 file every 314 closes an open `START`; from 3 on, a reader must treat an ABORT with no open `START` as a no-op, not a malformed file. |
+| `4`      | Two new transport facts (#262) — `LE_PLOG_PERF_ARMED` (315) recording the master loop phase at arm, and `LE_PLOG_TRANSPORT_HELD` (316) marking a mid-capture transport hold — and `LE_PLOG_RECORD_END` (301) now carries the `take` arm `{channel, take_id}` instead of a bare channel (#819). The offline renderer **requires** these: the two inferences it used before — the race-stale `armSnapshot.clockFrame` phase anchor and the "first `RECORD_END` while the channel is content-free" disarm-image proxy — were **deleted with no fallback** (AGENTS.md). A pre-4 file has neither fact, so it has no supported phase anchor and no take identity; it still parses (below), but renders correctly only if re-captured. |
 
 Neither reader in this repo (`perf_render.c`'s `le_pr_load_log`, the Dart
 `EventLogReader`) gates on the field — both check the magic and skip these four
-bytes — and that is deliberate: a capture already on disk still renders, with
-whatever semantics it was written under, rather than being refused. The field
-exists so a reader *can* tell the two apart, because the absence of a `314` in a
-file is otherwise indistinguishable from a writer that never knew about `314`.
+bytes — and that is deliberate: a capture already on disk still parses rather
+than being refused, and the version-4 facts are simply absent (not misread) in
+an older file. The field exists so a reader *can* tell the vocabularies apart,
+because the absence of a code in a file is otherwise indistinguishable from a
+writer that never knew about it.
 
 ### Entry (28 bytes each, one per logged event)
 
@@ -165,7 +167,7 @@ control-side-only concepts:
 | Code                            | Value | Arm     | Payload                                                   |
 |----------------------------------|-------|---------|------------------------------------------------------------|
 | `LE_PLOG_RECORD_START`            | 300   | generic | `arg_i` = channel. A track actually began recording — immediate press or a deferred quantized/sound-triggered fire, both logged at the frame it actually happened. |
-| `LE_PLOG_RECORD_END`              | 301   | generic | `arg_i` = channel. A track left RECORDING **having captured something**. Stop, punch-out, or the record/dub toggle into overdub. A take that captured nothing logs `LE_PLOG_RECORD_ABORT` instead — see 314. In a version-1 file this code carries both meanings. |
+| `LE_PLOG_RECORD_END`              | 301   | take    | `{channel, take_id}` — a track left RECORDING **having captured something** (stop, punch-out, or the record/dub toggle into overdub), and `take_id` is the monotonic per-track id of the take that just finalized (from header version 4; before that the arm was generic and carried only the channel). `channel` aliases the generic arm's `arg_i`. The offline renderer matches `take_id` against the disarm manifest's `takeId` to anchor the settled image by identity (#819). A take that captured nothing logs `LE_PLOG_RECORD_ABORT` instead — see 314. In a version-1 file this code carries both meanings. |
 | `LE_PLOG_LOOP_LENGTH_LOCKED`      | 302   | generic | `arg_i` = length in frames. The master loop length was (re-)established — the live-record finalize path or `LE_CMD_COMMIT_SESSION`'s session-import path. |
 | `LE_PLOG_LAYER_RETIRED`           | 303   | evt     | `{channel, slot, generation}`, mirroring `LE_EVT_LAYER_RETIRED`'s payload. A completed overdub pass retired. |
 | `LE_PLOG_UNDO`                    | 304   | generic | `arg_i` = channel. Every undo path — the common in-track swap or the to-EMPTY edge case — logs this one code. |
@@ -178,7 +180,9 @@ control-side-only concepts:
 | `LE_PLOG_SET_LANE_FX_CHAIN_ENABLED` | 311 | lanef   | `channel`, `lane`, `value` = enabled (0.0/1.0) — `LE_CMD_SET_LANE_MUTE`'s shape. Control-side emission. **Replayed in the lane wet pass.** |
 | `LE_PLOG_SET_MONITOR_FX_ENABLED`  | 312   | fx      | `channel` = input index, `lane` = -1, `index` = fx slot, `type` = enabled (0/1) — 307's addressing convention. Logged for the manifest/reader, **not replayed in the lane pass** (mirrors `LE_PLOG_SET_MONITOR_FX_PARAM`'s treatment). |
 | `LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED` | 313 | generic | `arg_i` = input index, `arg_f` = enabled (0.0/1.0) — the monitor volume/mute shape. Logged for the manifest/reader, **not replayed in the lane pass**. |
-| `LE_PLOG_RECORD_ABORT`            | 314   | generic | `arg_i` = channel. A take died having captured **nothing**: it left RECORDING void (armed and stopped on the loop top, so the track goes back to EMPTY) — or, from header version 3, a count-in was cancelled by `LE_CMD_FINALIZE_TAKE` (#405), in which case `arg_i` is the counting channel and no `RECORD_START` ever preceded it (the ABORT is unpaired). An aborted take is not a take: it produced no content and has no settled image of its own, and a reader must not treat it as a finalize. Its own code rather than a `RECORD_END` because the offline renderer keys its disarm-image anchor off 301 (#264); `perf_render.c`'s `RECORD_END` scan holds that derivation. Present from header version 2 on. |
+| `LE_PLOG_PERF_ARMED`              | 315   | perf_arm | `{position, master_len, iteration}` — the master loop phase at the exact audio-thread frame `LE_CMD_PERF_ARM` applied (capture frame 0). `master_len` == 0 means the capture armed with no master loop (Free/Song, or from silence), and `position`/`iteration` are then both 0. Exactly one per capture, from header version 4. The offline renderer's arm-image anchor and its no-lock `RECORD_END` phase math read this instead of the race-stale `armSnapshot.clockFrame` the control thread sampled BEFORE lane capture (#262); `iteration` also resolves a multi-loop arm image's sub-cycle (#260). |
+| `LE_PLOG_TRANSPORT_HELD`          | 316   | generic | `arg_i` = the clock position the loop clock was pinned FROM. The shared transport became HELD mid-capture — nothing playing/recording/overdubbing, so `advance_transport_frame` pins the clock to position 0 (its all-idle branch). Edge-triggered: logged once when the hold begins, not every held frame. From header version 4. Lets the renderer's phase math see a clock the engine froze rather than running it forward. |
+| `LE_PLOG_RECORD_ABORT`            | 314   | generic | `arg_i` = channel. A take died having captured **nothing**: it left RECORDING void (armed and stopped on the loop top, so the track goes back to EMPTY) — or, from header version 3, a count-in was cancelled by `LE_CMD_FINALIZE_TAKE` (#405), in which case `arg_i` is the counting channel and no `RECORD_START` ever preceded it (the ABORT is unpaired). An aborted take is not a take: it produced no content and has no settled image of its own, and a reader must not treat it as a finalize. Its own code rather than a `RECORD_END` (301) because the offline renderer anchors its disarm image off `RECORD_END` (#264); an abort never bumps a track's settled take id, so from header version 4 it also could never match a `takeId` even if it were a 301 — but keeping it a distinct code is the load-bearing guarantee. Present from header version 2 on. |
 
 The replayed lane chain seeds all enable bits to 1 at arm: the arm manifest
 carries no arm-time enabled state until part 3 of the FX-v3 epic adds it (a

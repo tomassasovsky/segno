@@ -177,7 +177,8 @@ void main() {
           ..peak = 0.6
           ..input_mask = 0x2
           ..output_mask = 0x5
-          ..length_preset_bars = 8;
+          ..length_preset_bars = 8
+          ..settled_take_id = 4;
 
         final track = TrackSnapshot.fromNative(ptr.ref);
         expect(track.state, TrackState.playing);
@@ -192,6 +193,7 @@ void main() {
         expect(track.inputMask, 0x2);
         expect(track.outputMask, 0x5);
         expect(track.lengthPresetBars, 8);
+        expect(track.settledTakeId, 4);
         // No lanes supplied => empty list, so the derived count is 0.
         expect(track.lanes, isEmpty);
         expect(track.laneCount, 0);
@@ -281,6 +283,31 @@ void main() {
         peak: 0.2,
         lengthPresetBars: 4,
       );
+      expect(a, isNot(equals(b)));
+      expect(a.hashCode, isNot(b.hashCode));
+    });
+
+    test('a differing settled take id breaks equality (#819)', () {
+      const a = TrackSnapshot(
+        state: TrackState.playing,
+        volume: 0.5,
+        muted: false,
+        lengthFrames: 100,
+        undoDepth: 0,
+        rms: 0.1,
+        peak: 0.2,
+      );
+      const b = TrackSnapshot(
+        state: TrackState.playing,
+        volume: 0.5,
+        muted: false,
+        lengthFrames: 100,
+        undoDepth: 0,
+        rms: 0.1,
+        peak: 0.2,
+        settledTakeId: 2,
+      );
+      expect(a.settledTakeId, 0);
       expect(a, isNot(equals(b)));
       expect(a.hashCode, isNot(b.hashCode));
     });

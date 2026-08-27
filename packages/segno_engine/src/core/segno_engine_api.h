@@ -675,6 +675,15 @@ typedef struct le_track_snapshot {
   /* Trailing (B4, One Shot): 0/1, default 0. Settable in any mode; only
    * behaviorally active in Free/Song — see LE_CMD_SET_ONE_SHOT's doc. */
   int32_t one_shot;
+  /* Trailing (#819): the monotonic per-track id of the currently-SETTLED take
+   * — the take the RECORD_END that last finalized this track logged, published
+   * from le_track.a_settled_take_id. 0 means the track never finalized a take
+   * in this session (still empty, or only ever held pre-arm content with no id
+   * yet). The performance-capture pipeline writes it onto the disarm manifest's
+   * lane-0 entry as `takeId`, and the offline renderer (perf_render.c) matches
+   * it against the RECORD_END payloads to anchor the settled image by identity
+   * rather than by "first RECORD_END on the channel". */
+  int32_t settled_take_id;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
