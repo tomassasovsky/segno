@@ -736,6 +736,22 @@ void main() {
     );
   });
 
+  group('buffer choices', () {
+    test('offers 32 frames, ascending, off ASIO (#893)', () {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      // The generic list is what a non-ASIO rig sees. 32 is the appliance's
+      // low-latency option; the ordering is what the picker renders, so a
+      // stray insert would show the tightest buffer in the wrong place.
+      expect(cubit.state.bufferChoices, [32, 64, 128, 256, 512]);
+      expect(
+        cubit.state.bufferChoices,
+        orderedEquals(List<int>.from(cubit.state.bufferChoices)..sort()),
+      );
+    });
+  });
+
   group('asio backend', () {
     test('loads drivers only when selectable', () {
       when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);

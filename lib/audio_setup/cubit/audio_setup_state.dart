@@ -223,7 +223,16 @@ class AudioSetupState extends Equatable {
   static const sampleRates = [44100, 48000, 96000];
 
   /// Selectable buffer sizes.
-  static const bufferSizes = [64, 128, 256, 512];
+  ///
+  /// 32 is offered because on the appliance it is worth more than the two
+  /// periods of arithmetic suggest (#893). Measured on the bench Pi 5 +
+  /// Scarlett 4i4 at 96 kHz, the USB playback queue — the driver's own
+  /// pre-queued URBs, which no host setting reaches — is 206 frames at a
+  /// 64-frame period and 141 at 32. So halving the period took 65 frames off
+  /// a term that is not the buffer at all, on top of the buffer's own saving.
+  /// The cost is a 333 us callback deadline instead of 667 us, which is why
+  /// this is an option and not a default.
+  static const bufferSizes = [32, 64, 128, 256, 512];
 
   /// Selectable max-loop-length options, in minutes. `0` is the engine default.
   static const maxLoopMinuteOptions = [0, 1, 2, 5, 10];
