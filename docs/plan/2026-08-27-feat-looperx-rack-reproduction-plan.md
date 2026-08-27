@@ -90,21 +90,24 @@ Twenty-seven modules across the nine racks. Six exist; twenty-one do not.
 
 ## The three blockers
 
-### B1 — the chain shape cannot hold a rack
+### B1 — the chain shape, revised
 
-`LE_FX_PARAMS = 4` is the binding constraint: eleven modules exceed it, with
-EQ and the Harmonizer at fifteen. `LE_FX_MAX = 8` binds too — Ed's Rack is
-nine modules.
+**Correction to the first draft of this plan.** Each Looper X module carries an
+on/off parameter (`Delay: 1.0`, `Reverb: 1.0`). Those are not parameters in
+segno's sense — they map onto the **per-slot enable bit** the chain already
+has (`a_fx_enabled`, `engine_private.h:368`). Discounting them, **19 of 26
+modules fit inside today's `LE_FX_PARAMS = 4`**:
 
-**Proposal: `LE_FX_PARAMS` 4 -> 16, `LE_FX_MAX` 8 -> 16.** Sixteen covers
-the widest module exactly. Cost is `16 * 16 * 4 B = 1 KiB` of atomics per
-chain across three owner types — negligible, and it *preserves* the
-fixed-size allocation-free snapshot property rather than trading it away for
-variable-width params.
+| fits today (19) | needs widening (7) |
+|---|---|
+| LPF (4), Vinyl (4), Mod (4), Ambient Reverb (3), Chorus (3), Slicer (3), Degrade (3), Transient (3), Doubler (2), Dub Delay (2), Overdrive (2), Pumper (2), Distort (2), Pitch Shift (2), Spring (2), HP/Gate (2), Octaver (1), Wah (1), Output (1) | EQ (up to 15 per rack), Harmonizer (12), Delay (8), Reverb (8), Smart Tune (8), Compressor (5), Amp+Cab (5) |
 
-The work is not the constants; it is the 135 call sites, the persistence
-format, `daw_export`'s VST3 parameter mapping, and every UI surface that
-assumes four sliders.
+`LE_FX_MAX = 8` binds only on Ed's Rack (9 modules), which is a Phase 4
+concern, not a Phase 1 one.
+
+So the widen is **real but deferrable**, and doing it first would be building
+against a requirement no shipped code has yet — precisely the speculative
+work AGENTS.md rules out. It lands when the first module that needs it does.
 
 ### B2 — per-slot DSP state does not scale to 27 types
 
@@ -112,14 +115,18 @@ assumes four sliders.
 to that struct multiplies EQ biquad banks, compressor envelopes, chorus delay
 lines and harmonizer voices across all sixteen slots, whether used or not.
 
-**Proposal: one `void* state` per slot plus a per-type vtable**
-(`prepare` / `reset` / `free` / `process`), allocated and freed on the control
-thread in `le_fx_prepare_entry`, exactly as the plugin slot and the octaver's
-PV buffers already do. Behaviour-preserving; provable by the existing suite.
+**Correction: the vtable already exists.** `le_fx_vtable`
+(`engine_fx.c:981-994`) dispatches `process` / `latency` / `prepare` /
+`defaults` per type, and its own comment says "adding an effect is adding its
+kernels above + one row here". `LE_FX_PLUGIN` already keeps all its state off
+`le_fx_state`, and the octaver's PV buffers are heap-allocated in
+`fx_octaver_prepare`.
 
-**This is the highest-leverage item in the programme.** Everything in
-Phase 3 stacks on it, and it is the one piece that gets harder the longer it
-waits.
+What is missing is only a **generic per-slot state pointer** so a new type can
+own an arbitrary struct without adding a field to `le_fx_state`. That is a
+small addition, and — per AGENTS.md — it should land with the **first module
+that needs it**, not before. The existing types stay where they are: migrating
+them buys nothing and risks a working product.
 
 ### B3 — the preset values are normalised against unknown tapers
 
@@ -182,26 +189,36 @@ a faithful numeric port.
 
 ## Phase order
 
-Each phase is one or more independently mergeable PRs.
+Revised against the two corrections above: the vtable exists, and 19 of 26
+modules fit the current parameter width. So the programme is not
+"two refactors then modules" — it is **modules first, widening when a module
+demands it.**
 
 | # | phase | gate | depends on |
 |---|---|---|---|
-| 1 | B2: type-tagged slot state (pure refactor) | `merge-gate` | — |
-| 2 | B1: widen to 16 x 16 | `merge-gate` | 1 |
-| 3a | Biquad family: EQ, HP/Gate, Wah, LPF widen | `merge-gate` | 2 |
-| 3b | Dynamics: Compressor, Transient | `merge-gate` | 2 |
-| 3c | Modulated delay: Chorus, Mod, Doubler, Spring, Dub Delay | `merge-gate` | 2 |
-| 3d | Reverb family: Reverb widen, Dub Reverb, Ambient Reverb | `merge-gate` | 2 |
-| 3e | Degradation: Vinyl, Degrade, Slicer, Pumper, Distort widen | `merge-gate` | 2 |
-| 3f | Pitch family: Pitch Shift, Whammy, Harmonizer, Smart Tune | `merge-gate` | 2 |
-| 3g | Amp+Cab | `plan-gate` | 2 |
-| 4 | Preset import + voicing | `merge-gate` | 3a-3g |
-| 5 | Content layer: icons, enum vocabularies, taxonomy | `merge-gate` | naming call |
+| 1 | First module end to end: **Chorus** | `merge-gate` | — |
+| 2 | Remaining ≤4-param modules, grouped by shared kernel | `merge-gate` | 1 |
+| 3 | Widen `LE_FX_PARAMS` 4 → 16, landing with **Compressor** (first module that needs it) | `merge-gate` | 1 |
+| 4 | Wide modules: EQ, Reverb widen, Delay widen, Amp+Cab, Smart Tune, Harmonizer | `merge-gate` | 3 |
+| 5 | Widen `LE_FX_MAX` 8 → 16, landing with the Ed's Rack import | `merge-gate` | 4 |
+| 6 | Preset import + voicing | `merge-gate` | 2, 4 |
+| 7 | Content layer: icons, enum vocabularies, taxonomy | `merge-gate` | naming call |
 
-Phases 1 and 2 are the only ones on the critical path; 3a-3g parallelise, and
-5 can land any time the naming question is answered. Phase 0 (taper
-measurement) is **cut** — no physical Looper X is available; see B3 for what
-survives without it.
+Phase 1 is deliberately a *small* module rather than a high-coverage one. Its
+job is to prove the whole path — native kernel, vtable row, Dart enum,
+parameter labels, FX editor UI, persistence, DAW export — on a capability
+that is useful on its own. Chorus is three parameters (rate, depth, mix),
+reuses the existing stereo delay ring (`fx_stereo_ring_prepare`), and is a
+plain win for a looper independent of whether a single factory preset ever
+imports.
+
+Phase 2 then adds modules on a path that is already proven, grouped so each
+PR shares a kernel: modulated delay (Mod, Doubler, Spring, Dub Delay),
+degradation (Vinyl, Degrade, Slicer, Pumper), dynamics-lite (Transient,
+HP/Gate), and filter (Wah, LPF widen).
+
+Phase 0 (taper measurement) is **cut** — no physical Looper X is available;
+see B3 for what survives without it.
 
 ### Why 3g carries a `plan-gate`
 
@@ -211,13 +228,6 @@ rootfs — so their cab simulation is algorithmic, not convolution. That is
 good news (a filter-based cab is cheaper than an IR loader) but it means the
 eleven cabinet voicings are ours to author, not to copy. Deciding how they
 are modelled and measured is a direction call, not a taste one.
-
-### Ordering rationale
-
-3a first because EQ appears in eight of nine racks; nothing else moves the
-needle as far. 3f last of the module phases despite being conceptually
-hardest, because it is the one group that reuses machinery that already
-works — the risk is integration, not DSP.
 
 ## Risks
 
@@ -235,6 +245,4 @@ works — the risk is integration, not DSP.
 
 ## Next step
 
-Phase 1. It is behaviour-preserving, provable by the existing native and Dart
-suites, unblocks everything downstream, and is the only item that gets more
-expensive with delay.
+Phase 1 — Chorus, end to end.
