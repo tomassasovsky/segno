@@ -5,6 +5,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:pedal_repository/pedal_repository.dart' show PedalButton;
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
@@ -415,6 +416,57 @@ class _TrackSlot extends StatelessWidget {
     // hold its flex share and leave a gap instead of letting the surviving
     // columns widen.
     if (track == null) return const SizedBox.shrink();
+
+    // FX mode re-dresses each cell from the chain its OWN footswitch drives,
+    // which may sit on any stage — an input monitor, the Master insert, another
+    // track's bus (#692). #867 wired the label seam but left the cell hardcoded
+    // to this column's own track chain, so a footswitch bound to an off-stage
+    // chain rendered a BLANK cell (#884). Resolve that binding here and re-
+    // source the dressing from the bound address; an UNBOUND cell passes
+    // nothing and keeps its own-track default, exactly as before.
+    FxAddress? fxTarget;
+    List<TrackEffect>? fxEffects;
+    bool? fxChainEnabled;
+    var inputNames = const <int, String>{};
+    if (mode == InteractionMode.fx) {
+      final control = context.watch<ControlCubit>().state;
+      // Only the visible bank is on screen, so a cell's channel maps straight
+      // to its bank-local track footswitch (track1..4, 0-based index) — the
+      // same map the control layer presses through (ControlCubit._trackIndex).
+      final button = _fxTrackButton(channel - control.bankBaseChannel);
+      final binding = button == null
+          ? null
+          : control.bindings.lookup(button, bank: control.activeBank);
+      if (binding != null) {
+        final target = binding.decodeTarget();
+        if (target != null) {
+          final address = target.address;
+          final looper = context.read<LooperRepository>();
+          fxTarget = address;
+          // Read the bound chain through the SAME lookup the resolvers and the
+          // FX editor use (FxChainLookup / FxBindingResolver), keyed on the
+          // LooperBloc so a chain edit or a stomp from any surface re-runs it —
+          // the bound chain may live on a stage this column's Track select
+          // never carries, so it needs its own reactive dependency.
+          fxEffects = context.select<LooperBloc, List<TrackEffect>>(
+            (_) => looper.chainEntriesAt(address) ?? const <TrackEffect>[],
+          );
+          fxChainEnabled = context.select<LooperBloc, bool>(
+            (_) => looper.bindingEnabled(FxChainTarget(address)) ?? false,
+          );
+          if (address.stage == FxStage.input) {
+            inputNames = context.watch<InputsCubit>().state.names;
+          }
+        } else {
+          // A stale binding drives nothing (R25) — show an empty cell, never
+          // fall back to this column's own track chips, which the switch does
+          // not drive.
+          fxEffects = const <TrackEffect>[];
+          fxChainEnabled = false;
+        }
+      }
+    }
+
     // The Expanded lives here, not at the call site, so the null case above can
     // opt out of the row's flex entirely.
     return Expanded(
@@ -430,8 +482,24 @@ class _TrackSlot extends StatelessWidget {
           looperMode: looperMode,
           isPrimary: isPrimary,
           onCrownPrimary: onCrownPrimary,
+          fxTarget: fxTarget,
+          fxEffects: fxEffects,
+          fxChainEnabled: fxChainEnabled,
+          inputNames: inputNames,
         ),
       ),
     );
   }
 }
+
+/// The bank-local track footswitch (track1..4) for a cell at 0-based [index]
+/// within the visible bank, or `null` when the index is off the plate (the
+/// four track buttons are the only per-track footswitches). Mirrors the
+/// button→channel map `ControlCubit` presses through.
+PedalButton? _fxTrackButton(int index) => switch (index) {
+  0 => PedalButton.track1,
+  1 => PedalButton.track2,
+  2 => PedalButton.track3,
+  3 => PedalButton.track4,
+  _ => null,
+};
