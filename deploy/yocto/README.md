@@ -145,6 +145,22 @@ One mechanical trap while you're in there: the M.2 carrier's PCIe ribbon latches
 at **both** ends, and a half-seated one enumerates intermittently rather than
 failing outright.
 
+### Hostname: the unit is `segno`
+
+The appliance announces itself as **`segno`** (#496) — that is the name on the
+router/AP client list (NetworkManager sends it in DHCP requests) and the SSH
+prompt. Set as image policy in `kas-segno-common.yml`
+(`hostname:pn-base-files`); older images announced the `MACHINE` name
+(`raspberrypi5`, or `raspberrypi4-64` before the Pi 5 switch).
+
+No mDNS ships (no avahi), so the name does **not** buy `segno.local` — connect
+by IP unless your router resolves DHCP hostnames.
+
+After updating a unit from an old-name image: `known_hosts` entries keyed by
+the old name go stale (`ssh-keygen -R raspberrypi5`), but the dropbear host
+keys live on `/data` and do not move — expect a re-learn under the new name,
+never a key-change warning. IP-keyed entries are untouched.
+
 ## Iterating
 
 App-only changes don't need a reflash — `rsync` the bundle to `/opt/segno` on the

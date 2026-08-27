@@ -131,6 +131,17 @@ local_conf_header:
     # in deploy/yocto/README.md); override here only to point elsewhere.
     IMAGE_INSTALL:append = " segno-bundle"
 
+    # Product hostname (#496). Poky's base-files defaults the hostname to
+    # ${MACHINE}, so without this the unit announces the board name
+    # ("raspberrypi5") on every AP client list and SSH prompt. One name for
+    # every board — a retired-board rebuild should carry the product name too.
+    # NetworkManager sends it in DHCP by default (dhcp-send-hostname), so no NM
+    # config is needed. base-files writes the same name into /etc/hosts; when
+    # verifying a build, confirm on the built rootfs that "segno" self-resolves
+    # (a hostname missing from /etc/hosts turns sudo-style lookups into
+    # "unable to resolve host" warnings and slow boots).
+    hostname:pn-base-files = "segno"
+
     # Kernel: use the 6.12 LTS instead of meta-raspberrypi's weak default (6.6, in
     # rpi-default-versions.inc). arm64 only selects ARCH_SUPPORTS_RT from ~6.12, so
     # CONFIG_PREEMPT_RT is selectable here (it is NOT on 6.6). The linux-raspberrypi
