@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:bloc/bloc.dart';
+import 'package:console_facts_client/console_facts_client.dart';
 import 'package:daw_export/daw_export.dart';
 import 'package:equatable/equatable.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -407,39 +408,22 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     // A platform that cannot answer (Windows, or df failing) must not be read
     // as "no space" — that would stop every capture on it.
     if (free == null) return;
-    if (free < stopFloorFor(_capturedBytes(dir))) {
+    // Bytes this capture has written so far — what finalize will have to
+    // duplicate as WAV — summed from the directory rather than estimated from
+    // elapsed time and a bitrate: the stream count varies with the rig (armed
+    // inputs, layers per loop), so a time-based guess would drift exactly on
+    // the big multi-track captures where being wrong costs the most. Runs on
+    // the ~5s sample, not per tick, so the recursive walk is not a hot path —
+    // and it is the SAME walk the Storage face's accounting uses, shared as
+    // one tested implementation rather than a second private copy (#656).
+    // Recursive because the bundle grows `loops/`/`stems/` at finalize; an
+    // unreadable directory sizes to 0, falling back to the headroom alone.
+    if (free < stopFloorFor(directorySizeBytes(dir))) {
       await _stopForLowDisk();
       return;
     }
     _lowDiskAtArm = free < lowDiskThresholdBytes;
     if (state is PerformanceRecorderArmed) _emitArmedTick();
-  }
-
-  /// Bytes this capture has written so far — what finalize will have to
-  /// duplicate as WAV.
-  ///
-  /// Summed from the directory rather than estimated from elapsed time and a
-  /// bitrate: the stream count varies with the rig (armed inputs, layers per
-  /// loop), so a time-based guess would drift exactly on the big multi-track
-  /// captures where being wrong costs the most. Runs on the ~5s sample, not
-  /// per tick, so walking a few dozen entries is not a hot path.
-  int _capturedBytes(String dir) {
-    try {
-      var total = 0;
-      // Recursive: the bundle has `loops/` and `stems/` beneath it. Those are
-      // populated at finalize rather than during capture today, so a flat walk
-      // happens to be correct right now — but it would undercount silently the
-      // moment anything lands in a subdirectory mid-capture, and undercounting
-      // is precisely how the floor collapses to nothing.
-      for (final entry in Directory(dir).listSync(recursive: true)) {
-        if (entry is File) total += entry.lengthSync();
-      }
-      return total;
-    } on FileSystemException {
-      // Unreadable mid-capture: fall back to the headroom alone rather than
-      // reporting 0 and letting the floor collapse to nothing.
-      return 0;
-    }
   }
 
   /// Stops a running capture and finalizes what it has, so the take is a
