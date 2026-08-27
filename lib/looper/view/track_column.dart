@@ -657,22 +657,30 @@ class _FxChainDressing extends StatelessWidget {
           child: effects.isEmpty
               // Nothing loaded: no power pill (there is nothing to power), just
               // a centered NO CHAIN and the invitation to build one.
-              ? const Center(child: _FxNoChain())
-              // The centered group, sitting in the cell's upper-middle. A
-              // bypassed chain dims the whole group (identity + chips + pill)
-              // together at the disabled dim (R26) — present, named, but
-              // visibly not running — rather than vanishing.
+              ? const Align(
+                  // Upper-middle: the NO CHAIN group centres at ~40% of the
+                  // card, matching the pen.
+                  alignment: Alignment(0, -0.33),
+                  child: _FxNoChain(),
+                )
+              // The centered group, anchored so its centre sits at ~42.7% of
+              // the card (the pen). A bypassed chain dims the whole group
+              // (identity + chips + pill) together at the disabled dim (R26) —
+              // present, named, but visibly not running — rather than
+              // vanishing.
               : Align(
-                  alignment: const Alignment(0, -0.1),
+                  alignment: const Alignment(0, -0.26),
                   child: Opacity(
                     opacity: chainEnabled ? 1 : surface.disabledOpacity,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         _FxCellIdentity(label: identityLabel),
-                        const SizedBox(height: kConsoleMode ? 14 : 9),
+                        // Inter-element gaps opened to the pen's proportions:
+                        // identity→chips ~3.8% of the card, chips→pill ~3.2%.
+                        const SizedBox(height: kConsoleMode ? 36 : 22),
                         _FxEntryRun(effects: effects),
-                        const SizedBox(height: kConsoleMode ? 18 : 12),
+                        const SizedBox(height: kConsoleMode ? 30 : 18),
                         _FxPowerPill(enabled: chainEnabled),
                       ],
                     ),
@@ -702,7 +710,7 @@ class _FxNoChain extends StatelessWidget {
           textAlign: TextAlign.center,
           style: TextStyle(
             color: surface.textTertiary,
-            fontSize: kConsoleMode ? 26 : 16,
+            fontSize: kConsoleMode ? 28 : 17,
             fontWeight: FontWeight.w800,
             letterSpacing: 2,
             height: 1.1,
@@ -756,14 +764,16 @@ class _FxCellIdentity extends StatelessWidget {
   }
 }
 
-/// The large ON/OFF power pill — the prominent stadium below the chips that
-/// states the whole chain's on/off at stage distance.
+/// The large ON/OFF power pill — the prominent fixed-width stadium below the
+/// chips that states the whole chain's on/off at stage distance.
 ///
-/// `ON` is purple-filled ([SurfaceTheme.fx]) with dark ink
-/// ([SurfaceTheme.background]) — a mode fill, never an inline wash of `fx` (the
-/// high-contrast flavor could not reach that; #737). `OFF` is the ghost of the
-/// same pill: an [SurfaceTheme.fx] outline over the bare, receded meter, so the
-/// engaged state reads as the heavier one (and the group [Opacity] dims it).
+/// A FIXED size in both states (the pen: ~1/3 of the cell wide, ~7.4% of the
+/// card tall, with a large label), so ON and OFF read as the same object
+/// flipped rather than two differently-shaped buttons. `ON` is purple-filled
+/// ([SurfaceTheme.fx]) with dark ink ([SurfaceTheme.background]) — a mode fill,
+/// never an inline wash of `fx` (the high-contrast flavor could not reach
+/// that; #737). `OFF` is the ghost of the same pill: an [SurfaceTheme.fx]
+/// outline over the bare, receded meter (the group [Opacity] dims it further).
 class _FxPowerPill extends StatelessWidget {
   const _FxPowerPill({required this.enabled});
 
@@ -773,29 +783,34 @@ class _FxPowerPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final l10n = context.l10n;
-    return Container(
-      key: const Key('tracks_tileFxPower'),
-      padding: const EdgeInsets.symmetric(
-        horizontal: kConsoleMode ? 34 : 24,
-        vertical: kConsoleMode ? 11 : 8,
-      ),
-      decoration: BoxDecoration(
-        color: enabled ? surface.fx : Colors.transparent,
-        borderRadius: BorderRadius.circular(999),
-        border: enabled ? null : Border.all(color: surface.fx, width: 2),
-      ),
-      child: AppText(
-        enabled ? l10n.stageFxChainOn : l10n.stageFxChainOff,
-        textAlign: TextAlign.center,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          // Dark ink on the purple ON fill; the fx outline colour on the ghost.
-          color: enabled ? surface.background : surface.fx,
-          fontSize: kConsoleMode ? 22 : 15,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 3,
-          height: 1,
+    return FractionallySizedBox(
+      // ~1/3 of the cell, both states — a fixed pill, not a text-hugging
+      // button. The dressing is inset from the card, so the factor over the
+      // dressing width lands the pill near 1/3 of the whole cell.
+      widthFactor: kConsoleMode ? 0.37 : 0.42,
+      child: Container(
+        key: const Key('tracks_tileFxPower'),
+        height: kConsoleMode ? 70 : 44,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: enabled ? surface.fx : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+          border: enabled ? null : Border.all(color: surface.fx, width: 2.5),
+        ),
+        child: AppText(
+          enabled ? l10n.stageFxChainOn : l10n.stageFxChainOff,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            // Dark ink on the purple ON fill; the fx outline colour on the
+            // ghost.
+            color: enabled ? surface.background : surface.fx,
+            fontSize: kConsoleMode ? 40 : 22,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 4,
+            height: 1,
+          ),
         ),
       ),
     );
@@ -824,12 +839,13 @@ class _FxEntryRun extends StatelessWidget {
     for (var i = 0; i < effects.length; i++) {
       if (i > 0) {
         children.add(
-          AppText(
-            '→',
-            style: TextStyle(
-              color: surface.fx.withValues(alpha: 0.6),
-              fontSize: kConsoleMode ? 16 : 12,
-            ),
+          // A real rendered arrow, not the raw '→' glyph — the console's mono
+          // face has no such codepoint and drew a .notdef box. Neutral grey to
+          // match the pen (the chips are neutral too, not part of the FX hue).
+          Icon(
+            Icons.arrow_right_alt,
+            color: surface.textTertiary,
+            size: kConsoleMode ? 22 : 16,
           ),
         );
       }
@@ -875,18 +891,20 @@ class _FxEntryChip extends StatelessWidget {
           vertical: kConsoleMode ? 5 : 3,
         ),
         decoration: BoxDecoration(
-          color: surface.fxSurface,
+          // Neutral, borderless pills over the waveform (the pen): a dark-grey
+          // fill with near-white label — NOT the FX purple, which belongs to
+          // the power pill alone. Regular weight, no stroke.
+          color: surface.control,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: surface.fx.withValues(alpha: 0.5)),
         ),
         child: AppText(
           label,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: surface.fx,
+            color: surface.textPrimary,
             fontSize: kConsoleMode ? 14 : 11,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w500,
             decoration: bypassed ? TextDecoration.lineThrough : null,
           ),
         ),

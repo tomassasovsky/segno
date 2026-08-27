@@ -77,6 +77,12 @@ void main() {
       '$fontDir/Roboto-Bold.ttf',
     ];
     await _loadFont('Roboto', robotoTtfs);
+    // Material icon glyphs (e.g. the FX entry-run's arrow_right_alt) — the app
+    // bundles this font at runtime; the golden harness must load it too, or
+    // every `Icon` renders as .notdef tofu.
+    await _loadFont('MaterialIcons', [
+      '$fontDir/MaterialIcons-Regular.otf',
+    ]);
     // TracksView wraps itself in LooperScreenTheme, which renders text in the
     // legend font (Helvetica / Arial / sans-serif — macOS/Linux system fonts,
     // absent under `flutter test`). Register the loaded Roboto glyphs under
