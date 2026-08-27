@@ -129,7 +129,9 @@ class LocalConsoleFactsClient implements ConsoleFactsClient {
 /// device name or a platform's default block size. macOS and Linux both honour
 /// both flags. When [path] does not exist yet (a fresh install before the first
 /// session is written) it walks up to the first ancestor that does, so `df`
-/// still lands on the right volume rather than failing.
+/// still lands on the right volume rather than failing. The stdout parse lives
+/// in [parseDfKP], where every defensive branch is unit-tested away from the
+/// subprocess.
 Future<DiskSpace?> _dfDiskSpace(String path) async {
   final target = _firstExistingAncestor(path);
   if (target == null) return null;
@@ -140,15 +142,29 @@ Future<DiskSpace?> _dfDiskSpace(String path) async {
     return null; // no df on this platform (Windows): unknown, honestly
   }
   if (result.exitCode != 0) return null;
-  final lines = (result.stdout as String).trim().split('\n');
-  if (lines.length < 2) return null;
-  // The data line is last: -P guarantees one line per filesystem with the
-  // header first. Columns: Filesystem, 1024-blocks, Used, Available, ...
+  return parseDfKP(result.stdout as String);
+}
+
+/// Parses the stdout of `df -k -P` into a [DiskSpace], or `null` when the
+/// output is not the shape that command guarantees.
+///
+/// Split out from the subprocess so the defensive branches — output with no
+/// data line, a line with too few columns, non-numeric sizes — are pinned by
+/// tests a live `df` would never produce on demand, and so a future `df`-format
+/// surprise fails loudly here rather than silently mis-reads a disk.
+///
+/// `-P` guarantees one filesystem per line with the header first, so the data
+/// line is the last, and its columns are `Filesystem, 1024-blocks, Used,
+/// Available, Capacity, Mounted-on`. Total and available are read straight off,
+/// scaled from 1024-byte blocks to bytes.
+DiskSpace? parseDfKP(String stdout) {
+  final lines = stdout.trim().split('\n');
+  if (lines.length < 2) return null; // header only, or empty: no data line
   final fields = lines.last.trim().split(RegExp(r'\s+'));
-  if (fields.length < 4) return null;
+  if (fields.length < 4) return null; // a wrapped or truncated line
   final totalKb = int.tryParse(fields[1]);
   final availKb = int.tryParse(fields[3]);
-  if (totalKb == null || availKb == null) return null;
+  if (totalKb == null || availKb == null) return null; // non-numeric sizes
   return DiskSpace(totalBytes: totalKb * 1024, freeBytes: availKb * 1024);
 }
 

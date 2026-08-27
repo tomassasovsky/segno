@@ -9,6 +9,6 @@ export 'src/create_console_facts_client.dart'
 export 'src/directory_size.dart' show directorySizeBytes;
 export 'src/fake_console_facts_client.dart' show FakeConsoleFactsClient;
 export 'src/local_console_facts_client.dart'
-    show DiskSpace, LocalConsoleFactsClient;
+    show DiskSpace, LocalConsoleFactsClient, parseDfKP;
 export 'src/unsupported_console_facts_client.dart'
     show UnsupportedConsoleFactsClient;

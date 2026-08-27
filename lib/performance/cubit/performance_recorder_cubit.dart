@@ -413,11 +413,15 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     // elapsed time and a bitrate: the stream count varies with the rig (armed
     // inputs, layers per loop), so a time-based guess would drift exactly on
     // the big multi-track captures where being wrong costs the most. Runs on
-    // the ~5s sample, not per tick, so the recursive walk is not a hot path —
-    // and it is the SAME walk the Storage face's accounting uses, shared as
-    // one tested implementation rather than a second private copy (#656).
-    // Recursive because the bundle grows `loops/`/`stems/` at finalize; an
-    // unreadable directory sizes to 0, falling back to the headroom alone.
+    // the ~5s sample, not per tick, so the recursive walk is not a hot path.
+    // Now the shared `directorySizeBytes` the Storage face's accounting also
+    // uses (#656) — one tested implementation, not a second private copy. It
+    // is intentionally STRICTER than the old private `_capturedBytes`:
+    // `followLinks: false` (no symlink double-count) and per-file error
+    // tolerance (a file vanishing mid-walk no longer zeroes the whole sum);
+    // both are improvements, and the result is identical for a capture bundle,
+    // which contains no symlinks. An unreadable directory sizes to 0, falling
+    // back to the headroom alone.
     if (free < stopFloorFor(directorySizeBytes(dir))) {
       await _stopForLowDisk();
       return;

@@ -252,6 +252,66 @@ void main() {
     });
   });
 
+  group('parseDfKP', () {
+    // Real `df -k -P` output has the header first and one filesystem per line;
+    // the parser reads total (1024-blocks) and available off the last line and
+    // scales to bytes. The live-df test above covers the happy path end to end;
+    // these pin the branches a running df would never hand you on demand.
+
+    test('parses a valid Linux df -k -P block', () {
+      const stdout =
+          'Filesystem     1024-blocks       Used Available '
+          'Capacity Mounted on\n'
+          '/dev/nvme0n1p7   940191048   64512000  827764736       8% /data\n';
+
+      final space = parseDfKP(stdout);
+
+      expect(space, isNotNull);
+      expect(space!.totalBytes, 940191048 * 1024);
+      expect(space.freeBytes, 827764736 * 1024);
+    });
+
+    test('parses a macOS df -k -P block with its extra columns', () {
+      // macOS prints iused/ifree/%iused between Capacity and Mounted-on; the
+      // total/available columns are still 1 and 3, so the parse is unchanged.
+      const stdout =
+          'Filesystem 1024-blocks Used Available Capacity iused '
+          'ifree %iused Mounted on\n'
+          '/dev/disk3s5 1948455240 1082619684 801731620 58% 501 999 1% '
+          '/System/Volumes/Data\n';
+
+      final space = parseDfKP(stdout);
+
+      expect(space, isNotNull);
+      expect(space!.totalBytes, 1948455240 * 1024);
+      expect(space.freeBytes, 801731620 * 1024);
+    });
+
+    test('a header-only output has no data line and is null', () {
+      const stdout =
+          'Filesystem 1024-blocks Used Available Capacity '
+          'Mounted on\n';
+      expect(parseDfKP(stdout), isNull);
+    });
+
+    test('empty output is null', () {
+      expect(parseDfKP(''), isNull);
+    });
+
+    test('a short data line (too few columns) is null', () {
+      const stdout = 'Filesystem 1024-blocks Used Available\n/dev/sda1 100\n';
+      expect(parseDfKP(stdout), isNull);
+    });
+
+    test('non-numeric size fields are null, not a throw', () {
+      const stdout =
+          'Filesystem 1024-blocks Used Available Capacity '
+          'Mounted on\n'
+          '/dev/sda1 lots some plenty 8% /data\n';
+      expect(parseDfKP(stdout), isNull);
+    });
+  });
+
   group('createConsoleFactsClient', () {
     Future<String> noRoot() async => '';
 
