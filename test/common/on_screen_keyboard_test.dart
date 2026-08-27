@@ -136,7 +136,7 @@ void main() {
       expect(controller.text, 'Ab');
     });
 
-    testWidgets('a second shift tap latches caps-lock across keys', (
+    testWidgets('a quick double-tap latches caps-lock across keys', (
       tester,
     ) async {
       // Renaming a track "FX BUS" should not mean tapping shift six times.
@@ -144,9 +144,10 @@ void main() {
       await tester.tap(find.byType(TextField));
       await tester.pump();
 
-      // First tap arms one-shot, a second latches the lock.
+      // A double-tap: the second tap lands well inside the 300 ms window, so
+      // the arm is promoted to a lock rather than toggled off.
       await tester.tap(find.bySemanticsLabel('Shift'));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
       await tester.tap(find.bySemanticsLabel('Shift'));
       await tester.pump();
 
@@ -157,14 +158,36 @@ void main() {
       expect(controller.text, 'ABC');
     });
 
+    testWidgets('a slow second tap toggles the arm off instead of locking', (
+      tester,
+    ) async {
+      // A deliberate, separate second tap — not a double-tap — is the phone
+      // idiom for turning a one-shot back off.
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      // Past the 300 ms double-tap window: this is a fresh tap, not the pair.
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+
+      // Back to off — an outline arrow, no lock, and lowercase output.
+      expect(find.byIcon(Icons.arrow_upward_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_capslock), findsNothing);
+      await tapKey(tester, 'a');
+      expect(controller.text, 'a');
+    });
+
     testWidgets('tapping shift again releases caps-lock', (tester) async {
       await pumpField(tester);
       await tester.tap(find.byType(TextField));
       await tester.pump();
 
-      // off -> one-shot -> locked, then a third tap back to off.
+      // Double-tap to lock, then a single tap back to off.
       await tester.tap(find.bySemanticsLabel('Shift'));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
       await tester.tap(find.bySemanticsLabel('Shift'));
       await tester.pump();
       await tapKey(tester, 'A');
@@ -182,24 +205,52 @@ void main() {
       await tester.tap(find.byType(TextField));
       await tester.pump();
 
-      // off: an outline arrow.
+      // The Material behind the shift glyph, whichever icon it currently shows.
+      Color shiftCapColor() {
+        final icon = tester.widget<Icon>(
+          find.byWidgetPredicate(
+            (w) =>
+                w is Icon &&
+                (w.semanticLabel == 'Shift' || w.semanticLabel == 'Caps lock'),
+          ),
+        );
+        return tester
+            .widget<Material>(
+              find
+                  .ancestor(
+                    of: find.byWidget(icon),
+                    matching: find.byType(Material),
+                  )
+                  .first,
+            )
+            .color!;
+      }
+
+      final surface = AppTheme.neon.extension<SurfaceTheme>()!;
+
+      // off: an outline arrow on the plain key fill.
       expect(find.byIcon(Icons.arrow_upward_outlined), findsOneWidget);
       expect(find.byIcon(Icons.arrow_upward), findsNothing);
       expect(find.byIcon(Icons.keyboard_capslock), findsNothing);
+      expect(shiftCapColor(), surface.cardHigh);
 
-      // one-shot: a filled arrow.
+      // one-shot: a filled arrow on the flat accent tint.
       await tester.tap(find.bySemanticsLabel('Shift'));
       await tester.pump();
       expect(find.byIcon(Icons.arrow_upward_outlined), findsNothing);
       expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
       expect(find.byIcon(Icons.keyboard_capslock), findsNothing);
+      expect(shiftCapColor(), surface.accentSurface);
 
-      // locked: the caps-lock glyph.
+      // locked (quick second tap): the caps-lock glyph on a SOLID bright
+      // accent cap — a stronger fill than armed's tint, so the two never blur.
       await tester.tap(find.bySemanticsLabel('Shift'));
       await tester.pump();
       expect(find.byIcon(Icons.arrow_upward_outlined), findsNothing);
       expect(find.byIcon(Icons.arrow_upward), findsNothing);
       expect(find.byIcon(Icons.keyboard_capslock), findsOneWidget);
+      expect(shiftCapColor(), surface.accent);
+      expect(surface.accent, isNot(surface.accentSurface));
     });
 
     testWidgets('switching layers spends a one-shot shift', (tester) async {
@@ -228,7 +279,7 @@ void main() {
       await tester.pump();
 
       await tester.tap(find.bySemanticsLabel('Shift'));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
       await tester.tap(find.bySemanticsLabel('Shift'));
       await tester.pump();
       await tapKey(tester, '?123');
