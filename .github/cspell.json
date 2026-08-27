@@ -24,7 +24,7 @@
     "**/third_party/signalsmith-stretch/**",
     "**/third_party/vst3sdk/**"
   ],
-            "words": [
+              "words": [
     "Ableton",
     "accum",
     "aconnect",
@@ -38,6 +38,7 @@
     "allpass",
     "ALSA",
     "alsamixer",
+    "alsashim",
     "altset",
     "Aluminio",
     "aluminium",
@@ -278,6 +279,7 @@
     "fase",
     "fbcon",
     "fbdev",
+    "fbshim",
     "fdatasync",
     "feedthrough",
     "ffigen",
@@ -298,6 +300,7 @@
     "FPEMPTY",
     "fplatform",
     "fqbn",
+    "FRAMEDIR",
     "Freerouting",
     "Freeverb",
     "freewheel",
@@ -437,6 +440,7 @@
     "logind",
     "LOGR",
     "Looperboard",
+    "LOOPERX",
     "loopsample",
     "loopstation",
     "lpthread",
@@ -706,6 +710,7 @@
     "Retroalimentaci\u00f3n",
     "revertable",
     "rfft",
+    "RGBA",
     "rhproxy",
     "rlen",
     "RLIMIT",
