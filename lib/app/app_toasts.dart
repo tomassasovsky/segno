@@ -31,6 +31,13 @@ final Map<String, ToastificationItem> _active = {};
 /// The registry below is module-level, so it survives between widget tests:
 /// one test showing a toast makes the next test's identical toast a duplicate
 /// and silently a no-op. Reset it in `setUp`.
+///
+/// This clears only *this module's* id→item map. The `toastification` package
+/// keeps its OWN process-global singleton (`toastification.managers`) that also
+/// leaks across tests under `very_good test --optimization`; wiping that is the
+/// job of `resetToastificationForTest` in `test/helpers/toast_test_helpers.dart`
+/// (it pokes a package member the analyzer only permits from test code). Toast
+/// tests call BOTH in `setUp`.
 @visibleForTesting
 void resetAppToastsForTest() => _active.clear();
 
