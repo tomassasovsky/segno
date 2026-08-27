@@ -173,10 +173,13 @@ class TrackColumn extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: looper.tileBackground,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(17),
+        // Selected: a 4px white ring (onAccent == pure white). Unselected: a
+        // 1px near-black hairline (the pen's card stroke #17171b, the `card`
+        // token's near-black) — not borderless.
         border: Border.all(
-          color: selected ? Colors.white : Colors.transparent,
-          width: 3,
+          color: selected ? surface.onAccent : surface.card,
+          width: selected ? 4 : 1,
         ),
       ),
       padding: const EdgeInsets.all(14),
@@ -194,9 +197,11 @@ class TrackColumn extends StatelessWidget {
                 AppText(
                   '${track.channel + 1}',
                   style: theme.textTheme.titleMedium?.copyWith(
-                    color: surface.textSecondary,
-                    // Console: larger channel number to match the bigger name.
-                    fontSize: 40,
+                    // The pen's cell number: UI sans, muted grey.
+                    fontFamily: SurfaceTheme.displayFont,
+                    color: surface.textTertiary,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
                 if (track.isMultiple)
@@ -649,7 +654,6 @@ class _FxChainDressing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surface = context.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
         child: Padding(
@@ -664,26 +668,26 @@ class _FxChainDressing extends StatelessWidget {
                   child: _FxNoChain(),
                 )
               // The centered group, anchored so its centre sits at ~42.7% of
-              // the card (the pen). A bypassed chain dims the whole group
-              // (identity + chips + pill) together at the disabled dim (R26) —
-              // present, named, but visibly not running — rather than
-              // vanishing.
+              // the card (the pen). A bypassed chain reads as dimmed — but
+              // through OPAQUE muted colours, not a translucent group: dimming
+              // white over the green fill tinted the identity green and the
+              // pill blue (the pen's dimmed values are flat neutral greys).
               : Align(
                   alignment: const Alignment(0, -0.26),
-                  child: Opacity(
-                    opacity: chainEnabled ? 1 : surface.disabledOpacity,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _FxCellIdentity(label: identityLabel),
-                        // Inter-element gaps opened to the pen's proportions:
-                        // identity→chips ~3.8% of the card, chips→pill ~3.2%.
-                        const SizedBox(height: kConsoleMode ? 36 : 22),
-                        _FxEntryRun(effects: effects),
-                        const SizedBox(height: kConsoleMode ? 30 : 18),
-                        _FxPowerPill(enabled: chainEnabled),
-                      ],
-                    ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _FxCellIdentity(
+                        label: identityLabel,
+                        enabled: chainEnabled,
+                      ),
+                      // Inter-element gaps opened to the pen's proportions:
+                      // identity→chips ~3.8% of the card, chips→pill ~3.2%.
+                      const SizedBox(height: kConsoleMode ? 36 : 22),
+                      _FxEntryRun(effects: effects, chainEnabled: chainEnabled),
+                      const SizedBox(height: kConsoleMode ? 30 : 18),
+                      _FxPowerPill(enabled: chainEnabled),
+                    ],
                   ),
                 ),
         ),
@@ -693,7 +697,8 @@ class _FxChainDressing extends StatelessWidget {
 }
 
 /// The centered "no effects loaded" state: a large NO CHAIN over a small,
-/// dimmed hint pointing at the Signal tab where a chain is assembled.
+/// dimmed hint pointing at the Signal tab where a chain is assembled. Both in
+/// the UI sans, in the pen's flat muted grey.
 class _FxNoChain extends StatelessWidget {
   const _FxNoChain();
 
@@ -709,10 +714,11 @@ class _FxNoChain extends StatelessWidget {
           key: const Key('tracks_tileFxNoChain'),
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: surface.textTertiary,
-            fontSize: kConsoleMode ? 28 : 17,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 2,
+            fontFamily: SurfaceTheme.displayFont,
+            color: surface.textMuted,
+            fontSize: kConsoleMode ? 28 : 18,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1,
             height: 1.1,
           ),
         ),
@@ -721,9 +727,10 @@ class _FxNoChain extends StatelessWidget {
           l10n.stageFxNoChainHint,
           textAlign: TextAlign.center,
           style: TextStyle(
+            fontFamily: SurfaceTheme.displayFont,
             color: surface.textMuted,
-            fontSize: kConsoleMode ? 14 : 10,
-            fontWeight: FontWeight.w500,
+            fontSize: kConsoleMode ? 18 : 12,
+            fontWeight: FontWeight.w400,
           ),
         ),
       ],
@@ -732,21 +739,25 @@ class _FxNoChain extends StatelessWidget {
 }
 
 /// The chain-first cell identity, `TARGET · CHAIN` — the dominant focal text of
-/// an FX-mode cell, sitting at the top of the centered group.
+/// an FX-mode cell, in the UI sans, sitting at the top of the centered group.
 ///
 /// Names the FX stage the footswitch's bound chain attaches to and the chain
 /// itself — the FX control the cell drives — NOT the track in the column
-/// (#692). It is the on-screen twin of the tile's FX semantic label. White
-/// ([SurfaceTheme.textPrimary]) as the biggest text in the cell; the group's
-/// own [Opacity] dims it when the chain is bypassed. Carries no semantics of
-/// its own: the tile's FX label already announces this same identity.
+/// (#692). It is the on-screen twin of the tile's FX semantic label. Near-white
+/// ([SurfaceTheme.textPrimary]) when engaged; a flat, OPAQUE muted grey
+/// ([SurfaceTheme.textSecondary]) when bypassed — never a translucent white,
+/// which over the green meter tints green. Carries no semantics of its own: the
+/// tile's FX label already announces this same identity.
 class _FxCellIdentity extends StatelessWidget {
-  const _FxCellIdentity({required this.label});
+  const _FxCellIdentity({required this.label, required this.enabled});
 
   final String label;
 
+  final bool enabled;
+
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     return AppText(
       label,
       key: const Key('tracks_tileFxTarget'),
@@ -754,26 +765,25 @@ class _FxCellIdentity extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
-        color: context.surface.textPrimary,
-        fontSize: kConsoleMode ? 32 : 19,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 1,
+        fontFamily: SurfaceTheme.displayFont,
+        color: enabled ? surface.textPrimary : surface.textSecondary,
+        fontSize: kConsoleMode ? 30 : 19,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.5,
         height: 1,
       ),
     );
   }
 }
 
-/// The large ON/OFF power pill — the prominent fixed-width stadium below the
+/// The large ON/OFF power pill — the prominent fully-round stadium below the
 /// chips that states the whole chain's on/off at stage distance.
 ///
-/// A FIXED size in both states (the pen: ~1/3 of the cell wide, ~7.4% of the
-/// card tall, with a large label), so ON and OFF read as the same object
-/// flipped rather than two differently-shaped buttons. `ON` is purple-filled
-/// ([SurfaceTheme.fx]) with dark ink ([SurfaceTheme.background]) — a mode fill,
-/// never an inline wash of `fx` (the high-contrast flavor could not reach
-/// that; #737). `OFF` is the ghost of the same pill: an [SurfaceTheme.fx]
-/// outline over the bare, receded meter (the group [Opacity] dims it further).
+/// `ON` is purple-filled ([SurfaceTheme.fx]) with a WHITE label — a mode fill,
+/// never an inline wash of `fx` (the high-contrast flavor could not reach that;
+/// #737). `OFF` is the ghost of the same pill: transparent with a flat muted
+/// grey ([SurfaceTheme.textMuted]) outline and label (the run's [Opacity] dims
+/// it further when bypassed). The label is the UI sans, sized to the pen.
 class _FxPowerPill extends StatelessWidget {
   const _FxPowerPill({required this.enabled});
 
@@ -783,52 +793,53 @@ class _FxPowerPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final l10n = context.l10n;
-    return FractionallySizedBox(
-      // ~1/3 of the cell, both states — a fixed pill, not a text-hugging
-      // button. The dressing is inset from the card, so the factor over the
-      // dressing width lands the pill near 1/3 of the whole cell.
-      widthFactor: kConsoleMode ? 0.37 : 0.42,
-      child: Container(
-        key: const Key('tracks_tileFxPower'),
-        height: kConsoleMode ? 70 : 44,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: enabled ? surface.fx : Colors.transparent,
-          borderRadius: BorderRadius.circular(999),
-          border: enabled ? null : Border.all(color: surface.fx, width: 2.5),
-        ),
-        child: AppText(
-          enabled ? l10n.stageFxChainOn : l10n.stageFxChainOff,
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            // Dark ink on the purple ON fill; the fx outline colour on the
-            // ghost.
-            color: enabled ? surface.background : surface.fx,
-            fontSize: kConsoleMode ? 40 : 22,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 4,
-            height: 1,
-          ),
+    return Container(
+      key: const Key('tracks_tileFxPower'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kConsoleMode ? 46 : 28,
+        vertical: kConsoleMode ? 16 : 10,
+      ),
+      decoration: BoxDecoration(
+        color: enabled ? surface.fx : Colors.transparent,
+        borderRadius: BorderRadius.circular(999),
+        // OFF ring is the pen's flat muted grey, not the fx purple (which over
+        // the green meter read bluish).
+        border: enabled ? null : Border.all(color: surface.textMuted, width: 2),
+      ),
+      child: AppText(
+        enabled ? l10n.stageFxChainOn : l10n.stageFxChainOff,
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontFamily: SurfaceTheme.displayFont,
+          // White label (onAccent) on the purple ON fill; flat muted grey on
+          // the ghost.
+          color: enabled ? surface.onAccent : surface.textMuted,
+          fontSize: kConsoleMode ? 40 : 22,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.4,
+          height: 1,
         ),
       ),
     );
   }
 }
 
-/// The chain's entries as small chips joined by dim arrows, in signal order —
-/// the surface where #601's per-entry dim/strikethrough idiom will mark
+/// The chain's entries as small neutral chips joined by a sans `→`, in signal
+/// order — the surface where #601's per-entry dim/strikethrough idiom will mark
 /// bypassed entries. Sits directly below the identity, centered.
 ///
-/// The whole run dims with the group when the chain is bypassed (the parent
-/// [Opacity]); the per-ENTRY seam is deliberate: [_FxEntryChip] already takes a
+/// The whole run dims with the group when the chain is bypassed (the [Opacity]
+/// here); the per-ENTRY seam is deliberate: [_FxEntryChip] already takes a
 /// `bypassed` flag (always `false` until #601 wires per-entry state), so that
 /// slice changes one argument here and nothing else.
 class _FxEntryRun extends StatelessWidget {
-  const _FxEntryRun({required this.effects});
+  const _FxEntryRun({required this.effects, required this.chainEnabled});
 
   final List<TrackEffect> effects;
+
+  final bool chainEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -838,14 +849,18 @@ class _FxEntryRun extends StatelessWidget {
     final children = <Widget>[];
     for (var i = 0; i < effects.length; i++) {
       if (i > 0) {
+        // The literal '→' (U+2192) in the UI SANS — Inter has the glyph, so it
+        // renders cleanly; the console's mono face does not, which is what drew
+        // the .notdef tofu when the run inherited it.
         children.add(
-          // A real rendered arrow, not the raw '→' glyph — the console's mono
-          // face has no such codepoint and drew a .notdef box. Neutral grey to
-          // match the pen (the chips are neutral too, not part of the FX hue).
-          Icon(
-            Icons.arrow_right_alt,
-            color: surface.textTertiary,
-            size: kConsoleMode ? 22 : 16,
+          AppText(
+            '→',
+            style: TextStyle(
+              fontFamily: SurfaceTheme.displayFont,
+              color: surface.textMuted,
+              fontSize: kConsoleMode ? 16 : 12,
+              height: 1,
+            ),
           ),
         );
       }
@@ -855,21 +870,25 @@ class _FxEntryRun extends StatelessWidget {
         _FxEntryChip(label: fxBlockName(l10n, effects[i]), bypassed: false),
       );
     }
-    return Container(
-      key: const Key('tracks_tileFxEntryRun'),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: kConsoleMode ? 7 : 5,
-        runSpacing: 4,
-        children: children,
+    return Opacity(
+      // A bypassed run reads dimmer, together with the rest of the group.
+      opacity: chainEnabled ? 1 : surface.disabledOpacity,
+      child: Container(
+        key: const Key('tracks_tileFxEntryRun'),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: kConsoleMode ? 8 : 6,
+          runSpacing: 4,
+          children: children,
+        ),
       ),
     );
   }
 }
 
-/// One entry in the stage-tile chain run — the entry's name in a small, dark
-/// pill chip.
+/// One entry in the stage-tile chain run — the entry's name in a small neutral
+/// pill chip (UI sans), a dark-grey fill with a hairline white border.
 ///
 /// [bypassed] is the #601 seam: when that slice lands it will dim/strike a
 /// single bypassed entry here without touching the whole-chain path above.
@@ -887,24 +906,26 @@ class _FxEntryChip extends StatelessWidget {
       opacity: bypassed ? surface.disabledOpacity : 1,
       child: Container(
         padding: const EdgeInsets.symmetric(
-          horizontal: kConsoleMode ? 11 : 8,
-          vertical: kConsoleMode ? 5 : 3,
+          horizontal: kConsoleMode ? 14 : 9,
+          vertical: kConsoleMode ? 8 : 5,
         ),
         decoration: BoxDecoration(
-          // Neutral, borderless pills over the waveform (the pen): a dark-grey
-          // fill with near-white label — NOT the FX purple, which belongs to
-          // the power pill alone. Regular weight, no stroke.
+          // Neutral pills over the waveform (the pen): a dark-grey fill with a
+          // hairline white border and a near-white label — NOT the FX purple,
+          // which belongs to the power pill alone.
           color: surface.control,
           borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: surface.borderSubtle),
         ),
         child: AppText(
           label,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
+            fontFamily: SurfaceTheme.displayFont,
             color: surface.textPrimary,
-            fontSize: kConsoleMode ? 14 : 11,
-            fontWeight: FontWeight.w500,
+            fontSize: kConsoleMode ? 18 : 13,
+            fontWeight: FontWeight.w600,
             decoration: bypassed ? TextDecoration.lineThrough : null,
           ),
         ),

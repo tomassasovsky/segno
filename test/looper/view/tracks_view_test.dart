@@ -1232,8 +1232,10 @@ void main() {
             .color;
       }
 
-      expect(borderColor(0), Colors.white); // selected
-      expect(borderColor(1), Colors.transparent); // unselected
+      expect(borderColor(0), Colors.white); // selected: 4px white ring
+      // Unselected: the pen's 1px near-black card hairline (the `card` token),
+      // not borderless.
+      expect(borderColor(1), AppTheme.neon.extension<SurfaceTheme>()!.card);
     });
 
     testWidgets('track tiles have no glow shadow', (tester) async {
