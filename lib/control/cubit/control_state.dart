@@ -24,6 +24,7 @@ class ControlState extends Equatable {
     this.heldMomentary = const <PedalBindingKey>{},
     this.controllerBindings = ControllerBindingSet.empty,
     this.controllerLearn,
+    this.clearAllPulse = 0,
   });
 
   /// Tracks per bank.
@@ -115,6 +116,15 @@ class ControlState extends Equatable {
   /// times out — never by engine truth.
   final ControllerLearn? controllerLearn;
 
+  /// A monotonic pulse bumped each time a [ControlCubit.clearAll] leaves at
+  /// least one track holding a clear restore point. NOT stored intent — an
+  /// emitted-once cue a surface listens for (the tracks view's post-clear-all
+  /// undo toast), the same one-shot-in-state shape `SessionState.outcome`
+  /// uses. It carries no set: undo-clear-all is derived from live
+  /// `Track.clearRestore`, so the pulse only needs to say "it happened".
+  /// Never invalidated — a sequence number, only ever incremented.
+  final int clearAllPulse;
+
   /// The remap actually in force: the session's when it has ANY bindings, the
   /// globals otherwise (A12). Derived, never stored — so the two copies can
   /// never disagree about which one applies.
@@ -170,6 +180,7 @@ class ControlState extends Equatable {
     ControllerBindingSet? controllerBindings,
     ControllerLearn? controllerLearn,
     bool clearControllerLearn = false,
+    int? clearAllPulse,
   }) => ControlState(
     mode: mode ?? this.mode,
     defaultMode: defaultMode ?? this.defaultMode,
@@ -187,6 +198,7 @@ class ControlState extends Equatable {
     controllerLearn: clearControllerLearn
         ? null
         : controllerLearn ?? this.controllerLearn,
+    clearAllPulse: clearAllPulse ?? this.clearAllPulse,
   );
 
   @override
@@ -203,5 +215,6 @@ class ControlState extends Equatable {
     heldMomentary,
     controllerBindings,
     controllerLearn,
+    clearAllPulse,
   ];
 }

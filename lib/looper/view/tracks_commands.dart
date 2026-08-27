@@ -67,6 +67,20 @@ class TracksCommands {
     _announce(context.l10n.a11yAllCleared);
   }
 
+  /// Restores every track a clear-all cleared — the whole-rig counterpart to
+  /// [undo] — and announces it. Derived from the live per-track restore points
+  /// (`Track.clearRestore`), so it never resurrects a track the engine has
+  /// retired. Inert (nothing dispatched, nothing announced) when no track
+  /// holds a pending clear, so ⌘⇧C on a rig with nothing to restore is silent.
+  void undoClearAll() {
+    final pending = context.read<LooperBloc>().state.tracks.any(
+      (t) => t.clearRestore,
+    );
+    if (!pending) return;
+    context.read<ControlCubit>().undoClearAll();
+    _announce(context.l10n.a11yUndoClearAll);
+  }
+
   /// Undoes the latest overdub pass on [channel] (past the base recording the
   /// track empties, redo-ably) and announces it. Skipped while the track is
   /// actively capturing — the engine rejects it then, and a screen reader must
@@ -154,7 +168,8 @@ class TracksCommands {
   ///
   /// Every mode: `M` cycle mode · `S` settings · `G` signal · `F` fullscreen ·
   /// `Space` play/pause all · `C` clear all · `A` arm/disarm performance
-  /// recording · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y` (or `Shift+Z`) redo.
+  /// recording · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y` (or `Shift+Z`) redo ·
+  /// `Cmd/Ctrl+Shift+C` undo clear-all (whole-rig restore).
   /// Record mode: `1`–`8` select · `R` record/overdub · `P` play/pause.
   /// Mute mode: `1`–`8` select + mute/unmute.
   /// FX mode: `1`–`8` select + toggle that track's FX chain.
@@ -184,6 +199,12 @@ class TracksCommands {
     }
 
     if (keyboard.isMetaPressed || keyboard.isControlPressed) {
+      // `⌘⇧C` mirrors `C` (clear-all): the whole-rig undo-clear-all. Checked
+      // before `⌘Z` so the Shift modifier is not read as a redo request.
+      if (key == LogicalKeyboardKey.keyC && keyboard.isShiftPressed) {
+        undoClearAll();
+        return KeyEventResult.handled;
+      }
       if (key == LogicalKeyboardKey.keyZ) {
         if (keyboard.isShiftPressed) {
           redo(selected);

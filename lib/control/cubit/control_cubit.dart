@@ -936,8 +936,13 @@ class ControlCubit extends Cubit<ControlState> {
   /// itself already knows how to skip.
   Future<void> clearAll() async {
     if (_performanceArmed) await _performance.persistLiveLanes();
+    // Whether any track we cleared held content: only a content clear leaves a
+    // restore point behind (an undone-to-empty redo-only track's does not), so
+    // this is the gate on offering whole-rig undo below.
+    var restorable = false;
     for (final track in _tracks) {
       if (!track.hasContent && !track.canRedo) continue;
+      if (track.hasContent) restorable = true;
       _looper
         ..clear(channel: track.channel)
         ..setMute(muted: false, channel: track.channel);
@@ -960,11 +965,38 @@ class ControlCubit extends Cubit<ControlState> {
         activeBank: 0,
         excluded: const <int>{},
         parkedResume: const <int>{},
+        // Offer whole-rig undo only when a cleared take can actually come back:
+        // bump the pulse so a surface (the tracks view's toast) can react.
+        // Derived, not remembered — [undoClearAll] re-reads live `clearRestore`
+        // — so the pulse only needs to say "a content clear-all just happened".
+        clearAllPulse: restorable ? state.clearAllPulse + 1 : null,
       ),
     );
     // The clear may be a state no-op (already home) while the held-LED bit
     // still needs to reach the wire.
     _pushProjected();
+  }
+
+  /// Whole-rig recovery from a clear-all: undoes every track that still holds
+  /// a clear restore point ([Track.clearRestore]), putting its erased take
+  /// back — with the layers, FX chains and mutes the repository snapshotted
+  /// and re-persists per channel.
+  ///
+  /// Derived from the live snapshot, never a remembered set: a restore point
+  /// the engine has already retired (a fresh take overwrote the cleared slot,
+  /// or a take redefined the master grid) is simply not in the set, so this
+  /// never resurrects a track the engine let go, and it does the right thing
+  /// in the partial case (clear-all, then a new take on one track →
+  /// undo-clear-all restores the others and leaves the fresh take alone). A
+  /// no-op when nothing is pending — the toast never shows and ⌘⇧C is inert.
+  ///
+  /// Emits nothing mode-related: unlike [clearAll] it does not re-home the
+  /// overlay — the user is recovering the rig they had, cursor and mode
+  /// included.
+  void undoClearAll() {
+    for (final track in _tracks) {
+      if (track.clearRestore) _looper.undo(channel: track.channel);
+    }
   }
 
   /// Undoes the latest overdub pass on [channel] (per-layer all the way
