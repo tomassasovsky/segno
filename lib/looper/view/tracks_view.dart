@@ -18,6 +18,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/cache_telemetry_scope.dart';
 import 'package:segno/looper/view/connectivity_banners.dart';
+import 'package:segno/looper/view/fx_overlay/fx_overlay.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_status_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
@@ -46,6 +47,20 @@ class TracksView extends StatefulWidget {
 }
 
 class _TracksViewState extends State<TracksView> {
+  /// The gap between track columns (the pen's 10 on console, 16 on desktop) —
+  /// shared by the track run and the FX overlay so the overlay's cells sit
+  /// over the columns.
+  static const double _runSpacing = kConsoleMode ? 10 : 16;
+
+  /// The FX-overlay style currently shown.
+  ///
+  /// TEMPORARY (#692 comparison): FX mode is being trialled in four styles
+  /// (`fx-opt-A`…`fx-opt-D`); the on-screen [FxStyleCycler] advances this
+  /// a→b→c→d→a. Once the owner picks one, drop this field, the cycler, and the
+  /// [FxOverlayStyle] cycling — the overlay keeps only the chosen treatment.
+  /// Default: candidate C (the slim per-column footer strip).
+  FxOverlayStyle _fxStyle = FxOverlayStyle.c;
+
   @override
   void dispose() {
     dismissAppToast(AppToastId.undoClearAll);
@@ -190,13 +205,6 @@ class _TracksViewState extends State<TracksView> {
                       behavior: HitTestBehavior.translucent,
                       onSecondaryTapUp: (_) => unawaited(openSegnoSettings()),
                       child: Scaffold(
-                        // #692: FX is a performance MODE, so the whole stage
-                        // takes the FX surface — the mode reads from the
-                        // gutters and chrome around the tiles, not from one
-                        // pill. Other modes keep the default stage black.
-                        backgroundColor: mode == InteractionMode.fx
-                            ? context.surface.fxSurface
-                            : null,
                         body: SafeArea(
                           child: Padding(
                             // Console/kiosk mode hides the on-screen toolbar
@@ -254,39 +262,91 @@ class _TracksViewState extends State<TracksView> {
                                   const SizedBox(height: 14),
                                 ],
                                 Expanded(
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    // The pen's four columns sit 10 apart, and
-                                    // the run's own inset holds it off the
-                                    // screen edges. Padding each column instead
-                                    // doubled the inner gap to 16 and put half
-                                    // of it outside the run as well.
-                                    spacing: kConsoleMode ? 10 : 16,
+                                  child: Stack(
+                                    fit: StackFit.expand,
                                     children: [
-                                      // _TrackSlot supplies its own Expanded,
-                                      // so a slot with no track takes no flex
-                                      // and its siblings widen -- matching what
-                                      // the old `for (track in state.tracks)`
-                                      // did by simply emitting fewer children.
-                                      for (final channel in chrome.channels)
-                                        if (overlay.bankContains(channel))
-                                          _TrackSlot(
-                                            channel: channel,
-                                            name: l10n.displayTrackName(
-                                              tracksState.nameOf(channel),
-                                              channel,
-                                            ),
-                                            selected: channel == overlay.cursor,
-                                            mode: mode,
-                                            onUndo: commands.undo,
-                                            onRedo: commands.redo,
-                                            looperMode: chrome.looperMode,
-                                            isPrimary:
-                                                channel == chrome.primaryTrack,
-                                            onCrownPrimary:
-                                                commands.crownPrimary,
+                                      Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        // The pen's four columns sit 10 apart,
+                                        // and the run's own inset holds it off
+                                        // the screen edges. Padding each column
+                                        // instead doubled the inner gap to 16
+                                        // and put half of it outside the run.
+                                        spacing: _runSpacing,
+                                        children: [
+                                          // _TrackSlot supplies its own
+                                          // Expanded, so a slot with no track
+                                          // takes no flex and its siblings
+                                          // widen -- matching what the old `for
+                                          // (track in state.tracks)` did by
+                                          // simply emitting fewer children.
+                                          for (final channel in chrome.channels)
+                                            if (overlay.bankContains(channel))
+                                              _TrackSlot(
+                                                channel: channel,
+                                                name: l10n.displayTrackName(
+                                                  tracksState.nameOf(channel),
+                                                  channel,
+                                                ),
+                                                selected:
+                                                    channel == overlay.cursor,
+                                                mode: mode,
+                                                onUndo: commands.undo,
+                                                onRedo: commands.redo,
+                                                looperMode: chrome.looperMode,
+                                                isPrimary:
+                                                    channel ==
+                                                    chrome.primaryTrack,
+                                                onCrownPrimary:
+                                                    commands.crownPrimary,
+                                              ),
+                                        ],
+                                      ),
+                                      // The pen's stage-top elevation shadow,
+                                      // on every STAGE frame: a soft drop cast
+                                      // downward at the top of the run, behind
+                                      // the status bar (#692 pen).
+                                      const Positioned(
+                                        top: 0,
+                                        left: 0,
+                                        right: 0,
+                                        child: _StageTopShadow(),
+                                      ),
+                                      // FX is an OVERLAY (owner pivot): the dim
+                                      // scrim + per-pedal ON/OFF controls float
+                                      // ABOVE the (unmodified) columns. Only in
+                                      // FX mode.
+                                      if (mode == InteractionMode.fx)
+                                        Positioned.fill(
+                                          child: FxOverlay(
+                                            style: _fxStyle,
+                                            channels: [
+                                              for (final channel
+                                                  in chrome.channels)
+                                                if (overlay.bankContains(
+                                                  channel,
+                                                ))
+                                                  channel,
+                                            ],
+                                            spacing: _runSpacing,
                                           ),
+                                        ),
+                                      // TEMPORARY (#692 comparison): the style
+                                      // cycler, FX-mode only. Remove with the
+                                      // multi-style overlay once a style is
+                                      // chosen.
+                                      if (mode == InteractionMode.fx)
+                                        Positioned(
+                                          top: kConsoleMode ? 8 : 4,
+                                          right: kConsoleMode ? 8 : 4,
+                                          child: FxStyleCycler(
+                                            style: _fxStyle,
+                                            onCycle: () => setState(
+                                              () => _fxStyle = _fxStyle.next,
+                                            ),
+                                          ),
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -306,6 +366,36 @@ class _TracksViewState extends State<TracksView> {
       ),
     );
   }
+}
+
+/// The pen's stage-screen top elevation shadow, present on every STAGE frame:
+/// a soft drop shadow cast downward at the top of the stage content, behind the
+/// status bar. Painted above the run content (an [IgnorePointer], so it never
+/// eats a tap). The pen values map 1:1 into the app's 1920 space.
+class _StageTopShadow extends StatelessWidget {
+  const _StageTopShadow();
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    child: SizedBox(
+      height: 1,
+      width: double.infinity,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          boxShadow: [
+            // The pen's outer drop shadow: offset (0, 19), blur 48. Its colour
+            // is the DS `dropShadow` token, which is #00000099 in the dark
+            // flavor (exactly the pen value) and deepens in high-contrast.
+            BoxShadow(
+              color: context.surface.dropShadow,
+              offset: const Offset(0, 19),
+              blurRadius: 48,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 /// The slice of [LooperState] that [TracksView]'s own chrome depends on.
