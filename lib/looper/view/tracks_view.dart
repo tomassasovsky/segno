@@ -190,6 +190,13 @@ class _TracksViewState extends State<TracksView> {
                       behavior: HitTestBehavior.translucent,
                       onSecondaryTapUp: (_) => unawaited(openSegnoSettings()),
                       child: Scaffold(
+                        // #692: FX is a performance MODE, so the whole stage
+                        // takes the FX surface — the mode reads from the
+                        // gutters and chrome around the tiles, not from one
+                        // pill. Other modes keep the default stage black.
+                        backgroundColor: mode == InteractionMode.fx
+                            ? context.surface.fxSurface
+                            : null,
                         body: SafeArea(
                           child: Padding(
                             // Console/kiosk mode hides the on-screen toolbar

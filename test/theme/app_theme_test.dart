@@ -87,7 +87,9 @@ void main() {
     Map<String, (Color, Color)> modePairs(SurfaceTheme s) => {
       'REC': (s.rec, s.recSurface),
       'MUTE': (s.success, s.successSurface),
-      'FX': (s.accent, s.accentSurface),
+      // #692: FX is its own purple pair now, not the blue `accent`/
+      // `accentSurface` it used to borrow.
+      'FX': (s.fx, s.fxSurface),
     };
 
     /// Every mode chip's label contrast in [data], *as rendered*, by mode.
@@ -138,6 +140,40 @@ void main() {
           reason: 'high contrast must not read flatter than neon for $mode',
         );
       }
+    });
+
+    // #692: FX mode is purple, and it dresses more than the mode chip — the
+    // stage transform paints `fx` as text/outline on the flat `fxSurface` fill
+    // (the FX mode chip and the tile power pill). That label rides at 14px
+    // w700, so it has to clear the 4.5:1 AA floor (WCAG 1.4.3) in BOTH flavors
+    // — the high-contrast one especially, since that is where FX slipped under
+    // AA before (#768/#770). The exact measured figures are the pen's
+    // `c/stage-fx` note (dark 4.74 / 5.32, HC 6.83 / 10.53).
+    test('the FX purple clears AA on every surface it labels', () {
+      for (final s in [SurfaceTheme.dark, SurfaceTheme.highContrast]) {
+        // Flat fill behind the FX mode chip and the power pill.
+        expect(
+          ratio(s.fx, s.fxSurface),
+          greaterThanOrEqualTo(4.5),
+          reason: 'FX label is below AA on its own flat fill',
+        );
+        // A conservative lower bound: `fx` also clears AA straight on the
+        // plain bg-base neutral. No FX text sits on the bare stage (the stage
+        // in FX mode is `fxSurface`, not `background` — tracks_view.dart), but
+        // pinning the darkest neutral guards the hue against a future retune
+        // regardless of which surface ends up behind it.
+        expect(
+          ratio(s.fx, s.background),
+          greaterThanOrEqualTo(4.5),
+          reason: 'FX purple is below AA even on the plain bg-base neutral',
+        );
+      }
+      // Pin the flat-fill figures to the pen's note so a retune that still
+      // clears the floor but drifts from the approved values is caught.
+      const dark = SurfaceTheme.dark;
+      const hc = SurfaceTheme.highContrast;
+      expect(ratio(dark.fx, dark.fxSurface), closeTo(4.74, 0.05));
+      expect(ratio(hc.fx, hc.fxSurface), closeTo(6.83, 0.05));
     });
 
     test('HC meter/indicator idle tones clear 3:1 on the track tile', () {
@@ -332,6 +368,8 @@ List<Color> _colors(SurfaceTheme s) => [
   s.onAccent,
   s.accentSurface,
   s.accentAlt,
+  s.fx,
+  s.fxSurface,
   s.warning,
   s.success,
   s.successSurface,
