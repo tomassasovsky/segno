@@ -1,6 +1,6 @@
 # Reproducing the Sheeran Looper X racks in segno (#887)
 
-Status: **programme plan, direction approved.** The owner has authorisation to
+Status: **programme plan, direction approved.** The owner has authorization to
 reuse the HG08 factory content and has chosen full sound reproduction — all
 nine racks, all twenty-one missing modules — over a content-only import. The
 `rack` naming collision with #535 is deliberately deferred.
@@ -14,7 +14,7 @@ critical-path refactors first.
 `~/Downloads/LooperX_1.0.2_extracted/` (README documents the `AZ0x` container
 and re-extraction steps). The parts that matter here:
 
-- **159 presets in 9 racks**, each a flat `parameter name -> normalised
+- **159 presets in 9 racks**, each a flat `parameter name -> normalized
   0..1 float` map plus a `_version`. Every preset in a rack shares one fixed
   schema, so each rack's DSP surface is exactly known.
 - **DSP parameter metadata** — names, printf unit formats (`%.1f : 1`,
@@ -128,7 +128,7 @@ small addition, and — per AGENTS.md — it should land with the **first module
 that needs it**, not before. The existing types stay where they are: migrating
 them buys nothing and risks a working product.
 
-### B3 — the preset values are normalised against unknown tapers
+### B3 — the preset values are normalized against unknown tapers
 
 `Rev Length = 0.42` has no known value in seconds. There is no descriptor
 table to lift: string references are PC-relative under PIE and the ranges are
@@ -137,13 +137,13 @@ code immediates.
 **But the tapers are measurable on the device.** The FX parameter widget
 renders `name + ": " + valuestring + " " + unitString` through a translator
 object (`AppUI/Pages/FxEdit/Parameter.qml:29-31`), so the screen shows the
-engineering value for any normalised input. Presets are plain JSON on a
+engineering value for any normalized input. Presets are plain JSON on a
 USB-visible path — `unpack_new_presets` writes them to
 `$mnt_path/FX Presets/`, i.e. `/media/az01-internal/Looper/usb_mnt`
 (`Scripts/def_vars`). And the rootfs ships `az01-ssh-login` and `telnet`.
 
 So: author probe presets that walk one parameter across a known ladder of
-normalised values, load them, read the rendered value back. That turns
+normalized values, load them, read the rendered value back. That turns
 "re-voice 159 presets by ear" into "sample 161 curves", which is the
 difference between reproduction and guesswork.
 
@@ -152,7 +152,7 @@ Phase 0 is therefore **cut**. What follows is what survives without it.
 
 #### What is recoverable with no hardware at all
 
-Quantisation analysis over all 159 presets — for each parameter, the smallest
+Quantization analysis over all 159 presets — for each parameter, the smallest
 `D` such that every observed value is exactly `k/D` — finds **47 of 160
 parameters are discrete**, and they are the musically decisive ones:
 
@@ -176,7 +176,7 @@ transfers exactly**, with no device. Only the **113 continuous** parameters
 
 #### What that leaves
 
-For the continuous parameters, import the normalised value at face value
+For the continuous parameters, import the normalized value at face value
 against **a range segno defines and documents per parameter**, constrained by
 the unit format strings we did recover (`%.1f : 1` bounds a ratio, `%.2f s` a
 spring time, `%.0f dB` a threshold). The relative intent — which module is
@@ -227,7 +227,7 @@ impulse responses** — `metronome.wav` is the only audio file in the entire
 rootfs — so their cab simulation is algorithmic, not convolution. That is
 good news (a filter-based cab is cheaper than an IR loader) but it means the
 eleven cabinet voicings are ours to author, not to copy. Deciding how they
-are modelled and measured is a direction call, not a taste one.
+are modeled and measured is a direction call, not a taste one.
 
 ## Risks
 
