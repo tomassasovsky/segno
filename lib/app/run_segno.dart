@@ -140,7 +140,13 @@ Future<void> runSegno(
   final wifi = WifiRepository(client: createWifiClient());
   final bluetooth = BluetoothRepository(client: createBluetoothClient());
   final brightness = createBrightnessClient();
-  final consoleFacts = createConsoleFactsClient();
+  // The same directory resolvers the session and performance repositories are
+  // wired with, so the real client's disk accounting measures the app's own
+  // data volume (`/data` on the appliance) by construction (#656).
+  final consoleFacts = createConsoleFactsClient(
+    sessionsRoot: defaultSessionsRoot,
+    capturesRoot: defaultExportDirectory,
+  );
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller
   // pipeline) and never disposes it. Held independent of the engine so MIDI
