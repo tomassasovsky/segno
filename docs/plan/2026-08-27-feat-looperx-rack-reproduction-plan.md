@@ -344,7 +344,7 @@ The app runs under emulation; its **GUI cannot**. Qt is statically linked with
 fbdev major), and `usr/lib/libEGL.so` is an **ARM Mali vendor blob** bound to
 `/dev/mali` with no Mesa in the rootfs. Driving the real UI would need a faked
 fbdev, Mesa substituted for the Mali blob, and eglfs persuaded to render
-surfacelessly — three stacked substitutions before any audio is routed.
+without a surface — three stacked substitutions before any audio is routed.
 
 Still viable if reopened: calling the DSP directly under emulation with no Qt,
 anchored on the audio threads' own log strings (`InputFXThread CPU affinity: `,

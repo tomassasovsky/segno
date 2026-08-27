@@ -24,7 +24,7 @@
     "**/third_party/signalsmith-stretch/**",
     "**/third_party/vst3sdk/**"
   ],
-        "words": [
+          "words": [
     "Ableton",
     "accum",
     "aconnect",
@@ -245,6 +245,7 @@
     "EDQUOT",
     "EEPROM",
     "EFFBITS",
+    "eglfs",
     "EINTR",
     "EINVAL",
     "electrolytics",
@@ -274,6 +275,7 @@
     "FACEDRIFT",
     "fase",
     "fbcon",
+    "fbdev",
     "fdatasync",
     "feedthrough",
     "ffigen",
