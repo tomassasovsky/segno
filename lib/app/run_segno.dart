@@ -99,8 +99,14 @@ Future<void> runSegno(
   // runs with no controller source. The waveform sub-window already returned
   // above, so it never opens MIDI.
   final midiSource = createNativeMidiSource();
+  // The push seam behind "Simulate input" (#519): a plain source in the same
+  // list as the real MIDI one, so a synthetic sweep/press is indistinguishable
+  // downstream and works with nothing plugged in. Owned by the repository — it
+  // is disposed when the repository disposes its sources — and handed to
+  // ControlCubit, which paces the synthetic sequence.
+  final simulatedControllerSource = SimulatedControllerSource();
   final controllerRepository = ControllerRepository(
-    sources: [?midiSource],
+    sources: [?midiSource, simulatedControllerSource],
     // MIDI-learn never captures the Segno pedal's own protocol traffic (B8):
     // the pedal shares this input stream, so a stomp mid-capture would
     // otherwise bind a footswitch the app already drives end to end. The
@@ -178,6 +184,7 @@ Future<void> runSegno(
     () => App(
       repository: looper,
       controllerRepository: controllerRepository,
+      simulatedControllerSource: simulatedControllerSource,
       midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
       pedalSimulator: pedalSimulator,

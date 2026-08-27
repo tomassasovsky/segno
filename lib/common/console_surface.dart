@@ -1228,6 +1228,7 @@ class ConsoleActionChip extends StatelessWidget {
     required this.onPressed,
     this.icon,
     this.destructive = false,
+    this.accent = false,
     super.key,
   });
 
@@ -1245,11 +1246,24 @@ class ConsoleActionChip extends StatelessWidget {
   /// Whether this action destroys something.
   final bool destructive;
 
+  /// Whether this is the accent (primary) action of its row — the Simulate
+  /// pill (#519), which leads the mapping editor's action strip. Ignored when
+  /// [destructive], which owns its own tone.
+  final bool accent;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final tint = destructive ? surface.rec : surface.textSecondary;
-    final edge = destructive ? surface.recLine : surface.line;
+    final tint = destructive
+        ? surface.rec
+        : accent
+        ? surface.accent
+        : surface.textSecondary;
+    final edge = destructive
+        ? surface.recLine
+        : accent
+        ? surface.accent
+        : surface.line;
     return Opacity(
       opacity: onPressed == null ? surface.disabledOpacity : 1,
       child: FocusableTapTarget(

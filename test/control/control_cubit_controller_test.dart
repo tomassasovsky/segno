@@ -58,6 +58,7 @@ void main() {
     late _MockLooperRepository looper;
     late StreamController<LooperState> looperStates;
     late _FakeSource source;
+    late SimulatedControllerSource simulated;
     late ControllerRepository controller;
     late _MockMidiDeviceRepository midiDevices;
     late StreamController<MidiConnection> connections;
@@ -83,8 +84,9 @@ void main() {
       looper = _MockLooperRepository();
       looperStates = StreamController<LooperState>.broadcast(sync: true);
       source = _FakeSource();
+      simulated = SimulatedControllerSource();
       controller = ControllerRepository(
-        sources: [source],
+        sources: [source, simulated],
         // One tick per move: the ramp is covered under a fake clock in the
         // package suite; here what matters is the value reaching the rig.
         smoothing: const Duration(milliseconds: 1),
@@ -165,9 +167,16 @@ void main() {
         performance: performance,
         controller: controller,
         midiDevices: midiDevices,
+        simulatedSource: simulated,
         keepAliveInterval: Duration.zero,
         learnTimeout: const Duration(milliseconds: 20),
         mappingsWriteDebounce: mappingsWriteDebounce,
+        // A brisk synthetic sweep — a few ticks per leg — so a simulation
+        // resolves within a test's real-timer window without sleeping. The tick
+        // is kept a touch longer than the repository's 1 ms smoothing so each
+        // ramp settles between pushes and the value lands on its endpoints.
+        simulateTick: const Duration(milliseconds: 5),
+        simulateSweepLeg: const Duration(milliseconds: 20),
       );
     });
 
@@ -831,6 +840,222 @@ void main() {
 
         expect(cubit.state.controllerLearn, isNull);
         expect(cubit.state.controllerBindings.isEmpty, isTrue);
+      });
+    });
+
+    group('simulate input (#519)', () {
+      /// Real timers, generously awaited: the synthetic sweep is paced by an
+      /// injected ticker (~5 ms/tick here), so a short real delay drains it.
+      Future<void> run() =>
+          Future<void>.delayed(const Duration(milliseconds: 200));
+
+      test('a sweep row moves its target through the range and back', () async {
+        await use([
+          ContinuousBinding(
+            trigger: expression,
+            target: volumeTarget.canonicalString(),
+            lo: 0.25,
+            hi: 0.75,
+          ),
+        ]);
+
+        cubit.simulateMapping(cubit.state.controllerBindings.bindings.single);
+        await run();
+
+        expect(volumeWrites.length, greaterThan(2), reason: 'it swept');
+        // Jumps to LO on the first move (CC 0), reaches HI at the peak
+        // (CC 127), then returns to LO — the binding's own range, downstream.
+        expect(volumeWrites.first, closeTo(0.25, 1e-9));
+        expect(
+          volumeWrites.reduce((a, b) => a > b ? a : b),
+          closeTo(0.75, 1e-9),
+        );
+        expect(volumeWrites.last, closeTo(0.25, 1e-9));
+      });
+
+      test('a switch row flips a toggle once', () async {
+        await use([
+          DiscreteBinding(
+            trigger: stomp,
+            target: chainTarget.canonicalString(),
+          ),
+        ]);
+        chainEnabled[0] = false;
+
+        cubit.simulateMapping(cubit.state.controllerBindings.bindings.single);
+        await run();
+
+        // Press flips it on; the release edge a toggle ignores, so it stays on.
+        expect(chainEnabled[0], isTrue);
+      });
+
+      test('a switch row holds a momentary, then lets it go', () async {
+        await use([
+          DiscreteBinding(
+            trigger: stomp,
+            target: chainTarget.canonicalString(),
+            behavior: BindingBehavior.momentary,
+          ),
+        ]);
+        chainEnabled[0] = false;
+
+        cubit.simulateMapping(cubit.state.controllerBindings.bindings.single);
+        await settle();
+        expect(chainEnabled[0], isTrue, reason: 'the press holds it');
+
+        await run();
+        expect(chainEnabled[0], isFalse, reason: 'the release restores it');
+      });
+
+      test('the global button feeds a listening learn capture', () async {
+        cubit.learnControllerBinding(target: volumeTarget.canonicalString());
+        await settle();
+        expect(cubit.state.controllerLearn, isNotNull);
+
+        cubit.simulateStatusRow(null);
+        await settle();
+
+        // The representative synthetic move completed the capture, exactly as a
+        // real control would have.
+        expect(cubit.state.controllerLearn, isNull);
+        expect(cubit.state.controllerBindings.bindings, hasLength(1));
+      });
+
+      test(
+        'the global button routes to the open row when not learning',
+        () async {
+          await use([
+            DiscreteBinding(
+              trigger: stomp,
+              target: chainTarget.canonicalString(),
+            ),
+          ]);
+          chainEnabled[0] = false;
+          final openKey = cubit.state.controllerBindings.bindings.single.key;
+
+          cubit.simulateStatusRow(openKey);
+          await run();
+
+          expect(chainEnabled[0], isTrue, reason: 'routed to simulateMapping');
+        },
+      );
+
+      test(
+        'the global button is inert with no learn and no open row',
+        () async {
+          cubit.simulateStatusRow(null);
+          await run();
+
+          expect(volumeWrites, isEmpty);
+          expect(cubit.state.controllerLearn, isNull);
+        },
+      );
+
+      test(
+        'a new simulation drains the previous — no stranded momentary',
+        () async {
+          // A long tick keeps the prior sequence's release queued, so the
+          // drain a replacing simulation performs is observable.
+          final sim2 = SimulatedControllerSource();
+          final controller2 = ControllerRepository(
+            sources: [sim2],
+            smoothing: const Duration(milliseconds: 1),
+            smoothingTick: const Duration(milliseconds: 1),
+          );
+          final cubit2 = ControlCubit(
+            looper: looper,
+            pedal: pedal,
+            settings: settings,
+            performance: performance,
+            controller: controller2,
+            midiDevices: midiDevices,
+            simulatedSource: sim2,
+            keepAliveInterval: Duration.zero,
+            mappingsWriteDebounce: Duration.zero,
+            simulateTick: const Duration(seconds: 1),
+          );
+          await cubit2.setControllerBindings(
+            ControllerBindingSet([
+              DiscreteBinding(
+                trigger: stomp,
+                target: chainTarget.canonicalString(),
+                behavior: BindingBehavior.momentary,
+              ),
+              ContinuousBinding(
+                trigger: expression,
+                target: volumeTarget.canonicalString(),
+              ),
+            ]),
+          );
+          chainEnabled[0] = false;
+
+          final momentary = cubit2.state.controllerBindings.bindings
+              .whereType<DiscreteBinding>()
+              .single;
+          final sweep = cubit2.state.controllerBindings.bindings
+              .whereType<ContinuousBinding>()
+              .single;
+
+          cubit2.simulateMapping(momentary);
+          await settle();
+          expect(chainEnabled[0], isTrue, reason: 'the press holds it');
+
+          // Replacing it drains the queued release, not stranding the hold.
+          cubit2.simulateMapping(sweep);
+          await settle();
+          expect(
+            chainEnabled[0],
+            isFalse,
+            reason: 'the prior hold was released',
+          );
+
+          await cubit2.close();
+          await controller2.dispose();
+        },
+      );
+
+      test('close() stops the simulation ticker', () async {
+        final sim2 = SimulatedControllerSource();
+        final controller2 = ControllerRepository(
+          sources: [sim2],
+          smoothing: const Duration(milliseconds: 1),
+          smoothingTick: const Duration(milliseconds: 1),
+        );
+        final cubit2 = ControlCubit(
+          looper: looper,
+          pedal: pedal,
+          settings: settings,
+          performance: performance,
+          controller: controller2,
+          midiDevices: midiDevices,
+          simulatedSource: sim2,
+          keepAliveInterval: Duration.zero,
+          mappingsWriteDebounce: Duration.zero,
+          // A full second between ticks: only the first push lands pre-close.
+          simulateTick: const Duration(seconds: 1),
+        );
+        await cubit2.setControllerBindings(
+          ControllerBindingSet([
+            ContinuousBinding(
+              trigger: expression,
+              target: volumeTarget.canonicalString(),
+            ),
+          ]),
+        );
+
+        cubit2.simulateMapping(cubit2.state.controllerBindings.bindings.single);
+        await settle();
+        final before = volumeWrites.length;
+
+        await cubit2.close();
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+
+        expect(
+          volumeWrites.length,
+          before,
+          reason: 'no tick fires after close',
+        );
+        await controller2.dispose();
       });
     });
   });

@@ -117,6 +117,11 @@ class ControlCubit extends Cubit<ControlState> {
   /// this cubit needs to honour the release-all rule when the MIDI source
   /// itself disappears (B1). Both are optional — a build or test with no MIDI
   /// seam simply never receives external control.
+  ///
+  /// [simulatedSource] is the push seam that lets a mapping prove itself with
+  /// no controller attached (#519): the same source the repository carries in
+  /// its `sources` list, so a synthetic sweep/press enters exactly where a real
+  /// CC would. [simulateTick] / [simulateSweepLeg] pace that synthetic sweep.
   ControlCubit({
     required LooperRepository looper,
     required PedalRepository pedal,
@@ -124,17 +129,23 @@ class ControlCubit extends Cubit<ControlState> {
     required PerformanceRepository performance,
     ControllerRepository? controller,
     MidiDeviceRepository? midiDevices,
+    SimulatedControllerSource? simulatedSource,
     Duration keepAliveInterval = const Duration(seconds: 1),
     Duration learnTimeout = const Duration(seconds: 15),
     Duration mappingsWriteDebounce = const Duration(milliseconds: 400),
+    Duration simulateTick = const Duration(milliseconds: 60),
+    Duration simulateSweepLeg = const Duration(milliseconds: 1500),
     PerformanceChains Function() currentChains = _noChains,
   }) : _looper = looper,
        _pedal = pedal,
        _settings = settings,
        _performance = performance,
        _controller = controller,
+       _simulatedSource = simulatedSource,
        _learnTimeout = learnTimeout,
        _mappingsWriteDebounce = mappingsWriteDebounce,
+       _simulateTick = simulateTick,
+       _simulateSweepLeg = simulateSweepLeg,
        _currentChains = currentChains,
        super(const ControlState()) {
     _looperSub = _looper.looperState.listen(_onLooperState);
@@ -165,8 +176,22 @@ class ControlCubit extends Cubit<ControlState> {
   final SettingsRepository _settings;
   final PerformanceRepository _performance;
   final ControllerRepository? _controller;
+
+  /// The seam a synthetic controller event is pushed through (#519). The same
+  /// object the repository carries in its `sources` list, so a simulated input
+  /// is indistinguishable from a real one downstream. Null in a build/test with
+  /// no simulation wired — [simulateMapping] and [simulateStatusRow] are then
+  /// inert.
+  final SimulatedControllerSource? _simulatedSource;
   final Duration _learnTimeout;
   final Duration _mappingsWriteDebounce;
+
+  /// The cadence a simulated sweep advances on, and how long each LO→HI (and
+  /// HI→LO) leg takes — the pen's "slow enough to watch". Injected like the
+  /// repository's own smoothing durations, so tests drive the sweep under a
+  /// fake clock instead of sleeping.
+  final Duration _simulateTick;
+  final Duration _simulateSweepLeg;
   final PerformanceChains Function() _currentChains;
 
   late final StreamSubscription<LooperState> _looperSub;
@@ -266,6 +291,15 @@ class ControlCubit extends Cubit<ControlState> {
   // leave the MIDI stream swallowed forever — the repository suppresses ALL
   // events while learning.
   Timer? _learnTimer;
+
+  // A simulation in flight (#519): the control its synthetic events target, the
+  // values still to push (one per [_simulateTick]), and the ticker draining
+  // them. One at a time — a new simulation drains the last so a switch's
+  // release edge is never stranded, leaving a momentary enabled with no foot
+  // on it (the same B1 hazard the release-all rule guards).
+  MappingTrigger? _simulateTrigger;
+  final List<int> _simulateQueue = [];
+  Timer? _simulateTimer;
 
   // Which capture is current. Every `learnNext` future resolves — including
   // the null a SUPERSEDED one gets when the next capture replaces it — so a
@@ -1726,6 +1760,157 @@ class ControlCubit extends Cubit<ControlState> {
     releaseAllControllerMomentary();
   }
 
+  // ---------------------------------------------------------------------------
+  // Simulate input (#519): a mapping proves itself with no controller attached
+  // ---------------------------------------------------------------------------
+
+  /// Runs [binding]'s synthetic sequence through the real pipeline: a
+  /// [ContinuousBinding] sweeps LO→HI→LO, a [DiscreteBinding] presses and
+  /// releases. The events enter through [_simulatedSource], so the binding's
+  /// OWN range / curve / threshold / behaviour apply downstream exactly as they
+  /// would to a real pedal — this method never pre-applies any of that; the
+  /// repository owns the math.
+  ///
+  /// Resolved against the LIVE set by [binding]'s key: the row's calibration
+  /// stays editable while a simulation could be requested, so what runs is the
+  /// range that is there NOW, not a stale snapshot.
+  void simulateMapping(ControllerBinding binding) {
+    final live = _liveBinding(binding.key) ?? binding;
+    final values = switch (live) {
+      ContinuousBinding() => _sweepValues,
+      DiscreteBinding() => _switchValues,
+    };
+    _startSimulation(live.trigger, values);
+  }
+
+  /// The global "Simulate input" affordance: routes a synthetic event where a
+  /// real one would land — a listening learn capture first, else the open row
+  /// [openKey], else nothing (the button renders dimmed with no route).
+  void simulateStatusRow((MappingTrigger, String)? openKey) {
+    if (state.controllerLearn != null) {
+      // A representative move the pending capture binds, exactly as a real one
+      // would — an expression control (mod wheel), not the pedal's own encoder
+      // CC, so `learnIgnore` never swallows it. Straight to the source, not the
+      // paced ticker: a capture ends on the first input it accepts.
+      _simulatedSource?.push(
+        const RawControllerInput(
+          kind: ControllerSourceKind.midiCc,
+          id: 1,
+          value: 127,
+        ),
+      );
+      return;
+    }
+    final open = _liveBinding(openKey);
+    if (open != null) simulateMapping(open);
+  }
+
+  /// CC values a sweep pushes: 0 → 127, a brief dwell at 127, then 127 → 0, one
+  /// per [_simulateTick], each leg spanning [_simulateSweepLeg]. The endpoints
+  /// are exact (0 and 127) so the bound value reaches both edges of its range;
+  /// the dwell lets the smoothing ramp settle AT the top before the descent, so
+  /// the target is seen to reach HI rather than only turn around near it.
+  List<int> get _sweepValues {
+    final n = _sweepSteps;
+    int cc(int i) => (127 * i / n).round();
+    return [
+      for (var i = 0; i <= n; i++) cc(i), // LO → HI
+      for (var i = 0; i < _sweepDwell; i++) 127, // settle at HI
+      for (var i = n - 1; i >= 0; i--) cc(i), // HI → LO
+    ];
+  }
+
+  /// How many extra ticks a sweep holds at HI before descending — enough for
+  /// the smoothing ramp to land on the endpoint even when the tick and the ramp
+  /// run at the same cadence.
+  static const int _sweepDwell = 2;
+
+  /// A switch's press then release, with a couple of held ticks between so a
+  /// momentary is visibly held before it lets go (a toggle ignores the release
+  /// edge, so the same sequence flips it once). Above then below any threshold:
+  /// 127 is on for every threshold `<= 127`, 0 is off for every threshold.
+  List<int> get _switchValues => const [127, 127, 127, 0];
+
+  /// How many ticks a sweep leg takes — at least one, mirroring the
+  /// repository's own smoothing-step flooring so a leg shorter than a tick
+  /// still lands on the endpoint.
+  int get _sweepSteps {
+    final steps = _simulateTick.inMicroseconds <= 0
+        ? 1
+        : (_simulateSweepLeg.inMicroseconds / _simulateTick.inMicroseconds)
+              .round();
+    return steps < 1 ? 1 : steps;
+  }
+
+  void _startSimulation(MappingTrigger trigger, List<int> values) {
+    // Finish any prior sequence first (a switch mid-hold, a sweep mid-ramp), so
+    // replacing it cannot strand a held momentary.
+    _drainSimulation();
+    _simulateTrigger = trigger;
+    _simulateQueue
+      ..clear()
+      ..addAll(values);
+    // Push the first now so the target moves without waiting a tick.
+    _tickSimulation();
+    if (_simulateQueue.isEmpty) {
+      _simulateTrigger = null;
+      return;
+    }
+    _simulateTimer = Timer.periodic(_simulateTick, (_) => _tickSimulation());
+  }
+
+  void _tickSimulation() {
+    final trigger = _simulateTrigger;
+    if (trigger == null) return;
+    if (_simulateQueue.isEmpty) {
+      _simulateTimer?.cancel();
+      _simulateTimer = null;
+      _simulateTrigger = null;
+      return;
+    }
+    _pushSimulated(trigger, _simulateQueue.removeAt(0));
+  }
+
+  /// Pushes whatever a running simulation has left immediately, then clears
+  /// it — so a switch's release edge always fires when a NEW simulation cuts
+  /// the ticker short, rather than stranding a momentary the prior press
+  /// enabled. Safe only while the cubit is alive to receive those pushed
+  /// events; teardown uses [_cancelSimulation] instead.
+  void _drainSimulation() {
+    _simulateTimer?.cancel();
+    _simulateTimer = null;
+    final trigger = _simulateTrigger;
+    if (trigger == null) return;
+    while (_simulateQueue.isNotEmpty) {
+      _pushSimulated(trigger, _simulateQueue.removeAt(0));
+    }
+    _simulateTrigger = null;
+  }
+
+  /// Stops a running simulation without pushing what is left — teardown, where
+  /// the binding-event subscription is about to be cancelled and a drained
+  /// event would never be delivered anyway (the app is going away).
+  void _cancelSimulation() {
+    _simulateTimer?.cancel();
+    _simulateTimer = null;
+    _simulateTrigger = null;
+    _simulateQueue.clear();
+  }
+
+  void _pushSimulated(MappingTrigger trigger, int value) {
+    _simulatedSource?.push(
+      RawControllerInput(
+        kind: trigger.kind,
+        id: trigger.id,
+        value: value,
+        // Omni triggers carry no channel; a real message still lands on one,
+        // so the synthetic one does too (channel 0, the default a capture
+        // records).
+        midiChannel: trigger.midiChannel ?? 0,
+      ),
+    );
+  }
+
   /// What each BOUND track switch's own target currently reads, by channel.
   ///
   /// Only in FX mode, because that is the only mode a binding overrides — the
@@ -1879,6 +2064,8 @@ class ControlCubit extends Cubit<ControlState> {
   Future<void> close() async {
     _keepAliveTimer?.cancel();
     _learnTimer?.cancel();
+    // Stop any simulation in flight — its ticker must not outlive the cubit.
+    _cancelSimulation();
     // A capture outlives this cubit otherwise: the controller repository is
     // app-scoped, and while it is learning it swallows EVERY input — including
     // the transport events another bloc consumes — with the timeout that would

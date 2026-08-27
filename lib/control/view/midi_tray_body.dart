@@ -287,6 +287,24 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
     final name = connection.selectedName;
     final live = connection.status == MidiConnectionStatus.connected;
 
+    // The global "Simulate input" routes where a real event would land: a
+    // listening learn capture first, else the open mapping row. With neither —
+    // or when the only open row is STALE, whose own Simulate pill is already
+    // disabled — it has nowhere real to go, so it renders dimmed rather than
+    // firing into a mapping that resolves to nothing (the two controls must
+    // agree). Gated on the SAME condition the row pill uses.
+    final control = context.watch<ControlCubit>();
+    final looper = context.read<LooperRepository>();
+    final openKey = _openKey;
+    final openBinding = openKey == null
+        ? null
+        : control.state.controllerBindings.bindings
+              .where((binding) => binding.key == openKey)
+              .firstOrNull;
+    final canSimulate =
+        control.state.controllerLearn != null ||
+        (openBinding != null && _bindingResolves(looper, openBinding));
+
     final (
       String message,
       ConsoleBannerTone tone,
@@ -342,6 +360,26 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
                   ),
                 )
               : const SizedBox(width: double.infinity),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(
+            kConsoleRowInset,
+          ).copyWith(top: kConsoleBlockGap, bottom: kConsoleBlockGap),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              ConsoleActionChip(
+                key: const Key('midi_simulate_global'),
+                label: l10n.midiSimulateGlobal,
+                accent: true,
+                onPressed: canSimulate
+                    ? () => context.read<ControlCubit>().simulateStatusRow(
+                        _openKey,
+                      )
+                    : null,
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -842,6 +880,18 @@ class _MappingRow extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 ConsoleActionChip(
+                  key: const Key('midi_simulate'),
+                  label: l10n.midiSimulate,
+                  accent: true,
+                  // No `connected` gate — proving a mapping with NOTHING
+                  // attached is the whole point. Inert only when the target is
+                  // stale: there is nothing for the synthetic event to move.
+                  onPressed: stale
+                      ? null
+                      : () => cubit.simulateMapping(binding),
+                ),
+                const SizedBox(width: 10),
+                ConsoleActionChip(
                   key: const Key('midi_relearn'),
                   label: l10n.midiLearnRelearn,
                   // Inert with nothing attached, exactly as Add sweep / Add
@@ -888,15 +938,30 @@ class _MappingRow extends StatelessWidget {
         if (target == null) return null;
         return (
           label: valueTargetLabel(l10n, trackNames, looper, target),
-          resolves: looper.valueTargetResolves(target),
+          resolves: _bindingResolves(looper, binding),
         );
       case DiscreteBinding():
         final target = FxBindingTarget.tryParse(binding.target);
         if (target == null) return null;
         return (
           label: bindingTargetLabel(l10n, trackNames, target),
-          resolves: looper.bindingResolves(target),
+          resolves: _bindingResolves(looper, binding),
         );
     }
+  }
+}
+
+/// Whether [binding]'s target decodes AND still resolves in the live rig — the
+/// one "not stale" test the row's Simulate pill (`stale ? null`) and the status
+/// card's global Simulate button both gate on, so the two can never disagree
+/// about whether a synthetic event has anywhere real to land.
+bool _bindingResolves(LooperRepository looper, ControllerBinding binding) {
+  switch (binding) {
+    case ContinuousBinding():
+      final target = ControlValueTarget.tryParse(binding.target);
+      return target != null && looper.valueTargetResolves(target);
+    case DiscreteBinding():
+      final target = FxBindingTarget.tryParse(binding.target);
+      return target != null && looper.bindingResolves(target);
   }
 }
