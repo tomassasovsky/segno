@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:console_facts_client/src/console_facts_client.dart';
 import 'package:console_facts_client/src/fake_console_facts_client.dart';
+import 'package:console_facts_client/src/local_console_facts_client.dart';
 import 'package:console_facts_client/src/unsupported_console_facts_client.dart';
 
 /// Whether `--dart-define=SEGNO_FAKE_RADIOS=true` swapped the appliance for an
@@ -11,13 +14,30 @@ import 'package:console_facts_client/src/unsupported_console_facts_client.dart';
 /// a name that reads slightly wide of its contents.
 const kFakeConsoleFacts = bool.fromEnvironment('SEGNO_FAKE_RADIOS');
 
-/// Factory: the fake under [kFakeConsoleFacts], else unsupported.
+/// Factory: the fake under [kFakeConsoleFacts]; the real
+/// [LocalConsoleFactsClient] on Linux and macOS; the honest "unknown" client
+/// everywhere else.
 ///
-/// There is no real implementation yet, and that is the honest state of it:
-/// disk accounting, capture retention and USB export do not exist on the
-/// appliance side. The seam is the contract, and the shipped app answers
-/// "unknown" rather than pretending otherwise.
-ConsoleFactsClient createConsoleFactsClient() {
+/// [sessionsRoot] and [capturesRoot] are the composition root's own session /
+/// capture directory resolvers — the same functions it hands the repositories —
+/// so the real client measures the app's actual data volume (`/data` on the
+/// appliance) rather than guessing where it lives.
+///
+/// Windows keeps [UnsupportedConsoleFactsClient]: it has no `df`, and the
+/// Storage face's "this build can't read the console's disk" is the truthful
+/// answer there. Disk accounting is real on Linux/macOS now; capture retention
+/// and USB export remain unimplemented on every platform (see
+/// [LocalConsoleFactsClient]).
+ConsoleFactsClient createConsoleFactsClient({
+  required Future<String> Function() sessionsRoot,
+  required Future<String> Function() capturesRoot,
+}) {
   if (kFakeConsoleFacts) return FakeConsoleFactsClient();
+  if (Platform.isLinux || Platform.isMacOS) {
+    return LocalConsoleFactsClient(
+      sessionsRoot: sessionsRoot,
+      capturesRoot: capturesRoot,
+    );
+  }
   return const UnsupportedConsoleFactsClient();
 }
