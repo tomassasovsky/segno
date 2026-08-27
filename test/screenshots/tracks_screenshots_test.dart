@@ -13,8 +13,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
-import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
-import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_mode.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -39,6 +38,9 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
 
 class _MockTransportClockCubit extends MockCubit<TransportClockState>
     implements TransportClockCubit {}
+
+class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
+    implements AudioSetupCubit {}
 
 Future<void> _loadFont(String family, List<String> paths) async {
   final loader = FontLoader(family);
@@ -104,10 +106,18 @@ void main() {
   late PerformanceRepository performance;
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
+  late AudioSetupCubit audioSetup;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
+    // Nothing lost by default; the device-lost scene below re-stubs audio.
+    audioSetup = _MockAudioSetupCubit();
+    whenListen(
+      audioSetup,
+      const Stream<AudioSetupState>.empty(),
+      initialState: const AudioSetupState(),
+    );
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
@@ -210,6 +220,9 @@ void main() {
                 create: (_) =>
                     MonitorCubit(repository: repository, settings: settings),
               ),
+              // The device-lost banner and the not-running gate read the
+              // audio setup cubit (#453).
+              BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             ],
             child: const TracksView(),
           ),
@@ -271,6 +284,43 @@ void main() {
       await expectLater(
         find.byType(TracksView),
         matchesGoldenFile('goldens/tracks_main_window.png'),
+      );
+    },
+    skip: !hasScreenshotFonts || !kConsoleMode,
+  );
+
+  testWidgets(
+    'console main window with the device-lost banner (STAGE / device-lost)',
+    (tester) async {
+      // The one standing loss condition: the pinned interface is gone, so the
+      // red banner holds the stage above the track run. It STANDS IN for the
+      // "engine stopped" bar (#453) — the two never stack — so a device-gone
+      // engine shows this banner alone, not both. MIDI loss is a transient
+      // toast, never a banner here.
+      whenListen(
+        audioSetup,
+        const Stream<AudioSetupState>.empty(),
+        initialState: const AudioSetupState(
+          deviceConnectivity: DeviceConnectivity.lost,
+          connectivityDeviceName: 'Scarlett 2i2',
+        ),
+      );
+      seed(
+        const LooperState(
+          // The engine reports the device gone, so the generic "not running"
+          // affordance is suppressed and only the device-lost banner shows.
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 96000),
+            Track(channel: 1),
+            Track(channel: 2),
+            Track(channel: 3),
+          ],
+        ),
+      );
+      await pump(tester);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_device_lost.png'),
       );
     },
     skip: !hasScreenshotFonts || !kConsoleMode,

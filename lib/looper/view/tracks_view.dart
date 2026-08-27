@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/console_mode.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -15,6 +16,7 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:segno/looper/view/cache_telemetry_scope.dart';
+import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_status_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
@@ -63,6 +65,15 @@ class _TracksViewState extends State<TracksView> {
     // per-track data is subscribed one level down, in [_TrackSlot].
     final chrome = context.select<LooperBloc, _ChromeState>(
       (bloc) => _ChromeState.of(bloc.state, commands),
+    );
+
+    // When the engine is stopped *because* the pinned interface is gone, the
+    // device-lost banner below is the one true statement of it — so the
+    // generic "engine stopped" affordance is suppressed while the loss
+    // condition holds, and the stage never says it twice (#453). A stopped
+    // engine with a device still present keeps the generic banner.
+    final deviceLost = context.select<AudioSetupCubit, bool>(
+      (cubit) => cubit.state.deviceConnectivity == DeviceConnectivity.lost,
     );
 
     // Settings are reachable from the Tracks view by right-clicking
@@ -178,10 +189,19 @@ class _TracksViewState extends State<TracksView> {
                                   ),
                                   const SizedBox(height: 14),
                                 ],
+                                // Standing loss conditions hold the stage
+                                // for as long as they are true — the pen's
+                                // `STAGE / device-lost`, at the run's top on
+                                // console and desktop alike. The widget
+                                // carries its own bottom gap, so an empty
+                                // stack adds no space here.
+                                const ConnectivityBanners(),
                                 // With no first-run gate, a stopped engine
                                 // lands here; a full-width affordance opens
-                                // settings to (re)start it.
-                                if (!chrome.isConnected) ...[
+                                // settings to (re)start it. Suppressed while
+                                // the device-lost banner above already states
+                                // the stop, so the two never stack (#453).
+                                if (!chrome.isConnected && !deviceLost) ...[
                                   const AudioNotRunningBanner(),
                                   const SizedBox(height: 14),
                                 ],

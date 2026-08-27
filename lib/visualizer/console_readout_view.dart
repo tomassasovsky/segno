@@ -75,6 +75,19 @@ class ConsoleReadoutView extends StatelessWidget {
               // a clipped descender is a worse fidelity loss than one.
               _ReadoutHeader(readout, s),
               SizedBox(height: 28 * s),
+              // The stage's one standing loss condition — the audio interface
+              // is gone — echoed here because the performer is looking down,
+              // not at the main screen (`c/device-lost`, #453). Same idiom,
+              // readout-scale type. No action — the readout's only touch
+              // affordance stays the MIX pill. MIDI loss is a transient toast
+              // on the main window, never a standing echo here.
+              if (readout.deviceLost) ...[
+                _ConnectivityEcho(
+                  key: const Key('console_readout_deviceLost'),
+                  s: s,
+                ),
+                SizedBox(height: 28 * s),
+              ],
               // The strip takes all remaining height — the pen's 766, 71% of
               // the frame — on the waveform's own dark, the pen's radius.
               // The MIX pill rides absolutely over the bars in the strip's
@@ -159,6 +172,57 @@ class _MixPill extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The echoed device-loss line: the stage banner's tinted rec strip re-drawn
+/// at the readout's proportional scale — dot, sentence, no action. Copy
+/// resolves from this window's own l10n; the wire carries only the boolean.
+class _ConnectivityEcho extends StatelessWidget {
+  const _ConnectivityEcho({required this.s, super.key});
+
+  final double s;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final l10n = context.l10n;
+    final dot = surface.rec;
+    final tint = surface.recTint;
+    final line = surface.recLine;
+    final message = l10n.deviceLostBanner;
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 17 * s, horizontal: 24 * s),
+      decoration: BoxDecoration(
+        color: tint,
+        borderRadius: BorderRadius.circular(14 * s),
+        border: Border.all(color: line, width: 2 * s),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 16 * s,
+            height: 16 * s,
+            decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+          ),
+          SizedBox(width: 16 * s),
+          Expanded(
+            child: AppText(
+              message,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: surface.textPrimary,
+                fontSize: 36 * s,
+                fontWeight: FontWeight.w500,
+                height: 1,
+                leadingDistribution: TextLeadingDistribution.even,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
