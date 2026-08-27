@@ -785,15 +785,25 @@ static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
  *       it (the count-in's commit is what logs the start). In a version-2
  *       file every 314 closes an open START; from 3 on, a reader must treat
  *       an ABORT with no open START as a no-op, not a malformed file.
+ *   4 — two new facts, and RECORD_END carries a take id (#262 / #819):
+ *       LE_PLOG_PERF_ARMED (315) records the master loop phase at arm and
+ *       LE_PLOG_TRANSPORT_HELD (316) marks a mid-capture transport hold, and
+ *       LE_PLOG_RECORD_END's payload is now the `take` arm {channel, take_id}
+ *       rather than a bare channel. The renderer REQUIRES these facts — its
+ *       old inferences (the race-stale armSnapshot.clockFrame anchor and the
+ *       "first RECORD_END while content-free" disarm proxy) were deleted with
+ *       no fallback (AGENTS.md), so a pre-4 capture no longer has a supported
+ *       phase anchor and renders correctly only if re-captured.
  * Without the bump, "no 314 in this file" is indistinguishable from "the
  * writer did not know about 314". No reader in this repo gates on the field —
  * le_pr_load_log and daw_export's EventLogReader both check the magic and skip
  * these four bytes — deliberately: refusing to render a capture already on
- * disk helps nobody. The field is there so a reader CAN tell, not so this
- * codebase can reject. */
+ * disk helps nobody, and the version-4 facts are simply absent (not
+ * misread) in an older file. The field is there so a reader CAN tell, not so
+ * this codebase can reject. */
 static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
   static const char magic[4] = {'P', 'L', 'E', 'V'};
-  const uint32_t version = 3;
+  const uint32_t version = 4;
   if (!le_pd_write(f, magic, sizeof(magic))) return 0;
   if (!le_pd_write(f, &version, sizeof(version))) return 0;
   if (!le_pd_write(f, &sample_rate, sizeof(sample_rate))) return 0;

@@ -21,10 +21,12 @@ class PerformanceLaneSnapshot {
     this.pcmFile,
     this.effects = const [],
     this.chainEnabled = true,
+    this.takeId = 0,
   });
 
   /// Rebuilds a [PerformanceLaneSnapshot] from a decoded JSON map. An absent
-  /// `chainEnabled` reads as engaged — see [chainEnabled].
+  /// `chainEnabled` reads as engaged — see [chainEnabled]. An absent `takeId`
+  /// reads as `0` (unknown / not a settled lane-0 entry) — see [takeId].
   factory PerformanceLaneSnapshot.fromJson(Map<String, dynamic> json) =>
       PerformanceLaneSnapshot(
         lane: (json['lane'] as num).toInt(),
@@ -32,6 +34,7 @@ class PerformanceLaneSnapshot {
         deferred: json['deferred'] as bool,
         pcmFile: json['pcmRef'] as String?,
         chainEnabled: json['chainEnabled'] as bool? ?? true,
+        takeId: (json['takeId'] as num?)?.toInt() ?? 0,
         effects: [
           for (final e in (json['effects'] as List<dynamic>? ?? const []))
             TrackEffect.fromJson(e as Map<String, dynamic>),
@@ -70,6 +73,20 @@ class PerformanceLaneSnapshot {
   /// every bypassed chain as engaged.
   final bool chainEnabled;
 
+  /// The monotonic id of the take this lane-0 image is the result of (#819),
+  /// carried from the engine snapshot's `settledTakeId` across the FFI boundary
+  /// so the offline renderer (`perf_render.c`) can anchor the DISARM image at
+  /// the `RECORD_END` whose logged take id matches — an identity, not the old
+  /// "first RECORD_END on this channel" ordinal proxy that mis-anchored on a
+  /// clear-then-re-record or an abort-before-content (#264).
+  ///
+  /// **Disarm-time lane 0 only**, and presence-keyed: written only when `> 0`,
+  /// so an arm-time snapshot, a non-zero lane, or a settled take that predates
+  /// the id machinery leaves the manifest byte-identical to what a build
+  /// without take ids wrote. `0` means "no identity recorded", and the renderer
+  /// then places no disarm segment for the channel (the arm image covers it).
+  final int takeId;
+
   /// Serializes this lane snapshot to a JSON map.
   Map<String, dynamic> toJson() => {
     'lane': lane,
@@ -77,6 +94,7 @@ class PerformanceLaneSnapshot {
     'deferred': deferred,
     if (pcmFile != null) 'pcmRef': pcmFile,
     if (!chainEnabled) 'chainEnabled': false,
+    if (takeId > 0) 'takeId': takeId,
     if (effects.isNotEmpty) 'effects': [for (final e in effects) e.toJson()],
   };
 }
@@ -155,8 +173,6 @@ class PerformanceTrackSnapshot {
 class PerformanceArmSnapshot {
   /// Creates a [PerformanceArmSnapshot].
   const PerformanceArmSnapshot({
-    required this.clockFrame,
-    required this.masterLengthFrames,
     required this.masterGain,
     required this.limiterEnabled,
     required this.limiterCeiling,
@@ -175,11 +191,12 @@ class PerformanceArmSnapshot {
   /// Presence-keyed, matching the session manifest's own migration style (no
   /// version `switch`): an absent `fxStagesVersion` marks a LEGACY snapshot —
   /// bus stages empty, every chain enabled — and the two bus fields are simply
-  /// absent there.
+  /// absent there. The old `clockFrame`/`masterLenFrames` master-phase anchor
+  /// is not read: the renderer takes the arm phase from events.log's
+  /// `LE_PLOG_PERF_ARMED` fact now (#262), so any such keys in an older bundle
+  /// are ignored.
   factory PerformanceArmSnapshot.fromJson(Map<String, dynamic> json) =>
       PerformanceArmSnapshot(
-        clockFrame: (json['clockFrame'] as num).toInt(),
-        masterLengthFrames: (json['masterLenFrames'] as num).toInt(),
         masterGain: (json['masterGain'] as num).toDouble(),
         limiterEnabled: json['limiterOn'] as bool,
         limiterCeiling: (json['limiterCeiling'] as num).toDouble(),
@@ -214,12 +231,6 @@ class PerformanceArmSnapshot {
   /// pre-FX-v3 capture that knew only the Input and Loop stages and had no
   /// concept of a disabled chain or slot.
   static const int legacyFxStagesVersion = 0;
-
-  /// Master playhead position at the arm instant.
-  final int clockFrame;
-
-  /// Master loop length in frames at arm time.
-  final int masterLengthFrames;
 
   /// Master output gain at arm time.
   final double masterGain;
@@ -274,8 +285,6 @@ class PerformanceArmSnapshot {
   /// the same bytes a pre-FX-v3 build did — apart from the marker itself, which
   /// is what makes that distinction readable.
   Map<String, dynamic> toJson() => {
-    'clockFrame': clockFrame,
-    'masterLenFrames': masterLengthFrames,
     'masterGain': masterGain,
     'limiterOn': limiterEnabled,
     'limiterCeiling': limiterCeiling,

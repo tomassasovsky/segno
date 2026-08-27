@@ -351,6 +351,8 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->record_pos = 0;
     tr->record_start = 0;
     tr->start_iter = 0;
+    tr->take_seq = 0; /* #819: fresh session, take ids restart at 1 */
+    store_i32(&tr->a_settled_take_id, 0);
     tr->od_gain = 0.0f;
     tr->xfade_capture = 0;
     /* ...and the trailing seam overlap (#728), for the same reason and then
@@ -455,6 +457,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   if (engine->lat_buf == NULL) engine->lat_buf_cap = 0;
   le_loop_clock_reset(&engine->clock);
   engine->loop_iteration = 0;
+  engine->transport_held = 0; /* #262: fresh transport, no hold latched */
   /* Free mode (B2b): each track's own clock resets alongside the master's —
    * a fresh configure/session must never carry a stale established length
    * from a previous run into the first Free-mode recording. */

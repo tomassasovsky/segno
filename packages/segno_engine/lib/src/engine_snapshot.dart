@@ -383,6 +383,7 @@ class TrackSnapshot {
     this.pending = false,
     this.lengthPresetBars = 0,
     this.oneShot = false,
+    this.settledTakeId = 0,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -404,6 +405,7 @@ class TrackSnapshot {
       pending = false,
       lengthPresetBars = 0,
       oneShot = false,
+      settledTakeId = 0,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -431,6 +433,7 @@ class TrackSnapshot {
     pending: native.pending != 0,
     lengthPresetBars: native.length_preset_bars,
     oneShot: native.one_shot != 0,
+    settledTakeId: native.settled_take_id,
     lanes: lanes,
   );
 
@@ -485,6 +488,14 @@ class TrackSnapshot {
   /// Dart-side mirror of this reset).
   final bool oneShot;
 
+  /// The monotonic id of this track's currently-SETTLED take (#819): the take
+  /// the last `RECORD_END` on this channel finalized. `0` when the track has
+  /// never finalized a take this session. The performance-capture pipeline
+  /// stamps it onto the disarm manifest's lane-0 entry as `takeId` so the
+  /// offline renderer anchors the settled image by take identity rather than by
+  /// ordinal position.
+  final int settledTakeId;
+
   /// RMS level for the most recent block, in `0..1`.
   final double rms;
 
@@ -529,6 +540,7 @@ class TrackSnapshot {
           pending == other.pending &&
           lengthPresetBars == other.lengthPresetBars &&
           oneShot == other.oneShot &&
+          settledTakeId == other.settledTakeId &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -548,6 +560,7 @@ class TrackSnapshot {
     pending,
     lengthPresetBars,
     oneShot,
+    settledTakeId,
     Object.hashAll(lanes),
   );
 }

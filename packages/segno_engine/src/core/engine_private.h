@@ -819,6 +819,17 @@ typedef struct le_track {
   uint64_t start_iter; /* loop_iteration when this track's recording began */
   int32_t record_start; /* record_pos when this capture began, so a fixed-length
                          * track can auto-finalize after exactly K base loops. */
+  /* Take identity (#819). take_seq is an audio-thread-local monotonic counter
+   * bumped once at every RECORD_START on this track (never reset by a clear —
+   * a clear-then-re-record deliberately yields a DISTINCT id, which is the
+   * whole point). Each RECORD_END logs the current take_seq in its payload and
+   * publishes it to a_settled_take_id, the id of the currently-settled take
+   * the snapshot exposes so the disarm manifest can name which take its image
+   * belongs to. Both reset to 0 on le_engine_configure (a fresh session), so
+   * the first take of any capture is id 1 and pre-arm ids can never collide
+   * with during-capture ones (they are strictly smaller). */
+  int32_t take_seq;
+  _Atomic int32_t a_settled_take_id;
   float od_gain; /* audio-thread-local overdub punch envelope (0..1). Ramps up on
                   * punch-in and down on punch-out so the layered input enters and
                   * leaves the loop buffer without a step discontinuity (a click)
@@ -1304,6 +1315,13 @@ struct le_engine {
   /* Audio-thread-local transport. */
   le_loop_clock clock;
   uint64_t loop_iteration; /* free-running count of base-loop wraps */
+  /* Audio-thread-local edge latch for the mid-capture transport hold
+   * (#262). Set when advance_transport_frame's all-idle branch first pins the
+   * clock to 0 and cleared when the transport is active again, so exactly one
+   * LE_PLOG_TRANSPORT_HELD fact is logged per hold episode instead of one per
+   * held frame. Pure transport state (tracked whether or not armed); the
+   * logging itself is gated by le_plog_push's armed check. */
+  int transport_held;
 
   /* Audio-thread-local tempo state. frame_clock is a running frame counter
    * (advanced once per process call by the block size — tap timing needs only

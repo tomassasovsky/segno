@@ -14,6 +14,7 @@ class _FakeTrack {
   double volume = 1;
   bool muted = false;
   int multiple = 1;
+  int settledTakeId = 0;
   final List<_FakeLane> lanes = [];
 }
 
@@ -63,12 +64,14 @@ class FakePerformanceEngine implements AudioEngine {
     double volume = 1,
     bool muted = false,
     int multiple = 1,
+    int settledTakeId = 0,
   }) {
     final track = _tracks[channel]
       ..state = trackState
       ..volume = volume
       ..muted = muted
-      ..multiple = multiple;
+      ..multiple = multiple
+      ..settledTakeId = settledTakeId;
     while (track.lanes.length <= lane) {
       track.lanes.add(_FakeLane());
     }
@@ -129,6 +132,7 @@ class FakePerformanceEngine implements AudioEngine {
           rms: 0,
           peak: 0,
           multiple: t.multiple,
+          settledTakeId: t.settledTakeId,
           lanes: [
             for (final l in t.lanes)
               LaneSnapshot(
