@@ -516,11 +516,10 @@ void main() {
 
       expect(find.byKey(const Key('tracks_tileFxNoChain')), findsOneWidget);
       expect(find.text('NO CHAIN'), findsOneWidget);
-      // An empty chain still names its target (the footswitch drives it either
-      // way), just the bare stage with no chain name appended.
-      expect(find.byKey(const Key('tracks_tileFxTarget')), findsOneWidget);
-      expect(find.text('TRACK 1'), findsOneWidget);
-      // There is no chain to power, so the pill is absent entirely.
+      // Nothing to power and no chain to name: the whole centered group is
+      // replaced by NO CHAIN, so neither the pill, the entry run, nor the
+      // TARGET · CHAIN identity is drawn.
+      expect(find.byKey(const Key('tracks_tileFxTarget')), findsNothing);
       expect(find.byKey(const Key('tracks_tileFxPower')), findsNothing);
       expect(find.byKey(const Key('tracks_tileFxEntryRun')), findsNothing);
     });
