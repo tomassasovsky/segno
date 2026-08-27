@@ -73,7 +73,11 @@ enum TrackEffectType {
   echo(6),
 
   /// Schroeder/Freeverb room reverb.
-  reverb(7);
+  reverb(7),
+
+  /// Stereo chorus — an LFO-swept short delay summed with the dry signal.
+  /// Code 9: the hosted-plugin row holds 8.
+  chorus(9);
 
   const TrackEffectType(this.code);
 

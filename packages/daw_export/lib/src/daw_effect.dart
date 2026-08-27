@@ -13,10 +13,17 @@ const int kPluginFxCode = 8;
 /// a built-in effect this feature can emit a device for.
 const int kMinBuiltInEffectType = 1;
 
-/// The highest valid `LE_FX_*` built-in effect type code a `DawEffect` can
-/// represent — `LE_FX_REVERB`, matching `segno_engine`'s
-/// `segno_engine_api.h`. Any code above this other than [kPluginFxCode] is
-/// not a built-in effect this feature can emit a device for.
+/// The highest `LE_FX_*` effect type code a `DawEffect` can represent —
+/// `LE_FX_REVERB`, matching `segno_engine`'s `segno_engine_api.h`.
+///
+/// This bounds what this feature can emit a DEVICE for, which is narrower
+/// than "is a built-in": it is the set of built-ins with a shipped Segno
+/// VST3 counterpart in `segnoVst3Plugins`. Built-ins added after the VST3
+/// set — `LE_FX_CHORUS` (9) is the first — are numbered above this bound on
+/// purpose, so `resolveDeviceChain` reports
+/// `DeviceChainFallbackReason.unrepresentedEffectType` and the export falls
+/// back to audio rather than emitting a device that references a plugin the
+/// user does not have. Raise this only alongside the matching plugin.
 const int kMaxBuiltInEffectType = 7;
 
 /// One built-in effect entry in a resolved device chain: a `LE_FX_*` [type]

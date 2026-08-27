@@ -120,6 +120,49 @@ static float fx_read_frac(const float* buf, int cap, int head, float d) {
   return buf[i0] + frac * (buf[i1] - buf[i0]);
 }
 
+/* Chorus: a short delay whose read tap is swept by a sine LFO, summed back with
+ * the dry signal — the moving tap detunes the wet copy, and the two beating
+ * against each other is the effect. Unlike DELAY there is no feedback: a chorus
+ * that regenerates is a flanger.
+ *
+ * p0 = rate (0.05..6 Hz), p1 = depth, p2 = mix.
+ *
+ * The base tap sits at LE_CHORUS_BASE_MS and the LFO sweeps it +-
+ * (depth * LE_CHORUS_SWEEP_MS). Base > sweep, so the tap never crosses the
+ * write head and the read stays in the past at any depth. The right channel's
+ * LFO runs a quarter cycle ahead of the left, so a mono source (l == r) comes
+ * out decorrelated — the width is the point of a stereo chorus. */
+static float fx_chorus(le_fx_state* fx, int slot, int chan, int sr, int cap,
+                       float x, const float* p) {
+  float* buf = fx->delay[slot][chan];
+  if (buf == NULL || cap <= 1) return x;
+
+  float ph = fx->lfo[slot][chan] + (chan ? 0.25f : 0.0f);
+  if (ph >= 1.0f) ph -= 1.0f;
+  const float lfo = sinf(2.0f * LE_PI * ph); /* -1..1 */
+
+  const float base = LE_CHORUS_BASE_MS * 0.001f * (float)sr;
+  const float sweep = p[1] * LE_CHORUS_SWEEP_MS * 0.001f * (float)sr;
+  float d = base + sweep * lfo;
+  if (d < 1.0f) d = 1.0f;
+  if (d > (float)(cap - 1)) d = (float)(cap - 1);
+
+  const int pos = fx->delay_pos[slot][chan];
+  buf[pos] = x;
+  const float wet = fx_read_frac(buf, cap, pos, d);
+  int nxt = pos + 1;
+  if (nxt >= cap) nxt = 0;
+  fx->delay_pos[slot][chan] = nxt;
+
+  const float rate = 0.05f + p[0] * 5.95f;
+  float nph = fx->lfo[slot][chan] + rate / (float)sr;
+  if (nph >= 1.0f) nph -= 1.0f;
+  fx->lfo[slot][chan] = nph;
+
+  const float mix = p[2];
+  return x * (1.0f - mix) + wet * mix;
+}
+
 /* --- Phase-vocoder octaver (LE_FX_OCTAVER) ------------------------------------
  *
  * A streaming STFT phase vocoder that shifts pitch while holding the formant
@@ -810,6 +853,12 @@ static void fx_tremolo_process(le_fx_state* fx, int slot, int sr, int cap,
   *l = fx_tremolo(fx, slot, 0, sr, *l, p);
   *r = fx_tremolo(fx, slot, 1, sr, *r, p);
 }
+static void fx_chorus_process(le_fx_state* fx, int slot, int sr, int cap,
+                              float* l, float* r, const float* p) {
+  *l = fx_chorus(fx, slot, 0, sr, cap, *l, p);
+  *r = fx_chorus(fx, slot, 1, sr, cap, *r, p);
+}
+
 static void fx_octaver_process(le_fx_state* fx, int slot, int sr, int cap,
                                float* l, float* r, const float* p) {
   (void)sr;
@@ -919,6 +968,12 @@ static void fx_drive_defaults(float out[LE_FX_PARAMS]) {
   out[2] = 0.0f;
   out[3] = 0.0f;
 }
+static void fx_chorus_defaults(float out[LE_FX_PARAMS]) {
+  out[0] = 0.25f; /* rate: ~1.5 Hz, a slow classic sweep */
+  out[1] = 0.5f;  /* depth */
+  out[2] = 0.4f;  /* mix: wet-forward but still under the dry */
+  out[3] = 0.0f;
+}
 static void fx_filter_defaults(float out[LE_FX_PARAMS]) {
   out[0] = 0.5f; /* cutoff */
   out[1] = 0.2f; /* resonance */
@@ -1014,8 +1069,14 @@ static const le_fx_vtable LE_FX[] = {
      * defaults (the host owns all state). Output is sanitized at the chain
      * boundary in fx_apply_chain. */
     [LE_FX_PLUGIN] = {fx_plugin_process, NULL, NULL, NULL},
+    [LE_FX_CHORUS] =
+        {fx_chorus_process, NULL, fx_stereo_ring_prepare, fx_chorus_defaults},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
+
+int le_fx_type_is_settable(int32_t type) {
+  return type >= LE_FX_NONE && type < LE_FX_TYPE_COUNT && type != LE_FX_PLUGIN;
+}
 
 /* Applies a chain to one stereo sample, in chain order, carrying the (l, r) pair
  * in place. The chain is stageless: every active entry processes both channels.

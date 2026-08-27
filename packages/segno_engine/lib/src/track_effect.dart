@@ -46,7 +46,13 @@ enum TrackEffectType {
   /// Schroeder/Freeverb room reverb — a dense, smooth decaying tail. Spreads a
   /// mono source into a stereo tail across the first two channels of its output
   /// route, so it is best placed last in a chain.
-  reverb(7, 'Reverb');
+  reverb(7, 'Reverb'),
+
+  /// Stereo chorus — a short delay whose read tap is swept by an LFO and summed
+  /// back with the dry signal. The left and right LFOs run a quarter cycle
+  /// apart, so a mono source comes out with stereo width. Code 9 sits past
+  /// [kPluginFxCode] because the hosted-plugin row claimed 8 first.
+  chorus(9, 'Chorus');
 
   const TrackEffectType(this.code, this.label);
 
@@ -110,6 +116,11 @@ enum TrackEffectType {
       TrackEffectParam('Damping'),
       TrackEffectParam('Mix'),
     ],
+    TrackEffectType.chorus => const [
+      TrackEffectParam('Rate'),
+      TrackEffectParam('Depth'),
+      TrackEffectParam('Mix'),
+    ],
   };
 
   /// Labels for this type's parameters, in order. A convenience over [params].
@@ -128,6 +139,7 @@ enum TrackEffectType {
     TrackEffectType.octaver => const [0.25, 0.5, 0.5, 0],
     TrackEffectType.echo => const [0.45, 0.5, 0.35, 0],
     TrackEffectType.reverb => const [0.5, 0.5, 0.35, 0],
+    TrackEffectType.chorus => const [0.25, 0.5, 0.4, 0],
   };
 }
 

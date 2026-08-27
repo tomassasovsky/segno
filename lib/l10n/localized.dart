@@ -20,6 +20,7 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.octaver => effectOctaver,
     TrackEffectType.echo => effectEcho,
     TrackEffectType.reverb => effectReverb,
+    TrackEffectType.chorus => effectChorus,
   };
 
   String effectParamLabel(String englishLabel) => switch (englishLabel) {
