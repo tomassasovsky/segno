@@ -112,6 +112,24 @@ const char *snd_ctl_card_info_get_driver(const void *info) {
   return "looperx-rig";
 }
 
+/* snd_ctl_card_info() leaves the caller's struct zeroed, so every getter has to
+ * be covered -- a missed one returns an empty string, and an empty card name is
+ * exactly what makes airDeviceIdentifier build an empty filename. */
+const char *snd_ctl_card_info_get_longname(const void *info) {
+  (void)info;
+  return "HG08 Looper X internal audio";
+}
+
+const char *snd_ctl_card_info_get_mixername(const void *info) {
+  (void)info;
+  return CARD_NAME;
+}
+
+const char *snd_ctl_card_info_get_components(const void *info) {
+  (void)info;
+  return "";
+}
+
 int snd_ctl_card_info_get_card(const void *info) {
   (void)info;
   return 0;

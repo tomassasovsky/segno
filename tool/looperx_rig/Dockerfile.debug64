@@ -1,6 +1,3 @@
-# arm64 base: native on Apple Silicon, so apt is fast and -- crucially --
-# qemu-arm can be invoked EXPLICITLY with its own gdbstub, which Docker's
-# transparent binfmt path cannot offer (no ptrace => gdb cannot attach).
 FROM arm64v8/debian:bookworm-slim
 RUN dpkg --add-architecture armhf && apt-get update && apt-get install -y --no-install-recommends \
       qemu-user-static gdb-multiarch gcc-arm-linux-gnueabihf xz-utils procps \
@@ -8,7 +5,7 @@ RUN dpkg --add-architecture armhf && apt-get update && apt-get install -y --no-i
       libegl1:armhf libegl-mesa0:armhf libgles2:armhf libglapi-mesa:armhf \
       libgbm1:armhf libgl1-mesa-dri:armhf \
   && rm -rf /var/lib/apt/lists/*
-COPY seqshim.c alsashim.c fbshim.c /tmp/
-RUN arm-linux-gnueabihf-gcc -shared -fPIC -O2 -o /usr/local/lib/libseqshim.so /tmp/seqshim.c \
- && arm-linux-gnueabihf-gcc -shared -fPIC -O2 -o /usr/local/lib/libalsashim.so /tmp/alsashim.c -ldl \
- && arm-linux-gnueabihf-gcc -shared -fPIC -O2 -o /usr/local/lib/libfbshim.so /tmp/fbshim.c -ldl
+COPY seqshim.c alsashim.c fbshim.c udevshim.c /tmp/
+RUN for s in seqshim alsashim fbshim udevshim; do \
+      arm-linux-gnueabihf-gcc -shared -fPIC -O2 -o /usr/local/lib/lib$s.so /tmp/$s.c -ldl || exit 1; \
+    done
