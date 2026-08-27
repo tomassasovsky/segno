@@ -9,7 +9,6 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/model/interaction_mode.dart';
-import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/rename_track_dialog.dart';
 import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
@@ -31,37 +30,11 @@ class TrackColumn extends StatelessWidget {
     this.looperMode = LooperMode.multi,
     this.isPrimary = false,
     this.onCrownPrimary,
-    this.fxTarget,
-    this.inputNames = const {},
     super.key,
   });
 
   /// The track this column renders.
   final Track track;
-
-  /// The FX stage the footswitch bound to this cell attaches to, in FX mode.
-  ///
-  /// FX mode identifies a cell CHAIN-FIRST — by the FX stage its bound chain
-  /// targets, never by the column's track (#692): a footswitch may toggle a
-  /// chain on any stage (an input monitor, a lane, another track's bus, the
-  /// Master insert), so the cell names the chain it drives, not the track it
-  /// happens to sit above.
-  ///
-  /// Null defaults to this column's own Track-stage chain — what the on-screen
-  /// stage's per-column tap currently toggles ([LooperTrackChainToggled]) — so
-  /// the identity still reads `TRACK n · …`, chain-first, exactly like any
-  /// other target. The chain's entries and power state are always taken from
-  /// [track] (the polled snapshot the stage renders); [fxTarget] renames the
-  /// cell, it does not re-source the chain.
-  final FxAddress? fxTarget;
-
-  /// The player's own names for hardware inputs, keyed by socket index (the
-  /// input-rename feature; `InputsState.names`).
-  ///
-  /// Only consulted when [fxTarget] is an Input-stage chain: a named socket
-  /// makes the cell read `GUITAR 1 · …` instead of `INPUT 1 · …` (owner's
-  /// call). Empty — the default — always yields the generic `INPUT n`.
-  final Map<int, String> inputNames;
 
   /// The track's resolved display name.
   final String name;
@@ -103,55 +76,7 @@ class TrackColumn extends StatelessWidget {
     // bar color is one table lookup on the track's meter state (muted included;
     // see LooperTheme.meterColors).
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
-    final isFx = mode == InteractionMode.fx;
-    // FX mode recedes the meter to 40% alpha so the chain dressing reads on top
-    // of it (#692). The meter stays TRUTHFUL — it is taken pre-chain, so it is
-    // the same fill and hue the other modes show — it just steps back to let
-    // the chain identity own the tile. The other modes paint it at full weight.
-    final barColor = isFx
-        ? looper.meterColor(meterState, mode: mode).withValues(alpha: 0.4)
-        : looper.meterColor(meterState, mode: mode);
-    // The FX-mode cell identity, chain-first (#692): the FX stage the bound
-    // chain sits on, then the chain's own name — the track name is deliberately
-    // absent, since the cell drives an FX control that need not belong to this
-    // column's track. The stage defaults to this column's own Track chain (what
-    // the per-column tap toggles), so a track chain still reads `TRACK n · …`,
-    // named like every other target rather than borrowing the track's name. The
-    // chain name is the head of the entries the polled snapshot carries.
-    final fxAddress =
-        fxTarget ?? FxAddress(stage: FxStage.track, index: track.channel);
-    final fxStageLabel = _stageFxTargetLabel(l10n, fxAddress);
-    final fxChainName = track.effects.isEmpty
-        ? null
-        : fxBlockName(l10n, track.effects.first);
-    // A NAMED input is the ONE two-tier identity (owner's call): the socket's
-    // own name on top, a smaller `INPUT n` sub-label under it, and the chain in
-    // the entry-run chips below (not jammed into the identity line). Every
-    // other stage — and an UNNAMED input — is a single `TARGET · CHAIN` line,
-    // or the bare stage when the chain is empty.
-    final fxInputName = fxAddress.stage == FxStage.input
-        ? (inputNames[fxAddress.index] ?? '')
-        : '';
-    final String fxIdentityPrimary;
-    final String? fxIdentitySub;
-    if (fxInputName.isNotEmpty) {
-      fxIdentityPrimary = fxInputName.toUpperCase();
-      fxIdentitySub = fxStageLabel;
-    } else if (fxAddress.stage == FxStage.input || fxChainName == null) {
-      // Unnamed input, or an empty chain on any stage: the bare stage label.
-      fxIdentityPrimary = fxStageLabel;
-      fxIdentitySub = null;
-    } else {
-      fxIdentityPrimary = l10n.stageFxCellLabel(
-        fxStageLabel,
-        fxChainName.toUpperCase(),
-      );
-      fxIdentitySub = null;
-    }
-    // The screen-reader identity flattens the two tiers into one phrase.
-    final fxCellLabel = fxIdentitySub == null
-        ? fxIdentityPrimary
-        : '$fxIdentityPrimary $fxIdentitySub';
+    final barColor = looper.meterColor(meterState, mode: mode);
     // Crown badge (D18, B5c): visible only in Sync/Band (Wave-view style,
     // per the brainstorm) — an inert, empty slot in every other mode so the
     // column layout never shifts when the mode changes.
@@ -206,13 +131,10 @@ class TrackColumn extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: looper.tileBackground,
-        borderRadius: BorderRadius.circular(17),
-        // Selected: a 4px white ring (onAccent == pure white). Unselected: a
-        // 1px near-black hairline (the pen's card stroke #17171b, the `card`
-        // token's near-black) — not borderless.
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: selected ? surface.onAccent : surface.card,
-          width: selected ? 4 : 1,
+          color: selected ? Colors.white : Colors.transparent,
+          width: 3,
         ),
       ),
       padding: const EdgeInsets.all(14),
@@ -230,11 +152,9 @@ class TrackColumn extends StatelessWidget {
                 AppText(
                   '${track.channel + 1}',
                   style: theme.textTheme.titleMedium?.copyWith(
-                    // The pen's cell number: UI sans, muted grey.
-                    fontFamily: SurfaceTheme.displayFont,
-                    color: surface.textTertiary,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
+                    color: surface.textSecondary,
+                    // Console: larger channel number to match the bigger name.
+                    fontSize: 40,
                   ),
                 ),
                 if (track.isMultiple)
@@ -322,18 +242,18 @@ class TrackColumn extends StatelessWidget {
               // keys): record/overdub in record mode, mute/unmute in mute
               // mode, FX-chain on/off in FX mode — one interaction mode for
               // every surface, touch included.
-              // FX mode names the cell chain-first — its bound chain's target
-              // identity (#692), not the track — and adds the CHAIN state,
-              // which the meter and indicator (transport only) never report,
-              // while KEEPING the transport word the other modes carry, which
-              // the meter otherwise conveys by colour alone (WCAG 1.4.1).
+              // FX mode adds the CHAIN state to the label — the meter and the
+              // indicator report transport state and say nothing about the
+              // chain — while KEEPING the transport word the other modes
+              // carry, which the meter otherwise conveys by colour alone
+              // (WCAG 1.4.1).
               semanticLabel: switch (mode) {
                 InteractionMode.record => l10n.a11yTrackTile(name, stateWord),
                 InteractionMode.mute => l10n.a11yTrackTileMute(name, stateWord),
                 InteractionMode.fx =>
                   track.chainEnabled
-                      ? l10n.a11yTrackTileFxOn(fxCellLabel, stateWord)
-                      : l10n.a11yTrackTileFxOff(fxCellLabel, stateWord),
+                      ? l10n.a11yTrackTileFxOn(name, stateWord)
+                      : l10n.a11yTrackTileFxOff(name, stateWord),
               },
               selected: selected,
               borderRadius: 8,
@@ -372,23 +292,16 @@ class TrackColumn extends StatelessWidget {
                         frozen: track.state == TrackState.stopped,
                       ),
                     ),
-                    // FX mode re-dresses the tile in place (#692): over the
-                    // receded meter, one centered vertical group in the
-                    // cell's upper-middle — the chain-first `TARGET · CHAIN`
-                    // identity as the dominant focal text, the chain's entries
-                    // in signal order below it, then a large ON/OFF power pill
-                    // (or a centered NO CHAIN when the chain is empty). This is
-                    // the on-screen twin of the tile's semantic label and of
-                    // the pedal's chain LED; the meter alone shows nothing
-                    // about the chain, since it is taken pre-chain.
-                    if (isFx)
-                      Positioned.fill(
-                        child: _FxChainDressing(
-                          identityPrimary: fxIdentityPrimary,
-                          identitySub: fxIdentitySub,
-                          effects: track.effects,
-                          chainEnabled: track.chainEnabled,
-                        ),
+                    // The ONLY on-screen cue that an FX-mode tap landed: the
+                    // meter is taken pre-chain by the engine, so bypassing a
+                    // chain changes neither the fill nor its colour, and
+                    // without this the tap is invisible and gets repeated.
+                    if (mode == InteractionMode.fx && !track.chainEnabled)
+                      Positioned(
+                        top: 4,
+                        left: 4,
+                        right: 4,
+                        child: _ChainOffPill(label: l10n.signalChainOff),
                       ),
                   ],
                 ),
@@ -403,37 +316,29 @@ class TrackColumn extends StatelessWidget {
             undoDepth: track.undoDepth + (track.hasContent ? 1 : 0),
             redoDepth: track.redoDepth,
           ),
-          // The track name identifies the column in every mode BUT FX. In FX
-          // mode the cell is not the track — it drives a bound FX chain, named
-          // chain-first by the `TARGET · CHAIN` identity inside the tile above
-          // (#692) — so the track name is removed from the cell entirely rather
-          // than re-asserting the track-as-FX-control conflation here.
-          if (!isFx) ...[
-            const SizedBox(height: kConsoleMode ? 2 : 10),
-            FocusableTapTarget(
-              key: Key('tracks_name_${track.channel}'),
-              semanticLabel: l10n.a11yRenameTrack(name),
-              onTap: () => showRenameTrackDialog(
-                context: context,
-                cubit: context.read<TracksCubit>(),
-                channel: track.channel,
-                current: name,
-              ),
-              child: kConsoleMode
-                  // Fixed console name size: uniform height across columns,
-                  // tuned so a 6-char name (e.g. GUITAR) reaches ~60% of the
-                  // column width on the 16" panel. Hard-coded (not
-                  // width-relative).
-                  ? AppText(
-                      name,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: nameStyle?.copyWith(fontSize: 47.3, height: 1),
-                    )
-                  : nameText,
+          const SizedBox(height: kConsoleMode ? 2 : 10),
+          FocusableTapTarget(
+            key: Key('tracks_name_${track.channel}'),
+            semanticLabel: l10n.a11yRenameTrack(name),
+            onTap: () => showRenameTrackDialog(
+              context: context,
+              cubit: context.read<TracksCubit>(),
+              channel: track.channel,
+              current: name,
             ),
-          ],
+            child: kConsoleMode
+                // Fixed console name size: uniform height across columns, tuned
+                // so a 6-char name (e.g. GUITAR) reaches ~60% of the column
+                // width on the 16" panel. Hard-coded (not width-relative).
+                ? AppText(
+                    name,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: nameStyle?.copyWith(fontSize: 47.3, height: 1),
+                  )
+                : nameText,
+          ),
           // A discrete arm/readiness strip, shown only when the view preference
           // is on. When off the widget is absent and the tile reflows.
           if (context.select<TracksCubit, bool>(
@@ -631,398 +536,41 @@ class _PendingArmBadge extends StatelessWidget {
   }
 }
 
-/// The generic FX stage label of an FX-mode cell — the stage the bound chain
-/// sits on: `INPUT n` / `TRACK n` / `LANE n` / `MASTER` (#692).
+/// The FX-mode "chain bypassed" pill drawn over a track's meter.
 ///
-/// Indices are 1-based, matching every other jack name the rig gives. This is
-/// name-free by design: TRACK never borrows the column's track name (the
-/// conflation fix), and LANE / MASTER carry no name. A NAMED input's own name
-/// is layered on TOP of this in [TrackColumn] as a two-tier identity (the name
-/// over this `INPUT n` sub-label); this helper always returns the generic form.
-String _stageFxTargetLabel(AppLocalizations l10n, FxAddress address) =>
-    switch (address.stage) {
-      FxStage.input => l10n.stageFxTargetInput(address.index + 1),
-      FxStage.loop => l10n.stageFxTargetLane(address.lane ?? 0),
-      FxStage.track => l10n.stageFxTargetTrack(address.index + 1),
-      FxStage.master => l10n.stageFxTargetMaster,
-    };
-
-/// The FX-mode re-dressing drawn over a track's (receded) meter (#692).
-///
-/// Candidate A of the #692 spike: FX mode does not swap the stage, it
-/// re-dresses each tile IN PLACE — geometry, the 1–8 key parity and the
-/// footswitch map all stay frozen, so the performer's spatial map is untouched.
-///
-/// The dressing is ONE centered vertical group sitting in the cell's
-/// upper-middle, over the waveform (the approved Pencil `stage-fx` frame), NOT
-/// scattered to the corners:
-///
-/// 1. the chain-first `TARGET · CHAIN` identity — the dominant focal text,
-///    white when engaged;
-/// 2. the chain's entries as small chips joined by `→`, in signal order;
-/// 3. a large ON/OFF power pill — purple-filled `ON`, ghost-outlined `OFF`.
-///
-/// A bypassed chain dims the whole group together. An empty chain replaces the
-/// group with a centered NO CHAIN and its hint — there is nothing to power.
-///
-/// It carries no semantics ([ExcludeSemantics]) and no hit target
-/// ([IgnorePointer]): [TrackColumn]'s tile already names the chain state for a
-/// screen reader, and the FX-mode tap that toggles the chain has to fall
-/// through to the tile beneath this overlay.
-class _FxChainDressing extends StatelessWidget {
-  const _FxChainDressing({
-    required this.identityPrimary,
-    required this.identitySub,
-    required this.effects,
-    required this.chainEnabled,
-  });
-
-  /// The cell's primary identity line — `TARGET · CHAIN` (e.g.
-  /// `MASTER · REVERB`), the bare stage `TARGET`, or a NAMED input's own name.
-  final String identityPrimary;
-
-  /// The smaller, dimmer second identity tier, or null for a single-line
-  /// identity. Only a named input carries one: its `INPUT n` under the name.
-  final String? identitySub;
-
-  /// The bound chain's entries, in processing order.
-  final List<TrackEffect> effects;
-
-  /// Whether the whole chain is engaged (drives the power pill and the group's
-  /// engaged/dimmed reading).
-  final bool chainEnabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: ExcludeSemantics(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: effects.isEmpty
-              // Nothing loaded: no power pill (there is nothing to power), just
-              // a centered NO CHAIN and the invitation to build one.
-              ? const Align(
-                  // Upper-middle: the NO CHAIN group centres at ~40% of the
-                  // card, matching the pen.
-                  alignment: Alignment(0, -0.33),
-                  child: _FxNoChain(),
-                )
-              // The centered group, anchored so its centre sits at ~42.7% of
-              // the card (the pen). A bypassed chain reads as dimmed — but
-              // through OPAQUE muted colours, not a translucent group: dimming
-              // white over the green fill tinted the identity green and the
-              // pill blue (the pen's dimmed values are flat neutral greys).
-              : Align(
-                  alignment: const Alignment(0, -0.26),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // A FIXED two-line slot for the identity, top-anchored: a
-                      // one-line identity leaves the lower line empty. This
-                      // keeps the chip row and the ON/OFF pill at the SAME y in
-                      // every cell — a named input's second tier no longer
-                      // pushes the indicators down out of line with its
-                      // one-line neighbours across the row.
-                      SizedBox(
-                        height: kConsoleMode
-                            ? _kFxIdentitySlot
-                            : _kFxIdentitySlotDesktop,
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child: _FxCellIdentity(
-                            primary: identityPrimary,
-                            sub: identitySub,
-                            enabled: chainEnabled,
-                          ),
-                        ),
-                      ),
-                      // Inter-element gaps opened to the pen's proportions:
-                      // identity→chips ~3.8% of the card, chips→pill ~3.2%.
-                      const SizedBox(height: kConsoleMode ? 20 : 12),
-                      _FxEntryRun(effects: effects, chainEnabled: chainEnabled),
-                      const SizedBox(height: kConsoleMode ? 30 : 18),
-                      _FxPowerPill(enabled: chainEnabled),
-                    ],
-                  ),
-                ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The centered "no effects loaded" state: a large NO CHAIN over a small,
-/// dimmed hint pointing at the Signal tab where a chain is assembled. Both in
-/// the UI sans, in the pen's flat muted grey.
-class _FxNoChain extends StatelessWidget {
-  const _FxNoChain();
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final surface = context.surface;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        AppText(
-          l10n.stageFxNoChain,
-          key: const Key('tracks_tileFxNoChain'),
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: SurfaceTheme.displayFont,
-            color: surface.textMuted,
-            fontSize: kConsoleMode ? 28 : 18,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1,
-            height: 1.1,
-          ),
-        ),
-        const SizedBox(height: kConsoleMode ? 8 : 5),
-        AppText(
-          l10n.stageFxNoChainHint,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: SurfaceTheme.displayFont,
-            color: surface.textMuted,
-            fontSize: kConsoleMode ? 18 : 12,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// The fixed height of the FX-cell identity slot — sized for the TWO-line
-/// named input (primary 30 + 6 gap + `INPUT n` sub 18, plus the faces' line
-/// overhead), so a one-line identity leaves the lower line empty and every
-/// cell's chips + pill start at the same y.
-const double _kFxIdentitySlot = 66;
-
-/// The desktop twin (primary 19 + 4 gap + sub 12, plus overhead).
-const double _kFxIdentitySlotDesktop = 44;
-
-/// The cell identity — the dominant focal text of an FX-mode cell, in the UI
-/// sans, at the top of the centered group.
-///
-/// Usually a single [primary] line: `TARGET · CHAIN` (e.g. `MASTER · REVERB`),
-/// a bare stage `TARGET`, or — for a NAMED input — the socket's own name, with
-/// a smaller, dimmer [sub] tier (`INPUT n`) directly beneath it. Names the FX
-/// control the cell drives, NOT the track in the column (#692). The [primary]
-/// line is near-white ([SurfaceTheme.textPrimary]) when engaged and a flat,
-/// OPAQUE muted grey ([SurfaceTheme.textSecondary]) when bypassed — never a
-/// translucent white, which over the green meter tints green; the [sub] line is
-/// always the muted grey. Carries no semantics of its own: the tile's FX label
-/// already announces this same identity.
-class _FxCellIdentity extends StatelessWidget {
-  const _FxCellIdentity({
-    required this.primary,
-    required this.sub,
-    required this.enabled,
-  });
-
-  final String primary;
-
-  final String? sub;
-
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    final subLabel = sub;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        AppText(
-          primary,
-          key: const Key('tracks_tileFxTarget'),
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontFamily: SurfaceTheme.displayFont,
-            color: enabled ? surface.textPrimary : surface.textSecondary,
-            fontSize: kConsoleMode ? 30 : 19,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.5,
-            height: 1,
-          ),
-        ),
-        if (subLabel != null) ...[
-          const SizedBox(height: kConsoleMode ? 6 : 4),
-          AppText(
-            subLabel,
-            key: const Key('tracks_tileFxTargetSub'),
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: SurfaceTheme.displayFont,
-              color: surface.textMuted,
-              fontSize: kConsoleMode ? 18 : 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 1,
-              height: 1,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-/// The large ON/OFF power pill — the prominent fully-round stadium below the
-/// chips that states the whole chain's on/off at stage distance.
-///
-/// `ON` is purple-filled ([SurfaceTheme.fx]) with a WHITE label — a mode fill,
-/// never an inline wash of `fx` (the high-contrast flavor could not reach that;
-/// #737). `OFF` is the ghost of the same pill: transparent with a flat muted
-/// grey ([SurfaceTheme.textMuted]) outline and label (the run's [Opacity] dims
-/// it further when bypassed). The label is the UI sans, sized to the pen.
-class _FxPowerPill extends StatelessWidget {
-  const _FxPowerPill({required this.enabled});
-
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    final l10n = context.l10n;
-    return Container(
-      key: const Key('tracks_tileFxPower'),
-      padding: const EdgeInsets.symmetric(
-        horizontal: kConsoleMode ? 46 : 28,
-        vertical: kConsoleMode ? 16 : 10,
-      ),
-      decoration: BoxDecoration(
-        color: enabled ? surface.fx : Colors.transparent,
-        borderRadius: BorderRadius.circular(999),
-        // OFF ring is the pen's flat muted grey, not the fx purple (which over
-        // the green meter read bluish).
-        border: enabled ? null : Border.all(color: surface.textMuted, width: 2),
-      ),
-      child: AppText(
-        enabled ? l10n.stageFxChainOn : l10n.stageFxChainOff,
-        textAlign: TextAlign.center,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontFamily: SurfaceTheme.displayFont,
-          // White label (onAccent) on the purple ON fill; flat muted grey on
-          // the ghost.
-          color: enabled ? surface.onAccent : surface.textMuted,
-          fontSize: kConsoleMode ? 40 : 22,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.4,
-          height: 1,
-        ),
-      ),
-    );
-  }
-}
-
-/// The chain's entries as small neutral chips joined by a sans `→`, in signal
-/// order — the surface where #601's per-entry dim/strikethrough idiom will mark
-/// bypassed entries. Sits directly below the identity, centered.
-///
-/// The whole run dims with the group when the chain is bypassed (the [Opacity]
-/// here); the per-ENTRY seam is deliberate: [_FxEntryChip] already takes a
-/// `bypassed` flag (always `false` until #601 wires per-entry state), so that
-/// slice changes one argument here and nothing else.
-class _FxEntryRun extends StatelessWidget {
-  const _FxEntryRun({required this.effects, required this.chainEnabled});
-
-  final List<TrackEffect> effects;
-
-  final bool chainEnabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final surface = context.surface;
-    // Interleave entry chips with arrow separators, in processing order.
-    final children = <Widget>[];
-    for (var i = 0; i < effects.length; i++) {
-      if (i > 0) {
-        // The literal '→' (U+2192) in the UI SANS — Inter has the glyph, so it
-        // renders cleanly; the console's mono face does not, which is what drew
-        // the .notdef tofu when the run inherited it.
-        children.add(
-          AppText(
-            '→',
-            style: TextStyle(
-              fontFamily: SurfaceTheme.displayFont,
-              color: surface.textMuted,
-              fontSize: kConsoleMode ? 16 : 12,
-              height: 1,
-            ),
-          ),
-        );
-      }
-      children.add(
-        // #601 seam: `bypassed` is passed explicitly false today; that slice
-        // computes it per entry and this is the one line it edits.
-        _FxEntryChip(label: fxBlockName(l10n, effects[i]), bypassed: false),
-      );
-    }
-    return Opacity(
-      // A bypassed run reads dimmer, together with the rest of the group.
-      opacity: chainEnabled ? 1 : surface.disabledOpacity,
-      child: Container(
-        key: const Key('tracks_tileFxEntryRun'),
-        child: Wrap(
-          alignment: WrapAlignment.center,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: kConsoleMode ? 8 : 6,
-          runSpacing: 4,
-          children: children,
-        ),
-      ),
-    );
-  }
-}
-
-/// One entry in the stage-tile chain run — the entry's name in a small neutral
-/// pill chip (UI sans), a dark-grey fill with a hairline white border.
-///
-/// [bypassed] is the #601 seam: when that slice lands it will dim/strike a
-/// single bypassed entry here without touching the whole-chain path above.
-class _FxEntryChip extends StatelessWidget {
-  const _FxEntryChip({required this.label, required this.bypassed});
+/// The tracks surface has no other channel for chain state — the meter is
+/// taken pre-chain by the engine, so a bypass changes nothing visible — and
+/// this is the tile's twin of the pedal's dark chain LED and the Signal
+/// page's own chain-off chip (whose wording it reuses).
+class _ChainOffPill extends StatelessWidget {
+  const _ChainOffPill({required this.label});
 
   final String label;
 
-  final bool bypassed;
-
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return Opacity(
-      opacity: bypassed ? surface.disabledOpacity : 1,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: kConsoleMode ? 14 : 9,
-          vertical: kConsoleMode ? 8 : 5,
-        ),
-        decoration: BoxDecoration(
-          // Neutral pills over the waveform (the pen): a dark-grey fill with a
-          // hairline white border and a near-white label — NOT the FX purple,
-          // which belongs to the power pill alone.
-          color: surface.control,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: surface.borderSubtle),
-        ),
+    return Container(
+      key: const Key('tracks_tileChainOff'),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      decoration: BoxDecoration(
+        color: surface.background.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: surface.warning),
+      ),
+      // The tile's own semantic label already reads the chain state, so this
+      // stays out of the tree a screen reader walks.
+      child: ExcludeSemantics(
         child: AppText(
           label,
+          textAlign: TextAlign.center,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: SurfaceTheme.displayFont,
-            color: surface.textPrimary,
-            fontSize: kConsoleMode ? 18 : 13,
-            fontWeight: FontWeight.w600,
-            decoration: bypassed ? TextDecoration.lineThrough : null,
+            color: surface.warning,
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
           ),
         ),
       ),
