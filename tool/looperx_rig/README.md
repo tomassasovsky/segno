@@ -10,10 +10,17 @@ ROOTFS=~/Downloads/LooperX_1.0.2_extracted/rootfs ./run.sh 60
 
 ## Status
 
-The app **boots, initializes audio, and runs without crashing** (with one
-binary patch, described below). It does **not** render: `eglInitialize`
-succeeds but `eglCreateWindowSurface` is never called, so Qt never creates its
-QQuickView and no frame has been captured yet.
+The app boots, initializes audio, runs without crashing (with one binary
+patch), and now **discovers its own MIDI control surface**:
+
+```
+air.devicemanager.midi.enumerator: Found client: 128 ( HG08 Control Surface MIDI 1 )
+air.devicemanager.midi.enumerator:   port: 0 ( HG08 Control Surface MIDI 1 )
+```
+
+It does **not** render. Qt's event loop never starts -- there are zero
+`poll`/`ppoll`/`epoll` calls in a whole run -- so `eglCreateWindowSurface` is
+never reached, no QQuickView is created, and no frame has been captured.
 
 ## Why each substitution exists
 
@@ -64,30 +71,30 @@ correlating `openat`/`mmap2` pairs in the trace, and **the main binary loads at
 
 ## Where it stops
 
-`eglInitialize -> 1`, but `eglCreateWindowSurface` is never called and Qt emits
-**no** `qt.scenegraph` or `qt.quick` output at all -- the QQuickView is never
-created. The app is past audio init (`RtAudio: AUDIO THREAD CPU affinity` and
-`ChordDetectorThread` both start) and no longer crashes, so something else
-gates UI creation.
+Qt's event loop never runs: a full run makes **zero** `poll`, `ppoll` or
+`epoll` calls, so the app never reaches `QCoreApplication::exec()`. It also
+never logs `Engine dependencies initialized`, so it is blocked *inside*
+engine-dependency initialization. `futex` is very busy (35k calls), which fits
+a condition-variable wait rather than a stall on I/O.
 
-`Failed to fetch the audio device ""` reappears once the null-singleton call is
-patched out, which suggests that call **was** the device-identity resolution:
-skipping it is a workaround, not a fix. Making it succeed is the most promising
-next step.
+That produced a deadlock worth recording: the app's UDevMonitor discovers
+devices **only** through hotplug events, and a hotplug notifier can only fire
+from the event loop that has not started. The shim hands that monitor a
+pre-armed pipe, but `udev_monitor_receive_device` is never called for exactly
+this reason.
 
-Note that `main.qml`'s root is an `Item`, not a `Window` -- the view is created
-in C++, and its geometry is gated on `hwInfo.isRadxa` (800x1280 portrait on the
-device, 1280x800 otherwise).
+With `seqshim.c` presenting a sequencer, the app now finds its control surface
+and then stops right there -- earlier than it used to, which is informative: it
+is presumably trying to *use* the surface and waiting for a response that real
+hardware would send. Emulating that exchange is the next step, and the shipped
+assignment files (`usr/Looper/Assignments/*.qml`) document the wire format:
+footswitches are notes 0-11 on channel 0, with CCs for the encoder and pedal.
 
-## Two ways to run it
-
-- `Dockerfile` + `boot.sh` — arm32 container, Docker's transparent binfmt.
-  Simplest, but **gdb cannot attach** (binfmt qemu-user has no ptrace).
-- `Dockerfile.debug64` + `boot-qemu.sh` — **arm64** container invoking
-  `qemu-arm-static` explicitly. Better in every way for diagnosis: the base is
-  native on Apple Silicon so `apt` is fast, the shims cross-compile with
-  `arm-linux-gnueabihf-gcc`, and qemu's own `-g <port>` gdbstub and `-strace`
-  both work. Needs `libc6-dev:armhf` for `crti.o`.
+Two dead ends worth not repeating: the audio-device identity failure
+(`Can't find file: ""`) is `UserDataDir` being empty -- the app also opens
+`"/DeviceConfiguration.json"` at the filesystem root for the same reason -- and
+neither creating that file nor setting `HOME`/`XDG_DATA_HOME`/the working
+directory changes it.
 
 ## Debugging notes
 

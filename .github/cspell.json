@@ -24,7 +24,7 @@
     "**/third_party/signalsmith-stretch/**",
     "**/third_party/vst3sdk/**"
   ],
-                    "words": [
+                      "words": [
     "Ableton",
     "accum",
     "aconnect",
@@ -210,6 +210,8 @@
     "desyncs",
     "detunes",
     "DEVICECHANGE",
+    "deviceidentifier",
+    "devicemanager",
     "diagnosability",
     "diffable",
     "discretes",
@@ -315,6 +317,7 @@
     "fscks",
     "fscrew",
     "fullscreens",
+    "futex",
     "fvisibility",
     "fwrite",
     "fxcount",
@@ -630,6 +633,7 @@
     "pourbox",
     "poweroff",
     "powersave",
+    "ppoll",
     "PPQN",
     "precedented",
     "prefs",
@@ -869,6 +873,7 @@
     "UART",
     "udevadm",
     "udevd",
+    "udevshim",
     "ulps",
     "unacked",
     "unbindable",
