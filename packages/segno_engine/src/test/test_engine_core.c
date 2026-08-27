@@ -8601,10 +8601,12 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * on-disk format, not just the in-memory ring. ---- */
 #define LE_TEST_EVENTS_HEADER_BYTES 12
 #define LE_TEST_EVENTS_ENTRY_BYTES 28
-/* The version perf_drain.c writes today. 2 = an aborted take logs
- * LE_PLOG_RECORD_ABORT; 1 = it logged a RECORD_END (every capture written
- * before #264). See the format doc's "What `version` means". */
-#define LE_TEST_EVENTS_VERSION 3
+/* The version perf_drain.c writes today. 4 = the PERF_ARMED/TRANSPORT_HELD
+ * facts + RECORD_END's take-id payload (#262/#819); 3 = unpaired RECORD_ABORT
+ * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
+ * RECORD_END (every capture written before #264). See the format doc's "What
+ * `version` means". */
+#define LE_TEST_EVENTS_VERSION 4
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -10513,7 +10515,14 @@ static void test_perf_events_log_transport_facts(void) {
   CHECK(find_log_entry(buf, count, 0, LE_PLOG_RECORD_START, &entry) >= 0);
   CHECK(entry.cmd.arg_i == 0);
   CHECK(find_log_entry(buf, count, 0, LE_PLOG_RECORD_END, &entry) >= 0);
-  CHECK(entry.cmd.arg_i == 0);
+  CHECK(entry.cmd.take.channel == 0); /* aliases arg_i */
+  CHECK(entry.cmd.take.take_id == 1); /* #819: channel 0's first take */
+  /* The arm fact is present and carries the armed-from-silence phase (no
+   * master existed when this capture armed): all three fields 0. */
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_PERF_ARMED, &entry) >= 0);
+  CHECK(entry.cmd.perf_arm.position == 0);
+  CHECK(entry.cmd.perf_arm.master_len == 0);
+  CHECK(entry.cmd.perf_arm.iteration == 0);
   CHECK(find_log_entry(buf, count, 0, LE_PLOG_LOOP_LENGTH_LOCKED, &entry) >= 0);
   CHECK(entry.cmd.arg_i == LOOP_N);
   CHECK(find_log_entry(buf, count, 0, LE_PLOG_LAYER_RETIRED, &entry) >= 0);
@@ -10539,6 +10548,187 @@ static void test_perf_events_log_transport_facts(void) {
   }
   CHECK(undo_entries == 3);
   CHECK(redo_entries == 2);
+
+  le_engine_destroy(e);
+}
+
+/* #262 acceptance: arming MID-LOOP against an already-playing master logs
+ * LE_PLOG_PERF_ARMED carrying the EXACT loop phase at the arm frame —
+ * position, master length, and iteration — not the control-side clockFrame
+ * that used to be sampled before this instant. The master is defined and
+ * advanced to a known position BEFORE the arm, so the fact must report that
+ * position (and a nonzero iteration once the loop has wrapped). */
+static void test_perf_armed_fact_carries_loop_phase(void) {
+  printf("test_perf_armed_fact_carries_loop_phase\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Define a LOOP_N master (NOT armed — nothing is logged yet), then leave it
+   * PLAYING and advance the shared clock past one full loop so the arm lands
+   * at iteration 1, position 2 (LOOP_N + 2 == 6 frames of playback). */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 1.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize -> master len LOOP_N */
+  drain(e);
+  process_const(e, 0.0f, LOOP_N + 2, out); /* wrap once, then two more frames */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 2);
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e); /* applies LE_CMD_PERF_ARM at capture frame 0, logs PERF_ARMED */
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+
+  le_perf_log_entry entry;
+  const int idx = find_log_entry(buf, count, 0, LE_PLOG_PERF_ARMED, &entry);
+  CHECK(idx >= 0);
+  CHECK(entry.frame == 0); /* capture frame 0 */
+  CHECK(entry.cmd.perf_arm.position == 2);
+  CHECK(entry.cmd.perf_arm.master_len == LOOP_N);
+  CHECK(entry.cmd.perf_arm.iteration == 1);
+  /* Exactly one arm fact per capture. */
+  int armed_count = 0;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code == LE_PLOG_PERF_ARMED) ++armed_count;
+  }
+  CHECK(armed_count == 1);
+
+  le_engine_destroy(e);
+}
+
+/* #819 (engine half): the per-channel take id is monotonic — it increments by
+ * one at each RECORD_START on a channel and is STABLE across a channel's
+ * finalize, and the RECORD_END payload carries the id of the take that just
+ * ended. Two channels count independently. Channel 0 records twice (clear
+ * between, so the second is a genuinely new take); channel 1 records once. */
+static void test_take_id_monotonic_per_channel(void) {
+  printf("test_take_id_monotonic_per_channel\n");
+  le_engine* e = make_configured_engine();
+  float out[LOOP_N];
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  /* Channel 0, take 1: defines the master. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  process_const(e, 1.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize -> RECORD_END take 1 */
+  drain(e);
+
+  /* Channel 1, take 1: a fresh loop over the master. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  process_const(e, 0.5f, LOOP_N, out);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* finalize -> RECORD_END take 1 */
+  drain(e);
+
+  /* Channel 0, take 2: clear then re-record — the clear-then-re-record that
+   * the old first-END proxy mis-anchored (#819). The new take id must be 2,
+   * strictly greater than the cleared take's 1. */
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  process_const(e, 0.7f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize -> RECORD_END take 2 */
+  drain(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].settled_take_id == 2); /* the re-recorded take */
+  CHECK(s.tracks[1].settled_take_id == 1);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[32768];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+
+  /* Channel 0 logged two RECORD_ENDs, carrying take ids 1 then 2 in order;
+   * channel 1 logged one, carrying take id 1. */
+  le_perf_log_entry entry;
+  int seen0 = 0, seen1 = 0;
+  int32_t last0 = 0;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code != LE_PLOG_RECORD_END) continue;
+    if (entry.cmd.take.channel == 0) {
+      ++seen0;
+      CHECK(entry.cmd.take.take_id == seen0); /* 1 then 2, monotonic */
+      last0 = entry.cmd.take.take_id;
+    } else if (entry.cmd.take.channel == 1) {
+      ++seen1;
+      CHECK(entry.cmd.take.take_id == 1); /* channel 1 counts independently */
+    }
+  }
+  CHECK(seen0 == 2);
+  CHECK(seen1 == 1);
+  CHECK(last0 == 2);
+
+  le_engine_destroy(e);
+}
+
+/* #262 (transport hold): once every track stops mid-capture the shared clock
+ * is pinned to 0 (advance_transport_frame's all-idle branch). That reset is
+ * logged as LE_PLOG_TRANSPORT_HELD exactly once — at the frame the hold
+ * begins, carrying the position it was pinned from — not once per held
+ * frame. */
+static void test_perf_transport_held_logged(void) {
+  printf("test_perf_transport_held_logged\n");
+  le_engine* e = make_configured_engine();
+  float out[LOOP_N];
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  /* Define a master and let it play to position 2. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  process_const(e, 1.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize -> PLAYING */
+  drain(e);
+  process_const(e, 0.0f, 2, out); /* clock advances to position 2 */
+
+  /* Stop the only track: the transport holds, pinning the clock from 2 -> 0.
+   * Several more idle blocks must NOT log additional held facts. */
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  drain(e);
+  process_const(e, 0.0f, LOOP_N, out);
+  process_const(e, 0.0f, LOOP_N, out);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+
+  le_perf_log_entry entry;
+  int held = 0;
+  int32_t pinned_from = -1;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code == LE_PLOG_TRANSPORT_HELD) {
+      ++held;
+      pinned_from = entry.cmd.arg_i;
+    }
+  }
+  CHECK(held == 1); /* edge-triggered: exactly one, not one per held frame */
+  CHECK(pinned_from == 2); /* the clock position held from (2 frames played) */
 
   le_engine_destroy(e);
 }
@@ -16188,7 +16378,7 @@ static void test_perf_render_scripted_log_boundaries(void) {
 
 /* Shared body for the overdub-pass stitching contract, parameterized by loop
  * length (#227 runs it beyond one quantum) and the arm-time loop phase
- * (`clock_frame`, armSnapshot.clockFrame — #255 runs it nonzero). Track
+ * (`clock_frame`, the PERF_ARMED fact's position — #255 runs it nonzero). Track
  * settled at arm with a base RAMP image; one retired-layer ramp (offset by
  * +2) activates at `retire_frame` — not one loop cycle earlier: a punch-out
  * mid-cycle retires via an async, chunked drain that can land arbitrarily
@@ -16241,10 +16431,13 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
   snprintf(layer_path, sizeof(layer_path), "%s/%s", dir, layer_name);
   test_write_raw_pcm_mono(layer_path, post, loop_len);
 
+  /* The arm phase now comes from the PERF_ARMED fact in events.log, not
+   * armSnapshot.clockFrame (deleted, #262) — so the manifest no longer carries
+   * clockFrame at all. */
   char manifest[2048];
   snprintf(manifest, sizeof(manifest),
            "{\"sample_rate\": %d, \"capture_frames\": %llu, "
-           "\"armSnapshot\": {\"clockFrame\": %llu, \"tracks\": "
+           "\"armSnapshot\": {\"tracks\": "
            "[{\"channel\": 0, \"lanes\": "
            "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
            "\"loops/track0-lane0.wav\"}]}]}, "
@@ -16253,7 +16446,6 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
            "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": 1, "
            "\"filename\": \"%s\"}]}",
            sr, (unsigned long long)capture_frames,
-           (unsigned long long)clock_frame,
            (unsigned long long)retire_frame, loop_len, layer_name);
   test_write_manifest(dir, manifest);
 
@@ -16263,6 +16455,15 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
   CHECK(lf != NULL);
   if (lf != NULL) {
     test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
+    /* The PERF_ARMED fact at capture frame 0: master position == clock_frame,
+     * one-loop master (iteration 0), so the arm image anchors at phase
+     * clock_frame % loop_len exactly as armSnapshot.clockFrame used to. */
+    test_write_log_entry(
+        lf, 0,
+        (le_command){.code = LE_PLOG_PERF_ARMED,
+                     .perf_arm = {.position = (int32_t)clock_frame,
+                                  .master_len = loop_len,
+                                  .iteration = 0}});
     test_write_log_entry(
         lf, retire_frame,
         (le_command){.code = LE_PLOG_LAYER_RETIRED,
@@ -16328,8 +16529,8 @@ static void test_perf_render_stitching_long_loop(void) {
 }
 
 /* The #255 sibling gap: a capture armed MID-LOOP against an already-playing
- * track (armSnapshot.clockFrame != 0). The arm image must play from
- * clockFrame at capture frame 0 — pre[(6 + f) % 4], i.e. arm phase 2 — and
+ * track (PERF_ARMED position != 0). The arm image must play from that logged
+ * position at capture frame 0 — pre[(6 + f) % 4], i.e. arm phase 2 — and
  * the mid-cycle retire at frame 9 must inherit the chained phase
  * ((6 + 9) % 4 == 3), locking the whole stem to the live phase counter. */
 static void test_perf_render_stitching_mid_loop_arm(void) {
@@ -16362,7 +16563,7 @@ static void test_perf_render_fresh_recorded_while_armed(void) {
           "{\"sample_rate\": %d, \"capture_frames\": %llu, "
           "\"armSnapshot\": {\"tracks\": []}, "
           "\"disarmSnapshot\": {\"tracks\": [{\"channel\": 1, \"lanes\": "
-          "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+          "[{\"lane\": 0, \"deferred\": false, \"takeId\": 1, \"pcmRef\": "
           "\"loops/track1-lane0.wav\"}]}]}, \"layers\": []}",
           sr, (unsigned long long)capture_frames);
   test_write_manifest(dir, manifest);
@@ -16373,9 +16574,12 @@ static void test_perf_render_fresh_recorded_while_armed(void) {
   CHECK(lf != NULL);
   if (lf != NULL) {
     test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
+    /* RECORD_END carries the take arm {channel, take_id}; the disarm lane's
+     * takeId (1) names the settled take, so the renderer anchors here (#819). */
     test_write_log_entry(
         lf, record_end,
-        (le_command){.code = LE_PLOG_RECORD_END, .arg_i = 1, .arg_f = 0});
+        (le_command){.code = LE_PLOG_RECORD_END,
+                     .take = {.channel = 1, .take_id = 1}});
     fclose(lf);
   }
 
@@ -16391,6 +16595,77 @@ static void test_perf_render_fresh_recorded_while_armed(void) {
   }
   for (uint64_t f = record_end; f < capture_frames; ++f) {
     CHECK(fabsf(stem[f] - 0.5f) < 1e-6f); /* disarm-snapshot content, looped */
+  }
+
+  le_engine_destroy(e);
+}
+
+/* #819 acceptance (renderer half): the disarm image is anchored by TAKE
+ * IDENTITY, not by "the first RECORD_END on the channel". The log carries TWO
+ * RECORD_ENDs on channel 1 — an earlier take (id 1, e.g. finalized then
+ * cleared) at frame 4 and the settled take (id 2, re-recorded) at frame 10 —
+ * and the disarm lane's takeId names take 2. The renderer must place the
+ * settled image at frame 10, leaving [0,10) silent. Against the deleted
+ * first-END proxy the image would wrongly start at frame 4, so the constant
+ * content would bleed into frames 4..9 that must be silent. */
+static void test_perf_render_disarm_anchors_by_take_identity(void) {
+  printf("test_perf_render_disarm_anchors_by_take_identity\n");
+  const char* dir = render_test_dir("takeid");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  const uint64_t capture_frames = 16;
+  const uint64_t first_end = 4;   /* the WRONG anchor (cleared take, id 1) */
+  const uint64_t settled_end = 10; /* the RIGHT anchor (settled take, id 2) */
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+
+  const float content[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track1-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, content, loop_len, sr);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+          "\"armSnapshot\": {\"tracks\": []}, "
+          "\"disarmSnapshot\": {\"tracks\": [{\"channel\": 1, \"lanes\": "
+          "[{\"lane\": 0, \"deferred\": false, \"takeId\": 2, \"pcmRef\": "
+          "\"loops/track1-lane0.wav\"}]}]}, \"layers\": []}",
+          sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
+    /* Take 1's END comes FIRST in the file — the ordinal proxy's trap. */
+    test_write_log_entry(
+        lf, first_end,
+        (le_command){.code = LE_PLOG_RECORD_END,
+                     .take = {.channel = 1, .take_id = 1}});
+    test_write_log_entry(
+        lf, settled_end,
+        (le_command){.code = LE_PLOG_RECORD_END,
+                     .take = {.channel = 1, .take_id = 2}});
+    fclose(lf);
+  }
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+
+  float stem[16];
+  const int32_t got = test_read_stem(dir, 1, stem, 16);
+  CHECK(got == (int32_t)capture_frames);
+  for (uint64_t f = 0; f < settled_end; ++f) {
+    CHECK(fabsf(stem[f]) < 1e-6f); /* silent until the SETTLED take's finalize */
+  }
+  for (uint64_t f = settled_end; f < capture_frames; ++f) {
+    CHECK(fabsf(stem[f] - 0.5f) < 1e-6f); /* the settled image, anchored at 10 */
   }
 
   le_engine_destroy(e);
@@ -17127,6 +17402,10 @@ static void test_perf_render_fresh_midloop_second_track_phase(void) {
 
   CHECK(le_perf_disarm(e) == LE_OK);
 
+  /* Take identity (#819): the disarm lanes carry the settled take id the live
+   * snapshot published (real pipeline behavior — performance_repository copies
+   * snapshot.settledTakeId onto the lane-0 entry), so the renderer anchors
+   * each disarm image at the RECORD_END whose logged take id matches. */
   char manifest[1600];
   snprintf(manifest, sizeof(manifest),
            "{\"sample_rate\": %d, \"capture_frames\": %llu, "
@@ -17134,13 +17413,14 @@ static void test_perf_render_fresh_midloop_second_track_phase(void) {
            "\"limiterCeiling\": 0.99, \"tracks\": []}, "
            "\"disarmSnapshot\": {\"tracks\": ["
            "{\"channel\": 0, \"volume\": 1.0, \"muted\": false, \"lanes\": "
-           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
            "\"track0-lane0.wav\", \"effects\": []}]}, "
            "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, \"lanes\": "
-           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
            "\"track1-lane0.wav\", \"effects\": []}]}]}, "
            "\"layers\": []}",
-           sr, (unsigned long long)capture_frames);
+           sr, (unsigned long long)capture_frames,
+           snap.tracks[0].settled_take_id, snap.tracks[1].settled_take_id);
   test_write_manifest(dir, manifest);
 
   CHECK(le_perf_render_begin(e, dir) == LE_OK);
@@ -17262,13 +17542,14 @@ static void test_perf_render_fresh_multiloop_second_track_phase(void) {
            "\"limiterCeiling\": 0.99, \"tracks\": []}, "
            "\"disarmSnapshot\": {\"tracks\": ["
            "{\"channel\": 0, \"volume\": 1.0, \"muted\": false, \"lanes\": "
-           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
            "\"track0-lane0.wav\", \"effects\": []}]}, "
            "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, \"lanes\": "
-           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
            "\"track1-lane0.wav\", \"effects\": []}]}]}, "
            "\"layers\": []}",
-           sr, (unsigned long long)capture_frames);
+           sr, (unsigned long long)capture_frames,
+           snap.tracks[0].settled_take_id, snap.tracks[1].settled_take_id);
   test_write_manifest(dir, manifest);
 
   CHECK(le_perf_render_begin(e, dir) == LE_OK);
@@ -17470,16 +17751,18 @@ static void test_perf_render_aborted_take_does_not_claim_disarm_image(void) {
            "\"limiterCeiling\": 0.99, \"tracks\": []}, "
            "\"disarmSnapshot\": {\"tracks\": ["
            "{\"channel\": 0, \"volume\": 1.0, \"muted\": false, \"lanes\": "
-           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
            "\"track0-lane0.wav\", \"effects\": []}]}, "
            "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, \"lanes\": "
-           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
            "\"track1-lane0.wav\", \"effects\": []}]}, "
            "{\"channel\": 2, \"volume\": 1.0, \"muted\": false, \"lanes\": "
-           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
            "\"track2-lane0.wav\", \"effects\": []}]}]}, "
            "\"layers\": []}",
-           sr, (unsigned long long)capture_frames);
+           sr, (unsigned long long)capture_frames,
+           snap.tracks[0].settled_take_id, snap.tracks[1].settled_take_id,
+           snap.tracks[2].settled_take_id);
   test_write_manifest(dir, manifest);
 
   CHECK(le_perf_render_begin(e, dir) == LE_OK);
@@ -17757,9 +18040,11 @@ static void test_perf_render_golden_master_parity(void) {
           "\"limiterCeiling\": 0.99, \"tracks\": []}, "
           "\"disarmSnapshot\": {\"tracks\": [{\"channel\": 0, \"volume\": "
           "1.0, \"muted\": false, \"lanes\": [{\"lane\": 0, \"deferred\": "
-          "false, \"pcmRef\": \"track0-lane0.wav\", \"effects\": []}]}]}, "
+          "false, \"takeId\": %d, \"pcmRef\": \"track0-lane0.wav\", "
+          "\"effects\": []}]}]}, "
           "\"layers\": []}",
-          sr, (unsigned long long)capture_frames);
+          sr, (unsigned long long)capture_frames,
+          snap.tracks[0].settled_take_id);
   test_write_manifest(dir, manifest);
 
   CHECK(le_perf_render_begin(e, dir) == LE_OK);
@@ -22403,8 +22688,16 @@ static void test_track_master_fx_setters_push_no_plog(void) {
   const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
   CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
   /* The whole session was nothing but track/master setter traffic, so the
-   * log must have ZERO entries — from either producer stream. */
-  CHECK(log_entry_count(n) == 0);
+   * ONLY entry the log may carry is the arm's own LE_PLOG_PERF_ARMED fact
+   * (#262, logged at every arm): no setter pushed anything into either
+   * producer stream. */
+  const size_t entries = log_entry_count(n);
+  CHECK(entries == 1);
+  le_perf_log_entry only;
+  if (entries >= 1) {
+    decode_log_entry_at(buf, 0, &only);
+    CHECK(only.cmd.code == LE_PLOG_PERF_ARMED);
+  }
 
   le_engine_destroy(e);
 }
@@ -24973,6 +25266,9 @@ int main(void) {
   test_perf_reconfigure_while_armed_marks_sidecar_device_changed();
   test_perf_events_log_table_round_trip_and_frame_accuracy();
   test_perf_events_log_transport_facts();
+  test_perf_armed_fact_carries_loop_phase();
+  test_take_id_monotonic_per_channel();
+  test_perf_transport_held_logged();
   test_perf_events_log_command_storm_no_loss();
   test_perf_events_log_fx_param_sweep_monotonic_frames();
   test_perf_events_log_readable_after_abrupt_stop();
@@ -25232,6 +25528,7 @@ int main(void) {
   test_perf_render_stitching_long_loop();
   test_perf_render_stitching_mid_loop_arm();
   test_perf_render_fresh_recorded_while_armed();
+  test_perf_render_disarm_anchors_by_take_identity();
   test_perf_render_progress_and_cancel();
   test_perf_render_concurrent_with_live_engine();
   test_perf_render_partial_success();

@@ -301,8 +301,11 @@ class PerformanceRepository {
     final snapshot = _engine.snapshot();
     final tracks = _captureSettledLanes(dir, chains: chains, writeChains: true);
     final armSnapshot = PerformanceArmSnapshot(
-      clockFrame: snapshot.masterPositionFrames,
-      masterLengthFrames: snapshot.masterLengthFrames,
+      // The master loop phase at arm is no longer recorded here: it was
+      // sampled on the control thread BEFORE lane export and manifest I/O, an
+      // unbounded gap before the capture's frame 0, so it was race-stale
+      // (#262). The renderer reads the exact phase from events.log's
+      // LE_PLOG_PERF_ARMED fact instead, and nothing else consumed it.
       masterGain: snapshot.masterGain,
       limiterEnabled: chains.limiterEnabled,
       limiterCeiling: chains.limiterCeiling,
@@ -960,6 +963,11 @@ class PerformanceRepository {
             pcmFile: filename,
             effects: laneChain?.effects ?? const [],
             chainEnabled: laneChain?.chainEnabled ?? true,
+            // Take identity (#819): lane 0 carries the track's settled take id
+            // so the offline renderer can anchor this disarm image by identity.
+            // Presence-keyed (written only when > 0), so it is inert on an
+            // arm-time snapshot whose settled take predates the capture.
+            takeId: laneIndex == 0 ? track.settledTakeId : 0,
           ),
         );
       }
