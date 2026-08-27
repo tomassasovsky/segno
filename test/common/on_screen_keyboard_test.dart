@@ -136,6 +136,111 @@ void main() {
       expect(controller.text, 'Ab');
     });
 
+    testWidgets('a second shift tap latches caps-lock across keys', (
+      tester,
+    ) async {
+      // Renaming a track "FX BUS" should not mean tapping shift six times.
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      // First tap arms one-shot, a second latches the lock.
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+
+      await tapKey(tester, 'A');
+      await tapKey(tester, 'B');
+      await tapKey(tester, 'C');
+
+      expect(controller.text, 'ABC');
+    });
+
+    testWidgets('tapping shift again releases caps-lock', (tester) async {
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      // off -> one-shot -> locked, then a third tap back to off.
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+      await tapKey(tester, 'A');
+      // Locked now reports itself as the caps-lock control.
+      await tester.tap(find.bySemanticsLabel('Caps lock'));
+      await tester.pump();
+
+      await tapKey(tester, 'b');
+
+      expect(controller.text, 'Ab');
+    });
+
+    testWidgets('the three shift states render distinctly', (tester) async {
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      // off: an outline arrow.
+      expect(find.byIcon(Icons.arrow_upward_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_upward), findsNothing);
+      expect(find.byIcon(Icons.keyboard_capslock), findsNothing);
+
+      // one-shot: a filled arrow.
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+      expect(find.byIcon(Icons.arrow_upward_outlined), findsNothing);
+      expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_capslock), findsNothing);
+
+      // locked: the caps-lock glyph.
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+      expect(find.byIcon(Icons.arrow_upward_outlined), findsNothing);
+      expect(find.byIcon(Icons.arrow_upward), findsNothing);
+      expect(find.byIcon(Icons.keyboard_capslock), findsOneWidget);
+    });
+
+    testWidgets('switching layers spends a one-shot shift', (tester) async {
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+      // The symbols layer hides the shift key, so go back to letters to read
+      // the state off the arrow.
+      await tapKey(tester, '?123');
+      await tapKey(tester, 'abc');
+
+      expect(find.byIcon(Icons.arrow_upward_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_upward), findsNothing);
+
+      await tapKey(tester, 'a');
+      expect(controller.text, 'a');
+    });
+
+    testWidgets('switching layers preserves caps-lock', (tester) async {
+      // Typing "FX-3" wants the lock to survive the trip to the symbols layer.
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+      await tapKey(tester, '?123');
+      await tapKey(tester, 'abc');
+
+      // The latch is still shown and still forces uppercase — the letter caps
+      // now read uppercase, so the key is labelled 'A'.
+      expect(find.byIcon(Icons.keyboard_capslock), findsOneWidget);
+      await tapKey(tester, 'A');
+      expect(controller.text, 'A');
+    });
+
     testWidgets('backspace deletes the character before the caret', (
       tester,
     ) async {

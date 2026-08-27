@@ -13,6 +13,25 @@ enum OnScreenKeyboardLayout {
   numeric,
 }
 
+/// The three positions of the shift key, cycled by tapping it.
+///
+/// A single tap arms [oneShot] — the next character is uppercase and the key
+/// falls back to [off]. A second tap (while already armed) latches [locked], a
+/// caps-lock that holds every character uppercase until the key is tapped a
+/// third time back to [off]. The cycle — off → one-shot → locked → off — is the
+/// phone-keyboard idiom, and reads on a touch panel with no press-and-hold or
+/// double-tap timing to discover.
+enum _ShiftState {
+  /// Lowercase.
+  off,
+
+  /// The next character is uppercase, then reverts to [off].
+  oneShot,
+
+  /// Every character stays uppercase until shift is tapped again.
+  locked,
+}
+
 /// Picks the layout a field's [TextInputType] calls for.
 ///
 /// Anything numeric gets the pad; everything else — including passwords, which
@@ -78,8 +97,21 @@ class OnScreenKeyboard extends StatefulWidget {
 }
 
 class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
-  bool _shifted = false;
+  _ShiftState _shift = _ShiftState.off;
   bool _symbols = false;
+
+  /// Whether the next character should come out uppercase — true for both the
+  /// armed one-shot and the latched caps-lock.
+  bool get _uppercase => _shift != _ShiftState.off;
+
+  /// Advances the shift key: off → one-shot → locked → off.
+  void _cycleShift() => setState(() {
+    _shift = switch (_shift) {
+      _ShiftState.off => _ShiftState.oneShot,
+      _ShiftState.oneShot => _ShiftState.locked,
+      _ShiftState.locked => _ShiftState.off,
+    };
+  });
 
   static const _row1 = 'qwertyuiop';
   static const _row2 = 'asdfghjkl';
@@ -92,10 +124,13 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
 
   void _tap(String key) {
     unawaited(HapticFeedback.selectionClick());
-    widget.onKey(_shifted ? key.toUpperCase() : key);
-    // Shift is one-shot, like every phone keyboard: holding it down is not an
-    // option when the other hand is on an instrument.
-    if (_shifted) setState(() => _shifted = false);
+    widget.onKey(_uppercase ? key.toUpperCase() : key);
+    // A one-shot shift spends itself on the next character, like every phone
+    // keyboard: holding it down is not an option when the other hand is on an
+    // instrument. Caps-lock holds until the key is tapped again.
+    if (_shift == _ShiftState.oneShot) {
+      setState(() => _shift = _ShiftState.off);
+    }
   }
 
   @override
@@ -121,12 +156,20 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
           children: [
             if (!_symbols)
               _special(
-                icon: _shifted
-                    ? Icons.arrow_upward
-                    : Icons.arrow_upward_outlined,
-                selected: _shifted,
-                onPressed: () => setState(() => _shifted = !_shifted),
-                semanticLabel: 'Shift',
+                // Each state reads at a glance: an outline arrow off, a filled
+                // arrow armed for one character, the caps-lock glyph latched.
+                icon: switch (_shift) {
+                  _ShiftState.off => Icons.arrow_upward_outlined,
+                  _ShiftState.oneShot => Icons.arrow_upward,
+                  _ShiftState.locked => Icons.keyboard_capslock,
+                },
+                selected: _uppercase,
+                onPressed: _cycleShift,
+                semanticLabel: switch (_shift) {
+                  _ShiftState.off => 'Shift',
+                  _ShiftState.oneShot => 'Shift',
+                  _ShiftState.locked => 'Caps lock',
+                },
               ),
             ...third.split('').map((k) => Expanded(child: _key(k))),
             _special(
@@ -142,7 +185,10 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
               label: _symbols ? 'abc' : '?123',
               onPressed: () => setState(() {
                 _symbols = !_symbols;
-                _shifted = false;
+                // A one-shot shift is spent by the layer change; a caps-lock
+                // persists, so returning to the letters keeps the latch the
+                // performer set rather than silently dropping it.
+                if (_shift == _ShiftState.oneShot) _shift = _ShiftState.off;
               }),
             ),
             Expanded(flex: 4, child: _key(' ', label: 'space')),
@@ -197,7 +243,7 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
       Row(children: [for (final k in keys) Expanded(child: _key(k))]);
 
   Widget _key(String value, {String? label}) {
-    final display = label ?? (_shifted ? value.toUpperCase() : value);
+    final display = label ?? (_uppercase ? value.toUpperCase() : value);
     return Padding(
       padding: const EdgeInsets.all(3),
       child: _KeyCap(
