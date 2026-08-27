@@ -155,7 +155,9 @@ void main() {
     );
     if (bind) {
       await cubit.selectOutput(_onScreenPedal);
-      await tester.pumpAndSettle();
+      // The standby ring breathes forever, so pumpAndSettle never returns;
+      // one pump flushes the bind.
+      await tester.pump();
     }
     return (cubit, sim);
   }
@@ -171,7 +173,7 @@ void main() {
         expect(find.byKey(_recPlayKey), findsNothing);
 
         await cubit.selectOutput(_onScreenPedal);
-        await tester.pumpAndSettle();
+        await tester.pump(); // breathing ring never settles
         // Bound: the plate, with the main screen embedded and switches present.
         expect(find.byKey(const Key('pedalFaceplate')), findsOneWidget);
         expect(find.byKey(_recPlayKey), findsOneWidget);
@@ -295,24 +297,25 @@ void main() {
             .top
             .color;
 
-    testWidgets('the ring animates to off once the loop is cleared', (
+    testWidgets('the ring breathes green once the loop is cleared', (
       tester,
     ) async {
       final (_, sim) = await pumpFaceplate(tester);
 
-      // Playing: the ring is lit in the activity colour.
+      // Recording: the ring is lit in the red activity colour.
       sim.send(
         PedalCodec.encodeFrame(
-          _frame(globalColor: GlobalColor.green, loopLengthMicros: 1000000),
+          _frame(globalColor: GlobalColor.red, loopLengthMicros: 1000000),
         ),
       );
       await tester.pump();
-      expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
+      expect(ringBorderColor(tester), SurfaceTheme.dark.ledRed);
 
-      // Cleared: activity off with no loop left — the ring goes dark (off).
+      // Cleared: activity off with no loop left — the ring breathes green, so
+      // the rim is green rather than dark.
       sim.send(PedalCodec.encodeFrame(_frame()));
       await tester.pump();
-      expect(ringBorderColor(tester), SurfaceTheme.dark.ledOff);
+      expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
     });
 
     testWidgets('a stop with a loop still loaded keeps the ring glow', (
