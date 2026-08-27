@@ -157,8 +157,8 @@ class _SessionBlock extends StatelessWidget {
 /// footswitch owns the cycle.
 ///
 /// The pen draws the record state (`rec` outline over `recSurface`) and the
-/// FX state (`accent` over the flat `accentSurface`); mute is `success` over
-/// the matching `successSurface` (#693 — the owner's call from the bench),
+/// FX state (`fx` purple over the flat `fxSurface`, #692); mute is `success`
+/// over the matching `successSurface` (#693 — the owner's call from the bench),
 /// since no STAGE screen draws it. Both halves come from
 /// `SurfaceTheme.modePair`, the single home of that mapping (#768), so the
 /// desktop `ModeIndicator` cannot drift from this pill — and every arm reads

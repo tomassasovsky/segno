@@ -77,6 +77,12 @@ void main() {
       '$fontDir/Roboto-Bold.ttf',
     ];
     await _loadFont('Roboto', robotoTtfs);
+    // Material icon glyphs (e.g. the FX entry-run's arrow_right_alt) — the app
+    // bundles this font at runtime; the golden harness must load it too, or
+    // every `Icon` renders as .notdef tofu.
+    await _loadFont('MaterialIcons', [
+      '$fontDir/MaterialIcons-Regular.otf',
+    ]);
     // TracksView wraps itself in LooperScreenTheme, which renders text in the
     // legend font (Helvetica / Arial / sans-serif — macOS/Linux system fonts,
     // absent under `flutter test`). Register the loaded Roboto glyphs under
@@ -321,6 +327,73 @@ void main() {
       await expectLater(
         find.byType(TracksView),
         matchesGoldenFile('goldens/tracks_device_lost.png'),
+      );
+    },
+    skip: !hasScreenshotFonts || !kConsoleMode,
+  );
+
+  // #692: the FX-mode stage transform — the whole stage takes the FX purple,
+  // meters recede to 40%, and each tile re-dresses with a power pill and its
+  // chain's entries (or NO CHAIN). Same seed as the nominal decal, in FX mode
+  // and with two real chains, so the decal shows the transform end to end.
+  testWidgets(
+    'console main window — FX mode transform (#692)',
+    (tester) async {
+      const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
+      for (var i = 0; i < names.length; i++) {
+        await tracks.rename(i, names[i]);
+      }
+      control.setMode(InteractionMode.fx);
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            // An engaged two-entry chain.
+            Track(
+              state: TrackState.playing,
+              rms: 0.72,
+              peak: 0.9,
+              lengthFrames: 96000,
+              effects: [
+                BuiltInEffect(type: TrackEffectType.drive),
+                BuiltInEffect(type: TrackEffectType.reverb),
+              ],
+            ),
+            // A bypassed chain.
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              rms: 0.5,
+              peak: 0.68,
+              lengthFrames: 96000,
+              chainEnabled: false,
+              effects: [BuiltInEffect(type: TrackEffectType.filter)],
+            ),
+            // A single-entry engaged chain.
+            Track(
+              channel: 2,
+              state: TrackState.playing,
+              rms: 0.4,
+              peak: 0.55,
+              lengthFrames: 96000,
+              effects: [BuiltInEffect(type: TrackEffectType.tremolo)],
+            ),
+            // Empty: NO CHAIN.
+            const Track(channel: 3),
+          ],
+        ),
+      );
+      await pump(tester);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_fx_window.png'),
       );
     },
     skip: !hasScreenshotFonts || !kConsoleMode,
