@@ -717,14 +717,28 @@ class _FxChainDressing extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _FxCellIdentity(
-                        primary: identityPrimary,
-                        sub: identitySub,
-                        enabled: chainEnabled,
+                      // A FIXED two-line slot for the identity, top-anchored: a
+                      // one-line identity leaves the lower line empty. This
+                      // keeps the chip row and the ON/OFF pill at the SAME y in
+                      // every cell — a named input's second tier no longer
+                      // pushes the indicators down out of line with its
+                      // one-line neighbours across the row.
+                      SizedBox(
+                        height: kConsoleMode
+                            ? _kFxIdentitySlot
+                            : _kFxIdentitySlotDesktop,
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: _FxCellIdentity(
+                            primary: identityPrimary,
+                            sub: identitySub,
+                            enabled: chainEnabled,
+                          ),
+                        ),
                       ),
                       // Inter-element gaps opened to the pen's proportions:
                       // identity→chips ~3.8% of the card, chips→pill ~3.2%.
-                      const SizedBox(height: kConsoleMode ? 36 : 22),
+                      const SizedBox(height: kConsoleMode ? 20 : 12),
                       _FxEntryRun(effects: effects, chainEnabled: chainEnabled),
                       const SizedBox(height: kConsoleMode ? 30 : 18),
                       _FxPowerPill(enabled: chainEnabled),
@@ -778,6 +792,15 @@ class _FxNoChain extends StatelessWidget {
     );
   }
 }
+
+/// The fixed height of the FX-cell identity slot — sized for the TWO-line
+/// named input (primary 30 + 6 gap + `INPUT n` sub 18, plus the faces' line
+/// overhead), so a one-line identity leaves the lower line empty and every
+/// cell's chips + pill start at the same y.
+const double _kFxIdentitySlot = 66;
+
+/// The desktop twin (primary 19 + 4 gap + sub 12, plus overhead).
+const double _kFxIdentitySlotDesktop = 44;
 
 /// The cell identity — the dominant focal text of an FX-mode cell, in the UI
 /// sans, at the top of the centered group.
