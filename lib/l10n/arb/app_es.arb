@@ -156,6 +156,7 @@
     "shortcutUndoOverdub": "Deshacer la última sobregrabación",
     "shortcutUndo": "Deshacer",
     "shortcutRedo": "Rehacer",
+    "shortcutUndoClearAll": "Deshacer borrar todo",
     "shortcutSaveSession": "Guardar la sesión abierta",
     "shortcutFocusTraverse": "Mover el foco entre los controles",
     "a11yTrackTile": "{name}, {state}, activar para grabar",
@@ -289,6 +290,9 @@
     "@clearAllTooltip": {
         "description": "Tooltip for the top-bar button that clears every track. The parenthetical names the keyboard shortcut."
     },
+    "undoClearAllToast": "Se borraron todas las pistas",
+    "undoClearAllAction": "Deshacer",
+    "a11yUndoClearAll": "Se restauraron todas las pistas borradas",
     "fullscreenTooltip": "Pantalla completa (F)",
     "@fullscreenTooltip": {
         "description": "Tooltip for the top-bar button (desktop only) that toggles OS fullscreen. The parenthetical names the keyboard shortcut."

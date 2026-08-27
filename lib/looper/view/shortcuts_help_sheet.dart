@@ -95,6 +95,11 @@ class _ShortcutsHelpDialog extends StatelessWidget {
                         isMac ? '⌘⇧Z' : 'Ctrl+Y',
                         l10n.shortcutRedo,
                       ),
+                      _Shortcut(
+                        'undoClearAll',
+                        isMac ? '⌘⇧C' : 'Ctrl+Shift+C',
+                        l10n.shortcutUndoClearAll,
+                      ),
                     ]),
                     _group(context, l10n.shortcutGroupNavigation, [
                       _Shortcut('signal', 'G', l10n.signalTooltip),
