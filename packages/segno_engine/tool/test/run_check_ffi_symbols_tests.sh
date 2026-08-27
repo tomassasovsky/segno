@@ -127,7 +127,31 @@ else
   fail "wrapped lookup shape must be extracted; rc=$rc"
 fi
 
-# --- 7. Missing inputs are errors --------------------------------------------
+# --- 7. A bindings file with no lookups says so ------------------------------
+# Regression: `grep -o` exits 1 on no match, so under set -e + pipefail this
+# used to abort with rc=1 and *no output whatsoever* -- fail-closed, but the
+# diagnostic explaining why was unreachable. Silent red in CI is expensive.
+nolookups="$tmp/nolookups.dart"
+echo "class Foo {}" > "$nolookups"
+out="$(NM="$nm_all" "$CHECK" "$FAKE_SO" "$nolookups" 2>&1)"; rc=$?
+if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'no _lookup< sites'; then
+  pass "bindings file with no lookups explains itself"
+else
+  fail "zero-lookup bindings must fail *with* a diagnostic; rc=$rc out=[$out]"
+fi
+
+# --- 8. A glob matching two libraries is named, not misread ------------------
+# CI invokes this with build/linux/*/debug/bundle/lib/libsegno_engine.so. A
+# stale sibling arch dir would put the second match in $2, where it would be
+# read as the bindings file and fail far from its cause.
+out="$("$CHECK" "$FAKE_SO" "$FAKE_SO" "$FAKE_SO" 2>&1)"; rc=$?
+if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'at most 2 arguments'; then
+  pass "over-expanded glob is reported as such"
+else
+  fail "extra arguments must be named; rc=$rc"
+fi
+
+# --- 9. Missing inputs are errors --------------------------------------------
 if ! "$CHECK" "$tmp/does-not-exist.so" >/dev/null 2>&1; then
   pass "missing library is an error"
 else

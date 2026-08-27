@@ -36,6 +36,12 @@ die() { echo "$SELF: error: $*" >&2; exit 1; }
 # --- Resolve inputs -----------------------------------------------------------
 so="${1:-}"
 [ -n "$so" ] || die "usage: $SELF <libsegno_engine.so> [bindings.dart]"
+# CI passes a glob (build/linux/*/debug/bundle/lib/libsegno_engine.so). If a
+# stale sibling arch directory makes it match twice, the second path would land
+# in $2 and be read as the bindings file -- a confusing failure a long way from
+# its cause. Name it here instead.
+[ "$#" -le 2 ] || die "expected at most 2 arguments, got $#: $*
+  (a glob matching more than one library will do this)"
 [ -f "$so" ] || die "shared object not found: $so"
 
 # Default to the generated bindings that sit two levels up from tool/.
@@ -80,7 +86,10 @@ extract_lookups() {
 # drifted out from under the pattern above and this script is now checking less
 # than it claims to. That is the one failure mode a gate must never have, so it
 # is fatal rather than a warning: fail closed, never silently under-check.
-count_lookup_sites() { grep -o '_lookup<' "$1" | wc -l | tr -d ' '; }
+# `|| true` is load-bearing: grep exits 1 when it matches nothing, and under
+# `set -e` + `pipefail` that aborts the assignment below with no output at all,
+# making the "no _lookup< sites" diagnostic that follows unreachable.
+count_lookup_sites() { { grep -o '_lookup<' "$1" || true; } | wc -l | tr -d ' '; }
 
 # LC_ALL=C throughout: `comm` compares bytes, but `sort` under a UTF-8 locale
 # collates by language rules that can ignore punctuation -- and every symbol here
