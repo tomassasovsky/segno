@@ -40,6 +40,11 @@ const _smallH = 88.0; // 7" aperture height
 /// The u of front-row pedal [i] (`0..7`), evenly spaced inside the edge margin.
 double _pedalU(int i) => 69.0 + (777.0 - 69.0) * i / 7.0;
 
+/// Smoothstep easing, `t*t*(3-2t)` — the verbatim curve the firmware's
+/// renderRing() applies to its standby-breathe triangle, so both twins ease
+/// the same way.
+double _smoothstep(double t) => t * t * (3 - 2 * t);
+
 /// Renders the Segno top plate to scale from injected state alone — the two
 /// screen apertures (a 7" waveform on the left, the main looper screen on the
 /// right), the encoder + activity ring, and the footswitches. Pure
@@ -98,10 +103,9 @@ class PedalPlate extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final bankBase = frame.activeBank * _trackButtons.length;
-    // Once the loop is cleared (activity off with nothing left to play) the
-    // ring animates fully dark: the hump makes one last pass in the off color
-    // and settles, instead of parking on a lit idle ring.
-    final ringCleared =
+    // Standby (activity off, nothing left to play): the ring breathes green so
+    // it reads as alive at rest — the on-screen twin of the firmware breathe.
+    final ringBreathing =
         frame.globalColor == GlobalColor.off && frame.loopLengthMicros == 0;
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -222,11 +226,10 @@ class PedalPlate extends StatelessWidget {
                   _ringOd,
                   _ringOd,
                   _Encoder(
-                    ringColor: ringCleared
-                        ? surface.ledOff
-                        : _ringColor(surface, frame.globalColor),
+                    ringColor: _ringColor(surface, frame.globalColor),
+                    baseColor: surface.ledGreen,
+                    breathing: ringBreathing,
                     loopLengthMicros: frame.loopLengthMicros,
-                    cleared: ringCleared,
                     onTurn: onTurn,
                     l10n: l10n,
                   ),
@@ -709,18 +712,22 @@ class _Led extends StatelessWidget {
 class _Encoder extends StatefulWidget {
   const _Encoder({
     required this.ringColor,
+    required this.baseColor,
+    required this.breathing,
     required this.loopLengthMicros,
-    required this.cleared,
     required this.onTurn,
     required this.l10n,
   });
 
   final Color ringColor;
-  final int loopLengthMicros;
 
-  /// The loop was just cleared: the hump makes one last pass (at `_idleSweep`)
-  /// in the off color, so the ring animates to dark instead of parking lit.
-  final bool cleared;
+  /// Standby breathe colour (green).
+  final Color baseColor;
+
+  /// Standby (activity off, no loop): breathe the ring green instead of the
+  /// sweep, so it reads as alive at rest.
+  final bool breathing;
+  final int loopLengthMicros;
   final void Function(int delta) onTurn;
   final AppLocalizations l10n;
 
@@ -728,15 +735,16 @@ class _Encoder extends StatefulWidget {
   State<_Encoder> createState() => _EncoderState();
 }
 
-class _EncoderState extends State<_Encoder>
-    with SingleTickerProviderStateMixin {
+class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
   static const double _dragPerDetent = 6;
 
-  // Steady rotation used when there is no loop to time the sweep to (e.g. while
-  // the ring winds off after a clear). Matches the firmware's kRingMsPerRev.
-  static const Duration _idleSweep = Duration(milliseconds: 700);
+  // Half the breathe period: repeat(reverse: true) runs a dim->bright then a
+  // bright->dim leg, so the full cycle is twice this — the firmware's
+  // kBreatheMs (2400 ms).
+  static const Duration _breatheHalfCycle = Duration(milliseconds: 1200);
 
   late final AnimationController _sweep;
+  late final AnimationController _breathe;
 
   // Residual drag, so a slow drag still crosses detents instead of truncating
   // sub-detent deltas to zero.
@@ -746,29 +754,33 @@ class _EncoderState extends State<_Encoder>
   void initState() {
     super.initState();
     _sweep = AnimationController(vsync: this);
-    _syncSweep();
+    _breathe = AnimationController(vsync: this, duration: _breatheHalfCycle);
+    _syncMotion();
   }
 
   @override
   void didUpdateWidget(_Encoder oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.loopLengthMicros != widget.loopLengthMicros ||
-        oldWidget.cleared != widget.cleared) {
-      _syncSweep();
+        oldWidget.breathing != widget.breathing) {
+      _syncMotion();
     }
   }
 
-  // One revolution per loop; on clear the hump makes one last idle-rate pass
-  // and settles dark (a single forward pass, not a repeat, so it animates off
-  // rather than parking a lit ring — and still settles for pumpAndSettle);
-  // otherwise parked.
-  void _syncSweep() {
+  // Standby breathes; otherwise one revolution per loop (or parked when no loop
+  // length is known yet, matching the firmware's static sweep-park).
+  void _syncMotion() {
+    if (widget.breathing) {
+      _sweep
+        ..stop()
+        ..value = 0;
+      if (!_breathe.isAnimating) unawaited(_breathe.repeat(reverse: true));
+      return;
+    }
+    _breathe.stop();
     if (widget.loopLengthMicros > 0) {
       _sweep.duration = Duration(microseconds: widget.loopLengthMicros);
       if (!_sweep.isAnimating) unawaited(_sweep.repeat());
-    } else if (widget.cleared) {
-      _sweep.duration = _idleSweep;
-      unawaited(_sweep.forward());
     } else {
       _sweep
         ..stop()
@@ -779,6 +791,7 @@ class _EncoderState extends State<_Encoder>
   @override
   void dispose() {
     _sweep.dispose();
+    _breathe.dispose();
     super.dispose();
   }
 
@@ -797,6 +810,8 @@ class _EncoderState extends State<_Encoder>
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    // The rim wears green while breathing, the activity colour otherwise.
+    final rimColor = widget.breathing ? widget.baseColor : widget.ringColor;
     return Semantics(
       slider: true,
       label: widget.l10n.pedalSimEncoderSemantics,
@@ -831,22 +846,29 @@ class _EncoderState extends State<_Encoder>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: surface.surface,
-                border: Border.all(color: widget.ringColor, width: 4),
-                boxShadow: [BoxShadow(color: widget.ringColor, blurRadius: 8)],
+                border: Border.all(color: rimColor, width: 4),
+                boxShadow: [BoxShadow(color: rimColor, blurRadius: 8)],
               ),
               child: Stack(
                 alignment: Alignment.center,
                 children: [
                   Positioned.fill(
                     child: AnimatedBuilder(
-                      animation: _sweep,
+                      animation: Listenable.merge([_sweep, _breathe]),
                       builder: (context, _) => CustomPaint(
                         key: const Key('pedalFaceplate_ring'),
                         painter: _LedRingPainter(
                           color: widget.ringColor,
-                          progress:
-                              widget.loopLengthMicros > 0 || widget.cleared
-                              ? _sweep.value
+                          baseColor: widget.baseColor,
+                          // No loop length (incl. standby, which breathes)
+                          // parks the sweep; a known loop drives the playhead.
+                          progress: widget.loopLengthMicros == 0
+                              ? null
+                              : _sweep.value,
+                          breathe: widget.breathing
+                              ? (_breathe.isAnimating
+                                    ? _smoothstep(_breathe.value)
+                                    : 0.55)
                               : null,
                         ),
                       ),
@@ -879,19 +901,45 @@ class _EncoderState extends State<_Encoder>
 /// burns bright and its neighbours fade off either side, so a highlight sweeps
 /// once per loop. [progress] is `null` when parked — then all twelve just idle.
 class _LedRingPainter extends CustomPainter {
-  _LedRingPainter({required this.color, required this.progress});
+  _LedRingPainter({
+    required this.color,
+    required this.baseColor,
+    required this.progress,
+    required this.breathe,
+  });
 
   final Color color;
+
+  /// Standby breathe colour (green).
+  final Color baseColor;
   final double? progress;
+
+  /// Standby breathe amount `0..1`, or null when not breathing (sweeping).
+  final double? breathe;
 
   static const _count = 12;
   static const _baseGlow = 0.30; // idle LED alpha
+  static const _breatheFloor = 0.15;
 
   @override
   void paint(Canvas canvas, Size size) {
     final centre = Offset(size.width / 2, size.height / 2);
     final dotR = size.shortestSide * 0.05;
     final ringR = size.shortestSide / 2 - dotR - 6;
+    if (breathe != null) {
+      // Standby: every LED breathes together in green.
+      final alpha = _breatheFloor + (1 - _breatheFloor) * breathe!;
+      for (var i = 0; i < _count; i++) {
+        final angle = -math.pi / 2 + i / _count * 2 * math.pi;
+        final at = centre + Offset(math.cos(angle), math.sin(angle)) * ringR;
+        canvas.drawCircle(
+          at,
+          dotR,
+          Paint()..color = baseColor.withValues(alpha: alpha),
+        );
+      }
+      return;
+    }
     // Playhead position in LED units (0..12); negative parks the sweep.
     final head = progress == null ? -1.0 : progress! * _count;
 
@@ -925,7 +973,10 @@ class _LedRingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LedRingPainter old) =>
-      old.progress != progress || old.color != color;
+      old.progress != progress ||
+      old.color != color ||
+      old.breathe != breathe ||
+      old.baseColor != baseColor;
 }
 
 /// How long a keyboard / screen-reader long-press holds a switch down.
