@@ -553,6 +553,17 @@
         }
     },
     "noActiveOutputsNotice": "No outputs are enabled — nothing will be heard. Tap a greyed output to turn it back on.",
+    "signalLastOutputTitle": "Switch off the last output?",
+    "signalLastOutputBody": "{outputName} is the only output still on. Off, the sum reaches nothing and the console is silent — the warning under the outputs will stand until one is switched back on.",
+    "@signalLastOutputBody": {
+        "placeholders": {
+            "outputName": {
+                "type": "String"
+            }
+        }
+    },
+    "signalLastOutputKeep": "Keep it on",
+    "signalLastOutputConfirm": "Switch off",
     "signalTitle": "Signal",
     "signalFlowSubtitle": "Inputs · Tracks · Outputs",
     "signalSectionInputs": "Inputs",

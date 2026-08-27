@@ -495,15 +495,91 @@ void main() {
   group('output gate', () {
     test('absence means enabled; only off entries are written', () async {
       // Default-on: no key => null (the caller reads as enabled).
-      expect(await repository.loadOutputEnabled(0), isNull);
+      expect(
+        await repository.loadOutputEnabled(device: 'Scarlett', output: 0),
+        isNull,
+      );
 
       // Disabling writes false.
-      await repository.saveOutputEnabled(0, enabled: false);
-      expect(await repository.loadOutputEnabled(0), isFalse);
+      await repository.saveOutputEnabled(
+        device: 'Scarlett',
+        output: 0,
+        enabled: false,
+      );
+      expect(
+        await repository.loadOutputEnabled(device: 'Scarlett', output: 0),
+        isFalse,
+      );
 
       // Re-enabling REMOVES the key (self-cleaning, absence == enabled).
-      await repository.saveOutputEnabled(0, enabled: true);
-      expect(await repository.loadOutputEnabled(0), isNull);
+      await repository.saveOutputEnabled(
+        device: 'Scarlett',
+        output: 0,
+        enabled: true,
+      );
+      expect(
+        await repository.loadOutputEnabled(device: 'Scarlett', output: 0),
+        isNull,
+      );
+    });
+
+    test('the gate is a fact about the device, not about "output N"', () async {
+      // Out 3/4 disabled as one interface's phones pair (#569)...
+      await repository.saveOutputEnabled(
+        device: 'Scarlett',
+        output: 3,
+        enabled: false,
+      );
+
+      // ...says nothing about another interface's Out 3/4 feeding the PA.
+      expect(
+        await repository.loadOutputEnabled(device: 'UMC1820', output: 3),
+        isNull,
+      );
+      expect(
+        await repository.loadOutputEnabled(device: 'Scarlett', output: 3),
+        isFalse,
+      );
+    });
+
+    test(
+      'a legacy global key is adopted by the first device to read it', //
+      () async {
+        // The pre-#569 shape: keyed by output alone.
+        store.values['output_enabled.2'] = false;
+
+        // First read on the open device adopts the value...
+        expect(
+          await repository.loadOutputEnabled(device: 'Scarlett', output: 2),
+          isFalse,
+        );
+        // ...re-keys it under that device, and removes the legacy key.
+        expect(store.values['output_enabled.Scarlett.2'], isFalse);
+        expect(store.values.containsKey('output_enabled.2'), isFalse);
+
+        // One-way and once: another device does NOT inherit the migrated flag.
+        expect(
+          await repository.loadOutputEnabled(device: 'UMC1820', output: 2),
+          isNull,
+        );
+        // And the adopting device keeps it on a later read.
+        expect(
+          await repository.loadOutputEnabled(device: 'Scarlett', output: 2),
+          isFalse,
+        );
+      },
+    );
+
+    test('a device-keyed value wins over a lingering legacy key', () async {
+      store.values['output_enabled.Scarlett.1'] = false;
+      store.values['output_enabled.1'] = false;
+
+      expect(
+        await repository.loadOutputEnabled(device: 'Scarlett', output: 1),
+        isFalse,
+      );
+      // The migration did not run: the device key already existed.
+      expect(store.values.containsKey('output_enabled.1'), isTrue);
     });
 
     test('clearMonitorLaneKeys removes the prior multi-lane keys', () async {

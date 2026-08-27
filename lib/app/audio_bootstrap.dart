@@ -382,9 +382,15 @@ Future<AutoStartResult> tryAutoStartEngine({
 
   // Restore the structural output gate. Only explicitly-disabled outputs were
   // persisted (default-on), so a missing key means enabled and needs no call.
-  // Scans the engine-aligned ceiling [0, kMaxOutputs) — see [kMaxOutputs].
+  // Keyed to the OPEN device, the way the latency offset above is: a socket
+  // disabled on one interface says nothing about another's. Scans the
+  // engine-aligned ceiling [0, kMaxOutputs) — see [kMaxOutputs].
   for (var output = 0; output < kMaxOutputs; output++) {
-    if (await settings.loadOutputEnabled(output) == false) {
+    final enabled = await settings.loadOutputEnabled(
+      device: status.deviceName,
+      output: output,
+    );
+    if (enabled == false) {
       repository.setOutputEnabled(output: output, enabled: false);
     }
   }
