@@ -35,7 +35,6 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.accentAlt,
     required this.fx,
     required this.fxSurface,
-    required this.fxWash,
     required this.warning,
     required this.success,
     required this.successSurface,
@@ -152,9 +151,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// [fx] is the label/outline colour; [fxSurface] is the **flat** fill the FX
   /// mode chip and the FX stage paint behind it (flat, not an alpha wash, for
   /// the same #737 reason [accentSurface] is — a mode fill must cover what it
-  /// sits on, and the high-contrast flavor overrides it wholesale); [fxWash] is
-  /// the translucent tint the stage dressing lays over a tile so the entry run
-  /// reads as an FX-mode panel rather than bare chrome.
+  /// sits on, and the high-contrast flavor overrides it wholesale). The stage
+  /// dressing itself recedes the meter (`meterColor` at 0.4 alpha) and paints
+  /// the Scaffold [fxSurface]; it lays no separate tile wash.
   ///
   /// The [fx]-on-[fxSurface] pair carries the FX chip's 14px w700 label, so it
   /// clears the 4.5:1 AA floor (WCAG 1.4.3) in both flavors — the pair pinned
@@ -162,7 +161,6 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// under AA before (#768/#770), so its pair is checked there too.
   final Color fx;
   final Color fxSurface;
-  final Color fxWash;
 
   /// The caution colour for non-blocking notices (e.g. "no active outputs"),
   /// brightened in the high-contrast variant so it stays legible (WCAG 1.4.3).
@@ -316,7 +314,6 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? accentAlt,
     Color? fx,
     Color? fxSurface,
-    Color? fxWash,
     Color? warning,
     Color? success,
     Color? successSurface,
@@ -366,7 +363,6 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     accentAlt: accentAlt ?? this.accentAlt,
     fx: fx ?? this.fx,
     fxSurface: fxSurface ?? this.fxSurface,
-    fxWash: fxWash ?? this.fxWash,
     warning: warning ?? this.warning,
     success: success ?? this.success,
     successSurface: successSurface ?? this.successSurface,
@@ -422,7 +418,6 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       accentAlt: c(accentAlt, other.accentAlt),
       fx: c(fx, other.fx),
       fxSurface: c(fxSurface, other.fxSurface),
-      fxWash: c(fxWash, other.fxWash),
       warning: c(warning, other.warning),
       success: c(success, other.success),
       successSurface: c(successSurface, other.successSurface),
@@ -499,12 +494,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     accentSurface: Color(0xFF121C31),
     accentAlt: Color(0xFF738CF2),
     // #692: FX mode = purple. `fx` on the flat `fxSurface` measures 4.74:1
-    // (>= AA for the 14px w700 chip label); on bg-base 5.32:1; and as the
-    // dressing's `fx`-on-`fxWash`-over-bg 4.60:1. All three pinned in
+    // (>= AA for the 14px w700 chip label); on bg-base 5.32:1. Both pinned in
     // app_theme_test.dart.
     fx: Color(0xFFA06BE0),
     fxSurface: Color(0xFF1E1430),
-    fxWash: Color(0x24A06BE0),
     warning: Color(0xFFE0A94A),
     success: Color(0xFF30A46C),
     successSurface: Color(0x2430A46C),
@@ -576,11 +569,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     accentAlt: Color(0xFF9AB4FF),
     // #692: the FX purple, lifted for the high-contrast flavor — `fx` on
     // `fxSurface` measures 6.83:1, on black 10.53:1 (this is the flavor where
-    // FX slipped under AA before, #768/#770, so it is checked explicitly). The
-    // wash carries the heavier HC alpha, matching `recSurface`/`successSurface`.
+    // FX slipped under AA before, #768/#770, so it is checked explicitly).
     fx: Color(0xFFC9A8FF),
     fxSurface: Color(0xFF33245A),
-    fxWash: Color(0x33C9A8FF),
     warning: Color(0xFFFFD27A),
     success: Color(0xFF6EE7B7),
     successSurface: Color(0x336EE7B7),
