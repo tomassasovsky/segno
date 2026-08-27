@@ -103,8 +103,9 @@ Repo: https://github.com/tomassasovsky/segno · branch `master`.
   whose bindings name an entry point its `libsegno_engine.so` does not export
   therefore compiles, packages, installs and launches — then throws
   `Failed to lookup symbol '...'` on the device, on whatever path reaches it
-  first. That is not theoretical: the appliance logged 548 such exceptions on
-  2026-08-25 off a *periodic* timer, from a bundle whose halves came from
+  first. That is not theoretical: the appliance threw 137 such exceptions on
+  2026-08-25, across six app starts, off a *periodic* timer -- so it repeated
+  for as long as each run lasted -- from a bundle whose halves came from
   different trees. Compare the two lists against a built library with:
   ```sh
   packages/segno_engine/tool/check_ffi_symbols.sh <path-to-libsegno_engine.so>

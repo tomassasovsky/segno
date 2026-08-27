@@ -77,7 +77,7 @@ file "$bin" | grep -q 'ARM aarch64' \
 # (libsegno_engine.so) that meet only through dlsym, which resolves lazily at
 # first call. A .so that is stale relative to the bindings therefore produces a
 # bundle that builds, installs and launches, then throws on the device -- as it
-# did on 2026-08-25, 548 times off a periodic timer. Gate it here, before the
+# did on 2026-08-25, 137 times off a periodic timer. Gate it here, before the
 # bundle can reach the rsync below or the Yocto staging dir, because after this
 # point nothing else looks.
 echo "==> Checking FFI symbol parity"

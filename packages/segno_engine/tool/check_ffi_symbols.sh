@@ -10,9 +10,10 @@
 # exception rather than failing to link. A bundle whose libapp.so looks up
 # entry points its libsegno_engine.so never defines therefore compiles clean,
 # packages clean, installs clean, and only breaks on the device when the code
-# path runs. That is not hypothetical: on 2026-08-25 the appliance logged 548
-# `Failed to lookup symbol 'le_perf_volume_free_bytes'` exceptions off a
-# periodic timer, from a bundle whose Dart half was newer than its .so half.
+# path runs. That is not hypothetical: on 2026-08-25 the appliance threw
+# `Failed to lookup symbol 'le_perf_volume_free_bytes'` 137 times across six
+# app starts -- off a periodic timer, so it repeated for as long as each run
+# lasted -- from a bundle whose Dart half was newer than its .so half.
 # Nothing in the build had anything to say about it. This script is that voice.
 #
 # Usage:
