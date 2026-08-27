@@ -51,7 +51,10 @@ these tiles talk to host helpers (same pattern as OTA's `segno-update-ctl`):
 | `/usr/bin/segno-touch-ctl` | touchscreen calibration matrix (`status` / `get` / `set` / `reset`) |
 
 WiFi is owned by **NetworkManager** (eth0 + wlan*). `systemd-networkd` is
-masked on the appliance image so the two managers do not fight.
+masked on the appliance image so the two managers do not fight. The unit
+announces itself as **`segno`** on the router/AP client list and the SSH
+prompt (the image hostname, set in `deploy/yocto/kas-segno-common.yml`; older
+images announced the board name, e.g. `raspberrypi5`).
 
 **On-device checklist** (after flashing an image that includes the helpers):
 
