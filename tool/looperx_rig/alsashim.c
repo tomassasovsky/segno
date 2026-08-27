@@ -141,6 +141,46 @@ int snd_ctl_subscribe_events(void *ctl, int subscribe) {
   return 0;
 }
 
+/* snd_ctl_pcm_info() above leaves the caller's snd_pcm_info_t zeroed, so
+ * RtAudio would read an empty id and build a device name like "HG08 ()".
+ * The app formats device names as "%1 (%2)" (card name, pcm id) and then looks
+ * the result up in its KnownDeviceList, so both halves have to be real. */
+
+const char *snd_pcm_info_get_name(const void *info) {
+  (void)info;
+  return CARD_NAME;
+}
+
+const char *snd_pcm_info_get_id(const void *info) {
+  (void)info;
+  return CARD_ID;
+}
+
+const char *snd_pcm_info_get_subdevice_name(const void *info) {
+  (void)info;
+  return CARD_NAME;
+}
+
+unsigned int snd_pcm_info_get_subdevices_count(const void *info) {
+  (void)info;
+  return 1;
+}
+
+unsigned int snd_pcm_info_get_subdevices_avail(const void *info) {
+  (void)info;
+  return 1;
+}
+
+unsigned int snd_pcm_info_get_device(const void *info) {
+  (void)info;
+  return 0;
+}
+
+int snd_pcm_info_get_card(const void *info) {
+  (void)info;
+  return 0;
+}
+
 /* ---- PCM: real alsa-lib, substituted device name ------------------------- */
 
 /* RtAudio links the input and output PCMs so they share a hardware clock. Two

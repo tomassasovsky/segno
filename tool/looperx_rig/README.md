@@ -58,6 +58,19 @@ either generated at runtime or expected somewhere not yet created.
 several of these before one becomes fatal, so the crash is recoverable state
 being hit repeatedly rather than a single hard fault.
 
+## Debugging notes
+
+- **gdb does not work here.** Docker's qemu-user binfmt does not support
+  ptrace, so gdb segfaults instead of attaching. Getting a backtrace needs
+  `qemu-arm -g <port>` with its own gdbstub, invoked explicitly rather than
+  through binfmt.
+- **How far it gets depends on whether the PCM opens.** With `LOOPERX_PCM`
+  pointing at a working device the app starts `InputFXThread` and dies; with it
+  pointing at a nonexistent device (so `snd_pcm_open` fails) it gets *further* —
+  `Streaming`, `WORKER THREAD` and `LooperTrack` threads all start — and then
+  still dies. That is useful: the crash is not in device setup, it is in state
+  reached shortly after, and audio being absent delays rather than prevents it.
+
 ## Next step
 
 Give the device manager an identity it accepts. Options, cheapest first:
