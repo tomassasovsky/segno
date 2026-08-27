@@ -157,6 +157,10 @@ void main() {
       // makes the next identical toast a silent no-op, and a settings guard
       // left set makes openSegnoSettings return early forever after.
       resetAppToastsForTest();
+      // The `toastification` singleton also leaks across files under
+      // `--optimization`, leaving a dead overlay the next toast renders into
+      // nothing (#875). Reset it so every toast here gets a live overlay.
+      resetToastificationForTest();
       resetSegnoNavigatorForTest();
       engine = FakeAudioEngine();
       repository = LooperRepository(
