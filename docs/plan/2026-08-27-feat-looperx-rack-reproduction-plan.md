@@ -272,10 +272,10 @@ between "similar" and "as close as possible", so the rig comes first.
 
 | # | phase | gate | depends on |
 |---|---|---|---|
-| 0 | **Measurement rig** — drive the emulated device, capture reference audio (#891) | `merge-gate` | — |
+| 0 | **Measurement rig** (#891) — **BLOCKED, see below**; optional track | `plan-gate` | — |
 | 1 | **Fidelity harness** — render our effect, score it against the reference | `merge-gate` | 0 |
 | 2 | Widen `LE_FX_PARAMS` 4 → 16, landing with EQ | `merge-gate` | — |
-| 3 | Effects, each fitted and verified: EQ, Compressor, Doubler, Amp+Cab, Wah, Mod, Pitch Shift, HP/Gate, then the singles | `merge-gate` | 0, 1, 2 |
+| 3 | Effects, spec-based; fitted and verified only if 0 ever lands: EQ, Compressor, Doubler, Amp+Cab, Wah, Mod, Pitch Shift, HP/Gate, then the singles | `merge-gate` | 2 |
 | 4 | Widen `LE_FX_MAX` 8 → 16 (Ed's Rack is 9 blocks) | `merge-gate` | 3 |
 | 5 | Preset import — near-mechanical once the DSP matches | `merge-gate` | 3 |
 | 6 | Content layer: icons, enum vocabularies, taxonomy | `merge-gate` | naming call |
@@ -336,7 +336,22 @@ named in the binary); or ALSA with a file plugin.
   so it delivers continuously — every effect in Phase 3 is usable on its own,
   independent of whether a factory preset ever imports.
 
+### Phase 0 is blocked (spiked 2026-08-27)
+
+The app runs under emulation; its **GUI cannot**. Qt is statically linked with
+**only the eglfs platform registered**, the app overrides `QT_QPA_PLATFORM` to
+`eglfs` itself, eglfs needs a framebuffer Docker's kernel does not provide (no
+fbdev major), and `usr/lib/libEGL.so` is an **ARM Mali vendor blob** bound to
+`/dev/mali` with no Mesa in the rootfs. Driving the real UI would need a faked
+fbdev, Mesa substituted for the Mali blob, and eglfs persuaded to render
+surfacelessly — three stacked substitutions before any audio is routed.
+
+Still viable if reopened: calling the DSP directly under emulation with no Qt,
+anchored on the audio threads' own log strings (`InputFXThread CPU affinity: `,
+`LooperTrack THREAD: ...`). Bounded RE work, no display or GPU needed.
+
 ## Next step
 
-Phase 0 — the measurement rig (#891). Everything else is guesswork until it
-exists, and guesswork is what "as close as possible" rules out.
+Phase 2 — widen `LE_FX_PARAMS` and land EQ, spec-based. Phase 0 stays open as
+an optional track; reopen it only if spec-based fidelity proves unsatisfying in
+practice, since the substitution stack is a multi-day gamble.
