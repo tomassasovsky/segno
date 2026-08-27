@@ -72,6 +72,17 @@ file "$bin" | grep -q 'ARM aarch64' \
   && echo "==> Confirmed aarch64: $(file -b "$bin")" \
   || echo "warning: $bin is not reported as ARM aarch64 -- check the host platform" >&2
 
+# --- Verify the two halves of the bundle agree on the FFI boundary ------------
+# The bundle ships a Dart half (libapp.so) and a native half
+# (libsegno_engine.so) that meet only through dlsym, which resolves lazily at
+# first call. A .so that is stale relative to the bindings therefore produces a
+# bundle that builds, installs and launches, then throws on the device -- as it
+# did on 2026-08-25, 548 times off a periodic timer. Gate it here, before the
+# bundle can reach the rsync below or the Yocto staging dir, because after this
+# point nothing else looks.
+echo "==> Checking FFI symbol parity"
+packages/segno_engine/tool/check_ffi_symbols.sh "$BUNDLE_REL/lib/libsegno_engine.so"
+
 # --- Optional deploy to the Pi ------------------------------------------------
 if [ -n "$deploy_target" ]; then
   command -v rsync >/dev/null 2>&1 || { echo "error: rsync not found on PATH" >&2; exit 1; }

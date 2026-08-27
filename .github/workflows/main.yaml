@@ -128,6 +128,16 @@ jobs:
       - run: flutter config --enable-linux-desktop
       - run: flutter pub get
       - run: flutter build linux --debug --target lib/main_development.dart
+      # A clean compile proves the two halves of the bundle build; it does not
+      # prove they agree. Dart reaches the engine only through dlsym, which
+      # resolves at first call, so a binding naming an entry point the C side
+      # never exports links clean and throws on the device instead -- as it did
+      # on the appliance on 2026-08-25, repeatedly, off a periodic timer.
+      # Compare the two symbol lists against the .so this job just built.
+      - name: FFI symbol parity (Dart bindings vs built libsegno_engine.so)
+        run: |
+          packages/segno_engine/tool/check_ffi_symbols.sh \
+            build/linux/*/debug/bundle/lib/libsegno_engine.so
 
   # ARM64 Linux guard for the Raspberry Pi 5 floor-console target (Pi OS is
   # arm64). Same compile-only contract as build-linux above — no audio runs (CI
@@ -161,6 +171,12 @@ jobs:
       - run: flutter config --enable-linux-desktop
       - run: flutter pub get
       - run: flutter build linux --debug --target lib/main_development.dart
+      # FFI symbol parity, as in build-linux above -- run here too because this
+      # job builds for the architecture the appliance actually ships.
+      - name: FFI symbol parity (Dart bindings vs built libsegno_engine.so)
+        run: |
+          packages/segno_engine/tool/check_ffi_symbols.sh \
+            build/linux/*/debug/bundle/lib/libsegno_engine.so
 
   # The native C engine + MIDI unit tests (the deterministic golden gate). They
   # need no audio device, so they run on Linux with just a C toolchain + ALSA
