@@ -140,13 +140,45 @@ normalised values, load them, read the rendered value back. That turns
 "re-voice 159 presets by ear" into "sample 161 curves", which is the
 difference between reproduction and guesswork.
 
-**This needs a spike** (Phase 0) to confirm device access and choose the
-readout channel — SSH plus the built-in screenshot facility
-(`AppUI/Screenshot.qml`, gated on `Looper.screenshotsEnabled()`), or MIDI
-feedback over the `ValueCCAssignment` surface in `MidiAssignments/`.
+**Measuring needs a physical Looper X, and there is not one available.**
+Phase 0 is therefore **cut**. What follows is what survives without it.
 
-**Dependency: this phase needs a physical Looper X.** Without one, Phases 1-3
-proceed unchanged and Phase 4 degrades from measured to voiced-by-ear.
+#### What is recoverable with no hardware at all
+
+Quantisation analysis over all 159 presets — for each parameter, the smallest
+`D` such that every observed value is exactly `k/D` — finds **47 of 160
+parameters are discrete**, and they are the musically decisive ones:
+
+| parameter | D | reading |
+|---|---|---|
+| `Pitch Shift` | 24 | 25 steps over +/-12 semitones; the values used decode to -12, unison, +7, +12 |
+| `Del Time` | 19 | the 20-entry note-division table (`1/32 ... 8/4`) — delays are tempo-synced |
+| `Voice 1/2 Delay` | 22 | 23-entry division table |
+| `Slic Step Len` | 8 | 9 divisions |
+| `LPF LFO Rate` | 15 | 16 divisions |
+| `Pumper Rate` | 10 | 11 divisions |
+| `Cab` | 11 | indices land exactly on the 11-cabinet list |
+| `Del Mode` | 11 | 12 modes |
+| `Mod Mode` | 2 | CHORUS / PHASER / FLANGER |
+| `Rev Mode`, `Slic Patt`, `Key`, `Voice 1/2 Pitch`, `Gate Thresh` | various | exact |
+| 26 module on/off switches | 1 | exact |
+
+So **every mode selection, note division, cabinet choice and pitch interval
+transfers exactly**, with no device. Only the **113 continuous** parameters
+(gains, ms, Hz, mixes) carry unknown tapers.
+
+#### What that leaves
+
+For the continuous parameters, import the normalised value at face value
+against **a range segno defines and documents per parameter**, constrained by
+the unit format strings we did recover (`%.1f : 1` bounds a ratio, `%.2f s` a
+spring time, `%.0f dB` a threshold). The relative intent — which module is
+on, roughly where each control sits in its travel — is preserved regardless
+of taper, and that is what a preset actually encodes.
+
+Phase 4 therefore ships **decoded-exact discrete values plus voiced-by-ear
+continuous values**, and should say so in its own docs rather than implying
+a faithful numeric port.
 
 ## Phase order
 
@@ -154,7 +186,6 @@ Each phase is one or more independently mergeable PRs.
 
 | # | phase | gate | depends on |
 |---|---|---|---|
-| 0 | Taper measurement spike | `blocked-verify` | hardware |
 | 1 | B2: type-tagged slot state (pure refactor) | `merge-gate` | — |
 | 2 | B1: widen to 16 x 16 | `merge-gate` | 1 |
 | 3a | Biquad family: EQ, HP/Gate, Wah, LPF widen | `merge-gate` | 2 |
@@ -164,11 +195,13 @@ Each phase is one or more independently mergeable PRs.
 | 3e | Degradation: Vinyl, Degrade, Slicer, Pumper, Distort widen | `merge-gate` | 2 |
 | 3f | Pitch family: Pitch Shift, Whammy, Harmonizer, Smart Tune | `merge-gate` | 2 |
 | 3g | Amp+Cab | `plan-gate` | 2 |
-| 4 | Preset import + voicing | `merge-gate` | 0, 3a-3g |
+| 4 | Preset import + voicing | `merge-gate` | 3a-3g |
 | 5 | Content layer: icons, enum vocabularies, taxonomy | `merge-gate` | naming call |
 
 Phases 1 and 2 are the only ones on the critical path; 3a-3g parallelise, and
-5 can land any time the naming question is answered.
+5 can land any time the naming question is answered. Phase 0 (taper
+measurement) is **cut** — no physical Looper X is available; see B3 for what
+survives without it.
 
 ### Why 3g carries a `plan-gate`
 
@@ -192,9 +225,10 @@ works — the risk is integration, not DSP.
   array changes the VST3 parameter mapping in `segno_vst3_plugins.dart` and
   the ALS builder. A session exported before Phase 2 must still open after
   it; that is a persistence-compatibility problem, not just a constant.
-- **Phase 4 is worthless without Phase 0** unless the owner accepts
-  voiced-by-ear presets. Confirm hardware access before committing to the
-  measured route.
+- **Phase 4 ships mixed-fidelity presets.** Discrete parameters decode
+  exactly; continuous ones are voiced by ear against ranges we choose. That
+  is a documentation obligation, not a defect — but a preset labelled
+  "Ed's Rack / Vocal Chorus" must not imply a numeric port of one.
 - **Twenty-one modules is a multi-quarter programme.** The phase table exists
   so it delivers value continuously — every 3x phase is usable on its own,
   independent of whether the factory presets ever import.
