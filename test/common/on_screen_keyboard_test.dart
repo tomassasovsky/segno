@@ -136,6 +136,162 @@ void main() {
       expect(controller.text, 'Ab');
     });
 
+    testWidgets('a quick double-tap latches caps-lock across keys', (
+      tester,
+    ) async {
+      // Renaming a track "FX BUS" should not mean tapping shift six times.
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      // A double-tap: the second tap lands well inside the 300 ms window, so
+      // the arm is promoted to a lock rather than toggled off.
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+
+      await tapKey(tester, 'A');
+      await tapKey(tester, 'B');
+      await tapKey(tester, 'C');
+
+      expect(controller.text, 'ABC');
+    });
+
+    testWidgets('a slow second tap toggles the arm off instead of locking', (
+      tester,
+    ) async {
+      // A deliberate, separate second tap — not a double-tap — is the phone
+      // idiom for turning a one-shot back off.
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      // Past the 300 ms double-tap window: this is a fresh tap, not the pair.
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+
+      // Back to off — an outline arrow, no lock, and lowercase output.
+      expect(find.byIcon(Icons.arrow_upward_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_capslock), findsNothing);
+      await tapKey(tester, 'a');
+      expect(controller.text, 'a');
+    });
+
+    testWidgets('tapping shift again releases caps-lock', (tester) async {
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      // Double-tap to lock, then a single tap back to off.
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+      await tapKey(tester, 'A');
+      // Locked now reports itself as the caps-lock control.
+      await tester.tap(find.bySemanticsLabel('Caps lock'));
+      await tester.pump();
+
+      await tapKey(tester, 'b');
+
+      expect(controller.text, 'Ab');
+    });
+
+    testWidgets('the three shift states render distinctly', (tester) async {
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      // The Material behind the shift glyph, whichever icon it currently shows.
+      Color shiftCapColor() {
+        final icon = tester.widget<Icon>(
+          find.byWidgetPredicate(
+            (w) =>
+                w is Icon &&
+                (w.semanticLabel == 'Shift' || w.semanticLabel == 'Caps lock'),
+          ),
+        );
+        return tester
+            .widget<Material>(
+              find
+                  .ancestor(
+                    of: find.byWidget(icon),
+                    matching: find.byType(Material),
+                  )
+                  .first,
+            )
+            .color!;
+      }
+
+      final surface = AppTheme.neon.extension<SurfaceTheme>()!;
+
+      // off: an outline arrow on the plain key fill.
+      expect(find.byIcon(Icons.arrow_upward_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_upward), findsNothing);
+      expect(find.byIcon(Icons.keyboard_capslock), findsNothing);
+      expect(shiftCapColor(), surface.cardHigh);
+
+      // one-shot: a filled arrow on the flat accent tint.
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+      expect(find.byIcon(Icons.arrow_upward_outlined), findsNothing);
+      expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_capslock), findsNothing);
+      expect(shiftCapColor(), surface.accentSurface);
+
+      // locked (quick second tap): the caps-lock glyph on a SOLID bright
+      // accent cap — a stronger fill than armed's tint, so the two never blur.
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+      expect(find.byIcon(Icons.arrow_upward_outlined), findsNothing);
+      expect(find.byIcon(Icons.arrow_upward), findsNothing);
+      expect(find.byIcon(Icons.keyboard_capslock), findsOneWidget);
+      expect(shiftCapColor(), surface.accent);
+      expect(surface.accent, isNot(surface.accentSurface));
+    });
+
+    testWidgets('switching layers spends a one-shot shift', (tester) async {
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+      // The symbols layer hides the shift key, so go back to letters to read
+      // the state off the arrow.
+      await tapKey(tester, '?123');
+      await tapKey(tester, 'abc');
+
+      expect(find.byIcon(Icons.arrow_upward_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_upward), findsNothing);
+
+      await tapKey(tester, 'a');
+      expect(controller.text, 'a');
+    });
+
+    testWidgets('switching layers preserves caps-lock', (tester) async {
+      // Typing "FX-3" wants the lock to survive the trip to the symbols layer.
+      await pumpField(tester);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.bySemanticsLabel('Shift'));
+      await tester.pump();
+      await tapKey(tester, '?123');
+      await tapKey(tester, 'abc');
+
+      // The latch is still shown and still forces uppercase — the letter caps
+      // now read uppercase, so the key is labelled 'A'.
+      expect(find.byIcon(Icons.keyboard_capslock), findsOneWidget);
+      await tapKey(tester, 'A');
+      expect(controller.text, 'A');
+    });
+
     testWidgets('backspace deletes the character before the caret', (
       tester,
     ) async {
