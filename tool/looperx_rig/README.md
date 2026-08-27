@@ -37,6 +37,30 @@ at all.
 Do **not** pass `--privileged`: it breaks library resolution against the
 bind-mounted rootfs, and nothing here needs it.
 
+## The fatal crash, as far as it is understood
+
+`-strace` pins the sequence:
+
+```
+sched_setscheduler(23, 2, ...) = -1 errno=1 (Operation not permitted)
+--- SIGSEGV {si_signo=SIGSEGV, si_code=1, si_addr=0x702d7562} ---
+```
+
+The app asks for `SCHED_RR` on an engine thread and is refused, then
+immediately faults. `si_code=1` is SEGV_MAPERR and `si_addr=0x702d7562` is
+**ASCII bytes** (`p`, `-`, `u`, `b`) — a string being dereferenced as a
+pointer, i.e. a garbage or type-confused pointer rather than a plain null.
+
+Granting `CAP_SYS_NICE` makes the EPERM go away but **does not** fix the crash,
+so the scheduling failure is a symptom sharing a cause rather than the cause.
+Creating the content trees the app expects
+(`/media/hg03-content/Resources/Audio`, `Resources/Audio`, the `usb_mnt`
+folders) does not fix it either.
+
+The strongest remaining hypothesis is still the empty audio-device identity:
+the app logs `Failed to fetch the audio device ""` shortly before, and an empty
+name flowing into a lookup is exactly the shape that yields a bogus pointer.
+
 ## Where it stops
 
 ```
@@ -58,12 +82,26 @@ either generated at runtime or expected somewhere not yet created.
 several of these before one becomes fatal, so the crash is recoverable state
 being hit repeatedly rather than a single hard fault.
 
+## Two ways to run it
+
+- `Dockerfile` + `boot.sh` — arm32 container, Docker's transparent binfmt.
+  Simplest, but **gdb cannot attach** (binfmt qemu-user has no ptrace).
+- `Dockerfile.debug64` + `boot-qemu.sh` — **arm64** container invoking
+  `qemu-arm-static` explicitly. Better in every way for diagnosis: the base is
+  native on Apple Silicon so `apt` is fast, the shims cross-compile with
+  `arm-linux-gnueabihf-gcc`, and qemu's own `-g <port>` gdbstub and `-strace`
+  both work. Needs `libc6-dev:armhf` for `crti.o`.
+
 ## Debugging notes
 
-- **gdb does not work here.** Docker's qemu-user binfmt does not support
-  ptrace, so gdb segfaults instead of attaching. Getting a backtrace needs
-  `qemu-arm -g <port>` with its own gdbstub, invoked explicitly rather than
-  through binfmt.
+- Run with `--cap-add=SYS_NICE --ulimit rtprio=99`. Without it the app's
+  `sched_setscheduler(SCHED_RR)` is refused with EPERM (see below).
+- `qemu-arm-static -strace` is the most useful tool here by far — it gives the
+  syscall trace and the faulting address without needing symbols.
+- Symbolizing is still unsolved: gdb sees `?? ()` because it has no module
+  bases, and `/proc/<qemu-pid>/maps` captured at the wrong moment shows only
+  qemu itself. Reconstructing bases from the `openat`/`mmap2` pairs in an
+  `-strace` log is the obvious next attempt.
 - **How far it gets depends on whether the PCM opens.** With `LOOPERX_PCM`
   pointing at a working device the app starts `InputFXThread` and dies; with it
   pointing at a nonexistent device (so `snd_pcm_open` fails) it gets *further* —
