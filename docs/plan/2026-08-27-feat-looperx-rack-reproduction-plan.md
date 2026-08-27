@@ -147,87 +147,59 @@ normalized values, load them, read the rendered value back. That turns
 "re-voice 159 presets by ear" into "sample 161 curves", which is the
 difference between reproduction and guesswork.
 
-**Measuring needs a physical Looper X, and there is not one available.**
-Phase 0 is therefore **cut**. What follows is what survives without it.
+**Correction (2026-08-27, verified): a physical Looper X is not needed.**
+The device runs under emulation on a developer Mac.
 
-#### What is recoverable with no hardware at all
+#### What was verified
 
-Quantization analysis over all 159 presets — for each parameter, the smallest
-`D` such that every observed value is exactly `k/D` — finds **47 of 160
-parameters are discrete**, and they are the musically decisive ones:
+- The binary disassembles cleanly (`arm-none-eabi-objdump`, ELF32 ARM). Its
+  own C++ symbols are NOT exported — `.dynsym` holds only libc/ALSA imports —
+  so static reverse engineering means reading anonymous assembly.
+- **Every shared library it needs resolves from the extracted rootfs, with
+  zero missing**, checked with the rootfs's own
+  `ld-linux-armhf.so.3 --library-path ... --list`.
+- **The application executes.** Under
+  `docker run --platform linux/arm/v7` with `QT_QPA_PLATFORM=offscreen`, given
+  a writable `/media/az01-internal/Looper`, it starts, clears initialization,
+  spawns three threads, settles at ~35 MB RSS and parks idle in
+  `rt_sigsuspend`. It does not crash — the only thing it originally complained
+  about was that missing directory.
 
-| parameter | D | reading |
-|---|---|---|
-| `Pitch Shift` | 24 | 25 steps over +/-12 semitones; the values used decode to -12, unison, +7, +12 |
-| `Del Time` | 19 | the 20-entry note-division table (`1/32 ... 8/4`) — delays are tempo-synced |
-| `Voice 1/2 Delay` | 22 | 23-entry division table |
-| `Slic Step Len` | 8 | 9 divisions |
-| `LPF LFO Rate` | 15 | 16 divisions |
-| `Pumper Rate` | 10 | 11 divisions |
-| `Cab` | 11 | indices land exactly on the 11-cabinet list |
-| `Del Mode` | 11 | 12 modes |
-| `Mod Mode` | 2 | CHORUS / PHASER / FLANGER |
-| `Rev Mode`, `Slic Patt`, `Key`, `Voice 1/2 Pitch`, `Gate Thresh` | various | exact |
-| 26 module on/off switches | 1 | exact |
+#### What that unlocks
 
-So **every mode selection, note division, cabinet choice and pitch interval
-transfers exactly**, with no device. Only the **113 continuous** parameters
-(gains, ms, Hz, mixes) carry unknown tapers.
+1. **Taper recovery without hardware.** The parameter widget renders
+   `name: valuestring unitString` through a translator object
+   (`AppUI/Pages/FxEdit/Parameter.qml:29-31`). Drive the emulated app across a
+   known ladder of normalized values and read the rendered value back, exactly
+   as the hardware plan intended — on a laptop instead.
+2. **Reference audio, which is the bigger prize.** Point the emulated app's
+   ALSA at a file plugin, push a test signal through a factory rack, and
+   capture what their DSP actually produces. That is ground truth to A/B every
+   re-implementation against, and it is the thing whose absence forced
+   "voiced by ear".
 
-#### What that leaves
+#### What remains genuinely out of scope
 
-For the continuous parameters, import the normalized value at face value
-against **a range segno defines and documents per parameter**, constrained by
-the unit format strings we did recover (`%.1f : 1` bounds a ratio, `%.2f s` a
-spring time, `%.0f dB` a threshold). The relative intent — which module is
-on, roughly where each control sits in its travel — is preserved regardless
-of taper, and that is what a preset actually encodes.
+Transliterating the DSP out of machine code. Twenty-seven effects of anonymous
+ARM VFP assembly is enormous, and it produces a mechanical copy of their object
+code rather than an implementation. Emulation gives us the *behavior* far more
+cheaply than reading the *code*, and behavior is what a re-implementation needs
+to match.
 
-Phase 4 therefore ships **decoded-exact discrete values plus voiced-by-ear
-continuous values**, and should say so in its own docs rather than implying
-a faithful numeric port.
+#### Still unproven — what the spike must establish
 
-## Phase order
+- Audio in/out under emulation: an `asoundrc` pointing at ALSA's `file`/`null`
+  plugins, and whether the app insists on its real hardware.
+- Driving the UI headless: `offscreen` was accepted, but QML actually loading
+  and being drivable is unconfirmed. The app ships `HWEmul.qml`, `DevSettings`
+  and a screenshot facility gated on `Looper.screenshotsEnabled()`.
+- Whether startup gates on the HG08 control surface being present.
+- Throughput: emulated ARM is roughly an order of magnitude slower than
+  native, which is irrelevant for offline capture.
 
-Revised against the two corrections above: the vtable exists, and 19 of 26
-modules fit the current parameter width. So the programme is not
-"two refactors then modules" — it is **modules first, widening when a module
-demands it.**
-
-| # | phase | gate | depends on |
-|---|---|---|---|
-| 1 | First module end to end: **Chorus** | `merge-gate` | — |
-| 2 | Remaining ≤4-param modules, grouped by shared kernel | `merge-gate` | 1 |
-| 3 | Widen `LE_FX_PARAMS` 4 → 16, landing with **Compressor** (first module that needs it) | `merge-gate` | 1 |
-| 4 | Wide modules: EQ, Reverb widen, Delay widen, Amp+Cab, Smart Tune, Harmonizer | `merge-gate` | 3 |
-| 5 | Widen `LE_FX_MAX` 8 → 16, landing with the Ed's Rack import | `merge-gate` | 4 |
-| 6 | Preset import + voicing | `merge-gate` | 2, 4 |
-| 7 | Content layer: icons, enum vocabularies, taxonomy | `merge-gate` | naming call |
-
-Phase 1 is deliberately a *small* module rather than a high-coverage one. Its
-job is to prove the whole path — native kernel, vtable row, Dart enum,
-parameter labels, FX editor UI, persistence, DAW export — on a capability
-that is useful on its own. Chorus is three parameters (rate, depth, mix),
-reuses the existing stereo delay ring (`fx_stereo_ring_prepare`), and is a
-plain win for a looper independent of whether a single factory preset ever
-imports.
-
-Phase 2 then adds modules on a path that is already proven, grouped so each
-PR shares a kernel: modulated delay (Mod, Doubler, Spring, Dub Delay),
-degradation (Vinyl, Degrade, Slicer, Pumper), dynamics-lite (Transient,
-HP/Gate), and filter (Wah, LPF widen).
-
-Phase 0 (taper measurement) is **cut** — no physical Looper X is available;
-see B3 for what survives without it.
-
-### Why 3g carries a `plan-gate`
-
-Amp+Cab is the one module with open design risk. The update image ships **no
-impulse responses** — `metronome.wav` is the only audio file in the entire
-rootfs — so their cab simulation is algorithmic, not convolution. That is
-good news (a filter-based cab is cheaper than an IR loader) but it means the
-eleven cabinet voicings are ours to author, not to copy. Deciding how they
-are modeled and measured is a direction call, not a taste one.
+Until that spike lands, Phase 6 still plans for mixed fidelity (discrete exact,
+continuous voiced). If it lands, Phase 6 becomes a measured port and the
+fidelity ceiling moves a long way up.
 
 ## How a .fxpreset actually lands (and what Chorus is)
 
