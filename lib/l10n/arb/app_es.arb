@@ -30,7 +30,10 @@
     "updateBannerUpdateAction": "Actualizar…",
     "updateBannerDismissAction": "Ahora no",
     "audioDeviceFallbackName": "Dispositivo de audio",
-    "deviceDisconnectedBanner": "{deviceName} desconectado — intentando reconectar…",
+    "deviceLostBanner": "Sin dispositivo de audio — no se oye nada",
+    "deviceLostBannerAction": "Abrir configuración",
+    "midiLostToastTitle": "Controlador MIDI desconectado",
+    "midiLostToastBody": "Mapeos inactivos hasta que vuelva — los loops siguen sonando",
     "deviceReconnectedSnackbar": "{deviceName} reconectado",
     "pedalFirmwareGateTitle": "Finalizando la actualización",
     "pedalFirmwareGateBody": "Actualizando tu pedal a {version}. Sus interruptores y luces están apagados hasta que termine — no lo desconectes.",
@@ -504,13 +507,6 @@
     "pitchSemitones": "{sign}{count} st",
     "defaultTrackName": "PISTA {trackNumber}",
     "outputWaveformWindowTitle": "Segno — Salida",
-    "@deviceDisconnectedBanner": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
     "@deviceReconnectedSnackbar": {
         "placeholders": {
             "deviceName": {
@@ -721,14 +717,6 @@
     "midiRequiredCcsHint": "CC 80 grabar · 81 detener · 82 deshacer · 83 borrar",
     "midiActivityActive": "Actividad MIDI",
     "midiActivityIdle": "Esperando entrada MIDI",
-    "midiDisconnectedBanner": "Controlador MIDI «{deviceName}» desconectado: se reconectará al conectarlo.",
-    "@midiDisconnectedBanner": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
     "midiReconnectedSnackbar": "Controlador MIDI «{deviceName}» reconectado.",
     "@midiReconnectedSnackbar": {
         "placeholders": {

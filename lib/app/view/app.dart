@@ -658,6 +658,7 @@ class _AppViewState extends State<_AppView> {
             context.read<PerformanceRecorderCubit>().state,
             context.read<MonitorCubit>().state,
             context.read<InputsCubit>().state,
+            context.read<AudioSetupCubit>().state,
             _l10n,
           ),
         );
@@ -688,6 +689,7 @@ class _AppViewState extends State<_AppView> {
     PerformanceRecorderState recorder,
     MonitorState monitors,
     InputsState inputs,
+    AudioSetupState audio,
     AppLocalizations l10n,
   ) {
     final transport = looper.transport;
@@ -740,53 +742,61 @@ class _AppViewState extends State<_AppView> {
       elapsedSeconds: clock.elapsed.inSeconds,
       recordArmed: armed != null,
       recordSeconds: armed?.elapsed.inSeconds ?? 0,
+      // The stage's one standing loss condition, echoed on the 7" readout
+      // (`c/device-lost`): the performer is looking down, not at the main
+      // screen. A boolean only — the echoed line is the pen's fixed copy, so
+      // no name rides the wire. MIDI loss is a transient toast, not a
+      // standing condition, so it never rides the readout.
+      deviceLost: audio.deviceConnectivity == DeviceConnectivity.lost,
     );
   }
 
-  /// Persistent "disconnected — trying to reconnect" toast when a pinned
-  /// device is lost; replaced by a short "reconnected" toast when it returns.
-  void _showConnectivityBanner(AudioSetupState state) {
+  /// Short "reconnected" snack toast when the pinned audio device returns.
+  ///
+  /// The *lost* branch is gone (#453): loss is a standing condition, held by
+  /// the stage's `ConnectivityBanners` until the hardware returns; a toast is
+  /// for the restored *event* only.
+  void _showDeviceRestoredToast(AudioSetupState state) {
+    if (state.deviceConnectivity != DeviceConnectivity.restored) return;
     final l10n = _l10n;
-    dismissAppToast(AppToastId.deviceLost);
     final name = state.connectivityDeviceName.isEmpty
         ? l10n.audioDeviceFallbackName
         : state.connectivityDeviceName;
-    switch (state.deviceConnectivity) {
-      case DeviceConnectivity.lost:
-        showAppToast(
-          id: AppToastId.deviceLost,
-          type: ToastificationType.warning,
-          title: AppText(l10n.deviceDisconnectedBanner(name)),
-          icon: const Icon(Icons.warning_amber_rounded),
-        );
-      case DeviceConnectivity.restored:
-        showAppSnackToast(
-          id: AppToastId.deviceRestored,
-          title: AppText(l10n.deviceReconnectedSnackbar(name)),
-          icon: const Icon(Icons.check_circle_outline),
-        );
-      case DeviceConnectivity.none:
-        break;
-    }
+    showAppSnackToast(
+      id: AppToastId.deviceRestored,
+      title: AppText(l10n.deviceReconnectedSnackbar(name)),
+      icon: const Icon(Icons.check_circle_outline),
+    );
   }
 
-  /// MIDI analog of [_showConnectivityBanner].
-  void _showMidiConnectivityBanner(MidiSetupState state) {
-    final l10n = _l10n;
-    dismissAppToast(AppToastId.midiLost);
+  /// The MIDI controller's connectivity, surfaced as a transient toast.
+  ///
+  /// Unlike a lost audio interface — a standing condition that stops the
+  /// engine and holds a persistent banner — a lost MIDI controller is
+  /// low-stakes: the loops keep playing, only the mappings go idle. So the
+  /// *lost* event flashes an amber toast that auto-dismisses and leaves no
+  /// standing bar (#453), and *restored* stays a short snack. Neither is a
+  /// persistent surface: `ConnectivityBanners` never mentions MIDI.
+  void _showMidiConnectivityToast(MidiSetupState state) {
     final connection = state.connection;
-    final name = connection.connectivityDeviceName.isEmpty
-        ? connection.selectedName
-        : connection.connectivityDeviceName;
+    final l10n = _l10n;
+    // The controller returning (or being reselected) retires the lost toast
+    // at once rather than leaving it to time out beside the restored snack.
+    dismissAppToast(AppToastId.midiLost);
     switch (connection.connectivity) {
       case MidiConnectivity.lost:
         showAppToast(
           id: AppToastId.midiLost,
           type: ToastificationType.warning,
-          title: AppText(l10n.midiDisconnectedBanner(name)),
+          title: AppText(l10n.midiLostToastTitle),
+          description: AppText(l10n.midiLostToastBody),
           icon: const Icon(Icons.piano_off_outlined),
+          autoCloseDuration: const Duration(seconds: 6),
         );
       case MidiConnectivity.restored:
+        final name = connection.connectivityDeviceName.isEmpty
+            ? connection.selectedName
+            : connection.connectivityDeviceName;
         showAppSnackToast(
           id: AppToastId.midiRestored,
           title: AppText(l10n.midiReconnectedSnackbar(name)),
@@ -982,13 +992,13 @@ class _AppViewState extends State<_AppView> {
         BlocListener<AudioSetupCubit, AudioSetupState>(
           listenWhen: (previous, current) =>
               previous.deviceConnectivity != current.deviceConnectivity,
-          listener: (_, state) => _showConnectivityBanner(state),
+          listener: (_, state) => _showDeviceRestoredToast(state),
         ),
         BlocListener<MidiSetupCubit, MidiSetupState>(
           listenWhen: (previous, current) =>
               previous.connection.connectivity !=
               current.connection.connectivity,
-          listener: (_, state) => _showMidiConnectivityBanner(state),
+          listener: (_, state) => _showMidiConnectivityToast(state),
         ),
         BlocListener<AudioRecoveryCubit, AudioRecoveryState>(
           listenWhen: (previous, current) => previous.status != current.status,

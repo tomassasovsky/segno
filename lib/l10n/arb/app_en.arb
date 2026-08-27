@@ -86,13 +86,21 @@
     "updateBannerUpdateAction": "Update…",
     "updateBannerDismissAction": "Not now",
     "audioDeviceFallbackName": "Audio device",
-    "deviceDisconnectedBanner": "{deviceName} disconnected — trying to reconnect…",
-    "@deviceDisconnectedBanner": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
+    "deviceLostBanner": "No audio device — nothing is heard",
+    "@deviceLostBanner": {
+        "description": "Standing red banner on the stage while the pinned audio interface is absent — the engine is stopped (pen: STAGE / device-lost)."
+    },
+    "deviceLostBannerAction": "Open setup",
+    "@deviceLostBannerAction": {
+        "description": "Inline action on the device-lost banner — opens the tray's Audio domain on the Device tab."
+    },
+    "midiLostToastTitle": "MIDI controller disconnected",
+    "@midiLostToastTitle": {
+        "description": "Title of the transient toast shown when the pinned MIDI controller is lost (pen: STAGE / midi-lost-toast)."
+    },
+    "midiLostToastBody": "Mappings idle until it returns — loops keep playing",
+    "@midiLostToastBody": {
+        "description": "Body of the MIDI-lost toast — the loss is low-stakes because the loops keep playing."
     },
     "deviceReconnectedSnackbar": "{deviceName} reconnected",
     "@deviceReconnectedSnackbar": {
@@ -999,14 +1007,6 @@
     "midiRequiredCcsHint": "CC 80 record · 81 stop · 82 undo · 83 clear",
     "midiActivityActive": "MIDI activity",
     "midiActivityIdle": "Waiting for MIDI input",
-    "midiDisconnectedBanner": "MIDI controller \"{deviceName}\" disconnected — it will reconnect when plugged in.",
-    "@midiDisconnectedBanner": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
     "midiReconnectedSnackbar": "MIDI controller \"{deviceName}\" reconnected.",
     "@midiReconnectedSnackbar": {
         "placeholders": {

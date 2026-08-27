@@ -670,6 +670,70 @@ void main() {
 
       expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
     });
+
+    test(
+      'resolving a lost device by picking the system default clears the '
+      'standing condition for good (#453)',
+      () async {
+        when(() => repository.lastEngineConfig).thenReturn(
+          const EngineConfig(playbackDeviceId: 'out-1'),
+        );
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+
+        stateController.add(present(devicePresent: true));
+        await Future<void>.delayed(Duration.zero);
+        stateController.add(present(devicePresent: false, name: ''));
+        await Future<void>.delayed(Duration.zero);
+        expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
+
+        // The banner's action ends it: un-pinning to the system default IS a
+        // resolution — and after it the pinned guard would never clear the
+        // enum again, so the apply itself must.
+        cubit.setPlaybackDevice('');
+        expect(cubit.state.playbackDeviceId, isEmpty);
+        expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
+
+        // Un-pinned ticks with the old interface still absent stay quiet.
+        stateController.add(present(devicePresent: false, name: ''));
+        await Future<void>.delayed(Duration.zero);
+        expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
+      },
+    );
+
+    test(
+      "the app's own reopen being refused does not read as an unplug (#453)",
+      () async {
+        when(() => repository.lastEngineConfig).thenReturn(
+          const EngineConfig(playbackDeviceId: 'out-1'),
+        );
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+
+        stateController.add(present(devicePresent: true));
+        await Future<void>.delayed(Duration.zero);
+
+        // A settings change stops the engine and the restart is refused: the
+        // engine now reports no device — with the hardware plugged in the
+        // whole time.
+        when(
+          () => repository.startEngine(any()),
+        ).thenReturn(EngineResult.device);
+        cubit.setSampleRate(96000);
+        expect(cubit.state.status, AudioSetupStatus.error);
+
+        // The stopped engine's ticks (default status: not connected, device
+        // not present) must not raise `lost` beside the real error: the stop
+        // was the app's own.
+        stateController.add(const LooperState());
+        await Future<void>.delayed(Duration.zero);
+        stateController.add(const LooperState());
+        await Future<void>.delayed(Duration.zero);
+
+        expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
+        expect(cubit.state.error, AudioSetupError.openDeviceFailed);
+      },
+    );
   });
 
   group('asio backend', () {

@@ -6,8 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
-import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
-import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/pedal/pedal.dart';
@@ -18,6 +17,9 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../helpers/helpers.dart';
 
 class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
+
+class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
+    implements AudioSetupCubit {}
 
 void main() {
   group('LooperPage', () {
@@ -44,6 +46,14 @@ void main() {
         pedal,
         const Stream<PedalState>.empty(),
         initialState: const PedalState(),
+      );
+      // The device-lost banner inside the Tracks view reads the audio
+      // setup cubit (#453); app-wide in the real shell, above this page.
+      final audioSetup = _MockAudioSetupCubit();
+      whenListen(
+        audioSetup,
+        const Stream<AudioSetupState>.empty(),
+        initialState: const AudioSetupState(),
       );
       addTearDown(repository.dispose);
       addTearDown(controllerRepository.dispose);
@@ -93,6 +103,7 @@ void main() {
                   performance: performanceRepository,
                 ),
               ),
+              BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             ],
             child: LooperPage(exportDirectory: () async => '.'),
           ),
