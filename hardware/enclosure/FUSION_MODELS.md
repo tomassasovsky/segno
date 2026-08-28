@@ -220,6 +220,47 @@ snapshot, save.
   fragile; see the memory notes referenced in `docs/PROGRESS.md` before
   touching appearances (VSM saves can reset local appearances).
 
+## LED pill diffusers (populated doc only)
+
+Six `led_diffuser_*` components under `lid_stack:1+diffusers:1`, each an
+imported STEP of `out/segno_led_diffuser.step`. They replaced a `led_strips`
+component that held all six as BODIES and had gone stale by a whole revision —
+it still carried the pre-#760 flangeless lens (59.8 x 5.8 x 2.4) long after the
+generator grew the 3 mm glue shoulder.
+
+**Placement.** x is the pedal's `u/10`; the rotation is `SLOPE_ANGLE`
+(12.498241812070852 deg), not the pedal tilt the tiles use. Row 1 (TRACK1-4)
+sits at `ty = 13.229313, tz = 4.154294`; row 2 (CLEAR, BANK) at
+`ty = 29.420852, tz = 7.743445`.
+
+```
+[1,0,0,u/10 | 0,c,-s,ty | 0,s,c,tz]
+```
+
+Those are ORIGIN values, not lens centres. To re-derive them from an existing
+body, the lens is centred in x/y and spans z 0..0.24 cm, so
+`ty = centre_y + sin(slope)*0.12` and `tz = centre_z - cos(slope)*0.12`.
+
+**Appearance is state, not material.** TRACK1 and TRACK2 carry `LED pill - green`
+(shown lit); the other four are `Plastic - Matte (White)`. Preserve that split
+across a re-import or the render silently loses its meaning.
+
+**The first import into an empty component cannot be transformed.** Setting
+`transform2` on it silently does nothing — no exception, the matrix just reads
+back as identity, and retrying does not help. Every LATER import into the same
+component accepts it normally. Work around it by importing the odd one out last,
+or by importing a throwaway first. Related: transform overrides only apply to a
+proxy obtained from the ROOT context, so use
+`occ.createForAssemblyContext(<root-context parent>)` — setting it on the
+occurrence straight out of `component.occurrences` throws
+"transform overrides can only be set on Occurrence proxy from root component".
+
+**A failed call can roll back further than that call.** The script error that
+tripped the transform rule above restored a `led_strips` occurrence deleted by
+the PREVIOUS, successful call — and moved it to a different parent — while
+leaving that call's imports in place. Re-read the tree after any failure instead of assuming only
+your own changes were undone.
+
 ## Vent blackout foam (populated doc only)
 
 `vent_foam` component: four 3 mm black pads glued to the INSIDE of every
