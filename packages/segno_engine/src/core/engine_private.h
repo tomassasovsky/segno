@@ -198,7 +198,10 @@ typedef struct le_octaver_state {
   float* out;        /* synthesis overlap-add accumulator, length LE_PV_N */
   float* last_phase; /* previous analysis phase per bin, length LE_PV_BINS */
   float* sum_phase;  /* accumulated synthesis phase per bin, length LE_PV_BINS */
-  int32_t hop_count; /* samples emitted in the current hop block */
+  /* Samples emitted in the current hop block (PV counts up to LE_PV_HOP;
+   * PSOLA counts down to its next YIN analysis). Seeded at this instance's
+   * STAGGERED phase, not 0 — see le_pv_hop_phase in engine_fx.c. */
+  int32_t hop_count;
   int32_t out_pos;   /* reserved read/write phase (PSOLA, part 4) */
   /* PSOLA (part 4; zero-initialized and unused here). */
   float period;
@@ -222,6 +225,17 @@ typedef struct le_octaver_state {
  * NULL), reading both banks from xl / xr — see fx_reverb. The rev_* arrays
  * already hold both banks (LE_REV_BANKS == 2) and stay per-slot. */
 typedef struct le_fx_state {
+  /* Octaver hop-phase stagger seed: a CHAIN-scoped small integer, unique per
+   * le_fx_state across the engine (le_engine_configure hands one to every
+   * lane, monitor, track bus and the master insert). The octaver derives each
+   * instance's analysis-hop PHASE from {this, slot} so two octaver instances
+   * never run their FFT frames on the same sample index — see le_pv_hop_phase
+   * in engine_fx.c for why that matters and why the phase costs no latency.
+   * 0 (the calloc'd default, and what the offline render / VST3 processors
+   * keep) is a valid seed: a standalone state runs one chain, so only the
+   * per-slot half of the spread applies there. Control-thread written, once,
+   * before any audio runs; audio-thread read-only. */
+  int32_t hop_seed;
   float svf_ic1[LE_FX_MAX][2];
   float svf_ic2[LE_FX_MAX][2];
   float lfo[LE_FX_MAX][2];

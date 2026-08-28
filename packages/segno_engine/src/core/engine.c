@@ -596,6 +596,30 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * the per-track bus resets above. */
   le_fx_bus_reset(&engine->master_fx);
 
+  /* Octaver hop-phase stagger seeds: hand every chain owner in the engine —
+   * each lane, each track bus, each monitor input, the master insert — a
+   * distinct le_fx_state::hop_seed, so two octavers in DIFFERENT chains
+   * stagger just like two in the same chain (engine_fx.c's le_pv_hop_phase
+   * derives the phase from {seed, slot}). Set here, in one place, rather than
+   * inside the resets above, because this is the only scope that knows every
+   * owner's index. Done AFTER them: the resets clear DSP state, not this, and
+   * a slot's hop counter is re-seeded from hop_seed by le_fx_entry_reset every
+   * time a type actually lands on it. The device is closed during configure,
+   * so these plain writes are race-free. */
+  {
+    int32_t hop_seed = 0;
+    for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+      for (int l = 0; l < LE_MAX_LANES; ++l) {
+        engine->tracks[t].lanes[l].fx.hop_seed = hop_seed++;
+      }
+      engine->tracks[t].bus.fx.hop_seed = hop_seed++;
+    }
+    for (int c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
+      engine->monitors[c].fx.hop_seed = hop_seed++;
+    }
+    engine->master_fx.fx.hop_seed = hop_seed++;
+  }
+
   store_i32(&engine->a_master_len, 0);
   store_i32(&engine->a_master_pos, 0);
   /* Loop-stage wet cache (part 2): fresh state + worker for the new session.
