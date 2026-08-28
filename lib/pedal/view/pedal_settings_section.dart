@@ -8,39 +8,25 @@ import 'package:segno/pedal/view/pedal_assignment_page.dart';
 import 'package:segno/setup/setup_surface.dart';
 import 'package:segno/theme/theme.dart';
 
-/// Dropdown value for the "None" item — not a real device id (hosts may expose
-/// ports whose id is empty, which would duplicate `''` and trip
-/// DropdownButton).
-const _kPedalNoneValue = '__segno_pedal_none__';
-
-/// Dropdown value for the "not set" firmware-version item — protocol
-/// versions start at 1, so 0 is never a real version.
-const _kPedalVersionUnknownValue = 0;
-
 /// The bidirectional-pedal block in the audio/I-O settings: a MIDI **output**
 /// device dropdown (with a "None" item) for the pedal's LED feedback link and a
 /// live bind-status line. Driven by [PedalCubit]; independent of the audio
-/// engine, so it renders even in Windows ASIO-only mode.
+/// engine.
 ///
 /// The pedal's *input* (footswitches) shares the MIDI input device selected in
 /// the MIDI input section; this only binds the output destination segno pushes
 /// state frames to.
 class PedalSettingsSection extends StatelessWidget {
   /// Creates a [PedalSettingsSection].
-  const PedalSettingsSection({this.consoleMode = true, super.key});
+  const PedalSettingsSection({super.key});
 
-  /// Whether this is the floor-console build. Defaults to true.
-  ///
-  /// Console hides the parts that CHOOSE hardware — the output picker and the
-  /// manual firmware-version gate — because auto-detect binds the pedal by
-  /// product name (#421) and the flasher records what it wrote (#427), so both
-  /// controls would be stale hand-cranks for values the appliance already
-  /// knows.
-  ///
-  /// It does NOT hide the parts that CONFIGURE it. Bind assignments and the
-  /// bind-status line stay: the console is the build most likely to need a
-  /// footswitch remapped, and it is the only one with no other way in.
-  final bool consoleMode;
+  // The parts that CHOOSE hardware -- the output picker and the manual
+  // firmware-version gate -- are not here: auto-detect binds the pedal by
+  // product name (#421) and the flasher records what it wrote (#427), so both
+  // would be stale hand-cranks for values the appliance already knows.
+  //
+  // The parts that CONFIGURE it stay. Bind assignments and the bind-status
+  // line are the only way in for a footswitch remap.
 
   @override
   Widget build(BuildContext context) {
@@ -55,29 +41,13 @@ class PedalSettingsSection extends StatelessWidget {
       children: [
         SetupGroupLabel(l10n.pedalOutputGroup),
         const SizedBox(height: 12),
-        if (!consoleMode) ...[
-          if (outputs.isEmpty && boundId == null)
-            const _PedalEmptyState()
-          else
-            _PedalDropdown(
-              outputs: outputs,
-              boundId: boundId,
-              onSelectNone: cubit.selectNone,
-              onSelected: cubit.selectOutput,
-            ),
-          const SizedBox(height: 12),
-        ],
-        // Kept on console: with no picker there, this line is the ONLY way to
-        // see whether auto-detect actually found the pedal.
+        // With no picker, this line is the ONLY way to see whether
+        // auto-detect actually found the pedal.
         _PedalStatusLine(
           status: cubit.state.bindStatus,
           deviceName: _boundName(outputs, boundId),
         ),
         const SizedBox(height: 12),
-        if (!consoleMode) ...[
-          AppText(l10n.pedalOutputHint, style: context.setupBody),
-          const SizedBox(height: 24),
-        ],
         // No hint line under this one: the assignment page opens with the
         // same sentence, so repeating it here only costs height.
         //
@@ -97,14 +67,6 @@ class PedalSettingsSection extends StatelessWidget {
         const SizedBox(height: 24),
         SetupGroupLabel(l10n.pedalFirmwareGroup),
         const SizedBox(height: 12),
-        if (!consoleMode) ...[
-          _PedalFirmwareVersionDropdown(
-            firmwareVersion: cubit.state.firmwareVersion,
-            onSelected: cubit.selectFirmwareVersion,
-          ),
-          const SizedBox(height: 12),
-          AppText(l10n.pedalFirmwareHint, style: context.setupBody),
-        ],
         // The condition itself is the cubit's (it reads the repository's
         // resolved wire version) — this only renders the answer.
         if (cubit.state.firmwareUpdateAvailable) ...[
@@ -123,26 +85,6 @@ class PedalSettingsSection extends StatelessWidget {
       if (device.id == boundId) return device.name;
     }
     return boundId;
-  }
-}
-
-/// Shown when the host exposes no MIDI output ports and none is bound. The
-/// looper and the pedal's footswitches still work — only LED feedback is idle.
-class _PedalEmptyState extends StatelessWidget {
-  const _PedalEmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const Key('pedalSettings_empty'),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: context.surface.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.surface.line),
-      ),
-      child: AppText(context.l10n.pedalNoOutputs, style: context.setupBody),
-    );
   }
 }
 
@@ -201,181 +143,6 @@ class _PedalFirmwareUpdateBanner extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// The dark-styled pedal output dropdown: a "None" item plus the enumerated
-/// output destinations.
-class _PedalDropdown extends StatelessWidget {
-  const _PedalDropdown({
-    required this.outputs,
-    required this.boundId,
-    required this.onSelectNone,
-    required this.onSelected,
-  });
-
-  final List<PedalOutput> outputs;
-  final String? boundId;
-  final VoidCallback onSelectNone;
-  final ValueChanged<PedalOutput> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final present = boundId != null && outputs.any((d) => d.id == boundId);
-    final value = present ? boundId! : _kPedalNoneValue;
-    final seenIds = <String>{};
-
-    return _PedalStyledDropdown<String>(
-      pickerKey: const Key('pedalSettings_device_picker'),
-      value: value,
-      items: [
-        DropdownMenuItem(
-          value: _kPedalNoneValue,
-          child: AppText(
-            l10n.pedalNone,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        for (final device in outputs)
-          if (seenIds.add(device.id))
-            DropdownMenuItem(
-              value: device.id,
-              child: AppText(
-                device.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-      ],
-      onChanged: (id) {
-        if (id == null || id == _kPedalNoneValue) {
-          onSelectNone();
-          return;
-        }
-        for (final device in outputs) {
-          if (device.id == id) {
-            onSelected(device);
-            return;
-          }
-        }
-      },
-    );
-  }
-}
-
-/// The shared dark-styled dropdown shell both pedal pickers render: one
-/// definition of the bordered card + [DropdownButton] chrome, so a styling
-/// change lands in a single place. (The audio-setup pickers carry their own
-/// copies of this chrome — unifying those is outside this feature's scope.)
-class _PedalStyledDropdown<T> extends StatelessWidget {
-  const _PedalStyledDropdown({
-    required this.pickerKey,
-    required this.value,
-    required this.items,
-    required this.onChanged,
-  });
-
-  /// Placed on the inner [DropdownButton], which the widget tests target.
-  final Key pickerKey;
-
-  final T value;
-  final List<DropdownMenuItem<T>> items;
-  final ValueChanged<T?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: context.surface.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.surface.line),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          focusColor: Colors.transparent,
-          key: pickerKey,
-          value: value,
-          isExpanded: true,
-          dropdownColor: context.surface.cardHigh,
-          borderRadius: BorderRadius.circular(12),
-          icon: Icon(Icons.expand_more, color: context.surface.textSecondary),
-          style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
-          items: items,
-          onChanged: onChanged,
-        ),
-      ),
-    );
-  }
-}
-
-/// The manual pedal firmware wire-protocol version picker — the pre-#331
-/// version-discovery gate (R6). "Not set" keeps outbound frames at the v2
-/// safety floor; picking the flashed firmware's version lets segno encode up
-/// to it (pedal FX mode needs v3). Options span v1 through the newest
-/// protocol the codec speaks, so a future bump appears here without a UI
-/// change.
-class _PedalFirmwareVersionDropdown extends StatelessWidget {
-  const _PedalFirmwareVersionDropdown({
-    required this.firmwareVersion,
-    required this.onSelected,
-  });
-
-  /// The saved version, or `null` when not set (unknown).
-  final int? firmwareVersion;
-
-  final ValueChanged<int?> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    // Show only a version the items actually contain (mirrors
-    // _PedalDropdown's present-guard): a stored value outside the codec's
-    // range — written by a newer build with a higher protocolVersionMax, or
-    // a corrupted pref — renders as "not set" instead of tripping
-    // DropdownButton's one-matching-item assert. The repository clamps the
-    // same value independently for wire encoding.
-    final known = firmwareVersion;
-    final value =
-        (known != null &&
-            known >= PedalCodec.protocolVersionV1 &&
-            known <= PedalCodec.protocolVersionMax)
-        ? known
-        : _kPedalVersionUnknownValue;
-
-    return _PedalStyledDropdown<int>(
-      pickerKey: const Key('pedalSettings_firmware_picker'),
-      value: value,
-      items: [
-        DropdownMenuItem(
-          value: _kPedalVersionUnknownValue,
-          child: AppText(
-            l10n.pedalFirmwareUnknown(PedalCodec.protocolVersion),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        for (
-          var version = PedalCodec.protocolVersionV1;
-          version <= PedalCodec.protocolVersionMax;
-          version++
-        )
-          DropdownMenuItem(
-            value: version,
-            child: AppText(
-              l10n.pedalFirmwareVersion(version),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-      ],
-      onChanged: (version) {
-        if (version == null) return;
-        onSelected(version == _kPedalVersionUnknownValue ? null : version);
-      },
     );
   }
 }

@@ -36,50 +36,13 @@ void main() {
       );
     }
 
-    Future<void> pumpSection(
-      WidgetTester tester,
-      PedalCubit cubit, {
-      bool consoleMode = false,
-    }) => tester.pumpApp(
-      BlocProvider.value(
-        value: cubit,
-        child: Scaffold(body: PedalSettingsSection(consoleMode: consoleMode)),
-      ),
-    );
-
-    testWidgets('shows the empty state when no output ports exist', (
-      tester,
-    ) async {
-      final cubit = cubitWith(FakePedalTransport());
-      addTearDown(cubit.close);
-
-      await pumpSection(tester, cubit);
-
-      expect(find.byKey(const Key('pedalSettings_empty')), findsOneWidget);
-      expect(
-        find.byKey(const Key('pedalSettings_device_picker')),
-        findsNothing,
-      );
-    });
-
-    testWidgets('shows the dropdown and status when outputs exist', (
-      tester,
-    ) async {
-      final cubit = cubitWith(
-        FakePedalTransport(
-          outputs: const [MidiDevice(id: 'out', name: 'Segno Pedal')],
-        ),
-      );
-      addTearDown(cubit.close);
-
-      await pumpSection(tester, cubit);
-
-      expect(
-        find.byKey(const Key('pedalSettings_device_picker')),
-        findsOneWidget,
-      );
-      expect(find.byKey(const Key('pedalSettings_status')), findsOneWidget);
-    });
+    Future<void> pumpSection(WidgetTester tester, PedalCubit cubit) =>
+        tester.pumpApp(
+          BlocProvider.value(
+            value: cubit,
+            child: const Scaffold(body: PedalSettingsSection()),
+          ),
+        );
 
     testWidgets('the bind status is a live region (WCAG 4.1.3)', (
       tester,
@@ -101,31 +64,6 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('empty output id does not collide with the None item', (
-      tester,
-    ) async {
-      final cubit = cubitWith(
-        FakePedalTransport(
-          outputs: const [MidiDevice(id: '', name: 'IAC Driver')],
-        ),
-      );
-      addTearDown(cubit.close);
-
-      await pumpSection(tester, cubit);
-
-      expect(
-        find.byKey(const Key('pedalSettings_device_picker')),
-        findsOneWidget,
-      );
-      await tester.tap(find.byKey(const Key('pedalSettings_device_picker')));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('IAC Driver'));
-      await tester.pumpAndSettle();
-
-      expect(cubit.state.boundOutputId, '');
-    });
-
     testWidgets('selecting a device binds it and shows the bound status', (
       tester,
     ) async {
@@ -144,71 +82,6 @@ void main() {
 
       expect(cubit.state.bindStatus, PedalBindStatus.bound);
       expect(find.textContaining('Segno Pedal'), findsWidgets);
-    });
-
-    testWidgets(
-      'the firmware picker defaults to "not set" and offers every codec '
-      'version (R6 manual gate)',
-      (tester) async {
-        final cubit = cubitWith(FakePedalTransport());
-        addTearDown(cubit.close);
-
-        await pumpSection(tester, cubit);
-
-        expect(
-          find.byKey(const Key('pedalSettings_firmware_picker')),
-          findsOneWidget,
-        );
-        expect(cubit.state.firmwareVersion, isNull);
-        // The closed dropdown shows the "not set" (unknown => v2) item.
-        expect(find.textContaining('v2'), findsWidgets);
-
-        await tester.tap(
-          find.byKey(const Key('pedalSettings_firmware_picker')),
-        );
-        await tester.pumpAndSettle();
-        for (
-          var version = PedalCodec.protocolVersionV1;
-          version <= PedalCodec.protocolVersionMax;
-          version++
-        ) {
-          expect(find.text('Protocol v$version'), findsWidgets);
-        }
-      },
-    );
-
-    testWidgets('a saved firmware version renders as the selection', (
-      tester,
-    ) async {
-      final cubit = cubitWith(FakePedalTransport());
-      addTearDown(cubit.close);
-      await cubit.selectFirmwareVersion(PedalCodec.protocolVersionV1);
-
-      await pumpSection(tester, cubit);
-
-      // The closed dropdown shows the persisted selection, not "not set".
-      expect(
-        find.text('Protocol v${PedalCodec.protocolVersionV1}'),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('selecting a firmware version updates the cubit', (
-      tester,
-    ) async {
-      final cubit = cubitWith(FakePedalTransport());
-      addTearDown(cubit.close);
-
-      await pumpSection(tester, cubit);
-      await tester.tap(find.byKey(const Key('pedalSettings_firmware_picker')));
-      await tester.pumpAndSettle();
-
-      await tester.tap(
-        find.text('Protocol v${PedalCodec.protocolVersionV3}').last,
-      );
-      await tester.pumpAndSettle();
-
-      expect(cubit.state.firmwareVersion, PedalCodec.protocolVersionV3);
     });
 
     group('the firmware-update banner (flow err-4)', () {
@@ -282,63 +155,5 @@ void main() {
       });
     });
 
-    group('console build', () {
-      // The console hides what CHOOSES hardware, never what CONFIGURES it.
-      // Hiding both together is how the assignment surface became unreachable
-      // on the one build that has no other route to it.
-      testWidgets('keeps the assignment route reachable', (tester) async {
-        final cubit = cubitWith(FakePedalTransport());
-        addTearDown(cubit.close);
-
-        await pumpSection(tester, cubit, consoleMode: true);
-
-        expect(
-          find.byKey(const Key('pedalSettings_openAssignments')),
-          findsOneWidget,
-        );
-      });
-
-      testWidgets('keeps the bind-status line', (tester) async {
-        // With no picker, this is the only way to see whether auto-detect
-        // actually found the pedal.
-        final cubit = cubitWith(FakePedalTransport());
-        addTearDown(cubit.close);
-
-        await pumpSection(tester, cubit, consoleMode: true);
-
-        expect(find.byType(PedalSettingsSection), findsOneWidget);
-        expect(find.byKey(const Key('pedalSettings_empty')), findsNothing);
-      });
-
-      testWidgets('drops the device picker and the empty state', (
-        tester,
-      ) async {
-        // Auto-detect binds the pedal by product name; a chooser would only
-        // ever offer the one answer.
-        final cubit = cubitWith(FakePedalTransport());
-        addTearDown(cubit.close);
-
-        await pumpSection(tester, cubit, consoleMode: true);
-
-        expect(
-          find.byKey(const Key('pedalSettings_device_picker')),
-          findsNothing,
-        );
-        expect(find.byKey(const Key('pedalSettings_empty')), findsNothing);
-      });
-
-      testWidgets('desktop still shows the picker', (tester) async {
-        final cubit = cubitWith(FakePedalTransport());
-        addTearDown(cubit.close);
-
-        await pumpSection(tester, cubit);
-
-        expect(find.byKey(const Key('pedalSettings_empty')), findsOneWidget);
-        expect(
-          find.byKey(const Key('pedalSettings_openAssignments')),
-          findsOneWidget,
-        );
-      });
-    });
   });
 }

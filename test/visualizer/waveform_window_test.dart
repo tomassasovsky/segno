@@ -2,9 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
-import 'package:segno/visualizer/console_volume_overlay.dart';
 import 'package:segno/visualizer/performance_readout.dart';
-import 'package:segno/visualizer/performance_readout_view.dart';
 import 'package:segno/visualizer/readout_control.dart';
 import 'package:segno/visualizer/waveform_window.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
@@ -175,7 +173,7 @@ void main() {
   });
 
   group('WaveformWindowApp', () {
-    Future<void> pump(WidgetTester tester, {required bool consoleMode}) async {
+    Future<void> pump(WidgetTester tester) async {
       final frame = ValueNotifier<WaveformFrame>(
         (samples: Float32List(0), progress: 0, selectedTrack: ''),
       );
@@ -189,7 +187,6 @@ void main() {
           frame: frame,
           readout: readout,
           title: 'Segno — Output',
-          consoleMode: consoleMode,
         ),
       );
       // Unmount before the harness checks timers: the chrome shell arms
@@ -197,27 +194,13 @@ void main() {
       addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
     }
 
-    testWidgets('the console build fills the panel with the pen readout', (
-      tester,
-    ) async {
-      await pump(tester, consoleMode: true);
+    testWidgets('fills the panel with the pen readout', (tester) async {
+      await pump(tester);
       expect(find.byType(ConsoleReadoutView), findsOneWidget);
-      expect(find.byType(PerformanceReadoutView), findsNothing);
       // Full-bleed: the console view spans the shell, no windowed inset.
       final shell = tester.getSize(find.byType(SegnoWindowChromeShell));
       final view = tester.getSize(find.byType(ConsoleReadoutView));
       expect(view.width, shell.width);
-    });
-
-    testWidgets('the desktop build keeps the windowed readout view', (
-      tester,
-    ) async {
-      await pump(tester, consoleMode: false);
-      expect(find.byType(PerformanceReadoutView), findsOneWidget);
-      expect(find.byType(ConsoleReadoutView), findsNothing);
-      // No overlay on the desktop face: the volume overlay is console-only,
-      // like the readout face it covers (#698).
-      expect(find.byType(ConsoleVolumeOverlay), findsNothing);
     });
 
     testWidgets(
@@ -277,17 +260,7 @@ void main() {
       // title-bar path, so the sub-window must supply the Material ancestor
       // itself — without it the readout renders in the unthemed fallback
       // style (yellow double-underlined text), as seen live on the 7".
-      await pump(tester, consoleMode: false);
-      expect(
-        find.ancestor(
-          of: find.byType(PerformanceReadoutView),
-          matching: find.byType(Material),
-        ),
-        findsWidgets,
-      );
-      expect(tester.takeException(), isNull);
-
-      await pump(tester, consoleMode: true);
+      await pump(tester);
       expect(
         find.ancestor(
           of: find.byType(ConsoleReadoutView),

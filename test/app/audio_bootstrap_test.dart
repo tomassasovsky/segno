@@ -55,29 +55,6 @@ void main() {
     group('first run (no saved config)', () {
       tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-      // Fed to the fake engine (engine-typed) ...
-      const asioDriver = le.AudioDevice(
-        id: 'Focusrite USB ASIO',
-        name: 'Focusrite USB ASIO',
-        isDefault: false,
-        isInput: false,
-        inputChannels: 18,
-        outputChannels: 20,
-        sampleRates: [48000, 96000],
-        bufferSizes: [128, 256],
-      );
-      // ... and the domain twin the repository maps it to for the picker cache.
-      const domainAsioDriver = AudioDevice(
-        id: 'Focusrite USB ASIO',
-        name: 'Focusrite USB ASIO',
-        isDefault: false,
-        isInput: false,
-        inputChannels: 18,
-        outputChannels: 20,
-        sampleRates: [48000, 96000],
-        bufferSizes: [128, 256],
-      );
-
       test('macOS/Linux opens the system default and persists it', () async {
         debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
 
@@ -188,55 +165,6 @@ void main() {
         expect(result.started, isFalse);
       });
 
-      test('Windows starts on the first ASIO driver and caches it', () async {
-        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-        engine.asioDrivers = const [asioDriver];
-
-        final result = await tryAutoStartEngine(
-          repository: repository,
-          settings: settings,
-        );
-
-        expect(result.started, isTrue);
-        // The enumerated list is returned for the cubit's picker cache.
-        expect(result.asioDrivers, const [domainAsioDriver]);
-        expect(engine.lastConfig?.backend.name, AudioBackend.asio.name);
-        expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
-        expect(engine.lastConfig?.sampleRate, 48000);
-        expect(engine.lastConfig?.bufferFrames, 128);
-        final saved = await settings.loadAudioConfig();
-        expect(saved?.backend, persisted.AudioBackend.asio);
-        expect(saved?.asioDriver, 'Focusrite USB ASIO');
-      });
-
-      test('Windows with no ASIO driver lands stopped', () async {
-        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-        engine.asioDrivers = const [];
-
-        final result = await tryAutoStartEngine(
-          repository: repository,
-          settings: settings,
-        );
-
-        expect(result.started, isFalse);
-        expect(engine.startCalls, 0);
-      });
-
-      test('Windows lands stopped when the ASIO driver open fails', () async {
-        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-        engine
-          ..asioDrivers = const [asioDriver]
-          ..startResult = EngineResult.device;
-
-        final result = await tryAutoStartEngine(
-          repository: repository,
-          settings: settings,
-        );
-
-        expect(result.started, isFalse);
-        // The drivers are still enumerated and returned for the picker cache.
-        expect(result.asioDrivers, const [domainAsioDriver]);
-      });
     });
 
     group('console empty-id heal (saved config)', () {
@@ -356,98 +284,6 @@ void main() {
           expect(engine.measureLatencyCalls, 0);
         },
       );
-    });
-
-    group('saved config on Windows (auto-finds ASIO)', () {
-      tearDown(() => debugDefaultTargetPlatformOverride = null);
-
-      const focusrite = le.AudioDevice(
-        id: 'Focusrite USB ASIO',
-        name: 'Focusrite USB ASIO',
-        isDefault: false,
-        isInput: false,
-        inputChannels: 18,
-        outputChannels: 20,
-      );
-
-      test(
-        'heals a stale saved backend=miniaudio to the installed driver',
-        () async {
-          debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-          engine.asioDrivers = const [focusrite];
-          // A config saved before the ASIO-only switch (miniaudio, no driver).
-          await settings.saveAudioConfig(
-            const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
-          );
-
-          final result = await tryAutoStartEngine(
-            repository: repository,
-            settings: settings,
-          );
-
-          expect(result.started, isTrue);
-          expect(engine.lastConfig?.backend.name, AudioBackend.asio.name);
-          expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
-        },
-      );
-
-      test('keeps the saved driver when it is still installed', () async {
-        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-        engine.asioDrivers = const [focusrite];
-        await settings.saveAudioConfig(
-          const StoredAudioConfig(
-            sampleRate: 48000,
-            bufferFrames: 128,
-            backend: persisted.AudioBackend.asio,
-            asioDriver: 'Focusrite USB ASIO',
-          ),
-        );
-
-        await tryAutoStartEngine(repository: repository, settings: settings);
-
-        expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
-      });
-
-      test(
-        'falls back to the first driver when the saved one is gone',
-        () async {
-          debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-          engine.asioDrivers = const [focusrite];
-          await settings.saveAudioConfig(
-            const StoredAudioConfig(
-              sampleRate: 48000,
-              bufferFrames: 128,
-              backend: persisted.AudioBackend.asio,
-              asioDriver: 'Some Removed Interface',
-            ),
-          );
-
-          await tryAutoStartEngine(repository: repository, settings: settings);
-
-          expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
-        },
-      );
-
-      test('lands stopped when no ASIO driver is installed', () async {
-        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-        engine.asioDrivers = const [];
-        await settings.saveAudioConfig(
-          const StoredAudioConfig(
-            sampleRate: 48000,
-            bufferFrames: 128,
-            backend: persisted.AudioBackend.asio,
-            asioDriver: 'Focusrite USB ASIO',
-          ),
-        );
-
-        final result = await tryAutoStartEngine(
-          repository: repository,
-          settings: settings,
-        );
-
-        expect(result.started, isFalse);
-        expect(engine.startCalls, 0);
-      });
     });
 
     test('restores saved per-track routing on launch', () async {
