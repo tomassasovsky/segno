@@ -3,14 +3,21 @@
 TEMPORARY snap-on diffuser for the 16-pixel WS2812 NeoPixel ring.
 
 A bench part, not an enclosure part. It clips onto the **ring module itself** --
-no faceplate, no standoffs, no glue -- and leaves the middle wide open so the
-EC11 encoder's bush, nut and knob pass straight through. Purpose: make a bare
-Ring 16 read as a soft arc instead of 16 point sources while there is no panel
-in front of it.
+no faceplate, no standoffs, no glue. The top face is SOLID right across; the
+only opening is a O7 hole for the EC11's threaded bush to poke through. Purpose:
+make a bare Ring 16 read as a soft lit face instead of 16 point sources while
+there is no panel in front of it.
 
 This is NOT the console ring window. That one is a O67/O51.5 annulus cut in the
 faceplate over a **Ring 24** (RING_OD / RING_ID in ../enclosure/segno_enclosure.py,
 issues #791/#794) with the diffuser glued to the faceplate underside.
+
+WHY THE FACE CAN BE SOLID
+    The encoder's own top face sits only ~0.5 mm above the LEDs (ENC_FACE_RISE),
+    so nothing in the middle is tall enough to need clearing -- only the bush
+    itself carries on upward. That is what lets the roof span the ring's bore
+    instead of stopping at it, and it is the one measurement this whole shape
+    rests on. _check_clearances() asserts the roof clears the encoder's body.
 
 HOW IT HOLDS ON
     Three cantilever fingers hang off the roof, run down past the ring's outer
@@ -23,17 +30,17 @@ HOW IT HOLDS ON
 
     ==> The ring must have ~1.7 mm of air under it for the hooks (it does when
         pin-mounted or on standoffs). A ring sitting flat on a surface cannot
-        take this part -- print SKIRT_ONLY=True for a friction shroud instead.
+        take this part -- print --skirt-only for a friction shroud instead.
 
 FIT
     Defaults are the genuine Adafruit Ring 16 (product 1463): O44.45 / O31.75.
     Clones sold as "NeoPixel Ring 16" are often much larger (68 mm+), and one of
     those will not go on. MEASURE the ring's outer diameter first; if it is not
-    44.5, re-run with --od/--id and print that instead.
+    44.5, re-run with --od/--id/--pads and print that instead.
 
 Outputs (./out): STEP (CAD, editable) + STL (print) + SVG preview views.
 Run:  ../enclosure/.venv/bin/python ring16_diffuser.py
-      ../enclosure/.venv/bin/python ring16_diffuser.py --od 68 --id 55 --name clone
+      ../enclosure/.venv/bin/python ring16_diffuser.py --enc 7.2
 """
 from __future__ import annotations
 
@@ -57,6 +64,20 @@ LED_H   = 1.60     # WS2812 5050 standing proud of the PCB
 PAD_ANGLES = (79.0, 124.0, 214.0, 304.0)
 
 # ----------------------------------------------------------------------------
+# THE ENCODER in the middle (mm)
+# ----------------------------------------------------------------------------
+# The EC11's body face is barely proud of the LEDs -- owner-measured on the real
+# assembly, 2026-08-28. Everything above that plane is just the bush.
+ENC_FACE_RISE = 0.5     # encoder top face above the LED tops   # MEASURED
+ENC_BODY_D    = 17.0    # 12 x 12 body, across the diagonal (clearance envelope)
+ENC_D         = 7.0     # bush clearance hole through the roof
+# NOTE ON ENC_D: the console faceplate uses 7.2, not 7.0 -- "M7 thread; 7.0 was
+# nominal-tight, the vendor STEP shows the thread OD needs the 0.2" (D_ENC in
+# ../enclosure/segno_enclosure.py, #762). 7.0 is what was asked for here and an
+# FDM hole tends to print under nominal, so if it will not pass the bush, that
+# is the reason: re-run with --enc 7.2.
+
+# ----------------------------------------------------------------------------
 # THE DIFFUSER (mm)
 # ----------------------------------------------------------------------------
 AIR_GAP    = 3.0    # LED top -> roof underside. More = softer, taller part.
@@ -64,9 +85,6 @@ ROOF_T     = 1.0    # white PLA, ~5 layers at 0.2 -- the diffusing membrane
 SKIRT_T    = 1.2    # outer shroud wall (kills side glare off the LED band)
 SKIRT_CLR  = 0.20   # radial slip fit over the ring OD
 SKIRT_DROP = 1.0    # how far the continuous shroud reaches below the PCB top
-INNER_T    = 1.0    # inner skirt: centres the part, dams light out of the bore
-INNER_CLR  = 0.20   # radial clearance inside the ring bore
-INNER_DROP = 0.8    # inner skirt reach below the PCB top (must engage the bore)
 
 N_ARMS       = 3
 ARM_W        = 7.0    # finger width, arc mm (narrow = flexes, wide = stiff)
@@ -88,19 +106,17 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 # ----------------------------------------------------------------------------
 def _geom() -> dict:
     r_skirt_i = RING_OD / 2 + SKIRT_CLR
-    r_skirt_o = r_skirt_i + SKIRT_T
-    r_inner_o = RING_ID / 2 - INNER_CLR
-    r_inner_i = r_inner_o - INNER_T
     hook_p = SKIRT_CLR + HOOK_ENGAGE          # barb protrusion off the wall
     roof_z0 = LED_H + AIR_GAP                 # roof underside, z=0 is PCB top
     hook_top = -PCB_T                         # barb meets the PCB's back face
     # retention face 45 deg up-and-out, flat tip, lead-in 45 deg down-and-out
-    arm_bot = hook_top - 2 * hook_p - HOOK_TIP
     return {
-        "r_skirt_i": r_skirt_i, "r_skirt_o": r_skirt_o,
-        "r_inner_i": r_inner_i, "r_inner_o": r_inner_o,
+        "r_skirt_i": r_skirt_i, "r_skirt_o": r_skirt_i + SKIRT_T,
+        "r_enc": ENC_D / 2,
         "hook_p": hook_p, "roof_z0": roof_z0, "roof_z1": roof_z0 + ROOF_T,
-        "hook_top": hook_top, "arm_bot": arm_bot,
+        "hook_top": hook_top,
+        "arm_bot": hook_top - 2 * hook_p - HOOK_TIP,
+        "enc_face_z": LED_H + ENC_FACE_RISE,
         "arm_ang": math.degrees(ARM_W / r_skirt_i),
         "slot_ang": math.degrees(SLOT_W / r_skirt_i),
     }
@@ -136,12 +152,9 @@ def build():
     angles = arm_angles()
     _check(g, angles)
 
-    # the diffusing roof: one flat annulus, the face that goes on the bed
-    part = _tube(g["r_inner_i"], g["r_skirt_o"], g["roof_z0"], g["roof_z1"])
-
-    # inner skirt -- centres on the bore and stops light spilling down the well
-    part = part.union(_tube(g["r_inner_i"], g["r_inner_o"],
-                            -INNER_DROP, g["roof_z0"]))
+    # the diffusing face: ONE solid disc across the whole ring, pierced only by
+    # the bush hole. This is the face that goes on the bed.
+    part = _tube(g["r_enc"], g["r_skirt_o"], g["roof_z0"], g["roof_z1"])
 
     # outer shroud, continuous, over the LED band and the PCB edge
     part = part.union(_tube(g["r_skirt_i"], g["r_skirt_o"],
@@ -209,53 +222,65 @@ def _occupied(solid, r: float, a_deg: float, z: float) -> bool:
 
 
 def _check_clearances(solid, g: dict) -> None:
-    """Sample the volumes the part MUST NOT occupy, and the one it must.
+    """Sample the volumes the part MUST NOT occupy, and the ones it must.
 
     Booleans fail quietly in CAD -- a degenerate operand gives you a solid that
-    exports, renders and is wrong. These probes are the acceptance test: the
-    ring's own space stays empty, the centre stays open, and there really is a
-    roof over the LEDs.
+    exports, renders and is wrong. These probes are the acceptance test.
     """
     probe = range(0, 360, 10)
+    top = g["roof_z1"]
 
-    # 1. the encoder well: fully open, top to bottom, all the way round
-    for r in (3.0, 8.0, 12.0, g["r_inner_i"] - 0.4):
+    # 1. the bush passage: clear from under the fingers all the way out the top
+    for r in (0.0, g["r_enc"] * 0.5, g["r_enc"] - 0.3):
         for a in probe:
-            for z in (g["arm_bot"] - 0.5, -1.0, 0.5, g["roof_z0"] + 0.4,
-                      g["roof_z1"] - 0.1):
+            for z in (g["arm_bot"] - 0.5, 0.0, g["roof_z0"] + ROOF_T / 2, top - 0.1):
                 assert not _occupied(solid, r, a, z), (
-                    f"material at r={r:.1f} a={a} z={z:.1f} blocks the encoder")
+                    f"material at r={r:.1f} a={a} z={z:.1f} blocks the bush")
 
-    # 2. the ring's own space: PCB (z -PCB_T..0) and LEDs (z 0..LED_H)
+    # 2. the encoder BODY: nothing of ours below its top face inside its envelope.
+    #    This is the assumption the solid roof rests on -- if the encoder were
+    #    taller than the roof, the middle could not be closed at all.
+    assert g["roof_z0"] > g["enc_face_z"] + 0.5, (
+        f"roof underside {g['roof_z0']:.2f} does not clear the encoder face "
+        f"{g['enc_face_z']:.2f} -- raise AIR_GAP")
+    for r in (ENC_BODY_D / 2 * f for f in (0.25, 0.5, 0.75, 0.98)):
+        for a in probe:
+            for z in (g["arm_bot"] - 0.5, -1.0, 0.5, g["enc_face_z"]):
+                assert not _occupied(solid, r, a, z), (
+                    f"material at r={r:.1f} a={a} z={z:.1f} fouls the encoder body")
+
+    # 3. the ring's own space: PCB (z -PCB_T..0) and LEDs (z 0..LED_H)
     for r in (RING_ID / 2 + 0.6, (RING_OD + RING_ID) / 4, RING_OD / 2 - 0.6):
         for a in probe:
             for z in (-PCB_T + 0.2, -0.4, 0.3, LED_H - 0.2, LED_H + 0.2):
                 assert not _occupied(solid, r, a, z), (
                     f"material at r={r:.1f} a={a} z={z:.1f} sits where the ring is")
 
-    # 3. there IS a roof over the LED band, unbroken all the way round
-    r_led = (RING_OD + RING_ID) / 4
-    for a in probe:
-        assert _occupied(solid, r_led, a, g["roof_z0"] + ROOF_T / 2), \
-            f"no roof over the LEDs at {a} deg"
+    # 4. the face really is solid: over the LED band AND across the bore, all
+    #    the way round, with only the bush hole missing
+    z_mid = g["roof_z0"] + ROOF_T / 2
+    for r in (g["r_enc"] + 0.4, RING_ID / 4, RING_ID / 2,
+              (RING_OD + RING_ID) / 4, RING_OD / 2):
+        for a in probe:
+            assert _occupied(solid, r, a, z_mid), \
+                f"hole in the face at r={r:.1f} a={a}"
 
 
-# ----------------------------------------------------------------------------
 def _check(g: dict, angles: list[float]) -> None:
     """Fit rules that a print cannot recover from."""
-    assert RING_ID + 2 * INNER_CLR < RING_OD, "bore/OD are inconsistent"
-    assert g["r_inner_o"] < RING_OD / 2 - 1.0, \
-        "inner skirt is not inside the LED band"
+    assert RING_ID < RING_OD, "bore/OD are inconsistent"
+    assert ENC_D < RING_ID - 4.0, "bush hole is not comfortably inside the bore"
+    assert ENC_D > 6.0, "an EC11 bush is M7 -- a hole under 6 mm cannot pass it"
 
-    # 1. the LED band must actually be under the roof, not under a wall
+    # the LED band must be under the roof, not under the shroud wall
     r_led = (RING_OD + RING_ID) / 4
-    assert g["r_inner_i"] < r_led - 2.5 and g["r_skirt_i"] > r_led + 2.5, \
-        f"LED centres r={r_led:.2f} are not clear of the skirts"
+    assert g["r_skirt_i"] > r_led + 2.5, \
+        f"LED centres r={r_led:.2f} are not clear of the shroud"
 
     if SKIRT_ONLY:
         return
 
-    # 2. no finger may land on a back-side solder pad
+    # no finger may land on a back-side solder pad
     for a in angles:
         for p in PAD_ANGLES:
             d = abs((a - p + 180) % 360 - 180)
@@ -263,13 +288,13 @@ def _check(g: dict, angles: list[float]) -> None:
                 f"finger at {a:.1f} deg is only {d:.1f} deg from the pad at "
                 f"{p:.1f} deg -- it would seat on a solder joint")
 
-    # 3. the fingers must enclose the centre, or the cap rocks off
+    # the fingers must enclose the centre, or the cap rocks off
     seq = sorted(angles)
     spans = [(seq[(i + 1) % len(seq)] - a) % 360 for i, a in enumerate(seq)]
     assert max(spans) < 180.0, \
         f"fingers span {max(spans):.0f} deg with nothing opposite -- it will rock off"
 
-    # 4. snap strain: the finger has to open by hook_p to clear the ring OD
+    # snap strain: the finger has to open by hook_p to clear the ring OD
     L = g["roof_z0"] - (g["hook_top"] - g["hook_p"] / 2)   # root -> engagement
     strain = 3 * g["hook_p"] * ARM_T / (2 * L ** 2)
     assert strain < STRAIN_LIMIT, (
@@ -283,12 +308,13 @@ def report() -> None:
     angles = arm_angles()
     L = g["roof_z0"] - (g["hook_top"] - g["hook_p"] / 2)
     strain = 3 * g["hook_p"] * ARM_T / (2 * L ** 2)
-    print(f"  ring            O{RING_OD} / O{RING_ID} x {PCB_T} PCB")
     bottom = -SKIRT_DROP if SKIRT_ONLY else g["arm_bot"]
+    print(f"  ring            O{RING_OD} / O{RING_ID} x {PCB_T} PCB")
     print(f"  part            O{2 * g['r_skirt_o']:.2f} outer, "
-          f"O{2 * g['r_inner_i']:.2f} clear centre, "
+          f"solid face with a O{ENC_D} bush hole, "
           f"{g['roof_z1'] - bottom:.2f} tall")
-    print(f"  roof            {ROOF_T} mm, {AIR_GAP} mm over the LEDs")
+    print(f"  face            {ROOF_T} mm, {AIR_GAP} mm over the LEDs, "
+          f"{g['roof_z0'] - g['enc_face_z']:.2f} mm over the encoder body")
     if not SKIRT_ONLY:
         print(f"  fingers         {N_ARMS} at "
               f"{', '.join(f'{a:.0f}' for a in angles)} deg "
@@ -329,16 +355,17 @@ def export(solid, name: str = "segno_ring16_diffuser") -> None:
             with open(svg, "w") as fh:
                 fh.write(body.replace('height="480.0"',
                                       'height="480.0"\n   viewBox="0 0 640 480"', 1))
-    print(f"wrote {name}.step / .stl (+ 3 SVG views) in {OUT}")
+    print(f"wrote {os.path.basename(name)}.step / .stl (+ 3 SVG views) in {OUT}")
 
 
 def main() -> None:
-    global RING_OD, RING_ID, PCB_T, AIR_GAP, SKIRT_ONLY, PAD_ANGLES
+    global RING_OD, RING_ID, PCB_T, AIR_GAP, SKIRT_ONLY, PAD_ANGLES, ENC_D
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     p.add_argument("--od", type=float, help="measured ring outer diameter")
     p.add_argument("--id", type=float, dest="bore", help="measured ring bore")
     p.add_argument("--pcb", type=float, help="ring PCB thickness")
     p.add_argument("--gap", type=float, help="air gap over the LEDs")
+    p.add_argument("--enc", type=float, help="bush hole diameter (7.2 if 7.0 binds)")
     p.add_argument("--pads", type=float, nargs="+", metavar="DEG",
                    help="back-side solder-pad angles on YOUR ring (deg)")
     p.add_argument("--skirt-only", action="store_true",
@@ -353,6 +380,8 @@ def main() -> None:
         PCB_T = a.pcb
     if a.gap:
         AIR_GAP = a.gap
+    if a.enc:
+        ENC_D = a.enc
     if a.pads:
         PAD_ANGLES = tuple(a.pads)
     SKIRT_ONLY = a.skirt_only

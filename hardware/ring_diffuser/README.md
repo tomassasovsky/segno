@@ -1,10 +1,10 @@
 # Ring 16 snap-on diffuser — temporary bench part
 
 A diffuser cap that clips onto a **16-pixel WS2812 NeoPixel ring** with nothing
-else involved: no faceplate, no glue, no standoffs. The centre stays fully open,
-so the EC11 encoder's bush, nut and knob pass straight through. It exists so a
-bare ring on the bench reads as a soft arc instead of 16 point sources, before
-there is any panel in front of it.
+else involved: no faceplate, no glue, no standoffs. The top face is **solid right
+across**; the only opening is a Ø7 hole for the EC11's threaded bush. It exists
+so a bare ring on the bench reads as a soft lit face instead of 16 point sources,
+before there is any panel in front of it.
 
 **This is not the console ring window.** That one is a Ø67 / Ø51.5 annulus cut
 in the faceplate over a **Ring 24**, with the diffuser glued to the faceplate
@@ -24,10 +24,32 @@ Outputs in `out/`: `segno_ring16_diffuser.step` (editable CAD) + `.stl` (print)
 | | |
 |---|---|
 | fits | Adafruit NeoPixel Ring 16 (1463), Ø44.45 / Ø31.75, 1.6 mm PCB |
-| part | Ø47.25 outer, Ø29.35 clear centre, 8.9 mm tall, ~3 g |
-| roof | 1.0 mm white PLA, 3.0 mm over the LEDs |
+| part | Ø47.25 outer, solid face, Ø7 bush hole, 8.9 mm tall, ~3.3 g |
+| face | 1.0 mm white PLA, 3.0 mm over the LEDs, 2.5 mm over the encoder body |
 | holds on | 3 snap fingers, 0.5 mm under the PCB, 2.2 % strain |
 | needs | **1.7 mm of air under the ring** for the hooks to swing under |
+
+## Why the face can be solid
+
+Because the EC11's own top face sits only **~0.5 mm above the LEDs**
+(`ENC_FACE_RISE`, measured on the real assembly). Nothing in the middle is tall
+enough to need clearing — only the bush carries on upward. That is the single
+measurement this whole shape rests on, so the script asserts it: the roof
+underside has to clear the encoder's body envelope, or `build()` refuses.
+
+If your encoder turns out to stand proud of the LEDs by more than ~2.5 mm, raise
+`AIR_GAP` and the face lifts with it.
+
+### The bush hole
+
+Ø7.0, as asked. Worth knowing: the console faceplate uses **7.2** for the same
+encoder — *"M7 thread; 7.0 was nominal-tight, the vendor STEP shows the thread
+OD needs the 0.2"* (`D_ENC`, #762). FDM holes also tend to come out under
+nominal. If it will not pass the bush, that is why:
+
+```bash
+../enclosure/.venv/bin/python ring16_diffuser.py --enc 7.2
+```
 
 ## Measure your ring first
 
@@ -52,20 +74,20 @@ warns when you feed it a ring that is not the one those angles came from.
 
 - **White PLA**, same call as the pill diffusers in the enclosure (#239). Not
   clear, not natural — white is what scatters.
-- **Roof face down on the bed. No supports.** The roof is a 1077 mm² annulus, so
+- **Face down on the bed. No supports.** The face is a solid 1715 mm² disc, so
   the part is flat and well anchored — none of the stilt-warping that bit the
   mini tray. Both barb faces are 45°, so the fingers self-support.
-- 0.2 mm layers are fine. The roof is 1.0 mm ≈ 5 layers; **solid infill in the
-  roof** or light leaks through the sparse pattern as a visible grid.
-- Do not iron the roof. The bed's own texture scatters better than a glassy face.
+- 0.2 mm layers are fine. The face is 1.0 mm ≈ 5 layers; **solid infill in the
+  face** or light leaks through the sparse pattern as a visible grid.
+- Do not iron it. The bed's own texture scatters better than a glassy face.
 
 ## Fit it
 
 1. Check there is ~1.7 mm of clear air under the ring. Pin-mounted on the ring
    board or on standoffs, there is. **Flat on a bench or bonded down, there is
    not** — print `--skirt-only` instead and let it sit by friction.
-2. Line the three fingers up with the bare stretches of the ring's back, away
-   from the four solder pads.
+2. Drop it over the bush and line the three fingers up with the bare stretches
+   of the ring's back, away from the four solder pads.
 3. Press straight down until all three click. Spread them slightly by hand if it
    fights you — the fingers run at 2.2 % strain, which PLA is happy with for a
    handful of cycles, not fifty.
@@ -74,22 +96,25 @@ warns when you feed it a ring that is not the one those angles came from.
 
 There is ~0.2 mm of axial play once it is on — the barb rests on the PCB's back
 corner, and nothing pulls the cap down against a stop. It rattles a little and
-diffuses the same.
+diffuses the same. If your bush is long enough to reach past the face, the
+encoder's own M7 nut will clamp the cap down and take the play out.
 
 ## Tuning
 
 Everything worth changing is a constant at the top of the script.
 
-- `AIR_GAP` (3.0) — the blending knob. 16 pixels at r ≈ 19 mm are 7.5 mm apart,
-  so 3 mm reads as *soft dots*, which suits a comet playhead. Raise it to 5 mm
-  for a continuous band; the part grows by the same amount.
+- `AIR_GAP` (3.0) — the blending knob, and the encoder clearance. 16 pixels at
+  r ≈ 19 mm are 7.5 mm apart, so 3 mm reads as *soft dots*. Raise it to 5 mm for
+  a continuous band; the part grows by the same amount.
 - `ROOF_T` (1.0) — thicker scatters more and passes less.
+- `ENC_D` (7.0) — the bush hole. See above.
 - `HOOK_ENGAGE` (0.5) / `ARM_T` (0.9) — grip vs. snap strain. `_check()` refuses
   anything over 3 % strain, so you cannot quietly design a finger that snaps off.
 
-The script's `_check_clearances()` probes the finished solid: the encoder well
-open top to bottom, nothing sitting where the ring's PCB and LEDs live, and an
-unbroken roof over the LED band. It is there because a bad boolean in CAD fails
-*quietly* — an early draft revolved the barb about the wrong axis, produced a
-zero-volume solid, and the intersect handed back the full pie wedges. That STL
-exported and rendered fine and was completely wrong.
+The script's `_check_clearances()` probes the finished solid: the bush passage
+open end to end, nothing below the encoder's face plane inside its body
+envelope, nothing sitting where the ring's PCB and LEDs live, and a face that is
+solid at every radius from the bush hole out to the rim. It is there because a
+bad boolean in CAD fails *quietly* — an early draft revolved the barb about the
+wrong axis, produced a zero-volume solid, and the intersect handed back the full
+pie wedges. That STL exported and rendered fine and was completely wrong.
