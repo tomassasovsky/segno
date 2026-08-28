@@ -253,10 +253,17 @@ that sketch holds the pad's own side edges — so the pad's plan taper is measur
 there, not inferred from the case. The window is a trapezoid keeping a 5 mm wall
 at every station (54.459 back / 53.855 toe); the generator's `TILE_PAD_W_BACK` /
 `TILE_PAD_W_TOE` are those pad widths, and the tiles follow. **Change one and you
-must change both.** Two traps: the sketch has zero constraints and zero
-dimensions, so points move freely and nothing warns you; and editing it does
-**not** recompute the body — call `design.computeAll()` or you will read the old
-geometry back and believe the edit failed.
+must change both.** Three traps, all of which produce a confident wrong answer:
+
+1. The sketch has **zero constraints and zero dimensions**, so points move freely
+   and nothing warns you that the window no longer relates to the pad edges.
+2. Editing it does **not** recompute the body — call `design.computeAll()` or you
+   read the old geometry back and conclude the edit failed.
+3. The populated doc **keeps serving the stale pad** after the pedal doc is
+   saved. `canAdvanceToLatest` is False; the call that works is
+   `app.activeDocument.updateAllReferences()`, and the doc must be saved first.
+   Until you make it, tile-vs-window checks in the console verify green against a
+   window that no longer exists in the source.
 
 **Re-import recipe** (same shape as the board's, above): regenerate with the
 generator, delete the ten `tile_*` occurrences, `importManager.createSTEPImportOptions`
