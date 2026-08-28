@@ -733,10 +733,9 @@ static void le_seam_fold(le_track* t, int32_t len, int32_t F) {
  * decays back to 0 by frame 2p; the drain budget (32768 samples at a 64-frame
  * block) then drains the whole remaining pass in a single block, and the layer
  * retires while the fold is still counting down. Measured at 48 kHz (F = 480,
- * 64-frame blocks): punch-out at 64 or 192
- * leaves the raw seam (score 204x, step 0.352), at 240 or 600 the folded one
- * (1.6x, 0.003) — pinned both ways by
- * test_loop_seam_gap_when_dub_retires_before_the_fold. Low severity and the
+ * 64-frame blocks): punch-out at 64 or 192 leaves the raw seam (score 204x,
+ * step 0.352), at 240 or 600 the folded one (1.6x, 0.003) — pinned both ways
+ * by test_loop_seam_gap_when_dub_retires_before_the_fold. Low severity and the
  * numbers say so: the head that survives is the honest raw seam of the take at
  * its true peak, a step rather than garbage, and only on the undo path. */
 static void le_seam_fold_dub_shadow(le_track* t, int32_t len, int32_t F) {
@@ -1204,9 +1203,8 @@ static void le_dub_boundary(le_engine* e, le_track* t, uint64_t frame) {
  * block-scaled bounded runs (LE_DRAIN_SAMPLES_PER_FRAME x block_frames per
  * track, capped at LE_DRAIN_CHUNK_MAX), retires it, and clears the flight
  * flag. The retire event is pushed BEFORE the flag clears (the release pairs
- * with the
- * control thread's acquire), so a control thread that sees flag == 0 after
- * draining the evt_ring is guaranteed to hold every layer. */
+ * with the control thread's acquire), so a control thread that sees flag == 0
+ * after draining the evt_ring is guaranteed to hold every layer. */
 static void le_dub_block_update(le_engine* e, uint64_t frame,
                                 uint32_t block_frames) {
   /* Free/Song mode (B2b, adversarial-review BUG 1 fix; broadened to SONG by
