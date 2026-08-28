@@ -1462,6 +1462,56 @@ void main() {
       );
 
       blocTest<LooperBloc, LooperState>(
+        'a bus PLUGIN param change goes through the granular setter too',
+        setUp: () {
+          when(() => repository.masterEffects).thenReturn([
+            const PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'p'),
+              unsupported: true,
+            ),
+          ]);
+          when(
+            () => repository.setMasterPluginParam(
+              index: any(named: 'index'),
+              paramId: any(named: 'paramId'),
+              value: any(named: 'value'),
+            ),
+          ).thenReturn(EngineResult.ok);
+        },
+        build: () => LooperBloc(
+          repository: repository,
+          settings: settings,
+          fxPersistDebounce: Duration.zero,
+        ),
+        act: (bloc) => bloc.add(
+          const LooperBusPluginParamChanged(
+            FxAddress(stage: FxStage.master),
+            0,
+            7,
+            0.5,
+          ),
+        ),
+        verify: (_) {
+          verify(
+            () => repository.setMasterPluginParam(
+              index: 0,
+              paramId: 7,
+              value: 0.5,
+            ),
+          ).called(1);
+          // The plugin itself never instantiates at this stage, so the
+          // whole-chain push this used to take would have reset the DSP of
+          // the BUILT-INS beside it for nothing.
+          verifyNever(
+            () => repository.setMasterEffects(
+              effects: any(named: 'effects'),
+            ),
+          );
+          verify(() => settings.saveMasterFxChain(any())).called(1);
+        },
+      );
+
+      blocTest<LooperBloc, LooperState>(
         'a re-sync cancels the lane editor polls it would otherwise rebind',
         setUp: () {
           when(
@@ -1720,9 +1770,11 @@ void main() {
         ),
       ).thenReturn(EngineResult.ok);
       when(
-        () => repository.setTrackEffects(
+        () => repository.setTrackPluginParam(
           channel: any(named: 'channel'),
-          effects: any(named: 'effects'),
+          index: any(named: 'index'),
+          paramId: any(named: 'paramId'),
+          value: any(named: 'value'),
         ),
       ).thenReturn(EngineResult.ok);
     });
@@ -1796,6 +1848,46 @@ void main() {
       },
     );
 
+    test(
+      'a bus PLUGIN knob drag writes the model per move and the store once',
+      () async {
+        when(() => repository.trackEffects(0)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.vst3, id: 'p'),
+            unsupported: true,
+          ),
+        ]);
+        final bloc = buildDebounced();
+        addTearDown(bloc.close);
+
+        for (var i = 0; i < 8; i++) {
+          bloc.add(
+            LooperBusPluginParamChanged(
+              const FxAddress(stage: FxStage.track),
+              0,
+              7,
+              i / 10,
+            ),
+          );
+        }
+        await pumpEventQueue();
+
+        verify(
+          () => repository.setTrackPluginParam(
+            channel: 0,
+            index: 0,
+            paramId: 7,
+            value: any(named: 'value'),
+          ),
+        ).called(8);
+        verifyNever(() => settings.saveTrackFxChain(any(), any()));
+
+        await Future<void>.delayed(debounce * 3);
+
+        verify(() => settings.saveTrackFxChain(0, any())).called(1);
+      },
+    );
+
     test('drags on two lanes each get their own write', () async {
       final bloc = buildDebounced();
       addTearDown(bloc.close);
@@ -1832,14 +1924,24 @@ void main() {
       }
       await pumpEventQueue();
 
-      // The engine still sees every move (a bus plugin has no granular
-      // setter to route to — see the handler).
+      // The engine still sees every move — now through the granular setter
+      // this PR adds, rather than a whole-chain push. That is the point of the
+      // change: re-pushing the chain reset the DSP of the built-ins sharing
+      // the bus.
       verify(
+        () => repository.setTrackPluginParam(
+          channel: 0,
+          index: 0,
+          paramId: 100,
+          value: any(named: 'value'),
+        ),
+      ).called(6);
+      verifyNever(
         () => repository.setTrackEffects(
           channel: 0,
           effects: any(named: 'effects'),
         ),
-      ).called(6);
+      );
       verifyNever(() => settings.saveTrackFxChain(any(), any()));
 
       await Future<void>.delayed(debounce * 3);
