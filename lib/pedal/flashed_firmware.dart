@@ -1,6 +1,5 @@
 import 'dart:io';
 
-
 /// Where `segno-update-ctl flash-pedal` records what it wrote to the pedal.
 ///
 /// On `/data`, not `/etc`: `/etc` lives inside the A/B slot image, so an OS

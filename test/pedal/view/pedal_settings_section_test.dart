@@ -154,6 +154,5 @@ void main() {
         expect(find.byKey(bannerKey), findsNothing);
       });
     });
-
   });
 }

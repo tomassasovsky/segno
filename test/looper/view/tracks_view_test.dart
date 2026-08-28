@@ -263,7 +263,6 @@ void main() {
         tester.element(find.byType(SettingsTray)),
       ).state;
 
-
   testWidgets('G opens the tray at Signal too', (tester) async {
     seed(const LooperState(tracks: [Track()]));
     await pump(tester);
@@ -278,7 +277,6 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(trayState(tester).destination, SettingsTrayDestination.signal);
   });
-
 
   testWidgets('tapping a tile records that channel in record mode', (
     tester,
@@ -1464,10 +1462,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('tracks_tile_4')), findsOneWidget);
     });
-
-
-
-
 
     testWidgets('Tab is not swallowed by the tracks key handler', (
       tester,

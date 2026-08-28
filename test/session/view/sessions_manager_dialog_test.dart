@@ -338,6 +338,5 @@ void main() {
       expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
       verifyNever(session.save);
     });
-
   });
 }

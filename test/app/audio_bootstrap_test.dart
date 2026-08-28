@@ -164,7 +164,6 @@ void main() {
 
         expect(result.started, isFalse);
       });
-
     });
 
     group('console empty-id heal (saved config)', () {

@@ -1,4 +1,3 @@
-
 /// Every USB product string a Segno pedal is known to advertise, newest first.
 ///
 /// Set at build time via `build.usb_product` (see
