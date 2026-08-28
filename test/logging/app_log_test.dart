@@ -127,6 +127,52 @@ void main() {
       expect(lines.last, contains('line 49'));
     });
 
+    test(
+      'a failed rotation costs one rotation, not the whole session',
+      () async {
+        // `segno.log.1` occupied by a non-empty directory: the rename that
+        // would make room for it throws. The logfile must survive that — on
+        // the appliance it is the only post-mortem there is.
+        Directory('${dir.path}/segno.log.1').createSync();
+        File('${dir.path}/segno.log.1/blocker').writeAsStringSync('x');
+        AppLog.close();
+        File('${dir.path}/segno.log').writeAsStringSync('x' * AppLog.maxBytes);
+        await AppLog.init(directory: dir);
+
+        AppLog.info('after the failed rotate');
+        AppLog.info('and the line after that');
+
+        final text = File('${dir.path}/segno.log').readAsStringSync();
+        expect(text, contains('after the failed rotate'));
+        expect(text, contains('and the line after that'));
+      },
+    );
+
+    test(
+      'an unopenable logfile degrades instead of aborting the boot',
+      () async {
+        // `segno.log` occupied by a directory: `openSync` throws. `init` runs
+        // at the very front of `runSegno`, so it must not rethrow.
+        AppLog.close();
+        File('${dir.path}/segno.log').deleteSync();
+        Directory('${dir.path}/segno.log').createSync();
+
+        await AppLog.init(directory: dir);
+
+        expect(AppLog.isInitialized, isTrue);
+        // And it recovers by itself once the cause is gone.
+        expect(() => AppLog.info('dropped'), returnsNormally);
+        Directory('${dir.path}/segno.log').deleteSync();
+
+        AppLog.info('recovered');
+
+        expect(
+          File('${dir.path}/segno.log').readAsStringSync(),
+          contains('recovered'),
+        );
+      },
+    );
+
     test('close releases the handle and a later init appends', () async {
       AppLog.info('before close');
       AppLog.close();

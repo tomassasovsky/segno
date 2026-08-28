@@ -348,6 +348,10 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// the pre-load leftover. Reads only from the repository; never re-applies to
   /// the engine (the load already did), so it cannot desync engine vs cache.
   Future<void> syncFromRepository() async {
+    // A loaded session supersedes every knob edit still in flight; the sweep
+    // below writes the loaded truth for both the applied and the dropped
+    // inputs, so a pending write has nothing left to say.
+    _fxPersist.cancelAll();
     final applied = _repository.allMonitors();
     final dropped = state.inputs.keys
         .where((input) => !applied.containsKey(input))

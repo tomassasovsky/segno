@@ -49,6 +49,17 @@ class WriteDebouncer {
   /// followed by a shutdown is not lost.
   void flush() => _pending.keys.toList().forEach(_flushKey);
 
+  /// Drops every pending write without running it — for when something has
+  /// superseded them all (a session load replacing every chain), where
+  /// flushing would write values the new truth has already replaced.
+  void cancelAll() {
+    for (final timer in _timers.values) {
+      timer.cancel();
+    }
+    _timers.clear();
+    _pending.clear();
+  }
+
   void _flushKey(Object key) {
     _timers.remove(key)?.cancel();
     _pending.remove(key)?.call();

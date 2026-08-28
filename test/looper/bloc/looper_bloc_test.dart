@@ -1706,12 +1706,23 @@ void main() {
       ).thenAnswer((_) async {});
       when(() => repository.trackEffects(any())).thenReturn(const []);
       when(() => repository.trackChainEnabled(any())).thenReturn(true);
+      when(() => repository.masterEffects).thenReturn(const []);
+      when(() => repository.masterChainEnabled).thenReturn(true);
+      when(() => repository.allLaneChains()).thenReturn(const {});
+      when(() => repository.allTrackChains()).thenReturn(const {});
+      when(() => settings.saveMasterFxChain(any())).thenAnswer((_) async {});
       when(
         () => repository.setTrackEffectParam(
           channel: any(named: 'channel'),
           index: any(named: 'index'),
           param: any(named: 'param'),
           value: any(named: 'value'),
+        ),
+      ).thenReturn(EngineResult.ok);
+      when(
+        () => repository.setTrackEffects(
+          channel: any(named: 'channel'),
+          effects: any(named: 'effects'),
         ),
       ).thenReturn(EngineResult.ok);
     });
@@ -1798,6 +1809,56 @@ void main() {
 
       verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
       verify(() => settings.saveLaneEffects(1, 0, any())).called(1);
+    });
+
+    test('a bus PLUGIN drag persists once too', () async {
+      when(() => repository.trackEffects(0)).thenReturn(const [
+        PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'p')),
+      ]);
+      final bloc = buildDebounced();
+      addTearDown(bloc.close);
+
+      for (var i = 0; i < 6; i++) {
+        bloc.add(
+          LooperBusPluginParamChanged(
+            const FxAddress(stage: FxStage.track),
+            0,
+            100,
+            i / 10,
+          ),
+        );
+      }
+      await pumpEventQueue();
+
+      // The engine still sees every move (a bus plugin has no granular
+      // setter to route to — see the handler).
+      verify(
+        () => repository.setTrackEffects(
+          channel: 0,
+          effects: any(named: 'effects'),
+        ),
+      ).called(6);
+      verifyNever(() => settings.saveTrackFxChain(any(), any()));
+
+      await Future<void>.delayed(debounce * 3);
+
+      verify(() => settings.saveTrackFxChain(0, any())).called(1);
+    });
+
+    test('a session load drops a knob write still in flight', () async {
+      // The session's chains are the new truth, and the resync sweep clears
+      // the keys it has no chain for — a pending write landing after it would
+      // resurrect one of them.
+      final bloc = buildDebounced()
+        ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.25));
+      addTearDown(bloc.close);
+      await pumpEventQueue();
+
+      bloc.add(const LooperSessionLoaded());
+      await pumpEventQueue();
+      await Future<void>.delayed(debounce * 3);
+
+      verifyNever(() => settings.saveLaneEffects(any(), any(), any()));
     });
 
     test('closing flushes a drag that ended inside the window', () async {

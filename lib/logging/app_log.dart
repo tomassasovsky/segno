@@ -113,12 +113,22 @@ class AppLog {
   /// Opens (creating if needed) the active file for append and seeds the byte
   /// counter from its current length — the one and only `stat`, paid per open
   /// rather than per line.
+  ///
+  /// Swallows its own failures: an unopenable logfile (a `segno.log` left
+  /// root-owned by an earlier run, a read-only `/data`) must degrade to the
+  /// stderr mirror, never abort the boot that [init] sits at the front of.
+  /// [_write] retries the open, so a transient cause recovers by itself.
   static void _open() {
     final dir = _directory;
     if (dir == null) return;
-    final file = File('${dir.path}/$fileName');
-    _bytes = file.existsSync() ? file.lengthSync() : 0;
-    _handle = file.openSync(mode: FileMode.append);
+    try {
+      final file = File('${dir.path}/$fileName');
+      _bytes = file.existsSync() ? file.lengthSync() : 0;
+      _handle = file.openSync(mode: FileMode.append);
+    } on Object {
+      _handle = null;
+      _bytes = 0;
+    }
   }
 
   static void _write(
@@ -142,6 +152,11 @@ class AppLog {
     // Intentional journal/stderr mirror for the appliance, as ONE write.
     stderr.write(payload);
 
+    if (!_initialized) return;
+    // A handle lost to a failed open or a failed rotation is retried here
+    // rather than disabling the logfile for the life of the process — on the
+    // appliance it is the only post-mortem there is.
+    if (_handle == null) _open();
     if (_handle == null) return;
     try {
       // Encoded once and written as bytes: the size check then costs nothing
@@ -165,28 +180,34 @@ class AppLog {
   ///
   /// Closes the handle FIRST: an open handle blocks the rename on Windows, and
   /// closing is also what guarantees the file about to become `.1` holds every
-  /// line written to it. Reopening before returning is what keeps the caller's
-  /// line from being dropped — the rotation is part of its write, not instead
-  /// of it.
+  /// line written to it. The reopen is in a `finally`, so a rename that throws
+  /// (a root-owned `.1`, a read-only mount) costs one rotation rather than
+  /// every line for the rest of the process — and the caller's own line still
+  /// lands, since the rotation is part of its write, not instead of it.
   static void _rotateSync() {
     final dir = _directory;
     if (dir == null) return;
     final handle = _handle;
     _handle = null;
     _bytes = 0;
-    handle?.closeSync();
-    final oldest = File('${dir.path}/$fileName.$rotatedCount');
-    if (oldest.existsSync()) oldest.deleteSync();
-    for (var i = rotatedCount - 1; i >= 1; i--) {
-      final from = File('${dir.path}/$fileName.$i');
-      if (from.existsSync()) {
-        from.renameSync('${dir.path}/$fileName.${i + 1}');
+    try {
+      handle?.closeSync();
+      final oldest = File('${dir.path}/$fileName.$rotatedCount');
+      if (oldest.existsSync()) oldest.deleteSync();
+      for (var i = rotatedCount - 1; i >= 1; i--) {
+        final from = File('${dir.path}/$fileName.$i');
+        if (from.existsSync()) {
+          from.renameSync('${dir.path}/$fileName.${i + 1}');
+        }
       }
+      final current = File('${dir.path}/$fileName');
+      if (current.existsSync()) {
+        current.renameSync('${dir.path}/$fileName.1');
+      }
+    } on Object {
+      // A logfile that cannot rotate is still a logfile.
+    } finally {
+      _open();
     }
-    final current = File('${dir.path}/$fileName');
-    if (current.existsSync()) {
-      current.renameSync('${dir.path}/$fileName.1');
-    }
-    _open();
   }
 }

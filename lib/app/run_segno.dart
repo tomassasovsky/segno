@@ -47,15 +47,21 @@ Future<void> runSegno(
     'inject all three repositories together or none',
   );
   WidgetsFlutterBinding.ensureInitialized();
-  // Durable logfile under $HOME/log (→ /data/log on the appliance). Before
-  // audio auto-start so open failures leave a breadcrumb.
-  await initAppLogging();
 
   final windowController = await WindowController.fromCurrentEngine();
   if (WaveformWindowArgs.isWaveformWindow(windowController.arguments)) {
     await runWaveformWindow(windowController);
     return;
   }
+
+  // Durable logfile under $HOME/log (→ /data/log on the appliance). Before
+  // audio auto-start so open failures leave a breadcrumb, and AFTER the
+  // waveform-window branch above: that window is a second Flutter engine in
+  // this process, so it is a second ISOLATE with its own `AppLog` statics —
+  // two held handles and two byte counters on one file would each rotate the
+  // other's out from under it. It keeps the stderr/journald mirror, which is
+  // where its lines were read from anyway.
+  await initAppLogging();
 
   // Hot restart resets Dart state while native sub-windows survive.
   await DesktopMultiWindowWaveformService.closeOrphanWindows();

@@ -34,22 +34,33 @@ class AudioDeviceScanScope extends StatefulWidget {
 }
 
 class _AudioDeviceScanScopeState extends State<AudioDeviceScanScope> {
-  /// Grabbed in [didChangeDependencies] so [dispose] — where `context.read`
-  /// on an ancestor may already be unsafe — can still release the claim.
-  AudioSetupCubit? _cubit;
+  /// Grabbed in [initState] so [dispose] — where `context.read` on an ancestor
+  /// may already be unsafe — can still release the claim. The cubit is
+  /// app-scoped and never swapped under this subtree, so it is read once.
+  late final AudioSetupCubit _cubit = context.read<AudioSetupCubit>();
+
+  /// Whether the deferred claim actually landed, so an unmount inside the
+  /// mounting frame does not release one that was never taken.
+  bool _claimed = false;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final cubit = context.read<AudioSetupCubit>();
-    if (identical(cubit, _cubit)) return;
-    _cubit?.endDeviceScan();
-    _cubit = cubit..beginDeviceScan();
+  void initState() {
+    super.initState();
+    // Deferred by one frame ON PURPOSE. `beginDeviceScan` enumerates straight
+    // away, and that call is the 950 ms one on the miniaudio fall-through this
+    // whole gate exists for — running it inside the frame that mounts the
+    // picker would stall the tray's opening animation on exactly the rig state
+    // (interface unplugged) that makes someone open it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _claimed = true;
+      _cubit.beginDeviceScan();
+    });
   }
 
   @override
   void dispose() {
-    _cubit?.endDeviceScan();
+    if (_claimed) _cubit.endDeviceScan();
     super.dispose();
   }
 

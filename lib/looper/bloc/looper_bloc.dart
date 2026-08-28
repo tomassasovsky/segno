@@ -299,10 +299,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       if (fx is! PluginEffect) return;
       final values = Map<int, double>.of(fx.paramValues)
         ..[event.paramId] = event.value;
-      _pushBusChain(
+      // The engine write stays a whole-chain push (a bus plugin has no
+      // granular param setter to route to), but the PERSISTENCE is debounced
+      // like every other knob-drag path — this is dragged at pointer rate.
+      _writeBusChain(
         event.address,
         [...chain]..[event.index] = fx.copyWith(paramValues: values),
       );
+      _schedulePersistBusChain(event.address);
     });
     on<LooperBusPluginRelinked>((event, _) {
       final chain = _busChain(event.address);
@@ -612,12 +616,18 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
 
   /// Writes [next] to the bus chain at [address] and persists its envelope.
   void _pushBusChain(FxAddress address, List<TrackEffect> next) {
+    _writeBusChain(address, next);
+    _persistBusChain(address);
+  }
+
+  /// The engine half of [_pushBusChain], on its own — for the knob-drag path,
+  /// which needs the write immediate and the persistence coalesced.
+  void _writeBusChain(FxAddress address, List<TrackEffect> next) {
     if (address.stage == FxStage.master) {
       _repository.setMasterEffects(effects: next);
     } else {
       _repository.setTrackEffects(channel: address.index, effects: next);
     }
-    _persistBusChain(address);
   }
 
   /// Persists the bus chain envelope at [address] — used on its own by the
@@ -671,6 +681,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   void _resyncSessionChains() {
     final settings = _settings;
     if (settings == null) return;
+    // A loaded session supersedes every edit in flight. Without this, a knob
+    // let go of less than one debounce window before the load would land
+    // AFTER the sweep below and resurrect a chain the sweep just cleared —
+    // exactly the stale-key revival the sweep exists to prevent.
+    _fxPersist.cancelAll();
     final lanes = _repository.allLaneChains();
     final tracks = _repository.allTrackChains();
     // The engine's track count, read fresh rather than from this bloc's
