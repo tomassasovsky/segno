@@ -12,7 +12,7 @@
 # Launch the Segno release bundle full-screen. Adjust the path to your build
 # output. Build it with console/kiosk mode on so the on-screen toolbar is
 # hidden (pedals drive it): flutter build linux --release
-#   --target lib/main_production.dart --dart-define=SEGNO_CONSOLE=true
+#   --target lib/main_production.dart
 #   (see deploy/rpi/README.md).
 SEGNO_BIN="${SEGNO_BIN:-$HOME/segno/build/linux/arm64/release/bundle/segno}"
 

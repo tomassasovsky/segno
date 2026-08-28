@@ -609,8 +609,6 @@ void main() {
                       name: name,
                       selected: false,
                       mode: mode,
-                      onUndo: (_) {},
-                      onRedo: (_) {},
                       fxTarget: fxTarget,
                       inputNames: inputNames,
                     ),

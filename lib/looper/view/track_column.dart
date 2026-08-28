@@ -24,8 +24,6 @@ class TrackColumn extends StatelessWidget {
     required this.name,
     required this.selected,
     required this.mode,
-    required this.onUndo,
-    required this.onRedo,
     this.looperMode = LooperMode.multi,
     this.isPrimary = false,
     this.onCrownPrimary,
@@ -69,13 +67,6 @@ class TrackColumn extends StatelessWidget {
 
   /// The active system mode (Record vs Mute).
   final InteractionMode mode;
-
-  /// Dispatches an undo for the given channel (shares the keyboard path's
-  /// dispatch+announce, wired in the host view).
-  final void Function(int channel) onUndo;
-
-  /// Dispatches a redo for the given channel.
-  final void Function(int channel) onRedo;
 
   /// The five-mode axis (B5c): governs whether the crown badge shows at all
   /// — visible in Sync/Band, absent in Multi/Song/Free (Wave-view style, per

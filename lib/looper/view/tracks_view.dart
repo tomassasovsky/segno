@@ -258,8 +258,6 @@ class _TracksViewState extends State<TracksView> {
                                             ),
                                             selected: channel == overlay.cursor,
                                             mode: mode,
-                                            onUndo: commands.undo,
-                                            onRedo: commands.redo,
                                             looperMode: chrome.looperMode,
                                             isPrimary:
                                                 channel == chrome.primaryTrack,
@@ -362,8 +360,6 @@ class _TrackSlot extends StatelessWidget {
     required this.name,
     required this.selected,
     required this.mode,
-    required this.onUndo,
-    required this.onRedo,
     required this.looperMode,
     required this.isPrimary,
     required this.onCrownPrimary,
@@ -373,8 +369,6 @@ class _TrackSlot extends StatelessWidget {
   final String name;
   final bool selected;
   final InteractionMode mode;
-  final void Function(int channel) onUndo;
-  final void Function(int channel) onRedo;
   final LooperMode looperMode;
   final bool isPrimary;
   final void Function(int channel)? onCrownPrimary;
@@ -404,8 +398,6 @@ class _TrackSlot extends StatelessWidget {
           name: name,
           selected: selected,
           mode: mode,
-          onUndo: onUndo,
-          onRedo: onRedo,
           looperMode: looperMode,
           isPrimary: isPrimary,
           onCrownPrimary: onCrownPrimary,

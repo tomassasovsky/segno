@@ -335,27 +335,6 @@ class _ActionRow extends StatelessWidget {
   }
 }
 
-/// Shows a name-input dialog (save-as / rename / duplicate) with an **inline**
-/// sanitize + duplicate-slug error, returning the entered name once it clears
-/// both checks, or `null` if cancelled. [taken] is the set of slugs already in
-/// use (fast feedback only — the cubit/repository remains the collision
-/// authority). Desktop only; the console goes through the rename sheet.
-Future<String?> showSessionNameDialog({
-  required BuildContext context,
-  required String title,
-  required Set<String> taken,
-  String initial = '',
-}) {
-  return showDialog<String>(
-    context: context,
-    builder: (_) => _SessionNameDialog(
-      title: title,
-      initial: initial,
-      taken: taken,
-    ),
-  );
-}
-
 class _SessionNameDialog extends StatefulWidget {
   const _SessionNameDialog({
     required this.title,
