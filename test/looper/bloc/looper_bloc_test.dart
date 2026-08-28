@@ -1066,7 +1066,11 @@ void main() {
 
     blocTest<LooperBloc, LooperState>(
       'LooperLaneEffectParamChanged persists the re-encoded chain',
-      build: () => LooperBloc(repository: repository, settings: settings),
+      build: () => LooperBloc(
+        repository: repository,
+        settings: settings,
+        fxPersistDebounce: Duration.zero,
+      ),
       act: (bloc) =>
           bloc.add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.25)),
       verify: (_) {
@@ -1085,7 +1089,11 @@ void main() {
 
     blocTest<LooperBloc, LooperState>(
       'LooperLanePluginParamChanged persists the re-encoded chain',
-      build: () => LooperBloc(repository: repository, settings: settings),
+      build: () => LooperBloc(
+        repository: repository,
+        settings: settings,
+        fxPersistDebounce: Duration.zero,
+      ),
       act: (bloc) =>
           bloc.add(const LooperLanePluginParamChanged(0, 1, 0, 100, 0.8)),
       verify: (_) {
@@ -1418,7 +1426,11 @@ void main() {
             ),
           ).thenReturn(EngineResult.ok);
         },
-        build: () => LooperBloc(repository: repository, settings: settings),
+        build: () => LooperBloc(
+          repository: repository,
+          settings: settings,
+          fxPersistDebounce: Duration.zero,
+        ),
         act: (bloc) => bloc.add(
           const LooperBusEffectParamChanged(
             FxAddress(stage: FxStage.track),
@@ -1675,6 +1687,129 @@ void main() {
         verify(() => settings.saveLooperMode(LooperMode.free.code)).called(1);
       },
     );
+  });
+
+  group('knob-drag persistence is debounced', () {
+    // Short enough to keep the test quick, long enough that a burst of events
+    // lands inside one window. Same shape as ControlCubit's mapping-write
+    // debounce test.
+    const debounce = Duration(milliseconds: 30);
+    late SettingsRepository settings;
+
+    setUp(() {
+      settings = _MockSettingsRepository();
+      when(
+        () => settings.saveLaneEffects(any(), any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => settings.saveTrackFxChain(any(), any()),
+      ).thenAnswer((_) async {});
+      when(() => repository.trackEffects(any())).thenReturn(const []);
+      when(() => repository.trackChainEnabled(any())).thenReturn(true);
+      when(
+        () => repository.setTrackEffectParam(
+          channel: any(named: 'channel'),
+          index: any(named: 'index'),
+          param: any(named: 'param'),
+          value: any(named: 'value'),
+        ),
+      ).thenReturn(EngineResult.ok);
+    });
+
+    LooperBloc buildDebounced() => LooperBloc(
+      repository: repository,
+      settings: settings,
+      fxPersistDebounce: debounce,
+    );
+
+    test(
+      'a lane knob drag writes the engine per move and the store once',
+      () async {
+        final bloc = buildDebounced();
+        addTearDown(bloc.close);
+
+        for (var i = 0; i < 8; i++) {
+          bloc.add(LooperLaneEffectParamChanged(0, 1, 1, 2, i / 10));
+        }
+        await pumpEventQueue();
+
+        // Every move reached the engine: nothing audible waits on the timer.
+        verify(
+          () => repository.setLaneEffectParam(
+            channel: 0,
+            lane: 1,
+            index: 1,
+            param: 2,
+            value: any(named: 'value'),
+          ),
+        ).called(8);
+        verifyNever(() => settings.saveLaneEffects(any(), any(), any()));
+
+        await Future<void>.delayed(debounce * 3);
+
+        verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
+      },
+    );
+
+    test(
+      'a bus knob drag writes the engine per move and the store once',
+      () async {
+        final bloc = buildDebounced();
+        addTearDown(bloc.close);
+
+        for (var i = 0; i < 8; i++) {
+          bloc.add(
+            LooperBusEffectParamChanged(
+              const FxAddress(stage: FxStage.track),
+              0,
+              1,
+              i / 10,
+            ),
+          );
+        }
+        await pumpEventQueue();
+
+        verify(
+          () => repository.setTrackEffectParam(
+            channel: 0,
+            index: 0,
+            param: 1,
+            value: any(named: 'value'),
+          ),
+        ).called(8);
+        verifyNever(() => settings.saveTrackFxChain(any(), any()));
+
+        await Future<void>.delayed(debounce * 3);
+
+        verify(() => settings.saveTrackFxChain(0, any())).called(1);
+      },
+    );
+
+    test('drags on two lanes each get their own write', () async {
+      final bloc = buildDebounced();
+      addTearDown(bloc.close);
+
+      bloc
+        ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.2))
+        ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.3))
+        ..add(const LooperLaneEffectParamChanged(1, 0, 0, 0, 0.4));
+      await pumpEventQueue();
+      await Future<void>.delayed(debounce * 3);
+
+      verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
+      verify(() => settings.saveLaneEffects(1, 0, any())).called(1);
+    });
+
+    test('closing flushes a drag that ended inside the window', () async {
+      final bloc = buildDebounced()
+        ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.25));
+      await pumpEventQueue();
+      verifyNever(() => settings.saveLaneEffects(any(), any(), any()));
+
+      await bloc.close();
+
+      verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
+    });
   });
 
   group('restoreLooperMode() (B5c boot restore)', () {

@@ -10,6 +10,17 @@ import '../../helpers/helpers.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
+/// Counts the string writes the debounce is meant to collapse.
+class _CountingStore extends FakeKeyValueStore {
+  int stringWrites = 0;
+
+  @override
+  Future<void> setString(String key, String value) {
+    stringWrites++;
+    return super.setString(key, value);
+  }
+}
+
 void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
@@ -112,8 +123,13 @@ void main() {
     when(() => repository.monitorEffects(any())).thenReturn(const []);
   });
 
-  MonitorCubit build() =>
-      MonitorCubit(repository: repository, settings: settings);
+  /// Writes through with no debounce, so a test's assertion does not have to
+  /// outlive a pending write. The debounce itself is covered in its own group.
+  MonitorCubit build() => MonitorCubit(
+    repository: repository,
+    settings: settings,
+    fxPersistDebounce: Duration.zero,
+  );
 
   group('following the repository', () {
     late StreamController<int> changes;
@@ -1249,6 +1265,65 @@ void main() {
         verify: (cubit) =>
             expect(cubit.state.forInput(0).effects, hasLength(1)),
       );
+    });
+  });
+
+  group('knob-drag persistence is debounced', () {
+    const debounce = Duration(milliseconds: 30);
+    late _CountingStore store;
+
+    setUp(() {
+      store = _CountingStore();
+      settings = SettingsRepository(store: store);
+    });
+
+    MonitorCubit buildDebounced() => MonitorCubit(
+      repository: repository,
+      settings: settings,
+      fxPersistDebounce: debounce,
+    );
+
+    test('a drag writes the engine per move and the store once', () async {
+      final cubit = buildDebounced()..addEffect(0);
+      addTearDown(cubit.close);
+      // The structural add persists straight through; only the knob is
+      // coalesced, so count from here.
+      final writesBeforeDrag = store.stringWrites;
+
+      for (var i = 0; i < 8; i++) {
+        cubit.setEffectParam(0, 0, 0, i / 10);
+      }
+
+      // Every move reached the engine on the move that made it.
+      verify(
+        () => repository.setMonitorEffectParam(
+          input: 0,
+          index: 0,
+          param: 0,
+          value: any(named: 'value'),
+        ),
+      ).called(8);
+      expect(store.stringWrites, writesBeforeDrag);
+
+      await Future<void>.delayed(debounce * 3);
+
+      expect(store.stringWrites, writesBeforeDrag + 1);
+      final persisted = decodeFxChain(await settings.loadMonitorEffects(0));
+      // The value the user let go on, not the one that scheduled the write.
+      expect((persisted.entries.single as BuiltInEffect).params.first, 0.7);
+    });
+
+    test('closing flushes a drag that ended inside the window', () async {
+      final cubit = buildDebounced()..addEffect(0);
+      final writesBeforeDrag = store.stringWrites;
+      cubit.setEffectParam(0, 0, 0, 0.42);
+      expect(store.stringWrites, writesBeforeDrag);
+
+      await cubit.close();
+      await pumpEventQueue();
+
+      final persisted = decodeFxChain(await settings.loadMonitorEffects(0));
+      expect((persisted.entries.single as BuiltInEffect).params.first, 0.42);
     });
   });
 }

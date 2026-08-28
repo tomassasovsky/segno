@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/view/audio_device_picker.dart';
+import 'package:segno/audio_setup/view/audio_device_scan_scope.dart';
 import 'package:segno/audio_setup/view/midi_device_picker.dart';
 import 'package:segno/audio_setup/view/midi_learn_section.dart';
 import 'package:segno/common/console_mode.dart';
@@ -43,228 +44,236 @@ class AudioSettingsSection extends StatelessWidget {
     final status = state.engineStatus;
     final measuring = status.latencyState == LatencyState.measuring;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        AppText(l10n.audioSettingsIntro, style: context.setupBody),
-        const SizedBox(height: 28),
-        // Engine errors are surfaced here (the only audio surface now that the
-        // wizard is gone): a failed open/start from a setting change shows its
-        // reason inline.
-        if (state.status == AudioSetupStatus.error && state.error != null) ...[
-          _ErrorBanner(error: state.error!, detail: state.errorDetail ?? ''),
-          const SizedBox(height: 20),
-        ],
-        // Windows runs ASIO exclusively: one driver picker, no backend selector
-        // or device pickers. With no driver installed, an ASIO4ALL affordance
-        // shows instead. macOS/Linux keep the output + input device pickers.
-        if (state.asioOnly) ...[
-          if (state.cachedAsioDrivers.isEmpty)
-            const _NoAsioDriverMessage()
-          else ...[
-            SetupGroupLabel(l10n.asioDriverGroup),
+    // The desktop device picker; re-enumeration is worth paying for exactly
+    // while it is on screen — see [AudioDeviceScanScope].
+    return AudioDeviceScanScope(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppText(l10n.audioSettingsIntro, style: context.setupBody),
+          const SizedBox(height: 28),
+          // Engine errors are surfaced here (the only audio surface now that
+          // the wizard is gone): a failed open/start from a setting change
+          // shows its reason inline.
+          if (state.status == AudioSetupStatus.error &&
+              state.error != null) ...[
+            _ErrorBanner(error: state.error!, detail: state.errorDetail ?? ''),
+            const SizedBox(height: 20),
+          ],
+          // Windows runs ASIO exclusively: one driver picker, no backend
+          // selector or device pickers. With no driver installed, an ASIO4ALL
+          // affordance shows instead. macOS/Linux keep the output + input
+          // device pickers.
+          if (state.asioOnly) ...[
+            if (state.cachedAsioDrivers.isEmpty)
+              const _NoAsioDriverMessage()
+            else ...[
+              SetupGroupLabel(l10n.asioDriverGroup),
+              const SizedBox(height: 12),
+              AudioDevicePicker(
+                pickerKey: 'audioSettings_asioDriver_picker',
+                semanticLabel: l10n.asioDriverGroup,
+                // The cached enumeration stays populated even while ASIO holds
+                // the device (re-probing live would tear the stream down — R1).
+                devices: _asioDriverDevices(l10n, state.cachedAsioDrivers),
+                selectedId: state.asioDriver,
+                onSelected: cubit.setAsioDriver,
+              ),
+            ],
+          ] else ...[
+            SetupGroupLabel(l10n.outputDeviceGroupUpper),
             const SizedBox(height: 12),
             AudioDevicePicker(
-              pickerKey: 'audioSettings_asioDriver_picker',
-              semanticLabel: l10n.asioDriverGroup,
-              // The cached enumeration stays populated even while ASIO holds
-              // the device (re-probing live would tear the stream down — R1).
-              devices: _asioDriverDevices(l10n, state.cachedAsioDrivers),
-              selectedId: state.asioDriver,
-              onSelected: cubit.setAsioDriver,
+              pickerKey: 'audioSettings_playbackDevice_picker',
+              semanticLabel: l10n.outputDeviceGroupUpper,
+              devices: state.playbackDevices,
+              selectedId: state.playbackDeviceId,
+              onSelected: cubit.setPlaybackDevice,
+              includeSystemDefault: !consoleMode,
+            ),
+            const SizedBox(height: 24),
+            SetupGroupLabel(l10n.inputDeviceGroupUpper),
+            const SizedBox(height: 12),
+            AudioDevicePicker(
+              pickerKey: 'audioSettings_captureDevice_picker',
+              semanticLabel: l10n.inputDeviceGroupUpper,
+              devices: state.captureDevices,
+              selectedId: state.captureDeviceId,
+              onSelected: cubit.setCaptureDevice,
+              includeSystemDefault: !consoleMode,
             ),
           ],
-        ] else ...[
-          SetupGroupLabel(l10n.outputDeviceGroupUpper),
+          // The MIDI foot-controller PICKER is desktop-only: on the console the
+          // Pro Micro is fixed hardware that auto-detect binds by product name
+          // (#421), so a chooser would only offer the one answer.
+          if (!consoleMode) ...[
+            const SizedBox(height: 28),
+            const MidiDevicePicker(),
+          ],
+          // CONFIGURING the pedal is not the same as choosing it, and hiding
+          // both together left the console — the build most likely to need a
+          // footswitch remapped — with no route to the assignment surface at
+          // all. These stay on every build; the sections drop their own
+          // device-chooser bits on console.
+          const SizedBox(height: 28),
+          const PedalSettingsSection(),
+          const SizedBox(height: 28),
+          // External MIDI mappings (part 7) listen through the bound input —
+          // chosen above on desktop, auto-detected on console.
+          const MidiLearnSection(),
+          const SizedBox(height: 28),
+          SetupGroupLabel(l10n.sampleRateGroup),
           const SizedBox(height: 12),
-          AudioDevicePicker(
-            pickerKey: 'audioSettings_playbackDevice_picker',
-            semanticLabel: l10n.outputDeviceGroupUpper,
-            devices: state.playbackDevices,
-            selectedId: state.playbackDeviceId,
-            onSelected: cubit.setPlaybackDevice,
-            includeSystemDefault: !consoleMode,
+          SetupOptionRow<int>(
+            selected: state.sampleRate,
+            onSelected: cubit.setSampleRate,
+            options: [
+              // Driver-supported rates under ASIO, else the generic list.
+              for (final rate in state.sampleRateChoices)
+                SetupOption(
+                  value: rate,
+                  label: l10n.sampleRateHz(rate),
+                  optionKey: Key('audioSettings_sampleRate_$rate'),
+                ),
+            ],
           ),
           const SizedBox(height: 24),
-          SetupGroupLabel(l10n.inputDeviceGroupUpper),
+          SetupGroupLabel(l10n.bufferSizeGroup),
           const SizedBox(height: 12),
-          AudioDevicePicker(
-            pickerKey: 'audioSettings_captureDevice_picker',
-            semanticLabel: l10n.inputDeviceGroupUpper,
-            devices: state.captureDevices,
-            selectedId: state.captureDeviceId,
-            onSelected: cubit.setCaptureDevice,
-            includeSystemDefault: !consoleMode,
+          SetupOptionRow<int>(
+            selected: state.bufferFrames,
+            onSelected: cubit.setBufferFrames,
+            options: [
+              // Driver buffer sizes under ASIO (often a single locked size),
+              // else the generic list.
+              for (final size in state.bufferChoices)
+                SetupOption(
+                  value: size,
+                  label: '$size',
+                  sub: _latencyHint(size, state.sampleRate),
+                  optionKey: Key('audioSettings_bufferSize_$size'),
+                ),
+            ],
           ),
-        ],
-        // The MIDI foot-controller PICKER is desktop-only: on the console the
-        // Pro Micro is fixed hardware that auto-detect binds by product name
-        // (#421), so a chooser would only offer the one answer.
-        if (!consoleMode) ...[
           const SizedBox(height: 28),
-          const MidiDevicePicker(),
+          SetupGroupLabel(l10n.recordingGroupLabel),
+          const SizedBox(height: 12),
+          AppText(l10n.maxLoopLengthIntro, style: context.setupBody),
+          const SizedBox(height: 12),
+          SetupOptionRow<int>(
+            selected: state.maxLoopMinutes,
+            onSelected: cubit.setMaxLoopMinutes,
+            options: [
+              for (final m in AudioSetupState.maxLoopMinuteOptions)
+                SetupOption(
+                  value: m,
+                  label: m == 0
+                      ? l10n.maxLoopDefault30s
+                      : l10n.maxLoopMinutes(m),
+                  optionKey: Key('audioSettings_maxLoop_$m'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SetupToggleRow(
+            toggleKey: const Key('audioSettings_quantize_switch'),
+            title: l10n.quantizeRecording,
+            subtitle: l10n.quantizeRecordingSubtitle,
+            value: context.watch<QuantizeCubit>().state,
+            onChanged: (on) =>
+                unawaited(context.read<QuantizeCubit>().setEnabled(value: on)),
+          ),
+          const SizedBox(height: 12),
+          SetupToggleRow(
+            toggleKey: const Key('audioSettings_recDub_switch'),
+            title: l10n.overdubOnSecondPressTitle,
+            subtitle: l10n.overdubOnSecondPressSubtitle,
+            value: context.watch<RecordOptionsCubit>().state.recDub,
+            onChanged: (on) => unawaited(
+              context.read<RecordOptionsCubit>().setRecDub(value: on),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SetupToggleRow(
+            toggleKey: const Key('audioSettings_autoRecord_switch'),
+            title: l10n.soundActivatedRecordingTitle,
+            subtitle: l10n.soundActivatedRecordingSubtitle,
+            value: context.watch<RecordOptionsCubit>().state.autoRecord,
+            onChanged: (on) => unawaited(
+              context.read<RecordOptionsCubit>().setAutoRecord(value: on),
+            ),
+          ),
+          const SizedBox(height: 16),
+          AppText(l10n.defaultLoopLengthIntro, style: context.setupBody),
+          const SizedBox(height: 12),
+          SetupOptionRow<int>(
+            selected: context.watch<RecordOptionsCubit>().state.defaultMultiple,
+            onSelected: (m) => unawaited(
+              context.read<RecordOptionsCubit>().setDefaultMultiple(m),
+            ),
+            options: [
+              SetupOption(
+                value: 0,
+                label: l10n.auto,
+                optionKey: const Key('audioSettings_defaultMultiple_0'),
+              ),
+              for (final m in const [1, 2, 3])
+                SetupOption(
+                  value: m,
+                  label: l10n.loopMultipleLabel(m),
+                  optionKey: Key('audioSettings_defaultMultiple_$m'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          SetupGroupLabel(l10n.statusGroupLabel),
+          const SizedBox(height: 12),
+          SetupInfoTable(
+            rows: [
+              (
+                l10n.deviceLabel,
+                _displayDeviceName(context, state),
+              ),
+              (
+                l10n.sampleRateLabel,
+                status.sampleRate > 0
+                    ? l10n.sampleRateHz(status.sampleRate)
+                    : l10n.emDash,
+              ),
+              (
+                l10n.bufferLabel,
+                status.bufferFrames > 0
+                    ? l10n.bufferFrames(status.bufferFrames)
+                    : l10n.emDash,
+              ),
+              (
+                l10n.roundTripLatencyLabel,
+                _roundTripLatency(l10n, status),
+              ),
+              (
+                l10n.recordOffsetLabel,
+                l10n.bufferFrames(status.recordOffsetFrames),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SetupNavRow(
+            rowKey: const Key('audioSettings_measure_button'),
+            title: measuring
+                ? l10n.measuringEllipsis
+                : l10n.measureRoundTripLatency,
+            subtitle: l10n.measureLatencySubtitle,
+            icon: Icons.timer_outlined,
+            onTap: cubit.measureLatency,
+          ),
+          const SizedBox(height: 12),
+          _RecordOffsetField(
+            frames: status.recordOffsetFrames,
+            sampleRate: status.sampleRate,
+            onApply: cubit.setRecordOffset,
+          ),
         ],
-        // CONFIGURING the pedal is not the same as choosing it, and hiding
-        // both together left the console — the build most likely to need a
-        // footswitch remapped — with no route to the assignment surface at
-        // all. These stay on every build; the sections drop their own
-        // device-chooser bits on console.
-        const SizedBox(height: 28),
-        const PedalSettingsSection(),
-        const SizedBox(height: 28),
-        // External MIDI mappings (part 7) listen through the bound input —
-        // chosen above on desktop, auto-detected on console.
-        const MidiLearnSection(),
-        const SizedBox(height: 28),
-        SetupGroupLabel(l10n.sampleRateGroup),
-        const SizedBox(height: 12),
-        SetupOptionRow<int>(
-          selected: state.sampleRate,
-          onSelected: cubit.setSampleRate,
-          options: [
-            // Driver-supported rates under ASIO, else the generic list.
-            for (final rate in state.sampleRateChoices)
-              SetupOption(
-                value: rate,
-                label: l10n.sampleRateHz(rate),
-                optionKey: Key('audioSettings_sampleRate_$rate'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        SetupGroupLabel(l10n.bufferSizeGroup),
-        const SizedBox(height: 12),
-        SetupOptionRow<int>(
-          selected: state.bufferFrames,
-          onSelected: cubit.setBufferFrames,
-          options: [
-            // Driver buffer sizes under ASIO (often a single locked size), else
-            // the generic list.
-            for (final size in state.bufferChoices)
-              SetupOption(
-                value: size,
-                label: '$size',
-                sub: _latencyHint(size, state.sampleRate),
-                optionKey: Key('audioSettings_bufferSize_$size'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 28),
-        SetupGroupLabel(l10n.recordingGroupLabel),
-        const SizedBox(height: 12),
-        AppText(l10n.maxLoopLengthIntro, style: context.setupBody),
-        const SizedBox(height: 12),
-        SetupOptionRow<int>(
-          selected: state.maxLoopMinutes,
-          onSelected: cubit.setMaxLoopMinutes,
-          options: [
-            for (final m in AudioSetupState.maxLoopMinuteOptions)
-              SetupOption(
-                value: m,
-                label: m == 0 ? l10n.maxLoopDefault30s : l10n.maxLoopMinutes(m),
-                optionKey: Key('audioSettings_maxLoop_$m'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        SetupToggleRow(
-          toggleKey: const Key('audioSettings_quantize_switch'),
-          title: l10n.quantizeRecording,
-          subtitle: l10n.quantizeRecordingSubtitle,
-          value: context.watch<QuantizeCubit>().state,
-          onChanged: (on) =>
-              unawaited(context.read<QuantizeCubit>().setEnabled(value: on)),
-        ),
-        const SizedBox(height: 12),
-        SetupToggleRow(
-          toggleKey: const Key('audioSettings_recDub_switch'),
-          title: l10n.overdubOnSecondPressTitle,
-          subtitle: l10n.overdubOnSecondPressSubtitle,
-          value: context.watch<RecordOptionsCubit>().state.recDub,
-          onChanged: (on) => unawaited(
-            context.read<RecordOptionsCubit>().setRecDub(value: on),
-          ),
-        ),
-        const SizedBox(height: 12),
-        SetupToggleRow(
-          toggleKey: const Key('audioSettings_autoRecord_switch'),
-          title: l10n.soundActivatedRecordingTitle,
-          subtitle: l10n.soundActivatedRecordingSubtitle,
-          value: context.watch<RecordOptionsCubit>().state.autoRecord,
-          onChanged: (on) => unawaited(
-            context.read<RecordOptionsCubit>().setAutoRecord(value: on),
-          ),
-        ),
-        const SizedBox(height: 16),
-        AppText(l10n.defaultLoopLengthIntro, style: context.setupBody),
-        const SizedBox(height: 12),
-        SetupOptionRow<int>(
-          selected: context.watch<RecordOptionsCubit>().state.defaultMultiple,
-          onSelected: (m) => unawaited(
-            context.read<RecordOptionsCubit>().setDefaultMultiple(m),
-          ),
-          options: [
-            SetupOption(
-              value: 0,
-              label: l10n.auto,
-              optionKey: const Key('audioSettings_defaultMultiple_0'),
-            ),
-            for (final m in const [1, 2, 3])
-              SetupOption(
-                value: m,
-                label: l10n.loopMultipleLabel(m),
-                optionKey: Key('audioSettings_defaultMultiple_$m'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 28),
-        SetupGroupLabel(l10n.statusGroupLabel),
-        const SizedBox(height: 12),
-        SetupInfoTable(
-          rows: [
-            (
-              l10n.deviceLabel,
-              _displayDeviceName(context, state),
-            ),
-            (
-              l10n.sampleRateLabel,
-              status.sampleRate > 0
-                  ? l10n.sampleRateHz(status.sampleRate)
-                  : l10n.emDash,
-            ),
-            (
-              l10n.bufferLabel,
-              status.bufferFrames > 0
-                  ? l10n.bufferFrames(status.bufferFrames)
-                  : l10n.emDash,
-            ),
-            (
-              l10n.roundTripLatencyLabel,
-              _roundTripLatency(l10n, status),
-            ),
-            (
-              l10n.recordOffsetLabel,
-              l10n.bufferFrames(status.recordOffsetFrames),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        SetupNavRow(
-          rowKey: const Key('audioSettings_measure_button'),
-          title: measuring
-              ? l10n.measuringEllipsis
-              : l10n.measureRoundTripLatency,
-          subtitle: l10n.measureLatencySubtitle,
-          icon: Icons.timer_outlined,
-          onTap: cubit.measureLatency,
-        ),
-        const SizedBox(height: 12),
-        _RecordOffsetField(
-          frames: status.recordOffsetFrames,
-          sampleRate: status.sampleRate,
-          onApply: cubit.setRecordOffset,
-        ),
-      ],
+      ),
     );
   }
 
