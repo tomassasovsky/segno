@@ -24,27 +24,90 @@ DSP itself was never recovered, so nothing here describes how anything
 
 ## 1. Platform and hardware surface
 
-- **Panel:** 800×1280 portrait, displayed rotated to 1280×800 landscape. The
-  QML applies the rotation itself — `touchWrapper` carries a
-  `Translate{x:-1280}` + `Rotation{angle:-90}` transform when running on the
-  device, and no transform otherwise **[observed,
-  `main.qml`]**. Root geometry is `800×1280` on hardware, `1280×800`
-  off it.
-- **The same QML runs on a desktop.** `main.qml`'s root is an `Item`, not a
-  `Window`, hosted by a C++ view, and it embeds an `HWEmul` hardware emulator
-  shown only when *not* on the device **[observed]**. The product was built to
-  be developed without hardware.
-- **Two products share the codebase**: HG08 (Looper X) and HG03, branched at
-  runtime via `Looper.isHG08()` / `hwInfo.isRadxa`. HG08 drops the separate
-  Input Monitor page and renames "Customize Footswitch" to "Customize Pedal
-  Menu" **[observed, `Pages/IO.qml`, `Pages/LoopSettings.qml`]**.
-- **Controls:** 12 footswitches, one encoder with press, an external
-  expression pedal input, and the touchscreen **[observed, the internal MIDI
-  assignment map]**.
-- **Brightness** is written to
-  `/sys/devices/platform/mipi-backlight/.../brightness` **[observed]**.
-- Board revision is read from
-  `/sys/firmware/devicetree/base/inmusic,az01-pcb-rev` **[observed]**.
+All of this is read out of the boot FIT, the kernel FIT's device tree, the
+rootfs and the pedal firmware image — not from published specs.
+
+### 1.1 Main board
+
+| part | value | source |
+|---|---|---|
+| SoC | **Rockchip RK3288**, quad-core 32-bit ARMv7 | `rockchip,rk3288` in the DT; board `rk3288-az05-hg08` |
+| CPU cores | `arm,cortex-a12` as declared | DT. (The RK3288 core is usually documented as Cortex-A17; Rockchip's own DT says a12 — architecturally the same core) |
+| GPU | **ARM Mali-T760** (Midgard) | `arm,mali-t760` in the DT, and the vendor blob `libmali-r1p0.so.14.0`. Its DDK refuses to run on anything else: *"built for 0x750 r0p0"* — 0x750 is the T760 product id |
+| PMIC | Active-Semi **ACT8846** | `act8846@5a` |
+| RTC | Haoyu **HYM8563** | `hym8563@51` |
+| Bootloader | **U-Boot 2021.07**, Rockchip `idbloader` + `rksd` | boot FIT |
+| Boot integrity | FIT images hashed **sha256** and signed **rsa2048** | boot FIT `signature-*` nodes |
+| Userland | Buildroot, glibc **2.36**, armhf | `libc.so.6` banner |
+
+Two board variants ship in one kernel FIT: `rk3288-az05-hg08` (the Looper X)
+and `az01b`. inMusic's own DT vendor prefix is `inmusic,`, with nodes
+`inmusic,hg08`, `inmusic,az05`, `inmusic,codec`, `inmusic,hg08-audio` and a
+board revision at `/sys/firmware/devicetree/base/inmusic,az01-pcb-rev`.
+
+### 1.2 Display and touch
+
+- **MIPI DSI panel**, driven by the VOP, with `mipi-panel`, `mipi-reset`,
+  `MIPI_PWM` and a `mipi-backlight` PWM. Brightness is written to
+  `/sys/devices/platform/mipi-backlight/backlight/mipi-backlight/brightness`.
+- The panel is **800×1280 portrait** and the DT carries
+  **`inmusic,panel-rotation`** — which is why the framebuffer is portrait and
+  the QML rotates the whole UI −90° into a 1280×800 landscape presentation.
+- **Touch controller: Ilitek ILI2116 / ILI2117** capacitive, on I²C with
+  `TOUCH_INT` / `TOUCH_RESET` lines.
+- An LVDS and an eDP controller also exist in the SoC DT but the product uses
+  the MIPI path **[inferred: only the MIPI nodes carry inMusic-specific
+  properties]**.
+
+### 1.3 Audio
+
+- A **custom codec** (`inmusic,codec`, `inmusic,hg08-audio`) on **I2S0**
+  (`i2s@ff890000`) with four data-out lines `I2S0_SDO0..3` — i.e. multichannel
+  out, consistent with the four-input/multi-output routing surface (§8).
+- ALSA sees **two cards**: `HG08` (the control card) and **`UAC2Gadget`** (the
+  PCM card). The device's own `/etc/asound.conf` binds
+  `pcm.UAC2Gadget_internal_int` to the gadget and `ctl.…` to `HG08`.
+- **USB Audio Class 2 gadget** — the device is a USB audio *interface* to the
+  host, implemented as a gadget on the Synopsys **dwc2** OTG controller, with
+  its own sample-rate, input-level and mode settings in Global Settings.
+- Audio file import goes through **ffmpeg** (`libavcodec.so.58`,
+  `libavformat.so.58`, `libswresample.so.3`), which is why the import dialog
+  accepts more than WAV.
+
+### 1.4 Storage and USB
+
+- Four Rockchip **dwmmc** controllers (`ff0c0000`, `ff0d0000`, `ff0e0000`,
+  `ff0f0000`) covering eMMC and the SD slot; the app refers to the SD slot as
+  `ff0c0000.dwmmc`.
+- USB: `snps,dwc2` OTG plus host controllers at `ff500000`–`ff5c0000`. The OTG
+  port is multiplexed by software between **USB audio gadget** and **USB mass
+  storage** — hence the "USB Audio is in use, storage unavailable" guard in the
+  menu (§2.2). The mux is driven through
+  `/sys/devices/platform/usb-mux/state`, and mass storage is composed at
+  runtime via configfs with `idVendor 0x0763` / `idProduct 0x501d`.
+
+### 1.5 The pedal board is a separate microcontroller
+
+The twelve footswitches, encoder and LEDs are **not** GPIOs on the SoC. They
+are a second processor that speaks MIDI to the main board:
+
+- Firmware ships as `usr/Looper/Firmware/UpdateImage.rbin`, magic **`!Rbn`**,
+  string *"Copyright 2023 inMusic Brands"*, version **10.11** declared in
+  `firmware.json`, 103,528 bytes.
+- Its vector table gives it away as an **ARM Cortex-M**: initial SP
+  `0x20008000` (32 KB SRAM at `0x20000000`) and a reset vector `0x6000a491`
+  with the Thumb bit set, in a `0x60000000` code region.
+- On boot the app compares `firmware.json`'s version against the device's and
+  schedules a **DFU update over MIDI SysEx** if they differ, using the frame
+  `F0 00 01 05 00 1D 03 00 04 %02X %02X %02X %02X F7`.
+- It reports a **boot state** back over SysEx that can request Production Test,
+  Factory Reset or a Temperature Overlay — so the pedal MCU, not the SoC,
+  decides which special startup mode the product enters.
+
+This is the single biggest architectural difference from a single-board design:
+the control surface is an independent MIDI peripheral with its own firmware,
+update path and boot-mode authority, and the main application talks to it
+exactly as it would to any third-party controller (§13).
 
 ## 2. Information architecture
 
