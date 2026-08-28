@@ -3517,6 +3517,23 @@ TILE_BODY_T = 1.8     # black body
 TILE_TEXT_T = 0.4     # white glyph layer; 1.8 + 0.4 = the 2.2 pocket, so the
                       # LETTERS finish flush with the pad and the black field
                       # sits 0.4 below it, out of the scuff line
+# --- resin two-part (#931) ---------------------------------------------------
+# Owner call 2026-08-28: these move from FDM (one extruder, filament change at
+# z=0.4) to a RESIN printer, in two printed parts. The split is the owner's and
+# it is the right way round: the WHOLE tile prints in WHITE exactly as it already
+# is, and a separate BLACK COVER fills the 0.4 field around the proud letters.
+# Total stays 2.2 -- the cover occupies the letter layer, it does not stack on it.
+#
+# Why this way round and not black-tile-with-white-inlay: every opening needs
+# clearance to assemble, and at a 0.61 mm stroke that gap is a visible line. With
+# white underneath, the gap shows WHITE and reads as the letter being a touch
+# bolder. With black underneath it would show as a dark halo cutting into a
+# stroke that is already at the printable limit.
+TILE_COVER_CLR = 0.08  # per side, letter to cover opening. Applied with OPPOSITE
+                       # signs on outer and counter contours: the outer grows, the
+                       # counter shrinks. A single-signed offset grows both, which
+                       # makes the counter island 0.16 oversize and it will not go
+                       # in.
 TILE_MARGIN = 6.0     # clear tile around the glyph block
 TILE_FONT   = "Helvetica Neue Light"  # THIN-looking but printable. At the tile's
                       # 7.9 mm glyph height, Helvetica Neue *Thin* measures 0.39 mm
@@ -3530,6 +3547,32 @@ TILE_SYM_H  = 14.0    # symbol em: play triangle 0.82*h = 11.5 tall
 # word is redundant next to three identical neighbours, and a lone digit can be
 # set far larger in the same window.
 TILE_TEXT = {"TRACK1": "1", "TRACK2": "2", "TRACK3": "3", "TRACK4": "4"}
+
+
+def _tile_cover_openings(cq, glyph, clr, z0, t):
+    """The letter shapes grown by `clr` for clearance -- what the black cover has
+    to be missing so it drops over the proud white letters.
+
+    Outer contours grow by +clr and counters SHRINK by -clr. cadquery's offset2D
+    applies one sign to every wire in a face, which grows the counter too and
+    leaves the black island 2*clr oversize -- it then will not go in. So the
+    contours are separated and offset independently.
+    """
+    out = None
+    for g in glyph.solids().vals():
+        face = cq.Workplane(obj=g).faces("<Z").val()
+        wires = sorted(cq.Workplane(obj=face).wires().vals(),
+                       key=lambda w: -w.BoundingBox().xlen)
+        outer, counters = wires[0], wires[1:]
+        solid = (cq.Workplane(obj=outer).toPending()
+                 .offset2D(clr, kind="arc").extrude(t))
+        for c in counters:
+            solid = solid.cut(cq.Workplane(obj=c).toPending()
+                              .offset2D(-clr, kind="arc").extrude(t))
+        bb = solid.val().BoundingBox()
+        solid = solid.translate((0, 0, z0 - bb.zmin))
+        out = solid if out is None else out.union(solid)
+    return out
 
 
 def tile_width_at(y):
@@ -3559,7 +3602,7 @@ def build_pedal_name_tiles():
     which is the intended tell.
     """
     import cadquery as cq
-    made = []
+    made, covers = [], []
     for label, _u, _v in PEDALS:
         # Trapezoid: +Y is toward the case BACK (the wide edge, and the top of
         # the glyphs), -Y toward the toe. The sides are parallel to the pad's.
@@ -3632,8 +3675,51 @@ def build_pedal_name_tiles():
         # STL is the fused single mesh: that is what a single-extruder,
         # filament-change print wants.
         cq.exporters.export(part.val(), os.path.join(OUT, stem + ".stl"))
+
+        # --- RESIN TWO-PART (#931) ------------------------------------------
+        # WHITE: the whole tile, unchanged -- `part` is already exactly it.
+        cq.exporters.export(part.val(), os.path.join(OUT, stem + "_white.step"))
+        cq.exporters.export(part.val(), os.path.join(OUT, stem + "_white.stl"))
+        # BLACK: the 0.4 letter layer with the letters (plus clearance) removed,
+        # so it drops over the proud white glyphs and sits flush at 2.2.
+        plate = (cq.Workplane("XY").workplane(offset=TILE_BODY_T)
+                 .polyline([(-TILE_L_BACK/2.0,  TILE_W/2.0),
+                            ( TILE_L_BACK/2.0,  TILE_W/2.0),
+                            ( TILE_L_TOE /2.0, -TILE_W/2.0),
+                            (-TILE_L_TOE /2.0, -TILE_W/2.0)])
+                 .close().extrude(TILE_TEXT_T))
+        openings = _tile_cover_openings(cq, glyph, TILE_COVER_CLR,
+                                        TILE_BODY_T, TILE_TEXT_T)
+        cover = plate.cut(openings)
+        # The counters are ISLANDS: black surrounded by white letter, with nothing
+        # to hold them. Count them rather than shipping a file whose piece count
+        # is a surprise at the bench.
+        pieces = cover.val().Solids()
+        loose = len(pieces) - 1
+        # Export an EXPLICIT compound of every solid. Handing the raw cut result
+        # to the exporter loses pieces -- a 4-piece cover round-tripped as one
+        # 2 mm3 island with the frame gone, and one came back empty.
+        blob = cq.Compound.makeCompound(pieces)
+        cq.exporters.export(blob, os.path.join(OUT, stem + "_cover.step"))
+        cq.exporters.export(blob, os.path.join(OUT, stem + "_cover.stl"))
+
+        # --- INLAY, the alternative to print one of and compare (#931) -------
+        # ONE black part, 2.2 solid, with the letters as 0.4-deep POCKETS. Fill
+        # the pockets with white resin, scrape flush, cure. No second print, no
+        # loose islands, no clearance gap anywhere -- but the black field ends up
+        # FLUSH with the letters instead of 0.4 below them.
+        slab = (cq.Workplane("XY")
+                .polyline([(-TILE_L_BACK/2.0,  TILE_W/2.0),
+                           ( TILE_L_BACK/2.0,  TILE_W/2.0),
+                           ( TILE_L_TOE /2.0, -TILE_W/2.0),
+                           (-TILE_L_TOE /2.0, -TILE_W/2.0)])
+                .close().extrude(TILE_BODY_T + TILE_TEXT_T))
+        inlay = slab.cut(glyph)
+        cq.exporters.export(inlay.val(), os.path.join(OUT, stem + "_inlay.step"))
+        cq.exporters.export(inlay.val(), os.path.join(OUT, stem + "_inlay.stl"))
+        covers.append((label, loose))
         made.append(stem)
-    return made
+    return made, covers
 
 
 def build_ring_disc_step():
@@ -5238,11 +5324,24 @@ def main(argv):
             print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
-            tiles = build_pedal_name_tiles()
-            print("Pedal name tiles (3D print, x%d -- TRAPEZOID %.2f(back)/%.2f(toe)\n"
-                  "  x %.2f, wide edge to the cable end; print FACE-DOWN, filament\n"
-                  "  change at z=%.1f: white glyphs then black body): out/%s.step ..."
-                  % (len(tiles), TILE_L_BACK, TILE_L_TOE, TILE_W, TILE_TEXT_T, tiles[0]))
+            tiles, covers = build_pedal_name_tiles()
+            print("Pedal name tiles (RESIN, two parts x%d -- TRAPEZOID %.2f(back)/"
+                  "%.2f(toe)\n  x %.2f, wide edge to the cable end): "
+                  "out/%s_white.step + _cover.step"
+                  % (len(tiles), TILE_L_BACK, TILE_L_TOE, TILE_W, tiles[0]))
+            loose = sum(n for _lb, n in covers)
+            print("  WHITE = the whole tile; BLACK cover = the %.1f letter layer, "
+                  "%.2f/side clearance." % (TILE_TEXT_T, TILE_COVER_CLR))
+            print("  Cover piece counts (1 frame + counter islands, which are "
+                  "loose):")
+            for lb, n in covers:
+                print("    %-10s %d piece%s%s" % (
+                    lb, n + 1, "" if n + 1 == 1 else "s",
+                    "" if n == 0 else "  <- %d loose island%s" % (n, "" if n == 1 else "s")))
+            print("  %d loose islands across the ten covers." % loose)
+            print("  Alternative to compare: out/%s_inlay.step -- ONE black part\n"
+                  "  with 0.4 letter POCKETS to fill with white resin (flush field,\n"
+                  "  no islands, no clearance gap)." % tiles[0])
             rd = build_ring_disc_step()
             print("Ring centre disc (2.0 Al, x1): out/" + os.path.basename(rd))
             kb = build_encoder_knob_step()
