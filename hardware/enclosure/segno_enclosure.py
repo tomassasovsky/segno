@@ -400,7 +400,33 @@ LED_INS_PROUD = 0.4       # lens stands this far above the outer skin
 LED_INS_FLANGE = 3.0      # shoulder overhang past the slot, all around (seats on the
                           # faceplate UNDERSIDE -- the insert pushes in from INSIDE)
 LED_INS_FL_T  = 1.5       # shoulder thickness
-LED_INS_POCKET = (6.0, 6.0, 0.8)  # LED nest recess in the shoulder's back face
+# --- the puck board SNAPS into the back of the diffuser (#927) ---------------
+# It used to be a 6 x 6 x 0.8 "nest" with the board VHB-taped over it, which
+# registered the 5 x 5 PACKAGE rather than the 16 x 8 BOARD -- and did not even
+# seat: a 1.6-tall PLCC4 in a 0.7-deep recess stands the board 0.9 off the
+# flange, with the tape spanning the gap. Now the flange keeps a clean flat face
+# for the glue bond to the faceplate underside, and retention is a slot with
+# snap rails on the board's LONG edges only -- both short ends stay open for the
+# castellated 3-wire daisy chain.
+LED_BOARD_L   = 16.0      # puck board, hardware/led_strip/ (BOARD_L x BOARD_W)
+LED_BOARD_W   = 8.0
+LED_BOARD_T   = 1.6       # standard PCB
+LED_BOARD_CLR = 0.25      # per side, board to slot
+LED_PKG       = 5.0       # WS2812B PLCC4 body, 5.0 x 5.0
+LED_PKG_H     = 1.6       # ...and its height -- the number the old nest ignored
+LED_PKG_CLR   = 0.3       # per side, package to its recess
+LED_WEB       = 0.8       # white PLA left between package and lens base. This is
+                          # the diffusing wall: thinner reads as a hot spot, and
+                          # it sets how deep the package recess can go.
+LED_RAIL_T    = 1.4       # snap-rail wall thickness
+LED_SHOULDER  = 0.75      # ledge the board's lens-side face lands on. Without it
+                          # the board's up-stop is the LED package bottoming in
+                          # its recess -- i.e. the insertion force lands on the
+                          # part, not the PCB.
+LED_SNAP      = 0.5       # how far the retaining lip overhangs the board edge.
+                          # The lip's underside is a 45 deg ramp: the board cams
+                          # the rails apart going in, and the ramp is
+                          # self-supporting printed lens-down.
 D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
                      # the vendor STEP shows the thread OD needs the 0.2, #762)
 # EC11 anti-rotation tab: NO keyway in the disc (user call 2026-08-19: the
@@ -3454,13 +3480,51 @@ def build_mini_console():
     outp.append(asm)
     return outp
 
+def diffuser_stack():
+    """The z stations down the back of the diffuser, all derived from the parts.
+
+    z = 0 is the lens base / flange front face; +z is OUT through the faceplate.
+    Returns (package recess depth, board top, board bottom, lip bottom).
+
+    The package sticks out past the flange back by whatever the recess cannot
+    swallow, and THAT is what sets where the board sits -- the old nest picked a
+    depth and ignored the package height, so the board never touched anything.
+    """
+    recess_d = LED_INS_FL_T - LED_WEB               # 0.7
+    stand    = LED_PKG_H - recess_d                 # 0.9 proud of the flange back
+    board_t0 = -LED_INS_FL_T - stand                # -2.4, board's lens-side face
+    board_t1 = board_t0 - LED_BOARD_T               # -4.0, board's back face
+    return recess_d, board_t0, board_t1, board_t1 - LED_SNAP
+
+
 def build_diffuser_step():
     """LED pill diffuser INSERT (3D-print in WHITE PLA, x6 per console):
     a stadium lens that pushes into the faceplate slot FROM THE INSIDE until its
     shoulder flange seats on the sheet's underside; the lens stands LED_INS_PROUD
-    above the outer skin. The single-LED module (hardware/led_strip/ puck or an
-    off-the-shelf WS2812B breakout) nests in a shallow pocket on the back and is
-    VHB-taped over the flange, which also retains the insert."""
+    above the outer skin. The flange is GLUED to the faceplate underside, so its
+    face is kept flat and clear -- nothing is modelled on it.
+
+    The puck board (hardware/led_strip/, 16 x 8 x 1.6) drops into rails on the
+    back (#927). Rails run the board's LONG edges only; both short ends stay open
+    so the castellated 3-wire daisy chain leaves without a notch. The board lands
+    its lens-side face on the rail shoulders with the WS2812B in the package
+    recess, and the lips hold it there.
+
+    FIT IT BY TILTING: get one long edge under its lip first, then press the other
+    edge past the 45 deg lead-in. Do NOT expect to push it in square.
+
+    The lips engage 0.25 mm per side, and that is a DELIBERATE ceiling, not a
+    number to raise. The rails are only 2.5 mm deep -- root at the flange back,
+    lip at the board's back face -- and a cantilever that short cannot flex: at
+    0.25 mm the root stress is already past what PLA takes, so the assembly leans
+    on the tilt and on a little local yield. Treat the lips as a retention detent
+    that stops the board falling out while the flange glue cures, not as a
+    structural snap. A real click needs the fingers to run along X and be released
+    from the flange, and that forces printing lens-UP -- see #927.
+
+    PRINT LENS-DOWN. The lens face is then the bed face (smooth, no layer lines
+    across the light), the 0.5 lip is a trivial bridge, and the lead-in ramp is
+    self-supporting."""
     import cadquery as cq
     lens_l = LED_SLOT_W - LED_INS_CLR
     lens_w = LED_SLOT_H - LED_INS_CLR
@@ -3470,9 +3534,33 @@ def build_diffuser_step():
     lens = cq.Workplane("XY").slot2D(lens_l, lens_w).extrude(lens_h)
     lens = lens.edges(">Z").chamfer(0.3)             # soft glow edge on the proud lip
     ins = lens.union(cq.Workplane("XY").slot2D(fl_l, fl_w).extrude(-LED_INS_FL_T))
-    px, py, pd = LED_INS_POCKET                       # LED nest, back face
+
+    recess_d, board_t0, board_t1, lip_z = diffuser_stack()
+
+    # package recess, cut into the flange's back face
+    pkg = LED_PKG + 2 * LED_PKG_CLR
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-LED_INS_FL_T)
-                  .rect(px, py).extrude(pd))
+                  .rect(pkg, pkg).extrude(recess_d))
+
+    # snap rails: one profile in YZ, mirrored, extruded along the board's length
+    y_in = LED_BOARD_W / 2.0 + LED_BOARD_CLR         # slot wall
+    y_out = y_in + LED_RAIL_T
+    assert y_out <= fl_w / 2.0, (
+        f"diffuser snap rail reaches y={y_out:.2f}, past the {fl_w/2.0:.2f} flange edge")
+    rail_l = LED_BOARD_L + 2 * LED_BOARD_CLR
+    y_sh = y_in - LED_SHOULDER
+    prof = [(y_sh, -LED_INS_FL_T),                   # shoulder, off the flange back
+            (y_sh, board_t0),                        #   ...down to the board face
+            (y_in, board_t0),                        # step out to the slot wall
+            (y_in, board_t1),                        #   ...down past the board
+            (y_in - LED_SNAP, board_t1),             # retaining lip (0.5 bridge)
+            (y_in, lip_z),                           # 45 deg lead-in, self-supporting
+            (y_out, lip_z),
+            (y_out, -LED_INS_FL_T)]
+    rail = (cq.Workplane("YZ").polyline(prof).close()
+            .extrude(rail_l / 2.0, both=True))
+    ins = ins.union(rail).union(rail.mirror("XZ"))
+
     step = os.path.join(OUT, "segno_led_diffuser.step")
     stl = os.path.join(OUT, "segno_led_diffuser.stl")
     cq.exporters.export(ins.val(), step)
