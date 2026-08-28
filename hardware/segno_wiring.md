@@ -71,20 +71,39 @@ tolerance only has to survive ~100 mm of internal wiring.
 | buck | loads | worst case |
 |---|---|---|
 | **BUCK_PI** | Pi 5 (via its USB-C) + its USB devices + NVMe | 5.0 A / 25 W |
-| **BUCK_AUX** | 7" + 16" screens + console board (J3) + all 100 WS2812 | 8.1 A / 41 W |
+| **BUCK_AUX** | 7" + 16" screens + console board (J3) + all 104 WS2812 | 6.4 A / 32 W |
 
-The worst case is capped by device limits, not estimated: the Pi's own 5 A
-budget, the screens' ratings, WS2812 at 60 mA all-white.
+BUCK_PI's worst case is capped by device limits, not estimated: the Pi's own 5 A
+budget. BUCK_AUX's figure is the screens' ratings plus the LEDs **as they are
+actually driven** — see below, because the naive all-white number for 104 WS2812
+is misleading in both directions.
 
-**The LED count is now brightness-limited, and that is a rail requirement (#930).**
-The pills went from 6 single LEDs to **ten 8-LED segments** of 144/m strip, so
-BUCK_AUX now carries **100 WS2812** (80 pill + 16 ring + 4). At full white that
-is 6.0 A of LED on top of 5.1 A of everything else — **11.1 A, over the 10 A
-buck.** Firmware therefore **must cap global brightness at 50%**, which puts the
-worst case at 8.1 A with real margin. This is not a look-and-feel setting: an
-uncapped all-white flash (a startup lamp test, a white "clipping" state) would
-brown out the screens on the same rail. If a future change wants full brightness,
-it needs a rail split, not a bigger number here.
+**The LED load is dominated by COLOUR and the pill gradient, not by the count
+(#930).** The pills went from 6 single LEDs to ten 8-LED segments of 144/m, and
+the ring is a Ring **24**, so BUCK_AUX carries **104 WS2812**. The naive
+"104 × 60 mA" reading of that is 6.2 A and it is wrong for two reasons: 60 mA is
+all three channels at full (an indicator is normally ONE channel, ~20 mA), and
+a pill is never all-on — it is rendered **centre-bright, dimming to both ends**,
+which sums to ~62% of all-at-full. The vendor's own figure agrees: 0.1 W per LED
+per colour at 5 V is exactly 20 mA.
+
+| state | LED | BUCK_AUX | of 10 A |
+|---|---|---|---|
+| all off (controller quiescent only) | 0.10 A | 5.24 A | 52% |
+| **normal — pills one colour + gradient, ring half** | **1.24 A** | **6.38 A** | **64%** |
+| pills amber (2 ch) + gradient, ring one colour | 2.48 A | 7.62 A | 76% |
+| pills white + gradient, ring full white | 4.44 A | 9.58 A | 96% |
+| everything full white, no gradient | 6.24 A | 11.38 A | **114%** |
+
+Normal operation is **1.24 A of LED**, and **no brightness cap is needed** — the
+gradient is inherent to how a pill is drawn, not a limiter bolted on. Two things
+to keep in view: **white is the expensive colour**, and pills-white *and*
+ring-white together reach 96% with no margin — so if a white lamp test or a white
+"clipping" state is ever added, it is that combination, not the LED count, that
+needs the thought. And the 5.14 A non-LED baseline is **rated maxima** for two
+screens and the board, not measured; real draw is likely well under half, so the
+true headroom is larger than this table admits. Measure it on the bench before
+trusting either direction.
 
 - **The Pi is fed through its USB-C, not the header.** Ribbon pins 2/4 are
   deliberately not connected (`PI_POWER` gate): tying them would put BUCK_PI in

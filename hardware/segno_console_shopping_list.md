@@ -52,22 +52,35 @@ Driven by the console board's own Pico 2 — there is **no separate LED-driver
 board, shifter, bulk cap or series resistor to buy**; all of that is on the v2
 board's BOM.
 
-- [ ] WS2812 **ring, 16 LEDs** ×1 — authentic Adafruit NeoPixel Ring 16
-      (44.5 mm OD; clones are 68 mm and won't fit the diffuser)
+- [x] WS2812 **ring, 24 LEDs** — Adafruit NeoPixel **Ring 24**, 65.5 mm OD /
+      52.3 mm ID / 3.2 mm thick. **Owner already has it.** This line said
+      "Ring 16, 44.5 mm OD" until 2026-08-28 — stale since #792/#794 moved
+      the faceplate window to Ø67 and the ring board to Ø68 for the 24.
+      A Ring 16 will NOT fill the window it is now cut for
 - [ ] WS2812B **indicator pills** — **144 LEDs/m, IP20 (non-waterproof),
       12 mm wide**, ×**1 m**. Cut into **10** eight-LED segments of 55.56 mm,
       one per pedal. You need 0.556 m; 1 m covers mis-cuts.
+      Candidate: LOAMLIN WS2812B 144LED/m, 3.2 ft, **IP30 non-waterproof**,
+      white PCB, DC5V —
+      [LOAMLIN 144/m 3.2 ft](https://www.amazon.com/dp/B0BDS7NHQM), $9.99. Right part on every axis that
+      matters, and its own listing states 0.1 W/LED per colour, which confirms
+      the power model below.
       The spec is load-bearing, not a preference:
       **144/m** because the pill only has 3.2 mm of diffuser to spread through,
-      so anything sparser reads as separate dots (60/m is 5.2:1 — three blobs);
-      **12 mm** is what 144/m comes as, and the diffuser flange was widened to
-      14 mm for it (#930); **IP20** because it is inside a sealed console and is
-      the thinnest at 2.13 mm — IP65/IP67 add 0.87/1.72 mm and push the LED
-      further from the lens.
-      **Firmware MUST cap global brightness at 50%.** Ten pills × 8 plus the
-      16-LED ring is 100 WS2812; at the 60 mA full-white worst case that is
-      11.1 A against a 10 A BUCK_AUX. At 50% it is 8.1 A, with margin. This is a
-      requirement of the rail, not a UI preference (#930)
+      so anything sparser reads as separate dots (60/m is 5.2:1 — three blobs),
+      and because the pill is rendered as a gradient, which needs steps to be
+      smooth; **non-waterproof** because it is inside a sealed console and is the
+      thinnest — IP65/IP67 add 0.87/1.72 mm and push the LED further from the
+      lens.
+      ⚠️ **MEASURE THE STRIP BEFORE PRINTING THE DIFFUSERS.** The candidate's own
+      listing contradicts itself on width — product image says 12 mm, its
+      compare-with-similar row says "IP30/65 - 10mm; IP67 - 12mm". The channel
+      grips 0.4 mm per side, so 2 mm of error either jams the strip or drops it
+      straight through. Width reaches **only the 3D-printed diffuser**, never
+      anything a shop cuts, so print those after the strip lands. Confirm width,
+      pitch and PCB thickness together.
+      Note it is built from 50 cm PCBs, so there is a **solder joint every
+      50 cm**. 80 LEDs are needed of 144, so there is room to cut around it
 
 ## Power (#754 — one 20 V PD contract, two bucks)
 

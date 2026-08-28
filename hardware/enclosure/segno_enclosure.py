@@ -429,14 +429,40 @@ LED_PKG_CLR   = 0.3       # per side, package to its recess
 # spread through, and a bar reads continuous when the LED pitch is within about
 # twice that. 144/m is 6.94 against 3.2 -- 2.2:1. 60/m would be 5.2:1, which is
 # three visible blobs per pill.
-LED_STRIP_W   = 12.0      # 144/m is 12 wide; only 30 and 60/m are 10
-LED_STRIP_OA  = 2.13      # OVERALL thickness, straight off the vendor datasheet
-                          # for IP20. This is the measured number and the PCB is
-                          # derived FROM it -- an earlier 0.35 "flex PCB" guess
-                          # was 0.18 thin and would have jammed under the lips.
+LED_STRIP_W   = 12.0      # *** MEASURE BEFORE PRINTING THE DIFFUSERS (#930) ***
+                          # 144/m is 12 wide where 30 and 60/m are 10 -- but the
+                          # chosen part's listing CONTRADICTS ITSELF: its product
+                          # image says 12, its compare-with-similar row says
+                          # "PCB Board Width: IP30/65 - 10mm; IP67 - 12mm". 12 is
+                          # taken because the image is specific to this part and
+                          # agrees with the reference sheet. It is NOT verified.
+                          # The lips grip 0.4 per side, so a 2 mm error either
+                          # jams the strip or drops it straight through.
+LED_STRIP_OA  = 2.13      # OVERALL thickness, off the reference sheet for IP20.
+                          # The chosen part's image says 0.5 mm of PCB, which
+                          # corroborates this within 0.03 (2.13 - 1.6 = 0.53).
+                          # The PCB is derived FROM the overall rather than
+                          # guessed -- an earlier 0.35 "flex PCB" guess was 0.18
+                          # thin and would have jammed under the lips.
 LED_STRIP_T   = LED_STRIP_OA - LED_PKG_H   # 0.53 of PCB; the rest is the 5050
-LED_STRIP_PITCH = 1000.0 / 144.0               # 6.944
-LED_STRIP_N   = int(LED_SLOT_W // LED_STRIP_PITCH)    # 8 LEDs inside the 60 pill
+LED_STRIP_PITCH = 1000.0 / 144.0               # 6.944 by definition at 144/m.
+                          # The chosen part's image labels 6.5, which cannot be
+                          # right (6.5 x 144 = 936, not 1000) -- marketing art,
+                          # not a dimension. Worth confirming on the real strip
+                          # anyway, since it sets the cut length.
+LED_STRIP_N_MAX = int(LED_SLOT_W // LED_STRIP_PITCH)  # 8 is all that fits the 60 pill
+# 8 or 7 is OPEN, deferred to when the strip is in hand (owner, 2026-08-28).
+# The pill is rendered as a CENTRE-BRIGHT GRADIENT falling off to both ends, and
+# an EVEN count has no centre pixel -- with 8 the middle two sit 3.47 either side
+# of centre. They are 6.94 apart against 3.2 mm of diffusion, so they should read
+# as one bright centre, and 8 fills the pill to within 2.2 mm of each end where 7
+# leaves 5.7. That is a judgement about how it LOOKS, which is why it waits for
+# the real part rather than being settled here.
+#   8 -> no centre pixel, better fill      (current)
+#   7 -> a true centre pixel at 0, dimmer ends
+# Changing it re-cuts the channel, so it changes the print -- nothing is printed
+# yet, which is exactly why now is the cheap time to still be undecided.
+LED_STRIP_N   = LED_STRIP_N_MAX                       # <- the one number to flip
 LED_STRIP_SEG = LED_STRIP_N * LED_STRIP_PITCH         # 55.56 cut length
 LED_STRIP_CLR = 0.3       # per side, across the width
 LED_CH_L      = LED_STRIP_SEG + 1.4   # cut segment plus slop -- scissors land
