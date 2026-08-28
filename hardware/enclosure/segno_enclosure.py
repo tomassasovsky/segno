@@ -3480,15 +3480,43 @@ def build_diffuser_step():
     return step
 
 
-# --- pedal name tiles (#795) -------------------------------------------------
-# The WTB-006's top pad has a 54.55 x 20 window through it, and the pad is a
-# uniform 2.2 slab lying on a case top tilted to match -- so the window is a
-# parallel-sided 2.2 deep pocket and a FLAT tile fits it.
+# --- pedal name tiles (#795, trapezoid #922) ---------------------------------
+# The WTB-006's top pad has a window through it, and the pad is a uniform 2.2
+# slab lying on a case top tilted to match -- so the window is a parallel-sided
+# 2.2 deep pocket and a FLAT tile fits it (flat in Z; see the plan taper below).
 # The tile FILLS the window: at 0.25/side the pedal's own case colour showed
 # through the gap around it. 0.05/side is below what FDM resolves, so this is a
 # press fit into a compliant rubber window -- which also retains it.
-TILE_L      = 54.45   # window is 54.55
-TILE_W      = 19.90   # window is 20.00
+#
+# THE TILE IS A TRAPEZOID, NOT A RECTANGLE (#922). The owner rule is 5 mm of pad
+# each side, ALWAYS -- and the WTB-006 is a wedge IN PLAN as well as in height,
+# so a constant width can only be right at one station along the length. The
+# tile's sides run PARALLEL TO THE PAD'S SIDES: wide edge toward the case BACK
+# (cable end), narrow edge toward the TOE. That is also the reading direction --
+# the top of the glyphs points at the wide edge -- so the tile cannot be fitted
+# the wrong way round without the label reading upside down.
+TILE_WALL   = 5.0     # pad left each side of the window. OWNER RULE, and the
+                      # thing the width is now DERIVED from. The old 54.45 was a
+                      # transcribed constant: it happened to satisfy this rule at
+                      # one station and was wrong at every other.
+TILE_PAD_W  = 64.55   # top-pad width at the window's MID-station. BACK-COMPUTED
+                      # from the single number #795 ever recorded (a 54.55 window)
+                      # plus the 5 mm rule -- the pad itself has never been on
+                      # calipers. Measure the PAD and this becomes the datum; the
+                      # window then follows from the rule instead of the reverse.
+TILE_WIN_W  = 20.00   # window length along the pedal
+TILE_CLR    = 0.05    # per side, all four sides
+TILE_WIN_L  = TILE_PAD_W - 2*TILE_WALL                   # 54.55 at mid-station
+# Plan taper, in mm of WIDTH per mm of LENGTH. INFERRED from the case
+# (PEDAL_W -> PEDAL_TOE_W over PEDAL_D), because the TOP pad's own outline has
+# never been put on calipers -- only the bottom pad is measured, and that one is
+# carried as a rectangle. The pad sits on the case top at a uniform inset, so it
+# tapers at the case's rate; confirm with one reading of the window width at each
+# end before this ships. #922.
+TILE_TAPER  = (PEDAL_W - PEDAL_TOE_W) / PEDAL_D          # 0.02976
+TILE_W      = TILE_WIN_W - 2*TILE_CLR                    # 19.90, along the pedal
+TILE_L_BACK = TILE_WIN_L + TILE_TAPER*TILE_WIN_W/2.0 - 2*TILE_CLR   # wide edge
+TILE_L_TOE  = TILE_WIN_L - TILE_TAPER*TILE_WIN_W/2.0 - 2*TILE_CLR   # narrow edge
 TILE_BODY_T = 1.8     # black body
 TILE_TEXT_T = 0.4     # white glyph layer; 1.8 + 0.4 = the 2.2 pocket, so the
                       # LETTERS finish flush with the pad and the black field
@@ -3508,6 +3536,14 @@ TILE_SYM_H  = 14.0    # symbol em: play triangle 0.82*h = 11.5 tall
 TILE_TEXT = {"TRACK1": "1", "TRACK2": "2", "TRACK3": "3", "TRACK4": "4"}
 
 
+def tile_width_at(y):
+    """Tile width at station y, with +Y toward the case BACK (the wide edge).
+    The sides are straight, so this is a plain interpolation between the toe and
+    back widths -- and it is what anything laid on the tile must clear."""
+    return ((TILE_L_BACK + TILE_L_TOE) / 2.0
+            + (TILE_L_BACK - TILE_L_TOE) * (y / TILE_W))
+
+
 def build_pedal_name_tiles():
     """One drop-in name tile per pedal, for the pad window.
 
@@ -3519,13 +3555,27 @@ def build_pedal_name_tiles():
     The text comes from PEDALS and SILK_SYMBOLS -- the same source as the
     faceplate legends -- so REC/PLAY and STOP carry the dot+plus+triangle and the
     square here too, and the two can never drift apart.
+
+    The tile is a TRAPEZOID (#922): the pad it drops into is a wedge in plan, and
+    the wall is 5 mm each side at EVERY station, so the tile's sides run parallel
+    to the pad's. The WIDE edge faces the case BACK (cable end) and carries the
+    top of the glyphs -- fit it the other way round and the label is upside down,
+    which is the intended tell.
     """
     import cadquery as cq
     made = []
     for label, _u, _v in PEDALS:
+        # Trapezoid: +Y is toward the case BACK (the wide edge, and the top of
+        # the glyphs), -Y toward the toe. The sides are parallel to the pad's.
         body = (cq.Workplane("XY")
-                .box(TILE_L, TILE_W, TILE_BODY_T, centered=(True, True, False)))
-        fit_l, fit_w = TILE_L - 2*TILE_MARGIN, TILE_W - 2*TILE_MARGIN
+                .polyline([(-TILE_L_BACK/2.0,  TILE_W/2.0),
+                           ( TILE_L_BACK/2.0,  TILE_W/2.0),
+                           ( TILE_L_TOE /2.0, -TILE_W/2.0),
+                           (-TILE_L_TOE /2.0, -TILE_W/2.0)])
+                .close().extrude(TILE_BODY_T))
+        # Fit the glyphs to the NARROW edge: a block sized off the wide edge would
+        # cross the tapered sides at the toe end.
+        fit_l, fit_w = TILE_L_TOE - 2*TILE_MARGIN, TILE_W - 2*TILE_MARGIN
         if label in SILK_SYMBOLS:
             # fit the symbol group to the SAME box the words get, so a symbol
             # tile and a word tile read at one size
@@ -3562,10 +3612,20 @@ def build_pedal_name_tiles():
         glyph = glyph.translate((-(gb.xmin + gb.xmax) / 2.0,
                                  -(gb.ymin + gb.ymax) / 2.0, 0))
         part = body.union(glyph)
+        # Gate the GLYPH, not the part envelope: the part IS the trapezoid, so its
+        # bbox always measures TILE_L_BACK and would gate nothing. Compare the ink
+        # against the tile width at the ink's OWN toe-most station -- that is the
+        # narrowest the tile gets anywhere the glyph reaches.
+        gb = glyph.val().BoundingBox()
+        avail = tile_width_at(gb.ymin)
+        assert gb.xlen <= avail + 1e-6 and gb.ylen <= TILE_W + 1e-6, (
+            f"pedal tile {label!r}: glyph {gb.xlen:.2f} x {gb.ylen:.2f} overflows "
+            f"the {avail:.2f} available at y={gb.ymin:.2f} on the "
+            f"{TILE_L_TOE:.2f}(toe)/{TILE_L_BACK:.2f}(back) x {TILE_W} tile")
         bb = part.val().BoundingBox()
-        assert bb.xlen <= TILE_L + 1e-6 and bb.ylen <= TILE_W + 1e-6, (
-            f"pedal tile {label!r}: glyph {bb.xlen:.2f} x {bb.ylen:.2f} overflows "
-            f"the {TILE_L} x {TILE_W} tile")
+        assert abs(bb.xlen - TILE_L_BACK) < 1e-6 and abs(bb.ylen - TILE_W) < 1e-6, (
+            f"pedal tile {label!r}: envelope {bb.xlen:.3f} x {bb.ylen:.3f} is not "
+            f"the {TILE_L_BACK:.3f} x {TILE_W:.3f} trapezoid")
         stem = "segno_pedal_tile_" + label.replace("/", "_")
         # STEP keeps the body and the glyphs as TWO SOLIDS -- that is the colour
         # split, so a CAD assembly can paint them black/white per body instead of
@@ -5183,9 +5243,10 @@ def main(argv):
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
             tiles = build_pedal_name_tiles()
-            print("Pedal name tiles (3D print, x%d -- print FACE-DOWN, filament\n"
+            print("Pedal name tiles (3D print, x%d -- TRAPEZOID %.2f(back)/%.2f(toe)\n"
+                  "  x %.2f, wide edge to the cable end; print FACE-DOWN, filament\n"
                   "  change at z=%.1f: white glyphs then black body): out/%s.step ..."
-                  % (len(tiles), TILE_TEXT_T, tiles[0]))
+                  % (len(tiles), TILE_L_BACK, TILE_L_TOE, TILE_W, TILE_TEXT_T, tiles[0]))
             rd = build_ring_disc_step()
             print("Ring centre disc (2.0 Al, x1): out/" + os.path.basename(rd))
             kb = build_encoder_knob_step()
