@@ -54,12 +54,20 @@ board's BOM.
 
 - [ ] WS2812 **ring, 16 LEDs** ×1 — authentic Adafruit NeoPixel Ring 16
       (44.5 mm OD; clones are 68 mm and won't fit the diffuser)
-- [ ] WS2812 **indicator pills** — **60 LEDs/m bare IP30 strip, 10 mm wide**,
-      ×1 short reel. Cut into **6** one-LED segments, one per *mappable*
-      pedal (TRACK1-4, CLEAR, BANK). The four fixed-transport pedals lost
-      theirs in #792, so this is 6 and not the 10 that #366 called for.
-      Must be BARE (no silicone sleeve) and 10 mm: the diffuser channel is
-      cut for exactly that
+- [ ] WS2812B **indicator pills** — **144 LEDs/m, IP20 (non-waterproof),
+      12 mm wide**, ×**1 m**. Cut into **10** eight-LED segments of 55.56 mm,
+      one per pedal. You need 0.556 m; 1 m covers mis-cuts.
+      The spec is load-bearing, not a preference:
+      **144/m** because the pill only has 3.2 mm of diffuser to spread through,
+      so anything sparser reads as separate dots (60/m is 5.2:1 — three blobs);
+      **12 mm** is what 144/m comes as, and the diffuser flange was widened to
+      14 mm for it (#930); **IP20** because it is inside a sealed console and is
+      the thinnest at 2.13 mm — IP65/IP67 add 0.87/1.72 mm and push the LED
+      further from the lens.
+      **Firmware MUST cap global brightness at 50%.** Ten pills × 8 plus the
+      16-LED ring is 100 WS2812; at the 60 mA full-white worst case that is
+      11.1 A against a 10 A BUCK_AUX. At 50% it is 8.1 A, with margin. This is a
+      requirement of the rail, not a UI preference (#930)
 
 ## Power (#754 — one 20 V PD contract, two bucks)
 

@@ -71,10 +71,20 @@ tolerance only has to survive ~100 mm of internal wiring.
 | buck | loads | worst case |
 |---|---|---|
 | **BUCK_PI** | Pi 5 (via its USB-C) + its USB devices + NVMe | 5.0 A / 25 W |
-| **BUCK_AUX** | 7" + 16" screens + console board (J3) + all 26 WS2812 | 6.7 A / 34 W |
+| **BUCK_AUX** | 7" + 16" screens + console board (J3) + all 100 WS2812 | 8.1 A / 41 W |
 
 The worst case is capped by device limits, not estimated: the Pi's own 5 A
-budget, the screens' ratings, 26 WS2812 at 60 mA all-white.
+budget, the screens' ratings, WS2812 at 60 mA all-white.
+
+**The LED count is now brightness-limited, and that is a rail requirement (#930).**
+The pills went from 6 single LEDs to **ten 8-LED segments** of 144/m strip, so
+BUCK_AUX now carries **100 WS2812** (80 pill + 16 ring + 4). At full white that
+is 6.0 A of LED on top of 5.1 A of everything else — **11.1 A, over the 10 A
+buck.** Firmware therefore **must cap global brightness at 50%**, which puts the
+worst case at 8.1 A with real margin. This is not a look-and-feel setting: an
+uncapped all-white flash (a startup lamp test, a white "clipping" state) would
+brown out the screens on the same rail. If a future change wants full brightness,
+it needs a rail split, not a bigger number here.
 
 - **The Pi is fed through its USB-C, not the header.** Ribbon pins 2/4 are
   deliberately not connected (`PI_POWER` gate): tying them would put BUCK_PI in
