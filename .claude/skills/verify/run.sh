@@ -1,0 +1,155 @@
+#!/bin/bash
+# Path-aware verify loop. Picks the gates the current diff actually needs,
+# runs them, and prints one PASS/FAIL/SKIP line per gate plus the failures.
+#
+# Usage: run.sh [base-ref]   (default: origin/master)
+set -uo pipefail
+
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT" || exit 1
+BASE=${1:-origin/master}
+
+# Bare `flutter`/`dart` are hook-blocked in this repo; use the SDK by path.
+FLUTTER_BIN=${SEGNO_FLUTTER_BIN:-/Users/Tomas/development/flutter/bin}
+FLUTTER="$FLUTTER_BIN/flutter"
+DART="$FLUTTER_BIN/dart"
+
+git rev-parse --verify --quiet "$BASE" >/dev/null || {
+  echo "base ref '$BASE' not found -- fetch it, or pass one that exists" >&2
+  exit 2
+}
+
+# Committed changes vs the base, plus anything still dirty in the tree.
+CHANGED=$( { git diff --name-only "$BASE"...HEAD; git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u )
+[ -n "$CHANGED" ] || { echo "no changes vs $BASE -- nothing to verify"; exit 0; }
+
+touched() { echo "$CHANGED" | grep -qE "$1"; }
+
+LOG=$(mktemp -d)
+RESULTS=""
+FAILED=0
+
+record() { RESULTS="${RESULTS}$1\t$2\t$3\n"; }
+
+gate() { # gate <name> <logfile> <cmd...>
+  local name=$1 log=$2; shift 2
+  printf '  running %s ...\n' "$name" >&2
+  if "$@" >"$log" 2>&1; then
+    record "PASS" "$name" ""
+  else
+    record "FAIL" "$name" "$log"
+    FAILED=1
+  fi
+}
+
+skip() { record "SKIP" "$1" "$2"; }
+
+# Every Dart gate needs a resolved package graph. Without one, `analyze` invents
+# tens of thousands of phantom errors and `format` rewrites the whole repo, so
+# skip them loudly rather than reporting noise as a failure.
+UNRESOLVED=""
+[ -f .dart_tool/package_config.json ] || UNRESOLVED="no .dart_tool/package_config.json -- run \`$FLUTTER pub get\` first"
+
+# --- static analysis --------------------------------------------------------
+if [ -z "$UNRESOLVED" ]; then
+  gate "dart analyze" "$LOG/analyze" "$DART" analyze
+else
+  skip "dart analyze" "$UNRESOLVED"
+fi
+
+# --- format: CI gates this --------------------------------------------------
+if [ -z "$UNRESOLVED" ]; then
+  gate "dart format --set-exit-if-changed" "$LOG/format" \
+    "$DART" format --set-exit-if-changed --output=none \
+    lib test packages/*/lib packages/*/test
+else
+  skip "dart format" "$UNRESOLVED"
+fi
+
+# --- bloc lint: carries rules dart analyze does not -------------------------
+# Notably, a cubit method returning anything but void fails here and passes
+# `dart analyze`. Some worktree layouts make it silently analyse zero files and
+# exit 64; a zero-file run is unverified, not green, so report it as a skip.
+if command -v bloc >/dev/null 2>&1; then
+  BL="$LOG/bloclint"
+  bloc lint lib test packages >"$BL" 2>&1
+  BL_RC=$?
+  if [ $BL_RC -eq 64 ] || grep -qiE "analyzed 0 |no files" "$BL"; then
+    skip "bloc lint" "checked 0 files (exit $BL_RC) -- known worktree no-op; must be run from the main checkout"
+  elif [ $BL_RC -eq 0 ]; then
+    record "PASS" "bloc lint" ""
+  else
+    record "FAIL" "bloc lint" "$BL"
+    FAILED=1
+  fi
+else
+  skip "bloc lint" "bloc CLI not on PATH (dart pub global activate bloc_tools)"
+fi
+
+# --- Dart/Flutter tests: when any Dart or asset/l10n input moved -------------
+if ! touched '\.(dart|arb)$|^pubspec\.(yaml|lock)$|^assets/'; then
+  skip "flutter test" "no Dart/arb/asset changes"
+elif [ -n "$UNRESOLVED" ]; then
+  skip "flutter test" "$UNRESOLVED"
+else
+  gate "flutter test" "$LOG/test" "$FLUTTER" test
+fi
+
+# --- native engine: only when engine sources moved --------------------------
+if touched '^packages/segno_engine/src/'; then
+  gate "native engine tests" "$LOG/native" bash packages/segno_engine/src/test/run_native_tests.sh
+else
+  skip "native engine tests" "no packages/segno_engine/src changes"
+fi
+
+# --- ffigen freshness: the API header and the bindings must move together ----
+if touched '^packages/segno_engine/src/core/segno_engine_api\.h$'; then
+  if touched '^packages/segno_engine/lib/src/generated/segno_engine_bindings\.dart$'; then
+    record "PASS" "ffigen bindings in step" ""
+  else
+    cat > "$LOG/ffigen" <<'MSG'
+segno_engine_api.h changed but the generated bindings did not.
+
+  cd packages/segno_engine
+  dart run ffigen --config ffigen.yaml
+  dart format lib/src/generated/segno_engine_bindings.dart
+
+The format step is required: ffigen emits a different style than the repo's, so
+skipping it turns a small API change into whole-file churn.
+MSG
+    record "FAIL" "ffigen bindings in step" "$LOG/ffigen"
+    FAILED=1
+  fi
+else
+  skip "ffigen bindings in step" "segno_engine_api.h unchanged"
+fi
+
+# --- firmware contract + protocol-copy drift gate ---------------------------
+if touched '^firmware/|^hardware/firmware/|pedal_protocol\.'; then
+  gate "firmware contract + drift gate" "$LOG/firmware" bash firmware/test/run_tests.sh
+else
+  skip "firmware contract + drift gate" "no firmware / pedal-codec changes"
+fi
+
+# --- report -----------------------------------------------------------------
+echo
+echo "verify vs $BASE"
+printf "%b" "$RESULTS" | awk -F'\t' '{printf "  %-5s %-34s %s\n", $1, $2, ($1=="SKIP" ? $3 : "")}'
+
+if [ $FAILED -eq 1 ]; then
+  echo
+  echo "failures:"
+  printf "%b" "$RESULTS" | awk -F'\t' '$1=="FAIL" {print $2"\t"$3}' | while IFS=$'\t' read -r name log; do
+    echo
+    echo "--- $name ---"
+    [ -f "$log" ] && tail -25 "$log"
+  done
+  echo
+  echo "(full logs under $LOG)"
+  echo
+  printf "%b" "$RESULTS" | awk -F'\t' '{printf "  %-5s %-34s %s\n", $1, $2, ($1=="SKIP" ? $3 : "")}'
+  exit 1
+fi
+
+echo
+echo "all applicable gates passed"
