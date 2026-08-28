@@ -15980,6 +15980,171 @@ static void test_octaver_added_latency(void) {
   le_engine_destroy(e);
 }
 
+/* ---- octaver analysis-hop stagger (#897) ---- */
+
+/* A mono monitor chain whose slot [slot] is a PV octaver at UNISON with mix
+ * [mix]; every earlier slot stays LE_FX_NONE (inert) so the octaver's own hop
+ * phase is the one belonging to `slot`, not to slot 0. Unison matters: at
+ * ratio 1 the phase vocoder is a transparent reconstruction, which is what
+ * makes the null test below possible at all. */
+static le_engine* oct_stagger_engine(int slot, float mix) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, OCT_SR, 1, 1, OCT_SR * 4);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_input_output(e, 0, 0x1);
+  for (int s = 0; s < slot; ++s) {
+    le_engine_set_monitor_input_fx(e, 0, s, LE_FX_NONE);
+  }
+  le_engine_set_monitor_input_fx(e, 0, slot, LE_FX_OCTAVER);
+  le_engine_set_monitor_input_fx_param(e, 0, slot, 0, 0.5f); /* unison */
+  le_engine_set_monitor_input_fx_param(e, 0, slot, 1, 1.0f); /* tone open */
+  le_engine_set_monitor_input_fx_param(e, 0, slot, 2, mix);
+  le_engine_set_monitor_input_fx_param(e, 0, slot, 3, 0.0f); /* PV mode */
+  le_engine_set_monitor_input_fx_count(e, 0, slot + 1);
+  return e;
+}
+
+static void oct_stagger_run(le_engine* e, const float* in, float* out,
+                            int total) {
+  int done = 0;
+  const int blk = 512;
+  while (done < total) {
+    int n = total - done;
+    if (n > blk) n = blk;
+    le_engine_process(e, out + done, in + done, (uint32_t)n);
+    done += n;
+  }
+}
+
+/* Normalized RMS error of out[t] against in[t - lag], over the settled tail
+ * (past four windows, so warm-up and ramp-in are excluded). */
+static double oct_null_err(const float* in, const float* out, int total,
+                           int lag) {
+  double num = 0.0;
+  double den = 0.0;
+  for (int t = 4 * OCT_PV_N; t < total; ++t) {
+    const double d = (double)out[t] - (double)in[t - lag];
+    num += d * d;
+    den += (double)in[t - lag] * (double)in[t - lag];
+  }
+  return den > 0.0 ? sqrt(num / den) : 0.0;
+}
+
+/* Hop-phase stagger: every octaver instance seeds its analysis hop counter at a
+ * PER-INSTANCE phase, so N instances spread their four length-LE_PV_N FFTs
+ * across N callbacks instead of running them all on the same sample index
+ * (before: 4 octavers cost an 8 us median with a ~330 us one-in-eight burst,
+ * against a 333 us deadline at 32 frames / 96 kHz).
+ *
+ * A phase offset is only safe if it moves NOTHING audible, and the three
+ * quantities that had to be re-derived with it are pinned here — at EVERY slot
+ * of the chain, i.e. at eight different phases:
+ *
+ *  1. The WET path is still a pure LE_PV_N - 1 delay. Unison PV reconstructs a
+ *     stationary two-tone almost exactly, so a full-wet output nulls against
+ *     in[t - (LE_PV_N - 1)]. The same null one HOP either side is asserted
+ *     LARGE, so this cannot pass by accident: the failure a wrong stagger
+ *     produces — a wet voice displaced by a hop — takes the error from ~0.002
+ *     to ~1.1, and a detuned octave is exactly what that would sound like.
+ *  2. The DELAY-MATCHED DRY tap has not moved with it (impulse at mix = 0
+ *     still emerges at ~LE_PV_N, never at t = 0), so le_octaver_latency's flat
+ *     LE_PV_N still describes both legs.
+ *  3. fx_apply_chain's LE_PV_N WARMUP still covers a phase-shifted first frame:
+ *     a bypass/re-enable at full wet never dips below the steady level. The
+ *     worst phase reaches full 4x overlap-add at exactly sample LE_PV_N, so
+ *     this has no margin to spare and is worth pinning.
+ *
+ * ...plus that the stagger is actually there: two slots of one chain hold
+ * different hop counters, while the two CHANNELS of one slot hold the same one
+ * (mono coherence, D5 — a per-channel phase would break test_octaver_mono_
+ * coherent, which is why the spread is per {chain, slot} only). */
+static void test_octaver_hop_stagger_alignment(void) {
+  printf("test_octaver_hop_stagger_alignment\n");
+  const int total = 24576;
+  float* in = (float*)calloc((size_t)total, sizeof(float));
+  float* out = (float*)calloc((size_t)total, sizeof(float));
+  /* Two inharmonic partials: a single sine's autocorrelation would make a
+   * one-hop displacement look like a plain phase rotation. */
+  for (int i = 0; i < total; ++i) {
+    in[i] = 0.4f * sinf(2.0f * LE_FFT_PI * 220.0f * (float)i / (float)OCT_SR) +
+            0.2f * sinf(2.0f * LE_FFT_PI * 517.0f * (float)i / (float)OCT_SR);
+  }
+
+  for (int slot = 0; slot < LE_FX_MAX; ++slot) {
+    /* (1) full wet: a pure LE_PV_N - 1 delay at this slot's phase. */
+    le_engine* e = oct_stagger_engine(slot, 1.0f);
+    oct_stagger_run(e, in, out, total);
+    le_engine_destroy(e);
+    const double at = oct_null_err(in, out, total, OCT_PV_N - 1);
+    const double early = oct_null_err(in, out, total, OCT_PV_N - 1 - 256);
+    const double late = oct_null_err(in, out, total, OCT_PV_N - 1 + 256);
+    printf("  slot %d wet null: on %.5f, -hop %.3f, +hop %.3f\n", slot, at,
+           early, late);
+    CHECK(at < 0.02);   /* aligned */
+    CHECK(early > 0.5); /* and the test can tell the difference */
+    CHECK(late > 0.5);
+  }
+
+  /* (2) the delay-matched dry tap, at a staggered slot. */
+  memset(in, 0, sizeof(float) * (size_t)total);
+  in[0] = 1.0f;
+  for (int slot = 0; slot < LE_FX_MAX; ++slot) {
+    le_engine* e = oct_stagger_engine(slot, 0.0f);
+    memset(out, 0, sizeof(float) * (size_t)total);
+    oct_stagger_run(e, in, out, 2 * OCT_PV_N);
+    le_engine_destroy(e);
+    int peak = 0;
+    for (int i = 0; i < 2 * OCT_PV_N; ++i) {
+      if (fabsf(out[i]) > fabsf(out[peak])) peak = i;
+    }
+    CHECK(abs(peak - OCT_PV_N) <= 2);
+    CHECK(out[0] == 0.0f);
+  }
+
+  /* (3) the re-enable warmup, at full wet, at a staggered slot. A constant is
+   * the one full-wet signal whose dry and wet legs are in phase, so a warmup
+   * that ended too early (partial overlap-add) reads as a plain level dip
+   * rather than as a crossfade artefact. */
+  for (int i = 0; i < total; ++i) in[i] = 0.5f;
+  for (int slot = 0; slot < LE_FX_MAX; ++slot) {
+    le_engine* e = oct_stagger_engine(slot, 1.0f);
+    oct_stagger_run(e, in, out, 8192);
+    CHECK(fabsf(out[8191] - 0.5f) < 0.01f);
+    le_engine_set_monitor_input_fx_enabled(e, 0, slot, 0);
+    oct_stagger_run(e, in, out, 4096);
+    le_engine_set_monitor_input_fx_enabled(e, 0, slot, 1);
+    oct_stagger_run(e, in, out, 8192);
+    float min = 1e9f;
+    for (int i = 0; i < 8192; ++i) {
+      if (out[i] < min) min = out[i];
+    }
+    printf("  slot %d re-enable min %.4f (steady 0.5)\n", slot, min);
+    CHECK(min > 0.45f);
+    le_engine_destroy(e);
+  }
+
+  /* (4) the stagger itself. hop_count advances one per sample from its seed, so
+   * two instances that started at different phases differ forever; two channels
+   * of one instance must not. */
+  {
+    le_engine* e = oct_stagger_engine(0, 1.0f);
+    le_engine_set_monitor_input_fx(e, 0, 3, LE_FX_OCTAVER);
+    le_engine_set_monitor_input_fx_param(e, 0, 3, 3, 0.0f);
+    le_engine_set_monitor_input_fx_count(e, 0, 4);
+    oct_stagger_run(e, in, out, 4096);
+    const le_fx_state* fx = &e->monitors[0].fx;
+    printf("  hop counters: slot0 %d, slot3 %d\n", fx->oct[0][0].hop_count,
+           fx->oct[3][0].hop_count);
+    CHECK(fx->oct[0][0].hop_count != fx->oct[3][0].hop_count);
+    CHECK(fx->oct[0][0].hop_count == fx->oct[0][1].hop_count);
+    CHECK(fx->oct[3][0].hop_count == fx->oct[3][1].hop_count);
+    le_engine_destroy(e);
+  }
+
+  free(in);
+  free(out);
+}
+
 /* ---- FFT primitive (fft.h) ---- */
 
 /* Verifies the header-only FFT in isolation, before the phase vocoder (part 3)
@@ -25516,6 +25681,7 @@ int main(void) {
   test_octaver_psola_voice_and_fallback();
   test_octaver_psola_no_chatter();
   test_octaver_added_latency();
+  test_octaver_hop_stagger_alignment();
   test_fft_roundtrip();
 
   test_json_read_parses_nested_objects_and_arrays();
