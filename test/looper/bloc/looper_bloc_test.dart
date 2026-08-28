@@ -1813,7 +1813,9 @@ void main() {
 
     test('a bus PLUGIN drag persists once too', () async {
       when(() => repository.trackEffects(0)).thenReturn(const [
-        PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'p')),
+        PluginEffect(
+          ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+        ),
       ]);
       final bloc = buildDebounced();
       addTearDown(bloc.close);
