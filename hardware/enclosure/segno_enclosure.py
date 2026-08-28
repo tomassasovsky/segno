@@ -400,33 +400,41 @@ LED_INS_PROUD = 0.4       # lens stands this far above the outer skin
 LED_INS_FLANGE = 3.0      # shoulder overhang past the slot, all around (seats on the
                           # faceplate UNDERSIDE -- the insert pushes in from INSIDE)
 LED_INS_FL_T  = 1.5       # shoulder thickness
-# --- the puck board SNAPS into the back of the diffuser (#927) ---------------
-# It used to be a 6 x 6 x 0.8 "nest" with the board VHB-taped over it, which
-# registered the 5 x 5 PACKAGE rather than the 16 x 8 BOARD -- and did not even
-# seat: a 1.6-tall PLCC4 in a 0.7-deep recess stands the board 0.9 off the
-# flange, with the tape spanning the gap. Now the flange keeps a clean flat face
-# for the glue bond to the faceplate underside, and retention is a slot with
-# snap rails on the board's LONG edges only -- both short ends stay open for the
-# castellated 3-wire daisy chain.
-LED_BOARD_L   = 16.0      # puck board, hardware/led_strip/ (BOARD_L x BOARD_W)
-LED_BOARD_W   = 8.0
-LED_BOARD_T   = 1.6       # standard PCB
-LED_BOARD_CLR = 0.25      # per side, board to slot
+# --- a cut WS2812B strip segment sits in the back of the diffuser (#927) -----
+# Owner call 2026-08-28: the light source is a **60 LEDs/m bare IP30 strip**, cut
+# to one LED per pill -- NOT the 16 x 8 puck PCB in hardware/led_strip/, and not
+# the 10-LED count still written in segno_console_shopping_list.md.
+#
+# It used to be a 6 x 6 x 0.8 "nest" with the module VHB-taped over it, which
+# registered the 5 x 5 PACKAGE rather than anything the size of the source -- and
+# did not even seat: a 1.6-tall PLCC4 in a 0.7-deep recess holds the source 0.9
+# clear of the flange, with tape spanning the gap.
+#
+# THE STRIP IS THE SPRING. Its own 3M tape is useless here -- the LEDs must face
+# the lens, which turns the adhesive to face away into the console -- so the strip
+# is trapped mechanically instead. That is what makes this work where a rigid
+# board could not: at 0.35 mm of flex PCB you bow the segment slightly, drop it
+# past the lips, and let it flatten. Nothing in the PRINTED part ever has to
+# deflect, so none of it has to be springy.
+LED_STRIP_W   = 10.0      # bare IP30 strip width (no silicone sleeve)
+LED_STRIP_T   = 0.35      # flex PCB thickness
+LED_STRIP_SEG = 16.67     # 60 LEDs/m pitch = one LED per cut segment
+LED_STRIP_CLR = 0.3       # per side, across the width
+LED_CH_L      = 18.0      # channel length. Deliberately longer than the segment:
+                          # cuts land +-0.5 by scissors, and 1.3 of slop moves the
+                          # LED at most 0.65 along a 60 mm pill -- invisible.
 LED_PKG       = 5.0       # WS2812B PLCC4 body, 5.0 x 5.0
 LED_PKG_H     = 1.6       # ...and its height -- the number the old nest ignored
 LED_PKG_CLR   = 0.3       # per side, package to its recess
 LED_WEB       = 0.8       # white PLA left between package and lens base. This is
                           # the diffusing wall: thinner reads as a hot spot, and
                           # it sets how deep the package recess can go.
-LED_RAIL_T    = 1.4       # snap-rail wall thickness
-LED_SHOULDER  = 0.75      # ledge the board's lens-side face lands on. Without it
-                          # the board's up-stop is the LED package bottoming in
-                          # its recess -- i.e. the insertion force lands on the
-                          # part, not the PCB.
-LED_SNAP      = 0.5       # how far the retaining lip overhangs the board edge.
-                          # The lip's underside is a 45 deg ramp: the board cams
-                          # the rails apart going in, and the ramp is
-                          # self-supporting printed lens-down.
+LED_LIP       = 0.7       # lip overhang past the channel wall -> 0.4 of grip on
+                          # each strip edge
+LED_SHOULDER  = 0.75      # ledge the strip's LED-side face lands on. Without it
+                          # the up-stop is the LED package bottoming in its recess
+                          # -- i.e. the fitting force lands on the part, not the LED.
+LED_WALL_MIN  = 0.6       # channel wall floor; the flange edge caps the outside
 D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
                      # the vendor STEP shows the thread OD needs the 0.2, #762)
 # EC11 anti-rotation tab: NO keyway in the disc (user call 2026-08-19: the
@@ -3484,17 +3492,17 @@ def diffuser_stack():
     """The z stations down the back of the diffuser, all derived from the parts.
 
     z = 0 is the lens base / flange front face; +z is OUT through the faceplate.
-    Returns (package recess depth, board top, board bottom, lip bottom).
+    Returns (package recess depth, strip front face, strip back face, lip bottom).
 
     The package sticks out past the flange back by whatever the recess cannot
-    swallow, and THAT is what sets where the board sits -- the old nest picked a
-    depth and ignored the package height, so the board never touched anything.
+    swallow, and THAT is what sets where the strip sits -- the old nest picked a
+    depth and ignored the package height, so the source never touched anything.
     """
     recess_d = LED_INS_FL_T - LED_WEB               # 0.7
     stand    = LED_PKG_H - recess_d                 # 0.9 proud of the flange back
-    board_t0 = -LED_INS_FL_T - stand                # -2.4, board's lens-side face
-    board_t1 = board_t0 - LED_BOARD_T               # -4.0, board's back face
-    return recess_d, board_t0, board_t1, board_t1 - LED_SNAP
+    strip_t0 = -LED_INS_FL_T - stand                # -2.40, strip's LED-side face
+    strip_t1 = strip_t0 - LED_STRIP_T               # -2.75, strip's back face
+    return recess_d, strip_t0, strip_t1, strip_t1 - LED_LIP
 
 
 def build_diffuser_step():
@@ -3504,23 +3512,21 @@ def build_diffuser_step():
     above the outer skin. The flange is GLUED to the faceplate underside, so its
     face is kept flat and clear -- nothing is modelled on it.
 
-    The puck board (hardware/led_strip/, 16 x 8 x 1.6) drops into rails on the
-    back (#927). Rails run the board's LONG edges only; both short ends stay open
-    so the castellated 3-wire daisy chain leaves without a notch. The board lands
-    its lens-side face on the rail shoulders with the WS2812B in the package
-    recess, and the lips hold it there.
+    A ONE-LED SEGMENT of 60 LEDs/m bare WS2812B strip snaps into a channel on the
+    back (#927). The channel runs the strip's long edges; both ends stay open, so
+    the 3 wires leave without a notch and a slightly long cut still fits.
 
-    FIT IT BY TILTING: get one long edge under its lip first, then press the other
-    edge past the 45 deg lead-in. Do NOT expect to push it in square.
+    THE STRIP IS THE SPRING. Its own adhesive cannot be used -- the LEDs face the
+    lens, which turns the tape to face away into the console -- so the segment is
+    trapped mechanically: bow the 0.35 mm flex PCB slightly, drop it past the
+    lips, let it flatten. It lands its LED-side face on the shoulders with the
+    WS2812B in the package recess. Nothing in the PRINTED part deflects, which is
+    exactly why this holds where a rigid board could not: a 2.5 mm-deep printed
+    wall cannot flex 0.4 mm without going past what PLA takes, and a flex PCB can
+    do it all day.
 
-    The lips engage 0.25 mm per side, and that is a DELIBERATE ceiling, not a
-    number to raise. The rails are only 2.5 mm deep -- root at the flange back,
-    lip at the board's back face -- and a cantilever that short cannot flex: at
-    0.25 mm the root stress is already past what PLA takes, so the assembly leans
-    on the tilt and on a little local yield. Treat the lips as a retention detent
-    that stops the board falling out while the flange glue cures, not as a
-    structural snap. A real click needs the fingers to run along X and be released
-    from the flange, and that forces printing lens-UP -- see #927.
+    Grip is 0.4 mm on each strip edge, and it does not resist sliding along the
+    channel -- the soldered wires and the closed console do that.
 
     PRINT LENS-DOWN. The lens face is then the bed face (smooth, no layer lines
     across the light), the 0.5 lip is a trivial bridge, and the lead-in ramp is
@@ -3535,30 +3541,33 @@ def build_diffuser_step():
     lens = lens.edges(">Z").chamfer(0.3)             # soft glow edge on the proud lip
     ins = lens.union(cq.Workplane("XY").slot2D(fl_l, fl_w).extrude(-LED_INS_FL_T))
 
-    recess_d, board_t0, board_t1, lip_z = diffuser_stack()
+    recess_d, strip_t0, strip_t1, lip_z = diffuser_stack()
 
     # package recess, cut into the flange's back face
     pkg = LED_PKG + 2 * LED_PKG_CLR
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-LED_INS_FL_T)
                   .rect(pkg, pkg).extrude(recess_d))
 
-    # snap rails: one profile in YZ, mirrored, extruded along the board's length
-    y_in = LED_BOARD_W / 2.0 + LED_BOARD_CLR         # slot wall
-    y_out = y_in + LED_RAIL_T
-    assert y_out <= fl_w / 2.0, (
-        f"diffuser snap rail reaches y={y_out:.2f}, past the {fl_w/2.0:.2f} flange edge")
-    rail_l = LED_BOARD_L + 2 * LED_BOARD_CLR
+    # channel walls: one profile in YZ, mirrored, extruded along the strip's run.
+    # The OUTSIDE is the flange edge -- the strip is 10 wide in a 12 wide flange,
+    # so the wall is whatever is left over, and the build fails if that is too
+    # thin to print rather than silently shaving it.
+    y_in = LED_STRIP_W / 2.0 + LED_STRIP_CLR         # channel wall
+    y_out = fl_w / 2.0
+    assert y_out - y_in >= LED_WALL_MIN, (
+        f"diffuser channel wall is {y_out - y_in:.2f}, under the {LED_WALL_MIN} floor "
+        f"-- widen LED_INS_FLANGE or narrow the channel")
     y_sh = y_in - LED_SHOULDER
     prof = [(y_sh, -LED_INS_FL_T),                   # shoulder, off the flange back
-            (y_sh, board_t0),                        #   ...down to the board face
-            (y_in, board_t0),                        # step out to the slot wall
-            (y_in, board_t1),                        #   ...down past the board
-            (y_in - LED_SNAP, board_t1),             # retaining lip (0.5 bridge)
+            (y_sh, strip_t0),                        #   ...down to the strip face
+            (y_in, strip_t0),                        # step out to the channel wall
+            (y_in, strip_t1),                        #   ...down past the strip
+            (y_in - LED_LIP, strip_t1),              # retaining lip (0.7 bridge)
             (y_in, lip_z),                           # 45 deg lead-in, self-supporting
             (y_out, lip_z),
             (y_out, -LED_INS_FL_T)]
     rail = (cq.Workplane("YZ").polyline(prof).close()
-            .extrude(rail_l / 2.0, both=True))
+            .extrude(LED_CH_L / 2.0, both=True))
     ins = ins.union(rail).union(rail.mirror("XZ"))
 
     step = os.path.join(OUT, "segno_led_diffuser.step")

@@ -54,7 +54,12 @@ board's BOM.
 
 - [ ] WS2812 **ring, 16 LEDs** ×1 — authentic Adafruit NeoPixel Ring 16
       (44.5 mm OD; clones are 68 mm and won't fit the diffuser)
-- [ ] WS2812 **indicator pills**, 10 LEDs (one per pedal, issue #366) ×1 strip
+- [ ] WS2812 **indicator pills** — **60 LEDs/m bare IP30 strip, 10 mm wide**,
+      ×1 short reel. Cut into **6** one-LED segments, one per *mappable*
+      pedal (TRACK1-4, CLEAR, BANK). The four fixed-transport pedals lost
+      theirs in #792, so this is 6 and not the 10 that #366 called for.
+      Must be BARE (no silicone sleeve) and 10 mm: the diffuser channel is
+      cut for exactly that
 
 ## Power (#754 — one 20 V PD contract, two bucks)
 
