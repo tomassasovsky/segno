@@ -6,9 +6,10 @@ import 'package:segno_engine/segno_engine.dart' hide TrackEffect;
 /// A single looper track: a multi-lane container that owns the transport
 /// (state, loop multiple, undo/redo depth) and its [lanes].
 ///
-/// The scalar [volume]/[muted]/[inputMask]/[outputMask]/[rms]/[peak] fields
-/// mirror lane 0 so existing single-lane callers (the channel strip, the
-/// routing graph) keep working; full per-lane state lives in [lanes].
+/// The scalar [volume]/[muted]/[inputMask]/[outputMask] fields mirror lane 0
+/// so existing single-lane callers (the channel strip, the routing graph) keep
+/// working; full per-lane state lives in [lanes]. [peak] is the exception: it
+/// is the whole track's mixed level, not lane 0's (#655).
 class Track extends Equatable {
   /// Creates a [Track].
   const Track({
@@ -17,8 +18,6 @@ class Track extends Equatable {
     this.volume = 1,
     this.muted = false,
     this.lengthFrames = 0,
-    this.playheadFrames = 0,
-    this.rms = 0,
     this.peak = 0,
     this.undoDepth = 0,
     this.clearRestore = false,
@@ -51,13 +50,9 @@ class Track extends Equatable {
   /// Captured length in frames (equals the master loop once finalized).
   final int lengthFrames;
 
-  /// Current playhead in frames.
-  final int playheadFrames;
-
-  /// RMS level for the most recent block, in `0..1`.
-  final double rms;
-
-  /// Peak level for the most recent block, in `0..1`.
+  /// Peak level of the track's mixed output for the most recent block, in
+  /// `0..1` — the one field that changes at the poll rate while audio flows.
+  /// Kept out of [steadyProps] for that reason.
   final double peak;
 
   /// Available undo steps (overdub layers).
@@ -144,16 +139,22 @@ class Track extends Equatable {
   /// Whether an undone overdub layer can be redone.
   bool get canRedo => redoDepth > 0;
 
-  @override
-  List<Object?> get props => [
+  /// Everything in [props] EXCEPT the live [peak] level.
+  ///
+  /// [peak] is the only field that changes at the poll rate on a track that is
+  /// merely playing, so it is the only one that has to be subscribed at meter
+  /// granularity. A surface that draws the tile AROUND a meter compares on
+  /// this, and subscribes to [peak] separately in the meter leaf itself, so a
+  /// moving level rebuilds the bar and nothing else (#646/#654/#832).
+  ///
+  /// Defined here rather than restated in the UI so a field added to [props]
+  /// can never be silently left out of a tile's rebuild condition.
+  List<Object?> get steadyProps => [
     channel,
     state,
     volume,
     muted,
     lengthFrames,
-    playheadFrames,
-    rms,
-    peak,
     undoDepth,
     clearRestore,
     redoDepth,
@@ -169,4 +170,7 @@ class Track extends Equatable {
     effects,
     chainEnabled,
   ];
+
+  @override
+  List<Object?> get props => [...steadyProps, peak];
 }

@@ -109,8 +109,9 @@ void main() {
   });
 
   group('rebuild scope', () {
-    // The whole point of #654 (the same split #646 gave TracksView): a level
-    // tick on one track must not rebuild the other tiles. Each tile's keyed
+    // The whole point of #654 (the same split #646 gave TracksView), taken one
+    // level deeper: a level tick must not rebuild ANY tile — not the other
+    // tracks', and not even the moving track's own. Each tile's keyed
     // Container is created fresh every `_TrackMeter.build` run (it carries
     // per-build values, so it is never const-canonicalised), which makes
     // widget identity an honest rebuild detector: the same instance across a
@@ -129,42 +130,58 @@ void main() {
     Container bar(WidgetTester tester, int channel) =>
         tester.widget<Container>(find.byKey(Key('pedalScreen_bar_$channel')));
 
-    testWidgets(
-      'a level-only change on one track does not rebuild the other tiles',
-      (tester) async {
-        const quiet = LooperState(tracks: [Track(), Track(channel: 1)]);
-        seedStream(quiet);
-        await pump(tester);
-
-        final tile0 = bar(tester, 0);
-        final tile1 = bar(tester, 1);
-
-        // Exactly what a moving meter emits: same structure, new levels and a
-        // new playhead — on track 0 only.
-        const loud = LooperState(
-          tracks: [
-            Track(rms: 0.8, peak: 0.9, playheadFrames: 4410),
-            Track(channel: 1),
-          ],
+    PeakMeterBar meter(WidgetTester tester, int channel) =>
+        tester.widget<PeakMeterBar>(
+          find.descendant(
+            of: find.byKey(Key('pedalScreen_bar_$channel')),
+            matching: find.byType(PeakMeterBar),
+          ),
         );
-        when(() => bloc.state).thenReturn(loud);
-        states.add(loud);
-        await tester.pump();
 
-        expect(
-          identical(tile0, bar(tester, 0)),
-          isFalse,
-          reason: 'track 0 level moved -- its own tile must rebuild',
-        );
-        expect(
-          identical(tile1, bar(tester, 1)),
-          isTrue,
-          reason:
-              "track 0's meter tick rebuilt track 1's tile -- the row or "
-              'slot selector is leaking live audio fields (see #654)',
-        );
-      },
-    );
+    testWidgets('a level-only change rebuilds no tile at all, only the bar', (
+      tester,
+    ) async {
+      const quiet = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 96000),
+          Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
+        ],
+      );
+      seedStream(quiet);
+      await pump(tester);
+
+      final tile0 = bar(tester, 0);
+      final tile1 = bar(tester, 1);
+
+      // Exactly what a moving meter emits: same structure, a new level on
+      // track 0 only.
+      const loud = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 96000, peak: 0.9),
+          Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
+        ],
+      );
+      when(() => bloc.state).thenReturn(loud);
+      states.add(loud);
+      await tester.pump();
+
+      expect(
+        identical(tile1, bar(tester, 1)),
+        isTrue,
+        reason:
+            "track 0's meter tick rebuilt track 1's tile -- the row or "
+            'slot selector is leaking live audio fields (see #654)',
+      );
+      expect(
+        identical(tile0, bar(tester, 0)),
+        isTrue,
+        reason:
+            "track 0's own tile rebuilt for a level -- the slot is still "
+            'comparing the whole Track instead of its steady slice',
+      );
+      // ...and the level still got through, to the one widget that draws it.
+      expect(meter(tester, 0).peak, 0.9);
+    });
 
     testWidgets('a structural change still rebuilds the row', (tester) async {
       const both = LooperState(tracks: [Track(), Track(channel: 1)]);

@@ -20,6 +20,7 @@ import 'package:segno/looper/view/connectivity_banners.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/stage_status_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
+import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/looper/view/tracks_commands.dart';
 import 'package:segno/performance/performance.dart';
@@ -85,14 +86,15 @@ class _TracksViewState extends State<TracksView> {
     final mode = overlay.mode;
     final commands = TracksCommands(context);
     // NOT `context.watch<LooperBloc>()`: `LooperState` carries live audio —
-    // per-track `rms`/`peak`/`playheadFrames` and `transport
-    // .masterPositionFrames` — so it changes on every poll tick while audio
-    // flows, and watching it here rebuilt this whole method: the theme, the
-    // listeners, the tray provider, the Scaffold, the tray, and all eight
-    // columns. Measured at 10.98ms p50 in the build phase on the Pi against a
-    // 16.7ms frame (#638). This selector holds only values a moving meter
-    // cannot change, so a level tick no longer reaches the chrome; the live
-    // per-track data is subscribed one level down, in [_TrackSlot].
+    // per-track `peak` and `transport.masterPositionFrames` — so it changes on
+    // every poll tick while audio flows, and watching it here rebuilt this
+    // whole method: the theme, the listeners, the tray provider, the Scaffold,
+    // the tray, and all eight columns. Measured at 10.98ms p50 in the build
+    // phase on the Pi against a 16.7ms frame (#638). This selector holds only
+    // values a moving meter cannot change, so a level tick no longer reaches
+    // the chrome; the per-track data is subscribed one level down, in
+    // [_TrackSlot], and the moving level one level below THAT, in
+    // [TrackPeakMeter].
     final chrome = context.select<LooperBloc, _ChromeState>(
       (bloc) => _ChromeState.of(bloc.state, commands),
     );
@@ -287,10 +289,10 @@ class _TracksViewState extends State<TracksView> {
 
 /// The slice of [LooperState] that [TracksView]'s own chrome depends on.
 ///
-/// Deliberately excludes everything a moving meter touches — `rms`, `peak`,
-/// `playheadFrames`, `masterPositionFrames`. Those change on every poll tick
-/// while audio flows, and including any of them here would put the whole
-/// console back on the rebuild path this class exists to keep it off (#646).
+/// Deliberately excludes everything a moving meter touches — per-track `peak`
+/// and `masterPositionFrames`. Those change on every poll tick while audio
+/// flows, and including either here would put the whole console back on the
+/// rebuild path this class exists to keep it off (#646).
 ///
 /// [channels] is every track's channel, not just the active bank's: the bank
 /// filter lives on [ControlCubit], so filtering here would rebuild the chrome
@@ -348,12 +350,16 @@ class _ChromeState extends Equatable {
   ];
 }
 
-/// One [TrackColumn], subscribed to nothing but its own [channel]'s [Track].
+/// One [TrackColumn], subscribed to nothing but its own [channel]'s [Track] —
+/// and to that track's STEADY fields only ([Track.steadyProps]).
 ///
-/// This is where the live audio data is allowed back in. Selecting per channel
-/// means track 0's meter moving rebuilds track 0's column and nothing else —
-/// where watching [LooperBloc] in [TracksView] rebuilt all eight columns plus
-/// the entire console around them on every tick (#646).
+/// Selecting per channel means only track 0's column can follow track 0, where
+/// watching [LooperBloc] in [TracksView] rebuilt all eight columns plus the
+/// entire console around them on every tick (#646). Comparing on the steady
+/// slice means a moving level does not rebuild even that column: the level is
+/// subscribed one level further down, in the [TrackPeakMeter] leaf, so a meter
+/// tick redraws a bar instead of ~250 lines of tile with its l10n lookups,
+/// theme-extension reads and FX stage label.
 class _TrackSlot extends StatelessWidget {
   const _TrackSlot({
     required this.channel,
@@ -375,12 +381,10 @@ class _TrackSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final track = context.select<LooperBloc, Track?>(
-      (bloc) => bloc.state.tracks.cast<Track?>().firstWhere(
-        (t) => t?.channel == channel,
-        orElse: () => null,
-      ),
+    final steady = context.select<LooperBloc, SteadyTrack?>(
+      (bloc) => steadyTrackOf(bloc.state, channel),
     );
+    final track = steady?.track;
     // Defence only: `channels` is derived from the same `tracks` list, and any
     // change to it changes [_ChromeState], so the row rebuilds in the same
     // frame and this should be unreachable. Returning a bare SizedBox rather

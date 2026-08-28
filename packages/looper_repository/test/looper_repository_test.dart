@@ -39,7 +39,12 @@ import 'package:segno_engine/segno_engine.dart'
 
 import 'helpers/fake_audio_engine.dart';
 
-const _playingSnapshot = EngineSnapshot(
+final EngineSnapshot _playingSnapshot = _playingAt(24000);
+
+/// One playing track, with the master transport at [masterPositionFrames] —
+/// the only thing that differs between two poll ticks of a loop that is simply
+/// playing.
+EngineSnapshot _playingAt(int masterPositionFrames) => EngineSnapshot(
   isRunning: true,
   sampleRate: 48000,
   bufferFrames: 128,
@@ -53,8 +58,8 @@ const _playingSnapshot = EngineSnapshot(
   latencyState: le.LatencyState.idle,
   measuredLatencyMs: -1,
   masterLengthFrames: 96000,
-  masterPositionFrames: 24000,
-  tracks: [
+  masterPositionFrames: masterPositionFrames,
+  tracks: const [
     TrackSnapshot(
       state: TrackState.playing,
       volume: 0.8,
@@ -278,7 +283,7 @@ void main() {
       expect(state.track.volume, closeTo(0.8, 1e-6));
       expect(state.track.muted, isFalse);
       expect(state.track.lengthFrames, 96000);
-      expect(state.track.playheadFrames, 24000);
+      expect(state.track.peak, closeTo(0.5, 1e-6));
       expect(state.track.canUndo, isTrue);
       expect(state.track.hasContent, isTrue);
       expect(state.track.inputMask, 0x2);
@@ -288,6 +293,27 @@ void main() {
       expect(state.status.inputChannels, 2);
       expect(state.status.outputChannels, 4);
       expect(state.status.isConnected, isTrue);
+    });
+
+    test('the master playhead moving does not change any track', () {
+      // The transport position belongs to the TRANSPORT. Copying it onto every
+      // `Track` (as `playheadFrames` once did) made all eight tracks compare
+      // unequal on every poll tick of a running loop, regardless of their own
+      // levels — which silently put every track tile back on the rebuild path
+      // #646/#654/#832 built to keep it off.
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo();
+      final before = repo.state;
+
+      engine.nextSnapshot = _playingAt(48000);
+      final after = repo.state;
+
+      expect(after.transport.masterPositionFrames, 48000);
+      expect(
+        after.tracks,
+        before.tracks,
+        reason: 'a track carries a copy of the master transport position',
+      );
     });
 
     test('projects multiple tracks with their channel indices', () {

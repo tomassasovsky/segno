@@ -101,11 +101,12 @@ Track? _trackOf(LooperState state, int track) {
 
 /// Whether the facts a panel draws about a lane are unchanged.
 ///
-/// Deliberately NOT `a == b`: a [Lane] carries live meters, so value equality
-/// on the whole object is false on every audio frame and the panel would
-/// redraw at the meter rate. It draws a chain, a volume, a mute and the
-/// chain's own power; only those decide. Same argument as `sameChainShape`
-/// makes for the card runs.
+/// Deliberately NOT `a == b`: a [Lane] carries numbers that move on their own
+/// — `lengthFrames` grows on every poll tick of a running recording, and
+/// `cacheState` follows the background renderer — so value equality on the
+/// whole object is false many times a second and the panel would redraw with
+/// it. It draws a chain, a volume, a mute and the chain's own power; only
+/// those decide. Same argument as `sameChainShape` makes for the card runs.
 bool sameLaneFacts(Lane? a, Lane? b) => a == null || b == null
     ? identical(a, b)
     : a.volume == b.volume &&
@@ -125,7 +126,8 @@ bool sameLaneFacts(Lane? a, Lane? b) => a == null || b == null
           listEquals(a.effects, b.effects);
 
 /// Whether the facts a panel draws about a track bus are unchanged.
-/// See [sameLaneFacts] — a [Track] carries live meters for the same reason.
+/// See [sameLaneFacts] — a [Track] carries the live `peak` on top of the same
+/// self-moving numbers, so it is false even more often.
 bool sameTrackFacts(Track? a, Track? b) => a == null || b == null
     ? identical(a, b)
     : a.volume == b.volume &&

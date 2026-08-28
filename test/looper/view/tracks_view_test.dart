@@ -20,6 +20,7 @@ import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/settings_tray.dart';
 import 'package:segno/looper/view/track_column.dart';
+import 'package:segno/looper/view/track_meters.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/session/session.dart';
@@ -50,6 +51,13 @@ class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
 /// creates unconditionally, in console and desktop layouts alike.
 final Finder _chromeProbe = find.byKey(
   const Key('tracks_settings_secondaryTap'),
+);
+
+/// The rebuild probe for one track column: `_TrackSlot` builds its
+/// [TrackColumn] fresh on every run, so the same instance across a pump means
+/// that slot did not re-run.
+Finder _column(int channel) => find.byWidgetPredicate(
+  (widget) => widget is TrackColumn && widget.track.channel == channel,
 );
 
 void main() {
@@ -1761,12 +1769,12 @@ void main() {
 
       final before = tester.widget<GestureDetector>(_chromeProbe);
 
-      // Exactly what a moving meter emits: same structure, new levels and a
-      // new playhead. Nothing the chrome renders depends on any of it.
+      // Exactly what a moving meter emits: same structure, new levels.
+      // Nothing the chrome renders depends on any of it.
       const loud = LooperState(
         tracks: [
-          Track(rms: 0.8, peak: 0.9, playheadFrames: 4410),
-          Track(channel: 1, rms: 0.5, peak: 0.6, playheadFrames: 4410),
+          Track(peak: 0.9),
+          Track(channel: 1, peak: 0.6),
         ],
         status: EngineStatus(isConnected: true),
       );
@@ -1780,6 +1788,66 @@ void main() {
         reason:
             'a meter tick rebuilt TracksView -- the selector is leaking '
             'live audio fields (see #646)',
+      );
+    });
+
+    testWidgets('a level-only change rebuilds no column, only the bar', (
+      tester,
+    ) async {
+      // One level deeper than the chrome guard above, and the half #832 did
+      // not deliver while the transport ran: a moving level must not rebuild
+      // the ~250-line tile around it either. `_TrackSlot` creates its
+      // TrackColumn fresh on every run, so widget identity is an honest
+      // rebuild detector here too.
+      const quiet = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 96000),
+          Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
+        ],
+        status: EngineStatus(isConnected: true),
+      );
+      seedStream(quiet);
+      await pump(tester);
+
+      final before = tester.widget<TrackColumn>(_column(0));
+      final other = tester.widget<TrackColumn>(_column(1));
+
+      const loud = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 96000, peak: 0.9),
+          Track(channel: 1, state: TrackState.playing, lengthFrames: 96000),
+        ],
+        status: EngineStatus(isConnected: true),
+      );
+      when(() => bloc.state).thenReturn(loud);
+      states.add(loud);
+      await tester.pump();
+
+      expect(
+        identical(other, tester.widget<TrackColumn>(_column(1))),
+        isTrue,
+        reason:
+            "track 0's meter tick rebuilt track 1's column -- a per-track "
+            'field is leaking into every column (see #646)',
+      );
+      expect(
+        identical(before, tester.widget<TrackColumn>(_column(0))),
+        isTrue,
+        reason:
+            "track 0's own column rebuilt for a level -- the slot is still "
+            'comparing the whole Track instead of its steady slice',
+      );
+      // ...and the level still got through, to the one widget that draws it.
+      expect(
+        tester
+            .widget<PeakMeterBar>(
+              find.descendant(
+                of: find.byKey(const Key('tracks_tile_0')),
+                matching: find.byType(PeakMeterBar),
+              ),
+            )
+            .peak,
+        0.9,
       );
     });
 

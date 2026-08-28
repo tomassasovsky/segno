@@ -25,13 +25,13 @@ class TrackMeterRow extends StatelessWidget {
     final looper = Theme.of(context).extension<LooperTheme>()!;
 
     // NOT `context.watch<LooperBloc>()`: `LooperState` carries live audio —
-    // per-track `rms`/`peak`/`playheadFrames` and `transport
-    // .masterPositionFrames` — so it changes on every poll tick while audio
-    // flows, and watching it here rebuilt the whole row on every tick: one
-    // track's level moving rebuilt all of the tiles. This selector holds only
-    // the row's structure (which channels exist), so a level tick no longer
-    // reaches the row; the live per-track data is subscribed one level down,
-    // in [_MeterSlot] — the same split #646 applied to `TracksView` (#654).
+    // per-track `peak` and `transport.masterPositionFrames` — so it changes on
+    // every poll tick while audio flows, and watching it here rebuilt the whole
+    // row on every tick: one track's level moving rebuilt all of the tiles.
+    // This selector holds only the row's structure (which channels exist), so a
+    // level tick no longer reaches the row; the tile is subscribed one level
+    // down in [_MeterSlot], and the moving level one level below THAT, in
+    // [TrackPeakMeter] — the same split #646 applied to `TracksView` (#654).
     final channels = context.select<LooperBloc, _MeterChannels>(
       (bloc) => _MeterChannels.of(bloc.state),
     );
@@ -61,10 +61,10 @@ class TrackMeterRow extends StatelessWidget {
 /// The slice of [LooperState] that [TrackMeterRow]'s own layout depends on:
 /// which channels exist, nothing else.
 ///
-/// Deliberately excludes everything a moving meter touches — `rms`, `peak`,
-/// `playheadFrames`, `masterPositionFrames`. Those change on every poll tick
-/// while audio flows, and including any of them here would put the whole row
-/// back on the rebuild path this class exists to keep it off (#646, #654).
+/// Deliberately excludes everything a moving meter touches — per-track `peak`
+/// and `masterPositionFrames`. Those change on every poll tick while audio
+/// flows, and including either here would put the whole row back on the
+/// rebuild path this class exists to keep it off (#646, #654).
 ///
 /// [channels] is every track's channel, not just the active bank's: the bank
 /// filter lives on [ControlCubit], so filtering here would rebuild the row
@@ -83,13 +83,13 @@ class _MeterChannels extends Equatable {
   List<Object?> get props => [channels];
 }
 
-/// One [_TrackMeter], subscribed to nothing but its own [channel]'s [Track].
+/// One [_TrackMeter], subscribed to nothing but its own [channel]'s [Track] —
+/// and to that track's STEADY fields only ([Track.steadyProps]).
 ///
-/// This is where the live audio data is allowed back in. Selecting per channel
-/// means track 0's meter moving rebuilds track 0's tile and nothing else —
-/// where watching [LooperBloc] in [TrackMeterRow] rebuilt every tile in the
-/// row on every tick (#654). `Track` is Equatable with the level fields in its
-/// props, so the select dedups when this channel's levels are unchanged.
+/// Selecting per channel means only track 0's tile can follow track 0
+/// (#654); comparing on the steady slice means a moving level does not rebuild
+/// even that tile — the level is subscribed one level further down, in the
+/// [TrackPeakMeter] leaf, which is the only thing a meter tick redraws.
 class _MeterSlot extends StatelessWidget {
   const _MeterSlot({
     required this.channel,
@@ -107,12 +107,10 @@ class _MeterSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final track = context.select<LooperBloc, Track?>(
-      (bloc) => bloc.state.tracks.cast<Track?>().firstWhere(
-        (t) => t?.channel == channel,
-        orElse: () => null,
-      ),
+    final steady = context.select<LooperBloc, SteadyTrack?>(
+      (bloc) => steadyTrackOf(bloc.state, channel),
     );
+    final track = steady?.track;
     // Defence only: `channels` is derived from the same `tracks` list, and any
     // change to it changes [_MeterChannels], so the row rebuilds in the same
     // frame and this should be unreachable. Returning a bare SizedBox rather
@@ -181,8 +179,8 @@ class _TrackMeter extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Expanded(
-            child: PeakMeterBar(
-              peak: track.peak,
+            child: TrackPeakMeter(
+              channel: track.channel,
               color: looper.meterColor(meterState, mode: mode),
               hasContent: track.hasContent,
               // A stopped track reports no live peak; hold the last fill so a
@@ -206,6 +204,93 @@ class _TrackMeter extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One track's [PeakMeterBar], subscribed to nothing but that track's live
+/// [Track.peak].
+///
+/// The leaf of the rebuild split (#646/#654/#832): every tile above it compares
+/// on [Track.steadyProps], which excludes `peak`, so the only thing a meter
+/// tick rebuilds is this bar. Everything else the bar needs — its colour,
+/// whether the track has content, whether it is frozen — is derived from steady
+/// fields and passed in by the tile, which is why this leaf can take the
+/// channel alone and read the one moving number itself.
+class TrackPeakMeter extends StatelessWidget {
+  /// Creates a [TrackPeakMeter].
+  const TrackPeakMeter({
+    required this.channel,
+    required this.color,
+    required this.hasContent,
+    required this.frozen,
+    super.key,
+  });
+
+  /// The channel whose level this bar follows.
+  final int channel;
+
+  /// The bar fill colour (the track's meter-state colour).
+  final Color color;
+
+  /// Whether the track holds recorded audio (an empty track shows no bar).
+  final bool hasContent;
+
+  /// Whether the track is stopped, so the last live fill is held.
+  final bool frozen;
+
+  @override
+  Widget build(BuildContext context) {
+    final peak = context.select<LooperBloc, double>(
+      (bloc) => peakOf(bloc.state, channel),
+    );
+    return PeakMeterBar(
+      peak: peak,
+      color: color,
+      hasContent: hasContent,
+      frozen: frozen,
+    );
+  }
+}
+
+/// [channel]'s current peak level, or `0` when the rig no longer has it.
+///
+/// A missing channel meters as silence rather than throwing: the tile above
+/// owns the "this channel is gone" case, and is rebuilt by the same emit that
+/// removed it.
+double peakOf(LooperState state, int channel) {
+  for (final track in state.tracks) {
+    if (track.channel == channel) return track.peak;
+  }
+  return 0;
+}
+
+/// A [Track] compared by its [Track.steadyProps] alone — everything about it
+/// EXCEPT the live [Track.peak].
+///
+/// What a track tile selects. `Track`'s own equality includes `peak`, so
+/// selecting the track itself puts the tile back on the meter's rebuild path —
+/// exactly the leak that made #646/#654/#832 stop short: the tiles were
+/// subscribed per channel, but every one of them still rebuilt on every poll
+/// tick. Wrapping rather than restating the field list means a field added to
+/// `Track` is compared here automatically.
+class SteadyTrack extends Equatable {
+  /// Wraps [track] for a peak-insensitive comparison.
+  const SteadyTrack(this.track);
+
+  /// The wrapped track. Its `peak` may be a tick stale — by design: whoever
+  /// draws the level subscribes to it directly ([TrackPeakMeter]).
+  final Track track;
+
+  @override
+  List<Object?> get props => track.steadyProps;
+}
+
+/// [channel]'s track as a [SteadyTrack], or `null` when the rig no longer
+/// has it.
+SteadyTrack? steadyTrackOf(LooperState state, int channel) {
+  for (final track in state.tracks) {
+    if (track.channel == channel) return SteadyTrack(track);
+  }
+  return null;
 }
 
 /// A bottom-anchored level meter driven by the track's current [peak]. Updates

@@ -33,6 +33,10 @@ class TrackColumn extends StatelessWidget {
   });
 
   /// The track this column renders.
+  ///
+  /// Its `peak` is deliberately NOT read here: the level is subscribed by the
+  /// [TrackPeakMeter] leaf inside the tile, so this instance may carry a
+  /// tick-stale level and the column still draws correctly (#646/#654/#832).
   final Track track;
 
   /// The FX stage the footswitch bound to this cell attaches to, in FX mode.
@@ -276,8 +280,12 @@ class TrackColumn extends StatelessWidget {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: PeakMeterBar(
-                        peak: track.peak,
+                      // The one part of the column a level tick redraws: the
+                      // bar subscribes to this channel's peak itself, so the
+                      // ~250 lines around it stay off the meter's rebuild path
+                      // (#646/#654/#832).
+                      child: TrackPeakMeter(
+                        channel: track.channel,
                         color: barColor,
                         hasContent: track.hasContent,
                         // A stopped track reports no live peak; hold the last

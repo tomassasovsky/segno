@@ -17,8 +17,6 @@ class Lane extends Equatable {
     this.volume = 1,
     this.muted = false,
     this.lengthFrames = 0,
-    this.rms = 0,
-    this.peak = 0,
     this.effects = const [],
     this.chainEnabled = true,
     this.inheritedFrom = const [],
@@ -40,12 +38,6 @@ class Lane extends Equatable {
 
   /// Captured length of this lane's buffer in frames.
   final int lengthFrames;
-
-  /// RMS level for the most recent block, in `0..1`.
-  final double rms;
-
-  /// Peak level for the most recent block, in `0..1`.
-  final double peak;
 
   /// The lane's record-route effects chain, in processing order.
   final List<TrackEffect> effects;
@@ -88,8 +80,6 @@ class Lane extends Equatable {
     volume,
     muted,
     lengthFrames,
-    rms,
-    peak,
     effects,
     chainEnabled,
     inheritedFrom,
