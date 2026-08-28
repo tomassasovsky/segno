@@ -31,9 +31,6 @@ class WriteDebouncer {
   final Map<Object, Timer> _timers = {};
   final Map<Object, void Function()> _pending = {};
 
-  /// Whether any write is waiting to go out.
-  bool get hasPending => _pending.isNotEmpty;
-
   /// Queues [write] for [key], replacing anything already queued for it.
   void schedule(Object key, void Function() write) {
     if (debounce <= Duration.zero) {
