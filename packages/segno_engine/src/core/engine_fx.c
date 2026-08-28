@@ -286,10 +286,25 @@ int le_psola_detect(const float* x, int n, int sr, float* out_period,
   return le_psola_detect_band(x, n, sr, 60, 1000, out_period, out_voiced);
 }
 
-int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
-                         float* out_period, float* out_voiced) {
-  *out_period = 0.0f;
-  *out_voiced = 0.0f;
+/* ---- Resumable YIN pass (see le_yin_pass in engine_private.h) --------------
+ *
+ * The three steps below ARE le_psola_detect_band, split at the two points a
+ * caller can pause at: before the difference function and after it. The
+ * octaver runs all three back to back (it needs the answer inside the same
+ * grain); the tuner runs le_yin_step a slice at a time across callbacks. The
+ * arithmetic is byte-identical either way, which is the whole point of the
+ * split — there is no second copy of the detector to keep in step. */
+
+int le_yin_begin(le_yin_pass* p, const float* x, int n, int sr, int min_hz,
+                 int max_hz, float* dp, int dp_cap) {
+  p->x = x;
+  p->dp = dp;
+  p->n = n;
+  p->tau = 1;
+  p->cum = 0.0;
+  p->minlag = 0;
+  p->maxlag = 0;
+  p->integ = 0;
   if (min_hz <= 0 || max_hz <= min_hz) return 0;
   int minlag = sr / max_hz;
   if (minlag < 2) minlag = 2;
@@ -297,6 +312,7 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
   if (maxlag > LE_PSOLA_MAXLAG) maxlag = LE_PSOLA_MAXLAG;
   if (maxlag > n / 2) maxlag = n / 2;
   if (maxlag <= minlag) return 0;
+  if (dp_cap < maxlag + 1) return 0;
   const int integ = n - maxlag; /* difference-function integration length */
 
   /* Silence floor: never run the detector on the noise floor (avoids reporting a
@@ -305,19 +321,40 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
   for (int i = 0; i < integ; ++i) energy += (double)x[i] * (double)x[i];
   if (energy < (double)integ * 1e-7) return 0;
 
-  /* Difference function d(tau), then its cumulative-mean normalization d'(tau). */
-  float dp[LE_PSOLA_MAXLAG + 1];
+  p->minlag = minlag;
+  p->maxlag = maxlag;
+  p->integ = integ;
   dp[0] = 1.0f;
-  double cum = 0.0;
-  for (int tau = 1; tau <= maxlag; ++tau) {
+  return 1;
+}
+
+int le_yin_step(le_yin_pass* p, long budget) {
+  /* Difference function d(tau), then its cumulative-mean normalization d'(tau).
+   * One whole lag always runs, however small the budget: a caller whose budget
+   * is under one integration length must still make progress, or the pass
+   * stalls forever. One lag is bounded by n/2 inner iterations. */
+  while (p->tau <= p->maxlag) {
     double sum = 0.0;
-    for (int i = 0; i < integ; ++i) {
-      const float diff = x[i] - x[i + tau];
+    const int tau = p->tau;
+    for (int i = 0; i < p->integ; ++i) {
+      const float diff = p->x[i] - p->x[i + tau];
       sum += (double)diff * (double)diff;
     }
-    cum += sum;
-    dp[tau] = cum > 0.0 ? (float)(sum * (double)tau / cum) : 1.0f;
+    p->cum += sum;
+    p->dp[tau] = p->cum > 0.0 ? (float)(sum * (double)tau / p->cum) : 1.0f;
+    ++p->tau;
+    if (budget >= 0) {
+      budget -= p->integ;
+      if (budget <= 0) break;
+    }
   }
+  return p->tau > p->maxlag;
+}
+
+int le_yin_finish(const le_yin_pass* p, float* out_period, float* out_voiced) {
+  const float* dp = p->dp;
+  const int minlag = p->minlag;
+  const int maxlag = p->maxlag;
 
   /* First dip below the absolute threshold, walked down to its local minimum;
    * fall back to the global minimum (low confidence) when nothing crosses. */
@@ -356,6 +393,18 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
   *out_period = period;
   *out_voiced = conf;
   return conf > 0.5f ? 1 : 0;
+}
+
+int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
+                         float* out_period, float* out_voiced) {
+  *out_period = 0.0f;
+  *out_voiced = 0.0f;
+  float dp[LE_PSOLA_MAXLAG + 1];
+  const int dp_cap = (int)(sizeof(dp) / sizeof(dp[0]));
+  le_yin_pass p;
+  if (!le_yin_begin(&p, x, n, sr, min_hz, max_hz, dp, dp_cap)) return 0;
+  le_yin_step(&p, -1); /* unbounded: the octaver needs the answer now */
+  return le_yin_finish(&p, out_period, out_voiced);
 }
 
 /* Added latency (frames) of the active octaver. Single source of truth, read in

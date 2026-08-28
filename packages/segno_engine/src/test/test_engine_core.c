@@ -15701,6 +15701,81 @@ static void test_tuner_arm_and_detect(void) {
   le_engine_destroy(e);
 }
 
+/* The tuner's device-rate refinement ring is CIRCULAR, and this pins that the
+ * change of representation changed nothing the reader sees.
+ *
+ * It used to be a shifting FIFO — memmove the whole 2048-sample buffer down by
+ * one, every frame — whose postcondition was simply "index 0 is the oldest of
+ * the last LE_TUNER_RAW samples, index RAW-1 the newest". The ring reaches the
+ * same postcondition with one store per frame instead of 8188 bytes moved, and
+ * le_tuner_raw_window is where the wrap is untangled. So the claim under test
+ * is that postcondition, asserted ACROSS a wrap (the case a shifting buffer
+ * never had and therefore the only case the rewrite could get wrong) and at a
+ * write index in the middle of the buffer (not the degenerate pos == 0, where
+ * the second memcpy is skipped and a broken one would go unnoticed).
+ *
+ * A unique per-frame value makes any misordering — an off-by-one, a swapped
+ * pair of halves, a stale tail — a hard mismatch rather than a plausible-
+ * looking waveform. */
+static void test_tuner_raw_ring_wrap(void) {
+  printf("test_tuner_raw_ring_wrap\n");
+  enum { FRAMES = 100, PUSHED = 4 * LE_TUNER_RAW };
+  le_engine* e = le_engine_create();
+  CHECK(e != NULL);
+  le_engine_configure(e, 48000, 2, 2, 1000);
+
+  float in[FRAMES * 2];
+  float out[FRAMES * 2];
+  /* PUSHED is not a multiple of FRAMES, so the last block overshoots it. */
+  float* ref = (float*)malloc(sizeof(float) * (PUSHED + FRAMES));
+  float* win = (float*)malloc(sizeof(float) * LE_TUNER_RAW); /* what it hands back */
+  CHECK(ref != NULL && win != NULL);
+
+  /* Arming resets the ring, and the reset lands in the command drain at the
+   * top of the very block that follows — so every frame from the first block
+   * onwards is ring content, and `ref` is the whole history. */
+  CHECK(le_engine_set_tuner_input(e, 0) == LE_OK);
+
+  int total = 0;
+  int checks = 0;
+  while (total < PUSHED) {
+    for (int f = 0; f < FRAMES; ++f) {
+      /* Distinct, bounded, and exactly representable: k * 2^-14. */
+      const float v = (float)(total + f) * 6.103515625e-05f;
+      ref[total + f] = v;
+      in[f * 2] = v;
+      in[f * 2 + 1] = 0.0f;
+    }
+    le_engine_process(e, out, in, FRAMES);
+    total += FRAMES;
+
+    if (total < LE_TUNER_RAW) {
+      /* Until the ring has filled once there is no window to hand out, and the
+       * caller's buffer is left alone rather than half-filled. */
+      win[0] = -1.0f;
+      CHECK(le_tuner_raw_window(e, win) == 0);
+      CHECK(win[0] == -1.0f);
+      continue;
+    }
+
+    /* 100 does not divide 2048, so the write index walks and this asserts at
+     * a different wrap offset on every block — including offsets either side
+     * of the wrap point. */
+    CHECK(le_tuner_raw_window(e, win) == 1);
+    for (int k = 0; k < LE_TUNER_RAW; ++k) {
+      CHECK(win[k] == ref[total - LE_TUNER_RAW + k]);
+    }
+    ++checks;
+  }
+  printf("  %d windows verified across %d frames (%d full wraps)\n", checks,
+         total, total / LE_TUNER_RAW);
+  CHECK(checks > 0);
+
+  free(win);
+  free(ref);
+  le_engine_destroy(e);
+}
+
 /* PSOLA pitch detector (YIN): the engine-internal le_psola_detect reports the true
  * period within tolerance across the vocal band with NO octave error (the half/
  * double-period trap that plain autocorrelation falls into), reads noise as
@@ -25513,6 +25588,7 @@ int main(void) {
   test_octaver_psola_pitch_detect();
   test_tuner_detect_band();
   test_tuner_arm_and_detect();
+  test_tuner_raw_ring_wrap();
   test_octaver_psola_voice_and_fallback();
   test_octaver_psola_no_chatter();
   test_octaver_added_latency();
