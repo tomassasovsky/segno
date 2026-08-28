@@ -123,7 +123,7 @@ class App extends StatelessWidget {
   final PedalRepository? pedalRepository;
 
   /// The on-screen pedal simulator transport that [pedalRepository] is built
-  /// over, or `null` when none was built. The `PedalFaceplate` injects presses
+  /// over, or `null` when none was built. The fuzz harness injects presses
   /// and reads decoded frames from it. Disposed by the [PedalCubit] (via the
   /// repository), so it is provided by value, not created here.
   final SimulatorPedalTransport? pedalSimulator;
@@ -448,12 +448,7 @@ class App extends StatelessWidget {
               final cubit = PedalCubit(
                 pedal: pedalRepo,
                 settings: context.read<SettingsRepository>(),
-                // Redundant only on a desktop analysis run — see run_segno.
-                // ignore: avoid_redundant_argument_values
                 autoBindProductNames: kPedalAutoBindProductNames,
-                // Console only; null on desktop, where the manual setting
-                // stays in charge.
-                // ignore: avoid_redundant_argument_values
                 flashedProtocolVersion: kFlashedPedalProtocolVersionReader,
               );
               unawaited(cubit.load());

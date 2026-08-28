@@ -34,6 +34,9 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
+class _MockTransportClockCubit extends MockCubit<TransportClockState>
+    implements TransportClockCubit {}
+
 class _MockSessionCubit extends MockCubit<SessionState>
     implements SessionCubit {}
 
@@ -58,6 +61,7 @@ void main() {
   late SessionCubit session;
   late PerformanceRepository performance;
   late PerformanceRecorderCubit performanceRecorder;
+  late TransportClockCubit transportClock;
   late AudioSetupCubit audioSetup;
 
   setUp(() {
@@ -115,6 +119,14 @@ void main() {
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
     );
+    // The stage status bar is unconditional now; its tempo/clock readout
+    // selects a TransportClockCubit. Mocked so no tick timer outlives a pump.
+    transportClock = _MockTransportClockCubit();
+    whenListen(
+      transportClock,
+      const Stream<TransportClockState>.empty(),
+      initialState: const TransportClockState(),
+    );
     control = ControlCubit(
       looper: repository,
       pedal: pedalRepo,
@@ -166,6 +178,7 @@ void main() {
           child: MultiBlocProvider(
             providers: [
               BlocProvider<LooperBloc>.value(value: bloc),
+              BlocProvider<TransportClockCubit>.value(value: transportClock),
               BlocProvider<TracksCubit>.value(value: tracks),
               BlocProvider<ControlCubit>.value(value: control),
               BlocProvider<SessionCubit>.value(value: session),
@@ -250,19 +263,6 @@ void main() {
         tester.element(find.byType(SettingsTray)),
       ).state;
 
-  testWidgets('the Signal button opens the tray at Signal', (tester) async {
-    seed(const LooperState(tracks: [Track()]));
-    await pump(tester);
-
-    expect(find.byKey(const Key('tracks_openSignal')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('tracks_openSignal')));
-    await tester.pumpAndSettle();
-
-    // Signal used to be a pushed page of its own. Asserting the button EXISTS
-    // is what let it keep existing while leading nowhere.
-    expect(trayState(tester).destination, SettingsTrayDestination.signal);
-    expect(trayState(tester).dragProgress, 1);
-  });
 
   testWidgets('G opens the tray at Signal too', (tester) async {
     seed(const LooperState(tracks: [Track()]));
@@ -279,16 +279,6 @@ void main() {
     expect(trayState(tester).destination, SettingsTrayDestination.signal);
   });
 
-  testWidgets('exposes a visible Settings button', (tester) async {
-    seed(const LooperState(tracks: [Track()]));
-    await pump(tester);
-
-    // Settings was previously reachable only by the `S` key or right-click;
-    // the top-bar button makes it operable by pointer/touch.
-    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-    expect(find.byKey(const Key('tracks_openSettings')), findsOneWidget);
-    expect(find.byTooltip(l10n.settingsTooltip), findsOneWidget);
-  });
 
   testWidgets('tapping a tile records that channel in record mode', (
     tester,
@@ -607,6 +597,7 @@ void main() {
             child: MultiBlocProvider(
               providers: [
                 BlocProvider<LooperBloc>.value(value: bloc),
+                BlocProvider<TransportClockCubit>.value(value: transportClock),
                 BlocProvider<TracksCubit>.value(value: tracks),
                 BlocProvider<ControlCubit>.value(value: control),
               ],
@@ -745,143 +736,13 @@ void main() {
     expect(find.byKey(const Key('tracks_tile_3')), findsOneWidget);
     expect(find.byKey(const Key('tracks_tile_4')), findsNothing);
 
-    // Switch to bank B -> channels 4-7.
-    await tester.tap(find.byKey(const Key('tracks_bank_1')));
+    // Bank B -> channels 4-7. The stage bank pair is a readout (the feet
+    // switch banks), so drive the cubit rather than tapping it.
+    control.browseBank(1);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('tracks_tile_4')), findsOneWidget);
     expect(find.byKey(const Key('tracks_tile_7')), findsOneWidget);
     expect(find.byKey(const Key('tracks_tile_0')), findsNothing);
-  });
-
-  group('transport tempo display', () {
-    testWidgets('hidden when no tempo has ever been set (grid-off)', (
-      tester,
-    ) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_transportTempo')), findsNothing);
-    });
-
-    testWidgets('shows the current BPM and beat dots once a tempo is set', (
-      tester,
-    ) async {
-      // Wide enough for the beat-indicator's width-threshold gate to show
-      // it (see the dedicated fallback/narrow-toolbar cases below).
-      tester.view.physicalSize = const Size(1400, 600);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      seed(
-        const LooperState(
-          transport: TransportState(
-            tempoBpm: 120,
-            tempoSource: TempoSource.manual,
-            currentBeat: 1,
-          ),
-          tracks: [Track()],
-        ),
-      );
-      await pump(tester);
-
-      expect(tester.takeException(), isNull);
-      final display = find.byKey(const Key('tracks_transportTempo'));
-      expect(display, findsOneWidget);
-      expect(find.text('120.0 BPM'), findsOneWidget);
-      // Small numerator (default 4/4) -> individual dots, not the "N/M"
-      // compact text the large-numerator fallback below uses.
-      expect(
-        find.descendant(of: display, matching: find.textContaining('/')),
-        findsNothing,
-      );
-    });
-
-    testWidgets('shows a counting-in readout with a beat countdown', (
-      tester,
-    ) async {
-      seed(
-        const LooperState(
-          transport: TransportState(
-            tempoBpm: 120,
-            tempoSource: TempoSource.manual,
-            countingIn: true,
-            countInBeatsLeft: 3,
-          ),
-          tracks: [Track()],
-        ),
-      );
-      await pump(tester);
-
-      expect(find.text('Count-in 3'), findsOneWidget);
-    });
-
-    testWidgets(
-      'a 15/8 signature at a normal width falls back to compact "beat N/M" '
-      'text instead of 15 dots (~130px of fixed width)',
-      (tester) async {
-        // Wide enough that the beat-indicator's width-threshold gate shows
-        // it (the toolbar's full icon cluster otherwise leaves little slack
-        // at the default 800×600 test surface — see the narrow-toolbar case
-        // below for that regime).
-        tester.view.physicalSize = const Size(1400, 600);
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-        seed(
-          const LooperState(
-            transport: TransportState(
-              tempoBpm: 120,
-              tempoSource: TempoSource.manual,
-              tsNum: 15,
-              tsDen: 8,
-              currentBeat: 2,
-            ),
-            tracks: [Track()],
-          ),
-        );
-
-        await pump(tester);
-
-        expect(tester.takeException(), isNull);
-        expect(find.text('3/15'), findsOneWidget);
-      },
-    );
-
-    testWidgets(
-      'a 15/8 signature on a narrow toolbar renders without a RenderFlex '
-      'overflow, even where the beat indicator itself is dropped',
-      (tester) async {
-        // Narrower than the default 800×600 test surface — the toolbar's
-        // full icon cluster plus this readout is already tight there (the
-        // regression this guards: 15 non-shrinkable dots at ~130px used to
-        // overflow regardless of how far the tempo text ellipsized).
-        tester.view.physicalSize = const Size(700, 600);
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(tester.view.resetDevicePixelRatio);
-        seed(
-          const LooperState(
-            transport: TransportState(
-              tempoBpm: 120,
-              tempoSource: TempoSource.manual,
-              tsNum: 15,
-              tsDen: 8,
-              currentBeat: 2,
-            ),
-            tracks: [Track()],
-          ),
-        );
-
-        await pump(tester);
-
-        // No RenderFlex overflow — the assertion the review demanded.
-        expect(tester.takeException(), isNull);
-        // At this width the LayoutBuilder gate drops the indicator
-        // entirely rather than squeezing it (still zero-overflow either
-        // way); the tempo text alone remains visible.
-        expect(find.text('120.0 BPM'), findsOneWidget);
-      },
-    );
   });
 
   group('pending arm badge', () {
@@ -1081,14 +942,18 @@ void main() {
     expect(find.text('TRACK 1'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('tracks_name_0')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400)); // open dialog
+    await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.byKey(const Key('renameTrack_field')),
-      'GUITAR',
-    );
-    await tester.tap(find.byKey(const Key('renameTrack_save')));
+    // The console rename sheet reads KeyEvent.character, so it takes keys
+    // directly rather than an enterText into a field; Enter is Save.
+    for (var i = 0; i < 'TRACK 1'.length; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    }
+    for (final ch in 'GUITAR'.split('')) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA, character: ch);
+    }
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
     expect(find.text('GUITAR'), findsOneWidget);
@@ -1311,6 +1176,10 @@ void main() {
   group('track indicators', () {
     final looper = AppTheme.neon.extension<LooperTheme>()!;
 
+    // The strip is off by default on the console (the pedals carry readiness),
+    // so every test here that expects one has to turn the pref on first.
+    setUp(() async => tracks.setShowIndicators(value: true));
+
     Color indicatorColorOf(WidgetTester tester, int channel) {
       final box = tester.widget<DecoratedBox>(
         find.descendant(
@@ -1474,8 +1343,8 @@ void main() {
         looper.indicatorColor(TrackIndicator.record),
       );
 
-      // Switch to bank B and select channel 4.
-      await tester.tap(find.byKey(const Key('tracks_bank_1')));
+      // Bank B, then select channel 4.
+      control.browseBank(1);
       await tester.pumpAndSettle();
       control.selectTrack(4);
       await tester.pumpAndSettle();
@@ -1579,138 +1448,26 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('the bank tab exposes its selected state', (tester) async {
-      final handle = tester.ensureSemantics();
+    testWidgets('the stage bank pair shows which bank is live', (tester) async {
       seed(
         LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
       );
       await pump(tester);
 
-      expect(
-        tester.getSemantics(find.byKey(const Key('tracks_bank_0'))),
-        isSemantics(isButton: true, isSelected: true),
-      );
-      expect(
-        tester.getSemantics(find.byKey(const Key('tracks_bank_1'))),
-        isSemantics(isButton: true, isSelected: false),
-      );
-      handle.dispose();
+      // A readout, not a control -- the feet switch banks -- so this asserts
+      // what it displays rather than a selected/button semantics role.
+      expect(find.byKey(const Key('stage_bank_pair')), findsOneWidget);
+      expect(find.byKey(const Key('stage_bank_0')), findsOneWidget);
+      expect(find.byKey(const Key('stage_bank_1')), findsOneWidget);
+
+      control.browseBank(1);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('tracks_tile_4')), findsOneWidget);
     });
 
-    testWidgets('the mode indicator is a labelled toggle button', (
-      tester,
-    ) async {
-      final handle = tester.ensureSemantics();
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
 
-      final node = tester.getSemantics(
-        find.byKey(const Key('tracks_mode_indicator')),
-      );
-      expect(node, isSemantics(isButton: true));
-      expect(node.label, isNotEmpty);
-      handle.dispose();
-    });
 
-    // The indicator's colour pair per mode — icon, label, border AND fill are
-    // all asserted: a half-applied change (say, a token border over a stale
-    // hardcoded fill — exactly the #737 defect) must not pass.
-    Future<(Color, Color, Color, Color?)> indicatorOf(
-      WidgetTester tester,
-      InteractionMode mode, {
-      ThemeData? theme,
-    }) async {
-      await tester.pumpApp(
-        theme: theme,
-        Scaffold(
-          body: ModeIndicator(mode: mode, onToggle: () {}),
-        ),
-      );
-      final scope = find.byKey(const Key('tracks_mode_indicator'));
-      final icon = tester
-          .widget<Icon>(find.descendant(of: scope, matching: find.byType(Icon)))
-          .color!;
-      final label = tester
-          .widget<Text>(find.descendant(of: scope, matching: find.byType(Text)))
-          .style!
-          .color!;
-      final box =
-          tester
-                  .widget<Container>(
-                    find.descendant(
-                      of: scope,
-                      matching: find.byType(Container),
-                    ),
-                  )
-                  .decoration!
-              as BoxDecoration;
-      return (box.border!.top.color, icon, label, box.color);
-    }
 
-    testWidgets('the mode indicator reads the SurfaceTheme token pairs', (
-      tester,
-    ) async {
-      // Rec red over its wash, mute green over its wash (#693 — the owner's
-      // call: mute reads green, matching the stage pill), FX purple over the
-      // deliberately FLAT `fxSurface` (#692 — its own hue, not the blue
-      // `accent` it used to borrow) — the same token pairs the stage status
-      // bar's pill reads, so the two surfaces cannot disagree.
-      final s = AppTheme.neon.extension<SurfaceTheme>()!;
-      expect(await indicatorOf(tester, InteractionMode.record), (
-        s.rec,
-        s.rec,
-        s.rec,
-        s.recSurface,
-      ));
-      expect(await indicatorOf(tester, InteractionMode.mute), (
-        s.success,
-        s.success,
-        s.success,
-        s.successSurface,
-      ));
-      expect(await indicatorOf(tester, InteractionMode.fx), (
-        s.fx,
-        s.fx,
-        s.fx,
-        s.fxSurface,
-      ));
-    });
-
-    testWidgets('the mode indicator fill follows the high-contrast flavor', (
-      tester,
-    ) async {
-      // The #737 regression this pins: the fill was an inline
-      // `color.withValues(alpha: 0.16)`, which the dark flavor's token values
-      // round close enough to that a dark-only test cannot see the bug. High
-      // contrast is the only flavor that overrides the washes — it lifts
-      // them to 0x33 (0.2) — so it is the only flavor where a hardcoded
-      // alpha visibly pins this chip below the stage pill beside it.
-      final hc = AppTheme.highContrast;
-      final s = hc.extension<SurfaceTheme>()!;
-
-      final rec = await indicatorOf(tester, InteractionMode.record, theme: hc);
-      final mute = await indicatorOf(tester, InteractionMode.mute, theme: hc);
-      final fx = await indicatorOf(tester, InteractionMode.fx, theme: hc);
-
-      expect(rec, (s.rec, s.rec, s.rec, s.recSurface));
-      expect(mute, (s.success, s.success, s.success, s.successSurface));
-      expect(fx, (s.fx, s.fx, s.fx, s.fxSurface));
-
-      // Stated as the reading rather than the hex: the two washes sit at one
-      // fill weight, and that weight is the boosted one — a hardcode cannot
-      // satisfy this. `fxSurface` is exempt by design: the pen draws it FLAT
-      // (opaque in both flavors), not as a wash, so its "boost" is a brighter
-      // flat value rather than a heavier alpha. Which flat value is a contrast
-      // constraint, held in `test/theme/app_theme_test.dart` (#692/#768), not
-      // a free choice.
-      expect(rec.$4!.a, mute.$4!.a);
-      expect(
-        rec.$4!.a,
-        greaterThan(SurfaceTheme.dark.recSurface.a),
-        reason: 'high contrast must boost the wash, not pin it at 0.16',
-      );
-      expect(fx.$4!.a, 1.0, reason: 'fxSurface is flat by design');
-    });
 
     testWidgets('Tab is not swallowed by the tracks key handler', (
       tester,
@@ -1725,228 +1482,6 @@ void main() {
       expect(FocusManager.instance.primaryFocus, isNotNull);
       // No exception; the tile targets are focusable.
       expect(find.byType(FocusableTapTarget), findsWidgets);
-    });
-  });
-
-  group('keyboard-shortcut help', () {
-    testWidgets('the chrome carries a labelled help button', (tester) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.byKey(const Key('tracks_shortcutsHelp')), findsOneWidget);
-      expect(find.byTooltip(l10n.a11yShortcutsHelp), findsWidgets);
-    });
-
-    testWidgets('the help button opens the legend dialog', (tester) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('tracks_shortcutsHelp')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('shortcutsHelp_dialog')), findsOneWidget);
-    });
-
-    testWidgets('the ? key (Shift+/) opens the legend dialog', (tester) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.slash);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('shortcutsHelp_dialog')), findsOneWidget);
-    });
-
-    testWidgets('the legend lists a known shortcut', (tester) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('tracks_shortcutsHelp')));
-      await tester.pumpAndSettle();
-
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      // The Space chip and its description both render.
-      expect(find.text('Space'), findsOneWidget);
-      expect(find.text(l10n.shortcutPlayStopAll), findsOneWidget);
-    });
-
-    testWidgets('a row is a single merged Semantics node', (tester) async {
-      final handle = tester.ensureSemantics();
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('tracks_shortcutsHelp')));
-      await tester.pumpAndSettle();
-
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      final node = tester.getSemantics(
-        find.byKey(const Key('shortcutRow_clear')),
-      );
-      // Reads as "<keys>: <description>", not two loose fragments.
-      expect(node.label, 'C: ${l10n.clearAllTooltip}');
-      handle.dispose();
-    });
-
-    testWidgets('the modifier chip shows ⌘ on macOS', (tester) async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('tracks_shortcutsHelp')));
-      await tester.pumpAndSettle();
-
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('shortcutRow_undo')),
-          matching: find.text('⌘Z'),
-        ),
-        findsOneWidget,
-      );
-      // Reset inline: the foundation-var invariant runs at the end of the test
-      // body, before tearDown callbacks.
-      debugDefaultTargetPlatformOverride = null;
-    });
-
-    testWidgets('the modifier chip shows Ctrl off macOS', (tester) async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('tracks_shortcutsHelp')));
-      await tester.pumpAndSettle();
-
-      expect(
-        find.descendant(
-          of: find.byKey(const Key('shortcutRow_undo')),
-          matching: find.text('Ctrl+Z'),
-        ),
-        findsOneWidget,
-      );
-      debugDefaultTargetPlatformOverride = null;
-    });
-  });
-
-  group('session menu', () {
-    testWidgets('the session button is present and accessibly labelled', (
-      tester,
-    ) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.byKey(const Key('tracks_session_menu')), findsOneWidget);
-      expect(find.byTooltip(l10n.a11ySessionMenu), findsOneWidget);
-    });
-
-    testWidgets('the folder button opens the Sessions popup', (tester) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      await tester.tap(find.byKey(const Key('tracks_session_menu')));
-      await tester.pumpAndSettle();
-      verify(session.refreshSessions).called(1);
-      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
-    });
-
-    testWidgets('the top bar shows "Unsaved" with no open session', (
-      tester,
-    ) async {
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      final label = tester.widget<AppText>(
-        find.byKey(const Key('tracks_session_name')),
-      );
-      expect(label.data, l10n.sessionUnsaved);
-    });
-
-    testWidgets('the top bar shows the current session name', (tester) async {
-      when(
-        () => session.state,
-      ).thenReturn(const SessionState(currentSessionName: 'Verse'));
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      expect(
-        tester
-            .widget<AppText>(find.byKey(const Key('tracks_session_name')))
-            .data,
-        'Verse',
-      );
-    });
-
-    testWidgets('Cmd/Ctrl+S writes back through the cubit', (tester) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-      await tester.pumpAndSettle();
-      verify(session.save).called(1);
-    });
-
-    testWidgets('a save-as request opens the name dialog', (tester) async {
-      whenListen(
-        session,
-        Stream.fromIterable(const [
-          SessionState(outcome: SessionOutcome.saveAsRequested),
-        ]),
-        initialState: const SessionState(),
-      );
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('sessionName_field')), findsOneWidget);
-    });
-
-    testWidgets('a success outcome surfaces a live-region SnackBar', (
-      tester,
-    ) async {
-      whenListen(
-        session,
-        Stream.fromIterable(const [
-          SessionState(status: SessionStatus.working),
-          SessionState(
-            status: SessionStatus.success,
-            outcome: SessionOutcome.saved,
-          ),
-        ]),
-        initialState: const SessionState(),
-      );
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      await tester.pump(); // deliver the emitted states
-
-      final handle = tester.ensureSemantics();
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.text(l10n.sessionSaved), findsOneWidget);
-      // The SnackBar content is wrapped in a live region (WCAG 4.1.3).
-      expect(
-        tester.getSemantics(find.text(l10n.sessionSaved)),
-        isSemantics(isLiveRegion: true),
-      );
-      handle.dispose();
-    });
-
-    testWidgets('a sample-rate mismatch surfaces the localized error', (
-      tester,
-    ) async {
-      whenListen(
-        session,
-        Stream.fromIterable(const [
-          SessionState(status: SessionStatus.working),
-          SessionState(
-            status: SessionStatus.failure,
-            error: SessionError.sampleRateMismatch,
-            errorMessage: 'session sample rate 44100 Hz does not match …',
-          ),
-        ]),
-        initialState: const SessionState(),
-      );
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      await tester.pump();
-
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.text(l10n.sessionErrorSampleRate), findsOneWidget);
     });
   });
 
@@ -2055,402 +1590,6 @@ void main() {
         expect(find.byKey(const Key('perfCompletion_sheet')), findsNothing);
       },
     );
-  });
-
-  group('transport controls', () {
-    // A connected engine holding recorded audio — the state in which the
-    // global transport buttons are live.
-    LooperState connected({
-      List<Track> tracks = const [
-        Track(state: TrackState.stopped, lengthFrames: 100),
-      ],
-    }) => LooperState(
-      tracks: tracks,
-      status: const EngineStatus(isConnected: true),
-    );
-
-    testWidgets('play/stop all and clear all render', (tester) async {
-      seed(connected());
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_playStopAll')), findsOneWidget);
-      expect(find.byKey(const Key('tracks_clearAll')), findsOneWidget);
-      // With nothing playing, the toggle shows the play icon.
-      final icon = tester.widget<Icon>(
-        find.descendant(
-          of: find.byKey(const Key('tracks_playStopAll')),
-          matching: find.byType(Icon),
-        ),
-      );
-      expect(icon.icon, Icons.play_arrow);
-    });
-
-    testWidgets('play all dispatches when nothing is playing', (tester) async {
-      seed(connected());
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('tracks_playStopAll')));
-      verify(() => bloc.add(const LooperPlayAllPressed())).called(1);
-    });
-
-    testWidgets('the toggle shows stop and stops all when a track is active', (
-      tester,
-    ) async {
-      seed(
-        connected(
-          tracks: const [Track(state: TrackState.playing, lengthFrames: 100)],
-        ),
-      );
-      await pump(tester);
-
-      // Icon flips to stop while a track is active.
-      final icon = tester.widget<Icon>(
-        find.descendant(
-          of: find.byKey(const Key('tracks_playStopAll')),
-          matching: find.byType(Icon),
-        ),
-      );
-      expect(icon.icon, Icons.stop);
-
-      await tester.tap(find.byKey(const Key('tracks_playStopAll')));
-      verify(() => bloc.add(const LooperStopAllPressed())).called(1);
-    });
-
-    for (final state in const [TrackState.recording, TrackState.overdubbing]) {
-      testWidgets('the toggle reads "active" while $state', (tester) async {
-        seed(connected(tracks: [Track(state: state, lengthFrames: 100)]));
-        await pump(tester);
-
-        final icon = tester.widget<Icon>(
-          find.descendant(
-            of: find.byKey(const Key('tracks_playStopAll')),
-            matching: find.byType(Icon),
-          ),
-        );
-        expect(icon.icon, Icons.stop);
-      });
-    }
-
-    testWidgets('clear all announces to assistive tech', (tester) async {
-      final announcements = <String>[];
-      tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler(
-        SystemChannels.accessibility,
-        (message) async {
-          final data = message! as Map<dynamic, dynamic>;
-          if (data['type'] == 'announce') {
-            announcements.add(
-              (data['data'] as Map<dynamic, dynamic>)['message'] as String,
-            );
-          }
-          return null;
-        },
-      );
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger
-            .setMockDecodedMessageHandler(SystemChannels.accessibility, null),
-      );
-
-      seed(connected());
-      await pump(tester);
-      await tester.tap(find.byKey(const Key('tracks_clearAll')));
-      await tester.pump();
-
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      // The button shares the keyboard path's announcement (anti-drift).
-      expect(announcements, contains(l10n.a11yAllCleared));
-      await settleToasts(tester); // clearing content raises the undo toast
-    });
-
-    testWidgets('clear all dispatches instantly (no dialog)', (tester) async {
-      seed(connected());
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('tracks_clearAll')));
-      // Clear-all is a ControlIntents action straight to the engine.
-      verify(() => repository.clear()).called(1);
-      await settleToasts(tester); // clearing content raises the undo toast
-    });
-
-    testWidgets('both are disabled when the engine is disconnected', (
-      tester,
-    ) async {
-      seed(
-        const LooperState(
-          tracks: [Track(state: TrackState.stopped, lengthFrames: 100)],
-        ),
-      );
-      await pump(tester);
-
-      expect(
-        tester
-            .widget<IconButton>(find.byKey(const Key('tracks_playStopAll')))
-            .onPressed,
-        isNull,
-      );
-      expect(
-        tester
-            .widget<IconButton>(find.byKey(const Key('tracks_clearAll')))
-            .onPressed,
-        isNull,
-      );
-    });
-
-    testWidgets('both are disabled when there is no content', (tester) async {
-      seed(
-        const LooperState(
-          tracks: [Track()],
-          status: EngineStatus(isConnected: true),
-        ),
-      );
-      await pump(tester);
-
-      expect(
-        tester
-            .widget<IconButton>(find.byKey(const Key('tracks_playStopAll')))
-            .onPressed,
-        isNull,
-      );
-      expect(
-        tester
-            .widget<IconButton>(find.byKey(const Key('tracks_clearAll')))
-            .onPressed,
-        isNull,
-      );
-    });
-
-    testWidgets(
-      'play is blocked when every loaded track is muted (clear stays on)',
-      (tester) async {
-        seed(
-          connected(
-            tracks: const [
-              Track(state: TrackState.stopped, lengthFrames: 100, muted: true),
-              Track(
-                channel: 1,
-                state: TrackState.stopped,
-                lengthFrames: 100,
-                muted: true,
-              ),
-            ],
-          ),
-        );
-        await pump(tester);
-
-        // Nothing would sound, so Play All is disabled...
-        expect(
-          tester
-              .widget<IconButton>(find.byKey(const Key('tracks_playStopAll')))
-              .onPressed,
-          isNull,
-        );
-        // ...but Clear All stays available (there is still content to clear).
-        expect(
-          tester
-              .widget<IconButton>(find.byKey(const Key('tracks_clearAll')))
-              .onPressed,
-          isNotNull,
-        );
-      },
-    );
-
-    testWidgets('play is allowed when at least one loaded track is unmuted', (
-      tester,
-    ) async {
-      seed(
-        connected(
-          tracks: const [
-            Track(state: TrackState.stopped, lengthFrames: 100, muted: true),
-            Track(channel: 1, state: TrackState.stopped, lengthFrames: 100),
-          ],
-        ),
-      );
-      await pump(tester);
-
-      expect(
-        tester
-            .widget<IconButton>(find.byKey(const Key('tracks_playStopAll')))
-            .onPressed,
-        isNotNull,
-      );
-      await tester.tap(find.byKey(const Key('tracks_playStopAll')));
-      verify(() => bloc.add(const LooperPlayAllPressed())).called(1);
-    });
-
-    testWidgets('stop stays available while a muted track is active', (
-      tester,
-    ) async {
-      seed(
-        connected(
-          tracks: const [
-            Track(state: TrackState.playing, lengthFrames: 100, muted: true),
-          ],
-        ),
-      );
-      await pump(tester);
-
-      // A muted but active track can still be stopped.
-      await tester.tap(find.byKey(const Key('tracks_playStopAll')));
-      verify(() => bloc.add(const LooperStopAllPressed())).called(1);
-    });
-
-    testWidgets('Space is a no-op when every loaded track is muted', (
-      tester,
-    ) async {
-      seed(
-        connected(
-          tracks: const [
-            Track(state: TrackState.stopped, lengthFrames: 100, muted: true),
-          ],
-        ),
-      );
-      await pump(tester);
-
-      await tester.sendKeyEvent(LogicalKeyboardKey.space);
-      await tester.pump();
-      verifyNever(() => bloc.add(const LooperPlayAllPressed()));
-    });
-
-    testWidgets('fullscreen button renders on desktop and is tappable', (
-      tester,
-    ) async {
-      // Reset inline (not via addTearDown): the foundation-var invariant check
-      // runs at the end of the test body, before tearDown callbacks.
-      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-      seed(connected());
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_fullscreen')), findsOneWidget);
-      // The helper swallows the missing platform channel in tests.
-      await tester.tap(find.byKey(const Key('tracks_fullscreen')));
-      await tester.pump();
-      debugDefaultTargetPlatformOverride = null;
-    });
-
-    testWidgets('fullscreen button is absent off desktop windowing', (
-      tester,
-    ) async {
-      // A mobile target stands in for "not desktop windowing" (the gate also
-      // hides the button on web).
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      seed(connected());
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_fullscreen')), findsNothing);
-      debugDefaultTargetPlatformOverride = null;
-    });
-  });
-
-  group('per-track undo/redo', () {
-    testWidgets('appear only on the selected column', (tester) async {
-      control.selectTrack(0);
-      seed(
-        const LooperState(
-          tracks: [
-            Track(lengthFrames: 100, state: TrackState.stopped),
-            Track(channel: 1, lengthFrames: 100, state: TrackState.stopped),
-          ],
-          status: EngineStatus(isConnected: true),
-        ),
-      );
-      await pump(tester);
-
-      expect(find.byKey(const Key('tracks_undo_0')), findsOneWidget);
-      expect(find.byKey(const Key('tracks_redo_0')), findsOneWidget);
-      expect(find.byKey(const Key('tracks_undo_1')), findsNothing);
-      expect(find.byKey(const Key('tracks_redo_1')), findsNothing);
-    });
-
-    testWidgets('undo dispatches for the selected channel', (tester) async {
-      control.selectTrack(0);
-      seed(
-        const LooperState(
-          tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
-        ),
-      );
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('tracks_undo_0')));
-      verify(() => bloc.add(const LooperUndoPressed(0))).called(1);
-    });
-
-    testWidgets('undo is disabled when the track has no content', (
-      tester,
-    ) async {
-      control.selectTrack(0);
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      expect(
-        tester
-            .widget<IconButton>(find.byKey(const Key('tracks_undo_0')))
-            .onPressed,
-        isNull,
-      );
-    });
-
-    testWidgets('redo is disabled with no redo history', (tester) async {
-      control.selectTrack(0);
-      seed(
-        const LooperState(
-          tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
-        ),
-      );
-      await pump(tester);
-
-      expect(
-        tester
-            .widget<IconButton>(find.byKey(const Key('tracks_redo_0')))
-            .onPressed,
-        isNull,
-      );
-    });
-
-    testWidgets('redo dispatches when a layer can be redone', (tester) async {
-      control.selectTrack(0);
-      seed(
-        const LooperState(
-          tracks: [
-            Track(lengthFrames: 100, state: TrackState.stopped, redoDepth: 1),
-          ],
-        ),
-      );
-      await pump(tester);
-
-      await tester.tap(find.byKey(const Key('tracks_redo_0')));
-      verify(() => bloc.add(const LooperRedoPressed(0))).called(1);
-    });
-
-    testWidgets('the tooltips name the macOS shortcut', (tester) async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-      control.selectTrack(0);
-      seed(
-        const LooperState(
-          tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
-        ),
-      );
-      await pump(tester);
-
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.byTooltip(l10n.undoTooltip('⌘Z')), findsOneWidget);
-      expect(find.byTooltip(l10n.redoTooltip('⌘⇧Z')), findsOneWidget);
-      debugDefaultTargetPlatformOverride = null;
-    });
-
-    testWidgets('the tooltips use Ctrl off macOS', (tester) async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      control.selectTrack(0);
-      seed(
-        const LooperState(
-          tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
-        ),
-      );
-      await pump(tester);
-
-      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.byTooltip(l10n.undoTooltip('Ctrl+Z')), findsOneWidget);
-      expect(find.byTooltip(l10n.redoTooltip('Ctrl+Y')), findsOneWidget);
-      debugDefaultTargetPlatformOverride = null;
-    });
   });
 
   group('keyboard refactor parity', () {
@@ -2604,12 +1743,9 @@ void main() {
     // identity an honest rebuild detector: the same instance across a pump
     // means the method did not re-run.
     //
-    // The probe is the keyed detector rather than `TracksToolbar` because the
-    // toolbar is compiled out when `kConsoleMode` is true -- and the console is
-    // the build whose frame budget prompted this. Probing something both
-    // layouts contain keeps the guard meaningful under
-    // `--dart-define=SEGNO_CONSOLE=true` instead of throwing on a missing
-    // widget.
+    // The probe is the keyed detector rather than `TracksToolbar`, which went
+    // with the desktop build -- and the console is the build whose frame
+    // budget prompted this guard in the first place.
     late StreamController<LooperState> states;
 
     setUp(() => states = StreamController<LooperState>.broadcast());

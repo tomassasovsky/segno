@@ -962,23 +962,14 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
           sizeof(engine->device_name) - 1);
   engine->device_name[sizeof(engine->device_name) - 1] = '\0';
 
-  /* Exclude any loopback-labelled capture channels. The ASIO backend already
-   * read its channel labels from the open driver and reported the mask in
-   * info.excluded_input_mask — re-running the per-OS label probe while ASIO
-   * holds the device would tear it down (R1 re-entrancy). Every other backend
-   * computes it here from the resolved capture-device UID: our explicit capture
-   * id when one was pinned/loopback-routed (capture_id_set, set by the backend),
-   * else the system default input (on string-id backends the id union is the
-   * UID string). */
-  uint32_t excluded_mask;
-  if (info.active_backend == LE_BACKEND_ASIO) {
-    excluded_mask = info.excluded_input_mask;
-  } else {
-    const char* capture_uid =
-        engine->capture_id_set ? (const char*)&engine->capture_id : NULL;
-    excluded_mask =
-        le_platform_excluded_input_mask(capture_uid, info.input_channels);
-  }
+  /* Exclude any loopback-labelled capture channels, computed from the resolved
+   * capture-device UID: our explicit capture id when one was pinned/loopback-
+   * routed (capture_id_set, set by the backend), else the system default input
+   * (on string-id backends the id union is the UID string). */
+  const char* capture_uid =
+      engine->capture_id_set ? (const char*)&engine->capture_id : NULL;
+  const uint32_t excluded_mask =
+      le_platform_excluded_input_mask(capture_uid, info.input_channels);
   /* relaxed: a lone published value, matching the other configuration atomics
    * (a_sample_rate, etc.) and the relaxed audio-thread / snapshot reads. */
   atomic_store_explicit(&engine->a_excluded_input_mask, excluded_mask,

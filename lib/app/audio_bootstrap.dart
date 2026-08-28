@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/console_audio_devices.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/logging/app_log.dart';
 // Settings owns its own AudioBackend; mapped to/from the looper domain backend
 // here. Prefixed only for that enum so the unprefixed one is the domain type.
@@ -40,12 +39,12 @@ typedef AutoStartResult = ({
 /// `false` only when no device could be opened (e.g. Windows with no ASIO
 /// driver), which the looper surfaces as an "audio not running" affordance.
 ///
-/// [consoleMode] defaults to [kConsoleMode]; tests inject `true`/`false`
+/// [consoleMode] defaults to true; tests inject `true`/`false`
 /// without a dart-define.
 Future<AutoStartResult> tryAutoStartEngine({
   required LooperRepository repository,
   required SettingsRepository settings,
-  bool consoleMode = kConsoleMode,
+  bool consoleMode = true,
 }) async {
   // Enumerate ASIO drivers once, before opening any device (R1), so the cubit
   // can cache them even after the engine auto-starts on ASIO.

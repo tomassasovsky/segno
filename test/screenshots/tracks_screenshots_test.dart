@@ -14,7 +14,6 @@ import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/looper.dart';
@@ -55,18 +54,16 @@ Future<void> _loadFont(String family, List<String> paths) async {
 /// exactly as the physical console shows it and captures a 1920x1080 golden.
 ///
 /// It only produces the CONSOLE layout when compiled with the flag on, so it is
-/// gated on [kConsoleMode]. Regenerate on the author's machine with:
+/// Regenerate on the author's machine with:
 ///
-///   flutter test --tags screenshots --dart-define=SEGNO_CONSOLE=true \
+///   flutter test --tags screenshots \
 ///     --update-goldens test/screenshots/tracks_screenshots_test.dart
 void main() {
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
   // Golden generators load the local SDK's Material fonts and compare against
   // macOS-rendered goldens, so they only run where those fonts exist (the
-  // author's machine); everywhere else they skip. Additionally gated on
-  // console mode: without --dart-define=SEGNO_CONSOLE=true the layout would
-  // carry the desktop toolbar and not match the console decal.
+  // author's machine); everywhere else they skip.
   final hasScreenshotFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
 
   setUpAll(() async {
@@ -216,8 +213,7 @@ void main() {
               // Console mode mounts the tray in the main window, and the tray
               // opens on Signal — whose input cards read both of these. Absent,
               // this whole test throws `ProviderNotFound` before it can draw,
-              // which is how it rotted: it only runs under
-              // `--dart-define=SEGNO_CONSOLE=true`, so nothing was running it.
+              // which is how it rotted while it was console-gated.
               BlocProvider<InputsCubit>(
                 create: (_) =>
                     InputsCubit(settings: settings, repository: repository),
@@ -292,7 +288,7 @@ void main() {
         matchesGoldenFile('goldens/tracks_main_window.png'),
       );
     },
-    skip: !hasScreenshotFonts || !kConsoleMode,
+    skip: !hasScreenshotFonts,
   );
 
   testWidgets(
@@ -329,7 +325,7 @@ void main() {
         matchesGoldenFile('goldens/tracks_device_lost.png'),
       );
     },
-    skip: !hasScreenshotFonts || !kConsoleMode,
+    skip: !hasScreenshotFonts,
   );
 
   // #692: the FX-mode stage transform — the whole stage takes the FX purple,
@@ -396,6 +392,6 @@ void main() {
         matchesGoldenFile('goldens/tracks_fx_window.png'),
       );
     },
-    skip: !hasScreenshotFonts || !kConsoleMode,
+    skip: !hasScreenshotFonts,
   );
 }

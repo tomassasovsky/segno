@@ -240,7 +240,6 @@ void main() {
             frame: frame,
             readout: readout,
             title: 'Segno — Output',
-            consoleMode: true,
             onControl: controls.add,
           ),
         );

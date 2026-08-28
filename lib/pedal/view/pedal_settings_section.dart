@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pedal_repository/pedal_repository.dart'
     show PedalBindStatus, PedalCodec, PedalOutput;
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/pedal/view/pedal_assignment_page.dart';
@@ -28,9 +27,9 @@ const _kPedalVersionUnknownValue = 0;
 /// state frames to.
 class PedalSettingsSection extends StatelessWidget {
   /// Creates a [PedalSettingsSection].
-  const PedalSettingsSection({this.consoleMode = kConsoleMode, super.key});
+  const PedalSettingsSection({this.consoleMode = true, super.key});
 
-  /// Whether this is the floor-console build. Defaults to [kConsoleMode].
+  /// Whether this is the floor-console build. Defaults to true.
   ///
   /// Console hides the parts that CHOOSE hardware — the output picker and the
   /// manual firmware-version gate — because auto-detect binds the pedal by

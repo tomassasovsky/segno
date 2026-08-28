@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:screen_retriever/screen_retriever.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
@@ -256,7 +255,7 @@ Float32List _toFloat32List(Object? raw) {
 /// by frames pushed from the main window.
 ///
 /// What surrounds the waveform depends on the build: the desktop keeps the
-/// windowed [PerformanceReadoutView]; the console ([kConsoleMode]) fills the
+/// windowed [PerformanceReadoutView]; the console fills the
 /// fixed 7" panel with the pen's `STAGE / readout` ([ConsoleReadoutView]) —
 /// stage-sized type legible from the floor, full-bleed because the panel is a
 /// panel, not a window.
@@ -266,7 +265,7 @@ class WaveformWindowApp extends StatelessWidget {
     required this.frame,
     required this.readout,
     required this.title,
-    this.consoleMode = kConsoleMode,
+    this.consoleMode = true,
     this.onControl = _dropControl,
     super.key,
   });

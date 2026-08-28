@@ -7,7 +7,6 @@ import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/view/audio_device_picker.dart';
 import 'package:segno/audio_setup/view/midi_device_picker.dart';
 import 'package:segno/audio_setup/view/midi_learn_section.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/quantize_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
@@ -28,10 +27,10 @@ class AudioSettingsSection extends StatelessWidget {
   /// Creates an [AudioSettingsSection].
   const AudioSettingsSection({
     super.key,
-    this.consoleMode = kConsoleMode,
+    this.consoleMode = true,
   });
 
-  /// Whether this is the floor-console build. Defaults to [kConsoleMode];
+  /// Whether this is the floor-console build. Defaults to true;
   /// tests inject `true`/`false` without a dart-define.
   final bool consoleMode;
 

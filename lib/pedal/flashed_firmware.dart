@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:segno/common/console_mode.dart';
 
 /// Where `segno-update-ctl flash-pedal` records what it wrote to the pedal.
 ///
@@ -46,10 +45,6 @@ Future<int?> readFlashedPedalProtocolVersion({
   }
 }
 
-/// The flashed-firmware reader for this build, or `null` when there is none.
-///
-/// Console only: nothing writes that record on desktop, where the manual
-/// firmware-version setting stays the way a user says what their pedal speaks.
-const Future<int?> Function()? kFlashedPedalProtocolVersionReader = kConsoleMode
-    ? readFlashedPedalProtocolVersion
-    : null;
+/// The flashed-firmware reader for this build.
+const Future<int?> Function() kFlashedPedalProtocolVersionReader =
+    readFlashedPedalProtocolVersion;

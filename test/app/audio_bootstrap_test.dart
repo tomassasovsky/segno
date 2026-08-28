@@ -128,7 +128,6 @@ void main() {
           final result = await tryAutoStartEngine(
             repository: repository,
             settings: settings,
-            consoleMode: true,
           );
 
           expect(result.started, isTrue);
@@ -165,7 +164,6 @@ void main() {
           final result = await tryAutoStartEngine(
             repository: repository,
             settings: settings,
-            consoleMode: true,
           );
 
           expect(result.started, isTrue);
@@ -269,7 +267,6 @@ void main() {
           final result = await tryAutoStartEngine(
             repository: repository,
             settings: settings,
-            consoleMode: true,
           );
 
           expect(result.started, isTrue);
@@ -308,7 +305,6 @@ void main() {
           final result = await tryAutoStartEngine(
             repository: repository,
             settings: settings,
-            consoleMode: true,
           );
 
           expect(result.started, isTrue);
@@ -353,7 +349,6 @@ void main() {
           await tryAutoStartEngine(
             repository: repository,
             settings: settings,
-            consoleMode: true,
           );
 
           expect(engine.lastConfig?.useLoopbackCapture, isFalse);
