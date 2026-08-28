@@ -483,7 +483,30 @@ class LooperRepository {
   }
 
   /// The current state, read synchronously from the engine.
+  ///
+  /// **Every call is a fresh FFI walk**: one `snapshot()` plus a per-track and
+  /// per-lane read (`1 + T + T*L` boundary crossings — ~31 on a default
+  /// 8x3 rig), then two complete object graphs, including a native->Dart
+  /// `String` for the device name. Correct when the caller must not miss a
+  /// write it just made; wrong on a repeating timer, where it re-derives at
+  /// the caller's cadence a projection [_poll] already keeps current. Timers
+  /// want [lastState].
   LooperState get state => _project(_engine.snapshot());
+
+  /// The most recently PROJECTED state — the same object [looperState] last
+  /// emitted, with no engine walk.
+  ///
+  /// This is what a periodic reader should use. [_poll] refreshes the
+  /// projection at the UI refresh rate ([pollInterval], 16 ms by default), so
+  /// a 33 ms timer calling [state] pays a full engine walk to recompute a
+  /// value that is at most one poll old and byte-identical to this one
+  /// ([_project] is pure over the snapshot, and the poll's own `next == _last`
+  /// dedupe is what proves it).
+  ///
+  /// Falls back to a real walk only before the first poll has landed, so a
+  /// caller reading during construction still sees the engine rather than an
+  /// invented empty rig.
+  LooperState get lastState => _last ?? state;
 
   /// Reads the audio callback's self-measurement (native issue #722): how long
   /// the engine takes to service one hardware period against the period, the

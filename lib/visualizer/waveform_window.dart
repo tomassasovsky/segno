@@ -107,6 +107,35 @@ typedef WaveformFrame = ({
   String selectedTrack,
 });
 
+/// Merges an incoming `waveform` [payload] onto the [previous] frame.
+///
+/// A payload with no `samples` key is a **progress-only push**: the main
+/// window sends the peaks only when they change (see `waveformFramePayload`),
+/// because through steady playback the loop-indexed buffer stands still and
+/// only the playhead moves. Carrying [previous]'s samples forward is what
+/// makes that safe — reading an absent key as an empty buffer would blank the
+/// waveform on every frame the peaks did not change, which is most of them.
+///
+/// Pure so the hold can be proven without a second engine.
+@visibleForTesting
+WaveformFrame waveformFrameFrom(
+  Map<Object?, Object?> payload,
+  WaveformFrame previous,
+) {
+  final progress = payload['progress'];
+  return (
+    samples: payload.containsKey('samples')
+        ? _toFloat32List(payload['samples'])
+        : previous.samples,
+    progress: progress is num ? progress.toDouble() : 0.0,
+    // Every other field degrades to what is already on screen rather than
+    // throwing: this crosses an engine boundary as a loose map, and a
+    // malformed frame must not take the second screen down mid-set.
+    selectedTrack:
+        payload['selectedTrack'] as String? ?? previous.selectedTrack,
+  );
+}
+
 /// Entrypoint for the secondary waveform window — a separate Flutter engine
 /// spawned by `desktop_multi_window`. It owns no audio engine; the main window
 /// pushes `waveform` frames to it over [waveformWindowChannel].
@@ -128,13 +157,7 @@ Future<void> runWaveformWindow(WindowController controller) async {
     switch (call.method) {
       case 'waveform':
         if (call.arguments is Map) {
-          final map = call.arguments as Map;
-          final progress = map['progress'];
-          frame.value = (
-            samples: _toFloat32List(map['samples']),
-            progress: progress is num ? progress.toDouble() : 0.0,
-            selectedTrack: map['selectedTrack'] as String,
-          );
+          frame.value = waveformFrameFrom(call.arguments as Map, frame.value);
         }
         return null;
       case 'readout':

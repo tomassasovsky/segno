@@ -157,8 +157,12 @@ class _TempoKeypadSheetState extends State<_TempoKeypadSheet> {
     final l10n = context.l10n;
     final surface = context.surface;
     // Watched, not read: while Tap is being pressed this field IS the readout
-    // of what the engine converged on.
-    final bpm = context.watch<LooperBloc>().state.transport.tempoBpm;
+    // of what the engine converged on. Selected down to the one number drawn,
+    // because `LooperState` also carries the moving playhead and levels, and
+    // watching the whole thing rebuilt this sheet at the poll rate.
+    final bpm = context.select<LooperBloc, double>(
+      (bloc) => bloc.state.transport.tempoBpm,
+    );
 
     return Focus(
       autofocus: true,

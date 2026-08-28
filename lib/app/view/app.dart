@@ -527,6 +527,12 @@ class _AppView extends StatefulWidget {
 class _AppViewState extends State<_AppView> {
   Timer? _pushTimer;
 
+  /// The state objects [_readoutOf] was last given, in the order they are
+  /// passed. `null` before the first push and after the window closes, so a
+  /// re-opened window is re-seeded from scratch — the same discipline
+  /// `pushReadout` applies to its own last-sent diff.
+  List<Object?>? _lastReadoutInputs;
+
   /// Resolves localized strings from inside [MaterialApp] when this state
   /// sits above it in the tree.
   AppLocalizations get _l10n {
@@ -654,9 +660,12 @@ class _AppViewState extends State<_AppView> {
         final tracks = context.read<TracksCubit>();
         final control = context.read<ControlCubit>().state;
         final cursor = control.cursor;
+        // `lastState`, not `state`: this runs 30x/s and `state` is a full
+        // engine walk (~31 FFI crossings + two object graphs) to re-derive
+        // the projection the repository's own 62.5 Hz poll already holds.
         widget.waveformWindow.pushWaveform(
           looper.readWaveform(),
-          looper.state.transport.progress,
+          looper.lastState.transport.progress,
           tracks.state.nameOf(cursor),
         );
         // Same timer, different discipline: the waveform changes every frame,
@@ -664,25 +673,94 @@ class _AppViewState extends State<_AppView> {
         // it last sent rather than re-serialising eight track records at frame
         // rate across an engine boundary. The clock and recorder facts are
         // whole seconds, so their churn is once a second, not once a frame.
-        widget.waveformWindow.pushReadout(
-          _readoutOf(
-            looper.state,
-            tracks.state,
-            control,
-            context.read<TransportClockCubit>().state,
-            context.read<PerformanceRecorderCubit>().state,
-            context.read<MonitorCubit>().state,
-            context.read<InputsCubit>().state,
-            context.read<AudioSetupCubit>().state,
-            _l10n,
-          ),
+        //
+        // That diff was placed for the CHANNEL, not for the CPU: it dropped
+        // ~29 of every 30 readouts *after* paying to build them. The gate
+        // below moves the same decision in front of the build, so an
+        // unchanged frame costs eight identity compares instead of a whole
+        // projection (#898).
+        _pushReadoutIfChanged(
+          looper.lastState,
+          tracks.state,
+          control,
+          context.read<TransportClockCubit>().state,
+          context.read<PerformanceRecorderCubit>().state,
+          context.read<MonitorCubit>().state,
+          context.read<InputsCubit>().state,
+          context.read<AudioSetupCubit>().state,
         );
       });
     } else {
       _pushTimer?.cancel();
       _pushTimer = null;
+      _lastReadoutInputs = null;
       await widget.waveformWindow.close();
     }
+  }
+
+  /// Builds and pushes the readout only when a state it is projected FROM has
+  /// actually changed.
+  ///
+  /// [_readoutOf] is pure over these nine inputs, so identical inputs give an
+  /// identical readout and there is nothing to build. Every input is an
+  /// immutable value replaced wholesale on emit — bloc states, and
+  /// [LooperRepository.lastState]'s deduped projection — which makes
+  /// reference identity a sound test and a very cheap one: eight pointer
+  /// compares against a frame that would otherwise allocate a readout, eight
+  /// track records, one input record per monitor, and every localized name on
+  /// both.
+  ///
+  /// Deliberately NOT a slower timer. The readout draws things the performer
+  /// causes — a footswitch arming a track, the cursor moving, a fader dragged
+  /// on the sub-window's own volume overlay — and a 1 Hz cadence would make
+  /// the second screen visibly lag the gesture that changed it. Gating on
+  /// change keeps frame-rate responsiveness and pays frame-rate cost only
+  /// when something moved.
+  void _pushReadoutIfChanged(
+    LooperState looper,
+    TracksState tracks,
+    ControlState control,
+    TransportClockState clock,
+    PerformanceRecorderState recorder,
+    MonitorState monitors,
+    InputsState inputs,
+    AudioSetupState audio,
+  ) {
+    final next = <Object?>[
+      looper,
+      tracks,
+      control,
+      clock,
+      recorder,
+      monitors,
+      inputs,
+      audio,
+    ];
+    final last = _lastReadoutInputs;
+    if (last != null) {
+      var same = true;
+      for (var i = 0; i < next.length; i++) {
+        if (!identical(next[i], last[i])) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return;
+    }
+    _lastReadoutInputs = next;
+    widget.waveformWindow.pushReadout(
+      _readoutOf(
+        looper,
+        tracks,
+        control,
+        clock,
+        recorder,
+        monitors,
+        inputs,
+        audio,
+        _l10n,
+      ),
+    );
   }
 
   /// Projects engine + control state onto the 7" readout's value type — the
@@ -709,6 +787,14 @@ class _AppViewState extends State<_AppView> {
   ) {
     final transport = looper.transport;
     final armed = recorder is PerformanceRecorderArmed ? recorder : null;
+    // Hoisted: `recordedInputs` allocates a Set, a List and sorts, and both
+    // loops below need it — the inputs loop once per (input, track) pair, so
+    // reading it inline made an 8x8 rig recompute the same eight answers 64
+    // times per readout (#898). One pass, then two lookups.
+    final recorded = {
+      for (final track in looper.tracks) track.channel: recordedInputs(track),
+    };
+    final monitoredInputs = monitors.inputs.keys.toList()..sort();
     return PerformanceReadout(
       tracks: [
         for (final track in looper.tracks)
@@ -724,7 +810,7 @@ class _AppViewState extends State<_AppView> {
                 tracks.nameOf(track.channel) ==
                 storedDefaultTrackName(track.channel),
             inputNames: [
-              for (final input in recordedInputs(track))
+              for (final input in recorded[track.channel]!)
                 l10n.inputName(inputs.names, input),
             ],
           ),
@@ -732,14 +818,14 @@ class _AppViewState extends State<_AppView> {
       inputs: [
         // Only configured monitors: an unmonitored input has no gain that
         // does anything, and the overlay must not draw a fader that lies.
-        for (final index in monitors.inputs.keys.toList()..sort())
+        for (final index in monitoredInputs)
           ReadoutInput(
             index: index,
             name: l10n.inputName(inputs.names, index),
             volume: monitors.forInput(index).volume,
             listeningTracks: [
               for (final track in looper.tracks)
-                if (recordedInputs(track).contains(index))
+                if (recorded[track.channel]!.contains(index))
                   l10n.trackName(tracks.names, track.channel),
             ],
           ),

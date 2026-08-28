@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:segno/visualizer/performance_readout.dart';
 import 'package:segno/visualizer/readout_control.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
@@ -26,6 +27,14 @@ abstract interface class WaveformWindowService {
 
   /// Sends a waveform frame (loop peaks + playhead [progress] in `0..1`) to the
   /// open window; no-op if closed.
+  ///
+  /// [samples] are sent ONLY when they differ from the last frame sent. The
+  /// source is a loop-indexed peak buffer the engine writes while capturing,
+  /// so through plain playback all 512 values stand still and only [progress]
+  /// moves — and re-sending them would copy 2 KB, encode it, and hop the
+  /// platform channel thirty times a second to redraw the same picture. The
+  /// window holds the last samples it was given, so a samples-free frame
+  /// moves the playhead over the waveform already on screen.
   void pushWaveform(Float32List samples, double progress, String selectedTrack);
 
   /// Pushes the performance readout, but ONLY when it differs from the last
@@ -54,6 +63,11 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   /// Cleared on close so a re-opened window is re-seeded from scratch.
   /// Static to match [_readyCompleter]: the channel itself is process-wide.
   static PerformanceReadout? _lastReadout;
+
+  /// Last waveform samples actually sent, for the same reason and with the
+  /// same lifecycle as [_lastReadout]: a fresh window has no held samples, so
+  /// closing must force the next frame to carry them.
+  static Float32List? _lastSamples;
   static var _mainChannelRegistered = false;
 
   /// Static like [_readyCompleter]: the channel handler is process-wide, so
@@ -134,6 +148,7 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
     _controller = null;
     _readyCompleter = null;
     _lastReadout = null;
+    _lastSamples = null;
     await waveformWindowChannel
         .invokeMethod('window_close')
         .catchError((Object _) => null);
@@ -147,13 +162,16 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
     String selectedTrack,
   ) {
     if (_controller == null) return;
+    final payload = waveformFramePayload(
+      samples: samples,
+      progress: progress,
+      selectedTrack: selectedTrack,
+      lastSent: _lastSamples,
+    );
+    if (payload.containsKey('samples')) _lastSamples = samples;
     unawaited(
       waveformWindowChannel
-          .invokeMethod('waveform', {
-            'samples': samples,
-            'progress': progress,
-            'selectedTrack': selectedTrack,
-          })
+          .invokeMethod('waveform', payload)
           .catchError((Object _) => null),
     );
   }
@@ -194,4 +212,38 @@ class NoopWaveformWindowService implements WaveformWindowService {
     double progress,
     String selectedTrack,
   ) {}
+}
+
+/// The `waveform` payload for one frame, given the [lastSent] peaks.
+///
+/// Progress and the track label ride every frame — the playhead is what
+/// actually moves. The peaks ride only when they differ from [lastSent]:
+/// through plain playback the loop-indexed peak buffer stands still, and
+/// re-sending it would copy 2 KB, encode it and hop the platform channel
+/// thirty times a second to redraw the same shape. Comparing the floats
+/// in-process is far cheaper than shipping them.
+///
+/// A `null` [lastSent] is never equal to anything: nothing has been sent yet,
+/// so the frame must carry samples to seed the window.
+///
+/// Pure so the diff can be proven without a second OS window — the same
+/// discipline `waveformWindowPlacement` uses for its own decision.
+@visibleForTesting
+Map<String, Object?> waveformFramePayload({
+  required Float32List samples,
+  required double progress,
+  required String selectedTrack,
+  required Float32List? lastSent,
+}) => {
+  if (!_sameSamples(samples, lastSent)) 'samples': samples,
+  'progress': progress,
+  'selectedTrack': selectedTrack,
+};
+
+bool _sameSamples(Float32List a, Float32List? b) {
+  if (b == null || a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }

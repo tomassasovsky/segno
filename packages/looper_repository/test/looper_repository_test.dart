@@ -123,6 +123,79 @@ void main() {
   LooperRepository buildRepo() =>
       LooperRepository(engine: engine, ticker: ticker.stream);
 
+  group('lastState (the cached projection)', () {
+    test("serves the poll's projection without walking the engine", () async {
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      // The listen above ran one poll; let it land.
+      await Future<void>.delayed(Duration.zero);
+
+      final walked = engine.snapshotCalls;
+      final first = repo.lastState;
+      final second = repo.lastState;
+
+      expect(
+        engine.snapshotCalls,
+        walked,
+        reason: 'a cached read must not cross the FFI boundary at all',
+      );
+      expect(
+        identical(first, second),
+        isTrue,
+        reason: 'the same projection object, not an equal rebuild of it',
+      );
+    });
+
+    test('equals what a fresh engine walk projects', () async {
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      // The whole substitution rests on this: `_project` is pure over the
+      // snapshot, so the cache is not a staler answer, it is the SAME answer
+      // arrived at without paying for it again.
+      expect(repo.lastState, repo.state);
+    });
+
+    test('follows the poll', () async {
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.lastState.transport.masterPositionFrames, 24000);
+
+      engine.nextSnapshot = _laneSnapshot;
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        repo.lastState.transport.masterPositionFrames,
+        0,
+        reason: 'the cache is refreshed by the poll, not frozen at first read',
+      );
+    });
+
+    test('falls back to a real walk before the first poll lands', () {
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+
+      // Nobody has listened, so nothing has polled and there is no cache. A
+      // reader must still see the engine rather than an invented empty rig.
+      expect(engine.snapshotCalls, 0);
+      expect(repo.lastState.transport.isRunning, isTrue);
+      expect(engine.snapshotCalls, greaterThan(0));
+    });
+  });
+
   group('cache telemetry gate', () {
     // The shared snapshot above carries no lanes, and this gate is entirely
     // about per-LANE reads — so seed one lane to observe.

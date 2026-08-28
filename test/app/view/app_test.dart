@@ -735,6 +735,39 @@ void main() {
       expect(windowService.readouts.last.activeBank, 1);
     });
 
+    testWidgets('does not rebuild the readout while nothing has changed', (
+      tester,
+    ) async {
+      final windowService = _RecordingWindowService();
+      await pumpApp(tester, windowService);
+
+      // One frame to compose and push the boot snapshot.
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.readouts, isNotEmpty);
+      final composed = windowService.readouts.length;
+      final waveformFrames = windowService.pushCalls;
+
+      // Ten more frames with no state moving under it. The real service's
+      // `==` diff would drop these anyway — the point here is that they are
+      // never BUILT: composing a readout allocates eight track records, one
+      // record per monitored input and every localized name on both, thirty
+      // times a second, to throw all of it away (#898).
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        windowService.readouts.length,
+        composed,
+        reason: 'the readout was recomposed for frames nothing had changed in',
+      );
+      expect(
+        windowService.pushCalls,
+        greaterThan(waveformFrames),
+        reason:
+            "the waveform must keep ticking — this gate is the readout's "
+            'alone, and a frozen waveform would mean the timer died',
+      );
+    });
+
     testWidgets(
       'overlay volume, mute and chain commands apply through the LooperBloc',
       (tester) async {
