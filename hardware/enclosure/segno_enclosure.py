@@ -3496,31 +3496,23 @@ def build_diffuser_step():
 # the top of the glyphs points at the wide edge -- so the tile cannot be fitted
 # the wrong way round without the label reading upside down.
 TILE_WALL   = 5.0     # pad left each side of the window. OWNER RULE, and the
-                      # thing the width is now DERIVED from. The old 54.45 was a
-                      # transcribed constant: it happened to satisfy this rule at
-                      # one station and was wrong at every other.
-TILE_PAD_W  = 64.55   # top-pad width at the window's MID-station -- the station
-                      # itself being 18.44 mm forward of the pedal's BACK edge
-                      # (read off the tile placements in the populated Fusion doc,
-                      # consistent across both rows). Back-computed from the single
-                      # number #795 ever recorded (a 54.55 window) plus the 5 mm
-                      # rule, then confirmed "around right" by the owner
-                      # 2026-08-28 -- so: sane, not yet on calipers. Measure the
-                      # PAD and this becomes the datum, with the window following
-                      # from the rule instead of the reverse.
+                      # thing the width is DERIVED from. The old 54.45 was a
+                      # transcribed constant: it satisfied this rule at ONE
+                      # station and was wrong at every other.
+# Top-pad width at the window's two ends, MEASURED off the `Top Pad` body in the
+# "Cherub WTB-006 Footswitch" Fusion doc (its PAD_WINDOW sketch carries the pad's
+# own side edges, so the taper comes from the part, not from the case). The pad
+# runs 64.55 at its widest -- that is the number the owner confirmed, and it is
+# the pad's BACK EDGE, not the window's station.
+TILE_PAD_W_BACK = 64.459   # at the window's back (cable-end) edge
+TILE_PAD_W_TOE  = 63.855   # at the window's toe edge -- the pad is a wedge in plan
 TILE_WIN_W  = 20.00   # window length along the pedal
 TILE_CLR    = 0.05    # per side, all four sides
-TILE_WIN_L  = TILE_PAD_W - 2*TILE_WALL                   # 54.55 at mid-station
-# Plan taper, in mm of WIDTH per mm of LENGTH. INFERRED from the case
-# (PEDAL_W -> PEDAL_TOE_W over PEDAL_D), because the TOP pad's own outline has
-# never been put on calipers -- only the bottom pad is measured, and that one is
-# carried as a rectangle. The pad sits on the case top at a uniform inset, so it
-# tapers at the case's rate; confirm with one reading of the window width at each
-# end before this ships. #922.
-TILE_TAPER  = (PEDAL_W - PEDAL_TOE_W) / PEDAL_D          # 0.02976
+TILE_WIN_L_BACK = TILE_PAD_W_BACK - 2*TILE_WALL          # 54.459
+TILE_WIN_L_TOE  = TILE_PAD_W_TOE  - 2*TILE_WALL          # 53.855
 TILE_W      = TILE_WIN_W - 2*TILE_CLR                    # 19.90, along the pedal
-TILE_L_BACK = TILE_WIN_L + TILE_TAPER*TILE_WIN_W/2.0 - 2*TILE_CLR   # wide edge
-TILE_L_TOE  = TILE_WIN_L - TILE_TAPER*TILE_WIN_W/2.0 - 2*TILE_CLR   # narrow edge
+TILE_L_BACK = TILE_WIN_L_BACK - 2*TILE_CLR               # 54.359, wide edge
+TILE_L_TOE  = TILE_WIN_L_TOE  - 2*TILE_CLR               # 53.755, narrow edge
 TILE_BODY_T = 1.8     # black body
 TILE_TEXT_T = 0.4     # white glyph layer; 1.8 + 0.4 = the 2.2 pocket, so the
                       # LETTERS finish flush with the pad and the black field

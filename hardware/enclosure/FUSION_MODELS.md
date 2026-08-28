@@ -247,6 +247,17 @@ the pedal's cable end, which is +y in the populated frame, and which also
 carries the top of the glyphs. Import at identity and the STEP's own +Y already
 points that way; do not rotate it about z.
 
+**The window it drops into lives in the OTHER doc.** `Top Pad` in "Cherub
+WTB-006 Footswitch" carries sketch `PAD_WINDOW` + feature `PAD_WINDOW_CUT`, and
+that sketch holds the pad's own side edges — so the pad's plan taper is measured
+there, not inferred from the case. The window is a trapezoid keeping a 5 mm wall
+at every station (54.459 back / 53.855 toe); the generator's `TILE_PAD_W_BACK` /
+`TILE_PAD_W_TOE` are those pad widths, and the tiles follow. **Change one and you
+must change both.** Two traps: the sketch has zero constraints and zero
+dimensions, so points move freely and nothing warns you; and editing it does
+**not** recompute the body — call `design.computeAll()` or you will read the old
+geometry back and believe the edit failed.
+
 **Re-import recipe** (same shape as the board's, above): regenerate with the
 generator, delete the ten `tile_*` occurrences, `importManager.createSTEPImportOptions`
 + `importToTarget(root)` per file, rename to `tile_<LABEL>`, re-apply the two
