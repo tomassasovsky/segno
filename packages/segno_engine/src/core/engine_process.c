@@ -1202,8 +1202,9 @@ static void le_dub_boundary(le_engine* e, le_track* t, uint64_t frame) {
  * parked retires, and — once a punched-out session's fade tail has decayed —
  * drains the uncovered remainder of the in-flight layer live -> shadow in
  * block-scaled bounded runs (LE_DRAIN_SAMPLES_PER_FRAME x block_frames per
- * track), retires it, and clears the flight flag. The retire event is pushed
- * BEFORE the flag clears (the release pairs with the
+ * track, capped at LE_DRAIN_CHUNK_MAX), retires it, and clears the flight
+ * flag. The retire event is pushed BEFORE the flag clears (the release pairs
+ * with the
  * control thread's acquire), so a control thread that sees flag == 0 after
  * draining the evt_ring is guaranteed to hold every layer. */
 static void le_dub_block_update(le_engine* e, uint64_t frame,
@@ -1255,14 +1256,18 @@ static void le_dub_block_update(le_engine* e, uint64_t frame,
       /* The copy runs per lane, so the RT budget is frames x lanes — scale the
        * chunk down so a multi-lane track drains the same bytes per block as a
        * mono one. The budget itself scales with THIS block's frame count, so
-       * the memcpy stays a fixed fraction of the callback deadline at any
-       * period size (engine_private.h has the full rationale); a frames == 0
-       * pump has no deadline and drains a 64-frame block's worth. */
-      const int64_t bf =
-          block_frames > 0 ? (int64_t)block_frames : LE_DRAIN_PUMP_FRAMES;
-      int64_t want = bf * LE_DRAIN_SAMPLES_PER_FRAME / lanes;
-      if (want > INT32_MAX) want = INT32_MAX;
-      int32_t budget = (int32_t)want;
+       * the memcpy shrinks with the callback deadline, and is clamped at the
+       * fixed chunk it replaced so it can never GROW past it on a
+       * large-period host (engine_private.h has the full rationale); a
+       * frames == 0 pump has no deadline and drains a 64-frame block's
+       * worth. */
+      const uint32_t bf_max =
+          (uint32_t)(LE_DRAIN_CHUNK_MAX / LE_DRAIN_SAMPLES_PER_FRAME);
+      uint32_t bf =
+          block_frames > 0 ? block_frames : (uint32_t)LE_DRAIN_PUMP_FRAMES;
+      if (bf > bf_max) bf = bf_max; /* clamped BEFORE the multiply */
+      int32_t budget =
+          (int32_t)(bf * (uint32_t)LE_DRAIN_SAMPLES_PER_FRAME) / lanes;
       if (budget < 1) budget = 1;
       while (budget > 0 && t->dub_count < t->dub_len) {
         /* Contiguous w run: until the segment ends (vpos wraps) or the

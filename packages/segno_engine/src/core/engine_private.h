@@ -156,15 +156,29 @@ extern "C" {
  * can now also be run at 32 frames — 333 us — where that same fixed cost is
  * over budget by its own numbers. 512 samples per block frame reproduces the
  * historical 32768 at 64 frames EXACTLY and holds the invariant that matters
- * musically: the drain RATE is 512 x sample_rate samples/s whatever the
- * period, so a drain still takes the wall-clock time it always did (a 30 s
- * mono loop in ~0.5 s) while the per-callback cost now scales WITH the
- * deadline instead of against it.
+ * musically across every period the appliance uses: the drain RATE stays
+ * 512 x sample_rate samples/s, so a drain still takes the wall-clock time it
+ * always did (a 30 s mono loop in ~0.5 s) while the per-callback cost now
+ * scales WITH the deadline instead of against it.
  *
  * The per-track budget is divided by the track's active lane count (the copy
  * runs per lane), so one draining track costs <= 2 KB of memcpy per block
  * frame regardless of lanes, and all 8 at once <= 16 KB per block frame. */
 #define LE_DRAIN_SAMPLES_PER_FRAME 512
+
+/* ...but never MORE per callback than the fixed chunk this replaced. The
+ * proportional budget is aimed at the appliance, whose periods are 64 frames
+ * and shorter; desktop hosts routinely hand us 512 or 1024, where an
+ * unclamped 512-per-frame would mean ~2 MB of memcpy per draining track in
+ * one callback (~16 MB across 8 tracks), and the argument that it is a fixed
+ * fraction of a longer deadline holds on average but not for a burst on a
+ * cold cache. Clamping at the historical 32768 makes the budget exactly what
+ * shipped for every period of 64 frames or longer and strictly smaller below
+ * it — the drain can never cost MORE per callback than it always did, at any
+ * period, while still shrinking with the deadline where the deadline is the
+ * problem. Above 64 frames the drain then takes the same wall-clock time it
+ * took before this change, which is the behaviour that shipped. */
+#define LE_DRAIN_CHUNK_MAX 32768
 
 /* A frames == 0 pump (the host tests' drain helper) is not a device callback
  * and has no deadline of its own, so it drains what one 64-frame callback

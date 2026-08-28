@@ -25273,9 +25273,13 @@ static int dub_drain_blocks(int block, int* frames_out) {
 
   int blocks = 0;
   int frames = 0;
+  const int32_t covered_before = e->tracks[0].dub_count;
   while (load_i32(&e->tracks[0].a_layer_in_flight) && blocks < 100000) {
     le_engine_process(e, out, in, (uint32_t)block);
-    if (blocks == 0) CHECK(e->tracks[0].dub_count > 0); /* the drain ran */
+    /* The very first pumped block must move the drain forward — otherwise a
+     * budget that collapsed to nothing would still "pass" by taking the
+     * bounded loop's escape hatch. */
+    if (blocks == 0) CHECK(e->tracks[0].dub_count > covered_before);
     ++blocks;
     frames += block;
   }
@@ -25285,29 +25289,37 @@ static int dub_drain_blocks(int block, int* frames_out) {
   return blocks;
 }
 
-/* The post-punch-out drain budget is sized in BLOCK FRAMES, not per callback.
- * Halving the period must halve the per-callback memcpy (so its share of the
- * — also halved — deadline is unchanged) while leaving the drain's real-time
- * duration the same. Both halves are asserted: the block COUNT scales with
- * 1/block, and the FRAMES consumed stay put. Under the old fixed per-callback
- * chunk the block count was constant and the frames halved with the period
- * instead — the exact inversion this pins against. */
+/* The post-punch-out drain budget is sized in BLOCK FRAMES, not per callback,
+ * and is capped at the fixed chunk it replaced. Two properties, both asserted:
+ *
+ *   - BELOW the cap (32 vs 64 frames), halving the period halves the
+ *     per-callback memcpy — so its share of the also-halved deadline is
+ *     unchanged — while the drain's real-time duration stays put. That shows
+ *     up as a block count scaling with 1/block at a CONSTANT frame count.
+ *     Under the old fixed per-callback chunk it was the exact inversion:
+ *     constant blocks, frames scaling with the period.
+ *   - AT the cap (256 frames), the budget stops growing, so the block count
+ *     stops falling — it matches the 64-frame case, which is where the cap
+ *     bites. That pins the drain at never costing more per callback than it
+ *     did before this change, on the long-period desktop hosts the
+ *     proportional budget was never aimed at. */
 static void test_dub_drain_budget_scales_with_the_block(void) {
   printf("test_dub_drain_budget_scales_with_the_block\n");
-  int f32 = 0, f64 = 0, f128 = 0;
+  int f32 = 0, f64 = 0, f256 = 0;
   const int b32 = dub_drain_blocks(32, &f32);
   const int b64 = dub_drain_blocks(64, &f64);
-  const int b128 = dub_drain_blocks(128, &f128);
-  printf("  32f: %d blocks / %d frames | 64f: %d / %d | 128f: %d / %d\n", b32,
-         f32, b64, f64, b128, f128);
+  const int b256 = dub_drain_blocks(256, &f256);
+  printf("  32f: %d blocks / %d frames | 64f: %d / %d | 256f: %d / %d\n", b32,
+         f32, b64, f64, b256, f256);
 
   CHECK(b64 > 1); /* the scenario really does span several blocks */
-  /* Blocks scale inversely with the block size (+/- one rounding block). */
+  /* Below the cap: blocks scale inversely with the block size, and the frames
+   * — i.e. the wall-clock drain time — stay put (+/- one rounding block). */
   CHECK(b32 >= 2 * b64 - 2 && b32 <= 2 * b64 + 2);
-  CHECK(b128 * 2 >= b64 - 2 && b128 * 2 <= b64 + 2);
-  /* Frames — i.e. wall-clock drain time — stay put across period sizes. */
   CHECK(abs(f32 - f64) <= 64);
-  CHECK(abs(f128 - f64) <= 128);
+  /* At the cap: the same per-callback budget as 64 frames, so the same number
+   * of blocks — the drain does NOT get 4x cheaper-per-second here. */
+  CHECK(b256 == b64);
 }
 
 int main(void) {
