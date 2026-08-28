@@ -225,8 +225,8 @@ snapshot, save.
 Six `led_diffuser_*` components under `lid_stack:1+diffusers:1`, each an
 imported STEP of `out/segno_led_diffuser.step`. They replaced a `led_strips`
 component that held all six as BODIES and had gone stale by a whole revision —
-it still carried the pre-#760 flangeless lens (59.8 x 5.8 x 2.4) long after the
-generator grew the 3 mm glue shoulder.
+it still carried the bare pre-#760 lens (59.8 x 5.8 x 2.4), no shoulder on it at
+all, long after the generator grew the 3 mm glue flange.
 
 **Placement.** x is the pedal's `u/10`; the rotation is `SLOPE_ANGLE`
 (12.498241812070852 deg), not the pedal tilt the tiles use. Row 1 (TRACK1-4)
