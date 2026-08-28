@@ -13,8 +13,27 @@ on:
       - master
 
 jobs:
+  # Inlined rather than reused so the job can declare `pull-requests: read`.
+  # Its absence is what has been failing this check independently of any
+  # change under review (#890) — the reusable workflow gives no way to grant
+  # it, because a called workflow cannot widen the caller's permissions.
   semantic-pull-request:
-    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/semantic_pull_request.yml@v1
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Ensure the PR title is semantic
+        if: github.event_name == 'pull_request'
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          validateSingleCommit: false
+          ignoreLabels: |
+            bot
+            ignore-semantic-pull-request
+          wip: false
 
   build:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
