@@ -21,11 +21,17 @@ RequiresMountsFor=/data
 Type=simple
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=WAYLAND_DISPLAY=wayland-1
-# Real-time audio: the engine puts its ALSA duplex thread on SCHED_FIFO 80 and
-# miniaudio locks its buffers. Without these limits (systemd defaults RTPRIO=0,
-# MEMLOCK=8M) the setschedparam EPERMs and the thread stays SCHED_OTHER -> jitter
-# and xruns. 95 leaves the audio thread (80) room and the USB IRQ thread (rtirq,
-# ~90) above it.
+# Real-time audio. Two separate things need these limits:
+#   - RTPRIO: the engine puts its ALSA duplex thread on SCHED_FIFO 80. Without
+#     it (systemd defaults to RTPRIO=0) the setschedparam EPERMs and the thread
+#     stays SCHED_OTHER -> jitter and xruns. 95 leaves the audio thread (80)
+#     room and the USB IRQ thread (rtirq, ~90) above it.
+#   - MEMLOCK: the engine calls mlockall(MCL_CURRENT|MCL_FUTURE) at startup so
+#     the audio thread can never take a major fault on its own code, stack or
+#     buffers. It checks this rlimit FIRST and skips the call unless it is
+#     infinity, so the default 8M is not a degraded lock — it is no lock at all
+#     (engine_linux.c, #804). Grep the journal for "segno/rt: memory locked" to
+#     confirm it took effect.
 LimitRTPRIO=95
 LimitMEMLOCK=infinity
 ExecStart=/usr/bin/segno-kiosk-launch

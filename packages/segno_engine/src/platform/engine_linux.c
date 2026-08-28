@@ -14,12 +14,15 @@
 #if defined(__linux__)
 
 #include <dlfcn.h>
+#include <errno.h>     /* errno for the mlockall / getrlimit diagnostics */
 #include <pthread.h>   /* pthread_setschedparam for the appliance RT audio thread */
 #include <sched.h>     /* SCHED_FIFO, struct sched_param */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>     /* mlockall (le_platform_lock_memory) */
+#include <sys/resource.h> /* getrlimit / RLIMIT_MEMLOCK — the mlockall guard */
 #include <sys/stat.h>  /* stat() — probe /proc/asound/cardN pcm direction */
 
 #include "engine_platform.h"  /* the seam */
@@ -856,6 +859,67 @@ void le_platform_after_device_start(le_engine* engine, const le_config* config) 
 void le_platform_on_engine_teardown(void) {
   if (le_alsa_only()) return; /* no PipeWire quantum was forced */
   le_pipewire_force_quantum(0); /* restore PipeWire's dynamic quantum */
+}
+
+/* Pin the whole process into RAM. rt_alloc.h stops the audio thread faulting on
+ * pages it WRITES; this stops it faulting on pages it merely touches — the
+ * engine's text and rodata, the callback's own stack, the DSP tables, a hosted
+ * plugin's binary. Those are reclaimable (file-backed text always is, even with
+ * no swap configured), and re-faulting one is a MAJOR fault: disk I/O inside a
+ * 333 us callback deadline.
+ *
+ * GUARDED ON THE RLIMIT, not on the appliance pin, and that guard is the whole
+ * safety argument:
+ *
+ *   - It asks the only question that matters — has the operator actually
+ *     granted this? The appliance's segno.service sets LimitMEMLOCK=infinity;
+ *     a desktop gets systemd's 8 MB default, or whatever limits.conf gave the
+ *     audio group. Gating on SEGNO_ALSA_ONLY instead would both miss a properly
+ *     configured desktop rig and say nothing about whether the call can work.
+ *
+ *   - MCL_FUTURE is the half that could bite. Under it every later mapping is
+ *     locked as it is made, and one that would exceed RLIMIT_MEMLOCK FAILS —
+ *     an app-wide malloc returning NULL, not a slow path. With the limit at
+ *     infinity there is no ceiling to exceed: a future allocation can only fail
+ *     by genuinely exhausting RAM, which was already fatal on a unit with no
+ *     swap. Under a finite limit we never make the call at all, so no desktop
+ *     build can walk into that failure mode.
+ *
+ * Failure is never fatal, in either direction: an ungranted limit, an EPERM, an
+ * ENOMEM — all of them log and return, and the engine starts exactly as it does
+ * today. A user without the rlimit must still be able to run the app; they just
+ * run it without this protection, which is where every build stood before.
+ *
+ * Once per process (mlockall is process-wide, and le_engine_create can run more
+ * than once in a host that recreates the engine). */
+void le_platform_lock_memory(void) {
+  static int done = 0;
+  if (done) return;
+  done = 1;
+  struct rlimit lim;
+  if (getrlimit(RLIMIT_MEMLOCK, &lim) != 0) {
+    fprintf(stderr,
+            "segno/rt: RLIMIT_MEMLOCK unreadable (errno %d); memory not locked "
+            "(#804)\n",
+            errno);
+    return;
+  }
+  if (lim.rlim_cur != RLIM_INFINITY) {
+    /* Not a warning: this is the normal state of a desktop Linux build. */
+    fprintf(stderr,
+            "segno/rt: RLIMIT_MEMLOCK is %llu bytes, not unlimited; skipping "
+            "mlockall (grant LimitMEMLOCK=infinity to enable it)\n",
+            (unsigned long long)lim.rlim_cur);
+    return;
+  }
+  if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
+    fprintf(stderr,
+            "segno/rt: mlockall failed (errno %d); the audio thread can still "
+            "take major faults (#804)\n",
+            errno);
+    return;
+  }
+  fprintf(stderr, "segno/rt: memory locked (mlockall MCL_CURRENT|MCL_FUTURE)\n");
 }
 
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {

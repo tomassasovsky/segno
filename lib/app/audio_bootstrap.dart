@@ -397,8 +397,13 @@ Future<AutoStartResult> tryAutoStartEngine({
 
   // Per-input live monitors are restored by MonitorCubit.load() (the shell
   // creates and loads it on every launch), so they are not re-applied here.
-  final pinned = playbackId.isNotEmpty || captureId.isNotEmpty;
-  AppLog.info('audio auto-start: started ok pinned=$pinned');
+  // "pinnedDevice", not "pinned": this says the engine opened a SAVED device id
+  // rather than the system default. It is not a statement about memory pinning
+  // — that is the engine's own `segno/rt: memory locked` line — and a log that
+  // could be read as claiming a real-time property it never checked is worse
+  // than no log.
+  final pinnedDevice = playbackId.isNotEmpty || captureId.isNotEmpty;
+  AppLog.info('audio auto-start: started ok pinnedDevice=$pinnedDevice');
   return (started: true, asioDrivers: asioDrivers, recoveryConfig: null);
 }
 

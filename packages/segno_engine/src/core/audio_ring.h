@@ -17,12 +17,15 @@
  * detail (#804). A capture ring is written by the audio callback, one frame at
  * a time, for the whole length of a take — so on Linux it must not be ordinary
  * malloc memory. Any fork() in the host process write-protects every writable
- * anonymous page of the parent for copy-on-write, and the app forks (`df`,
- * the Wi-Fi/Bluetooth/update helpers) while a capture is armed; the SCHED_FIFO
+ * anonymous page of the parent for copy-on-write, and the app forks (the
+ * Wi-Fi/Bluetooth/update helpers) while a capture is armed; the SCHED_FIFO
  * callback then pays a CoW page fault per page as it sweeps the ring, and under
  * PREEMPT_RT that fault takes mmap_lock as a SLEEPING lock, so the audio thread
  * blocks in state D behind whichever ordinary thread is mid-fork.
- * le_audio_ring_alloc is where that is dealt with, once, for every ring.
+ *
+ * The ring does not deal with that itself: it claims its storage from
+ * le_rt_alloc (rt_alloc.h), the one allocator every audio-thread-written buffer
+ * in the engine goes through. Read rt_alloc.h for the full argument.
  */
 #ifndef SEGNO_AUDIO_RING_H
 #define SEGNO_AUDIO_RING_H
@@ -53,17 +56,10 @@ typedef struct le_audio_ring {
  * over caller-supplied memory, so `le_audio_ring_release` can never be handed
  * something it did not claim.
  *
- * On Linux the storage is its own anonymous mapping marked MADV_DONTFORK, so
- * fork() skips the vma outright and never write-protects the parent's pages —
- * see the header note above for why that matters. If the kernel refuses the
- * madvise, the ring is still returned: the mapping is good memory and all that
- * is lost is the fork protection, which is a capture with dropouts rather than
- * no capture at all. It says so on stderr. Everywhere else this is plain
- * malloc, which is what those platforms already had.
- *
- * Either way the pages are touched HERE, on the calling (control) thread, so
- * the audio thread does not fault them in on its first lap. That makes this
- * call proportional to `capacity` — about a millisecond per 2 MB ring on the
+ * The storage comes from le_rt_alloc (rt_alloc.h): fork-shielded on Linux,
+ * zeroed, and with every page touched on the calling (control) thread so the
+ * audio thread does not fault one in on its first lap. That makes this call
+ * proportional to `capacity` — about a millisecond per 2 MB ring on the
  * appliance — which is why it belongs in arm and not anywhere hotter. */
 int le_audio_ring_alloc(le_audio_ring* ring, size_t capacity);
 

@@ -79,6 +79,22 @@ void le_platform_after_device_open(le_engine* engine);
  * dynamic quantum (force-quantum 0). No-op elsewhere. */
 void le_platform_on_engine_teardown(void);
 
+/* Called once, from le_engine_create, before anything is allocated. Linux pins
+ * the process's pages into RAM with mlockall(MCL_CURRENT | MCL_FUTURE) — the
+ * companion to rt_alloc.h's fork shield, and the only thing that can protect
+ * what an allocator cannot: the engine's own text and rodata, the audio
+ * thread's stack, and the loaded plugin binaries, all of which are reclaimable
+ * pages whose re-fault would stall a SCHED_FIFO callback on I/O.
+ *
+ * It is attempted ONLY where the operator has granted RLIMIT_MEMLOCK = infinity
+ * (the appliance's segno.service does; a desktop's 8 MB default does not), and
+ * it NEVER refuses to start — see engine_linux.c for why both halves of that
+ * matter. No-op on macOS/Windows, which have no equivalent worth doing here:
+ * neither runs the PREEMPT_RT kernel this defends, and mach_vm_wire /
+ * VirtualLock are privileged, per-region calls, not a process-wide switch.
+ * Safe to call more than once; it acts at most once per process. */
+void le_platform_lock_memory(void);
+
 /* Excluded-input-channel mask from per-channel labels. macOS reads CoreAudio
  * labels; Windows reads the ASIO driver's channel names (SEGNO_ENABLE_ASIO, via
  * le_win_asio_excluded_mask) — and the ASIO duplex backend computes the same mask

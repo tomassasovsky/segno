@@ -56,6 +56,7 @@
 #include "loop_clock.h"
 #include "restore_declip.h"   /* offline de-clip DSP (#697 S8) */
 #include "restore_halfband.h" /* 2:1 half-band resampler (#697 S8) */
+#include "rt_alloc.h" /* le_rt_alloc/le_rt_free/le_rt_size (the RT allocator) */
 #include "rnnoise.h" /* vendored third_party/rnnoise (#697 S7 smoke test) */
 #include "segno_engine_api.h"
 #include "tempo_grid.h" /* le_tempo_grid, le_grid_* (pure grid math) */
@@ -161,6 +162,137 @@ static void test_ring_wraps_around(void) {
     CHECK(le_ring_pop(&ring, &out) == 1);
     CHECK(out.code == i);
   }
+}
+
+/* ---- le_rt_alloc (the allocator every audio-thread-written buffer uses) ----
+ *
+ * What is testable HERE is the seam's contract: zeroed, sized, writable end to
+ * end, released, and — the point of the whole design — still all of those when
+ * the fork shield fails. What is NOT testable here is the property the seam
+ * exists for: that a fork() no longer costs the callback a page fault. That
+ * needs MADV_DONTFORK, a PREEMPT_RT kernel and a live forker, i.e. the
+ * appliance — which is why the issue this lands under is blocked-verify. */
+
+static void test_rt_alloc_zeroes_and_sizes(void) {
+  printf("test_rt_alloc_zeroes_and_sizes\n");
+  /* Deliberately several pages and not a page multiple: the header offset must
+   * not eat into the payload, and the last byte must be as writable as the
+   * first. */
+  const size_t bytes = 3 * 4096 + 7;
+  unsigned char* p = (unsigned char*)le_rt_alloc(bytes);
+  CHECK(p != NULL);
+  if (p != NULL) {
+    CHECK(le_rt_size(p) == bytes);
+    int all_zero = 1;
+    for (size_t i = 0; i < bytes; ++i) {
+      if (p[i] != 0) all_zero = 0;
+    }
+    CHECK(all_zero == 1); /* calloc's guarantee, kept */
+    for (size_t i = 0; i < bytes; ++i) p[i] = (unsigned char)(i & 0xFF);
+    CHECK(p[0] == 0);
+    CHECK(p[bytes - 1] == (unsigned char)((bytes - 1) & 0xFF));
+    le_rt_free(p);
+  }
+  /* Two live allocations are independent buffers, not one aliased mapping. */
+  float* a = (float*)le_rt_alloc(64 * sizeof(float));
+  float* b = (float*)le_rt_alloc(64 * sizeof(float));
+  CHECK(a != NULL && b != NULL && a != b);
+  if (a != NULL && b != NULL) {
+    a[0] = 1.0f;
+    b[0] = 2.0f;
+    CHECK(a[0] == 1.0f);
+    CHECK(b[0] == 2.0f);
+  }
+  le_rt_free(a);
+  le_rt_free(b);
+  le_rt_free(NULL); /* NULL-safe, so teardown can call it unconditionally */
+  CHECK(le_rt_size(NULL) == 0);
+}
+
+static void test_rt_alloc_rejects_zero_and_overflow(void) {
+  printf("test_rt_alloc_rejects_zero_and_overflow\n");
+  CHECK(le_rt_alloc(0) == NULL);
+  /* A size whose header-inclusive byte count would wrap: refused, not mapped
+   * short — the same wild-write guard le_audio_ring_alloc keeps above it. */
+  CHECK(le_rt_alloc(SIZE_MAX) == NULL);
+  CHECK(le_rt_alloc(SIZE_MAX - 8) == NULL);
+}
+
+static void test_rt_alloc_degrades_when_fork_shield_fails(void) {
+  printf("test_rt_alloc_degrades_when_fork_shield_fails\n");
+  /* DEGRADE, DO NOT REFUSE: a kernel that rejects MADV_DONTFORK costs the
+   * performance its click-freedom, and refusing the allocation instead would
+   * cost it the recording. On Linux this drives the real refusal branch (and
+   * its stderr line); elsewhere there is no shield to fail and the assertion is
+   * simply that a shield-less allocation is still good memory. */
+  le_rt_set_fork_shield_failure_for_test(1);
+  const size_t bytes = 8192;
+  unsigned char* p = (unsigned char*)le_rt_alloc(bytes);
+  CHECK(p != NULL);
+  if (p != NULL) {
+    CHECK(le_rt_size(p) == bytes);
+    CHECK(p[0] == 0);
+    CHECK(p[bytes - 1] == 0);
+    p[bytes - 1] = 0x5A;
+    CHECK(p[bytes - 1] == 0x5A);
+    le_rt_free(p);
+  }
+  le_rt_set_fork_shield_failure_for_test(0);
+  /* And the seam is restorable: the next allocation is shielded again. */
+  void* q = le_rt_alloc(64);
+  CHECK(q != NULL);
+  le_rt_free(q);
+}
+
+/* The one caller that resizes an le_rt_alloc buffer. It cannot realloc (the
+ * storage is a mapping), so it maps new / copies / publishes / unmaps old —
+ * this pins that the copy actually happens and that the published cap follows
+ * the buffer. */
+static void test_lane_shrink_slot_preserves_leading_frames(void) {
+  printf("test_lane_shrink_slot_preserves_leading_frames\n");
+  le_lane ln;
+  memset(&ln, 0, sizeof(ln));
+  CHECK(le_lane_ensure_slot(&ln, 0, 4096) == 1);
+  CHECK(ln.pool_cap[0] == 4096);
+  CHECK(ln.pool[0] != NULL);
+  if (ln.pool[0] == NULL) return;
+  for (int32_t i = 0; i < 4096; ++i) ln.pool[0][i] = (float)i;
+
+  le_lane_shrink_slot(&ln, 0, 1000);
+  CHECK(ln.pool_cap[0] == 1000);
+  CHECK(ln.pool[0] != NULL);
+  int preserved = 1;
+  for (int32_t i = 0; i < 1000; ++i) {
+    if (ln.pool[0][i] != (float)i) preserved = 0;
+  }
+  CHECK(preserved == 1);
+  /* The new buffer really is the smaller one — not the old mapping relabelled
+   * — and its last frame is writable. */
+  CHECK(le_rt_size(ln.pool[0]) == (size_t)1000 * sizeof(float));
+  ln.pool[0][999] = -1.0f;
+  CHECK(ln.pool[0][999] == -1.0f);
+
+  /* No-ops: a shrink to the same or a larger size leaves the slot alone, so a
+   * caller can ask unconditionally. */
+  float* before = ln.pool[0];
+  le_lane_shrink_slot(&ln, 0, 1000);
+  le_lane_shrink_slot(&ln, 0, 8192);
+  le_lane_shrink_slot(&ln, 0, 0);
+  CHECK(ln.pool[0] == before);
+  CHECK(ln.pool_cap[0] == 1000);
+
+  /* Grow-by-replace: a bigger ask hands back a fresh, zeroed buffer. */
+  CHECK(le_lane_ensure_slot(&ln, 0, 8192) == 1);
+  CHECK(ln.pool_cap[0] == 8192);
+  CHECK(ln.pool[0][0] == 0.0f);
+  CHECK(ln.pool[0][8191] == 0.0f);
+  /* An ask the slot already satisfies keeps the buffer (and its contents). */
+  ln.pool[0][3] = 7.0f;
+  before = ln.pool[0];
+  CHECK(le_lane_ensure_slot(&ln, 0, 100) == 1);
+  CHECK(ln.pool[0] == before);
+  CHECK(ln.pool[0][3] == 7.0f);
+  le_rt_free(ln.pool[0]);
 }
 
 /* ---- le_audio_ring (performance-recording capture ring) ---- */
@@ -25293,6 +25425,10 @@ int main(void) {
   test_ring_push_pop_fifo();
   test_ring_reports_full();
   test_ring_wraps_around();
+  test_rt_alloc_zeroes_and_sizes();
+  test_rt_alloc_rejects_zero_and_overflow();
+  test_rt_alloc_degrades_when_fork_shield_fails();
+  test_lane_shrink_slot_preserves_leading_frames();
   test_audio_ring_alloc_rejects_bad_capacity();
   test_audio_ring_push_pop_fifo();
   test_audio_ring_push_frame_all_or_nothing();
