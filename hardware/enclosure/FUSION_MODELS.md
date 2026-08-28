@@ -220,6 +220,39 @@ snapshot, save.
   fragile; see the memory notes referenced in `docs/PROGRESS.md` before
   touching appearances (VSM saves can reset local appearances).
 
+## Pedal name tiles (populated doc only)
+
+Ten root-level `tile_*` components (`tile_REC_PLAY` ... `tile_BANK`), one per
+pedal, each an **imported STEP** from `out/segno_pedal_tile_<LABEL>.step` — not
+modelled here. The STEP carries two solids so the colours are per-body:
+
+| solid | appearance |
+|---|---|
+| body (1.8 thick) | `Plastic - Matte (Black)` |
+| glyphs (0.4 proud) | `Plastic - Matte (White)` |
+
+**Placement.** x is the pedal's own `u/10` from `PEDALS`; the rotation is the
+faceplate slope; and the tile centre sits **1.8444 cm forward of the pedal's
+back edge** — note the Cherub component's origin IS its back edge, not its
+centre, so compare against `occ.boundingBox.maxPoint.y`, never against
+`PEDAL_ROW*_V`. Both rows agree on that offset. Row 1 lands at
+`y = 10.2695, z = 4.1129`; row 2 (CLEAR, BANK) at `y = 26.4592, z = 7.7057`.
+
+```
+[1,0,0,u/10 | 0,c,-s,y | 0,s,c,z]      c,s = cos,sin(1.4614 deg)
+```
+
+**Orientation is load-bearing (#922).** The tile is a TRAPEZOID — wide edge to
+the pedal's cable end, which is +y in the populated frame, and which also
+carries the top of the glyphs. Import at identity and the STEP's own +Y already
+points that way; do not rotate it about z.
+
+**Re-import recipe** (same shape as the board's, above): regenerate with the
+generator, delete the ten `tile_*` occurrences, `importManager.createSTEPImportOptions`
++ `importToTarget(root)` per file, rename to `tile_<LABEL>`, re-apply the two
+appearances, then set the transform and snapshot. Do it one tile per call — this
+doc is heavy, and batching per-body operations is what froze it in #753.
+
 ## Vent blackout foam (populated doc only)
 
 `vent_foam` component: four 3 mm black pads glued to the INSIDE of every

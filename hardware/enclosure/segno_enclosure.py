@@ -3499,11 +3499,15 @@ TILE_WALL   = 5.0     # pad left each side of the window. OWNER RULE, and the
                       # thing the width is now DERIVED from. The old 54.45 was a
                       # transcribed constant: it happened to satisfy this rule at
                       # one station and was wrong at every other.
-TILE_PAD_W  = 64.55   # top-pad width at the window's MID-station. BACK-COMPUTED
-                      # from the single number #795 ever recorded (a 54.55 window)
-                      # plus the 5 mm rule -- the pad itself has never been on
-                      # calipers. Measure the PAD and this becomes the datum; the
-                      # window then follows from the rule instead of the reverse.
+TILE_PAD_W  = 64.55   # top-pad width at the window's MID-station -- the station
+                      # itself being 18.44 mm forward of the pedal's BACK edge
+                      # (read off the tile placements in the populated Fusion doc,
+                      # consistent across both rows). Back-computed from the single
+                      # number #795 ever recorded (a 54.55 window) plus the 5 mm
+                      # rule, then confirmed "around right" by the owner
+                      # 2026-08-28 -- so: sane, not yet on calipers. Measure the
+                      # PAD and this becomes the datum, with the window following
+                      # from the rule instead of the reverse.
 TILE_WIN_W  = 20.00   # window length along the pedal
 TILE_CLR    = 0.05    # per side, all four sides
 TILE_WIN_L  = TILE_PAD_W - 2*TILE_WALL                   # 54.55 at mid-station
