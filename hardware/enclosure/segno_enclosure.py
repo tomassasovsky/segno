@@ -3513,23 +3513,114 @@ TILE_WIN_L_TOE  = TILE_PAD_W_TOE  - 2*TILE_WALL          # 53.855
 TILE_W      = TILE_WIN_W - 2*TILE_CLR                    # 19.90, along the pedal
 TILE_L_BACK = TILE_WIN_L_BACK - 2*TILE_CLR               # 54.359, wide edge
 TILE_L_TOE  = TILE_WIN_L_TOE  - 2*TILE_CLR               # 53.755, narrow edge
-TILE_BODY_T = 1.8     # black body
-TILE_TEXT_T = 0.4     # white glyph layer; 1.8 + 0.4 = the 2.2 pocket, so the
-                      # LETTERS finish flush with the pad and the black field
-                      # sits 0.4 below it, out of the scuff line
+TILE_BODY_T = 1.8     # tile body. WHITE since #931 -- it was the BLACK body when
+                      # this was one FDM part with white glyphs on top, and the
+                      # resin split turned that round: the whole tile prints white
+                      # and the black is the separate 0.4 cover.
+TILE_TEXT_T = 0.4     # glyph layer; 1.8 + 0.4 = the 2.2 pocket.
+                      #
+                      # *** THE 0.4 FIELD RECESS IS GONE, AND IT IS AN OWNER CALL
+                      # (#931). The FDM tile finished with the LETTERS flush to the
+                      # pad and the black field 0.4 BELOW it -- deliberately, to
+                      # keep the field out of the scuff line. Both resin routes
+                      # lose that: the cover fills the letter layer (z 1.8..2.2),
+                      # so field and letters both finish at 2.2, and the inlay is
+                      # flush by construction. "Flush field" is therefore NOT what
+                      # distinguishes the two candidates -- they are identical on
+                      # that axis and differ only in loose islands vs a resin fill.
+                      # Getting the recess back in the two-part route means moving
+                      # the SPLIT, not the total: body 1.4 with the glyphs standing
+                      # 0.8 proud, and the black cover 0.4 sitting 1.4..1.8. Still
+                      # 2.2 overall. Nobody has asked for that, and a flush face is
+                      # easier to wipe, so it is recorded here rather than decided.
+# --- resin two-part (#931) ---------------------------------------------------
+# Owner call 2026-08-28: these move from FDM (one extruder, filament change at
+# z=0.4) to a RESIN printer, in two printed parts. The split is the owner's and
+# it is the right way round: the WHOLE tile prints in WHITE exactly as it already
+# is, and a separate BLACK COVER fills the 0.4 field around the proud letters.
+# Total stays 2.2 -- the cover occupies the letter layer, it does not stack on it.
+#
+# Why this way round and not black-tile-with-white-inlay: every opening needs
+# clearance to assemble, and at a 0.61 mm stroke that gap is a visible line. With
+# white underneath, the gap shows WHITE and reads as the letter being a touch
+# bolder. With black underneath it would show as a dark halo cutting into a
+# stroke that is already at the printable limit.
+TILE_COVER_CLR = 0.08  # per side, letter to cover opening. Applied with OPPOSITE
+                       # signs on outer and counter contours: the outer grows, the
+                       # counter shrinks. A single-signed offset grows both, which
+                       # makes the counter island 0.16 oversize and it will not go
+                       # in.
+TILE_ISLAND_MIN_V = 1.5  # mm3. Smallest counter island a person can pick up and
+                         # drop into its letter. At TILE_TEXT_T = 0.4 that is
+                         # ~3.8 mm2 of footprint. Not measured against a bench --
+                         # it is a floor under today's smallest (BANK's B, 2.16)
+                         # so that shrinking one is a build failure and not a
+                         # surprise in a pile of black flakes.
 TILE_MARGIN = 6.0     # clear tile around the glyph block
 TILE_FONT   = "Helvetica Neue Light"  # THIN-looking but printable. At the tile's
                       # 7.9 mm glyph height, Helvetica Neue *Thin* measures 0.39 mm
                       # of stroke -- under a 0.4 nozzle, so a slicer drops or gaps
                       # it. Light holds 0.61. The two asks (thinner AND smaller)
-                      # collide at the nozzle; this is where they meet. Measured,
-                      # not guessed -- see the stroke check when regenerating.
+                      # collide at the nozzle; this is where they meet. Both
+                      # numbers were measured in a font tool, by hand -- there is
+                      # no stroke gate in this file, and the line that used to
+                      # point at one was pointing at nothing. What IS gated is the
+                      # consequence that matters since #931: the cover openings
+                      # must not merge when the glyphs grow by TILE_COVER_CLR.
 TILE_SYM_H  = 14.0    # symbol em: play triangle 0.82*h = 11.5 tall
 
 # What each pedal's tile SAYS. The track pedals carry only their number -- the
 # word is redundant next to three identical neighbours, and a lone digit can be
 # set far larger in the same window.
 TILE_TEXT = {"TRACK1": "1", "TRACK2": "2", "TRACK3": "3", "TRACK4": "4"}
+
+
+def _tile_cover_openings(cq, glyph, clr, z0, t):
+    """The letter shapes grown by `clr` for clearance -- what the black cover has
+    to be missing so it drops over the proud white letters.
+
+    Returns (openings, n_glyphs, n_counters); the counts are what the piece-count
+    gates downstream check the finished cover against.
+
+    Outer contours grow by +clr and counters SHRINK by -clr. cadquery's offset2D
+    applies one sign to every wire in a face, which grows the counter too and
+    leaves the black island 2*clr oversize -- it then will not go in. So the
+    contours are separated and offset independently.
+    """
+    out, n_glyphs, n_counters = None, 0, 0
+    for g in glyph.solids().vals():
+        face = cq.Workplane(obj=g).faces("<Z").val()
+        # By ENCLOSED AREA, not by bbox width: the outer contour is the one that
+        # contains the others, and for Latin letters that also happens to be the
+        # widest -- but "happens to" is not a rule, and a symbol added to
+        # SILK_SYMBOLS need not honour it.
+        wires = sorted(cq.Workplane(obj=face).wires().vals(),
+                       key=lambda w: -cq.Face.makeFromWires(w).Area())
+        outer, counters = wires[0], wires[1:]
+        n_glyphs += 1
+        n_counters += len(counters)
+        solid = (cq.Workplane(obj=outer).toPending()
+                 .offset2D(clr, kind="arc").extrude(t))
+        for c in counters:
+            solid = solid.cut(cq.Workplane(obj=c).toPending()
+                              .offset2D(-clr, kind="arc").extrude(t))
+        bb = solid.val().BoundingBox()
+        solid = solid.translate((0, 0, z0 - bb.zmin))
+        out = solid if out is None else out.union(solid)
+    # *** offset2D's curves cannot survive STEP, and it fails SILENTLY. ***
+    # Offsetting the glyph's beziers yields Geom_OffsetCurve edges (geomType
+    # "OFFSET"). OCC writes them, and reading the file back gives loose SHELLS
+    # and ZERO solids -- an empty part that still has the right bounding box, so
+    # it looks fine in a thumbnail. It is not the multi-piece export: a ONE-piece
+    # cover fails the same way, and re-extruding, ShapeFix, UnifySameDomain and
+    # write.precision all leave it broken. Converting to NURBS is what fixes it,
+    # because a B-spline is something STEP can actually say.
+    # Bisected against a plain `plate.cut(text_solid)`, which round-trips fine --
+    # so it is the offset, not the text and not the boolean.
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
+    conv = BRepBuilderAPI_NurbsConvert(out.val().wrapped, True)
+    out = cq.Workplane(obj=cq.Shape.cast(conv.Shape()))
+    return out, n_glyphs, n_counters
 
 
 def tile_width_at(y):
@@ -3543,10 +3634,15 @@ def tile_width_at(y):
 def build_pedal_name_tiles():
     """One drop-in name tile per pedal, for the pad window.
 
-    PRINT FACE-DOWN with a filament change at z = TILE_TEXT_T. The glyphs stand
-    proud of the body, so face-down they are the first 0.4 mm off the bed: print
-    that in WHITE, swap to BLACK for the rest, flip, done. One extruder, crisp
-    glyph edges, and the letters get the bed finish.
+    RESIN, TWO PARTS since #931 (owner call): `_white` is this whole tile printed
+    in white, `_cover` is a black 0.4 plate with letter-shaped holes that drops
+    over the proud glyphs. `_inlay` is the alternative being compared -- one black
+    part with 0.4 letter POCKETS to fill with white resin. Both finish FLUSH at
+    2.2; see TILE_TEXT_T for the 0.4 field recess that neither keeps.
+
+    The retired route was FDM: print face-down with a filament change at
+    z = TILE_TEXT_T, white glyphs off the bed then black body, one extruder. The
+    fused mesh that needed is deliberately no longer written -- see below.
 
     The text comes from PEDALS and SILK_SYMBOLS -- the same source as the
     faceplate legends -- so REC/PLAY and STOP carry the dot+plus+triangle and the
@@ -3559,7 +3655,7 @@ def build_pedal_name_tiles():
     which is the intended tell.
     """
     import cadquery as cq
-    made = []
+    made, covers = [], []
     for label, _u, _v in PEDALS:
         # Trapezoid: +Y is toward the case BACK (the wide edge, and the top of
         # the glyphs), -Y toward the toe. The sides are parallel to the pad's.
@@ -3629,11 +3725,102 @@ def build_pedal_name_tiles():
         # out) and a multi-material slicer can read the split directly.
         two = cq.Compound.makeCompound([body.val(), glyph.val()])
         cq.exporters.export(two, os.path.join(OUT, stem + ".step"))
-        # STL is the fused single mesh: that is what a single-extruder,
-        # filament-change print wants.
-        cq.exporters.export(part.val(), os.path.join(OUT, stem + ".stl"))
+        # ...and there is deliberately NO plain stem + ".stl". That file was the
+        # single-extruder filament-change mesh, and #931 retired that route; it
+        # would now be byte-identical to _white.stl and be the one a print pack
+        # picked up by habit. The two-solid STEP above stays, because the Fusion
+        # doc reads the colours off those bodies (FUSION_MODELS.md) -- it is the
+        # ASSEMBLY's appearance, not either printed part.
+
+        # --- RESIN TWO-PART (#931) ------------------------------------------
+        # WHITE: the whole tile -- `part` is already exactly it, fused into one
+        # solid because that is what gets printed, in one colour.
+        cq.exporters.export(part.val(), os.path.join(OUT, stem + "_white.step"))
+        cq.exporters.export(part.val(), os.path.join(OUT, stem + "_white.stl"))
+        # BLACK: the 0.4 letter layer with the letters (plus clearance) removed,
+        # so it drops over the proud white glyphs and sits flush at 2.2.
+        plate = (cq.Workplane("XY").workplane(offset=TILE_BODY_T)
+                 .polyline([(-TILE_L_BACK/2.0,  TILE_W/2.0),
+                            ( TILE_L_BACK/2.0,  TILE_W/2.0),
+                            ( TILE_L_TOE /2.0, -TILE_W/2.0),
+                            (-TILE_L_TOE /2.0, -TILE_W/2.0)])
+                 .close().extrude(TILE_TEXT_T))
+        openings, n_glyphs, n_counters = _tile_cover_openings(
+            cq, glyph, TILE_COVER_CLR, TILE_BODY_T, TILE_TEXT_T)
+        assert len(openings.val().Solids()) == n_glyphs, (
+            f"pedal tile {label!r}: growing the glyphs by {TILE_COVER_CLR} merged "
+            f"{n_glyphs} openings into {len(openings.val().Solids())} -- the black "
+            f"web between two letters is thinner than 2 x the clearance")
+        cover = plate.cut(openings)
+        # The counters are ISLANDS: black surrounded by white letter, with nothing
+        # to hold them. Count them rather than shipping a file whose piece count
+        # is a surprise at the bench.
+        pieces = cover.val().Solids()
+        loose = len(pieces) - 1
+        # ...and the tally has to BE the counters. Any other number means the frame
+        # itself broke into pieces -- which is what a clearance that ate through a
+        # thin part of the field looks like, and it would otherwise be reported as
+        # extra "islands" and glued in as if that were the design.
+        assert loose == n_counters, (
+            f"pedal tile {label!r}: cover came out {len(pieces)} pieces for "
+            f"{n_counters} counter(s) -- the frame is not in one piece")
+        # ...and every island has to be a thing a person can pick up and place.
+        # The smallest today is ~2 mm3 (BANK's B), which is 5 mm2 of footprint at
+        # 0.4 thick -- already fiddly. A font, an em or a TILE_COVER_CLR change
+        # shrinks these silently, and the build would still report EXIT=0 with a
+        # tidy piece tally while the bench found a chip it cannot handle.
+        frame = max(pieces, key=lambda s: s.Volume())
+        for isl in pieces:
+            if isl is frame:
+                continue
+            assert isl.Volume() >= TILE_ISLAND_MIN_V, (
+                f"pedal tile {label!r}: a cover island is {isl.Volume():.2f} mm3, "
+                f"under the {TILE_ISLAND_MIN_V} floor -- too small to place by "
+                f"hand; the inlay route has no islands at all")
+        # Export an EXPLICIT compound of every solid. (This was thought to be the
+        # cause of the lost pieces; it is not -- see the NURBS note in
+        # _tile_cover_openings. It stays because a multi-solid part should say so
+        # explicitly rather than depend on what the exporter makes of a cut
+        # result.) The round-trip is now checked below rather than assumed.
+        blob = cq.Compound.makeCompound(pieces)
+        cover_step = os.path.join(OUT, stem + "_cover.step")
+        cq.exporters.export(blob, cover_step)
+        cq.exporters.export(blob, os.path.join(OUT, stem + "_cover.stl"))
+        # ...and read it back. This file goes in segno_3dprint.zip; a STEP that
+        # exports without complaint and contains no solid is exactly the failure
+        # that shipped here once, and nothing but re-reading it catches that.
+        back = cq.importers.importStep(cover_step)
+        back_solids = [x for o in back.vals() for x in o.Solids()]
+        v_out = sum(x.Volume() for x in back_solids)
+        v_in = sum(x.Volume() for x in pieces)
+        # RELATIVE, and over EVERY root: a multi-piece cover is written as a STEP
+        # assembly, so .val() would read only the first root if the reader ever
+        # stopped collapsing them -- failing on exactly the files this protects.
+        # The tolerance is for a lost solid, not for OCC's write precision: an
+        # absolute 1e-3 on ~400 mm3 is 2.5 ppm, and an OCC upgrade would then kill
+        # the run here, after every DXF and PDF has been rendered.
+        assert len(back_solids) == len(pieces) and abs(v_out - v_in) < 1e-6 * v_in, (
+            f"pedal tile {label!r}: _cover.step round-trips as "
+            f"{len(back_solids)} solid(s)/{v_out:.2f} mm3, not the "
+            f"{len(pieces)}/{v_in:.2f} exported")
+
+        # --- INLAY, the alternative to print one of and compare (#931) -------
+        # ONE black part, 2.2 solid, with the letters as 0.4-deep POCKETS. Fill
+        # the pockets with white resin, scrape flush, cure. No second print, no
+        # loose islands, no clearance gap anywhere -- but the black field ends up
+        # FLUSH with the letters instead of 0.4 below them.
+        slab = (cq.Workplane("XY")
+                .polyline([(-TILE_L_BACK/2.0,  TILE_W/2.0),
+                           ( TILE_L_BACK/2.0,  TILE_W/2.0),
+                           ( TILE_L_TOE /2.0, -TILE_W/2.0),
+                           (-TILE_L_TOE /2.0, -TILE_W/2.0)])
+                .close().extrude(TILE_BODY_T + TILE_TEXT_T))
+        inlay = slab.cut(glyph)
+        cq.exporters.export(inlay.val(), os.path.join(OUT, stem + "_inlay.step"))
+        cq.exporters.export(inlay.val(), os.path.join(OUT, stem + "_inlay.stl"))
+        covers.append((label, loose))
         made.append(stem)
-    return made
+    return made, covers
 
 
 def build_ring_disc_step():
@@ -4959,10 +5146,18 @@ def build_quote_packages(with_step=True, with_pdf=True):
     pack("segno_sheetmetal_step.zip",
          ["segno_assembly", "segno_faceplate", "segno_ring_disc", "segno_post"],
          (".step",))
+    # Tiles go in as _white + _cover -- the two parts that are actually PRINTED
+    # since #931. The plain segno_pedal_tile_<LABEL> STEP is the two-body
+    # appearance reference for the Fusion doc, not a print file, and it rode in
+    # this pack until the resin split made that the wrong thing to hand a printer.
+    # _inlay is deliberately out, like segno_screen7_fit_test below: it is the
+    # alternative being compared, quantity 0, and shipping it invites a quote for
+    # a part nobody has chosen.
     pack("segno_3dprint.zip",
          ["segno_platform_front", "segno_platform_mid",
           "segno_led_diffuser", "segno_ring_diffuser"]
-         + ["segno_pedal_tile_" + l.replace("/", "_") for l, _u, _v in PEDALS] + [
+         + [f"segno_pedal_tile_{l.replace('/', '_')}_{part}"
+            for l, _u, _v in PEDALS for part in ("white", "cover")] + [
           "segno_screen7_tower",
           "segno_screen16_stand_L", "segno_screen16_stand_R"],
          (".step", ".stl"))
@@ -5238,11 +5433,28 @@ def main(argv):
             print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
-            tiles = build_pedal_name_tiles()
-            print("Pedal name tiles (3D print, x%d -- TRAPEZOID %.2f(back)/%.2f(toe)\n"
-                  "  x %.2f, wide edge to the cable end; print FACE-DOWN, filament\n"
-                  "  change at z=%.1f: white glyphs then black body): out/%s.step ..."
-                  % (len(tiles), TILE_L_BACK, TILE_L_TOE, TILE_W, TILE_TEXT_T, tiles[0]))
+            tiles, covers = build_pedal_name_tiles()
+            print("Pedal name tiles (RESIN, two parts x%d -- TRAPEZOID %.2f(back)/"
+                  "%.2f(toe)\n  x %.2f, wide edge to the cable end): "
+                  "out/%s_white.step + _cover.step"
+                  % (len(tiles), TILE_L_BACK, TILE_L_TOE, TILE_W, tiles[0]))
+            loose = sum(n for _lb, n in covers)
+            print("  WHITE = the whole tile; BLACK cover = the %.1f letter layer, "
+                  "%.2f/side clearance." % (TILE_TEXT_T, TILE_COVER_CLR))
+            print("  Cover piece counts (1 frame + counter islands, which are "
+                  "loose):")
+            for lb, n in covers:
+                print("    %-10s %d piece%s%s" % (
+                    lb, n + 1, "" if n + 1 == 1 else "s",
+                    "" if n == 0 else "  <- %d loose island%s" % (n, "" if n == 1 else "s")))
+            print("  %d loose islands across the ten covers." % loose)
+            print("  Alternative to compare: out/%s_inlay.step -- ONE black part\n"
+                  "  with 0.4 letter POCKETS to fill with white resin: no second\n"
+                  "  print, no loose islands, no clearance gap, but a resin fill\n"
+                  "  to scrape flush by hand." % tiles[0])
+            print("  BOTH finish FLUSH at %.1f -- the FDM tile's 0.4 field recess\n"
+                  "  is in neither route (TILE_TEXT_T, #931, open)."
+                  % (TILE_BODY_T + TILE_TEXT_T))
             rd = build_ring_disc_step()
             print("Ring centre disc (2.0 Al, x1): out/" + os.path.basename(rd))
             kb = build_encoder_knob_step()
