@@ -1086,6 +1086,16 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
     if (le_fx_prepare(fx, s, chain.type[s], m->sample_rate) != LE_OK) {
       prepare_failed = 1;
     }
+    /* ...and then settle the one kernel whose reset state is audibly not what
+     * a lane already carrying it at arm was doing: from le_fx_entry_reset the
+     * octaver ramps its shift up from unison over ~5 ms and, if the arm params
+     * ask for PSOLA, spends ~15 ms fading out and ~15 ms fading back in before
+     * the mode flips. Same reasoning as le_fx_enable_seed_settled above, which
+     * this render already applies to the enable crossfade for exactly this
+     * reason. */
+    if (chain.type[s] == LE_FX_OCTAVER) {
+      le_fx_octaver_seed_settled(fx, s, chain.params[s]);
+    }
   }
 
   float* wet = (float*)calloc((size_t)m->capture_frames, sizeof(float));
