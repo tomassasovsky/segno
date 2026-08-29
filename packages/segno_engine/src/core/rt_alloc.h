@@ -11,13 +11,34 @@
  * the Pi 5 bench as ~100 faults/s while armed, each able to stall the callback
  * for milliseconds; that is what #804's audible clicks were.
  *
- * This is where that is dealt with, once, for every such buffer: the capture
- * rings (audio_ring.c), the lane loop buffers and the overdub shadow slot
- * (engine.c), the FX delay/echo/reverb rings and the octaver's phase-vocoder
- * buffers (engine_fx.c), and the latency-capture / input-conditioning scratch
- * (engine.c). A buffer the audio thread only READS does not need this — a read
- * fault on a shared CoW page is minor and does not take mmap_lock for write —
- * but everything above is written from the callback.
+ * This is where that is dealt with for every buffer THIS ENGINE owns: the
+ * capture rings (audio_ring.c), the lane loop buffers and the overdub shadow
+ * slot (engine.c), the FX delay/echo/reverb rings and the octaver's
+ * phase-vocoder buffers (engine_fx.c), the latency-capture / input-conditioning
+ * scratch (engine.c), and the le_engine struct itself. A buffer the audio
+ * thread only READS does not need this — a read fault on a shared CoW page is
+ * minor and does not take mmap_lock for write — but everything above is written
+ * from the callback.
+ *
+ * TWO WRITTEN-FROM-THE-CALLBACK REGIONS ARE STILL UNSHIELDED, named here rather
+ * than quietly excluded from "every":
+ *
+ *   - miniaudio's own device buffers. `playback.pInputCache` is ma_realloc'd
+ *     unconditionally for a duplex device (which is what this engine opens),
+ *     and the JACK backend adds its intermediary pair; all of them are plain
+ *     heap and all are written per block. Closing it means installing
+ *     ma_allocation_callbacks on the context, which routes EVERY miniaudio
+ *     allocation — including the device enumeration this repo has already had
+ *     to tune — through a page-granular allocator. That is its own change,
+ *     with its own measurement, not a rider on this one.
+ *
+ *   - the audio thread's own stack. Anonymous, private, written every block,
+ *     and nothing can mark it DONTFORK. It is bounded — a handful of hot
+ *     pages, so a few CoW faults per fork rather than one per buffer page —
+ *     which is why it is a footnote and the buffers above were the fix.
+ *
+ * Both are residual exposure to the same #804 mechanism, both are measurable
+ * only on the bench, and neither is made worse by anything here.
  *
  * Not an arena and not a pool: one mapping per buffer. The rule is NEVER FROM
  * THE AUDIO THREAD — mmap/madvise/munmap all take mmap_lock and are exactly the
@@ -61,6 +82,16 @@ extern "C" {
  * macOS also gets its own mapping (there is no fork shield to apply, but the
  * lifecycle is then identical on every POSIX host, so the tests exercise the
  * code the appliance runs); Windows uses the heap.
+ *
+ * WHAT ONE-MAPPING-PER-BUFFER COSTS, since it is not free either. mmap and
+ * munmap take mmap_lock for WRITE — the same lock this exists to keep the audio
+ * thread off — and munmap additionally issues TLB-shootdown IPIs to every CPU,
+ * the isolated RT core included. That is fine for the lifecycle call sites this
+ * is meant for, and it is why the offline render workers (which claim and
+ * release a chain's worth of buffers per job) are called out at
+ * engine_fx.c's fx_alloc_ring. It is also why a sub-page buffer costs a whole
+ * page: LE_PV_BINS is ~2 KB and gets 4 KB. Both are bench questions on the
+ * appliance, not things a test suite can answer.
  *
  * Either way the pages are touched HERE, on the calling thread, so the audio
  * thread never faults one in on its first lap. That makes the call
