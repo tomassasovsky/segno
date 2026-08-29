@@ -1356,7 +1356,7 @@ class ControlCubit extends Cubit<ControlState> {
     switch (binding.behavior) {
       case BindingBehavior.toggle:
         _log('binding toggle ${binding.key.button.name} -> ${!prior}');
-        _looper.setBindingEnabled(target, enabled: !prior);
+        toggleBinding(target);
       case BindingBehavior.momentary:
         _log('binding momentary ${binding.key.button.name} (was $prior)');
         // Capture on the FIRST press only. A repeated press with no release
@@ -1373,6 +1373,25 @@ class ControlCubit extends Cubit<ControlState> {
           state.copyWith(heldMomentary: {...state.heldMomentary, binding.key}),
         );
     }
+    _pushProjected();
+  }
+
+  /// Toggles [target]'s engaged state and re-lights the pedal — the LATCHING
+  /// half of [_pressBinding], reached from the pedal's own toggle stomps and
+  /// from the on-screen twin of that switch (the FX-mode cell's tap, #884).
+  ///
+  /// Always a latch, whatever [BindingBehavior] the binding carries: a tap has
+  /// no release to restore on, so running a momentary binding from a surface
+  /// with no hold would strand its target enabled with no foot on the switch
+  /// (B1).
+  ///
+  /// A target that no longer resolves is a NO-OP that writes nothing and
+  /// lights nothing (R25) — the assignment screen is where the user learns it
+  /// is broken.
+  void toggleBinding(FxBindingTarget target) {
+    final prior = _looper.bindingEnabled(target);
+    if (prior == null) return;
+    _looper.setBindingEnabled(target, enabled: !prior);
     _pushProjected();
   }
 

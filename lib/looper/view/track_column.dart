@@ -1,3 +1,4 @@
+import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -31,9 +32,7 @@ class TrackColumn extends StatelessWidget {
     this.looperMode = LooperMode.multi,
     this.isPrimary = false,
     this.onCrownPrimary,
-    this.fxTarget,
-    this.fxEffects,
-    this.fxChainEnabled,
+    this.fxBinding,
     this.inputNames = const {},
     super.key,
   });
@@ -41,44 +40,32 @@ class TrackColumn extends StatelessWidget {
   /// The track this column renders.
   final Track track;
 
-  /// The FX stage the footswitch bound to this cell attaches to, in FX mode.
+  /// What the footswitch over this cell drives in FX mode, resolved against
+  /// the live rig by the caller — or null when that switch carries NO binding.
   ///
-  /// FX mode identifies a cell CHAIN-FIRST — by the FX stage its bound chain
-  /// targets, never by the column's track (#692): a footswitch may toggle a
-  /// chain on any stage (an input monitor, a lane, another track's bus, the
-  /// Master insert), so the cell names the chain it drives, not the track it
-  /// happens to sit above.
+  /// FX mode identifies a cell CHAIN-FIRST — by the FX target its bound chain
+  /// names, never by the column's track (#692): a footswitch may toggle a
+  /// chain (or one effect inside it) on any stage — an input monitor, a lane,
+  /// another track's bus, the Master insert — so the cell names, draws, and
+  /// TOGGLES what it drives, not the track it happens to sit above.
   ///
-  /// Null defaults to this column's own Track-stage chain — what the on-screen
-  /// stage's per-column tap currently toggles ([LooperTrackChainToggled]) — so
-  /// the identity still reads `TRACK n · …`, chain-first, exactly like any
-  /// other target. [fxTarget] names the cell; [fxEffects]/[fxChainEnabled]
-  /// re-source what it draws (#884).
-  final FxAddress? fxTarget;
-
-  /// The bound chain's entries, in processing order — the data source for the
-  /// FX-mode dressing (chips + the chain name) when the footswitch over this
-  /// cell drives a chain on a DIFFERENT stage than the column's own track
-  /// (#884). The stage-`fx` cell hardcoded to [track]'s own chain rendered a
-  /// blank cell for exactly this case, since the bound chain lives elsewhere.
+  /// One value rather than a target plus loose chain data, because the cell's
+  /// dressing, its semantic label, and its tap must never disagree about which
+  /// chain they are talking about: #884 was exactly that split, with the
+  /// dressing hardcoded to [track]'s own chain while the switch drove another.
   ///
-  /// Null is an UNBOUND cell (and every non-FX mode): the dressing falls back
-  /// to [track]'s own on-board chain, unchanged. An EMPTY (non-null) list is a
-  /// bound-but-empty (or stale) chain — a `NO CHAIN` cell, never [track]'s
-  /// chips (R25).
-  final List<TrackEffect>? fxEffects;
-
-  /// Whether the bound chain named by [fxEffects] is engaged — the power
-  /// pill's ON/OFF and the tile's engaged/bypassed reading (#884). Null falls
-  /// back to [track]'s own `chainEnabled`, in lockstep with [fxEffects].
-  final bool? fxChainEnabled;
+  /// Null — an UNBOUND cell, and every non-FX mode — keeps this column's own
+  /// Track-stage chain: the identity reads `TRACK n · …` and the tap toggles
+  /// it through [LooperTrackChainToggled], exactly as before.
+  final FxCellBinding? fxBinding;
 
   /// The player's own names for hardware inputs, keyed by socket index (the
   /// input-rename feature; `InputsState.names`).
   ///
-  /// Only consulted when [fxTarget] is an Input-stage chain: a named socket
-  /// makes the cell read `GUITAR 1 · …` instead of `INPUT 1 · …` (owner's
-  /// call). Empty — the default — always yields the generic `INPUT n`.
+  /// Only consulted when [fxBinding] names an Input-stage chain: a named
+  /// socket makes the cell read `GUITAR 1 · …` instead of `INPUT 1 · …`
+  /// (owner's call). Empty — the default — always yields the generic
+  /// `INPUT n`.
   final Map<int, String> inputNames;
 
   /// The track's resolved display name.
@@ -136,29 +123,49 @@ class TrackColumn extends StatelessWidget {
     // the per-column tap toggles), so a track chain still reads `TRACK n · …`,
     // named like every other target rather than borrowing the track's name. The
     // chain name is the head of the entries the polled snapshot carries.
+    // What the cell DRAWS and DRIVES (#884): a BOUND cell takes its identity,
+    // its entries and its power state from the resolved binding — a chain that
+    // may sit on any stage, so [track] says nothing about it — while an
+    // UNBOUND cell keeps this column's own on-board Track chain, exactly as
+    // before. A binding that no longer resolves borrows NOTHING of the
+    // column's own (R25): the switch does not drive that chain.
+    final binding = fxBinding;
+    final fxStale = binding != null && !binding.resolves;
     final fxAddress =
-        fxTarget ?? FxAddress(stage: FxStage.track, index: track.channel);
+        binding?.target?.address ??
+        FxAddress(stage: FxStage.track, index: track.channel);
     final fxStageLabel = _stageFxTargetLabel(l10n, fxAddress);
-    // The chain the cell draws (#884): the bound chain the footswitch drives
-    // when the caller resolved one — its entries and power state come from that
-    // (possibly other-stage) address, not from [track]. An UNBOUND cell (null)
-    // keeps this column's own on-board chain, exactly as before.
-    final fxChainEffects = fxEffects ?? track.effects;
-    final fxChainOn = fxChainEnabled ?? track.chainEnabled;
-    final fxChainName = fxChainEffects.isEmpty
+    final fxChainEffects = binding == null ? track.effects : binding.entries;
+    final fxChainOn = binding == null
+        ? track.chainEnabled
+        : binding.enabled ?? false;
+    // The entry that NAMES the cell: a whole-chain binding is named by its
+    // head — the chain-first identity (#692) — and a SLOT binding by the ONE
+    // effect it actually drives. Naming a slot cell after the chain's head
+    // would advertise slot 1 while the switch bypasses slot 3.
+    final fxNamedEntry = _fxNamedEntry(binding?.target, fxChainEffects);
+    final fxChainName = fxNamedEntry == null
         ? null
-        : fxBlockName(l10n, fxChainEffects.first);
+        : fxBlockName(l10n, fxNamedEntry);
     // A NAMED input is the ONE two-tier identity (owner's call): the socket's
     // own name on top, a smaller `INPUT n` sub-label under it, and the chain in
     // the entry-run chips below (not jammed into the identity line). Every
     // other stage — and an UNNAMED input — is a single `TARGET · CHAIN` line,
     // or the bare stage when the chain is empty.
-    final fxInputName = fxAddress.stage == FxStage.input
+    final fxInputName = !fxStale && fxAddress.stage == FxStage.input
         ? (inputNames[fxAddress.index] ?? '')
         : '';
     final String fxIdentityPrimary;
     final String? fxIdentitySub;
-    if (fxInputName.isNotEmpty) {
+    if (fxStale) {
+      // A binding pointing at a chain or slot the rig no longer has is BROKEN
+      // and says so (R25). It must not borrow this column's own identity — the
+      // switch does not drive that chain — nor read as a merely empty chain on
+      // a stage that is gone. Only the screen reader hears this: an empty
+      // chain draws the bare `NO CHAIN` dressing either way.
+      fxIdentityPrimary = l10n.pedalAssignStale.toUpperCase();
+      fxIdentitySub = null;
+    } else if (fxInputName.isNotEmpty) {
       fxIdentityPrimary = fxInputName.toUpperCase();
       fxIdentitySub = fxStageLabel;
     } else if (fxAddress.stage == FxStage.input || fxChainName == null) {
@@ -369,14 +376,25 @@ class TrackColumn extends StatelessWidget {
                   case InteractionMode.mute:
                     bloc.add(LooperMuteToggled(track.channel));
                   case InteractionMode.fx:
-                    // Toggle event, not a computed set: `track` here is the
-                    // polled snapshot, a poll behind any flip another surface
-                    // just made. The announcement shares the keyboard path's
-                    // helper so the two cannot drift.
-                    TracksCommands(
-                      context,
-                    ).announceFxChainToggle(track.channel);
-                    bloc.add(LooperTrackChainToggled(track.channel));
+                    // A BOUND cell drives what it DRAWS (#884): the same typed
+                    // target the footswitch over it stomps, through the same
+                    // interpreter — never this column's own chain, which the
+                    // cell does not describe. A stale binding is inert there
+                    // (R25); the tap still moves the cursor, as above.
+                    final boundTarget = binding?.target;
+                    if (boundTarget != null) {
+                      TracksCommands(context).toggleFxBinding(boundTarget);
+                    } else if (binding == null) {
+                      // UNBOUND: this column's own Track chain. A toggle event,
+                      // not a computed set — `track` here is the polled
+                      // snapshot, a poll behind any flip another surface just
+                      // made. The announcement shares the keyboard path's
+                      // helper so the two cannot drift.
+                      TracksCommands(
+                        context,
+                      ).announceFxChainToggle(track.channel);
+                      bloc.add(LooperTrackChainToggled(track.channel));
+                    }
                 }
               },
               child: GestureDetector(
@@ -660,6 +678,64 @@ class _PendingArmBadge extends StatelessWidget {
 /// conflation fix), and LANE / MASTER carry no name. A NAMED input's own name
 /// is layered on TOP of this in [TrackColumn] as a two-tier identity (the name
 /// over this `INPUT n` sub-label); this helper always returns the generic form.
+/// What the footswitch over one FX-mode cell drives, resolved against the live
+/// rig (#884).
+///
+/// Carries the TYPED target alongside the chain it reads, so a cell can never
+/// name one thing and act on another — the split #884 was. Built by the host
+/// view (`_TrackSlot`), which owns the reactive subscriptions the resolution
+/// needs; [TrackColumn] only renders it.
+@immutable
+class FxCellBinding extends Equatable {
+  /// Creates a resolved cell binding.
+  const FxCellBinding({
+    required this.target,
+    required this.entries,
+    required this.enabled,
+  });
+
+  /// A binding whose stored target string does not even decode: there is no
+  /// address to name, nothing to draw, and nothing to drive (R25).
+  const FxCellBinding.undecodable()
+    : target = null,
+      entries = const [],
+      enabled = null;
+
+  /// The typed target the switch drives — one whole chain, or ONE slot inside
+  /// it. Kept typed rather than widened to its containing chain: a slot
+  /// binding's name, its power state and its tap must all reach that slot,
+  /// never the chain around it (A9).
+  final FxBindingTarget? target;
+
+  /// The entries of the chain [target] lives on, in processing order — the
+  /// cell's chips. Empty when the binding does not resolve.
+  final List<TrackEffect> entries;
+
+  /// [target]'s own engaged state — the chain's flag for a chain binding, the
+  /// SLOT's for a slot binding, exactly what the pedal lights. Null when the
+  /// binding no longer resolves.
+  final bool? enabled;
+
+  /// Whether the binding still names something the live rig has.
+  bool get resolves => enabled != null;
+
+  @override
+  List<Object?> get props => [target, entries, enabled];
+}
+
+/// The entry that names an FX-mode cell: the slot a [FxSlotTarget] drives, or
+/// the head of [entries] for a whole-chain (or unbound) cell. Null when there
+/// is no such entry — an empty chain, or a slot that has left it.
+TrackEffect? _fxNamedEntry(FxBindingTarget? target, List<TrackEffect> entries) {
+  if (target is FxSlotTarget) {
+    for (final fx in entries) {
+      if (fx.slotId == target.slotId) return fx;
+    }
+    return null;
+  }
+  return entries.isEmpty ? null : entries.first;
+}
+
 String _stageFxTargetLabel(AppLocalizations l10n, FxAddress address) =>
     switch (address.stage) {
       FxStage.input => l10n.stageFxTargetInput(address.index + 1),

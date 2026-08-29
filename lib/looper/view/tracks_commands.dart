@@ -149,6 +149,29 @@ class TracksCommands {
     );
   }
 
+  /// Toggles the typed [target] a pedal-BOUND FX cell drives (#884), and
+  /// announces the state it lands in.
+  ///
+  /// The on-screen twin of stomping the footswitch that carries the binding:
+  /// it goes through `ControlCubit`, the one interpreter every control surface
+  /// reaches, so the tap, the stomp and a mapped MIDI switch can never drift
+  /// in what they write — or in what the pedal's LEDs are then told. It reads
+  /// the SAME resolver the flip writes through, so the announcement cannot
+  /// name a different state than the one that lands.
+  ///
+  /// A target that no longer resolves writes nothing and announces nothing
+  /// (R25) — a stale binding is inert wherever it is pressed.
+  void toggleFxBinding(FxBindingTarget target) {
+    final enabled = context.read<LooperRepository>().bindingEnabled(target);
+    if (enabled == null) return;
+    _announce(
+      enabled
+          ? context.l10n.a11yTrackFxChainOff
+          : context.l10n.a11yTrackFxChainOn,
+    );
+    context.read<ControlCubit>().toggleBinding(target);
+  }
+
   /// Announces a transient state change to assistive tech (WCAG 4.1.3). The
   /// tracks surface is otherwise silent — state lives in colour and meter
   /// fills a screen-reader cannot perceive.

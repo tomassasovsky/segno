@@ -421,12 +421,11 @@ class _TrackSlot extends StatelessWidget {
     // which may sit on any stage — an input monitor, the Master insert, another
     // track's bus (#692). #867 wired the label seam but left the cell hardcoded
     // to this column's own track chain, so a footswitch bound to an off-stage
-    // chain rendered a BLANK cell (#884). Resolve that binding here and re-
-    // source the dressing from the bound address; an UNBOUND cell passes
-    // nothing and keeps its own-track default, exactly as before.
-    FxAddress? fxTarget;
-    List<TrackEffect>? fxEffects;
-    bool? fxChainEnabled;
+    // chain rendered a BLANK cell (#884). Resolve that binding here — where the
+    // reactive subscriptions it needs live — and hand the column the resolved
+    // whole; an UNBOUND cell passes nothing and keeps its own-track default,
+    // exactly as before.
+    FxCellBinding? fxBinding;
     var inputNames = const <int, String>{};
     if (mode == InteractionMode.fx) {
       final control = context.watch<ControlCubit>().state;
@@ -439,30 +438,36 @@ class _TrackSlot extends StatelessWidget {
           : control.bindings.lookup(button, bank: control.activeBank);
       if (binding != null) {
         final target = binding.decodeTarget();
-        if (target != null) {
-          final address = target.address;
+        if (target == null) {
+          fxBinding = const FxCellBinding.undecodable();
+        } else {
           final looper = context.read<LooperRepository>();
-          fxTarget = address;
-          // Read the bound chain through the SAME lookup the resolvers and the
-          // FX editor use (FxChainLookup / FxBindingResolver), keyed on the
-          // LooperBloc so a chain edit or a stomp from any surface re-runs it —
-          // the bound chain may live on a stage this column's Track select
-          // never carries, so it needs its own reactive dependency.
-          fxEffects = context.select<LooperBloc, List<TrackEffect>>(
-            (_) => looper.chainEntriesAt(address) ?? const <TrackEffect>[],
+          final stage = target.address.stage;
+          // Read the bound target through the SAME lookup and resolver the
+          // pedal, the FX editor and the LED projection use — and keep it
+          // TYPED, so a slot binding reports the slot's own state and not the
+          // chain's (A9). An unresolvable target yields a null `enabled`: the
+          // column draws it as broken rather than as this column's chain.
+          FxCellBinding resolve() => FxCellBinding(
+            target: target,
+            entries:
+                looper.chainEntriesAt(target.address) ?? const <TrackEffect>[],
+            enabled: looper.bindingEnabled(target),
           );
-          fxChainEnabled = context.select<LooperBloc, bool>(
-            (_) => looper.bindingEnabled(FxChainTarget(address)) ?? false,
-          );
-          if (address.stage == FxStage.input) {
+          // The reactive key has to be the surface that actually announces the
+          // bound stage. Track / Loop / Master chains are projected onto
+          // `LooperState`, so the bloc sees every edit and every stomp. A
+          // MONITOR is not: it lives only in the repository's own maps and
+          // announces on `monitorChanges` (which `MonitorCubit` follows), so
+          // keying an Input cell on `LooperBloc` would leave it stale until
+          // some unrelated change happened to move the state — at rest, the
+          // projection compares equal and the bloc emits nothing at all.
+          fxBinding = stage == FxStage.input
+              ? context.select<MonitorCubit, FxCellBinding>((_) => resolve())
+              : context.select<LooperBloc, FxCellBinding>((_) => resolve());
+          if (stage == FxStage.input) {
             inputNames = context.watch<InputsCubit>().state.names;
           }
-        } else {
-          // A stale binding drives nothing (R25) — show an empty cell, never
-          // fall back to this column's own track chips, which the switch does
-          // not drive.
-          fxEffects = const <TrackEffect>[];
-          fxChainEnabled = false;
         }
       }
     }
@@ -482,9 +487,7 @@ class _TrackSlot extends StatelessWidget {
           looperMode: looperMode,
           isPrimary: isPrimary,
           onCrownPrimary: onCrownPrimary,
-          fxTarget: fxTarget,
-          fxEffects: fxEffects,
-          fxChainEnabled: fxChainEnabled,
+          fxBinding: fxBinding,
           inputNames: inputNames,
         ),
       ),

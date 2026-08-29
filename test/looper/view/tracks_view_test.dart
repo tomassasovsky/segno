@@ -43,6 +43,9 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
 
+class _MockMonitorCubit extends MockCubit<MonitorState>
+    implements MonitorCubit {}
+
 /// The rebuild probe for the `rebuild scope` group: a widget `TracksView.build`
 /// creates unconditionally, in console and desktop layouts alike.
 final Finder _chromeProbe = find.byKey(
@@ -59,6 +62,10 @@ void main() {
   late PerformanceRepository performance;
   late PerformanceRecorderCubit performanceRecorder;
   late AudioSetupCubit audioSetup;
+  // Held rather than created inline in [pump] so a test can swap in a stand-in
+  // — the FX-mode Input cell keys its rebuilds on this cubit, and proving that
+  // means driving it directly.
+  late MonitorCubit monitors;
 
   setUp(() {
     // The toast registry is module-level and survives between tests; a stale
@@ -123,6 +130,8 @@ void main() {
       keepAliveInterval: Duration.zero,
     );
     addTearDown(control.close);
+    monitors = MonitorCubit(repository: repository, settings: settings);
+    addTearDown(monitors.close);
     session = _MockSessionCubit();
     when(() => session.state).thenReturn(const SessionState());
     when(session.save).thenAnswer((_) async {});
@@ -178,10 +187,7 @@ void main() {
                 create: (_) =>
                     InputsCubit(settings: settings, repository: repository),
               ),
-              BlocProvider<MonitorCubit>(
-                create: (_) =>
-                    MonitorCubit(repository: repository, settings: settings),
-              ),
+              BlocProvider<MonitorCubit>.value(value: monitors),
               // The device-lost banner and the not-running gate read the
               // audio setup cubit (#453).
               BlocProvider<AudioSetupCubit>.value(value: audioSetup),
@@ -591,7 +597,7 @@ void main() {
       required Track track,
       required String name,
       required InteractionMode mode,
-      FxAddress? fxTarget,
+      FxCellBinding? fxBinding,
       Map<int, String> inputNames = const {},
     }) {
       seed(LooperState(tracks: [track]));
@@ -622,7 +628,7 @@ void main() {
                       mode: mode,
                       onUndo: (_) {},
                       onRedo: (_) {},
-                      fxTarget: fxTarget,
+                      fxBinding: fxBinding,
                       inputNames: inputNames,
                     ),
                   ),
@@ -662,7 +668,11 @@ void main() {
         mode: InteractionMode.fx,
         // The footswitch over the GUITAR column is bound to the MASTER insert's
         // chain: the cell must say MASTER, never TRACK 1 / GUITAR.
-        fxTarget: const FxAddress(stage: FxStage.master),
+        fxBinding: FxCellBinding(
+          target: const FxChainTarget(FxAddress(stage: FxStage.master)),
+          entries: [BuiltInEffect(type: TrackEffectType.reverb)],
+          enabled: true,
+        ),
         track: Track(effects: [BuiltInEffect(type: TrackEffectType.reverb)]),
       );
 
@@ -679,7 +689,11 @@ void main() {
         mode: InteractionMode.fx,
         // A footswitch bound to input socket 0's monitor chain, and the player
         // has named that socket "Guitar".
-        fxTarget: const FxAddress(stage: FxStage.input),
+        fxBinding: FxCellBinding(
+          target: const FxChainTarget(FxAddress(stage: FxStage.input)),
+          entries: [BuiltInEffect(type: TrackEffectType.filter)],
+          enabled: true,
+        ),
         inputNames: const {0: 'Guitar'},
         track: Track(effects: [BuiltInEffect(type: TrackEffectType.filter)]),
       );
@@ -700,7 +714,13 @@ void main() {
         tester,
         name: 'TRACK 5',
         mode: InteractionMode.fx,
-        fxTarget: const FxAddress(stage: FxStage.input, index: 1),
+        fxBinding: FxCellBinding(
+          target: const FxChainTarget(
+            FxAddress(stage: FxStage.input, index: 1),
+          ),
+          entries: [BuiltInEffect(type: TrackEffectType.filter)],
+          enabled: true,
+        ),
         // No name for socket 1.
         track: Track(effects: [BuiltInEffect(type: TrackEffectType.filter)]),
       );
@@ -725,6 +745,76 @@ void main() {
       // and no chain-first identity is drawn.
       expect(find.text('GUITAR'), findsOneWidget);
       expect(find.byKey(const Key('tracks_tileFxTarget')), findsNothing);
+    });
+
+    testWidgets('a SLOT binding names and powers the SLOT it drives, not the '
+        "chain's head", (tester) async {
+      await pumpColumn(
+        tester,
+        name: 'GUITAR',
+        mode: InteractionMode.fx,
+        // Bound to the SECOND effect in the Master chain. Widening that to its
+        // containing chain would advertise the head (Reverb) and draw the
+        // chain's power state — the switch drives neither (A9).
+        fxBinding: FxCellBinding(
+          target: const FxSlotTarget(
+            address: FxAddress(stage: FxStage.master),
+            slotId: 'slot-delay',
+          ),
+          entries: [
+            BuiltInEffect(
+              type: TrackEffectType.reverb,
+              slotId: 'slot-reverb',
+            ),
+            BuiltInEffect(type: TrackEffectType.delay, slotId: 'slot-delay'),
+          ],
+          enabled: false,
+        ),
+        track: const Track(),
+      );
+
+      expect(find.text('MASTER · DELAY'), findsOneWidget);
+      expect(find.text('MASTER · REVERB'), findsNothing);
+      // The SLOT's own bypassed state, not the chain's (which is engaged).
+      expect(find.text('OFF'), findsOneWidget);
+      expect(find.text('ON'), findsNothing);
+    });
+
+    testWidgets("a STALE binding reads as BROKEN, never as the column's own "
+        'chain', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpColumn(
+        tester,
+        name: 'GUITAR',
+        mode: InteractionMode.fx,
+        // Decodes, but the monitor it points at is gone: `enabled` is null.
+        // This is the stale case that PARSES — the one a null-target check
+        // alone never catches.
+        fxBinding: const FxCellBinding(
+          target: FxChainTarget(FxAddress(stage: FxStage.input, index: 3)),
+          entries: [],
+          enabled: null,
+        ),
+        // The column's OWN chain is full: leaking it here would tell the player
+        // a dead switch drives their filter.
+        track: Track(effects: [BuiltInEffect(type: TrackEffectType.filter)]),
+      );
+
+      expect(find.text('Filter'), findsNothing);
+      expect(find.byKey(const Key('tracks_tileFxNoChain')), findsOneWidget);
+      // Nor does the screen reader hear the column's own identity: a broken
+      // binding says it is broken (R25).
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(
+        find.bySemanticsLabel(
+          l10n.a11yTrackTileFxOff(
+            l10n.pedalAssignStale.toUpperCase(),
+            l10n.trackStateEmpty,
+          ),
+        ),
+        findsOneWidget,
+      );
+      handle.dispose();
     });
   });
 
@@ -788,6 +878,117 @@ void main() {
           find.text('OFF'),
           findsOneWidget,
         ); // cell 1 (own chain), bypassed
+      });
+
+      testWidgets('tapping a pedal-bound cell toggles the BOUND chain, never '
+          "the column's own", (tester) async {
+        await bindTrack1ToMaster([BuiltInEffect(type: TrackEffectType.reverb)]);
+        when(
+          () =>
+              repository.setMasterChainEnabled(enabled: any(named: 'enabled')),
+        ).thenReturn(EngineResult.ok);
+        control.setMode(InteractionMode.fx);
+        seed(const LooperState(tracks: [Track()]));
+        await pump(tester);
+
+        await tester.tap(find.byKey(const Key('tracks_tile_0')));
+        await tester.pump();
+
+        // The cell drives what it DRAWS: the same write the footswitch's own
+        // stomp makes, through the same interpreter.
+        verify(
+          () => repository.setMasterChainEnabled(enabled: false),
+        ).called(1);
+        // And NOT channel 0's own chain — the tile never described it, so
+        // toggling it would move a pill the player cannot see while the one
+        // they can see stays put (the display/action split, #884).
+        verifyNever(() => bloc.add(const LooperTrackChainToggled(0)));
+      });
+
+      testWidgets('a STALE binding leaves the cell inert and borrows none of '
+          "the column's own chain", (tester) async {
+        // Points at a monitor the rig does not have: the binding PARSES but
+        // resolves to nothing (R25) — the stale case a null-target check alone
+        // never catches.
+        when(repository.allMonitors).thenReturn(const {});
+        await control.setGlobalBindings(
+          PedalBindingSet([
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+              target: const FxChainTarget(
+                FxAddress(stage: FxStage.input, index: 3),
+              ).canonicalString(),
+            ),
+          ]),
+        );
+        control.setMode(InteractionMode.fx);
+        seed(
+          LooperState(
+            tracks: [
+              Track(effects: [BuiltInEffect(type: TrackEffectType.filter)]),
+            ],
+          ),
+        );
+        await pump(tester);
+
+        // Never the column's own chips, which the dead switch does not drive.
+        expect(find.text('Filter'), findsNothing);
+        expect(find.byKey(const Key('tracks_tileFxNoChain')), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('tracks_tile_0')));
+        await tester.pump();
+        verifyNever(() => bloc.add(const LooperTrackChainToggled(0)));
+      });
+
+      testWidgets('an INPUT-stage cell follows the monitor cubit, the only '
+          'surface that announces a monitor', (tester) async {
+        // A monitor lives ONLY in the repository's own maps — it is never
+        // projected onto LooperState — so a cell keyed on LooperBloc would sit
+        // stale after a stomp or an FX-editor edit: at rest the projection
+        // compares equal and the bloc emits nothing at all.
+        when(
+          () => repository.allMonitors(),
+        ).thenReturn({0: const InputMonitor(input: 0)});
+        when(
+          () => repository.monitorEffects(0),
+        ).thenReturn([BuiltInEffect(type: TrackEffectType.reverb)]);
+        when(() => repository.monitorChainEnabled(0)).thenReturn(true);
+        final monitorStates = StreamController<MonitorState>();
+        addTearDown(monitorStates.close);
+        final stand = _MockMonitorCubit();
+        whenListen(
+          stand,
+          monitorStates.stream,
+          initialState: const MonitorState(),
+        );
+        monitors = stand;
+        await control.setGlobalBindings(
+          PedalBindingSet([
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+              target: const FxChainTarget(
+                FxAddress(stage: FxStage.input),
+              ).canonicalString(),
+            ),
+          ]),
+        );
+        control.setMode(InteractionMode.fx);
+        seed(const LooperState(tracks: [Track()]));
+        await pump(tester);
+
+        expect(find.text('INPUT 1'), findsOneWidget);
+        expect(find.text('Reverb'), findsOneWidget);
+        expect(find.text('ON'), findsOneWidget);
+
+        // A stomp (or the FX editor) switches the monitor chain off in the
+        // repository; the cubit is what announces it. The LooperBloc stream is
+        // empty here, exactly as it is at rest on the console.
+        when(() => repository.monitorChainEnabled(0)).thenReturn(false);
+        monitorStates.add(const MonitorState());
+        await tester.pump();
+
+        expect(find.text('OFF'), findsOneWidget);
+        expect(find.text('ON'), findsNothing);
       });
     },
   );
