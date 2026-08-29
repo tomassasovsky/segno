@@ -342,9 +342,9 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // The SELECTION follows what the device gave — as far as the chooser can
     // represent it. A row that keeps saying 96 kHz while the engine runs 48 is
     // the lie the Status tab existed to correct; a row saying 480 when the
-    // grid only offers 64/128/256/512 is a different one, with no chip lit and
-    // no way back, and it would be PERSISTED. So an off-list figure stays out
-    // of the selection and is named by the banner instead.
+    // grid only offers AudioSetupState.bufferSizes is a different one, with no
+    // chip lit and no way back, and it would be PERSISTED. So an off-list
+    // figure stays out of the selection and is named by the banner instead.
     final rate = _offerable(actualRate, state.sampleRateChoices, askedRate);
     final buffer = _offerable(actualBuffer, state.bufferChoices, askedBuffer);
     final settled = state.copyWith(
