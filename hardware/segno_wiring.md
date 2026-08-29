@@ -68,10 +68,10 @@ tolerance only has to survive ~100 mm of internal wiring.
   tied together have no current sharing: one hogs the load until it limits,
   then they hunt.
 
-| buck | loads | worst case |
+| buck | loads | design figure |
 |---|---|---|
-| **BUCK_PI** | Pi 5 (via its USB-C) + its USB devices + NVMe | 5.0 A / 25 W |
-| **BUCK_AUX** | 7" + 16" screens + console board (J3) + all 104 WS2812 | 6.4 A / 32 W |
+| **BUCK_PI** | Pi 5 (via its USB-C) + its USB devices + NVMe | 5.0 A / 25 W (worst case) |
+| **BUCK_AUX** | 7" + 16" screens + console board (J3) + all 104 WS2812 | 6.4 A / 32 W (**normal**, not worst case — see the state table) |
 
 BUCK_PI's worst case is capped by device limits, not estimated: the Pi's own 5 A
 budget. BUCK_AUX's figure is the screens' ratings plus the LEDs **as they are

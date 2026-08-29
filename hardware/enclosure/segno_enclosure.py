@@ -388,11 +388,12 @@ S7C_ADJ      = 6.0     # height regulation budget: felt compression (~1) + up to
 #  SCREEN_TOP_V, which is defined further down)
 
 # --- LEDs / encoder -----------------------------------------------------------
-# Status indicators = SMD LEDs (WS2812B), NOT through-hole: ONE single-LED
-# board per indicator pedal (hardware/led_strip/, 16 x 8 mm puck) stuck to the
-# faceplate UNDERSIDE with VHB tape; a WHITE PLA pill diffuser insert sets into
-# each slot and glows through. Boards daisy-chain pedal-to-pedal with 3 wires
-# (5V/data/GND) on the castellated end pads.
+# Status indicators = SMD LEDs (WS2812B), NOT through-hole: a WHITE PLA pill
+# diffuser insert sets into each slot and glows through, and an EIGHT-LED
+# segment cut from bare 144 LEDs/m strip snaps into a channel on its back (#927,
+# #930). It is NOT the 16 x 8 puck PCB in hardware/led_strip/ and not VHB tape --
+# see the LED_STRIP_* block below for the source and how it is retained.
+# Segments daisy-chain pedal-to-pedal with 3 wires (5V/data/GND).
 LED_SLOT_H = 6.0          # diffuser-slot height (v); corner r = H/2 -> full round ends
 LED_SLOT_W = 60.0         # pill window per indicator pedal (one 5050 diffused behind it)
 LED_INS_CLR   = 0.2       # diffuser-insert lateral clearance in the slot (total)
@@ -406,9 +407,10 @@ LED_INS_FLANGE = 4.0      # shoulder overhang past the slot, all around (seats o
                           # stops ~5 clear of the aperture.
 LED_INS_FL_T  = 1.5       # shoulder thickness
 # --- a cut WS2812B strip segment sits in the back of the diffuser (#927) -----
-# Owner call 2026-08-28: the light source is a **60 LEDs/m bare IP30 strip**, cut
-# to one LED per pill -- NOT the 16 x 8 puck PCB in hardware/led_strip/, and not
-# the 10-LED count still written in segno_console_shopping_list.md.
+# Owner call 2026-08-28: the light source is a **bare non-waterproof WS2812B
+# strip**, cut to one segment per pill -- NOT the 16 x 8 puck PCB in
+# hardware/led_strip/. The density landed on 144 LEDs/m in #930 (see
+# LED_STRIP_PITCH); segno_console_shopping_list.md orders to that.
 #
 # It used to be a 6 x 6 x 0.8 "nest" with the module VHB-taped over it, which
 # registered the 5 x 5 PACKAGE rather than anything the size of the source -- and
@@ -418,7 +420,7 @@ LED_INS_FL_T  = 1.5       # shoulder thickness
 # THE STRIP IS THE SPRING. Its own 3M tape is useless here -- the LEDs must face
 # the lens, which turns the adhesive to face away into the console -- so the strip
 # is trapped mechanically instead. That is what makes this work where a rigid
-# board could not: at 0.35 mm of flex PCB you bow the segment slightly, drop it
+# board could not: at LED_STRIP_T of flex PCB you bow the segment slightly, drop it
 # past the lips, and let it flatten. Nothing in the PRINTED part ever has to
 # deflect, so none of it has to be springy.
 LED_PKG       = 5.0       # WS2812B PLCC4 body, 5.0 x 5.0
@@ -477,6 +479,13 @@ LED_LIP       = 0.7       # lip overhang past the channel wall -> 0.4 of grip on
 LED_SHOULDER  = 0.75      # ledge the strip's LED-side face lands on. Without it
                           # the up-stop is the LED package bottoming in its recess
                           # -- i.e. the fitting force lands on the part, not the LED.
+LED_PKG_Z_CLR = 0.15      # ...and the shoulder is only really the stop if the
+                          # package top stops SHORT of the recess ceiling. At zero
+                          # the two contacts are line-to-line, so a package on the
+                          # high side of its height tolerance lands the fitting
+                          # force on the LED after all -- the very thing
+                          # LED_SHOULDER exists to prevent. 0.15 of air makes the
+                          # order unambiguous and is nothing optically.
 LED_WALL_MIN  = 0.6       # channel wall floor; the flange edge caps the outside
 D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
                      # the vendor STEP shows the thread OD needs the 0.2, #762)
@@ -3555,11 +3564,13 @@ def diffuser_stack():
     The package sticks out past the flange back by whatever the recess cannot
     swallow, and THAT is what sets where the strip sits -- the old nest picked a
     depth and ignored the package height, so the source never touched anything.
+    LED_PKG_Z_CLR then drops the strip a further hair so the shoulders, not the
+    LED, are what it lands on.
     """
-    recess_d = LED_INS_FL_T - LED_WEB               # 0.7
-    stand    = LED_PKG_H - recess_d                 # 0.9 proud of the flange back
-    strip_t0 = -LED_INS_FL_T - stand                # -2.40, strip's LED-side face
-    strip_t1 = strip_t0 - LED_STRIP_T               # -2.75, strip's back face
+    recess_d = LED_INS_FL_T - LED_WEB               # 0.7 of the 1.5 flange
+    stand    = LED_PKG_H + LED_PKG_Z_CLR - recess_d # proud of the flange back
+    strip_t0 = -LED_INS_FL_T - stand                # strip's LED-side face
+    strip_t1 = strip_t0 - LED_STRIP_T               # strip's back face
     return recess_d, strip_t0, strip_t1, strip_t1 - LED_LIP
 
 
@@ -3579,7 +3590,7 @@ def build_diffuser_step():
 
     THE STRIP IS THE SPRING. Its own adhesive cannot be used -- the LEDs face the
     lens, which turns the tape to face away into the console -- so the segment is
-    trapped mechanically: bow the 0.35 mm flex PCB slightly, drop it past the
+    trapped mechanically: bow the ~0.5 mm flex PCB slightly, drop it past the
     lips, let it flatten. It lands its LED-side face on the shoulders with the
     WS2812B in the package recess. Nothing in the PRINTED part deflects, which is
     exactly why this holds where a rigid board could not: a 2.5 mm-deep printed
@@ -3590,7 +3601,7 @@ def build_diffuser_step():
     channel -- the soldered wires and the closed console do that.
 
     PRINT LENS-DOWN. The lens face is then the bed face (smooth, no layer lines
-    across the light), the 0.5 lip is a trivial bridge, and the lead-in ramp is
+    across the light), the LED_LIP overhang is a trivial bridge, and the ramp is
     self-supporting."""
     import cadquery as cq
     lens_l = LED_SLOT_W - LED_INS_CLR
@@ -3604,15 +3615,25 @@ def build_diffuser_step():
 
     recess_d, strip_t0, strip_t1, lip_z = diffuser_stack()
 
-    # package recess, cut into the flange's back face
+    # Package recess, cut into the flange's back face. It runs the WHOLE channel
+    # as one groove rather than a pocket per LED: there are LED_STRIP_N packages
+    # on the segment, not one, and where they land in x depends on where the
+    # scissors fell (LED_CH_L carries +-0.7 of slop on purpose). A per-LED pocket
+    # would have to be right about all of that; a groove cannot be wrong about
+    # any of it. It also leaves the SAME LED_WEB over every package, which is the
+    # point of choosing a dense strip -- discrete pockets would put 0.8 of wall
+    # over each LED and 1.5 between them, i.e. put the ripple back in.
     pkg = LED_PKG + 2 * LED_PKG_CLR
+    assert pkg <= LED_SLOT_H - LED_INS_CLR, (
+        f"diffuser package groove is {pkg} wide, past the {LED_SLOT_H - LED_INS_CLR} "
+        f"lens it has to stay under -- narrow LED_PKG_CLR or widen the slot")
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-LED_INS_FL_T)
-                  .rect(pkg, pkg).extrude(recess_d))
+                  .rect(LED_CH_L, pkg).extrude(recess_d))
 
     # channel walls: one profile in YZ, mirrored, extruded along the strip's run.
-    # The OUTSIDE is the flange edge -- the strip is 10 wide in a 12 wide flange,
-    # so the wall is whatever is left over, and the build fails if that is too
-    # thin to print rather than silently shaving it.
+    # The OUTSIDE is the flange edge -- an LED_STRIP_W strip in a fl_w flange, so
+    # the wall is whatever is left over, and the build fails if that is too thin
+    # to print rather than silently shaving it.
     y_in = LED_STRIP_W / 2.0 + LED_STRIP_CLR         # channel wall
     y_out = fl_w / 2.0
     assert y_out - y_in >= LED_WALL_MIN, (

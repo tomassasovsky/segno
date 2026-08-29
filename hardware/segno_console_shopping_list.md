@@ -57,8 +57,9 @@ board's BOM.
       "Ring 16, 44.5 mm OD" until 2026-08-28 — stale since #792/#794 moved
       the faceplate window to Ø67 and the ring board to Ø68 for the 24.
       A Ring 16 will NOT fill the window it is now cut for
-- [ ] WS2812B **indicator pills** — **144 LEDs/m, IP20 (non-waterproof),
-      12 mm wide**, ×**1 m**. Cut into **10** eight-LED segments of 55.56 mm,
+- [ ] WS2812B **indicator pills** — **144 LEDs/m, bare/non-waterproof
+      (labelled IP20 or IP30 — the same uncoated strip either way), 12 mm
+      wide**, ×**1 m**. Cut into **10** eight-LED segments of 55.56 mm,
       one per pedal. You need 0.556 m; 1 m covers mis-cuts.
       Candidate: LOAMLIN WS2812B 144LED/m, 3.2 ft, **IP30 non-waterproof**,
       white PCB, DC5V —
