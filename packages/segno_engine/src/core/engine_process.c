@@ -3909,6 +3909,7 @@ static inline void mix_tracks_frame(
     int ch_out, int tc, int sr, int fx_cap, uint32_t excluded,
     uint32_t out_enabled, float overdub_fb,
     float od_step, int32_t od_fade_frames, int32_t pos, const int32_t* lane_n,
+    const int* lane_fx_any,
     int has_fx[][LE_MAX_LANES], int32_t fx_count[][LE_MAX_LANES],
     int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
     float fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
@@ -3957,8 +3958,41 @@ static inline void mix_tracks_frame(
   int mut[LE_MAX_TRACKS][LE_MAX_LANES];
   int32_t lane_in[LE_MAX_TRACKS][LE_MAX_LANES];
   uint32_t out_mask[LE_MAX_TRACKS][LE_MAX_LANES];
+  /* IDLE TRACK SKIP. An EMPTY or STOPPED track's lane body is provably a
+   * no-op: it never enters the RECORDING / OVERDUBBING / PLAYING write
+   * branches, so `loopsample` is 0; `audible` is false, so nothing is routed
+   * and nothing lands on the track bus; and the meters it feeds (lane_peak,
+   * lane_sumsq, frame_trk_peak, trk_mix) all fold that same 0. Running it
+   * anyway cost six relaxed atomic loads plus the whole body PER LANE PER
+   * FRAME — 7.4 ns a lane, so 49 empty lanes burned ~7 us of a 333 us
+   * callback. Both the snapshot loop below and the lane loop skip together
+   * (they are the only readers of buf/cap/vol/mut/lane_in/out_mask, so a
+   * skipped track's entries are simply never read).
+   *
+   * THE THREE THINGS THAT STILL HAVE TO RUN, and why each is excluded here:
+   *  - The #728 seam capture (`lbuf[seam_w] = insample`) writes on a track
+   *    whose state has ALREADY returned to PLAYING/STOPPED, so state alone is
+   *    not enough: seam_capture > 0 keeps the track out of the skip.
+   *  - An effect chain must keep ticking on silence (delay tails, LFO phase),
+   *    which is the documented run-on-silence rule; lane_fx_any keeps any
+   *    track holding one out of the skip. (The TRACK-stage chain and its
+   *    a_recoverable / meter publishing all live OUTSIDE the lane loop and
+   *    are untouched by this.)
+   *  - od_gain is the punch-out tail. It can only drive a write from inside
+   *    the OVERDUBBING/PLAYING branch, which an EMPTY/STOPPED track cannot
+   *    reach — but it is checked anyway so the skip stays provable from the
+   *    guard alone. It is read one frame stale (this loop runs before the
+   *    envelope advances below), which is safe in the only direction that
+   *    matters: od_gain rises only while OVERDUBBING, a state that is not
+   *    skippable, so a stale read can hold a track OUT of the skip but never
+   *    let a writing one in. */
+  int idle[LE_MAX_TRACKS];
   for (int t = 0; t < tc; ++t) {
     st[t] = load_i32(&e->tracks[t].a_state);
+    idle[t] = (st[t] == LE_TRACK_EMPTY || st[t] == LE_TRACK_STOPPED) &&
+              !lane_fx_any[t] && e->tracks[t].seam_capture == 0 &&
+              e->tracks[t].od_gain == 0.0f;
+    if (idle[t]) continue;
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &e->tracks[t].lanes[l];
       const int32_t live = load_i32(&ln->a_live);
@@ -4120,7 +4154,11 @@ static inline void mix_tracks_frame(
      * accumulators after the lane loop (#655). */
     float trk_mix = 0.0f;
 
-    for (int l = 0; l < lane_n[t]; ++l) {
+    /* Idle track (see the idle[] derivation at the snapshot loop above): the
+     * whole lane body folds to zero, and its snapshot was skipped with it.
+     * Everything AFTER this loop still runs — the track-stage chain on its
+     * seeded (0, 0) bus, the punch envelope, the seam countdown. */
+    for (int l = 0; !idle[t] && l < lane_n[t]; ++l) {
       /* Clean single-input capture: a lane records exactly its assigned hardware
        * input — never an average of several — or silence when it has no input,
        * an out-of-range/loopback-excluded channel, or no allocated buffer.
@@ -4531,6 +4569,21 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   int has_fx[LE_MAX_TRACKS][LE_MAX_LANES];
   snapshot_lane_fx(e, tc, lane_n, fx_count, fx_type, fx_params, fx_enabled,
                    has_fx);
+  /* "Does ANY lane of this track carry a chain?", folded once per buffer.
+   * mix_tracks_frame's per-frame idle-track skip needs it (a chain must keep
+   * ticking on silence — tails and LFO phase — so a track with one runs its
+   * lane body every frame however silent it is), and folding it there would
+   * put an 8-iteration scan back on the very path the skip exists to avoid. */
+  int lane_fx_any[LE_MAX_TRACKS];
+  for (int t = 0; t < tc; ++t) {
+    lane_fx_any[t] = 0;
+    for (int l = 0; l < lane_n[t]; ++l) {
+      if (has_fx[t][l]) {
+        lane_fx_any[t] = 1;
+        break;
+      }
+    }
+  }
 
   /* Track-stage chains (part 1b), snapshotted once per buffer like the lane
    * chains above (see snapshot_track_fx). trk_has_fx is the D-TRACKROUTE
@@ -4627,7 +4680,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * upstream of the lane write by design (WYSIWYG). */
     mix_tracks_frame(e, in_c, out, f, ch_in, ch_out, tc, sr, fx_cap, excluded,
                      out_enabled, overdub_fb, od_step, od_fade_frames, pos,
-                     lane_n, has_fx, fx_count, fx_type, fx_params, fx_enabled,
+                     lane_n, lane_fx_any, has_fx, fx_count, fx_type, fx_params,
+                     fx_enabled,
                      trk_has_fx, trk_fx_count, trk_fx_type, trk_fx_params,
                      trk_fx_enabled, cache_ent, lane_sumsq, lane_peak, st,
                      frame_trk_peak, trk_sumsq, trk_peak, perf_frame_base);
