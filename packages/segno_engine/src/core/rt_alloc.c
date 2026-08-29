@@ -87,28 +87,41 @@ static void le_rt_fork_shield(void* base, size_t total) {
 #endif
 }
 
-void* le_rt_alloc(size_t bytes) {
+/* The one mapping routine. `prefault` writes every page on the calling thread;
+ * see the two public entry points below for when that is the point and when it
+ * is pure waste. */
+static void* le_rt_map(size_t bytes, int prefault) {
   if (bytes == 0 || bytes > SIZE_MAX - LE_RT_HEADER) return NULL;
   const size_t total = bytes + LE_RT_HEADER;
   unsigned char* base = NULL;
 #if defined(_WIN32)
   base = (unsigned char*)malloc(total);
   if (base == NULL) return NULL;
+  /* malloc has no untouched-page notion to skip, and its bytes are
+   * indeterminate rather than zero, so Windows always clears. `prefault` is a
+   * permission to skip work, never a promise of garbage. */
+  (void)prefault;
+  memset(base, 0, total);
 #else
   void* mapped = mmap(NULL, total, PROT_READ | PROT_WRITE,
                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (mapped == MAP_FAILED) return NULL;
   le_rt_fork_shield(mapped, total);
   base = (unsigned char*)mapped;
+  /* Touch every page HERE, on the calling (non-audio) thread. mmap hands back
+   * untouched pages, and the first pass over a fresh buffer would otherwise be
+   * faulted in by the audio callback one page at a time. The kernel already
+   * guarantees the CONTENT is zero; this pass buys the residency, which is why
+   * a caller that is about to overwrite the whole buffer itself can skip it. */
+  if (prefault) memset(base, 0, total);
 #endif
-  /* Touch every page HERE, on the control thread. mmap and malloc both hand
-   * back untouched pages, and the first pass over a fresh buffer would
-   * otherwise be faulted in by the audio callback one page at a time. This also
-   * gives the caller the zeroed memory calloc used to. */
-  memset(base, 0, total);
   memcpy(base, &bytes, sizeof(bytes));
   return base + LE_RT_HEADER;
 }
+
+void* le_rt_alloc(size_t bytes) { return le_rt_map(bytes, 1); }
+
+void* le_rt_alloc_for_overwrite(size_t bytes) { return le_rt_map(bytes, 0); }
 
 size_t le_rt_size(const void* p) {
   if (p == NULL) return 0;

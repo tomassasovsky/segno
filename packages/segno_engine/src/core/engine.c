@@ -124,6 +124,11 @@ int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
    * or zero) cap reads a short prefix of a larger buffer and is harmless, while
    * the reverse pairing would over-read. Like shrink's, that is an interleaving
    * argument and not a barrier — see the note there. */
+  /* le_rt_alloc, not _for_overwrite: a pool slot IS read beyond what has been
+   * written into it — le_prepare_new_capture relies on the tail of a rounded-up
+   * multi-loop length playing as silence, and an undo shadow is read back over
+   * regions the backup-on-write pass never reached. The zeroing is content
+   * here, not just residency. */
   float* p = (float*)le_rt_alloc((size_t)frames * sizeof(float));
   float* old = ln->pool[slot];
   ln->pool[slot] = p;
@@ -167,7 +172,13 @@ void le_lane_shrink_slot(le_lane* ln, int32_t slot, int32_t frames) {
   if (frames <= 0 || ln->pool[slot] == NULL) return;
   if (ln->pool_cap[slot] <= frames) return;
   const size_t bytes = (size_t)frames * sizeof(float);
-  float* p = (float*)le_rt_alloc(bytes);
+  /* _for_overwrite: the memcpy below writes every byte, so le_rt_alloc's
+   * page-touching pass would zero the buffer only for this line to overwrite
+   * the same range immediately — doubled memory traffic on a path that runs
+   * once per retired layer per lane per overdub LAP (le_handle_retired), which
+   * is the hottest le_rt_alloc call site in the engine. The memcpy does the
+   * residency pass the prefault existed to do. */
+  float* p = (float*)le_rt_alloc_for_overwrite(bytes);
   if (p == NULL) return;
   float* old = ln->pool[slot];
   memcpy(p, old, bytes);

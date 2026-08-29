@@ -209,6 +209,28 @@ static void test_rt_alloc_zeroes_and_sizes(void) {
   CHECK(le_rt_size(NULL) == 0);
 }
 
+/* le_rt_alloc_for_overwrite: same mapping, same size header, same le_rt_free —
+ * it only skips the page-touching pass for a caller that writes the whole
+ * buffer itself (le_lane_shrink_slot). The contract it must still honour is
+ * that the storage is USABLE and correctly sized; "may skip the prefault" is
+ * not licence to hand back a short or unwritable buffer. */
+static void test_rt_alloc_for_overwrite_is_usable_and_sized(void) {
+  printf("test_rt_alloc_for_overwrite_is_usable_and_sized\n");
+  const size_t bytes = 8192;
+  unsigned char* p = (unsigned char*)le_rt_alloc_for_overwrite(bytes);
+  CHECK(p != NULL);
+  if (p != NULL) {
+    CHECK(le_rt_size(p) == bytes);
+    memset(p, 0x5A, bytes); /* the caller's own whole-buffer write */
+    CHECK(p[0] == 0x5A);
+    CHECK(p[bytes - 1] == 0x5A);
+    le_rt_free(p); /* freed through the same seam, not free() */
+  }
+  /* Shares le_rt_alloc's rejections rather than having its own. */
+  CHECK(le_rt_alloc_for_overwrite(0) == NULL);
+  CHECK(le_rt_alloc_for_overwrite(SIZE_MAX) == NULL);
+}
+
 static void test_rt_alloc_rejects_zero_and_overflow(void) {
   printf("test_rt_alloc_rejects_zero_and_overflow\n");
   CHECK(le_rt_alloc(0) == NULL);
@@ -25441,6 +25463,7 @@ int main(void) {
   test_ring_wraps_around();
   test_rt_alloc_zeroes_and_sizes();
   test_rt_alloc_rejects_zero_and_overflow();
+  test_rt_alloc_for_overwrite_is_usable_and_sized();
   test_rt_alloc_degrades_when_fork_shield_fails();
   test_lane_shrink_slot_preserves_leading_frames();
   test_audio_ring_alloc_rejects_bad_capacity();

@@ -17,6 +17,7 @@
 #include <errno.h>     /* errno for the mlockall / getrlimit diagnostics */
 #include <pthread.h>   /* pthread_setschedparam for the appliance RT audio thread */
 #include <sched.h>     /* SCHED_FIFO, struct sched_param */
+#include <stdarg.h>    /* va_list for the once-per-process memlock diagnostic */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -946,6 +947,26 @@ void le_platform_on_engine_teardown(void) {
 static pthread_mutex_t g_memlock_mu = PTHREAD_MUTEX_INITIALIZER;
 static int g_memlock_refs = 0; /* live engines that asked for the lock */
 static int g_memlock_held = 0; /* whether WE hold the process-wide lock */
+/* One diagnostic per process for the paths that DID NOT lock. The attempt
+ * itself is retried on every create (cheap, and a later engine may find a
+ * limit an earlier one did not), but the reason is process-wide and unchanging
+ * in practice — and on a host without the grant, "once per engine create"
+ * means the native suite writes thousands of identical lines and the appliance
+ * writes them into a segno.log that never rotates. Same hazard rt_alloc.c
+ * latches against for MADV_DONTFORK, same answer. */
+static int g_memlock_skip_reported = 0;
+
+static void le_memlock_report_skip(const char* fmt, ...)
+    __attribute__((format(printf, 1, 2)));
+
+static void le_memlock_report_skip(const char* fmt, ...) {
+  if (g_memlock_skip_reported) return;
+  g_memlock_skip_reported = 1;
+  va_list ap;
+  va_start(ap, fmt);
+  vfprintf(stderr, fmt, ap);
+  va_end(ap);
+}
 
 void le_platform_lock_memory(void) {
   pthread_mutex_lock(&g_memlock_mu);
@@ -956,19 +977,19 @@ void le_platform_lock_memory(void) {
   }
   struct rlimit lim;
   if (getrlimit(RLIMIT_MEMLOCK, &lim) != 0) {
-    fprintf(stderr,
-            "segno/rt: RLIMIT_MEMLOCK unreadable (errno %d); memory not locked "
-            "(#804)\n",
-            errno);
+    le_memlock_report_skip(
+        "segno/rt: RLIMIT_MEMLOCK unreadable (errno %d); memory not locked "
+        "(#804)\n",
+        errno);
     pthread_mutex_unlock(&g_memlock_mu);
     return;
   }
   if (lim.rlim_cur != RLIM_INFINITY) {
     /* Not a warning: this is the normal state of a desktop Linux build. */
-    fprintf(stderr,
-            "segno/rt: RLIMIT_MEMLOCK is %llu bytes, not unlimited; skipping "
-            "mlockall (grant LimitMEMLOCK=infinity to enable it)\n",
-            (unsigned long long)lim.rlim_cur);
+    le_memlock_report_skip(
+        "segno/rt: RLIMIT_MEMLOCK is %llu bytes, not unlimited; skipping "
+        "mlockall (grant LimitMEMLOCK=infinity to enable it)\n",
+        (unsigned long long)lim.rlim_cur);
     pthread_mutex_unlock(&g_memlock_mu);
     return;
   }
@@ -977,21 +998,24 @@ void le_platform_lock_memory(void) {
     /* EINVAL here is the pre-4.4 kernel: the flag compiled but the running
      * kernel does not know it. Deliberately NOT retried without MCL_ONFAULT —
      * see above on why the pre-populating form is the worse outcome. */
-    fprintf(stderr,
-            "segno/rt: mlockall failed (errno %d); the audio thread can still "
-            "take major faults (#804)\n",
-            errno);
+    le_memlock_report_skip(
+        "segno/rt: mlockall failed (errno %d); the audio thread can still "
+        "take major faults (#804)\n",
+        errno);
     pthread_mutex_unlock(&g_memlock_mu);
     return;
   }
   g_memlock_held = 1; /* only a lock we actually took is one we may undo */
+  /* The success line is NOT latched: it fires on each 0 -> 1 transition, which
+   * is once per process in every real host and exactly the signal an on-device
+   * check greps for. */
   fprintf(stderr,
           "segno/rt: memory locked (mlockall MCL_CURRENT|MCL_FUTURE|"
           "MCL_ONFAULT)\n");
 #else
-  fprintf(stderr,
-          "segno/rt: MCL_ONFAULT unavailable in this libc; skipping mlockall "
-          "rather than pre-populating every reservation (#804)\n");
+  le_memlock_report_skip(
+      "segno/rt: MCL_ONFAULT unavailable in this libc; skipping mlockall "
+      "rather than pre-populating every reservation (#804)\n");
 #endif
   pthread_mutex_unlock(&g_memlock_mu);
 }

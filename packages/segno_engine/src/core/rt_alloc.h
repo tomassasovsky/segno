@@ -64,14 +64,28 @@ extern "C" {
  *
  * Either way the pages are touched HERE, on the calling thread, so the audio
  * thread never faults one in on its first lap. That makes the call
- * proportional to `bytes` — about a millisecond per 2 MB on the appliance —
- * which is why it belongs in arm / configure / lazy-prepare and nowhere hotter.
+ * proportional to `bytes` — about a millisecond per 2 MB on the appliance — so
+ * it belongs in arm / configure / lazy-prepare. The one call site that is
+ * hotter than that (le_lane_shrink_slot, once per retired layer per overdub
+ * lap) uses le_rt_alloc_for_overwrite below precisely so it does not pay this
+ * twice.
  */
 void* le_rt_alloc(size_t bytes);
 
-/* Releases a pointer from le_rt_alloc / le_rt_shrink. NULL-safe, so teardown
- * paths can call it unconditionally. Never call free() on such a pointer, and
- * never call this on a malloc'd one. */
+/* le_rt_alloc for a caller that writes EVERY byte of the buffer before anything
+ * reads it. Same mapping, same fork shield, same le_rt_free — it only skips the
+ * page-touching pass, because the caller's own write does that pass anyway and
+ * doing both doubles the memory traffic on a control-thread path.
+ *
+ * The contract is "do not read before you write", not "expect garbage": on
+ * POSIX the kernel still zeroes the pages, and Windows clears them outright.
+ * Reach for it only where the whole-buffer overwrite is visible in the same
+ * function, as in le_lane_shrink_slot's memcpy. */
+void* le_rt_alloc_for_overwrite(size_t bytes);
+
+/* Releases a pointer from le_rt_alloc / le_rt_alloc_for_overwrite. NULL-safe,
+ * so teardown paths can call it unconditionally. Never call free() on such a
+ * pointer, and never call this on a malloc'd one. */
 void le_rt_free(void* p);
 
 /* Payload size of a live le_rt_alloc pointer, in bytes (0 for NULL). Exists for
