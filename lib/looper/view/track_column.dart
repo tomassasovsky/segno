@@ -28,6 +28,8 @@ class TrackColumn extends StatelessWidget {
     this.isPrimary = false,
     this.onCrownPrimary,
     this.fxTarget,
+    this.fxEffects,
+    this.fxChainEnabled,
     this.inputNames = const {},
     super.key,
   });
@@ -46,10 +48,26 @@ class TrackColumn extends StatelessWidget {
   /// Null defaults to this column's own Track-stage chain — what the on-screen
   /// stage's per-column tap currently toggles ([LooperTrackChainToggled]) — so
   /// the identity still reads `TRACK n · …`, chain-first, exactly like any
-  /// other target. The chain's entries and power state are always taken from
-  /// [track] (the polled snapshot the stage renders); [fxTarget] renames the
-  /// cell, it does not re-source the chain.
+  /// other target. [fxTarget] names the cell; [fxEffects]/[fxChainEnabled]
+  /// re-source what it draws (#884).
   final FxAddress? fxTarget;
+
+  /// The bound chain's entries, in processing order — the data source for the
+  /// FX-mode dressing (chips + the chain name) when the footswitch over this
+  /// cell drives a chain on a DIFFERENT stage than the column's own track
+  /// (#884). The stage-`fx` cell hardcoded to [track]'s own chain rendered a
+  /// blank cell for exactly this case, since the bound chain lives elsewhere.
+  ///
+  /// Null is an UNBOUND cell (and every non-FX mode): the dressing falls back
+  /// to [track]'s own on-board chain, unchanged. An EMPTY (non-null) list is a
+  /// bound-but-empty (or stale) chain — a `NO CHAIN` cell, never [track]'s
+  /// chips (R25).
+  final List<TrackEffect>? fxEffects;
+
+  /// Whether the bound chain named by [fxEffects] is engaged — the power
+  /// pill's ON/OFF and the tile's engaged/bypassed reading (#884). Null falls
+  /// back to [track]'s own `chainEnabled`, in lockstep with [fxEffects].
+  final bool? fxChainEnabled;
 
   /// The player's own names for hardware inputs, keyed by socket index (the
   /// input-rename feature; `InputsState.names`).
@@ -110,9 +128,15 @@ class TrackColumn extends StatelessWidget {
     final fxAddress =
         fxTarget ?? FxAddress(stage: FxStage.track, index: track.channel);
     final fxStageLabel = _stageFxTargetLabel(l10n, fxAddress);
-    final fxChainName = track.effects.isEmpty
+    // The chain the cell draws (#884): the bound chain the footswitch drives
+    // when the caller resolved one — its entries and power state come from that
+    // (possibly other-stage) address, not from [track]. An UNBOUND cell (null)
+    // keeps this column's own on-board chain, exactly as before.
+    final fxChainEffects = fxEffects ?? track.effects;
+    final fxChainOn = fxChainEnabled ?? track.chainEnabled;
+    final fxChainName = fxChainEffects.isEmpty
         ? null
-        : fxBlockName(l10n, track.effects.first);
+        : fxBlockName(l10n, fxChainEffects.first);
     // A NAMED input is the ONE two-tier identity (owner's call): the socket's
     // own name on top, a smaller `INPUT n` sub-label under it, and the chain in
     // the entry-run chips below (not jammed into the identity line). Every
@@ -245,7 +269,7 @@ class TrackColumn extends StatelessWidget {
                 InteractionMode.record => l10n.a11yTrackTile(name, stateWord),
                 InteractionMode.mute => l10n.a11yTrackTileMute(name, stateWord),
                 InteractionMode.fx =>
-                  track.chainEnabled
+                  fxChainOn
                       ? l10n.a11yTrackTileFxOn(fxCellLabel, stateWord)
                       : l10n.a11yTrackTileFxOff(fxCellLabel, stateWord),
               },
@@ -263,9 +287,9 @@ class TrackColumn extends StatelessWidget {
                     // polled snapshot, a poll behind any flip another surface
                     // just made. The announcement shares the keyboard path's
                     // helper so the two cannot drift.
-                    TracksCommands(context).announceFxChainToggle(
-                      track.channel,
-                    );
+                    TracksCommands(
+                      context,
+                    ).announceFxChainToggle(track.channel);
                     bloc.add(LooperTrackChainToggled(track.channel));
                 }
               },
@@ -300,8 +324,8 @@ class TrackColumn extends StatelessWidget {
                         child: _FxChainDressing(
                           identityPrimary: fxIdentityPrimary,
                           identitySub: fxIdentitySub,
-                          effects: track.effects,
-                          chainEnabled: track.chainEnabled,
+                          effects: fxChainEffects,
+                          chainEnabled: fxChainOn,
                         ),
                       ),
                   ],
@@ -377,10 +401,7 @@ class TrackColumn extends StatelessWidget {
 /// bright dots are undoable layers, grey dots are redoable ones, and faint
 /// dots are unused slots — so the white/grey boundary marks where you are.
 class _TrackHistoryDots extends StatelessWidget {
-  const _TrackHistoryDots({
-    required this.undoDepth,
-    required this.redoDepth,
-  });
+  const _TrackHistoryDots({required this.undoDepth, required this.redoDepth});
 
   final int undoDepth;
 

@@ -715,6 +715,70 @@ void main() {
     });
   });
 
+  group(
+    'FX mode re-dresses each cell from the chain its pedal drives (#884)',
+    () {
+      // Binds the visible bank-A track1 footswitch (channel 0) to the MASTER
+      // insert chain — a chain that lives on a stage this column's own Track
+      // never carries, the exact case #867 rendered blank.
+      Future<void> bindTrack1ToMaster(List<TrackEffect> masterChain) async {
+        when(() => repository.masterEffects).thenReturn(masterChain);
+        when(
+          () => repository.masterChainEnvelope(),
+        ).thenReturn(FxChainEnvelope(entries: masterChain));
+        await control.setGlobalBindings(
+          PedalBindingSet([
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+              target: const FxChainTarget(
+                FxAddress(stage: FxStage.master),
+              ).canonicalString(),
+            ),
+          ]),
+        );
+      }
+
+      testWidgets('a pedal-bound cell surfaces the BOUND chain, never blank, '
+          'while an unbound cell keeps its own-track default', (tester) async {
+        await bindTrack1ToMaster([BuiltInEffect(type: TrackEffectType.reverb)]);
+        control.setMode(InteractionMode.fx);
+        // Channel 0's OWN chain is EMPTY — before the fix its cell drew that
+        // empty chain and read NO CHAIN (the blank cell). Channel 1 is unbound,
+        // with its own drive chain.
+        seed(
+          LooperState(
+            tracks: [
+              const Track(),
+              Track(
+                channel: 1,
+                chainEnabled: false,
+                effects: [BuiltInEffect(type: TrackEffectType.drive)],
+              ),
+            ],
+          ),
+        );
+        await pump(tester);
+
+        // Cell 0 draws the bound MASTER chain — its identity, its chip, and its
+        // ON pill (the master chain's own enabled state) — not the empty own-
+        // track NO CHAIN it showed before.
+        expect(find.text('MASTER · REVERB'), findsOneWidget);
+        expect(find.text('Reverb'), findsOneWidget);
+        expect(find.byKey(const Key('tracks_tileFxNoChain')), findsNothing);
+
+        // Cell 1 is unbound: still its own Track-stage chain, chain-first, and
+        // its own bypassed (OFF) power state — never the bound cell's.
+        expect(find.text('TRACK 2 · DRIVE'), findsOneWidget);
+        expect(find.text('Drive'), findsOneWidget);
+        expect(find.text('ON'), findsOneWidget); // cell 0 (master), engaged
+        expect(
+          find.text('OFF'),
+          findsOneWidget,
+        ); // cell 1 (own chain), bypassed
+      });
+    },
+  );
+
   testWidgets('long-pressing a tile stops that channel', (tester) async {
     seed(const LooperState(tracks: [Track()]));
     await pump(tester);
