@@ -94,7 +94,11 @@ static void fill_tone(float* in, int frames, int ch, int sr, long* phase) {
 static le_engine* make_engine(int sr, int frames, int tracks, int lanes) {
   le_engine* e = le_engine_create();
   if (e == NULL) return NULL;
-  if (le_engine_configure(e, sr, 2, 2, 8000) != LE_OK) {
+  /* The cap has to exceed what the fill loop below records, or the track
+   * auto-finalizes into OVERDUBBING at max_loop_frames and the rest of the
+   * loop overdubs instead — leaving a loop of `cap` frames, not the half
+   * second the comment claims. One second of headroom for a half-second loop. */
+  if (le_engine_configure(e, sr, 2, 2, sr) != LE_OK) {
     le_engine_destroy(e);
     return NULL;
   }

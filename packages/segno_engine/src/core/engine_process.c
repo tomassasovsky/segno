@@ -3699,7 +3699,13 @@ static void tuner_coarse_done(le_engine* e) {
   float period = 0.0f;
   le_yin_finish(&p->yin, &period, &p->conf);
   if (period <= 0.0f) {
-    tuner_publish(e, 0.0f, p->conf);
+    /* (0 Hz, 0 conf) is what "no pitch" looks like everywhere else in this
+     * pipeline — tuner_begin's rejection publishes exactly that. Carrying
+     * p->conf through here would emit a (0 Hz, conf > 0) pair nothing else
+     * produces and no reader expects. Very nearly unreachable, since
+     * tau >= minlag >= 2; le_yin_finish's parabolic step only guards
+     * fabsf(denom) > 1e-9f, so a near-flat dp triple could still take it. */
+    tuner_publish(e, 0.0f, 0.0f);
     p->phase = LE_TUNER_PHASE_IDLE;
     return;
   }
@@ -3750,12 +3756,24 @@ static void tuner_slice(le_engine* e, uint32_t frames) {
 static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
                             int ch_in, int sr) {
   const int32_t input = load_i32(&e->a_tuner_input);
-  if (input < 0 || input >= ch_in || in == NULL) return;
   const int sr_d = sr / LE_TUNER_DECIM;
-  if (sr_d <= LE_TUNER_MIN_HZ) return;
-  /* A device-rate change invalidates a frozen pass: its window was captured at
-   * the old rate, and both the lag geometry and the published Hz derive from
-   * it. Abandon it rather than let it finish against the wrong rate. */
+  /* Any block this function declines to tap is a gap in the analysis window.
+   * A pass frozen across one would resume and publish a pitch derived entirely
+   * from audio captured before the gap — arithmetically valid, silently
+   * stale. Cheaper to abandon it and let the next hop start a fresh one: the
+   * point of the slicing is that a pass costs one hop, not that any particular
+   * pass has to survive. */
+  if (input < 0 || input >= ch_in || in == NULL || sr_d <= LE_TUNER_MIN_HZ) {
+    e->tuner_pass.phase = LE_TUNER_PHASE_IDLE;
+    return;
+  }
+  /* Belt-and-braces: a device-rate change invalidates a frozen pass, since its
+   * window was captured at the old rate and both the lag geometry and the
+   * published Hz derive from it. Unreachable today — le_engine_configure
+   * stores a_tuner_input = -1 and le_engine_start always calls it, so any
+   * device (re)open disarms the tuner, and re-arming resets phase to IDLE —
+   * but the check costs one comparison and what it prevents is a wrong
+   * published pitch. */
   if (e->tuner_pass.phase != LE_TUNER_PHASE_IDLE && e->tuner_pass.sr != sr) {
     e->tuner_pass.phase = LE_TUNER_PHASE_IDLE;
   }
@@ -3794,11 +3812,16 @@ static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
      *     block, after this loop, but hops are counted per frame inside it: a
      *     block longer than 2048 frames would cross two boundaries with no
      *     slice in between — so the second would find the first's pass still
-     *     in flight and skip it however large the budget is. The shipped
-     *     period list is [64, 128, 256, 512] (bufferSizes in
-     *     audio_setup_state.dart), a quarter of a hop at its longest, so a
-     *     block carries at most one boundary. Raising the budget would NOT
-     *     buy headroom here; only a hop longer than the block does. */
+     *     in flight and skip it however large the budget is. Raising the
+     *     budget would NOT buy headroom here; only a hop longer than the
+     *     block does. No shipped path negotiates a period that large: the
+     *     generic chooser offers [64, 128, 256, 512] (bufferSizes in
+     *     audio_setup_state.dart) and an ASIO driver substitutes its own
+     *     list, but none of them lands above a hop. If one ever did, the
+     *     single consequence is that the needle refreshes every second hop
+     *     instead of every hop — ~86 ms rather than ~43 ms, still far finer
+     *     than a needle needs to look continuous. Nothing is wrong, only
+     *     coarser. */
     if (e->tuner_pass.phase == LE_TUNER_PHASE_IDLE) tuner_begin(e, sr, sr_d);
 
     /* Slide by one hop, so the next detect costs one memmove rather than one

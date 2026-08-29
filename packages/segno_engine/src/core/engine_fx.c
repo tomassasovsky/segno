@@ -356,6 +356,19 @@ int le_yin_finish(const le_yin_pass* p, float* out_period, float* out_voiced) {
   const int minlag = p->minlag;
   const int maxlag = p->maxlag;
 
+  /* A rejected le_yin_begin leaves minlag == maxlag == 0 and never writes
+   * dp[0], but le_yin_step still reports "done" (tau 1 > maxlag 0). A caller
+   * that ignores le_yin_begin's return would land here and read dp[0]
+   * uninitialised, yielding a garbage period at conf = 1 - garbage. Both
+   * callers do check, so this is belt-and-braces -- but le_yin_* is published
+   * in engine_fx.h now, so make the rejected state say "no pitch" instead of
+   * depending on every future caller. */
+  if (minlag < 2 || maxlag <= minlag) {
+    *out_period = 0.0f;
+    *out_voiced = 0.0f;
+    return 0;
+  }
+
   /* First dip below the absolute threshold, walked down to its local minimum;
    * fall back to the global minimum (low confidence) when nothing crosses. */
   int tau = -1;
