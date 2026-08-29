@@ -125,12 +125,17 @@ fi
 # The packages CI tests in their own job. daw_export is pure Dart (`dart test`);
 # the rest are Flutter packages. Coverage floors stay CI's job -- this gate
 # answers "do the tests pass", not "is the floor still met".
-# Packages the six CI jobs path-depend on. looper_repository and
-# session_repository both `path: ../segno_engine`, so "packages/<pkg>/ unchanged"
-# is true of a package's own files and false of its inputs -- and CI, which runs
-# all six unconditionally, would catch the break that a path-only predicate
-# skips here.
-PKG_DEPS='^packages/(segno_engine|wav_codec)/'
+# Packages the six CI jobs path-depend on: looper_repository and
+# session_repository both `path: ../segno_engine`, so "packages/<pkg>/
+# unchanged" is true of a package's own files and false of its inputs.
+#
+# Scoped to the DART surface of those dependencies, not the whole directory. A
+# change under packages/segno_engine/src/ is C, reachable from Dart only
+# through the built dylib, which these suites do not link (the fingerprint
+# tests that would are fuzz-tagged and self-skip). Firing all five for a C-only
+# engine diff would report UNVERIFIED until someone ran `pub get` in five
+# packages, to re-run tests that could not have changed.
+PKG_DEPS='^packages/(segno_engine|wav_codec)/(lib/|pubspec\.)'
 
 pkg_test() { # pkg_test <package-dir> <runner>
   local pkg=$1 runner=$2 name="test ($1)"
