@@ -15987,9 +15987,14 @@ static void test_octaver_added_latency(void) {
  * phase is the one belonging to `slot`, not to slot 0. Unison matters: at
  * ratio 1 the phase vocoder is a transparent reconstruction, which is what
  * makes the null test below possible at all. */
-static le_engine* oct_stagger_engine(int slot, float mix) {
+static le_engine* oct_stagger_engine_at(int slot, float mix, int32_t seed) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, OCT_SR, 1, 1, OCT_SR * 4);
+  /* An explicit base phase, so a test can reach a phase the engine's own
+   * numbering never hands this chain — the monitor inputs sit in one corner
+   * of it. Written before the FX commands are even posted, and nothing has
+   * processed yet, so le_fx_entry_reset seeds from it when the type lands. */
+  if (seed >= 0) e->monitors[0].fx.hop_seed = seed;
   le_engine_set_monitor_input(e, 0, 1);
   le_engine_set_monitor_input_output(e, 0, 0x1);
   for (int s = 0; s < slot; ++s) {
@@ -16002,6 +16007,10 @@ static le_engine* oct_stagger_engine(int slot, float mix) {
   le_engine_set_monitor_input_fx_param(e, 0, slot, 3, 0.0f); /* PV mode */
   le_engine_set_monitor_input_fx_count(e, 0, slot + 1);
   return e;
+}
+
+static le_engine* oct_stagger_engine(int slot, float mix) {
+  return oct_stagger_engine_at(slot, mix, -1);
 }
 
 static void oct_stagger_run(le_engine* e, const float* in, float* out,
@@ -16101,26 +16110,52 @@ static void test_octaver_hop_stagger_alignment(void) {
     CHECK(out[0] == 0.0f);
   }
 
-  /* (3) the re-enable warmup, at full wet, at a staggered slot. A constant is
-   * the one full-wet signal whose dry and wet legs are in phase, so a warmup
-   * that ended too early (partial overlap-add) reads as a plain level dip
-   * rather than as a crossfade artefact. */
+  /* (3) the re-enable warmup, at full wet, at EVERY phase. A constant is the
+   * one full-wet signal whose dry and wet legs are in phase, so a warmup that
+   * ended too early (partial overlap-add) reads as a plain level dip rather
+   * than as a crossfade artefact.
+   *
+   * Swept over all LE_PV_HOP phases rather than over the eight slots, because
+   * the slots cannot reach the case this is here to pin. The warmup argument
+   * in le_pv_tick says the worst phase is p = 1, which reaches full 4x
+   * overlap-add at sample LE_PV_N EXACTLY — zero margin — and the monitor
+   * chain's own eight slot phases (216, 248, 24, 56, ... at the seed
+   * le_fx_lane_hop_seed gives monitor 0) never include it: the smallest is
+   * 24, which still leaves 23 samples of slack. A sweep that stops at the
+   * slots would pass a change that pushed the first frame one tick later and
+   * broke the real worst case. */
   for (int i = 0; i < total; ++i) in[i] = 0.5f;
-  for (int slot = 0; slot < LE_FX_MAX; ++slot) {
-    le_engine* e = oct_stagger_engine(slot, 1.0f);
-    oct_stagger_run(e, in, out, 8192);
-    CHECK(fabsf(out[8191] - 0.5f) < 0.01f);
-    le_engine_set_monitor_input_fx_enabled(e, 0, slot, 0);
-    oct_stagger_run(e, in, out, 4096);
-    le_engine_set_monitor_input_fx_enabled(e, 0, slot, 1);
-    oct_stagger_run(e, in, out, 8192);
-    float min = 1e9f;
-    for (int i = 0; i < 8192; ++i) {
-      if (out[i] < min) min = out[i];
+  {
+    float worst = 1e9f;
+    int worst_phase = -1;
+    for (int32_t phase = 0; phase < LE_PV_HOP; ++phase) {
+      le_engine* e = oct_stagger_engine_at(0, 1.0f, phase);
+      oct_stagger_run(e, in, out, 4 * OCT_PV_N);
+      CHECK(fabsf(out[4 * OCT_PV_N - 1] - 0.5f) < 0.01f);
+      le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0);
+      oct_stagger_run(e, in, out, OCT_PV_N);
+      le_engine_set_monitor_input_fx_enabled(e, 0, 0, 1);
+      oct_stagger_run(e, in, out, 4 * OCT_PV_N);
+      float min = 1e9f;
+      for (int i = 0; i < 4 * OCT_PV_N; ++i) {
+        if (out[i] < min) min = out[i];
+      }
+      if (min < worst) {
+        worst = min;
+        worst_phase = (int)phase;
+      }
+      le_engine_destroy(e);
     }
-    printf("  slot %d re-enable min %.4f (steady 0.5)\n", slot, min);
-    CHECK(min > 0.45f);
-    le_engine_destroy(e);
+    printf("  re-enable worst min %.7f at phase %d (steady 0.5)\n",
+           (double)worst, worst_phase);
+    /* Tight on purpose, and calibrated: a warmup that covers every phase
+     * leaves the level flat to 8e-6 of the steady 0.5 (the residual is the
+     * PV's own reconstruction error on a constant, not a dip). Shortening
+     * fx_apply_chain's warmup by a SINGLE sample already takes it to 1.3e-4,
+     * a hop to 1.5e-2. The bound sits ~4x clear of both, so it catches the
+     * zero-margin case the comment above is about — a loose "no gross dip"
+     * bound would not. */
+    CHECK(0.5f - worst < 3.2e-5f);
   }
 
   /* (4) the stagger itself. hop_count advances one per sample from its seed, so
@@ -16139,6 +16174,42 @@ static void test_octaver_hop_stagger_alignment(void) {
     CHECK(fx->oct[0][0].hop_count == fx->oct[0][1].hop_count);
     CHECK(fx->oct[3][0].hop_count == fx->oct[3][1].hop_count);
     le_engine_destroy(e);
+  }
+
+  /* (5) the phase is BOUNDED for any seed a caller can store, not just for the
+   * engine's own indices. hop_count indexes the OLA accumulator in le_pv_tick,
+   * so a negative or oversized phase reads outside it — and perf_render's
+   * track index comes from a manifest on disk that is only checked for being
+   * non-negative, so le_fx_lane_hop_seed can be handed an arbitrary int32. */
+  {
+    le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
+    CHECK(fx != NULL);
+    if (fx != NULL) {
+      const int32_t tracks[] = {0, 1, LE_MAX_TRACKS, 100000001, 0x7FFFFFFF};
+      for (size_t k = 0; k < sizeof(tracks) / sizeof(tracks[0]); ++k) {
+        const int32_t seed = le_fx_lane_hop_seed(tracks[k], 0);
+        CHECK(seed >= 0 && seed < LE_PV_HOP);
+        fx->hop_seed = seed;
+        for (int slot = 0; slot < LE_FX_MAX; ++slot) {
+          le_fx_entry_reset(fx, slot); /* safe with NULL buffers */
+          CHECK(fx->oct[slot][0].hop_count >= 0);
+          CHECK(fx->oct[slot][0].hop_count < LE_PV_HOP);
+        }
+      }
+      /* And for a stored seed the helper would never produce — the field is
+       * plain state, and the bound must not depend on who wrote it. */
+      const int32_t raw[] = {-1, -12345, 0x7FFFFFFF};
+      for (size_t k = 0; k < sizeof(raw) / sizeof(raw[0]); ++k) {
+        fx->hop_seed = raw[k];
+        for (int slot = 0; slot < LE_FX_MAX; ++slot) {
+          le_fx_entry_reset(fx, slot);
+          CHECK(fx->oct[slot][0].hop_count >= 0);
+          CHECK(fx->oct[slot][0].hop_count < LE_PV_HOP);
+        }
+      }
+      le_fx_state_free_buffers(fx);
+      free(fx);
+    }
   }
 
   free(in);

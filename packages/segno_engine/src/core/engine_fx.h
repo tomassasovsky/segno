@@ -27,7 +27,9 @@ extern "C" {
 
 /* --- Phase-vocoder octaver (LE_FX_OCTAVER, mode p3 < 0.5) tuning ------------- */
 #define LE_PV_N 1024             /* STFT window (power of two) */
-#define LE_PV_HOP 256            /* 4x overlap (HOP = N/4: the clean-PV minimum) */
+#define LE_PV_HOP 256            /* 4x overlap (HOP = N/4: the clean-PV minimum);
+                                  * a POWER OF TWO — le_fx_lane_hop_seed and
+                                  * le_pv_hop_phase mask with LE_PV_HOP - 1 */
 #define LE_PV_BINS (LE_PV_N / 2 + 1)
 #define LE_PV_LIFTER (LE_PV_N / 24) /* ~42: cepstral envelope lifter cutoff */
 
@@ -76,8 +78,14 @@ extern "C" {
  * step discontinuity — a click), and an exported stem would not reproduce what
  * was heard. */
 static inline int32_t le_fx_lane_hop_seed(int32_t track, int32_t lane) {
-  return (track * LE_PV_STAGGER_OWNER_STEP + lane * LE_PV_STAGGER_LANE_STEP) %
-         LE_PV_HOP;
+  /* Unsigned and masked, not signed-and-%: the only caller that does not pass
+   * a bounded engine index is perf_render, whose track comes from a manifest
+   * on disk and is only checked for being non-negative. Signed overflow there
+   * would be UB, and C's sign-preserving % would then hand back a NEGATIVE
+   * phase — which le_pv_tick uses to index the OLA accumulator. */
+  const uint32_t base = (uint32_t)track * (uint32_t)LE_PV_STAGGER_OWNER_STEP +
+                        (uint32_t)lane * (uint32_t)LE_PV_STAGGER_LANE_STEP;
+  return (int32_t)(base & (uint32_t)(LE_PV_HOP - 1));
 }
 
 /* --- PSOLA octaver (mode p3 >= 0.5) tuning ---------------------------------- */

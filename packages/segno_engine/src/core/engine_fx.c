@@ -137,7 +137,6 @@ static float le_wrap_pi(float x) {
   return x - two_pi * roundf(x / two_pi);
 }
 
-
 /* The analysis-hop PHASE (in samples) of the octaver instance in chain slot
  * [slot] of chain [fx]: the value le_pv_reset_runtime seeds hop_count with, so
  * that N octaver instances run their frames on N DIFFERENT sample indices
@@ -164,11 +163,15 @@ static float le_wrap_pi(float x) {
  * The spread therefore comes from {chain seed, slot}. */
 static int le_pv_hop_phase(const le_fx_state* fx, int slot) {
   /* The chain's base phase (le_fx_lane_hop_seed: its owner and lane axes),
-   * plus this slot's step. Bounded by LE_PV_HOP: hop_count indexes o->out[]
-   * in le_pv_tick, and doubles as PSOLA's countdown to its next YIN analysis
-   * (also staggered — that detector is the more expensive of the two
-   * bursts). */
-  return (fx->hop_seed + slot * LE_PV_STAGGER_SLOT_STEP) % LE_PV_HOP;
+   * plus this slot's step. MASKED, not %-ed, into [0, LE_PV_HOP) — the bound
+   * is load-bearing on both ends: hop_count indexes o->out[] in le_pv_tick
+   * (so a negative or oversized phase reads outside the accumulator), and it
+   * doubles as PSOLA's countdown to its next YIN analysis (also staggered —
+   * that detector is the more expensive of the two bursts). The mask holds
+   * for ANY hop_seed a caller stores, which the sign-preserving % did not. */
+  const uint32_t p = (uint32_t)fx->hop_seed +
+                     (uint32_t)slot * (uint32_t)LE_PV_STAGGER_SLOT_STEP;
+  return (int)(p & (uint32_t)(LE_PV_HOP - 1));
 }
 
 /* Zeros the octaver's per-mode DSP runtime (phase history, synthesis

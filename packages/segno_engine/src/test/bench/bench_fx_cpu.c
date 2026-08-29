@@ -61,6 +61,10 @@ static void run_mode(const char* name, le_engine* e, int blocks, int warm) {
   float in[BENCH_BLOCK * BENCH_CH];
   float out[BENCH_BLOCK * BENCH_CH];
   double* us = (double*)malloc(sizeof(double) * (size_t)blocks);
+  if (us == NULL) {
+    printf("%-10s SKIPPED (out of memory for %d timings)\n", name, blocks);
+    return;
+  }
   double phase = 0.0;
   int kept = 0;
   double sum = 0.0;
@@ -136,7 +140,14 @@ int main(int argc, char** argv) {
   const char* mode = "all";
   for (int i = 1; i < argc; ++i) {
     if (strcmp(argv[i], "--blocks") == 0 && i + 1 < argc) {
+      /* Validated, not trusted: atoi yields 0 for junk, and every statistic
+       * below indexes us[] off `kept` — a zero or negative count divides by
+       * zero and reads us[-1]. */
       blocks = atoi(argv[++i]);
+      if (blocks < 1) {
+        printf("bench_fx_cpu: --blocks must be a positive integer\n");
+        return 1;
+      }
     } else if (strcmp(argv[i], "--mode") == 0 && i + 1 < argc) {
       mode = argv[++i];
     }
