@@ -35,13 +35,18 @@ class TrackColumn extends StatelessWidget {
   /// The track this column renders — every fact drawn here comes from it
   /// except the meter's level.
   ///
-  /// `peak` is the one field this build method does not read directly: the
-  /// level is subscribed for `track.channel` by the [TrackPeakMeter] leaf
-  /// inside the tile, so this instance may carry a tick-stale level and the
-  /// column still draws correctly (#646/#654/#832). `track.peak` goes down as
-  /// that leaf's fallback, which is what it meters when the rig holds no such
-  /// channel — a mis-wired tile then shows a level rather than a permanently
-  /// flat bar.
+  /// **The level comes from the ambient [LooperBloc], for `track.channel`.**
+  /// That is the rebuild split (#646/#654/#832): the [TrackPeakMeter] leaf
+  /// subscribes to the one moving number itself, so this instance may carry a
+  /// tick-stale `peak` and the column still draws correctly — and so a meter
+  /// tick redraws a bar instead of this whole tile.
+  ///
+  /// The cost of that is a real constraint on callers: a column is a LIVE
+  /// view, not a function of its argument. Passing a [Track] that is not the
+  /// bloc's own track for that channel — a synthesized preview, a session or
+  /// preset snapshot, a frozen "before" state in an A/B — draws that track's
+  /// steady facts under the rig's current level. Such a surface needs its own
+  /// meter widget, not this one.
   final Track track;
 
   /// The FX stage the footswitch bound to this cell attaches to, in FX mode.
@@ -290,8 +295,9 @@ class TrackColumn extends StatelessWidget {
                       // ~250 lines around it stay off the meter's rebuild path
                       // (#646/#654/#832).
                       child: TrackPeakMeter(
+                        // Live, by channel: [track]'s own `peak` is
+                        // deliberately not read here — see [track]'s doc.
                         channel: track.channel,
-                        fallbackPeak: track.peak,
                         color: barColor,
                         hasContent: track.hasContent,
                         // A stopped track reports no live peak; hold the last

@@ -205,56 +205,49 @@ void main() {
     });
   });
 
-  group('TrackPeakMeter fallback', () {
-    // Reading the level out of the ambient bloc by channel is what lets a
-    // meter tick skip the tile above it. It must stay an OPTIMIZATION: the
-    // `Track` a caller passes in has to remain what decides the picture, or a
-    // mis-wired tile degrades into a bar that is merely always at rest —
-    // indistinguishable, on screen, from a silent track.
-    Future<void> pumpMeter(
-      WidgetTester tester, {
-      required int channel,
-      required double fallbackPeak,
-    }) => tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.neon,
-        home: BlocProvider<LooperBloc>.value(
-          value: bloc,
-          child: Scaffold(
-            body: TrackPeakMeter(
-              channel: channel,
-              fallbackPeak: fallbackPeak,
-              color: Colors.green,
-              hasContent: true,
-              frozen: false,
+  group('TrackPeakMeter', () {
+    // The level is read from the ambient bloc by channel — that is what lets
+    // a meter tick skip the ~250-line tile above it, and what makes every
+    // surface built from these tiles a LIVE view rather than a function of
+    // the Track it was handed.
+    Future<void> pumpMeter(WidgetTester tester, {required int channel}) =>
+        tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.neon,
+            home: BlocProvider<LooperBloc>.value(
+              value: bloc,
+              child: Scaffold(
+                body: TrackPeakMeter(
+                  channel: channel,
+                  color: Colors.green,
+                  hasContent: true,
+                  frozen: false,
+                ),
+              ),
             ),
           ),
-        ),
-      ),
-    );
+        );
 
-    testWidgets('draws the live level when the rig holds the channel', (
-      tester,
-    ) async {
-      seed(const LooperState(tracks: [Track(peak: 0.75)]));
-      await pumpMeter(tester, channel: 0, fallbackPeak: 0.1);
+    testWidgets('draws the rig level for its channel', (tester) async {
+      seed(
+        const LooperState(tracks: [Track(peak: 0.75), Track(channel: 1)]),
+      );
+      await pumpMeter(tester, channel: 0);
 
       expect(tester.widget<PeakMeterBar>(find.byType(PeakMeterBar)).peak, 0.75);
     });
 
-    testWidgets('falls back to the given level for an unheld channel', (
+    testWidgets('a channel the rig has dropped meters as silence', (
       tester,
     ) async {
+      // Never drawn in the app — the slot above unmounts the tile in the same
+      // frame. Asserted anyway because the selector runs at EMIT time, before
+      // that unmount, so this path is reached on every channel removal and
+      // must not throw.
       seed(const LooperState(tracks: [Track(peak: 0.75)]));
-      await pumpMeter(tester, channel: 6, fallbackPeak: 0.4);
+      await pumpMeter(tester, channel: 6);
 
-      expect(
-        tester.widget<PeakMeterBar>(find.byType(PeakMeterBar)).peak,
-        0.4,
-        reason:
-            'a channel the bloc does not hold metered as silence -- the '
-            'passed-in Track stopped deciding what is drawn',
-      );
+      expect(tester.widget<PeakMeterBar>(find.byType(PeakMeterBar)).peak, 0);
     });
   });
 }

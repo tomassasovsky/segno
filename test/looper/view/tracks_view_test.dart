@@ -590,6 +590,11 @@ void main() {
       FxAddress? fxTarget,
       Map<int, String> inputNames = const {},
     }) {
+      // [track] is seeded as the bloc's OWN track for its channel, not just
+      // handed to the widget. A column is a live view: its meter reads the
+      // level for `track.channel` out of the ambient bloc (see
+      // `TrackColumn.track`), so a harness that let the two disagree would
+      // make every meter assertion here true for the wrong reason.
       seed(LooperState(tracks: [track]));
       return tester.pumpWidget(
         MaterialApp(

@@ -180,8 +180,11 @@ class _TrackMeter extends StatelessWidget {
           const SizedBox(height: 4),
           Expanded(
             child: TrackPeakMeter(
+              // Live, by channel: [track]'s own `peak` is deliberately not
+              // read, so this tile stays off the meter's rebuild path. It
+              // does mean the bar shows the RIG's level for the channel, not
+              // whatever [track] carries — see `TrackColumn.track`.
               channel: track.channel,
-              fallbackPeak: track.peak,
               color: looper.meterColor(meterState, mode: mode),
               hasContent: track.hasContent,
               // A stopped track reports no live peak; hold the last fill so a
@@ -216,22 +219,15 @@ class _TrackMeter extends StatelessWidget {
 /// fields and passed in by the tile, which is why this leaf can take the
 /// channel and read the one moving number itself.
 ///
-/// The level drawn is the RIG's, for [channel] — deliberately, and it is the
-/// whole point: reading it here is how a moving level reaches the bar without
-/// rebuilding the tile above. A console meter has no other honest source, so
-/// a caller cannot override a live level by passing a different one.
-///
-/// [fallbackPeak] covers the one case the rig cannot answer: a [channel]
-/// `state.tracks` does not hold at all. The level then travels with the
-/// [Track] the tile was built from, so a tile wired to a channel the rig has
-/// dropped draws that track's own level instead of a bar that is silently and
-/// permanently at rest — a mis-wiring otherwise indistinguishable, on screen,
-/// from a silent track.
+/// The level is therefore the RIG's, always: it is read here so it can reach
+/// the bar without rebuilding the ~250 lines of tile around it. That makes
+/// every surface built out of these tiles a live view of the ambient
+/// [LooperBloc] rather than a function of the [Track] handed in — see
+/// `TrackColumn.track`.
 class TrackPeakMeter extends StatelessWidget {
   /// Creates a [TrackPeakMeter].
   const TrackPeakMeter({
     required this.channel,
-    required this.fallbackPeak,
     required this.color,
     required this.hasContent,
     required this.frozen,
@@ -240,11 +236,6 @@ class TrackPeakMeter extends StatelessWidget {
 
   /// The channel whose level this bar follows.
   final int channel;
-
-  /// The level to draw when the ambient [LooperBloc] holds no [channel] — the
-  /// peak carried by the [Track] the tile was built from. Not an override: a
-  /// channel the rig HAS is metered from the rig.
-  final double fallbackPeak;
 
   /// The bar fill colour (the track's meter-state colour).
   final Color color;
@@ -258,7 +249,7 @@ class TrackPeakMeter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final peak = context.select<LooperBloc, double>(
-      (bloc) => peakOf(bloc.state, channel) ?? fallbackPeak,
+      (bloc) => peakOf(bloc.state, channel),
     );
     return PeakMeterBar(
       peak: peak,
@@ -269,17 +260,21 @@ class TrackPeakMeter extends StatelessWidget {
   }
 }
 
-/// [channel]'s current peak level, or `null` when the rig has no such channel.
+/// [channel]'s current peak level, or `0` when [state] has no such channel.
 ///
-/// `null` rather than `0`: "the rig is not metering this channel" and "this
-/// channel is silent" draw identically, so collapsing them would turn a
-/// mis-wired tile into a bar that is merely always at rest. The caller decides
-/// — [TrackPeakMeter] falls back to the level on the [Track] it was given.
-double? peakOf(LooperState state, int channel) {
+/// Silence, not an exception — and not because losing a channel is harmless,
+/// but because this runs at the wrong moment to react to it. A selector is
+/// evaluated when the bloc EMITS, before anything rebuilds, so a state that
+/// has dropped [channel] reaches this function on its way to the frame that
+/// unmounts the whole tile: the tile's own selector ([SteadyTrack]) has gone
+/// null, and the slot above it returns a `SizedBox` in the same frame. The
+/// value computed here is never drawn, so throwing would only turn an
+/// already-handled case into a crash.
+double peakOf(LooperState state, int channel) {
   for (final track in state.tracks) {
     if (track.channel == channel) return track.peak;
   }
-  return null;
+  return 0;
 }
 
 /// A [Track] compared by its [Track.steadyProps] alone — everything about it
