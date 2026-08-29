@@ -790,6 +790,13 @@ static void le_cache_render(le_engine* e, struct le_fx_cache* c,
                           memory_order_release);
     return;
   }
+  /* Match the live lane's hop-stagger seed BEFORE any le_fx_entry_reset below
+   * seeds an octaver's hop counter from it: a calloc'd 0 is lane 0 of track
+   * 0's seed, so every other lane would render its wet at a DIFFERENT
+   * phase-vocoder realization than the live chain it replaces — and the swap
+   * happens at a loop top, i.e. a step discontinuity (a click) on every lane
+   * but one. */
+  fx->hop_seed = le_fx_lane_hop_seed(job->channel, job->lane);
   /* Seed the enable-crossfade runtime per EFFECTIVE bit, mirroring the live
    * chain's settled state exactly: enabled slots settled wet (no fade-in at
    * frame 0), disabled slots settled bypass (no 5 ms fade-out the live chain

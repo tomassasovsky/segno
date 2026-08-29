@@ -1036,6 +1036,12 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
     *out_failed = 1;
     return NULL;
   }
+  /* Match the live lane's hop-stagger seed (this render reconstructs lane 0 of
+   * track [channel]) BEFORE any octaver's hop counter is seeded from it: a
+   * calloc'd 0 is track 0's seed, so every other track's stem would be
+   * rendered at a DIFFERENT phase-vocoder realization than the one that was
+   * heard. */
+  fx->hop_seed = le_fx_lane_hop_seed(channel, 0);
   /* Seed the enable-crossfade runtime SETTLED at enabled, mirroring
    * le_lane_reset — a calloc'd zero state would fade the whole chain in over
    * the ramp window at frame 0 and break golden parity. */
@@ -1050,8 +1056,18 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
    * were bypassed. */
   int prepare_failed = 0;
   for (int s = 0; s < chain.count; ++s) {
-    if (chain.type[s] != LE_FX_NONE &&
-        le_fx_prepare(fx, s, chain.type[s], m->sample_rate) != LE_OK) {
+    if (chain.type[s] == LE_FX_NONE) continue;
+    /* Start the slot from the same reset the live lane got when the type
+     * landed on it (the SET_*_FX ring handler runs le_fx_entry_reset on the
+     * audio thread), exactly as the wet cache's render does — a raw calloc
+     * zero is NOT that state. It differs only in the octaver's fields, and
+     * every one of them is audible: the shift smoother seeds at unison 0.5
+     * rather than ramping up from 0.0 (two octaves down), the mode
+     * crossfade seeds steady at 1.0 rather than fading the wet in over
+     * ~15 ms, and the hop counter seeds at this lane's staggered phase
+     * (hop_seed, set above) rather than 0. */
+    le_fx_entry_reset(fx, s);
+    if (le_fx_prepare(fx, s, chain.type[s], m->sample_rate) != LE_OK) {
       prepare_failed = 1;
     }
   }
