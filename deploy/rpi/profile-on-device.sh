@@ -136,7 +136,7 @@ ssh -o BatchMode=yes "$HOST" "
   export XDG_CONFIG_HOME=\$HOME/.config
   export SEGNO_ALSA_ONLY=1
   export SEGNO_RT_AUDIO=1
-  export SEGNO_ALSA_PERIODS=8
+  export SEGNO_ALSA_PERIODS=4
   setsid nohup $REMOTE_DIR/segno >$REMOTE_DIR/profile.log 2>&1 </dev/null &
   echo \$! > $REMOTE_DIR/segno.pid
 "

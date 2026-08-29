@@ -108,23 +108,35 @@ export SEGNO_RT_AUDIO=1
 # Both happened.
 #
 # The cushion case was re-run rather than assumed: 5.5 minutes under
-# alsa_watch.py at periods=4, worst appl_ptr stall 1.41ms against a 1.33ms
-# cushion (one sample, and the sampler's 350us granularity inflates every
-# duration by up to one interval), zero playback resyncs, zero hw_ptr
-# regressions, zero USB errors, no engine dropout telemetry. The #804 hunt's
-# 2-3ms stalls — the ones that justified raising the cushion — did not appear
-# at all. What that run does NOT cover: the app's UI could not be driven
-# headlessly (the uinput keyboard registers but weston does not route it to the
-# surface), so the load was the monitor path, not a live take with the
-# performance drain writing to NVMe. Judge the take case by ear.
+# alsa_watch.py at periods=4. Read that run as a NEAR MISS, not a pass: the
+# worst appl_ptr stall was 1.41ms against the 1.33ms cushion this config
+# leaves, so the margin was exceeded, once. Nothing downstream showed it —
+# zero playback resyncs, zero hw_ptr regressions, zero USB errors, no engine
+# dropout telemetry — and the evidence is thin in both directions (a single
+# occurrence, and the sampler's 350us granularity inflates every duration by
+# up to one interval). But "zero resyncs" is an observation over 5.5 minutes,
+# not a bound, and a stall past the cushion is an audible click. This depth
+# ACCEPTS that risk; it does not eliminate it. What makes it acceptable is
+# cause, not count: the #804 hunt's 2-3ms stalls — the ones that justified
+# raising the cushion — did not appear at all, their sources (#807, #808)
+# having been fixed. If clicks resurface, this is the trade to revisit first.
+#
+# What that run does NOT cover: the app's UI could not be driven headlessly
+# (the uinput keyboard registers but weston does not route it to the surface),
+# so the load was the monitor path, not a live take with the performance drain
+# writing to NVMe. Judge the take case by ear.
 #
 # A period is not the same thing on every unit. Rate and buffer_frames are
 # persisted per unit on /data by the app, which ships 48000 / 128
 # (lib/audio_setup/cubit/audio_setup_state.dart:63-64). At 96kHz/64 one period
 # is 0.67ms; at 48kHz/128 it is 2.67ms — the frames double AND the rate halves,
 # so every millisecond figure above is 4x, not 2x. Redo the arithmetic rather
-# than quoting these numbers. At the shipped default 4 periods still puts the
-# threshold on its floor, so this change costs an un-retuned unit nothing.
+# than quoting these numbers. At the shipped default 48kHz/128 the threshold
+# is still on its two-period floor at 4, so an un-retuned unit pays no monitor
+# latency here — but it does not come out even: its capture ring halves too,
+# 1024 -> 512 frames (21.3ms -> 10.7ms). That pair was never re-measured; the
+# sweep above is 96kHz/64 only, though #818 asked for both. A capture drop
+# reported on a 48kHz/128 unit is the first thing to re-derive.
 #
 # The engine clamps into [2,8] (`le_alsa_periods_from_env` in
 # engine_miniaudio.c, #736) and logs an out-of-range value to stderr rather
@@ -137,7 +149,15 @@ export SEGNO_RT_AUDIO=1
 # means a systemd drop-in (Environment=SEGNO_ALSA_PERIODS=N) or an operator's
 # `systemctl set-environment` wins, so the next re-derivation — and a revert,
 # if a take turns out to click at this depth — costs one command and a restart
-# instead of editing an image file.
+# instead of editing an image file. It is also logged: segno.service is
+# Restart=always, so a drop-in left behind outlives every restart while
+# silently moving BOTH the monitor latency and the #809 record-offset
+# migration key (.p8 vs .p4) that decides which calibration a take is
+# aligned against. An unexplained latency figure should be answerable from
+# the log rather than by guessing at the unit's environment.
+if [ -n "${SEGNO_ALSA_PERIODS:-}" ]; then
+  echo "segno-kiosk-launch: SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS from the environment overrides the shipped 4 (moves monitor latency and the record-offset key)" >&2
+fi
 : "${SEGNO_ALSA_PERIODS:=4}"
 export SEGNO_ALSA_PERIODS
 exec /opt/segno/segno "$@"

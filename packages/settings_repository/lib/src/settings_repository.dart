@@ -169,10 +169,15 @@ class SettingsRepository {
   ///
   ///   delta = max(0, (bufferFrames * periods) ~/ 2 - 2 * bufferFrames)
   ///
-  /// which is 0 for periods <= 4 and, e.g., `2 * bufferFrames` at the
-  /// appliance's shipped 8. `period` here is [bufferFrames]: the engine
-  /// requests `periodSizeInFrames = buffer_frames` (engine_miniaudio.c) and
-  /// the key stores that same requested value. Caveat, accepted: the
+  /// which is 0 for periods <= 4 and, e.g., `2 * bufferFrames` at 8. Since
+  /// #818 re-derived the appliance down to 4, this returns **0** there — and
+  /// that is the point of the change, not a detail of it: #809 adds nothing
+  /// to output latency at the shipped depth, so a pre-#809 calibration
+  /// migrates unshifted and recorded loops stay aligned without a re-measure.
+  ///
+  /// `period` here is [bufferFrames]: the engine requests
+  /// `periodSizeInFrames = buffer_frames` (engine_miniaudio.c) and the key
+  /// stores that same requested value. Caveat, accepted: the
   /// threshold itself uses the NEGOTIATED internalPeriodSize/internalPeriods,
   /// while this uses the requested buffer and the clamped requested period
   /// count — they match on the appliance's Scarlett (per the launcher's
