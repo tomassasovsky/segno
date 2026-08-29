@@ -87,13 +87,39 @@ else
 fi
 
 # --- Dart/Flutter tests: when any Dart or asset/l10n input moved -------------
+# NOTE: a root `flutter test` runs the ROOT app's test/ dir ONLY. It does not
+# descend into packages/*. CI knows this and gives six packages their own job
+# (see the comments on `daw-export` and the five repository jobs in
+# .github/workflows/main.yaml), so a change confined to one of those packages
+# passes a root-only run here and fails CI. Each gets its own gate below,
+# fired only when that package moved so the common case stays cheap.
 if ! touched '\.(dart|arb)$|^pubspec\.(yaml|lock)$|^assets/'; then
   skip "flutter test" "no Dart/arb/asset changes"
 elif [ -n "$UNRESOLVED" ]; then
   skip "flutter test" "$UNRESOLVED"
 else
-  gate "flutter test" "$LOG/test" "$FLUTTER" test
+  gate "flutter test (root app)" "$LOG/test" "$FLUTTER" test
 fi
+
+# The packages CI tests in their own job. daw_export is pure Dart (`dart test`);
+# the rest are Flutter packages. Coverage floors stay CI's job -- this gate
+# answers "do the tests pass", not "is the floor still met".
+pkg_test() { # pkg_test <package-dir> <runner>
+  local pkg=$1 runner=$2 name="test ($1)"
+  if ! touched "^packages/$pkg/"; then
+    skip "$name" "unchanged"
+  elif [ ! -f "packages/$pkg/.dart_tool/package_config.json" ]; then
+    skip "$name" "unresolved -- run \`$FLUTTER pub get\` in packages/$pkg"
+  else
+    gate "$name" "$LOG/test_$pkg" bash -c "cd 'packages/$pkg' && '$runner' test"
+  fi
+}
+pkg_test daw_export "$DART"
+pkg_test looper_repository "$FLUTTER"
+pkg_test session_repository "$FLUTTER"
+pkg_test performance_repository "$FLUTTER"
+pkg_test pedal_repository "$FLUTTER"
+pkg_test controller_repository "$FLUTTER"
 
 # --- native engine: only when engine sources moved --------------------------
 if touched '^packages/segno_engine/src/'; then
@@ -129,6 +155,15 @@ if touched '^firmware/|^hardware/firmware/|pedal_protocol\.'; then
   gate "firmware contract + drift gate" "$LOG/firmware" bash firmware/test/run_tests.sh
 else
   skip "firmware contract + drift gate" "no firmware / pedal-codec changes"
+fi
+
+# --- agent hooks: they run unattended on every session ----------------------
+# A misfiring PreToolUse guard blocks work repo-wide and a stray `dart format`
+# rewrites the tree, so these are not "just scripts".
+if touched '^\.claude/hooks/'; then
+  gate "agent hook tests" "$LOG/hooks" bash .claude/hooks/test/run_hook_tests.sh
+else
+  skip "agent hook tests" "no .claude/hooks changes"
 fi
 
 # --- report -----------------------------------------------------------------

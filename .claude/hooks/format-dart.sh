@@ -14,11 +14,21 @@ esac
 [ -f "$FILE" ] || exit 0
 command -v dart >/dev/null 2>&1 || exit 0
 
-# `dart format` takes its trailing-comma behaviour from the language version in
-# the enclosing package's `.dart_tool/package_config.json`. In a fresh worktree
-# that has not had `pub get` yet, that file is missing, format silently falls
-# back to a different default, and a one-file edit turns into a ~200-file
-# reformat across the repo. Skip until the package is actually resolved.
+# This hook only ever sees Edit/Write. Shell-scripted edits (sed, python3,
+# heredocs) never reach it, so `dart format --set-exit-if-changed` in
+# .claude/skills/verify/run.sh is the gate that actually catches those --
+# do not read a green session here as "formatting is handled".
+#
+# The skip below is not paranoia. `dart format` keeps trailing commas only
+# because `formatter: trailing_commas: preserve` reaches it through
+# analysis_options.yaml's `include: package:very_good_analysis/...`, and a
+# `package:` include resolves only via `.dart_tool/package_config.json`. In a
+# fresh worktree that has not had `pub get` yet that file is missing, the
+# include silently fails, the formatter falls back to `trailing_commas:
+# automate`, and a one-file edit turns into a ~200-file reformat across the
+# repo -- every trailing comma collapsed. Verified both ways: with the file
+# present `f(\n a,\n b,\n)` survives; with it absent it becomes `f(a, b)`.
+# Skip until the package is actually resolved.
 DIR=$(cd "$(dirname "$FILE")" && pwd)
 while [ "$DIR" != "/" ]; do
   if [ -f "$DIR/pubspec.yaml" ]; then
