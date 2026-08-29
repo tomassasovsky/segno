@@ -196,8 +196,12 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// put 32 at the head of the generic list, `first` would make the
   /// least-proven callback deadline the landing spot for a selection this
   /// method is only trying to keep valid, then persist it. 32 is an option, so
-  /// it has to stay one. Prefer [AudioSetupState.defaultBufferFrames] and fall
-  /// back to `first` only for a driver set that does not offer it.
+  /// it has to stay one. So: prefer [AudioSetupState.defaultBufferFrames],
+  /// and for a driver set that does not offer it take the LARGEST size on
+  /// offer. Never `first` — a driver reporting `[32, 64]` would put the snap
+  /// straight back on the tightest period, which is the whole thing this
+  /// avoids. The largest is the safest deadline available, and an unchosen
+  /// landing spot should err that way.
   AudioSetupState _snapRateAndBuffer(AudioSetupState next) {
     final rates = next.sampleRateChoices;
     final buffers = next.bufferChoices;
@@ -209,7 +213,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
           ? next.bufferFrames
           : buffers.contains(AudioSetupState.defaultBufferFrames)
           ? AudioSetupState.defaultBufferFrames
-          : buffers.first,
+          : buffers.reduce((a, b) => a > b ? a : b),
     );
   }
 

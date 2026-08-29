@@ -768,6 +768,32 @@ void main() {
       expect(cubit.state.bufferFrames, 128);
     });
 
+    test('a driver set without 128 snaps to its largest, not its first', () {
+      // The guard has to hold for every offered set, not only ones
+      // containing the default. A driver reporting [32, 64] would put
+      // `.first` straight back on the tightest period.
+      when(repository.asioDrivers).thenReturn(const [
+        AudioDevice(
+          id: 'Tight ASIO',
+          name: 'Tight ASIO',
+          isDefault: false,
+          isInput: false,
+          inputChannels: 2,
+          outputChannels: 2,
+          bufferSizes: [32, 64],
+          sampleRates: [48000],
+        ),
+      ]);
+
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+
+      // The default 128 is not on offer, so the snap takes the safest
+      // deadline available rather than the tightest.
+      expect(cubit.state.bufferChoices, [32, 64]);
+      expect(cubit.state.bufferFrames, 64);
+    });
+
     test('a NEGOTIATED 32 is adopted and persisted, by design', () async {
       // Offering 32 also makes it offerable, so a device that opens at 32
       // when 64 was asked now has 32 enter the selection and reach disk.
