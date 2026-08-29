@@ -8529,6 +8529,16 @@ static void test_sleep_ms(int ms) {
  * fdopen/freopen/tmpfile — same reasoning, and none of them appear in this
  * module.
  *
+ * THE HOLE THAT GREW SINCE #900: mmap. le_rt_alloc is a direct mmap (see
+ * rt_alloc.h) and is invisible to every counter here, so a drain-cycle
+ * regression that claimed an audio-thread buffer through it would pass green.
+ * That was a theoretical gap when the only mmap'd buffers were the capture
+ * rings; it is a real one now that EVERY audio-thread-written buffer takes
+ * that route. Interposing mmap itself is not the answer (libc's own internals
+ * use it constantly, and the noise would swamp the signal); the guard is that
+ * every le_rt_alloc call site is a lifecycle one — configure, arm, lazy
+ * prepare — and none of them is on the drain cycle's path.
+ *
  * Two platforms opt out, and both are stated rather than silently skipped:
  * under a sanitizer the allocator is already interposed by the runtime and a
  * second definition either collides at link time or fights the interceptor;

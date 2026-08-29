@@ -852,7 +852,17 @@ static int fx_alloc_ring(le_fx_state* fx, int slot, int chan, int cap) {
   if (fx->delay[slot][chan] != NULL) return 0;
   /* le_rt_alloc, not calloc: a delay ring is written by the audio thread on
    * every frame the slot processes, so its pages must not be copy-on-write
-   * after a fork (rt_alloc.h, #804). Released through le_fx_free_delay. */
+   * after a fork (rt_alloc.h, #804). Released through le_fx_free_delay.
+   *
+   * This is also reached by the two OFFLINE renderers, whose le_fx_state is
+   * per-job and whose rings the audio thread never touches — engine_cache.c's
+   * wet-cache worker and perf_render.c's export. They pay for the uniform
+   * seam: an mmap + madvise + munmap per job (all mmap_lock-write) plus an
+   * eager prefault, where glibc's dynamic mmap threshold used to serve
+   * repeated same-size jobs from the arena. Accepted rather than split,
+   * because a second allocator for "the offline ones" reintroduces exactly the
+   * mismatched-free hazard le_fx_free_delay exists to make impossible, and the
+   * traffic is per user edit / per export, not per block. */
   fx->delay[slot][chan] = (float*)le_rt_alloc((size_t)cap * sizeof(float));
   return fx->delay[slot][chan] != NULL ? 1 : -1;
 }

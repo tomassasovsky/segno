@@ -96,9 +96,9 @@ void le_platform_on_engine_teardown(void);
  * No-op on macOS/Windows, which have no equivalent worth doing here: neither
  * runs the PREEMPT_RT kernel this defends, and mach_vm_wire / VirtualLock are
  * privileged, per-region calls, not a process-wide switch.
- * Safe to call more than once: the lock is reference-counted against
- * le_platform_unlock_memory, so N engines lock once and only the last teardown
- * unlocks. */
+ * Safe to call more than once, and from more than one thread: the lock is
+ * reference-counted against le_platform_unlock_memory under a mutex, so N
+ * engines lock once and only the last teardown unlocks. */
 void le_platform_lock_memory(void);
 
 /* The other half of le_platform_lock_memory, called from le_engine_destroy.

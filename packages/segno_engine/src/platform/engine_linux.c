@@ -904,6 +904,18 @@ void le_platform_on_engine_teardown(void) {
  * protection is an improvement on a build that ran for years without it; the
  * fallback is a way to OOM the appliance.
  *
+ * WHAT IT COSTS, stated because the audio side is not the whole story. This is
+ * PROCESS-wide: the Dart heap, Skia's caches, decoded images and every
+ * file-backed mapping the UI touches become unevictable too, so the kernel
+ * loses clean pages as a reclaim source on a swapless 8 GB unit. Under memory
+ * pressure the outcome shifts from "reclaim and degrade" to "OOM-kill segno".
+ * MCL_ONFAULT keeps that bounded to what has actually been touched rather than
+ * what has been reserved, and the appliance is a single-app kiosk whose
+ * touched set is the set it needs — but it is a real change in failure MODE,
+ * it is not measurable from a test suite, and it is the reason this ships
+ * blocked-verify. On device: watch Locked: in /proc/<pid>/smaps_rollup over a
+ * long session and confirm it plateaus rather than tracking RSS upward.
+ *
  * Failure is never fatal, in any direction: an ungranted limit, a missing
  * MCL_ONFAULT, an EPERM, an ENOMEM — all of them log and return, and the engine
  * starts exactly as it does today. A user without the rlimit must still be able
