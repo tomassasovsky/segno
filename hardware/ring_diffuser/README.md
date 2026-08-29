@@ -85,7 +85,12 @@ warns when you feed it a ring that is not the one those angles came from.
 
 1. Check there is ~1.7 mm of clear air under the ring. Pin-mounted on the ring
    board or on standoffs, there is. **Flat on a bench or bonded down, there is
-   not** — print `--skirt-only` instead and let it sit by friction.
+   not** — print `--skirt-only` instead. Note what that gives up: the hooks are
+   the only thing holding the cap on, and the shroud is a **slip fit** (0.20 mm
+   radial), so the no-hooks variant will lift straight off. If it has to stay
+   put, tighten it — `--skirt-only --clr 0.05` — and expect to adjust once on
+   your own printer, because ±0.1–0.2 of FDM tolerance on a Ø44 bore covers both
+   "will not go on" and "falls off".
 2. Drop it over the bush and line the three fingers up with the bare stretches
    of the ring's back, away from the four solder pads.
 3. Press straight down until all three click. Spread them slightly by hand if it

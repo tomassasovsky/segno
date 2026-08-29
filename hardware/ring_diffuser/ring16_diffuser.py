@@ -30,7 +30,9 @@ HOW IT HOLDS ON
 
     ==> The ring must have ~1.7 mm of air under it for the hooks (it does when
         pin-mounted or on standoffs). A ring sitting flat on a surface cannot
-        take this part -- print --skirt-only for a friction shroud instead.
+        take this part -- print --skirt-only instead, and read SKIRT_CLR: that
+        variant has nothing holding it on but the fit, and the default fit is a
+        slip fit.
 
 FIT
     Defaults are the genuine Adafruit Ring 16 (product 1463): O44.45 / O31.75.
@@ -83,8 +85,18 @@ ENC_D         = 7.0     # bush clearance hole through the roof
 AIR_GAP    = 3.0    # LED top -> roof underside. More = softer, taller part.
 ROOF_T     = 1.0    # white PLA, ~5 layers at 0.2 -- the diffusing membrane
 SKIRT_T    = 1.2    # outer shroud wall (kills side glare off the LED band)
-SKIRT_CLR  = 0.20   # radial slip fit over the ring OD
-SKIRT_DROP = 1.0    # how far the continuous shroud reaches below the PCB top
+SKIRT_CLR  = 0.20   # radial SLIP fit over the ring OD. The hooks are what hold
+                    # the cap on, so the shroud is deliberately loose.
+                    # --skirt-only has no hooks and nothing else to hold it: at
+                    # 0.20 it drops on and drops off again. A shroud that grips a
+                    # O44 bore by friction alone is not something CAD settles --
+                    # FDM runs +-0.1..0.2 there, which straddles both "will not go
+                    # on" and "falls off" -- so dial it in with --clr on the
+                    # printer that will make it (start ~0.05) rather than trusting
+                    # this number.
+SKIRT_DROP = 1.0    # how far the shroud reaches below the PCB top. Capped by
+                    # PCB_T: --skirt-only is for a ring lying FLAT, so anything
+                    # past its back face lands on the bench and lifts the cap.
 
 N_ARMS       = 3
 ARM_W        = 7.0    # finger width, arc mm (narrow = flexes, wide = stiff)
@@ -156,13 +168,15 @@ def build():
     # the bush hole. This is the face that goes on the bed.
     part = _tube(g["r_enc"], g["r_skirt_o"], g["roof_z0"], g["roof_z1"])
 
-    # outer shroud, continuous, over the LED band and the PCB edge
+    # outer shroud over the LED band and the PCB edge. It goes on full-circle here
+    # and the relief slots take 6 x SLOT_W out of it further down, so the finished
+    # rim is not light-tight -- the slots are what let the fingers flex at all.
     part = part.union(_tube(g["r_skirt_i"], g["r_skirt_o"],
                             -SKIRT_DROP, g["roof_z0"]))
 
     if SKIRT_ONLY:
         solid = part.val()
-        _check_clearances(solid, g)
+        _check_clearances(solid, g, [])
         return solid
 
     # fingers: the shroud carried down past the PCB inside the arm sectors only
@@ -175,6 +189,16 @@ def build():
     arms = _tube(g["r_skirt_i"], g["r_skirt_i"] + ARM_T,
                  g["arm_bot"], g["roof_z0"]).intersect(sectors)
     part = part.union(arms)
+
+    # ...and take the SHROUD back to ARM_T inside those sectors. Without this the
+    # finger is only ARM_T thick below the shroud's hem (z = -SKIRT_DROP): above
+    # that the union with the SKIRT_T shroud makes it 1.2, i.e. the root -- where
+    # bending strain is highest -- is a third thicker than the number _check()
+    # reasons about. ARM_T is documented as the constant that sets the snap
+    # strain, so the geometry is made to agree with that rather than the other
+    # way round. _check_clearances() re-measures it off the finished solid.
+    part = part.cut(_tube(g["r_skirt_i"] + ARM_T, g["r_skirt_o"] + 1,
+                          g["arm_bot"] - 1, g["roof_z0"]).intersect(sectors))
 
     # the barbs, revolved as one profile then kept only on the fingers
     r_tip = g["r_skirt_i"] - g["hook_p"]
@@ -206,7 +230,7 @@ def build():
             part = part.cut(cutter)
 
     solid = part.val()
-    _check_clearances(solid, g)
+    _check_clearances(solid, g, angles)
     return solid
 
 
@@ -221,7 +245,7 @@ def _occupied(solid, r: float, a_deg: float, z: float) -> bool:
     return c.State() in (TopAbs_IN, TopAbs_ON)
 
 
-def _check_clearances(solid, g: dict) -> None:
+def _check_clearances(solid, g: dict, angles: list[float]) -> None:
     """Sample the volumes the part MUST NOT occupy, and the ones it must.
 
     Booleans fail quietly in CAD -- a degenerate operand gives you a solid that
@@ -264,6 +288,18 @@ def _check_clearances(solid, g: dict) -> None:
         for a in probe:
             assert _occupied(solid, r, a, z_mid), \
                 f"hole in the face at r={r:.1f} a={a}"
+
+    # 5. the finger really is ARM_T thick where it bends. _check()'s strain is a
+    #    uniform-cantilever formula, so it is only true if the root is ARM_T --
+    #    and the root is where the shroud wants to make it SKIRT_T. Measured just
+    #    under the roof, which is the highest-moment section.
+    z_root = g["roof_z0"] - 0.3
+    for a in angles:
+        assert _occupied(solid, g["r_skirt_i"] + ARM_T - 0.1, a, z_root), \
+            f"finger at {a:.0f} deg is thinner than ARM_T at its root"
+        assert not _occupied(solid, g["r_skirt_i"] + ARM_T + 0.1, a, z_root), (
+            f"finger at {a:.0f} deg is thicker than ARM_T at its root -- the "
+            f"strain _check() reports is not the strain the part will see")
 
 
 def _check(g: dict, angles: list[float]) -> None:
@@ -324,8 +360,15 @@ def report() -> None:
               f"{-g['arm_bot'] - PCB_T:.2f} mm of air under the ring")
 
 
-def warn_off_spec() -> None:
-    """PAD_ANGLES belong to the Adafruit Ring 16 and to nothing else."""
+def warn_off_spec(pads_given: bool) -> None:
+    """PAD_ANGLES belong to the Adafruit Ring 16 and to nothing else.
+
+    Silent once --pads is supplied: at that point the angles came off the ring in
+    hand, which is exactly what the warning asks for. Shouting anyway trains
+    people to ignore it.
+    """
+    if pads_given:
+        return
     if abs(RING_OD - 44.45) < 0.6 and abs(RING_ID - 31.75) < 0.6:
         return
     print(f"  ! O{RING_OD}/O{RING_ID} is not the Adafruit Ring 16, so the solder "
@@ -360,6 +403,7 @@ def export(solid, name: str = "segno_ring16_diffuser") -> None:
 
 def main() -> None:
     global RING_OD, RING_ID, PCB_T, AIR_GAP, SKIRT_ONLY, PAD_ANGLES, ENC_D
+    global SKIRT_CLR
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     p.add_argument("--od", type=float, help="measured ring outer diameter")
     p.add_argument("--id", type=float, dest="bore", help="measured ring bore")
@@ -368,8 +412,12 @@ def main() -> None:
     p.add_argument("--enc", type=float, help="bush hole diameter (7.2 if 7.0 binds)")
     p.add_argument("--pads", type=float, nargs="+", metavar="DEG",
                    help="back-side solder-pad angles on YOUR ring (deg)")
+    p.add_argument("--clr", type=float,
+                   help="radial clearance over the ring OD (0.20 slip; go ~0.05 "
+                        "for a --skirt-only shroud that has to grip)")
     p.add_argument("--skirt-only", action="store_true",
-                   help="no hooks: friction shroud, for a ring lying flat")
+                   help="no hooks, for a ring lying flat -- see --clr, nothing "
+                        "else holds it on")
     p.add_argument("--name", default="segno_ring16_diffuser")
     a = p.parse_args()
     if a.od:
@@ -382,11 +430,13 @@ def main() -> None:
         AIR_GAP = a.gap
     if a.enc:
         ENC_D = a.enc
+    if a.clr is not None:
+        SKIRT_CLR = a.clr
     if a.pads:
         PAD_ANGLES = tuple(a.pads)
     SKIRT_ONLY = a.skirt_only
     report()
-    warn_off_spec()
+    warn_off_spec(bool(a.pads))
     export(build(), a.name)
 
 
