@@ -16126,12 +16126,20 @@ static void test_octaver_hop_stagger_alignment(void) {
    * broke the real worst case. */
   for (int i = 0; i < total; ++i) in[i] = 0.5f;
   {
-    float worst = 1e9f;
+    float worst_drop = 0.0f;
     int worst_phase = -1;
     for (int32_t phase = 0; phase < LE_PV_HOP; ++phase) {
       le_engine* e = oct_stagger_engine_at(0, 1.0f, phase);
+      /* Settle, and measure this run's OWN floor over a stretch with no
+       * warmup in it. The phase vocoder does not reconstruct a constant
+       * exactly, and how far off it sits is float/libm/arch dependent — so
+       * the dip is measured against this, never against the literal 0.5. */
       oct_stagger_run(e, in, out, 4 * OCT_PV_N);
-      CHECK(fabsf(out[4 * OCT_PV_N - 1] - 0.5f) < 0.01f);
+      float steady = 1e9f;
+      for (int i = 2 * OCT_PV_N; i < 4 * OCT_PV_N; ++i) {
+        if (out[i] < steady) steady = out[i];
+      }
+      CHECK(fabsf(steady - 0.5f) < 0.01f);
       le_engine_set_monitor_input_fx_enabled(e, 0, 0, 0);
       oct_stagger_run(e, in, out, OCT_PV_N);
       le_engine_set_monitor_input_fx_enabled(e, 0, 0, 1);
@@ -16140,22 +16148,19 @@ static void test_octaver_hop_stagger_alignment(void) {
       for (int i = 0; i < 4 * OCT_PV_N; ++i) {
         if (out[i] < min) min = out[i];
       }
-      if (min < worst) {
-        worst = min;
+      if (steady - min > worst_drop) {
+        worst_drop = steady - min;
         worst_phase = (int)phase;
       }
       le_engine_destroy(e);
     }
-    printf("  re-enable worst min %.7f at phase %d (steady 0.5)\n",
-           (double)worst, worst_phase);
+    printf("  re-enable worst drop below steady %.7f at phase %d\n",
+           (double)worst_drop, worst_phase);
     /* Tight on purpose, and calibrated: a warmup that covers every phase
-     * leaves the level flat to 8e-6 of the steady 0.5 (the residual is the
-     * PV's own reconstruction error on a constant, not a dip). Shortening
-     * fx_apply_chain's warmup by a SINGLE sample already takes it to 1.3e-4,
-     * a hop to 1.5e-2. The bound sits ~4x clear of both, so it catches the
-     * zero-margin case the comment above is about — a loose "no gross dip"
-     * bound would not. */
-    CHECK(0.5f - worst < 3.2e-5f);
+     * costs NOTHING relative to that run's own steady floor. Shortening
+     * fx_apply_chain's warmup by a SINGLE sample takes the drop to ~1.2e-4,
+     * by a hop to ~1.5e-2. A loose "no gross dip" bound would pass both. */
+    CHECK(worst_drop < 3.0e-5f);
   }
 
   /* (4) the stagger itself. hop_count advances one per sample from its seed, so
@@ -18483,6 +18488,164 @@ static void test_perf_render_golden_master_parity(void) {
     for (uint64_t f = 0; f < capture_frames; ++f) {
       CHECK(fabsf(offline[f] - live[f]) < 1e-4f);
     }
+  }
+
+  free(live);
+  free(offline);
+  le_engine_destroy(e);
+}
+
+/* Pumps `frames` of a sine through the engine in 64-frame blocks, advancing
+ * *phase (in cycles) so successive calls are continuous. Output discarded —
+ * what this drives is the RECORDING and the performance capture. */
+static void oct_golden_pump(le_engine* e, double* phase, double cycles_per_frame,
+                            int frames) {
+  float in[64];
+  float out[64];
+  while (frames > 0) {
+    const int n = frames > 64 ? 64 : frames;
+    for (int i = 0; i < n; ++i) {
+      in[i] = 0.5f * sinf((float)(2.0 * 3.14159265358979 * *phase));
+      *phase += cycles_per_frame;
+      if (*phase >= 1.0) *phase -= 1.0;
+    }
+    le_engine_process(e, out, in, (uint32_t)n);
+    frames -= n;
+  }
+}
+
+/* Acceptance, and the one that pins the offline octaver against the LIVE
+ * engine rather than against another offline render: a real performance on a
+ * NON-ZERO track with an octaver engaged mid-capture through the public API,
+ * compared sample-by-sample against the live-captured master.
+ *
+ * This is the case the stem render CAN reproduce exactly, and the case the
+ * per-lane hop phase is load-bearing for. The type lands on the audio thread
+ * at a logged frame and the render replays le_fx_entry_reset at that same
+ * frame, so both chains seed their analysis-hop counter at the same instant —
+ * from the same lane's phase, once the render stops rendering on a calloc'd
+ * seed. Track 2, because track 0 / lane 0 is the single lane whose seed is 0,
+ * i.e. the one a calloc'd render reproduces by accident.
+ *
+ * (An octaver already in the chain AT arm is a different, weaker case: the
+ * live lane has been ticking it since the type landed, so its hop counter is
+ * that lane's phase plus an elapsed-frame count nothing records. That render
+ * stays an approximation of the same class as the empty delay ring the
+ * golden-parity protocol already excludes — see le_pr_render_wet_track.) */
+static void test_perf_render_golden_octaver_nonzero_track(void) {
+  printf("test_perf_render_golden_octaver_nonzero_track\n");
+  const char* dir = render_test_dir("golden-oct");
+  const int32_t sr = 48000;
+  const int32_t loop_len = 4096;
+  const int32_t channel = 2;
+  /* 16 whole cycles per loop, so the loop tiles seamlessly. */
+  const double cyc = 16.0 / (double)loop_len;
+  double phase = 0.0;
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, sr);
+
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+
+  CHECK(le_engine_record(e, channel) == LE_OK);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+  CHECK(le_engine_record(e, channel) == LE_OK); /* finalize -> PLAYING */
+  drain(e);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+
+  /* Engage the octaver mid-performance, full wet, then let it run well past
+   * its LE_PV_N warmup so the compared window is steady-state phase-vocoder
+   * output, not a ramp. */
+  CHECK(le_engine_set_lane_fx(e, channel, 0, 0, LE_FX_OCTAVER) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, channel, 0, 1) == LE_OK);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+  CHECK(le_engine_set_lane_fx_param(e, channel, 0, 0, 2, 1.0f) == LE_OK);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+  oct_golden_pump(e, &phase, cyc, loop_len);
+
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  const int32_t capture_frames = (int32_t)snap.perf_frames;
+  CHECK(capture_frames > 4 * loop_len);
+
+  float* exported = (float*)malloc((size_t)loop_len * sizeof(float));
+  CHECK(exported != NULL);
+  if (exported == NULL) {
+    le_engine_destroy(e);
+    return;
+  }
+  const int32_t exported_n =
+      le_engine_export_track_lane(e, channel, 0, exported, loop_len);
+  CHECK(exported_n == loop_len);
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track%d-lane0.wav", dir, channel);
+  test_write_wav_mono(wav_path, exported, loop_len, sr);
+  free(exported);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char manifest[1400];
+  snprintf(manifest, sizeof(manifest),
+           "{\"sample_rate\": %d, \"capture_frames\": %d, "
+           "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+           "\"limiterCeiling\": 0.99, \"tracks\": []}, "
+           "\"disarmSnapshot\": {\"tracks\": [{\"channel\": %d, \"volume\": "
+           "1.0, \"muted\": false, \"lanes\": [{\"lane\": 0, \"deferred\": "
+           "false, \"takeId\": %d, \"pcmRef\": \"track%d-lane0.wav\", "
+           "\"effects\": []}]}]}, "
+           "\"layers\": []}",
+           sr, capture_frames, channel, snap.tracks[channel].settled_take_id,
+           channel);
+  test_write_manifest(dir, manifest);
+
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 20000);
+  int32_t done = 0, track_count = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, &track_count) == LE_OK);
+  CHECK(done == 1);
+  CHECK(track_count == 1);
+  int32_t rendered_channel = -1, succeeded = 0;
+  CHECK(le_perf_render_track_status(e, 0, &rendered_channel, &succeeded) ==
+        LE_OK);
+  CHECK(rendered_channel == channel);
+  CHECK(succeeded == 1);
+
+  char master_pcm_path[700];
+  snprintf(master_pcm_path, sizeof(master_pcm_path), "%s/master.pcm", dir);
+  FILE* mf = fopen(master_pcm_path, "rb");
+  CHECK(mf != NULL);
+  float* live = (float*)malloc((size_t)capture_frames * sizeof(float));
+  float* offline = (float*)malloc((size_t)capture_frames * sizeof(float));
+  CHECK(live != NULL && offline != NULL);
+  size_t live_n = 0;
+  if (mf != NULL && live != NULL) {
+    live_n = fread(live, sizeof(float), (size_t)capture_frames, mf);
+  }
+  if (mf != NULL) fclose(mf);
+  CHECK(live_n == (size_t)capture_frames);
+
+  int32_t offline_n = 0;
+  if (offline != NULL) {
+    offline_n = test_read_master_stem(dir, offline, capture_frames);
+  }
+  CHECK(offline_n == capture_frames);
+
+  if (live_n == (size_t)capture_frames && offline_n == capture_frames &&
+      live != NULL && offline != NULL) {
+    float worst = 0.0f;
+    float peak = 0.0f;
+    for (int32_t f = 0; f < capture_frames; ++f) {
+      const float d = fabsf(offline[f] - live[f]);
+      if (d > worst) worst = d;
+      if (fabsf(live[f]) > peak) peak = fabsf(live[f]);
+    }
+    printf("  offline-vs-live max diff %.7f (live peak %.3f)\n", (double)worst,
+           (double)peak);
+    CHECK(peak > 0.1f); /* there IS a wet octave voice to compare */
+    CHECK(worst < 1e-4f);
   }
 
   free(live);
@@ -25971,6 +26134,7 @@ int main(void) {
   test_finalize_take_ends_live_take_at_call_frame();
   test_finalize_take_aborts_count_in();
   test_perf_render_golden_master_parity();
+  test_perf_render_golden_octaver_nonzero_track();
   test_perf_render_quantized_round_down_truncation_log_frame();
   test_looper_mode_defaults_and_persistence();
   test_looper_mode_setter_validates_args();
