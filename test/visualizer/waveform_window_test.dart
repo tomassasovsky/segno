@@ -103,6 +103,22 @@ void main() {
       expect(next.selectedTrack, 'Bass');
     });
 
+    test('a malformed samples value HOLDS the waveform on screen', () {
+      // The absent key is the easy case (a progress-only push). A present but
+      // garbled value is what a damaged frame actually looks like, and
+      // decoding it to an empty buffer would blank the second screen mid-set
+      // — the one outcome the hold exists to prevent.
+      final previous = frameOf([0.1, 0.2, 0.3]);
+
+      final next = waveformFrameFrom(
+        {'samples': 'nope', 'progress': 0.4, 'selectedTrack': 'Drums'},
+        previous,
+      );
+
+      expect(next.samples, previous.samples);
+      expect(next.progress, 0.4);
+    });
+
     test('a malformed progress holds the playhead instead of resetting it', () {
       final next = waveformFrameFrom(
         {'progress': 'nope', 'selectedTrack': 'Bass'},

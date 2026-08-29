@@ -154,7 +154,11 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
         _lastSamples = null;
         _lastReadout = null;
         _readyHandler?.call();
-        _readyCompleter?.complete();
+        // Guarded: a re-announce (the path the comment above names) arrives
+        // with the completer from the last open already completed, and
+        // completing twice throws out of this channel handler.
+        final ready = _readyCompleter;
+        if (ready != null && !ready.isCompleted) ready.complete();
       }
       if (call.method == waveformWindowControlMethod) {
         final arguments = call.arguments;

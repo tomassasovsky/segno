@@ -124,10 +124,13 @@ WaveformFrame waveformFrameFrom(
 ) {
   final progress = payload['progress'];
   final selectedTrack = payload['selectedTrack'];
+  final samples = payload['samples'];
   return (
-    samples: payload.containsKey('samples')
-        ? _toFloat32List(payload['samples'])
-        : previous.samples,
+    // `is List` covers the absent key and the garbled value in one test: a
+    // frame with no `samples` is the ordinary progress-only push, and one
+    // carrying something that is not a buffer is a frame that arrived
+    // damaged. Both hold what is on screen.
+    samples: samples is List ? _toFloat32List(samples) : previous.samples,
     // Every field degrades to what is already on screen rather than throwing
     // OR resetting: this crosses an engine boundary as a loose map, and a
     // malformed frame must neither take the second screen down mid-set nor

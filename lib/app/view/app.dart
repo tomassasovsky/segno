@@ -507,8 +507,6 @@ class App extends StatelessWidget {
   }
 }
 
-/// Builds the themed [MaterialApp], wires the macOS system menu, and opens /
-/// closes the secondary waveform window for tracks mode.
 /// The inputs [_AppViewState._readoutOf] was last given, remembered so an
 /// unchanged frame can be skipped in front of the build instead of after it.
 ///
@@ -527,6 +525,8 @@ typedef _ReadoutInputs = ({
   String localeName,
 });
 
+/// Builds the themed [MaterialApp], wires the macOS system menu, and opens /
+/// closes the secondary waveform window for tracks mode.
 class _AppView extends StatefulWidget {
   const _AppView({
     required this.waveformWindow,
@@ -565,6 +565,10 @@ class _AppViewState extends State<_AppView> {
   /// and after the window closes.
   String? _lastFrameLabel;
 
+  /// The projection the last frame SENT carried, so a rejection that lands
+  /// late can tell whether it has been superseded. See [_sendWaveformFrame].
+  LooperState? _lastSentFrame;
+
   /// The states [_readoutOf] was last given. `null` before the first push and
   /// after the window closes, so a re-opened window is re-seeded from scratch
   /// — the same discipline `pushReadout` applies to its own last-sent diff.
@@ -583,11 +587,7 @@ class _AppViewState extends State<_AppView> {
   @override
   void initState() {
     super.initState();
-    // A sub-window that has just announced itself holds nothing, so the gate
-    // in front of `pushReadout` — a belief about what is already on the
-    // second screen — is void. The service drops its own diff on the same
-    // signal; it cannot reach this one.
-    widget.waveformWindow.onWindowReady = () => _lastReadoutInputs = null;
+    widget.waveformWindow.onWindowReady = _onWindowReady;
     // The sub-window's volume overlay sends control commands back over the
     // window channel (#698); they are applied here, through the same blocs
     // the main UI's own controls dispatch to.
@@ -664,6 +664,23 @@ class _AppViewState extends State<_AppView> {
           ),
         );
     }
+  }
+
+  /// A sub-window has announced itself, and therefore holds NOTHING.
+  ///
+  /// Every diff on this side is a belief about what is already on the second
+  /// screen, so all of them are void: the readout gate, and the label the
+  /// waveform tick compares against. The service drops its own two on the
+  /// same signal, but dropping them is not enough here — the readout is
+  /// rebuilt by the next timer tick, while a waveform frame is only produced
+  /// by an EVENT, and a rig that is not moving produces none. So one is
+  /// requested outright, or a reclaimed window shows an empty waveform beside
+  /// a live readout until something happens to change.
+  void _onWindowReady() {
+    if (!mounted) return;
+    _lastReadoutInputs = null;
+    _lastFrameLabel = null;
+    _requestWaveformFrame(context.read<LooperRepository>().lastState);
   }
 
   /// Whether only one display is connected (the console expects two). `null`
@@ -753,6 +770,7 @@ class _AppViewState extends State<_AppView> {
       unawaited(_pollSub?.cancel());
       _pollSub = null;
       _lastFrameLabel = null;
+      _lastSentFrame = null;
       _lastReadoutInputs = null;
       await widget.waveformWindow.close();
     }
@@ -791,6 +809,7 @@ class _AppViewState extends State<_AppView> {
     final cursor = context.read<ControlCubit>().state.cursor;
     final label = context.read<TracksCubit>().state.nameOf(cursor);
     _lastFrameLabel = label;
+    _lastSentFrame = state;
     _pendingFrame = null;
     _armFrameGate();
     unawaited(
@@ -803,8 +822,16 @@ class _AppViewState extends State<_AppView> {
             // second screen keeps whatever it last drew. Re-QUEUED, not
             // re-sent: the gate is what keeps a window that is failing every
             // frame from spinning.
-            if (!mounted) return;
-            _pendingFrame = state;
+            //
+            // Only while this is still the newest frame anyone has sent. A
+            // rejection crosses the channel and can land several polls late,
+            // and re-sending a superseded one would put an OLDER playhead on
+            // screen as the last word — on a rig that then goes quiet, for
+            // good. If a newer frame went out it either landed (nothing to
+            // heal) or is healing itself through this same path; if one is
+            // merely waiting, `??=` leaves it alone.
+            if (!mounted || !identical(_lastSentFrame, state)) return;
+            _pendingFrame ??= state;
             _armFrameGate();
           }),
     );

@@ -143,6 +143,10 @@ class _RecordingWindowService implements WaveformWindowService {
   /// service reports that by completing the future with an error.
   int failNextWaveformPushes = 0;
 
+  /// How long a failing push takes to REPORT its failure — a channel
+  /// round-trip that rejects several polls late.
+  Duration failDelay = Duration.zero;
+
   @override
   Future<void> pushWaveform(
     Float32List samples,
@@ -152,6 +156,7 @@ class _RecordingWindowService implements WaveformWindowService {
     pushCalls++;
     if (failNextWaveformPushes > 0) {
       failNextWaveformPushes--;
+      if (failDelay > Duration.zero) await Future<void>.delayed(failDelay);
       throw const _WindowGone();
     }
     waveforms.add((progress: progress, selectedTrack: selectedTrack));
@@ -993,6 +998,62 @@ void main() {
           rig.window.waveforms.last.progress,
           closeTo(0.25, 1e-9),
           reason: 'the re-sent frame carried the wrong state — 24000/96000',
+        );
+      });
+
+      testWidgets('a late failure never re-sends a superseded frame', (
+        tester,
+      ) async {
+        final rig = await pumpPlaying(tester);
+        rig.window
+          ..failNextWaveformPushes = 1
+          ..failDelay = const Duration(milliseconds: 200);
+
+        // Frame A goes out and will reject long after the fact.
+        engine.nextSnapshot = playing(position: 24000, peak: 0.3);
+        rig.ticker.add(null);
+        await tester.pump();
+
+        // Frame B lands cleanly in the meantime.
+        engine.nextSnapshot = playing(position: 72000, peak: 0.5);
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(rig.window.waveforms.last.progress, closeTo(0.75, 1e-9));
+
+        // A's rejection arrives. Re-sending it now would put an older
+        // playhead on screen as the last word — and this rig has gone quiet,
+        // so nothing would ever correct it.
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(
+          rig.window.waveforms.last.progress,
+          closeTo(0.75, 1e-9),
+          reason: 'a stale frame was re-sent over a newer one that had landed',
+        );
+      });
+
+      testWidgets('a re-announced window is re-seeded with a frame', (
+        tester,
+      ) async {
+        // The service clears its own send diffs on the ready ping, but a
+        // waveform frame is only produced by an EVENT and this rig is not
+        // moving — so without an explicit request the reclaimed window shows
+        // an empty waveform beside a live readout, indefinitely.
+        final rig = await pumpPlaying(tester);
+        final frames = rig.window.pushCalls;
+        final readouts = rig.window.readouts.length;
+
+        rig.window.onWindowReady!();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(
+          rig.window.pushCalls,
+          greaterThan(frames),
+          reason: 'a reclaimed window was never sent a waveform frame',
+        );
+        expect(
+          rig.window.readouts.length,
+          greaterThan(readouts),
+          reason: 'a reclaimed window was never re-sent the readout',
         );
       });
 
