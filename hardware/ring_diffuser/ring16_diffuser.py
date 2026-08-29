@@ -94,9 +94,13 @@ SKIRT_CLR  = 0.20   # radial SLIP fit over the ring OD. The hooks are what hold
                     # on" and "falls off" -- so dial it in with --clr on the
                     # printer that will make it (start ~0.05) rather than trusting
                     # this number.
-SKIRT_DROP = 1.0    # how far the shroud reaches below the PCB top. Capped by
-                    # PCB_T: --skirt-only is for a ring lying FLAT, so anything
-                    # past its back face lands on the bench and lifts the cap.
+SKIRT_DROP = 1.0    # how far the shroud reaches below the PCB top -- the WISH.
+                    # _geom() clamps it to PCB_T, because --skirt-only is for a
+                    # ring lying FLAT and a hem past its back face lands on the
+                    # bench and lifts the cap off. Clamped rather than asserted:
+                    # this is a module constant with no flag, so on a --pcb 0.8
+                    # ring an assert would be a dead end with no way out but
+                    # editing the source.
 
 N_ARMS       = 3
 ARM_W        = 7.0    # finger width, arc mm (narrow = flexes, wide = stiff)
@@ -117,6 +121,7 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 # derived geometry
 # ----------------------------------------------------------------------------
 def _geom() -> dict:
+    skirt_drop = min(SKIRT_DROP, PCB_T)       # see SKIRT_DROP
     r_skirt_i = RING_OD / 2 + SKIRT_CLR
     hook_p = SKIRT_CLR + HOOK_ENGAGE          # barb protrusion off the wall
     roof_z0 = LED_H + AIR_GAP                 # roof underside, z=0 is PCB top
@@ -131,6 +136,7 @@ def _geom() -> dict:
         "enc_face_z": LED_H + ENC_FACE_RISE,
         "arm_ang": math.degrees(ARM_W / r_skirt_i),
         "slot_ang": math.degrees(SLOT_W / r_skirt_i),
+        "skirt_drop": skirt_drop,
     }
 
 
@@ -165,7 +171,11 @@ def _tube(r_i: float, r_o: float, z0: float, z1: float):
 
 def build():
     g = _geom()
-    angles = arm_angles()
+    # No fingers in --skirt-only, so do not ask arm_angles() about them: it
+    # asserts there are enough pad gaps for N_ARMS, and refusing to build the
+    # HOOKLESS variant over a shortage of hooks is exactly backwards -- that
+    # variant is the documented fallback for rings the hooks cannot take.
+    angles = [] if SKIRT_ONLY else arm_angles()
     _check(g, angles)
 
     # the diffusing face: ONE solid disc across the whole ring, pierced only by
@@ -176,7 +186,7 @@ def build():
     # and the relief slots take 6 x SLOT_W out of it further down, so the finished
     # rim is not light-tight -- the slots are what let the fingers flex at all.
     part = part.union(_tube(g["r_skirt_i"], g["r_skirt_o"],
-                            -SKIRT_DROP, g["roof_z0"]))
+                            -g["skirt_drop"], g["roof_z0"]))
 
     if SKIRT_ONLY:
         solid = part.val()
@@ -195,7 +205,7 @@ def build():
     part = part.union(arms)
 
     # ...and take the SHROUD back to ARM_T inside those sectors. Without this the
-    # finger is only ARM_T thick below the shroud's hem (z = -SKIRT_DROP): above
+    # finger is only ARM_T thick below the shroud's hem: above
     # that the union with the SKIRT_T shroud makes it 1.2, i.e. the root -- where
     # bending strain is highest -- is a third thicker than the number _check()
     # reasons about. ARM_T is documented as the constant that sets the snap
@@ -315,15 +325,15 @@ def _check_clearances(solid, g: dict, angles: list[float]) -> None:
 def _check(g: dict, angles: list[float]) -> None:
     """Fit rules that a print cannot recover from."""
     assert RING_ID < RING_OD, "bore/OD are inconsistent"
+    assert ENC_D < RING_ID / 2.0, (
+        f"bush hole O{ENC_D} is more than half the O{RING_ID} bore -- there is no "
+        f"face left to diffuse through, and the roof probes would report it as a "
+        f"hole in the face rather than as this")
     assert ENC_D < RING_ID - 4.0, "bush hole is not comfortably inside the bore"
+    assert SKIRT_CLR >= 0.0, (
+        f"--clr {SKIRT_CLR} is negative: the shroud would be smaller than the ring "
+        f"and the barb wire degenerates with an OCC error that says nothing")
     assert ENC_D > 6.0, "an EC11 bush is M7 -- a hole under 6 mm cannot pass it"
-
-    # the shroud hem must not reach past the ring's back face. --skirt-only is for
-    # a ring lying FLAT, so a hem below that lands on the bench and lifts the cap
-    # off; --pcb makes this reachable, so it is asserted rather than commented.
-    assert SKIRT_DROP <= PCB_T, (
-        f"shroud hem drops {SKIRT_DROP} below the PCB top on a {PCB_T} PCB -- it "
-        f"would bottom out past the ring's back face")
 
     # the LED band must be under the roof, not under the shroud wall
     r_led = (RING_OD + RING_ID) / 4
@@ -343,6 +353,12 @@ def _check(g: dict, angles: list[float]) -> None:
 
     # the fingers must enclose the centre, or the cap rocks off
     seq = sorted(angles)
+    # ...and three is the floor. With one finger the span list is [0] and with two
+    # it is [d, 360-d]; the first passes the test below vacuously, which is how a
+    # one-hook cap got built. Two hooks give a hinge, not a mount.
+    assert len(seq) >= 3, (
+        f"{len(seq)} finger(s): a cap needs at least 3 to sit flat. --arms 1 or 2 "
+        f"builds something that pivots off")
     spans = [(seq[(i + 1) % len(seq)] - a) % 360 for i, a in enumerate(seq)]
     assert max(spans) < 180.0, (
         f"fingers span {max(spans):.0f} deg with nothing opposite -- it will rock "
@@ -366,10 +382,10 @@ def _check(g: dict, angles: list[float]) -> None:
 
 def report() -> None:
     g = _geom()
-    angles = arm_angles()
+    angles = [] if SKIRT_ONLY else arm_angles()
     L = g["roof_z0"] - (g["hook_top"] - g["hook_p"] / 2)
     strain = 3 * HOOK_ENGAGE * ARM_T / (2 * L ** 2)
-    bottom = -SKIRT_DROP if SKIRT_ONLY else g["arm_bot"]
+    bottom = -g["skirt_drop"] if SKIRT_ONLY else g["arm_bot"]
     print(f"  ring            O{RING_OD} / O{RING_ID} x {PCB_T} PCB")
     print(f"  part            O{2 * g['r_skirt_o']:.2f} outer, "
           f"solid face with a O{ENC_D} bush hole, "
@@ -447,7 +463,13 @@ def main() -> None:
     p.add_argument("--clr", type=float,
                    help="radial clearance over the ring OD (0.20 slip; go ~0.05 "
                         "for a --skirt-only shroud that has to grip)")
-    p.add_argument("--arms", type=int,
+    def _arms(v):
+        n = int(v)
+        if n < 3:
+            raise argparse.ArgumentTypeError(
+                "at least 3 -- fewer cannot hold a cap flat")
+        return n
+    p.add_argument("--arms", type=_arms,
                    help=f"number of snap fingers (default {N_ARMS}); a ring whose "
                         f"pads leave no {N_ARMS}-gap spread needs 4")
     p.add_argument("--skirt-only", action="store_true",
