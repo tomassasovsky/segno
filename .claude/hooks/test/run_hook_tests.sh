@@ -150,6 +150,15 @@ g allow 'git commit -m "chore: x && git push"'
 g allow 'gh pr create --body "never write \"cd x && git push\" in a script"'
 g allow 'git commit -m "docs: explain \"cd repo; git push\" and why it fails"'
 g deny  'git commit -m "say \"x\"" && git push'
+# The two boundaries of the escape handling. A span that ends too EARLY denies
+# prose; one that ends too LATE swallows a real push. `\\"` is an escaped
+# backslash followed by the real terminator, so the push after it is visible;
+# `\"` is an escaped quote, so the push inside the string is not.
+g deny  'echo "a\\" && git push'
+g allow 'echo "a\" && git push"'
+g deny  'echo "a\\\"" && git push'
+g deny  'echo "a" && git push && echo "b"'
+g deny  'echo "a" ; git push ; echo "b"'
 # Single-quoted spans containing separators: without single-quote blanking at
 # all, both of these become deny.
 g allow "echo 'x; git push; y'"
