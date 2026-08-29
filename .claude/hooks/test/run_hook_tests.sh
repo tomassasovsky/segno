@@ -144,6 +144,16 @@ g allow "$(printf 'gh pr create --title "fix: x" --body "## What\n\ngit push is 
 g allow "$(printf 'git commit -m "chore: x\n\ngit push through the gh helper is the only sanctioned form.\n"')"
 g allow "$(printf 'gh pr comment 938 --body "CLAUDE.md says:\ngit push must go through the gh credential helper."')"
 g allow 'git commit -m "chore: x && git push"'
+# `\"` does not close a double-quoted string in bash. A blanker that thinks it
+# does un-blanks the rest of the body, and a separator in the leaked span
+# manufactures a `git push` segment out of prose.
+g allow 'gh pr create --body "never write \"cd x && git push\" in a script"'
+g allow 'git commit -m "docs: explain \"cd repo; git push\" and why it fails"'
+g deny  'git commit -m "say \"x\"" && git push'
+# Single-quoted spans containing separators: without single-quote blanking at
+# all, both of these become deny.
+g allow "echo 'x; git push; y'"
+g allow "sed -i '' 's/a; git push; b/c/' docs/x.md"
 
 # A PreToolUse hook that errors blocks the Bash tool outright, so malformed or
 # absent input must be a silent allow, never a crash. Bound the run time too:

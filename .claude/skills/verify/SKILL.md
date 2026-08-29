@@ -16,7 +16,8 @@ bash .claude/skills/verify/run.sh [base-ref]     # default base: origin/master
 ## Gates and when each one fires
 
 Every gate is conditional. "Dart moved" below means any `.dart` / `.arb` /
-`pubspec.yaml` / `pubspec.lock` / `assets/` change.
+`pubspec.yaml` / `pubspec.lock` / `assets/` change **at any depth** — a bump to
+`packages/<pkg>/pubspec.yaml` counts, and CI puts no path filter on those jobs.
 
 | Gate | Fires when |
 |---|---|
@@ -24,12 +25,13 @@ Every gate is conditional. "Dart moved" below means any `.dart` / `.arb` /
 | `dart format --set-exit-if-changed` | Dart moved — over the same `lib test packages/*/lib packages/*/test` CI gates |
 | `bloc lint lib test packages` | Dart moved, and the `bloc` CLI is installed |
 | `flutter test (root app)` | Dart moved |
-| `test (<package>)`, six of them | that package changed, or a package it path-depends on did |
+| `test (<package>)`, six of them | that package changed, or the Dart surface of `segno_engine` / `wav_codec` did |
 | native engine tests | `packages/segno_engine/src/**` changed |
 | ffigen bindings in step | `segno_engine_api.h` changed |
 | firmware contract + drift gate | `firmware/**`, `hardware/firmware/**`, or `pedal_protocol.*` changed |
 | appliance bundle suites (9 + a dash pass) | `deploy/yocto/.../segno-bundle/**` changed |
 | agent hook tests | `.claude/hooks/**` changed |
+| agent script syntax | `.claude/hooks/**` or `.claude/skills/**` changed |
 
 ## Things the script encodes so you do not have to remember them
 

@@ -59,8 +59,12 @@ UNRESOLVED=""
 
 # Nothing Dart-shaped moved, so neither analysis nor formatting can have
 # regressed -- the same predicate the test gates use.
+# Anchored with (^|/), not ^: a bump to packages/<pkg>/pubspec.yaml is exactly
+# the change most likely to break analysis, and a root-only anchor skipped
+# every Dart gate for it and reported green. CI has no path filter on those
+# jobs, so that combination is verify-green and CI-red.
 DART_TOUCHED=1
-touched '\.(dart|arb)$|^pubspec\.(yaml|lock)$|^assets/' || DART_TOUCHED=0
+touched '\.(dart|arb)$|(^|/)pubspec\.(yaml|lock)$|(^|/)assets/' || DART_TOUCHED=0
 
 # --- static analysis --------------------------------------------------------
 if [ "$DART_TOUCHED" = 0 ]; then
@@ -114,7 +118,7 @@ fi
 # .github/workflows/main.yaml), so a change confined to one of those packages
 # passes a root-only run here and fails CI. Each gets its own gate below,
 # fired only when that package moved so the common case stays cheap.
-if ! touched '\.(dart|arb)$|^pubspec\.(yaml|lock)$|^assets/'; then
+if [ "$DART_TOUCHED" = 0 ]; then
   skip "flutter test" "no Dart/arb/asset changes"
 elif [ -n "$UNRESOLVED" ]; then
   unrun "flutter test" "$UNRESOLVED"
@@ -125,9 +129,13 @@ fi
 # The packages CI tests in their own job. daw_export is pure Dart (`dart test`);
 # the rest are Flutter packages. Coverage floors stay CI's job -- this gate
 # answers "do the tests pass", not "is the floor still met".
-# Packages the six CI jobs path-depend on: looper_repository and
-# session_repository both `path: ../segno_engine`, so "packages/<pkg>/
-# unchanged" is true of a package's own files and false of its inputs.
+# Packages the six CI jobs path-depend on: looper_repository,
+# session_repository and performance_repository all `path: ../segno_engine`, so
+# "packages/<pkg>/ unchanged" is true of a package's own files and false of its
+# inputs. One shared regex rather than a per-package map -- daw_export,
+# pedal_repository and controller_repository depend on neither, so they fire a
+# little more often than they need to. Over-running a fast suite is the cheap
+# mistake here; under-running one is the expensive one.
 #
 # Scoped to the DART surface of those dependencies, not the whole directory. A
 # change under packages/segno_engine/src/ is C, reachable from Dart only
@@ -223,6 +231,18 @@ if touched '^\.claude/hooks/'; then
   gate "agent hook tests" "$LOG/hooks" bash .claude/hooks/test/run_hook_tests.sh
 else
   skip "agent hook tests" "no .claude/hooks changes"
+fi
+
+# The skills' own scripts -- this one included -- have no test suite, so the
+# least that can be said about a change to them is that they parse. A syntax
+# error in run.sh or precheck.sh is silent until the next session runs /verify.
+if touched '^\.claude/(hooks|skills)/'; then
+  gate "agent script syntax" "$LOG/shsyntax" bash -c \
+    'rc=0; for f in .claude/hooks/*.sh .claude/hooks/test/*.sh .claude/skills/*/*.sh; do
+       [ -f "$f" ] || continue; bash -n "$f" || rc=1
+     done; exit $rc'
+else
+  skip "agent script syntax" "no .claude/hooks or .claude/skills changes"
 fi
 
 # --- report -----------------------------------------------------------------
