@@ -139,6 +139,9 @@ class TrackColumn extends StatelessWidget {
     final fxChainOn = binding == null
         ? track.chainEnabled
         : binding.enabled ?? false;
+    // The run of chips draws the CONTAINING chain, so it dims on that chain's
+    // own flag — a slot binding bypasses one effect, not the eight around it.
+    final fxRunOn = binding == null ? track.chainEnabled : binding.chainEnabled;
     // The entry that NAMES the cell: a whole-chain binding is named by its
     // head — the chain-first identity (#692) — and a SLOT binding by the ONE
     // effect it actually drives. Naming a slot cell after the chain's head
@@ -361,10 +364,23 @@ class TrackColumn extends StatelessWidget {
               semanticLabel: switch (mode) {
                 InteractionMode.record => l10n.a11yTrackTile(name, stateWord),
                 InteractionMode.mute => l10n.a11yTrackTileMute(name, stateWord),
-                InteractionMode.fx =>
-                  fxChainOn
-                      ? l10n.a11yTrackTileFxOn(fxCellLabel, stateWord)
-                      : l10n.a11yTrackTileFxOff(fxCellLabel, stateWord),
+                // A STALE cell gets its own label: it promises no action,
+                // because its tap really is inert (R25) — the other two end
+                // in "activate to switch it on/off".
+                InteractionMode.fx => switch ((fxStale, fxChainOn)) {
+                  (true, _) => l10n.a11yTrackTileFxStale(
+                    fxIdentityPrimary,
+                    stateWord,
+                  ),
+                  (false, true) => l10n.a11yTrackTileFxOn(
+                    fxCellLabel,
+                    stateWord,
+                  ),
+                  (false, false) => l10n.a11yTrackTileFxOff(
+                    fxCellLabel,
+                    stateWord,
+                  ),
+                },
               },
               selected: selected,
               borderRadius: 8,
@@ -377,24 +393,10 @@ class TrackColumn extends StatelessWidget {
                     bloc.add(LooperMuteToggled(track.channel));
                   case InteractionMode.fx:
                     // A BOUND cell drives what it DRAWS (#884): the same typed
-                    // target the footswitch over it stomps, through the same
-                    // interpreter — never this column's own chain, which the
-                    // cell does not describe. A stale binding is inert there
-                    // (R25); the tap still moves the cursor, as above.
-                    final boundTarget = binding?.target;
-                    if (boundTarget != null) {
-                      TracksCommands(context).toggleFxBinding(boundTarget);
-                    } else if (binding == null) {
-                      // UNBOUND: this column's own Track chain. A toggle event,
-                      // not a computed set — `track` here is the polled
-                      // snapshot, a poll behind any flip another surface just
-                      // made. The announcement shares the keyboard path's
-                      // helper so the two cannot drift.
-                      TracksCommands(
-                        context,
-                      ).announceFxChainToggle(track.channel);
-                      bloc.add(LooperTrackChainToggled(track.channel));
-                    }
+                    // target the footswitch over it stomps. Resolved by the
+                    // shared helper the `1`-`8` keys also call, so the two
+                    // surfaces over one cell cannot flip different chains.
+                    TracksCommands(context).toggleFxCell(track.channel);
                 }
               },
               child: GestureDetector(
@@ -429,7 +431,8 @@ class TrackColumn extends StatelessWidget {
                           identityPrimary: fxIdentityPrimary,
                           identitySub: fxIdentitySub,
                           effects: fxChainEffects,
-                          chainEnabled: fxChainOn,
+                          enabled: fxChainOn,
+                          chainEnabled: fxRunOn,
                         ),
                       ),
                   ],
@@ -670,14 +673,6 @@ class _PendingArmBadge extends StatelessWidget {
   }
 }
 
-/// The generic FX stage label of an FX-mode cell — the stage the bound chain
-/// sits on: `INPUT n` / `TRACK n` / `LANE n` / `MASTER` (#692).
-///
-/// Indices are 1-based, matching every other jack name the rig gives. This is
-/// name-free by design: TRACK never borrows the column's track name (the
-/// conflation fix), and LANE / MASTER carry no name. A NAMED input's own name
-/// is layered on TOP of this in [TrackColumn] as a two-tier identity (the name
-/// over this `INPUT n` sub-label); this helper always returns the generic form.
 /// What the footswitch over one FX-mode cell drives, resolved against the live
 /// rig (#884).
 ///
@@ -692,6 +687,7 @@ class FxCellBinding extends Equatable {
     required this.target,
     required this.entries,
     required this.enabled,
+    required this.chainEnabled,
   });
 
   /// A binding whose stored target string does not even decode: there is no
@@ -699,7 +695,8 @@ class FxCellBinding extends Equatable {
   const FxCellBinding.undecodable()
     : target = null,
       entries = const [],
-      enabled = null;
+      enabled = null,
+      chainEnabled = false;
 
   /// The typed target the switch drives — one whole chain, or ONE slot inside
   /// it. Kept typed rather than widened to its containing chain: a slot
@@ -716,11 +713,17 @@ class FxCellBinding extends Equatable {
   /// binding no longer resolves.
   final bool? enabled;
 
+  /// Whether the CONTAINING chain is engaged, which is a different question
+  /// for a slot binding: the run of chips reads this, so bypassing one effect
+  /// dims that chip's own pill and identity without drawing the whole chain as
+  /// switched off. Equal to [enabled] for a whole-chain binding.
+  final bool chainEnabled;
+
   /// Whether the binding still names something the live rig has.
   bool get resolves => enabled != null;
 
   @override
-  List<Object?> get props => [target, entries, enabled];
+  List<Object?> get props => [target, entries, enabled, chainEnabled];
 }
 
 /// The entry that names an FX-mode cell: the slot a [FxSlotTarget] drives, or
@@ -736,6 +739,14 @@ TrackEffect? _fxNamedEntry(FxBindingTarget? target, List<TrackEffect> entries) {
   return entries.isEmpty ? null : entries.first;
 }
 
+/// The generic FX stage label of an FX-mode cell — the stage the bound chain
+/// sits on: `INPUT n` / `TRACK n` / `LANE n` / `MASTER` (#692).
+///
+/// Indices are 1-based, matching every other jack name the rig gives. This is
+/// name-free by design: TRACK never borrows the column's track name (the
+/// conflation fix), and LANE / MASTER carry no name. A NAMED input's own name
+/// is layered on TOP of this in [TrackColumn] as a two-tier identity (the name
+/// over this `INPUT n` sub-label); this helper always returns the generic form.
 String _stageFxTargetLabel(AppLocalizations l10n, FxAddress address) =>
     switch (address.stage) {
       FxStage.input => l10n.stageFxTargetInput(address.index + 1),
@@ -771,6 +782,7 @@ class _FxChainDressing extends StatelessWidget {
     required this.identityPrimary,
     required this.identitySub,
     required this.effects,
+    required this.enabled,
     required this.chainEnabled,
   });
 
@@ -785,8 +797,14 @@ class _FxChainDressing extends StatelessWidget {
   /// The bound chain's entries, in processing order.
   final List<TrackEffect> effects;
 
-  /// Whether the whole chain is engaged (drives the power pill and the group's
-  /// engaged/dimmed reading).
+  /// Whether the thing this cell DRIVES is engaged — the whole chain, or the
+  /// one slot a slot binding names. Drives the power pill and the identity's
+  /// engaged/dimmed reading, both of which speak for that target.
+  final bool enabled;
+
+  /// Whether the containing CHAIN is engaged — what the run of chips dims on.
+  /// Equal to [enabled] except for a slot binding, where bypassing one effect
+  /// must not draw the chain around it as switched off.
   final bool chainEnabled;
 
   @override
@@ -829,7 +847,7 @@ class _FxChainDressing extends StatelessWidget {
                           child: _FxCellIdentity(
                             primary: identityPrimary,
                             sub: identitySub,
-                            enabled: chainEnabled,
+                            enabled: enabled,
                           ),
                         ),
                       ),
@@ -838,7 +856,7 @@ class _FxChainDressing extends StatelessWidget {
                       const SizedBox(height: kConsoleMode ? 20 : 12),
                       _FxEntryRun(effects: effects, chainEnabled: chainEnabled),
                       const SizedBox(height: kConsoleMode ? 30 : 18),
-                      _FxPowerPill(enabled: chainEnabled),
+                      _FxPowerPill(enabled: enabled),
                     ],
                   ),
                 ),

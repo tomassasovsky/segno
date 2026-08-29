@@ -149,25 +149,37 @@ class TracksCommands {
     );
   }
 
-  /// Toggles the typed [target] a pedal-BOUND FX cell drives (#884), and
-  /// announces the state it lands in.
+  /// Toggles what the FX-mode cell for [channel] DRIVES, and announces the
+  /// state it lands in (#884).
   ///
-  /// The on-screen twin of stomping the footswitch that carries the binding:
-  /// it goes through `ControlCubit`, the one interpreter every control surface
+  /// A cell whose footswitch carries a binding drives that switch's own typed
+  /// target — the chain, or the single effect, the tile actually draws — and
+  /// goes through `ControlCubit`, the one interpreter every control surface
   /// reaches, so the tap, the stomp and a mapped MIDI switch can never drift
-  /// in what they write — or in what the pedal's LEDs are then told. It reads
-  /// the SAME resolver the flip writes through, so the announcement cannot
-  /// name a different state than the one that lands.
+  /// in what they write or in what the pedal's LEDs are then told. An UNBOUND
+  /// cell keeps the channel's own Track-stage chain, dispatched through the
+  /// bloc so it persists the chain envelope exactly as the FX dock does.
   ///
-  /// A target that no longer resolves writes nothing and announces nothing
-  /// (R25) — a stale binding is inert wherever it is pressed.
-  void toggleFxBinding(FxBindingTarget target) {
+  /// A binding that no longer resolves — or one whose stored string does not
+  /// decode at all — writes nothing and announces nothing (R25).
+  ///
+  /// Shared by the track tiles and the `1`–`8` keys: two surfaces over one
+  /// cell, one answer about what it drives.
+  void toggleFxCell(int channel) {
+    final binding = context.read<ControlCubit>().state.fxCellBinding(channel);
+    if (binding == null) {
+      announceFxChainToggle(channel);
+      context.read<LooperBloc>().add(LooperTrackChainToggled(channel));
+      return;
+    }
+    final target = binding.decodeTarget();
+    if (target == null) return; // undecodable: inert, never a guess (R25)
     final enabled = context.read<LooperRepository>().bindingEnabled(target);
-    if (enabled == null) return;
+    if (enabled == null) return; // decodes, resolves to nothing: inert too
+    // Reads the SAME resolver the flip writes through, so the announcement
+    // cannot name a different state than the one that lands.
     _announce(
-      enabled
-          ? context.l10n.a11yTrackFxChainOff
-          : context.l10n.a11yTrackFxChainOn,
+      enabled ? context.l10n.a11yStageFxOff : context.l10n.a11yStageFxOn,
     );
     context.read<ControlCubit>().toggleBinding(target);
   }
@@ -318,11 +330,12 @@ class TracksCommands {
           case InteractionMode.mute:
             bloc.add(LooperMuteToggled(channel));
           case InteractionMode.fx:
-            // The bloc resolves the flip against the repository's remembered
-            // intent — deriving it here from the polled snapshot would read a
-            // missing channel as "off" and dispatch enable forever.
-            announceFxChainToggle(channel);
-            bloc.add(LooperTrackChainToggled(channel));
+            // The tile's twin, through the one shared resolution: a BOUND
+            // cell's key flips the same typed target its tap and its
+            // footswitch do (#884), an unbound one the channel's own Track
+            // chain. Called AFTER `selectTrack` above, which reveals the bank
+            // the binding is looked up in.
+            toggleFxCell(channel);
         }
       }
       return KeyEventResult.handled;

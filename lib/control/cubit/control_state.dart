@@ -165,6 +165,26 @@ class ControlState extends Equatable {
   bool bankContains(int channel) =>
       channel >= bankBaseChannel && channel < bankBaseChannel + tracksPerBank;
 
+  /// The binding carried by the footswitch that sits over [channel]'s cell, or
+  /// null when the cell is off the visible bank or its switch is unbound.
+  ///
+  /// The plate has four per-track footswitches, so a cell's channel maps
+  /// BANK-LOCALLY onto `track1..4` — the same map [ControlCubit] presses
+  /// through. This is the ONE answer to "what does this cell drive?", shared
+  /// by every surface that asks: the FX-mode cell's dressing, its tap, and the
+  /// `1`–`8` keys. Resolving it twice is how a cell comes to draw one chain
+  /// and flip another (#884).
+  PedalBinding? fxCellBinding(int channel) {
+    final button = switch (channel - bankBaseChannel) {
+      0 => PedalButton.track1,
+      1 => PedalButton.track2,
+      2 => PedalButton.track3,
+      3 => PedalButton.track4,
+      _ => null,
+    };
+    return button == null ? null : bindings.lookup(button, bank: activeBank);
+  }
+
   /// Returns a copy with the given fields replaced.
   ControlState copyWith({
     InteractionMode? mode,

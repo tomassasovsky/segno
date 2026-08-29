@@ -5,7 +5,6 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:pedal_repository/pedal_repository.dart' show PedalButton;
 import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
@@ -429,13 +428,9 @@ class _TrackSlot extends StatelessWidget {
     var inputNames = const <int, String>{};
     if (mode == InteractionMode.fx) {
       final control = context.watch<ControlCubit>().state;
-      // Only the visible bank is on screen, so a cell's channel maps straight
-      // to its bank-local track footswitch (track1..4, 0-based index) — the
-      // same map the control layer presses through (ControlCubit._trackIndex).
-      final button = _fxTrackButton(channel - control.bankBaseChannel);
-      final binding = button == null
-          ? null
-          : control.bindings.lookup(button, bank: control.activeBank);
+      // The ONE cell -> footswitch answer, shared with the tap and the 1-8
+      // keys so no two of them can resolve a different switch.
+      final binding = control.fxCellBinding(channel);
       if (binding != null) {
         final target = binding.decodeTarget();
         if (target == null) {
@@ -453,6 +448,12 @@ class _TrackSlot extends StatelessWidget {
             entries:
                 looper.chainEntriesAt(target.address) ?? const <TrackEffect>[],
             enabled: looper.bindingEnabled(target),
+            // The CONTAINING chain's own flag, which is what the entry run
+            // reads: a slot binding bypasses one effect, so dimming the whole
+            // run off its slot's state would draw a chain that is still
+            // running as if it were not.
+            chainEnabled:
+                looper.bindingEnabled(FxChainTarget(target.address)) ?? false,
           );
           // The reactive key has to be the surface that actually announces the
           // bound stage. Track / Loop / Master chains are projected onto
@@ -494,15 +495,3 @@ class _TrackSlot extends StatelessWidget {
     );
   }
 }
-
-/// The bank-local track footswitch (track1..4) for a cell at 0-based [index]
-/// within the visible bank, or `null` when the index is off the plate (the
-/// four track buttons are the only per-track footswitches). Mirrors the
-/// button→channel map `ControlCubit` presses through.
-PedalButton? _fxTrackButton(int index) => switch (index) {
-  0 => PedalButton.track1,
-  1 => PedalButton.track2,
-  2 => PedalButton.track3,
-  3 => PedalButton.track4,
-  _ => null,
-};

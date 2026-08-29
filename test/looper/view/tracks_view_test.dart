@@ -672,6 +672,7 @@ void main() {
           target: const FxChainTarget(FxAddress(stage: FxStage.master)),
           entries: [BuiltInEffect(type: TrackEffectType.reverb)],
           enabled: true,
+          chainEnabled: true,
         ),
         track: Track(effects: [BuiltInEffect(type: TrackEffectType.reverb)]),
       );
@@ -693,6 +694,7 @@ void main() {
           target: const FxChainTarget(FxAddress(stage: FxStage.input)),
           entries: [BuiltInEffect(type: TrackEffectType.filter)],
           enabled: true,
+          chainEnabled: true,
         ),
         inputNames: const {0: 'Guitar'},
         track: Track(effects: [BuiltInEffect(type: TrackEffectType.filter)]),
@@ -720,6 +722,7 @@ void main() {
           ),
           entries: [BuiltInEffect(type: TrackEffectType.filter)],
           enabled: true,
+          chainEnabled: true,
         ),
         // No name for socket 1.
         track: Track(effects: [BuiltInEffect(type: TrackEffectType.filter)]),
@@ -769,6 +772,7 @@ void main() {
             BuiltInEffect(type: TrackEffectType.delay, slotId: 'slot-delay'),
           ],
           enabled: false,
+          chainEnabled: true,
         ),
         track: const Track(),
       );
@@ -794,6 +798,7 @@ void main() {
           target: FxChainTarget(FxAddress(stage: FxStage.input, index: 3)),
           entries: [],
           enabled: null,
+          chainEnabled: false,
         ),
         // The column's OWN chain is full: leaking it here would tell the player
         // a dead switch drives their filter.
@@ -803,11 +808,12 @@ void main() {
       expect(find.text('Filter'), findsNothing);
       expect(find.byKey(const Key('tracks_tileFxNoChain')), findsOneWidget);
       // Nor does the screen reader hear the column's own identity: a broken
-      // binding says it is broken (R25).
+      // binding says it is broken, and — unlike the on/off labels — promises
+      // no action, because the cell really is inert (R25).
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       expect(
         find.bySemanticsLabel(
-          l10n.a11yTrackTileFxOff(
+          l10n.a11yTrackTileFxStale(
             l10n.pedalAssignStale.toUpperCase(),
             l10n.trackStateEmpty,
           ),
@@ -902,6 +908,28 @@ void main() {
         // And NOT channel 0's own chain — the tile never described it, so
         // toggling it would move a pill the player cannot see while the one
         // they can see stays put (the display/action split, #884).
+        verifyNever(() => bloc.add(const LooperTrackChainToggled(0)));
+      });
+
+      testWidgets('the number key over a bound cell flips the same chain its '
+          'tile does', (tester) async {
+        // The tile's label calls the number keys its twin; a bound cell has to
+        // keep that true, or one visible control has two targets.
+        await bindTrack1ToMaster([BuiltInEffect(type: TrackEffectType.reverb)]);
+        when(
+          () =>
+              repository.setMasterChainEnabled(enabled: any(named: 'enabled')),
+        ).thenReturn(EngineResult.ok);
+        control.setMode(InteractionMode.fx);
+        seed(const LooperState(tracks: [Track()]));
+        await pump(tester);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
+        await tester.pump();
+
+        verify(
+          () => repository.setMasterChainEnabled(enabled: false),
+        ).called(1);
         verifyNever(() => bloc.add(const LooperTrackChainToggled(0)));
       });
 

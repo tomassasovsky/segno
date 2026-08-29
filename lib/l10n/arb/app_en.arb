@@ -264,6 +264,14 @@
     "@a11yTrackFxChainOff": {
         "description": "Announced when a track's Track-stage FX chain is switched off (bypassed) from the tracks surface."
     },
+    "a11yStageFxOn": "FX on",
+    "@a11yStageFxOn": {
+        "description": "Announced when the FX a pedal-BOUND stage cell drives is switched on from the tracks surface. Deliberately does NOT say 'track' or 'chain': the bound target may be a chain on any stage (an input monitor, a lane, the Master insert) or one single effect inside it, and naming it a track's chain would be wrong on both counts. Distinct from a11yTrackFxChainOn (the column's OWN Track-stage chain) and from a11yFxChainOn (the FX editor's power toggle) — three surfaces, three strings, so a copy change to one never rewords the others."
+    },
+    "a11yStageFxOff": "FX off",
+    "@a11yStageFxOff": {
+        "description": "Announced when the FX a pedal-BOUND stage cell drives is switched off (bypassed) from the tracks surface. See a11yStageFxOn."
+    },
     "a11yPlayingAll": "Playing all tracks",
     "a11yStoppedAll": "Stopped all tracks",
     "a11yAllCleared": "All tracks cleared",
@@ -405,6 +413,18 @@
     "a11yTrackTileFxOff": "{target}, {state}, FX chain off, activate to switch it on",
     "@a11yTrackTileFxOff": {
         "description": "Accessibility label for a stage cell in FX mode while its bound FX chain is bypassed. Leads with the chain-first target identity, never the column's track name (#692).",
+        "placeholders": {
+            "target": {
+                "type": "String"
+            },
+            "state": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yTrackTileFxStale": "{target}, {state}, this switch drives nothing",
+    "@a11yTrackTileFxStale": {
+        "description": "Accessibility label for a stage cell in FX mode whose footswitch carries a STALE binding — one pointing at a chain or effect the rig no longer has. Unlike a11yTrackTileFxOn/Off it promises NO action, because the cell really is inert (R25); the assignment screen is where the binding gets rebound or cleared. The target reads as the localized 'target missing' wording, never the column's own chain, which this switch does not drive.",
         "placeholders": {
             "target": {
                 "type": "String"
