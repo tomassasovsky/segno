@@ -119,6 +119,23 @@ class _FakeWifiClient implements WifiClient {
 
 WifiRepository _repo(_FakeWifiClient client) => WifiRepository(client: client);
 
+/// Waits until the join loop has actually entered its backoff.
+///
+/// `pumpEventQueue()` cannot express this. `retrying: true` is emitted
+/// immediately before `await Future.delayed(...)`, so on a loaded runner a
+/// pump that itself outlasts the backoff lets the retry complete and finds the
+/// flag already false again — which is exactly how this suite failed in CI
+/// while passing locally. Waiting on the emission is what "inside the backoff"
+/// means; the delay below then only has to outlast the handful of microtasks
+/// between that emission and the act under test.
+Future<void> enterBackoff(WifiCubit cubit) =>
+    cubit.stream.firstWhere((s) => s.retrying);
+
+/// Long enough that the act under test lands inside the window even on a
+/// contended runner, short enough that awaiting the abandoned timer out (the
+/// backoff is a plain `Future.delayed` and cannot be cancelled) stays cheap.
+const backoffWindow = Duration(milliseconds: 300);
+
 void main() {
   group('WifiCubit', () {
     blocTest<WifiCubit, WifiState>(
@@ -445,13 +462,13 @@ void main() {
       final client = _FakeWifiClient()..connectErrors.add(StateError(iwdRace));
       final cubit = WifiCubit(
         repository: _repo(client),
-        retryDelays: const [Duration(milliseconds: 50)],
+        retryDelays: const [backoffWindow],
       );
       addTearDown(cubit.close);
 
       await cubit.load();
       final pending = cubit.connect('Studio 5G');
-      await pumpEventQueue();
+      await enterBackoff(cubit);
       expect(cubit.state.retrying, isTrue);
 
       await cubit.cancelConnect();
@@ -471,13 +488,13 @@ void main() {
           ..connectErrors.add(StateError(iwdRace));
         final cubit = WifiCubit(
           repository: _repo(client),
-          retryDelays: const [Duration(milliseconds: 50)],
+          retryDelays: const [backoffWindow],
         );
         addTearDown(cubit.close);
 
         await cubit.load();
         final first = cubit.connect('Studio 5G');
-        await pumpEventQueue();
+        await enterBackoff(cubit);
         expect(cubit.state.retrying, isTrue);
 
         await cubit.cancelConnect();
@@ -491,7 +508,9 @@ void main() {
         // no third activation, and no emit over the successful join.
         await first;
         await second;
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+        await Future<void>.delayed(
+          backoffWindow + const Duration(milliseconds: 60),
+        );
         expect(client.connects.length, 2);
         expect(cubit.state.status.connected, isTrue);
         expect(cubit.state.errorMessage, isNull);
@@ -531,12 +550,12 @@ void main() {
       final client = _FakeWifiClient()..connectErrors.add(StateError(iwdRace));
       final cubit = WifiCubit(
         repository: _repo(client),
-        retryDelays: const [Duration(milliseconds: 50)],
+        retryDelays: const [backoffWindow],
       );
 
       await cubit.load();
       final pending = cubit.connect('Studio 5G');
-      await pumpEventQueue();
+      await enterBackoff(cubit);
       await cubit.close();
 
       await expectLater(pending, completes);
