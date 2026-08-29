@@ -225,16 +225,18 @@ typedef struct le_octaver_state {
  * NULL), reading both banks from xl / xr — see fx_reverb. The rev_* arrays
  * already hold both banks (LE_REV_BANKS == 2) and stay per-slot. */
 typedef struct le_fx_state {
-  /* Octaver hop-phase stagger seed: a CHAIN-scoped small integer, unique per
-   * le_fx_state across the engine (le_engine_configure hands one to every
-   * lane, monitor, track bus and the master insert). The octaver derives each
-   * instance's analysis-hop PHASE from {this, slot} so two octaver instances
-   * never run their FFT frames on the same sample index — see le_pv_hop_phase
-   * in engine_fx.c for why that matters and why the phase costs no latency.
-   * 0 (the calloc'd default, and what the offline render / VST3 processors
-   * keep) is a valid seed: a standalone state runs one chain, so only the
-   * per-slot half of the spread applies there. Control-thread written, once,
-   * before any audio runs; audio-thread read-only. */
+  /* Octaver hop-phase stagger seed: this CHAIN's base analysis-hop phase, in
+   * [0, LE_PV_HOP). le_engine_create hands a distinct one to every lane,
+   * monitor, track bus and the master insert (le_fx_lane_hop_seed,
+   * engine_fx.h); the octaver adds the per-slot step to it (le_pv_hop_phase,
+   * engine_fx.c) so two octaver instances never run their FFT frames on the
+   * same sample index — see that function for why it matters and why the
+   * phase costs no latency. 0 (the calloc'd default, which the VST3
+   * processors keep) is a valid base: a standalone state runs one chain, so
+   * only the per-slot part of the spread applies there. The OFFLINE renderers
+   * are NOT in that position — they stand in for a specific live lane and
+   * must copy its base, see le_fx_lane_hop_seed. Control-thread written,
+   * once, before any audio runs; audio-thread read-only. */
   int32_t hop_seed;
   float svf_ic1[LE_FX_MAX][2];
   float svf_ic2[LE_FX_MAX][2];

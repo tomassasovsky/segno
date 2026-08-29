@@ -137,12 +137,6 @@ static float le_wrap_pi(float x) {
   return x - two_pi * roundf(x / two_pi);
 }
 
-/* Hop-phase stagger multiplier. Odd (so coprime with LE_PV_HOP = 256, making
- * the map from instance index to phase a bijection over any 256 consecutive
- * indices) and close to LE_PV_HOP / golden ratio, so the small runs that
- * actually occur — the 8 slots of one chain, a handful of neighbouring lanes —
- * land far apart rather than in a clump. */
-#define LE_PV_STAGGER_STEP 157
 
 /* The analysis-hop PHASE (in samples) of the octaver instance in chain slot
  * [slot] of chain [fx]: the value le_pv_reset_runtime seeds hop_count with, so
@@ -169,12 +163,12 @@ static float le_wrap_pi(float x) {
  * right in to produce identical out, and a per-channel phase would break it.
  * The spread therefore comes from {chain seed, slot}. */
 static int le_pv_hop_phase(const le_fx_state* fx, int slot) {
-  const uint32_t index =
-      (uint32_t)fx->hop_seed * (uint32_t)LE_FX_MAX + (uint32_t)slot;
-  /* Bounded by LE_PV_HOP: hop_count indexes o->out[] in le_pv_tick, and
-   * doubles as PSOLA's countdown to its next YIN analysis (also staggered —
-   * that detector is the more expensive of the two bursts). */
-  return (int)((index * (uint32_t)LE_PV_STAGGER_STEP) % (uint32_t)LE_PV_HOP);
+  /* The chain's base phase (le_fx_lane_hop_seed: its owner and lane axes),
+   * plus this slot's step. Bounded by LE_PV_HOP: hop_count indexes o->out[]
+   * in le_pv_tick, and doubles as PSOLA's countdown to its next YIN analysis
+   * (also staggered — that detector is the more expensive of the two
+   * bursts). */
+  return (fx->hop_seed + slot * LE_PV_STAGGER_SLOT_STEP) % LE_PV_HOP;
 }
 
 /* Zeros the octaver's per-mode DSP runtime (phase history, synthesis
