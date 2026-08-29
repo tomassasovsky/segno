@@ -43,17 +43,18 @@ class AudioSettingsSection extends StatelessWidget {
         children: [
           AppText(l10n.audioSettingsIntro, style: context.setupBody),
           const SizedBox(height: 28),
-          // Engine errors are surfaced here (the only audio surface now that the
-          // wizard is gone): a failed open/start from a setting change shows its
-          // reason inline.
+          // Engine errors are surfaced here (the only audio surface now that
+          // the wizard is gone): a failed open/start from a setting change
+          // shows its reason inline.
           if (state.status == AudioSetupStatus.error &&
               state.error != null) ...[
             _ErrorBanner(error: state.error!, detail: state.errorDetail ?? ''),
             const SizedBox(height: 20),
           ],
-          // Windows runs ASIO exclusively: one driver picker, no backend selector
-          // or device pickers. With no driver installed, an ASIO4ALL affordance
-          // shows instead. macOS/Linux keep the output + input device pickers.
+          // Windows runs ASIO exclusively: one driver picker, no backend
+          // selector or device pickers. With no driver installed, an ASIO4ALL
+          // affordance shows instead. macOS/Linux keep the output + input
+          // device pickers.
           if (state.asioOnly) ...[
             if (state.cachedAsioDrivers.isEmpty)
               const _NoAsioDriverMessage()
@@ -94,9 +95,9 @@ class AudioSettingsSection extends StatelessWidget {
             ),
           ],
           // There is no MIDI foot-controller PICKER: the Pro Micro is fixed
-          // hardware that auto-detect binds by product name (#421), so a chooser
-          // would only offer the one answer. CONFIGURING the pedal is not the
-          // same as choosing it, so the assignment route below stays.
+          // hardware that auto-detect binds by product name (#421), so a
+          // chooser would only offer the one answer. CONFIGURING the pedal is
+          // not the same as choosing it, so the assignment route below stays.
           const SizedBox(height: 28),
           const PedalSettingsSection(),
           const SizedBox(height: 28),
@@ -126,8 +127,8 @@ class AudioSettingsSection extends StatelessWidget {
             selected: state.bufferFrames,
             onSelected: cubit.setBufferFrames,
             options: [
-              // Driver buffer sizes under ASIO (often a single locked size), else
-              // the generic list.
+              // Driver buffer sizes under ASIO (often a single locked size),
+              // else the generic list.
               for (final size in state.bufferChoices)
                 SetupOption(
                   value: size,
