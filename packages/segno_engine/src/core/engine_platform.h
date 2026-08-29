@@ -80,12 +80,9 @@ void le_platform_after_device_open(le_engine* engine);
 void le_platform_on_engine_teardown(void);
 
 /* Excluded-input-channel mask from per-channel labels. macOS reads CoreAudio
- * labels; Windows reads the ASIO driver's channel names (SEGNO_ENABLE_ASIO, via
- * le_win_asio_excluded_mask) — and the ASIO duplex backend computes the same mask
- * directly at open, reported in le_device_open_result.excluded_input_mask, so the
- * core uses that instead of re-probing a live driver. Linux returns 0 (no
- * channel-label source yet; PipeWire port labels are future work). All paths
- * route through the shared le_excluded_mask_from_names / le_label_is_loopback. */
+ * labels. Linux returns 0 (no channel-label source yet; PipeWire port labels
+ * are future work). All paths route through the shared
+ * le_excluded_mask_from_names / le_label_is_loopback. */
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count);
 
 /* Platform-native device enumeration, taking precedence over the portable

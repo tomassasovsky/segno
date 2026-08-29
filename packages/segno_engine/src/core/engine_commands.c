@@ -28,6 +28,7 @@
 
 #include "audio_ring.h"  /* le_audio_ring_alloc/release (capture rings) */
 #include "engine_cache.h" /* le_cache_tick (wet-cache scheduler heartbeat) */
+#include "engine_restore.h" /* le_restore_tick + le_restore_commit_layer (#697) */
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
 #include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
 #include "engine_private.h"
@@ -294,6 +295,76 @@ static void le_drop_clear_history(le_track* t) {
  * gate (engine_cache.c) decides from the same predicate and the two must
  * never diverge. */
 
+/* Commits a completed loop-close restoration (#697 S9) as ONE lockstep undo
+ * layer — declared in engine_restore.h, defined HERE so it reuses the undo /
+ * pool machinery above (track_acquire_slot, le_clear_redo, le_hist_layer,
+ * le_publish_undo_depth, le_track_publish_live) rather than duplicating it.
+ * Control thread only; the audio thread is untouched (a_live is swapped by a
+ * single release store, and no buffer it can hold is freed — the pre-restore
+ * live slot lives on as the pushed undo layer). See the header for the full
+ * contract. */
+int32_t le_restore_commit_layer(le_engine* engine, int32_t channel,
+                                uint32_t lane_mask, uint32_t audio_rev,
+                                int32_t len,
+                                float* const restored[LE_MAX_LANES]) {
+  if (engine == NULL || channel < 0 || channel >= engine->track_count) {
+    return LE_ERR_INVALID;
+  }
+  le_track* t = &engine->tracks[channel];
+  /* The same gate the enqueue used, re-checked at commit: a capture may have
+   * started since. */
+  const int32_t est = le_effective_state(t);
+  if (est != LE_TRACK_PLAYING && est != LE_TRACK_STOPPED) return LE_ERR_INVALID;
+  if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
+    return LE_ERR_INVALID;
+  }
+  /* [B5]: the take must not have moved since the worker copied it. */
+  if (atomic_load_explicit(&t->a_audio_rev, memory_order_acquire) != audio_rev) {
+    return LE_ERR_INVALID;
+  }
+  const int32_t live = load_i32(&t->lanes[0].a_live);
+  if (len <= 0 || load_i32(&t->lanes[0].a_len) != len) return LE_ERR_INVALID;
+
+  const int32_t lanes = le_lanes_active(t);
+  const int32_t slot = track_acquire_slot(t);
+  if (slot < 0) return LE_ERR_INVALID; /* pool exhausted beyond eviction */
+
+  /* Fill the fresh slot on every active lane: the restored PCM where opted,
+   * else a plain copy of the current live buffer (safe to read on this thread
+   * — the gate above proves the audio thread is not writing pool[live]). */
+  for (int32_t l = 0; l < lanes; ++l) {
+    if (!le_lane_ensure_slot(&t->lanes[l], slot, len)) {
+      /* OOM: abandon the commit. track_acquire_slot only returns a free slot
+       * (never referenced by a_live / undo / redo / outstanding), so leaving
+       * it partially allocated in the pool is harmless — nothing names it. */
+      return LE_ERR_INVALID;
+    }
+    float* dst = t->lanes[l].pool[slot];
+    const float* src = t->lanes[l].pool[live];
+    if ((lane_mask & (1u << l)) && restored[l] != NULL) {
+      memcpy(dst, restored[l], (size_t)len * sizeof(float));
+    } else if (src != NULL) {
+      memcpy(dst, src, (size_t)len * sizeof(float));
+    } else {
+      memset(dst, 0, (size_t)len * sizeof(float));
+    }
+  }
+
+  /* A fresh action invalidates any redo path, exactly like a punch-in. */
+  le_clear_redo(t);
+  /* Push the pre-restoration live slot as one lockstep undo layer so a plain
+   * le_engine_undo peels the restoration back to the raw take (the retention
+   * model the plan specifies: in-session undo, no session-bundle change). */
+  if (t->undo_count < LE_POOL_SLOTS) {
+    t->undo_stack[t->undo_count++] = le_hist_layer(live);
+  }
+  le_publish_undo_depth(t);
+  /* Swap a_live to the restored slot on every lane + bump a_audio_rev in one
+   * motion (invalidating and re-rendering the wet cache). */
+  le_track_publish_live(t, slot);
+  return LE_OK;
+}
+
 /* Marks a successfully posted state-flip command (control thread). */
 static void le_mark_state_cmd(le_track* t, int32_t target) {
   t->state_cmds_posted++;
@@ -551,6 +622,10 @@ void le_engine_drain_events(le_engine* engine) {
    * cost is bounded: the copy step is chunked and every scan is fixed-size
    * with an under-budget early-out. */
   le_cache_tick(engine);
+  /* Offline loop-close restoration worker (#697 S9): the same control-thread
+   * heartbeat drives its chunked enqueue copy + finished-job collect. No-op
+   * until le_restore_init, and until a le_engine_restore_track enqueues a job. */
+  le_restore_tick(engine);
 }
 
 /* Zeroes every active lane's live buffer (control thread) before a fresh capture

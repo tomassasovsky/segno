@@ -1,0 +1,52 @@
+# The journal, on /data instead of in RAM (#438).
+#
+# WHY THE PATH LOOKS ODD: journald's storage location is hardcoded to
+# /var/log/journal and cannot be configured. On this image /var/log is a symlink
+# to volatile/log (tmpfs), so the CANONICAL path — and therefore the only
+# legal Where= for a mount unit — is /var/volatile/log/journal. A unit named for
+# the symlinked path would be rejected as non-canonical.
+#
+# Ordering is the whole difficulty, and it is explicit rather than inherited:
+# systemd-journal-flush.service carries RequiresMountsFor=/var/log/journal, but
+# that resolves path PREFIXES literally and so never finds a unit named for the
+# canonical path. Hence the explicit Before= — it is what actually makes the
+# flush land on /data rather than in tmpfs.
+#
+# Verified on the Pi 5 bench: after a reboot, `journalctl -b -1` returns 6521
+# lines of the previous boot, from the kernel banner through systemd-shutdown.
+[Unit]
+Description=Segno: journal storage on /data (survives reboot and OS update)
+DefaultDependencies=no
+Requires=data.mount
+# Wants, not Requires: segno-log-dirs.service failing (say, chgrp on a broken
+# image) must not take this mount down with it — on every boot after the first
+# the directories already exist and the bind mount can land on its own. The
+# oneshot still fails loudly in `systemctl --failed`; it just stops being a
+# single point of failure for BOTH mounts.
+Wants=segno-log-dirs.service
+After=data.mount segno-log-dirs.service
+Before=systemd-journal-flush.service local-fs.target
+Conflicts=umount.target
+Before=umount.target
+# The Before=systemd-journal-flush.service above puts this job on early boot's
+# critical path. This timeout bounds only THIS bind-mount job: past 10 s the
+# job is cancelled and boot proceeds on runtime-only logging (Storage=auto
+# keeps that visible, and segno-log-check reports it). 10 s is an eternity for
+# a bind of a partition on the disk the rootfs just booted from.
+#
+# What it does NOT bound, stated so nobody credits it with more: if the /data
+# DEVICE itself is absent, data.mount (pre-existing, not this PR's) still
+# waits ~90 s of DefaultDeviceTimeoutSec on dev-disk-by\x2dlabel-data.device
+# before local-fs.target proceeds. That stall predates this unit and is
+# data.mount's to fix; bounding it here would change behaviour this PR does
+# not own (segno.service hard-requires /data).
+JobTimeoutSec=10
+
+[Mount]
+What=/data/log/journal
+Where=/var/volatile/log/journal
+Type=none
+Options=bind
+
+[Install]
+WantedBy=local-fs.target

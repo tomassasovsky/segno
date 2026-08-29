@@ -25,15 +25,14 @@ keyboard or mouse.
 
 ## Install
 
-1. Build the release bundle with **console/kiosk mode** on:
+1. Build the release bundle:
    ```bash
-   flutter build linux --release --target lib/main_production.dart --dart-define=SEGNO_CONSOLE=true
+   flutter build linux --release --target lib/main_production.dart
    ```
-   `SEGNO_CONSOLE=true` hides the on-screen tracks toolbar (the foot pedals
-   drive transport/mode/clear) and tightens the layout for the fixed 16″ panel
-   — see [`lib/common/console_mode.dart`](../../lib/common/console_mode.dart). Omit
-   the define for a normal desktop build. (The `build-linux-arm64` CI job guards
-   that this compiles for arm64.)
+   segno builds only for the console now: no on-screen tracks toolbar (the
+   foot pedals drive transport/mode/clear) and a layout fixed to the 16″
+   panel. (The `build-linux-arm64` CI job guards that this compiles for
+   arm64.)
 
    From a Mac (which cannot build a Linux bundle natively), run the containerized
    arm64 build instead — it wraps the exact command above and can `rsync` the
