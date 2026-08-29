@@ -246,10 +246,14 @@ class SettingsRepository {
     final legacyKey = _legacyLatencyKey(device, sampleRate, bufferFrames);
     // A sibling .pN is tried BEFORE the legacy key, because with the knob
     // engaged `saveLatencyOffsetFrames` only ever writes the qualified key.
-    // The legacy entry is therefore frozen at whatever was measured before
-    // the knob existed: a unit that has re-measured since holds its real
-    // calibration under some .pN and a stale one under the legacy key, and
-    // reading legacy first would silently discard the newer measurement.
+    // On a machine that always runs with it engaged — the appliance, whose
+    // launcher always sets SEGNO_ALSA_PERIODS — the legacy entry is therefore
+    // frozen at whatever was measured before the knob existed, while a .pN
+    // tracks every re-measure since; reading legacy first would silently
+    // discard the newer measurement. (A host that runs SOMETIMES without the
+    // variable can freshen the legacy key, so there the preference can point
+    // at the older value. Narrow, and not the case this has to be right for:
+    // such a host can re-measure, and the appliance cannot.)
     //
     // Preferring the sibling never loses. One this migration derived is
     // exactly baseline + delta, so rebasing it returns the same number the
@@ -280,6 +284,14 @@ class SettingsRepository {
       final sibling = await _store.getInt('$legacyKey.p$periods');
       if (sibling == null) continue;
       final baseline = sibling - _deltaFramesAt(bufferFrames, periods);
+      // A stored value smaller than its own depth's delta cannot have come
+      // from this model (the deltas grow with the buffer: p8 at 512 frames is
+      // 1024). Rebasing it would write a non-positive offset, and since both
+      // consumers gate on `> 0` the unit would then run with NO compensation
+      // while the qualified key it now holds stops it ever consulting the
+      // legacy baseline again. Skip such a sibling and let the scan fall
+      // through.
+      if (baseline <= 0) continue;
       final migrated = baseline + _startThresholdDeltaFrames(bufferFrames);
       await _store.setInt(key, migrated);
       return migrated;

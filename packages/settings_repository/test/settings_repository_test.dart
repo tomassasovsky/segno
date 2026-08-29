@@ -273,6 +273,26 @@ void main() {
       expect(await load(appliance), 480);
     });
 
+    test('a sibling that cannot be rebased falls through to legacy', () async {
+      // p8 @ 512 frames adds 1024, so a stored 500 there is not a value this
+      // model produced. Rebasing it would persist a non-positive offset --
+      // which both consumers ignore, while the key it wrote stops the legacy
+      // baseline ever being read again. It must be skipped instead.
+      store.values['latency_offset.Scarlett.96000.512.p8'] = 500;
+      store.values['latency_offset.Scarlett.96000.512'] = 480;
+
+      final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+      final got = await appliance.loadLatencyOffsetFrames(
+        device: 'Scarlett',
+        sampleRate: 96000,
+        bufferFrames: 512,
+      );
+
+      // p4 @ 512 is on the two-period floor, so legacy migrates unshifted.
+      expect(got, 480);
+      expect(store.values['latency_offset.Scarlett.96000.512.p4'], 480);
+    });
+
     test('a derived sibling rebases to what legacy would have given', () async {
       // The no-loss argument for preferring siblings: a sibling this
       // migration DERIVED is exactly baseline + delta, so rebasing it lands

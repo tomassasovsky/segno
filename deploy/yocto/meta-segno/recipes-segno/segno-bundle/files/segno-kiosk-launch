@@ -156,14 +156,20 @@ export SEGNO_RT_AUDIO=1
 # which calibration a take is aligned against. An unexplained latency figure
 # has to be answerable from the log rather than by guessing at the unit's
 # environment -- which means the ordinary case must say what it ran at too.
-: "${SEGNO_ALSA_PERIODS:=4}"
+# ONE literal for the shipped depth, named so the default and the "is this an
+# override" test cannot drift apart -- a stale test here would log a false
+# override alarm on every ordinary boot. deploy/rpi/profile-on-device.sh also
+# reads this line off the unit when the service is not running.
+SEGNO_ALSA_PERIODS_DEFAULT=4
+: "${SEGNO_ALSA_PERIODS:=$SEGNO_ALSA_PERIODS_DEFAULT}"
 export SEGNO_ALSA_PERIODS
-# The 4 repeated here is the default assigned just above. Kept a literal in
-# both places on purpose: deploy/rpi/profile-on-device.sh reads the shipped
-# default back out of this file when the app is down.
-if [ "$SEGNO_ALSA_PERIODS" = 4 ]; then
+# Numeric compare first, so an explicit "04" is not called an override; the
+# string compare is the fallback for a non-numeric value, which the engine
+# clamps and which IS worth naming.
+if [ "$SEGNO_ALSA_PERIODS" -eq "$SEGNO_ALSA_PERIODS_DEFAULT" ] 2>/dev/null ||
+   [ "$SEGNO_ALSA_PERIODS" = "$SEGNO_ALSA_PERIODS_DEFAULT" ]; then
   echo "segno-kiosk-launch: SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS (shipped default)" >&2
 else
-  echo "segno-kiosk-launch: SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS overrides the shipped 4 -- moves monitor latency AND the record-offset key" >&2
+  echo "segno-kiosk-launch: SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS overrides the shipped $SEGNO_ALSA_PERIODS_DEFAULT -- moves monitor latency AND the record-offset key" >&2
 fi
 exec /opt/segno/segno "$@"
