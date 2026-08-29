@@ -26,12 +26,16 @@ Environment=WAYLAND_DISPLAY=wayland-1
 #     it (systemd defaults to RTPRIO=0) the setschedparam EPERMs and the thread
 #     stays SCHED_OTHER -> jitter and xruns. 95 leaves the audio thread (80)
 #     room and the USB IRQ thread (rtirq, ~90) above it.
-#   - MEMLOCK: the engine calls mlockall(MCL_CURRENT|MCL_FUTURE) at startup so
-#     the audio thread can never take a major fault on its own code, stack or
-#     buffers. It checks this rlimit FIRST and skips the call unless it is
-#     infinity, so the default 8M is not a degraded lock — it is no lock at all
+#   - MEMLOCK: the engine calls mlockall(MCL_CURRENT|MCL_FUTURE|MCL_ONFAULT) at
+#     startup so the audio thread can never take a major fault on its own code,
+#     stack or buffers. ONFAULT is what keeps that to the pages actually
+#     touched: without it mlockall pre-populates every sparse reservation in
+#     the process (the Dart heap, a hosted plugin's arena) and OOMs the unit.
+#     It checks this rlimit FIRST and skips the call unless it is infinity, so
+#     the default 8M is not a degraded lock — it is no lock at all
 #     (engine_linux.c, #804). Grep the journal for "segno/rt: memory locked" to
-#     confirm it took effect.
+#     confirm it took effect, and set SEGNO_NO_MLOCK=1 to turn it off without
+#     touching this unit file.
 LimitRTPRIO=95
 LimitMEMLOCK=infinity
 ExecStart=/usr/bin/segno-kiosk-launch

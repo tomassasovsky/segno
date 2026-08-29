@@ -90,8 +90,10 @@ void le_platform_on_engine_teardown(void);
  * (the appliance's segno.service does; a desktop's 8 MB default does not) and
  * only with MCL_ONFAULT, so it locks what is RESIDENT instead of committing
  * every sparse reservation in the address space (the Dart VM's heap, a hosted
- * plugin's arena, ASan's shadow). It NEVER refuses to start — see
- * engine_linux.c for why each of those matters.
+ * plugin's arena, ASan's shadow), and only when SEGNO_NO_MLOCK is unset — an
+ * unlimited rlimit is what a desktop pro-audio limits.conf grants by default,
+ * which is not the same as an operator choosing this. It NEVER refuses to
+ * start — see engine_linux.c for why each of those matters.
  *
  * No-op on macOS/Windows, which have no equivalent worth doing here: neither
  * runs the PREEMPT_RT kernel this defends, and mach_vm_wire / VirtualLock are

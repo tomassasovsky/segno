@@ -905,6 +905,13 @@ void le_platform_on_engine_teardown(void) {
  * protection is an improvement on a build that ran for years without it; the
  * fallback is a way to OOM the appliance.
  *
+ * SEGNO_NO_MLOCK=1 TURNS IT OFF, and it is there because the rlimit guard is
+ * not the same question as consent. `@audio - memlock unlimited` is exactly
+ * what a desktop pro-audio limits.conf grants, so a workstation running other
+ * work alongside this app can land in the locked state without anyone choosing
+ * it — and on a general-purpose machine the cost below is paid against every
+ * other process. The appliance never sets the variable and is unaffected.
+ *
  * WHAT IT COSTS, stated because the audio side is not the whole story. This is
  * PROCESS-wide: the Dart heap, Skia's caches, decoded images and every
  * file-backed mapping the UI touches become unevictable too, so the kernel
@@ -975,6 +982,14 @@ void le_platform_lock_memory(void) {
     pthread_mutex_unlock(&g_memlock_mu);
     return;
   }
+  const char* off = getenv("SEGNO_NO_MLOCK");
+  if (off != NULL && off[0] != '\0' && off[0] != '0') {
+    le_memlock_report_skip(
+        "segno/rt: SEGNO_NO_MLOCK set; skipping mlockall (the audio thread can "
+        "still take major faults)\n");
+    pthread_mutex_unlock(&g_memlock_mu);
+    return;
+  }
   struct rlimit lim;
   if (getrlimit(RLIMIT_MEMLOCK, &lim) != 0) {
     le_memlock_report_skip(
@@ -1034,6 +1049,12 @@ void le_platform_unlock_memory(void) {
     return;
   }
   g_memlock_held = 0;
+  /* munlockall is as process-wide as mlockall: it drops EVERY lock in the
+   * process, not only the one taken above. Nothing else here locks memory
+   * today, but a hosted plugin that mlock'd its own DSP buffers would be
+   * silently unlocked by this — inherent to the API (there is no
+   * "undo my mlockall"), and the reason the g_memlock_held guard matters:
+   * a process this code never locked is never munlockall'd either. */
   if (munlockall() != 0) {
     fprintf(stderr,
             "segno/rt: munlockall failed (errno %d); the process stays locked "

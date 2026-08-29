@@ -216,11 +216,32 @@ int valid_channel(le_engine* e, int32_t ch) {
 /* ---- configuration / lifecycle ---- */
 
 /* Resets a lane's routing/volume/mute/effects/metering to defaults (recording
- * hardware input [input_channel]), clearing its effect DSP state and releasing
- * its delay lines. Does NOT touch the pool buffers — the caller owns
- * allocation. Used at configure and when a lane is (re)activated by a growing
- * lane count. */
-void le_lane_reset(le_lane* ln, int32_t input_channel) {
+ * hardware input [input_channel]) and clears its effect DSP state. Does NOT
+ * touch the pool buffers — the caller owns allocation.
+ *
+ * TWO CALLERS, AND THEY DIFFER IN ONE WAY THAT MATTERS. le_engine_configure and
+ * session import run with the device closed, so there is no audio thread and
+ * the lane's heap DSP buffers can simply be RELEASED (`release_heap`).
+ * le_engine_set_lane_count's grow branch runs LIVE, and the lane it
+ * re-activates may still be named by an in-flight block: the audio thread
+ * snapshots lane_n once per block (engine_process.c's mix pass), so a
+ * shrink-then-regrow inside one block leaves it processing a lane index the
+ * control thread now considers newly activated. Releasing there used to hand
+ * that reader garbage from a freed heap buffer; since these buffers became
+ * le_rt_alloc storage it would hand it an UNMAPPED page instead — a SIGSEGV on
+ * the SCHED_FIFO thread. So the live caller zeroes the buffers in place
+ * (le_fx_clear_heap_buffers) and keeps the mappings, which gives the same
+ * no-stale-tail guarantee with no pointer the audio thread can fault on.
+ *
+ * Two things on that live path are deliberately UNCHANGED here, because
+ * neither is affected by the allocator move and both are older than it: the
+ * le_plugin_slot_destroy below still runs (a pre-existing hazard on the same
+ * window, and a plugin-lifetime call rather than an allocator one), and
+ * le_lane_ensure_slot's own free is unreachable from that caller — it asks for
+ * exactly the max_loop_frames configure already allocated, so the capacity
+ * check short-circuits before any release. */
+static void le_lane_reset_impl(le_lane* ln, int32_t input_channel,
+                               int release_heap) {
   /* Wet cache (part 2): a reset lane has no cached identity, so retract any
    * published entry pointer. Never a leak: the entry object itself stays
    * owned (and eventually freed) by engine_cache.c's per-lane bookkeeping —
@@ -258,17 +279,37 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
      * target, so a fresh chain does not fade in on first use. */
     store_i32(&ln->a_fx_enabled[s], 1);
     le_fx_enable_seed_settled(&ln->fx, s);
-    le_fx_free_delay(&ln->fx, s);
-    le_fx_free_octaver(&ln->fx, s);
+    if (release_heap) {
+      le_fx_free_delay(&ln->fx, s);
+      le_fx_free_octaver(&ln->fx, s);
+    } else {
+      le_fx_clear_heap_buffers(&ln->fx, s); /* live: zero, never unmap */
+    }
     le_fx_entry_reset(&ln->fx, s);
-    /* Destroy any hosted plugin slot too. Reset runs from le_engine_configure
-     * while the device is closed (no audio thread), so a direct destroy is safe
-     * — mirrors le_engine_destroy. Without this, a start→stop→start or any
-     * reconfigure leaks the live IPluginHost and its loaded plugin binary. */
+    /* Destroy any hosted plugin slot too. Safe on the configure path (device
+     * closed, no audio thread) — mirrors le_engine_destroy. Without this, a
+     * start→stop→start or any reconfigure leaks the live IPluginHost and its
+     * loaded plugin binary. On the live re-activation path this shares the
+     * in-flight-block window described above; that is pre-existing and not
+     * something the allocator change altered, so it is left exactly as it was
+     * rather than half-fixed here. */
     le_plugin_slot_destroy(
         atomic_load_explicit(&ln->fx.plugin[s], memory_order_relaxed));
     atomic_store_explicit(&ln->fx.plugin[s], NULL, memory_order_relaxed);
   }
+}
+
+/* Configure / session-import form: the device is closed, so release everything.
+ * Declared in engine_core.h. */
+void le_lane_reset(le_lane* ln, int32_t input_channel) {
+  le_lane_reset_impl(ln, input_channel, 1);
+}
+
+/* le_engine_set_lane_count's grow form: the device is live, so the heap DSP
+ * buffers are zeroed in place instead of unmapped. Declared in
+ * engine_core.h. */
+void le_lane_reset_reactivating(le_lane* ln, int32_t input_channel) {
+  le_lane_reset_impl(ln, input_channel, 0);
 }
 
 /* Resets a live monitor input to defaults: disabled, full stereo output, unity

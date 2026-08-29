@@ -231,6 +231,37 @@ static void test_rt_alloc_for_overwrite_is_usable_and_sized(void) {
   CHECK(le_rt_alloc_for_overwrite(SIZE_MAX) == NULL);
 }
 
+/* le_lane_reset_reactivating is the live-safe form: it must clear the lane's
+ * heap DSP buffers WITHOUT unmapping them, because an in-flight audio block can
+ * still name a lane index le_engine_set_lane_count's grow branch considers
+ * newly activated. The configure form must still release them. */
+static void test_lane_reset_reactivating_keeps_fx_buffers_mapped(void) {
+  printf("test_lane_reset_reactivating_keeps_fx_buffers_mapped\n");
+  le_lane ln;
+  memset(&ln, 0, sizeof(ln));
+  /* A delay slot with a real ring, dirtied so the clear is observable. */
+  CHECK(le_fx_prepare(&ln.fx, 0, LE_FX_DELAY, 48000) == LE_OK);
+  float* ring = ln.fx.delay[0][0];
+  CHECK(ring != NULL);
+  if (ring == NULL) return;
+  const size_t ring_bytes = le_rt_size(ring);
+  CHECK(ring_bytes > 0);
+  ring[0] = 1.0f;
+  ring[(ring_bytes / sizeof(float)) - 1] = 1.0f;
+
+  le_lane_reset_reactivating(&ln, 0);
+  /* Same mapping, same size — and zeroed, so no stale tail survives. */
+  CHECK(ln.fx.delay[0][0] == ring);
+  CHECK(le_rt_size(ln.fx.delay[0][0]) == ring_bytes);
+  CHECK(ring[0] == 0.0f);
+  CHECK(ring[(ring_bytes / sizeof(float)) - 1] == 0.0f);
+
+  /* The configure form still releases: that path has no audio thread. */
+  le_lane_reset(&ln, 0);
+  CHECK(ln.fx.delay[0][0] == NULL);
+  CHECK(ln.fx.delay[0][1] == NULL);
+}
+
 static void test_rt_alloc_rejects_zero_and_overflow(void) {
   printf("test_rt_alloc_rejects_zero_and_overflow\n");
   CHECK(le_rt_alloc(0) == NULL);
@@ -25464,6 +25495,7 @@ int main(void) {
   test_rt_alloc_zeroes_and_sizes();
   test_rt_alloc_rejects_zero_and_overflow();
   test_rt_alloc_for_overwrite_is_usable_and_sized();
+  test_lane_reset_reactivating_keeps_fx_buffers_mapped();
   test_rt_alloc_degrades_when_fork_shield_fails();
   test_lane_shrink_slot_preserves_leading_frames();
   test_audio_ring_alloc_rejects_bad_capacity();

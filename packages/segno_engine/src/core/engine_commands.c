@@ -2120,7 +2120,11 @@ int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
     const size_t cap = (size_t)engine->max_loop_frames;
     for (int32_t l = old; l < count; ++l) {
       le_lane* ln = &t->lanes[l];
-      le_lane_reset(ln, l); /* defaults to recording hardware input channel l */
+      /* _reactivating: this runs with the device LIVE, and a shrink-then-regrow
+       * inside one audio block can leave the callback still processing this
+       * lane index. The live form zeroes the lane's DSP buffers instead of
+       * unmapping them (engine.c). Defaults to hardware input channel l. */
+      le_lane_reset_reactivating(ln, l);
       if (!le_lane_ensure_slot(ln, 0, engine->max_loop_frames)) {
         return LE_ERR_INVALID;
       }

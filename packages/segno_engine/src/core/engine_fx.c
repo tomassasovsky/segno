@@ -692,6 +692,20 @@ void le_fx_free_delay(le_fx_state* fx, int slot) {
   fx->delay[slot][1] = NULL;
 }
 
+void le_fx_clear_heap_buffers(le_fx_state* fx, int slot) {
+  for (int chan = 0; chan < 2; ++chan) {
+    if (fx->delay[slot][chan] != NULL) {
+      memset(fx->delay[slot][chan], 0, le_rt_size(fx->delay[slot][chan]));
+    }
+    le_octaver_state* o = &fx->oct[slot][chan];
+    if (o->out != NULL) memset(o->out, 0, le_rt_size(o->out));
+    if (o->last_phase != NULL) {
+      memset(o->last_phase, 0, le_rt_size(o->last_phase));
+    }
+    if (o->sum_phase != NULL) memset(o->sum_phase, 0, le_rt_size(o->sum_phase));
+  }
+}
+
 void le_fx_state_free_buffers(le_fx_state* fx) {
   for (int s = 0; s < LE_FX_MAX; ++s) {
     le_fx_free_delay(fx, s);
