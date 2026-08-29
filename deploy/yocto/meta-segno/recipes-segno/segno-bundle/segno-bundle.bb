@@ -152,6 +152,7 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${sysconfdir}/modprobe.d/brcmfmac.conf \
                 ${sysconfdir}/segno/update-channel ${sysconfdir}/segno/build-version \
                 ${sysconfdir}/segno/wifi-country \
+                ${sysconfdir}/iwd/main.conf \
                 ${systemd_system_unitdir}/segno.service \
                 ${systemd_system_unitdir}/segno-rtirq.service \
                 ${systemd_system_unitdir}/segno-data-grow.service \
@@ -163,6 +164,8 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${systemd_system_unitdir}/segno-touch-apply.path \
                 ${systemd_system_unitdir}/segno-touch-apply.service \
                 ${systemd_system_unitdir}/segno-mark-good.service \
+                ${systemd_system_unitdir}/segno-wifi-retry.service \
+                ${systemd_system_unitdir}/segno-iwd-tame.service \
                 ${systemd_system_unitdir}/boot.mount \
                 ${systemd_system_unitdir}/data.mount \
                 ${systemd_system_unitdir}/segno-ota-check.service \
