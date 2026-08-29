@@ -196,12 +196,17 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// put 32 at the head of the generic list, `first` would make the
   /// least-proven callback deadline the landing spot for a selection this
   /// method is only trying to keep valid, then persist it. 32 is an option, so
-  /// it has to stay one. So: prefer [AudioSetupState.defaultBufferFrames],
-  /// and for a driver set that does not offer it take the LARGEST size on
-  /// offer. Never `first` — a driver reporting `[32, 64]` would put the snap
-  /// straight back on the tightest period, which is the whole thing this
-  /// avoids. The largest is the safest deadline available, and an unchosen
-  /// landing spot should err that way.
+  /// it has to stay one. So the rule is: take
+  /// [AudioSetupState.defaultBufferFrames] when it is offered; otherwise the
+  /// SMALLEST option at or above it; and only when every option is below it,
+  /// the largest of those.
+  ///
+  /// Not `first` — a driver reporting `[32, 64]` would put the snap straight
+  /// back on the tightest period, which is the thing this avoids. And not
+  /// simply the largest either: a driver whose minimum is 256 reports
+  /// `[256, 512, 1024, 2048]`, and landing a looper on 2048 frames (42.7 ms
+  /// at 48 kHz) to dodge a tight deadline trades one bad outcome for a worse
+  /// one. Nearest-above keeps it next to the default in both directions.
   AudioSetupState _snapRateAndBuffer(AudioSetupState next) {
     final rates = next.sampleRateChoices;
     final buffers = next.bufferChoices;
@@ -211,10 +216,27 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
           : rates.first,
       bufferFrames: buffers.contains(next.bufferFrames)
           ? next.bufferFrames
-          : buffers.contains(AudioSetupState.defaultBufferFrames)
-          ? AudioSetupState.defaultBufferFrames
-          : buffers.reduce((a, b) => a > b ? a : b),
+          : _nearestOfferedAtOrAboveDefault(buffers),
     );
+  }
+
+  /// The buffer size a snap lands on when the current one is not offered:
+  /// [AudioSetupState.defaultBufferFrames] if present, else the smallest
+  /// option above it, else — every option being below it — the largest.
+  /// [buffers] is never empty (`bufferChoices` falls back to the static list).
+  static int _nearestOfferedAtOrAboveDefault(List<int> buffers) {
+    const wanted = AudioSetupState.defaultBufferFrames;
+    int? above;
+    var below = buffers.first;
+    for (final size in buffers) {
+      if (size == wanted) return wanted;
+      if (size > wanted) {
+        if (above == null || size < above) above = size;
+      } else if (size > below) {
+        below = size;
+      }
+    }
+    return above ?? below;
   }
 
   /// Sets the maximum per-track loop length in whole [minutes] (`0` = engine

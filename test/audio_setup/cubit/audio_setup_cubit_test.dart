@@ -768,7 +768,7 @@ void main() {
       expect(cubit.state.bufferFrames, 128);
     });
 
-    test('a driver set without 128 snaps to its largest, not its first', () {
+    test('a driver set below 128 snaps to its largest, not its first', () {
       // The guard has to hold for every offered set, not only ones
       // containing the default. A driver reporting [32, 64] would put
       // `.first` straight back on the tightest period.
@@ -792,6 +792,30 @@ void main() {
       // deadline available rather than the tightest.
       expect(cubit.state.bufferChoices, [32, 64]);
       expect(cubit.state.bufferFrames, 64);
+    });
+
+    test('a driver set above 128 snaps to its smallest, not its largest', () {
+      // The other direction, and the reason the fallback is not simply "the
+      // largest": a driver whose minimum is 256 reports [256 .. 2048], and
+      // landing a LOOPER on 2048 frames -- 42.7ms at 48kHz -- to avoid a
+      // tight deadline would trade one bad outcome for a worse one.
+      when(repository.asioDrivers).thenReturn(const [
+        AudioDevice(
+          id: 'Coarse ASIO',
+          name: 'Coarse ASIO',
+          isDefault: false,
+          isInput: false,
+          inputChannels: 2,
+          outputChannels: 2,
+          bufferSizes: [256, 512, 1024, 2048],
+          sampleRates: [48000],
+        ),
+      ]);
+
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+
+      expect(cubit.state.bufferFrames, 256);
     });
 
     test('a NEGOTIATED 32 is adopted and persisted, by design', () async {
