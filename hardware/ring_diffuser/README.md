@@ -26,7 +26,7 @@ Outputs in `out/`: `segno_ring16_diffuser.step` (editable CAD) + `.stl` (print)
 | fits | Adafruit NeoPixel Ring 16 (1463), Ø44.45 / Ø31.75, 1.6 mm PCB |
 | part | Ø47.25 outer, solid face, Ø7 bush hole, 8.9 mm tall, ~3.3 g |
 | face | 1.0 mm white PLA, 3.0 mm over the LEDs, 2.5 mm over the encoder body |
-| holds on | 3 snap fingers, 0.5 mm under the PCB, 2.2 % strain |
+| holds on | 3 snap fingers, 0.5 mm under the PCB, 1.6 % strain |
 | needs | **1.7 mm of air under the ring** for the hooks to swing under |
 
 ## Why the face can be solid
@@ -61,7 +61,12 @@ of those will not go on this cap. Put calipers across the ring before you print:
 ../enclosure/.venv/bin/python ring16_diffuser.py --od 68 --id 55 --pads 70 115 205 295
 ```
 
-`--pads` matters as much as `--od`. The three fingers are clocked into the gaps
+`--pads` matters as much as `--od` — and pass **every** pad, since the fingers
+are placed in the gaps between the ones you name. Four evenly spaced pads leave
+no three-way spread that encloses the centre; that case wants `--arms 4`, and the
+assertion says so.
+
+The three fingers are clocked into the gaps
 between the ring's four **back-side** solder pads (JP1–JP4), which on the
 Adafruit Ring 16 sit at **79° / 124° / 214° / 304°**, r ≈ 21 mm. Those angles are
 lifted from `../kicad/segno.pretty/ModuleMountPads_4.kicad_mod`, which was
@@ -94,7 +99,7 @@ warns when you feed it a ring that is not the one those angles came from.
 2. Drop it over the bush and line the three fingers up with the bare stretches
    of the ring's back, away from the four solder pads.
 3. Press straight down until all three click. Spread them slightly by hand if it
-   fights you — the fingers run at 2.2 % strain, which PLA is happy with for a
+   fights you — the fingers run at 1.6 % strain, which PLA is happy with for a
    handful of cycles, not fifty.
 4. To remove: lever one finger out at a time. The 45° retention face is
    deliberately easy to release.

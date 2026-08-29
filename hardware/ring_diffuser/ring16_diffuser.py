@@ -143,6 +143,10 @@ def arm_angles() -> list[float]:
         width = (b - a) % 360 or 360.0
         gaps.append((width, (a + width / 2) % 360))
     gaps.sort(reverse=True)                      # widest gap first
+    assert len(gaps) >= N_ARMS, (
+        f"{len(gaps)} pad gap(s) for {N_ARMS} fingers -- a cap with fewer hooks "
+        f"than asked for cannot stay on. Pass every pad on YOUR ring to --pads, "
+        f"or lower --arms deliberately")
     return sorted(centre for _, centre in gaps[:N_ARMS])
 
 
@@ -273,8 +277,14 @@ def _check_clearances(solid, g: dict, angles: list[float]) -> None:
                 assert not _occupied(solid, r, a, z), (
                     f"material at r={r:.1f} a={a} z={z:.1f} fouls the encoder body")
 
-    # 3. the ring's own space: PCB (z -PCB_T..0) and LEDs (z 0..LED_H)
-    for r in (RING_ID / 2 + 0.6, (RING_OD + RING_ID) / 4, RING_OD / 2 - 0.6):
+    # 3. the ring's own space: PCB (z -PCB_T..0) and LEDs (z 0..LED_H).
+    #    The last two radii are the point of this probe: everything inboard of
+    #    the barb tip is trivially clear, so sampling only there would pass even
+    #    with the barbs revolved straight through the LED band. r just inside the
+    #    PCB edge catches a barb at the wrong height; r just inside the shroud
+    #    bore catches a shroud that has eaten its own clearance.
+    for r in (RING_ID / 2 + 0.6, (RING_OD + RING_ID) / 4, RING_OD / 2 - 0.6,
+              RING_OD / 2 - 0.1, g["r_skirt_i"] - 0.05):
         for a in probe:
             for z in (-PCB_T + 0.2, -0.4, 0.3, LED_H - 0.2, LED_H + 0.2):
                 assert not _occupied(solid, r, a, z), (
@@ -308,6 +318,13 @@ def _check(g: dict, angles: list[float]) -> None:
     assert ENC_D < RING_ID - 4.0, "bush hole is not comfortably inside the bore"
     assert ENC_D > 6.0, "an EC11 bush is M7 -- a hole under 6 mm cannot pass it"
 
+    # the shroud hem must not reach past the ring's back face. --skirt-only is for
+    # a ring lying FLAT, so a hem below that lands on the bench and lifts the cap
+    # off; --pcb makes this reachable, so it is asserted rather than commented.
+    assert SKIRT_DROP <= PCB_T, (
+        f"shroud hem drops {SKIRT_DROP} below the PCB top on a {PCB_T} PCB -- it "
+        f"would bottom out past the ring's back face")
+
     # the LED band must be under the roof, not under the shroud wall
     r_led = (RING_OD + RING_ID) / 4
     assert g["r_skirt_i"] > r_led + 2.5, \
@@ -327,12 +344,20 @@ def _check(g: dict, angles: list[float]) -> None:
     # the fingers must enclose the centre, or the cap rocks off
     seq = sorted(angles)
     spans = [(seq[(i + 1) % len(seq)] - a) % 360 for i, a in enumerate(seq)]
-    assert max(spans) < 180.0, \
-        f"fingers span {max(spans):.0f} deg with nothing opposite -- it will rock off"
+    assert max(spans) < 180.0, (
+        f"fingers span {max(spans):.0f} deg with nothing opposite -- it will rock "
+        f"off. Evenly spaced pads do this to an odd finger count: try --arms 4")
 
-    # snap strain: the finger has to open by hook_p to clear the ring OD
+    # Snap strain. The finger opens by HOOK_ENGAGE, NOT by hook_p: the barb tip
+    # sits at r_skirt_i - hook_p, which is RING_OD/2 - HOOK_ENGAGE once SKIRT_CLR
+    # cancels, so the clearance is already air and nothing has to flex through it.
+    # Using hook_p read 0.7 of deflection for a 0.5 reality -- conservative, but it
+    # also made the published strain move whenever --clr moved, which is nonsense.
+    # Uniform-cantilever formula, so it is only true while the finger is ARM_T
+    # thick at the root -- build() cuts the shroud back to keep that so, and
+    # _check_clearances() probe 5 measures it off the solid.
     L = g["roof_z0"] - (g["hook_top"] - g["hook_p"] / 2)   # root -> engagement
-    strain = 3 * g["hook_p"] * ARM_T / (2 * L ** 2)
+    strain = 3 * HOOK_ENGAGE * ARM_T / (2 * L ** 2)
     assert strain < STRAIN_LIMIT, (
         f"snap strain {strain:.1%} over {STRAIN_LIMIT:.0%} -- thin ARM_T, "
         f"shorten HOOK_ENGAGE or raise the roof")
@@ -343,7 +368,7 @@ def report() -> None:
     g = _geom()
     angles = arm_angles()
     L = g["roof_z0"] - (g["hook_top"] - g["hook_p"] / 2)
-    strain = 3 * g["hook_p"] * ARM_T / (2 * L ** 2)
+    strain = 3 * HOOK_ENGAGE * ARM_T / (2 * L ** 2)
     bottom = -SKIRT_DROP if SKIRT_ONLY else g["arm_bot"]
     print(f"  ring            O{RING_OD} / O{RING_ID} x {PCB_T} PCB")
     print(f"  part            O{2 * g['r_skirt_o']:.2f} outer, "
@@ -352,7 +377,7 @@ def report() -> None:
     print(f"  face            {ROOF_T} mm, {AIR_GAP} mm over the LEDs, "
           f"{g['roof_z0'] - g['enc_face_z']:.2f} mm over the encoder body")
     if not SKIRT_ONLY:
-        print(f"  fingers         {N_ARMS} at "
+        print(f"  fingers         {len(angles)} at "
               f"{', '.join(f'{a:.0f}' for a in angles)} deg "
               f"(pads at {', '.join(f'{p:.0f}' for p in PAD_ANGLES)} deg)")
         print(f"  snap            {HOOK_ENGAGE} mm engagement, "
@@ -382,28 +407,35 @@ def export(solid, name: str = "segno_ring16_diffuser") -> None:
     base = os.path.join(OUT, os.path.basename(name))
     cq.exporters.export(solid, base + ".step")
     cq.exporters.export(solid, base + ".stl")
+    w, h = 640, 480
     for view, d in (("top", (0, 0, 1)), ("front", (0, -1, 0.15)),
                     ("iso", (1, -1, 0.8))):
         svg = f"{base}_{view}.svg"
         cq.exporters.export(
             solid, svg,
             opt={"projectionDir": d, "showAxes": False,
-                 "strokeWidth": 0.3, "width": 640, "height": 480},
+                 "strokeWidth": 0.3, "width": w, "height": h},
         )
         # cadquery emits width/height but no viewBox, so the drawing CLIPS
         # instead of scaling in anything that resizes it (a browser, a README).
+        # The canvas comes from w/h above so the two cannot drift apart, and a
+        # miss is raised: cadquery formats the attribute, and if that formatting
+        # ever changes this would quietly go back to writing clipped SVGs.
         with open(svg) as fh:
             body = fh.read()
         if "viewBox" not in body:
+            needle = f'height="{float(h)}"'
+            assert needle in body, (
+                f"{os.path.basename(svg)}: no {needle} to hang a viewBox on -- "
+                f"cadquery changed its attribute formatting")
             with open(svg, "w") as fh:
-                fh.write(body.replace('height="480.0"',
-                                      'height="480.0"\n   viewBox="0 0 640 480"', 1))
+                fh.write(body.replace(needle, f'{needle}\n   viewBox="0 0 {w} {h}"', 1))
     print(f"wrote {os.path.basename(name)}.step / .stl (+ 3 SVG views) in {OUT}")
 
 
 def main() -> None:
     global RING_OD, RING_ID, PCB_T, AIR_GAP, SKIRT_ONLY, PAD_ANGLES, ENC_D
-    global SKIRT_CLR
+    global SKIRT_CLR, N_ARMS
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     p.add_argument("--od", type=float, help="measured ring outer diameter")
     p.add_argument("--id", type=float, dest="bore", help="measured ring bore")
@@ -415,29 +447,43 @@ def main() -> None:
     p.add_argument("--clr", type=float,
                    help="radial clearance over the ring OD (0.20 slip; go ~0.05 "
                         "for a --skirt-only shroud that has to grip)")
+    p.add_argument("--arms", type=int,
+                   help=f"number of snap fingers (default {N_ARMS}); a ring whose "
+                        f"pads leave no {N_ARMS}-gap spread needs 4")
     p.add_argument("--skirt-only", action="store_true",
                    help="no hooks, for a ring lying flat -- see --clr, nothing "
                         "else holds it on")
-    p.add_argument("--name", default="segno_ring16_diffuser")
+    p.add_argument("--name", help="output base name (default "
+                                  "segno_ring16_diffuser, or ..._skirt with "
+                                  "--skirt-only)")
     a = p.parse_args()
-    if a.od:
+    # `is not None`, not truthiness: 0.0 is a legitimate value for --gap and
+    # --clr, and swallowing it silently builds a part nobody asked for.
+    if a.od is not None:
         RING_OD = a.od
-    if a.bore:
+    if a.bore is not None:
         RING_ID = a.bore
-    if a.pcb:
+    if a.pcb is not None:
         PCB_T = a.pcb
-    if a.gap:
+    if a.gap is not None:
         AIR_GAP = a.gap
-    if a.enc:
+    if a.enc is not None:
         ENC_D = a.enc
     if a.clr is not None:
         SKIRT_CLR = a.clr
+    if a.arms is not None:
+        N_ARMS = a.arms
     if a.pads:
         PAD_ANGLES = tuple(a.pads)
     SKIRT_ONLY = a.skirt_only
+    # The two variants are DIFFERENT PARTS and must not share a base name: the
+    # README says "print --skirt-only instead", and with one default that
+    # sentence overwrites the hooked STEP/STL/SVGs in out/ with a hookless cap.
+    name = a.name or ("segno_ring16_diffuser_skirt" if SKIRT_ONLY
+                      else "segno_ring16_diffuser")
     report()
     warn_off_spec(bool(a.pads))
-    export(build(), a.name)
+    export(build(), name)
 
 
 if __name__ == "__main__":
