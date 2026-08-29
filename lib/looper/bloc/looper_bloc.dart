@@ -293,19 +293,26 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _pushBusChain(event.address, [...chain, PluginEffect(ref: event.ref)]);
     });
     on<LooperBusPluginParamChanged>((event, _) {
-      final chain = _busChain(event.address);
-      if (event.index < 0 || event.index >= chain.length) return;
-      final fx = chain[event.index];
-      if (fx is! PluginEffect) return;
-      final values = Map<int, double>.of(fx.paramValues)
-        ..[event.paramId] = event.value;
-      // The engine write stays a whole-chain push (a bus plugin has no
-      // granular param setter to route to), but the PERSISTENCE is debounced
-      // like every other knob-drag path — this is dragged at pointer rate.
-      _writeBusChain(
-        event.address,
-        [...chain]..[event.index] = fx.copyWith(paramValues: values),
-      );
+      // Granular, NOT a whole-chain push — the same argument as
+      // [LooperBusEffectParamChanged] above, and it bites HARDER here: a bus
+      // plugin never instantiates, so the chain re-push would reset the DSP of
+      // the BUILT-INS sharing the bus without the plugin's own value even
+      // having somewhere to go.
+      if (event.address.stage == FxStage.master) {
+        _repository.setMasterPluginParam(
+          index: event.index,
+          paramId: event.paramId,
+          value: event.value,
+        );
+      } else {
+        _repository.setTrackPluginParam(
+          channel: event.address.index,
+          index: event.index,
+          paramId: event.paramId,
+          value: event.value,
+        );
+      }
+      // Debounced: the model write above is per-move, this is per-drag.
       _schedulePersistBusChain(event.address);
     });
     on<LooperBusPluginRelinked>((event, _) {
