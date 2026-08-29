@@ -123,6 +123,7 @@ WaveformFrame waveformFrameFrom(
   WaveformFrame previous,
 ) {
   final progress = payload['progress'];
+  final selectedTrack = payload['selectedTrack'];
   return (
     samples: payload.containsKey('samples')
         ? _toFloat32List(payload['samples'])
@@ -130,9 +131,12 @@ WaveformFrame waveformFrameFrom(
     progress: progress is num ? progress.toDouble() : 0.0,
     // Every other field degrades to what is already on screen rather than
     // throwing: this crosses an engine boundary as a loose map, and a
-    // malformed frame must not take the second screen down mid-set.
-    selectedTrack:
-        payload['selectedTrack'] as String? ?? previous.selectedTrack,
+    // malformed frame must not take the second screen down mid-set. Hence
+    // `is String` and not `as String?`, which throws on a present-but-wrong
+    // value — the only shape a garbled frame actually takes.
+    selectedTrack: selectedTrack is String
+        ? selectedTrack
+        : previous.selectedTrack,
   );
 }
 

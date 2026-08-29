@@ -503,10 +503,20 @@ class LooperRepository {
   /// ([_project] is pure over the snapshot, and the poll's own `next == _last`
   /// dedupe is what proves it).
   ///
-  /// Falls back to a real walk only before the first poll has landed, so a
-  /// caller reading during construction still sees the engine rather than an
-  /// invented empty rig.
-  LooperState get lastState => _last ?? state;
+  /// Falls back to a real walk whenever the cache cannot be trusted to be
+  /// current — before the first poll has landed, and equally whenever polling
+  /// is not running (nobody is listening to [looperState], so nothing is
+  /// refreshing [_last] and it may be arbitrarily old). A caller reading
+  /// during construction, or on a repository with no subscribers, still sees
+  /// the engine rather than a stale or invented rig.
+  LooperState get lastState {
+    final last = _last;
+    return last != null && _isPolling ? last : state;
+  }
+
+  /// Whether the snapshot poll is currently running — either driven by the
+  /// injected ticker or by this repository's own timer.
+  bool get _isPolling => _tickerSub != null || _pollTimer != null;
 
   /// Reads the audio callback's self-measurement (native issue #722): how long
   /// the engine takes to service one hardware period against the period, the

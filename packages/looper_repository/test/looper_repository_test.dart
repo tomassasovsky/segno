@@ -183,6 +183,31 @@ void main() {
       );
     });
 
+    test('falls back to a real walk once polling has STOPPED', () async {
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      expect(repo.lastState.transport.masterPositionFrames, 24000);
+
+      // Polling is wired to onListen/onCancel, so the last listener leaving
+      // freezes the cache. "Nothing has ever polled" and "nothing is polling
+      // any more" are the same situation from a reader's point of view, and
+      // serving a frozen projection to either is how a caller ends up acting
+      // on a rig that has moved on.
+      await sub.cancel();
+      engine.nextSnapshot = _laneSnapshot;
+      final walked = engine.snapshotCalls;
+
+      expect(repo.lastState.transport.masterPositionFrames, 0);
+      expect(
+        engine.snapshotCalls,
+        greaterThan(walked),
+        reason: 'a frozen cache was served after the poll refreshing it died',
+      );
+    });
+
     test('falls back to a real walk before the first poll lands', () {
       engine.nextSnapshot = _playingSnapshot;
       final repo = buildRepo();

@@ -168,11 +168,22 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
       selectedTrack: selectedTrack,
       lastSent: _lastSamples,
     );
-    if (payload.containsKey('samples')) _lastSamples = samples;
+    final carriesSamples = payload.containsKey('samples');
+    if (carriesSamples) _lastSamples = samples;
     unawaited(
-      waveformWindowChannel
-          .invokeMethod('waveform', payload)
-          .catchError((Object _) => null),
+      waveformWindowChannel.invokeMethod('waveform', payload).catchError((
+        Object _,
+      ) {
+        // The frame never landed, so the window does NOT hold these peaks —
+        // forget them. Without this the diff is armed on a delivery that
+        // failed: through steady playback the loop-indexed buffer stands
+        // still, so `samples` would be suppressed on every later frame too
+        // and the second screen would freeze with only the playhead moving,
+        // for the rest of the set. Clearing makes the next frame re-seed it,
+        // which is how a dropped frame healed itself before the diff existed.
+        if (carriesSamples) _lastSamples = null;
+        return null;
+      }),
     );
   }
 
@@ -182,9 +193,16 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
     if (readout == _lastReadout) return;
     _lastReadout = readout;
     unawaited(
-      waveformWindowChannel
-          .invokeMethod('readout', readout.toMap())
-          .catchError((Object _) => null),
+      waveformWindowChannel.invokeMethod('readout', readout.toMap()).catchError(
+        (Object _) {
+          // Same self-heal as [pushWaveform]: a readout the window never
+          // received must not sit in the diff as one it did, or the next
+          // equal readout is dropped and the second screen holds stale
+          // facts until something else about the rig changes.
+          if (identical(_lastReadout, readout)) _lastReadout = null;
+          return null;
+        },
+      ),
     );
   }
 }

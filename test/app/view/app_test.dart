@@ -24,7 +24,7 @@ import 'package:segno/visualizer/visualizer.dart';
 // audio_bootstrap_test.
 import 'package:segno_engine/segno_engine.dart'
     as le
-    show EngineSnapshot, LatencyState;
+    show EngineSnapshot, LatencyState, TrackSnapshot, TrackState;
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 import 'package:update_repository/update_repository.dart';
@@ -745,7 +745,6 @@ void main() {
       await tester.pump(const Duration(milliseconds: 40));
       expect(windowService.readouts, isNotEmpty);
       final composed = windowService.readouts.length;
-      final waveformFrames = windowService.pushCalls;
 
       // Ten more frames with no state moving under it. The real service's
       // `==` diff would drop these anyway — the point here is that they are
@@ -759,13 +758,148 @@ void main() {
         composed,
         reason: 'the readout was recomposed for frames nothing had changed in',
       );
-      expect(
-        windowService.pushCalls,
-        greaterThan(waveformFrames),
-        reason:
-            "the waveform must keep ticking — this gate is the readout's "
-            'alone, and a frozen waveform would mean the timer died',
+    });
+
+    group('the gate under a PLAYING rig', () {
+      // The case that matters, and the one an idle rig cannot show. A loop
+      // that is merely playing publishes a NEW `LooperState` on every single
+      // poll: the master playhead advances on the transport and every track's
+      // `peak` moves, and both are part of `LooperState ==`, so the poll's
+      // `next == _last` dedupe never suppresses anything. A gate written as
+      // `identical(state, previous)` therefore falls through on every tick
+      // and rebuilds the readout 30x/s — in exactly the performing case it
+      // was written to spare.
+      //
+      // The repair is NOT to drop `peak` from `Track`'s equality: the meters
+      // are fed through it, and they would all go flat with no error. The
+      // gate narrows to what the readout draws instead — which is neither the
+      // playhead nor the levels.
+      le.EngineSnapshot playing({
+        required int position,
+        required double peak,
+        bool muted = false,
+      }) => le.EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        inputChannels: 2,
+        outputChannels: 2,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        devicePresent: true,
+        masterLengthFrames: 96000,
+        masterPositionFrames: position,
+        tracks: [
+          le.TrackSnapshot(
+            state: le.TrackState.playing,
+            volume: 0.8,
+            muted: muted,
+            lengthFrames: 96000,
+            undoDepth: 0,
+            rms: peak / 2,
+            peak: peak,
+          ),
+        ],
       );
+
+      /// Boots the app on a repository whose poll the test drives by hand.
+      Future<
+        ({_RecordingWindowService window, StreamController<void> ticker})
+      >
+      pumpPlaying(WidgetTester tester) async {
+        final ticker = StreamController<void>.broadcast();
+        addTearDown(() => unawaited(ticker.close()));
+        final driven = LooperRepository(engine: engine, ticker: ticker.stream);
+        addTearDown(driven.dispose);
+        engine.nextSnapshot = playing(position: 0, peak: 0.1);
+
+        final window = _RecordingWindowService();
+        await tester.pumpWidget(
+          App(
+            repository: driven,
+            controllerRepository: controllerRepository,
+            midiDeviceRepository: midiDeviceRepository,
+            settings: settings,
+            waveformWindow: window,
+            sessionRepository: sessionRepository,
+            performanceRepository: performanceRepository,
+            exportDirectory: () async => '.',
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 40));
+        return (window: window, ticker: ticker);
+      }
+
+      testWidgets('a moving playhead and moving levels compose nothing', (
+        tester,
+      ) async {
+        final rig = await pumpPlaying(tester);
+        expect(rig.window.readouts, isNotEmpty);
+        final composed = rig.window.readouts.length;
+
+        // Twenty polls of a loop going round: a fresh projection every time,
+        // and not one fact the readout draws among the differences.
+        for (var i = 1; i <= 20; i++) {
+          engine.nextSnapshot = playing(
+            position: i * 4000,
+            peak: 0.1 + i / 100,
+          );
+          rig.ticker.add(null);
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+
+        expect(
+          rig.window.readouts.length,
+          composed,
+          reason:
+              'the readout was recomposed for a moving playhead and moving '
+              'levels — the gate is comparing whole LooperStates again',
+        );
+      });
+
+      testWidgets('a fact the readout DOES draw still gets through', (
+        tester,
+      ) async {
+        final rig = await pumpPlaying(tester);
+        expect(rig.window.readouts.last.tracks.single.muted, isFalse);
+
+        // Muted rides the readout, so this must survive the narrowing that
+        // drops the playhead and the levels.
+        engine.nextSnapshot = playing(position: 8000, peak: 0.9, muted: true);
+        rig.ticker.add(null);
+        await tester.pump(const Duration(milliseconds: 40));
+
+        expect(
+          rig.window.readouts.last.tracks.single.muted,
+          isTrue,
+          reason: 'the gate swallowed a fact the second screen draws',
+        );
+      });
+
+      testWidgets('the waveform keeps following the poll', (tester) async {
+        final rig = await pumpPlaying(tester);
+        final frames = rig.window.pushCalls;
+
+        for (var i = 1; i <= 10; i++) {
+          engine.nextSnapshot = playing(position: i * 4000, peak: 0.2);
+          rig.ticker.add(null);
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+
+        expect(
+          rig.window.pushCalls,
+          greaterThan(frames),
+          reason:
+              "the waveform must keep ticking — the gate is the readout's "
+              'alone, and a frozen waveform means the playhead died',
+        );
+      });
     });
 
     testWidgets(

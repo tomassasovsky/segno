@@ -103,6 +103,20 @@ void main() {
       expect(next.selectedTrack, 'Bass');
     });
 
+    test('a malformed selectedTrack degrades instead of throwing', () {
+      // The comment two lines above the field promises the second screen does
+      // not go down mid-set on a garbled frame. `as String?` would have
+      // thrown here — a present-but-wrong value is the shape a garbled frame
+      // actually takes; an absent key is the easy case.
+      final next = waveformFrameFrom(
+        {'progress': 0.2, 'selectedTrack': 7},
+        frameOf([0.1, 0.2]),
+      );
+
+      expect(next.selectedTrack, 'Drums');
+      expect(next.progress, 0.2);
+    });
+
     test('samples survive a list-encoded round trip', () {
       // `desktop_multi_window` can hand the payload back as a plain List of
       // numbers rather than a Float32List when it crosses engines.

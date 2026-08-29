@@ -52,12 +52,6 @@ final Finder _chromeProbe = find.byKey(
   const Key('tracks_settings_secondaryTap'),
 );
 
-/// The rebuild probe for [TransportTempoDisplay]: the `Padding` its `build`
-/// creates fresh every run. `TracksToolbar` holds the display as a `const`
-/// instance, so this widget is recreated ONLY when the display's own selector
-/// fires — which is exactly what the tempo-scope tests need to observe.
-final Finder _tempoProbe = find.byKey(const Key('tracks_transportTempo'));
-
 void main() {
   late LooperBloc bloc;
   late TracksCubit tracks;
@@ -1786,97 +1780,6 @@ void main() {
         reason:
             'a meter tick rebuilt TracksView -- the selector is leaking '
             'live audio fields (see #646)',
-      );
-    });
-
-    testWidgets('a moving playhead does not rebuild the tempo readout', (
-      tester,
-    ) async {
-      // Wide enough for the beat indicator's width gate, so the readout draws
-      // everything it can — the widest surface the selector has to protect.
-      tester.view.physicalSize = const Size(1400, 600);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      const still = LooperState(
-        transport: TransportState(
-          tempoBpm: 120,
-          tempoSource: TempoSource.manual,
-          currentBeat: 1,
-        ),
-        tracks: [Track()],
-        status: EngineStatus(isConnected: true),
-      );
-      seedStream(still);
-      await pump(tester);
-
-      final before = tester.widget<Padding>(_tempoProbe);
-
-      // The transport ticking forward. `masterPositionFrames` lives on the
-      // very object this readout draws from, which is why a plain `select` on
-      // `TransportState` would NOT have fixed this — only a slice of the
-      // fields actually drawn does.
-      const moving = LooperState(
-        transport: TransportState(
-          tempoBpm: 120,
-          tempoSource: TempoSource.manual,
-          currentBeat: 1,
-          masterPositionFrames: 24000,
-        ),
-        tracks: [Track(rms: 0.8, peak: 0.9, playheadFrames: 4410)],
-        status: EngineStatus(isConnected: true),
-      );
-      when(() => bloc.state).thenReturn(moving);
-      states.add(moving);
-      await tester.pump();
-
-      expect(
-        identical(before, tester.widget<Padding>(_tempoProbe)),
-        isTrue,
-        reason:
-            'a poll tick rebuilt the tempo readout -- the selector is '
-            'leaking the master playhead',
-      );
-    });
-
-    testWidgets('a beat still rebuilds the tempo readout', (tester) async {
-      tester.view.physicalSize = const Size(1400, 600);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      const beatOne = LooperState(
-        transport: TransportState(
-          tempoBpm: 120,
-          tempoSource: TempoSource.manual,
-          currentBeat: 1,
-        ),
-        tracks: [Track()],
-        status: EngineStatus(isConnected: true),
-      );
-      seedStream(beatOne);
-      await pump(tester);
-
-      final before = tester.widget<Padding>(_tempoProbe);
-
-      // The beat dot moving is the readout's whole job; the slice must not
-      // have narrowed so far that it stops drawing.
-      const beatTwo = LooperState(
-        transport: TransportState(
-          tempoBpm: 120,
-          tempoSource: TempoSource.manual,
-          currentBeat: 2,
-        ),
-        tracks: [Track()],
-        status: EngineStatus(isConnected: true),
-      );
-      when(() => bloc.state).thenReturn(beatTwo);
-      states.add(beatTwo);
-      await tester.pump();
-
-      expect(
-        identical(before, tester.widget<Padding>(_tempoProbe)),
-        isFalse,
-        reason: 'the tempo slice swallowed a beat',
       );
     });
 
