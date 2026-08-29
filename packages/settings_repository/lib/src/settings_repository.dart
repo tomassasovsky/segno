@@ -277,20 +277,26 @@ class SettingsRepository {
       // baseline, then add this one's. Modelled, per the note above, but a
       // modelled offset beats no offset.
       //
-      // Closest depth first, so more than one sibling is deterministic rather
-      // than whichever the scan reached. Nothing records whether a stored
-      // value was measured or derived, so between two independently measured
-      // depths the pick is arbitrary; closest is at least stable.
-      final byDistance =
+      // LEAST MODELLED first — the same rule that puts the legacy key ahead
+      // of any sibling. What a rebase costs is that depth's own delta (the
+      // `+delta(current)` term is identical whichever sibling is picked), so
+      // the best one has the smallest `_deltaFramesAt` — NOT the nearest
+      // depth. At periods=4 a `.p3` passes through untouched while the nearer
+      // `.p5` would spend 32 frames of a model the sweep above shows
+      // overestimates. Ties (every depth on the two-period floor shares delta
+      // 0) rebase to the same number, so the depth order only makes the pick
+      // deterministic. Nothing records whether a stored value was measured or
+      // derived, so beyond this the choice cannot be better informed.
+      final byModelCost =
           [
             for (var p = _minAlsaPeriods; p <= _maxAlsaPeriods; p++)
               if (p != _alsaPeriods) p,
           ]..sort((a, b) {
-            final da = (a - _alsaPeriods).abs();
-            final db = (b - _alsaPeriods).abs();
-            return da == db ? b.compareTo(a) : da.compareTo(db);
+            final ca = _deltaFramesAt(bufferFrames, a);
+            final cb = _deltaFramesAt(bufferFrames, b);
+            return ca == cb ? a.compareTo(b) : ca.compareTo(cb);
           });
-      for (final periods in byDistance) {
+      for (final periods in byModelCost) {
         final sibling = await _store.getInt('$legacyKey.p$periods');
         if (sibling == null) continue;
         final baseline = sibling - _deltaFramesAt(bufferFrames, periods);

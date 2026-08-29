@@ -102,15 +102,19 @@ if [ -z "${SEGNO_ALSA_PERIODS:-}" ]; then
     printf "%s" "$v"
   ' 2>/dev/null || true)"
 fi
-# Digits only. The value is either operator-supplied or scraped off the unit,
-# and it is interpolated into the remote shell below -- so anything else is
-# rejected here rather than word-split (or executed) there.
+# Accept only a depth the engine will actually run at. Two reasons: the value
+# is interpolated into the remote shell below and is either operator-supplied
+# or scraped off the unit, so anything but digits could word-split (or
+# execute) there; and le_alsa_periods_from_env clamps into [2,8], so a 0 or a
+# 12 would be printed here as the profiling depth while the engine quietly ran
+# 2 or 8 -- the silent mismatch this whole block exists to prevent.
 case "${SEGNO_ALSA_PERIODS:-}" in
-  '' | *[!0-9]*)
+  2 | 3 | 4 | 5 | 6 | 7 | 8) ;;
+  *)
     echo "==> WARNING: no usable SEGNO_ALSA_PERIODS from $HOST" \
-         "(got '${SEGNO_ALSA_PERIODS:-}'). Profiling at 4; if the unit runs" \
-         "another depth, every capture-path number here describes a build it" \
-         "is not running." >&2
+         "(got '${SEGNO_ALSA_PERIODS:-}'; the engine accepts 2-8)." \
+         "Profiling at 4; if the unit runs another depth, every" \
+         "capture-path number here describes a build it is not running." >&2
     SEGNO_ALSA_PERIODS=4
     ;;
 esac

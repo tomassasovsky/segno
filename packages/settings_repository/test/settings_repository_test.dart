@@ -259,38 +259,29 @@ void main() {
       expect(load(appliance), completion(477));
     });
 
-    test('a sibling is rebased only when no legacy entry exists', () async {
-      // The case the sibling path was written for: first calibrated while the
-      // knob was already engaged, so there is no baseline to prefer.
-      store.values['latency_offset.Scarlett.96000.64.p8'] = 608;
-
-      final appliance = SettingsRepository(store: store, alsaPeriods: 4);
-      // 608 - 128 = 480 baseline, and p4 adds nothing.
-      expect(await load(appliance), 480);
-      expect(store.values['latency_offset.Scarlett.96000.64.p4'], 480);
-      // No legacy key is synthesised: it was never measured pre-#809.
-      expect(
-        store.values.containsKey('latency_offset.Scarlett.96000.64'),
-        isFalse,
-      );
-      // Second read takes the qualified key verbatim.
-      expect(await load(appliance), 480);
-      // And the round trip back to 8 recovers the original.
-      expect(
-        await load(SettingsRepository(store: store, alsaPeriods: 8)),
-        608,
-      );
-    });
-
-    test('the closest sibling depth is the one rebased from', () async {
-      // Two siblings, no legacy. p6 is nearer to p4 than p8 is, so it is the
-      // one used -- deterministic rather than whichever the scan reached.
+    test('the LEAST modelled sibling is the one rebased from', () async {
+      // Two siblings, no legacy. p6 carries a 64-frame delta and p8 a
+      // 128-frame one, so p6 puts less of the model in the path and wins.
       store.values['latency_offset.Scarlett.96000.64.p8'] = 900;
       store.values['latency_offset.Scarlett.96000.64.p6'] = 544;
 
       final appliance = SettingsRepository(store: store, alsaPeriods: 4);
       // p6 @ 64 adds +64: 544 - 64 = 480 baseline, p4 adds nothing.
       expect(await load(appliance), 480);
+    });
+
+    test('a zero-delta sibling beats a nearer one that needs the model', () {
+      // The tie-break has to follow the same "least modelled wins" rule the
+      // legacy preference does. At p4, p3 sits on the two-period floor, so
+      // rebasing it is a pass-through; p5 costs 32 frames of a model this
+      // PR's own sweep shows overestimates. p5 is the NEARER depth, so a
+      // distance-ordered scan would have taken it.
+      store.values['latency_offset.Scarlett.96000.64.p3'] = 470;
+      store.values['latency_offset.Scarlett.96000.64.p5'] = 512;
+
+      final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+      // p3 and p4 are both on the floor, so the value passes through.
+      expect(load(appliance), completion(470));
     });
 
     test(
