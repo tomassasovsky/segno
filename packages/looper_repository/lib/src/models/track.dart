@@ -156,6 +156,13 @@ class Track extends Equatable {
   /// twice per comparison (a `Track ==` is on the console's hot path). The
   /// two are locked to each other by a test — `props` is exactly this list
   /// plus [peak] — so a field added to one cannot silently miss the other.
+  ///
+  /// "Steady" means steady against a moving LEVEL, and nothing more. A track
+  /// that is RECORDING still differs here on every poll tick: [lengthFrames]
+  /// (and the recording lane's own) grow as the take does. That is one tile
+  /// rebuilding while it records, not eight rebuilding because one of them
+  /// made a noise, so it is left alone — the tile draws `hasContent`, which
+  /// the growing length flips exactly once (#899).
   List<Object?> get steadyProps => [
     channel,
     state,
@@ -191,7 +198,7 @@ class Track extends Equatable {
   /// error and no failing widget test: they would simply stop moving.
   ///
   /// A caller that needs to ignore the moving level compares [steadyProps]
-  /// instead. Locked by a test in `looper_repository_test.dart`.
+  /// instead. Locked by the tests in `test/models/track_test.dart`.
   @override
   List<Object?> get props => [
     channel,

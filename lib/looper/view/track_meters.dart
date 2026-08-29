@@ -216,12 +216,17 @@ class _TrackMeter extends StatelessWidget {
 /// fields and passed in by the tile, which is why this leaf can take the
 /// channel and read the one moving number itself.
 ///
-/// [fallbackPeak] is what keeps the tile's own `Track` authoritative. Reading
-/// the ambient bloc is an OPTIMIZATION — it is how a level tick reaches the
-/// bar without rebuilding the tile — not a second source of truth. A caller
-/// that hands a tile a track the bloc does not hold (a synthesized preview, a
-/// channel the rig has since dropped) gets that track's own level drawn
-/// instead of a silently flat bar.
+/// The level drawn is the RIG's, for [channel] — deliberately, and it is the
+/// whole point: reading it here is how a moving level reaches the bar without
+/// rebuilding the tile above. A console meter has no other honest source, so
+/// a caller cannot override a live level by passing a different one.
+///
+/// [fallbackPeak] covers the one case the rig cannot answer: a [channel]
+/// `state.tracks` does not hold at all. The level then travels with the
+/// [Track] the tile was built from, so a tile wired to a channel the rig has
+/// dropped draws that track's own level instead of a bar that is silently and
+/// permanently at rest — a mis-wiring otherwise indistinguishable, on screen,
+/// from a silent track.
 class TrackPeakMeter extends StatelessWidget {
   /// Creates a [TrackPeakMeter].
   const TrackPeakMeter({
@@ -237,7 +242,8 @@ class TrackPeakMeter extends StatelessWidget {
   final int channel;
 
   /// The level to draw when the ambient [LooperBloc] holds no [channel] — the
-  /// peak carried by the [Track] the tile was built from.
+  /// peak carried by the [Track] the tile was built from. Not an override: a
+  /// channel the rig HAS is metered from the rig.
   final double fallbackPeak;
 
   /// The bar fill colour (the track's meter-state colour).
