@@ -82,6 +82,7 @@ add_library(segno_engine SHARED
   core/engine_process.c      # THE audio-thread TU (le_engine_process + transport)
   core/engine_commands.c     # control-thread command producers
   core/engine_cache.c        # Loop-stage wet cache (scheduler + render worker)
+  core/engine_restore.c      # Offline loop-close restoration worker (#697 S9)
   core/engine_cond.c         # per-input conditioning stage (input conditioning)
   # Offline loop-close restoration DSP (#697 S8) — pure TUs, no engine state;
   # consumed by the restore worker (engine_restore.c, S9). NOT matched by
