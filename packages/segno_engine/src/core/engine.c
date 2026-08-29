@@ -90,14 +90,23 @@ int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
   if (frames <= 0) return 0;
   if (ln->pool[slot] != NULL && ln->pool_cap[slot] >= frames) return 1;
   /* Map new / publish / unmap old — the same order le_lane_shrink_slot uses,
-   * and now for the same reason. le_rt_free UNMAPS, so freeing first would
-   * leave pool[slot] naming an unmapped page for the width of the allocation:
-   * a reader that dereferenced it there would take a SIGSEGV on the SCHED_FIFO
-   * thread, where the old calloc/free storage merely handed it stale bytes.
-   * The callers' invariant (the track is EMPTY, so nothing dereferences the
-   * slot — see le_prepare_new_capture / le_begin_empty_capture) is unchanged
-   * and is still what makes this safe; this only keeps the cost of a hole in
-   * that invariant where it used to be, at garbage audio rather than a crash.
+   * and now for the same reason. le_rt_free UNMAPS, so freeing first left
+   * pool[slot] itself naming an unmapped page for the width of the allocation,
+   * and a reader that loaded the slot in that window got a pointer that is
+   * guaranteed to fault. This closes that window: a reader loading pool[slot]
+   * at any instant gets either the old buffer or the new one, both mapped.
+   *
+   * Be precise about what that does NOT buy, because the difference is a
+   * SIGSEGV on the SCHED_FIFO thread. A reader that snapshotted the OLD pointer
+   * before the swap and dereferences it after le_rt_free still touches an
+   * unmapped page — no store order can help it, and where the old calloc
+   * storage gave it stale bytes, an unmapped one kills the process. That case
+   * is ruled out by the callers' invariant alone: the track is EMPTY, so
+   * nothing dereferences the slot at all (le_prepare_new_capture,
+   * le_begin_empty_capture, session import). le_rt_alloc storage makes that
+   * invariant load-bearing for CRASH-safety where it used to be load-bearing
+   * only for audio quality, so relax a call site on the strength of the
+   * ordering below and the result is a hard fault, not a click.
    *
    * Publication order is pointer-then-cap, the mirror of shrink's: this GROWS,
    * so a reader that pairs the new pointer with the not-yet-updated (smaller,
@@ -127,9 +136,14 @@ int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
  * published, and the old mapping is torn down only once nothing published
  * points at it.
  *
- * What makes that safe is the INVARIANT, not the store order: a retired slot is
- * one the audio thread handed back through the evt_ring and can no longer name
- * (engine_process.c's #728 note). The shorter cap is stored before the new
+ * What makes that safe is the INVARIANT, not the store order, and the invariant
+ * now carries more weight than it did: a reader that snapshotted the old
+ * pointer before the swap dereferences an UNMAPPED page once the copy is
+ * published, which no ordering can prevent and which kills the SCHED_FIFO
+ * thread rather than feeding it stale audio. What rules that out is that a
+ * retired slot is one the audio thread handed back through the evt_ring and can
+ * no longer name (engine_process.c's #728 note). The shorter cap is stored
+ * before the new
  * pointer only because that is the order in which a plain interleaving stays
  * benign — a reader that has not yet seen the new pointer is bounded by the
  * shorter cap on the old, larger buffer. It is NOT a publication barrier and

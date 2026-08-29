@@ -18,8 +18,12 @@
 #define LE_RT_HEADER 64u
 
 static int g_shield_fail_override = 0;
-/* see le_rt_fork_shield: at most one refusal line per process */
+#if defined(__linux__)
+/* see le_rt_fork_shield: at most one refusal line per process. Linux-only,
+ * because only Linux has a shield that can be refused — declaring it
+ * unconditionally is an unused variable everywhere else. */
 static int g_shield_warned = 0;
+#endif
 
 void le_rt_set_fork_shield_failure_for_test(int state) {
   g_shield_fail_override = state;

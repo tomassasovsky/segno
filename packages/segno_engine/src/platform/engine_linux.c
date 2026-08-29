@@ -885,22 +885,52 @@ void le_platform_on_engine_teardown(void) {
  *     swap. Under a finite limit we never make the call at all, so no desktop
  *     build can walk into that failure mode.
  *
- * Failure is never fatal, in either direction: an ungranted limit, an EPERM, an
- * ENOMEM — all of them log and return, and the engine starts exactly as it does
- * today. A user without the rlimit must still be able to run the app; they just
- * run it without this protection, which is where every build stood before.
+ * MCL_ONFAULT IS NOT OPTIONAL HERE, and it is the difference between locking
+ * what is resident and committing every RESERVATION in the address space.
+ * Without it, mlockall pre-populates every readable mapping — and this process
+ * is full of large, sparse, MAP_NORESERVE ones it must not commit: the Dart
+ * VM's heap reservations, a hosted VST3/CLAP plugin's arena, and (in an
+ * instrumented build) ASan's multi-terabyte shadow. On a machine that actually
+ * granted the rlimit — that is, the appliance, the one configuration this
+ * feature targets — pre-population is an OOM, not a slow start. With
+ * MCL_ONFAULT the kernel locks the pages that are PRESENT and marks the rest to
+ * be locked as they fault in, which is exactly the property being bought:
+ * nothing the audio thread has touched can be reclaimed under it afterwards.
+ * The only thing given up is pre-faulting pages nobody has touched yet, and the
+ * buffers where that would have mattered are prefaulted by le_rt_alloc already.
+ *
+ * So if MCL_ONFAULT is unavailable (pre-4.4 kernel, or libc headers without
+ * it), this SKIPS rather than falling back to the pre-populating form. The
+ * protection is an improvement on a build that ran for years without it; the
+ * fallback is a way to OOM the appliance.
+ *
+ * Failure is never fatal, in any direction: an ungranted limit, a missing
+ * MCL_ONFAULT, an EPERM, an ENOMEM — all of them log and return, and the engine
+ * starts exactly as it does today. A user without the rlimit must still be able
+ * to run the app; they just run it without this protection, which is where
+ * every build stood before.
  *
  * Once per process (mlockall is process-wide, and le_engine_create can run more
  * than once in a host that recreates the engine) — but REFERENCE-COUNTED, not
  * latched, so le_platform_unlock_memory below can actually undo it. A latch
  * would make the lock one-way: MCL_FUTURE would go on locking every heap growth
  * and every dlopen for the rest of the process, long after the engine that
- * wanted it was destroyed. */
+ * wanted it was destroyed.
+ *
+ * The mutex is not paranoia about a hot path — neither function is one. It is
+ * because BOTH the count and the process-wide lock it guards have to move
+ * together: two concurrent le_engine_creates could otherwise both find the
+ * count at 0, both lock, and leave it at 1 for two live engines, so the first
+ * le_engine_destroy would munlockall the process out from under the survivor's
+ * audio thread. */
+static pthread_mutex_t g_memlock_mu = PTHREAD_MUTEX_INITIALIZER;
 static int g_memlock_refs = 0;
 
 void le_platform_lock_memory(void) {
+  pthread_mutex_lock(&g_memlock_mu);
   if (g_memlock_refs > 0) { /* already locked: just take a reference */
     ++g_memlock_refs;
+    pthread_mutex_unlock(&g_memlock_mu);
     return;
   }
   struct rlimit lim;
@@ -909,6 +939,7 @@ void le_platform_lock_memory(void) {
             "segno/rt: RLIMIT_MEMLOCK unreadable (errno %d); memory not locked "
             "(#804)\n",
             errno);
+    pthread_mutex_unlock(&g_memlock_mu);
     return;
   }
   if (lim.rlim_cur != RLIM_INFINITY) {
@@ -917,32 +948,54 @@ void le_platform_lock_memory(void) {
             "segno/rt: RLIMIT_MEMLOCK is %llu bytes, not unlimited; skipping "
             "mlockall (grant LimitMEMLOCK=infinity to enable it)\n",
             (unsigned long long)lim.rlim_cur);
+    pthread_mutex_unlock(&g_memlock_mu);
     return;
   }
-  if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
+#if defined(MCL_ONFAULT)
+  if (mlockall(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT) != 0) {
+    /* EINVAL here is the pre-4.4 kernel: the flag compiled but the running
+     * kernel does not know it. Deliberately NOT retried without MCL_ONFAULT —
+     * see above on why the pre-populating form is the worse outcome. */
     fprintf(stderr,
             "segno/rt: mlockall failed (errno %d); the audio thread can still "
             "take major faults (#804)\n",
             errno);
+    pthread_mutex_unlock(&g_memlock_mu);
     return;
   }
   g_memlock_refs = 1; /* only a lock we actually took is one we may undo */
-  fprintf(stderr, "segno/rt: memory locked (mlockall MCL_CURRENT|MCL_FUTURE)\n");
+  fprintf(stderr,
+          "segno/rt: memory locked (mlockall MCL_CURRENT|MCL_FUTURE|"
+          "MCL_ONFAULT)\n");
+#else
+  fprintf(stderr,
+          "segno/rt: MCL_ONFAULT unavailable in this libc; skipping mlockall "
+          "rather than pre-populating every reservation (#804)\n");
+#endif
+  pthread_mutex_unlock(&g_memlock_mu);
 }
 
 /* Releases the process-wide lock once the last engine is gone. A skipped or
  * failed lock left g_memlock_refs at 0, so this is a no-op there and never
- * munlockall's a process this code did not lock. See engine_platform.h. */
+ * munlockall's a process this code did not lock — which matters because
+ * munlockall is process-wide and would otherwise drop a lock this code never
+ * took. See engine_platform.h. */
 void le_platform_unlock_memory(void) {
-  if (g_memlock_refs == 0) return;   /* never locked, or already released */
-  if (--g_memlock_refs > 0) return;  /* another engine still wants it */
-  if (munlockall() != 0) {
-    fprintf(stderr, "segno/rt: munlockall failed (errno %d); the process stays "
-                    "locked into RAM\n",
-            errno);
+  pthread_mutex_lock(&g_memlock_mu);
+  if (g_memlock_refs == 0 ||    /* never locked, or already released */
+      --g_memlock_refs > 0) {   /* another engine still wants it */
+    pthread_mutex_unlock(&g_memlock_mu);
     return;
   }
-  fprintf(stderr, "segno/rt: memory unlocked (munlockall)\n");
+  if (munlockall() != 0) {
+    fprintf(stderr,
+            "segno/rt: munlockall failed (errno %d); the process stays locked "
+            "into RAM\n",
+            errno);
+  } else {
+    fprintf(stderr, "segno/rt: memory unlocked (munlockall)\n");
+  }
+  pthread_mutex_unlock(&g_memlock_mu);
 }
 
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {

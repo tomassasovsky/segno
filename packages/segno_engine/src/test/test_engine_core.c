@@ -10124,34 +10124,38 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   tl_count_allocations = 0;
   CHECK(atomic_load(&g_test_alloc_count) > 0);
   /* WHAT CLEARS THIS FLOOR, measured on this fixture rather than assumed,
-   * because it is a constant coupled to two unrelated sizings and a reader
-   * debugging a failure here needs to know which one moved. Two ENGINE-SIDE
-   * allocations cross the arm:
-   *   - le_perf_drain itself, 724104 bytes — sizeof the struct, which since
-   *     #722 carries json_buf (LE_PD_JSON_BUF = 512 KB) inside it;
-   *   - le_perf_arm's master ring, 524288 bytes — le_perf_ring_capacity
-   *     rounds 1 ch x 48000 x LE_PERF_CAPTURE_SECONDS up to a power of two
-   *     (131072 samples x 4 B), landing EXACTLY on this floor.
+   * because a reader debugging a failure here needs to know which sizing
+   * moved. Exactly ONE engine-side allocation crosses the arm and clears it:
+   * le_perf_drain itself, 724104 bytes — sizeof the struct, which since #722
+   * carries json_buf (LE_PD_JSON_BUF = 512 KB) inside it.
+   *
+   * It used to be two. le_perf_arm's master ring — 524288 bytes,
+   * le_perf_ring_capacity rounding 1 ch x 48000 x LE_PERF_CAPTURE_SECONDS up
+   * to a power of two — landed exactly ON this floor and was the redundant
+   * second clearance. It no longer counts at all: the capture rings are
+   * le_rt_alloc storage now (#900), i.e. their own mmap, and this interposer
+   * only sees malloc/calloc/realloc/strdup. That leaves the drain struct as
+   * the SOLE clearance, with 200 KB of margin rather than two independent
+   * ones, so a shrinking LE_PD_JSON_BUF is now the single thing that can put
+   * this assertion under the floor.
    *
    * HOW MANY ALLOCATIONS THE ARM ACTUALLY COUNTS IS PLATFORM-SPECIFIC, so do
-   * not read any one number as a constant. On macOS those two ARE the whole
-   * tally — two: libc-internal allocations bind to libsystem_malloc and never
-   * reach this executable's definitions, the two-level-namespace hole
+   * not read any one number as a constant. On macOS the drain struct is the
+   * whole tally — one: libc-internal allocations bind to libsystem_malloc and
+   * never reach this executable's definitions, the two-level-namespace hole
    * described above. On glibc the flip side applies: ELF interposition DOES
    * catch libc's internals, so the two fopens' FILE objects and stream buffers
-   * are counted as well and the tally is five (instrumented and measured in
-   * gcc:13; largest is 724104 and the fopen counter reads 2 on both). Both are
-   * correct. Only the two engine-side sizes above are portable, and only the
-   * largest of them is what this floor asserts on — which is why the assertion
-   * below is on `largest` and not on a count.
+   * are counted as well (largest is 724104 and the fopen counter reads 2 on
+   * both). Both are correct. Only the engine-side size above is portable, and
+   * it is what this floor asserts on — which is why the assertion below is on
+   * `largest` and not on a count.
    *
-   * So the control does not depend on the change under test: the ring clears
-   * it on its own, as it did before #722. But it clears it by zero bytes, so
-   * do not read a failure here as "interposition broke" without checking
-   * whether LE_PD_JSON_BUF, LE_PERF_CAPTURE_SECONDS or this fixture's
-   * configure() moved first. Retuning the floor is the right fix in that case;
-   * its job is only to rule out an incidental small allocation satisfying the
-   * non-zero check above. */
+   * So the control still does not depend on the change under test. But do not
+   * read a failure here as "interposition broke" without checking whether
+   * LE_PD_JSON_BUF moved first, or whether another engine-side buffer followed
+   * the rings out of malloc and into le_rt_alloc. Retuning the floor is the
+   * right fix in either case; its job is only to rule out an incidental small
+   * allocation satisfying the non-zero check above. */
   CHECK(atomic_load(&g_test_alloc_largest) >= 512u * 1024u);
   /* The stdio half of the control: le_perf_arm fopens master.pcm and
    * events.log, so a zero here means the fopen interposer is not bound and

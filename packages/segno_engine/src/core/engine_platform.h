@@ -80,18 +80,22 @@ void le_platform_after_device_open(le_engine* engine);
 void le_platform_on_engine_teardown(void);
 
 /* Called once, from le_engine_create, before anything is allocated. Linux pins
- * the process's pages into RAM with mlockall(MCL_CURRENT | MCL_FUTURE) — the
- * companion to rt_alloc.h's fork shield, and the only thing that can protect
- * what an allocator cannot: the engine's own text and rodata, the audio
- * thread's stack, and the loaded plugin binaries, all of which are reclaimable
- * pages whose re-fault would stall a SCHED_FIFO callback on I/O.
+ * the process's resident pages into RAM with mlockall — the companion to
+ * rt_alloc.h's fork shield, and the only thing that can protect what an
+ * allocator cannot: the engine's own text and rodata, the audio thread's stack,
+ * and the loaded plugin binaries, all of which are reclaimable pages whose
+ * re-fault would stall a SCHED_FIFO callback on I/O.
  *
  * It is attempted ONLY where the operator has granted RLIMIT_MEMLOCK = infinity
- * (the appliance's segno.service does; a desktop's 8 MB default does not), and
- * it NEVER refuses to start — see engine_linux.c for why both halves of that
- * matter. No-op on macOS/Windows, which have no equivalent worth doing here:
- * neither runs the PREEMPT_RT kernel this defends, and mach_vm_wire /
- * VirtualLock are privileged, per-region calls, not a process-wide switch.
+ * (the appliance's segno.service does; a desktop's 8 MB default does not) and
+ * only with MCL_ONFAULT, so it locks what is RESIDENT instead of committing
+ * every sparse reservation in the address space (the Dart VM's heap, a hosted
+ * plugin's arena, ASan's shadow). It NEVER refuses to start — see
+ * engine_linux.c for why each of those matters.
+ *
+ * No-op on macOS/Windows, which have no equivalent worth doing here: neither
+ * runs the PREEMPT_RT kernel this defends, and mach_vm_wire / VirtualLock are
+ * privileged, per-region calls, not a process-wide switch.
  * Safe to call more than once: the lock is reference-counted against
  * le_platform_unlock_memory, so N engines lock once and only the last teardown
  * unlocks. */
