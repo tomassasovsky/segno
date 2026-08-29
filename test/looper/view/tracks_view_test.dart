@@ -656,6 +656,55 @@ void main() {
       expect(find.text('GUITAR'), findsNothing);
     });
 
+    testWidgets('a value-equal Track from an EARLIER poll is accepted', (
+      tester,
+    ) async {
+      // The instance a column is handed is a tick old by design: the slot
+      // above it only rebuilds when the STEADY facts change, so it keeps
+      // passing the projection from whichever poll last changed them, while
+      // `_project` builds a fresh `lanes` list literal every tick. The guard
+      // therefore has to be Equatable-deep — a shallow compare of the prop
+      // lists calls two value-equal projections different and red-screens the
+      // stage on the next theme rebuild.
+      // `List.of`, not a literal: a const literal would be canonicalised into
+      // the same instance both times and make this test vacuous, which is
+      // exactly what the analyzer would rather have here.
+      Track projected({required double peak}) => Track(
+        peak: peak,
+        lanes: List.of(const [Lane(inputChannel: 0)]),
+        effects: List.of([BuiltInEffect(type: TrackEffectType.drive)]),
+      );
+
+      await pumpColumn(
+        tester,
+        name: 'DRUMS',
+        mode: InteractionMode.record,
+        track: projected(peak: 0),
+        // Same facts, new lists, and a level that has moved since — exactly
+        // what the rig looks like one poll later.
+        liveTrack: projected(peak: 0.9),
+      );
+
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a channel the bloc does not hold trips the live-view assert', (
+      tester,
+    ) async {
+      // A snapshot surface — a saved 8-channel session on a 2-channel rig —
+      // would otherwise draw a permanently flat meter per missing channel,
+      // silently, in debug and release alike.
+      await pumpColumn(
+        tester,
+        name: 'GUITAR',
+        mode: InteractionMode.record,
+        track: const Track(channel: 5),
+        liveTrack: const Track(),
+      );
+
+      expect(tester.takeException(), isA<AssertionError>());
+    });
+
     testWidgets('a Track the bloc does not hold trips the live-view assert', (
       tester,
     ) async {

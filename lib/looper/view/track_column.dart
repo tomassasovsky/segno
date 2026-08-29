@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -46,8 +45,10 @@ class TrackColumn extends StatelessWidget {
   /// view, not a function of its argument. Passing a [Track] that is not the
   /// bloc's own track for that channel — a synthesized preview, a session or
   /// preset snapshot, a frozen "before" state in an A/B — draws that track's
-  /// steady facts under the rig's current level. Such a surface needs its own
-  /// meter widget, not this one.
+  /// steady facts under the rig's current level, or under no level at all for
+  /// a channel the rig does not have. Such a surface needs its own meter
+  /// widget, not this one. Enforced by an assert in [build], so the mistake
+  /// fails loudly in debug instead of rendering perfectly and lying.
   final Track track;
 
   /// The FX stage the footswitch bound to this cell attaches to, in FX mode.
@@ -106,16 +107,18 @@ class TrackColumn extends StatelessWidget {
     // its level out of THIS bloc by channel, so handing a column a track the
     // bloc does not hold draws one track's facts under another's level — a
     // mis-wiring that renders perfectly and is invisible in a screenshot.
-    // A tick-stale `peak` is fine and expected, which is exactly why the
-    // comparison is on `steadyProps`. An absent channel is allowed: that is
-    // the frame in which the slot above unmounts this column.
+    //
+    // Compared as `SteadyTrack`, not by `listEquals` on the prop lists: the
+    // comparison has to be Equatable-deep, because `_project` builds a fresh
+    // `lanes` literal every poll and a shallow list compare would call two
+    // value-equal projections one tick apart different — rejecting the
+    // tick-stale instance this widget is DESIGNED to be handed. Steady, so a
+    // stale `peak` stays legal, which is the whole point of the split.
     assert(
       () {
-        final live = bloc.state.tracks
-            .where((t) => t.channel == track.channel)
-            .toList();
-        return live.isEmpty ||
-            listEquals(live.first.steadyProps, track.steadyProps);
+        final live = bloc.state.tracks.where((t) => t.channel == track.channel);
+        if (live.length != 1) return false;
+        return SteadyTrack(live.first) == SteadyTrack(track);
       }(),
       'TrackColumn was given a Track the ambient LooperBloc does not hold '
       '(channel ${track.channel}). A column is a live view of that bloc, not '
