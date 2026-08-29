@@ -13,7 +13,10 @@ cd "$(dirname "$0")/../../.."   # src/test/bench -> packages/segno_engine
 
 CC=${CC:-cc}
 OUT="${TMPDIR:-/tmp}"
-STD="-std=gnu11 -O2 -DNDEBUG -I src/core -I src/midi -I src/asio -I src/miniaudio \
+# No -I src/asio: master deleted that directory and dropped the flag from
+# run_native_tests.sh. Clang ignores a missing -I silently, so carrying it here
+# would just re-introduce a dead path on merge.
+STD="-std=gnu11 -O2 -DNDEBUG -I src/core -I src/midi -I src/miniaudio \
   -I third_party/rnnoise/include -I third_party/rnnoise/src"
 
 case "$(uname -s)" in
