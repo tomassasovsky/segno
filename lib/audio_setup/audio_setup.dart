@@ -10,5 +10,4 @@ export 'cubit/midi_setup_cubit.dart';
 export 'cubit/monitor_cubit.dart';
 export 'view/audio_device_picker.dart';
 export 'view/audio_settings_section.dart';
-export 'view/midi_device_picker.dart';
 export 'view/midi_learn_section.dart';

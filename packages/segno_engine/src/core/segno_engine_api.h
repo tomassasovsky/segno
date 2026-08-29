@@ -494,12 +494,14 @@ typedef enum le_fx_type {
 } le_fx_type;
 
 /* Which device backend to open. The default (0) opens miniaudio's default
- * backend for the platform (Core Audio on macOS, the Linux preference list).
- * On Windows the engine forces ASIO, which is only available in a
- * SEGNO_ENABLE_ASIO build. */
+ * backend for the platform (Core Audio on macOS, the Linux preference list) —
+ * the only backend this engine ships. */
 typedef enum le_audio_backend {
   LE_BACKEND_MINIAUDIO = 0, /* default: miniaudio's default platform backend */
-  LE_BACKEND_ASIO = 1,   /* Windows ASIO (requires SEGNO_ENABLE_ASIO) */
+  /* Reserved. Was Windows ASIO; the backend went with the desktop targets, but
+   * the value stays claimed so a persisted setting written by an older build
+   * still parses instead of being reinterpreted as another backend. */
+  LE_BACKEND_ASIO = 1,
 } le_audio_backend;
 
 /* A hardware audio device discovered by enumeration (le_enumerate_*).
@@ -546,13 +548,10 @@ typedef struct le_config {
    * overrides capture_device_id when a loopback device is detected. */
   char playback_device_id[256];
   char capture_device_id[256];
-  /* le_audio_backend to open; 0 (LE_BACKEND_MINIAUDIO) selects the default
-   * miniaudio path, LE_BACKEND_ASIO the Windows ASIO backend. Honored at start
-   * via le_select_backend (a SEGNO_ENABLE_ASIO Windows build); elsewhere every
-   * value resolves to miniaudio. */
+  /* le_audio_backend to open. Every value resolves to miniaudio via
+   * le_select_backend; the field stays so persisted configs still round-trip. */
   int32_t backend;
-  /* Selected ASIO driver name (used by the ASIO backend in Part 2). Empty and
-   * ignored on the default path. */
+  /* Reserved, alongside LE_BACKEND_ASIO. Always empty and ignored. */
   char asio_driver[256];
 } le_config;
 
@@ -1099,18 +1098,10 @@ LE_EXPORT int32_t le_enumerate_playback_devices(le_device_info* out, int32_t max
 LE_EXPORT int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
                                                int32_t* count);
 
-/* Enumerates the installed ASIO drivers into `out` (room for `max`), writing the
- * count into *count. Each entry is one duplex driver: `id` and `name` are the
- * driver name and `input_channels`/`output_channels` are probed from the driver
- * (so the picker can show "18 in / 20 out" before opening). A driver that fails
- * to probe is omitted; the call degrades to *count = 0 rather than erroring.
- *
- * Only the SEGNO_ENABLE_ASIO Windows build enumerates real drivers; every other
- * build is a stub returning *count = 0, LE_OK. RE-ENTRANCY: the ASIO host SDK
- * loads a single process-global driver, so this MUST NOT be called while an ASIO
- * device is open (it would tear down the live stream) — the Dart layer only
- * enumerates while stopped or running on the miniaudio backend. Returns LE_OK,
- * or LE_ERR_INVALID for a null argument / non-positive `max`. */
+/* Reserved: always writes *count = 0 and returns LE_OK. ASIO was the Windows
+ * duplex backend and went with the desktop targets; the symbol stays exported so
+ * the Dart layer can keep calling it unconditionally. Returns LE_ERR_INVALID for
+ * a null argument / non-positive `max`. */
 LE_EXPORT int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
                                             int32_t* count);
 

@@ -5,13 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:screen_retriever/screen_retriever.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/visualizer/console_readout_view.dart';
 import 'package:segno/visualizer/console_volume_overlay.dart';
 import 'package:segno/visualizer/performance_readout.dart';
-import 'package:segno/visualizer/performance_readout_view.dart';
 import 'package:segno/visualizer/readout_control.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
 import 'package:segno/visualizer/waveform_window_channel.dart';
@@ -255,24 +253,20 @@ Float32List _toFloat32List(Object? raw) {
 /// The root widget of the waveform window: a full-screen [WaveformView] driven
 /// by frames pushed from the main window.
 ///
-/// What surrounds the waveform depends on the build: the desktop keeps the
-/// windowed [PerformanceReadoutView]; the console ([kConsoleMode]) fills the
-/// fixed 7" panel with the pen's `STAGE / readout` ([ConsoleReadoutView]) —
-/// stage-sized type legible from the floor, full-bleed because the panel is a
-/// panel, not a window.
+/// The waveform fills the fixed 7" panel with the pen's `STAGE / readout`
+/// ([ConsoleReadoutView]) — stage-sized type legible from the floor,
+/// full-bleed because the panel is a panel, not a window.
 class WaveformWindowApp extends StatelessWidget {
   /// Creates a [WaveformWindowApp] rendering [frame].
   const WaveformWindowApp({
     required this.frame,
     required this.readout,
     required this.title,
-    this.consoleMode = kConsoleMode,
     this.onControl = _dropControl,
     super.key,
   });
 
-  /// Default [onControl]: a windowed desktop build has no volume overlay, so
-  /// nothing sends.
+  /// Default [onControl]: drops the command, for hosts that wire nothing.
   static void _dropControl(ReadoutControl control) {}
 
   /// The latest waveform frame, updated as the main window pushes new data.
@@ -283,10 +277,6 @@ class WaveformWindowApp extends StatelessWidget {
 
   /// OS window title.
   final String title;
-
-  /// Whether this build is the floor console. A parameter (defaulting to the
-  /// compile-time flag) so tests can drive both faces without the define.
-  final bool consoleMode;
 
   /// Sends a volume-overlay control command back to the main window (#698).
   /// The entrypoint wires this to the window channel; tests capture it.
@@ -325,26 +315,16 @@ class WaveformWindowApp extends StatelessWidget {
                   semanticLabel: context.l10n.a11yWaveform,
                 ),
               );
-              if (consoleMode) {
-                // Full-bleed: the console view carries the pen's own inset.
-                // The overlay owns the pages; the readout face's MIX pill
-                // is the only way into it (#698, entry reworked in #707);
-                // the desktop face below is untouched.
-                return ConsoleVolumeOverlay(
-                  readout: readoutData,
-                  onControl: onControl,
-                  builder: (context, openMixer) => ConsoleReadoutView(
-                    readout: readoutData,
-                    waveform: waveform,
-                    onMix: openMixer,
-                  ),
-                );
-              }
-              return Padding(
-                padding: const EdgeInsets.all(16),
-                child: PerformanceReadoutView(
+              // Full-bleed: the console view carries the pen's own inset.
+              // The overlay owns the pages; the readout face's MIX pill is the
+              // only way into it (#698, entry reworked in #707).
+              return ConsoleVolumeOverlay(
+                readout: readoutData,
+                onControl: onControl,
+                builder: (context, openMixer) => ConsoleReadoutView(
                   readout: readoutData,
                   waveform: waveform,
+                  onMix: openMixer,
                 ),
               );
             },
