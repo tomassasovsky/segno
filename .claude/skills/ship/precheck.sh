@@ -54,14 +54,20 @@ if ! command -v npx >/dev/null 2>&1; then
 else
   MD=$(git diff --name-only "$BASE"...HEAD -- '*.md'; git diff --name-only HEAD -- '*.md'; git ls-files --others --exclude-standard -- '*.md')
   MD=$(printf '%s\n' "$MD" | sort -u | grep -v '^$')
-  if [ -z "$MD" ]; then
+  # Split on newlines only: an unquoted $MD would also split a path containing
+  # a space into two nonexistent arguments.
+  MD_FILES=()
+  while IFS= read -r f; do [ -n "$f" ] && MD_FILES+=("$f"); done <<EOF
+$MD
+EOF
+  if [ ${#MD_FILES[@]} -eq 0 ]; then
     echo "SKIP  cspell  (no Markdown changed)"
   else
     OUT=$(mktemp)
     # Keep the summary line: cspell exits non-zero both for real spelling issues
     # and for "checked nothing at all", and those mean opposite things.
-    # shellcheck disable=SC2086
-    npx --yes cspell@latest --config .github/cspell.json --no-progress $MD >"$OUT" 2>&1
+    npx --yes cspell@latest --config .github/cspell.json --no-progress \
+      "${MD_FILES[@]}" >"$OUT" 2>&1
     CS_RC=$?
     SUMMARY=$(grep -oE 'Files checked: [0-9]+' "$OUT" | head -1)
     CHECKED=$(printf '%s' "$SUMMARY" | grep -oE '[0-9]+')

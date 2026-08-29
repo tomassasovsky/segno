@@ -7,7 +7,7 @@ disable-model-invocation: true
 # verify
 
 Runs the gates from `CLAUDE.md`, picking the applicable subset from what the
-diff touches, and prints one PASS / FAIL / SKIP line per gate.
+diff touches, and prints one PASS / FAIL / SKIP / UNRUN line per gate.
 
 ```
 bash .claude/skills/verify/run.sh [base-ref]     # default base: origin/master
@@ -15,36 +15,44 @@ bash .claude/skills/verify/run.sh [base-ref]     # default base: origin/master
 
 ## Gates and when each one fires
 
+Every gate is conditional. "Dart moved" below means any `.dart` / `.arb` /
+`pubspec.yaml` / `pubspec.lock` / `assets/` change.
+
 | Gate | Fires when |
 |---|---|
-| `dart analyze` | always (skipped if the checkout is unresolved) |
-| `dart format --set-exit-if-changed` | always — CI gates it over `lib test packages/*/lib packages/*/test` |
-| `bloc lint lib test packages` | always, if the `bloc` CLI is installed |
-| `flutter test (root app)` | any `.dart` / `.arb` / `pubspec` / `assets/` change |
-| `test (<package>)`, six of them | that package under `packages/` changed |
+| `dart analyze` | Dart moved |
+| `dart format --set-exit-if-changed` | Dart moved — over the same `lib test packages/*/lib packages/*/test` CI gates |
+| `bloc lint lib test packages` | Dart moved, and the `bloc` CLI is installed |
+| `flutter test (root app)` | Dart moved |
+| `test (<package>)`, six of them | that package changed, or a package it path-depends on did |
 | native engine tests | `packages/segno_engine/src/**` changed |
 | ffigen bindings in step | `segno_engine_api.h` changed |
 | firmware contract + drift gate | `firmware/**`, `hardware/firmware/**`, or `pedal_protocol.*` changed |
+| appliance bundle suites (9 + a dash pass) | `deploy/yocto/.../segno-bundle/**` changed |
 | agent hook tests | `.claude/hooks/**` changed |
 
 ## Things the script encodes so you do not have to remember them
 
 - **Bare `flutter` / `dart` are hook-blocked.** It calls the SDK by absolute
   path. Override with `SEGNO_FLUTTER_BIN` if your SDK lives elsewhere.
-- **An unresolved checkout is skipped, not failed.** Without
+- **An unresolved checkout reports UNRUN and ends the run at exit 3.** Without
   `.dart_tool/package_config.json`, `dart analyze` invents tens of thousands of
-  phantom errors and `dart format` rewrites the entire repo. The script skips
-  those gates and tells you to run `pub get` instead of reporting the noise.
+  phantom errors and `dart format` rewrites the entire repo, so the script
+  refuses to run them — but refusing is not passing, and an earlier version
+  that reported "all applicable gates passed" here was the worst bug this
+  script has had. Run `pub get` and re-run.
 - **`bloc lint` carries rules `dart analyze` does not** — a cubit method
   returning anything but void fails here and passes there. It runs as its own
-  gate, and a zero-file run reports as SKIP rather than a false green.
+  gate, and a run that says it checked nothing reports UNRUN rather than a
+  false green. Note that exit 64 alone is not that signal: 64 is `EX_USAGE`, so
+  a genuinely broken invocation returns it too and is reported as a failure.
 - **A root `flutter test` runs the root app's `test/` only.** It does not
   descend into `packages/*`. CI gives six packages their own job — `daw_export`
   and the five `*_repository` packages — so until they had gates here, a change
   confined to one of them passed verify and failed CI. Each now runs when its
   own package moves. Their coverage floors stay CI's job; this answers "do the
   tests pass", not "is the floor still met".
-- **A sub-package that has never had `pub get` reports SKIP, not PASS.** A root
+- **A sub-package that has never had `pub get` reports UNRUN, not PASS.** A root
   `pub get` does not resolve `packages/*`. The script will not run `pub get`
   for you — that rewrites a tracked `pubspec.lock`, and a verify run must not
   dirty the tree.
@@ -75,6 +83,8 @@ collapsing them is how a verify run reports success having verified nothing:
 - CI runs the native suite four more ways — ASan, TSan, telemetry-off, and a
   fuzz job. This runs the plain one only. For an engine change, green here is
   necessary and not sufficient.
+- CI also compiles the app and engine for Windows, Linux and Linux/arm64, and
+  builds the VST3 plugins on Linux. None of that runs here.
 - Coverage floors are CI's (root 90, and a per-package floor on each of the six).
   Nothing here measures coverage.
 - Screenshot goldens are author-machine-only and rot silently. After any UI

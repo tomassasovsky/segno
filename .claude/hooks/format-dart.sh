@@ -36,11 +36,13 @@ DART=${SEGNO_FLUTTER_BIN:-/Users/Tomas/development/flutter/bin}/dart
 # every trailing comma in the file. `dart format` still exits 0 while doing it
 # -- the only signal is a "Package resolution error" warning on stderr.
 #
-# So: ANY stderr, or any non-zero exit, means do not write. That covers the
-# unresolved worktree, a truncated or half-written package_config.json from an
-# interrupted `pub get`, a config that resolves but is missing
-# very_good_analysis, and a file with a syntax error (exit 65, empty stdout --
-# writing that back would truncate the file). Asking the formatter is strictly
+# So: ANY stderr means do not write. That is what catches the unresolved
+# worktree, a truncated or half-written package_config.json from an interrupted
+# `pub get`, a config that resolves but is missing very_good_analysis, and a
+# file with a syntax error (dart writes the parse error to stderr). The
+# exit-code and empty-output checks are belt-and-braces behind it -- a syntax
+# error also exits 65 with empty stdout, and writing THAT back would truncate
+# the file. Asking the formatter is strictly
 # better than trying to predict it from the filesystem: an earlier version of
 # this hook looked for package_config.json beside the nearest pubspec.yaml,
 # which no `packages/*` in this repo has, so it silently skipped all 20
@@ -56,5 +58,12 @@ RC=$?
 [ -s "$ERR" ] && exit 0
 [ -s "$OUT" ] || exit 0
 
-cmp -s "$OUT" "$FILE" || cat "$OUT" >"$FILE"
+# Only on a real change, so an already-canonical file keeps its mtime and does
+# not trigger a rebuild. Errors are swallowed: a hook has nowhere useful to put
+# "Permission denied" on a read-only file, and a raw shell error on every edit
+# is worse than the silence.
+if ! cmp -s "$OUT" "$FILE"; then
+  [ -w "$FILE" ] || exit 0
+  { cat "$OUT" >"$FILE"; } 2>/dev/null || true
+fi
 exit 0

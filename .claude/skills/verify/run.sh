@@ -86,7 +86,9 @@ fi
 # Notably, a cubit method returning anything but void fails here and passes
 # `dart analyze`. Some worktree layouts make it silently analyse zero files and
 # exit 64; a zero-file run is unverified, not green, so report it as a skip.
-if command -v bloc >/dev/null 2>&1; then
+if [ "$DART_TOUCHED" = 0 ]; then
+  skip "bloc lint" "no Dart/arb/asset changes"
+elif command -v bloc >/dev/null 2>&1; then
   BL="$LOG/bloclint"
   bloc lint lib test packages >"$BL" 2>&1
   BL_RC=$?
@@ -123,9 +125,16 @@ fi
 # The packages CI tests in their own job. daw_export is pure Dart (`dart test`);
 # the rest are Flutter packages. Coverage floors stay CI's job -- this gate
 # answers "do the tests pass", not "is the floor still met".
+# Packages the six CI jobs path-depend on. looper_repository and
+# session_repository both `path: ../segno_engine`, so "packages/<pkg>/ unchanged"
+# is true of a package's own files and false of its inputs -- and CI, which runs
+# all six unconditionally, would catch the break that a path-only predicate
+# skips here.
+PKG_DEPS='^packages/(segno_engine|wav_codec)/'
+
 pkg_test() { # pkg_test <package-dir> <runner>
   local pkg=$1 runner=$2 name="test ($1)"
-  if ! touched "^packages/$pkg/"; then
+  if ! touched "^packages/$pkg/" && ! touched "$PKG_DEPS"; then
     skip "$name" "unchanged"
   elif [ ! -f "packages/$pkg/.dart_tool/package_config.json" ]; then
     unrun "$name" "unresolved -- run \`$FLUTTER pub get\` in packages/$pkg"
@@ -174,6 +183,32 @@ if touched '^firmware/|^hardware/firmware/|pedal_protocol\.'; then
   gate "firmware contract + drift gate" "$LOG/firmware" bash firmware/test/run_tests.sh
 else
   skip "firmware contract + drift gate" "no firmware / pedal-codec changes"
+fi
+
+# --- appliance bundle shell suites (CI's flash-pedal-tests job) -------------
+# Globbed rather than listed, so a suite added to that directory is gated here
+# the moment it exists -- the enumerated list in main.yaml is the thing that
+# goes stale, and this is the copy nobody would remember to update.
+BT=deploy/yocto/meta-segno/recipes-segno/segno-bundle/test
+if ! touched '^deploy/yocto/meta-segno/recipes-segno/segno-bundle/'; then
+  skip "appliance bundle tests" "no segno-bundle changes"
+else
+  for suite in "$BT"/run_*_tests.sh; do
+    [ -f "$suite" ] || continue
+    sname=$(basename "$suite" .sh)
+    sname=${sname#run_}
+    gate "appliance: ${sname%_tests}" "$LOG/$sname" bash "$suite"
+  done
+  # Twice on purpose: the appliance's /bin/sh is busybox ash, so these have to
+  # hold under a strict POSIX shell too. A bash-only pass here would report
+  # green on exactly the breakage this suite exists to catch.
+  if command -v dash >/dev/null 2>&1; then
+    gate "appliance: reconcile-staged (dash)" "$LOG/reconcile_dash" \
+      env TEST_SHELL=dash bash "$BT/run_reconcile_staged_tests.sh"
+  else
+    unrun "appliance: reconcile-staged (dash)" \
+      "dash not installed (brew install dash) -- CI runs this pass"
+  fi
 fi
 
 # --- agent hooks: they run unattended on every session ----------------------

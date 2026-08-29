@@ -12,8 +12,10 @@ cd "$(dirname "$0")/../../.." || exit 1
 
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq not installed"; exit 0; }
 
-GUARD=.claude/hooks/guard-push.sh
-FORMAT=.claude/hooks/format-dart.sh
+# Absolute: some cases below cd into a fixture directory to prove the hooks
+# do not depend on the cwd.
+GUARD=$PWD/.claude/hooks/guard-push.sh
+FORMAT=$PWD/.claude/hooks/format-dart.sh
 PASS=0
 FAIL=0
 
@@ -57,14 +59,30 @@ g deny "git -c credential.helper='!gh auth git-credential' push origin A && git 
 g deny "$(printf 'git \\\n  push origin main')"
 # Wrapped pushes are still pushes -- these are ordinary agent constructs.
 g deny '(git push)'
+g deny '{ git push; }'
+g deny 'if ! git push; then echo fail; fi'
+g deny 'while ! git push; do sleep 1; done'
+g deny 'until git push; do sleep 1; done'
+# `<<` that opens no heredoc must not swallow the rest of the line, and an
+# opener's own line still runs before the body is read.
+g deny 'grep -q x <<< "abc" && git push'
+g deny 'x=$((1<<3)); git push'
+g deny 'echo "a << b" && git push'
+g deny "$(printf 'cat /tmp/f <<EOF; git push\nbody\nEOF')"
+g deny "$(printf 'cat > f <<EOF && git push\nbody\nEOF')"
 g deny 'if true; then git push; fi'
 g deny 'for b in a b; do git push origin $b; done'
 g deny 'timeout 60 git push'
 # The sanctioned marker has to be a credential.helper assignment, not prose.
 g deny 'git push origin main # remember to use gh auth git-credential'
-# Globbing must not change the verdict: `set -f` keeps `*` from expanding
-# against whatever directory the hook happens to run in.
+# Globbing must not change the verdict. Run these from a directory containing
+# a file literally named `push`: without `set -f`, `git *push*` expands to
+# `git push` and the answer starts depending on the cwd.
+GLOBDIR=$(mktemp -d); : > "$GLOBDIR/push"
+KEEP=$PWD; cd "$GLOBDIR" || exit 1
 g allow 'git add *push*'
+g allow 'git *push*'
+cd "$KEEP" || exit 1; rm -rf "$GLOBDIR"
 # A heredoc body is prose, but a real push after it is not.
 g deny "$(printf 'cat > docs/x.md <<%s\n    git push origin main\n%s\ngit push\n' "'EOF'" 'EOF')"
 
@@ -99,6 +117,14 @@ g allow "git commit -m 'document the git push workaround'"
 g allow 'git log --oneline | grep push'
 g allow 'git log --grep="push"'
 g allow "$(printf 'cat > docs/x.md <<%s\nRun:\n\n    git push origin main\n%s\n' "'EOF'" 'EOF')"
+g allow "$(printf 'cat > docs/x.md <<EOF\n    git push origin main\nEOF')"
+# A multi-line quoted argument is ONE argument, not several commands. /ship
+# tells the agent to write PR bodies explaining this very rule, so denying them
+# would break the documented flow on its own documentation.
+g allow "$(printf 'gh pr create --title "fix: x" --body "## What\n\ngit push is denied unless routed through the gh helper.\n\nCloses #937"')"
+g allow "$(printf 'git commit -m "chore: x\n\ngit push through the gh helper is the only sanctioned form.\n"')"
+g allow "$(printf 'gh pr comment 938 --body "CLAUDE.md says:\ngit push must go through the gh credential helper."')"
+g allow 'git commit -m "chore: x && git push"'
 
 # A PreToolUse hook that errors blocks the Bash tool outright, so malformed or
 # absent input must be a silent allow, never a crash. Bound the run time too:
@@ -115,12 +141,15 @@ raw 'not json at all' 'malformed json'
 raw '{"tool_name":"Read","tool_input":{"file_path":"/x"}}' 'a non-Bash payload'
 raw '{"tool_input":{"command":null}}' 'a null command'
 
-BIG=$(printf 'git commit -m "push %s"' "$(head -c 20000 /dev/zero | tr '\0' 'x')")
+# 500 kB, and a 2 s ceiling. Sized so that reverting the quote-blanking to a
+# bash character loop blows the budget rather than sneaking under it: this
+# hook runs before every Bash call, so an unbounded cost is a defect.
+BIG=$(printf 'git commit -m "push %s"' "$(head -c 500000 /dev/zero | tr '\0' 'x')")
 START=$(date +%s)
 printf '%s' "$BIG" | jq -Rs '{tool_input:{command:.}}' | bash "$GUARD" >/dev/null 2>&1
 ELAPSED=$(( $(date +%s) - START ))
 if [ "$ELAPSED" -le 2 ]; then ok; else
-  bad "guard-push: took ${ELAPSED}s on a 20 kB command -- it runs before every Bash call"
+  bad "guard-push: took ${ELAPSED}s on a 500 kB command -- it runs before every Bash call"
 fi
 
 # ---- format-dart ------------------------------------------------------------
@@ -130,7 +159,8 @@ fi
 # `package:` include resolves only through a .dart_tool/package_config.json.
 # Where that resolution fails the formatter still exits 0 while collapsing
 # every trailing comma in the file.
-VGA=$(ls -d "$HOME"/.pub-cache/hosted/pub.dev/very_good_analysis-* 2>/dev/null | tail -1)
+# Sort by version, not lexically: `ls | tail -1` picks 9.0.0 over 10.3.0.
+VGA=$(ls -d "$HOME"/.pub-cache/hosted/pub.dev/very_good_analysis-* 2>/dev/null | sort -t- -k2 -V | tail -1)
 if [ -z "$VGA" ]; then
   echo "SKIP: very_good_analysis not in the pub cache; format-dart tests need it"
 else
@@ -197,10 +227,22 @@ printf 'void broken( {\n' > "$F/ok/lib/e.dart"; fmt "$F/ok/lib/e.dart"
 expect x 'void broken( {\n' "$F/ok/lib/e.dart" "damaged a file that does not parse"
 
 # 7. Non-Dart files and missing paths are no-ops, not errors.
-printf 'x   =1\n' > "$F/ok/lib/a.txt"; fmt "$F/ok/lib/a.txt"
-expect x 'x   =1\n' "$F/ok/lib/a.txt" "touched a non-Dart file"
+# VALID, badly-formatted Dart in a .txt: unparseable content would be rejected
+# by the stderr guard instead and the suffix filter would go untested.
+printf 'void   g(int a){return;}\n' > "$F/ok/lib/a.txt"; fmt "$F/ok/lib/a.txt"
+expect x 'void   g(int a){return;}\n' "$F/ok/lib/a.txt" "touched a non-Dart file"
 fmt "$F/ok/lib/gone.dart"
 [ $? -eq 0 ] && ok || bad "format-dart: non-zero exit on a missing file"
+
+# 8. A read-only file is left alone silently. A hook has nowhere useful to put
+#    "Permission denied", and a raw shell error on every edit is worse noise
+#    than the silence.
+printf 'void   g(int a){return;}\n' > "$F/ok/lib/ro.dart"; chmod 444 "$F/ok/lib/ro.dart"
+RO_ERR=$(printf '%s' "$F/ok/lib/ro.dart" | jq -Rs '{tool_input:{file_path:.}}' | bash "$FORMAT" 2>&1)
+if [ -z "$RO_ERR" ]; then ok; else
+  bad "format-dart: leaked an error on a read-only file: $RO_ERR"
+fi
+chmod 644 "$F/ok/lib/ro.dart"
 
 rm -rf "$F"
 fi
