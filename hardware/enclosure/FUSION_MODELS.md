@@ -222,16 +222,24 @@ snapshot, save.
 
 ## LED pill diffusers (populated doc only)
 
+> **The doc is one revision behind the generator again, on purpose (#930).** It
+> holds **six** diffusers of the pre-#930 part (3 mm flange, 66 x 12 x 3.9). The
+> generator now emits **ten**, at 68 x 14 x 6.18 with a 4 mm flange and a strip
+> channel. Re-import before trusting anything rendered from it — everything
+> below is how, and the numbers below are still right because the lens origin
+> did not move.
+
 Six `led_diffuser_*` components under `lid_stack:1+diffusers:1`, each an
 imported STEP of `out/segno_led_diffuser.step`. They replaced a `led_strips`
 component that held all six as BODIES and had gone stale by a whole revision —
 it still carried the bare pre-#760 lens (59.8 x 5.8 x 2.4), no shoulder on it at
-all, long after the generator grew the 3 mm glue flange.
+all, long after the generator grew the glue flange.
 
 **Placement.** x is the pedal's `u/10`; the rotation is `SLOPE_ANGLE`
-(12.498241812070852 deg), not the pedal tilt the tiles use. Row 1 (TRACK1-4)
-sits at `ty = 13.229313, tz = 4.154294`; row 2 (CLEAR, BANK) at
-`ty = 29.420852, tz = 7.743445`.
+(12.498241812070852 deg), not the pedal tilt the tiles use. Row 1 sits at
+`ty = 13.229313, tz = 4.154294`; row 2 (CLEAR, BANK) at
+`ty = 29.420852, tz = 7.743445`. Row 1 is TRACK1-4 in the doc as it stands; on
+re-import it is all eight of row 1, since #930 gave every pedal a pill.
 
 ```
 [1,0,0,u/10 | 0,c,-s,ty | 0,s,c,tz]
@@ -242,8 +250,8 @@ body, the lens is centred in x/y and spans z 0..0.24 cm, so
 `ty = centre_y + sin(slope)*0.12` and `tz = centre_z - cos(slope)*0.12`.
 
 **Appearance is state, not material.** TRACK1 and TRACK2 carry `LED pill - green`
-(shown lit); the other four are `Plastic - Matte (White)`. Preserve that split
-across a re-import or the render silently loses its meaning.
+(shown lit); the rest are `Plastic - Matte (White)`. Preserve that split across a
+re-import or the render silently loses its meaning.
 
 **The first import into an empty component cannot be transformed.** Setting
 `transform2` on it silently does nothing — no exception, the matrix just reads

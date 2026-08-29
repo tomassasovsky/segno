@@ -487,6 +487,21 @@ LED_PKG_Z_CLR = 0.15      # ...and the shoulder is only really the stop if the
                           # LED_SHOULDER exists to prevent. 0.15 of air makes the
                           # order unambiguous and is nothing optically.
 LED_WALL_MIN  = 0.6       # channel wall floor; the flange edge caps the outside
+LED_LAND_MIN  = 2.4       # faceplate metal left between the shoulder's front edge
+                          # and the pedal aperture behind it -- the land the flange
+                          # is glued to. THIS IS A TRIPWIRE AT THE CURRENT VALUE,
+                          # NOT A MARGIN, and it is an OPEN OWNER CALL (#930):
+                          # a 12 mm strip needs LED_INS_FLANGE >= 3.9 (channel
+                          # wall + LED_WALL_MIN), which at LED_GAP = 12 leaves at
+                          # most 2.51 -- so the 3.0 the first version of this gate
+                          # asked for and a 12 mm strip cannot both hold here.
+                          # 3.0 never held anyway: it was measured off LED_GAP
+                          # instead of the emitted aperture, and the true land was
+                          # 3.41 before this PR and is 2.41 now. To get 3.0 back,
+                          # LED_GAP has to go to ~12.6 -- which moves all ten pills
+                          # AND their legends, so it is a layout decision, not a
+                          # tolerance one. Anything that eats further into the land
+                          # now fails the build.
 D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
                      # the vendor STEP shows the thread OD needs the 0.2, #762)
 # EC11 anti-rotation tab: NO keyway in the disc (user call 2026-08-19: the
@@ -1032,9 +1047,10 @@ PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - LABEL_DV_LED - FSW_SLOT_D / 2.
 # The band top is the play triangle's tip -- it is the tallest thing in row 1,
 # taller than the cap height of UNDO/MODE, so it is what the eye reads as the
 # edge of the legend band.
-ROW1_LEGEND_TOP = (PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + LABEL_DV_PLAIN
-                   + SILK_H * (SILK_CAP / 2.0 + SILK_TRI_H / 2.0))
-ENC_V        = (ROW1_LEGEND_TOP + (SCREEN_TOP_V - SMALL_H)) / 2.0
+# ROW1_LEGEND_TOP / ENC_V are defined further down, once NO_LED_PEDALS and _ROW1
+# exist -- the band top depends on WHICH label offset row 1 actually uses, and
+# that is a function of the tuple. Writing LABEL_DV_PLAIN here was what made this
+# go stale twice (see there).
 
 # Front row of 8, EVENLY spaced across the faceplate (no 4+4 grouping).
 _ROW1 = ["REC/PLAY", "STOP", "UNDO", "MODE", "TRACK1", "TRACK2", "TRACK3", "TRACK4"]
@@ -1087,6 +1103,19 @@ NO_LED_PEDALS = ()
 
 def _has_led(label):
     return label not in NO_LED_PEDALS
+
+# Row 1's legend band top, and the encoder that is centred against it. The offset
+# is READ OFF the pedals rather than written: a row-1 label sits at LABEL_DV_LED
+# or LABEL_DV_PLAIN depending on NO_LED_PEDALS, and that tuple has now changed
+# twice (#792 emptied row 1 of pills, #930 refilled it). Both times this line
+# still said LABEL_DV_PLAIN while every row-1 label had moved, which left ENC_V
+# 7.5 mm low and quietly broke the centred rule above -- the legends moved in the
+# DXF and the ring did not.
+_ROW1_LABEL_DV = max(LABEL_DV_LED if _has_led(lb) else LABEL_DV_PLAIN
+                     for lb in _ROW1)
+ROW1_LEGEND_TOP = (PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + _ROW1_LABEL_DV
+                   + SILK_H * (SILK_CAP / 2.0 + SILK_TRI_H / 2.0))
+ENC_V        = (ROW1_LEGEND_TOP + (SCREEN_TOP_V - SMALL_H)) / 2.0
 
 # Legends. Two transport controls read as SYMBOLS rather than words (owner call
 # 2026-08-21): "REC/PLAY" was a two-line block eating the tallest label slot on
@@ -1664,15 +1693,25 @@ def _check(strict_board_mount=True):
         assert clr >= 0.8, f"SCREW_BOSS: only {clr:.1f} mm under the faceplate at v={v_screw:.0f}"
 
     # 3b*. the LED diffuser's glue shoulder must not reach the pedal aperture it
-    # sits behind. The shoulder grew 3 -> 4 in #930 to take a 12 mm strip, and
-    # the pill is only LED_GAP behind the slot, so this is the constraint that
-    # bounds any further widening -- it used to have 6 mm of room and now has 5.
-    fl_reach = LED_SLOT_H / 2.0 + LED_INS_FLANGE
-    slot_gap = LED_GAP - fl_reach
-    assert slot_gap >= 3.0, (
-        f"LED_DIFFUSER: shoulder reaches to {fl_reach:.1f} mm of the pill centre, "
-        f"leaving only {slot_gap:.1f} mm to the pedal aperture "
-        f"(LED_GAP={LED_GAP}); widen LED_GAP or narrow LED_INS_FLANGE")
+    # sits behind: what is left between them is the metal the flange is glued to.
+    #
+    # MEASURED OFF THE EMITTED CUTS, not off LED_GAP. LED_GAP is referenced to
+    # v + FSW_SLOT_D/2, but the aperture is NOT cut there -- PEDAL_AP_DEV (2.59)
+    # shifts it rearward for the fold development (#760). Reading LED_GAP
+    # directly overstates the land by exactly that, which is how the first
+    # version of this gate reported 5.0 mm for a 2.4 mm reality and passed a
+    # condition it would have failed.
+    for lb, _u, _v in PEDALS:
+        if not _has_led(lb):
+            continue
+        ap = next(c for c in cuts if c.get("ref") == lb)
+        ls = next(c for c in cuts if c.get("ref") == lb + "_LEDSLOT")
+        land = (ls["v"] + ls["h"] / 2.0 - LED_SLOT_H / 2.0 - LED_INS_FLANGE
+                - (ap["v"] + ap["h"]))
+        assert land >= LED_LAND_MIN, (
+            f"LED_DIFFUSER {lb}: only {land:.2f} mm of faceplate between the "
+            f"shoulder edge and the pedal aperture, under the {LED_LAND_MIN} "
+            f"floor; move the pill back (LED_GAP) or narrow LED_INS_FLANGE")
     # ...and the strip channel has to survive inside that shoulder.
     assert LED_INS_FLANGE * 2 + LED_SLOT_H - LED_STRIP_W - 2 * LED_STRIP_CLR >= 2 * LED_WALL_MIN, (
         f"LED_DIFFUSER: a {LED_STRIP_W} strip leaves under {LED_WALL_MIN} of wall "

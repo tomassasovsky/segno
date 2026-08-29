@@ -95,12 +95,19 @@ per colour at 5 V is exactly 20 mA.
 | pills white + gradient, ring full white | 4.44 A | 9.58 A | 96% |
 | everything full white, no gradient | 6.24 A | 11.38 A | **114%** |
 
-Normal operation is **1.24 A of LED**, and **no brightness cap is needed** — the
-gradient is inherent to how a pill is drawn, not a limiter bolted on. Two things
-to keep in view: **white is the expensive colour**, and pills-white *and*
-ring-white together reach 96% with no margin — so if a white lamp test or a white
-"clipping" state is ever added, it is that combination, not the LED count, that
-needs the thought. And the 5.14 A non-LED baseline is **rated maxima** for two
+Normal operation is **1.24 A of LED**, and **the rail does not need a brightness
+cap** — the gradient is inherent to how a pill is drawn, not a limiter bolted on.
+Two things to keep in view: **white is the expensive colour**, and pills-white
+*and* ring-white together reach 96% with no margin — so if a white lamp test or a
+white "clipping" state is ever added, it is that combination, not the LED count,
+that needs the thought.
+
+**The rail is not the binding limit — the board path is.** BUCK_AUX is a 10 A
+buck, but the LEDs reach it through J3 (two parallel JST-XH contacts, ~6 A) and
+the console board's 0.6 mm +5 V track (~2 A per IPC-2152), both sized when the
+chain was 26 WS2812. Anything above ~2 A of LED is already past the track. That
+is an **open call (#930)** and it is a board/firmware question, not a rail one —
+see the J3 bullet below. And the 5.14 A non-LED baseline is **rated maxima** for two
 screens and the board, not measured; real draw is likely well under half, so the
 true headroom is larger than this table admits. Measure it on the bench before
 trusting either direction.
@@ -113,8 +120,13 @@ trusting either direction.
   600 mA unless **`usb_max_current_enable=1`** is set in `config.txt`. Required
   here: the touch panels and the audio interface hang off that budget.
 - The console board takes 5 V from **BUCK_AUX on J3** — four ways as two
-  parallel pairs, because JST-XH is ~3 A per contact and the LED chain alone
-  nears that.
+  parallel pairs, because JST-XH is ~3 A per contact. That pair is ~6 A, which
+  covered the chain when it was 26 WS2812. **It no longer covers the all-white
+  case**: 104 WS2812 flat out is 6.24 A through J3 *and* through the board's
+  0.6 mm +5 V track, which IPC-2152 rates at ~2 A. Normal draw (1.24 A) is
+  nowhere near either. **Open call (#930)** — cap global brightness in firmware,
+  feed the pills from BUCK_AUX directly rather than through the board, or respin
+  the board's 5 V path. See `kicad/console_board_pcb.py` (`TRACK_W`).
 - **Unverified until a build (carried from #754):** the UPERFECT 15.6" is a
   USB-C portable monitor, and many of those expect PD and run dim — or refuse
   to light — on a plain non-PD 5 V feed. BUCK_AUX is exactly that. Verify the

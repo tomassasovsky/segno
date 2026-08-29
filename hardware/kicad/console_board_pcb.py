@@ -76,7 +76,8 @@ MOUNT_INSET = 5.0               # mounting-hole centres, in from each corner.
 
 # Widths per the pcb-layout skill (IPC-2152 rule of thumb): ~1.0 mm for
 # power/ground, ~0.6 mm for signal. The first cut used 0.35/0.8, which is
-# under-sized on both counts -- the +5V rail feeds 22 WS2812s as well as logic.
+# under-sized on both counts -- the +5V rail feeds the whole WS2812 chain as well
+# as logic.
 # ONE width, 0.6 mm, and it is what the board actually gets: Freerouting takes the
 # width from the DSN netclass, so this constant only reaches copper via the GND
 # stubs. There used to be a TRACK_PWR = 1.0 beside it "for +5V/+3V3" -- it was read
@@ -84,11 +85,23 @@ MOUNT_INSET = 5.0               # mounting-hole centres, in from each corner.
 # so the rails have been 0.6 mm all along while a constant said otherwise.
 #
 # 0.6 mm is the right answer anyway, and this is the arithmetic rather than a shrug.
-# Worst case on +5V is 26 WS2812s flat out (16 ring + 10 indicators) at 60 mA =
-# 1.56 A, plus ~60 mA of Pico and AHCT logic. IPC-2152 gives a 0.6 mm external trace
-# in 1 oz copper about 2 A for a 10 degC rise, so the margin is ~20%, and the IR drop
-# over the ~60 mm from J3 to J6/J7 is 1.6 A x 0.049 ohm = 81 mV -- a WS2812 chain
-# entering at 4.92 V. Verified after routing by MIN_PWR_TRACK_W in export().
+# IPC-2152 gives a 0.6 mm external trace in 1 oz copper about 2 A for a 10 degC
+# rise. This board was sized against 26 WS2812s flat out (16 ring + 10 single-LED
+# indicators) at 60 mA = 1.56 A plus ~60 mA of logic -- ~20% of margin, and 81 mV
+# of IR drop over the ~60 mm from J3 to J6/J7.
+#
+# *** THAT PREMISE NO LONGER HOLDS AND THIS IS AN OPEN OWNER CALL (#930). ***
+# The console now carries 104 WS2812 -- ten EIGHT-LED pill segments plus a Ring
+# 24, not ten single pucks plus a Ring 16 (hardware/enclosure/segno_enclosure.py,
+# LED_STRIP_N). All-white that is 6.24 A, three times what this trace is rated
+# for, and past J3 as well: two parallel JST-XH contacts on 5V is ~6 A. See the
+# state table in hardware/segno_wiring.md -- NORMAL draw is 1.24 A and fine; it
+# is the all-white states that are not. The board is unchanged here because the
+# fix is a choice this file does not get to make: cap global brightness in
+# firmware, feed the pills from BUCK_AUX directly instead of through the board,
+# or respin with a poured 5V rail and a bigger connector.
+# MIN_PWR_TRACK_W in export() is a WIDTH check, not a current one -- it will not
+# catch this.
 TRACK_W = 0.6                   # every routed track, signal and rail alike
 VIA_D, VIA_DRILL = 0.8, 0.4
 CLEARANCE = 0.25

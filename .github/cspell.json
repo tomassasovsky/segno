@@ -25,7 +25,6 @@
     "**/third_party/vst3sdk/**"
   ],
   "words": [
-    "LOAMLIN",
     "Ableton",
     "accum",
     "aconnect",
@@ -415,6 +414,7 @@
     "linuxexport",
     "linuxmain",
     "loadability",
+    "LOAMLIN",
     "LOCALAPPDATA",
     "localizable",
     "lockfree",
