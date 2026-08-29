@@ -85,24 +85,35 @@ if [ -z "${SEGNO_ALSA_PERIODS:-}" ]; then
   SEGNO_ALSA_PERIODS="$(ssh -o BatchMode=yes "$HOST" '
     pid=$(pidof segno 2>/dev/null | cut -d" " -f1)
     [ -n "$pid" ] || pid=$(pgrep -n -x segno 2>/dev/null)
+    v=""
     if [ -n "$pid" ] && [ -r "/proc/$pid/environ" ]; then
-      tr "\0" "\n" < "/proc/$pid/environ" |
-        sed -n "s/^SEGNO_ALSA_PERIODS=//p" | tail -1
-    else
+      v=$(tr "\0" "\n" < "/proc/$pid/environ" |
+            sed -n "s/^SEGNO_ALSA_PERIODS=//p" | tail -1)
+    fi
+    # Gate on the VALUE, not on whether a pid was readable: an app started by
+    # hand, or a pre-#734 image, is running with no such variable at all, and
+    # the launcher default is still the right answer for what this unit ships.
+    if [ -z "$v" ]; then
       # Matches the current `SEGNO_ALSA_PERIODS_DEFAULT=4` and the pre-#818
       # `export SEGNO_ALSA_PERIODS=8`.
-      sed -n "s/.*SEGNO_ALSA_PERIODS\(_DEFAULT\)\{0,1\}:\{0,1\}=\([0-9][0-9]*\).*/\2/p" \
-        /usr/bin/segno-kiosk-launch 2>/dev/null | tail -1
+      v=$(sed -n "s/.*SEGNO_ALSA_PERIODS\(_DEFAULT\)\{0,1\}:\{0,1\}=\([0-9][0-9]*\).*/\2/p" \
+            /usr/bin/segno-kiosk-launch 2>/dev/null | tail -1)
     fi
+    printf "%s" "$v"
   ' 2>/dev/null || true)"
 fi
-if [ -z "${SEGNO_ALSA_PERIODS:-}" ]; then
-  echo "==> WARNING: could not read SEGNO_ALSA_PERIODS from $HOST (service not" \
-       "running and no readable launcher?). Profiling at 4; the unit may run" \
-       "another depth, which would make every capture-path number describe a" \
-       "build it is not running." >&2
-  SEGNO_ALSA_PERIODS=4
-fi
+# Digits only. The value is either operator-supplied or scraped off the unit,
+# and it is interpolated into the remote shell below -- so anything else is
+# rejected here rather than word-split (or executed) there.
+case "${SEGNO_ALSA_PERIODS:-}" in
+  '' | *[!0-9]*)
+    echo "==> WARNING: no usable SEGNO_ALSA_PERIODS from $HOST" \
+         "(got '${SEGNO_ALSA_PERIODS:-}'). Profiling at 4; if the unit runs" \
+         "another depth, every capture-path number here describes a build it" \
+         "is not running." >&2
+    SEGNO_ALSA_PERIODS=4
+    ;;
+esac
 echo "==> SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS"
 
 echo "==> stopping segno.service"

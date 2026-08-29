@@ -220,12 +220,21 @@ class SettingsRepository {
   /// entry is left in place for exactly that reason, and so a downgrade to a
   /// pre-#809 build still finds its own correct value.
   ///
-  /// Ordering, when the qualified key is empty: another period-qualified key
-  /// first, then the legacy one (see the body for why that way round). The
-  /// sibling path is what keeps a unit calibrated across a shipped depth
-  /// change; without it a unit whose only calibration was measured while the
-  /// knob was already engaged gets `null` — no compensation, and on the
-  /// appliance no auto re-measure to catch it.
+  /// Ordering, when the qualified key is empty: the legacy key first (least
+  /// modelled — and at the shipped periods=4 its delta is 0, so it is the
+  /// answer verbatim), and only with no legacy entry at all, another
+  /// period-qualified key rebased onto this depth. That second path is what
+  /// keeps a unit calibrated across a shipped depth change; without it a unit
+  /// whose only calibration was measured while the knob was already engaged
+  /// gets `null` — no compensation, and on the appliance no auto re-measure
+  /// to catch it. Its cost is that it applies the model twice; see the body.
+  ///
+  /// Known limitation, not worth modelling around: with the knob engaged
+  /// saves only ever write the QUALIFIED key, so on a machine that always
+  /// runs engaged the legacy entry cannot be freshened. A unit that has
+  /// re-measured since therefore keeps a newer figure under a `.pN` that this
+  /// ordering will not prefer. Taking the exact-but-older measurement over a
+  /// twice-modelled newer one is the deliberate call.
   ///
   /// Caveat, where a re-measure WOULD have been possible: on a host with an
   /// auto-routable loopback (not the appliance — its capture device is pinned
@@ -244,60 +253,60 @@ class SettingsRepository {
     final stored = await _store.getInt(key);
     if (stored != null || _alsaPeriods == null) return stored;
     final legacyKey = _legacyLatencyKey(device, sampleRate, bufferFrames);
-    // A sibling .pN is tried BEFORE the legacy key, because with the knob
-    // engaged `saveLatencyOffsetFrames` only ever writes the qualified key.
-    // On a machine that always runs with it engaged — the appliance, whose
-    // launcher always sets SEGNO_ALSA_PERIODS — the legacy entry is therefore
-    // frozen at whatever was measured before the knob existed, while a .pN
-    // tracks every re-measure since; reading legacy first would silently
-    // discard the newer measurement. (A host that runs SOMETIMES without the
-    // variable can freshen the legacy key, so there the preference can point
-    // at the older value. Narrow, and not the case this has to be right for:
-    // such a host can re-measure, and the appliance cannot.)
+    // The legacy key comes FIRST, because it is the least modelled answer
+    // available. It was measured with the start threshold pinned at two
+    // periods, so migrating it applies the model exactly once (+delta), and
+    // at the shipped periods=4 that delta is 0 — making the stored value the
+    // right answer verbatim, with no model in the path at all.
     //
-    // Preferring the sibling never loses. One this migration derived is
-    // exactly baseline + delta, so rebasing it returns the same number the
-    // legacy path would have produced; one that was measured is simply
-    // better. Rebasing means subtracting the delta that depth added and
-    // re-adding this one's — exact, on the premise the legacy path rests on.
-    //
-    // It also covers the case that has no legacy entry AT ALL: a unit first
-    // measured while the knob was already engaged never wrote one, so a
-    // shipped depth change (#818 took the appliance 8 -> 4) would otherwise
-    // hand it null — no compensation, nothing surfaced, and on the appliance
-    // no auto re-measure to notice.
-    //
-    // Closest depth first, so the least-extrapolated sibling wins when more
-    // than one exists. Nothing records whether a stored value was measured or
-    // derived, so if two depths were each independently re-measured the pick
-    // between them is arbitrary; closest is at least deterministic.
-    final byDistance =
-        [
-          for (var p = _minAlsaPeriods; p <= _maxAlsaPeriods; p++)
-            if (p != _alsaPeriods) p,
-        ]..sort((a, b) {
-          final da = (a - _alsaPeriods).abs();
-          final db = (b - _alsaPeriods).abs();
-          return da == db ? b.compareTo(a) : da.compareTo(db);
-        });
-    for (final periods in byDistance) {
-      final sibling = await _store.getInt('$legacyKey.p$periods');
-      if (sibling == null) continue;
-      final baseline = sibling - _deltaFramesAt(bufferFrames, periods);
-      // A stored value smaller than its own depth's delta cannot have come
-      // from this model (the deltas grow with the buffer: p8 at 512 frames is
-      // 1024). Rebasing it would write a non-positive offset, and since both
-      // consumers gate on `> 0` the unit would then run with NO compensation
-      // while the qualified key it now holds stops it ever consulting the
-      // legacy baseline again. Skip such a sibling and let the scan fall
-      // through.
-      if (baseline <= 0) continue;
-      final migrated = baseline + _startThresholdDeltaFrames(bufferFrames);
-      await _store.setInt(key, migrated);
-      return migrated;
-    }
+    // That matters because the model is not the measurement. This PR's own
+    // sweep moved the digital round trip 480 -> 376 frames going 8 -> 4, i.e.
+    // 104, where `_deltaFramesAt(64, 8)` says 128. Rebasing a sibling applies
+    // the model TWICE (subtract its depth's delta, add this one's) and so
+    // injects that ~24-frame error; preferring the legacy entry avoids it.
     final legacy = await _store.getInt(legacyKey);
-    if (legacy == null) return null;
+    if (legacy == null) {
+      // No pre-#809 baseline. Not the "never calibrated" case it looks like:
+      // a unit whose first ever measurement was taken while the knob was
+      // ALREADY engaged never wrote one, so its calibration sits under some
+      // other .pN. Without this a shipped depth change (#818 took the
+      // appliance 8 -> 4) would hand it null — no compensation, nothing
+      // surfaced, and on the appliance no auto re-measure to notice.
+      //
+      // Rebase it: subtract the delta that depth added to recover the
+      // baseline, then add this one's. Modelled, per the note above, but a
+      // modelled offset beats no offset.
+      //
+      // Closest depth first, so more than one sibling is deterministic rather
+      // than whichever the scan reached. Nothing records whether a stored
+      // value was measured or derived, so between two independently measured
+      // depths the pick is arbitrary; closest is at least stable.
+      final byDistance =
+          [
+            for (var p = _minAlsaPeriods; p <= _maxAlsaPeriods; p++)
+              if (p != _alsaPeriods) p,
+          ]..sort((a, b) {
+            final da = (a - _alsaPeriods).abs();
+            final db = (b - _alsaPeriods).abs();
+            return da == db ? b.compareTo(a) : da.compareTo(db);
+          });
+      for (final periods in byDistance) {
+        final sibling = await _store.getInt('$legacyKey.p$periods');
+        if (sibling == null) continue;
+        final baseline = sibling - _deltaFramesAt(bufferFrames, periods);
+        // A stored value smaller than its own depth's delta cannot have come
+        // from this model (the deltas grow with the buffer: p8 at 512 frames
+        // is 1024). Rebasing it would write a non-positive offset, and since
+        // both consumers gate on `> 0` the unit would run with NO
+        // compensation while the key it just wrote stops anything else being
+        // consulted. Skip it.
+        if (baseline <= 0) continue;
+        final rebased = baseline + _startThresholdDeltaFrames(bufferFrames);
+        await _store.setInt(key, rebased);
+        return rebased;
+      }
+      return null;
+    }
     final migrated = legacy + _startThresholdDeltaFrames(bufferFrames);
     await _store.setInt(key, migrated);
     return migrated;

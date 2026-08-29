@@ -170,6 +170,10 @@ if [ "$SEGNO_ALSA_PERIODS" -eq "$SEGNO_ALSA_PERIODS_DEFAULT" ] 2>/dev/null ||
    [ "$SEGNO_ALSA_PERIODS" = "$SEGNO_ALSA_PERIODS_DEFAULT" ]; then
   echo "segno-kiosk-launch: SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS (shipped default)" >&2
 else
-  echo "segno-kiosk-launch: SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS overrides the shipped $SEGNO_ALSA_PERIODS_DEFAULT -- moves monitor latency AND the record-offset key" >&2
+  # The raw value is logged, so name the clamp rather than reimplement it:
+  # both the engine (le_alsa_periods_from_env) and the Dart record-offset key
+  # (alsaPeriodsFromEnvironment) fold this into [2,8], so an out-of-range
+  # value here is NOT the depth that ran.
+  echo "segno-kiosk-launch: SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS overrides the shipped $SEGNO_ALSA_PERIODS_DEFAULT -- moves monitor latency AND the record-offset key (clamped into [2,8] by the engine)" >&2
 fi
 exec /opt/segno/segno "$@"
