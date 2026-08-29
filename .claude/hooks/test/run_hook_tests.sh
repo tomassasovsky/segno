@@ -74,6 +74,9 @@ g allow "git -c credential.helper='!gh auth git-credential' push -u origin b 2>&
 g allow "$(printf 'git \\\n  -c credential.helper=%s push origin main' "'!gh auth git-credential'")"
 # Not pushes at all.
 g allow 'git status'
+# Deliberate: `gh pr create` does push internally, but it is the sanctioned way
+# to open a PR and the /ship flow depends on it. Denying it to catch that push
+# would break the documented path.
 g allow 'gh pr create --fill'
 g allow 'ls'
 g allow ''

@@ -30,8 +30,21 @@
 #   - the command is split on ; && || | and newlines, and each segment is
 #     judged on its own, so one sanctioned push no longer whitelists a bare
 #     push later in the same chain;
-#   - a segment only counts if `git` is its first word and `push` appears as a
-#     whole word -- `git push-something` and `echo git push` are not pushes.
+#   - a segment only counts if `git` is its first word and `push` lands in the
+#     SUBCOMMAND slot -- `git push-something`, `git stash push` and
+#     `echo git push` are not pushes.
+#
+# Known and deliberate gaps, all in the allow direction: a push hidden inside a
+# quoted string (`bash -c "git push"`, `eval "git push"`) or a command
+# substitution is not seen, because blanking quoted spans is the same mechanism
+# that stops `git commit -m "document the git push workaround"` from being
+# denied. Reading inside quotes would buy those rare forms at the price of
+# denying ordinary prose about pushing, in a repo whose CLAUDE.md,
+# docs/TRACKING.md and skills/ship/SKILL.md all discuss it. `gh pr create` is
+# allowed on purpose too -- it is the sanctioned way to open a PR, and denying
+# the documented /ship flow to catch its internal push would be a worse trade.
+# A guard that misfires on routine commands is one the next session works
+# around, and then it protects nothing.
 set -uo pipefail
 
 command -v jq >/dev/null 2>&1 || exit 0
