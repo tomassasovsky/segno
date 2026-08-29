@@ -58,6 +58,7 @@ static void le_fill_track_snapshot(le_track* tr, int active,
   out->settled_take_id =
       active ? atomic_load_explicit(&tr->a_settled_take_id, memory_order_acquire)
              : 0;
+  out->restore_state = active ? load_i32(&tr->a_restore_state) : 0;
 }
 
 /* Max added latency (frames) across every active octaver in any record-route or
@@ -290,6 +291,7 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->sync_divisor = 0;
     out->one_shot = 0;
     out->settled_take_id = 0;
+    out->restore_state = 0;
     return;
   }
   le_fill_track_snapshot(&engine->tracks[channel], 1, out);
