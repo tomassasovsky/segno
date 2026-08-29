@@ -35,6 +35,8 @@
  *   ./bench_tuner.sh --sr 96000 --frames 32   # the tightest shipped deadline
  *   ./bench_tuner.sh --tracks 4 --lanes 2 --blocks 200000
  */
+#include <errno.h>
+#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -98,6 +100,12 @@ static le_engine* make_engine(int sr, int frames, int tracks, int lanes) {
   }
   float* in = (float*)calloc((size_t)frames * 2, sizeof(float));
   float* out = (float*)calloc((size_t)frames * 2, sizeof(float));
+  if (in == NULL || out == NULL) {
+    free(in);
+    free(out);
+    le_engine_destroy(e);
+    return NULL;
+  }
   long phase = 0;
   const int loop_blocks = (sr / 2) / frames; /* ~0.5 s per loop */
   for (int t = 0; t < tracks; ++t) {
@@ -128,7 +136,17 @@ static double run(int sr, int frames, int tracks, int lanes, int blocks,
 
   float* in = (float*)calloc((size_t)frames * 2, sizeof(float));
   float* out = (float*)calloc((size_t)frames * 2, sizeof(float));
+  /* --blocks scales this array without bound; a failed allocation here would
+   * otherwise be a segfault in the timing loop rather than a message. */
   uint64_t* ns = (uint64_t*)malloc(sizeof(uint64_t) * (size_t)blocks);
+  if (in == NULL || out == NULL || ns == NULL) {
+    printf("  %-8s OUT OF MEMORY (%d blocks)\n", label, blocks);
+    free(ns);
+    free(in);
+    free(out);
+    le_engine_destroy(e);
+    return 0.0;
+  }
   long phase = 0;
 
   /* Warm up: drains the arm command, fills the tuner's windows, and settles
@@ -163,6 +181,33 @@ static double run(int sr, int frames, int tracks, int lanes, int blocks,
   return mean;
 }
 
+static void usage(const char* argv0) {
+  fprintf(stderr,
+          "usage: %s [--sr N] [--frames N] [--blocks N] "
+          "[--tracks N --lanes N]\n",
+          argv0);
+}
+
+/* Every option here is a divisor, an array length or a loop count: --sr 0
+ * divides by zero in the deadline print, --blocks 0 divides by zero for the
+ * mean and reads ns[-1], and a negative --blocks wraps the malloc size. atoi
+ * reports none of that, so parse strictly and refuse anything out of range —
+ * this is committed tooling, meant to be re-run by hand on the appliance, not
+ * a throwaway. Returns 0 on success and -1 after printing the reason. */
+static int parse_positive(const char* flag, const char* text, int max,
+                          int* out) {
+  char* end = NULL;
+  errno = 0;
+  const long v = strtol(text, &end, 10);
+  if (end == text || *end != '\0' || errno == ERANGE || v < 1 || v > max) {
+    fprintf(stderr, "%s: expected an integer in [1, %d], got \"%s\"\n", flag,
+            max, text);
+    return -1;
+  }
+  *out = (int)v;
+  return 0;
+}
+
 int main(int argc, char** argv) {
   int sr = 96000;
   int frames = 32;
@@ -171,23 +216,34 @@ int main(int argc, char** argv) {
   int lanes = -1;
   for (int i = 1; i < argc; ++i) {
     const int more = i + 1 < argc;
+    int rc = 0;
     if (strcmp(argv[i], "--sr") == 0 && more) {
-      sr = atoi(argv[++i]);
+      rc = parse_positive("--sr", argv[++i], 768000, &sr);
     } else if (strcmp(argv[i], "--frames") == 0 && more) {
-      frames = atoi(argv[++i]);
+      rc = parse_positive("--frames", argv[++i], 16384, &frames);
     } else if (strcmp(argv[i], "--blocks") == 0 && more) {
-      blocks = atoi(argv[++i]);
+      rc = parse_positive("--blocks", argv[++i], 100000000, &blocks);
     } else if (strcmp(argv[i], "--tracks") == 0 && more) {
-      tracks = atoi(argv[++i]);
+      rc = parse_positive("--tracks", argv[++i], LE_MAX_TRACKS, &tracks);
     } else if (strcmp(argv[i], "--lanes") == 0 && more) {
-      lanes = atoi(argv[++i]);
+      rc = parse_positive("--lanes", argv[++i], LE_MAX_LANES, &lanes);
     } else {
-      fprintf(stderr,
-              "usage: %s [--sr N] [--frames N] [--blocks N] "
-              "[--tracks N --lanes N]\n",
-              argv[0]);
+      usage(argv[0]);
       return 2;
     }
+    if (rc != 0) return 2;
+  }
+  /* --tracks and --lanes select one configuration together; honouring half a
+   * pair would silently run the default sweep instead of what was asked for. */
+  if ((tracks > 0) != (lanes > 0)) {
+    fprintf(stderr, "--tracks and --lanes must be given together\n");
+    return 2;
+  }
+  /* A loop must be at least one block long or make_engine records nothing. */
+  if ((sr / 2) / frames < 1) {
+    fprintf(stderr, "--frames %d is longer than half a second at --sr %d\n",
+            frames, sr);
+    return 2;
   }
 
   const int sweep[][2] = {{1, 1}, {4, 2}, {8, 4}};
