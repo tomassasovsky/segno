@@ -748,12 +748,13 @@ void main() {
       expect(cubit.state.bufferChoices, [32, 64, 128, 256, 512]);
     });
 
-    test('an off-list buffer snaps to 128, not to the tightest option', () {
+    test('an off-list buffer snaps to its neighbour, not to the tightest', () {
       // 480 is a period the grid cannot show — an ALSA quantum negotiated by
       // some device. The snap exists so a chip stays lit, so it has to land
       // somewhere; `bufferChoices.first` is 32 now, and landing an UNCHOSEN
       // selection on the least-proven deadline (then persisting it) is what
-      // the 128 preference guards against.
+      // the nearest-offered rule guards against. 512 is also what the user
+      // effectively had, which 128 would have thrown away.
       when(() => repository.lastEngineConfig).thenReturn(
         const EngineConfig(sampleRate: 48000, bufferFrames: 480),
       );
@@ -765,7 +766,33 @@ void main() {
       addTearDown(cubit.close);
 
       expect(cubit.state.bufferChoices, [32, 64, 128, 256, 512]);
-      expect(cubit.state.bufferFrames, 128);
+      expect(cubit.state.bufferFrames, 512);
+    });
+
+    test('a low-latency pick is approximated, not reset to the default', () {
+      // Someone who chose 32 and then switches to a driver that cannot do it
+      // should land on the closest thing it CAN do, not be silently bumped to
+      // the default two steps away.
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(sampleRate: 48000, bufferFrames: 32),
+      );
+      when(repository.asioDrivers).thenReturn(const [
+        AudioDevice(
+          id: 'Mid ASIO',
+          name: 'Mid ASIO',
+          isDefault: false,
+          isInput: false,
+          inputChannels: 2,
+          outputChannels: 2,
+          bufferSizes: [64, 128, 256],
+          sampleRates: [48000],
+        ),
+      ]);
+
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+
+      expect(cubit.state.bufferFrames, 64);
     });
 
     test('a driver set below 128 snaps to its largest, not its first', () {

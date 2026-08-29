@@ -222,12 +222,13 @@ class AudioSetupState extends Equatable {
   /// Selectable sample rates.
   static const sampleRates = [44100, 48000, 96000];
 
-  /// The buffer size used until the user (or a device) says otherwise, and the
-  /// one a snap prefers when the current selection is not on offer (see
-  /// `AudioSetupCubit._snapRateAndBuffer`). Named because those two have to
-  /// agree: move this out of [bufferSizes] and every fresh snap lands on the
-  /// nearest offered size ABOVE it instead — quietly one notch slacker than
-  /// the default this names, on every rig at once.
+  /// The buffer size a fresh state starts on, until the user or a device says
+  /// otherwise. Named rather than left a literal in the constructor because it
+  /// is the figure the rest of the audio setup is reasoned about against — the
+  /// latency hints, the goldens, and the period this app is assumed to be
+  /// running at when nothing has chosen one. It must stay a member of
+  /// [bufferSizes]: a default the picker cannot show would leave no chip lit
+  /// on first run.
   static const defaultBufferFrames = 128;
 
   /// Selectable buffer sizes.
