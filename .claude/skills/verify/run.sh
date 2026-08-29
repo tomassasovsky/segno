@@ -28,6 +28,7 @@ touched() { echo "$CHANGED" | grep -qE "$1"; }
 LOG=$(mktemp -d)
 RESULTS=""
 FAILED=0
+UNVERIFIED=0
 
 record() { RESULTS="${RESULTS}$1\t$2\t$3\n"; }
 
@@ -42,7 +43,13 @@ gate() { # gate <name> <logfile> <cmd...>
   fi
 }
 
-skip() { record "SKIP" "$1" "$2"; }
+# Two different things wear the word "skip", and collapsing them is how a
+# verify run reports success having verified nothing:
+#   skip  -- the gate does not apply to this diff. A real answer.
+#   unrun -- the gate applies but a fixable local condition stopped it (no
+#            `pub get`, no `bloc` CLI). NOT a pass; the run ends non-zero.
+skip()  { record "SKIP" "$1" "$2"; }
+unrun() { record "UNRUN" "$1" "$2"; UNVERIFIED=$((UNVERIFIED + 1)); }
 
 # Every Dart gate needs a resolved package graph. Without one, `analyze` invents
 # tens of thousands of phantom errors and `format` rewrites the whole repo, so
@@ -50,20 +57,29 @@ skip() { record "SKIP" "$1" "$2"; }
 UNRESOLVED=""
 [ -f .dart_tool/package_config.json ] || UNRESOLVED="no .dart_tool/package_config.json -- run \`$FLUTTER pub get\` first"
 
+# Nothing Dart-shaped moved, so neither analysis nor formatting can have
+# regressed -- the same predicate the test gates use.
+DART_TOUCHED=1
+touched '\.(dart|arb)$|^pubspec\.(yaml|lock)$|^assets/' || DART_TOUCHED=0
+
 # --- static analysis --------------------------------------------------------
-if [ -z "$UNRESOLVED" ]; then
+if [ "$DART_TOUCHED" = 0 ]; then
+  skip "dart analyze" "no Dart/arb/asset changes"
+elif [ -z "$UNRESOLVED" ]; then
   gate "dart analyze" "$LOG/analyze" "$DART" analyze
 else
-  skip "dart analyze" "$UNRESOLVED"
+  unrun "dart analyze" "$UNRESOLVED"
 fi
 
 # --- format: CI gates this --------------------------------------------------
-if [ -z "$UNRESOLVED" ]; then
+if [ "$DART_TOUCHED" = 0 ]; then
+  skip "dart format" "no Dart/arb/asset changes"
+elif [ -z "$UNRESOLVED" ]; then
   gate "dart format --set-exit-if-changed" "$LOG/format" \
     "$DART" format --set-exit-if-changed --output=none \
     lib test packages/*/lib packages/*/test
 else
-  skip "dart format" "$UNRESOLVED"
+  unrun "dart format" "$UNRESOLVED"
 fi
 
 # --- bloc lint: carries rules dart analyze does not -------------------------
@@ -74,8 +90,11 @@ if command -v bloc >/dev/null 2>&1; then
   BL="$LOG/bloclint"
   bloc lint lib test packages >"$BL" 2>&1
   BL_RC=$?
-  if [ $BL_RC -eq 64 ] || grep -qiE "analyzed 0 |no files" "$BL"; then
-    skip "bloc lint" "checked 0 files (exit $BL_RC) -- known worktree no-op; must be run from the main checkout"
+  # 64 is EX_USAGE -- a genuinely broken invocation reports it too, so do not
+  # take the code alone as proof of the known no-op. Only a run that actually
+  # says it checked nothing is a no-op; a bare 64 is a failure.
+  if grep -qiE "analyzed 0 |no files" "$BL"; then
+    unrun "bloc lint" "checked 0 files (exit $BL_RC) -- known worktree no-op; must be run from the main checkout"
   elif [ $BL_RC -eq 0 ]; then
     record "PASS" "bloc lint" ""
   else
@@ -83,7 +102,7 @@ if command -v bloc >/dev/null 2>&1; then
     FAILED=1
   fi
 else
-  skip "bloc lint" "bloc CLI not on PATH (dart pub global activate bloc_tools)"
+  unrun "bloc lint" "bloc CLI not on PATH (dart pub global activate bloc_tools)"
 fi
 
 # --- Dart/Flutter tests: when any Dart or asset/l10n input moved -------------
@@ -96,7 +115,7 @@ fi
 if ! touched '\.(dart|arb)$|^pubspec\.(yaml|lock)$|^assets/'; then
   skip "flutter test" "no Dart/arb/asset changes"
 elif [ -n "$UNRESOLVED" ]; then
-  skip "flutter test" "$UNRESOLVED"
+  unrun "flutter test" "$UNRESOLVED"
 else
   gate "flutter test (root app)" "$LOG/test" "$FLUTTER" test
 fi
@@ -109,7 +128,7 @@ pkg_test() { # pkg_test <package-dir> <runner>
   if ! touched "^packages/$pkg/"; then
     skip "$name" "unchanged"
   elif [ ! -f "packages/$pkg/.dart_tool/package_config.json" ]; then
-    skip "$name" "unresolved -- run \`$FLUTTER pub get\` in packages/$pkg"
+    unrun "$name" "unresolved -- run \`$FLUTTER pub get\` in packages/$pkg"
   else
     gate "$name" "$LOG/test_$pkg" bash -c "cd 'packages/$pkg' && '$runner' test"
   fi
@@ -169,7 +188,7 @@ fi
 # --- report -----------------------------------------------------------------
 echo
 echo "verify vs $BASE"
-printf "%b" "$RESULTS" | awk -F'\t' '{printf "  %-5s %-34s %s\n", $1, $2, ($1=="SKIP" ? $3 : "")}'
+printf "%b" "$RESULTS" | awk -F'\t' '{printf "  %-7s %-34s %s\n", $1, $2, ($1=="PASS" ? "" : $3)}'
 
 if [ $FAILED -eq 1 ]; then
   echo
@@ -182,8 +201,15 @@ if [ $FAILED -eq 1 ]; then
   echo
   echo "(full logs under $LOG)"
   echo
-  printf "%b" "$RESULTS" | awk -F'\t' '{printf "  %-5s %-34s %s\n", $1, $2, ($1=="SKIP" ? $3 : "")}'
+  printf "%b" "$RESULTS" | awk -F'\t' '{printf "  %-7s %-34s %s\n", $1, $2, ($1=="PASS" ? "" : $3)}'
   exit 1
+fi
+
+if [ $UNVERIFIED -gt 0 ]; then
+  echo
+  echo "UNVERIFIED -- $UNVERIFIED gate(s) apply to this diff but could not run."
+  echo "Fix the reasons above and re-run. This is not a pass."
+  exit 3
 fi
 
 echo

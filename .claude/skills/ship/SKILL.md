@@ -18,8 +18,10 @@ bash .claude/skills/ship/precheck.sh "<proposed pr title>" [base-ref]
 
 Checks the two CI gates that are cheap here and irritating in CI:
 
-- **Semantic PR title** — CI runs `semantic_pull_request`. Conventional commits:
-  `type(scope): description`, lowercase description, no trailing period.
+- **Semantic PR title** — CI runs `semantic_pull_request`, which checks the
+  `type(scope): description` shape and nothing else. Lowercase subjects and no
+  trailing period are house style, so precheck reports them as WARN, not FAIL —
+  a local gate stricter than CI is one you learn to route around.
 - **cspell over changed Markdown** — CI spell-checks `**/*.md` with
   `modified_files_only: false`, so one new word in a doc fails the run for
   everyone. Unknown-but-correct words go in `.github/cspell.json` under
@@ -52,8 +54,10 @@ checkout, `git add` sweeps up the other's in-flight edits — the result analyse
 clean locally and fails CI with changes nobody meant to send. Stage explicit
 paths, never `git add -A`.
 
-`.claude/*` is gitignored with a few files force-added, so new files there need
-`git add -f`.
+`.claude/*` is gitignored except for the shared harness — `launch.json`,
+`settings.json`, `hooks/`, `agents/` and `skills/` are negated, so plain
+`git add` works there. Anything else under `.claude/` (`settings.local.json`,
+scratch) stays ignored on purpose.
 
 Push through the gh credential helper — the bare form hangs on osxkeychain here
 and silently strands the branch. A `PreToolUse` hook denies it and reminds you:

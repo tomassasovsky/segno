@@ -17,7 +17,9 @@ RC=0
 if [ -z "$TITLE" ]; then
   echo "SKIP  semantic title  (no title passed)"
 else
-  TYPES="build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test"
+  # `design` is in the list because the repo has merged one (#548) with CI
+  # green. Keep this list a mirror of what CI accepts, never a stricter one.
+  TYPES="build|chore|ci|design|docs|feat|fix|perf|refactor|revert|style|test"
   if ! printf '%s' "$TITLE" | grep -qE "^($TYPES)(\([a-z0-9 ,._/-]+\))?!?: .+"; then
     echo "FAIL  semantic title"
     echo "      '$TITLE'"
@@ -25,15 +27,21 @@ else
     echo "      types: $TYPES"
     RC=1
   else
+    echo "PASS  semantic title"
+    # Advisory only, and deliberately so. CI is
+    # very_good_workflows/semantic_pull_request.yml@v1, which sets no
+    # subjectPattern -- so casing and punctuation are unchecked there. Thirty
+    # of the last four hundred merged titles start their subject with a
+    # capital, nearly all proper nouns (`Android`, `Wi-Fi`, `AppText`,
+    # `Ableton`). A local pre-flight that fails what CI merges is a gate the
+    # agent learns to route around; keep it a subset of CI, never a superset.
     SUBJECT=${TITLE#*: }
     if printf '%s' "$SUBJECT" | grep -qE '^[A-Z][a-z]'; then
-      echo "FAIL  semantic title  (description starts with a capital: '$SUBJECT')"
-      RC=1
-    elif printf '%s' "$SUBJECT" | grep -qE '\.$'; then
-      echo "FAIL  semantic title  (description ends with a period)"
-      RC=1
-    else
-      echo "PASS  semantic title"
+      echo "WARN  semantic title  (subject starts with a capital: '$SUBJECT')"
+      echo "      house style is lowercase unless it is a proper noun. CI does not check this."
+    fi
+    if printf '%s' "$SUBJECT" | grep -qE '\.$'; then
+      echo "WARN  semantic title  (subject ends with a period). CI does not check this."
     fi
   fi
 fi
@@ -55,10 +63,19 @@ else
     # shellcheck disable=SC2086
     npx --yes cspell@latest --config .github/cspell.json --no-progress $MD >"$OUT" 2>&1
     CS_RC=$?
-    CHECKED=$(grep -oE 'Files checked: [0-9]+' "$OUT" | grep -oE '[0-9]+' | head -1)
-    if [ "${CHECKED:-0}" = "0" ]; then
-      # The repo config sets useGitignore, so gitignored paths (.claude/** among
-      # them) are skipped here exactly as they are in CI. Nothing to gate.
+    SUMMARY=$(grep -oE 'Files checked: [0-9]+' "$OUT" | head -1)
+    CHECKED=$(printf '%s' "$SUMMARY" | grep -oE '[0-9]+')
+    if [ -z "$SUMMARY" ]; then
+      # No summary line at all means cspell never ran -- npx could not fetch it,
+      # or the remote dictionaries in .github/cspell.json were unreachable.
+      # Reporting that as "nothing to check" is how a spell gate silently stops
+      # being a gate, so say what actually happened and fail.
+      echo "FAIL  cspell  (the tool did not run -- no 'Files checked' summary)"
+      sed 's/^/      /' "$OUT" | head -20
+      RC=1
+    elif [ "$CHECKED" = "0" ]; then
+      # The repo config sets useGitignore, so gitignored paths are skipped here
+      # exactly as they are in CI. Nothing to gate.
       echo "SKIP  cspell  (0 files checked -- changed Markdown is gitignored, as it is in CI)"
     elif [ $CS_RC -eq 0 ]; then
       echo "PASS  cspell  ($CHECKED file(s))"

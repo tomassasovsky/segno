@@ -55,6 +55,16 @@ g deny 'git push 2>&1 | tail -3'
 g deny "git -c credential.helper='!gh auth git-credential' push origin A && git push origin B"
 # A continuation is still one command.
 g deny "$(printf 'git \\\n  push origin main')"
+# Wrapped pushes are still pushes -- these are ordinary agent constructs.
+g deny '(git push)'
+g deny 'if true; then git push; fi'
+g deny 'for b in a b; do git push origin $b; done'
+g deny 'timeout 60 git push'
+# The sanctioned marker has to be a credential.helper assignment, not prose.
+g deny 'git push origin main # remember to use gh auth git-credential'
+# Globbing must not change the verdict: `set -f` keeps `*` from expanding
+# against whatever directory the hook happens to run in.
+g allow 'git add *push*'
 # A heredoc body is prose, but a real push after it is not.
 g deny "$(printf 'cat > docs/x.md <<%s\n    git push origin main\n%s\ngit push\n' "'EOF'" 'EOF')"
 
@@ -68,6 +78,16 @@ g allow 'gh pr create --fill'
 g allow 'ls'
 g allow ''
 g allow 'git push-something'
+# `push` outside the subcommand slot is not a push. Denying these blocks
+# routine local commands with a remediation that makes no sense for them.
+g allow 'git stash push -m wip'
+g allow 'git stash push -u'
+g allow 'git stash push --keep-index -- lib/'
+g allow 'git help push'
+g allow 'git config alias.p push'
+g allow 'git diff HEAD -- push'
+g allow 'git log --oneline --grep push'
+g allow 'git show HEAD:push'
 # Prose about pushing: reading it, grepping it, committing it, writing it.
 g allow 'echo "remember to git push later"'
 g allow 'grep -rn "git push" docs/'
@@ -101,37 +121,86 @@ if [ "$ELAPSED" -le 2 ]; then ok; else
 fi
 
 # ---- format-dart ------------------------------------------------------------
-# The one thing this hook must never do is run `dart format` in a worktree that
-# has not been `pub get`-resolved: the `formatter: trailing_commas: preserve`
-# setting reaches the formatter through analysis_options.yaml's
-# `include: package:very_good_analysis/...`, which needs
-# `.dart_tool/package_config.json`. Without it every trailing comma in the repo
-# collapses.
-f_dir=$(mktemp -d)
-mkdir -p "$f_dir/pkg/lib"
-printf 'name: fixture\nenvironment:\n  sdk: ^3.11.0\n' > "$f_dir/pkg/pubspec.yaml"
-printf 'void f(\n  int a,\n  int b,\n) {}\n' > "$f_dir/pkg/lib/a.dart"
-cp "$f_dir/pkg/lib/a.dart" "$f_dir/expected.dart"
+# The hazard: `dart format` keeps trailing commas only because
+# `formatter: trailing_commas: preserve` reaches it through
+# analysis_options.yaml's `include: package:very_good_analysis/...`, and a
+# `package:` include resolves only through a .dart_tool/package_config.json.
+# Where that resolution fails the formatter still exits 0 while collapsing
+# every trailing comma in the file.
+VGA=$(ls -d "$HOME"/.pub-cache/hosted/pub.dev/very_good_analysis-* 2>/dev/null | tail -1)
+if [ -z "$VGA" ]; then
+  echo "SKIP: very_good_analysis not in the pub cache; format-dart tests need it"
+else
+F=$(mktemp -d)
+SPLIT='void f(\n  int a,\n  int b,\n) {}\n'   # trailing commas: must survive
+UGLY='void   g(int a){return;}\n'              # must be fixed when resolvable
 
-printf '%s' "$f_dir/pkg/lib/a.dart" | jq -Rs '{tool_input:{file_path:.}}' |
-  bash "$FORMAT" >/dev/null 2>&1
-if cmp -s "$f_dir/expected.dart" "$f_dir/pkg/lib/a.dart"; then ok; else
-  bad "format-dart: reformatted a file in an unresolved package (trailing commas would collapse repo-wide)"
-fi
+mkpkg() { # mkpkg <dir> <resolved|unresolved|broken>
+  mkdir -p "$1/lib" "$1/.dart_tool"
+  printf 'name: fixture\nenvironment:\n  sdk: ^3.11.0\n' > "$1/pubspec.yaml"
+  printf 'include:\n  - package:very_good_analysis/analysis_options.yaml\n' \
+    > "$1/analysis_options.yaml"
+  case "$2" in
+    resolved) printf '{"configVersion":2,"packages":[{"name":"fixture","rootUri":"../","packageUri":"lib/","languageVersion":"3.11"},{"name":"very_good_analysis","rootUri":"file://%s","packageUri":"lib/","languageVersion":"3.9"}]}\n' "$VGA" > "$1/.dart_tool/package_config.json" ;;
+    broken) printf '{"configVersion":2,' > "$1/.dart_tool/package_config.json" ;;
+    unresolved) rm -rf "$1/.dart_tool" ;;
+  esac
+}
 
-# Non-Dart files are left alone even when resolved.
-printf 'x   =1\n' > "$f_dir/pkg/lib/a.txt"
-cp "$f_dir/pkg/lib/a.txt" "$f_dir/expected.txt"
-printf '%s' "$f_dir/pkg/lib/a.txt" | jq -Rs '{tool_input:{file_path:.}}' |
-  bash "$FORMAT" >/dev/null 2>&1
-cmp -s "$f_dir/expected.txt" "$f_dir/pkg/lib/a.txt" && ok || bad "format-dart: touched a non-Dart file"
+fmt() { printf '%s' "$1" | jq -Rs '{tool_input:{file_path:.}}' | bash "$FORMAT" >/dev/null 2>&1; }
 
-# A path that does not exist must be a no-op, not an error.
-printf '%s' "$f_dir/pkg/lib/gone.dart" | jq -Rs '{tool_input:{file_path:.}}' |
-  bash "$FORMAT" >/dev/null 2>&1
+expect() { # expect <file> <expected-content> <label>
+  local want; want=$(printf "$2")
+  if [ "$(cat "$3")" = "$want" ]; then ok; else
+    bad "format-dart: $4"$'\n'"      want: $(printf "$2" | tr '\n' '~')"$'\n'"      got:  $(tr '\n' '~' < "$3")"
+  fi
+}
+
+# 1. Resolved: trailing commas survive.
+mkpkg "$F/ok" resolved
+printf "$SPLIT" > "$F/ok/lib/a.dart"; fmt "$F/ok/lib/a.dart"
+expect x "$SPLIT" "$F/ok/lib/a.dart" "collapsed trailing commas in a RESOLVED package"
+
+# 2. Resolved: badly formatted code is actually fixed. Without this the suite
+#    cannot tell "correctly skipped" from "hook is a total no-op".
+printf "$UGLY" > "$F/ok/lib/b.dart"; fmt "$F/ok/lib/b.dart"
+expect x 'void g(int a) {\n  return;\n}\n' "$F/ok/lib/b.dart" "did NOT format a file it could resolve"
+
+# 3. A sub-package with no .dart_tool of its own, under a root that has one.
+#    Every packages/* in this repo looks like this, and the formatter resolves
+#    them through the root -- a guard that stops at the nearest pubspec.yaml
+#    silently skips all of them, ffigen bindings included.
+mkpkg "$F/mono" resolved
+mkdir -p "$F/mono/packages/sub/lib"
+printf 'name: sub\nenvironment:\n  sdk: ^3.11.0\n' > "$F/mono/packages/sub/pubspec.yaml"
+printf "$UGLY" > "$F/mono/packages/sub/lib/c.dart"; fmt "$F/mono/packages/sub/lib/c.dart"
+expect x 'void g(int a) {\n  return;\n}\n' "$F/mono/packages/sub/lib/c.dart" "skipped a sub-package file the root config resolves"
+printf "$SPLIT" > "$F/mono/packages/sub/lib/d.dart"; fmt "$F/mono/packages/sub/lib/d.dart"
+expect x "$SPLIT" "$F/mono/packages/sub/lib/d.dart" "collapsed trailing commas in a sub-package"
+
+# 4. Unresolved: must not touch. This is the ~200-file collapse.
+mkpkg "$F/un" unresolved
+printf "$SPLIT" > "$F/un/lib/a.dart"; fmt "$F/un/lib/a.dart"
+expect x "$SPLIT" "$F/un/lib/a.dart" "reformatted a file in an UNRESOLVED package"
+
+# 5. Broken config -- what an interrupted `pub get` leaves behind.
+mkpkg "$F/br" broken
+printf "$SPLIT" > "$F/br/lib/a.dart"; fmt "$F/br/lib/a.dart"
+expect x "$SPLIT" "$F/br/lib/a.dart" "reformatted against a TRUNCATED package_config.json"
+
+# 6. A syntax error makes dart format exit non-zero with empty output; writing
+#    that back would truncate the file.
+printf 'void broken( {\n' > "$F/ok/lib/e.dart"; fmt "$F/ok/lib/e.dart"
+expect x 'void broken( {\n' "$F/ok/lib/e.dart" "damaged a file that does not parse"
+
+# 7. Non-Dart files and missing paths are no-ops, not errors.
+printf 'x   =1\n' > "$F/ok/lib/a.txt"; fmt "$F/ok/lib/a.txt"
+expect x 'x   =1\n' "$F/ok/lib/a.txt" "touched a non-Dart file"
+fmt "$F/ok/lib/gone.dart"
 [ $? -eq 0 ] && ok || bad "format-dart: non-zero exit on a missing file"
 
-rm -rf "$f_dir"
+rm -rf "$F"
+fi
 
 # ---- report -----------------------------------------------------------------
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"

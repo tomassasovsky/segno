@@ -55,16 +55,30 @@ bash .claude/skills/verify/run.sh [base-ref]     # default base: origin/master
 
 ## Reading the result
 
-Exit 0 means every gate that applied passed. Exit 1 prints the tail of each
-failing gate's log, then re-prints the summary, with full logs in a temp dir.
+| Exit | Meaning |
+|---|---|
+| 0 | every gate that applied ran and passed |
+| 1 | a gate failed — the tail of each failing log is printed, full logs in a temp dir |
+| 2 | the base ref does not exist |
+| 3 | **UNVERIFIED** — a gate applied but could not run |
 
-A wall of SKIPs is a real answer — it means the diff did not touch those
-subsystems. But a SKIP for an unresolved checkout means that gate is
-**unverified**: run `pub get` and re-run before calling the change done.
+`SKIP` and `UNRUN` are different answers and the script keeps them apart, because
+collapsing them is how a verify run reports success having verified nothing:
 
-`flutter test` here does not cover the screenshot goldens, which are
-author-machine-only and rot silently. After any UI redesign, regenerate and
-eyeball those separately.
+- **SKIP** — the gate does not apply to this diff. A wall of these is a real
+  answer; it means the change did not touch those subsystems.
+- **UNRUN** — the gate applies, but a fixable local condition stopped it: no
+  `pub get`, no `bloc` CLI. That is not a pass. The run ends 3 and says so.
+
+## What a green run still does not prove
+
+- CI runs the native suite four more ways — ASan, TSan, telemetry-off, and a
+  fuzz job. This runs the plain one only. For an engine change, green here is
+  necessary and not sufficient.
+- Coverage floors are CI's (root 90, and a per-package floor on each of the six).
+  Nothing here measures coverage.
+- Screenshot goldens are author-machine-only and rot silently. After any UI
+  redesign, regenerate and eyeball them separately.
 
 ## Why the format gate matters more than it looks
 

@@ -7,6 +7,14 @@
 # worst way -- the branch simply never leaves the machine, and a later session
 # reading the remote concludes the work was never started.
 #
+# Note what this is and is not worth. A machine may already be safe by config:
+# `git config --get-urlmatch credential.helper <remote-url>` resolving to the
+# gh helper means a bare push on THAT remote never reaches osxkeychain. But
+# ~/.gitconfig is machine-local and unversioned, a fresh container or a second
+# machine has none of it, and any non-GitHub remote still falls through to
+# osxkeychain. The guard is cheap insurance against a failure whose signature
+# is "the work was never done"; it is not a claim that every bare push breaks.
+#
 # The matching is deliberately structural rather than a substring search. This
 # hook sees EVERY Bash command, and this repo documents the workaround in
 # CLAUDE.md, docs/TRACKING.md and .claude/skills/ship/SKILL.md -- so a plain
@@ -62,25 +70,46 @@ strip_quotes() {
   printf '%s' "$out"
 }
 
-# Is this segment a git invocation that pushes?
-is_push() {
-  local seg=$1
-  # Two O(1) rejections before strip_quotes, whose bash-3.2 character loop is
-  # quadratic in the segment length: a segment with no "push" at all cannot be
-  # one, and neither can one whose first word is already something else. This
-  # is what keeps a 20 kB heredoc mentioning "push" from costing seconds on a
-  # hook that runs before every Bash call.
-  case "$seg" in *push*) ;; *) return 1 ;; esac
-  set -- $seg
+# Step over leading environment assignments, command wrappers and shell
+# keywords, none of which change which program runs, and require what is left
+# to be `git`. Returns the remaining words in SKIPPED.
+SKIPPED=""
+skip_to_git() {
+  local first
   while [ $# -gt 0 ]; do
     case "$1" in
       *=*) shift ;;
-      env|command|sudo|nohup|time) shift ;;
+      env|command|sudo|nohup|time|timeout|then|do|else|elif|!) shift ;;
+      # `timeout 60 git push` -- a leading bare number is never a program.
+      [0-9]*) shift ;;
       *) break ;;
     esac
   done
   [ $# -gt 0 ] || return 1
-  case "${1##*/}" in git|\"git\"|\'git\') ;; *) return 1 ;; esac
+  # `(git push)` and `{ git push` put punctuation on the first word.
+  first=${1#[({]}
+  case "${first##*/}" in git) ;; *) return 1 ;; esac
+  shift
+  SKIPPED=$*
+  return 0
+}
+
+# Is this segment a git invocation whose SUBCOMMAND is push?
+is_push() {
+  local seg=$1
+  # Two O(1) rejections before strip_quotes, whose bash-3.2 character loop is
+  # quadratic in the segment length: a segment with no "push" at all cannot be
+  # one, and neither can one that does not start with git. This is what keeps
+  # a 20 kB heredoc mentioning "push" from costing seconds on a hook that runs
+  # before every Bash call.
+  #
+  # `set --` word-splits, and globbing is on by default: a segment containing
+  # `*` would otherwise expand against whatever directory the hook happens to
+  # run in, so the same command could be judged differently in two checkouts.
+  case "$seg" in *push*) ;; *) return 1 ;; esac
+  set -f
+  set -- $seg
+  if ! skip_to_git "$@"; then set +f; return 1; fi
 
   # Only the head of a segment can hold the verb -- `git push` puts it inside
   # ~60 characters, the sanctioned `-c credential.helper=...` form inside ~100.
@@ -90,25 +119,39 @@ is_push() {
   # stays inside it (the quote simply never closes) and no new UNQUOTED push
   # can appear. Errs toward allowing, which is the safe direction for a hook
   # that gates every Bash call.
-  seg=${seg:0:2000}
-  seg=$(strip_quotes "$seg")
-  # Leading environment assignments and wrappers do not change the verb.
+  set +f
+  seg=$(strip_quotes "${seg:0:2000}")
+  set -f
   set -- $seg
+  if ! skip_to_git "$@"; then set +f; return 1; fi
+  set -- $SKIPPED
+  set +f
+
+  # `push` must be git's SUBCOMMAND, not merely a word somewhere in the argv.
+  # Scanning every position denies `git stash push -m wip` (purely local, and
+  # the modern spelling of `git stash save`), `git help push`,
+  # `git log --oneline --grep push` and `git diff HEAD -- push` -- all
+  # ordinary, all unrecoverable for the agent in that turn, and none of them a
+  # push. So step over git's global options and judge only the token that
+  # lands in the subcommand slot.
   while [ $# -gt 0 ]; do
     case "$1" in
-      *=*) shift ;;
-      env|command|sudo|nohup|time) shift ;;
+      # Global options that consume the NEXT argument.
+      -C|-c|--git-dir|--work-tree|--namespace|--exec-path|--super-prefix)
+        [ $# -ge 2 ] || return 1
+        shift 2 ;;
+      # Everything else beginning with `-` is self-contained
+      # (-c k=v, --git-dir=..., --no-pager, -p, --bare, ...).
+      -*) shift ;;
       *) break ;;
     esac
   done
   [ $# -gt 0 ] || return 1
-  case "${1##*/}" in git) ;; *) return 1 ;; esac
-  shift
-  while [ $# -gt 0 ]; do
-    [ "$1" = "push" ] && return 0
-    shift
-  done
-  return 1
+  # `(git push)` and `do git push; done` leave punctuation on the last word.
+  local verb=$1
+  verb=${verb%%;*}
+  verb=${verb%%)*}
+  [ "$verb" = "push" ]
 }
 
 # Walk the command line by line, skipping heredoc bodies, and collect the
@@ -147,7 +190,11 @@ while IFS= read -r LINE; do
   while IFS= read -r SEG; do
     [ -n "$SEG" ] || continue
     is_push "$SEG" || continue
-    case "$SEG" in *"gh auth git-credential"*) continue ;; esac
+    # The sanctioned form is `-c credential.helper='!gh auth git-credential'`.
+    # Requiring the marker to sit in a credential.helper ASSIGNMENT, not just
+    # somewhere in the segment, stops a trailing `# ... gh auth git-credential`
+    # comment (or any other prose) from waving a real bare push through.
+    case "$SEG" in *credential.helper=*"gh auth git-credential"*) continue ;; esac
     OFFENDER=$SEG
     break
   done <<EOS
