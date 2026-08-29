@@ -13,9 +13,10 @@ cd "$(dirname "$0")/../../.."   # src/test/bench -> packages/segno_engine
 
 CC=${CC:-cc}
 OUT="${TMPDIR:-/tmp}"
-# No -I src/asio: master deleted that directory and dropped the flag from
-# run_native_tests.sh. Clang ignores a missing -I silently, so carrying it here
-# would just re-introduce a dead path on merge.
+# No -I src/asio, deliberately out of step with the siblings named above: this
+# branch still has src/asio, but master deleted it in #924 along with the flag
+# in run_native_tests.sh. Clang ignores a missing -I silently, and nothing here
+# includes an ASIO header, so the list below is already the post-merge one.
 STD="-std=gnu11 -O2 -DNDEBUG -I src/core -I src/midi -I src/miniaudio \
   -I third_party/rnnoise/include -I third_party/rnnoise/src"
 

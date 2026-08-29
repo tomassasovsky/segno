@@ -299,7 +299,6 @@ int le_yin_begin(le_yin_pass* p, const float* x, int n, int sr, int min_hz,
                  int max_hz, float* dp, int dp_cap) {
   p->x = x;
   p->dp = dp;
-  p->n = n;
   p->tau = 1;
   p->cum = 0.0;
   p->minlag = 0;
@@ -359,11 +358,13 @@ int le_yin_finish(const le_yin_pass* p, float* out_period, float* out_voiced) {
   /* A rejected le_yin_begin leaves minlag == maxlag == 0 and never writes
    * dp[0], but le_yin_step still reports "done" (tau 1 > maxlag 0). A caller
    * that ignores le_yin_begin's return would land here and read dp[0]
-   * uninitialised, yielding a garbage period at conf = 1 - garbage. Both
-   * callers do check, so this is belt-and-braces -- but le_yin_* is published
-   * in engine_fx.h now, so make the rejected state say "no pitch" instead of
-   * depending on every future caller. */
-  if (minlag < 2 || maxlag <= minlag) {
+   * uninitialised, yielding a garbage period at conf = 1 - garbage. The
+   * symmetric misuse -- finishing before le_yin_step has reported done --
+   * reads dp[tau..maxlag] uninitialised for the same result, so tau is
+   * checked here too. Both callers are correct today; le_yin_* is published in
+   * engine_fx.h now, so the failed states answer "no pitch" themselves rather
+   * than depending on every future caller. */
+  if (minlag < 2 || maxlag <= minlag || p->tau <= maxlag) {
     *out_period = 0.0f;
     *out_voiced = 0.0f;
     return 0;
@@ -416,7 +417,11 @@ int le_psola_detect_band(const float* x, int n, int sr, int min_hz, int max_hz,
   const int dp_cap = (int)(sizeof(dp) / sizeof(dp[0]));
   le_yin_pass p;
   if (!le_yin_begin(&p, x, n, sr, min_hz, max_hz, dp, dp_cap)) return 0;
-  le_yin_step(&p, -1); /* unbounded: the octaver needs the answer now */
+  /* Unbounded: the octaver needs the answer now. A negative budget always
+   * completes, so the check can only ever pass -- it is here so the one-shot
+   * path states the precondition le_yin_finish relies on rather than assuming
+   * it. */
+  if (!le_yin_step(&p, -1)) return 0;
   return le_yin_finish(&p, out_period, out_voiced);
 }
 
