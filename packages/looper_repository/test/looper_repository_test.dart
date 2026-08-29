@@ -6337,6 +6337,107 @@ void main() {
         EngineResult.invalid,
       );
     });
+
+    test('a track PLUGIN param write remembers the value and pushes no '
+        'chain', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.reverb),
+            const PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'p'),
+            ),
+          ],
+        );
+      addTearDown(repo.dispose);
+      engine.calls.clear();
+
+      expect(
+        repo.setTrackPluginParam(
+          channel: 0,
+          index: 1,
+          paramId: 42,
+          value: 0.3,
+        ),
+        EngineResult.ok,
+      );
+
+      // No slot type re-push, so the reverb sharing the bus keeps its tail...
+      expect(engine.calls, isNot(contains('setTrackFx')));
+      // ...and a bus plugin has no live slot, so nothing reaches the RT queue.
+      expect(engine.pluginParamSets, isEmpty);
+      // The value is remembered against the day a bus slot ABI lands.
+      expect(
+        (repo.trackEffects(0)[1] as PluginEffect).paramValues[42],
+        0.3,
+      );
+    });
+
+    test('a master PLUGIN param write behaves the same', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMasterEffects(
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'm'),
+            ),
+          ],
+        );
+      addTearDown(repo.dispose);
+      engine.calls.clear();
+
+      expect(
+        repo.setMasterPluginParam(index: 0, paramId: 7, value: 0.9),
+        EngineResult.ok,
+      );
+
+      expect(engine.calls, isNot(contains('setMasterFx')));
+      expect(engine.pluginParamSets, isEmpty);
+      expect((repo.masterEffects.single as PluginEffect).paramValues[7], 0.9);
+    });
+
+    test('a bus plugin param write on a built-in entry is rejected', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMasterEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+      addTearDown(repo.dispose);
+
+      expect(
+        repo.setTrackPluginParam(
+          channel: 0,
+          index: 0,
+          paramId: 1,
+          value: 0.5,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMasterPluginParam(index: 0, paramId: 1, value: 0.5),
+        EngineResult.invalid,
+      );
+      // ...and an out-of-range index too.
+      expect(
+        repo.setTrackPluginParam(
+          channel: 0,
+          index: 9,
+          paramId: 1,
+          value: 0.5,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMasterPluginParam(index: 9, paramId: 1, value: 0.5),
+        EngineResult.invalid,
+      );
+    });
   });
 
   group('inheritance rules (R13/R18/A7/A8)', () {
