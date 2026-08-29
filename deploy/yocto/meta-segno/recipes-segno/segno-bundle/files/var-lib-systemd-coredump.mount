@@ -1,0 +1,46 @@
+# Coredumps on /data (#438).
+#
+# systemd-coredump writes to /var/lib/systemd/coredump, which on this image is
+# the A/B rootfs: a core there survives a reboot but not an OS update, and it
+# competes for a 3 GB partition with the OS itself. /data is never touched by
+# an update (seeded at 2 GiB by the .wic, grown to the card by
+# segno-data-grow), and coredump.conf.d/10-segno.conf caps what cores may take
+# of it at either size.
+#
+# Unlike the journal mount, this path has no symlink in it, so the unit name is
+# the plain escaped path.
+#
+# NOT PROVEN ON HARDWARE, unlike the journal half of #438 (which has a bench
+# figure on its own mount unit). core_pattern on the shipped image is
+# `|/bin/false` and stays that way until systemd is rebuilt with the
+# coredump/elfutils PACKAGECONFIG, so nothing here yet shows that a fault
+# produced a core on /data or that the core was symbolized — only that the mount
+# lands, in the right order, with the right ownership. #822 carries the
+# on-device check to run once an image with the rebuilt systemd is installed.
+[Unit]
+Description=Segno: coredump storage on /data (survives reboot and OS update)
+DefaultDependencies=no
+Requires=data.mount
+# Wants, not Requires: a failed segno-log-dirs.service (still loud in
+# `systemctl --failed`) must not take both bind mounts down when the
+# directories already exist from an earlier boot — each mount fails or lands
+# on its own.
+Wants=segno-log-dirs.service
+After=data.mount segno-log-dirs.service
+Before=local-fs.target
+Conflicts=umount.target
+Before=umount.target
+# Same reasoning as on the journal mount: Before=local-fs.target puts this job
+# on the boot path, so a missing /data must cost seconds, not the ~90 s
+# DefaultTimeoutStartSec. Cores then land on the rootfs for this boot —
+# degraded, and segno-log-check says so — instead of holding boot hostage.
+JobTimeoutSec=10
+
+[Mount]
+What=/data/log/coredump
+Where=/var/lib/systemd/coredump
+Type=none
+Options=bind
+
+[Install]
+WantedBy=local-fs.target

@@ -64,7 +64,15 @@ SRC_URI = "file://segno.service \
            file://segno-iwd-tame.service \
            file://wifi-country-default \
            file://brcmfmac.conf \
-           file://update-channel"
+           file://update-channel \
+           file://journald-segno.conf \
+           file://coredump-segno.conf \
+           file://segno-coredump-retention.conf \
+           file://segno-log-dirs.service \
+           file://segno-log-check \
+           file://segno-log-check.service \
+           file://var-volatile-log-journal.mount \
+           file://var-lib-systemd-coredump.mount"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
 # files land in ${UNPACKDIR}, which do_install references directly.
@@ -117,7 +125,7 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via segno-update-ctl).
 # So segno-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount"
+SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount"
 
 FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${bindir}/segno-data-grow \
@@ -131,6 +139,7 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${bindir}/segno-ssh-persist \
                 ${bindir}/segno-bt-persist \
                 ${bindir}/segno-mark-good \
+                ${bindir}/segno-log-check \
                 ${bindir}/segno-bt-ctl \
                 ${bindir}/segno-brightness-ctl \
                 ${bindir}/segno-touch-ctl \
@@ -143,6 +152,7 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${sysconfdir}/modprobe.d/brcmfmac.conf \
                 ${sysconfdir}/segno/update-channel ${sysconfdir}/segno/build-version \
                 ${sysconfdir}/segno/wifi-country \
+                ${sysconfdir}/iwd/main.conf \
                 ${systemd_system_unitdir}/segno.service \
                 ${systemd_system_unitdir}/segno-rtirq.service \
                 ${systemd_system_unitdir}/segno-data-grow.service \
@@ -154,10 +164,19 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${systemd_system_unitdir}/segno-touch-apply.path \
                 ${systemd_system_unitdir}/segno-touch-apply.service \
                 ${systemd_system_unitdir}/segno-mark-good.service \
+                ${systemd_system_unitdir}/segno-wifi-retry.service \
+                ${systemd_system_unitdir}/segno-iwd-tame.service \
                 ${systemd_system_unitdir}/boot.mount \
                 ${systemd_system_unitdir}/data.mount \
                 ${systemd_system_unitdir}/segno-ota-check.service \
                 ${systemd_system_unitdir}/segno-ota-check.timer \
+                ${systemd_system_unitdir}/segno-log-dirs.service \
+                ${systemd_system_unitdir}/segno-log-check.service \
+                ${systemd_system_unitdir}/var-volatile-log-journal.mount \
+                ${systemd_system_unitdir}/var-lib-systemd-coredump.mount \
+                ${sysconfdir}/systemd/journald.conf.d/10-segno.conf \
+                ${sysconfdir}/systemd/coredump.conf.d/10-segno.conf \
+                ${sysconfdir}/tmpfiles.d/10-segno-coredump.conf \
                 ${sysconfdir}/systemd/system/wpa_supplicant.service \
                 ${sysconfdir}/systemd/system/serial-getty@ttyS0.service \
                 ${sysconfdir}/tmpfiles.d/segno-runtime.conf"
@@ -205,6 +224,25 @@ do_install() {
     # /data = persistent app data (survives updates).
     install -m 0644 ${UNPACKDIR}/boot.mount ${D}${systemd_system_unitdir}/boot.mount
     install -m 0644 ${UNPACKDIR}/data.mount ${D}${systemd_system_unitdir}/data.mount
+
+    # Crash evidence on /data (#438): the journal and coredump storage bind
+    # mounts, the oneshot that creates their source directories, the check that
+    # reports it when a mount did not land (because journald will not), and the
+    # journald/coredump policy drop-ins. Nothing here writes to the A/B rootfs,
+    # so an OS update cannot take the evidence with it.
+    install -m 0644 ${UNPACKDIR}/segno-log-dirs.service ${D}${systemd_system_unitdir}/segno-log-dirs.service
+    install -m 0755 ${UNPACKDIR}/segno-log-check ${D}${bindir}/segno-log-check
+    install -m 0644 ${UNPACKDIR}/segno-log-check.service ${D}${systemd_system_unitdir}/segno-log-check.service
+    install -m 0644 ${UNPACKDIR}/var-volatile-log-journal.mount ${D}${systemd_system_unitdir}/var-volatile-log-journal.mount
+    install -m 0644 ${UNPACKDIR}/var-lib-systemd-coredump.mount ${D}${systemd_system_unitdir}/var-lib-systemd-coredump.mount
+    install -d ${D}${sysconfdir}/systemd/journald.conf.d
+    install -m 0644 ${UNPACKDIR}/journald-segno.conf ${D}${sysconfdir}/systemd/journald.conf.d/10-segno.conf
+    install -d ${D}${sysconfdir}/systemd/coredump.conf.d
+    install -m 0644 ${UNPACKDIR}/coredump-segno.conf ${D}${sysconfdir}/systemd/coredump.conf.d/10-segno.conf
+    # 10- so it sorts before systemd's own systemd.conf, which is how a
+    # tmpfiles line is overridden: earliest filename wins for a given path.
+    install -d ${D}${sysconfdir}/tmpfiles.d
+    install -m 0644 ${UNPACKDIR}/segno-coredump-retention.conf ${D}${sysconfdir}/tmpfiles.d/10-segno-coredump.conf
 
     # OTA update client: timer-driven check that polls the channel manifest on
     # segno.aquiles.dev and rauc-installs newer signed bundles (deferred activation).
