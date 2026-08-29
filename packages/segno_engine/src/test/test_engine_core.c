@@ -16025,6 +16025,14 @@ static void oct_stagger_run(le_engine* e, const float* in, float* out,
   }
 }
 
+/* Circular distance between two hop phases, in samples: how far apart in the
+ * LE_PV_HOP-long cycle two instances run their analysis frames. */
+static int oct_phase_gap(int32_t a, int32_t b) {
+  int d = (int)(a - b) % LE_PV_HOP;
+  if (d < 0) d += LE_PV_HOP;
+  return d < LE_PV_HOP - d ? d : LE_PV_HOP - d;
+}
+
 /* Normalized RMS error of out[t] against in[t - lag], over the settled tail
  * (past four windows, so warm-up and ramp-in are excluded). */
 static double oct_null_err(const float* in, const float* out, int total,
@@ -16215,6 +16223,70 @@ static void test_octaver_hop_stagger_alignment(void) {
       le_fx_state_free_buffers(fx);
       free(fx);
     }
+  }
+
+  /* (6) the stagger STEPS themselves, which nothing else pins. Two slots of
+   * one chain differing (leg 4) does not catch an owner or lane step that has
+   * been "tidied" into a multiple of another axis: at OWNER_STEP 32 the owner
+   * and slot axes collapse, four per-track octavers on lane 0 hop on identical
+   * sample indices again — the exact defect the seed exists for — and every
+   * other leg here still passes. So assert the properties the steps were
+   * chosen for, directly. */
+  {
+    /* Every chain owner the engine holds: LE_MAX_TRACKS groups of
+     * (LE_MAX_LANES lanes + the track bus), then the monitors and the master
+     * insert as the group past the last track. */
+    const int owners = LE_MAX_TRACKS + 1;
+    const int lanes = LE_MAX_LANES + 1;
+    int32_t base[(LE_MAX_TRACKS + 1) * (LE_MAX_LANES + 1)];
+    int n = 0;
+    for (int t = 0; t < owners; ++t) {
+      for (int l = 0; l < lanes; ++l) {
+        base[n++] = le_fx_lane_hop_seed(t, l);
+      }
+    }
+    /* a. distinct: no two chains in the engine share a base phase, which is
+     *    what makes two octavers in DIFFERENT chains stagger at all (they are
+     *    both slot 0, so the slot step cannot separate them). */
+    int collisions = 0;
+    for (int i = 0; i < n; ++i) {
+      for (int j = i + 1; j < n; ++j) {
+        if (base[i] == base[j]) collisions++;
+      }
+    }
+    CHECK(collisions == 0);
+    /* b. and far enough apart along each axis that the runs which actually
+     *    run together do not share a 32-frame callback: one track's lanes and
+     *    bus, the same lane across every track, and one chain's slots. */
+    int min_lane = LE_PV_HOP;
+    int min_owner = LE_PV_HOP;
+    for (int l = 0; l + 1 < lanes; ++l) {
+      for (int k = l + 1; k < lanes; ++k) {
+        const int d = oct_phase_gap(le_fx_lane_hop_seed(0, l),
+                                    le_fx_lane_hop_seed(0, k));
+        if (d < min_lane) min_lane = d;
+      }
+    }
+    for (int t = 0; t + 1 < owners; ++t) {
+      for (int k = t + 1; k < owners; ++k) {
+        const int d = oct_phase_gap(le_fx_lane_hop_seed(t, 0),
+                                    le_fx_lane_hop_seed(k, 0));
+        if (d < min_owner) min_owner = d;
+      }
+    }
+    int min_slot = LE_PV_HOP;
+    for (int a = 0; a + 1 < LE_FX_MAX; ++a) {
+      for (int b = a + 1; b < LE_FX_MAX; ++b) {
+        const int d = oct_phase_gap(a * LE_PV_STAGGER_SLOT_STEP,
+                                    b * LE_PV_STAGGER_SLOT_STEP);
+        if (d < min_slot) min_slot = d;
+      }
+    }
+    printf("  stagger spacing: lanes %d, owners %d, slots %d\n", min_lane,
+           min_owner, min_slot);
+    CHECK(min_lane >= 24);
+    CHECK(min_owner >= 24);
+    CHECK(min_slot >= 32);
   }
 
   free(in);

@@ -726,6 +726,32 @@ static void le_fx_clear_reverb(le_fx_state* fx, int s) {
  * allocated octaver slot it now memsets the three phase-vocoder buffers
  * (~16 KB/channel). That is bounded and fires only on a discrete type-change
  * event (never per sample), consistent with the existing reverb-line clears. */
+void le_fx_entry_reset(le_fx_state* fx, int slot) {
+  for (int chan = 0; chan < 2; ++chan) {
+    fx->svf_ic1[slot][chan] = 0.0f;
+    fx->svf_ic2[slot][chan] = 0.0f;
+    fx->lfo[slot][chan] = 0.0f;
+    fx->delay_pos[slot][chan] = 0;
+    fx->fx_lp[slot][chan] = 0.0f;
+    le_octaver_state* o = &fx->oct[slot][chan];
+    o->sm_shift = 0.5f; /* unison: the smoother ramps up from no shift, not -2 oct */
+    o->sm_tone = 0.0f;
+    o->sm_mix = 0.0f; /* starts dry, so the param ramp-in is inaudible */
+    o->cur_mode = 0;  /* phase vocoder */
+    o->xfade = 1.0f;  /* steady (no gain dip) */
+    le_pv_reset_runtime(fx, slot, chan);
+  }
+  le_fx_clear_reverb(fx, slot);
+}
+
+/* Seeds chain slot [slot]'s OCTAVER runtime SETTLED at [params] — the three
+ * param smoothers already at their targets and the mode crossfade already
+ * resolved onto the mode params[3] selects — so an offline render standing in
+ * for a lane whose octaver has been running since before the capture does not
+ * re-pay that lane's start-up. Contract and rationale in engine_fx.h.
+ *
+ * Control thread / offline only (perf_render's arm chain), unlike
+ * le_fx_entry_reset above, and always AFTER it. */
 void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
                                 const float* params) {
   if (fx == NULL || params == NULL || slot < 0 || slot >= LE_FX_MAX) return;
@@ -744,24 +770,6 @@ void le_fx_octaver_seed_settled(le_fx_state* fx, int slot,
       le_pv_reset_runtime(fx, slot, chan);
     }
   }
-}
-
-void le_fx_entry_reset(le_fx_state* fx, int slot) {
-  for (int chan = 0; chan < 2; ++chan) {
-    fx->svf_ic1[slot][chan] = 0.0f;
-    fx->svf_ic2[slot][chan] = 0.0f;
-    fx->lfo[slot][chan] = 0.0f;
-    fx->delay_pos[slot][chan] = 0;
-    fx->fx_lp[slot][chan] = 0.0f;
-    le_octaver_state* o = &fx->oct[slot][chan];
-    o->sm_shift = 0.5f; /* unison: the smoother ramps up from no shift, not -2 oct */
-    o->sm_tone = 0.0f;
-    o->sm_mix = 0.0f; /* starts dry, so the param ramp-in is inaudible */
-    o->cur_mode = 0;  /* phase vocoder */
-    o->xfade = 1.0f;  /* steady (no gain dip) */
-    le_pv_reset_runtime(fx, slot, chan);
-  }
-  le_fx_clear_reverb(fx, slot);
 }
 
 /* Seeds chain slot [slot]'s enable-crossfade runtime SETTLED at enabled, so a
