@@ -573,28 +573,18 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// repository's [LooperRepository.onLaneChainChanged] notification (F3: the
   /// record-time snapshot copy). Reads the repository's enriched chain so a
   /// persisted plugin entry keeps its resolved name.
-  void _persistLaneChain(int channel, int lane) {
-    unawaited(
-      _settings?.saveLaneEffects(
-        channel,
-        lane,
-        _encodedLaneChain(channel, lane),
-      ),
-    );
-  }
+  void _persistLaneChain(int channel, int lane) => persistLaneFxChain(
+    settings: _settings,
+    looper: _repository,
+    channel: channel,
+    lane: lane,
+  );
 
   /// Encodes lane [lane] of [channel]'s chain as the persisted envelope
   /// string (R15): the entries, the chain-enabled flag, and the inheritance
   /// meta all ride the one `lane_effects` key — no per-flag keys.
-  String _encodedLaneChain(int channel, int lane) => encodeFxChain(
-    FxChainEnvelope(
-      chainEnabled: _repository.laneChainEnabled(channel, lane),
-      meta: FxChainMeta(
-        inheritedFrom: _repository.laneChainInheritedFrom(channel, lane),
-      ),
-      entries: _repository.laneEffects(channel, lane),
-    ),
-  );
+  String _encodedLaneChain(int channel, int lane) =>
+      encodeLaneFxChain(looper: _repository, channel: channel, lane: lane);
 
   /// The current chain at bus [address], read from the repository (the
   /// authority that every bus write lands in synchronously) rather than from
@@ -689,18 +679,8 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   }
 
   /// Persists the Master insert chain envelope.
-  void _persistMasterChain() {
-    unawaited(
-      _settings?.saveMasterFxChain(
-        encodeFxChain(
-          FxChainEnvelope(
-            chainEnabled: _repository.masterChainEnabled,
-            entries: _repository.masterEffects,
-          ),
-        ),
-      ),
-    );
-  }
+  void _persistMasterChain() =>
+      persistMasterFxChain(settings: _settings, looper: _repository);
 
   /// Cancels every editor-sync poll timer for lane [lane] of [channel].
   void _cancelLaneEditorTimers(int channel, int lane) {

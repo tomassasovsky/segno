@@ -22,6 +22,26 @@ extension FxChainLookup on LooperRepository {
   /// so there is nothing to pick between. Coercing the null to lane 0 would
   /// silently act on (or, in a label, describe) a chain the user never bound,
   /// which is the retarget A9 forbids; it resolves to nothing instead.
+  /// The chain-level `enabled` flag [address]'s stage REMEMBERS, without
+  /// re-checking that the chain exists — [chainEntriesAt] is that check, and
+  /// asking both questions in one enumeration is what keeps a caller that
+  /// re-resolves at poll rate (the FX-mode cells) off the hot path.
+  ///
+  /// Null only for a Loop address with no lane, which names no chain to have
+  /// a flag (see [chainEntriesAt]). Every other stage answers with its
+  /// remembered intent whether or not the rig has configured it, so pair this
+  /// with [chainEntriesAt] before treating the answer as a real chain's.
+  bool? rememberedChainEnabled(FxAddress address) {
+    final lane = address.lane;
+    return switch (address.stage) {
+      FxStage.input => monitorChainEnabled(address.index),
+      FxStage.loop =>
+        lane == null ? null : laneChainEnabled(address.index, lane),
+      FxStage.track => trackChainEnabled(address.index),
+      FxStage.master => masterChainEnvelope().chainEnabled,
+    };
+  }
+
   List<TrackEffect>? chainEntriesAt(FxAddress address) {
     if (address.index < 0) return null;
     final lane = address.lane;
@@ -43,4 +63,19 @@ extension FxChainLookup on LooperRepository {
       FxStage.master => address.index == 0 ? masterEffects : null,
     };
   }
+}
+
+/// The entry carrying [slotId] within [entries], or null when none does — the
+/// stable-id indirection that makes a slot binding survive inserts and
+/// reorders (A9), in the one place every caller shares.
+///
+/// A free function, not part of [FxChainLookup]: the scan needs the entries,
+/// not the rig, so a caller that already holds a chain (the FX-mode cell,
+/// naming what its switch drives) must not have to reach for a repository to
+/// ask the same question the resolver asks.
+TrackEffect? slotEntryIn(List<TrackEffect> entries, String slotId) {
+  for (final fx in entries) {
+    if (fx.slotId == slotId) return fx;
+  }
+  return null;
 }

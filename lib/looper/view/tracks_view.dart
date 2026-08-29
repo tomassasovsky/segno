@@ -443,18 +443,41 @@ class _TrackSlot extends StatelessWidget {
           // TYPED, so a slot binding reports the slot's own state and not the
           // chain's (A9). An unresolvable target yields a null `enabled`: the
           // column draws it as broken rather than as this column's chain.
-          FxCellBinding resolve() => FxCellBinding(
-            target: target,
-            entries:
-                looper.chainEntriesAt(target.address) ?? const <TrackEffect>[],
-            enabled: looper.bindingEnabled(target),
-            // The CONTAINING chain's own flag, which is what the entry run
-            // reads: a slot binding bypasses one effect, so dimming the whole
-            // run off its slot's state would draw a chain that is still
-            // running as if it were not.
-            chainEnabled:
-                looper.bindingEnabled(FxChainTarget(target.address)) ?? false,
-          );
+          //
+          // ONE enumeration per cell. This is a `select` selector, so it runs
+          // on every repository poll rather than only on rebuild, and
+          // `chainEntriesAt` rebuilds its stage's whole enumeration each call
+          // — asking it the chain, the chain's power and the target's power
+          // separately put three of those on the 16 ms path #646 cleared.
+          FxCellBinding resolve() {
+            final entries = looper.chainEntriesAt(target.address);
+            final chainEnabled = entries == null
+                ? null
+                : looper.rememberedChainEnabled(target.address);
+            if (entries == null || chainEnabled == null) {
+              return FxCellBinding(
+                target: target,
+                entries: const [],
+                enabled: null,
+                chainEnabled: false,
+              );
+            }
+            return FxCellBinding(
+              target: target,
+              entries: entries,
+              enabled: looper.bindingEnabledIn(
+                target,
+                entries,
+                chainEnabled: chainEnabled,
+              ),
+              // The CONTAINING chain's own flag, which is what the entry run
+              // reads: a slot binding bypasses one effect, so dimming the
+              // whole run off its slot's state would draw a chain that is
+              // still running as if it were not.
+              chainEnabled: chainEnabled,
+            );
+          }
+
           // The reactive key has to be the surface that actually announces the
           // bound stage. Track / Loop / Master chains are projected onto
           // `LooperState`, so the bloc sees every edit and every stomp. A

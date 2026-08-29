@@ -67,15 +67,27 @@ extension FxBindingResolver on LooperRepository {
   /// The target's current `enabled` state, or `null` when it does not
   /// resolve.
   bool? bindingEnabled(FxBindingTarget target) {
-    switch (target) {
-      case FxChainTarget(:final address):
-        return _chainEnabled(address);
-      case FxSlotTarget(:final address, :final slotId):
-        final index = _slotIndex(address, slotId);
-        if (index == null) return null;
-        return chainEntriesAt(address)![index].enabled;
-    }
+    final entries = chainEntriesAt(target.address);
+    if (entries == null) return null;
+    final chainEnabled = rememberedChainEnabled(target.address);
+    if (chainEnabled == null) return null;
+    return bindingEnabledIn(target, entries, chainEnabled: chainEnabled);
   }
+
+  /// [target]'s `enabled` resolved against a chain the caller has ALREADY
+  /// read — the re-enumeration-free twin of [bindingEnabled], for a caller
+  /// that needs the entries anyway and re-resolves at repository-poll rate
+  /// (the FX-mode cells, #884/#646). [chainEntriesAt] plus
+  /// [rememberedChainEnabled] are its preconditions; [bindingEnabled] is
+  /// written in terms of it, so the two can never answer differently.
+  bool? bindingEnabledIn(
+    FxBindingTarget target,
+    List<TrackEffect> entries, {
+    required bool chainEnabled,
+  }) => switch (target) {
+    FxChainTarget() => chainEnabled,
+    FxSlotTarget(:final slotId) => slotEntryIn(entries, slotId)?.enabled,
+  };
 
   /// Whether [target] names something that exists in the live rig.
   bool bindingResolves(FxBindingTarget target) =>
@@ -98,20 +110,6 @@ extension FxBindingResolver on LooperRepository {
         slotId,
         enabled: enabled,
       ),
-    };
-  }
-
-  /// The chain-level `enabled` flag at [address], or `null` when that chain
-  /// does not exist in the rig.
-  bool? _chainEnabled(FxAddress address) {
-    if (chainEntriesAt(address) == null) return null;
-    return switch (address.stage) {
-      FxStage.input => monitorChainEnabled(address.index),
-      // Non-null: `chainEntriesAt` above already rejected a lane-less Loop
-      // address, so this branch is unreachable without one.
-      FxStage.loop => laneChainEnabled(address.index, address.lane!),
-      FxStage.track => trackChainEnabled(address.index),
-      FxStage.master => masterChainEnvelope().chainEnabled,
     };
   }
 

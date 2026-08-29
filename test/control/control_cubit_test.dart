@@ -2215,6 +2215,26 @@ void main() {
           expect(chainEnabled[3], isTrue);
         });
 
+        test('a toggle binding SAVES the chain it flipped, like the '
+            'contextual stomp beside it', () async {
+          // The unbound FX-mode stomp has always persisted; a bound one wrote
+          // the engine and nothing else, so a chain bypassed mid-set came back
+          // engaged on the next boot.
+          await cubit.setGlobalBindings(
+            PedalBindingSet([bind(PedalButton.recPlay)]),
+          );
+          await stomp(PedalButton.recPlay);
+          await pumpEventQueue();
+
+          expect(await settings.loadTrackFxChain(3), isNotNull);
+          expect(
+            await settings.loadTrackFxChain(3),
+            encodeFxChain(
+              FxChainEnvelope(chainEnabled: false, entries: trackChains[3]!),
+            ),
+          );
+        });
+
         test('a SLOT binding flips one effect, leaving the chain flag '
             'alone (A9)', () async {
           await cubit.setGlobalBindings(

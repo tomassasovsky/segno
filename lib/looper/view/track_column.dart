@@ -729,15 +729,16 @@ class FxCellBinding extends Equatable {
 /// The entry that names an FX-mode cell: the slot a [FxSlotTarget] drives, or
 /// the head of [entries] for a whole-chain (or unbound) cell. Null when there
 /// is no such entry — an empty chain, or a slot that has left it.
-TrackEffect? _fxNamedEntry(FxBindingTarget? target, List<TrackEffect> entries) {
-  if (target is FxSlotTarget) {
-    for (final fx in entries) {
-      if (fx.slotId == target.slotId) return fx;
-    }
-    return null;
-  }
-  return entries.isEmpty ? null : entries.first;
-}
+///
+/// The slot is found through the shared [slotEntryIn], the same stable-id scan
+/// the resolver flips against (A9), so the cell cannot name one effect while
+/// its tap bypasses another.
+TrackEffect? _fxNamedEntry(
+  FxBindingTarget? target,
+  List<TrackEffect> entries,
+) => target is FxSlotTarget
+    ? slotEntryIn(entries, target.slotId)
+    : (entries.isEmpty ? null : entries.first);
 
 /// The generic FX stage label of an FX-mode cell — the stage the bound chain
 /// sits on: `INPUT n` / `TRACK n` / `LANE n` / `MASTER` (#692).

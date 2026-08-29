@@ -1356,7 +1356,11 @@ class ControlCubit extends Cubit<ControlState> {
     switch (binding.behavior) {
       case BindingBehavior.toggle:
         _log('binding toggle ${binding.key.button.name} -> ${!prior}');
+        // Returns rather than falling through to the push below:
+        // [toggleBinding] has already projected, and a second push would only
+        // diff itself away.
         toggleBinding(target);
+        return;
       case BindingBehavior.momentary:
         _log('binding momentary ${binding.key.button.name} (was $prior)');
         // Capture on the FIRST press only. A repeated press with no release
@@ -1392,6 +1396,17 @@ class ControlCubit extends Cubit<ControlState> {
     final prior = _looper.bindingEnabled(target);
     if (prior == null) return;
     _looper.setBindingEnabled(target, enabled: !prior);
+    // Save the flip, exactly as the unbound FX-mode stomp does
+    // ([_setTrackChain]) and as `LooperBloc` does for the on-screen dock:
+    // through the shared helper, because a cubit never calls a bloc. Without
+    // it a chain a performer bypassed comes back engaged on the next boot.
+    // Only the LATCHING path persists — a momentary hold is transient by
+    // definition, and its release restores what was saved anyway.
+    persistFxChainAt(
+      settings: _settings,
+      looper: _looper,
+      address: target.address,
+    );
     _pushProjected();
   }
 
@@ -1976,18 +1991,14 @@ class ControlCubit extends Cubit<ControlState> {
   Map<int, bool?> _boundChains() {
     if (state.mode != InteractionMode.fx) return const {};
     final bound = <int, bool?>{};
-    for (final button in const [
-      PedalButton.track1,
-      PedalButton.track2,
-      PedalButton.track3,
-      PedalButton.track4,
-    ]) {
-      final binding = state.bindings.lookup(button, bank: state.activeBank);
+    for (var index = 0; index < ControlState.tracksPerBank; index++) {
+      // The SAME cell->footswitch answer the console's FX cells draw from
+      // (#884), so the plate's lights and the cells under them can never
+      // describe different chains.
+      final binding = state.fxCellBinding(state.bankBaseChannel + index);
       if (binding == null) continue;
       final target = binding.decodeTarget();
-      bound[_trackIndex(button)] = target == null
-          ? null
-          : _looper.bindingEnabled(target);
+      bound[index] = target == null ? null : _looper.bindingEnabled(target);
     }
     return bound;
   }

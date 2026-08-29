@@ -830,11 +830,30 @@ void main() {
       // Binds the visible bank-A track1 footswitch (channel 0) to the MASTER
       // insert chain — a chain that lives on a stage this column's own Track
       // never carries, the exact case #867 rendered blank.
+      // The Master chain's live power state, so the stubs behave like the
+      // repository rather than like a frozen snapshot: the flip has to be
+      // readable by whatever runs after it (the announcement, the persist,
+      // the next resolve).
+      var masterChainOn = true;
       Future<void> bindTrack1ToMaster(List<TrackEffect> masterChain) async {
+        masterChainOn = true;
         when(() => repository.masterEffects).thenReturn(masterChain);
         when(
-          () => repository.masterChainEnvelope(),
-        ).thenReturn(FxChainEnvelope(entries: masterChain));
+          () => repository.masterChainEnabled,
+        ).thenAnswer((_) => masterChainOn);
+        when(() => repository.masterChainEnvelope()).thenAnswer(
+          (_) => FxChainEnvelope(
+            chainEnabled: masterChainOn,
+            entries: masterChain,
+          ),
+        );
+        when(
+          () =>
+              repository.setMasterChainEnabled(enabled: any(named: 'enabled')),
+        ).thenAnswer((call) {
+          masterChainOn = call.namedArguments[#enabled] as bool;
+          return EngineResult.ok;
+        });
         await control.setGlobalBindings(
           PedalBindingSet([
             PedalBinding(
@@ -888,11 +907,8 @@ void main() {
 
       testWidgets('tapping a pedal-bound cell toggles the BOUND chain, never '
           "the column's own", (tester) async {
-        await bindTrack1ToMaster([BuiltInEffect(type: TrackEffectType.reverb)]);
-        when(
-          () =>
-              repository.setMasterChainEnabled(enabled: any(named: 'enabled')),
-        ).thenReturn(EngineResult.ok);
+        final chain = [BuiltInEffect(type: TrackEffectType.reverb)];
+        await bindTrack1ToMaster(chain);
         control.setMode(InteractionMode.fx);
         seed(const LooperState(tracks: [Track()]));
         await pump(tester);
@@ -909,6 +925,13 @@ void main() {
         // toggling it would move a pill the player cannot see while the one
         // they can see stays put (the display/action split, #884).
         verifyNever(() => bloc.add(const LooperTrackChainToggled(0)));
+
+        // The flip is SAVED, like every other surface's: an unpersisted bypass
+        // comes back engaged on the next boot.
+        expect(
+          await settings.loadMasterFxChain(),
+          encodeFxChain(FxChainEnvelope(chainEnabled: false, entries: chain)),
+        );
       });
 
       testWidgets('the number key over a bound cell flips the same chain its '
@@ -916,10 +939,6 @@ void main() {
         // The tile's label calls the number keys its twin; a bound cell has to
         // keep that true, or one visible control has two targets.
         await bindTrack1ToMaster([BuiltInEffect(type: TrackEffectType.reverb)]);
-        when(
-          () =>
-              repository.setMasterChainEnabled(enabled: any(named: 'enabled')),
-        ).thenReturn(EngineResult.ok);
         control.setMode(InteractionMode.fx);
         seed(const LooperState(tracks: [Track()]));
         await pump(tester);
