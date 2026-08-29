@@ -482,7 +482,20 @@ LED_WEB       = 0.8       # white PLA left between package and lens base. This i
                           # the diffusing wall: thinner reads as a hot spot, and
                           # it sets how deep the package recess can go.
 LED_LIP       = 0.7       # lip overhang past the channel wall -> 0.4 of grip on
-                          # each strip edge
+                          # each strip edge NOMINALLY, i.e. with the strip centred.
+                          # It is not centred by anything: the channel gives it
+                          # +-LED_STRIP_CLR of lateral play, so a strip against one
+                          # wall has 0.7 of grip on that side and 0.1 on the other.
+                          # 0.1 is inside one layer line, and nothing else retains
+                          # the strip -- its adhesive faces away by design.
+                          # *** OWNER CALL (#930): live with 0.1 worst case, or buy
+                          # it back. The levers are LED_LIP (1.0 makes the worst
+                          # case 0.4, but then the strip has to bow past 0.7 of
+                          # interference instead of 0.4) and LED_STRIP_CLR (a
+                          # tighter channel has less play, but LED_STRIP_W is the
+                          # unverified number in this file, so tightening it now is
+                          # betting on a width the vendor listing contradicts).
+                          # Settle it with the strip in hand, not here.
 LED_SHOULDER  = 0.75      # ledge the strip's LED-side face lands on. Without it
                           # the up-stop is the LED package bottoming in its recess
                           # -- i.e. the fitting force lands on the part, not the LED.
@@ -494,6 +507,12 @@ LED_PKG_Z_CLR = 0.15      # ...and the shoulder is only really the stop if the
                           # LED_SHOULDER exists to prevent. 0.15 of air makes the
                           # order unambiguous and is nothing optically.
 LED_WALL_MIN  = 0.6       # channel wall floor; the flange edge caps the outside
+# Neither of the next two is a manufacturing allowance -- they are CAD tripwires
+# set just under what the layout delivers, so that moving a constant fails the
+# build. As-printed is a separate question nobody has answered: a 14 mm FDM
+# shoulder can come out 0.2 over, and with a glue bead that eats most of the 0.39
+# to the post pad. Check the first printed diffuser against a post before gluing
+# ten of them.
 LED_POST_MIN  = 0.3       # gap from the shoulder's REAR edge to the support-post
                           # top pad. Same story as LED_LAND_MIN below and the same
                           # cause: 3 -> 4 took it from 1.39 to 0.39. Also a
@@ -1328,10 +1347,11 @@ def faceplate_holes():
                 engr.append({"u": left_x, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "left"})
             else:                                      # single line -> centred on the pedal
                 engr.append({"u": u, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "center"})
-    # --- LED diffuser slots: ONE small pill window per indicator pedal, on the
-    #     old status-LED centre-line (a single-LED WS2812B board under each,
-    #     VHB-taped to the faceplate underside; white-PLA pill diffuser set into
-    #     the slot). Full-round ends: corner r = LED_SLOT_H/2.
+    # --- LED diffuser slots: ONE pill window per pedal, on the old status-LED
+    #     centre-line. Behind each is a white-PLA diffuser pushed in from inside,
+    #     with an LED_STRIP_N-LED segment of bare 144/m strip snapped into its
+    #     back (#927/#930 -- not the VHB-taped single-LED board this used to say).
+    #     Full-round ends: corner r = LED_SLOT_H/2.
     for label, u, v in PEDALS:
         if not _has_led(label):
             continue
@@ -3690,6 +3710,7 @@ def build_diffuser_step():
     ins = lens.union(cq.Workplane("XY").slot2D(fl_l, fl_w).extrude(-LED_INS_FL_T))
 
     recess_d, strip_t0, strip_t1, lip_z = diffuser_stack()
+    y_sh_of = lambda: LED_STRIP_W / 2.0 + LED_STRIP_CLR - LED_SHOULDER
 
     # Package recess, cut into the flange's back face. It runs the WHOLE channel
     # as one groove rather than a pocket per LED: there are LED_STRIP_N packages
@@ -3699,10 +3720,17 @@ def build_diffuser_step():
     # any of it. It also leaves the SAME LED_WEB over every package, which is the
     # point of choosing a dense strip -- discrete pockets would put 0.8 of wall
     # over each LED and 1.5 between them, i.e. put the ripple back in.
-    pkg = LED_PKG + 2 * LED_PKG_CLR
-    assert pkg <= LED_SLOT_H - LED_INS_CLR, (
-        f"diffuser package groove is {pkg} wide, past the {LED_SLOT_H - LED_INS_CLR} "
-        f"lens it has to stay under -- narrow LED_PKG_CLR or widen the slot")
+    # LED_STRIP_CLR is in here as well as LED_PKG_CLR, because the strip is only
+    # located by the channel walls: it can sit anywhere within +-LED_STRIP_CLR,
+    # and the packages ride with it. Sizing the groove on LED_PKG_CLR alone left
+    # a strip pushed against one wall with its package edge exactly on the groove
+    # wall -- zero clearance before any package-placement tolerance on the strip
+    # itself, and an outer LED fouling that wall stops the strip reaching the
+    # shoulders, which is the one thing LED_SHOULDER and LED_PKG_Z_CLR exist for.
+    pkg = LED_PKG + 2 * (LED_PKG_CLR + LED_STRIP_CLR)
+    assert pkg / 2.0 < y_sh_of(), (
+        f"diffuser package groove is {pkg} wide and undercuts the shoulders the "
+        f"strip lands on -- narrow the clearances or widen the pill")
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-LED_INS_FL_T)
                   .rect(LED_CH_L, pkg).extrude(recess_d))
 
@@ -3731,6 +3759,15 @@ def build_diffuser_step():
             (y_out, -LED_INS_FL_T)]
     rail = (cq.Workplane("YZ").polyline(prof).close()
             .extrude(LED_CH_L / 2.0, both=True))
+    # ...trimmed to the flange's own stadium outline. The rail is a straight
+    # extrusion LED_CH_L long, but the flange's straight run is only fl_l - fl_w
+    # (54 against 56.96), so the last 1.5 mm at each end stood ~0.16 mm PROUD of
+    # the rounded outline -- a squared-off ear, down-facing and unsupported
+    # lens-down, and outside the footprint both _check gates model as
+    # `slot +- LED_INS_FLANGE`.
+    foot = (cq.Workplane("XY").workplane(offset=lip_z)
+            .slot2D(fl_l, fl_w).extrude(-lip_z))
+    rail = rail.intersect(foot)
     ins = ins.union(rail).union(rail.mirror("XZ"))
 
     step = os.path.join(OUT, "segno_led_diffuser.step")
