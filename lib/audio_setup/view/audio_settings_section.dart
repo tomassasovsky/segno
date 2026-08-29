@@ -46,7 +46,8 @@ class AudioSettingsSection extends StatelessWidget {
           // Engine errors are surfaced here (the only audio surface now that the
           // wizard is gone): a failed open/start from a setting change shows its
           // reason inline.
-          if (state.status == AudioSetupStatus.error && state.error != null) ...[
+          if (state.status == AudioSetupStatus.error &&
+              state.error != null) ...[
             _ErrorBanner(error: state.error!, detail: state.errorDetail ?? ''),
             const SizedBox(height: 20),
           ],
@@ -148,7 +149,9 @@ class AudioSettingsSection extends StatelessWidget {
               for (final m in AudioSetupState.maxLoopMinuteOptions)
                 SetupOption(
                   value: m,
-                  label: m == 0 ? l10n.maxLoopDefault30s : l10n.maxLoopMinutes(m),
+                  label: m == 0
+                      ? l10n.maxLoopDefault30s
+                      : l10n.maxLoopMinutes(m),
                   optionKey: Key('audioSettings_maxLoop_$m'),
                 ),
             ],
