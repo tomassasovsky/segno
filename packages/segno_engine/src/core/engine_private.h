@@ -235,9 +235,9 @@ typedef struct le_fx_state {
    * STANDALONE state: it runs one chain, so only the per-slot part of the
    * spread applies. That is what the VST3 processors keep — and since each of
    * them is one instance in slot 0, they all land on phase 0 and do NOT
-   * stagger against each other; #940 tracks giving a hosted instance a seed. The OFFLINE renderers
-   * are NOT in that position — they stand in for a specific live lane and
-   * must copy its base, see le_fx_lane_hop_seed. Control-thread written,
+   * stagger against each other; #940 tracks giving a hosted instance a seed.
+   * The OFFLINE renderers are NOT in that position — they stand in for a
+   * specific live lane and must copy its base, see le_fx_lane_hop_seed. Control-thread written,
    * once, before any audio runs; audio-thread read-only. */
   int32_t hop_seed;
   float svf_ic1[LE_FX_MAX][2];
