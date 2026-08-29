@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -76,14 +75,6 @@ Future<String?> _promptName(
   required Set<String> taken,
   String initial = '',
 }) async {
-  if (!kConsoleMode) {
-    return showSessionNameDialog(
-      context: context,
-      title: title,
-      initial: initial,
-      taken: taken,
-    );
-  }
   final l10n = context.l10n;
   final raw = await showConsoleRenameSheet(
     context,
@@ -193,32 +184,6 @@ class _SessionsManagerDialog extends StatelessWidget {
                 ),
               const SizedBox(height: 19),
               _ActionRow(state: state),
-              // The pen's sessions dialog carries no exports; the console
-              // routes them through the capture flow. The desktop keeps its
-              // session-level mixdown/stems here — dropping the only UI those
-              // repository calls have would be a feature removed under the
-              // banner of a redesign.
-              if (!kConsoleMode) ...[
-                const SizedBox(height: 10),
-                Row(
-                  spacing: 10,
-                  children: [
-                    ConsoleSmallButton(
-                      key: const Key('sessions_exportMixdown'),
-                      label: l10n.exportMixdown,
-                      onPressed: () => unawaited(
-                        context.read<SessionCubit>().exportMixdown(),
-                      ),
-                    ),
-                    ConsoleSmallButton(
-                      key: const Key('sessions_exportStems'),
-                      label: l10n.exportStems,
-                      onPressed: () =>
-                          unawaited(context.read<SessionCubit>().exportStems()),
-                    ),
-                  ],
-                ),
-              ],
             ],
           ),
         );
@@ -368,27 +333,6 @@ class _ActionRow extends StatelessWidget {
     if (!confirmed) return;
     await cubit.deleteSession(current);
   }
-}
-
-/// Shows a name-input dialog (save-as / rename / duplicate) with an **inline**
-/// sanitize + duplicate-slug error, returning the entered name once it clears
-/// both checks, or `null` if cancelled. [taken] is the set of slugs already in
-/// use (fast feedback only — the cubit/repository remains the collision
-/// authority). Desktop only; the console goes through the rename sheet.
-Future<String?> showSessionNameDialog({
-  required BuildContext context,
-  required String title,
-  required Set<String> taken,
-  String initial = '',
-}) {
-  return showDialog<String>(
-    context: context,
-    builder: (_) => _SessionNameDialog(
-      title: title,
-      initial: initial,
-      taken: taken,
-    ),
-  );
 }
 
 class _SessionNameDialog extends StatefulWidget {

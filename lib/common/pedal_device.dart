@@ -1,5 +1,3 @@
-import 'package:segno/common/console_mode.dart';
-
 /// Every USB product string a Segno pedal is known to advertise, newest first.
 ///
 /// Set at build time via `build.usb_product` (see
@@ -32,8 +30,5 @@ const kPedalUsbProductNames = <String>[
 /// the bus" would bind an unrelated USB-MIDI keyboard as if it were the pedal.
 /// The cost is that a Pro Micro flashed before the `build.usb_product` rename
 /// enumerates as `Arduino Leonardo` and will never auto-bind — and the console
-/// has no picker to fall back on. Recovery is reflashing it from a desktop
-/// build.
-const List<String>? kPedalAutoBindProductNames = kConsoleMode
-    ? kPedalUsbProductNames
-    : null;
+/// has no picker to fall back on. Recovery is reflashing it.
+const List<String> kPedalAutoBindProductNames = kPedalUsbProductNames;

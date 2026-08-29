@@ -1,5 +1,6 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -68,6 +69,22 @@ void main() {
       ),
     );
     await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+  }
+
+  /// Types [name] into the console rename sheet and confirms with Enter.
+  ///
+  /// The sheet reads `KeyEvent.character`, so there is no text field to
+  /// `enterText` into -- each character is sent as its own key event.
+  Future<void> typeSheetName(WidgetTester tester, String name) async {
+    for (var i = 0; i < 40; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    }
+    for (final ch in name.split('')) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA, character: ch);
+    }
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
   }
 
@@ -158,12 +175,7 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('sessions_rename')));
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const Key('sessionName_field')),
-        'Chorus',
-      );
-      await tester.tap(find.byKey(const Key('sessionName_save')));
-      await tester.pumpAndSettle();
+      await typeSheetName(tester, 'Chorus');
       verify(() => session.renameSession('A', 'Chorus')).called(1);
     });
 
@@ -176,12 +188,7 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('sessions_duplicate')));
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const Key('sessionName_field')),
-        'A copy',
-      );
-      await tester.tap(find.byKey(const Key('sessionName_save')));
-      await tester.pumpAndSettle();
+      await typeSheetName(tester, 'A copy');
       verify(() => session.duplicateSession('A', 'A copy')).called(1);
     });
 
@@ -218,9 +225,7 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('sessions_rename')));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('sessionName_field')), 'B');
-      await tester.tap(find.byKey(const Key('sessionName_save')));
-      await tester.pumpAndSettle();
+      await typeSheetName(tester, 'B');
       final dup = (await l10n()).sessionNameDuplicate('B');
       expect(find.text(dup), findsOneWidget);
       verifyNever(() => session.renameSession(any(), any()));
@@ -276,12 +281,7 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('sessions_rename')));
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const Key('sessionName_field')),
-        '///',
-      );
-      await tester.tap(find.byKey(const Key('sessionName_save')));
-      await tester.pumpAndSettle();
+      await typeSheetName(tester, '///');
       expect(find.text((await l10n()).sessionNameInvalid), findsOneWidget);
       verifyNever(() => session.renameSession(any(), any()));
     });
@@ -317,12 +317,7 @@ void main() {
       await openManager(tester, state: const SessionState(sessions: two));
       await tester.tap(find.byKey(const Key('sessions_saveAs')));
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const Key('sessionName_field')),
-        'Bridge',
-      );
-      await tester.tap(find.byKey(const Key('sessionName_save')));
-      await tester.pumpAndSettle();
+      await typeSheetName(tester, 'Bridge');
       verify(() => session.saveAs('Bridge')).called(1);
     });
 
@@ -340,18 +335,8 @@ void main() {
       await openManager(tester, state: const SessionState(sessions: two));
       await tester.tap(find.byKey(const Key('sessions_save')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('sessionName_field')), findsOneWidget);
+      expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
       verifyNever(session.save);
-    });
-
-    testWidgets('the exports fire the cubit', (tester) async {
-      await openManager(tester, state: const SessionState(sessions: two));
-      await tester.tap(find.byKey(const Key('sessions_exportMixdown')));
-      await tester.pumpAndSettle();
-      verify(() => session.exportMixdown()).called(1);
-      await tester.tap(find.byKey(const Key('sessions_exportStems')));
-      await tester.pumpAndSettle();
-      verify(() => session.exportStems()).called(1);
     });
   });
 }

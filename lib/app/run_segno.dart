@@ -155,9 +155,6 @@ Future<void> runSegno(
     source: midiSource,
     settings: settings,
     // Redundant only on a desktop analysis run: the constant is null unless
-    // SEGNO_CONSOLE is defined, and dropping it would disable console
-    // auto-detect entirely.
-    // ignore: avoid_redundant_argument_values
     autoBindProductNames: kPedalAutoBindProductNames,
   );
 

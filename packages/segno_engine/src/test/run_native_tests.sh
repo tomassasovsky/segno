@@ -39,7 +39,7 @@ EXTRA_CFLAGS="${EXTRA_CFLAGS:-}"
 # builds with src/ on the path for exactly this reason. It goes LAST so the
 # engine's own headers still win any future name clash (there are none today
 # — the two sets were compared).
-STD="-std=gnu11 -I src/core -I src/midi -I src/asio -I src/miniaudio \
+STD="-std=gnu11 -I src/core -I src/midi -I src/miniaudio \
   -I third_party/rnnoise/include -I third_party/rnnoise/src"
 
 case "$(uname -s)" in
@@ -116,7 +116,7 @@ $CC $STD $EXTRA_CFLAGS src/test/test_engine_core.c $ENGINE_SRC $ENGINE_LIBS \
 echo "== building midi tests =="
 # shellcheck disable=SC2086
 $CC $STD $EXTRA_CFLAGS src/test/test_midi_core.c src/midi/midi.c src/midi/midi_backend_linux.c \
-  src/midi/midi_backend_apple.c src/midi/midi_backend_windows.c src/midi/le_midi_clock.c \
+  src/midi/midi_backend_apple.c src/midi/le_midi_clock.c \
   src/core/tempo_grid.c $MIDI_LIBS \
   -o "$OUT/segno_midi_tests.exe"
 "$OUT/segno_midi_tests.exe"

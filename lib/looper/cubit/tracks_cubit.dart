@@ -1,6 +1,5 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/l10n/localized.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -42,10 +41,7 @@ class TracksCubit extends Cubit<TracksState> {
     }
     final showIndicators = await _settings.loadShowTrackIndicators(
       // Console/kiosk builds default the readiness strip off (still user-
-      // toggleable); desktop builds keep it on. This equals the repo default
-      // only under non-console analysis, so the redundancy lint misfires.
-      // ignore: avoid_redundant_argument_values
-      defaultValue: !kConsoleMode,
+      defaultValue: false,
     );
     if (!isClosed && generation == _loadGeneration) {
       emit(state.copyWith(names: names, showIndicators: showIndicators));

@@ -256,14 +256,14 @@ void main() {
 
     final toggle = find.byKey(const Key('settings_trackIndicators_switch'));
     expect(toggle, findsOneWidget);
-    // Default on (the cubit seeds true).
-    expect(tracks.state.showIndicators, isTrue);
+    // Default off on the console (the pedals carry readiness).
+    expect(tracks.state.showIndicators, isFalse);
 
     await tester.tap(toggle);
     await tester.pumpAndSettle();
 
-    expect(tracks.state.showIndicators, isFalse);
-    expect(await settings.loadShowTrackIndicators(), isFalse);
+    expect(tracks.state.showIndicators, isTrue);
+    expect(await settings.loadShowTrackIndicators(), isTrue);
   });
 
   testWidgets('renaming a track updates the list and persists it', (
@@ -278,22 +278,23 @@ void main() {
     await tester.tap(find.byKey(const Key('settings_trackName_0')));
     await tester.pumpAndSettle();
 
-    // The dialog says WHAT it is about to rename, not just which ordinal
+    // The sheet says WHAT it is about to rename, not just which ordinal
     // (#526) — before this it read "Rename track 1" beside a stage that
     // already called the track by name.
     final l10n = AppLocalizations.of(
-      tester.element(find.byKey(const Key('renameTrack_field'))),
+      tester.element(find.byKey(const Key('console_rename_sheet'))),
     );
-    expect(
-      find.text(l10n.renameTrackTitle(l10n.defaultTrackName(1))),
-      findsOneWidget,
-    );
+    expect(find.text(l10n.defaultTrackName(1)), findsWidgets);
 
-    await tester.enterText(
-      find.byKey(const Key('renameTrack_field')),
-      'DRUMS',
-    );
-    await tester.tap(find.byKey(const Key('renameTrack_save')));
+    // The console sheet reads KeyEvent.character; Enter is Save.
+    for (var i = 0; i < 'TRACK 1'.length; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    }
+    for (final ch in 'DRUMS'.split('')) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA, character: ch);
+    }
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
     expect(find.text('DRUMS'), findsOneWidget);

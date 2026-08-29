@@ -13,7 +13,6 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_toasts.dart';
-import 'package:segno/app/audio_bootstrap.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/appliance/software_brightness.dart';
@@ -123,7 +122,7 @@ class App extends StatelessWidget {
   final PedalRepository? pedalRepository;
 
   /// The on-screen pedal simulator transport that [pedalRepository] is built
-  /// over, or `null` when none was built. The `PedalFaceplate` injects presses
+  /// over, or `null` when none was built. The fuzz harness injects presses
   /// and reads decoded frames from it. Disposed by the [PedalCubit] (via the
   /// repository), so it is provided by value, not created here.
   final SimulatorPedalTransport? pedalSimulator;
@@ -405,7 +404,6 @@ class App extends StatelessWidget {
             create: (context) => AudioSetupCubit(
               repository: context.read<LooperRepository>(),
               settings: context.read<SettingsRepository>(),
-              asioSelectable: platformAsioSelectable,
               initialAsioDrivers: initialAsioDrivers,
             ),
           ),
@@ -462,12 +460,7 @@ class App extends StatelessWidget {
               final cubit = PedalCubit(
                 pedal: pedalRepo,
                 settings: context.read<SettingsRepository>(),
-                // Redundant only on a desktop analysis run — see run_segno.
-                // ignore: avoid_redundant_argument_values
                 autoBindProductNames: kPedalAutoBindProductNames,
-                // Console only; null on desktop, where the manual setting
-                // stays in charge.
-                // ignore: avoid_redundant_argument_values
                 flashedProtocolVersion: kFlashedPedalProtocolVersionReader,
               );
               unawaited(cubit.load());

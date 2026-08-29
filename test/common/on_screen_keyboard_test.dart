@@ -372,7 +372,6 @@ void main() {
       // keystroke.
       await tester.pumpApp(
         OnScreenKeyboardHost(
-          enabled: true,
           child: Scaffold(body: TextField(controller: controller)),
         ),
       );
@@ -640,7 +639,6 @@ void main() {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           builder: (context, child) => OnScreenKeyboardHost(
-            enabled: true,
             child: Builder(
               builder: (context) {
                 inset = MediaQuery.of(context).viewInsets.bottom;

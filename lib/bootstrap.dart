@@ -5,7 +5,6 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:bloc/bloc.dart';
 import 'package:flutter/widgets.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/logging/app_log.dart';
 
 class AppBlocObserver extends BlocObserver {
@@ -37,7 +36,6 @@ Future<void> initAppLogging() async {
   final alsaOnly = Platform.environment['SEGNO_ALSA_ONLY'] ?? '';
   final rtAudio = Platform.environment['SEGNO_RT_AUDIO'] ?? '';
   AppLog.info(
-    'start pid=$pid console=$kConsoleMode '
     'os=${Platform.operatingSystem} '
     'SEGNO_ALSA_ONLY=$alsaOnly SEGNO_RT_AUDIO=$rtAudio',
   );

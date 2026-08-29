@@ -53,8 +53,8 @@ flutter pub get
 echo "==> CI-parity debug smoke: flutter build linux --debug (main_development)"
 flutter build linux --debug --target lib/main_development.dart
 
-# The real deliverable: the release bundle. SEGNO_CONSOLE defaults on via the
-# wrapper; extra args ("$@") are forwarded verbatim so callers can override.
+# The real deliverable: the release bundle. Extra args ("$@") are forwarded
+# verbatim so callers can override.
 echo "==> Release bundle: flutter build linux --release (main_production) $*"
 flutter build linux --release --target lib/main_production.dart "$@"
 

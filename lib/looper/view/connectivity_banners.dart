@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
@@ -40,7 +39,7 @@ class ConnectivityBanners extends StatelessWidget {
   /// The gap under the banner: the pen's 10 on the console stage (the run's
   /// own rhythm), 14 on desktop where the surrounding chrome — the toolbar
   /// gap and the not-running banner's — steps by 14.
-  static const double _gapBelow = kConsoleMode ? 10 : 14;
+  static const double _gapBelow = 10;
 
   @override
   Widget build(BuildContext context) {

@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:performance_repository/performance_repository.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -113,22 +112,16 @@ class _PerformanceCompletionSheetState
   Future<void> _rename(BuildContext context, String path) async {
     final cubit = context.read<PerformanceRecorderCubit>();
     final l10n = context.l10n;
-    // The console has no physical keyboard, so its rename is the full-width
-    // sheet with the on-screen keys — the same surface every other rename on
-    // the appliance uses. The desktop keeps the compact dialog its hardware
-    // keyboard is already pointed at (#668).
-    final to = kConsoleMode
-        ? await showConsoleRenameSheet(
-            context,
-            title: l10n.perfRenameTitle,
-            subtitle: _basename(path),
-            current: _basename(path),
-            fieldLabel: l10n.perfRenameTitle,
-          )
-        : await showDialog<String>(
-            context: context,
-            builder: (_) => _RenameCaptureDialog(initial: _basename(path)),
-          );
+    // The console has no physical keyboard, so rename is the full-width sheet
+    // with the on-screen keys — the same surface every other rename on the
+    // appliance uses (#668).
+    final to = await showConsoleRenameSheet(
+      context,
+      title: l10n.perfRenameTitle,
+      subtitle: _basename(path),
+      current: _basename(path),
+      fieldLabel: l10n.perfRenameTitle,
+    );
     if (to == null) return;
     // The desktop dialog pre-validates inline; the console sheet has no
     // validator hook, so the same `performanceCaptureSlug` check runs here —
@@ -396,68 +389,4 @@ class _DialogTitle extends StatelessWidget {
       leadingDistribution: TextLeadingDistribution.even,
     ),
   );
-}
-
-class _RenameCaptureDialog extends StatefulWidget {
-  const _RenameCaptureDialog({required this.initial});
-
-  final String initial;
-
-  @override
-  State<_RenameCaptureDialog> createState() => _RenameCaptureDialogState();
-}
-
-class _RenameCaptureDialogState extends State<_RenameCaptureDialog> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.initial,
-  );
-  String? _error;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final l10n = context.l10n;
-    final raw = _controller.text;
-    if (performanceCaptureSlug(raw) == null) {
-      setState(() => _error = l10n.perfRenameInvalid);
-      return;
-    }
-    Navigator.of(context).pop(raw);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    return AlertDialog(
-      title: AppText(l10n.perfRenameTitle),
-      content: TextField(
-        key: const Key('perfRename_field'),
-        controller: _controller,
-        autofocus: true,
-        decoration: InputDecoration(
-          hintText: l10n.perfRenameHint,
-          errorText: _error,
-        ),
-        onChanged: (_) {
-          if (_error != null) setState(() => _error = null);
-        },
-        onSubmitted: (_) => _submit(),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: AppText(l10n.cancel),
-        ),
-        TextButton(
-          key: const Key('perfRename_save'),
-          onPressed: _submit,
-          child: AppText(l10n.perfRenameButton),
-        ),
-      ],
-    );
-  }
 }

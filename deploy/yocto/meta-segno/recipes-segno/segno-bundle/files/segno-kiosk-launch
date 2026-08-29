@@ -1,7 +1,7 @@
 #!/bin/sh
 # Launch the prebuilt Segno GTK bundle as a Wayland client under weston.
 # GDK_BACKEND=wayland forces the GTK embedder onto Wayland (not X11/XWayland).
-# SEGNO_CONSOLE is already compiled into the bundle; nothing to pass here.
+# The console build is the only build; nothing to pass here.
 export GDK_BACKEND=wayland
 
 # Persistent data lives on the /data partition (label "data"), which OS/app updates

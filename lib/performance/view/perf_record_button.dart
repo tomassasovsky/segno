@@ -6,9 +6,9 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
-/// Toggles performance-recording arm/disarm from `TracksToolbar`.
+/// Toggles performance-recording arm/disarm from the stage status bar.
 /// Self-contained — reads [PerformanceRecorderCubit] directly rather than
-/// threading callbacks through the host (mirrors `SessionMenu`'s own
+/// threading callbacks through the host (mirrors the session block's own
 /// pattern in this toolbar).
 class PerfRecordButton extends StatelessWidget {
   /// Creates a [PerfRecordButton].

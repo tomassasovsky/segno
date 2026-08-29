@@ -10,9 +10,9 @@ class TracksState extends Equatable {
   /// Creates a [TracksState].
   const TracksState({
     required this.names,
-    // Off by default in console/kiosk builds (see [kConsoleMode]); the loaded
+    // Off by default on the console; the loaded
     // preference can still turn it on.
-    this.showIndicators = !kConsoleMode,
+    this.showIndicators = false,
   });
 
   /// Tracks per bank.

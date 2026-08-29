@@ -67,38 +67,38 @@ void main() {
       verify: (_) async => expect(await settings.loadTrackName(0), 'BASS'),
     );
 
-    test('showIndicators seeds on (true) so a default-on feature does not '
-        'flash absent', () {
-      expect(TracksCubit(settings: settings).state.showIndicators, isTrue);
+    test('showIndicators seeds off (false) -- on the console the pedals carry '
+        'readiness, so the strip does not flash in before the pref loads', () {
+      expect(TracksCubit(settings: settings).state.showIndicators, isFalse);
     });
 
     blocTest<TracksCubit, TracksState>(
       'setShowIndicators persists and emits the new value',
       build: () => TracksCubit(settings: settings),
-      act: (cubit) => cubit.setShowIndicators(value: false),
-      expect: () => [
-        isA<TracksState>().having((s) => s.showIndicators, 'show', false),
-      ],
-      verify: (_) async =>
-          expect(await settings.loadShowTrackIndicators(), isFalse),
-    );
-
-    blocTest<TracksCubit, TracksState>(
-      'setShowIndicators to the current value does not emit but persists',
-      build: () => TracksCubit(settings: settings),
       act: (cubit) => cubit.setShowIndicators(value: true),
-      expect: () => <TracksState>[],
+      expect: () => [
+        isA<TracksState>().having((s) => s.showIndicators, 'show', true),
+      ],
       verify: (_) async =>
           expect(await settings.loadShowTrackIndicators(), isTrue),
     );
 
     blocTest<TracksCubit, TracksState>(
-      'load restores a persisted showIndicators = false',
-      setUp: () => settings.saveShowTrackIndicators(value: false),
+      'setShowIndicators to the current value does not emit but persists',
+      build: () => TracksCubit(settings: settings),
+      act: (cubit) => cubit.setShowIndicators(value: false),
+      expect: () => <TracksState>[],
+      verify: (_) async =>
+          expect(await settings.loadShowTrackIndicators(), isFalse),
+    );
+
+    blocTest<TracksCubit, TracksState>(
+      'load restores a persisted showIndicators = true',
+      setUp: () => settings.saveShowTrackIndicators(value: true),
       build: () => TracksCubit(settings: settings),
       act: (cubit) => cubit.load(),
       expect: () => [
-        isA<TracksState>().having((s) => s.showIndicators, 'show', false),
+        isA<TracksState>().having((s) => s.showIndicators, 'show', true),
       ],
     );
   });

@@ -20,9 +20,6 @@
 #include "engine_private.h"   /* le_engine, enumerate_devices/le_find_loopback decls */
 #include "segno_engine_api.h"
 #include "miniaudio.h"
-#if defined(_WIN32) && defined(SEGNO_ENABLE_ASIO)
-#include "win_asio_device.h" /* le_asio_backend (selected by le_select_backend) */
-#endif
 
 /* ---- loopback detection ---- */
 
@@ -463,28 +460,21 @@ int le_resolve_device_id(ma_context* ctx, int capture, const char* want,
 
 /* ---- device backend selection ---- */
 
-/* Selects the device backend for a requested le_audio_backend. The default build
- * ships only the miniaudio backend, so every choice resolves to it. In a
- * SEGNO_ENABLE_ASIO Windows build, LE_BACKEND_ASIO resolves to the ASIO backend;
- * the reference to le_asio_backend lives inside the guard, so the default build
- * never links any le_asio_* symbol. */
+/* Selects the device backend for a requested le_audio_backend. miniaudio is the
+ * only backend this engine ships, so every choice resolves to it. (The ASIO
+ * backend was Windows-only and went with the desktop targets; LE_BACKEND_ASIO
+ * survives as a reserved value so persisted settings still parse.) */
 const le_device_backend* le_select_backend(int32_t backend) {
-#if defined(_WIN32) && defined(SEGNO_ENABLE_ASIO)
-  if (backend == LE_BACKEND_ASIO) return &le_asio_backend;
-#endif
   (void)backend;
   return &le_miniaudio_backend;
 }
 
-#if !(defined(_WIN32) && defined(SEGNO_ENABLE_ASIO))
-/* ASIO-disabled stub: no ASIO drivers exist, so enumeration is always empty. The
- * real probe lives in win_asio_device.cpp behind SEGNO_ENABLE_ASIO. Keeping the
- * FFI symbol defined in every build lets the Dart layer call it unconditionally
- * (it returns [] / count 0 off Windows or on the default build). */
+/* No ASIO backend exists, so enumeration is always empty. The FFI symbol stays
+ * defined so the Dart layer can keep calling it unconditionally (it returns
+ * [] / count 0). */
 int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
                                   int32_t* count) {
   if (out == NULL || count == NULL || max <= 0) return LE_ERR_INVALID;
   *count = 0;
   return LE_OK;
 }
-#endif

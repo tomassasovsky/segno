@@ -403,14 +403,13 @@ the end. Build the `aarch64` bundle with `deploy/rpi/build/build-arm64-bundle.sh
   [`deploy/rpi/pin-displays.sh`](../deploy/rpi/pin-displays.sh). On the **TV**,
   turn **overscan** off ("Just Scan" / 1:1 in the TV's picture menu, or
   `disable_overscan=1` in `config.txt`) or the UI edges are clipped.
-- **First-run device setup.** `SEGNO_CONSOLE` hides the transport chrome, so the
-  device pickers live in **Settings** (right-click, or press `S`). Bind: (a) the
+- **First-run device setup.** There is no transport chrome, so the device
+  pickers live in **Settings** (right-click, or press `S`). Bind: (a) the
   **MIDI FOOT CONTROLLER** input, (b) the **PEDAL LINK** output, and (c) the
-  **audio interface as both input and output @ 512 frames**. These persist across
-  reboots (`tryAutoStartEngine` + hotplug reconnect). **Open question:** confirm
-  Settings is reachable in a console build; if it is not, do the first-run bind
-  with a **non-console** bundle (omit `--dart-define=SEGNO_CONSOLE=true` — no new
-  tooling), then switch back to the console bundle.
+  **audio interface as both input and output @ 512 frames**. These persist
+  across reboots (`tryAutoStartEngine` + hotplug reconnect). Settings must stay
+  reachable on the console: with the desktop build gone there is no non-console
+  bundle to fall back on for the first-run bind.
 
 ### Goal 1 — Dual-display
 

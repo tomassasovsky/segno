@@ -6,7 +6,7 @@ import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/session_persistence_sync_listener.dart';
-import 'package:segno/pedal/pedal.dart';
+import 'package:segno/looper/view/tracks_view.dart';
 import 'package:segno/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -74,13 +74,7 @@ class LooperPage extends StatelessWidget {
       // re-projects the cubit and re-persists the chains from the repository
       // afterwards, so the FX dock and every boot-restore key follow the loaded
       // session.
-      child: const SessionPersistenceSyncListener(
-        // While the on-screen pedal is the bound output, the Tracks view is
-        // reframed as the pedal top plate (with the TracksView embedded in
-        // its main screen); otherwise the faceplate renders the TracksView
-        // full-screen as usual. The gate lives in [PedalFaceplate].
-        child: PedalFaceplate(),
-      ),
+      child: const SessionPersistenceSyncListener(child: TracksView()),
     );
   }
 }

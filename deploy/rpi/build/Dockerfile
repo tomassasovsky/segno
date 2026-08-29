@@ -1,7 +1,7 @@
 # Reproducible aarch64 Flutter GTK build image for the Segno appliance bundle.
 # Build + run natively on an arm64 host/runner (Apple Silicon, ubuntu-24.04-arm):
 #   docker build -t segno-arm64-build deploy/rpi/build
-#   docker run --rm -v "$PWD":/workspace segno-arm64-build --dart-define=SEGNO_CONSOLE=true
+#   docker run --rm -v "$PWD":/workspace segno-arm64-build
 # The entrypoint (segno-build.sh) runs `flutter build linux --release`; extra args
 # ("$@") are forwarded to it. Output lands in build/linux/arm64/release/bundle.
 FROM ubuntu:24.04

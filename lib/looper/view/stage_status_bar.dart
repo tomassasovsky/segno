@@ -26,7 +26,7 @@ import 'package:segno/theme/theme.dart';
 /// Self-contained (the `SessionMenu` / `PerfRecordButton` pattern): each
 /// element subscribes to its own cubit slice, so a beat tick rebuilds the
 /// clock and nothing else — the same rebuild discipline the track run holds
-/// (#646). The widget itself is not gated on `kConsoleMode`; the host mounts
+/// (#646). The host mounts
 /// it console-only, which keeps it testable in a normal test run.
 class StageStatusBar extends StatelessWidget {
   /// Creates a [StageStatusBar].

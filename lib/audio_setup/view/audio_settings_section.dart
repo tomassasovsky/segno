@@ -5,9 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/view/audio_device_picker.dart';
-import 'package:segno/audio_setup/view/midi_device_picker.dart';
 import 'package:segno/audio_setup/view/midi_learn_section.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/quantize_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
@@ -21,19 +19,12 @@ import 'package:url_launcher/url_launcher.dart';
 /// (applied live while running), see the live device/latency status, and
 /// re-run the round-trip latency measurement.
 ///
-/// On a [consoleMode] build the MIDI foot-controller and pedal LED pickers are
-/// hidden (the Pro Micro is fixed hardware — see #331), and audio device
-/// pickers omit "System default" so a concrete interface stays pinned.
+/// The MIDI foot-controller and pedal LED pickers are absent (the Pro Micro is
+/// fixed hardware — see #331), and audio device pickers omit "System default"
+/// so a concrete interface stays pinned.
 class AudioSettingsSection extends StatelessWidget {
   /// Creates an [AudioSettingsSection].
-  const AudioSettingsSection({
-    super.key,
-    this.consoleMode = kConsoleMode,
-  });
-
-  /// Whether this is the floor-console build. Defaults to [kConsoleMode];
-  /// tests inject `true`/`false` without a dart-define.
-  final bool consoleMode;
+  const AudioSettingsSection({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -83,7 +74,7 @@ class AudioSettingsSection extends StatelessWidget {
             devices: state.playbackDevices,
             selectedId: state.playbackDeviceId,
             onSelected: cubit.setPlaybackDevice,
-            includeSystemDefault: !consoleMode,
+            includeSystemDefault: false,
           ),
           const SizedBox(height: 24),
           SetupGroupLabel(l10n.inputDeviceGroupUpper),
@@ -94,26 +85,18 @@ class AudioSettingsSection extends StatelessWidget {
             devices: state.captureDevices,
             selectedId: state.captureDeviceId,
             onSelected: cubit.setCaptureDevice,
-            includeSystemDefault: !consoleMode,
+            includeSystemDefault: false,
           ),
         ],
-        // The MIDI foot-controller PICKER is desktop-only: on the console the
-        // Pro Micro is fixed hardware that auto-detect binds by product name
-        // (#421), so a chooser would only offer the one answer.
-        if (!consoleMode) ...[
-          const SizedBox(height: 28),
-          const MidiDevicePicker(),
-        ],
-        // CONFIGURING the pedal is not the same as choosing it, and hiding
-        // both together left the console — the build most likely to need a
-        // footswitch remapped — with no route to the assignment surface at
-        // all. These stay on every build; the sections drop their own
-        // device-chooser bits on console.
+        // There is no MIDI foot-controller PICKER: the Pro Micro is fixed
+        // hardware that auto-detect binds by product name (#421), so a chooser
+        // would only offer the one answer. CONFIGURING the pedal is not the
+        // same as choosing it, so the assignment route below stays.
         const SizedBox(height: 28),
         const PedalSettingsSection(),
         const SizedBox(height: 28),
-        // External MIDI mappings (part 7) listen through the bound input —
-        // chosen above on desktop, auto-detected on console.
+        // External MIDI mappings (part 7) listen through the auto-detected
+        // bound input.
         const MidiLearnSection(),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.sampleRateGroup),

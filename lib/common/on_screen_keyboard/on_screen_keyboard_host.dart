@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard.dart';
 
 /// Wraps the app and supplies an on-screen keyboard whenever a text field takes
@@ -26,14 +25,14 @@ class OnScreenKeyboardHost extends StatefulWidget {
   /// Creates an [OnScreenKeyboardHost] around [child].
   const OnScreenKeyboardHost({
     required this.child,
-    this.enabled = kConsoleMode,
+    this.enabled = true,
     super.key,
   });
 
   /// The app below the keyboard.
   final Widget child;
 
-  /// Whether to supply a keyboard at all. Defaults to [kConsoleMode]: desktop
+  /// Whether to supply a keyboard at all. Defaults to true: desktop
   /// builds have a real keyboard, and drawing a second one would be noise.
   final bool enabled;
 

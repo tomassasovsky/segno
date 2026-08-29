@@ -37,8 +37,6 @@ void main() {
         exportsRoot: () async => '.',
       );
       final settings = SettingsRepository(store: FakeKeyValueStore());
-      // The looper page renders the pedal faceplate, whose gate reads a
-      // PedalCubit; unbound (no on-screen pedal) it shows the TracksView.
       final sim = SimulatorPedalTransport(inner: const NoopPedalTransport());
       final pedal = _MockPedalCubit();
       when(() => pedal.state).thenReturn(const PedalState());
@@ -70,6 +68,11 @@ void main() {
           ],
           child: MultiBlocProvider(
             providers: [
+              // The stage status bar is now unconditional, and its clock
+              // readout selects a TransportClockCubit.
+              BlocProvider<TransportClockCubit>(
+                create: (_) => TransportClockCubit(repository: repository),
+              ),
               BlocProvider<TracksCubit>(
                 create: (_) => TracksCubit(settings: settings),
               ),

@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:window_manager/window_manager.dart';
@@ -22,12 +21,12 @@ bool get segnoUsesFlutterTitleBar =>
 /// Whether Segno should auto-hide the idle mouse cursor.
 ///
 /// Enabled wherever [segnoUsesFlutterTitleBar] draws custom chrome, and also
-/// on the Linux console/kiosk build ([kConsoleMode]) — the RPi floor console
+/// on the Linux console/kiosk build — the RPi floor console
 /// has no title bar (it's driven by foot pedals, not a pointer), but the OS
 /// cursor should still vanish after idle instead of sitting on the touchscreen.
 bool get segnoUsesCursorAutoHide =>
     segnoUsesFlutterTitleBar ||
-    (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux && kConsoleMode);
+    (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux);
 
 /// Hides the native title bar on Windows so Flutter can draw
 /// [SegnoWindowTitleBar].
