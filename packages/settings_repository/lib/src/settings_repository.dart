@@ -220,12 +220,21 @@ class SettingsRepository {
   /// entry is left in place for exactly that reason, and so a downgrade to a
   /// pre-#809 build still finds its own correct value.
   ///
-  /// With no legacy entry the read falls back to any OTHER period-qualified
-  /// key and rebases it (see the body). That case is not hypothetical: a unit
-  /// whose first ever calibration was measured while the knob was already
-  /// engaged has only a `.pN`, so without this a shipped depth change would
-  /// hand it `null` — no compensation, nothing surfaced, and no auto
-  /// re-measure on Linux to catch it.
+  /// Ordering, when the qualified key is empty: another period-qualified key
+  /// first, then the legacy one (see the body for why that way round). The
+  /// sibling path is what keeps a unit calibrated across a shipped depth
+  /// change; without it a unit whose only calibration was measured while the
+  /// knob was already engaged gets `null` — no compensation, and on the
+  /// appliance no auto re-measure to catch it.
+  ///
+  /// Caveat, where a re-measure WOULD have been possible: on a host with an
+  /// auto-routable loopback (not the appliance — its capture device is pinned
+  /// and no input is platform-excluded), returning `null` used to trigger
+  /// `measureLatency` and produce a real figure. A rebased value suppresses
+  /// that, so such a host now keeps the model-derived number, with the
+  /// requested-vs-negotiated caveat above, until someone measures by hand.
+  /// That trade is made deliberately: the appliance, where no re-measure is
+  /// coming, is the case this has to be right for.
   Future<int?> loadLatencyOffsetFrames({
     required String device,
     required int sampleRate,
@@ -235,35 +244,51 @@ class SettingsRepository {
     final stored = await _store.getInt(key);
     if (stored != null || _alsaPeriods == null) return stored;
     final legacyKey = _legacyLatencyKey(device, sampleRate, bufferFrames);
-    final legacy = await _store.getInt(legacyKey);
-    if (legacy != null) {
-      final migrated = legacy + _startThresholdDeltaFrames(bufferFrames);
-      await _store.setInt(key, migrated);
-      return migrated;
-    }
-    // No pre-#809 baseline to migrate from. That is not the "never calibrated"
-    // case it looks like: a unit first measured while the knob was ALREADY
-    // engaged only ever wrote a qualified key, so its calibration is sitting
-    // under some other .pN — and changing the shipped depth (#818 took the
-    // appliance 8 -> 4) would otherwise strand it, silently, with no
-    // compensation and no auto re-measure on Linux to notice.
+    // A sibling .pN is tried BEFORE the legacy key, because with the knob
+    // engaged `saveLatencyOffsetFrames` only ever writes the qualified key.
+    // The legacy entry is therefore frozen at whatever was measured before
+    // the knob existed: a unit that has re-measured since holds its real
+    // calibration under some .pN and a stale one under the legacy key, and
+    // reading legacy first would silently discard the newer measurement.
     //
-    // Rebase it instead: subtract the delta that depth added, re-add this
-    // one's. Exact, on the same premise the legacy migration rests on. Any
-    // sibling is equally valid (all derive from one baseline), so the scan is
-    // ascending and takes the first. The recovered baseline is deliberately
-    // NOT written to the legacy key: it was never measured pre-#809, and this
-    // scan finds it again just as cheaply next time.
-    for (var p = _minAlsaPeriods; p <= _maxAlsaPeriods; p++) {
-      if (p == _alsaPeriods) continue;
-      final sibling = await _store.getInt('$legacyKey.p$p');
+    // Preferring the sibling never loses. One this migration derived is
+    // exactly baseline + delta, so rebasing it returns the same number the
+    // legacy path would have produced; one that was measured is simply
+    // better. Rebasing means subtracting the delta that depth added and
+    // re-adding this one's — exact, on the premise the legacy path rests on.
+    //
+    // It also covers the case that has no legacy entry AT ALL: a unit first
+    // measured while the knob was already engaged never wrote one, so a
+    // shipped depth change (#818 took the appliance 8 -> 4) would otherwise
+    // hand it null — no compensation, nothing surfaced, and on the appliance
+    // no auto re-measure to notice.
+    //
+    // Closest depth first, so the least-extrapolated sibling wins when more
+    // than one exists. Nothing records whether a stored value was measured or
+    // derived, so if two depths were each independently re-measured the pick
+    // between them is arbitrary; closest is at least deterministic.
+    final byDistance =
+        [
+          for (var p = _minAlsaPeriods; p <= _maxAlsaPeriods; p++)
+            if (p != _alsaPeriods) p,
+        ]..sort((a, b) {
+          final da = (a - _alsaPeriods).abs();
+          final db = (b - _alsaPeriods).abs();
+          return da == db ? b.compareTo(a) : da.compareTo(db);
+        });
+    for (final periods in byDistance) {
+      final sibling = await _store.getInt('$legacyKey.p$periods');
       if (sibling == null) continue;
-      final baseline = sibling - _deltaFramesAt(bufferFrames, p);
+      final baseline = sibling - _deltaFramesAt(bufferFrames, periods);
       final migrated = baseline + _startThresholdDeltaFrames(bufferFrames);
       await _store.setInt(key, migrated);
       return migrated;
     }
-    return null;
+    final legacy = await _store.getInt(legacyKey);
+    if (legacy == null) return null;
+    final migrated = legacy + _startThresholdDeltaFrames(bufferFrames);
+    await _store.setInt(key, migrated);
+    return migrated;
   }
 
   /// Saves the record-offset (frames) for the given device profile.

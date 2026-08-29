@@ -149,15 +149,21 @@ export SEGNO_RT_AUDIO=1
 # means a systemd drop-in (Environment=SEGNO_ALSA_PERIODS=N) or an operator's
 # `systemctl set-environment` wins, so the next re-derivation — and a revert,
 # if a take turns out to click at this depth — costs one command and a restart
-# instead of editing an image file. It is also logged: segno.service is
-# Restart=always, so a drop-in left behind outlives every restart while
-# silently moving BOTH the monitor latency and the #809 record-offset
-# migration key (.p8 vs .p4) that decides which calibration a take is
-# aligned against. An unexplained latency figure should be answerable from
-# the log rather than by guessing at the unit's environment.
-if [ -n "${SEGNO_ALSA_PERIODS:-}" ]; then
-  echo "segno-kiosk-launch: SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS from the environment overrides the shipped 4 (moves monitor latency and the record-offset key)" >&2
-fi
+# instead of editing an image file. The effective value is logged
+# UNCONDITIONALLY, not just when overridden: segno.service is Restart=always,
+# so a drop-in left behind outlives every restart while silently moving BOTH
+# the monitor latency and the #809 record-offset key (.p8 vs .p4) that decides
+# which calibration a take is aligned against. An unexplained latency figure
+# has to be answerable from the log rather than by guessing at the unit's
+# environment -- which means the ordinary case must say what it ran at too.
 : "${SEGNO_ALSA_PERIODS:=4}"
 export SEGNO_ALSA_PERIODS
+# The 4 repeated here is the default assigned just above. Kept a literal in
+# both places on purpose: deploy/rpi/profile-on-device.sh reads the shipped
+# default back out of this file when the app is down.
+if [ "$SEGNO_ALSA_PERIODS" = 4 ]; then
+  echo "segno-kiosk-launch: SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS (shipped default)" >&2
+else
+  echo "segno-kiosk-launch: SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS overrides the shipped 4 -- moves monitor latency AND the record-offset key" >&2
+fi
 exec /opt/segno/segno "$@"

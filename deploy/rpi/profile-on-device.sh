@@ -90,24 +90,46 @@ ssh -o BatchMode=yes "$HOST" "rm -rf $REMOTE_DIR && mkdir -p $REMOTE_DIR"
 tar -C "$BUNDLE" -cf - . | ssh -o BatchMode=yes "$HOST" "tar -C $REMOTE_DIR -xf -"
 ssh -o BatchMode=yes "$HOST" "chmod +x $REMOTE_DIR/segno"
 
-# Resolve the ALSA depth the unit will ACTUALLY run at before launching under
-# it. Since #818 the launcher takes SEGNO_ALSA_PERIODS as an overridable
-# default, so a drop-in (Environment=) or `systemctl set-environment` is how a
-# re-derivation gets applied -- and neither reaches an ssh-spawned process.
-# Ask the unit rather than restating a number here. Set SEGNO_ALSA_PERIODS in
-# this script's environment to profile a candidate depth instead. Every lookup
-# is best-effort: on a unit without the service (or without systemd) this must
-# fall through to the launcher's shipped default, not abort the run.
+# Resolve the ALSA depth the unit will ACTUALLY run at, and profile under it.
+# Since #818 the launcher takes SEGNO_ALSA_PERIODS as an overridable default,
+# so the effective value can come from a drop-in (Environment=), an
+# EnvironmentFile=, `systemctl set-environment`, or the launcher's own default
+# -- and none of them reach an ssh-spawned process. Rather than reconstruct
+# systemd's precedence here and get it wrong (unit Environment= beats the
+# manager environment, not the other way round), read it off the RUNNING app,
+# where all four have already been resolved into one answer.
+#
+# If the app is not up, fall back to the launcher's own default read FROM THE
+# UNIT rather than restated here: a pre-#818 image still exports 8
+# unconditionally, and printing 4 for it would be exactly the silent mismatch
+# this exists to prevent.
+#
+# Set SEGNO_ALSA_PERIODS in this script's own environment to profile a
+# candidate depth instead. Every lookup is best-effort -- a unit with no
+# service must not abort the run -- so an unreadable depth warns rather than
+# quietly picking a number.
 if [ -z "${SEGNO_ALSA_PERIODS:-}" ]; then
   SEGNO_ALSA_PERIODS="$(ssh -o BatchMode=yes "$HOST" '
-    { systemctl show segno.service -p Environment --value 2>/dev/null || true
-      systemctl show-environment 2>/dev/null || true
-    } | tr " " "\n" | sed -n "s/^SEGNO_ALSA_PERIODS=//p" | tail -1
-  ' || true)"
+    pid=$(pidof segno 2>/dev/null | cut -d" " -f1)
+    [ -n "$pid" ] || pid=$(pgrep -n -x segno 2>/dev/null)
+    if [ -n "$pid" ] && [ -r "/proc/$pid/environ" ]; then
+      tr "\0" "\n" < "/proc/$pid/environ" |
+        sed -n "s/^SEGNO_ALSA_PERIODS=//p" | tail -1
+    else
+      # Matches both the pre-#818 `export SEGNO_ALSA_PERIODS=8` and the
+      # current `: "${SEGNO_ALSA_PERIODS:=4}"`.
+      sed -n "s/.*SEGNO_ALSA_PERIODS:\{0,1\}=\([0-9][0-9]*\).*/\1/p" \
+        /usr/bin/segno-kiosk-launch 2>/dev/null | tail -1
+    fi
+  ' 2>/dev/null || true)"
 fi
-# The launcher's shipped default (segno-kiosk-launch), used when the unit
-# names no override of its own.
-: "${SEGNO_ALSA_PERIODS:=4}"
+if [ -z "${SEGNO_ALSA_PERIODS:-}" ]; then
+  echo "==> WARNING: could not read SEGNO_ALSA_PERIODS from $HOST (app down and" \
+       "no launcher on the unit?). Profiling at 4; the unit may run another" \
+       "depth, which would make the capture-path numbers describe a build it" \
+       "is not running." >&2
+  SEGNO_ALSA_PERIODS=4
+fi
 echo "==> SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS"
 
 echo "==> starting profile build"
@@ -117,7 +139,7 @@ echo "==> starting profile build"
 # appliance. Kept in sync by hand -- if that launcher changes, change this too.
 # That includes SEGNO_ALSA_PERIODS: it tracks the value the unit ACTUALLY runs
 # at rather than pinning one of its own, because the whole point of this script
-# is to profile the configuration that ships. It is read off the unit below,
+# is to profile the configuration that ships. It is read off the unit above,
 # not restated here -- since #818 the launcher takes it as an overridable
 # default, and a drop-in (Environment=) or `systemctl set-environment` is
 # exactly how a re-derivation is meant to be applied. Neither reaches an

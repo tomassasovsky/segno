@@ -246,15 +246,45 @@ void main() {
       );
     });
 
-    test('a legacy entry still wins over a sibling period key', () async {
+    test('a sibling key wins over a legacy one that can no longer move', () {
+      // With the knob engaged, saves only ever write the QUALIFIED key, so a
+      // legacy entry is frozen at its pre-knob value while a .pN tracks every
+      // re-measure since. Reading legacy first would throw the newer figure
+      // away. Here the operator re-measured at p8 (620); the stale legacy 480
+      // must lose.
       store.values['latency_offset.Scarlett.96000.64'] = 480;
-      // A sibling that disagrees; legacy is the documented baseline, so it is
-      // what the migration must use.
-      store.values['latency_offset.Scarlett.96000.64.p8'] = 999;
+      store.values['latency_offset.Scarlett.96000.64.p8'] = 620;
 
-      final appliance = SettingsRepository(store: store, alsaPeriods: 6);
-      // p6 @ 64: halfRing 192 - 128 = +64.
-      expect(await load(appliance), 544);
+      final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+      // Rebase off p8: 620 - 128 = 492 baseline, and p4 adds nothing.
+      // The legacy path would have produced a stale 480.
+      expect(load(appliance), completion(492));
+    });
+
+    test('the closest sibling depth is the one rebased from', () async {
+      // Two siblings, both plausible sources. p6 is nearer to p4 than p8 is,
+      // so it is the one used -- deterministic rather than whichever the scan
+      // reached first.
+      store.values['latency_offset.Scarlett.96000.64.p8'] = 900;
+      store.values['latency_offset.Scarlett.96000.64.p6'] = 544;
+
+      final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+      // p6 @ 64 adds +64: 544 - 64 = 480 baseline, p4 adds nothing.
+      expect(await load(appliance), 480);
+    });
+
+    test('a derived sibling rebases to what legacy would have given', () async {
+      // The no-loss argument for preferring siblings: a sibling this
+      // migration DERIVED is exactly baseline + delta, so rebasing it lands
+      // on the same number the legacy path would have produced.
+      store.values['latency_offset.Scarlett.96000.64'] = 480;
+      final atEight = SettingsRepository(store: store, alsaPeriods: 8);
+      expect(await load(atEight), 608);
+
+      final atSix = SettingsRepository(store: store, alsaPeriods: 6);
+      // Rebased off the derived p8, not off legacy -- and identical either
+      // way: 608 - 128 = 480, + 64 = 544.
+      expect(await load(atSix), 544);
     });
 
     test('desktop (no alsaPeriods) never migrates', () async {
