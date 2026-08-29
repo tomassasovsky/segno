@@ -224,7 +224,12 @@ snapshot, save.
 
 Ten root-level `tile_*` components (`tile_REC_PLAY` ... `tile_BANK`), one per
 pedal, each an **imported STEP** from `out/segno_pedal_tile_<LABEL>.step` — not
-modelled here. The STEP carries two solids so the colours are per-body:
+modelled here. That file is the ASSEMBLY's appearance and nothing else: since
+#931 the tile is printed as two resin parts (`_white`, the whole tile in white;
+`_cover`, the black letter layer), and neither of those is what Fusion wants —
+the assembled result reads black field / white letters either way, which is what
+the two solids below give you. Do not import `_white` here expecting colours; it
+is one solid.
 
 | solid | appearance |
 |---|---|
