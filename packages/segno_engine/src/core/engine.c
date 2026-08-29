@@ -108,6 +108,17 @@ int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
    * only for audio quality, so relax a call site on the strength of the
    * ordering below and the result is a hard fault, not a click.
    *
+   * The order is not free: holding both buffers means a grow now peaks at
+   * old + new rather than max(old, new) — 11.6 MB instead of 5.8 for a lane
+   * slot at the appliance's default cap — and cannot reuse the mapping it is
+   * about to release, so a regrow under real memory pressure can fail where it
+   * used to squeak through. Accepted deliberately: publishing before releasing
+   * is the only order that keeps a dangling pool[slot] impossible, the peak is
+   * one buffer on a unit with gigabytes spare, and every lazy-grow caller
+   * already handles a failed grow. The failure SEMANTICS are unchanged from
+   * the free-then-allocate version on purpose — the old buffer is released and
+   * the slot left unallocated — so nothing downstream sees a new state.
+   *
    * Publication order is pointer-then-cap, the mirror of shrink's: this GROWS,
    * so a reader that pairs the new pointer with the not-yet-updated (smaller,
    * or zero) cap reads a short prefix of a larger buffer and is harmless, while

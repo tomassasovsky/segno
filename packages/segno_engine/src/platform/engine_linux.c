@@ -917,19 +917,28 @@ void le_platform_on_engine_teardown(void) {
  * and every dlopen for the rest of the process, long after the engine that
  * wanted it was destroyed.
  *
+ * TWO pieces of state, not one, and the distinction is load-bearing:
+ * g_memlock_refs counts LIVE ENGINES (every le_platform_lock_memory call takes
+ * one, whether or not the lock could be taken), while g_memlock_held says
+ * whether this code actually holds the process lock. Counting successful locks
+ * instead would mean an engine whose lock attempt failed — a transient ENOMEM,
+ * say — contributes no reference, so a later engine that succeeds takes the
+ * count to 1 for two live engines, and the FIRST destroy munlockalls the
+ * process out from under the second one's audio thread. Splitting them also
+ * lets a later create retry a lock an earlier one could not get.
+ *
  * The mutex is not paranoia about a hot path — neither function is one. It is
- * because BOTH the count and the process-wide lock it guards have to move
- * together: two concurrent le_engine_creates could otherwise both find the
- * count at 0, both lock, and leave it at 1 for two live engines, so the first
- * le_engine_destroy would munlockall the process out from under the survivor's
- * audio thread. */
+ * because both fields and the process-wide lock they describe have to move
+ * together: two concurrent le_engine_creates could otherwise both find
+ * g_memlock_held clear and both call mlockall. */
 static pthread_mutex_t g_memlock_mu = PTHREAD_MUTEX_INITIALIZER;
-static int g_memlock_refs = 0;
+static int g_memlock_refs = 0; /* live engines that asked for the lock */
+static int g_memlock_held = 0; /* whether WE hold the process-wide lock */
 
 void le_platform_lock_memory(void) {
   pthread_mutex_lock(&g_memlock_mu);
-  if (g_memlock_refs > 0) { /* already locked: just take a reference */
-    ++g_memlock_refs;
+  ++g_memlock_refs; /* one per engine, taken before anything can fail */
+  if (g_memlock_held) { /* already locked: the reference is all that is due */
     pthread_mutex_unlock(&g_memlock_mu);
     return;
   }
@@ -963,7 +972,7 @@ void le_platform_lock_memory(void) {
     pthread_mutex_unlock(&g_memlock_mu);
     return;
   }
-  g_memlock_refs = 1; /* only a lock we actually took is one we may undo */
+  g_memlock_held = 1; /* only a lock we actually took is one we may undo */
   fprintf(stderr,
           "segno/rt: memory locked (mlockall MCL_CURRENT|MCL_FUTURE|"
           "MCL_ONFAULT)\n");
@@ -975,18 +984,20 @@ void le_platform_lock_memory(void) {
   pthread_mutex_unlock(&g_memlock_mu);
 }
 
-/* Releases the process-wide lock once the last engine is gone. A skipped or
- * failed lock left g_memlock_refs at 0, so this is a no-op there and never
- * munlockall's a process this code did not lock — which matters because
- * munlockall is process-wide and would otherwise drop a lock this code never
- * took. See engine_platform.h. */
+/* Releases the process-wide lock once the LAST engine is gone. A skipped or
+ * failed lock left g_memlock_held clear, so this never munlockall's a process
+ * this code did not lock — which matters because munlockall is process-wide
+ * and would otherwise drop a lock some other component took. See
+ * engine_platform.h. */
 void le_platform_unlock_memory(void) {
   pthread_mutex_lock(&g_memlock_mu);
-  if (g_memlock_refs == 0 ||    /* never locked, or already released */
-      --g_memlock_refs > 0) {   /* another engine still wants it */
+  if (g_memlock_refs == 0 ||  /* unbalanced call: nothing of ours to release */
+      --g_memlock_refs > 0 || /* another engine is still live */
+      !g_memlock_held) {      /* the lock was never taken in the first place */
     pthread_mutex_unlock(&g_memlock_mu);
     return;
   }
+  g_memlock_held = 0;
   if (munlockall() != 0) {
     fprintf(stderr,
             "segno/rt: munlockall failed (errno %d); the process stays locked "

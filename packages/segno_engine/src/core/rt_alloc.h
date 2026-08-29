@@ -54,7 +54,9 @@ extern "C" {
  * on an instrument whose whole purpose is capturing a performance, "you cannot
  * record" is a worse outcome than "the recording clicks". It says so on stderr
  * (the journal, on the appliance) so a bench session is never left wondering why
- * the clicks came back.
+ * the clicks came back — ONCE per process, because the condition is
+ * process-wide and this seam is on the path of every audio-thread buffer,
+ * while segno.log does not rotate on the appliance.
  *
  * macOS also gets its own mapping (there is no fork shield to apply, but the
  * lifecycle is then identical on every POSIX host, so the tests exercise the
@@ -91,7 +93,12 @@ size_t le_rt_size(const void* p);
  * Only Linux has a shield to fail, so only there does this change which branch
  * runs; elsewhere it is inert and the test it drives asserts the invariant that
  * survives either way — a shield-less allocation is still usable, zeroed memory.
- * That is the whole contract of degrading rather than refusing. */
+ * That is the whole contract of degrading rather than refusing.
+ *
+ * A forced failure logs its own distinct line every time and does NOT consume
+ * the one-per-process report a genuine kernel refusal owns. That is what lets
+ * "no MADV_DONTFORK-refused line in a suite run" stay evidence that every
+ * unforced allocation was shielded by a real kernel. */
 void le_rt_set_fork_shield_failure_for_test(int state);
 
 #ifdef __cplusplus

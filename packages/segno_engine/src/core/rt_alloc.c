@@ -13,8 +13,16 @@
 /* Every allocation carries its own size, so le_rt_free / le_rt_shrink need only
  * the pointer — munmap needs a length, and threading one through ~30 call sites
  * (each holding the size in a different unit: frames, samples, channels) is how
- * a mismatched-length unmap gets written. One cache line, so the payload stays
- * 64-byte aligned for the DSP that reads it. */
+ * a mismatched-length unmap gets written.
+ *
+ * One cache line, so on the mmap path — every POSIX host, which is every host
+ * that runs the audio engine — the base is page-aligned and the payload comes
+ * out 64-byte aligned. NOT a portable guarantee: the Windows branch below is
+ * plain malloc, whose 16-byte alignment plus 64 is still only 16. Nothing in
+ * the DSP needs more than that today (the kernels are scalar float loops), so
+ * this buys cache-line behaviour where it is free rather than an invariant
+ * anything depends on. A future SIMD path that DOES require 64 has to switch
+ * the _WIN32 branch to _aligned_malloc/_aligned_free first. */
 #define LE_RT_HEADER 64u
 
 static int g_shield_fail_override = 0;
@@ -37,6 +45,19 @@ static void le_rt_fork_shield(void* base, size_t total) {
   if (!g_shield_fail_override && madvise(base, total, MADV_DONTFORK) == 0) {
     return;
   }
+  if (g_shield_fail_override) {
+    /* Forced by the test seam. Reported EVERY time and deliberately outside
+     * the latch below: a test that drives the degrade path must not consume
+     * the one report a genuine kernel refusal owns for the rest of the
+     * process — that is what turns "no refusal line in the suite output" into
+     * evidence that every other allocation really was shielded. Its own
+     * wording, too, so the journal can never confuse the two. */
+    fprintf(stderr,
+            "segno/rt_alloc: fork shield forced to fail by the test seam for "
+            "this %zu-byte buffer; the allocation still succeeds (#804)\n",
+            total);
+    return;
+  }
   /* ONCE PER PROCESS. A kernel that refuses MADV_DONTFORK refuses it for every
    * buffer, and this seam is now on the path of every audio-thread buffer, not
    * just the capture rings — hundreds of allocations per session. The appliance
@@ -54,7 +75,7 @@ static void le_rt_fork_shield(void* base, size_t total) {
           "buffer — and every later one — is copy-on-write, and every fork "
           "will cost the audio thread a fault per page (#804). Reported once "
           "per process.\n",
-          g_shield_fail_override ? 0 : errno, total);
+          errno, total);
 #else
   /* No fork shield off Linux: MADV_DONTFORK is a Linux advice, and neither
    * macOS nor Windows runs the PREEMPT_RT kernel whose sleeping mmap_lock turns
