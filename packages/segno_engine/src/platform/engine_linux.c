@@ -21,7 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>     /* mlockall (le_platform_lock_memory) */
+#include <sys/mman.h>     /* mlockall / munlockall (le_platform_*_memory) */
 #include <sys/resource.h> /* getrlimit / RLIMIT_MEMLOCK — the mlockall guard */
 #include <sys/stat.h>  /* stat() — probe /proc/asound/cardN pcm direction */
 
@@ -891,11 +891,18 @@ void le_platform_on_engine_teardown(void) {
  * run it without this protection, which is where every build stood before.
  *
  * Once per process (mlockall is process-wide, and le_engine_create can run more
- * than once in a host that recreates the engine). */
+ * than once in a host that recreates the engine) — but REFERENCE-COUNTED, not
+ * latched, so le_platform_unlock_memory below can actually undo it. A latch
+ * would make the lock one-way: MCL_FUTURE would go on locking every heap growth
+ * and every dlopen for the rest of the process, long after the engine that
+ * wanted it was destroyed. */
+static int g_memlock_refs = 0;
+
 void le_platform_lock_memory(void) {
-  static int done = 0;
-  if (done) return;
-  done = 1;
+  if (g_memlock_refs > 0) { /* already locked: just take a reference */
+    ++g_memlock_refs;
+    return;
+  }
   struct rlimit lim;
   if (getrlimit(RLIMIT_MEMLOCK, &lim) != 0) {
     fprintf(stderr,
@@ -919,7 +926,23 @@ void le_platform_lock_memory(void) {
             errno);
     return;
   }
+  g_memlock_refs = 1; /* only a lock we actually took is one we may undo */
   fprintf(stderr, "segno/rt: memory locked (mlockall MCL_CURRENT|MCL_FUTURE)\n");
+}
+
+/* Releases the process-wide lock once the last engine is gone. A skipped or
+ * failed lock left g_memlock_refs at 0, so this is a no-op there and never
+ * munlockall's a process this code did not lock. See engine_platform.h. */
+void le_platform_unlock_memory(void) {
+  if (g_memlock_refs == 0) return;   /* never locked, or already released */
+  if (--g_memlock_refs > 0) return;  /* another engine still wants it */
+  if (munlockall() != 0) {
+    fprintf(stderr, "segno/rt: munlockall failed (errno %d); the process stays "
+                    "locked into RAM\n",
+            errno);
+    return;
+  }
+  fprintf(stderr, "segno/rt: memory unlocked (munlockall)\n");
 }
 
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {

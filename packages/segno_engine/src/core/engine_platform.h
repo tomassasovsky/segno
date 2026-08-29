@@ -92,8 +92,23 @@ void le_platform_on_engine_teardown(void);
  * matter. No-op on macOS/Windows, which have no equivalent worth doing here:
  * neither runs the PREEMPT_RT kernel this defends, and mach_vm_wire /
  * VirtualLock are privileged, per-region calls, not a process-wide switch.
- * Safe to call more than once; it acts at most once per process. */
+ * Safe to call more than once: the lock is reference-counted against
+ * le_platform_unlock_memory, so N engines lock once and only the last teardown
+ * unlocks. */
 void le_platform_lock_memory(void);
+
+/* The other half of le_platform_lock_memory, called from le_engine_destroy.
+ * Drops this engine's reference and, when it was the last one, releases the
+ * process-wide lock (Linux: munlockall).
+ *
+ * It has to exist because mlockall is PROCESS-wide and MCL_FUTURE is open-
+ * ended: without this, an engine that has been destroyed leaves every later
+ * heap growth and every dlopen in the host process locked into RAM for the
+ * process's lifetime, protecting an audio thread that no longer exists. A host
+ * that stops the engine and goes on doing other work (or one that recreates it
+ * on a device change) would otherwise pay that forever. No-op on
+ * macOS/Windows, and a no-op wherever the lock was never taken. */
+void le_platform_unlock_memory(void);
 
 /* Excluded-input-channel mask from per-channel labels. macOS reads CoreAudio
  * labels; Windows reads the ASIO driver's channel names (SEGNO_ENABLE_ASIO, via

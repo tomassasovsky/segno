@@ -89,10 +89,27 @@ void le_track_set_len(le_track* t, int32_t len) {
 int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
   if (frames <= 0) return 0;
   if (ln->pool[slot] != NULL && ln->pool_cap[slot] >= frames) return 1;
-  le_rt_free(ln->pool[slot]);
-  ln->pool[slot] = (float*)le_rt_alloc((size_t)frames * sizeof(float));
-  ln->pool_cap[slot] = ln->pool[slot] != NULL ? frames : 0;
-  return ln->pool[slot] != NULL;
+  /* Map new / publish / unmap old — the same order le_lane_shrink_slot uses,
+   * and now for the same reason. le_rt_free UNMAPS, so freeing first would
+   * leave pool[slot] naming an unmapped page for the width of the allocation:
+   * a reader that dereferenced it there would take a SIGSEGV on the SCHED_FIFO
+   * thread, where the old calloc/free storage merely handed it stale bytes.
+   * The callers' invariant (the track is EMPTY, so nothing dereferences the
+   * slot — see le_prepare_new_capture / le_begin_empty_capture) is unchanged
+   * and is still what makes this safe; this only keeps the cost of a hole in
+   * that invariant where it used to be, at garbage audio rather than a crash.
+   *
+   * Publication order is pointer-then-cap, the mirror of shrink's: this GROWS,
+   * so a reader that pairs the new pointer with the not-yet-updated (smaller,
+   * or zero) cap reads a short prefix of a larger buffer and is harmless, while
+   * the reverse pairing would over-read. Like shrink's, that is an interleaving
+   * argument and not a barrier — see the note there. */
+  float* p = (float*)le_rt_alloc((size_t)frames * sizeof(float));
+  float* old = ln->pool[slot];
+  ln->pool[slot] = p;
+  ln->pool_cap[slot] = p != NULL ? frames : 0;
+  le_rt_free(old);
+  return p != NULL;
 }
 
 /* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`
@@ -107,13 +124,20 @@ int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
  * stakes of getting the order wrong — the old buffer is UNMAPPED at the end, so
  * a reader still holding the old pointer faults, where a realloc'd one merely
  * read stale bytes. Hence: the new buffer is fully populated before anything is
- * published, the shorter cap is stored BEFORE the new pointer (so no interleaved
- * reader can ever pair the new, smaller buffer with the old, larger cap), and
- * the old mapping is torn down only once nothing published points at it. The
- * invariant that makes even that unnecessary still holds and is what this
- * function relies on — a retired slot is one the audio thread handed back
- * through the evt_ring and can no longer name (engine_process.c's #728 note) —
- * but the ordering costs nothing and is correct without it. */
+ * published, and the old mapping is torn down only once nothing published
+ * points at it.
+ *
+ * What makes that safe is the INVARIANT, not the store order: a retired slot is
+ * one the audio thread handed back through the evt_ring and can no longer name
+ * (engine_process.c's #728 note). The shorter cap is stored before the new
+ * pointer only because that is the order in which a plain interleaving stays
+ * benign — a reader that has not yet seen the new pointer is bounded by the
+ * shorter cap on the old, larger buffer. It is NOT a publication barrier and
+ * must not be read as one: pool[] and pool_cap[] are plain non-atomic fields,
+ * the audio thread reads them plain and in the opposite order (pointer first —
+ * engine_process.c's live-slot snapshot), so on a weakly ordered core either
+ * side may still reorder. If the invariant above ever stops holding, the fix is
+ * real atomics, not a different store order. */
 void le_lane_shrink_slot(le_lane* ln, int32_t slot, int32_t frames) {
   if (frames <= 0 || ln->pool[slot] == NULL) return;
   if (ln->pool_cap[slot] <= frames) return;
@@ -792,7 +816,12 @@ le_engine* le_engine_create(void) {
    * block, recording or not. So it comes from le_rt_alloc like the buffers it
    * owns, and not from calloc (rt_alloc.h, #804). */
   le_engine* engine = (le_engine*)le_rt_alloc(sizeof(le_engine));
-  if (engine == NULL) return NULL;
+  if (engine == NULL) {
+    /* No engine means no le_engine_destroy, so hand the lock reference back
+     * here or the process stays pinned for a create that never succeeded. */
+    le_platform_unlock_memory();
+    return NULL;
+  }
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   le_ring_init(&engine->evt_ring, engine->evt_storage, LE_RING_CAPACITY);
   le_ring_init(&engine->midi_clock_ring, engine->midi_clock_ring_storage,
@@ -934,6 +963,13 @@ void le_engine_destroy(le_engine* engine) {
     le_audio_ring_release(&engine->perf.monitor_ring[c]);
   }
   le_platform_on_engine_teardown(); /* Linux restores PipeWire's dynamic quantum */
+  /* The other half of le_engine_create's le_platform_lock_memory. mlockall is
+   * process-wide and MCL_FUTURE is open-ended, so a destroyed engine that never
+   * unlocked would leave every later allocation and dlopen in the host pinned
+   * into RAM for the process's lifetime, guarding an audio thread that no
+   * longer exists. Reference-counted, so a host running two engines only
+   * releases on the last one. */
+  le_platform_unlock_memory();
   le_rt_free(engine);
 }
 

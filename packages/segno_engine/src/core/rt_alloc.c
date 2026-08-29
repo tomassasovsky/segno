@@ -18,6 +18,8 @@
 #define LE_RT_HEADER 64u
 
 static int g_shield_fail_override = 0;
+/* see le_rt_fork_shield: at most one refusal line per process */
+static int g_shield_warned = 0;
 
 void le_rt_set_fork_shield_failure_for_test(int state) {
   g_shield_fail_override = state;
@@ -31,10 +33,23 @@ static void le_rt_fork_shield(void* base, size_t total) {
   if (!g_shield_fail_override && madvise(base, total, MADV_DONTFORK) == 0) {
     return;
   }
+  /* ONCE PER PROCESS. A kernel that refuses MADV_DONTFORK refuses it for every
+   * buffer, and this seam is now on the path of every audio-thread buffer, not
+   * just the capture rings — hundreds of allocations per session. The appliance
+   * never rotates segno.log, so an unlatched line here would fill the partition
+   * to say one thing over and over. The first one carries the diagnosis; the
+   * condition is process-wide, so the repeats carry nothing.
+   *
+   * A plain flag, not an atomic: two threads racing here print the line twice,
+   * which is harmless, and the alternative is an atomic on the allocation path
+   * to make a log line exact. */
+  if (g_shield_warned) return;
+  g_shield_warned = 1;
   fprintf(stderr,
           "segno/rt_alloc: MADV_DONTFORK refused (errno %d); this %zu-byte "
-          "buffer is copy-on-write and every fork will cost the audio thread a "
-          "fault per page (#804)\n",
+          "buffer — and every later one — is copy-on-write, and every fork "
+          "will cost the audio thread a fault per page (#804). Reported once "
+          "per process.\n",
           g_shield_fail_override ? 0 : errno, total);
 #else
   /* No fork shield off Linux: MADV_DONTFORK is a Linux advice, and neither

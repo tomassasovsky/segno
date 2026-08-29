@@ -19,8 +19,14 @@
  * fault on a shared CoW page is minor and does not take mmap_lock for write —
  * but everything above is written from the callback.
  *
- * Not an arena and not a pool: one mapping per buffer, claimed from the CONTROL
- * thread only. Nothing here is callable from the audio thread.
+ * Not an arena and not a pool: one mapping per buffer. The rule is NEVER FROM
+ * THE AUDIO THREAD — mmap/madvise/munmap all take mmap_lock and are exactly the
+ * blocking the callback exists to avoid. Any other thread may call it, and more
+ * than the control thread does: the wet-cache worker (engine_cache.c) and the
+ * offline performance renderer (perf_render.c) both reach it through
+ * le_fx_prepare on their own threads. Callers are responsible for the buffer's
+ * own ownership; the allocator itself keeps no shared state beyond the test
+ * seam below.
  */
 #ifndef SEGNO_RT_ALLOC_H
 #define SEGNO_RT_ALLOC_H
@@ -54,8 +60,8 @@ extern "C" {
  * lifecycle is then identical on every POSIX host, so the tests exercise the
  * code the appliance runs); Windows uses the heap.
  *
- * Either way the pages are touched HERE, on the calling (control) thread, so the
- * audio thread never faults one in on its first lap. That makes the call
+ * Either way the pages are touched HERE, on the calling thread, so the audio
+ * thread never faults one in on its first lap. That makes the call
  * proportional to `bytes` — about a millisecond per 2 MB on the appliance —
  * which is why it belongs in arm / configure / lazy-prepare and nowhere hotter.
  */
@@ -78,8 +84,9 @@ void le_rt_free(void* p);
 size_t le_rt_size(const void* p);
 
 /* TEST SEAM. Forces the fork shield to fail, so the degrade path above can be
- * driven without a kernel that refuses MADV_DONTFORK. Control thread only, and a
- * test that sets it must clear it.
+ * driven without a kernel that refuses MADV_DONTFORK. Unlike le_rt_alloc this
+ * IS single-threaded-only — it is a plain global, so a test that sets it must
+ * clear it and must be the only thread allocating meanwhile.
  *
  * Only Linux has a shield to fail, so only there does this change which branch
  * runs; elsewhere it is inert and the test it drives asserts the invariant that

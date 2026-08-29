@@ -78,6 +78,8 @@ void le_platform_on_engine_teardown(void) {}
 
 void le_platform_lock_memory(void) {}
 
+void le_platform_unlock_memory(void) {}
+
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {
 #if defined(SEGNO_ENABLE_ASIO)
   /* Opt-in: read per-channel labels via ASIO (win_asio_labels.cpp). Degrades to
