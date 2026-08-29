@@ -136,6 +136,22 @@ void le_fx_entry_reset(le_fx_state* fx, int slot);
  * offline render, VST3 plugin processors, test harnesses). */
 void le_fx_enable_seed_settled(le_fx_state* fx, int slot);
 
+/* Seeds slot [slot]'s OCTAVER runtime settled at [params]: the three param
+ * smoothers already at their targets, and the mode crossfade already resolved
+ * onto the mode params[3] selects. The octaver's analogue of
+ * le_fx_enable_seed_settled above, and there for the same reason — an offline
+ * render standing in for a lane whose octaver has been running since before
+ * the capture must not re-pay that lane's start-up. From le_fx_entry_reset's
+ * state it would: the shift smoother ramps ~5 ms up from unison, and a PSOLA
+ * slot spends ~15 ms fading the wet leg out and another ~15 ms fading it back
+ * in before the mode even flips, none of which the live lane was doing.
+ *
+ * The one thing it CANNOT settle is the analysis-hop phase: the live lane's
+ * counter is its phase plus an elapsed-frame count nothing records. Caller
+ * must pass an octaver slot (no type check here). Control thread / offline
+ * only, and after le_fx_entry_reset. */
+void le_fx_octaver_seed_settled(le_fx_state* fx, int slot, const float* params);
+
 /* Settles chain slot [slot]'s enable-crossfade runtime at fully BYPASSED.
  * For a slot the chain will NOT process while its effective enabled bit is 0
  * (per-buffer snapshots, le_engine_stop, the offline render's count/type

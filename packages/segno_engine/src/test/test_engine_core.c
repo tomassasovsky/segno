@@ -17244,16 +17244,19 @@ static void test_perf_render_wet_fx_sweep(void) {
 /* Runs `n` frames of `dry` through a one-slot octaver chain built on a fresh
  * heap le_fx_state seeded with `hop_seed`, exactly as le_pr_render_wet_track
  * does (unity volume, unmuted, all-effective bits), and returns the wet. The
- * engine's own DSP, not a reimplementation — the only thing this controls is
- * the seed. */
+ * engine's own DSP, not a reimplementation — the only things this controls are
+ * the seed and whether the octaver runtime is settled at `params4`
+ * (le_fx_octaver_seed_settled) or left at le_fx_entry_reset's start-up state. */
 static float* oct_reference_wet(const float* dry, int32_t n, int32_t sr,
-                                int32_t hop_seed, const float* params4) {
+                                int32_t hop_seed, const float* params4,
+                                int settle) {
   le_fx_state* fx = (le_fx_state*)calloc(1, sizeof(le_fx_state));
   CHECK(fx != NULL);
   if (fx == NULL) return NULL;
   fx->hop_seed = hop_seed;
   le_fx_entry_reset(fx, 0);
   CHECK(le_fx_prepare(fx, 0, LE_FX_OCTAVER, sr) == LE_OK);
+  if (settle) le_fx_octaver_seed_settled(fx, 0, params4);
   for (int s = 0; s < LE_FX_MAX; ++s) le_fx_enable_seed_settled(fx, s);
   int32_t types[LE_FX_MAX];
   int32_t enabled[LE_FX_MAX];
@@ -17293,16 +17296,15 @@ static float* oct_reference_wet(const float* dry, int32_t n, int32_t sr,
  * the engine's own DSP driven over the render's own dry stem with the lane's
  * seed. The wrong-seed reference is asserted to differ, so the comparison
  * cannot pass by being insensitive to the seed. */
-static void test_perf_render_wet_octaver_matches_lane_hop_phase(void) {
-  printf("test_perf_render_wet_octaver_matches_lane_hop_phase\n");
-  const char* dir = render_test_dir("wet-octaver-phase");
+static void run_perf_render_octaver_case(const char* name, float mode_p3) {
+  const char* dir = render_test_dir(name);
   const int32_t sr = 48000;
   const int32_t channel = 3; /* NOT 0: track 0 / lane 0 is the single lane a
                               * calloc'd render reproduces by accident. */
   const int32_t loop_len = 1024;
   const int32_t capture_frames = 8192; /* well past the LE_PV_N warmup */
-  /* -1 octave, tone open, full wet, phase-vocoder mode. */
-  const float params4[LE_FX_PARAMS] = {0.25f, 1.0f, 1.0f, 0.0f};
+  /* -1 octave, tone open, full wet; mode_p3 picks phase vocoder or PSOLA. */
+  const float params4[LE_FX_PARAMS] = {0.25f, 1.0f, 1.0f, mode_p3};
 
   char loops_dir[700];
   snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
@@ -17371,30 +17373,49 @@ static void test_perf_render_wet_octaver_matches_lane_hop_phase(void) {
   CHECK(test_read_wet_stem(dir, channel, wet, capture_frames) ==
         capture_frames);
 
-  float* ref =
-      oct_reference_wet(dry, capture_frames, sr,
-                        le_fx_lane_hop_seed(channel, 0), params4);
-  float* wrong = oct_reference_wet(dry, capture_frames, sr, 0, params4);
-  CHECK(ref != NULL && wrong != NULL);
-  if (ref != NULL && wrong != NULL) {
+  float* ref = oct_reference_wet(dry, capture_frames, sr,
+                                 le_fx_lane_hop_seed(channel, 0), params4, 1);
+  float* wrong_seed = oct_reference_wet(dry, capture_frames, sr, 0, params4, 1);
+  float* unsettled = oct_reference_wet(
+      dry, capture_frames, sr, le_fx_lane_hop_seed(channel, 0), params4, 0);
+  CHECK(ref != NULL && wrong_seed != NULL && unsettled != NULL);
+  if (ref != NULL && wrong_seed != NULL && unsettled != NULL) {
     float d_ref = 0.0f;
-    float d_wrong = 0.0f;
+    float d_seed = 0.0f;
+    float d_unsettled = 0.0f;
     for (int32_t f = 0; f < capture_frames; ++f) {
       const float a = fabsf(wet[f] - ref[f]);
-      const float b = fabsf(wet[f] - wrong[f]);
+      const float b = fabsf(wet[f] - wrong_seed[f]);
+      const float c = fabsf(wet[f] - unsettled[f]);
       if (a > d_ref) d_ref = a;
-      if (b > d_wrong) d_wrong = b;
+      if (b > d_seed) d_seed = b;
+      if (c > d_unsettled) d_unsettled = c;
     }
-    printf("  stem vs lane-seed ref %.7f, vs seed-0 ref %.4f\n", (double)d_ref,
-           (double)d_wrong);
-    CHECK(d_ref < 1e-6f);   /* the render used THIS lane's hop phase */
-    CHECK(d_wrong > 0.01f); /* and the comparison can tell a wrong one */
+    printf("  mode %d: stem vs lane ref %.7f, vs seed-0 %.4f, vs unsettled "
+           "%.4f\n",
+           params4[3] >= 0.5f ? 1 : 0, (double)d_ref, (double)d_seed,
+           (double)d_unsettled);
+    CHECK(d_ref < 1e-6f);       /* the render used THIS lane's hop phase */
+    CHECK(d_seed > 0.01f);      /* and can tell a wrong seed */
+    CHECK(d_unsettled > 0.01f); /* and a start-up state the live lane was not
+                                 * in — the ~5 ms shift ramp, and in PSOLA
+                                 * mode the ~30 ms mode crossfade */
   }
   free(ref);
-  free(wrong);
+  free(wrong_seed);
+  free(unsettled);
   free(dry);
   free(wet);
   le_engine_destroy(e);
+}
+
+/* Run at BOTH octaver modes: the phase vocoder and PSOLA read the shared hop
+ * counter differently, and only the PSOLA case exercises the mode crossfade
+ * that le_fx_octaver_seed_settled resolves. */
+static void test_perf_render_wet_octaver_matches_lane_hop_phase(void) {
+  printf("test_perf_render_wet_octaver_matches_lane_hop_phase\n");
+  run_perf_render_octaver_case("wet-octaver-phase", 0.0f);
+  run_perf_render_octaver_case("wet-octaver-psola", 1.0f);
 }
 
 /* Regression: a dry-stem write failure must exclude that channel's wet
