@@ -196,9 +196,8 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// put 32 at the head of the generic list, `first` would make the
   /// least-proven callback deadline the landing spot for a selection this
   /// method is only trying to keep valid, then persist it. 32 is an option, so
-  /// it has to stay one. Prefer 128 (the state's own default, and
-  /// `audio_bootstrap`'s) and fall back to `first` only for a driver set that
-  /// does not offer it.
+  /// it has to stay one. Prefer [AudioSetupState.defaultBufferFrames] and fall
+  /// back to `first` only for a driver set that does not offer it.
   AudioSetupState _snapRateAndBuffer(AudioSetupState next) {
     final rates = next.sampleRateChoices;
     final buffers = next.bufferChoices;
@@ -208,15 +207,11 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
           : rates.first,
       bufferFrames: buffers.contains(next.bufferFrames)
           ? next.bufferFrames
-          : buffers.contains(_defaultBufferFrames)
-          ? _defaultBufferFrames
+          : buffers.contains(AudioSetupState.defaultBufferFrames)
+          ? AudioSetupState.defaultBufferFrames
           : buffers.first,
     );
   }
-
-  /// The buffer size a snap prefers when the current one is not on offer.
-  /// Matches `AudioSetupState.bufferFrames`'s own default.
-  static const _defaultBufferFrames = 128;
 
   /// Sets the maximum per-track loop length in whole [minutes] (`0` = engine
   /// default). Persists the choice and, when running, reopens the device so the

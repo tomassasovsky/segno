@@ -767,6 +767,40 @@ void main() {
       expect(cubit.state.bufferChoices, [32, 64, 128, 256, 512]);
       expect(cubit.state.bufferFrames, 128);
     });
+
+    test('a NEGOTIATED 32 is adopted and persisted, by design', () async {
+      // Offering 32 also makes it offerable, so a device that opens at 32
+      // when 64 was asked now has 32 enter the selection and reach disk.
+      // That is the rule working rather than a leak: the engine IS running
+      // at 32, and a chip still reading 64 would be the lie the refused
+      // banner exists to correct. Pinned so the behaviour is a decision.
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            sampleRate: 48000,
+            bufferFrames: 32,
+            isConnected: true,
+          ),
+        ),
+      );
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(sampleRate: 48000, bufferFrames: 64),
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      cubit.setBufferFrames(64);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(cubit.state.bufferFrames, 32);
+      expect(cubit.state.requestedBuffer, 64);
+      expect(cubit.state.actualBuffer, 32);
+      // Named as a refusal, so the player is told rather than silently moved.
+      expect(cubit.state.phase, ConfigPhase.refused);
+      expect((await settings.loadAudioConfig())?.bufferFrames, 32);
+    });
   });
 
   group('asio backend', () {

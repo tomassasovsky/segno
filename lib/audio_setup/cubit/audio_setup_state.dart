@@ -61,7 +61,7 @@ class AudioSetupState extends Equatable {
   /// Creates an [AudioSetupState].
   const AudioSetupState({
     this.sampleRate = 48000,
-    this.bufferFrames = 128,
+    this.bufferFrames = defaultBufferFrames,
     this.maxLoopMinutes = 0,
     this.status = AudioSetupStatus.stopped,
     this.engineStatus = const EngineStatus(),
@@ -222,6 +222,13 @@ class AudioSetupState extends Equatable {
   /// Selectable sample rates.
   static const sampleRates = [44100, 48000, 96000];
 
+  /// The buffer size used until the user (or a device) says otherwise, and the
+  /// one a snap falls back to when the current selection is not on offer (see
+  /// `AudioSetupCubit._snapRateAndBuffer`). Named because those two have to
+  /// agree: were this to move out of [bufferSizes], the snap would drop to
+  /// `bufferSizes.first`, which is the tightest period on the list.
+  static const defaultBufferFrames = 128;
+
   /// Selectable buffer sizes.
   ///
   /// 32 is offered because on the appliance it is worth more than the two
@@ -236,6 +243,15 @@ class AudioSetupState extends Equatable {
   /// offset is keyed by rate and frames, and the appliance does not auto
   /// re-measure — so a unit that takes this option needs a Measure pass
   /// before its next recorded take lines up.
+  ///
+  /// This list is the set of periods the app is willing to RUN at, which is a
+  /// stronger claim than the set it will offer: a period on it is also
+  /// ADOPTABLE, so a device that opens at 32 when 64 was asked has 32 enter
+  /// the selection and reach disk. Intended. The engine is running at 32
+  /// either way; a chip still reading 64 would be the lie the refused banner
+  /// exists to correct, and the banner names the substitution. Pinned by
+  /// `audio_setup_cubit_test.dart`, 'a NEGOTIATED 32 is adopted and
+  /// persisted, by design'.
   static const bufferSizes = [32, 64, 128, 256, 512];
 
   /// Selectable max-loop-length options, in minutes. `0` is the engine default.
