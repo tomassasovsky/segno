@@ -422,6 +422,30 @@
             }
         }
     },
+    "a11yTrackTileFxEffectOn": "{target}, {state}, FX effect on, activate to switch it off",
+    "@a11yTrackTileFxEffectOn": {
+        "description": "Accessibility label for a stage cell in FX mode whose footswitch is bound to ONE effect inside a chain (a slot target) that is currently engaged. Says 'effect', not 'chain': the switch bypasses one block, and naming it the chain would tell a screen-reader user it takes the whole rack out.",
+        "placeholders": {
+            "target": {
+                "type": "String"
+            },
+            "state": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yTrackTileFxEffectOff": "{target}, {state}, FX effect off, activate to switch it on",
+    "@a11yTrackTileFxEffectOff": {
+        "description": "Accessibility label for a stage cell in FX mode whose bound single effect is bypassed. See a11yTrackTileFxEffectOn.",
+        "placeholders": {
+            "target": {
+                "type": "String"
+            },
+            "state": {
+                "type": "String"
+            }
+        }
+    },
     "a11yTrackTileFxStale": "{target}, {state}, this switch drives nothing",
     "@a11yTrackTileFxStale": {
         "description": "Accessibility label for a stage cell in FX mode whose footswitch carries a STALE binding — one pointing at a chain or effect the rig no longer has. Unlike a11yTrackTileFxOn/Off it promises NO action, because the cell really is inert (R25); the assignment screen is where the binding gets rebound or cleared. The target reads as the localized 'target missing' wording, never the column's own chain, which this switch does not drive.",

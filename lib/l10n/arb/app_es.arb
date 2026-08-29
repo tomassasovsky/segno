@@ -166,6 +166,8 @@
     "a11yTrackTileMute": "{name}, {state}, activar para silenciar o reactivar",
     "a11yTrackTileFxOn": "{target}, {state}, cadena de FX encendida, activar para apagarla",
     "a11yTrackTileFxOff": "{target}, {state}, cadena de FX apagada, activar para encenderla",
+    "a11yTrackTileFxEffectOn": "{target}, {state}, efecto de FX encendido, activar para apagarlo",
+    "a11yTrackTileFxEffectOff": "{target}, {state}, efecto de FX apagado, activar para encenderlo",
     "a11yRenameTrack": "Renombrar {name}",
     "renameTrackTitle": "Renombrar {trackName}",
     "cancel": "Cancelar",

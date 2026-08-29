@@ -450,26 +450,30 @@ class _TrackSlot extends StatelessWidget {
           // — asking it the chain, the chain's power and the target's power
           // separately put three of those on the 16 ms path #646 cleared.
           FxCellBinding resolve() {
+            const broken = FxCellBinding(
+              target: null,
+              entries: [],
+              enabled: null,
+              chainEnabled: false,
+            );
             final entries = looper.chainEntriesAt(target.address);
-            final chainEnabled = entries == null
-                ? null
-                : looper.rememberedChainEnabled(target.address);
-            if (entries == null || chainEnabled == null) {
-              return FxCellBinding(
-                target: target,
-                entries: const [],
-                enabled: null,
-                chainEnabled: false,
-              );
-            }
+            if (entries == null) return broken.withTarget(target);
+            final chainEnabled = looper.rememberedChainEnabled(target.address);
+            if (chainEnabled == null) return broken.withTarget(target);
+            final enabled = looper.bindingEnabledIn(
+              target,
+              entries,
+              chainEnabled: chainEnabled,
+            );
+            // A slot the chain no longer carries is as stale as a chain the
+            // rig no longer has, and has to LOOK it: keeping the surviving
+            // entries would draw the live chain under a dead switch's OFF
+            // pill (R25).
+            if (enabled == null) return broken.withTarget(target);
             return FxCellBinding(
               target: target,
               entries: entries,
-              enabled: looper.bindingEnabledIn(
-                target,
-                entries,
-                chainEnabled: chainEnabled,
-              ),
+              enabled: enabled,
               // The CONTAINING chain's own flag, which is what the entry run
               // reads: a slot binding bypasses one effect, so dimming the
               // whole run off its slot's state would draw a chain that is

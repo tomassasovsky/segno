@@ -207,7 +207,8 @@ class TracksCommands {
   /// `Cmd/Ctrl+Shift+C` undo clear-all (whole-rig restore).
   /// Record mode: `1`–`8` select · `R` record/overdub · `P` play/pause.
   /// Mute mode: `1`–`8` select + mute/unmute.
-  /// FX mode: `1`–`8` select + toggle that track's FX chain.
+  /// FX mode: `1`–`8` select + toggle what that cell drives (its footswitch's
+  /// bound target, or the track's own chain when unbound).
   ///
   /// Kept in sync with `shortcuts_help_sheet.dart` by contract: a row added
   /// here is added there in the same change, or the legend starts lying.
@@ -315,10 +316,9 @@ class TracksCommands {
     }
 
     // Number keys 1–8 select a track (auto-revealing its bank). In mute mode
-    // they also toggle mute on that track; in FX mode they toggle its
-    // Track-stage chain — the keyboard twin of the pedal's FX-mode track
-    // stomps, dispatched through the bloc so the on-screen path persists the
-    // chain envelope exactly as the FX dock does.
+    // they also toggle mute on that track; in FX mode they toggle what that
+    // cell DRIVES — the keyboard twin of the pedal's FX-mode track stomps, and
+    // of the tile's own tap, through the one shared [toggleFxCell] (#884).
     final digit = _digitOf(key);
     if (digit != null) {
       final channel = digit - 1;

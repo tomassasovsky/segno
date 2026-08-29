@@ -163,9 +163,11 @@ class TrackColumn extends StatelessWidget {
     if (fxStale) {
       // A binding pointing at a chain or slot the rig no longer has is BROKEN
       // and says so (R25). It must not borrow this column's own identity — the
-      // switch does not drive that chain — nor read as a merely empty chain on
-      // a stage that is gone. Only the screen reader hears this: an empty
-      // chain draws the bare `NO CHAIN` dressing either way.
+      // switch does not drive that chain. Only the screen reader hears this
+      // wording: a stale cell always resolves to NO entries (the caller drops
+      // them), so it draws the bare `NO CHAIN` dressing, which is where R25
+      // leaves it — a mid-song stomp is not where a broken binding is
+      // announced; the assignment screen is.
       fxIdentityPrimary = l10n.pedalAssignStale.toUpperCase();
       fxIdentitySub = null;
     } else if (fxInputName.isNotEmpty) {
@@ -236,6 +238,25 @@ class TrackColumn extends StatelessWidget {
       LooperMeterState.stopped => l10n.trackStateStopped,
       LooperMeterState.muted => l10n.trackStateMuted,
     };
+
+    // The FX tile's accessible label. A STALE cell gets its own, which
+    // promises no action, because its tap really is inert (R25) — the others
+    // end in "activate to switch it on/off". A SLOT binding says EFFECT, not
+    // chain: it bypasses one block, and calling it the chain would tell a
+    // screen-reader user the switch takes the whole rack out.
+    String fxTileLabel() {
+      if (fxStale) {
+        return l10n.a11yTrackTileFxStale(fxIdentityPrimary, stateWord);
+      }
+      if (binding?.target is FxSlotTarget) {
+        return fxChainOn
+            ? l10n.a11yTrackTileFxEffectOn(fxCellLabel, stateWord)
+            : l10n.a11yTrackTileFxEffectOff(fxCellLabel, stateWord);
+      }
+      return fxChainOn
+          ? l10n.a11yTrackTileFxOn(fxCellLabel, stateWord)
+          : l10n.a11yTrackTileFxOff(fxCellLabel, stateWord);
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -364,23 +385,7 @@ class TrackColumn extends StatelessWidget {
               semanticLabel: switch (mode) {
                 InteractionMode.record => l10n.a11yTrackTile(name, stateWord),
                 InteractionMode.mute => l10n.a11yTrackTileMute(name, stateWord),
-                // A STALE cell gets its own label: it promises no action,
-                // because its tap really is inert (R25) — the other two end
-                // in "activate to switch it on/off".
-                InteractionMode.fx => switch ((fxStale, fxChainOn)) {
-                  (true, _) => l10n.a11yTrackTileFxStale(
-                    fxIdentityPrimary,
-                    stateWord,
-                  ),
-                  (false, true) => l10n.a11yTrackTileFxOn(
-                    fxCellLabel,
-                    stateWord,
-                  ),
-                  (false, false) => l10n.a11yTrackTileFxOff(
-                    fxCellLabel,
-                    stateWord,
-                  ),
-                },
+                InteractionMode.fx => fxTileLabel(),
               },
               selected: selected,
               borderRadius: 8,
@@ -697,6 +702,16 @@ class FxCellBinding extends Equatable {
       entries = const [],
       enabled = null,
       chainEnabled = false;
+
+  /// This binding with [target] attached and nothing else changed — how a
+  /// STALE cell keeps the address it points at (for its label) while drawing
+  /// none of the chain around it.
+  FxCellBinding withTarget(FxBindingTarget target) => FxCellBinding(
+    target: target,
+    entries: entries,
+    enabled: enabled,
+    chainEnabled: chainEnabled,
+  );
 
   /// The typed target the switch drives — one whole chain, or ONE slot inside
   /// it. Kept typed rather than widened to its containing chain: a slot

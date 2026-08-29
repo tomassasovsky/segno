@@ -752,6 +752,7 @@ void main() {
 
     testWidgets('a SLOT binding names and powers the SLOT it drives, not the '
         "chain's head", (tester) async {
+      final handle = tester.ensureSemantics();
       await pumpColumn(
         tester,
         name: 'GUITAR',
@@ -782,6 +783,16 @@ void main() {
       // The SLOT's own bypassed state, not the chain's (which is engaged).
       expect(find.text('OFF'), findsOneWidget);
       expect(find.text('ON'), findsNothing);
+      // And the screen reader hears EFFECT, not chain: this switch bypasses
+      // one block, not the rack around it.
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(
+        find.bySemanticsLabel(
+          l10n.a11yTrackTileFxEffectOff('MASTER · DELAY', l10n.trackStateEmpty),
+        ),
+        findsOneWidget,
+      );
+      handle.dispose();
     });
 
     testWidgets("a STALE binding reads as BROKEN, never as the column's own "
@@ -984,6 +995,44 @@ void main() {
 
         await tester.tap(find.byKey(const Key('tracks_tile_0')));
         await tester.pump();
+        verifyNever(() => bloc.add(const LooperTrackChainToggled(0)));
+      });
+
+      testWidgets('a binding whose SLOT has left the chain is stale too — it '
+          'never draws the live chain under a dead OFF pill', (tester) async {
+        // The stale shape that still RESOLVES a chain: the Master insert is
+        // there, the effect the switch pointed at is not. Keeping the
+        // surviving entries would draw a running chain bypassed.
+        final chain = [
+          BuiltInEffect(type: TrackEffectType.reverb, slotId: 'slot-reverb'),
+        ];
+        await bindTrack1ToMaster(chain);
+        await control.setGlobalBindings(
+          PedalBindingSet([
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+              target: const FxSlotTarget(
+                address: FxAddress(stage: FxStage.master),
+                slotId: 'slot-gone',
+              ).canonicalString(),
+            ),
+          ]),
+        );
+        control.setMode(InteractionMode.fx);
+        seed(const LooperState(tracks: [Track()]));
+        await pump(tester);
+
+        expect(find.byKey(const Key('tracks_tileFxNoChain')), findsOneWidget);
+        expect(find.text('Reverb'), findsNothing);
+        expect(find.text('OFF'), findsNothing);
+        expect(find.text('ON'), findsNothing);
+
+        await tester.tap(find.byKey(const Key('tracks_tile_0')));
+        await tester.pump();
+        verifyNever(
+          () =>
+              repository.setMasterChainEnabled(enabled: any(named: 'enabled')),
+        );
         verifyNever(() => bloc.add(const LooperTrackChainToggled(0)));
       });
 
