@@ -467,6 +467,13 @@ LED_STRIP_N_MAX = int(LED_SLOT_W // LED_STRIP_PITCH)  # 8 is all that fits the 6
 LED_STRIP_N   = LED_STRIP_N_MAX                       # <- the one number to flip
 LED_STRIP_SEG = LED_STRIP_N * LED_STRIP_PITCH         # 55.56 cut length
 LED_STRIP_CLR = 0.3       # per side, across the width
+LED_STRIP_T_CLR = 0.15    # ...and ACROSS THE THICKNESS. Without it the channel is
+                          # exactly LED_STRIP_T deep, off a LED_STRIP_OA the block
+                          # above flags as unverified -- a strip 0.1 over nominal
+                          # then cannot flatten, so it stays bowed and pushes on
+                          # the lips, which is the one thing the design says the
+                          # printed part never has to take. Every other axis had a
+                          # clearance; this one did not.
 LED_CH_L      = LED_STRIP_SEG + 1.4   # cut segment plus slop -- scissors land
                           # +-0.5 either way. DERIVED now: a fixed 18.0 silently
                           # stopped fitting the moment the segment went from one
@@ -487,6 +494,18 @@ LED_PKG_Z_CLR = 0.15      # ...and the shoulder is only really the stop if the
                           # LED_SHOULDER exists to prevent. 0.15 of air makes the
                           # order unambiguous and is nothing optically.
 LED_WALL_MIN  = 0.6       # channel wall floor; the flange edge caps the outside
+LED_POST_MIN  = 0.3       # gap from the shoulder's REAR edge to the support-post
+                          # top pad. Same story as LED_LAND_MIN below and the same
+                          # cause: 3 -> 4 took it from 1.39 to 0.39. Also a
+                          # tripwire, not a margin.
+                          #
+                          # BOTH of these exist because LED_STRIP_W is 12. The
+                          # shoulder is only 4 mm to house a 12 mm channel; at
+                          # 10 mm it goes back to 3 and both gaps roughly double
+                          # (land 3.41, post 1.39). The strip's own listing
+                          # contradicts itself on width -- see LED_STRIP_W -- so
+                          # MEASURING IT is what settles whether this part is
+                          # comfortable or on two knife edges at once.
 LED_LAND_MIN  = 2.4       # faceplate metal left between the shoulder's front edge
                           # and the pedal aperture behind it -- the land the flange
                           # is glued to. THIS IS A TRIPWIRE AT THE CURRENT VALUE,
@@ -1706,12 +1725,30 @@ def _check(strict_board_mount=True):
             continue
         ap = next(c for c in cuts if c.get("ref") == lb)
         ls = next(c for c in cuts if c.get("ref") == lb + "_LEDSLOT")
-        land = (ls["v"] + ls["h"] / 2.0 - LED_SLOT_H / 2.0 - LED_INS_FLANGE
-                - (ap["v"] + ap["h"]))
+        land = ls["v"] - LED_INS_FLANGE - (ap["v"] + ap["h"])
         assert land >= LED_LAND_MIN, (
             f"LED_DIFFUSER {lb}: only {land:.2f} mm of faceplate between the "
             f"shoulder edge and the pedal aperture, under the {LED_LAND_MIN} "
             f"floor; move the pill back (LED_GAP) or narrow LED_INS_FLANGE")
+    # ...and behind the pill, the same shoulder must not reach the support post's
+    # top pad -- both bear on the faceplate underside, and the existing post gate
+    # (above) tests the LED SLOT (+-30 in u), not the shoulder (+-34), so it does
+    # not see this. Going 3 -> 4 halved the gap here too: 1.39 -> 0.39.
+    for lb, _u, _v in PEDALS:
+        if not _has_led(lb):
+            continue
+        ls = next(c for c in cuts if c.get("ref") == lb + "_LEDSLOT")
+        f_u0, f_u1 = ls["u"] - LED_INS_FLANGE, ls["u"] + ls["w"] + LED_INS_FLANGE
+        f_v1 = ls["v"] + ls["h"] + LED_INS_FLANGE
+        for u in POST_U:
+            if f_u1 <= u - POST_PW/2 or u + POST_PW/2 <= f_u0:
+                continue                              # no overlap in u, no issue
+            gap = (POST_V - POST_PAD) - f_v1
+            assert gap >= LED_POST_MIN, (
+                f"LED_DIFFUSER {lb}: shoulder rear edge is {gap:.2f} mm from the "
+                f"post pad at u={u:.0f}, under the {LED_POST_MIN} floor -- both "
+                f"bear on the faceplate underside")
+
     # ...and the strip channel has to survive inside that shoulder.
     assert LED_INS_FLANGE * 2 + LED_SLOT_H - LED_STRIP_W - 2 * LED_STRIP_CLR >= 2 * LED_WALL_MIN, (
         f"LED_DIFFUSER: a {LED_STRIP_W} strip leaves under {LED_WALL_MIN} of wall "
@@ -3609,7 +3646,7 @@ def diffuser_stack():
     recess_d = LED_INS_FL_T - LED_WEB               # 0.7 of the 1.5 flange
     stand    = LED_PKG_H + LED_PKG_Z_CLR - recess_d # proud of the flange back
     strip_t0 = -LED_INS_FL_T - stand                # strip's LED-side face
-    strip_t1 = strip_t0 - LED_STRIP_T               # strip's back face
+    strip_t1 = strip_t0 - LED_STRIP_T - LED_STRIP_T_CLR   # under the strip's back
     return recess_d, strip_t0, strip_t1, strip_t1 - LED_LIP
 
 
@@ -3683,7 +3720,12 @@ def build_diffuser_step():
             (y_sh, strip_t0),                        #   ...down to the strip face
             (y_in, strip_t0),                        # step out to the channel wall
             (y_in, strip_t1),                        #   ...down past the strip
-            (y_in - LED_LIP, strip_t1),              # retaining lip (0.7 bridge)
+            (y_in - LED_LIP, strip_t1),              # retaining lip -- a LED_LIP
+                                                     # CANTILEVER, not a bridge:
+                                                     # the two lips face each
+                                                     # other across the channel
+                                                     # and never meet, so lens-down
+                                                     # this starts over open air
             (y_in, lip_z),                           # 45 deg lead-in, self-supporting
             (y_out, lip_z),
             (y_out, -LED_INS_FL_T)]

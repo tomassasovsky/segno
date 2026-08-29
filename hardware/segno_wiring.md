@@ -105,9 +105,19 @@ that needs the thought.
 **The rail is not the binding limit — the board path is.** BUCK_AUX is a 10 A
 buck, but the LEDs reach it through J3 (two parallel JST-XH contacts, ~6 A) and
 the console board's 0.6 mm +5 V track (~2 A per IPC-2152), both sized when the
-chain was 26 WS2812. Anything above ~2 A of LED is already past the track. That
-is an **open call (#930)** and it is a board/firmware question, not a rail one —
-see the J3 bullet below. And the 5.14 A non-LED baseline is **rated maxima** for two
+chain was 26 WS2812. **Anything above ~2 A of LED is already past the track** —
+which is rows 3, 4 and 5 of the table, and row 3 (pills amber, ring one colour)
+is an ordinary operating state, not a lamp test. Only the top two rows are
+comfortable. That is an **open call (#930)** and it is a board/firmware question,
+not a rail one — see the J3 bullet below.
+
+**And the whole table is a model of software that does not exist.** The gradient
+duty (62%) and "one channel per indicator" are how a pill is *intended* to be
+drawn; there is no console pixel renderer yet (`firmware/led_driver/` is the
+standalone RP2040 driver, sized 24 ring + 8 indicators, with a fixed
+`setBrightness(120)` ≈ 47%). So the numbers below are a design target for that
+renderer to hit, not a measurement — and the 2 A track is the number it has to
+hit them against. And the 5.14 A non-LED baseline is **rated maxima** for two
 screens and the board, not measured; real draw is likely well under half, so the
 true headroom is larger than this table admits. Measure it on the bench before
 trusting either direction.

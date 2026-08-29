@@ -224,7 +224,7 @@ snapshot, save.
 
 > **The doc is one revision behind the generator again, on purpose (#930).** It
 > holds **six** diffusers of the pre-#930 part (3 mm flange, 66 x 12 x 3.9). The
-> generator now emits **ten**, at 68 x 14 x 6.18 with a 4 mm flange and a strip
+> generator now emits **ten**, at 68 x 14 x 6.33 with a 4 mm flange and a strip
 > channel. Re-import before trusting anything rendered from it — everything
 > below is how, and the numbers below are still right because the lens origin
 > did not move.
