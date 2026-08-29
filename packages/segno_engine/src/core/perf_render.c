@@ -1040,7 +1040,23 @@ static float* le_pr_render_wet_track(const le_pr_manifest* m,
    * track [channel]) BEFORE any octaver's hop counter is seeded from it: a
    * calloc'd 0 is track 0's seed, so every other track's stem would be
    * rendered at a DIFFERENT phase-vocoder realization than the one that was
-   * heard. */
+   * heard.
+   *
+   * EXACT for a type that lands DURING the capture, which is the case this
+   * render reconstructs rather than approximates: the replay below runs
+   * le_fx_entry_reset at the same logged frame the audio thread ran it, so
+   * both chains start their hop counter from this lane's phase at the same
+   * instant (test_perf_render_golden_octaver_nonzero_track pins exactly that
+   * against a live capture, and it comes out bit-exact).
+   *
+   * An octaver already in the chain AT ARM is only approximated: the live
+   * lane has been ticking it since the type landed, so its counter is this
+   * phase plus an elapsed-frame count nothing records. That is the same class
+   * of approximation this render already makes for every arm-time slot — an
+   * empty delay ring, a cold reverb — and which the fixed golden-parity
+   * protocol excludes by construction (see the scope note above). The seed
+   * still belongs here: it puts an arm-time render on THIS lane's phase
+   * family instead of on one lane's it is not. */
   fx->hop_seed = le_fx_lane_hop_seed(channel, 0);
   /* Seed the enable-crossfade runtime SETTLED at enabled, mirroring
    * le_lane_reset — a calloc'd zero state would fade the whole chain in over

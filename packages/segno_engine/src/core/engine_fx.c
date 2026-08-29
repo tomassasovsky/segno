@@ -137,6 +137,20 @@ static float le_wrap_pi(float x) {
   return x - two_pi * roundf(x / two_pi);
 }
 
+/* The two invariants the stagger's arithmetic rests on, asserted rather than
+ * merely written down (engine_fx.h states both in prose):
+ *  - LE_PV_HOP is a power of two, or the & LE_PV_HOP - 1 masks below and in
+ *    le_fx_lane_hop_seed silently return phases OUTSIDE [0, LE_PV_HOP) — which
+ *    le_pv_tick then uses to index o->out[];
+ *  - the owner/lane steps were chosen for a 9 x 9 owner grid and give distinct
+ *    base phases only over it. At 16 tracks x 16 lanes, 289 owners collapse
+ *    onto 225 phases; the steps have to be re-derived if a dimension grows. */
+_Static_assert((LE_PV_HOP & (LE_PV_HOP - 1)) == 0,
+               "LE_PV_HOP must be a power of two (hop-phase masks)");
+_Static_assert(LE_MAX_TRACKS <= 8 && LE_MAX_LANES <= 8 &&
+                   LE_MAX_MONITORED_INPUTS <= 8,
+               "hop-stagger steps are derived for a 9x9 owner grid");
+
 /* The analysis-hop PHASE (in samples) of the octaver instance in chain slot
  * [slot] of chain [fx]: the value le_pv_reset_runtime seeds hop_count with, so
  * that N octaver instances run their frames on N DIFFERENT sample indices

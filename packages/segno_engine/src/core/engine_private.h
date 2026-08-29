@@ -231,9 +231,11 @@ typedef struct le_fx_state {
    * engine_fx.h); the octaver adds the per-slot step to it (le_pv_hop_phase,
    * engine_fx.c) so two octaver instances never run their FFT frames on the
    * same sample index — see that function for why it matters and why the
-   * phase costs no latency. 0 (the calloc'd default, which the VST3
-   * processors keep) is a valid base: a standalone state runs one chain, so
-   * only the per-slot part of the spread applies there. The OFFLINE renderers
+   * phase costs no latency. 0 (the calloc'd default) is a valid base for a
+   * STANDALONE state: it runs one chain, so only the per-slot part of the
+   * spread applies. That is what the VST3 processors keep — and since each of
+   * them is one instance in slot 0, they all land on phase 0 and do NOT
+   * stagger against each other; #940 tracks giving a hosted instance a seed. The OFFLINE renderers
    * are NOT in that position — they stand in for a specific live lane and
    * must copy its base, see le_fx_lane_hop_seed. Control-thread written,
    * once, before any audio runs; audio-thread read-only. */
