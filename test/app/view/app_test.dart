@@ -112,7 +112,9 @@ class _RecordingWindowService implements WaveformWindowService {
   void Function(ReadoutControl control)? onControl;
 
   @override
-  void pushReadout(PerformanceReadout readout) => readouts.add(readout);
+  Future<void> pushReadout(PerformanceReadout readout) async {
+    readouts.add(readout);
+  }
 
   @override
   bool get isOpen => _open;
@@ -130,12 +132,19 @@ class _RecordingWindowService implements WaveformWindowService {
     _open = false;
   }
 
+  /// Every waveform frame the app handed over, in order — the playhead and
+  /// the label it carried.
+  final waveforms = <({double progress, String selectedTrack})>[];
+
   @override
   void pushWaveform(
     Float32List samples,
     double progress,
     String selectedTrack,
-  ) => pushCalls++;
+  ) {
+    pushCalls++;
+    waveforms.add((progress: progress, selectedTrack: selectedTrack));
+  }
 }
 
 /// A MIDI source whose enumeration the test drives by hand, so a pinned
@@ -879,6 +888,66 @@ void main() {
           rig.window.readouts.last.tracks.single.muted,
           isTrue,
           reason: 'the gate swallowed a fact the second screen draws',
+        );
+      });
+
+      testWidgets('a burst of polls is rate-limited but never DROPPED', (
+        tester,
+      ) async {
+        // The rate limit is not a decimator, and the difference is the whole
+        // point: `looperState` is deduped, so an emit is a CHANGE, not a
+        // tick. A rig that stops, clears or undoes emits once and then goes
+        // quiet — drop that one and the second screen keeps the pre-stop
+        // playhead until something else happens to move.
+        final rig = await pumpPlaying(tester);
+        final frames = rig.window.pushCalls;
+
+        // Two changes inside one frame period: the first opens the frame, the
+        // second arrives with the gate shut.
+        engine.nextSnapshot = playing(position: 24000, peak: 0.3);
+        rig.ticker.add(null);
+        await tester.pump();
+        engine.nextSnapshot = playing(position: 48000, peak: 0.4);
+        rig.ticker.add(null);
+        await tester.pump();
+
+        expect(
+          rig.window.pushCalls - frames,
+          1,
+          reason: 'the rate limit let a burst through unthrottled',
+        );
+
+        // ...and the held one lands on the trailing edge, carrying the LAST
+        // state rather than the one that happened to arrive on an even tick.
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(
+          rig.window.waveforms.last.progress,
+          closeTo(0.5, 1e-9),
+          reason: 'a change was swallowed instead of held — 48000/96000',
+        );
+      });
+
+      testWidgets('a cursor move reaches the window on a SILENT rig', (
+        tester,
+      ) async {
+        // Nothing is added to the ticker here on purpose: the poll is deduped
+        // and this rig is not moving, so it emits nothing at all. The label
+        // is not looper state, so if the timer does not carry it the second
+        // screen keeps naming the wrong track indefinitely.
+        final rig = await pumpPlaying(tester);
+        final before = rig.window.waveforms.last.selectedTrack;
+
+        tester
+            .element(find.byType(LooperPage))
+            .read<ControlCubit>()
+            .selectTrack(1);
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(
+          rig.window.waveforms.last.selectedTrack,
+          isNot(before),
+          reason:
+              'the cursor moved and the second screen never heard about it',
         );
       });
 

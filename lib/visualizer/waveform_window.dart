@@ -128,12 +128,13 @@ WaveformFrame waveformFrameFrom(
     samples: payload.containsKey('samples')
         ? _toFloat32List(payload['samples'])
         : previous.samples,
-    progress: progress is num ? progress.toDouble() : 0.0,
-    // Every other field degrades to what is already on screen rather than
-    // throwing: this crosses an engine boundary as a loose map, and a
-    // malformed frame must not take the second screen down mid-set. Hence
-    // `is String` and not `as String?`, which throws on a present-but-wrong
-    // value — the only shape a garbled frame actually takes.
+    // Every field degrades to what is already on screen rather than throwing
+    // OR resetting: this crosses an engine boundary as a loose map, and a
+    // malformed frame must neither take the second screen down mid-set nor
+    // snap the playhead back to the loop start. Hence `is num` / `is String`
+    // rather than casts — a present-but-wrong value is the shape a garbled
+    // frame actually takes; an absent key is the easy case.
+    progress: progress is num ? progress.toDouble() : previous.progress,
     selectedTrack: selectedTrack is String
         ? selectedTrack
         : previous.selectedTrack,

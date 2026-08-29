@@ -40,11 +40,17 @@ abstract interface class WaveformWindowService {
   /// Pushes the performance readout, but ONLY when it differs from the last
   /// one pushed.
   ///
-  /// The waveform rides a per-frame timer because its samples change every
-  /// frame; the readout does not. Diffing here is what keeps a playing loop
-  /// from re-serialising eight track records sixty times a second across an
-  /// engine boundary.
-  void pushReadout(PerformanceReadout readout);
+  /// The waveform rides the engine poll because its playhead moves with it;
+  /// the readout does not. Diffing here is what keeps a playing loop from
+  /// re-serialising eight track records sixty times a second across an engine
+  /// boundary.
+  ///
+  /// The returned future completes when the readout has been delivered, and
+  /// **with an error when it never landed**. Callers that keep a change gate
+  /// of their own in front of this must clear it on that error, or a readout
+  /// that was built once and dropped in flight is never rebuilt and the
+  /// second screen holds stale facts for the rest of the set.
+  Future<void> pushReadout(PerformanceReadout readout);
 
   /// Handler for control commands the sub-window's volume overlay sends back
   /// (#698) — the channel's first sub→main control path. The app shell sets
@@ -104,6 +110,15 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
     if (_mainChannelRegistered) return;
     await waveformWindowChannel.setMethodCallHandler((call) async {
       if (call.method == waveformWindowReadyMethod) {
+        // A window announcing itself holds NOTHING yet. Both diffs are
+        // beliefs about what is already on the second screen, so they have to
+        // be dropped here as well as in [close]: a sub-window engine that
+        // comes back without this side closing it (an orphan reclaimed after
+        // a hot restart, a re-announced window) would otherwise be fed
+        // progress-only frames forever and show an empty waveform under a
+        // moving playhead.
+        _lastSamples = null;
+        _lastReadout = null;
         _readyCompleter?.complete();
       }
       if (call.method == waveformWindowControlMethod) {
@@ -188,22 +203,22 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   }
 
   @override
-  void pushReadout(PerformanceReadout readout) {
+  Future<void> pushReadout(PerformanceReadout readout) async {
     if (_controller == null) return;
     if (readout == _lastReadout) return;
     _lastReadout = readout;
-    unawaited(
-      waveformWindowChannel.invokeMethod('readout', readout.toMap()).catchError(
-        (Object _) {
-          // Same self-heal as [pushWaveform]: a readout the window never
-          // received must not sit in the diff as one it did, or the next
-          // equal readout is dropped and the second screen holds stale
-          // facts until something else about the rig changes.
-          if (identical(_lastReadout, readout)) _lastReadout = null;
-          return null;
-        },
-      ),
-    );
+    try {
+      await waveformWindowChannel.invokeMethod('readout', readout.toMap());
+    } on Object {
+      // Same self-heal as [pushWaveform]: a readout the window never received
+      // must not sit in the diff as one it did, or the next equal readout is
+      // dropped. Rethrown rather than swallowed because this diff is only the
+      // second of two — the caller holds one in front of it, and clearing
+      // only this one would leave the caller never rebuilding the readout to
+      // re-send.
+      if (identical(_lastReadout, readout)) _lastReadout = null;
+      rethrow;
+    }
   }
 }
 
@@ -222,7 +237,7 @@ class NoopWaveformWindowService implements WaveformWindowService {
   Future<void> close() async {}
 
   @override
-  void pushReadout(PerformanceReadout readout) {}
+  Future<void> pushReadout(PerformanceReadout readout) async {}
 
   @override
   void pushWaveform(

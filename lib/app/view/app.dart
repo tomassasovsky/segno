@@ -546,18 +546,23 @@ class _AppViewState extends State<_AppView> {
   Timer? _pushTimer;
 
   /// Drives the waveform frames while the sub-window is open. `null` when it
-  /// is closed. See [_onLooperPoll] for why the frames follow the poll rather
-  /// than [_pushTimer].
+  /// is closed. See [_requestWaveformFrame] for why the frames follow the poll
+  /// rather than [_pushTimer].
   StreamSubscription<LooperState>? _pollSub;
 
-  /// Polls seen since the last waveform frame — the decimation counter that
-  /// holds the second screen at ~[_waveformFrame] whatever the console's
-  /// refresh rate is set to. See [_pollsPerFrame].
-  int _pollsSinceFrame = 0;
+  /// Open between waveform frames — while it runs, a frame is held back
+  /// rather than sent, and the last one held is sent when it fires. This is
+  /// what paces the second screen at ~[_waveformFrame] whatever the console's
+  /// refresh rate is set to, WITHOUT a free-running clock of its own; see
+  /// [_requestWaveformFrame].
+  Timer? _frameGate;
 
-  /// The projection and the label the last waveform frame carried. `null`
-  /// before the first frame and after the window closes.
-  LooperState? _lastFrameState;
+  /// The newest projection that arrived while [_frameGate] was closed, sent on
+  /// the trailing edge. `null` when nothing is waiting.
+  LooperState? _pendingFrame;
+
+  /// The label the last waveform frame carried. `null` before the first frame
+  /// and after the window closes.
   String? _lastFrameLabel;
 
   /// The states [_readoutOf] was last given. `null` before the first push and
@@ -599,6 +604,7 @@ class _AppViewState extends State<_AppView> {
   @override
   void dispose() {
     _pushTimer?.cancel();
+    _frameGate?.cancel();
     unawaited(_pollSub?.cancel());
     widget.waveformWindow.onControl = null;
     unawaited(widget.waveformWindow.close());
@@ -687,32 +693,30 @@ class _AppViewState extends State<_AppView> {
         _showWaveformWindowFailedBanner();
         return;
       }
-      // The waveform follows the POLL, not this timer — see [_onLooperPoll].
+      // The waveform follows the POLL, not this timer — see
+      // [_requestWaveformFrame].
       _pollSub ??= context.read<LooperRepository>().looperState.listen(
-        _onLooperPoll,
+        _requestWaveformFrame,
       );
       _pushTimer ??= Timer.periodic(_waveformFrame, (_) {
         if (!mounted) return;
         final looper = context.read<LooperRepository>();
         final control = context.read<ControlCubit>().state;
-        // The readout is what this timer is FOR: its eight inputs are bloc
-        // states with no common stream to listen to, and the facts it draws
-        // are ones the performer causes — a footswitch arming a track, the
-        // cursor moving, a fader dragged on the sub-window's own overlay — so
-        // it is polled at frame rate and gated on change.
+        // The readout is what this timer is FOR: its inputs are bloc states
+        // with no common stream to listen to, and the facts it draws are ones
+        // the performer causes — a footswitch arming a track, the cursor
+        // moving, a fader dragged on the sub-window's own overlay — so it is
+        // polled at frame rate and gated on change.
         //
         // The waveform frame is not pushed here as a rule: the poll drives
-        // it. This tick fills the one gap the poll cannot, the selected-track
-        // LABEL, which is not looper state at all — on a stopped rig the
-        // deduped poll emits nothing ever, and moving the cursor would
-        // otherwise never reach the second screen. Anything the poll is about
-        // to deliver is left to it: pushing a frame the poll has newer data
-        // for is exactly the second clock [_onLooperPoll] exists to remove.
-        final state = looper.lastState;
+        // it. This tick covers the one input the poll cannot see — the
+        // selected-track LABEL, which is not looper state at all, so on a
+        // stopped rig (where the deduped poll emits nothing) moving the
+        // cursor would otherwise never reach the second screen. It goes
+        // through the same gate as a poll, so it can never jump ahead of one.
         final label = context.read<TracksCubit>().state.nameOf(control.cursor);
-        if (identical(state, _lastFrameState) && label != _lastFrameLabel) {
-          _pushWaveformFrame(looper, state, label);
-        }
+        final state = looper.lastState;
+        if (label != _lastFrameLabel) _requestWaveformFrame(state);
         // Same timer, different discipline from the old push: the readout
         // rarely changes, so `pushReadout` already dropped anything equal to
         // what it last sent rather than re-serialising eight track records at
@@ -737,72 +741,62 @@ class _AppViewState extends State<_AppView> {
     } else {
       _pushTimer?.cancel();
       _pushTimer = null;
+      _frameGate?.cancel();
+      _frameGate = null;
+      _pendingFrame = null;
       unawaited(_pollSub?.cancel());
       _pollSub = null;
-      _pollsSinceFrame = 0;
-      _lastFrameState = null;
       _lastFrameLabel = null;
       _lastReadoutInputs = null;
       await widget.waveformWindow.close();
     }
   }
 
-  /// Pushes a waveform frame for the projection the repository just published.
+  /// Sends a waveform frame for [state], or holds it until the gate opens.
   ///
-  /// Driven by the poll rather than by [_pushTimer] because the playhead the
-  /// frame carries IS that projection's. A timer of its own period resamples
+  /// Driven by the poll — and by a label change on the tick below — rather
+  /// than by a periodic push, because the playhead a frame carries IS the
+  /// poll's. A timer of its own period resamples
   /// [LooperRepository.lastState] on a clock that beats against the poll's:
   /// at the 30 Hz refresh setting a 33 ms timer reads a 33.33 ms projection,
   /// so roughly every hundredth frame repeats the playhead and the next skips
   /// two — visible stutter on the second screen and the 7" panel, for a value
-  /// that was exact before it was read out of the cache. Pushing on the emit
+  /// that was exact before it was read out of the cache. Sending on the event
   /// that produced the value removes the second clock entirely.
   ///
-  /// Decimated rather than throttled on a clock, for the same reason: an
-  /// integer number of polls per frame is uniform by construction.
-  void _onLooperPoll(LooperState state) {
+  /// The gate is a rate limit, NOT a decimator, and the difference matters:
+  /// [LooperRepository.looperState] is deduped, so an emit is a CHANGE, not a
+  /// tick. Dropping every second one would drop half of the rig's discrete
+  /// events outright — a stop, a clear, an undo on a quiet rig emits once and
+  /// never again, and there is no following poll to carry it. So a frame that
+  /// arrives early is remembered and sent on the trailing edge instead, and
+  /// the last state always wins.
+  void _requestWaveformFrame(LooperState state) {
     if (!mounted) return;
-    final looper = context.read<LooperRepository>();
-    // The first poll after the window opens always goes out: it is what seeds
-    // the sub-window's held peaks and playhead. Only after that does the
-    // decimation apply.
-    if (_lastFrameState != null &&
-        ++_pollsSinceFrame < _pollsPerFrame(looper.pollInterval)) {
+    if (_frameGate != null) {
+      _pendingFrame = state;
       return;
     }
-    final cursor = context.read<ControlCubit>().state.cursor;
-    _pushWaveformFrame(
-      looper,
-      state,
-      context.read<TracksCubit>().state.nameOf(cursor),
-    );
+    _sendWaveformFrame(state);
   }
 
-  void _pushWaveformFrame(
-    LooperRepository looper,
-    LooperState state,
-    String label,
-  ) {
-    _pollsSinceFrame = 0;
-    _lastFrameState = state;
-    _lastFrameLabel = label;
+  void _sendWaveformFrame(LooperState state) {
+    final looper = context.read<LooperRepository>();
+    final cursor = context.read<ControlCubit>().state.cursor;
+    _lastFrameLabel = context.read<TracksCubit>().state.nameOf(cursor);
+    _pendingFrame = null;
+    _frameGate = Timer(_waveformFrame, _openFrameGate);
     widget.waveformWindow.pushWaveform(
       looper.readWaveform(),
       state.transport.progress,
-      label,
+      _lastFrameLabel!,
     );
   }
 
-  /// How many polls one waveform frame is worth at [pollInterval], so the
-  /// second screen is fed at ~[_waveformFrame] whatever the console's refresh
-  /// rate is set to: 1 poll at 30 Hz, 2 at 60 Hz, 4 at 120 Hz.
-  ///
-  /// Rounded, not ceiled: at the 62.5 Hz default, 2 polls is 32 ms and 3 is
-  /// 48 ms, and a frame slightly early beats a second screen running at 20 Hz.
-  static int _pollsPerFrame(Duration pollInterval) {
-    final micros = pollInterval.inMicroseconds;
-    if (micros <= 0) return 1;
-    return (_waveformFrame.inMicroseconds / micros).round().clamp(1, 16);
+  void _openFrameGate() {
+    _frameGate = null;
+    final pending = _pendingFrame;
+    if (pending != null && mounted) _sendWaveformFrame(pending);
   }
 
   /// Builds and pushes the readout only when a fact it is projected FROM has
@@ -848,7 +842,7 @@ class _AppViewState extends State<_AppView> {
         l10n.localeName == last.localeName) {
       return;
     }
-    _lastReadoutInputs = (
+    final sent = (
       looper: looper,
       tracks: tracks,
       control: control,
@@ -859,18 +853,33 @@ class _AppViewState extends State<_AppView> {
       audio: audio,
       localeName: l10n.localeName,
     );
-    widget.waveformWindow.pushReadout(
-      _readoutOf(
-        looper,
-        tracks,
-        control,
-        clock,
-        recorder,
-        monitors,
-        inputs,
-        audio,
-        l10n,
-      ),
+    _lastReadoutInputs = sent;
+    unawaited(
+      widget.waveformWindow
+          .pushReadout(
+            _readoutOf(
+              looper,
+              tracks,
+              control,
+              clock,
+              recorder,
+              monitors,
+              inputs,
+              audio,
+              l10n,
+            ),
+          )
+          .catchError((Object _) {
+            // It never landed, so this gate is now a belief about a readout
+            // the second screen does not have. Drop it — the next tick then
+            // rebuilds and re-sends rather than suppressing an identical
+            // readout forever. Guarded on identity so a failure that
+            // completes after a newer readout has already been armed cannot
+            // undo it.
+            if (identical(_lastReadoutInputs, sent)) {
+              _lastReadoutInputs = null;
+            }
+          }),
     );
   }
 

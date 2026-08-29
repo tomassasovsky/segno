@@ -103,6 +103,24 @@ void main() {
       expect(next.selectedTrack, 'Bass');
     });
 
+    test('a malformed progress holds the playhead instead of resetting it', () {
+      final next = waveformFrameFrom(
+        {'progress': 'nope', 'selectedTrack': 'Bass'},
+        (
+          samples: Float32List.fromList([0.1]),
+          progress: 0.62,
+          selectedTrack: 'Drums',
+        ),
+      );
+
+      expect(
+        next.progress,
+        0.62,
+        reason: 'a garbled frame snapped the playhead back to the loop start',
+      );
+      expect(next.selectedTrack, 'Bass');
+    });
+
     test('a malformed selectedTrack degrades instead of throwing', () {
       // The comment two lines above the field promises the second screen does
       // not go down mid-set on a garbled frame. `as String?` would have
