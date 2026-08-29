@@ -3780,9 +3780,25 @@ static void tuner_tap_block(le_engine* e, const float* in, uint32_t frames,
     if (e->tuner_fill < LE_TUNER_WIN) continue;
 
     /* Hop boundary. A pass still in flight keeps the window it froze and this
-     * hop simply does not start one — which the budget makes unreachable at
-     * every supported period (see LE_TUNER_WORK_PER_FRAME), and which would
-     * cost nothing but one skipped refresh if it ever were reached. */
+     * hop simply does not start one; it would cost nothing but one skipped
+     * refresh, and no supported period reaches it. Two independent things
+     * have to hold for that, and only the first is about the budget:
+     *
+     *   - a pass must finish within the hop it started in. tuner_slice gets
+     *     LE_TUNER_WORK_PER_FRAME per device frame and a hop is
+     *     LE_TUNER_HOP * LE_TUNER_DECIM = 2048 frames, so a hop is worth ~393k
+     *     iterations against a worst-case pass of ~184k — the ~2x headroom
+     *     LE_TUNER_WORK_PER_FRAME is chosen for. This holds at any block size,
+     *     since the budget is per frame.
+     *   - a block must not span two hop boundaries. tuner_slice runs ONCE per
+     *     block, after this loop, but hops are counted per frame inside it: a
+     *     block longer than 2048 frames would cross two boundaries with no
+     *     slice in between — so the second would find the first's pass still
+     *     in flight and skip it however large the budget is. The shipped
+     *     period list is [64, 128, 256, 512] (bufferSizes in
+     *     audio_setup_state.dart), a quarter of a hop at its longest, so a
+     *     block carries at most one boundary. Raising the budget would NOT
+     *     buy headroom here; only a hop longer than the block does. */
     if (e->tuner_pass.phase == LE_TUNER_PHASE_IDLE) tuner_begin(e, sr, sr_d);
 
     /* Slide by one hop, so the next detect costs one memmove rather than one
