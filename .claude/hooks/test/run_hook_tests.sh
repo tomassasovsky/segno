@@ -45,6 +45,12 @@ g() { # g <deny|allow> <command>
 g deny 'git push'
 g deny 'git push origin HEAD:my-branch'
 g deny 'git push --force-with-lease origin HEAD'
+g deny 'git push --tags'
+g deny 'git -c http.sslVerify=false push origin main'
+g deny 'git add -A && git commit -m "wip" && git push -u origin HEAD'
+g deny 'set -e; git fetch; git push'
+g deny 'git rebase --onto main HEAD~2 && git push --force-with-lease'
+g deny 'for f in a b; do echo $f; done && git push'
 g deny 'git   push'
 g deny 'git -C /some/dir push origin main'
 g deny '/usr/bin/git push origin main'
@@ -120,6 +126,15 @@ g allow 'cat docs/TRACKING.md | grep -c "git push"'
 g allow "git commit -m 'document the git push workaround'"
 g allow 'git log --oneline | grep push'
 g allow 'git log --grep="push"'
+g allow 'git reflog | grep push'
+g allow 'man git-push'
+# Tooling that reads or rewrites the prose. All of these appear in ordinary
+# sessions in this repo, and a deny is unrecoverable for the agent in that turn.
+g allow 'rg "git push" -n docs/'
+g allow "sed -i '' 's/git push/foo/' file.md"
+g allow 'python3 -c "print(\"git push\")"'
+g allow "awk '/git push/{print}' CLAUDE.md"
+g allow "git config --global alias.pushall 'push --all'"
 g allow "$(printf 'cat > docs/x.md <<%s\nRun:\n\n    git push origin main\n%s\n' "'EOF'" 'EOF')"
 g allow "$(printf 'cat > docs/x.md <<EOF\n    git push origin main\nEOF')"
 # A multi-line quoted argument is ONE argument, not several commands. /ship
