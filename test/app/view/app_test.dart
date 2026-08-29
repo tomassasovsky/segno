@@ -112,6 +112,9 @@ class _RecordingWindowService implements WaveformWindowService {
   void Function(ReadoutControl control)? onControl;
 
   @override
+  void Function()? onWindowReady;
+
+  @override
   Future<void> pushReadout(PerformanceReadout readout) async {
     readouts.add(readout);
   }
@@ -136,15 +139,28 @@ class _RecordingWindowService implements WaveformWindowService {
   /// the label it carried.
   final waveforms = <({double progress, String selectedTrack})>[];
 
+  /// How many of the next waveform pushes are lost in flight. The real
+  /// service reports that by completing the future with an error.
+  int failNextWaveformPushes = 0;
+
   @override
-  void pushWaveform(
+  Future<void> pushWaveform(
     Float32List samples,
     double progress,
     String selectedTrack,
-  ) {
+  ) async {
     pushCalls++;
+    if (failNextWaveformPushes > 0) {
+      failNextWaveformPushes--;
+      throw const _WindowGone();
+    }
     waveforms.add((progress: progress, selectedTrack: selectedTrack));
   }
+}
+
+/// What a push into a window that is not there looks like.
+class _WindowGone implements Exception {
+  const _WindowGone();
 }
 
 /// A MIDI source whose enumeration the test drives by hand, so a pinned
@@ -948,6 +964,35 @@ void main() {
           isNot(before),
           reason:
               'the cursor moved and the second screen never heard about it',
+        );
+      });
+
+      testWidgets('a frame lost in flight is re-sent on a still rig', (
+        tester,
+      ) async {
+        // Frames are produced by events now, not by a timer, so a lost one
+        // has nothing behind it: the poll is deduped and this rig stops
+        // moving after the single change below. The old unconditional 33 ms
+        // push healed this implicitly; the re-queue is what replaces it.
+        final rig = await pumpPlaying(tester);
+        final frames = rig.window.pushCalls;
+        rig.window.failNextWaveformPushes = 1;
+
+        engine.nextSnapshot = playing(position: 24000, peak: 0.3);
+        rig.ticker.add(null);
+        await tester.pump();
+        expect(rig.window.pushCalls - frames, 1);
+
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(
+          rig.window.pushCalls - frames,
+          greaterThan(1),
+          reason: 'a dropped frame was never re-sent, and nothing else would',
+        );
+        expect(
+          rig.window.waveforms.last.progress,
+          closeTo(0.25, 1e-9),
+          reason: 'the re-sent frame carried the wrong state — 24000/96000',
         );
       });
 

@@ -35,7 +35,17 @@ abstract interface class WaveformWindowService {
   /// platform channel thirty times a second to redraw the same picture. The
   /// window holds the last samples it was given, so a samples-free frame
   /// moves the playhead over the waveform already on screen.
-  void pushWaveform(Float32List samples, double progress, String selectedTrack);
+  ///
+  /// The returned future completes when the frame has been delivered, and
+  /// **with an error when it never landed**. Frames are produced by events
+  /// now, not by a timer, so on a rig that is not moving there is no next
+  /// frame to heal a lost one: a caller must re-request one on that error or
+  /// the second screen keeps whatever it last drew.
+  Future<void> pushWaveform(
+    Float32List samples,
+    double progress,
+    String selectedTrack,
+  );
 
   /// Pushes the performance readout, but ONLY when it differs from the last
   /// one pushed.
@@ -57,6 +67,17 @@ abstract interface class WaveformWindowService {
   /// this to a callback that applies the command through the same blocs the
   /// main UI uses; `null` drops commands on the floor.
   abstract void Function(ReadoutControl control)? onControl;
+
+  /// Fired when a sub-window announces it is up — and therefore that it is
+  /// holding NOTHING.
+  ///
+  /// Both send diffs (here and in any gate the caller keeps in front of this)
+  /// are beliefs about what the second screen already shows, so a window that
+  /// comes back without this side closing it — an orphan reclaimed after a
+  /// hot restart, a sub-window re-announcing itself — invalidates them. The
+  /// service drops its own; this is how the caller hears about it and drops
+  /// the one the service cannot reach.
+  abstract void Function()? onWindowReady;
 }
 
 /// Opens a real second OS window via `desktop_multi_window` and streams
@@ -80,12 +101,23 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   /// whichever instance last set a handler owns command delivery.
   static void Function(ReadoutControl control)? _controlHandler;
 
+  /// Static for the same reason as [_controlHandler].
+  static void Function()? _readyHandler;
+
   @override
   void Function(ReadoutControl control)? get onControl => _controlHandler;
 
   @override
   set onControl(void Function(ReadoutControl control)? handler) {
     _controlHandler = handler;
+  }
+
+  @override
+  void Function()? get onWindowReady => _readyHandler;
+
+  @override
+  set onWindowReady(void Function()? handler) {
+    _readyHandler = handler;
   }
 
   /// Closes sub-windows left over from a hot restart. Dart state is reset but
@@ -110,15 +142,18 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
     if (_mainChannelRegistered) return;
     await waveformWindowChannel.setMethodCallHandler((call) async {
       if (call.method == waveformWindowReadyMethod) {
-        // A window announcing itself holds NOTHING yet. Both diffs are
-        // beliefs about what is already on the second screen, so they have to
-        // be dropped here as well as in [close]: a sub-window engine that
+        // A window announcing itself holds NOTHING yet. Every send diff is a
+        // belief about what is already on the second screen, so they all have
+        // to be dropped here as well as in [close]: a sub-window engine that
         // comes back without this side closing it (an orphan reclaimed after
         // a hot restart, a re-announced window) would otherwise be fed
         // progress-only frames forever and show an empty waveform under a
-        // moving playhead.
+        // moving playhead. [onWindowReady] carries the same news to the gate
+        // the caller keeps in front of `pushReadout`, which this side cannot
+        // reach.
         _lastSamples = null;
         _lastReadout = null;
+        _readyHandler?.call();
         _readyCompleter?.complete();
       }
       if (call.method == waveformWindowControlMethod) {
@@ -171,11 +206,11 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   }
 
   @override
-  void pushWaveform(
+  Future<void> pushWaveform(
     Float32List samples,
     double progress,
     String selectedTrack,
-  ) {
+  ) async {
     if (_controller == null) return;
     final payload = waveformFramePayload(
       samples: samples,
@@ -185,21 +220,25 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
     );
     final carriesSamples = payload.containsKey('samples');
     if (carriesSamples) _lastSamples = samples;
-    unawaited(
-      waveformWindowChannel.invokeMethod('waveform', payload).catchError((
-        Object _,
-      ) {
-        // The frame never landed, so the window does NOT hold these peaks —
-        // forget them. Without this the diff is armed on a delivery that
-        // failed: through steady playback the loop-indexed buffer stands
-        // still, so `samples` would be suppressed on every later frame too
-        // and the second screen would freeze with only the playhead moving,
-        // for the rest of the set. Clearing makes the next frame re-seed it,
-        // which is how a dropped frame healed itself before the diff existed.
-        if (carriesSamples) _lastSamples = null;
-        return null;
-      }),
-    );
+    try {
+      await waveformWindowChannel.invokeMethod('waveform', payload);
+    } on Object {
+      // The frame never landed, so the window does NOT hold these peaks —
+      // forget them. Without this the diff is armed on a delivery that
+      // failed: through steady playback the loop-indexed buffer stands still,
+      // so `samples` would be suppressed on every later frame too and the
+      // second screen would freeze with only the playhead moving, for the
+      // rest of the set.
+      //
+      // Guarded on identity, like [pushReadout]: a slow frame failing after a
+      // later one has already landed must not discard peaks the window really
+      // does hold. Rethrown because clearing this alone is not enough — the
+      // caller drives the frames now, and has to send another one.
+      if (carriesSamples && identical(_lastSamples, samples)) {
+        _lastSamples = null;
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -231,6 +270,9 @@ class NoopWaveformWindowService implements WaveformWindowService {
   void Function(ReadoutControl control)? onControl;
 
   @override
+  void Function()? onWindowReady;
+
+  @override
   Future<bool> open({String title = 'Segno — Output'}) async => true;
 
   @override
@@ -240,11 +282,11 @@ class NoopWaveformWindowService implements WaveformWindowService {
   Future<void> pushReadout(PerformanceReadout readout) async {}
 
   @override
-  void pushWaveform(
+  Future<void> pushWaveform(
     Float32List samples,
     double progress,
     String selectedTrack,
-  ) {}
+  ) async {}
 }
 
 /// The `waveform` payload for one frame, given the [lastSent] peaks.

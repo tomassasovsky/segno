@@ -583,6 +583,11 @@ class _AppViewState extends State<_AppView> {
   @override
   void initState() {
     super.initState();
+    // A sub-window that has just announced itself holds nothing, so the gate
+    // in front of `pushReadout` — a belief about what is already on the
+    // second screen — is void. The service drops its own diff on the same
+    // signal; it cannot reach this one.
+    widget.waveformWindow.onWindowReady = () => _lastReadoutInputs = null;
     // The sub-window's volume overlay sends control commands back over the
     // window channel (#698); they are applied here, through the same blocs
     // the main UI's own controls dispatch to.
@@ -607,6 +612,7 @@ class _AppViewState extends State<_AppView> {
     _frameGate?.cancel();
     unawaited(_pollSub?.cancel());
     widget.waveformWindow.onControl = null;
+    widget.waveformWindow.onWindowReady = null;
     unawaited(widget.waveformWindow.close());
     super.dispose();
   }
@@ -783,14 +789,29 @@ class _AppViewState extends State<_AppView> {
   void _sendWaveformFrame(LooperState state) {
     final looper = context.read<LooperRepository>();
     final cursor = context.read<ControlCubit>().state.cursor;
-    _lastFrameLabel = context.read<TracksCubit>().state.nameOf(cursor);
+    final label = context.read<TracksCubit>().state.nameOf(cursor);
+    _lastFrameLabel = label;
     _pendingFrame = null;
-    _frameGate = Timer(_waveformFrame, _openFrameGate);
-    widget.waveformWindow.pushWaveform(
-      looper.readWaveform(),
-      state.transport.progress,
-      _lastFrameLabel!,
+    _armFrameGate();
+    unawaited(
+      widget.waveformWindow
+          .pushWaveform(looper.readWaveform(), state.transport.progress, label)
+          .catchError((Object _) {
+            // It never landed. Nothing else will produce a frame on a rig
+            // that is not moving — the poll is deduped and the label has not
+            // changed — so the lost frame has to be re-queued here or the
+            // second screen keeps whatever it last drew. Re-QUEUED, not
+            // re-sent: the gate is what keeps a window that is failing every
+            // frame from spinning.
+            if (!mounted) return;
+            _pendingFrame = state;
+            _armFrameGate();
+          }),
     );
+  }
+
+  void _armFrameGate() {
+    _frameGate ??= Timer(_waveformFrame, _openFrameGate);
   }
 
   void _openFrameGate() {
