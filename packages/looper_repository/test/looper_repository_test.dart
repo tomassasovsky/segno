@@ -2888,6 +2888,74 @@ void main() {
       expect(engine.monitorMute[0], isTrue);
     });
 
+    test('setInputConditioningEnabled forwards while running', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setInputConditioningEnabled(input: 0, enabled: true);
+      expect(engine.conditioningEnabled[0], isTrue);
+    });
+
+    test('setInputConditioningParam forwards the code + real-unit value', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setInputConditioningParam(
+          input: 1,
+          param: InputConditioningParam.hpfHz,
+          value: 80,
+        );
+      expect(engine.conditioningParam[(1, InputConditioningParam.hpfHz)], 80);
+    });
+
+    test('conditioning intent is remembered and reapplied on restart', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setInputConditioningParam(
+          input: 0,
+          param: InputConditioningParam.expRatio,
+          value: 3,
+        )
+        ..setInputConditioningEnabled(input: 0, enabled: true);
+
+      engine.conditioningEnabled.clear();
+      engine.conditioningParam.clear();
+      repo.startEngine(const EngineConfig());
+
+      expect(engine.conditioningEnabled[0], isTrue);
+      expect(
+        engine.conditioningParam[(0, InputConditioningParam.expRatio)],
+        3,
+      );
+    });
+
+    test('conditioning set while stopped applies on the next start', () {
+      final repo = buildRepo()
+        ..setInputConditioningEnabled(input: 0, enabled: true);
+      // Nothing forwarded yet: the device is not running.
+      expect(engine.conditioningEnabled.containsKey(0), isFalse);
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.conditioningEnabled[0], isTrue);
+    });
+
+    test('rejects an out-of-range conditioning input without touching '
+        'the engine', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      expect(
+        repo.setInputConditioningEnabled(input: -1, enabled: true),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setInputConditioningParam(
+          input: kMaxMonitoredInputs,
+          param: InputConditioningParam.hpfHz,
+          value: 40,
+        ),
+        EngineResult.invalid,
+      );
+      expect(engine.conditioningEnabled, isEmpty);
+      expect(engine.conditioningParam, isEmpty);
+    });
+
     test('an empty monitor chain (clean path) zeroes the count', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())

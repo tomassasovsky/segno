@@ -179,6 +179,7 @@
     "ddcutil",
     "deadband",
     "deburr",
+    "declip",
     "declspec",
     "decorrelate",
     "decorrelated",

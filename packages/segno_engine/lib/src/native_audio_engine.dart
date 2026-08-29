@@ -10,6 +10,7 @@ import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/ffi_strings.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
+import 'package:segno_engine/src/input_conditioning_param.dart';
 import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
@@ -1361,6 +1362,38 @@ class NativeAudioEngine implements AudioEngine {
         _engine,
         input,
         muted ? 1 : 0,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setInputConditioningEnabled({
+    required int input,
+    required bool enabled,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_input_conditioning(
+        _engine,
+        input,
+        enabled ? 1 : 0,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setInputConditioningParam({
+    required int input,
+    required InputConditioningParam param,
+    required double value,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_input_conditioning_param(
+        _engine,
+        input,
+        param.code,
+        value,
       ),
     );
   }

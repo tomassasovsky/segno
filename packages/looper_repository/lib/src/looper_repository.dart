@@ -340,6 +340,15 @@ class LooperRepository {
   final Map<int, bool> _monitorMute = {};
   final Map<int, List<TrackEffect>> _monitorEffects = {};
 
+  /// Per-input conditioning-stage intent (the fixed HPF / hum-notch / expander
+  /// utility stage), remembered and re-applied on every successful (re)start:
+  /// the engine resets conditioning on every configure, so — like the monitor
+  /// maps above — the intent lives here and is re-pushed after each device
+  /// (re)open. [_condEnabled] is the stage on/off; [_condParams] holds each set
+  /// parameter's real-unit value, keyed by input then [InputConditioningParam].
+  final Map<int, bool> _condEnabled = {};
+  final Map<int, Map<InputConditioningParam, double>> _condParams = {};
+
   /// Live plugin slot handles keyed by chain position — `(channel, lane,
   /// index)` for lane chains, `(input, index)` for monitor chains. Repopulated
   /// every time a chain is (re)applied to the running engine; an absent entry
@@ -984,6 +993,22 @@ class LooperRepository {
           input: input,
           enabled: enabled,
         ),
+      );
+      // Re-apply per-input conditioning (the engine resets it on configure):
+      // stage each input's parameters first, then its enable flag, so the final
+      // enable establishes the stage with its parameters already in place.
+      _condParams.forEach((input, params) {
+        params.forEach(
+          (param, value) => _engine.setInputConditioningParam(
+            input: input,
+            param: param,
+            value: value,
+          ),
+        );
+      });
+      _condEnabled.forEach(
+        (input, enabled) =>
+            _engine.setInputConditioningEnabled(input: input, enabled: enabled),
       );
       // Re-apply the Track-stage + Master insert chains and their chain flags
       // (FX v3 part 1b owners), mirroring the lane/monitor replay above.
@@ -2297,6 +2322,46 @@ class LooperRepository {
     _monitorChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMonitorInputMute(input: input, muted: muted);
+  }
+
+  /// Enables or disables hardware [input]'s conditioning stage (the fixed HPF /
+  /// hum-notch / expander utility stage). Remembered and re-applied on every
+  /// successful (re)start — the engine resets conditioning on each configure —
+  /// and takes effect immediately only while running. Returns
+  /// [EngineResult.invalid] for an input outside `[0, kMaxMonitoredInputs)`.
+  EngineResult setInputConditioningEnabled({
+    required int input,
+    required bool enabled,
+  }) {
+    if (input < 0 || input >= kMaxMonitoredInputs) {
+      return EngineResult.invalid;
+    }
+    _condEnabled[input] = enabled;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setInputConditioningEnabled(input: input, enabled: enabled);
+  }
+
+  /// Sets conditioning parameter [param] of hardware [input] to [value] in its
+  /// real unit (Hz / dB / ms / ratio — see [InputConditioningParam]). Remembered
+  /// and re-applied on every (re)start; takes effect immediately only while
+  /// running. Independent of the enable flag — a value set while the stage is
+  /// off is applied and takes effect when it is next enabled. Returns
+  /// [EngineResult.invalid] for an input outside `[0, kMaxMonitoredInputs)`.
+  EngineResult setInputConditioningParam({
+    required int input,
+    required InputConditioningParam param,
+    required double value,
+  }) {
+    if (input < 0 || input >= kMaxMonitoredInputs) {
+      return EngineResult.invalid;
+    }
+    (_condParams[input] ??= {})[param] = value;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setInputConditioningParam(
+      input: input,
+      param: param,
+      value: value,
+    );
   }
 
   /// Turns hardware [output] on/off as a routing target (the structural output
