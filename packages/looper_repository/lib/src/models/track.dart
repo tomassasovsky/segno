@@ -147,8 +147,15 @@ class Track extends Equatable {
   /// this, and subscribes to [peak] separately in the meter leaf itself, so a
   /// moving level rebuilds the bar and nothing else (#646/#654/#832).
   ///
-  /// Defined here rather than restated in the UI so a field added to [props]
-  /// can never be silently left out of a tile's rebuild condition.
+  /// This is the ONLY sanctioned way to ignore a moving level. Anything that
+  /// wants a peak-insensitive comparison — a `context.select` projection, a
+  /// `buildWhen`, a push gate on the second screen — compares on this rather
+  /// than editing [props]; see the warning there.
+  ///
+  /// Listed out rather than derived from [props] so neither list is built
+  /// twice per comparison (a `Track ==` is on the console's hot path). The
+  /// two are locked to each other by a test — `props` is exactly this list
+  /// plus [peak] — so a field added to one cannot silently miss the other.
   List<Object?> get steadyProps => [
     channel,
     state,
@@ -171,6 +178,41 @@ class Track extends Equatable {
     chainEnabled,
   ];
 
+  /// Value equality over every field, [peak] INCLUDED — deliberately, and
+  /// load-bearing.
+  ///
+  /// **Do not remove [peak] from this list.** The meters are fed through
+  /// `LooperState ==`: `LooperRepository`'s poll drops a projection equal to
+  /// the one before it (`if (next == _last) return`), so a field outside
+  /// equality is a field that never reaches the UI at all. Taking [peak] out
+  /// — tempting, because it is what makes a fresh `LooperState` arrive on
+  /// every poll tick and so defeats any gate written as
+  /// `identical(state, previous)` — would flatten all eight meters with no
+  /// error and no failing widget test: they would simply stop moving.
+  ///
+  /// A caller that needs to ignore the moving level compares [steadyProps]
+  /// instead. Locked by a test in `looper_repository_test.dart`.
   @override
-  List<Object?> get props => [...steadyProps, peak];
+  List<Object?> get props => [
+    channel,
+    state,
+    volume,
+    muted,
+    lengthFrames,
+    undoDepth,
+    clearRestore,
+    redoDepth,
+    multiple,
+    inputMask,
+    outputMask,
+    layerInFlight,
+    pending,
+    lengthPresetBars,
+    quantizeOverride,
+    oneShot,
+    lanes,
+    effects,
+    chainEnabled,
+    peak,
+  ];
 }

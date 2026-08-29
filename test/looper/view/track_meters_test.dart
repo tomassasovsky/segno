@@ -204,4 +204,57 @@ void main() {
       );
     });
   });
+
+  group('TrackPeakMeter fallback', () {
+    // Reading the level out of the ambient bloc by channel is what lets a
+    // meter tick skip the tile above it. It must stay an OPTIMIZATION: the
+    // `Track` a caller passes in has to remain what decides the picture, or a
+    // mis-wired tile degrades into a bar that is merely always at rest —
+    // indistinguishable, on screen, from a silent track.
+    Future<void> pumpMeter(
+      WidgetTester tester, {
+      required int channel,
+      required double fallbackPeak,
+    }) => tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.neon,
+        home: BlocProvider<LooperBloc>.value(
+          value: bloc,
+          child: Scaffold(
+            body: TrackPeakMeter(
+              channel: channel,
+              fallbackPeak: fallbackPeak,
+              color: Colors.green,
+              hasContent: true,
+              frozen: false,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('draws the live level when the rig holds the channel', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track(peak: 0.75)]));
+      await pumpMeter(tester, channel: 0, fallbackPeak: 0.1);
+
+      expect(tester.widget<PeakMeterBar>(find.byType(PeakMeterBar)).peak, 0.75);
+    });
+
+    testWidgets('falls back to the given level for an unheld channel', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track(peak: 0.75)]));
+      await pumpMeter(tester, channel: 6, fallbackPeak: 0.4);
+
+      expect(
+        tester.widget<PeakMeterBar>(find.byType(PeakMeterBar)).peak,
+        0.4,
+        reason:
+            'a channel the bloc does not hold metered as silence -- the '
+            'passed-in Track stopped deciding what is drawn',
+      );
+    });
+  });
 }

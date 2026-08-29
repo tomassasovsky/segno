@@ -181,6 +181,7 @@ class _TrackMeter extends StatelessWidget {
           Expanded(
             child: TrackPeakMeter(
               channel: track.channel,
+              fallbackPeak: track.peak,
               color: looper.meterColor(meterState, mode: mode),
               hasContent: track.hasContent,
               // A stopped track reports no live peak; hold the last fill so a
@@ -206,19 +207,26 @@ class _TrackMeter extends StatelessWidget {
   }
 }
 
-/// One track's [PeakMeterBar], subscribed to nothing but that track's live
-/// [Track.peak].
+/// One track's [PeakMeterBar], following [channel]'s live [Track.peak].
 ///
 /// The leaf of the rebuild split (#646/#654/#832): every tile above it compares
 /// on [Track.steadyProps], which excludes `peak`, so the only thing a meter
 /// tick rebuilds is this bar. Everything else the bar needs — its colour,
 /// whether the track has content, whether it is frozen — is derived from steady
 /// fields and passed in by the tile, which is why this leaf can take the
-/// channel alone and read the one moving number itself.
+/// channel and read the one moving number itself.
+///
+/// [fallbackPeak] is what keeps the tile's own `Track` authoritative. Reading
+/// the ambient bloc is an OPTIMIZATION — it is how a level tick reaches the
+/// bar without rebuilding the tile — not a second source of truth. A caller
+/// that hands a tile a track the bloc does not hold (a synthesized preview, a
+/// channel the rig has since dropped) gets that track's own level drawn
+/// instead of a silently flat bar.
 class TrackPeakMeter extends StatelessWidget {
   /// Creates a [TrackPeakMeter].
   const TrackPeakMeter({
     required this.channel,
+    required this.fallbackPeak,
     required this.color,
     required this.hasContent,
     required this.frozen,
@@ -227,6 +235,10 @@ class TrackPeakMeter extends StatelessWidget {
 
   /// The channel whose level this bar follows.
   final int channel;
+
+  /// The level to draw when the ambient [LooperBloc] holds no [channel] — the
+  /// peak carried by the [Track] the tile was built from.
+  final double fallbackPeak;
 
   /// The bar fill colour (the track's meter-state colour).
   final Color color;
@@ -240,7 +252,7 @@ class TrackPeakMeter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final peak = context.select<LooperBloc, double>(
-      (bloc) => peakOf(bloc.state, channel),
+      (bloc) => peakOf(bloc.state, channel) ?? fallbackPeak,
     );
     return PeakMeterBar(
       peak: peak,
@@ -251,16 +263,17 @@ class TrackPeakMeter extends StatelessWidget {
   }
 }
 
-/// [channel]'s current peak level, or `0` when the rig no longer has it.
+/// [channel]'s current peak level, or `null` when the rig has no such channel.
 ///
-/// A missing channel meters as silence rather than throwing: the tile above
-/// owns the "this channel is gone" case, and is rebuilt by the same emit that
-/// removed it.
-double peakOf(LooperState state, int channel) {
+/// `null` rather than `0`: "the rig is not metering this channel" and "this
+/// channel is silent" draw identically, so collapsing them would turn a
+/// mis-wired tile into a bar that is merely always at rest. The caller decides
+/// — [TrackPeakMeter] falls back to the level on the [Track] it was given.
+double? peakOf(LooperState state, int channel) {
   for (final track in state.tracks) {
     if (track.channel == channel) return track.peak;
   }
-  return 0;
+  return null;
 }
 
 /// A [Track] compared by its [Track.steadyProps] alone — everything about it

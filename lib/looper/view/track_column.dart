@@ -32,11 +32,14 @@ class TrackColumn extends StatelessWidget {
     super.key,
   });
 
-  /// The track this column renders.
+  /// The track this column renders — every fact drawn here comes from it.
   ///
-  /// Its `peak` is deliberately NOT read here: the level is subscribed by the
-  /// [TrackPeakMeter] leaf inside the tile, so this instance may carry a
-  /// tick-stale level and the column still draws correctly (#646/#654/#832).
+  /// Its `peak` is the one field this build method does not read directly:
+  /// the level is subscribed by the [TrackPeakMeter] leaf inside the tile, so
+  /// this instance may carry a tick-stale level and the column still draws
+  /// correctly (#646/#654/#832). The leaf is given `track.peak` as its
+  /// fallback, so a caller passing a track the ambient [LooperBloc] does not
+  /// hold still gets that track's level metered rather than a flat bar.
   final Track track;
 
   /// The FX stage the footswitch bound to this cell attaches to, in FX mode.
@@ -286,6 +289,7 @@ class TrackColumn extends StatelessWidget {
                       // (#646/#654/#832).
                       child: TrackPeakMeter(
                         channel: track.channel,
+                        fallbackPeak: track.peak,
                         color: barColor,
                         hasContent: track.hasContent,
                         // A stopped track reports no live peak; hold the last
