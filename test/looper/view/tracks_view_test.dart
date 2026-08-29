@@ -795,6 +795,35 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('a SLOT binding on a NAMED input still names the effect it '
+        'drives', (tester) async {
+      await pumpColumn(
+        tester,
+        name: 'TRACK 5',
+        mode: InteractionMode.fx,
+        // The two-tier `GUITAR / INPUT 1` identity describes a whole input
+        // chain. This switch bypasses ONE block inside it, so the cell has to
+        // say which — the player's own word for the jack, then the effect.
+        fxBinding: FxCellBinding(
+          target: const FxSlotTarget(
+            address: FxAddress(stage: FxStage.input),
+            slotId: 'slot-delay',
+          ),
+          entries: [
+            BuiltInEffect(type: TrackEffectType.filter, slotId: 'slot-filter'),
+            BuiltInEffect(type: TrackEffectType.delay, slotId: 'slot-delay'),
+          ],
+          enabled: true,
+          chainEnabled: true,
+        ),
+        inputNames: const {0: 'Guitar'},
+        track: const Track(),
+      );
+
+      expect(find.text('GUITAR · DELAY'), findsOneWidget);
+      expect(find.byKey(const Key('tracks_tileFxTargetSub')), findsNothing);
+    });
+
     testWidgets("a STALE binding reads as BROKEN, never as the column's own "
         'chain', (tester) async {
       final handle = tester.ensureSemantics();
@@ -996,6 +1025,37 @@ void main() {
         await tester.tap(find.byKey(const Key('tracks_tile_0')));
         await tester.pump();
         verifyNever(() => bloc.add(const LooperTrackChainToggled(0)));
+      });
+
+      testWidgets('a MOMENTARY binding latches from the screen but is never '
+          'saved', (tester) async {
+        // There is no hold to release on a tap, so it latches (B1) — but a
+        // momentary target is transient by definition, and saving it would
+        // boot the rig engaged with the plate unable to clear it (its next
+        // press would capture the enabled state as its restore point).
+        await bindTrack1ToMaster([BuiltInEffect(type: TrackEffectType.reverb)]);
+        await control.setGlobalBindings(
+          PedalBindingSet([
+            PedalBinding(
+              key: const PedalBindingKey(button: PedalButton.track1, bank: 0),
+              target: const FxChainTarget(
+                FxAddress(stage: FxStage.master),
+              ).canonicalString(),
+              behavior: BindingBehavior.momentary,
+            ),
+          ]),
+        );
+        control.setMode(InteractionMode.fx);
+        seed(const LooperState(tracks: [Track()]));
+        await pump(tester);
+
+        await tester.tap(find.byKey(const Key('tracks_tile_0')));
+        await tester.pump();
+
+        verify(
+          () => repository.setMasterChainEnabled(enabled: false),
+        ).called(1);
+        expect(await settings.loadMasterFxChain(), isNull);
       });
 
       testWidgets('a binding whose SLOT has left the chain is stale too — it '

@@ -170,6 +170,19 @@ class TrackColumn extends StatelessWidget {
       // announced; the assignment screen is.
       fxIdentityPrimary = l10n.pedalAssignStale.toUpperCase();
       fxIdentitySub = null;
+    } else if (binding?.target is FxSlotTarget && fxChainName != null) {
+      // A SLOT binding is always ONE `TARGET · EFFECT` line, named by the
+      // effect it drives. The two-tier named-input identity describes a whole
+      // input chain, and letting it win here would print `GUITAR / INPUT 1`
+      // over a switch that bypasses one block inside that chain — the
+      // advertise-slot-1-while-bypassing-slot-3 failure, in the identity.
+      // A named socket still supplies the head: it is the player's own word
+      // for the jack, and the effect earns the second half.
+      fxIdentityPrimary = l10n.stageFxCellLabel(
+        fxInputName.isNotEmpty ? fxInputName.toUpperCase() : fxStageLabel,
+        fxChainName.toUpperCase(),
+      );
+      fxIdentitySub = null;
     } else if (fxInputName.isNotEmpty) {
       fxIdentityPrimary = fxInputName.toUpperCase();
       fxIdentitySub = fxStageLabel;

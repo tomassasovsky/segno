@@ -1392,21 +1392,30 @@ class ControlCubit extends Cubit<ControlState> {
   /// A target that no longer resolves is a NO-OP that writes nothing and
   /// lights nothing (R25) — the assignment screen is where the user learns it
   /// is broken.
-  void toggleBinding(FxBindingTarget target) {
+  ///
+  /// [persist] saves the flipped chain's envelope, which every LATCHING
+  /// surface wants: a bypass the performer set has to survive the next boot.
+  /// A MOMENTARY binding passes false — its target is transient by
+  /// definition, and saving the latch a hold-less surface gives it would boot
+  /// the rig with that target engaged AND the plate unable to clear it, since
+  /// the next momentary press would capture the enabled state as its restore
+  /// point and put it straight back.
+  void toggleBinding(FxBindingTarget target, {bool persist = true}) {
     final prior = _looper.bindingEnabled(target);
     if (prior == null) return;
     _looper.setBindingEnabled(target, enabled: !prior);
-    // Save the flip, exactly as the unbound FX-mode stomp does
-    // ([_setTrackChain]) and as `LooperBloc` does for the on-screen dock:
-    // through the shared helper, because a cubit never calls a bloc. Without
-    // it a chain a performer bypassed comes back engaged on the next boot.
-    // Only the LATCHING path persists — a momentary hold is transient by
-    // definition, and its release restores what was saved anyway.
-    persistFxChainAt(
-      settings: _settings,
-      looper: _looper,
-      address: target.address,
-    );
+    if (persist) {
+      // Save the flip, exactly as the unbound FX-mode stomp does
+      // ([_setTrackChain]) and as `LooperBloc` does for the on-screen dock:
+      // through the shared helper, because a cubit never calls a bloc.
+      // Without it a chain a performer bypassed comes back engaged on the
+      // next boot.
+      persistFxChainAt(
+        settings: _settings,
+        looper: _looper,
+        address: target.address,
+      );
+    }
     _pushProjected();
   }
 

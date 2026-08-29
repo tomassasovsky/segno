@@ -181,7 +181,12 @@ class TracksCommands {
     _announce(
       enabled ? context.l10n.a11yStageFxOff : context.l10n.a11yStageFxOn,
     );
-    context.read<ControlCubit>().toggleBinding(target);
+    context.read<ControlCubit>().toggleBinding(
+      target,
+      // A momentary binding latches here — there is no hold to release — but
+      // it is never SAVED: see `ControlCubit.toggleBinding`.
+      persist: binding.behavior == BindingBehavior.toggle,
+    );
   }
 
   /// Announces a transient state change to assistive tech (WCAG 4.1.3). The
