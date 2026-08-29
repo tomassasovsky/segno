@@ -2787,6 +2787,70 @@ class SegnoEngineBindings {
       _le_engine_set_input_conditioning_paramPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
 
+  /// Queues an offline restoration pass over track [channel]'s captured lanes
+  /// (control thread). [lane_mask] selects which lanes to repair (bit l = lane l,
+  /// restricted to the track's active lanes); [flags] is a bitwise-OR of
+  /// le_restore_flags. The pass runs on a background worker and publishes its
+  /// result as one undo layer once complete — never touching the RT audio
+  /// thread's latency. Returns LE_OK once the job is queued, or LE_ERR_INVALID
+  /// for a null/out-of-range handle, empty flags or lane mask, a track that is
+  /// RECORDING/OVERDUBBING or has an overdub layer in flight, a track with no
+  /// captured content, or a restoration already in flight (one job engine-wide).
+  /// A queued pass whose take moves before it commits (a new overdub, an undo)
+  /// is discarded, never published.
+  int le_engine_restore_track(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane_mask,
+    int flags,
+  ) {
+    return _le_engine_restore_track(
+      engine,
+      channel,
+      lane_mask,
+      flags,
+    );
+  }
+
+  late final _le_engine_restore_trackPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Uint32,
+            ffi.Uint32,
+          )
+        >
+      >('le_engine_restore_track');
+  late final _le_engine_restore_track = _le_engine_restore_trackPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Cancels an in-flight restoration on track [channel] (control thread): a job
+  /// still copying is dropped immediately; one already on the worker aborts at
+  /// its next lane boundary and its result is discarded rather than published.
+  /// Returns LE_OK when a matching job was found and signalled, or LE_ERR_INVALID
+  /// for a null/out-of-range handle or when no restoration for [channel] is in
+  /// flight.
+  int le_engine_cancel_restore(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_cancel_restore(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_cancel_restorePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_cancel_restore');
+  late final _le_engine_cancel_restore = _le_engine_cancel_restorePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets Track-stage chain entry [index] (0..LE_FX_MAX-1) of track [channel] to
   /// [type]. Changing the type resets that entry's DSP state; delay-lined types
   /// lazily allocate their buffers on this calling thread and seed the type's
@@ -4826,6 +4890,15 @@ final class le_track_snapshot extends ffi.Struct {
   /// rather than by "first RECORD_END on the channel".
   @ffi.Int32()
   external int settled_take_id;
+
+  /// Trailing (#697 S9, offline loop-close restoration): 0 idle, 1 queued (the
+  /// enqueue copy is in flight or the job is waiting for the worker), 2 running
+  /// (the worker's de-clip/denoise DSP is in flight). A completed pass publishes
+  /// its result as an ordinary undo layer, so undo_depth/clear_restore carry the
+  /// revert affordance — this field is only the in-progress indicator. See
+  /// le_engine_restore_track.
+  @ffi.Int32()
+  external int restore_state;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct

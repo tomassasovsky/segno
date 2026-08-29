@@ -104,10 +104,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// disposes, and the poll must not stop underneath the new one.
   int _deviceScanners = 0;
 
-  /// Whether the ASIO backend is selectable on this platform (Windows only),
-  /// injected by the presentation layer (`platformAsioSelectable`) so the cubit
-  /// holds no OS policy and stays free of Flutter imports. ASIO is offered when
-  /// is true and at least one driver enumerated.
+  /// Whether the ASIO backend is selectable. Always false now: ASIO was a
+  /// Windows-only API and went with the desktop targets. The seam stays so the
+  /// cubit holds no OS policy, and so the ASIO state it guards stays inert
+  /// rather than being ripped out mid-flight (#920 follow-up).
   final bool _asioSelectable;
 
   /// Enumerates the installed ASIO drivers for the backend selector, honoring

@@ -35,6 +35,7 @@
 
 #include "audio_ring.h" /* le_audio_ring_release (capture-ring teardown) */
 #include "engine_cache.h" /* le_cache_init/shutdown (wet-cache lifecycle) */
+#include "engine_restore.h" /* le_restore_init/shutdown (restoration worker) */
 #include "engine_core.h" /* shared low-level helpers: le_push, valid_channel, ... */
 #include "../host/plugin_slot.h" /* le_plugin_slot_destroy (teardown of slots) */
 #include "engine_fx.h" /* effects DSP island: chain runner, reset/free, latency */
@@ -271,6 +272,10 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * are about to lose their owner struct. Re-initialized at the end of this
    * function once the fresh pools exist. */
   le_cache_shutdown(engine);
+  /* Offline restoration worker (#697 S9, [R2](d)): join before the pools below
+   * are freed — its enqueue copies read pool memory. Re-initialized at the end
+   * of this function once the fresh pools exist. */
+  le_restore_shutdown(engine);
 
   /* Performance-recording capture: stop and join the drain thread — if
    * still armed here, the engine is being reconfigured mid-session (a
@@ -602,6 +607,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * The cap (a_fx_cache_cap) is a SETTING seeded in le_engine_create and
    * deliberately not reset here, like the tempo/click settings above. */
   le_cache_init(engine);
+  le_restore_init(engine); /* #697 S9: offline loop-close restoration worker */
   atomic_store_explicit(&engine->a_configured, 1, memory_order_release);
   return LE_OK;
 }
@@ -643,6 +649,21 @@ int32_t le_engine_lane_slot_cap_for_test(le_engine* engine, int32_t channel,
   }
   if (slot >= LE_POOL_SLOTS) return -1;
   return engine->tracks[channel].lanes[lane].pool_cap[slot];
+}
+
+int32_t le_engine_read_lane_live_for_test(le_engine* engine, int32_t channel,
+                                          int32_t lane, float* out,
+                                          int32_t max_frames) {
+  if (engine == NULL || out == NULL || max_frames <= 0) return 0;
+  if (channel < 0 || channel >= engine->track_count) return 0;
+  if (lane < 0 || lane >= LE_MAX_LANES) return 0;
+  le_lane* ln = &engine->tracks[channel].lanes[lane];
+  const float* src = ln->pool[load_i32(&ln->a_live)];
+  int32_t len = load_i32(&ln->a_len);
+  if (src == NULL || len <= 0) return 0;
+  if (len > max_frames) len = max_frames;
+  memcpy(out, src, (size_t)len * sizeof(float));
+  return len;
 }
 
 void le_engine_set_lane_count_unsafe_for_test(le_engine* engine,
@@ -842,6 +863,7 @@ void le_engine_destroy(le_engine* engine) {
    * never free a buffer the worker still reads (the ASan
    * destroy-during-active-render test pins exactly this ordering). */
   le_cache_shutdown(engine);
+  le_restore_shutdown(engine); /* #697 S9: join before the pool frees below */
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_lane* ln = &engine->tracks[t].lanes[l];
@@ -962,23 +984,14 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
           sizeof(engine->device_name) - 1);
   engine->device_name[sizeof(engine->device_name) - 1] = '\0';
 
-  /* Exclude any loopback-labelled capture channels. The ASIO backend already
-   * read its channel labels from the open driver and reported the mask in
-   * info.excluded_input_mask — re-running the per-OS label probe while ASIO
-   * holds the device would tear it down (R1 re-entrancy). Every other backend
-   * computes it here from the resolved capture-device UID: our explicit capture
-   * id when one was pinned/loopback-routed (capture_id_set, set by the backend),
-   * else the system default input (on string-id backends the id union is the
-   * UID string). */
-  uint32_t excluded_mask;
-  if (info.active_backend == LE_BACKEND_ASIO) {
-    excluded_mask = info.excluded_input_mask;
-  } else {
-    const char* capture_uid =
-        engine->capture_id_set ? (const char*)&engine->capture_id : NULL;
-    excluded_mask =
-        le_platform_excluded_input_mask(capture_uid, info.input_channels);
-  }
+  /* Exclude any loopback-labelled capture channels, computed from the resolved
+   * capture-device UID: our explicit capture id when one was pinned/loopback-
+   * routed (capture_id_set, set by the backend), else the system default input
+   * (on string-id backends the id union is the UID string). */
+  const char* capture_uid =
+      engine->capture_id_set ? (const char*)&engine->capture_id : NULL;
+  const uint32_t excluded_mask =
+      le_platform_excluded_input_mask(capture_uid, info.input_channels);
   /* relaxed: a lone published value, matching the other configuration atomics
    * (a_sample_rate, etc.) and the relaxed audio-thread / snapshot reads. */
   atomic_store_explicit(&engine->a_excluded_input_mask, excluded_mask,
@@ -1058,6 +1071,7 @@ int32_t le_engine_stop(le_engine* engine) {
    * stopped engine has no cached playback to serve. The next start's
    * configure re-initializes it. */
   le_cache_shutdown(engine);
+  le_restore_shutdown(engine); /* #697 S9: join the restoration worker on stop */
   /* Per-OS teardown on stop (not only destroy) so a forced quantum doesn't
    * outlive a running engine for other PipeWire clients. No-op off Linux. */
   le_platform_on_engine_teardown();

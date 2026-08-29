@@ -6,9 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/view/audio_device_picker.dart';
 import 'package:segno/audio_setup/view/audio_device_scan_scope.dart';
-import 'package:segno/audio_setup/view/midi_device_picker.dart';
 import 'package:segno/audio_setup/view/midi_learn_section.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/quantize_cubit.dart';
 import 'package:segno/looper/cubit/record_options_cubit.dart';
@@ -22,19 +20,12 @@ import 'package:url_launcher/url_launcher.dart';
 /// (applied live while running), see the live device/latency status, and
 /// re-run the round-trip latency measurement.
 ///
-/// On a [consoleMode] build the MIDI foot-controller and pedal LED pickers are
-/// hidden (the Pro Micro is fixed hardware — see #331), and audio device
-/// pickers omit "System default" so a concrete interface stays pinned.
+/// The MIDI foot-controller and pedal LED pickers are absent (the Pro Micro is
+/// fixed hardware — see #331), and audio device pickers omit "System default"
+/// so a concrete interface stays pinned.
 class AudioSettingsSection extends StatelessWidget {
   /// Creates an [AudioSettingsSection].
-  const AudioSettingsSection({
-    super.key,
-    this.consoleMode = kConsoleMode,
-  });
-
-  /// Whether this is the floor-console build. Defaults to [kConsoleMode];
-  /// tests inject `true`/`false` without a dart-define.
-  final bool consoleMode;
+  const AudioSettingsSection({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -44,26 +35,24 @@ class AudioSettingsSection extends StatelessWidget {
     final status = state.engineStatus;
     final measuring = status.latencyState == LatencyState.measuring;
 
-    // The desktop device picker; re-enumeration is worth paying for exactly
-    // while it is on screen — see [AudioDeviceScanScope].
+    // The device picker re-enumerates only while it is on screen -- see
+    // [AudioDeviceScanScope].
     return AudioDeviceScanScope(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           AppText(l10n.audioSettingsIntro, style: context.setupBody),
           const SizedBox(height: 28),
-          // Engine errors are surfaced here (the only audio surface now that
-          // the wizard is gone): a failed open/start from a setting change
-          // shows its reason inline.
-          if (state.status == AudioSetupStatus.error &&
-              state.error != null) ...[
+          // Engine errors are surfaced here (the only audio surface now that the
+          // wizard is gone): a failed open/start from a setting change shows its
+          // reason inline.
+          if (state.status == AudioSetupStatus.error && state.error != null) ...[
             _ErrorBanner(error: state.error!, detail: state.errorDetail ?? ''),
             const SizedBox(height: 20),
           ],
-          // Windows runs ASIO exclusively: one driver picker, no backend
-          // selector or device pickers. With no driver installed, an ASIO4ALL
-          // affordance shows instead. macOS/Linux keep the output + input
-          // device pickers.
+          // Windows runs ASIO exclusively: one driver picker, no backend selector
+          // or device pickers. With no driver installed, an ASIO4ALL affordance
+          // shows instead. macOS/Linux keep the output + input device pickers.
           if (state.asioOnly) ...[
             if (state.cachedAsioDrivers.isEmpty)
               const _NoAsioDriverMessage()
@@ -89,7 +78,7 @@ class AudioSettingsSection extends StatelessWidget {
               devices: state.playbackDevices,
               selectedId: state.playbackDeviceId,
               onSelected: cubit.setPlaybackDevice,
-              includeSystemDefault: !consoleMode,
+              includeSystemDefault: false,
             ),
             const SizedBox(height: 24),
             SetupGroupLabel(l10n.inputDeviceGroupUpper),
@@ -100,26 +89,18 @@ class AudioSettingsSection extends StatelessWidget {
               devices: state.captureDevices,
               selectedId: state.captureDeviceId,
               onSelected: cubit.setCaptureDevice,
-              includeSystemDefault: !consoleMode,
+              includeSystemDefault: false,
             ),
           ],
-          // The MIDI foot-controller PICKER is desktop-only: on the console the
-          // Pro Micro is fixed hardware that auto-detect binds by product name
-          // (#421), so a chooser would only offer the one answer.
-          if (!consoleMode) ...[
-            const SizedBox(height: 28),
-            const MidiDevicePicker(),
-          ],
-          // CONFIGURING the pedal is not the same as choosing it, and hiding
-          // both together left the console — the build most likely to need a
-          // footswitch remapped — with no route to the assignment surface at
-          // all. These stay on every build; the sections drop their own
-          // device-chooser bits on console.
+          // There is no MIDI foot-controller PICKER: the Pro Micro is fixed
+          // hardware that auto-detect binds by product name (#421), so a chooser
+          // would only offer the one answer. CONFIGURING the pedal is not the
+          // same as choosing it, so the assignment route below stays.
           const SizedBox(height: 28),
           const PedalSettingsSection(),
           const SizedBox(height: 28),
-          // External MIDI mappings (part 7) listen through the bound input —
-          // chosen above on desktop, auto-detected on console.
+          // External MIDI mappings (part 7) listen through the auto-detected
+          // bound input.
           const MidiLearnSection(),
           const SizedBox(height: 28),
           SetupGroupLabel(l10n.sampleRateGroup),
@@ -144,8 +125,8 @@ class AudioSettingsSection extends StatelessWidget {
             selected: state.bufferFrames,
             onSelected: cubit.setBufferFrames,
             options: [
-              // Driver buffer sizes under ASIO (often a single locked size),
-              // else the generic list.
+              // Driver buffer sizes under ASIO (often a single locked size), else
+              // the generic list.
               for (final size in state.bufferChoices)
                 SetupOption(
                   value: size,
@@ -167,9 +148,7 @@ class AudioSettingsSection extends StatelessWidget {
               for (final m in AudioSetupState.maxLoopMinuteOptions)
                 SetupOption(
                   value: m,
-                  label: m == 0
-                      ? l10n.maxLoopDefault30s
-                      : l10n.maxLoopMinutes(m),
+                  label: m == 0 ? l10n.maxLoopDefault30s : l10n.maxLoopMinutes(m),
                   optionKey: Key('audioSettings_maxLoop_$m'),
                 ),
             ],

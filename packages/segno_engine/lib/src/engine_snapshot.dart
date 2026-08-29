@@ -78,6 +78,33 @@ enum TrackState {
   };
 }
 
+/// Progress of an offline loop-close restoration pass (#697) on a track.
+///
+/// Mirrors the native `le_track_snapshot.restore_state`. A completed pass
+/// publishes its result as an ordinary undo layer, so the revert affordance
+/// surfaces through [TrackSnapshot.undoDepth]/[TrackSnapshot.clearRestore] —
+/// this is only the in-progress indicator (drive a "restoring…" affordance
+/// off it, clear it when it returns to [idle]).
+enum TrackRestoreState {
+  /// No restoration in flight.
+  idle,
+
+  /// A restoration is queued: its lane copy is in flight, or it is waiting for
+  /// the background worker to pick it up.
+  queued,
+
+  /// The background worker's de-clip/denoise DSP is running.
+  running;
+
+  /// Maps a native `le_track_snapshot.restore_state` integer to a value.
+  static TrackRestoreState fromCode(int code) => switch (code) {
+    0 => TrackRestoreState.idle,
+    1 => TrackRestoreState.queued,
+    2 => TrackRestoreState.running,
+    _ => TrackRestoreState.idle,
+  };
+}
+
 /// Where the current tempo came from (D7 precedence:
 /// `external > (manual | tapped, last writer wins) > derived`).
 ///
@@ -384,6 +411,7 @@ class TrackSnapshot {
     this.lengthPresetBars = 0,
     this.oneShot = false,
     this.settledTakeId = 0,
+    this.restoreState = TrackRestoreState.idle,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -406,6 +434,7 @@ class TrackSnapshot {
       lengthPresetBars = 0,
       oneShot = false,
       settledTakeId = 0,
+      restoreState = TrackRestoreState.idle,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -434,6 +463,7 @@ class TrackSnapshot {
     lengthPresetBars: native.length_preset_bars,
     oneShot: native.one_shot != 0,
     settledTakeId: native.settled_take_id,
+    restoreState: TrackRestoreState.fromCode(native.restore_state),
     lanes: lanes,
   );
 
@@ -496,6 +526,13 @@ class TrackSnapshot {
   /// ordinal position.
   final int settledTakeId;
 
+  /// Progress of an offline loop-close restoration pass (#697) on this track:
+  /// [TrackRestoreState.idle] when none is in flight, else queued/running.
+  ///
+  /// The restored take is published as an ordinary undo layer, so the revert
+  /// affordance is [undoDepth]; this only drives an in-progress indicator.
+  final TrackRestoreState restoreState;
+
   /// RMS level for the most recent block, in `0..1`.
   final double rms;
 
@@ -541,6 +578,7 @@ class TrackSnapshot {
           lengthPresetBars == other.lengthPresetBars &&
           oneShot == other.oneShot &&
           settledTakeId == other.settledTakeId &&
+          restoreState == other.restoreState &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -561,6 +599,7 @@ class TrackSnapshot {
     lengthPresetBars,
     oneShot,
     settledTakeId,
+    restoreState,
     Object.hashAll(lanes),
   );
 }
@@ -622,9 +661,7 @@ class CallbackWindowStats {
         maxUs: native.max_us,
         meanUs: native.mean_us,
         maxGapUs: native.max_gap_us,
-        buckets: [
-          for (var i = 0; i < LE_CB_BUCKETS; i++) native.buckets[i],
-        ],
+        buckets: [for (var i = 0; i < LE_CB_BUCKETS; i++) native.buckets[i]],
         xruns: [for (var i = 0; i < LE_XRUN_KINDS; i++) native.xruns[i]],
       );
 

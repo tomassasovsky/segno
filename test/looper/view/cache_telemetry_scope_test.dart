@@ -20,12 +20,15 @@ void main() {
     late TracksCubit tracksCubit;
     late SettingsTrayCubit trayCubit;
 
-    setUp(() {
+    setUp(() async {
       engine = FakeAudioEngine();
       ticker = StreamController<void>.broadcast();
       repository = LooperRepository(engine: engine, ticker: ticker.stream);
       settings = SettingsRepository(store: FakeKeyValueStore());
       tracksCubit = TracksCubit(settings: settings);
+      // The strip is off by default on the console, and the scope only polls
+      // while it is on -- so turn it on to exercise the gate at all.
+      await tracksCubit.setShowIndicators(value: true);
       trayCubit = SettingsTrayCubit(settings: settings);
     });
 
@@ -55,10 +58,9 @@ void main() {
       (tester) async {
         await pumpScope(tester);
 
-        // The desktop default preference is ON from the first frame — the
-        // exact state that used to cost a per-poll engine sweep on every
-        // screen (#418). With the tray closed nothing renders the glyph, so
-        // the repository must not be polling.
+        // With the preference ON — the exact state that used to cost a
+        // per-poll engine sweep on every screen (#418) — but the tray closed,
+        // nothing renders the glyph, so the repository must not be polling.
         expect(tracksCubit.state.showIndicators, isTrue);
         expect(repository.cacheTelemetryEnabled, isFalse);
         expect(engine.laneCacheSweeps, 0);

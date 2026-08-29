@@ -494,12 +494,14 @@ typedef enum le_fx_type {
 } le_fx_type;
 
 /* Which device backend to open. The default (0) opens miniaudio's default
- * backend for the platform (Core Audio on macOS, the Linux preference list).
- * On Windows the engine forces ASIO, which is only available in a
- * SEGNO_ENABLE_ASIO build. */
+ * backend for the platform (Core Audio on macOS, the Linux preference list) —
+ * the only backend this engine ships. */
 typedef enum le_audio_backend {
   LE_BACKEND_MINIAUDIO = 0, /* default: miniaudio's default platform backend */
-  LE_BACKEND_ASIO = 1,   /* Windows ASIO (requires SEGNO_ENABLE_ASIO) */
+  /* Reserved. Was Windows ASIO; the backend went with the desktop targets, but
+   * the value stays claimed so a persisted setting written by an older build
+   * still parses instead of being reinterpreted as another backend. */
+  LE_BACKEND_ASIO = 1,
 } le_audio_backend;
 
 /* A hardware audio device discovered by enumeration (le_enumerate_*).
@@ -546,13 +548,10 @@ typedef struct le_config {
    * overrides capture_device_id when a loopback device is detected. */
   char playback_device_id[256];
   char capture_device_id[256];
-  /* le_audio_backend to open; 0 (LE_BACKEND_MINIAUDIO) selects the default
-   * miniaudio path, LE_BACKEND_ASIO the Windows ASIO backend. Honored at start
-   * via le_select_backend (a SEGNO_ENABLE_ASIO Windows build); elsewhere every
-   * value resolves to miniaudio. */
+  /* le_audio_backend to open. Every value resolves to miniaudio via
+   * le_select_backend; the field stays so persisted configs still round-trip. */
   int32_t backend;
-  /* Selected ASIO driver name (used by the ASIO backend in Part 2). Empty and
-   * ignored on the default path. */
+  /* Reserved, alongside LE_BACKEND_ASIO. Always empty and ignored. */
   char asio_driver[256];
 } le_config;
 
@@ -684,6 +683,13 @@ typedef struct le_track_snapshot {
    * it against the RECORD_END payloads to anchor the settled image by identity
    * rather than by "first RECORD_END on the channel". */
   int32_t settled_take_id;
+  /* Trailing (#697 S9, offline loop-close restoration): 0 idle, 1 queued (the
+   * enqueue copy is in flight or the job is waiting for the worker), 2 running
+   * (the worker's de-clip/denoise DSP is in flight). A completed pass publishes
+   * its result as an ordinary undo layer, so undo_depth/clear_restore carry the
+   * revert affordance — this field is only the in-progress indicator. See
+   * le_engine_restore_track. */
+  int32_t restore_state;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1092,18 +1098,10 @@ LE_EXPORT int32_t le_enumerate_playback_devices(le_device_info* out, int32_t max
 LE_EXPORT int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
                                                int32_t* count);
 
-/* Enumerates the installed ASIO drivers into `out` (room for `max`), writing the
- * count into *count. Each entry is one duplex driver: `id` and `name` are the
- * driver name and `input_channels`/`output_channels` are probed from the driver
- * (so the picker can show "18 in / 20 out" before opening). A driver that fails
- * to probe is omitted; the call degrades to *count = 0 rather than erroring.
- *
- * Only the SEGNO_ENABLE_ASIO Windows build enumerates real drivers; every other
- * build is a stub returning *count = 0, LE_OK. RE-ENTRANCY: the ASIO host SDK
- * loads a single process-global driver, so this MUST NOT be called while an ASIO
- * device is open (it would tear down the live stream) — the Dart layer only
- * enumerates while stopped or running on the miniaudio backend. Returns LE_OK,
- * or LE_ERR_INVALID for a null argument / non-positive `max`. */
+/* Reserved: always writes *count = 0 and returns LE_OK. ASIO was the Windows
+ * duplex backend and went with the desktop targets; the symbol stays exported so
+ * the Dart layer can keep calling it unconditionally. Returns LE_ERR_INVALID for
+ * a null argument / non-positive `max`. */
 LE_EXPORT int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
                                             int32_t* count);
 
@@ -2014,6 +2012,45 @@ LE_EXPORT int32_t le_engine_set_input_conditioning_param(le_engine* engine,
                                                          int32_t input,
                                                          int32_t param,
                                                          float value);
+
+/* ---- Offline loop-close restoration (input conditioning, S9) ---- *
+ * The restoration counterpart to the live conditioning stage above: after a
+ * loop closes, a background worker repairs the CAPTURED lanes — de-clip
+ * (reconstruct the peaks a converter flattened) then optional RNNoise denoise
+ * — and publishes the result as one lockstep undo layer, so a plain
+ * le_engine_undo reverts to the raw take. It runs entirely off the RT audio
+ * thread (a copy-at-enqueue worker mirroring the wet cache), so it never adds
+ * playback latency, and it is opt-in per input via the flags below. Policy
+ * lives in the app: the engine only restores what it is asked to, when it is
+ * asked. Progress surfaces through le_track_snapshot.restore_state. */
+typedef enum le_restore_flags {
+  LE_RESTORE_DECLIP = 1,  /* de-clip pass (restore_declip.c), at the full rate */
+  LE_RESTORE_DENOISE = 2, /* RNNoise denoise — passthrough at 48 kHz, a 2:1
+                           * half-band resample at 96 kHz, skipped at other
+                           * rates (de-clip still runs). */
+} le_restore_flags;
+
+/* Queues an offline restoration pass over track [channel]'s captured lanes
+ * (control thread). [lane_mask] selects which lanes to repair (bit l = lane l,
+ * restricted to the track's active lanes); [flags] is a bitwise-OR of
+ * le_restore_flags. The pass runs on a background worker and publishes its
+ * result as one undo layer once complete — never touching the RT audio
+ * thread's latency. Returns LE_OK once the job is queued, or LE_ERR_INVALID
+ * for a null/out-of-range handle, empty flags or lane mask, a track that is
+ * RECORDING/OVERDUBBING or has an overdub layer in flight, a track with no
+ * captured content, or a restoration already in flight (one job engine-wide).
+ * A queued pass whose take moves before it commits (a new overdub, an undo)
+ * is discarded, never published. */
+LE_EXPORT int32_t le_engine_restore_track(le_engine* engine, int32_t channel,
+                                          uint32_t lane_mask, uint32_t flags);
+
+/* Cancels an in-flight restoration on track [channel] (control thread): a job
+ * still copying is dropped immediately; one already on the worker aborts at
+ * its next lane boundary and its result is discarded rather than published.
+ * Returns LE_OK when a matching job was found and signalled, or LE_ERR_INVALID
+ * for a null/out-of-range handle or when no restoration for [channel] is in
+ * flight. */
+LE_EXPORT int32_t le_engine_cancel_restore(le_engine* engine, int32_t channel);
 
 /* ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ---- *
  * Each track owns ONE Track-stage chain, downstream of its per-lane chains.
