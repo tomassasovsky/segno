@@ -5,6 +5,7 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/common/fx_chain_persistence.dart';
+import 'package:segno/common/write_debouncer.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'looper_event.dart';
@@ -23,8 +24,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     required LooperRepository repository,
     ControllerRepository? controller,
     SettingsRepository? settings,
+    Duration fxPersistDebounce = const Duration(milliseconds: 300),
   }) : _repository = repository,
        _settings = settings,
+       _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
        super(const LooperState()) {
     on<LooperStateUpdated>((event, emit) => emit(event.state));
     on<LooperRecordPressed>(
@@ -149,14 +152,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         value: event.value,
       );
       // Re-save the whole chain (the engine call above was granular and did not
-      // reset DSP; persistence stores the chain as one encoded string).
-      unawaited(
-        _settings?.saveLaneEffects(
-          event.channel,
-          event.lane,
-          _encodedLaneChain(event.channel, event.lane),
-        ),
-      );
+      // reset DSP; persistence stores the chain as one encoded string) — and
+      // DEBOUNCED, because this is the knob-drag path: one pointer move used
+      // to re-encode the envelope and rewrite the preferences file.
+      _schedulePersistLaneChain(event.channel, event.lane);
     });
     on<LooperLanePluginParamChanged>((event, _) {
       _repository.setLanePluginParam(
@@ -167,14 +166,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         value: event.value,
       );
       // Persist the whole chain (the param set above was granular); the encoded
-      // chain carries the plugin's remembered paramValues.
-      unawaited(
-        _settings?.saveLaneEffects(
-          event.channel,
-          event.lane,
-          _encodedLaneChain(event.channel, event.lane),
-        ),
-      );
+      // chain carries the plugin's remembered paramValues. Debounced for the
+      // same reason as the built-in param path above.
+      _schedulePersistLaneChain(event.channel, event.lane);
     });
     on<LooperLanePluginInserted>((event, _) {
       _pushLaneEffects(event.channel, event.lane, [
@@ -290,7 +284,8 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
           value: event.value,
         );
       }
-      _persistBusChain(event.address);
+      // Debounced: the engine write above is per-move, this is per-drag.
+      _schedulePersistBusChain(event.address);
     });
     on<LooperBusPluginInserted>((event, _) {
       final chain = _busChain(event.address);
@@ -298,16 +293,27 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _pushBusChain(event.address, [...chain, PluginEffect(ref: event.ref)]);
     });
     on<LooperBusPluginParamChanged>((event, _) {
-      final chain = _busChain(event.address);
-      if (event.index < 0 || event.index >= chain.length) return;
-      final fx = chain[event.index];
-      if (fx is! PluginEffect) return;
-      final values = Map<int, double>.of(fx.paramValues)
-        ..[event.paramId] = event.value;
-      _pushBusChain(
-        event.address,
-        [...chain]..[event.index] = fx.copyWith(paramValues: values),
-      );
+      // Granular, NOT a whole-chain push — the same argument as
+      // [LooperBusEffectParamChanged] above, and it bites HARDER here: a bus
+      // plugin never instantiates, so the chain re-push would reset the DSP of
+      // the BUILT-INS sharing the bus without the plugin's own value even
+      // having somewhere to go.
+      if (event.address.stage == FxStage.master) {
+        _repository.setMasterPluginParam(
+          index: event.index,
+          paramId: event.paramId,
+          value: event.value,
+        );
+      } else {
+        _repository.setTrackPluginParam(
+          channel: event.address.index,
+          index: event.index,
+          paramId: event.paramId,
+          value: event.value,
+        );
+      }
+      // Debounced: the model write above is per-move, this is per-drag.
+      _schedulePersistBusChain(event.address);
     });
     on<LooperBusPluginRelinked>((event, _) {
       final chain = _busChain(event.address);
@@ -513,6 +519,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
 
   final LooperRepository _repository;
   final SettingsRepository? _settings;
+
+  /// Coalesces the per-target chain-envelope writes that a knob drag would
+  /// otherwise emit at pointer rate. Flushed in [close].
+  final WriteDebouncer _fxPersist;
   late final StreamSubscription<LooperState> _subscription;
   StreamSubscription<ControllerEvent>? _controllerSubscription;
 
@@ -583,6 +593,13 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     );
   }
 
+  /// Coalesced twin of [_persistLaneChain], for the paths a knob drag drives.
+  /// Keyed per lane, so dragging one lane's knob never delays another's write.
+  void _schedulePersistLaneChain(int channel, int lane) => _fxPersist.schedule(
+    (#lane, channel, lane),
+    () => _persistLaneChain(channel, lane),
+  );
+
   /// Encodes lane [lane] of [channel]'s chain as the persisted envelope
   /// string (R15): the entries, the chain-enabled flag, and the inheritance
   /// meta all ride the one `lane_effects` key — no per-flag keys.
@@ -606,12 +623,18 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
 
   /// Writes [next] to the bus chain at [address] and persists its envelope.
   void _pushBusChain(FxAddress address, List<TrackEffect> next) {
+    _writeBusChain(address, next);
+    _persistBusChain(address);
+  }
+
+  /// The engine half of [_pushBusChain], on its own — for the knob-drag path,
+  /// which needs the write immediate and the persistence coalesced.
+  void _writeBusChain(FxAddress address, List<TrackEffect> next) {
     if (address.stage == FxStage.master) {
       _repository.setMasterEffects(effects: next);
     } else {
       _repository.setTrackEffects(channel: address.index, effects: next);
     }
-    _persistBusChain(address);
   }
 
   /// Persists the bus chain envelope at [address] — used on its own by the
@@ -624,6 +647,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _persistTrackChain(address.index);
     }
   }
+
+  /// Coalesced twin of [_persistBusChain] — the bus half of
+  /// [_schedulePersistLaneChain], keyed by the address it persists.
+  void _schedulePersistBusChain(FxAddress address) =>
+      _fxPersist.schedule(address, () => _persistBusChain(address));
 
   /// Persists track [channel]'s Track-stage chain envelope (the bus twin of
   /// [_encodedLaneChain]; bus chains carry no inheritance meta) — through the
@@ -660,6 +688,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   void _resyncSessionChains() {
     final settings = _settings;
     if (settings == null) return;
+    // A loaded session supersedes every edit in flight. Without this, a knob
+    // let go of less than one debounce window before the load would land
+    // AFTER the sweep below and resurrect a chain the sweep just cleared —
+    // exactly the stale-key revival the sweep exists to prevent.
+    _fxPersist.cancelAll();
     final lanes = _repository.allLaneChains();
     final tracks = _repository.allTrackChains();
     // The engine's track count, read fresh rather than from this bloc's
@@ -794,6 +827,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
 
   @override
   Future<void> close() {
+    // Before anything is torn down: a drag that ended in the debounce window
+    // and was followed by a shutdown must still reach the store.
+    _fxPersist.flush();
     for (final timer in _lanePluginEditorTimers.values) {
       timer.cancel();
     }

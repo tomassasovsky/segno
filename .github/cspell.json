@@ -211,6 +211,7 @@
     "dllexport",
     "dllmain",
     "dlopen",
+    "dlsym",
     "dmix",
     "DNDEBUG",
     "DNOMINMAX",

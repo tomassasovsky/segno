@@ -22075,6 +22075,96 @@ static void bus_fx_record_loop(le_engine* e, float value) {
   drain(e);
 }
 
+/* Idle-track lane skip (#897): mix_tracks_frame skips the entire per-lane
+ * snapshot AND body for a track that is EMPTY or STOPPED, carries no lane
+ * chain, is not seam-capturing and has no punch tail — a lane whose whole job
+ * is loading one zero and adding it twice cost ~7.4 ns per frame, so 49 of
+ * them burned ~7 us of a 333 us callback. The skip is only sound while the
+ * things it must NOT skip stay excluded from it, which is what this pins:
+ *
+ *  1. An effect chain must keep ticking on silence (delay tails, LFO phase) —
+ *     the run-on-silence rule — even on a track that will never sound. Read
+ *     off the delay ring's write head, which advances one per PROCESSED frame
+ *     and freezes the moment the lane body stops running.
+ *  2. Idle tracks must contribute exactly nothing: adding seven EMPTY tracks
+ *     with eight lanes each to a playing engine must not move a single sample.
+ *  3. A STOPPED track must come back. It is skipped while stopped, so the
+ *     per-frame snapshot it needs (live buffer, volume, mute, routing) has to
+ *     re-populate on the very frame it stops being idle.
+ *
+ * The #728 seam-capture clause of the same guard is defensive rather than
+ * observable here: a seam capture normally runs while the track is PLAYING,
+ * which the skip never touches. */
+static void test_idle_track_lane_skip(void) {
+  printf("test_idle_track_lane_skip\n");
+  static float cap[FX_EN_SETTLE];
+
+  /* (1) chain on an EMPTY track keeps ticking. */
+  {
+    le_engine* e = make_configured_engine();
+    CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DELAY) == LE_OK);
+    CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+    drain(e);
+    le_track_snapshot ts;
+    le_engine_get_track(e, 0, &ts);
+    CHECK(ts.state == LE_TRACK_EMPTY);
+    /* The fx ring is one second long, so its capacity is the sample rate. */
+    const int32_t ring = 48000;
+    const int32_t head0 = e->tracks[0].lanes[0].fx.delay_pos[0][0];
+    process_n(e, 0.0f, 512, cap);
+    CHECK(e->tracks[0].lanes[0].fx.delay_pos[0][0] == (head0 + 512) % ring);
+    le_engine_destroy(e);
+  }
+
+  /* (2) idle tracks and their lanes contribute nothing: bit-identical mix. */
+  {
+    static float bare[FX_EN_SETTLE];
+    static float crowded[FX_EN_SETTLE];
+    le_engine* a = make_configured_engine();
+    bus_fx_record_loop(a, 0.5f);
+    process_n(a, 0.0f, FX_EN_SETTLE, bare);
+    le_engine_destroy(a);
+
+    le_engine* b = make_configured_engine();
+    bus_fx_record_loop(b, 0.5f);
+    for (int t = 1; t < LE_MAX_TRACKS; ++t) {
+      CHECK(le_engine_set_lane_count(b, t, LE_MAX_LANES) == LE_OK);
+    }
+    drain(b);
+    process_n(b, 0.0f, FX_EN_SETTLE, crowded);
+    le_engine_destroy(b);
+
+    for (int i = 0; i < FX_EN_SETTLE; ++i) CHECK(bare[i] == crowded[i]);
+  }
+
+  /* (3) a STOPPED track resumes: the skipped snapshot re-populates. */
+  {
+    le_engine* e = make_configured_engine();
+    bus_fx_record_loop(e, 0.5f);
+    process_n(e, 0.0f, 256, cap);
+    const float playing = cap[255];
+    CHECK(playing != 0.0f);
+
+    CHECK(le_engine_stop_track(e, 0) == LE_OK);
+    drain(e);
+    le_track_snapshot ts;
+    le_engine_get_track(e, 0, &ts);
+    CHECK(ts.state == LE_TRACK_STOPPED);
+    process_n(e, 0.0f, 256, cap);
+    for (int i = 0; i < 256; ++i) CHECK(cap[i] == 0.0f); /* silent while idle */
+
+    CHECK(le_engine_play(e, 0) == LE_OK);
+    drain(e);
+    process_n(e, 0.0f, 256, cap);
+    int sounded = 0;
+    for (int i = 0; i < 256; ++i) {
+      if (cap[i] == playing) sounded = 1;
+    }
+    CHECK(sounded);
+    le_engine_destroy(e);
+  }
+}
+
 /* D-TRACKROUTE bit-identity (empty): an engine that set a Track chain and
  * then emptied it (count = 0) is memcmp-identical to one that never touched
  * it — the migration fingerprint invariant. (The untouched-default half of
@@ -26154,6 +26244,7 @@ int main(void) {
   test_perf_render_replays_fx_slot_enable();
   test_perf_render_replays_fx_chain_enable();
 
+  test_idle_track_lane_skip();
   test_track_fx_empty_set_then_empty_bit_identity();
   test_track_fx_union_routing();
   test_track_fx_audible_only_summing();
