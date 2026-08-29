@@ -34,6 +34,32 @@ void main() {
       expect(decoded.pcmFile, isNull);
       expect(decoded.effects, isEmpty);
     });
+
+    test('carries a positive takeId through JSON (#819)', () {
+      const lane = PerformanceLaneSnapshot(
+        lane: 0,
+        lengthFrames: 480,
+        deferred: false,
+        pcmFile: 'loops/track1-lane0.wav',
+        takeId: 3,
+      );
+      final json = lane.toJson();
+      expect(json['takeId'], 3);
+      expect(PerformanceLaneSnapshot.fromJson(json).takeId, 3);
+    });
+
+    test('omits takeId when zero and reads an absent takeId as zero', () {
+      const lane = PerformanceLaneSnapshot(
+        lane: 0,
+        lengthFrames: 480,
+        deferred: false,
+        pcmFile: 'loops/track1-lane0.wav',
+      );
+      final json = lane.toJson();
+      // Presence-keyed: a byte-identical shape to a build without take ids.
+      expect(json.containsKey('takeId'), isFalse);
+      expect(PerformanceLaneSnapshot.fromJson(json).takeId, 0);
+    });
   });
 
   group('PerformanceTrackSnapshot', () {
@@ -61,8 +87,6 @@ void main() {
   group('PerformanceArmSnapshot', () {
     test('round-trips through JSON, including monitors', () {
       const snapshot = PerformanceArmSnapshot(
-        clockFrame: 100,
-        masterLengthFrames: 48000,
         masterGain: 0.9,
         limiterEnabled: true,
         limiterCeiling: 0.95,
@@ -88,8 +112,10 @@ void main() {
         ],
       );
       final decoded = PerformanceArmSnapshot.fromJson(snapshot.toJson());
-      expect(decoded.clockFrame, 100);
-      expect(decoded.masterLengthFrames, 48000);
+      // The old master-phase anchor keys are gone (#262) — the renderer reads
+      // the arm phase from events.log's LE_PLOG_PERF_ARMED fact.
+      expect(snapshot.toJson().containsKey('clockFrame'), isFalse);
+      expect(snapshot.toJson().containsKey('masterLenFrames'), isFalse);
       expect(decoded.masterGain, 0.9);
       expect(decoded.limiterEnabled, isTrue);
       expect(decoded.limiterCeiling, 0.95);
@@ -113,8 +139,6 @@ void main() {
       'flags (R20/R3)',
       () {
         final snapshot = PerformanceArmSnapshot(
-          clockFrame: 0,
-          masterLengthFrames: 480,
           masterGain: 1,
           limiterEnabled: false,
           limiterCeiling: 0.99,
@@ -239,6 +263,10 @@ void main() {
         expect(decoded.trackChains, isEmpty);
         expect(decoded.masterEffects, isEmpty);
         expect(decoded.masterChainEnabled, isTrue);
+        // No tempo field either (#281): a pre-field capture reads back the
+        // 0-as-unset sentinel — the exporter's cue that there is no tempo
+        // evidence here, same as a capture that never set one.
+        expect(decoded.tempoBpm, 0);
         // Everything the legacy schema DID describe is intact, defaulted to
         // audible — the pre-FX-v3 world had no other possibility.
         final lane = decoded.tracks.single.lanes.single;
@@ -250,11 +278,40 @@ void main() {
     );
 
     test(
+      'stores the arm-time tempo verbatim — 0 = unset, session-manifest '
+      'parity — and reads an absent key back as 0 (#281)',
+      () {
+        const withTempo = PerformanceArmSnapshot(
+          masterGain: 1,
+          limiterEnabled: false,
+          limiterCeiling: 0.99,
+          latencyOffsetFrames: 0,
+          tempoBpm: 87.5,
+        );
+        expect(withTempo.toJson()['tempoBpm'], 87.5);
+        expect(
+          PerformanceArmSnapshot.fromJson(withTempo.toJson()).tempoBpm,
+          87.5,
+        );
+
+        // Unset is a literal 0, written verbatim like Session.tempoBpm —
+        // readers guard with `> 0`, so 0 and a pre-field absent key resolve
+        // identically (no tempo evidence).
+        const noTempo = PerformanceArmSnapshot(
+          masterGain: 1,
+          limiterEnabled: false,
+          limiterCeiling: 0.99,
+          latencyOffsetFrames: 0,
+        );
+        expect(noTempo.toJson()['tempoBpm'], 0);
+        expect(PerformanceArmSnapshot.fromJson(noTempo.toJson()).tempoBpm, 0);
+      },
+    );
+
+    test(
       'omits the bus fields and every engaged flag when at their defaults',
       () {
         const snapshot = PerformanceArmSnapshot(
-          clockFrame: 0,
-          masterLengthFrames: 0,
           masterGain: 1,
           limiterEnabled: false,
           limiterCeiling: 0.99,
@@ -296,6 +353,7 @@ void main() {
   group('PerformanceDisarmSnapshot', () {
     test('round-trips through JSON', () {
       const snapshot = PerformanceDisarmSnapshot(
+        tempoBpm: 132,
         tracks: [
           PerformanceTrackSnapshot(
             channel: 3,
@@ -308,7 +366,20 @@ void main() {
       );
       final decoded = PerformanceDisarmSnapshot.fromJson(snapshot.toJson());
       expect(decoded.tracks.single.channel, 3);
+      // The authoritative export tempo (#281) — the arm-time read can
+      // predate D6's lock engaging, this one cannot.
+      expect(decoded.tempoBpm, 132);
     });
+
+    test(
+      'reads a pre-#281 snapshot (no tempoBpm key) back as 0-as-unset',
+      () {
+        final decoded = PerformanceDisarmSnapshot.fromJson(const {
+          'tracks': <dynamic>[],
+        });
+        expect(decoded.tempoBpm, 0);
+      },
+    );
   });
 
   group('PerformanceLayerEntry', () {

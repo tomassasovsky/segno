@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 // The audio-config + effect types are domain types here (from the barrel); the
@@ -68,6 +69,46 @@ const _playingSnapshot = EngineSnapshot(
   ],
 );
 
+/// One playing track with one real lane — the cache-telemetry gate is a
+/// per-lane concern, and [_playingSnapshot]'s tracks carry no lanes.
+const _laneSnapshot = EngineSnapshot(
+  isRunning: true,
+  sampleRate: 48000,
+  bufferFrames: 128,
+  inputChannels: 2,
+  outputChannels: 4,
+  framesProcessed: 0,
+  xrunCount: 0,
+  inputRms: 0,
+  inputPeak: 0,
+  outputRms: 0,
+  latencyState: le.LatencyState.idle,
+  measuredLatencyMs: -1,
+  masterLengthFrames: 96000,
+  tracks: [
+    TrackSnapshot(
+      state: TrackState.playing,
+      volume: 1,
+      muted: false,
+      lengthFrames: 96000,
+      undoDepth: 0,
+      rms: 0,
+      peak: 0,
+      lanes: [
+        LaneSnapshot(
+          inputChannel: 0,
+          outputMask: 0x3,
+          volume: 1,
+          muted: false,
+          lengthFrames: 96000,
+          rms: 0,
+          peak: 0,
+        ),
+      ],
+    ),
+  ],
+);
+
 void main() {
   late FakeAudioEngine engine;
   late StreamController<void> ticker;
@@ -81,6 +122,111 @@ void main() {
 
   LooperRepository buildRepo() =>
       LooperRepository(engine: engine, ticker: ticker.stream);
+
+  group('cache telemetry gate', () {
+    // The shared snapshot above carries no lanes, and this gate is entirely
+    // about per-LANE reads — so seed one lane to observe.
+    setUp(() => engine.nextSnapshot = _laneSnapshot);
+
+    test('is off by default and polls no lane', () {
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+
+      expect(repo.cacheTelemetryEnabled, isFalse);
+      expect(
+        repo.state.tracks.first.lanes.first.cacheState,
+        isNull,
+        reason: 'unobserved is not the same as live',
+      );
+      // The point of the gate: a cache-state sweep drains the engine and runs
+      // a scheduler pass, so an off gate must not merely hide the result — it
+      // must not ask.
+      expect(engine.laneCacheSweeps, 0);
+    });
+
+    test('turning it on republishes immediately with observed states', () {
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      engine.seededLaneCacheStates[(0, 0)] = LaneCacheState.cached;
+
+      repo.setCacheTelemetryEnabled(enabled: true);
+
+      expect(
+        repo.state.tracks.first.lanes.first.cacheState,
+        LaneCacheState.cached,
+      );
+      expect(engine.laneCacheSweeps, 1);
+    });
+
+    test('turning it back off clears every lane state and stops reading', () {
+      final repo = buildRepo()..setCacheTelemetryEnabled(enabled: true);
+      addTearDown(repo.dispose);
+      engine.laneCacheSweeps = 0;
+
+      repo.setCacheTelemetryEnabled(enabled: false);
+
+      expect(repo.state.tracks.first.lanes.first.cacheState, isNull);
+      expect(engine.laneCacheSweeps, 0);
+    });
+
+    test(
+      'a local edit reuses the last refresh instead of re-reading the engine',
+      () {
+        // _reproject() runs on every local edit — including each frame of a
+        // dragged FX knob. Reading telemetry there would put a drain plus a
+        // scheduler sweep inside the gesture _reproject exists to keep
+        // responsive, so the projection must reuse the polled states.
+        final repo = buildRepo()..setCacheTelemetryEnabled(enabled: true);
+        addTearDown(repo.dispose);
+        repo.setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+        engine.laneCacheSweeps = 0;
+
+        for (var i = 0; i < 10; i++) {
+          repo.setLaneEffectParam(
+            channel: 0,
+            lane: 0,
+            index: 0,
+            param: 0,
+            value: i / 10,
+          );
+        }
+
+        expect(engine.laneCacheSweeps, 0);
+      },
+    );
+
+    test('a poll runs exactly one batched sweep', () {
+      final repo = buildRepo()..setCacheTelemetryEnabled(enabled: true);
+      addTearDown(repo.dispose);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      engine.laneCacheSweeps = 0;
+
+      ticker.add(null);
+
+      // One tick, ONE sweep for every lane at once (#418) — never a per-lane
+      // read loop, and no duplicate from a projection that also polls.
+      return Future<void>.delayed(Duration.zero, () {
+        expect(engine.laneCacheSweeps, 1);
+      });
+    });
+
+    test('setting the same value is a no-op', () {
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      engine.laneCacheSweeps = 0;
+
+      repo.setCacheTelemetryEnabled(enabled: false);
+
+      // No republish, so no sweep — the guard is what keeps a redundant
+      // preference write from costing a full poll.
+      expect(engine.laneCacheSweeps, 0);
+    });
+  });
 
   group('poll interval', () {
     test('reports and updates the configured cadence', () {
@@ -721,6 +867,24 @@ void main() {
         ..startEngine(const EngineConfig())
         ..cancelArm(channel: 3);
       expect(engine.cancelledArms, [3]);
+    });
+
+    test('finalizeTake reaches the engine while running, is a no-op when '
+        'stopped (a live take cannot outlive the engine capturing it), and '
+        'surfaces the engine refusal untranslated — the caller reads it as '
+        '"the capture survives" (#405)', () {
+      final repo = buildRepo();
+      expect(repo.finalizeTake(channel: 3), EngineResult.ok);
+      expect(engine.finalizedTakes, isEmpty); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(repo.finalizeTake(channel: 3), EngineResult.ok);
+      expect(engine.finalizedTakes, [3]);
+
+      // The defining-take refusal is a contract, not an error to swallow.
+      engine.finalizeTakeResult = EngineResult.invalid;
+      expect(repo.finalizeTake(channel: 3), EngineResult.invalid);
+      expect(engine.finalizedTakes, [3, 3]);
     });
 
     test('per-track quantize overrides are deferred then re-applied', () {
@@ -2722,6 +2886,74 @@ void main() {
       engine.monitorMute.clear();
       repo.startEngine(const EngineConfig());
       expect(engine.monitorMute[0], isTrue);
+    });
+
+    test('setInputConditioningEnabled forwards while running', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setInputConditioningEnabled(input: 0, enabled: true);
+      expect(engine.conditioningEnabled[0], isTrue);
+    });
+
+    test('setInputConditioningParam forwards the code + real-unit value', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setInputConditioningParam(
+          input: 1,
+          param: InputConditioningParam.hpfHz,
+          value: 80,
+        );
+      expect(engine.conditioningParam[(1, InputConditioningParam.hpfHz)], 80);
+    });
+
+    test('conditioning intent is remembered and reapplied on restart', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setInputConditioningParam(
+          input: 0,
+          param: InputConditioningParam.expRatio,
+          value: 3,
+        )
+        ..setInputConditioningEnabled(input: 0, enabled: true);
+
+      engine.conditioningEnabled.clear();
+      engine.conditioningParam.clear();
+      repo.startEngine(const EngineConfig());
+
+      expect(engine.conditioningEnabled[0], isTrue);
+      expect(
+        engine.conditioningParam[(0, InputConditioningParam.expRatio)],
+        3,
+      );
+    });
+
+    test('conditioning set while stopped applies on the next start', () {
+      final repo = buildRepo()
+        ..setInputConditioningEnabled(input: 0, enabled: true);
+      // Nothing forwarded yet: the device is not running.
+      expect(engine.conditioningEnabled.containsKey(0), isFalse);
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.conditioningEnabled[0], isTrue);
+    });
+
+    test('rejects an out-of-range conditioning input without touching '
+        'the engine', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      expect(
+        repo.setInputConditioningEnabled(input: -1, enabled: true),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setInputConditioningParam(
+          input: kMaxMonitoredInputs,
+          param: InputConditioningParam.hpfHz,
+          value: 40,
+        ),
+        EngineResult.invalid,
+      );
+      expect(engine.conditioningEnabled, isEmpty);
+      expect(engine.conditioningParam, isEmpty);
     });
 
     test('an empty monitor chain (clean path) zeroes the count', () {
@@ -6601,8 +6833,8 @@ void main() {
 
       // Deliberate, and load-bearing: these arrive at controller rate from a
       // mapped CC, and the listener persists what it reads — announcing would
-      // write five settings keys per frame of a sweep. #605 owns the cadence
-      // question; until then this stays quiet on purpose.
+      // write five settings keys per frame of a sweep. Param writes announce
+      // on their own throttled stream instead: `monitorParamChanges` (#605).
       repo.setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.4);
       await Future<void>.delayed(Duration.zero);
 
@@ -6678,6 +6910,172 @@ void main() {
         );
       },
     );
+  });
+
+  group('monitorParamChanges', () {
+    // The throttle is a real Timer, so these run under fake time: `elapse`
+    // is the only honest way to cross the 100 ms window without a wall-clock
+    // wait, and `flushMicrotasks` is what delivers a broadcast add.
+    LooperRepository buildWithChain(FakeAsync async) {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+      async.flushMicrotasks();
+      return repo;
+    }
+
+    test('a param write announces its input', () {
+      fakeAsync((async) {
+        final repo = buildWithChain(async);
+        final seen = <int>[];
+        repo.monitorParamChanges.listen(seen.add);
+
+        repo.setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.4);
+        async.flushMicrotasks();
+
+        // Immediately — the knob starts moving on the sweep's first frame,
+        // not one throttle window late.
+        expect(seen, [0]);
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+      });
+    });
+
+    test('a burst inside the window coalesces to first plus trailing', () {
+      fakeAsync((async) {
+        final repo = buildWithChain(async);
+        final seen = <int>[];
+        repo.monitorParamChanges.listen(seen.add);
+
+        // A sweep: many controller frames inside one throttle window.
+        for (var i = 0; i < 20; i++) {
+          repo.setMonitorEffectParam(
+            input: 0,
+            index: 0,
+            param: 0,
+            value: i / 20,
+          );
+        }
+        async.flushMicrotasks();
+        expect(seen, [0], reason: 'the window holds everything after the 1st');
+
+        async
+          ..elapse(LooperRepository.monitorParamAnnounceInterval)
+          ..flushMicrotasks();
+        // One trailing announce carries the sweep's last value; a listener
+        // re-reads the chain, so the announce needs no payload.
+        expect(seen, [0, 0]);
+        expect(
+          (repo.monitorEffects(0).single as BuiltInEffect).params.first,
+          closeTo(19 / 20, 1e-9),
+        );
+
+        // And a clean window ends silent — no announce without a write.
+        async
+          ..elapse(LooperRepository.monitorParamAnnounceInterval * 2)
+          ..flushMicrotasks();
+        expect(seen, [0, 0]);
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+      });
+    });
+
+    test('a sweep longer than one window announces at the cadence', () {
+      fakeAsync((async) {
+        final repo = buildWithChain(async);
+        final seen = <int>[];
+        repo.monitorParamChanges.listen(seen.add);
+
+        // 350 ms of continuous sweeping at ~100 fps.
+        for (var t = 0; t < 35; t++) {
+          repo.setMonitorEffectParam(
+            input: 0,
+            index: 0,
+            param: 0,
+            value: t / 35,
+          );
+          async
+            ..elapse(const Duration(milliseconds: 10))
+            ..flushMicrotasks();
+        }
+
+        // ≤10 Hz: the leading announce plus one per full window — never one
+        // per write.
+        expect(seen.length, inInclusiveRange(3, 5));
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+      });
+    });
+
+    test('windows are per input, and rejected writes stay silent', () {
+      fakeAsync((async) {
+        final repo = buildWithChain(async)
+          ..setMonitorEffects(
+            input: 3,
+            effects: [BuiltInEffect(type: TrackEffectType.delay)],
+          );
+        async.flushMicrotasks();
+        final seen = <int>[];
+        repo.monitorParamChanges.listen(seen.add);
+
+        repo
+          ..setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.1)
+          // Input 3's window is its own — input 0's open one must not hold it.
+          ..setMonitorEffectParam(input: 3, index: 0, param: 0, value: 0.2)
+          // Out of range: the write did nothing, so nothing to announce.
+          ..setMonitorEffectParam(input: 0, index: 9, param: 0, value: 0.3)
+          ..setMonitorEffectParam(input: 7, index: 0, param: 0, value: 0.3);
+        async.flushMicrotasks();
+
+        expect(seen, [0, 3]);
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+      });
+    });
+
+    test('a structural write does not announce on the param stream', () {
+      fakeAsync((async) {
+        final repo = buildWithChain(async);
+        final seen = <int>[];
+        repo.monitorParamChanges.listen(seen.add);
+
+        repo
+          ..setMonitorMute(input: 0, muted: true)
+          ..setMonitorChainEnabled(input: 0, enabled: false)
+          ..setMonitorEffects(
+            input: 0,
+            effects: [BuiltInEffect(type: TrackEffectType.delay)],
+          );
+        async.flushMicrotasks();
+
+        expect(seen, isEmpty);
+        unawaited(repo.dispose());
+        async.flushMicrotasks();
+      });
+    });
+
+    test('a disposed repository announces nothing, even mid-window', () {
+      fakeAsync((async) {
+        final repo = buildWithChain(async);
+        final seen = <int>[];
+        repo.monitorParamChanges.listen(seen.add);
+
+        // Leave a dirty window open across the dispose: the trailing timer
+        // must be cancelled, not left to fire into a closed controller.
+        repo
+          ..setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.1)
+          ..setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.2);
+        unawaited(repo.dispose());
+        async
+          ..elapse(LooperRepository.monitorParamAnnounceInterval * 2)
+          ..flushMicrotasks();
+
+        expect(seen, [0]); // the leading announce, and nothing after
+      });
+    });
   });
 
   group('monitor mode (tri-state)', () {

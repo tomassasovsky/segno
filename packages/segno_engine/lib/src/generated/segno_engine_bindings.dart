@@ -1666,6 +1666,56 @@ class SegnoEngineBindings {
   late final _le_engine_cancel_arm = _le_engine_cancel_armPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Finalizes track [channel]'s live NON-DEFINING recording take NOW,
+  /// unconditionally — the counterpart to le_engine_cancel_arm above: cancel_arm
+  /// kills the PENDING (an arm that has not fired), this kills the LIVE (a take
+  /// already capturing). The finalize is exactly what a quantize-off record
+  /// press does today — never off-grid: the length rounds UP to whole base
+  /// loops, the unfilled tail is the digital silence the capture prep wrote,
+  /// with the stopped-early seam treatment applied — but it skips the quantize
+  /// deferral, the auto-record arm toggle, and the shared arm machinery
+  /// entirely, so it can neither arm a take nor cancel (or consume) anyone
+  /// else's arm, and it never continues into overdub (rec/dub is a record-press
+  /// meaning; the take settles to PLAYING).
+  ///
+  /// Refuses (LE_ERR_INVALID) unless the take is safe to end here:
+  /// - the track is not RECORDING (EMPTY, PLAYING, OVERDUBBING, STOPPED, or a
+  /// parked transport — nothing starts, nothing punches in or out);
+  /// - the take is the DEFINING one (nothing else holds the grid): ending it
+  /// would let this call set the session's bar length mid-gesture, so the
+  /// defining take keeps running and the caller falls back to
+  /// capture-survives;
+  /// - the channel still has a live pending arm (any trigger): the arm belongs
+  /// to another command and must be retired first (le_engine_cancel_arm) —
+  /// finalizing under it would leave it to fire onto the settled loop later.
+  ///
+  /// The one exception to the RECORDING guard: while a count-in is running the
+  /// call is accepted for ANY valid channel and cancels the count-in outright —
+  /// the count-in is global transport state that has captured nothing, and its
+  /// abort is logged as LE_PLOG_RECORD_ABORT for the counting channel.
+  ///
+  /// Like cancel_arm, LE_OK means the command actually reached the ring; the
+  /// audio thread re-checks the RECORDING/non-defining precondition on apply,
+  /// so a state change racing the post degrades to a no-op, never to a start.
+  int le_engine_finalize_take(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_finalize_take(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_finalize_takePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_finalize_take');
+  late final _le_engine_finalize_take = _le_engine_finalize_takePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets the tempo in denominator-note beats per minute, clamped to 30..300.
   /// Sets tempo_source = manual; ignored while the tempo is locked.
   int le_engine_set_tempo(
@@ -2737,6 +2787,70 @@ class SegnoEngineBindings {
       _le_engine_set_input_conditioning_paramPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
 
+  /// Queues an offline restoration pass over track [channel]'s captured lanes
+  /// (control thread). [lane_mask] selects which lanes to repair (bit l = lane l,
+  /// restricted to the track's active lanes); [flags] is a bitwise-OR of
+  /// le_restore_flags. The pass runs on a background worker and publishes its
+  /// result as one undo layer once complete — never touching the RT audio
+  /// thread's latency. Returns LE_OK once the job is queued, or LE_ERR_INVALID
+  /// for a null/out-of-range handle, empty flags or lane mask, a track that is
+  /// RECORDING/OVERDUBBING or has an overdub layer in flight, a track with no
+  /// captured content, or a restoration already in flight (one job engine-wide).
+  /// A queued pass whose take moves before it commits (a new overdub, an undo)
+  /// is discarded, never published.
+  int le_engine_restore_track(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane_mask,
+    int flags,
+  ) {
+    return _le_engine_restore_track(
+      engine,
+      channel,
+      lane_mask,
+      flags,
+    );
+  }
+
+  late final _le_engine_restore_trackPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Uint32,
+            ffi.Uint32,
+          )
+        >
+      >('le_engine_restore_track');
+  late final _le_engine_restore_track = _le_engine_restore_trackPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Cancels an in-flight restoration on track [channel] (control thread): a job
+  /// still copying is dropped immediately; one already on the worker aborts at
+  /// its next lane boundary and its result is discarded rather than published.
+  /// Returns LE_OK when a matching job was found and signalled, or LE_ERR_INVALID
+  /// for a null/out-of-range handle or when no restoration for [channel] is in
+  /// flight.
+  int le_engine_cancel_restore(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_cancel_restore(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_cancel_restorePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_cancel_restore');
+  late final _le_engine_cancel_restore = _le_engine_cancel_restorePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets Track-stage chain entry [index] (0..LE_FX_MAX-1) of track [channel] to
   /// [type]. Changing the type resets that entry's DSP state; delay-lined types
   /// lazily allocate their buffers on this calling thread and seed the type's
@@ -3057,6 +3171,46 @@ class SegnoEngineBindings {
         )
       >();
 
+  /// Fills out[channel * LE_MAX_LANES + lane] for EVERY lane of every active
+  /// track behind a single drain + scheduler tick — the batch form of
+  /// le_engine_get_lane_cache for a poller that wants all lanes at once. The
+  /// per-lane accessor costs a full drain per call, so an 8-track poll through it
+  /// runs 16-32 control-thread sweeps per tick; this runs exactly one (#418).
+  /// [capacity] is the number of le_lane_cache_info slots at [out] and must be at
+  /// least track_count * LE_MAX_LANES (LE_MAX_TRACKS * LE_MAX_LANES always
+  /// suffices). Returns the number of slots filled, or LE_ERR_INVALID. Control
+  /// thread.
+  int le_engine_get_all_lane_caches(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<le_lane_cache_info> out,
+    int capacity,
+  ) {
+    return _le_engine_get_all_lane_caches(
+      engine,
+      out,
+      capacity,
+    );
+  }
+
+  late final _le_engine_get_all_lane_cachesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<le_lane_cache_info>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_get_all_lane_caches');
+  late final _le_engine_get_all_lane_caches = _le_engine_get_all_lane_cachesPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<le_lane_cache_info>,
+          int,
+        )
+      >();
+
   /// Sets the wet-cache memory budget in BYTES (stereo entries at 2x frames,
   /// toggled pairs, and in-flight enqueue copies all count against it). 0
   /// disables caching and frees every entry (every lane plays live); negative is
@@ -3208,6 +3362,52 @@ class SegnoEngineBindings {
       );
   late final _le_perf_disarm = _le_perf_disarmPtr
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
+
+  /// Free bytes on the volume holding `path`, into `*out_bytes`. Returns LE_OK,
+  /// LE_ERR_INVALID (null/empty `path` or null `out_bytes`), or LE_ERR_DEVICE if
+  /// the platform refused to answer (a path that does not exist, a filesystem that
+  /// cannot report). Engine-free: it is a question about a directory, not about a
+  /// running capture, so it is also the check made BEFORE arming one.
+  ///
+  /// It is here rather than in the caller because the caller is Dart, which has no
+  /// free-space API at all — and the shell-out that filled that gap turned out to
+  /// be the most expensive thing on the appliance's real-time path. `Process.run`
+  /// is fork() + exec(), fork() holds mmap_lock for write for milliseconds while it
+  /// copies a 1.7 GB address space's page tables, and under PREEMPT_RT the audio
+  /// thread's next page fault sleeps behind it. A capture re-checked its volume
+  /// every 4.75 s, so a take forked the whole app twelve times a minute; every
+  /// audible dropout measured on the Pi 5 bench landed within 3 ms of one (#806).
+  ///
+  /// Answering it in C also keeps the struct layout in C. `statvfs` is shaped
+  /// differently on glibc and on macOS, and a Dart-side layout guess would not
+  /// fail loudly — it would report a plausible wrong number and stop a take that
+  /// had room.
+  ///
+  /// ALL THREE PLATFORMS ANSWER, which is a deliberate widening: the `df` this
+  /// replaced returned "cannot answer" on Windows, so the free-space floor (#640)
+  /// has never applied there. It does now. That is the behaviour the floor was
+  /// written for, but it is a change on a platform the click work did not
+  /// otherwise touch, so it is stated here rather than left to be discovered.
+  int le_perf_volume_free_bytes(
+    ffi.Pointer<ffi.Char> path,
+    ffi.Pointer<ffi.Uint64> out_bytes,
+  ) {
+    return _le_perf_volume_free_bytes(
+      path,
+      out_bytes,
+    );
+  }
+
+  late final _le_perf_volume_free_bytesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Uint64>)
+        >
+      >('le_perf_volume_free_bytes');
+  late final _le_perf_volume_free_bytes = _le_perf_volume_free_bytesPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Uint64>)
+      >();
 
   /// Starts an offline render of the finalized capture at `capture_dir`: spawns
   /// a worker thread that writes `stems/dry/track<channel>.wav` +
@@ -4359,6 +4559,19 @@ enum le_command_code {
   /// apply).
   LE_CMD_SET_INPUT_COND_PARAM(55),
 
+  /// Immediate finalize (#405): ends track arg_i's live RECORDING take NOW —
+  /// or does nothing. Unlike LE_CMD_RECORD, whose meaning depends on the state
+  /// it lands on (start / finalize / punch-in / punch-out), this command
+  /// re-checks its precondition on the audio thread and is a strict no-op
+  /// anywhere else, so a state change in the one-block window between
+  /// le_engine_finalize_take's control-side guards and the apply can never
+  /// turn it into a capture start or a punch-in/out. During a count-in it
+  /// cancels the count-in (global transport state — the addressed channel is
+  /// irrelevant) and logs LE_PLOG_RECORD_ABORT for the counting channel. Not
+  /// itself perf-logged (like LE_CMD_ARM/DISARM: the transport fact it causes
+  /// — LE_PLOG_RECORD_END / LE_PLOG_RECORD_ABORT — is what is logged).
+  LE_CMD_FINALIZE_TAKE(56),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100);
@@ -4423,6 +4636,7 @@ enum le_command_code {
     53 => LE_CMD_SET_TUNER_INPUT,
     54 => LE_CMD_SET_INPUT_COND,
     55 => LE_CMD_SET_INPUT_COND_PARAM,
+    56 => LE_CMD_FINALIZE_TAKE,
     100 => LE_EVT_LAYER_RETIRED,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
@@ -4556,6 +4770,15 @@ final class le_lane_snapshot extends ffi.Struct {
   /// 0..1
   @ffi.Float()
   external double peak;
+
+  /// Trailing (#595): 0/1 — this lane captured audio that is still live or
+  /// restorable (clear-restore shadow / redo stack). THE per-lane "holds
+  /// content" signal: length_frames is track-shared (the write head publishes
+  /// the same growing length onto every active lane), so it cannot answer
+  /// whether a specific lane's slot is safe to reclaim. Drops to 0 only once
+  /// nothing on the lane can come back.
+  @ffi.Int32()
+  external int recoverable;
 }
 
 /// Per-track state published in le_snapshot.tracks.
@@ -4656,6 +4879,26 @@ final class le_track_snapshot extends ffi.Struct {
   /// behaviorally active in Free/Song — see LE_CMD_SET_ONE_SHOT's doc.
   @ffi.Int32()
   external int one_shot;
+
+  /// Trailing (#819): the monotonic per-track id of the currently-SETTLED take
+  /// — the take the RECORD_END that last finalized this track logged, published
+  /// from le_track.a_settled_take_id. 0 means the track never finalized a take
+  /// in this session (still empty, or only ever held pre-arm content with no id
+  /// yet). The performance-capture pipeline writes it onto the disarm manifest's
+  /// lane-0 entry as `takeId`, and the offline renderer (perf_render.c) matches
+  /// it against the RECORD_END payloads to anchor the settled image by identity
+  /// rather than by "first RECORD_END on the channel".
+  @ffi.Int32()
+  external int settled_take_id;
+
+  /// Trailing (#697 S9, offline loop-close restoration): 0 idle, 1 queued (the
+  /// enqueue copy is in flight or the job is waiting for the worker), 2 running
+  /// (the worker's de-clip/denoise DSP is in flight). A completed pass publishes
+  /// its result as an ordinary undo layer, so undo_depth/clear_restore carry the
+  /// revert affordance — this field is only the in-progress indicator. See
+  /// le_engine_restore_track.
+  @ffi.Int32()
+  external int restore_state;
 }
 
 /// Dropout classes counted per window. The three ALSA ones come from the direct

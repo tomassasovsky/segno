@@ -30,7 +30,10 @@
     "updateBannerUpdateAction": "Actualizar…",
     "updateBannerDismissAction": "Ahora no",
     "audioDeviceFallbackName": "Dispositivo de audio",
-    "deviceDisconnectedBanner": "{deviceName} desconectado — intentando reconectar…",
+    "deviceLostBanner": "Sin dispositivo de audio — no se oye nada",
+    "deviceLostBannerAction": "Abrir configuración",
+    "midiLostToastTitle": "Controlador MIDI desconectado",
+    "midiLostToastBody": "Mapeos inactivos hasta que vuelva — los loops siguen sonando",
     "deviceReconnectedSnackbar": "{deviceName} reconectado",
     "pedalFirmwareGateTitle": "Finalizando la actualización",
     "pedalFirmwareGateBody": "Actualizando tu pedal a {version}. Sus interruptores y luces están apagados hasta que termine — no lo desconectes.",
@@ -146,19 +149,20 @@
     "shortcutPlayStopAll": "Reproducir o detener todas las pistas",
     "shortcutMode": "Cambiar modo grabación / silencio / FX",
     "shortcutArm": "Armar o desarmar la grabación de actuación",
-    "shortcutSelectTrack": "Seleccionar una pista (silenciarla en modo silencio, alternar su cadena de FX en modo FX)",
+    "shortcutSelectTrack": "Seleccionar una pista (silenciarla en modo silencio; en modo FX, alternar la cadena de FX asignada a esa tecla)",
     "shortcutBank": "Cambiar de banco A / B",
     "shortcutRecord": "Grabar o sobregrabar la pista seleccionada",
     "shortcutPlayPause": "Reproducir o pausar la pista seleccionada",
     "shortcutUndoOverdub": "Deshacer la última sobregrabación",
     "shortcutUndo": "Deshacer",
     "shortcutRedo": "Rehacer",
+    "shortcutUndoClearAll": "Deshacer borrar todo",
     "shortcutSaveSession": "Guardar la sesión abierta",
     "shortcutFocusTraverse": "Mover el foco entre los controles",
     "a11yTrackTile": "{name}, {state}, activar para grabar",
     "a11yTrackTileMute": "{name}, {state}, activar para silenciar o reactivar",
-    "a11yTrackTileFxOn": "{name}, {state}, cadena de FX encendida, activar para apagarla",
-    "a11yTrackTileFxOff": "{name}, {state}, cadena de FX apagada, activar para encenderla",
+    "a11yTrackTileFxOn": "{target}, {state}, cadena de FX encendida, activar para apagarla",
+    "a11yTrackTileFxOff": "{target}, {state}, cadena de FX apagada, activar para encenderla",
     "a11yRenameTrack": "Renombrar {name}",
     "renameTrackTitle": "Renombrar {trackName}",
     "cancel": "Cancelar",
@@ -210,6 +214,10 @@
     "a11yOutputEnabledDisable": "Salida {outputNumber}, activada. Toca para desactivar.",
     "a11yOutputDisabledEnable": "Salida {outputNumber}, desactivada. Toca para activar.",
     "noActiveOutputsNotice": "No hay salidas activas — no se oirá nada. Toca una salida atenuada para reactivarla.",
+    "signalLastOutputTitle": "¿Apagar la última salida?",
+    "signalLastOutputBody": "{outputName} es la única salida que sigue activa. Apagada, la suma no llega a ningún sitio y la consola queda en silencio — el aviso bajo las salidas seguirá ahí hasta reactivar alguna.",
+    "signalLastOutputKeep": "Mantenerla activa",
+    "signalLastOutputConfirm": "Apagar",
     "signalTitle": "Señal",
     "signalFlowSubtitle": "Entradas · Pistas · Salidas",
     "signalSectionInputs": "Entradas",
@@ -282,6 +290,9 @@
     "@clearAllTooltip": {
         "description": "Tooltip for the top-bar button that clears every track. The parenthetical names the keyboard shortcut."
     },
+    "undoClearAllToast": "Se borraron todas las pistas",
+    "undoClearAllAction": "Deshacer",
+    "a11yUndoClearAll": "Se restauraron todas las pistas borradas",
     "fullscreenTooltip": "Pantalla completa (F)",
     "@fullscreenTooltip": {
         "description": "Tooltip for the top-bar button (desktop only) that toggles OS fullscreen. The parenthetical names the keyboard shortcut."
@@ -352,6 +363,15 @@
     "signalChainOff": "Cadena apagada",
     "signalCardChainOffRun": "Cadena apagada · {run}",
     "signalChainOn": "Cadena encendida",
+    "stageFxChainOn": "ON",
+    "stageFxChainOff": "OFF",
+    "stageFxNoChain": "SIN CADENA",
+    "stageFxNoChainHint": "crea una en Signal",
+    "stageFxCellLabel": "{target} · {chain}",
+    "stageFxTargetInput": "ENTRADA {number}",
+    "stageFxTargetTrack": "PISTA {number}",
+    "stageFxTargetLane": "LÍNEA {lane}",
+    "stageFxTargetMaster": "MASTER",
     "signalShowAllLanes": "Todos los carriles",
     "signalShowRecordedLanes": "Carriles grabados",
     "signalInherited": "Heredada",
@@ -504,13 +524,6 @@
     "pitchSemitones": "{sign}{count} st",
     "defaultTrackName": "PISTA {trackNumber}",
     "outputWaveformWindowTitle": "Segno — Salida",
-    "@deviceDisconnectedBanner": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
     "@deviceReconnectedSnackbar": {
         "placeholders": {
             "deviceName": {
@@ -721,14 +734,6 @@
     "midiRequiredCcsHint": "CC 80 grabar · 81 detener · 82 deshacer · 83 borrar",
     "midiActivityActive": "Actividad MIDI",
     "midiActivityIdle": "Esperando entrada MIDI",
-    "midiDisconnectedBanner": "Controlador MIDI «{deviceName}» desconectado: se reconectará al conectarlo.",
-    "@midiDisconnectedBanner": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
     "midiReconnectedSnackbar": "Controlador MIDI «{deviceName}» reconectado.",
     "@midiReconnectedSnackbar": {
         "placeholders": {
@@ -1295,6 +1300,8 @@
     "midiLearnLearn": "Aprender",
     "midiLearnRelearn": "Reaprender",
     "midiLearnClear": "Quitar",
+    "midiSimulate": "Simular",
+    "midiSimulateGlobal": "Simular entrada",
     "midiLearnCancel": "Cancelar",
     "midiLearnListening": "Escuchando… mové el control que querés usar.",
     "midiLearnReplacePrompt": "{control} ya controla otra asignación. ¿Reemplazarla?",
@@ -1369,6 +1376,10 @@
     "wifiConnectFailedGeneric": "No se pudo unir a esa red.",
     "@wifiConnectFailedGeneric": {
         "description": "Fallback error when WiFi connect fails for an unknown reason."
+    },
+    "wifiConnectFailedBackend": "No se pudo conectar — error de red, no es un problema de contraseña.",
+    "@wifiConnectFailedBackend": {
+        "description": "Shown when a join fails for backend/transient reasons (iwd race, NM no-secrets on a saved network) after automatic retries — explicitly not a credentials problem, so the owner does not forget the network and re-type the password (#829)."
     },
     "wifiSsidLabel": "Red",
     "@wifiSsidLabel": {
@@ -1577,6 +1588,15 @@
     "wifiJoiningBanner": "Conectando a {ssid}…",
     "@wifiJoiningBanner": {
         "description": "In-flight banner at the top of the WiFi list while a join is running.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiRetryingBanner": "Error de red — reintentando {ssid}…",
+    "@wifiRetryingBanner": {
+        "description": "In-flight banner while the console automatically re-activates a join after a backend/transient failure (#829). Never worded as a password problem.",
         "placeholders": {
             "ssid": {
                 "type": "String"

@@ -4,8 +4,12 @@ SUMMARY = "RAUC update bundle (.raucb) for the Segno appliance — the rootfs sl
 inherit bundle
 
 RAUC_BUNDLE_FORMAT     = "verity"
-# MUST byte-match [system] compatible in recipes-core/rauc/files/system.conf.
-RAUC_BUNDLE_COMPATIBLE = "segno-raspberrypi4"
+# MUST byte-match [system] compatible in the installed system.conf — both are
+# rendered from SEGNO_RAUC_COMPATIBLE (set per board in the kas project), so the
+# bundle can only ever declare itself compatible with the board it was built for.
+SEGNO_RAUC_COMPATIBLE ?= ""
+RAUC_BUNDLE_COMPATIBLE = "${SEGNO_RAUC_COMPATIBLE}"
+
 # The build number (CI sets it), same value stamped into /etc/segno/build-version.
 # Deterministic — using ${DATETIME} makes the task basehash non-reproducible.
 SEGNO_BUILD_VERSION   ?= "0"
@@ -21,6 +25,13 @@ RAUC_CERT_FILE = "${RAUC_KEYDIR}/development-1.cert.pem"
 
 python __anonymous() {
     import os
+
+    if not d.getVar("SEGNO_RAUC_COMPATIBLE"):
+        raise bb.parse.SkipRecipe(
+            "SEGNO_RAUC_COMPATIBLE is unset — set it in the board's kas project "
+            "(deploy/yocto/kas-segno-rpi{4,5}.yml). An empty compatible string "
+            "builds a bundle no device will accept.")
+
     keyfile = d.getVar("RAUC_KEY_FILE")
     if not keyfile or not os.path.exists(keyfile):
         raise bb.parse.SkipRecipe(

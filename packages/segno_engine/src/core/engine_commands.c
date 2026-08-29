@@ -26,8 +26,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "audio_ring.h"  /* le_audio_ring_init (performance-recording rings) */
+#include "audio_ring.h"  /* le_audio_ring_alloc/release (capture rings) */
 #include "engine_cache.h" /* le_cache_tick (wet-cache scheduler heartbeat) */
+#include "engine_restore.h" /* le_restore_tick + le_restore_commit_layer (#697) */
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
 #include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
 #include "engine_private.h"
@@ -247,6 +248,23 @@ static void le_undo_swap(le_track* t) {
   store_i32(&t->a_redo_depth, t->redo_count);
 }
 
+/* #595: drops every lane's recoverable flag once NOTHING on this track can
+ * come back — no live take (len 0), no undo history (which includes a clear
+ * restore point: the shadow that keeps a wiped-looking take one undo away),
+ * and no redo. Anything short of all three keeps the flags: a stale 1 only
+ * declines a lane trim, a wrong 0 lets the trim eat a restorable take (the
+ * #594 failure), so every guard errs toward keeping. Called after the history
+ * mutations that can only shrink the ways back (redo invalidation, restore-
+ * point drops, the plain clear); per-lane granularity comes from the SET side
+ * (only writing lanes ever latch), not from here. */
+static void le_track_drop_recoverable_if_dead(le_track* t) {
+  if (load_i32(&t->lanes[0].a_len) > 0) return;
+  if (t->undo_count > 0 || t->redo_count > 0) return;
+  for (int l = 0; l < LE_MAX_LANES; ++l) {
+    store_i32(&t->lanes[l].a_recoverable, 0);
+  }
+}
+
 /* Clears a track's redo history (control thread) — a fresh action (punch-in,
  * new recording, session import) invalidates the resurrect path, including the
  * undone-to-empty length. */
@@ -254,6 +272,7 @@ static void le_clear_redo(le_track* t) {
   t->redo_count = 0;
   t->empty_len = 0;
   store_i32(&t->a_redo_depth, 0);
+  le_track_drop_recoverable_if_dead(t); /* #595: the resurrect path died */
 }
 
 
@@ -268,12 +287,83 @@ static void le_drop_clear_history(le_track* t) {
   if (!le_history_is_cleared(t)) return;
   t->undo_count = 0;
   le_publish_undo_depth(t);
+  le_track_drop_recoverable_if_dead(t); /* #595: the way back is gone */
 }
 
 /* le_effective_state — the track's effective state for control-side decisions
  * — moved to engine_core.h (static inline): the wet-cache scheduler's enqueue
  * gate (engine_cache.c) decides from the same predicate and the two must
  * never diverge. */
+
+/* Commits a completed loop-close restoration (#697 S9) as ONE lockstep undo
+ * layer — declared in engine_restore.h, defined HERE so it reuses the undo /
+ * pool machinery above (track_acquire_slot, le_clear_redo, le_hist_layer,
+ * le_publish_undo_depth, le_track_publish_live) rather than duplicating it.
+ * Control thread only; the audio thread is untouched (a_live is swapped by a
+ * single release store, and no buffer it can hold is freed — the pre-restore
+ * live slot lives on as the pushed undo layer). See the header for the full
+ * contract. */
+int32_t le_restore_commit_layer(le_engine* engine, int32_t channel,
+                                uint32_t lane_mask, uint32_t audio_rev,
+                                int32_t len,
+                                float* const restored[LE_MAX_LANES]) {
+  if (engine == NULL || channel < 0 || channel >= engine->track_count) {
+    return LE_ERR_INVALID;
+  }
+  le_track* t = &engine->tracks[channel];
+  /* The same gate the enqueue used, re-checked at commit: a capture may have
+   * started since. */
+  const int32_t est = le_effective_state(t);
+  if (est != LE_TRACK_PLAYING && est != LE_TRACK_STOPPED) return LE_ERR_INVALID;
+  if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
+    return LE_ERR_INVALID;
+  }
+  /* [B5]: the take must not have moved since the worker copied it. */
+  if (atomic_load_explicit(&t->a_audio_rev, memory_order_acquire) != audio_rev) {
+    return LE_ERR_INVALID;
+  }
+  const int32_t live = load_i32(&t->lanes[0].a_live);
+  if (len <= 0 || load_i32(&t->lanes[0].a_len) != len) return LE_ERR_INVALID;
+
+  const int32_t lanes = le_lanes_active(t);
+  const int32_t slot = track_acquire_slot(t);
+  if (slot < 0) return LE_ERR_INVALID; /* pool exhausted beyond eviction */
+
+  /* Fill the fresh slot on every active lane: the restored PCM where opted,
+   * else a plain copy of the current live buffer (safe to read on this thread
+   * — the gate above proves the audio thread is not writing pool[live]). */
+  for (int32_t l = 0; l < lanes; ++l) {
+    if (!le_lane_ensure_slot(&t->lanes[l], slot, len)) {
+      /* OOM: abandon the commit. track_acquire_slot only returns a free slot
+       * (never referenced by a_live / undo / redo / outstanding), so leaving
+       * it partially allocated in the pool is harmless — nothing names it. */
+      return LE_ERR_INVALID;
+    }
+    float* dst = t->lanes[l].pool[slot];
+    const float* src = t->lanes[l].pool[live];
+    if ((lane_mask & (1u << l)) && restored[l] != NULL) {
+      memcpy(dst, restored[l], (size_t)len * sizeof(float));
+    } else if (src != NULL) {
+      memcpy(dst, src, (size_t)len * sizeof(float));
+    } else {
+      memset(dst, 0, (size_t)len * sizeof(float));
+    }
+  }
+
+  /* A fresh action invalidates any redo path, exactly like a punch-in. */
+  le_clear_redo(t);
+  /* Push the pre-restoration live slot as one lockstep undo layer so a plain
+   * le_engine_undo peels the restoration back to the raw take (the retention
+   * model the plan specifies: in-session undo, no session-bundle change). */
+  if (t->undo_count < LE_POOL_SLOTS) {
+    t->undo_stack[t->undo_count++] = le_hist_layer(live);
+  }
+  le_publish_undo_depth(t);
+  /* Swap a_live to the restored slot on every lane + bump a_audio_rev in one
+   * motion (invalidating and re-rendering the wet cache). */
+  le_track_publish_live(t, slot);
+  return LE_OK;
+}
 
 /* Marks a successfully posted state-flip command (control thread). */
 static void le_mark_state_cmd(le_track* t, int32_t target) {
@@ -286,6 +376,11 @@ static void le_mark_state_cmd(le_track* t, int32_t target) {
  * Returns the DISARM push result (LE_OK when there was no arm to cancel) —
  * the internal callers discard it, le_engine_cancel_arm reports it. */
 static int32_t le_cancel_arm(le_engine* engine, int32_t channel);
+
+/* #595: trailing-lane reclaim, defined below but called from the event drain
+ * (le_engine_drain_events) as well as the un-route itself. */
+static void le_trim_trailing_lanes(le_engine* engine, int32_t channel,
+                                   int32_t unrouted_lane);
 
 /* Applies undo taps that were queued while a layer was in flight (control
  * thread, called from the event drain once the flight flag cleared). Each
@@ -498,6 +593,19 @@ void le_engine_drain_events(le_engine* engine) {
     }
     le_apply_queued_undo(engine, ch);
   }
+  /* #595: post-drain trailing-lane reclaim. An un-route latched
+   * pending_lane_trim; now that this drain follows the audio thread applying
+   * the block's commands, every un-routed lane's routing is published, so one
+   * trim pass (unrouted_lane == -1, judging purely by published routing) frees
+   * the whole trailing run a burst of un-routes left stranded — the immediate
+   * trim in le_engine_set_lane_input could only reclaim the last of the burst.
+   * Cleared after the single attempt: a decline while capturing does not
+   * re-latch it, mirroring the immediate path's "the next un-route retries". */
+  for (int32_t ch = 0; ch < engine->track_count; ++ch) {
+    if (!engine->tracks[ch].pending_lane_trim) continue;
+    engine->tracks[ch].pending_lane_trim = 0;
+    le_trim_trailing_lanes(engine, ch, -1);
+  }
   /* Loop-stage wet cache (FX v3 part 2): one scheduler pass per drain —
    * collect finished renders, publish [B5], chunked enqueue copies,
    * debounce + enqueue [B2][B3], enforce the memory cap. No-op until
@@ -514,6 +622,10 @@ void le_engine_drain_events(le_engine* engine) {
    * cost is bounded: the copy step is chunked and every scan is fixed-size
    * with an under-budget early-out. */
   le_cache_tick(engine);
+  /* Offline loop-close restoration worker (#697 S9): the same control-thread
+   * heartbeat drives its chunked enqueue copy + finished-job collect. No-op
+   * until le_restore_init, and until a le_engine_restore_track enqueues a job. */
+  le_restore_tick(engine);
 }
 
 /* Zeroes every active lane's live buffer (control thread) before a fresh capture
@@ -948,6 +1060,12 @@ static int32_t le_clear_track(le_engine* engine, int32_t channel,
   t->dub_generation++;
   le_mark_state_cmd(t, LE_TRACK_EMPTY);
   le_track_set_len(t, 0); /* coherent snapshot before the audio thread applies */
+  /* #595: after the length publish, not before — a plain clear (no restore
+   * point kept) leaves len 0 / undo 0 / redo 0, and only then may the lanes'
+   * recoverable flags drop. An undoable clear keeps its restore point on the
+   * undo stack, so the helper keeps the flags — the erased take is still one
+   * undo away. */
+  le_track_drop_recoverable_if_dead(t);
   engine->armed[channel] = 0;
   return LE_OK;
 }
@@ -1234,6 +1352,51 @@ int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel) {
    * actually reached the ring — a caller promised "nothing fires later" must
    * be able to see when it did not. */
   return le_cancel_arm(engine, channel);
+}
+
+int32_t le_engine_finalize_take(le_engine* engine, int32_t channel) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  le_engine_drain_events(engine);
+  /* A running count-in is global transport state that has captured nothing:
+   * the call is accepted for any valid channel and posts the abort. The audio
+   * thread's count-in branch (handle_finalize_take) does the teardown and
+   * logs LE_PLOG_RECORD_ABORT for the counting channel — and if the count-in
+   * commits in the one-block window before this applies, the command lands on
+   * a DEFINING recording and the apply-side guard refuses it, so the race
+   * degrades to capture-survives, never to a finalize that sets the grid. */
+  if (load_i32(&engine->a_counting_in)) {
+    return le_push(engine, LE_CMD_FINALIZE_TAKE, channel, 0.0f);
+  }
+  le_track* t = &engine->tracks[channel];
+  if (le_effective_state(t) != LE_TRACK_RECORDING) return LE_ERR_INVALID;
+  /* The DEFINING take (nothing else holds the grid) is refused: finalizing it
+   * here would let this call — in the app, a mode switch — set the session's
+   * bar length to wherever the player happened to be mid-gesture. Same
+   * question le_engine_record answers when it decides whether a fresh take
+   * redefines the grid, asked from the other side; the master-length check is
+   * the belt for the internal-CLEAR window where the published master has not
+   * caught up with a grid redefinition already riding the ring. */
+  if (load_i32(&engine->a_master_len) <= 0 ||
+      !le_grid_still_needed(engine, channel)) {
+    return LE_ERR_INVALID;
+  }
+  /* A LIVE pending arm on this channel — any trigger — belongs to another
+   * command (B3b: armed[]/armed_trigger[] is shared across every arm-capable
+   * command) and is refused, not consumed: the caller must retire it first
+   * (le_engine_cancel_arm, which the app's FX entry already runs before this).
+   * Finalizing under it would leave the arm to fire onto the settled loop as
+   * a punch-in the user never asked for. A spent arm (already fired; the
+   * published pending flag reads 0) is no obstacle — and armed[] is left
+   * untouched either way, so this command provably cannot cancel anyone's
+   * arm. */
+  if (engine->armed[channel] && load_i32(&t->a_pending) != 0) {
+    return LE_ERR_INVALID;
+  }
+  return le_push(engine, LE_CMD_FINALIZE_TAKE, channel, 0.0f);
 }
 
 int32_t le_engine_set_track_quantize(le_engine* engine, int32_t channel,
@@ -2040,7 +2203,54 @@ int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
     }
   }
   t->lane_count = count;
+  /* #595 (D3): evict the freed lanes' wet-cache entries NOW, not on the next
+   * scheduler tick — a shrink-then-regrow otherwise meets le_lane_reset's
+   * engine defaults with a stale cached render still published for the lane
+   * index (#594's cache-desync hazard, engine side). The tick's deactivated-
+   * lane reclaim stays as the backstop for a render that lands after this. */
+  if (count < old) le_cache_evict_lanes(engine, channel, count, old);
   return LE_OK;
+}
+
+/* #595: automatic trailing-lane reclaim, run when an un-route lands. Shrinks
+ * the lane count past the longest TRAILING run of lanes that are both
+ * un-routed and non-recoverable — holes in the middle stay exactly where they
+ * are (compacting would move a recorded take onto another source, the rule
+ * #594 exists to protect), and a lane whose audio is still live or restorable
+ * (undo shadow / redo — the engine-owned a_recoverable, NOT the track-shared
+ * length) is never dropped, so the shrink-then-regrow reset in
+ * le_engine_set_lane_count can no longer eat a take undo could have brought
+ * back. Called two ways: from the un-route itself with unrouted_lane set to
+ * the just-freed index — whose command may still be in the ring, so it is
+ * forced to -1 here while sibling lanes are judged by their published routing;
+ * and from the event drain with unrouted_lane == -1, once every queued command
+ * has applied and all routing is published, so a whole trailing run of a burst
+ * of un-routes reclaims together (no index reads -1 spuriously, since valid
+ * lane indices are >= 0). Declines silently while the track captures or a layer
+ * is in flight (the same guard le_engine_set_lane_count enforces) — the next
+ * un-route simply retries. */
+static void le_trim_trailing_lanes(le_engine* engine, int32_t channel,
+                                   int32_t unrouted_lane) {
+  le_track* t = &engine->tracks[channel];
+  const int32_t st = le_effective_state(t);
+  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+      atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
+    return;
+  }
+  const int32_t old = le_lanes_active(t);
+  int32_t keep = old;
+  while (keep > 1) {
+    le_lane* ln = &t->lanes[keep - 1];
+    /* An out-of-range default (le_lane_reset routes lane l to hardware input
+     * l, which a smaller device does not have) reads >= 0 and counts as
+     * routed — a declined trim, the safe direction. */
+    const int32_t in = keep - 1 == unrouted_lane
+                           ? -1
+                           : load_i32(&ln->a_input_channel);
+    if (in >= 0 || load_i32(&ln->a_recoverable)) break;
+    keep--;
+  }
+  if (keep < old) (void)le_engine_set_lane_count(engine, channel, keep);
 }
 
 /* The four lane setters address the lane by (channel, lane), carried as named
@@ -2049,9 +2259,32 @@ int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
 int32_t le_engine_set_lane_input(le_engine* engine, int32_t channel,
                                  int32_t lane, int32_t input_channel) {
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
-  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_INPUT,
-                                          .lanei = {channel, lane,
-                                                    input_channel}});
+  const int32_t rc = le_push_cmd(engine, (le_command){.code =
+                                                          LE_CMD_SET_LANE_INPUT,
+                                                      .lanei = {channel, lane,
+                                                                input_channel}});
+  /* #595: an accepted un-route may free trailing lane slots — reclaim them so
+   * a track routed and un-routed repeatedly never strands at LE_MAX_LANES.
+   * Only an explicit -1 triggers (a rejected/excluded channel the handler
+   * maps to -1 is not the user freeing the lane).
+   *
+   * Two trim moments, one predicate. This immediate pass reclaims the
+   * just-un-routed slot right away (its command may still be in the ring, so
+   * it is treated as -1 by index). But sibling un-routes pushed earlier in the
+   * SAME audio block are also still in the ring and read as routed, so a burst
+   * would strand every trailing slot but the last. The pending flag re-runs
+   * the trim from the event drain (le_engine_drain_events), after the block's
+   * commands apply and routing publishes, so the whole trailing run frees once
+   * the drain settles. Setting it is gated on the same explicit-un-route
+   * predicate, so an out-of-range / excluded route that the handler maps to -1
+   * is never swept by the drain pass either. */
+  if (rc == LE_OK && input_channel < 0 &&
+      atomic_load_explicit(&engine->a_configured, memory_order_acquire) &&
+      channel >= 0 && channel < engine->track_count) {
+    le_trim_trailing_lanes(engine, channel, lane);
+    engine->tracks[channel].pending_lane_trim = 1;
+  }
+  return rc;
 }
 
 int32_t le_engine_set_lane_output(le_engine* engine, int32_t channel,
@@ -2139,12 +2372,10 @@ static int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]) {
  * thread (the command was never pushed, or push failed) — plain control-thread
  * cleanup, not a quiescent teardown, since nothing was published. */
 static void le_perf_free_unpublished(le_engine* e, uint32_t monitors_done) {
-  free(e->perf.master_ring.buffer);
-  e->perf.master_ring = (le_audio_ring){0};
+  le_audio_ring_release(&e->perf.master_ring);
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (monitors_done & (1u << c)) {
-      free(e->perf.monitor_ring[c].buffer);
-      e->perf.monitor_ring[c] = (le_audio_ring){0};
+      le_audio_ring_release(&e->perf.monitor_ring[c]);
     }
   }
 }
@@ -2178,9 +2409,9 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
 
   const int32_t sr = engine->sample_rate > 0 ? engine->sample_rate : 48000;
   const size_t master_cap = le_perf_ring_capacity(found, sr);
-  float* master_buf = (float*)malloc(master_cap * sizeof(float));
-  if (master_buf == NULL) return LE_ERR_INVALID;
-  le_audio_ring_init(&engine->perf.master_ring, master_buf, master_cap);
+  if (!le_audio_ring_alloc(&engine->perf.master_ring, master_cap)) {
+    return LE_ERR_INVALID;
+  }
   engine->perf.master_channels = found;
   engine->perf.master_out_ch[0] = out_ch[0];
   engine->perf.master_out_ch[1] = out_ch[1];
@@ -2207,12 +2438,10 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   const size_t monitor_cap = le_perf_ring_capacity(2, sr);
   for (int32_t c = 0; c < monitor_ch_limit; ++c) {
     if (!load_i32(&engine->monitors[c].a_enabled)) continue;
-    float* buf = (float*)malloc(monitor_cap * sizeof(float));
-    if (buf == NULL) {
+    if (!le_audio_ring_alloc(&engine->perf.monitor_ring[c], monitor_cap)) {
       le_perf_free_unpublished(engine, input_mask);
       return LE_ERR_INVALID;
     }
-    le_audio_ring_init(&engine->perf.monitor_ring[c], buf, monitor_cap);
     input_mask |= (1u << c);
   }
   engine->perf.input_mask = input_mask;
@@ -2386,12 +2615,10 @@ int32_t le_perf_disarm(le_engine* engine) {
   le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DISARM);
   engine->perf.drain = NULL;
 
-  free(engine->perf.master_ring.buffer);
-  engine->perf.master_ring = (le_audio_ring){0};
+  le_audio_ring_release(&engine->perf.master_ring);
   for (int32_t c = 0; c < LE_MAX_MONITORED_INPUTS; ++c) {
     if (engine->perf.input_mask & (1u << c)) {
-      free(engine->perf.monitor_ring[c].buffer);
-      engine->perf.monitor_ring[c] = (le_audio_ring){0};
+      le_audio_ring_release(&engine->perf.monitor_ring[c]);
     }
   }
   engine->perf.input_mask = 0;

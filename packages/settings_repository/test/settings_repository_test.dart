@@ -106,6 +106,189 @@ void main() {
         expect(store.values, hasLength(1));
       },
     );
+
+    test('without alsaPeriods the key keeps its historical shape', () async {
+      // Pins the exact stored key: every pre-existing desktop calibration
+      // lives under this shape, and folding the ALSA period count into the
+      // key (#809) must not disturb it when the knob is not engaged.
+      await repository.saveLatencyOffsetFrames(
+        device: 'Scarlett',
+        sampleRate: 48000,
+        bufferFrames: 128,
+        frames: 480,
+      );
+
+      expect(store.values, {'latency_offset.Scarlett.48000.128': 480});
+    });
+
+    test('with alsaPeriods the key carries the period count', () async {
+      final appliance = SettingsRepository(store: store, alsaPeriods: 8);
+      await appliance.saveLatencyOffsetFrames(
+        device: 'Scarlett',
+        sampleRate: 96000,
+        bufferFrames: 64,
+        frames: 240,
+      );
+
+      expect(store.values, {'latency_offset.Scarlett.96000.64.p8': 240});
+    });
+
+    test(
+      'a period-qualified offset is invisible to the legacy key',
+      () async {
+        // The period count moves the playback start threshold (#809), so an
+        // offset calibrated under a period count must not leak into the
+        // legacy (period-less) profile.
+        final appliance = SettingsRepository(store: store, alsaPeriods: 8);
+        await appliance.saveLatencyOffsetFrames(
+          device: 'Scarlett',
+          sampleRate: 96000,
+          bufferFrames: 64,
+          frames: 240,
+        );
+        expect(
+          await repository.loadLatencyOffsetFrames(
+            device: 'Scarlett',
+            sampleRate: 96000,
+            bufferFrames: 64,
+          ),
+          isNull,
+        );
+      },
+    );
+  });
+
+  group('latency offset migration (legacy -> period-qualified)', () {
+    // #809 shifts real output latency by exactly the start-threshold delta:
+    // max(0, bufferFrames * periods ~/ 2 - 2 * bufferFrames). A pre-#809
+    // calibration is therefore not discarded (nothing re-measures on the
+    // appliance) but shifted by that delta and persisted under the qualified
+    // key on first read.
+    Future<int?> load(SettingsRepository repo) => repo.loadLatencyOffsetFrames(
+      device: 'Scarlett',
+      sampleRate: 96000,
+      bufferFrames: 64,
+    );
+
+    test(
+      'legacy present and p8 absent returns legacy + delta and persists it',
+      () async {
+        // p8 @ 64 frames: halfRing 256 - legacy threshold 128 = 128 frames.
+        store.values['latency_offset.Scarlett.96000.64'] = 480;
+
+        final appliance = SettingsRepository(store: store, alsaPeriods: 8);
+        expect(await load(appliance), 608);
+        expect(store.values, {
+          // Downgrade path: the legacy entry is untouched, so a pre-#809
+          // build still finds the value that is correct for it.
+          'latency_offset.Scarlett.96000.64': 480,
+          'latency_offset.Scarlett.96000.64.p8': 608,
+        });
+
+        // The qualified key now exists, so later reads use it verbatim.
+        expect(await load(appliance), 608);
+      },
+    );
+
+    test('an existing period-qualified value wins over legacy', () async {
+      store.values['latency_offset.Scarlett.96000.64'] = 480;
+      store.values['latency_offset.Scarlett.96000.64.p8'] = 240;
+
+      final appliance = SettingsRepository(store: store, alsaPeriods: 8);
+      expect(await load(appliance), 240);
+      expect(store.values['latency_offset.Scarlett.96000.64'], 480);
+    });
+
+    test('legacy absent returns null and persists nothing', () async {
+      final appliance = SettingsRepository(store: store, alsaPeriods: 8);
+      expect(await load(appliance), isNull);
+      expect(store.values, isEmpty);
+    });
+
+    test('desktop (no alsaPeriods) never migrates', () async {
+      store.values['latency_offset.Scarlett.96000.64'] = 480;
+
+      expect(await load(repository), 480);
+      // No qualified key materialised, and the value is unshifted.
+      expect(store.values, {'latency_offset.Scarlett.96000.64': 480});
+    });
+
+    test('delta tracks the start-threshold change per period count', () async {
+      // threshold = max(2 * period, period * periods ~/ 2); legacy = 2 *
+      // period. At 64-frame periods: p8 -> +128, p6 -> +64, and p4 / p2 sit
+      // on the two-period floor -> +0.
+      store.values['latency_offset.Scarlett.96000.64'] = 480;
+      const expected = {8: 608, 6: 544, 4: 480, 2: 480};
+
+      for (final MapEntry(key: periods, value: migrated) in expected.entries) {
+        final appliance = SettingsRepository(
+          store: store,
+          alsaPeriods: periods,
+        );
+        expect(await load(appliance), migrated, reason: 'p$periods');
+        expect(
+          store.values['latency_offset.Scarlett.96000.64.p$periods'],
+          migrated,
+          reason: 'p$periods persists under its own key',
+        );
+      }
+      expect(store.values['latency_offset.Scarlett.96000.64'], 480);
+    });
+
+    test(
+      'a delta-0 migration still materialises the qualified key',
+      () async {
+        // At periods <= 4 the shift is 0 (#809 is a no-op there), but the
+        // qualified key must still be written: subsequent saves then land on
+        // the p4 key instead of overwriting the legacy entry, which stays a
+        // pristine pre-#809 baseline for any later period-count migration.
+        store.values['latency_offset.Scarlett.96000.64'] = 480;
+
+        final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+        expect(await load(appliance), 480);
+        expect(store.values, {
+          'latency_offset.Scarlett.96000.64': 480,
+          'latency_offset.Scarlett.96000.64.p4': 480,
+        });
+      },
+    );
+  });
+
+  group('alsaPeriodsFromEnvironment', () {
+    test('unset or empty means the knob is not engaged', () {
+      expect(SettingsRepository.alsaPeriodsFromEnvironment(null), isNull);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment(''), isNull);
+    });
+
+    test('in-range values pass through', () {
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('2'), 2);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('5'), 5);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('8'), 8);
+    });
+
+    test('out-of-range values clamp to [2, 8], mirroring the engine', () {
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('0'), 2);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('1'), 2);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('-3'), 2);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('9'), 8);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('12'), 8);
+      expect(
+        SettingsRepository.alsaPeriodsFromEnvironment('99999999999999999999'),
+        8,
+      );
+      expect(
+        SettingsRepository.alsaPeriodsFromEnvironment('-99999999999999999999'),
+        2,
+      );
+    });
+
+    test('non-numeric input parses like strtol: no digits reads as 0', () {
+      // strtol("abc") is 0, which the engine clamps to 2; "6junk" parses its
+      // leading digits. The key must record what the engine actually uses.
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('abc'), 2);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment('6junk'), 6);
+      expect(SettingsRepository.alsaPeriodsFromEnvironment(' 7'), 7);
+    });
   });
 
   group('track names', () {
@@ -312,15 +495,91 @@ void main() {
   group('output gate', () {
     test('absence means enabled; only off entries are written', () async {
       // Default-on: no key => null (the caller reads as enabled).
-      expect(await repository.loadOutputEnabled(0), isNull);
+      expect(
+        await repository.loadOutputEnabled(device: 'Scarlett', output: 0),
+        isNull,
+      );
 
       // Disabling writes false.
-      await repository.saveOutputEnabled(0, enabled: false);
-      expect(await repository.loadOutputEnabled(0), isFalse);
+      await repository.saveOutputEnabled(
+        device: 'Scarlett',
+        output: 0,
+        enabled: false,
+      );
+      expect(
+        await repository.loadOutputEnabled(device: 'Scarlett', output: 0),
+        isFalse,
+      );
 
       // Re-enabling REMOVES the key (self-cleaning, absence == enabled).
-      await repository.saveOutputEnabled(0, enabled: true);
-      expect(await repository.loadOutputEnabled(0), isNull);
+      await repository.saveOutputEnabled(
+        device: 'Scarlett',
+        output: 0,
+        enabled: true,
+      );
+      expect(
+        await repository.loadOutputEnabled(device: 'Scarlett', output: 0),
+        isNull,
+      );
+    });
+
+    test('the gate is a fact about the device, not about "output N"', () async {
+      // Out 3/4 disabled as one interface's phones pair (#569)...
+      await repository.saveOutputEnabled(
+        device: 'Scarlett',
+        output: 3,
+        enabled: false,
+      );
+
+      // ...says nothing about another interface's Out 3/4 feeding the PA.
+      expect(
+        await repository.loadOutputEnabled(device: 'UMC1820', output: 3),
+        isNull,
+      );
+      expect(
+        await repository.loadOutputEnabled(device: 'Scarlett', output: 3),
+        isFalse,
+      );
+    });
+
+    test(
+      'a legacy global key is adopted by the first device to read it', //
+      () async {
+        // The pre-#569 shape: keyed by output alone.
+        store.values['output_enabled.2'] = false;
+
+        // First read on the open device adopts the value...
+        expect(
+          await repository.loadOutputEnabled(device: 'Scarlett', output: 2),
+          isFalse,
+        );
+        // ...re-keys it under that device, and removes the legacy key.
+        expect(store.values['output_enabled.Scarlett.2'], isFalse);
+        expect(store.values.containsKey('output_enabled.2'), isFalse);
+
+        // One-way and once: another device does NOT inherit the migrated flag.
+        expect(
+          await repository.loadOutputEnabled(device: 'UMC1820', output: 2),
+          isNull,
+        );
+        // And the adopting device keeps it on a later read.
+        expect(
+          await repository.loadOutputEnabled(device: 'Scarlett', output: 2),
+          isFalse,
+        );
+      },
+    );
+
+    test('a device-keyed value wins over a lingering legacy key', () async {
+      store.values['output_enabled.Scarlett.1'] = false;
+      store.values['output_enabled.1'] = false;
+
+      expect(
+        await repository.loadOutputEnabled(device: 'Scarlett', output: 1),
+        isFalse,
+      );
+      // The migration did not run: the device key already existed.
+      expect(store.values.containsKey('output_enabled.1'), isTrue);
     });
 
     test('clearMonitorLaneKeys removes the prior multi-lane keys', () async {
@@ -652,8 +911,8 @@ void main() {
   });
 
   group('brightness', () {
-    test('defaults to 0.8 when unset', () async {
-      expect(await repository.loadBrightness(), 0.8);
+    test('defaults to full brightness (1.0) when unset', () async {
+      expect(await repository.loadBrightness(), 1.0);
     });
 
     test('round-trips a saved preference and clamps', () async {
@@ -942,6 +1201,82 @@ void main() {
         Version.parse('0.1.0'),
         Version.parse('0.4.0'),
       });
+    });
+  });
+
+  group('input conditioning (#697)', () {
+    test('every field is null when nothing is stored', () async {
+      expect(await repository.loadInputConditioningEnabled(1), isNull);
+      expect(await repository.loadInputConditioningHpfHz(1), isNull);
+      expect(await repository.loadInputConditioningHumHz(1), isNull);
+      expect(await repository.loadInputConditioningHumHarmonics(1), isNull);
+      expect(await repository.loadInputConditioningExpThresholdDb(1), isNull);
+      expect(await repository.loadInputConditioningExpRatio(1), isNull);
+      expect(await repository.loadInputConditioningExpReleaseMs(1), isNull);
+    });
+
+    test('round-trips every conditioning field for an input', () async {
+      await repository.saveInputConditioningEnabled(2, enabled: true);
+      await repository.saveInputConditioningHpfHz(2, 80);
+      await repository.saveInputConditioningHumHz(2, 60);
+      await repository.saveInputConditioningHumHarmonics(2, 6);
+      await repository.saveInputConditioningExpThresholdDb(2, -48);
+      await repository.saveInputConditioningExpRatio(2, 3);
+      await repository.saveInputConditioningExpReleaseMs(2, 220);
+
+      expect(await repository.loadInputConditioningEnabled(2), isTrue);
+      expect(await repository.loadInputConditioningHpfHz(2), 80);
+      expect(await repository.loadInputConditioningHumHz(2), 60);
+      expect(await repository.loadInputConditioningHumHarmonics(2), 6);
+      expect(await repository.loadInputConditioningExpThresholdDb(2), -48);
+      expect(await repository.loadInputConditioningExpRatio(2), 3);
+      expect(await repository.loadInputConditioningExpReleaseMs(2), 220);
+    });
+
+    test('keys are isolated per input', () async {
+      await repository.saveInputConditioningEnabled(0, enabled: true);
+      await repository.saveInputConditioningHpfHz(0, 100);
+
+      expect(await repository.loadInputConditioningEnabled(0), isTrue);
+      expect(await repository.loadInputConditioningEnabled(1), isNull);
+      expect(await repository.loadInputConditioningHpfHz(0), 100);
+      expect(await repository.loadInputConditioningHpfHz(1), isNull);
+    });
+
+    test('uses the documented key names', () async {
+      await repository.saveInputConditioningEnabled(3, enabled: true);
+      await repository.saveInputConditioningHpfHz(3, 40);
+      await repository.saveInputConditioningHumHz(3, 50);
+      await repository.saveInputConditioningHumHarmonics(3, 4);
+      await repository.saveInputConditioningExpThresholdDb(3, -55);
+      await repository.saveInputConditioningExpRatio(3, 2);
+      await repository.saveInputConditioningExpReleaseMs(3, 150);
+
+      expect(store.values['input_cond.3'], true);
+      expect(store.values['input_cond_hpf.3'], 40);
+      expect(store.values['input_cond_hum.3'], 50);
+      expect(store.values['input_cond_hum_harmonics.3'], 4);
+      expect(store.values['input_cond_exp_thresh.3'], -55);
+      expect(store.values['input_cond_exp_ratio.3'], 2);
+      expect(store.values['input_cond_exp_release.3'], 150);
+    });
+  });
+
+  group('input restoration opt-in (#697)', () {
+    test('is null when nothing is stored', () async {
+      expect(await repository.loadInputRestore(1), isNull);
+    });
+
+    test('round-trips a flag bitmask under input_restore.N', () async {
+      await repository.saveInputRestore(2, 3);
+      expect(await repository.loadInputRestore(2), 3);
+      expect(store.values['input_restore.2'], 3);
+    });
+
+    test('is isolated per input', () async {
+      await repository.saveInputRestore(0, 2);
+      expect(await repository.loadInputRestore(0), 2);
+      expect(await repository.loadInputRestore(1), isNull);
     });
   });
 }

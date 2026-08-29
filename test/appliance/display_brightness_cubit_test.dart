@@ -15,9 +15,6 @@ class _FakeBrightnessClient implements BrightnessClient {
   Future<bool> isSupported() async => supported;
 
   @override
-  Future<double> get() async => 0.8;
-
-  @override
   Future<void> set(double value) async => sets.add(value);
 }
 
@@ -67,11 +64,12 @@ void main() {
       'setBrightness persists and applies DDC when supported',
       build: build,
       act: (cubit) async {
-        // First emit always fires (bloc `_emitted` flag), even at default 0.8.
+        // First emit always fires (bloc `_emitted` flag), even at the
+        // default.
         await cubit.load();
         await cubit.setBrightness(0.3);
       },
-      expect: () => [0.8, 0.3],
+      expect: () => [kDefaultDisplayBrightness, 0.3],
       verify: (_) async {
         expect(await settings.loadBrightness(), 0.3);
         expect(client.sets.last, 0.3);
@@ -88,7 +86,7 @@ void main() {
         await cubit.load();
         await cubit.setBrightness(0.25);
       },
-      expect: () => [0.8, 0.25],
+      expect: () => [kDefaultDisplayBrightness, 0.25],
       verify: (_) async {
         expect(await settings.loadBrightness(), 0.25);
         expect(client.sets, isEmpty);
@@ -105,7 +103,7 @@ void main() {
         await cubit.load();
         await cubit.setBrightness(0);
       },
-      expect: () => [0.8, kMinDisplayBrightness],
+      expect: () => [kDefaultDisplayBrightness, kMinDisplayBrightness],
       verify: (_) async {
         expect(await settings.loadBrightness(), kMinDisplayBrightness);
       },

@@ -700,6 +700,33 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-input conditioning enabled flag passed to
+  /// [setInputConditioningEnabled].
+  final Map<int, bool> conditioningEnabled = {};
+
+  /// Per-(input, param) conditioning value passed to
+  /// [setInputConditioningParam].
+  final Map<(int, InputConditioningParam), double> conditioningParam = {};
+
+  @override
+  EngineResult setInputConditioningEnabled({
+    required int input,
+    required bool enabled,
+  }) {
+    conditioningEnabled[input] = enabled;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setInputConditioningParam({
+    required int input,
+    required InputConditioningParam param,
+    required double value,
+  }) {
+    conditioningParam[(input, param)] = value;
+    return EngineResult.ok;
+  }
+
   /// Per-(input, index) effect type passed to [setMonitorInputFx].
   final Map<(int, int), TrackEffectType> monitorFx = {};
 
@@ -778,6 +805,26 @@ class FakeAudioEngine implements AudioEngine {
 
   @override
   int monitorFxFingerprint({required int input}) => FxFingerprint.offset;
+
+  /// Per-lane wet-cache states this fake reports, keyed by `(channel, lane)`;
+  /// anything unseeded reads as [LaneCacheState.live].
+  final Map<(int, int), LaneCacheState> seededLaneCacheStates = {};
+
+  /// How many batched [laneCacheStates] sweeps ran — lets a widget test prove
+  /// the telemetry gate stops the engine read, not just the rendering.
+  int laneCacheSweeps = 0;
+
+  @override
+  Map<(int, int), LaneCacheState> laneCacheStates() {
+    laneCacheSweeps++;
+    final states = <(int, int), LaneCacheState>{};
+    for (var t = 0; t < nextSnapshot.tracks.length; t++) {
+      for (var l = 0; l < kMaxLanes; l++) {
+        states[(t, l)] = seededLaneCacheStates[(t, l)] ?? LaneCacheState.live;
+      }
+    }
+    return states;
+  }
 
   /// Per-output structural gate passed to [setOutputEnabled].
   final Map<int, bool> outputEnabled = {};
@@ -858,6 +905,13 @@ class FakeAudioEngine implements AudioEngine {
     perfDisarmCalls++;
     return perfDisarmResult;
   }
+
+  @override
+  int? volumeFreeBytes(String path) => freeBytes;
+
+  /// What [volumeFreeBytes] reports; `null` models a platform that cannot
+  /// answer.
+  int? freeBytes = 1 << 40;
 
   /// Result returned by [renderBegin].
   EngineResult renderBeginResult = EngineResult.ok;
@@ -994,5 +1048,18 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult cancelArm({required int channel}) {
     cancelledArms.add(channel);
     return EngineResult.ok;
+  }
+
+  /// Channels passed to [finalizeTake], in call order.
+  final List<int> finalizedTakes = [];
+
+  /// The result [finalizeTake] returns — override with
+  /// [EngineResult.invalid] to model the engine refusing (a defining take).
+  EngineResult finalizeTakeResult = EngineResult.ok;
+
+  @override
+  EngineResult finalizeTake({required int channel}) {
+    finalizedTakes.add(channel);
+    return finalizeTakeResult;
   }
 }

@@ -624,8 +624,12 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 - **Record is exclusive** — one input stream, one capturer; chained hand-off.
 - **Latency compensation** — comp write + live monitoring + auto-offset from the
   loopback measurement, persisted per device.
-- **Undo/redo** — multi-level, per track, overdub layers only; clear removes a
-  track. Immediate swap (tiny click on undo accepted).
+- **Undo/redo** — multi-level, per track, overdub layers only. A **user clear
+  is undoable**: it leaves a per-track restore point (take + layers + FX chains
+  + mutes) that undo brings back; a post-clear-all toast and `⌘⇧C` restore the
+  whole rig at once (undo-clear-all, derived from live restore points).
+  Session-load clears stay destructive. Immediate swap (tiny click on undo
+  accepted).
 - **#4 loop multiples** — **auto-round on stop** (record freely from the loop
   top; round track length up to the nearest whole multiple of the base loop).
   Free-running `loop_iteration`; track reads its `(iter-start_iter) % k` segment.

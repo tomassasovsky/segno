@@ -7,6 +7,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/network/wifi_join_sheet.dart';
 import 'package:segno/wifi/wifi_cubit.dart';
 import 'package:segno/wifi/wifi_error_message.dart';
+import 'package:segno/wifi/wifi_join_failure.dart';
 import 'package:segno/wifi/wifi_network_visibility.dart';
 import 'package:wifi_repository/wifi_repository.dart';
 
@@ -200,7 +201,13 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
     if (state.connectingSsid case final ssid?) {
       return ConsoleBanner(
         key: const Key('wifi_banner'),
-        message: l10n.wifiJoiningBanner(ssid),
+        // A retry after a backend failure says so — presenting a second
+        // activation as a fresh join would hide that anything went wrong,
+        // and presenting it as a password problem taught the owner to
+        // destroy the evidence (#824, #829).
+        message: state.retrying
+            ? l10n.wifiRetryingBanner(ssid)
+            : l10n.wifiJoiningBanner(ssid),
         tone: ConsoleBannerTone.pending,
         actions: [
           ConsoleSmallButton(
@@ -214,13 +221,28 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
     final ssid = state.failedSsid;
     return ConsoleBanner(
       key: const Key('wifi_banner'),
-      message: wifiErrorMessage(l10n, state.errorMessage),
+      message: wifiErrorMessage(
+        l10n,
+        state.errorMessage,
+        kind: state.errorKind,
+      ),
       tone: ConsoleBannerTone.failure,
       actions: [
         if (ssid case final failed?)
           ConsoleSmallButton(
             label: l10n.consoleTryAgain,
-            onPressed: () => unawaited(_join(context, cubit, state, failed)),
+            // Only a genuine credential rejection routes back to the
+            // passphrase sheet; every other failure re-activates with what
+            // the console already holds.
+            onPressed: () => unawaited(
+              _join(
+                context,
+                cubit,
+                state,
+                failed,
+                forcePrompt: state.errorKind == WifiJoinErrorKind.credentials,
+              ),
+            ),
           ),
       ],
     );
@@ -338,12 +360,18 @@ class _WifiTrayBodyState extends State<WifiTrayBody> {
     BuildContext context,
     WifiCubit cubit,
     WifiState state,
-    String ssid,
-  ) async {
+    String ssid, {
+    bool forcePrompt = false,
+  }) async {
     final network = state.networks.where((n) => n.ssid == ssid).firstOrNull;
     // A saved network already holds its credential; asking again for a
-    // passphrase the console has is a question with a known answer.
-    if (network != null && (!network.secured || network.saved)) {
+    // passphrase the console has is a question with a known answer. The one
+    // exception is [forcePrompt]: the stored key was genuinely rejected, so
+    // the known answer is known wrong.
+    final promptless =
+        network != null &&
+        (!network.secured || (network.saved && !forcePrompt));
+    if (promptless) {
       await cubit.connect(ssid);
       return;
     }

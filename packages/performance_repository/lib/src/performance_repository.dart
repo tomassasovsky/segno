@@ -180,6 +180,17 @@ class PerformanceRepository {
   /// native fields while armed). Deleted once finalize folds it in.
   static const String _armSnapshotFileName = 'arm-snapshot.json';
 
+  /// Free bytes on the volume holding [path], or `null` when the platform
+  /// cannot answer.
+  ///
+  /// A capture re-checks the volume it is filling, and used to do it by running
+  /// `df` — which forks the whole app, twelve times a minute, for the length
+  /// of a take. On the appliance that is milliseconds of `mmap_lock` held for
+  /// write while a 1.7 GB address space's page tables are copied, with the
+  /// real-time audio thread asleep behind it (#806). The engine answers the
+  /// same question with a `statvfs` and no child process.
+  int? freeSpaceBytes(String path) => _engine.volumeFreeBytes(path);
+
   /// The repository-owned capture phase, replaying the current value to a new
   /// listener before live updates (mirrors `LooperRepository.looperState`).
   Stream<PerformanceCaptureStatus> get captureStatus async* {
@@ -290,12 +301,20 @@ class PerformanceRepository {
     final snapshot = _engine.snapshot();
     final tracks = _captureSettledLanes(dir, chains: chains, writeChains: true);
     final armSnapshot = PerformanceArmSnapshot(
-      clockFrame: snapshot.masterPositionFrames,
-      masterLengthFrames: snapshot.masterLengthFrames,
+      // The master loop phase at arm is no longer recorded here: it was
+      // sampled on the control thread BEFORE lane export and manifest I/O, an
+      // unbounded gap before the capture's frame 0, so it was race-stale
+      // (#262). The renderer reads the exact phase from events.log's
+      // LE_PLOG_PERF_ARMED fact instead, and nothing else consumed it.
       masterGain: snapshot.masterGain,
       limiterEnabled: chains.limiterEnabled,
       limiterCeiling: chains.limiterCeiling,
       latencyOffsetFrames: snapshot.recordOffsetFrames,
+      // The engine tempo at the arm instant, verbatim (0 = unset, matching
+      // the session manifest's own sentinel). The crash-salvage fallback
+      // only — the disarm snapshot re-reads it authoritatively, because
+      // D6's tempo lock may not even have engaged yet this early (#281).
+      tempoBpm: snapshot.tempoBpm,
       tracks: tracks,
       monitors: _monitorsJson(chains),
       // The bus stages (FX v3, R20/R3): recorded so a replay can rebuild the
@@ -392,10 +411,19 @@ class PerformanceRepository {
   Future<EngineResult> _finalizeArmed(String dir) async {
     _setStatus(PerformanceCaptureStatus.finalizing);
     final disarmSnapshot = PerformanceDisarmSnapshot(
+      // Re-read here, not copied from the arm snapshot: D6's tempo lock
+      // only engages once grid content exists, so a tempo dialed in — or
+      // derived by the first loop — after an arm-over-empty-grid is only
+      // knowable now. This is the authoritative tempo a DAW export stamps;
+      // the arm-time copy serves crash salvage, which never gets this pass
+      // (#281). Read before perfDisarm below, while the engine is still the
+      // live session's.
+      tempoBpm: _engine.snapshot().tempoBpm,
       tracks: _captureSettledLanes(
         dir,
         chains: const PerformanceChains(),
         writeChains: false,
+        stampTakeId: true,
       ),
     );
 
@@ -886,10 +914,15 @@ class PerformanceRepository {
   /// track. A track currently capturing (recording/overdubbing) contributes
   /// `deferred: true` lane entries instead of exporting (D-SNAP) — its buffer
   /// is being written by the audio thread and exporting it would tear.
+  /// [stampTakeId] writes each track's settled take id onto its lane-0 entry
+  /// as `takeId` (#819). Only the DISARM pass sets it: the offline renderer
+  /// consumes `takeId` solely from `disarmSnapshot.tracks`, so an arm-time
+  /// manifest stays byte-identical to a build without take ids.
   List<PerformanceTrackSnapshot> _captureSettledLanes(
     String dir, {
     required PerformanceChains chains,
     required bool writeChains,
+    bool stampTakeId = false,
   }) {
     final snapshot = _engine.snapshot();
     final tracks = <PerformanceTrackSnapshot>[];
@@ -936,6 +969,12 @@ class PerformanceRepository {
             pcmFile: filename,
             effects: laneChain?.effects ?? const [],
             chainEnabled: laneChain?.chainEnabled ?? true,
+            // Take identity (#819): lane 0 of the DISARM pass carries the
+            // track's settled take id so the offline renderer can anchor this
+            // disarm image by identity. Presence-keyed (written only when > 0);
+            // never stamped on the arm pass, which the renderer never reads it
+            // from — see [stampTakeId].
+            takeId: stampTakeId && laneIndex == 0 ? track.settledTakeId : 0,
           ),
         );
       }

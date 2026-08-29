@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -11,6 +13,7 @@ import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/looper/view/fx_editor/fx_block_chip.dart';
 import 'package:segno/looper/view/signal/signal_card.dart';
 import 'package:segno/looper/view/signal/signal_detail_panel.dart';
+import 'package:segno/theme/theme.dart';
 
 /// One Signal tab: the scope chip, then the chains at that stage as a row of
 /// cards, then whatever else that stage owns.
@@ -381,6 +384,10 @@ class _MasterStage extends StatelessWidget {
                   key: Key('signal_output_row_$output'),
                   output: output,
                   enabled: enabled,
+                  // The guard's whole condition, computed where the mask is:
+                  // this row off would be the LAST one off (#569).
+                  lastLive:
+                      enabled && live.where((isLive) => isLive).length == 1,
                   showDivider: output < outputs - 1,
                 ),
             ],
@@ -416,12 +423,19 @@ class _OutputRow extends StatelessWidget {
   const _OutputRow({
     required this.output,
     required this.enabled,
+    required this.lastLive,
     required this.showDivider,
     super.key,
   });
 
   final int output;
   final bool enabled;
+
+  /// Whether this row's off would silence the rig — it is the only output
+  /// still on. Only that tap is intercepted (#569): every other flip, on or
+  /// off, is reversible by ear and lands silently.
+  final bool lastLive;
+
   final bool showDivider;
 
   @override
@@ -439,8 +453,108 @@ class _OutputRow extends StatelessWidget {
         semanticLabel: enabled
             ? l10n.a11yOutputEnabledDisable(output + 1)
             : l10n.a11yOutputDisabledEnable(output + 1),
-        onChanged: (value) => context.read<LooperBloc>().add(
-          LooperOutputEnabledToggled(output, enabled: value),
+        onChanged: (value) {
+          // The pen's `SIGNAL / master-last-output`: switching the last live
+          // output off is the silence the banner below warns about, and it
+          // must not be reachable without being told. The dialog INTERCEPTS
+          // the write rather than undoing it — the switch has not moved yet,
+          // and `Keep it on` means the write never happened.
+          if (!value && lastLive) {
+            _showLastOutputDialog(context, output: output);
+            return;
+          }
+          context.read<LooperBloc>().add(
+            LooperOutputEnabledToggled(output, enabled: value),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// The last-live-output guard (#569), as the pen draws it: a confirm in the
+/// warning's own amber, not the destructive red — nothing is destroyed, and
+/// `Keep it on` costs nothing.
+void _showLastOutputDialog(BuildContext context, {required int output}) {
+  // Re-provided across the route boundary: a dialog is built by the
+  // navigator and inherits nothing from this subtree.
+  final looper = context.read<LooperBloc>();
+  unawaited(
+    showDialog<void>(
+      context: context,
+      barrierColor: context.surface.scrim,
+      builder: (_) => BlocProvider.value(
+        value: looper,
+        child: _LastOutputDialog(output: output),
+      ),
+    ),
+  );
+}
+
+/// The amber intercept's panel: what is about to happen, the way to not do
+/// it, and the way to go through with it — in that order, keep-on first.
+class _LastOutputDialog extends StatelessWidget {
+  const _LastOutputDialog({required this.output});
+
+  final int output;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    return Center(
+      child: ConsoleDialogShell(
+        key: const Key('signal_last_output_dialog'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppText(
+              l10n.signalLastOutputTitle,
+              style: TextStyle(
+                color: surface.textPrimary,
+                fontSize: 19,
+                height: 1.16,
+                leadingDistribution: TextLeadingDistribution.even,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: kConsoleLabelGap),
+            AppText(
+              l10n.signalLastOutputBody(l10n.outputChannelLabel(output + 1)),
+              style: TextStyle(
+                color: surface.textSecondary,
+                fontSize: 16,
+                height: 1.4,
+                leadingDistribution: TextLeadingDistribution.even,
+              ),
+            ),
+            const SizedBox(height: kConsoleGroupGap),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              spacing: kConsoleLabelGap,
+              children: [
+                ConsoleDialogButton(
+                  key: const Key('signal_last_output_keep'),
+                  label: l10n.signalLastOutputKeep,
+                  // Keep-on is a plain dismiss: the write was intercepted, so
+                  // there is nothing to undo and nothing to dispatch.
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                ConsoleDialogButton(
+                  key: const Key('signal_last_output_confirm'),
+                  label: l10n.signalLastOutputConfirm,
+                  tone: ConsoleDialogTone.warning,
+                  onPressed: () {
+                    context.read<LooperBloc>().add(
+                      LooperOutputEnabledToggled(output, enabled: false),
+                    );
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

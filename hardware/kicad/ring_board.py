@@ -1,9 +1,19 @@
 """SKiDL generator for the Segno pedal RING/ENCODER base board.
 
-Hosts an off-the-shelf **16-LED WS2812 5050 NeoPixel ring module** (wired to a
-4-pin header) plus the rotary encoder and the link to the main board. Everything
-on this board is THROUGH-HOLE -- no SMD to hand-solder, and the LED ring is a
-pre-assembled module, so there are no WS2812s on this PCB at all.
+Hosts an off-the-shelf **24-LED WS2812 5050 NeoPixel ring module** (O65.5 OD /
+O52.3 ID / 3.2 thick) plus the rotary encoder and the link to the main board.
+Everything on this board is THROUGH-HOLE -- no SMD to hand-solder, and the LED
+ring is a pre-assembled module, so there are no WS2812s on this PCB at all.
+
+The board was a Ring 16 design until 2026-08-22 (#794). Fitting the Ring 24 took
+four mechanical changes, all in segno_pedal_ring.kicad_pcb: the outline grew
+O60 -> O68 (the ring is O65.5 and overhung a O60 board by 2.75 mm all round), the
+three M3 holes moved from r=26 in to r=22 so their heads clear the ring's inner
+edge at r=26.15, J3's module-mount pads moved from the Ring 16's O42.1 circle out
+to the Ring 24's r=31.59 (they were landing inside the new ring's bore), and
+RING1's documentation footprint became NeoPixel_Ring24. The GND pour was grown
+with the outline -- it was still a r=29.45 circle cut for the O60 board and did
+not reach the new pads.
 
 Run (from hardware/kicad/):
     python ring_board.py     # KICAD_SYMBOL_DIR may override the symbol path
@@ -71,18 +81,30 @@ j2[2] += gnd
 j2[3] += ring_data
 j2[4] += ring_dout
 
-# 4 distributed THT pads directly under the module's In/+5V/GND/Out pads (Adafruit
-# JP1/JP3/JP4/JP2) so the ring can be pin-mounted instead of flying-wired (parallel
-# to J2 -- same nets, either connection method works). The Out pin carries the
-# spare DOUT net but is mainly there to solder down a 4th post for rigidity.
+# 4 distributed THT pads directly under the RING 24's IN/+5V/GND/OUT solder
+# points, so the module can be pin-mounted instead of flying-wired (parallel to
+# J2 -- same nets, either method works).
+#
+# The coordinates are NOT eyeballed and not measured off a photo: they are lifted
+# from Adafruit's own board file for the part -- github.com/adafruit/
+# Adafruit-NeoPixel-Ring, "Adafruit NeoPixel Ring 24 B.brd" -- with Y negated for
+# KiCad's downward Y. The signal per pad is read from that file's netlist too
+# (JP1=IN via R1, JP2=OUT off LED24's DOUT, JP3=VDD, JP4=GND), because JP
+# numbering is not a signal order and must not be assumed to carry across ring
+# sizes. The same extraction reproduces the OLD ModuleMountPads_4's Ring 16 pads
+# exactly, which is how the method was checked before trusting it here.
+#
+# That file also confirms the ring is O65.53 / O52.32 -- the fitted part.
 j3 = Part("Connector_Generic", "Conn_01x04",
-          footprint="segno:ModuleMountPads_4", ref="J3", value="RINGPINS")
+          footprint="segno:ModuleMountPads_Ring24", ref="J3", value="RINGPINS24")
 j3[1] += ring_data   # DIN
 j3[2] += v5          # +5V
 j3[3] += gnd         # GND
 j3[4] += ring_dout   # DOUT (spare; soldered for mechanical support)
 
-# bulk cap at the module power entry (16 LEDs ~1 A) -- THT radial electrolytic.
+# bulk cap at the module power entry (24 LEDs, ~1.44 A all-white worst case; the
+# comet only ever lights part of the ring, so the real draw is far lower) -- THT
+# radial electrolytic.
 # ESR grade in the VALUE because the value is what a BOM prints and the grade is
 # load-bearing: a general-purpose 470uF in the same can runs ~0.5 ohm, and the
 # ring's amp-scale frame edges x that ESR is real ripple on the LEDs' own VDD.

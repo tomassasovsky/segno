@@ -1228,6 +1228,7 @@ class ConsoleActionChip extends StatelessWidget {
     required this.onPressed,
     this.icon,
     this.destructive = false,
+    this.accent = false,
     super.key,
   });
 
@@ -1245,11 +1246,24 @@ class ConsoleActionChip extends StatelessWidget {
   /// Whether this action destroys something.
   final bool destructive;
 
+  /// Whether this is the accent (primary) action of its row — the Simulate
+  /// pill (#519), which leads the mapping editor's action strip. Ignored when
+  /// [destructive], which owns its own tone.
+  final bool accent;
+
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final tint = destructive ? surface.rec : surface.textSecondary;
-    final edge = destructive ? surface.recLine : surface.line;
+    final tint = destructive
+        ? surface.rec
+        : accent
+        ? surface.accent
+        : surface.textSecondary;
+    final edge = destructive
+        ? surface.recLine
+        : accent
+        ? surface.accent
+        : surface.line;
     return Opacity(
       opacity: onPressed == null ? surface.disabledOpacity : 1,
       child: FocusableTapTarget(
@@ -3326,6 +3340,11 @@ enum ConsoleDialogTone {
   /// The one that destroys something. Solid, because it is the only control
   /// on this console that cannot be undone by tapping again.
   destructive,
+
+  /// The one that goes through with what a guard asked about — solid in the
+  /// warning amber, not the destructive red: nothing is destroyed, but the
+  /// tap was intercepted and this is the button that lets it land.
+  warning,
 }
 
 /// A 40px button at the foot of a panel or sheet.
@@ -3374,6 +3393,14 @@ class ConsoleDialogButton extends StatelessWidget {
         surface.rec,
         surface.onAccent,
       ),
+      // Ink is the surface's own background: dark over the amber fill in
+      // both themes, where `onAccent` is white in the dark theme and would
+      // wash out against it.
+      ConsoleDialogTone.warning => (
+        surface.warning,
+        surface.warning,
+        surface.background,
+      ),
     };
     return FocusableTapTarget(
       onTap: onPressed,
@@ -3398,7 +3425,11 @@ class ConsoleDialogButton extends StatelessWidget {
               fontSize: 15,
               height: 1.2,
               leadingDistribution: TextLeadingDistribution.even,
-              fontWeight: tone == ConsoleDialogTone.destructive
+              // Both solid tones carry their weight; the outlined ones stay
+              // regular — the pen draws `Switch off` at 600 like `Delete`.
+              fontWeight:
+                  tone == ConsoleDialogTone.destructive ||
+                      tone == ConsoleDialogTone.warning
                   ? FontWeight.w600
                   : FontWeight.normal,
             ),

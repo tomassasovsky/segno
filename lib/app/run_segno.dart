@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:console_facts_client/console_facts_client.dart';
@@ -97,8 +99,14 @@ Future<void> runSegno(
   // runs with no controller source. The waveform sub-window already returned
   // above, so it never opens MIDI.
   final midiSource = createNativeMidiSource();
+  // The push seam behind "Simulate input" (#519): a plain source in the same
+  // list as the real MIDI one, so a synthetic sweep/press is indistinguishable
+  // downstream and works with nothing plugged in. Owned by the repository — it
+  // is disposed when the repository disposes its sources — and handed to
+  // ControlCubit, which paces the synthetic sequence.
+  final simulatedControllerSource = SimulatedControllerSource();
   final controllerRepository = ControllerRepository(
-    sources: [?midiSource],
+    sources: [?midiSource, simulatedControllerSource],
     // MIDI-learn never captures the Segno pedal's own protocol traffic (B8):
     // the pedal shares this input stream, so a stomp mid-capture would
     // otherwise bind a footswitch the app already drives end to end. The
@@ -113,14 +121,32 @@ Future<void> runSegno(
   // share one transport graph.
   final (repo: pedalRepository, sim: pedalSimulator) =
       createSimAwarePedalRepository(midiSource);
-  final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
+  final settings = SettingsRepository(
+    store: SharedPreferencesKeyValueStore(),
+    // The ALSA period count is part of the latency-calibration key: #809 made
+    // it move the playback start threshold, so a record offset measured under
+    // one period count is stale under another. Only the Linux engine reads
+    // SEGNO_ALSA_PERIODS, so elsewhere (and with it unset) this is null and
+    // the key keeps its historical shape — desktop calibrations stay valid.
+    alsaPeriods: Platform.isLinux
+        ? SettingsRepository.alsaPeriodsFromEnvironment(
+            Platform.environment['SEGNO_ALSA_PERIODS'],
+          )
+        : null,
+  );
   // In-app updates. The backend is inert until the appliance/desktop backends
   // are wired, so the update UI stays hidden on unsupported builds.
   final updates = UpdateRepository(backend: createPlatformUpdateBackend());
   final wifi = WifiRepository(client: createWifiClient());
   final bluetooth = BluetoothRepository(client: createBluetoothClient());
   final brightness = createBrightnessClient();
-  final consoleFacts = createConsoleFactsClient();
+  // The same directory resolvers the session and performance repositories are
+  // wired with, so the real client's disk accounting measures the app's own
+  // data volume (`/data` on the appliance) by construction (#656).
+  final consoleFacts = createConsoleFactsClient(
+    sessionsRoot: defaultSessionsRoot,
+    capturesRoot: defaultExportDirectory,
+  );
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller
   // pipeline) and never disposes it. Held independent of the engine so MIDI
@@ -129,9 +155,6 @@ Future<void> runSegno(
     source: midiSource,
     settings: settings,
     // Redundant only on a desktop analysis run: the constant is null unless
-    // SEGNO_CONSOLE is defined, and dropping it would disable console
-    // auto-detect entirely.
-    // ignore: avoid_redundant_argument_values
     autoBindProductNames: kPedalAutoBindProductNames,
   );
 
@@ -164,6 +187,7 @@ Future<void> runSegno(
     () => App(
       repository: looper,
       controllerRepository: controllerRepository,
+      simulatedControllerSource: simulatedControllerSource,
       midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
       pedalSimulator: pedalSimulator,

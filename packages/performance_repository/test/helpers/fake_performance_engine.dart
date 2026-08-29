@@ -14,6 +14,7 @@ class _FakeTrack {
   double volume = 1;
   bool muted = false;
   int multiple = 1;
+  int settledTakeId = 0;
   final List<_FakeLane> lanes = [];
 }
 
@@ -32,6 +33,10 @@ class FakePerformanceEngine implements AudioEngine {
   int masterPositionFrames = 0;
   double masterGain = 1;
   int recordOffsetFrames = 0;
+
+  /// Tempo the snapshot reports; `0` models "no tempo set" (the engine's
+  /// own at-rest default).
+  double tempoBpm = 0;
 
   bool perfArmed = false;
   String? lastPerfCaptureDir;
@@ -59,12 +64,14 @@ class FakePerformanceEngine implements AudioEngine {
     double volume = 1,
     bool muted = false,
     int multiple = 1,
+    int settledTakeId = 0,
   }) {
     final track = _tracks[channel]
       ..state = trackState
       ..volume = volume
       ..muted = muted
-      ..multiple = multiple;
+      ..multiple = multiple
+      ..settledTakeId = settledTakeId;
     while (track.lanes.length <= lane) {
       track.lanes.add(_FakeLane());
     }
@@ -108,6 +115,7 @@ class FakePerformanceEngine implements AudioEngine {
     masterPositionFrames: masterPositionFrames,
     masterGain: masterGain,
     recordOffsetFrames: recordOffsetFrames,
+    tempoBpm: tempoBpm,
     isPerfArmed: perfArmed,
     perfFrames: perfFrames,
     perfOverruns: perfOverruns,
@@ -124,6 +132,7 @@ class FakePerformanceEngine implements AudioEngine {
           rms: 0,
           peak: 0,
           multiple: t.multiple,
+          settledTakeId: t.settledTakeId,
           lanes: [
             for (final l in t.lanes)
               LaneSnapshot(
@@ -193,6 +202,13 @@ class FakePerformanceEngine implements AudioEngine {
     perfArmed = false;
     return EngineResult.ok;
   }
+
+  @override
+  int? volumeFreeBytes(String path) => freeBytes;
+
+  /// What [volumeFreeBytes] reports; `null` models a platform that cannot
+  /// answer.
+  int? freeBytes = 1 << 40;
 
   int renderBeginCalls = 0;
   String? lastRenderCaptureDir;
@@ -474,6 +490,17 @@ class FakePerformanceEngine implements AudioEngine {
   EngineResult setMonitorInputMute({required int input, required bool muted}) =>
       EngineResult.ok;
   @override
+  EngineResult setInputConditioningEnabled({
+    required int input,
+    required bool enabled,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setInputConditioningParam({
+    required int input,
+    required InputConditioningParam param,
+    required double value,
+  }) => EngineResult.ok;
+  @override
   EngineResult setMonitorInputFx({
     required int input,
     required int index,
@@ -496,6 +523,8 @@ class FakePerformanceEngine implements AudioEngine {
       FxFingerprint.offset;
   @override
   int monitorFxFingerprint({required int input}) => FxFingerprint.offset;
+  @override
+  Map<(int, int), LaneCacheState> laneCacheStates() => const {};
   @override
   EngineResult setOutputEnabled({required int output, required bool enabled}) =>
       EngineResult.ok;
@@ -570,5 +599,18 @@ class FakePerformanceEngine implements AudioEngine {
   EngineResult cancelArm({required int channel}) {
     cancelledArms.add(channel);
     return EngineResult.ok;
+  }
+
+  /// Channels passed to [finalizeTake], in call order.
+  final List<int> finalizedTakes = [];
+
+  /// The result [finalizeTake] returns — override with
+  /// [EngineResult.invalid] to model the engine refusing (a defining take).
+  EngineResult finalizeTakeResult = EngineResult.ok;
+
+  @override
+  EngineResult finalizeTake({required int channel}) {
+    finalizedTakes.add(channel);
+    return finalizeTakeResult;
   }
 }

@@ -2,10 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:toastification/toastification.dart';
 
 /// Stable toast ids used by the app shell (and widget tests).
+///
+/// The lost-*device* id is gone on purpose (#453): a lost audio interface is a
+/// standing CONDITION — the engine stops, nothing is heard — surfaced by the
+/// persistent `ConnectivityBanners` on the stage, not a toast. A lost *MIDI*
+/// controller is the opposite: the loops keep playing, so it is a low-stakes
+/// event that flashes a transient toast ([midiLost]) and leaves no standing
+/// bar. Both hardware returns are *restored* events, each a short snack.
 abstract final class AppToastId {
-  static const deviceLost = 'app_deviceLost_banner';
   static const deviceRestored = 'app_deviceRestored_snackbar';
-  static const midiLost = 'app_midiLost_banner';
+  static const midiLost = 'app_midiLost_toast';
   static const midiRestored = 'app_midiRestored_snackbar';
   static const audioRecovery = 'app_audioRecovery_banner';
   static const update = 'app_update_banner';
@@ -13,6 +19,8 @@ abstract final class AppToastId {
   static const updateAction = 'app_update_banner_update';
   static const waveformFailed = 'app_waveformWindowFailed_banner';
   static const singleDisplay = 'app_singleDisplay_banner';
+  static const undoClearAll = 'app_undoClearAll_snackbar';
+  static const undoClearAllAction = 'app_undoClearAll_snackbar_action';
 }
 
 final Map<String, ToastificationItem> _active = {};
@@ -23,8 +31,23 @@ final Map<String, ToastificationItem> _active = {};
 /// The registry below is module-level, so it survives between widget tests:
 /// one test showing a toast makes the next test's identical toast a duplicate
 /// and silently a no-op. Reset it in `setUp`.
+///
+/// This clears only *this module's* id→item map. The `toastification` package
+/// keeps its OWN process-global singleton (`toastification.managers`) that also
+/// leaks across tests under `very_good test --optimization`; wiping that is the
+/// job of `resetToastificationForTest` in `test/helpers/toast_test_helpers.dart`
+/// (it pokes a package member the analyzer only permits from test code). Toast
+/// tests call BOTH in `setUp`.
 @visibleForTesting
 void resetAppToastsForTest() => _active.clear();
+
+/// Whether a toast with [id] is currently registered.
+///
+/// The test seam for toast assertions: toastification renders into an overlay
+/// the widget-test harness does not reliably provide, so "the snack showed"
+/// is asserted against this registry rather than against widget keys.
+@visibleForTesting
+bool debugAppToastActive(String id) => _active.containsKey(id);
 
 void dismissAppToast(String id) {
   final item = _active.remove(id);

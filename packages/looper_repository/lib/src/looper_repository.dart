@@ -123,6 +123,19 @@ class LooperRepository {
   /// Broadcasts the input whose monitor-owned state a caller just changed.
   final StreamController<int> _monitorChanges =
       StreamController<int>.broadcast();
+
+  /// Broadcasts the input whose monitor chain just took a PARAMETER write,
+  /// throttled to [monitorParamAnnounceInterval] — see [monitorParamChanges].
+  final StreamController<int> _monitorParamChanges =
+      StreamController<int>.broadcast();
+
+  /// Per-input open throttle windows for [_monitorParamChanged]: while an
+  /// input's timer runs, further param writes only mark it dirty.
+  final Map<int, Timer> _paramAnnounceWindows = {};
+
+  /// Inputs written again inside their open window; each gets one trailing
+  /// announce when the window closes, so a sweep's LAST value always lands.
+  final Set<int> _paramAnnounceDirty = {};
   StreamSubscription<void>? _tickerSub;
   Timer? _pollTimer;
   LooperState? _last;
@@ -327,6 +340,15 @@ class LooperRepository {
   final Map<int, bool> _monitorMute = {};
   final Map<int, List<TrackEffect>> _monitorEffects = {};
 
+  /// Per-input conditioning-stage intent (the fixed HPF / hum-notch / expander
+  /// utility stage), remembered and re-applied on every successful (re)start:
+  /// the engine resets conditioning on every configure, so — like the monitor
+  /// maps above — the intent lives here and is re-pushed after each device
+  /// (re)open. [_condEnabled] is the stage on/off; [_condParams] holds each set
+  /// parameter's real-unit value, keyed by input then [InputConditioningParam].
+  final Map<int, bool> _condEnabled = {};
+  final Map<int, Map<InputConditioningParam, double>> _condParams = {};
+
   /// Live plugin slot handles keyed by chain position — `(channel, lane,
   /// index)` for lane chains, `(input, index)` for monitor chains. Repopulated
   /// every time a chain is (re)applied to the running engine; an absent entry
@@ -373,15 +395,60 @@ class LooperRepository {
   /// power, the mode, mask, volume, mute, a relink, and a rebind that
   /// rewrote the chain. A parameter write does not: those arrive at
   /// controller rate from a mapped CC, and a listener that persists what it
-  /// reads would write settings on every frame of a sweep. Following a
-  /// swept param needs the ≤10 Hz cadence the editor poll already uses
-  /// (#605).
+  /// reads would write settings on every frame of a sweep. Param writes get
+  /// their own throttled stream instead — [monitorParamChanges] (#605).
   Stream<int> get monitorChanges => _monitorChanges.stream;
+
+  /// The parameter-announce cadence: the same ≤10 Hz ceiling as the editor
+  /// sync poll (D-SYNC), which exists for exactly this class of problem.
+  static const Duration monitorParamAnnounceInterval = Duration(
+    milliseconds: 100,
+  );
+
+  /// Broadcasts the input whose monitor chain just took a parameter write —
+  /// [setMonitorEffectParam], the one monitor write [monitorChanges] stays
+  /// silent on — throttled to [monitorParamAnnounceInterval].
+  ///
+  /// A CC mapped to an input-stage param writes here at controller rate
+  /// (`ControlValueResolver` routes an `FxStage.input` target straight to the
+  /// repository), and without an announce the audio moves while the console
+  /// knob does not — until the next structural announce makes a listener
+  /// re-read the chain and the knob jumps (#605). This stream is what lets
+  /// the knob follow.
+  ///
+  /// Deliberately DISTINCT from [monitorChanges] so a listener can treat the
+  /// two differently: a structural announce is worth persisting, a swept
+  /// value is not — the editor-sync poll does not persist either, and a
+  /// persist-per-announce here would still write settings ten times a second
+  /// for the length of a sweep.
+  ///
+  /// Throttle shape: the first write announces immediately (the knob starts
+  /// moving on the first frame, not 100 ms late), writes inside the open
+  /// window coalesce, and a dirty window closes with one trailing announce —
+  /// so a burst produces its first and last values, never a stale rest.
+  Stream<int> get monitorParamChanges => _monitorParamChanges.stream;
 
   /// Announces a change to monitor [input]. Every monitor setter ends here.
   void _monitorChanged(int input) {
     if (_monitorChanges.isClosed) return;
     _monitorChanges.add(input);
+  }
+
+  /// Announces a parameter write to monitor [input]'s chain, coalescing to at
+  /// most one announce per [monitorParamAnnounceInterval] per input.
+  void _monitorParamChanged(int input) {
+    if (_monitorParamChanges.isClosed) return;
+    if (_paramAnnounceWindows.containsKey(input)) {
+      _paramAnnounceDirty.add(input);
+      return;
+    }
+    _monitorParamChanges.add(input);
+    _paramAnnounceWindows[input] = Timer(monitorParamAnnounceInterval, () {
+      _paramAnnounceWindows.remove(input);
+      // Trailing announce re-arms the window, so a sweep longer than one
+      // window keeps announcing at the cadence rather than once per sweep.
+      if (_paramAnnounceDirty.remove(input)) _monitorParamChanged(input);
+    });
   }
 
   /// Fires once per completed [applySession]: the rig that was on the engine
@@ -481,8 +548,67 @@ class LooperRepository {
     }
   }
 
+  /// Whether each poll also reads every lane's wet-cache state into
+  /// [Lane.cacheState] (R27 debug telemetry).
+  ///
+  /// Starts off, and stays off until a caller turns it on. While off, every
+  /// lane reports a `null` cache state — honestly "not observed" rather than
+  /// "live".
+  ///
+  /// The read itself is one batched engine sweep ([AudioEngine.laneCacheStates]
+  /// — a single drain + scheduler pass for ALL lanes, #418), so the residual
+  /// cost of leaving this on is one extra sweep per poll on top of the one
+  /// `snapshot()` already runs. Still gated, because telemetry nobody renders
+  /// should cost nothing: the app scopes it to "the Signal surface is showing
+  /// AND the track-indicator preference is on" (`CacheTelemetryScope`), so
+  /// the appliance — where the xrun budget is tight — never pays even that
+  /// sweep outside the one screen that draws it.
+  bool get cacheTelemetryEnabled => _cacheTelemetryEnabled;
+  bool _cacheTelemetryEnabled = false;
+
+  /// The last-refreshed per-lane cache states, keyed by `(channel, lane)`, or
+  /// empty while telemetry is off.
+  ///
+  /// [_project] reads THIS rather than the engine, and only [_poll] (plus the
+  /// toggle below) refreshes it. That split matters: `_project` also runs from
+  /// [_reproject], which fires on every local edit — including each frame of a
+  /// dragged FX knob — and re-reading telemetry there would put an engine
+  /// drain inside the very gesture `_reproject` exists to keep responsive.
+  /// A debug glyph can be one poll tick stale; a knob cannot be janky.
+  final Map<(int, int), LaneCacheState> _laneCacheStates = {};
+
+  /// Re-reads every lane's cache state in one batched engine sweep, or clears
+  /// the map when telemetry is off. The only place the engine read happens.
+  void _refreshCacheTelemetry() {
+    _laneCacheStates.clear();
+    if (!_cacheTelemetryEnabled) return;
+    _laneCacheStates.addAll(_engine.laneCacheStates());
+  }
+
+  /// Turns per-lane wet-cache telemetry on or off (see [cacheTelemetryEnabled])
+  /// and republishes immediately, so the glyph appears or clears on the toggle
+  /// rather than at the next tick.
+  ///
+  /// **Single-owner:** this is a plain last-writer-wins switch, not a
+  /// refcounted resource. Exactly one surface is expected to drive it — today
+  /// the app's `CacheTelemetryScope`, which ANDs the track-indicator
+  /// preference with "the Signal surface is showing" over its own lifecycle.
+  /// A second independent caller would fight the first; give the switch an
+  /// ownership model before adding one.
+  void setCacheTelemetryEnabled({required bool enabled}) {
+    if (enabled == _cacheTelemetryEnabled) return;
+    _cacheTelemetryEnabled = enabled;
+    // Populate (or drop) the states before republishing, so the toggle shows
+    // the real thing immediately instead of a tick of empty glyphs.
+    _refreshCacheTelemetry();
+    // _reproject, not _poll: this is an out-of-band republish like every other
+    // local edit, and it must not run the periodic poll's device supervision.
+    _reproject();
+  }
+
   void _poll() {
     final snapshot = _engine.snapshot();
+    _refreshCacheTelemetry();
     _superviseDevice(devicePresent: snapshot.devicePresent);
     // A measurement auto-sets the engine's offset (it never flows through
     // setRecordOffset), so mirror it into the remembered value here — otherwise
@@ -675,6 +801,9 @@ class LooperRepository {
                 chainEnabled: laneChainEnabled(i, l),
                 inheritedFrom: _laneChainMeta[(i, l)] ?? const [],
                 inputChainDiverges: laneChainDivergesFromInput(i, l),
+                // From the last refresh, never a fresh engine read — see
+                // [_laneCacheStates] for why _project must stay cheap.
+                cacheState: _laneCacheStates[(i, l)],
               ),
           ],
           effects: _trackEffects[i] ?? const [],
@@ -864,6 +993,22 @@ class LooperRepository {
           input: input,
           enabled: enabled,
         ),
+      );
+      // Re-apply per-input conditioning (the engine resets it on configure):
+      // stage each input's parameters first, then its enable flag, so the final
+      // enable establishes the stage with its parameters already in place.
+      _condParams.forEach((input, params) {
+        params.forEach(
+          (param, value) => _engine.setInputConditioningParam(
+            input: input,
+            param: param,
+            value: value,
+          ),
+        );
+      });
+      _condEnabled.forEach(
+        (input, enabled) =>
+            _engine.setInputConditioningEnabled(input: input, enabled: enabled),
       );
       // Re-apply the Track-stage + Master insert chains and their chain flags
       // (FX v3 part 1b owners), mirroring the lane/monitor replay above.
@@ -2179,6 +2324,46 @@ class LooperRepository {
     return _engine.setMonitorInputMute(input: input, muted: muted);
   }
 
+  /// Enables or disables hardware [input]'s conditioning stage (the fixed HPF /
+  /// hum-notch / expander utility stage). Remembered and re-applied on every
+  /// successful (re)start — the engine resets conditioning on each configure —
+  /// and takes effect immediately only while running. Returns
+  /// [EngineResult.invalid] for an input outside `[0, kMaxMonitoredInputs)`.
+  EngineResult setInputConditioningEnabled({
+    required int input,
+    required bool enabled,
+  }) {
+    if (input < 0 || input >= kMaxMonitoredInputs) {
+      return EngineResult.invalid;
+    }
+    _condEnabled[input] = enabled;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setInputConditioningEnabled(input: input, enabled: enabled);
+  }
+
+  /// Sets conditioning parameter [param] of hardware [input] to [value] in its
+  /// real unit (Hz / dB / ms / ratio — see [InputConditioningParam]). Remembered
+  /// and re-applied on every (re)start; takes effect immediately only while
+  /// running. Independent of the enable flag — a value set while the stage is
+  /// off is applied and takes effect when it is next enabled. Returns
+  /// [EngineResult.invalid] for an input outside `[0, kMaxMonitoredInputs)`.
+  EngineResult setInputConditioningParam({
+    required int input,
+    required InputConditioningParam param,
+    required double value,
+  }) {
+    if (input < 0 || input >= kMaxMonitoredInputs) {
+      return EngineResult.invalid;
+    }
+    (_condParams[input] ??= {})[param] = value;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setInputConditioningParam(
+      input: input,
+      param: param,
+      value: value,
+    );
+  }
+
   /// Turns hardware [output] on/off as a routing target (the structural output
   /// gate). A disabled output is removed from the mix while its lane/monitor
   /// route masks are preserved — re-enabling restores them. Default-on: only
@@ -2257,6 +2442,26 @@ class LooperRepository {
   EngineResult cancelArm({required int channel}) {
     if (!_intendRunning) return EngineResult.ok;
     return _engine.cancelArm(channel: channel);
+  }
+
+  /// Finalizes track [channel]'s live non-defining recording take NOW —
+  /// [cancelArm]'s counterpart for the LIVE take (#405): the cancel retires
+  /// an arm that has not fired, this ends a take already capturing, exactly
+  /// as a quantize-off record press would (rounded up to whole base loops,
+  /// the tail staying silence — never off-grid) and without touching any
+  /// arm machinery.
+  ///
+  /// The engine refuses for the DEFINING take (ending it would let a mode
+  /// switch set the session's bar length mid-gesture) and while a pending
+  /// arm is live on the channel; callers treat a refusal as "the capture
+  /// survives". A running count-in is cancelled outright instead, whatever
+  /// channel is addressed. No [record]-style snapshot side effects here: the
+  /// take is already running, so its record-time lane FX snapshot was pushed
+  /// when it started — and nothing to remember across a restart (a live take
+  /// does not survive one).
+  EngineResult finalizeTake({required int channel}) {
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.finalizeTake(channel: channel);
   }
 
   /// Fixes track [channel]'s loop length to [multiple] base loops (`0` = auto).
@@ -3271,6 +3476,10 @@ class LooperRepository {
     // owns them and emits optimistically), so there is nothing to re-emit.
     _monitorEffects[input] = List<TrackEffect>.of(effects)
       ..[index] = fx.copyWith(params: params);
+    // The throttled param announce, not [_monitorChanged]: this is the write
+    // that arrives at controller rate, and the structural stream's listeners
+    // persist what they read (#605).
+    _monitorParamChanged(input);
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMonitorInputFxParam(
       input: input,
@@ -3637,7 +3846,13 @@ class LooperRepository {
   Future<void> _stopPollingAndClose() async {
     _stopPolling();
     _stopReconnectPolling();
+    for (final window in _paramAnnounceWindows.values) {
+      window.cancel();
+    }
+    _paramAnnounceWindows.clear();
+    _paramAnnounceDirty.clear();
     await _monitorChanges.close();
+    await _monitorParamChanges.close();
     await _rigReplaced.close();
     await _controller.close();
   }

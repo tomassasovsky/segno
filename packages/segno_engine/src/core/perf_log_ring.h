@@ -49,8 +49,17 @@ typedef enum le_perf_log_code {
   LE_PLOG_RECORD_START = 300, /* a track actually began recording (immediate or
                                * a quantized ARM firing at the loop top). generic
                                * arm: arg_i = channel (arg_f unused). */
-  LE_PLOG_RECORD_END = 301,   /* a track left RECORDING (stop, punch-out, or
-                               * overdub toggle). generic arm: arg_i = channel. */
+  LE_PLOG_RECORD_END = 301,   /* a track left RECORDING HAVING CAPTURED
+                               * SOMETHING (stop, punch-out, or overdub
+                               * toggle). `take` arm: {channel, take_id} — the
+                               * monotonic per-track take id (le_track.take_seq)
+                               * of the take that just finalized, so the offline
+                               * renderer can anchor the disarm image by take
+                               * IDENTITY (#819) rather than the old "first END
+                               * while content-free" ordinal proxy. `channel`
+                               * aliases the generic arm's arg_i. A take that
+                               * captured nothing logs LE_PLOG_RECORD_ABORT
+                               * (314) instead and never a 301. */
   LE_PLOG_LOOP_LENGTH_LOCKED = 302, /* the master loop length was (re)established
                                      * — first record finalize, or a session
                                      * commit/import. generic arm: arg_i =
@@ -100,6 +109,43 @@ typedef enum le_perf_log_code {
                                         * index, type = enabled (0/1). */
   LE_PLOG_SET_MONITOR_FX_CHAIN_ENABLED = 313, /* generic arm: arg_i = input,
                                               * arg_f = enabled (0.0/1.0). */
+  LE_PLOG_RECORD_ABORT = 314, /* a take died having captured NOTHING: either it
+                               * left RECORDING (finalize_new_track's void
+                               * branch: armed, then stopped before a single
+                               * frame was written, so the track goes back to
+                               * EMPTY), or — from events.log version 3 — a
+                               * count-in was cancelled by the immediate-
+                               * finalize primitive (#405), in which case no
+                               * RECORD_START ever preceded it and the ABORT is
+                               * UNPAIRED. generic arm: arg_i = channel. Its
+                               * own code, not a 301, so that perf_render.c's
+                               * disarm-image anchor — which keys on RECORD_END
+                               * — never sees it (#264). The derivation lives
+                               * at that anchor, next to the rule it
+                               * protects. */
+  /* Transport facts fired from inside the audio thread's command drain /
+   * per-frame loop, carrying the exact sample-accurate frame. Both are new in
+   * events.log version 4 (#262). */
+  LE_PLOG_PERF_ARMED = 315,   /* LE_CMD_PERF_ARM applied: the master loop phase
+                               * at capture frame 0. `perf_arm` arm: {position,
+                               * master_len, iteration}. The offline renderer's
+                               * arm-image anchor and its no-lock RECORD_END
+                               * phase math read this instead of the race-stale
+                               * armSnapshot.clockFrame the control thread
+                               * sampled BEFORE lane capture (the #262 root
+                               * cause); it also carries the loop iteration, so
+                               * a multi-loop arm image's sub-cycle is no longer
+                               * ambiguous (#260). Exactly one per capture. */
+  LE_PLOG_TRANSPORT_HELD = 316, /* the shared transport became HELD mid-capture:
+                                 * nothing is playing/recording/overdubbing, so
+                                 * advance_transport_frame pins the loop clock
+                                 * to position 0 (engine_process.c's all-idle
+                                 * branch). Edge-triggered — logged once when the
+                                 * hold begins, not every held frame. generic
+                                 * arm: arg_i = the clock position it was pinned
+                                 * FROM. Lets the renderer's phase math see a
+                                 * clock the engine froze rather than silently
+                                 * running it forward. */
 } le_perf_log_code;
 
 /* Pack/unpack helpers for LE_PLOG_SET_LANE_FX_PARAM / _MONITOR_FX_PARAM's

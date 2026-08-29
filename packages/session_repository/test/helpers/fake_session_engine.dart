@@ -552,6 +552,17 @@ class FakeSessionEngine implements AudioEngine {
     required bool muted,
   }) => EngineResult.ok;
   @override
+  EngineResult setInputConditioningEnabled({
+    required int input,
+    required bool enabled,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setInputConditioningParam({
+    required int input,
+    required InputConditioningParam param,
+    required double value,
+  }) => EngineResult.ok;
+  @override
   EngineResult setMonitorInputFx({
     required int input,
     required int index,
@@ -575,6 +586,8 @@ class FakeSessionEngine implements AudioEngine {
   @override
   int monitorFxFingerprint({required int input}) => FxFingerprint.offset;
   @override
+  Map<(int, int), LaneCacheState> laneCacheStates() => const {};
+  @override
   EngineResult setOutputEnabled({
     required int output,
     required bool enabled,
@@ -583,6 +596,13 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult perfArm(String captureDir) => EngineResult.ok;
   @override
   EngineResult perfDisarm() => EngineResult.ok;
+
+  @override
+  int? volumeFreeBytes(String path) => freeBytes;
+
+  /// What [volumeFreeBytes] reports; `null` models a platform that cannot
+  /// answer.
+  int? freeBytes = 1 << 40;
   @override
   EngineResult renderBegin(String captureDir) => EngineResult.ok;
   @override
@@ -662,5 +682,18 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult cancelArm({required int channel}) {
     cancelledArms.add(channel);
     return EngineResult.ok;
+  }
+
+  /// Channels passed to [finalizeTake], in call order.
+  final List<int> finalizedTakes = [];
+
+  /// The result [finalizeTake] returns — override with
+  /// [EngineResult.invalid] to model the engine refusing (a defining take).
+  EngineResult finalizeTakeResult = EngineResult.ok;
+
+  @override
+  EngineResult finalizeTake({required int channel}) {
+    finalizedTakes.add(channel);
+    return finalizeTakeResult;
   }
 }

@@ -16,6 +16,8 @@ CC="${CC:-gcc}"
 # CI ASAN job, or EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0" for the callback
 # telemetry gate-off job (#722) — both of which CI runs on every PR
 # (native-tests-asan / native-tests-telemetry-off in .github/workflows/main.yaml).
+# The TSAN job (native-tests-tsan, #739) also comes through here, but with
+# NATIVE_TESTS_ONLY=races so only the dedicated concurrency binary is built.
 # The gate-off run MUST stay green: assertions that can only hold with the
 # instrument compiled in are wrapped in CHECK_TIMING in test_engine_core.c, and
 # everything outside it is asserted in both builds. (The engine/MIDI suites
@@ -37,7 +39,7 @@ EXTRA_CFLAGS="${EXTRA_CFLAGS:-}"
 # builds with src/ on the path for exactly this reason. It goes LAST so the
 # engine's own headers still win any future name clash (there are none today
 # — the two sets were compared).
-STD="-std=gnu11 -I src/core -I src/midi -I src/asio -I src/miniaudio \
+STD="-std=gnu11 -I src/core -I src/midi -I src/miniaudio \
   -I third_party/rnnoise/include -I third_party/rnnoise/src"
 
 case "$(uname -s)" in
@@ -86,6 +88,25 @@ ENGINE_SRC="$ENGINE_SRC \
   third_party/rnnoise/src/rnnoise_data.c \
   third_party/rnnoise/src/rnnoise_tables.c"
 
+# --- Telemetry concurrency (race) tests (#739) ------------------------------
+# Dedicated binary that races the exact thread pairs engine_telemetry.h's
+# WRITER OWNERSHIP note describes (break-raise vs callback loop, xrun tally vs
+# arm-path reset, control read vs callback loop). The telemetry is header-only,
+# so this compiles from the headers alone — no engine TU list to drift. It runs
+# in every invocation (the never-lost handshake is a functional property TSAN
+# cannot check), and the native-tests-tsan CI job additionally runs ONLY this
+# binary under `-fsanitize=thread` via NATIVE_TESTS_ONLY=races — sanitizing the
+# rest of the suite would be minutes spent on single-threaded code.
+echo "== building engine race tests =="
+# shellcheck disable=SC2086
+$CC $STD $EXTRA_CFLAGS src/test/test_engine_races.c -lpthread -lm \
+  -o "$OUT/segno_race_tests.exe"
+"$OUT/segno_race_tests.exe"
+
+if [ "${NATIVE_TESTS_ONLY:-}" = "races" ]; then
+  exit 0
+fi
+
 echo "== building engine tests =="
 # shellcheck disable=SC2086
 $CC $STD $EXTRA_CFLAGS src/test/test_engine_core.c $ENGINE_SRC $ENGINE_LIBS \
@@ -95,7 +116,7 @@ $CC $STD $EXTRA_CFLAGS src/test/test_engine_core.c $ENGINE_SRC $ENGINE_LIBS \
 echo "== building midi tests =="
 # shellcheck disable=SC2086
 $CC $STD $EXTRA_CFLAGS src/test/test_midi_core.c src/midi/midi.c src/midi/midi_backend_linux.c \
-  src/midi/midi_backend_apple.c src/midi/midi_backend_windows.c src/midi/le_midi_clock.c \
+  src/midi/midi_backend_apple.c src/midi/le_midi_clock.c \
   src/core/tempo_grid.c $MIDI_LIBS \
   -o "$OUT/segno_midi_tests.exe"
 "$OUT/segno_midi_tests.exe"

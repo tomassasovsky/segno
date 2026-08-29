@@ -6,6 +6,8 @@ import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/fx_fingerprint.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
+import 'package:segno_engine/src/input_conditioning_param.dart';
+import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
@@ -531,6 +533,9 @@ class MockAudioEngine implements AudioEngine {
   EngineResult cancelArm({required int channel}) => _requireRunning();
 
   @override
+  EngineResult finalizeTake({required int channel}) => _requireRunning();
+
+  @override
   EngineResult setTrackMultiple({
     required int channel,
     required int multiple,
@@ -904,6 +909,45 @@ class MockAudioEngine implements AudioEngine {
     required double value,
   }) => _requireRunning();
 
+  /// Recorded [setInputConditioningEnabled] calls, in order, for test
+  /// assertions.
+  final inputConditioningEnabledCalls = <({int input, bool enabled})>[];
+
+  /// Recorded [setInputConditioningParam] calls, in order, for test assertions.
+  final inputConditioningParamCalls =
+      <({int input, InputConditioningParam param, double value})>[];
+
+  // Conditioning setters record their calls and work while stopped (a direct
+  // atomic publish native-side), so a repository/cubit test can assert what was
+  // pushed without a running device — the same posture as the FX-enable twins
+  // above.
+  @override
+  EngineResult setInputConditioningEnabled({
+    required int input,
+    required bool enabled,
+  }) {
+    if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) {
+      return EngineResult.invalid;
+    }
+    inputConditioningEnabledCalls.add((input: input, enabled: enabled));
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setInputConditioningParam({
+    required int input,
+    required InputConditioningParam param,
+    required double value,
+  }) {
+    if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) {
+      return EngineResult.invalid;
+    }
+    inputConditioningParamCalls.add(
+      (input: input, param: param, value: value),
+    );
+    return EngineResult.ok;
+  }
+
   /// Recorded [setMonitorInputFxEnabled] calls, in order, for test assertions.
   final monitorInputFxEnabledCalls = <({int input, int index, bool enabled})>[];
 
@@ -949,6 +993,24 @@ class MockAudioEngine implements AudioEngine {
 
   @override
   int monitorFxFingerprint({required int input}) => FxFingerprint.offset;
+
+  /// Per-lane cache states this mock reports, keyed by `(channel, lane)`.
+  /// There is no cache in the mock engine, so a test that cares about the
+  /// debug telemetry seeds this directly; anything unseeded reads as
+  /// [LaneCacheState.live], which is also what a real engine with caching
+  /// disabled reports.
+  final Map<(int, int), LaneCacheState> seededLaneCacheStates = {};
+
+  @override
+  Map<(int, int), LaneCacheState> laneCacheStates() {
+    final states = <(int, int), LaneCacheState>{};
+    for (var t = 0; t < _tracks.length; t++) {
+      for (var l = 0; l < kMaxLanes; l++) {
+        states[(t, l)] = seededLaneCacheStates[(t, l)] ?? LaneCacheState.live;
+      }
+    }
+    return states;
+  }
 
   @override
   Float32List readVisual() => Float32List(0);
@@ -1006,6 +1068,14 @@ class MockAudioEngine implements AudioEngine {
     _perfArmed = false; // idempotent: disarming an unarmed mock is a no-op
     return EngineResult.ok;
   }
+
+  /// What [volumeFreeBytes] reports. `null` models a platform that cannot
+  /// answer; set a number to model a volume with that much room left.
+  int? volumeFreeBytesValue = 1 << 40; // 1 TiB: plenty, by default
+
+  @override
+  int? volumeFreeBytes(String path) =>
+      path.isEmpty ? null : volumeFreeBytesValue;
 
   /// The `captureDir` passed to the most recent [renderBegin] call, for test
   /// assertions. `null` until the first render.
@@ -1142,6 +1212,12 @@ class _MockLane {
   int outputMask = 0x3;
   double volume = 1;
   bool muted = false;
+
+  /// The engine-owned "holds restorable audio" flag (#595). The mock never
+  /// records, so it stays `false` — exposed so [TrackSnapshot.lanes] carries
+  /// the field with the same default shape the native snapshot publishes for
+  /// a lane that captured nothing.
+  bool recoverable = false;
 }
 
 class _MockTrack {
@@ -1162,6 +1238,11 @@ class _MockTrack {
   /// doc).
   bool oneShot = false;
 
+  /// The currently-settled take id (#819). The mock does not simulate the
+  /// audio thread's take lifecycle, so this stays at its default `0` unless a
+  /// test sets it directly to exercise the disarm-image take-identity seam.
+  int settledTakeId = 0;
+
   _MockLane laneAt(int lane) => _lanes[lane.clamp(0, kMaxLanes - 1)];
 
   TrackSnapshot snapshot() {
@@ -1175,6 +1256,7 @@ class _MockTrack {
           lengthFrames: 0,
           rms: 0,
           peak: 0,
+          recoverable: _lanes[i].recoverable,
         ),
     ];
     final lane0 = lanes.isEmpty ? const LaneSnapshot.empty() : lanes.first;
@@ -1191,6 +1273,7 @@ class _MockTrack {
       outputMask: lane0.outputMask,
       lengthPresetBars: lengthPresetBars,
       oneShot: oneShot,
+      settledTakeId: settledTakeId,
       lanes: lanes,
     );
   }

@@ -55,6 +55,20 @@ typedef struct le_command {
       int32_t channel, slot;
       uint32_t generation;
     } evt;
+    struct { /* LE_PLOG_RECORD_END (#819): which take on this channel finalized.
+              * `channel` aliases the generic arm's arg_i, so the per-channel
+              * events.log helpers that key off arg_i keep working unchanged;
+              * `take_id` is the monotonic per-track counter (le_track.take_seq)
+              * the offline renderer matches against the disarm manifest's
+              * `takeId` to anchor the settled image by identity, not ordinal. */
+      int32_t channel, take_id;
+    } take;
+    struct { /* LE_PLOG_PERF_ARMED (#262): the master loop phase at the exact
+              * audio-thread frame LE_CMD_PERF_ARM applied. `master_len` == 0
+              * means the capture armed with no master loop (Free/Song, or from
+              * silence), and `position`/`iteration` are then both 0. */
+      int32_t position, master_len, iteration;
+    } perf_arm;
     struct { /* LE_CMD_RESTORE_CLEAR: undo of an undoable clear. `state` is the
               * pre-clear LE_TRACK_*; `master_len` re-establishes the grid when
               * the clear emptied the last track and reset the clock (0 = the

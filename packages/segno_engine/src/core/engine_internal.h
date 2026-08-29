@@ -142,6 +142,16 @@ int le_label_is_loopback(const char* label);
  * short without failing anything. Not part of the FFI surface. */
 #define LE_CHANNEL_CACHE_TTL 32
 
+/* TEST SEAM into the channel-count memo (engine_devices.c): runs the memo's
+ * decision core for (key, capture) with `query` standing in for the expensive
+ * live device query (called with `env`; returns the channel count, 0 =
+ * failed). Lets a test script answers — in particular the persistent-failure
+ * case behind the negative TTL (#649), which no real device on a CI box can be
+ * made to produce on demand. Shares the live table, so tests must use keys no
+ * real device id can collide with. Control thread only, like the memo. */
+int32_t le_channel_memo_for_test(const char* key, int capture,
+                                 int32_t (*query)(void* env), void* env);
+
 /* YIN pitch detector for the PSOLA octaver (mode >= 0.5). Runs the cumulative-
  * mean-normalized difference function over `n` contiguous samples of `x` at `sr`
  * Hz, searching the vocal band (~60-1000 Hz), and returns a sub-sample period
@@ -244,6 +254,16 @@ int le_engine_lane_buffer_allocated_for_test(le_engine* engine, int32_t channel,
  * of the FFI surface. */
 int32_t le_engine_lane_slot_cap_for_test(le_engine* engine, int32_t channel,
                                          int32_t lane, int32_t slot);
+
+/* Copies up to [max_frames] frames of lane [lane]'s LIVE loop buffer
+ * (pool[a_live]) into [out], for the #697 restoration tests to inspect what a
+ * loop-close restoration pass published. Returns the number of frames copied
+ * (min of the recorded length and [max_frames]), or 0 for out-of-range indices
+ * or an unallocated/empty live slot. Control-thread test seam; not part of the
+ * FFI surface. */
+int32_t le_engine_read_lane_live_for_test(le_engine* engine, int32_t channel,
+                                          int32_t lane, float* out,
+                                          int32_t max_frames);
 
 /* Forces track [channel]'s active lane count to [count] WITHOUT allocating the
  * new lanes' buffers, so a test can drive the audio thread into the window where

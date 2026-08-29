@@ -13,9 +13,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
-import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
-import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
-import 'package:segno/common/console_mode.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/looper.dart';
@@ -40,6 +38,9 @@ class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
 class _MockTransportClockCubit extends MockCubit<TransportClockState>
     implements TransportClockCubit {}
 
+class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
+    implements AudioSetupCubit {}
+
 Future<void> _loadFont(String family, List<String> paths) async {
   final loader = FontLoader(family);
   for (final p in paths) {
@@ -53,18 +54,16 @@ Future<void> _loadFont(String family, List<String> paths) async {
 /// exactly as the physical console shows it and captures a 1920x1080 golden.
 ///
 /// It only produces the CONSOLE layout when compiled with the flag on, so it is
-/// gated on [kConsoleMode]. Regenerate on the author's machine with:
+/// Regenerate on the author's machine with:
 ///
-///   flutter test --tags screenshots --dart-define=SEGNO_CONSOLE=true \
+///   flutter test --tags screenshots \
 ///     --update-goldens test/screenshots/tracks_screenshots_test.dart
 void main() {
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
   // Golden generators load the local SDK's Material fonts and compare against
   // macOS-rendered goldens, so they only run where those fonts exist (the
-  // author's machine); everywhere else they skip. Additionally gated on
-  // console mode: without --dart-define=SEGNO_CONSOLE=true the layout would
-  // carry the desktop toolbar and not match the console decal.
+  // author's machine); everywhere else they skip.
   final hasScreenshotFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
 
   setUpAll(() async {
@@ -75,6 +74,12 @@ void main() {
       '$fontDir/Roboto-Bold.ttf',
     ];
     await _loadFont('Roboto', robotoTtfs);
+    // Material icon glyphs (e.g. the FX entry-run's arrow_right_alt) — the app
+    // bundles this font at runtime; the golden harness must load it too, or
+    // every `Icon` renders as .notdef tofu.
+    await _loadFont('MaterialIcons', [
+      '$fontDir/MaterialIcons-Regular.otf',
+    ]);
     // TracksView wraps itself in LooperScreenTheme, which renders text in the
     // legend font (Helvetica / Arial / sans-serif — macOS/Linux system fonts,
     // absent under `flutter test`). Register the loaded Roboto glyphs under
@@ -104,10 +109,18 @@ void main() {
   late PerformanceRepository performance;
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
+  late AudioSetupCubit audioSetup;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
+    // Nothing lost by default; the device-lost scene below re-stubs audio.
+    audioSetup = _MockAudioSetupCubit();
+    whenListen(
+      audioSetup,
+      const Stream<AudioSetupState>.empty(),
+      initialState: const AudioSetupState(),
+    );
     tracks = TracksCubit(settings: settings);
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
@@ -115,6 +128,9 @@ void main() {
     // The tray's Signal face reads these through `MonitorCubit`. A bare mock
     // returns null for each and the cubit dies in its constructor.
     when(() => repository.monitorChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
+    );
+    when(() => repository.monitorParamChanges).thenAnswer(
       (_) => const Stream<int>.empty(),
     );
     when(() => repository.allMonitors()).thenReturn(const {});
@@ -197,8 +213,7 @@ void main() {
               // Console mode mounts the tray in the main window, and the tray
               // opens on Signal — whose input cards read both of these. Absent,
               // this whole test throws `ProviderNotFound` before it can draw,
-              // which is how it rotted: it only runs under
-              // `--dart-define=SEGNO_CONSOLE=true`, so nothing was running it.
+              // which is how it rotted while it was console-gated.
               BlocProvider<InputsCubit>(
                 create: (_) =>
                     InputsCubit(settings: settings, repository: repository),
@@ -207,6 +222,9 @@ void main() {
                 create: (_) =>
                     MonitorCubit(repository: repository, settings: settings),
               ),
+              // The device-lost banner and the not-running gate read the
+              // audio setup cubit (#453).
+              BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             ],
             child: const TracksView(),
           ),
@@ -270,6 +288,110 @@ void main() {
         matchesGoldenFile('goldens/tracks_main_window.png'),
       );
     },
-    skip: !hasScreenshotFonts || !kConsoleMode,
+    skip: !hasScreenshotFonts,
+  );
+
+  testWidgets(
+    'console main window with the device-lost banner (STAGE / device-lost)',
+    (tester) async {
+      // The one standing loss condition: the pinned interface is gone, so the
+      // red banner holds the stage above the track run. It STANDS IN for the
+      // "engine stopped" bar (#453) — the two never stack — so a device-gone
+      // engine shows this banner alone, not both. MIDI loss is a transient
+      // toast, never a banner here.
+      whenListen(
+        audioSetup,
+        const Stream<AudioSetupState>.empty(),
+        initialState: const AudioSetupState(
+          deviceConnectivity: DeviceConnectivity.lost,
+          connectivityDeviceName: 'Scarlett 2i2',
+        ),
+      );
+      seed(
+        const LooperState(
+          // The engine reports the device gone, so the generic "not running"
+          // affordance is suppressed and only the device-lost banner shows.
+          tracks: [
+            Track(state: TrackState.playing, lengthFrames: 96000),
+            Track(channel: 1),
+            Track(channel: 2),
+            Track(channel: 3),
+          ],
+        ),
+      );
+      await pump(tester);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_device_lost.png'),
+      );
+    },
+    skip: !hasScreenshotFonts,
+  );
+
+  // #692: the FX-mode stage transform — the whole stage takes the FX purple,
+  // meters recede to 40%, and each tile re-dresses with a power pill and its
+  // chain's entries (or NO CHAIN). Same seed as the nominal decal, in FX mode
+  // and with two real chains, so the decal shows the transform end to end.
+  testWidgets(
+    'console main window — FX mode transform (#692)',
+    (tester) async {
+      const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
+      for (var i = 0; i < names.length; i++) {
+        await tracks.rename(i, names[i]);
+      }
+      control.setMode(InteractionMode.fx);
+      seed(
+        LooperState(
+          status: const EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'Segno',
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            // An engaged two-entry chain.
+            Track(
+              state: TrackState.playing,
+              rms: 0.72,
+              peak: 0.9,
+              lengthFrames: 96000,
+              effects: [
+                BuiltInEffect(type: TrackEffectType.drive),
+                BuiltInEffect(type: TrackEffectType.reverb),
+              ],
+            ),
+            // A bypassed chain.
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              rms: 0.5,
+              peak: 0.68,
+              lengthFrames: 96000,
+              chainEnabled: false,
+              effects: [BuiltInEffect(type: TrackEffectType.filter)],
+            ),
+            // A single-entry engaged chain.
+            Track(
+              channel: 2,
+              state: TrackState.playing,
+              rms: 0.4,
+              peak: 0.55,
+              lengthFrames: 96000,
+              effects: [BuiltInEffect(type: TrackEffectType.tremolo)],
+            ),
+            // Empty: NO CHAIN.
+            const Track(channel: 3),
+          ],
+        ),
+      );
+      await pump(tester);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_fx_window.png'),
+      );
+    },
+    skip: !hasScreenshotFonts,
   );
 }

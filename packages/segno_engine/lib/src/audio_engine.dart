@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:segno_engine/src/audio_device.dart';
 import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
+import 'package:segno_engine/src/input_conditioning_param.dart';
+import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
@@ -242,6 +244,25 @@ abstract interface class LooperTransport {
   /// created the arm still hold — with the transport parked it starts a
   /// capture instead. Callers that mean "nothing may fire later" want this.
   EngineResult cancelArm({required int channel});
+
+  /// Finalizes track [channel]'s live NON-defining recording take NOW,
+  /// unconditionally — [cancelArm]'s counterpart for the LIVE take (#405):
+  /// cancelArm kills the pending (an arm that has not fired), this kills the
+  /// live (a take already capturing). The finalize is exactly a quantize-off
+  /// [record] press's — never off-grid: the length rounds up to whole base
+  /// loops and the unfilled tail stays silence — but it skips the quantize
+  /// deferral, the auto-record arm toggle, and the shared arm machinery
+  /// entirely, so it can neither arm a take nor cancel anyone else's arm,
+  /// and it never continues into overdub (the take settles to playing).
+  ///
+  /// Refuses unless the track holds a live non-defining recording take with
+  /// no live pending arm. In particular the DEFINING take — the one
+  /// establishing the loop length — is refused: ending it would let this
+  /// call set the session's bar length mid-gesture, so it keeps running and
+  /// the caller must treat the refusal as "the capture survives". While a
+  /// count-in is running the call is instead accepted for any channel and
+  /// cancels the count-in outright (nothing has been captured).
+  EngineResult finalizeTake({required int channel});
 
   /// Fixes track [channel]'s loop length to [multiple] whole base loops, or `0`
   /// to inherit the global default ([setDefaultMultiple]). Applies to the next
@@ -607,6 +628,20 @@ abstract interface class EffectsControl {
   /// FNV-1a offset basis.
   int laneFxFingerprint({required int channel, required int lane});
 
+  /// Every lane's Loop-stage wet-cache state, keyed by `(channel, lane)` —
+  /// debug telemetry only (R27), never a signal-path fact (see
+  /// [LaneCacheState]).
+  ///
+  /// One batched engine sweep: the native call drains events and runs a
+  /// single scheduler pass for the WHOLE map, where reading lanes one at a
+  /// time would run that drain per lane — 16-32 extra control-thread sweeps
+  /// per poll on an 8-track rig (#418). Polling this also drives the cache
+  /// forward, so it is still real work: gate it on somebody actually looking
+  /// (`LooperRepository.cacheTelemetryEnabled` is that gate for the app).
+  /// Returns an empty map when the engine cannot report (e.g. not
+  /// configured).
+  Map<(int, int), LaneCacheState> laneCacheStates();
+
   // ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ----
   //
   // One chain per track, downstream of its per-lane chains. While EMPTY
@@ -742,6 +777,45 @@ abstract interface class MonitorControl {
   /// effect chain (see [EffectsControl.laneFxFingerprint]). For cache-vs-engine
   /// divergence detection only.
   int monitorFxFingerprint({required int input});
+}
+
+/// Per-hardware-input live conditioning: a fixed, zero-added-latency utility
+/// stage (HPF + mains-hum notches + downward expander) applied to the raw
+/// input upstream of BOTH the lane fan-out and the monitor split, so lanes,
+/// monitors, and the tuner all read the conditioned signal (WYSIWYG — what
+/// records is what you hear). Deliberately NOT an effect-chain entry: it cannot
+/// be reordered or
+/// removed per-chain, never enters a chain fingerprint, and its parameters are
+/// carried in real units (see [InputConditioningParam]) rather than normalized
+/// `0..1`.
+///
+/// Whether a stage is actually running is published on the snapshot
+/// (`EngineSnapshot.inputCondMask`); the raw-path clip/HOT detector
+/// (`EngineSnapshot.inputClipMask`) reads upstream of this stage, so a clipped
+/// input still flags HOT even when the expander/HPF has reshaped what records.
+/// A loopback-excluded input is never conditioned.
+abstract interface class InputConditioningControl {
+  /// Enables or disables the conditioning stage on hardware [input]. While
+  /// disabled the input is bit-identical to the stage never having existed;
+  /// enabling resets the stage's filter/envelope state (no stale filter ring).
+  /// A loopback-excluded input reports enabled here but never conditions.
+  EngineResult setInputConditioningEnabled({
+    required int input,
+    required bool enabled,
+  });
+
+  /// Sets conditioning parameter [param] of hardware [input] to [value] in that
+  /// parameter's REAL unit (Hz / dB / ms / ratio — see
+  /// [InputConditioningParam]). The audio thread clamps on apply and recomputes
+  /// only the affected section's
+  /// coefficients, so a live tweak never rings with coefficients it was not
+  /// filtered by. Independent of the enable flag — a value set while disabled
+  /// takes effect when the stage is next enabled.
+  EngineResult setInputConditioningParam({
+    required int input,
+    required InputConditioningParam param,
+    required double value,
+  });
 }
 
 /// Session persistence: stem export/import and committing a restored session.
@@ -945,6 +1019,20 @@ abstract interface class EnginePerformanceCapture {
   /// the engine is disposed.
   EngineResult perfDisarm();
 
+  /// Free bytes on the volume holding [path], or `null` if the platform could
+  /// not answer (a path that does not exist, a filesystem that cannot report).
+  ///
+  /// This is a question about a directory, not about a running capture, so it
+  /// is also the check made before arming one. It lives on the engine because
+  /// Dart has no free-space API, and the `df` subprocess that filled that gap
+  /// turned out to be the single most expensive thing on the appliance's
+  /// real-time path: `Process.run` is fork() + exec(), fork() holds the
+  /// process's mmap_lock for write for milliseconds while it copies a 1.7 GB
+  /// address space's page tables, and under PREEMPT_RT the audio thread's next
+  /// page fault sleeps behind it. Every audible dropout measured on the Pi 5
+  /// bench landed within 3 ms of one (#806).
+  int? volumeFreeBytes(String path);
+
   /// Starts an offline render of the finalized capture at [captureDir]: a
   /// worker thread reconstructs each non-empty track's full-length DRY stem
   /// (part 7 — wet stems are part 8) by replaying `events.log` against the
@@ -996,6 +1084,7 @@ abstract interface class AudioEngine
         MasterBusControl,
         EffectsControl,
         MonitorControl,
+        InputConditioningControl,
         EnginePluginHosting,
         EnginePerformanceCapture,
         SessionIo {}

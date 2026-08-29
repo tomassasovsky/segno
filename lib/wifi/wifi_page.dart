@@ -110,6 +110,7 @@ class _WifiPageState extends State<WifiPage> {
                                   ? wifiErrorMessage(
                                       l10n,
                                       state.errorMessage,
+                                      kind: state.errorKind,
                                     )
                                   : l10n.wifiUnsupportedBody,
                               style: context.setupBody,
@@ -158,6 +159,7 @@ class _WifiPageState extends State<WifiPage> {
                                           wifiErrorMessage(
                                             l10n,
                                             state.errorMessage,
+                                            kind: state.errorKind,
                                           ),
                                           style: context.setupBody.copyWith(
                                             fontSize: 12,

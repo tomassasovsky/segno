@@ -42,12 +42,13 @@ const _allowed = <String, String>{
 /// Colour literals that carry no palette meaning.
 final _harmless = RegExp(r'Colors\.transparent');
 
-/// An inline alpha wash of a **state** colour — `accent`, `rec` or `success`.
+/// An inline alpha wash of a **state** colour — `accent`, `rec`, `success` or
+/// `fx`.
 ///
-/// Those three are the tokens that own a matching `*Surface` fill
-/// (`accentSurface`, `recSurface`, `successSurface`), so washing them by hand
-/// is the same defect a hex is: the high-contrast flavor overrides the
-/// surface tokens and cannot reach an inline alpha, which pins the washed
+/// Those four are the tokens that own a matching `*Surface` fill
+/// (`accentSurface`, `recSurface`, `successSurface`, `fxSurface`), so washing
+/// them by hand is the same defect a hex is: the high-contrast flavor overrides
+/// the surface tokens and cannot reach an inline alpha, which pins the washed
 /// surface at the dark flavor's fill while every sibling brightens around it
 /// (#737). The literal sweep below could not see this class — the alpha is
 /// spelled as arithmetic on a token, not as a colour — which is how three
@@ -56,7 +57,7 @@ final _harmless = RegExp(r'Colors\.transparent');
 /// Deliberately narrow: an alpha on a NEUTRAL (`textPrimary` dimmed to an
 /// unlit dot, `scrim` deepened for a barrier, `line` softened) is a dim, not
 /// a fill, and has no token to reach for.
-final _stateWash = RegExp(r'\.(accent|rec|success)\.withValues\(\s*alpha:');
+final _stateWash = RegExp(r'\.(accent|rec|success|fx)\.withValues\(\s*alpha:');
 
 /// Files that may still wash a state colour inline, and why.
 const _allowedWash = <String, String>{

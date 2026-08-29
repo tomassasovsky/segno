@@ -619,10 +619,17 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
   t->start_iter = 0;
   /* This track leaves RECORDING here regardless of end_state — even the
    * OVERDUBBING case is a record-to-overdub toggle, not a continuation of the
-   * same recording. */
-  le_plog_push(e, frame,
-              (le_command){.code = LE_PLOG_RECORD_END,
-                           .arg_i = (int32_t)(t - e->tracks)});
+   * same recording. The take id (#819) both rides the RECORD_END payload and
+   * publishes to a_settled_take_id, so the snapshot names this exact take as
+   * the settled one. */
+  {
+    const int32_t fm_ch = (int32_t)(t - e->tracks);
+    le_plog_push(e, frame,
+                (le_command){.code = LE_PLOG_RECORD_END,
+                             .take = {.channel = fm_ch,
+                                      .take_id = t->take_seq}});
+    store_i32(&t->a_settled_take_id, t->take_seq);
+  }
   /* A6/D17: an N-bars length preset that finalizes WITHOUT its auto-finalize
    * target having been armed (click was off, or click was on but no tempo
    * existed at record start — le_arm_length_preset_target) derives tempo from
@@ -969,8 +976,12 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
     store_i32(&t->a_multiple, 1);
     store_i32(&t->a_sync_divisor, 0);
     t->record_pos = 0;
+    /* RECORD_ABORT, not RECORD_END (#264): nothing was captured, so this take
+     * has no content and no disarm image of its own. Why that distinction is
+     * load-bearing lives with the rule it protects — perf_render.c's
+     * RECORD_END scan, and LE_PLOG_RECORD_ABORT's own declaration. */
     le_plog_push(e, frame,
-                (le_command){.code = LE_PLOG_RECORD_END, .arg_i = ch});
+                (le_command){.code = LE_PLOG_RECORD_ABORT, .arg_i = ch});
     return;
   }
   /* A mute deferred during the take lands with the finalize (and blocks a
@@ -1054,7 +1065,12 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
   le_audio_rev_bump(t); /* [R1] record finalize: fresh content */
   store_i32(&t->a_state, end_state);
   t->record_pos = 0;
-  le_plog_push(e, frame, (le_command){.code = LE_PLOG_RECORD_END, .arg_i = ch});
+  /* Take id (#819): logged in the RECORD_END payload and published as the
+   * settled take so the disarm manifest can anchor by identity. */
+  le_plog_push(e, frame,
+               (le_command){.code = LE_PLOG_RECORD_END,
+                            .take = {.channel = ch, .take_id = t->take_seq}});
+  store_i32(&t->a_settled_take_id, t->take_seq);
   if (end_state == LE_TRACK_OVERDUBBING) le_dub_session_start(e, t);
 }
 /* ---- per-pass undo layer capture (audio thread) ----
@@ -1415,7 +1431,9 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
       /* The transport fact: this track actually began recording THIS frame —
        * whether from an immediate press (frame == the buffer-start tag from
        * apply_command) or a deferred quantized/sound-triggered fire (frame ==
-       * the exact sample index from inside the per-frame loop). */
+       * the exact sample index from inside the per-frame loop). Its take id is
+       * bumped here (#819): one new monotonic id per take begun on this track. */
+      t->take_seq++;
       le_plog_push(e, frame,
                   (le_command){.code = LE_PLOG_RECORD_START, .arg_i = ch});
       /* Auto-unmute + unpark: a capture never starts silent, and starting one
@@ -1457,6 +1475,46 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
     default:
       break;
   }
+}
+
+/* Applies LE_CMD_FINALIZE_TAKE (le_engine_finalize_take, #405): ends the
+ * addressed track's live take NOW — or does nothing. The control side already
+ * refused every wrong state; this re-check makes the guarantee hold across
+ * the one-block window between that guard and this apply, where a
+ * fixed-multiple auto-finalize, an arm firing, or a count-in commit could
+ * have moved the state. Where LE_CMD_RECORD's meaning depends on the state it
+ * lands on, every branch here either ends a capture or does nothing:
+ * - count-in running: cancel it back to idle (global transport state; the
+ *   addressed channel is irrelevant, matching the D9 press-cancel) and log
+ *   LE_PLOG_RECORD_ABORT for the counting channel — the take-in-gestation
+ *   died having captured nothing, and without the row an events.log reader
+ *   would see a count-in that silently evaporated. No RECORD_START ever
+ *   preceded it (the commit is what logs the start), so this is the one
+ *   place an unpaired ABORT can originate — events.log header version 3.
+ * - RECORDING, non-defining (clock.length > 0): finalize_new_track, the exact
+ *   quantize-off second-press finalize — round UP to whole base loops, the
+ *   silence tail seam-treated (#730), RECORD_END logged there. Always to
+ *   PLAYING, never rec/dub's continue-into-overdub: FX mode's transport is
+ *   inert, so the punch-out would be unreachable.
+ * - RECORDING, defining (clock.length == 0): refuse — a mode switch must
+ *   never set the session's grid. This is the race backstop for a count-in
+ *   commit landing in the same block: capture-survives, exactly the
+ *   documented defining-take fallback.
+ * - anything else: strict no-op. */
+static void handle_finalize_take(le_engine* e, int32_t ch, uint64_t frame) {
+  if (e->count_in_total > 0) {
+    const int32_t counting_ch = e->count_in_channel;
+    le_count_in_reset(e);
+    le_plog_push(
+        e, frame,
+        (le_command){.code = LE_PLOG_RECORD_ABORT, .arg_i = counting_ch});
+    return;
+  }
+  if (!valid_channel(e, ch)) return;
+  le_track* t = &e->tracks[ch];
+  if (load_i32(&t->a_state) != LE_TRACK_RECORDING) return;
+  if (e->clock.length == 0) return; /* the defining take keeps running */
+  finalize_new_track(e, t, LE_TRACK_PLAYING, frame);
 }
 
 static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
@@ -1720,7 +1778,11 @@ static void le_truncate_capture_tail(le_engine* e, le_track* t, int32_t drop) {
  * sample-accurately from inside the per-frame loop below); LE_CMD_DUB_SHADOW
  * (internal shadow-pool bookkeeping, not itself an audible change);
  * LE_CMD_PERF_ARM/LE_CMD_PERF_DISARM (meta — arming/disarming the capture
- * session isn't part of what the session captures). A command that changes
+ * session isn't part of what the session captures);
+ * LE_CMD_FINALIZE_TAKE (the ARM/DISARM rationale from the other side: the
+ * command is finalize intent, and the transport fact it causes — RECORD_END,
+ * or RECORD_ABORT for a cancelled count-in — is what is logged, from
+ * finalize_new_track / handle_finalize_take). A command that changes
  * output but isn't logged here is a standing review-checklist item (the
  * umbrella plan). */
 static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
@@ -1751,6 +1813,15 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         store_i32(&e->tracks[cmd->arg_i].a_pending, 0);
       }
       handle_record(e, cmd->arg_i, frame);
+      break;
+    case LE_CMD_FINALIZE_TAKE:
+      /* Not logged verbatim (the ARM/DISARM rationale in the audited-subset
+       * note above): the transport fact it causes — RECORD_END, or
+       * RECORD_ABORT for a cancelled count-in — is logged where it lands.
+       * Deliberately does NOT touch pending_record/a_pending: this command
+       * can never consume anyone's arm (the control side refuses while one
+       * is live). */
+      handle_finalize_take(e, cmd->arg_i, frame);
       break;
     case LE_CMD_ARM:
       if (valid_channel(e, cmd->arg_i)) {
@@ -2516,6 +2587,22 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       le_cb_timing_reset_armed(&e->cb_timing);
       e->perf.armed = 1;
       atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
+      /* Transport fact (#262): the master loop phase at THIS frame — capture
+       * frame 0 (le_perf_arm reset a_perf_frames to 0 before posting this
+       * command, so `frame` is 0 here). Logged AFTER e->perf.armed flips so
+       * le_plog_push does not no-op. This is the exact anchor the offline
+       * renderer's arm image needs; the control thread's armSnapshot.clockFrame
+       * was sampled an unbounded I/O gap earlier and is race-stale. Carries the
+       * loop iteration too, so a multi-loop arm image's sub-cycle is resolved
+       * (#260). Free/Song or armed-from-silence: clock.length == 0, so all
+       * three fields read 0 (no master phase to anchor). */
+      le_plog_push(e, frame,
+                   (le_command){.code = LE_PLOG_PERF_ARMED,
+                                .perf_arm = {
+                                    .position = e->clock.position,
+                                    .master_len = e->clock.length,
+                                    .iteration = (int32_t)e->loop_iteration,
+                                }});
       break;
     case LE_CMD_PERF_DISARM:
       /* Stop touching the rings for good before le_perf_disarm's quiescent
@@ -2863,6 +2950,7 @@ static void le_count_in_commit(le_engine* e, uint64_t frame) {
   le_loop_clock_reset(&e->clock);
   store_i32(&t->a_state, LE_TRACK_RECORDING);
   le_arm_length_preset_target(e, t); /* A6: may arm an N-bars target */
+  t->take_seq++; /* #819: the count-in's downbeat begins a new take */
   le_plog_push(e, frame,
                (le_command){.code = LE_PLOG_RECORD_START, .arg_i = ch});
   le_capture_start_unmute(e, t, frame);
@@ -3056,6 +3144,20 @@ static inline void advance_track_clock_frame(le_engine* e, int32_t ch,
   if (le_loop_clock_tick(&t->free_clock)) {
     t->free_iteration++;
     if (load_i32(&t->a_one_shot)) {
+      /* Synthetic LE_CMD_STOP (#420): this auto-stop is the same audible
+       * transition as a manual Stop press, which apply_command logs before
+       * handle_stop runs — without an entry here a perf-log replay hears
+       * the track playing forever past the wrap. Same replays-match-what-a-
+       * listener-heard rule as le_unpark_stopped's synthetic LE_CMD_PLAY
+       * and le_capture_start_unmute's synthetic LE_CMD_SET_LANE_MUTE.
+       * Deliberately NO LE_PLOG_RECORD_END for a wrap mid-overdub: a manual
+       * Stop on an OVERDUBBING track pushes none either — RECORD_END means
+       * "left RECORDING" (perf_log_ring.h), a state this function's guard
+       * never admits, and the dub pass's end is already logged when its
+       * layer retires (LE_PLOG_LAYER_RETIRED) — so emitting one would make
+       * the wrap's log DIFFER from a manual stop's and hand perf_render's
+       * RECORD_START/END pairing an unpaired END. */
+      le_plog_push(e, frame, (le_command){.code = LE_CMD_STOP, .arg_i = ch});
       store_i32(&t->a_state, LE_TRACK_STOPPED);
       le_consume_pending_mutes(e, t, LE_TRACK_STOPPED, 1, frame);
     }
@@ -3134,6 +3236,7 @@ static inline void advance_transport_frame(le_engine* e, int tc,
       }
     }
     if (any_active) {
+      e->transport_held = 0; /* #262: transport is running; re-arm the hold edge */
       const int wrapped = le_loop_clock_tick(&e->clock);
       if (wrapped) e->loop_iteration++;
       /* Grid-armed fire check. The loop top (wrap) is every division's
@@ -3206,6 +3309,17 @@ static inline void advance_transport_frame(le_engine* e, int tc,
        * next play starts from the beginning rather than looping in silence.
        * Resetting each track's start_iter keeps multi-loop tracks aligned to
        * their first segment on the next play. */
+      /* Transport fact (#262), edge-triggered: log the hold once, at the frame
+       * it begins, carrying the position the clock is pinned FROM (read BEFORE
+       * the reset below). Subsequent held frames find the latch set and stay
+       * silent. Lets the renderer see a clock the engine froze mid-capture
+       * rather than silently running its phase math forward. */
+      if (!e->transport_held) {
+        le_plog_push(e, frame,
+                     (le_command){.code = LE_PLOG_TRANSPORT_HELD,
+                                  .arg_i = e->clock.position});
+        e->transport_held = 1;
+      }
       e->clock.position = 0;
       e->loop_iteration = 0;
       for (int t = 0; t < tc; ++t) e->tracks[t].start_iter = 0;
@@ -4583,8 +4697,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   for (int t = 0; t < tc; ++t) {
     /* Lane buffers are mono: one loop sample accumulated per frame. The shared
      * write head publishes the same growing length onto every active lane. */
-    const int recording =
-        load_i32(&e->tracks[t].a_state) == LE_TRACK_RECORDING;
+    const int32_t tstate = load_i32(&e->tracks[t].a_state);
+    const int recording = tstate == LE_TRACK_RECORDING;
+    /* #595: an overdub writes the lanes too (backup-on-write + layer sum). */
+    const int capturing = recording || tstate == LE_TRACK_OVERDUBBING;
     const int32_t rp = e->tracks[t].record_pos;
     for (int l = 0; l < lane_n[t]; ++l) {
       le_lane* ln = &e->tracks[t].lanes[l];
@@ -4592,6 +4708,19 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                 frames ? sqrtf(lane_sumsq[t][l] / (float)frames) : 0.0f);
       store_f32(&ln->a_peak_bits, lane_peak[t][l]);
       if (recording) store_i32(&ln->a_len, rp > 0 ? rp : 0);
+      /* #595: latch "this lane captured audio it could still give back" on
+       * exactly the WRITING lanes — the in-range-input predicate mirrors the
+       * per-frame capture in mix_tracks_frame (an out-of-range or unrouted
+       * lane writes nothing and must not read recoverable: a_len alone can't
+       * tell, the shared write head grows it on every active lane). Reads the
+       * same a_input_channel that loop read this block — commands drain
+       * before the frame loop, so the value cannot have moved. Once per
+       * block, store-once (the load guard keeps the steady state read-only).
+       * Cleared only on the control thread (history death / lane reset). */
+      if (capturing && !load_i32(&ln->a_recoverable)) {
+        const int32_t ic = load_i32(&ln->a_input_channel);
+        if (ic >= 0 && ic < ch_in) store_i32(&ln->a_recoverable, 1);
+      }
     }
     store_f32(&e->tracks[t].a_trk_rms_bits,
               frames ? sqrtf(trk_sumsq[t] / (float)frames) : 0.0f);

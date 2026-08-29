@@ -120,6 +120,7 @@ for session saves).
   "limiterOn": true,
   "limiterCeiling": 0.99,
   "latencyOffsetFrames": 128,
+  "tempoBpm": 96.0,
   "fxStagesVersion": 1,
   "tracks": [ /* see below */ ],
   "monitors": [
@@ -140,6 +141,7 @@ for session saves).
 | `masterGain` | Master output gain at arm time. |
 | `limiterOn` / `limiterCeiling` | Master peak limiter state at arm time. |
 | `latencyOffsetFrames` | The active device profile's record-offset latency compensation. |
+| `tempoBpm` | The engine tempo at the arm instant, verbatim (`0` = unset, the same sentinel `session.json`'s `tempoBpm` uses; absent = written before the field existed — both read as "no tempo evidence"). The **crash-salvage fallback** for a DAW export's tempo, not the authoritative value: D6's tempo lock only engages once grid content exists, so a tempo dialed in (or derived by the first loop) after an arm-over-empty-grid is only knowable at disarm — see `disarmSnapshot.tempoBpm`. |
 | `fxStagesVersion` | FX-stage schema revision (FX v3, R20): `1` = the four-stage model below. **Absent = a legacy snapshot** written before those fields existed; see "FX stages" below. |
 | `tracks` | One entry per **non-empty** track (empty tracks are omitted); carries the **Loop** stage, per lane. |
 | `monitors` | The **Input** stage: one entry per hardware input the caller supplied chain/routing state for. Each entry's `chainEnabled` is that monitor chain's bypass flag, written only when `false` (absent = engaged, or legacy — see the marker below); `enabled` beside it is the input's own monitor gate, not an FX flag. |
@@ -188,6 +190,7 @@ field by field, matching the session manifest's own migration style.
 | `chainEnabled` | The lane chain's per-chain bypass flag, written only when `false` (absent = engaged, or legacy — see the marker above). |
 | `deferred` | `true` when this lane was mid-overdub at snapshot time (D-SNAP) — the audio thread was still writing its buffer, so there is no stable PCM to export here. Its content instead reaches disk via the retired-layer path (`layers[]` above) once the pass retires, or via `disarmSnapshot` if it finishes before disarm. |
 | `pcmRef` | The lane's exported WAV filename, relative to the bundle directory (e.g. `loops/track0-lane0.wav`). Absent when `deferred`, or when the lane was empty. |
+| `takeId` | The monotonic id of the take this lane-0 image is the result of (#819), carried from the engine snapshot's `settledTakeId` (`le_track_snapshot.settled_take_id`). **Disarm-time lane 0 only**, presence-keyed (written only when `> 0`): the offline renderer (`perf_render.c`) matches it against the `LE_PLOG_RECORD_END` payloads' `take_id` in `events.log` to anchor the DISARM image by identity rather than by "the first `RECORD_END` on this channel" (which mis-anchored on a clear-then-re-record or an abort-before-content, #264). Absent means "no identity recorded" (an arm entry, a non-zero lane, or a settled take that predates the id machinery), and the renderer then places no disarm segment. |
 | `effects` | The lane's effect chain, in order, **only on an arm-time snapshot** ("chain at t=0"). Each entry is a `TrackEffect.toJson()` map verbatim: `{type, params}` for a built-in effect (`type` = the native `le_fx_type` code, `params` = up to 4 normalized `0..1` values), or `{type: 8, plugin: {...}, paramValues?, state?, name?}` for a hosted VST3/CLAP plugin (`PluginRef` identity — `daw_export`'s `fx-chains.txt`, part 10, reads this for third-party plugin identity + passthrough notes). Any entry may also carry `"enabled": false` (its own bypass; absent = audible) and `"slotId"` (its stable per-slot identity, the same id pedal bindings address). Absent (not an empty array) when there is nothing to report. |
 
 A `disarmSnapshot` lane entry never carries `effects` **or `chainEnabled`** —
@@ -208,12 +211,18 @@ finalization produces no retire event (retires are overdub-only), so without
 this pass its stem would have no PCM source anywhere (D-SNAP).
 
 ```jsonc
-{ "tracks": [ { "channel": 2, "state": "playing", "volume": 1.0, "muted": false, "multiple": 1, "lanes": [ { "lane": 0, "lenFrames": 48000, "deferred": false, "pcmRef": "loops/track2-lane0.wav" } ] } ] }
+{ "tempoBpm": 120.0, "tracks": [ { "channel": 2, "state": "playing", "volume": 1.0, "muted": false, "multiple": 1, "lanes": [ { "lane": 0, "lenFrames": 48000, "deferred": false, "pcmRef": "loops/track2-lane0.wav", "takeId": 2 } ] } ] }
 ```
 
 Same `tracks[]`/`lanes[]` shape as `armSnapshot`, minus `effects` (see
 above) and minus the top-level clock/master/limiter/monitor fields (nothing
-there needs a second capture).
+there needs a second capture), **plus** the lane-0 `takeId` (above) that
+anchors each settled image by take identity — and plus one field that **does**
+need a second capture:
+
+| Field | Notes |
+|---|---|
+| `tempoBpm` | The engine tempo at disarm, verbatim (`0` = unset; absent = pre-field bundle). The **authoritative** tempo for DAW exports (`daw_export` prefers it over `armSnapshot.tempoBpm`, and over any caller-supplied live tempo): D6's tempo lock has engaged by disarm in every case where the take has a grid at all, whereas the arm-time read can predate a tempo dialed in — or derived by the first loop — during the take. The arm-time copy exists for crash salvage, which never gets this pass. |
 
 ## Reconciling `armSnapshot` and `disarmSnapshot` for `loops/`
 

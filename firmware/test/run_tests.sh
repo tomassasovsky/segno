@@ -103,6 +103,24 @@ for sym in kRingIdleGlow; do
   fi
 done
 
+# The standby-breathe period is a shared timing constant, exactly the kind of
+# value that gets tuned in one copy only, so the two pedals would breathe at
+# different rates with nothing to catch it.
+for spec in "unsigned long kBreatheMs"; do
+  # `|| true`: grep exits 1 when it matches nothing, which under `set -e`
+  # would abort the script before the `<missing>` diagnostic below could name
+  # the constant -- i.e. exactly the drift this block exists to report would
+  # fail CI with no message at all.
+  p="$(grep -h "^static const $spec" "$PRIMARY_INO" | normalize || true)"
+  m="$(grep -h "^static const $spec" "$MIRROR_INO" | normalize || true)"
+  if [ -z "$p" ] || [ "$p" != "$m" ]; then
+    echo "FAIL: $spec differs (or is missing) between the two sketches." >&2
+    echo "  $PRIMARY_INO: ${p:-<missing>}" >&2
+    echo "  $MIRROR_INO: ${m:-<missing>}" >&2
+    exit 1
+  fi
+done
+
 echo "== sketch colour mapping: primary and 32u4 mirror agree =="
 
 BUILD_DIR="$(mktemp -d)"
