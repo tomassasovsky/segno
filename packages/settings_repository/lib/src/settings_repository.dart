@@ -144,9 +144,16 @@ class SettingsRepository {
     // A run of digits too long for a Dart int can only be far out of [2, 8]:
     // saturate to the bound on its sign, as the engine's strtol + clamp does.
     final parsed =
-        int.tryParse(digits[0]!) ?? (digits[0]!.startsWith('-') ? 0 : 8);
-    return parsed.clamp(2, 8);
+        int.tryParse(digits[0]!) ??
+        (digits[0]!.startsWith('-') ? 0 : _maxAlsaPeriods);
+    return parsed.clamp(_minAlsaPeriods, _maxAlsaPeriods);
   }
+
+  /// The period counts the engine will accept (`le_alsa_periods_from_env`
+  /// clamps into this range, #736). Bounds the sibling-key search in
+  /// [loadLatencyOffsetFrames].
+  static const _minAlsaPeriods = 2;
+  static const _maxAlsaPeriods = 8;
 
   String _legacyLatencyKey(String device, int sampleRate, int bufferFrames) =>
       'latency_offset.$device.$sampleRate.$bufferFrames';
@@ -182,8 +189,13 @@ class SettingsRepository {
   /// while this uses the requested buffer and the clamped requested period
   /// count — they match on the appliance's Scarlett (per the launcher's
   /// hw_params note), which is the only place the knob ships engaged.
-  int _startThresholdDeltaFrames(int bufferFrames) {
-    final halfRing = bufferFrames * _alsaPeriods! ~/ 2;
+  int _startThresholdDeltaFrames(int bufferFrames) =>
+      _deltaFramesAt(bufferFrames, _alsaPeriods!);
+
+  /// [_startThresholdDeltaFrames] for an arbitrary [periods], so a calibration
+  /// stored under one depth can be rebased onto another.
+  static int _deltaFramesAt(int bufferFrames, int periods) {
+    final halfRing = bufferFrames * periods ~/ 2;
     final legacyThreshold = 2 * bufferFrames;
     return halfRing > legacyThreshold ? halfRing - legacyThreshold : 0;
   }
@@ -207,6 +219,13 @@ class SettingsRepository {
   /// change migrates from the baseline again with its own delta. The legacy
   /// entry is left in place for exactly that reason, and so a downgrade to a
   /// pre-#809 build still finds its own correct value.
+  ///
+  /// With no legacy entry the read falls back to any OTHER period-qualified
+  /// key and rebases it (see the body). That case is not hypothetical: a unit
+  /// whose first ever calibration was measured while the knob was already
+  /// engaged has only a `.pN`, so without this a shipped depth change would
+  /// hand it `null` — no compensation, nothing surfaced, and no auto
+  /// re-measure on Linux to catch it.
   Future<int?> loadLatencyOffsetFrames({
     required String device,
     required int sampleRate,
@@ -215,13 +234,36 @@ class SettingsRepository {
     final key = _latencyKey(device, sampleRate, bufferFrames);
     final stored = await _store.getInt(key);
     if (stored != null || _alsaPeriods == null) return stored;
-    final legacy = await _store.getInt(
-      _legacyLatencyKey(device, sampleRate, bufferFrames),
-    );
-    if (legacy == null) return null;
-    final migrated = legacy + _startThresholdDeltaFrames(bufferFrames);
-    await _store.setInt(key, migrated);
-    return migrated;
+    final legacyKey = _legacyLatencyKey(device, sampleRate, bufferFrames);
+    final legacy = await _store.getInt(legacyKey);
+    if (legacy != null) {
+      final migrated = legacy + _startThresholdDeltaFrames(bufferFrames);
+      await _store.setInt(key, migrated);
+      return migrated;
+    }
+    // No pre-#809 baseline to migrate from. That is not the "never calibrated"
+    // case it looks like: a unit first measured while the knob was ALREADY
+    // engaged only ever wrote a qualified key, so its calibration is sitting
+    // under some other .pN — and changing the shipped depth (#818 took the
+    // appliance 8 -> 4) would otherwise strand it, silently, with no
+    // compensation and no auto re-measure on Linux to notice.
+    //
+    // Rebase it instead: subtract the delta that depth added, re-add this
+    // one's. Exact, on the same premise the legacy migration rests on. Any
+    // sibling is equally valid (all derive from one baseline), so the scan is
+    // ascending and takes the first. The recovered baseline is deliberately
+    // NOT written to the legacy key: it was never measured pre-#809, and this
+    // scan finds it again just as cheaply next time.
+    for (var p = _minAlsaPeriods; p <= _maxAlsaPeriods; p++) {
+      if (p == _alsaPeriods) continue;
+      final sibling = await _store.getInt('$legacyKey.p$p');
+      if (sibling == null) continue;
+      final baseline = sibling - _deltaFramesAt(bufferFrames, p);
+      final migrated = baseline + _startThresholdDeltaFrames(bufferFrames);
+      await _store.setInt(key, migrated);
+      return migrated;
+    }
+    return null;
   }
 
   /// Saves the record-offset (frames) for the given device profile.

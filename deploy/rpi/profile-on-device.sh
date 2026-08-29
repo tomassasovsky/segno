@@ -90,17 +90,40 @@ ssh -o BatchMode=yes "$HOST" "rm -rf $REMOTE_DIR && mkdir -p $REMOTE_DIR"
 tar -C "$BUNDLE" -cf - . | ssh -o BatchMode=yes "$HOST" "tar -C $REMOTE_DIR -xf -"
 ssh -o BatchMode=yes "$HOST" "chmod +x $REMOTE_DIR/segno"
 
+# Resolve the ALSA depth the unit will ACTUALLY run at before launching under
+# it. Since #818 the launcher takes SEGNO_ALSA_PERIODS as an overridable
+# default, so a drop-in (Environment=) or `systemctl set-environment` is how a
+# re-derivation gets applied -- and neither reaches an ssh-spawned process.
+# Ask the unit rather than restating a number here. Set SEGNO_ALSA_PERIODS in
+# this script's environment to profile a candidate depth instead. Every lookup
+# is best-effort: on a unit without the service (or without systemd) this must
+# fall through to the launcher's shipped default, not abort the run.
+if [ -z "${SEGNO_ALSA_PERIODS:-}" ]; then
+  SEGNO_ALSA_PERIODS="$(ssh -o BatchMode=yes "$HOST" '
+    { systemctl show segno.service -p Environment --value 2>/dev/null || true
+      systemctl show-environment 2>/dev/null || true
+    } | tr " " "\n" | sed -n "s/^SEGNO_ALSA_PERIODS=//p" | tail -1
+  ' || true)"
+fi
+# The launcher's shipped default (segno-kiosk-launch), used when the unit
+# names no override of its own.
+: "${SEGNO_ALSA_PERIODS:=4}"
+echo "==> SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS"
+
 echo "==> starting profile build"
 # The ENVIRONMENT VARIABLES below mirror /usr/bin/segno-kiosk-launch. They have
 # to: the ALSA/RT/HOME variables change how the engine and path_provider behave,
 # and a profile run under a different environment would not be measuring the
 # appliance. Kept in sync by hand -- if that launcher changes, change this too.
-# That includes SEGNO_ALSA_PERIODS: it tracks the shipped value rather than
-# pinning one of its own, because the whole point of this script is to profile
-# the configuration that ships. Pinning a different depth here would make every
-# capture-path measurement describe a build nobody runs. To profile a candidate
-# depth, edit it here for that one run and put it back -- a value left behind
-# here stops measuring the appliance without saying so.
+# That includes SEGNO_ALSA_PERIODS: it tracks the value the unit ACTUALLY runs
+# at rather than pinning one of its own, because the whole point of this script
+# is to profile the configuration that ships. It is read off the unit below,
+# not restated here -- since #818 the launcher takes it as an overridable
+# default, and a drop-in (Environment=) or `systemctl set-environment` is
+# exactly how a re-derivation is meant to be applied. Neither reaches an
+# ssh-spawned process, so a hardcoded value here would silently profile a
+# depth the unit is not running. To profile a candidate depth, set
+# SEGNO_ALSA_PERIODS in this script's own environment for that one run.
 #
 # What is NOT mirrored, so nobody reads "mirrors the launcher" as "is the
 # launcher". Both are benign today; the second has a tripwire.
@@ -136,7 +159,7 @@ ssh -o BatchMode=yes "$HOST" "
   export XDG_CONFIG_HOME=\$HOME/.config
   export SEGNO_ALSA_ONLY=1
   export SEGNO_RT_AUDIO=1
-  export SEGNO_ALSA_PERIODS=4
+  export SEGNO_ALSA_PERIODS=$SEGNO_ALSA_PERIODS
   setsid nohup $REMOTE_DIR/segno >$REMOTE_DIR/profile.log 2>&1 </dev/null &
   echo \$! > $REMOTE_DIR/segno.pid
 "

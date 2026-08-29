@@ -205,6 +205,58 @@ void main() {
       expect(store.values, isEmpty);
     });
 
+    test(
+      'a sibling period key is rebased when no legacy entry exists',
+      () async {
+        // The unit #818 strands without this: first calibrated while the knob
+        // was already engaged, so it holds a .p8 and NO pre-#809 baseline.
+        // Taking it to 4 must not read as "never calibrated".
+        // p8 @ 64 frames is +128; p4 sits on the two-period floor, so +0.
+        // 608 - 128 = 480 baseline -> 480 at p4, the pre-#809 value.
+        store.values['latency_offset.Scarlett.96000.64.p8'] = 608;
+
+        final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+        expect(await load(appliance), 480);
+        expect(
+          store.values['latency_offset.Scarlett.96000.64.p8'],
+          // The sibling is left intact, so going back to 8 is still exact.
+          608,
+        );
+      },
+    );
+
+    test('the rebase persists under the new key and round-trips', () async {
+      store.values['latency_offset.Scarlett.96000.64.p8'] = 608;
+
+      final appliance = SettingsRepository(store: store, alsaPeriods: 4);
+      expect(await load(appliance), 480);
+      expect(store.values['latency_offset.Scarlett.96000.64.p4'], 480);
+      // No legacy key is synthesised: it was never measured pre-#809.
+      expect(
+        store.values.containsKey('latency_offset.Scarlett.96000.64'),
+        isFalse,
+      );
+      // Second read takes the qualified key verbatim.
+      expect(await load(appliance), 480);
+
+      // And the round trip back to 8 recovers the original.
+      expect(
+        await load(SettingsRepository(store: store, alsaPeriods: 8)),
+        608,
+      );
+    });
+
+    test('a legacy entry still wins over a sibling period key', () async {
+      store.values['latency_offset.Scarlett.96000.64'] = 480;
+      // A sibling that disagrees; legacy is the documented baseline, so it is
+      // what the migration must use.
+      store.values['latency_offset.Scarlett.96000.64.p8'] = 999;
+
+      final appliance = SettingsRepository(store: store, alsaPeriods: 6);
+      // p6 @ 64: halfRing 192 - 128 = +64.
+      expect(await load(appliance), 544);
+    });
+
     test('desktop (no alsaPeriods) never migrates', () async {
       store.values['latency_offset.Scarlett.96000.64'] = 480;
 
