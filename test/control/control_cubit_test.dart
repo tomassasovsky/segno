@@ -49,11 +49,13 @@ LooperState _stateWith(
   int masterLengthFrames = 48000,
   int masterPositionFrames = 0,
   int sampleRate = 48000,
+  bool countingIn = false,
 }) => LooperState(
   transport: TransportState(
     isRunning: true,
     masterLengthFrames: masterLengthFrames,
     masterPositionFrames: masterPositionFrames,
+    countingIn: countingIn,
   ),
   tracks: tracks,
   status: EngineStatus(sampleRate: sampleRate),
@@ -167,6 +169,9 @@ void main() {
       when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
       when(
         () => looper.cancelArm(channel: any(named: 'channel')),
+      ).thenReturn(EngineResult.ok);
+      when(
+        () => looper.finalizeTake(channel: any(named: 'channel')),
       ).thenReturn(EngineResult.ok);
 
       chainEnabled = <int, bool>{};
@@ -327,20 +332,83 @@ void main() {
         expect(await settings.loadDefaultInteractionMode(), isNull);
       });
 
-      test('entering FX mode leaves a LIVE capture running, exactly as Mute '
-          'does — the mode toggle is not a transport action', () {
+      test('entering FX mode FINALIZES a live capture at the entry gesture '
+          'via the immediate-finalize primitive, never a record press '
+          '(#405)', () {
         setEngine(
           _tracksWith(const [Track(state: TrackState.recording)]),
         );
         cubit.setMode(InteractionMode.fx);
-        // Ending it here needs a finalize that ignores quantize, and the only
-        // tool available (a record press) ARMS a loop-top finalize instead —
-        // which left the take running anyway AND re-armed the track. Until an
-        // engine primitive exists, FX matches Mute: the take ends when the
-        // user cycles back to Rec.
+        // The primitive, not record(): a record press under quantize ARMS a
+        // loop-top finalize instead of ending the take — the withdrawn A5
+        // attempt this entry replaces. finalizeTake ends the take on-grid
+        // (rounded up, tail silent) with no arm machinery involved.
+        verify(() => looper.finalizeTake(channel: 0)).called(1);
         verifyNever(() => looper.record(channel: any(named: 'channel')));
         verifyNever(() => looper.record());
         expect(cubit.state.mode, InteractionMode.fx);
+      });
+
+      test('a DEFINING take survives FX entry: the engine refusal is the '
+          'fallback, silently accepted (#405)', () {
+        setEngine(
+          _tracksWith(const [Track(state: TrackState.recording)]),
+        );
+        // The engine refuses the defining take (finalizing it would let a
+        // mode switch set the session's bar length). The cubit asks — it
+        // cannot know which take defines the grid — and accepts the refusal
+        // as "the capture survives", entering FX regardless.
+        when(
+          () => looper.finalizeTake(channel: any(named: 'channel')),
+        ).thenReturn(EngineResult.invalid);
+        cubit.setMode(InteractionMode.fx);
+        verify(() => looper.finalizeTake(channel: 0)).called(1);
+        expect(cubit.state.mode, InteractionMode.fx);
+      });
+
+      test('entering FX mode leaves a live OVERDUB running — punch-out is '
+          'out of scope, exactly as under Mute (#405 decision 2)', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.overdubbing, lengthFrames: 48000),
+          ]),
+        );
+        cubit.setMode(InteractionMode.fx);
+        verifyNever(() => looper.finalizeTake(channel: any(named: 'channel')));
+        verifyNever(() => looper.record(channel: any(named: 'channel')));
+        expect(cubit.state.mode, InteractionMode.fx);
+      });
+
+      test('entering FX mode mid COUNT-IN aborts it — nothing has been '
+          'captured, and no track even reads as recording yet (#405 '
+          'decision 3)', () {
+        // During a count-in the defining track is still EMPTY engine-side;
+        // only the transport flag says a take is in gestation. The abort is
+        // channel-agnostic (the count-in is global transport state), so the
+        // cubit addresses channel 0.
+        final state = _stateWith(_emptyTracks(), countingIn: true);
+        when(() => looper.state).thenReturn(state);
+        looperStates.add(state);
+
+        cubit.setMode(InteractionMode.fx);
+
+        verify(() => looper.finalizeTake(channel: 0)).called(1);
+        expect(cubit.state.mode, InteractionMode.fx);
+      });
+
+      test('the arm sweep runs BEFORE the finalize on a capturing track with '
+          'a pending loop-top finalize arm — the primitive refuses under a '
+          'live arm, and the sweep is what retires it (#405)', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.recording, pending: true),
+          ]),
+        );
+        cubit.setMode(InteractionMode.fx);
+        verifyInOrder([
+          () => looper.cancelArm(channel: 0),
+          () => looper.finalizeTake(channel: 0),
+        ]);
       });
 
       test(
@@ -381,6 +449,9 @@ void main() {
         verify(() => looper.cancelArm(channel: 0)).called(1);
         verifyNever(() => looper.record(channel: any(named: 'channel')));
         verifyNever(() => looper.record());
+        // And the dub itself is untouched: overdubbing is not RECORDING, so
+        // the immediate finalize never fires for it (#405 decision 2).
+        verifyNever(() => looper.finalizeTake(channel: any(named: 'channel')));
       });
 
       test('entering FX mode reads LIVE engine truth for the arm sweep, not '
@@ -414,6 +485,7 @@ void main() {
         verifyNever(() => looper.record(channel: any(named: 'channel')));
         verifyNever(() => looper.record());
         verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+        verifyNever(() => looper.finalizeTake(channel: any(named: 'channel')));
       });
 
       test('side effects fire for the LANDED mode only — the cycle never '
@@ -1521,6 +1593,104 @@ void main() {
 
           await expectLater(pending, completes);
           verify(() => looper.clear()).called(1);
+        },
+      );
+    });
+
+    group('undoClearAll', () {
+      test(
+        'undoes every track holding a clear restore point, and only those',
+        () {
+          setEngine(
+            _tracksWith(const [
+              Track(clearRestore: true),
+              Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
+              Track(channel: 2, clearRestore: true),
+              // Peelable layer, not a clear restore point.
+              Track(
+                channel: 3,
+                state: TrackState.playing,
+                lengthFrames: 48000,
+                undoDepth: 2,
+              ),
+            ]),
+          );
+
+          cubit.undoClearAll();
+
+          // Exactly the two pending-clear channels are restored.
+          verify(() => looper.undo()).called(1);
+          verify(() => looper.undo(channel: 2)).called(1);
+          verifyNever(() => looper.undo(channel: 1));
+          verifyNever(() => looper.undo(channel: 3));
+          for (var channel = 4; channel < 8; channel++) {
+            verifyNever(() => looper.undo(channel: channel));
+          }
+        },
+      );
+
+      test('is a no-op when no track holds a clear restore point', () {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 48000,
+              undoDepth: 3,
+            ),
+          ]),
+        );
+
+        cubit.undoClearAll();
+
+        verifyNever(() => looper.undo(channel: any(named: 'channel')));
+        verifyNever(() => looper.undo());
+      });
+
+      test(
+        'does not re-home the overlay (unlike clearAll)',
+        () {
+          setEngine(_tracksWith(const [Track(channel: 2, clearRestore: true)]));
+          cubit
+            ..toggleMode() // leave record mode
+            ..selectTrack(5); // move the cursor off home
+          final before = cubit.state;
+
+          cubit.undoClearAll();
+
+          // Recovery restores the rig the user had — cursor and mode included.
+          expect(cubit.state.mode, before.mode);
+          expect(cubit.state.cursor, before.cursor);
+        },
+      );
+
+      test(
+        'clearAll bumps clearAllPulse when a content track is cleared',
+        () async {
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          final before = cubit.state.clearAllPulse;
+
+          await cubit.clearAll();
+
+          // The pulse is the cue the tracks view's undo toast listens for.
+          expect(cubit.state.clearAllPulse, before + 1);
+        },
+      );
+
+      test(
+        'clearAll leaves clearAllPulse untouched when nothing to restore',
+        () async {
+          setEngine(_emptyTracks());
+          final before = cubit.state.clearAllPulse;
+
+          await cubit.clearAll();
+
+          expect(cubit.state.clearAllPulse, before);
         },
       );
     });

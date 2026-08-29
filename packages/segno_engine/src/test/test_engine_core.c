@@ -47,6 +47,7 @@
 #include "engine_fx.h" /* LE_FX_ENABLE_RAMP_MS (FX enable-flag tests) */
 #include "engine_cache.h" /* LE_CACHE_SETTLE_MS (wet-cache tests) */
 #include "engine_internal.h"
+#include "engine_restore.h" /* le_restore_commit_layer (#697 S9 restore tests) */
 #include "engine_private.h"   /* LE_POOL_SLOTS (per-pass undo pool cap) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
 #include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
@@ -165,23 +166,23 @@ static void test_ring_wraps_around(void) {
 
 /* ---- le_audio_ring (performance-recording capture ring) ---- */
 
-static void test_audio_ring_init_rejects_bad_capacity(void) {
-  printf("test_audio_ring_init_rejects_bad_capacity\n");
-  float storage[8];
+static void test_audio_ring_alloc_rejects_bad_capacity(void) {
+  printf("test_audio_ring_alloc_rejects_bad_capacity\n");
   le_audio_ring ring;
-  CHECK(le_audio_ring_init(&ring, storage, 8) == 1); /* power of two */
-  CHECK(le_audio_ring_init(&ring, storage, 6) == 0); /* not power of two */
-  CHECK(le_audio_ring_init(&ring, storage, 1) == 0); /* too small */
-  CHECK(le_audio_ring_init(&ring, storage, 0) == 0); /* zero */
-  CHECK(le_audio_ring_init(NULL, storage, 8) == 0);  /* null ring */
-  CHECK(le_audio_ring_init(&ring, NULL, 8) == 0);    /* null buffer */
+  CHECK(le_audio_ring_alloc(&ring, 8) == 1); /* power of two */
+  le_audio_ring_release(&ring);
+  CHECK(le_audio_ring_alloc(&ring, 6) == 0); /* not power of two */
+  CHECK(le_audio_ring_alloc(&ring, 1) == 0); /* too small */
+  CHECK(le_audio_ring_alloc(&ring, 0) == 0); /* zero */
+  CHECK(le_audio_ring_alloc(NULL, 8) == 0);  /* null ring */
+  /* A capacity whose byte count would wrap: refused, not mapped short. */
+  CHECK(le_audio_ring_alloc(&ring, (SIZE_MAX >> 1) + 1) == 0);
 }
 
 static void test_audio_ring_push_pop_fifo(void) {
   printf("test_audio_ring_push_pop_fifo\n");
-  float storage[8];
   le_audio_ring ring;
-  le_audio_ring_init(&ring, storage, 8);
+  CHECK(le_audio_ring_alloc(&ring, 8) == 1);
 
   float out[8];
   CHECK(le_audio_ring_pop(&ring, out, 8) == 0); /* empty */
@@ -196,13 +197,13 @@ static void test_audio_ring_push_pop_fifo(void) {
     CHECK(out[i * 2 + 1] == (float)i + 0.5f);
   }
   CHECK(le_audio_ring_pop(&ring, out, 8) == 0); /* drained */
+  le_audio_ring_release(&ring);
 }
 
 static void test_audio_ring_push_frame_all_or_nothing(void) {
   printf("test_audio_ring_push_frame_all_or_nothing\n");
-  float storage[4]; /* usable slots == capacity - 1 == 3 samples */
-  le_audio_ring ring;
-  le_audio_ring_init(&ring, storage, 4);
+  le_audio_ring ring; /* usable slots == capacity - 1 == 3 samples */
+  CHECK(le_audio_ring_alloc(&ring, 4) == 1);
 
   float mono[1] = {1.0f};
   CHECK(le_audio_ring_push_frame(&ring, mono, 1) == 1); /* 1/3 used */
@@ -218,13 +219,13 @@ static void test_audio_ring_push_frame_all_or_nothing(void) {
   CHECK(le_audio_ring_pop(&ring, out, 4) == 2); /* exactly the two mono pushes */
   CHECK(out[0] == 1.0f);
   CHECK(out[1] == 1.0f);
+  le_audio_ring_release(&ring);
 }
 
 static void test_audio_ring_reports_full(void) {
   printf("test_audio_ring_reports_full\n");
-  float storage[4];
   le_audio_ring ring;
-  le_audio_ring_init(&ring, storage, 4);
+  CHECK(le_audio_ring_alloc(&ring, 4) == 1);
 
   float v = 1.0f;
   CHECK(le_audio_ring_push_frame(&ring, &v, 1) == 1);
@@ -235,13 +236,13 @@ static void test_audio_ring_reports_full(void) {
   float out[1];
   CHECK(le_audio_ring_pop(&ring, out, 1) == 1);
   CHECK(le_audio_ring_push_frame(&ring, &v, 1) == 1); /* room again after a pop */
+  le_audio_ring_release(&ring);
 }
 
 static void test_audio_ring_wraps_around(void) {
   printf("test_audio_ring_wraps_around\n");
-  float storage[4];
   le_audio_ring ring;
-  le_audio_ring_init(&ring, storage, 4);
+  CHECK(le_audio_ring_alloc(&ring, 4) == 1);
 
   float out[1];
   for (int i = 0; i < 100; ++i) {
@@ -250,6 +251,86 @@ static void test_audio_ring_wraps_around(void) {
     CHECK(le_audio_ring_pop(&ring, out, 1) == 1);
     CHECK(out[0] == v);
   }
+  le_audio_ring_release(&ring);
+}
+
+/* #804: a capture ring is written by the audio callback for the whole length of
+ * a take, so its storage must survive a fork() in the host process without
+ * costing that thread a page fault. On Linux le_audio_ring_alloc maps it
+ * privately and marks it MADV_DONTFORK; this asserts the flag actually landed,
+ * by reading the mapping's own VmFlags out of smaps — the same `dc` the kernel
+ * shows for VM_DONTCOPY. Without it the ring is CoW'd on every fork and the
+ * SCHED_FIFO thread re-faults every page of it on the next lap, which is the
+ * defect the function exists to remove.
+ *
+ * Linux-only by nature: MADV_DONTFORK has no macOS or Windows counterpart and
+ * neither platform runs the appliance. The allocate/use/release contract below
+ * it is checked everywhere. */
+#if defined(__linux__)
+static int smaps_mapping_is_dontcopy(const void* addr) {
+  FILE* f = fopen("/proc/self/smaps", "r");
+  if (f == NULL) return -1; /* no procfs at all: inconclusive, not a failure */
+  char line[512];
+  int in_range = 0;
+  int found = -2; /* smaps readable, mapping not located yet — a FAILURE if it
+                   * stays that way: it means the parse stopped matching, and a
+                   * test that cannot find the mapping is asserting nothing. */
+  const unsigned long want = (unsigned long)(uintptr_t)addr;
+  while (fgets(line, sizeof(line), f) != NULL) {
+    unsigned long lo = 0;
+    unsigned long hi = 0;
+    char perms[8];
+    /* A mapping HEADER is "<lo>-<hi> <perms> ..."; every other smaps line is a
+     * "Name: value" field, and no field name parses as <hex>-<hex>. */
+    if (sscanf(line, "%lx-%lx %7s", &lo, &hi, perms) == 3) {
+      in_range = (want >= lo && want < hi);
+      if (in_range) found = 0; /* mapping located; flags not seen yet */
+    } else if (in_range && strncmp(line, "VmFlags:", 8) == 0) {
+      found = strstr(line, " dc") != NULL;
+      break;
+    }
+  }
+  fclose(f);
+  return found;
+}
+#endif
+
+static void test_audio_ring_alloc_owns_fork_safe_storage(void) {
+  printf("test_audio_ring_alloc_owns_fork_safe_storage\n");
+  le_audio_ring ring;
+
+  /* Big enough to span several pages on any page size this runs on, so the
+   * madvise below covers more than the one page a token allocation would. */
+  const size_t cap = 1u << 18; /* 256K samples = 1 MB */
+  CHECK(le_audio_ring_alloc(&ring, cap) == 1);
+  CHECK(ring.buffer != NULL);
+  CHECK(ring.capacity == cap);
+
+  /* Pre-faulted and zeroed by the allocator, both ends of the span. */
+  CHECK(ring.buffer[0] == 0.0f);
+  CHECK(ring.buffer[cap - 1] == 0.0f);
+
+#if defined(__linux__)
+  const int dc = smaps_mapping_is_dontcopy(ring.buffer);
+  CHECK(dc == 1 || dc == -1); /* 1 = VM_DONTCOPY set; -1 = no procfs at all.
+                               * 0 (present, unset) and -2 (never located) both
+                               * fail — the second is how a silently broken
+                               * parse would otherwise pass. */
+#endif
+
+  /* Still an ordinary ring. */
+  float frame[2] = {1.0f, 2.0f};
+  CHECK(le_audio_ring_push_frame(&ring, frame, 2) == 1);
+  float out[2] = {0.0f, 0.0f};
+  CHECK(le_audio_ring_pop(&ring, out, 2) == 2);
+  CHECK(out[0] == 1.0f);
+  CHECK(out[1] == 2.0f);
+
+  le_audio_ring_release(&ring);
+  CHECK(ring.buffer == NULL);
+  CHECK(ring.capacity == 0);
+  le_audio_ring_release(&ring); /* idempotent: teardown paths call it blind */
+  le_audio_ring_release(NULL);
 }
 
 static void test_engine_lifecycle_without_device(void) {
@@ -1502,6 +1583,145 @@ static void test_record_press_on_pending_arm_starts_when_parked(void) {
   /* Not a cancel: the track is now capturing. This is precisely why FX entry
    * must call le_engine_cancel_arm instead. */
   CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
+/* le_engine_finalize_take (#405) is cancel_arm's counterpart for the LIVE
+ * take — and a strict refusal everywhere else. Where le_engine_record's
+ * meaning depends on the state it lands on (start / finalize / punch-in /
+ * punch-out), this primitive can only ever END a capture: every state that
+ * is not a live non-defining RECORDING take refuses with LE_ERR_INVALID and
+ * changes nothing. The refusals below are the exact counter-cases to the
+ * three wrong record-press meanings. */
+static void test_finalize_take_refuses_all_non_recording_states(void) {
+  printf("test_finalize_take_refuses_all_non_recording_states\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* EMPTY with the transport parked: the exact shape where a record press
+   * STARTS a capture (test_record_press_on_pending_arm_starts_when_parked
+   * above) — the refusal, and "nothing starts", is the point. */
+  CHECK(le_engine_finalize_take(e, 0) == LE_ERR_INVALID);
+  drain(e);
+  process_const(e, 0.5f, 8, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].length_frames == 0);
+
+  record_base_loop(e, 1.0f); /* track 0 defines the master and plays */
+
+  /* PLAYING: a record press would punch IN to overdub; this refuses. */
+  CHECK(le_engine_finalize_take(e, 0) == LE_ERR_INVALID);
+  drain(e);
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  /* OVERDUBBING is out of scope (the punch-out is a record-press meaning;
+   * an overdub is bounded and rides on under FX exactly as it does under
+   * Mute): refuse, and the dub keeps running. */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
+  drain(e);
+  CHECK(le_engine_finalize_take(e, 0) == LE_ERR_INVALID);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  /* Guards, cancel_arm's shape. */
+  CHECK(le_engine_finalize_take(e, -1) == LE_ERR_INVALID);
+  CHECK(le_engine_finalize_take(e, 99) == LE_ERR_INVALID);
+  CHECK(le_engine_finalize_take(NULL, 0) == LE_ERR_INVALID);
+  le_engine* raw = le_engine_create();
+  CHECK(le_engine_finalize_take(raw, 0) == LE_ERR_NOT_RUNNING);
+  le_engine_destroy(raw);
+
+  le_engine_destroy(e);
+}
+
+/* The DEFINING take is refused: nothing else holds the grid, so finalizing
+ * here would let the call — in the app, a mode switch — set the session's
+ * bar length to wherever the player happened to be mid-gesture. The capture
+ * survives, untouched: the documented fallback. */
+static void test_finalize_take_refuses_the_defining_take(void) {
+  printf("test_finalize_take_refuses_the_defining_take\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.7f, 3, out); /* live, mid-gesture, no master anywhere */
+  CHECK(le_engine_finalize_take(e, 0) == LE_ERR_INVALID);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING); /* still capturing */
+  CHECK(s.master_length_frames == 0);             /* no grid was set */
+
+  /* The capture survived INTACT: finishing it by hand yields the full span
+   * — 8 frames, not the 3 the refusal point had seen. */
+  process_const(e, 0.7f, 5, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.master_length_frames == 8);
+
+  le_engine_destroy(e);
+}
+
+/* B3b for the new primitive: finalize_take can neither consume nor cancel a
+ * pending arm — its own channel's or anyone else's. A live arm on the
+ * addressed channel refuses the call (retire it first via cancel_arm, which
+ * is exactly what the app's FX entry does before finalizing); the arm then
+ * still fires exactly as queued. */
+static void test_finalize_take_leaves_pending_arms_untouched(void) {
+  printf("test_finalize_take_leaves_pending_arms_untouched\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f); /* master = LOOP_N, track 0 playing */
+  le_engine_set_quantize(e, 1);
+
+  /* A live take on 1, started by its own quantized arm firing at the top. */
+  process_const(e, 0.0f, 1, out);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* arm the start */
+  process_const(e, 0.5f, LOOP_N, out);    /* crosses the top: fires */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  /* A second press queues the quantized loop-top FINALIZE: a live arm on
+   * this very channel. Refused, not consumed. */
+  process_const(e, 0.5f, 1, out); /* off the top so the arm stays pending */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 1);
+  CHECK(le_engine_finalize_take(e, 1) == LE_ERR_INVALID);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].pending == 1);                /* untouched */
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING); /* take still live */
+
+  /* And the arm still does ITS job: the next loop top fires the queued
+   * finalize exactly as if the primitive had never been called. */
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].pending == 0);
+
+  /* A pending PUNCH-IN arm on a playing track is someone else's future take:
+   * refused (not RECORDING), and the arm is left pending. */
+  process_const(e, 0.0f, 1, out); /* off the top */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* arm punch-in on playing 0 */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending == 1);
+  CHECK(le_engine_finalize_take(e, 0) == LE_ERR_INVALID);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending == 1);
 
   le_engine_destroy(e);
 }
@@ -3169,17 +3389,21 @@ static void test_loop_seam_master_take_no_splice(void) {
   le_engine_destroy(e);
 }
 
-/* #728: overdubbing whole laps over the master must not splice the wrap. Each
- * overdub lap writes the head a whole lap before it writes the tail, so this
- * is the case that looked most likely to break — it does not, because the
- * write is read-before-write: every head sample the wrap resolves to was
- * layered exactly one frame after the tail sample preceding it. The punch-in
- * and punch-out both land ON the loop top here (what quantized rec/dub does
- * every time), and the input stays live through the punch-out fade tail, which
- * is what the tail needs to taper into (same contract as
- * test_overdub_punch_no_click). Stopping dead on the punch-out instead is a
- * SEPARATE defect — the tail then keeps a lap the head never got — measured
- * and filed on its own; it is not what this test covers. */
+/* #728: overdubbing whole laps over the master must not splice the wrap. The
+ * punch-in and punch-out both land ON the loop top here (what quantized
+ * rec/dub does every time), and the input stays live through the punch-out
+ * fade tail. Every loop position gets exactly two overdub writes — head and
+ * tail alike, and stopping the input at the punch-out would not change that —
+ * so lap counts are NOT what this test hangs on. What keeps the wrap
+ * continuous is the fade tail itself: the player's still-live input keeps
+ * writing into [0, F) after the punch-out, and that write happens to BE the
+ * continuation of position len-1 — #728's fold, done accidentally, by the
+ * performer. The 2.1x measured here is that accident holding, not a designed
+ * contract. Stopping dead on the punch-out instead removes the accidental
+ * fold and exposes the overdub's own wrap seam — a generational content
+ * mismatch at the fold, not a lap-count imbalance — measured and pinned by
+ * test_loop_seam_on_punch_out_with_player_stopped (#731) below; it is not
+ * what this test covers. */
 static void test_loop_seam_survives_whole_lap_overdub(void) {
   printf("test_loop_seam_survives_whole_lap_overdub\n");
   le_engine* e = le_engine_create();
@@ -3218,6 +3442,197 @@ static void test_loop_seam_survives_whole_lap_overdub(void) {
   printf("  overdubbed master seam: step=%.5f median-delta=%.6f score=%.1fx\n",
          step, med, score);
   CHECK(score < 25.0);
+  free(loop);
+
+  le_engine_destroy(e);
+}
+
+/* #731, CHARACTERIZATION — this asserts the DEFECT, not a fix.
+ *
+ * The same whole-lap overdub as test_loop_seam_survives_whole_lap_overdub,
+ * except the player STOPS DEAD on the punch-out instead of playing through the
+ * fade tail — which is the normal thing to do, since punching out is how you
+ * stop layering.
+ *
+ * WHAT #731 SAYS THE CAUSE IS, AND WHY THAT IS WRONG. The issue says "the loop
+ * head keeps a lap of layered material that the loop tail never got". It does
+ * not: the arithmetic below reproduces the measured step exactly, and the
+ * punch-in ramp is no part of it. Writing x(i) = 0.5*sin(i * 2*pi*36.25/48000)
+ * for the oscillator feed_osc feeds, and F for the declick fade:
+ *
+ *   loop[4799] = x(4799) + x(9599)             = +0.148123
+ *   loop[0]    = ramp(0)*x(0) + x(4800)        = -0.353553
+ *   step                                        =  0.501676
+ *
+ * THE RAMP CANNOT BE WHAT MAKES THE STEP HERE, and the CHECK on loop[0] below
+ * is that argument rather than a claim about it: whatever shape ramp() has
+ * over [0, F), at the punch-in it multiplies x(0) = 0.5*sin(0), which is
+ * zero. So loop position 0 holds the second pass's contribution ALONE —
+ * x(4800), to better than a float ulp. (Nothing else touches position 0
+ * either: the punch-out fade tail runs over [0, F) too, but it tapers an
+ * input the player has already stopped feeding, so it adds zero.) Note what
+ * this does NOT say: ramp(0) is not 0 — engine_process.c advances od_gain
+ * BEFORE the write, so the first overdubbed frame is written at od_step
+ * (1/480 @ 48k) — and the ramp dropping out of the arithmetic is a property
+ * of THIS FIXTURE, whose oscillator sits at phase 0 at the punch-in. In
+ * general the punch-in ramp IS load-bearing (it suppresses the head's oldest
+ * generation at the punch point) and must not be read as droppable.
+ *
+ * The step is simply the overdub's OWN WRAP SEAM: a signal that is not
+ * loop-periodic, layered across the loop point, with no continuation to fold
+ * — a generational content mismatch at the fold, not a lap-count imbalance.
+ * The control test scores 2.1x only because the player's still-live input
+ * through the punch-out fade tail happens to ACT as a continuation fold.
+ *
+ * That kills #731's RATIONALE, and its first option with it. "Crossfade the
+ * loop's tail into its head" needs either a continuation (there is none — the
+ * player stopped) or a shorter loop (the length must stay a multiple of the
+ * base). And an envelope justified by "head and tail must end with the same
+ * number of laps" fixes nothing FOR THAT REASON, because they already do —
+ * but the mechanism that option names, a loop-position-aware envelope, is
+ * exactly the chosen fix, applied to the LAYER rather than the punch-out
+ * gain: layer = live - shadow, tapered over [0, F) and [len - F, len),
+ * exactly as #730 gives a stopped-early take, so the layer is a
+ * self-contained one-shot inside the loop and the underlying loop's own
+ * continuity is untouched. That needs the pre-pass undo shadow, on the audio
+ * thread, in the layer machinery — see
+ * docs/plan/2026-08-25-fix-punch-out-splice-plan.md.
+ *
+ * Pinned here so the number is reproducible and so a fix can be measured
+ * against it. The assertions at the bottom are DELIBERATELY INVERTED — read
+ * the note there before touching them. */
+static void test_loop_seam_on_punch_out_with_player_stopped(void) {
+  printf("test_loop_seam_on_punch_out_with_player_stopped\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 4800;
+  le_test_osc osc = make_osc(36.25, 48000.0);
+
+  /* Silent defining master, so the only content at the seam is the overdub's. */
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL);
+  drain(e);
+  feed_to_loop_top(e);
+
+  /* Two whole overdub passes, punched in and out ON the loop top. */
+  le_engine_record(e, 0); /* -> OVERDUBBING */
+  drain(e);
+  feed_osc(e, &osc, 2 * N, NULL, NULL);
+  le_engine_record(e, 0);               /* punch out -> PLAYING */
+  feed_const(e, 0.0f, 512, NULL, NULL); /* the player stops dead */
+  drain(e);
+  settle_layers(e);
+
+  feed_to_loop_top(e); /* so capture index == loop position */
+  float* loop = (float*)malloc(sizeof(float) * (size_t)(2 * N));
+  /* A failed allocation has to land as a reported failure: feed_const writes
+   * straight through this pointer, so falling through would segfault and take
+   * every later test's result down with the diagnosis. */
+  CHECK(loop != NULL);
+  if (loop == NULL) {
+    le_engine_destroy(e);
+    return;
+  }
+  int n = 0;
+  feed_const(e, 0.0f, 2 * N, loop, &n);
+  /* splice_score is bounded by the n it is handed; the wrap and head
+   * arithmetic below indexes loop[N] and loop[N - 1] directly, so a short
+   * capture would read uninitialized heap instead of failing. */
+  CHECK(n == 2 * N);
+  if (n < 2 * N) {
+    free(loop);
+    le_engine_destroy(e);
+    return;
+  }
+
+  double step = 0.0;
+  double med = 0.0;
+  const double score = splice_score(loop, n, &step, &med);
+  const double wrap = fabs((double)loop[N] - (double)loop[N - 1]);
+  double peak = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const double a = fabs((double)loop[i]);
+    if (a > peak) peak = a;
+  }
+  /* x(N) — the second pass's contribution at loop position 0, with no ramp
+   * term at all. osc.inc is fixed at construction; only its phase advanced. */
+  const double head_no_ramp = 0.5 * sin((double)N * osc.inc);
+  printf("  wrap @%d: %.5f (%.1fx)   worst anywhere: %.5f  score=%.1fx\n", N,
+         wrap, med > 0 ? wrap / med : 0.0, step, score);
+  printf("  head=%.6f  ramp-free x(%d)=%.6f  diff=%.1e  peak=%.4f\n",
+         (double)loop[0], N, head_no_ramp, fabs((double)loop[0] - head_no_ramp),
+         peak);
+
+  /* Six assertions, each catching what the others cannot.
+   *
+   * loop[0] — the ramp counterfactual from the header, as arithmetic rather
+   * than prose. Measured deviation from the ramp-free value is 6.1e-9, i.e. the
+   * capture IS the correctly-rounded float of it (ulp is 3.0e-8 in [0.25,
+   * 0.5)); 1e-7 leaves a few ulps for libm's last bit and nothing more. If the
+   * punch-in ramp ever contributed at position 0, this is what would move.
+   *
+   * wrap — the absolute step, the one number the analysis above derives. 1e-6
+   * is ~17 float ulps at this amplitude (ulp(0.5) = 5.96e-8), which is clear
+   * of the rounding in the layer mix and still pins every printed digit. The
+   * score cannot stand in for it: score is a RATIO, so editing the fixture's
+   * amplitude or frequency moves the score with the step unchanged, and a
+   * change that moved the step would slip past unless it moved the ratio too.
+   *
+   * med and wrap/med — the splice must be AT THE LOOP SEAM this test names,
+   * measured against a loop that still carries the overdubbed audio. The
+   * global score alone cannot say either: splice_score returns 1e9 for a
+   * median of 0, so a layer wiped to silence with one blip anywhere would
+   * "score like a splice", and an unrelated >100x artifact elsewhere in the
+   * lap keeps the global ratio high with the seam itself repaired. The med
+   * guard rejects the wiped-loop degenerate case; the wrap/med ratio then
+   * pins the seam step itself as the outlier, in the same units the file's
+   * other seam tests use.
+   *
+   * peak — audio either way, never corruption (the bound the file's other
+   * defect pin, test_loop_seam_gap_when_dub_retires_before_the_fold, also
+   * holds). Derived from THIS fixture, not copied from that one: two
+   * full-gain 0.5-amplitude passes offset by N*inc = 2*pi*3.625 sum to
+   * amplitude 2*0.5*|cos(pi*0.625)| = 0.38268 over the steady region, but
+   * the loop's true peak sits in the ramped head [0, F), where the
+   * attenuated first pass leaves the second pass's near-crest exposed:
+   * max |ramp(i)*x(i) + x(i+N)| = 0.42898, at i = 90 (measured 0.4290).
+   * 0.45 sits above that deterministic value, below the 0.5 single-pass
+   * amplitude that caps any legitimate content in this fixture, and far
+   * below where duplicated or unscaled writes land (0.5 .. 1.0).
+   *
+   * score — the step as a multiple of the loop's median adjacent delta, the
+   * form #731 quotes and the form a fix will be judged in. Two-sided on
+   * purpose: measured 389.8x, and the fixture is deterministic to the float
+   * ulp the wrap CHECK pins, so this +/-5% band is not measurement tolerance.
+   * It is the width at which a PARTIAL fix (say 120x) and a REGRESSION (say
+   * 2000x) each fail, instead of both reading as "defect unchanged".
+   *
+   * WHEN #731 LANDS: the defect pins (loop[0], wrap, wrap/med, the score
+   * band) flip to CHECK(score < 25.0); the med guard and the peak bound
+   * stay, and a content floor is ADDED — CHECK(peak > 0.35) (the 0.38268
+   * steady two-pass amplitude survives a seam-local taper) or
+   * CHECK(med > 6e-4) (half the expected 0.0013). Without it the flipped
+   * form passes on a "fix" that attenuates the layer to near-silence:
+   * score is scale-invariant (~2x on smooth near-zero content), a
+   * denormal-positive median satisfies med > 0, and a near-zero peak
+   * satisfies any upper bound. The absolute wrap/loop[0] pins being
+   * dropped by the flip are what guaranteed content until now. 25.0 is not a number picked for the occasion — it is the bound
+   * every other seam test in this file already holds for "continuous, not
+   * spliced", and they measure 1.6x to 2.1x against it while the known #728
+   * retire-before-the-fold gap measures 204x. Between the pre-fix floor
+   * (>370x, and >100x on wrap/med) and the post-fix ceiling (<25x) is a
+   * DELIBERATE dead band: a partial fix landing anywhere in 25x..370x fails
+   * BOTH forms of the test — it moved the step without removing the splice —
+   * and must not be read as a flaky bound to widen. */
+  CHECK(fabs((double)loop[0] - head_no_ramp) < 1e-7);
+  CHECK(fabs(wrap - 0.50167599) < 1e-6);
+  CHECK(med > 0.0);
+  CHECK(wrap / med > 100.0);
+  CHECK(peak < 0.45);
+  CHECK(score > 370.0);
+  CHECK(score < 410.0);
   free(loop);
 
   le_engine_destroy(e);
@@ -6461,6 +6876,71 @@ static void test_enumerate_devices_counts_are_stable(void) {
   }
 }
 
+/* ---- channel-count memo: failures are NOT cached (#649 follow-up) ----
+ *
+ * Drives the memo's decision core (le_channel_memo_for_test) with scripted
+ * query answers, because the case under test — a device that FAILS its channel
+ * query — cannot be produced on demand by any real device on a CI box. The
+ * keys are shapes no backend emits, so the live table is shared safely.
+ *
+ * channel_memo is reached only by device_info_copy's miniaudio enumeration
+ * (macOS/Windows and the Linux JACK/Pulse routes); the Linux ALSA-cards route
+ * has its own le_alsa_channels_cached memo and never enters this function.
+ * #649 briefly memoised a failure here for one TTL window as defense against
+ * ALSA's PCM-hint clutter, but the same PR's route fix made that clutter
+ * unreachable through this path — so the negative cache only added a staleness
+ * window on the miniaudio path (a transient 0 pinned at UNKNOWN for up to a TTL
+ * window). This test pins the restored self-correcting rule: a 0 is re-queried
+ * on the very next sighting, never memoised, while a positive answer still is. */
+static int32_t memo_scripted_query(void* env) {
+  int32_t* script = (int32_t*)env; /* [0] = answer to give, [1] = call tally */
+  ++script[1];
+  return script[0];
+}
+
+static void test_channel_memo_failure_not_cached(void) {
+  printf("test_channel_memo_failure_not_cached\n");
+  int32_t script[2] = {0, 0};
+  const char* key = "for-test:failure-not-cached";
+
+  /* A transient/persistent 0 is queried EVERY sighting — never cached. Before
+   * this fix (#864's negative cache) the first 0 would have been memoised and
+   * the loop would have queried only ~3 times over 3*TTL sightings. */
+  for (int i = 0; i < 3 * LE_CHANNEL_CACHE_TTL; ++i) {
+    CHECK(le_channel_memo_for_test(key, 1, memo_scripted_query, script) == 0);
+  }
+  CHECK(script[1] == 3 * LE_CHANNEL_CACHE_TTL);
+
+  /* Because no negative entry was ever inserted, a device that starts answering
+   * heals IMMEDIATELY on its next sighting (a hit-on-stale-0 would only heal
+   * after a trust countdown; here there is nothing stale to wait out). */
+  script[0] = 6;
+  CHECK(le_channel_memo_for_test(key, 1, memo_scripted_query, script) == 6);
+  const int32_t calls_after_first_answer = script[1];
+  CHECK(calls_after_first_answer == 3 * LE_CHANNEL_CACHE_TTL + 1);
+
+  /* The positive answer IS memoised: the next sighting answers from the table
+   * without a query, and a later transient 0 never blanks the known count. */
+  script[0] = 0;
+  for (int i = 0; i < 2 * LE_CHANNEL_CACHE_TTL; ++i) {
+    CHECK(le_channel_memo_for_test(key, 1, memo_scripted_query, script) == 6);
+  }
+  /* Over 2*TTL sightings a memoised entry re-reads at most twice (its trust
+   * countdown, reseeded to TTL, falls due at most twice in that span), versus
+   * the 2*TTL queries an uncached path would have paid — proof the positive
+   * result is genuinely cached. */
+  CHECK(script[1] <= calls_after_first_answer + 2);
+
+  /* Direction is part of the key: the other direction of the same id starts
+   * from its own miss, not from the capture entry, and its failing query is
+   * likewise never cached. */
+  script[0] = 0;
+  const int32_t calls_before = script[1];
+  CHECK(le_channel_memo_for_test(key, 0, memo_scripted_query, script) == 0);
+  CHECK(le_channel_memo_for_test(key, 0, memo_scripted_query, script) == 0);
+  CHECK(script[1] == calls_before + 2);
+}
+
 /* The device-id serializer (engine_platform.h) turns a backend id into a
  * printable token used to match a user-selected device back to its native id.
  * On the char-string backends (CoreAudio/ALSA/PulseAudio) it copies verbatim;
@@ -6647,6 +7127,107 @@ static void test_pinned_probe_never_reaches_pulseaudio(void) {
     CHECK(ctx.backend == ma_backend_alsa);
     ma_context_uninit(&ctx);
   }
+  le_platform_set_alsa_only_for_test(-1);
+#endif
+}
+
+/* ---- Linux enumeration routing (#649) ----
+ *
+ * The route table is pure policy hoisted into the portable core precisely so
+ * this truth table runs on every OS; what only Linux CI exercises is the seam
+ * BEHIND it — the real dlopen presence probes and the enumerators the routes
+ * lead to (the behavioural test below is Linux-only for that reason). */
+static void test_linux_enum_route_table(void) {
+  printf("test_linux_enum_route_table\n");
+  /* The appliance pin wins over everything. le_platform_enumerate_devices
+   * never even probes the desktop libraries under the pin, but the table must
+   * agree whatever values it is handed. */
+  CHECK(le_linux_enum_route_pick(1, 0, 0) == LE_LINUX_ENUM_ALSA_CARDS);
+  CHECK(le_linux_enum_route_pick(1, 1, 0) == LE_LINUX_ENUM_ALSA_CARDS);
+  CHECK(le_linux_enum_route_pick(1, 0, 1) == LE_LINUX_ENUM_ALSA_CARDS);
+  CHECK(le_linux_enum_route_pick(1, 1, 1) == LE_LINUX_ENUM_ALSA_CARDS);
+  /* libjack present: JACK enumeration, regardless of libpulse — the open
+   * would land on JACK, so only JACK node ids can resolve. */
+  CHECK(le_linux_enum_route_pick(0, 1, 0) == LE_LINUX_ENUM_JACK);
+  CHECK(le_linux_enum_route_pick(0, 1, 1) == LE_LINUX_ENUM_JACK);
+  /* libpulse without libjack: miniaudio — probe and open both land on Pulse. */
+  CHECK(le_linux_enum_route_pick(0, 0, 1) == LE_LINUX_ENUM_MINIAUDIO);
+  /* Neither library: the #649 fall-through — the ALSA cards list, not
+   * miniaudio's ~950 ms full ALSA probe. */
+  CHECK(le_linux_enum_route_pick(0, 0, 0) == LE_LINUX_ENUM_ALSA_CARDS);
+}
+
+/* The seam behind the route table, driven through both test overrides so every
+ * branch is exact on any Linux box regardless of what the CI image has
+ * installed. Also pins #649's "appliance path unchanged" acceptance criterion:
+ * under SEGNO_ALSA_ONLY the desktop-library probes are short-circuited, so
+ * pinning the libraries PRESENT and ABSENT must produce byte-identical
+ * results. */
+static void test_enum_seam_fallthrough_and_appliance_pin(void) {
+  printf("test_enum_seam_fallthrough_and_appliance_pin\n");
+#if !defined(__linux__)
+  printf("  (skipped: the enumeration route seam only exists on Linux)\n");
+#else
+  enum { MAXD = 32 };
+  static le_device_info a[MAXD]; /* static: keep 2x32 device infos off the
+                                    test's stack */
+  static le_device_info b[MAXD];
+  int32_t count = 0;
+
+  le_platform_set_alsa_only_for_test(0);
+
+  /* libpulse present, no libjack: the seam must DECLINE — miniaudio owns this
+   * configuration (probe and open both land on Pulse). A cards list here
+   * would hand out ids the Pulse open context could never resolve. */
+  le_platform_set_enum_libs_for_test(0, 1);
+  count = 77;
+  CHECK(le_platform_enumerate_devices(a, MAXD, &count, /*capture=*/0) == 0);
+  CHECK(count == 0);
+
+  /* Neither library: the #649 fall-through answers from /proc/asound/cards.
+   * On a box with a card every id is a ":<card>,<dev>" token — by
+   * construction what miniaudio's simplified ALSA enumeration yields for the
+   * same hardware, which is the id-consistency invariant. A soundless CI box
+   * has no cards, the cards path declines, and the pinned miniaudio backstop
+   * must still answer — asserted through the portable entry point. */
+  le_platform_set_enum_libs_for_test(0, 0);
+  for (int capture = 0; capture <= 1; ++capture) {
+    count = -1;
+    const int handled = le_platform_enumerate_devices(a, MAXD, &count, capture);
+    CHECK(handled == 0 || handled == 1);
+    if (handled == 1) {
+      CHECK(count > 0 && count <= MAXD);
+      for (int32_t i = 0; i < count; ++i) {
+        CHECK(a[i].id[0] == ':'); /* a cards token, never a JACK node name */
+        CHECK(strlen(a[i].name) > 0);
+      }
+    } else {
+      CHECK(count == 0);
+    }
+    int32_t full_count = -1;
+    CHECK((capture ? le_enumerate_capture_devices(b, MAXD, &full_count)
+                   : le_enumerate_playback_devices(b, MAXD, &full_count)) ==
+          LE_OK);
+    CHECK(full_count >= 0 && full_count <= MAXD);
+  }
+
+  /* Appliance pin: byte-identical whatever the desktop libraries claim. */
+  le_platform_set_alsa_only_for_test(1);
+  for (int capture = 0; capture <= 1; ++capture) {
+    memset(a, 0, sizeof(a));
+    memset(b, 0, sizeof(b));
+    int32_t count_a = -1;
+    int32_t count_b = -1;
+    le_platform_set_enum_libs_for_test(1, 1);
+    const int ra = le_platform_enumerate_devices(a, MAXD, &count_a, capture);
+    le_platform_set_enum_libs_for_test(0, 0);
+    const int rb = le_platform_enumerate_devices(b, MAXD, &count_b, capture);
+    CHECK(ra == rb);
+    CHECK(count_a == count_b);
+    CHECK(memcmp(a, b, sizeof(a)) == 0);
+  }
+
+  le_platform_set_enum_libs_for_test(-1, -1);
   le_platform_set_alsa_only_for_test(-1);
 #endif
 }
@@ -8206,6 +8787,12 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
  * on-disk format, not just the in-memory ring. ---- */
 #define LE_TEST_EVENTS_HEADER_BYTES 12
 #define LE_TEST_EVENTS_ENTRY_BYTES 28
+/* The version perf_drain.c writes today. 4 = the PERF_ARMED/TRANSPORT_HELD
+ * facts + RECORD_END's take-id payload (#262/#819); 3 = unpaired RECORD_ABORT
+ * (#405); 2 = an aborted take logs LE_PLOG_RECORD_ABORT; 1 = it logged a
+ * RECORD_END (every capture written before #264). See the format doc's "What
+ * `version` means". */
+#define LE_TEST_EVENTS_VERSION 4
 
 static size_t read_binary_file_for_test(const char* path, unsigned char* out,
                                         size_t cap) {
@@ -8250,6 +8837,36 @@ static int find_log_entry(const unsigned char* buf, size_t count, int from,
   return -1;
 }
 
+/* How many entries carry `code` on generic-arm channel `channel`. The
+ * RECORD_START/END/ABORT transport facts are per-channel, so "there is one"
+ * is only an assertion worth making per channel — find_log_entry's first-match
+ * scan would happily accept another track's. */
+static int count_log_entries_for_channel(const unsigned char* buf, size_t count,
+                                         int32_t code, int32_t channel) {
+  int n = 0;
+  le_perf_log_entry entry;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code == code && entry.cmd.arg_i == channel) ++n;
+  }
+  return n;
+}
+
+/* The frame of the first entry carrying `code` on channel `channel`, or
+ * UINT64_MAX if there is none. */
+static uint64_t frame_of_log_entry_for_channel(const unsigned char* buf,
+                                               size_t count, int32_t code,
+                                               int32_t channel) {
+  le_perf_log_entry entry;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code == code && entry.cmd.arg_i == channel) {
+      return entry.frame;
+    }
+  }
+  return UINT64_MAX;
+}
+
 /* ---- retired-layer manifest test helpers (part 5, D-LAYER) — the sidecar's
  * "layers" array is hand-rolled JSON like the rest of performance.json, so
  * these are plain strstr-based scans, not a real parser. ---- */
@@ -8286,6 +8903,30 @@ static int nth_layer_filename_for_test(const char* json, int n, char* out,
   memcpy(out, p, len);
   out[len] = '\0';
   return 1;
+}
+
+/* #806: the free-space check a capture makes every few seconds used to be a
+ * `df` subprocess, and fork() on the appliance costs the real-time audio thread
+ * milliseconds. This is the replacement — a plain question about a directory,
+ * with no engine and no child process. */
+static void test_perf_volume_free_bytes(void) {
+  printf("test_perf_volume_free_bytes\n");
+  uint64_t bytes = 12345;
+
+  CHECK(le_perf_volume_free_bytes(NULL, &bytes) == LE_ERR_INVALID);
+  CHECK(le_perf_volume_free_bytes("", &bytes) == LE_ERR_INVALID);
+  CHECK(le_perf_volume_free_bytes(".", NULL) == LE_ERR_INVALID);
+
+  /* A path the filesystem cannot answer for is LE_ERR_DEVICE, not a zero that
+   * the caller would read as "full" and refuse to arm on. */
+  bytes = 12345;
+  CHECK(le_perf_volume_free_bytes("/no/such/directory/for/segno",
+                                  &bytes) == LE_ERR_DEVICE);
+  CHECK(bytes == 0); /* cleared even on failure, so a stale read cannot leak */
+
+  bytes = 0;
+  CHECK(le_perf_volume_free_bytes(".", &bytes) == LE_OK);
+  CHECK(bytes > 0); /* the volume the tests build on is not full */
 }
 
 static void test_perf_arm_requires_configure(void) {
@@ -9052,6 +9693,160 @@ static void perf_mid_cycle_short_pad(void* raw) {
   }
 }
 
+/* #790: the same short-write accounting gap as #718, one function over.
+ *
+ * #718 fixed the PAD (le_pd_catch_up). le_pd_drain_ring still used the
+ * all-or-nothing le_pd_write, so a short write there put bytes on disk and
+ * returned before `pf->written` moved — and the final cycle's catch-up then
+ * padded a gap that included frames whose bytes were already in the file.
+ *
+ * STEREO, and a budget that is deliberately NOT a whole number of frames,
+ * because those are the two ways the credit can be wrong and a mono
+ * whole-frame fixture sees neither: mono cannot catch a credit in SAMPLES
+ * (dropping the divide by `channels` desyncs every stereo capture by a factor
+ * of two and leaves a mono test unchanged), and a budget landing exactly on a
+ * frame boundary cannot catch a torn tail left at EOF for the pad to append
+ * behind. 12 bytes of a 256-byte drain is one stereo frame plus 4 orphans:
+ *
+ *   credit 1 frame, rewind the 4, pad 31 -> 256 bytes (the fix)
+ *   credit 3 (samples, not frames)       -> 240
+ *   credit 1 but leave the 4 orphans     -> 260, and half a frame out from
+ *                                           there to the end of the take
+ *   credit 0 (pre-fix)                   -> 268
+ *
+ * DRIVEN ENTIRELY FROM THE MID-CYCLE HOOK, on the drain thread, so the fixture
+ * has no timing window in it at all. The hook fires after the rings drain and
+ * before the catch-up, so it cannot arm a budget for the drain of its OWN
+ * cycle — but it can arm one for the next cycle's, and it is the only place in
+ * this suite that can name "the cycle after this one" at all. Arming from the
+ * test thread instead leaves a 250 ms window in which a cycle can fire, drain
+ * an empty ring, and be healed before any short write happened, leaving every
+ * assertion below measuring the fast path.
+ *
+ *   cycle 1 — exists, and nothing more. Its log drain is what clears any
+ *             arm-time events.log entries at the unlimited budget: entries
+ *             share this budget and cost 28 bytes each, so one left pending
+ *             would eat the 12 bytes cycle 3's drain is supposed to spend.
+ *   cycle 2 — arm 12 bytes, then publish 32 stereo frames the way the audio
+ *             thread does (ring push, THEN a_perf_frames, release). This
+ *             cycle's `elapsed` was sampled before the push, so its catch-up
+ *             pads nothing and writes nothing.
+ *   cycle 3 — drains all 32 frames, lands 12 of 256 bytes, fails. The hook
+ *             heals the disk so the final pass can pad; this cycle's own pad
+ *             is skipped (the cycle has already failed).
+ *   final   — the unconditional last pass. The ring is empty, so the catch-up
+ *             alone decides the length: it tops up 31 frames if `written`
+ *             advanced by the one that landed, and 32 if it did not. */
+typedef struct {
+  le_engine* e;
+  int stage;
+  uint64_t pushed;
+} perf_short_ring_ctx;
+
+/* 12 of the 256 bytes the drain wants: short, not refused, and one stereo
+ * frame plus a torn 4 — see the table above for what each wrong credit
+ * produces. */
+#define LE_TEST_SHORT_RING_BUDGET_BYTES 12
+#define LE_TEST_SHORT_RING_FRAMES 32
+/* Exactly representable, so the landed frame can be compared for equality and
+ * told apart from the silence padded behind it. */
+#define LE_TEST_SHORT_RING_MARK 0.25f
+
+static void perf_mid_cycle_short_ring(void* raw) {
+  perf_short_ring_ctx* ctx = (perf_short_ring_ctx*)raw;
+  if (ctx->stage == 0) {
+    ctx->stage = 1; /* cycle 1: let it run a full pass, log drain included */
+    return;
+  }
+  if (ctx->stage == 1) {
+    /* Cycle 2: starve the NEXT cycle's ring drain, then hand it the audio.
+     * Nothing writes in between — this cycle's catch-up has nothing to pad
+     * (its `elapsed` predates the push) and both log rings are empty. */
+    ctx->stage = 2;
+    le_perf_drain_set_write_budget_for_test(LE_TEST_SHORT_RING_BUDGET_BYTES);
+    const float frame[2] = {LE_TEST_SHORT_RING_MARK, LE_TEST_SHORT_RING_MARK};
+    for (int i = 0; i < LE_TEST_SHORT_RING_FRAMES; ++i) {
+      if (!le_audio_ring_push_frame(&ctx->e->perf.master_ring, frame, 2)) break;
+      ctx->pushed++;
+    }
+    /* RELEASE, and after the pushes, exactly like the real tap in
+     * engine_process.c: the stand-in models the publishing edge too, not just
+     * the statement order. */
+    atomic_fetch_add_explicit(&ctx->e->a_perf_frames, ctx->pushed,
+                              memory_order_release);
+    return;
+  }
+  if (ctx->stage == 2) {
+    /* Cycle 3, whose ring drain just short-wrote. Heal the disk before the
+     * final pass pads: a pad that failed too would hide the desync this test
+     * is looking for. */
+    ctx->stage = 3;
+    le_perf_drain_set_write_budget_for_test(-1); /* unlimited */
+  }
+}
+
+static void test_perf_ring_short_write_does_not_desync_file(void) {
+  printf("test_perf_ring_short_write_does_not_desync_file\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 48000); /* stereo master, roomy ring */
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  CHECK(e->perf.master_channels == 2); /* the divisor under test is 2, not 1 */
+
+  perf_short_ring_ctx ctx = {e, 0, 0};
+  le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_short_ring, &ctx);
+
+  /* Four cycles of LE_PD_FLUSH_MS is a second; a poll, not a sleep, so the
+   * timeout is only the ceiling. */
+  CHECK(poll_drain_self_stopped_for_test(e->perf.drain, 5000));
+  CHECK(le_perf_disarm(e) == LE_OK); /* joins after the thread's final pass */
+  le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
+  le_perf_drain_set_write_budget_for_test(-1); /* before other tests run */
+
+  CHECK(ctx.stage == 3); /* the drain short-wrote, and only THEN was it healed */
+  CHECK(ctx.pushed == (uint64_t)LE_TEST_SHORT_RING_FRAMES); /* roomy ring */
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_frames == LE_TEST_SHORT_RING_FRAMES);
+  CHECK(s.perf_overruns == 0); /* nothing was dropped: this is NOT #710's case */
+  /* THE SPLIT, which the byte length alone cannot see: one frame of audio
+   * landed before the disk gave out and 31 were padded behind it. A fixture
+   * that decayed into landing nothing would still produce a 32-frame file, and
+   * would read 32 here. */
+  CHECK(s.perf_zero_filled_frames == LE_TEST_SHORT_RING_FRAMES - 1);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/master.pcm", perf_test_dir());
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    float got[LE_TEST_SHORT_RING_FRAMES * 2];
+    const size_t samples =
+        fread(got, sizeof(float), sizeof(got) / sizeof(got[0]), f);
+    CHECK(fseek(f, 0, SEEK_END) == 0);
+    const long bytes = ftell(f);
+    fclose(f);
+    printf("  master.pcm %ld bytes = %ld stereo frames (elapsed %d)\n", bytes,
+           bytes / (long)(2 * sizeof(float)), LE_TEST_SHORT_RING_FRAMES);
+    /* Exactly elapsed, and frame-aligned: the 4 orphan bytes were overwritten
+     * by the pad rather than shifting the whole rest of the take half a frame
+     * late. */
+    CHECK(bytes == LE_TEST_SHORT_RING_FRAMES * 2 * (long)sizeof(float));
+    CHECK(samples == (size_t)(LE_TEST_SHORT_RING_FRAMES * 2));
+    CHECK(got[0] == LE_TEST_SHORT_RING_MARK); /* the frame that landed... */
+    CHECK(got[1] == LE_TEST_SHORT_RING_MARK);
+    int padded_is_silent = 1;
+    for (size_t i = 2; i < samples; ++i) {
+      if (got[i] != 0.0f) padded_is_silent = 0;
+    }
+    CHECK(padded_is_silent); /* ...and the 31 that were padded behind it */
+  }
+
+  le_engine_destroy(e);
+}
+
 static void test_perf_zero_fill_short_write_does_not_desync_file(void) {
   printf("test_perf_zero_fill_short_write_does_not_desync_file\n");
   le_engine* e = le_engine_create();
@@ -9268,11 +10063,14 @@ static void test_perf_sidecar_bytes_are_exact(void) {
  *
  * SCOPE, precisely: the cycles are driven hard enough to take
  * le_pd_drain_ring's loop-again branch (more than LE_PD_SCRATCH_SAMPLES
- * available per cycle) and, once, le_pd_catch_up's chunked zero-fill after a
- * deliberate ring overflow. It does NOT cover le_pd_write_staged_layer — that
- * needs a retired overdub layer, and the layer tests below cover that path's
- * own allocation handoff. */
+ * available per cycle) and, once, le_pd_catch_up's chunked zero-fill — from
+ * an un-backed gap that cycle 4's hook forces directly (#823), with a
+ * best-effort real ring-overflow burst layered on top for
+ * production-geometry coverage. It does NOT cover le_pd_write_staged_layer
+ * — that needs a retired overdub layer, and the layer tests below cover
+ * that path's own allocation handoff. */
 typedef struct {
+  le_engine* e;       /* for the cycle-4 forced gap in the hook below */
   _Atomic int cycles; /* written by the drain thread, polled by the test one */
 } perf_alloc_watch_ctx;
 
@@ -9289,6 +10087,14 @@ typedef struct {
  * emptying the ring in one short pop — while staying inside the ring's
  * LE_PERF_CAPTURE_SECONDS so nothing overruns except where this test asks. */
 #define LE_TEST_ALLOC_WATCH_FRAMES_PER_TICK 4096
+/* The forced gap, in frames: four of le_pd_catch_up's 1024-sample kZeros
+ * chunks on this mono fixture, so padding it takes the chunk loop, not one
+ * memcpy. (The >= floor below pins that the WHOLE gap comes back as
+ * zero-fill; catch-up is re-entered every cycle, so it does NOT pin how
+ * many chunks any single call wrote.) Deliberately NO relationship to ring
+ * capacity — an un-backed gap of any size pads; only the chunk size
+ * matters here. */
+#define LE_TEST_ALLOC_GAP_FRAMES 4096
 
 /* Both helpers below serve only this test, so they live inside the same guard
  * its body does — otherwise a sanitized build carries two unused functions. */
@@ -9312,6 +10118,30 @@ static void perf_mid_cycle_watch_allocations(void* raw) {
   /* Runs ON the drain thread, which is the whole point: this arms the
    * thread-local counter for that thread only. */
   if (n == 3) tl_count_allocations = 1;
+  /* Cycle 4: open a pop-vs-elapsed gap with no frames behind it — the
+   * counted-but-never-enqueued state a real overrun leaves behind. Forced
+   * HERE, on the drain thread, because it then happens iff cycles reach 4 —
+   * which the cadence CHECK already demands — where a main-thread bump (or
+   * the racing burst alone) can be skipped or lost under load (#823). This
+   * cycle's catch-up sampled elapsed before the ring drain (#710's
+   * load-bearing order), so padding starts in cycle 5 at the earliest; a
+   * mid-run cycle can pad less than the residue when its own pops overshoot
+   * the sampled elapsed, and it is the unconditional FINAL pass — same
+   * thread, counter still armed, no concurrent producer left — that closes
+   * the gap exactly. That top-up is what makes the >= floor below precise,
+   * so the final pass is load-bearing for it. Side effect, deliberate and
+   * unasserted: every later frame tag and the sidecar's capture_frames run
+   * LE_TEST_ALLOC_GAP_FRAMES ahead of the audio actually pushed. Relaxed,
+   * unlike the short-ring stand-in's release: that one publishes frames it
+   * really pushed, while this bump publishes no data — and being an RMW it
+   * continues the release sequence headed by the real tap's release
+   * fetch_add, so the drain's acquire load still synchronizes with the
+   * audio side exactly as before. */
+  if (n == 4) {
+    atomic_fetch_add_explicit(&ctx->e->a_perf_frames,
+                              (uint64_t)LE_TEST_ALLOC_GAP_FRAMES,
+                              memory_order_relaxed);
+  }
 }
 #endif
 
@@ -9324,9 +10154,19 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   printf("  (skipped: allocator interposition unavailable on this build)\n");
 #else
   le_engine* e = le_engine_create();
-  le_engine_configure(e, 48000, 1, 1, 1000); /* real ring: nothing may drop */
+  /* Real ring, sized so the steady per-tick pushes do not drop at the
+   * nominal 250 ms cadence (~800 ms of backlog headroom). A drain cycle
+   * stretched past that CAN still drop them — the 15 s budget tolerates
+   * cycles up to ~1.9 s — which is harmless here: nothing asserts on
+   * perf_overruns, and drops only add zero-fill on top of the forced gap. */
+  le_engine_configure(e, 48000, 1, 1, 1000);
 
-  perf_alloc_watch_ctx ctx = {0};
+  /* Static, not stack: if le_perf_disarm ever failed, the drain thread — and
+   * with it this hook — could outlive the test function's frame. See the
+   * matching leak-not-free at the bottom. */
+  static perf_alloc_watch_ctx ctx;
+  ctx.e = e;
+  atomic_store(&ctx.cycles, 0);
   le_perf_drain_set_mid_cycle_hook_for_test(perf_mid_cycle_watch_allocations,
                                             &ctx);
 
@@ -9381,26 +10221,34 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
    * counted ones have genuine work: multi-buffer ring pops, PCM writes, an
    * events.log append, a sidecar rewrite and rename. */
   int waited = 0;
-  int overflowed_once = 0;
+  int burst_pushed_once = 0;
   while (atomic_load(&ctx.cycles) < LE_TEST_ALLOC_WATCH_CYCLES &&
          waited < LE_TEST_ALLOC_WATCH_TIMEOUT_MS) {
     push_frames_for_test(e, 0.25f, LE_TEST_ALLOC_WATCH_FRAMES_PER_TICK);
-    /* Once, mid-run: hand the ring more than it can hold in a single tick, so
-     * a cycle also runs le_pd_catch_up's chunked zero-fill. */
-    if (!overflowed_once && atomic_load(&ctx.cycles) >= 4) {
-      overflowed_once = 1;
+    /* Once, mid-run: hand the ring more than it can hold in a single tick.
+     * COVERAGE, not the zero-fill proof: this is the suite's one
+     * production-geometry ring-full drive against the live drain thread —
+     * the tiny-ring overrun tests all run at sample_rate 4. (Plain native
+     * runs only: the ASAN job compiles this whole test out, since the
+     * interposer is disabled under sanitizers.) Whether it actually drops
+     * depends on outrunning the drain — under load it loses that race
+     * (#823) — so NO assertion depends on it: the zero-fill proof runs off
+     * the hook's forced gap, and this burst's real drops only add to the
+     * same counter. The note printed after the snapshot below keeps the
+     * coverage visible when the race is lost. Latched best-effort; a
+     * starved poll that watches cycles jump past the window skips it,
+     * costing that run the burst's coverage and nothing else. */
+    if (!burst_pushed_once && atomic_load(&ctx.cycles) >= 4) {
+      burst_pushed_once = 1;
       push_frames_for_test(e, 0.25f, 48000 * (LE_PERF_CAPTURE_SECONDS + 1));
     }
     test_sleep_ms(25);
     waited += 25;
   }
 
-  /* CADENCE FIRST, then everything that depends on it. The overflow below is
-   * only armed once the drain thread has reached its 4th cycle, so a thread
-   * too slow to get there inside the timeout would otherwise surface as
-   * `overflowed_once != 1` — a failure of the allocation fixture, reported
-   * when nothing allocated at all. Assert the observable that actually
-   * failed, and say so in the message. */
+  /* CADENCE FIRST: a drain thread too slow to reach its cycle target inside
+   * the timeout is reported as exactly that, not as whichever downstream
+   * assertion happens to notice first. */
   const int observed_cycles = atomic_load(&ctx.cycles);
   if (observed_cycles < LE_TEST_ALLOC_WATCH_CYCLES) {
     printf(
@@ -9410,21 +10258,34 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
         LE_TEST_ALLOC_WATCH_TIMEOUT_MS);
   }
   CHECK(observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES);
-  CHECK(overflowed_once == 1);
 
-  CHECK(le_perf_disarm(e) == LE_OK); /* joins the drain thread */
+  const int disarmed = (le_perf_disarm(e) == LE_OK); /* joins the drain thread */
+  CHECK(disarmed);
   le_perf_drain_set_mid_cycle_hook_for_test(NULL, NULL);
 
   /* LE_TEST_ALLOC_WATCH_CYCLES observed. Counting arms inside cycle 3's
    * mid-cycle hook, which fires after that cycle's ring drain, so cycle 3 is
    * counted from its second half only; cycles 4..LE_TEST_ALLOC_WATCH_CYCLES
    * are counted end to end, plus the final cycle le_pd_drain_thread_main runs
-   * on its way out — 6 whole cycles at the current constants. (The negative
-   * control that reintroduces the per-cycle 512 KB malloc reports 7
-   * allocations: those 6 plus cycle 3's counted half.) */
+   * on its way out — at least 6 whole cycles at the current constants, more
+   * whenever the poll loop overshoots its exit. (The negative control that
+   * reintroduces the per-cycle 512 KB malloc reports at least 7 allocations:
+   * those plus cycle 3's counted half.) */
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
-  CHECK(s.perf_zero_filled_frames > 0); /* the zero-fill path really ran */
+  /* The zero-fill really ran, and completely: the whole forced gap must come
+   * back as padded frames (the final pass's top-up makes the floor exact),
+   * with the burst's real drops, when it won its race, only adding on top.
+   * Gated on cadence: without cycle 4 there IS no forced gap, and that
+   * failure is already reported above as what it is. */
+  if (observed_cycles >= LE_TEST_ALLOC_WATCH_CYCLES) {
+    CHECK(s.perf_zero_filled_frames >= LE_TEST_ALLOC_GAP_FRAMES);
+  }
+  if (s.perf_overruns == 0) {
+    printf(
+        "  note: the burst never overflowed the ring this run — "
+        "production-geometry drop coverage did not execute\n");
+  }
 
   if (atomic_load(&g_test_alloc_count) != 0) {
     printf("  drain thread allocated %d time(s), largest %zu bytes\n",
@@ -9440,7 +10301,13 @@ static void test_perf_drain_steady_state_cycle_is_allocation_free(void) {
   /* Nothing to unset: the flag lived on the drain thread, which the disarm
    * above already joined. */
 
-  le_engine_destroy(e);
+  if (disarmed) {
+    le_engine_destroy(e);
+  }
+  /* else: leak the engine. A failed disarm leaves the drain thread alive, and
+   * a hook call already in flight may still read ctx->e — freeing it here
+   * would turn one reported CHECK failure into a use-after-free. The static
+   * ctx above survives for the same reason. */
 #endif
 }
 
@@ -9653,7 +10520,7 @@ static void test_perf_events_log_table_round_trip_and_frame_accuracy(void) {
   CHECK(memcmp(buf, "PLEV", 4) == 0);
   uint32_t version;
   memcpy(&version, buf + 4, 4);
-  CHECK(version == 1);
+  CHECK(version == LE_TEST_EVENTS_VERSION);
   int32_t sample_rate;
   memcpy(&sample_rate, buf + 8, 4);
   CHECK(sample_rate == 48000);
@@ -9834,7 +10701,14 @@ static void test_perf_events_log_transport_facts(void) {
   CHECK(find_log_entry(buf, count, 0, LE_PLOG_RECORD_START, &entry) >= 0);
   CHECK(entry.cmd.arg_i == 0);
   CHECK(find_log_entry(buf, count, 0, LE_PLOG_RECORD_END, &entry) >= 0);
-  CHECK(entry.cmd.arg_i == 0);
+  CHECK(entry.cmd.take.channel == 0); /* aliases arg_i */
+  CHECK(entry.cmd.take.take_id == 1); /* #819: channel 0's first take */
+  /* The arm fact is present and carries the armed-from-silence phase (no
+   * master existed when this capture armed): all three fields 0. */
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_PERF_ARMED, &entry) >= 0);
+  CHECK(entry.cmd.perf_arm.position == 0);
+  CHECK(entry.cmd.perf_arm.master_len == 0);
+  CHECK(entry.cmd.perf_arm.iteration == 0);
   CHECK(find_log_entry(buf, count, 0, LE_PLOG_LOOP_LENGTH_LOCKED, &entry) >= 0);
   CHECK(entry.cmd.arg_i == LOOP_N);
   CHECK(find_log_entry(buf, count, 0, LE_PLOG_LAYER_RETIRED, &entry) >= 0);
@@ -9860,6 +10734,187 @@ static void test_perf_events_log_transport_facts(void) {
   }
   CHECK(undo_entries == 3);
   CHECK(redo_entries == 2);
+
+  le_engine_destroy(e);
+}
+
+/* #262 acceptance: arming MID-LOOP against an already-playing master logs
+ * LE_PLOG_PERF_ARMED carrying the EXACT loop phase at the arm frame —
+ * position, master length, and iteration — not the control-side clockFrame
+ * that used to be sampled before this instant. The master is defined and
+ * advanced to a known position BEFORE the arm, so the fact must report that
+ * position (and a nonzero iteration once the loop has wrapped). */
+static void test_perf_armed_fact_carries_loop_phase(void) {
+  printf("test_perf_armed_fact_carries_loop_phase\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Define a LOOP_N master (NOT armed — nothing is logged yet), then leave it
+   * PLAYING and advance the shared clock past one full loop so the arm lands
+   * at iteration 1, position 2 (LOOP_N + 2 == 6 frames of playback). */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 1.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize -> master len LOOP_N */
+  drain(e);
+  process_const(e, 0.0f, LOOP_N + 2, out); /* wrap once, then two more frames */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 2);
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e); /* applies LE_CMD_PERF_ARM at capture frame 0, logs PERF_ARMED */
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+
+  le_perf_log_entry entry;
+  const int idx = find_log_entry(buf, count, 0, LE_PLOG_PERF_ARMED, &entry);
+  CHECK(idx >= 0);
+  CHECK(entry.frame == 0); /* capture frame 0 */
+  CHECK(entry.cmd.perf_arm.position == 2);
+  CHECK(entry.cmd.perf_arm.master_len == LOOP_N);
+  CHECK(entry.cmd.perf_arm.iteration == 1);
+  /* Exactly one arm fact per capture. */
+  int armed_count = 0;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code == LE_PLOG_PERF_ARMED) ++armed_count;
+  }
+  CHECK(armed_count == 1);
+
+  le_engine_destroy(e);
+}
+
+/* #819 (engine half): the per-channel take id is monotonic — it increments by
+ * one at each RECORD_START on a channel and is STABLE across a channel's
+ * finalize, and the RECORD_END payload carries the id of the take that just
+ * ended. Two channels count independently. Channel 0 records twice (clear
+ * between, so the second is a genuinely new take); channel 1 records once. */
+static void test_take_id_monotonic_per_channel(void) {
+  printf("test_take_id_monotonic_per_channel\n");
+  le_engine* e = make_configured_engine();
+  float out[LOOP_N];
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  /* Channel 0, take 1: defines the master. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  process_const(e, 1.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize -> RECORD_END take 1 */
+  drain(e);
+
+  /* Channel 1, take 1: a fresh loop over the master. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  process_const(e, 0.5f, LOOP_N, out);
+  CHECK(le_engine_record(e, 1) == LE_OK); /* finalize -> RECORD_END take 1 */
+  drain(e);
+
+  /* Channel 0, take 2: clear then re-record — the clear-then-re-record that
+   * the old first-END proxy mis-anchored (#819). The new take id must be 2,
+   * strictly greater than the cleared take's 1. */
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  process_const(e, 0.7f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize -> RECORD_END take 2 */
+  drain(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].settled_take_id == 2); /* the re-recorded take */
+  CHECK(s.tracks[1].settled_take_id == 1);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[32768];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+
+  /* Channel 0 logged two RECORD_ENDs, carrying take ids 1 then 2 in order;
+   * channel 1 logged one, carrying take id 1. */
+  le_perf_log_entry entry;
+  int seen0 = 0, seen1 = 0;
+  int32_t last0 = 0;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code != LE_PLOG_RECORD_END) continue;
+    if (entry.cmd.take.channel == 0) {
+      ++seen0;
+      CHECK(entry.cmd.take.take_id == seen0); /* 1 then 2, monotonic */
+      last0 = entry.cmd.take.take_id;
+    } else if (entry.cmd.take.channel == 1) {
+      ++seen1;
+      CHECK(entry.cmd.take.take_id == 1); /* channel 1 counts independently */
+    }
+  }
+  CHECK(seen0 == 2);
+  CHECK(seen1 == 1);
+  CHECK(last0 == 2);
+
+  le_engine_destroy(e);
+}
+
+/* #262 (transport hold): once every track stops mid-capture the shared clock
+ * is pinned to 0 (advance_transport_frame's all-idle branch). That reset is
+ * logged as LE_PLOG_TRANSPORT_HELD exactly once — at the frame the hold
+ * begins, carrying the position it was pinned from — not once per held
+ * frame. */
+static void test_perf_transport_held_logged(void) {
+  printf("test_perf_transport_held_logged\n");
+  le_engine* e = make_configured_engine();
+  float out[LOOP_N];
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  /* Define a master and let it play to position 2. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  process_const(e, 1.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize -> PLAYING */
+  drain(e);
+  process_const(e, 0.0f, 2, out); /* clock advances to position 2 */
+
+  /* Stop the only track: the transport holds, pinning the clock from 2 -> 0.
+   * Several more idle blocks must NOT log additional held facts. */
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  drain(e);
+  process_const(e, 0.0f, LOOP_N, out);
+  process_const(e, 0.0f, LOOP_N, out);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+
+  le_perf_log_entry entry;
+  int held = 0;
+  int32_t pinned_from = -1;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code == LE_PLOG_TRANSPORT_HELD) {
+      ++held;
+      pinned_from = entry.cmd.arg_i;
+    }
+  }
+  CHECK(held == 1); /* edge-triggered: exactly one, not one per held frame */
+  CHECK(pinned_from == 2); /* the clock position held from (2 frames played) */
 
   le_engine_destroy(e);
 }
@@ -15349,9 +16404,9 @@ static void test_write_raw_pcm_mono(const char* path, const float* samples,
   fclose(f);
 }
 
-static void test_write_log_header(FILE* f, int32_t sample_rate) {
+static void test_write_log_header(FILE* f, int32_t sample_rate,
+                                  uint32_t version) {
   fwrite("PLEV", 1, 4, f);
-  const uint32_t version = 1;
   fwrite(&version, 4, 1, f);
   fwrite(&sample_rate, 4, 1, f);
 }
@@ -15416,14 +16471,11 @@ static void test_wait_for_render(le_engine* e, int max_polls) {
   }
 }
 
-/* Acceptance: a scripted log (record -> play -> mute -> volume ride -> stop)
- * renders a dry stem whose boundaries land at the exact logged frames. The
- * non-content events (mute/volume/stop) must not corrupt the timeline — the
- * dry stem is unity-gain loop content only (volume/mute are automation for
- * the .als generator, parts 9-10, not baked into stem audio). */
-static void test_perf_render_scripted_log_boundaries(void) {
-  printf("test_perf_render_scripted_log_boundaries\n");
-  const char* dir = render_test_dir("scripted");
+/* Shared body for the scripted-log acceptance, parameterized by the events.log
+ * header VERSION so the same fixture proves both of them render. */
+static void run_perf_render_scripted_log_case(const char* name,
+                                              uint32_t log_version) {
+  const char* dir = render_test_dir(name);
   const int32_t sr = 4800;
   const int32_t loop_len = 4;
   const uint64_t capture_frames = 20;
@@ -15452,7 +16504,7 @@ static void test_perf_render_scripted_log_boundaries(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, log_version);
     test_write_log_entry(
         lf, 2, (le_command){.code = LE_CMD_PLAY, .arg_i = 0, .arg_f = 0});
     test_write_log_entry(
@@ -15492,9 +16544,27 @@ static void test_perf_render_scripted_log_boundaries(void) {
   le_engine_destroy(e);
 }
 
+/* Acceptance: a scripted log (record -> play -> mute -> volume ride -> stop)
+ * renders a dry stem whose boundaries land at the exact logged frames. The
+ * non-content events (mute/volume/stop) must not corrupt the timeline — the
+ * dry stem is unity-gain loop content only (volume/mute are automation for
+ * the .als generator, parts 9-10, not baked into stem audio).
+ *
+ * Run at BOTH header versions. le_pr_load_log checks the magic and skips the
+ * version bytes, and this pins that as deliberate rather than accidental: a
+ * version-1 capture (written before #264, where an aborted take logged a
+ * RECORD_END) still renders — with whatever semantics it was written under —
+ * instead of being refused. The field is descriptive, not a gate; the format
+ * doc's "What `version` means" says what each value implies for a reader. */
+static void test_perf_render_scripted_log_boundaries(void) {
+  printf("test_perf_render_scripted_log_boundaries\n");
+  run_perf_render_scripted_log_case("scripted", LE_TEST_EVENTS_VERSION);
+  run_perf_render_scripted_log_case("scriptedv1", 1);
+}
+
 /* Shared body for the overdub-pass stitching contract, parameterized by loop
  * length (#227 runs it beyond one quantum) and the arm-time loop phase
- * (`clock_frame`, armSnapshot.clockFrame — #255 runs it nonzero). Track
+ * (`clock_frame`, the PERF_ARMED fact's position — #255 runs it nonzero). Track
  * settled at arm with a base RAMP image; one retired-layer ramp (offset by
  * +2) activates at `retire_frame` — not one loop cycle earlier: a punch-out
  * mid-cycle retires via an async, chunked drain that can land arbitrarily
@@ -15547,10 +16617,13 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
   snprintf(layer_path, sizeof(layer_path), "%s/%s", dir, layer_name);
   test_write_raw_pcm_mono(layer_path, post, loop_len);
 
+  /* The arm phase now comes from the PERF_ARMED fact in events.log, not
+   * armSnapshot.clockFrame (deleted, #262) — so the manifest no longer carries
+   * clockFrame at all. */
   char manifest[2048];
   snprintf(manifest, sizeof(manifest),
            "{\"sample_rate\": %d, \"capture_frames\": %llu, "
-           "\"armSnapshot\": {\"clockFrame\": %llu, \"tracks\": "
+           "\"armSnapshot\": {\"tracks\": "
            "[{\"channel\": 0, \"lanes\": "
            "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
            "\"loops/track0-lane0.wav\"}]}]}, "
@@ -15559,7 +16632,6 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
            "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": 1, "
            "\"filename\": \"%s\"}]}",
            sr, (unsigned long long)capture_frames,
-           (unsigned long long)clock_frame,
            (unsigned long long)retire_frame, loop_len, layer_name);
   test_write_manifest(dir, manifest);
 
@@ -15568,7 +16640,16 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
+    /* The PERF_ARMED fact at capture frame 0: master position == clock_frame,
+     * one-loop master (iteration 0), so the arm image anchors at phase
+     * clock_frame % loop_len exactly as armSnapshot.clockFrame used to. */
+    test_write_log_entry(
+        lf, 0,
+        (le_command){.code = LE_PLOG_PERF_ARMED,
+                     .perf_arm = {.position = (int32_t)clock_frame,
+                                  .master_len = loop_len,
+                                  .iteration = 0}});
     test_write_log_entry(
         lf, retire_frame,
         (le_command){.code = LE_PLOG_LAYER_RETIRED,
@@ -15634,8 +16715,8 @@ static void test_perf_render_stitching_long_loop(void) {
 }
 
 /* The #255 sibling gap: a capture armed MID-LOOP against an already-playing
- * track (armSnapshot.clockFrame != 0). The arm image must play from
- * clockFrame at capture frame 0 — pre[(6 + f) % 4], i.e. arm phase 2 — and
+ * track (PERF_ARMED position != 0). The arm image must play from that logged
+ * position at capture frame 0 — pre[(6 + f) % 4], i.e. arm phase 2 — and
  * the mid-cycle retire at frame 9 must inherit the chained phase
  * ((6 + 9) % 4 == 3), locking the whole stem to the live phase counter. */
 static void test_perf_render_stitching_mid_loop_arm(void) {
@@ -15668,7 +16749,7 @@ static void test_perf_render_fresh_recorded_while_armed(void) {
           "{\"sample_rate\": %d, \"capture_frames\": %llu, "
           "\"armSnapshot\": {\"tracks\": []}, "
           "\"disarmSnapshot\": {\"tracks\": [{\"channel\": 1, \"lanes\": "
-          "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+          "[{\"lane\": 0, \"deferred\": false, \"takeId\": 1, \"pcmRef\": "
           "\"loops/track1-lane0.wav\"}]}]}, \"layers\": []}",
           sr, (unsigned long long)capture_frames);
   test_write_manifest(dir, manifest);
@@ -15678,10 +16759,13 @@ static void test_perf_render_fresh_recorded_while_armed(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
+    /* RECORD_END carries the take arm {channel, take_id}; the disarm lane's
+     * takeId (1) names the settled take, so the renderer anchors here (#819). */
     test_write_log_entry(
         lf, record_end,
-        (le_command){.code = LE_PLOG_RECORD_END, .arg_i = 1, .arg_f = 0});
+        (le_command){.code = LE_PLOG_RECORD_END,
+                     .take = {.channel = 1, .take_id = 1}});
     fclose(lf);
   }
 
@@ -15697,6 +16781,77 @@ static void test_perf_render_fresh_recorded_while_armed(void) {
   }
   for (uint64_t f = record_end; f < capture_frames; ++f) {
     CHECK(fabsf(stem[f] - 0.5f) < 1e-6f); /* disarm-snapshot content, looped */
+  }
+
+  le_engine_destroy(e);
+}
+
+/* #819 acceptance (renderer half): the disarm image is anchored by TAKE
+ * IDENTITY, not by "the first RECORD_END on the channel". The log carries TWO
+ * RECORD_ENDs on channel 1 — an earlier take (id 1, e.g. finalized then
+ * cleared) at frame 4 and the settled take (id 2, re-recorded) at frame 10 —
+ * and the disarm lane's takeId names take 2. The renderer must place the
+ * settled image at frame 10, leaving [0,10) silent. Against the deleted
+ * first-END proxy the image would wrongly start at frame 4, so the constant
+ * content would bleed into frames 4..9 that must be silent. */
+static void test_perf_render_disarm_anchors_by_take_identity(void) {
+  printf("test_perf_render_disarm_anchors_by_take_identity\n");
+  const char* dir = render_test_dir("takeid");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  const uint64_t capture_frames = 16;
+  const uint64_t first_end = 4;   /* the WRONG anchor (cleared take, id 1) */
+  const uint64_t settled_end = 10; /* the RIGHT anchor (settled take, id 2) */
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+
+  const float content[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track1-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, content, loop_len, sr);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+          "\"armSnapshot\": {\"tracks\": []}, "
+          "\"disarmSnapshot\": {\"tracks\": [{\"channel\": 1, \"lanes\": "
+          "[{\"lane\": 0, \"deferred\": false, \"takeId\": 2, \"pcmRef\": "
+          "\"loops/track1-lane0.wav\"}]}]}, \"layers\": []}",
+          sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
+    /* Take 1's END comes FIRST in the file — the ordinal proxy's trap. */
+    test_write_log_entry(
+        lf, first_end,
+        (le_command){.code = LE_PLOG_RECORD_END,
+                     .take = {.channel = 1, .take_id = 1}});
+    test_write_log_entry(
+        lf, settled_end,
+        (le_command){.code = LE_PLOG_RECORD_END,
+                     .take = {.channel = 1, .take_id = 2}});
+    fclose(lf);
+  }
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+
+  float stem[16];
+  const int32_t got = test_read_stem(dir, 1, stem, 16);
+  CHECK(got == (int32_t)capture_frames);
+  for (uint64_t f = 0; f < settled_end; ++f) {
+    CHECK(fabsf(stem[f]) < 1e-6f); /* silent until the SETTLED take's finalize */
+  }
+  for (uint64_t f = settled_end; f < capture_frames; ++f) {
+    CHECK(fabsf(stem[f] - 0.5f) < 1e-6f); /* the settled image, anchored at 10 */
   }
 
   le_engine_destroy(e);
@@ -15742,7 +16897,7 @@ static void test_perf_render_progress_and_cancel(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     fclose(lf);
   }
 
@@ -15808,7 +16963,7 @@ static void test_perf_render_concurrent_with_live_engine(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     fclose(lf);
   }
 
@@ -15872,7 +17027,7 @@ static void test_perf_render_partial_success(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     fclose(lf);
   }
 
@@ -15998,7 +17153,7 @@ static void test_perf_render_wet_fx_sweep(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     /* fx.index packs (slot << 8 | param); fx.type carries the float value
      * bit-cast to int32 (LE_PLOG_SET_LANE_FX_PARAM, perf_log_ring.h). */
     uint32_t drive_bits;
@@ -16074,7 +17229,7 @@ static void test_perf_render_dry_write_fail_excludes_from_master(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     fclose(lf);
   }
 
@@ -16171,7 +17326,7 @@ static void test_perf_render_multi_channel_dry_fail_isolated(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     fclose(lf);
   }
 
@@ -16275,7 +17430,7 @@ static void test_perf_render_wet_multi_slot_and_count_shrink(void) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     test_write_log_entry(
         lf, shrink_frame,
         (le_command){.code = LE_CMD_SET_LANE_FX_COUNT,
@@ -16433,6 +17588,10 @@ static void test_perf_render_fresh_midloop_second_track_phase(void) {
 
   CHECK(le_perf_disarm(e) == LE_OK);
 
+  /* Take identity (#819): the disarm lanes carry the settled take id the live
+   * snapshot published (real pipeline behavior — performance_repository copies
+   * snapshot.settledTakeId onto the lane-0 entry), so the renderer anchors
+   * each disarm image at the RECORD_END whose logged take id matches. */
   char manifest[1600];
   snprintf(manifest, sizeof(manifest),
            "{\"sample_rate\": %d, \"capture_frames\": %llu, "
@@ -16440,13 +17599,14 @@ static void test_perf_render_fresh_midloop_second_track_phase(void) {
            "\"limiterCeiling\": 0.99, \"tracks\": []}, "
            "\"disarmSnapshot\": {\"tracks\": ["
            "{\"channel\": 0, \"volume\": 1.0, \"muted\": false, \"lanes\": "
-           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
            "\"track0-lane0.wav\", \"effects\": []}]}, "
            "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, \"lanes\": "
-           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
            "\"track1-lane0.wav\", \"effects\": []}]}]}, "
            "\"layers\": []}",
-           sr, (unsigned long long)capture_frames);
+           sr, (unsigned long long)capture_frames,
+           snap.tracks[0].settled_take_id, snap.tracks[1].settled_take_id);
   test_write_manifest(dir, manifest);
 
   CHECK(le_perf_render_begin(e, dir) == LE_OK);
@@ -16568,13 +17728,14 @@ static void test_perf_render_fresh_multiloop_second_track_phase(void) {
            "\"limiterCeiling\": 0.99, \"tracks\": []}, "
            "\"disarmSnapshot\": {\"tracks\": ["
            "{\"channel\": 0, \"volume\": 1.0, \"muted\": false, \"lanes\": "
-           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
            "\"track0-lane0.wav\", \"effects\": []}]}, "
            "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, \"lanes\": "
-           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
            "\"track1-lane0.wav\", \"effects\": []}]}]}, "
            "\"layers\": []}",
-           sr, (unsigned long long)capture_frames);
+           sr, (unsigned long long)capture_frames,
+           snap.tracks[0].settled_take_id, snap.tracks[1].settled_take_id);
   test_write_manifest(dir, manifest);
 
   CHECK(le_perf_render_begin(e, dir) == LE_OK);
@@ -16612,6 +17773,368 @@ static void test_perf_render_fresh_multiloop_second_track_phase(void) {
       CHECK(fabsf(offline[f] - live[f]) < 1e-4f);
     }
   }
+
+  le_engine_destroy(e);
+}
+
+/* #264 (P0): an ABORTED EMPTY take must not claim the disarm image.
+ *
+ * perf_render.c anchors the disarm-snapshot image on the first RECORD_END it
+ * sees on a still-content-free channel. A take that captured nothing logged one
+ * of those too, so an abort placed the REAL take's audio at the ABORT frame
+ * and — the lookup then marking the channel content-bearing — swallowed the
+ * segment belonging to the finalize that actually produced it.
+ *
+ * The timeline of the midloop fixture above, with two press pairs inserted on
+ * the loop top, and it pins three separate things:
+ *
+ *   - Channel 1 (abort, THEN a real take) renders exactly as the midloop
+ *     fixture does: silent until its real finalize at frame 11, then the image
+ *     at the MASTER phase, checked sample-for-sample. The bug class here is "a
+ *     segment landed at the wrong frame", and an image anchored one frame late
+ *     or at the wrong loop phase survives an "is anything non-silent after the
+ *     finalize" probe — so the guard against over-correcting has to be as tight
+ *     as the guard against under-correcting.
+ *   - Channel 2 aborts and is NEVER recorded again, leaving a RECORD_START with
+ *     no partner — the shape no other fixture has, and the one where channel
+ *     1's later real START cannot shadow the abort's. The manifest deliberately
+ *     offers channel 2 a loud disarm image; nothing may place it.
+ *   - events.log really carries LE_PLOG_RECORD_ABORT for both. Code 314 is
+ *     written by exactly one line in engine_process.c, and deleting that line
+ *     outright — logging nothing at all for an abort — renders an identical
+ *     stem, so the render assertions alone leave the on-disk vocabulary the
+ *     format doc advertises to external readers completely unpinned. */
+static void test_perf_render_aborted_take_does_not_claim_disarm_image(void) {
+  printf("test_perf_render_aborted_take_does_not_claim_disarm_image\n");
+  const char* dir = render_test_dir("abortedtake");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  /* Track 0's finalize: LOOP_LENGTH_LOCKED, and the master phase reset that
+   * every later segment's phase is measured from. */
+  const uint64_t master_lock_frame = 4;
+  float out[64];
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, 1000);
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+
+  /* Track 0 defines the master; finalize applies at capture frame 4. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+
+  /* THE ABORTS, and they have to land ON the loop top. record_pos is the write
+   * POSITION seeded at the press so writes stay phase-locked to the master —
+   * not a count of captured frames — so finalize_new_track's `record_pos <= 0`
+   * void branch is only reachable when the press lands at master position 0.
+   * The master finalize just applied, which is exactly that instant, and
+   * drain() is a zero-frame process: it applies the queued commands without
+   * advancing the capture clock, so all four presses resolve at frame 4. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 2) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 2) == LE_OK);
+  drain(e);
+  le_snapshot aborted;
+  le_engine_get_snapshot(e, &aborted);
+  CHECK(aborted.tracks[1].state == LE_TRACK_EMPTY); /* they really were void */
+  CHECK(aborted.tracks[2].state == LE_TRACK_EMPTY);
+  const uint64_t abort_frame = (uint64_t)aborted.perf_frames;
+  CHECK(abort_frame == master_lock_frame);
+
+  /* Play on to master position 1, then channel 1's REAL take: press at frame 9
+   * (position 1), two frames captured, finalize press at frame 11 (position
+   * 3) — the midloop fixture's take, verbatim. */
+  process_const(e, 0.0f, 4, out);
+  process_const(e, 0.0f, 1, out);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 0.3f, 2, out);
+  le_snapshot before_end;
+  le_engine_get_snapshot(e, &before_end);
+  const uint64_t real_end_frame = (uint64_t)before_end.perf_frames;
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+
+  process_const(e, 0.0f, 8, out);
+
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  const uint64_t capture_frames = (uint64_t)snap.perf_frames;
+  CHECK(capture_frames == 19);
+  CHECK(real_end_frame == 11);
+  CHECK(abort_frame < real_end_frame); /* the fixture is the right shape */
+
+  /* Channel 1's settled image, loop-position-indexed against the running
+   * master: [0, 0.3, 0.3, 0]. Channel 2 has none — it is EMPTY — so its
+   * "disarm image" is a hand-built loud one the renderer must refuse to place.
+   * Distinct values per position so a misplacement cannot alias to silence. */
+  float lane0[8] = {0};
+  float lane1[8] = {0};
+  CHECK(le_engine_export_track_lane(e, 0, 0, lane0, 8) == loop_len);
+  CHECK(le_engine_export_track_lane(e, 1, 0, lane1, 8) == loop_len);
+  CHECK(fabsf(lane1[0]) < 1e-6f);
+  CHECK(fabsf(lane1[1] - 0.3f) < 1e-6f);
+  CHECK(fabsf(lane1[2] - 0.3f) < 1e-6f);
+  CHECK(fabsf(lane1[3]) < 1e-6f);
+  const float lane2[4] = {0.9f, 0.8f, 0.7f, 0.6f};
+
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane0, loop_len, sr);
+  snprintf(wav_path, sizeof(wav_path), "%s/track1-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane1, loop_len, sr);
+  snprintf(wav_path, sizeof(wav_path), "%s/track2-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane2, loop_len, sr);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  /* The on-disk vocabulary, before anything is rendered from it. */
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  static unsigned char log_buf[16384];
+  const size_t log_bytes =
+      read_binary_file_for_test(log_path, log_buf, sizeof(log_buf));
+  CHECK(log_bytes >= LE_TEST_EVENTS_HEADER_BYTES);
+  uint32_t log_version = 0;
+  memcpy(&log_version, log_buf + 4, 4);
+  /* 314 only means "aborted take" from version 2 on — a file that carries the
+   * code has to declare the vocabulary that defines it. */
+  CHECK(log_version == LE_TEST_EVENTS_VERSION);
+  const size_t entries = log_entry_count(log_bytes);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                      1) == 1);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                      2) == 1);
+  CHECK(frame_of_log_entry_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                       1) == abort_frame);
+  CHECK(frame_of_log_entry_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                       2) == abort_frame);
+  /* And an abort is not ALSO an END: channel 1's single RECORD_END is the real
+   * finalize's, and channel 2 — which only ever aborted — has none at all. */
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_END,
+                                      1) == 1);
+  CHECK(frame_of_log_entry_for_channel(log_buf, entries, LE_PLOG_RECORD_END,
+                                       1) == real_end_frame);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_END,
+                                      2) == 0);
+  /* Both STARTs are there. Channel 1's abort START is shadowed by its later
+   * real one (le_pr_find_record_start takes the LATEST at or before the end
+   * frame); channel 2's is the unpaired one. */
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_START,
+                                      1) == 2);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_START,
+                                      2) == 1);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+           "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+           "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+           "\"limiterCeiling\": 0.99, \"tracks\": []}, "
+           "\"disarmSnapshot\": {\"tracks\": ["
+           "{\"channel\": 0, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
+           "\"track0-lane0.wav\", \"effects\": []}]}, "
+           "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
+           "\"track1-lane0.wav\", \"effects\": []}]}, "
+           "{\"channel\": 2, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"takeId\": %d, \"pcmRef\": "
+           "\"track2-lane0.wav\", \"effects\": []}]}]}, "
+           "\"layers\": []}",
+           sr, (unsigned long long)capture_frames,
+           snap.tracks[0].settled_take_id, snap.tracks[1].settled_take_id,
+           snap.tracks[2].settled_take_id);
+  test_write_manifest(dir, manifest);
+
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+
+  /* Channel 1: silent for every frame before the real finalize — against the
+   * pre-fix code the abort's RECORD_END anchored the image at `abort_frame`,
+   * so those frames were the take's audio playing before it was recorded —
+   * and from the finalize on, the image at the MASTER phase,
+   * lane1[(f - lock) % 4], the same criterion the midloop fixture uses. Not
+   * "something is non-silent": a one-frame-late or wrong-phase anchor reads a
+   * DIFFERENT sample here and fails loudly. */
+  float stem1[64] = {0};
+  CHECK(test_read_stem(dir, 1, stem1, 64) == (int32_t)capture_frames);
+  for (uint64_t f = 0; f < real_end_frame; ++f) {
+    CHECK(fabsf(stem1[f]) < 1e-6f);
+  }
+  for (uint64_t f = real_end_frame; f < capture_frames; ++f) {
+    const float want = lane1[(f - master_lock_frame) % (uint64_t)loop_len];
+    CHECK(fabsf(stem1[f] - want) < 1e-6f);
+  }
+
+  /* Channel 2: armed, voided, never recorded again. No RECORD_END exists on
+   * it, so the disarm image the manifest offers has nothing to anchor to and
+   * the whole stem stays silent — the aborted take produced no content, and a
+   * stem is what the performer heard. */
+  float stem2[64] = {0};
+  CHECK(test_read_stem(dir, 2, stem2, 64) == (int32_t)capture_frames);
+  for (uint64_t f = 0; f < capture_frames; ++f) {
+    CHECK(fabsf(stem2[f]) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* le_engine_finalize_take (#405), the happy path: quantize ON, master
+ * present, transport active, a live non-defining take — and the finalize
+ * lands at the CALL frame, not the loop top. The quantize-ON setup is the
+ * plan's mutation check: an implementation routed through le_engine_record
+ * would ARM a loop-top finalize here instead of ending the take, and every
+ * assertion below would fail. The length is never off-grid: 5 captured
+ * frames round UP to 2 whole base loops, the unfilled tail staying the
+ * prepared digital silence — exactly what a quantize-off record press does.
+ * events.log carries the one START..END pair, END at the call frame, and no
+ * ABORT (content existed). */
+static void test_finalize_take_ends_live_take_at_call_frame(void) {
+  printf("test_finalize_take_ends_live_take_at_call_frame\n");
+  const char* dir = render_test_dir("fintake");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  float out[64];
+  le_snapshot s;
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, 1000);
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+
+  /* Track 0 defines the master: 4 frames, locked at capture frame 4. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+
+  le_engine_set_quantize(e, 1); /* the discriminating condition */
+
+  /* A live take on 1, started at the loop top by its own quantized arm. */
+  process_const(e, 0.0f, 1, out);         /* frame 5, master position 1 */
+  CHECK(le_engine_record(e, 1) == LE_OK); /* arm the start */
+  process_const(e, 0.3f, 3, out);         /* crosses the top: fires */
+  process_const(e, 0.3f, 5, out);         /* runs into the second lap */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[1].pending == 0);
+  const uint64_t call_frame = (uint64_t)s.perf_frames;
+  CHECK(call_frame == 13); /* mid-loop, well off the top */
+
+  /* THE CALL — and the take is over before another frame is processed. */
+  CHECK(le_engine_finalize_take(e, 1) == LE_OK);
+  drain(e); /* zero-frame: applies at capture frame 13, not the loop top */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].pending == 0);           /* nothing armed, nothing left */
+  CHECK(s.tracks[1].length_frames == 8);     /* rounded UP to whole loops */
+  CHECK(s.tracks[1].multiple == 2);
+
+  /* Cross two more loop tops: nothing deferred ever fires; the loop holds. */
+  process_const(e, 0.0f, 16, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].length_frames == 8);
+
+  /* On-grid content: the captured audio, then the prepared silence tail. */
+  float pcm[8] = {0};
+  CHECK(le_engine_export_track_lane(e, 1, 0, pcm, 8) == 8);
+  CHECK(fabsf(pcm[1] - 0.3f) < 1e-6f);
+  CHECK(fabsf(pcm[7]) < 1e-6f);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  static unsigned char log_buf[16384];
+  const size_t log_bytes =
+      read_binary_file_for_test(log_path, log_buf, sizeof(log_buf));
+  CHECK(log_bytes >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t entries = log_entry_count(log_bytes);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_START,
+                                      1) == 1);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_END,
+                                      1) == 1);
+  CHECK(frame_of_log_entry_for_channel(log_buf, entries, LE_PLOG_RECORD_END,
+                                       1) == call_frame);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                      1) == 0);
+
+  le_engine_destroy(e);
+}
+
+/* le_engine_finalize_take mid count-in (#405 decision 3): nothing has been
+ * captured (the track is still EMPTY — it only becomes RECORDING at the
+ * count-in's downbeat commit), so the call cancels the count-in outright,
+ * for ANY addressed channel (the count-in is global transport state, same
+ * rule as the D9 press-cancel), and the abort is logged as RECORD_ABORT for
+ * the COUNTING channel. Never a RECORD_END, and no RECORD_START ever
+ * preceded it — the unpaired-ABORT shape events.log header version 3
+ * declares. */
+static void test_finalize_take_aborts_count_in(void) {
+  printf("test_finalize_take_aborts_count_in\n");
+  const char* dir = render_test_dir("fintakecountin");
+  le_snapshot s;
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 1000, 1, 1, 20000);
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK); /* 500 frames per beat */
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK);   /* 4 beats = 2000 frames */
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  tg_advance(e, 1);
+
+  CHECK(le_engine_record(e, 1) == LE_OK); /* the defining press: counts in */
+  tg_advance(e, 500);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY); /* nothing captured yet */
+  const uint64_t call_frame = (uint64_t)s.perf_frames;
+
+  /* FX entry mid-count, addressed to a DIFFERENT channel than the counting
+   * one: accepted — the cancel is channel-agnostic by design. */
+  CHECK(le_engine_finalize_take(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.count_in_beats_left == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+
+  /* Well past the would-be downbeat: the deferred defining record died with
+   * the count — back to a clean idle rig, exactly the D9 cancel. */
+  tg_advance(e, 4000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.master_length_frames == 0);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  static unsigned char log_buf[16384];
+  const size_t log_bytes =
+      read_binary_file_for_test(log_path, log_buf, sizeof(log_buf));
+  CHECK(log_bytes >= LE_TEST_EVENTS_HEADER_BYTES);
+  uint32_t log_version = 0;
+  memcpy(&log_version, log_buf + 4, 4);
+  /* An unpaired ABORT only means "cancelled count-in" from version 3 on — a
+   * file that carries the shape has to declare the vocabulary defining it. */
+  CHECK(log_version == LE_TEST_EVENTS_VERSION);
+  const size_t entries = log_entry_count(log_bytes);
+  /* The abort names the COUNTING channel (1), not the addressed one (0). */
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                      1) == 1);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                      0) == 0);
+  CHECK(frame_of_log_entry_for_channel(log_buf, entries, LE_PLOG_RECORD_ABORT,
+                                       1) == call_frame);
+  /* Unpaired, and never an END: no capture ever started, none ever ended. */
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_START,
+                                      1) == 0);
+  CHECK(count_log_entries_for_channel(log_buf, entries, LE_PLOG_RECORD_END,
+                                      1) == 0);
 
   le_engine_destroy(e);
 }
@@ -16703,9 +18226,11 @@ static void test_perf_render_golden_master_parity(void) {
           "\"limiterCeiling\": 0.99, \"tracks\": []}, "
           "\"disarmSnapshot\": {\"tracks\": [{\"channel\": 0, \"volume\": "
           "1.0, \"muted\": false, \"lanes\": [{\"lane\": 0, \"deferred\": "
-          "false, \"pcmRef\": \"track0-lane0.wav\", \"effects\": []}]}]}, "
+          "false, \"takeId\": %d, \"pcmRef\": \"track0-lane0.wav\", "
+          "\"effects\": []}]}]}, "
           "\"layers\": []}",
-          sr, (unsigned long long)capture_frames);
+          sr, (unsigned long long)capture_frames,
+          snap.tracks[0].settled_take_id);
   test_write_manifest(dir, manifest);
 
   CHECK(le_perf_render_begin(e, dir) == LE_OK);
@@ -18446,6 +19971,129 @@ static void test_one_shot_persists_across_mode_switch_fires_on_first_wrap(
   tg_advance(e, 1);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+
+  le_engine_destroy(e);
+}
+
+static void test_one_shot_wrap_logs_synthetic_stop(void) {
+  printf("test_one_shot_wrap_logs_synthetic_stop\n");
+  /* #420: the One Shot auto-stop at the free-clock wrap is the same audible
+   * transition as a manual Stop press, so it must land in events.log the
+   * same way -- a synthetic LE_CMD_STOP at the exact wrap frame (the same
+   * replays-match-what-a-listener-heard rule as le_unpark_stopped's
+   * synthetic LE_CMD_PLAY). Without it a replay hears the track playing
+   * forever past the wrap. */
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  drain(e);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  fm_record_track(e, 0, 300);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  /* Just short of the lap, then the wrap frame alone in its own 1-frame
+   * buffer: its buffer-base perf-frame count IS the wrap frame's tag, so
+   * the expected frame needs no lap arithmetic. */
+  tg_advance(e, 299);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  const uint64_t wrap_frame =
+      atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+
+  /* Exactly one STOP on this channel -- the synthetic one; no Stop press
+   * was ever issued -- and it carries the wrap frame, sample-accurately. */
+  CHECK(count_log_entries_for_channel(buf, count, LE_CMD_STOP, 0) == 1);
+  CHECK(frame_of_log_entry_for_channel(buf, count, LE_CMD_STOP, 0) ==
+        wrap_frame);
+  /* The defining take's finalize is the only RECORD_END -- the wrap added
+   * none (the track was PLAYING, no capture ended). */
+  CHECK(count_log_entries_for_channel(buf, count, LE_PLOG_RECORD_END, 0) ==
+        1);
+
+  le_engine_destroy(e);
+}
+
+static void test_one_shot_wrap_mid_overdub_logs_stop_no_record_end(void) {
+  printf("test_one_shot_wrap_mid_overdub_logs_stop_no_record_end\n");
+  /* #420, the OVERDUBBING variant, pinning the contract decision: a One
+   * Shot wrap mid-overdub logs the synthetic LE_CMD_STOP and deliberately
+   * NO LE_PLOG_RECORD_END -- exactly what a manual Stop press on an
+   * OVERDUBBING track produces (handle_stop's PLAYING/OVERDUBBING branch
+   * pushes none; RECORD_END means "left RECORDING", perf_log_ring.h). The
+   * dub pass's end reaches the log as its LE_PLOG_LAYER_RETIRED instead,
+   * via the same ordinary retire machinery a manual stop drains through
+   * (test_one_shot_overdubbing_track_stops_cleanly_at_wrap). */
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  drain(e);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  fm_record_track(e, 0, 300);
+  tg_advance(e, 100);
+  le_engine_record(e, 0); /* PLAYING -> OVERDUBBING, punch in */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  /* Cross the loop top while still overdubbing; bracket the advance so the
+   * logged stop frame can be pinned inside it. */
+  const uint64_t before =
+      atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+  tg_advance(e, 300);
+  const uint64_t after =
+      atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED); /* fired mid-overdub */
+
+  /* Let the in-flight layer retire while still armed, so its retire event
+   * lands in this capture's log. */
+  settle_layers(e);
+  drain(e);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+  le_perf_log_entry entry;
+
+  /* The synthetic STOP, inside the advance that crossed the top. */
+  CHECK(count_log_entries_for_channel(buf, count, LE_CMD_STOP, 0) == 1);
+  const uint64_t stop_frame =
+      frame_of_log_entry_for_channel(buf, count, LE_CMD_STOP, 0);
+  CHECK(stop_frame >= before && stop_frame < after);
+
+  /* Still exactly one RECORD_END -- the defining take's finalize. The wrap
+   * ended an overdub, not a RECORDING, so it added none (a manual Stop
+   * press mid-overdub logs none either). */
+  CHECK(count_log_entries_for_channel(buf, count, LE_PLOG_RECORD_END, 0) ==
+        1);
+
+  /* The dub pass's end IS logged -- as its layer retiring. */
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_LAYER_RETIRED, &entry) >= 0);
+  CHECK(entry.cmd.evt.channel == 0);
 
   le_engine_destroy(e);
 }
@@ -20540,7 +22188,7 @@ static void run_perf_render_fx_enable_case(const char* name, int32_t code) {
   FILE* lf = fopen(log_path, "wb");
   CHECK(lf != NULL);
   if (lf != NULL) {
-    test_write_log_header(lf, sr);
+    test_write_log_header(lf, sr, LE_TEST_EVENTS_VERSION);
     if (code == LE_PLOG_SET_LANE_FX_ENABLED) {
       test_write_log_entry(lf, 16,
                           (le_command){.code = LE_PLOG_SET_LANE_FX_ENABLED,
@@ -21226,8 +22874,16 @@ static void test_track_master_fx_setters_push_no_plog(void) {
   const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
   CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
   /* The whole session was nothing but track/master setter traffic, so the
-   * log must have ZERO entries — from either producer stream. */
-  CHECK(log_entry_count(n) == 0);
+   * ONLY entry the log may carry is the arm's own LE_PLOG_PERF_ARMED fact
+   * (#262, logged at every arm): no setter pushed anything into either
+   * producer stream. */
+  const size_t entries = log_entry_count(n);
+  CHECK(entries == 1);
+  le_perf_log_entry only;
+  if (entries >= 1) {
+    decode_log_entry_at(buf, 0, &only);
+    CHECK(only.cmd.code == LE_PLOG_PERF_ARMED);
+  }
 
   le_engine_destroy(e);
 }
@@ -22080,6 +23736,55 @@ static void test_cache_audio_rev_bump_sites(void) {
   }
 
   le_engine_destroy(a);
+}
+
+/* The batch accessor (le_engine_get_all_lane_caches, #418) exists so a poller
+ * reading every lane pays for ONE drain + scheduler tick instead of one per
+ * lane. The one-drain half is structural (a single le_engine_drain_events
+ * call before the fill loop); what a test can and must pin is that the sweep
+ * reports exactly what the per-lane accessor reports for every slot — with a
+ * real CACHED lane in the mix, so the equality is not vacuously all-LIVE. */
+static void test_cache_batch_matches_per_lane(void) {
+  printf("test_cache_batch_matches_per_lane\n");
+  le_engine* e = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  cache_record_loop(e, CACHE_LOOP, 1.0f);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  drain(e);
+  le_lane_cache_info reg;
+  le_engine_get_lane_cache(e, 0, 0, &reg); /* register the new key */
+  pump_frames(e, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(e, 0, 0, LE_CACHE_CACHED, 3000));
+
+  le_lane_cache_info batch[LE_MAX_TRACKS * LE_MAX_LANES];
+  /* Rejections fill nothing. */
+  CHECK(le_engine_get_all_lane_caches(NULL, batch,
+                                      LE_MAX_TRACKS * LE_MAX_LANES) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_get_all_lane_caches(e, NULL, LE_MAX_TRACKS * LE_MAX_LANES) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_get_all_lane_caches(e, batch, LE_MAX_LANES - 1) ==
+        LE_ERR_INVALID);
+
+  const int32_t n =
+      le_engine_get_all_lane_caches(e, batch, LE_MAX_TRACKS * LE_MAX_LANES);
+  CHECK(n > 0 && n % LE_MAX_LANES == 0 && n <= LE_MAX_TRACKS * LE_MAX_LANES);
+  /* The cached lane is in the sweep — the comparison below is not all-LIVE. */
+  CHECK(batch[0].state == LE_CACHE_CACHED);
+  /* Steady state (no frames pumped between the calls), so the extra drains
+   * the per-lane calls run cannot move any answer: every slot must match. */
+  for (int32_t i = 0; i < n; ++i) {
+    le_lane_cache_info one;
+    CHECK(le_engine_get_lane_cache(e, i / LE_MAX_LANES, i % LE_MAX_LANES,
+                                   &one) == LE_OK);
+    CHECK(one.state == batch[i].state);
+    CHECK(one.reason == batch[i].reason);
+    CHECK(one.engaged == batch[i].engaged);
+    CHECK(one.entry_frames == batch[i].entry_frames);
+    CHECK(one.renders == batch[i].renders);
+    CHECK(one.audio_rev == batch[i].audio_rev);
+  }
+  le_engine_destroy(e);
 }
 
 /* ---- per-input conditioning stage (input conditioning, S1) ----
@@ -23274,6 +24979,716 @@ static void test_halfband_lengths_and_arg_guards(void) {
    * write, so only the reject side is probed here). */
 }
 
+/* ---- Offline loop-close restoration worker (#697 S9) --------------------
+ *
+ * The engine half of #697's restoration: le_engine_restore_track queues a
+ * background pass (de-clip + optional RNNoise) over a track's captured lanes
+ * and publishes the repaired audio as one lockstep undo layer, so a plain
+ * le_engine_undo reverts to the raw take and the RT audio thread is untouched.
+ * These tests drive the worker deterministically the way the wet-cache tests
+ * do — le_engine_get_snapshot both drains the event ring (running
+ * le_restore_tick) and reads the per-track restore_state, so polling it in a
+ * spin advances the copy -> queue -> render -> publish pipeline to completion.
+ * Fidelity is asserted against a clean reference sine (the same technique the
+ * S8 de-clip tests use); the raw-vs-restored / undo roundtrip and the two
+ * rev/gate guards are exercised directly and deterministically. */
+
+enum { kRestoreLen = 9600 };
+static float g_rs_clean[kRestoreLen];
+static float g_rs_clipped[kRestoreLen];
+static float g_rs_live[kRestoreLen];
+static float g_rs_pre[kRestoreLen];
+
+/* Fills g_rs_clean with amp * sin and g_rs_clipped with its +/-0.999 twin;
+ * returns the longest at-rail run (so a test can assert the AR path is hit). */
+static int restore_build_clipped_sine(double freq, double amp, double sr) {
+  int run = 0;
+  int longest = 0;
+  for (int i = 0; i < kRestoreLen; ++i) {
+    float c = (float)(amp * sin(2.0 * M_PI * freq * (double)i / sr));
+    g_rs_clean[i] = c;
+    if (c > 0.999f) c = 0.999f;
+    if (c < -0.999f) c = -0.999f;
+    g_rs_clipped[i] = c;
+    if (c >= 0.999f || c <= -0.999f) {
+      if (++run > longest) longest = run;
+    } else {
+      run = 0;
+    }
+  }
+  return longest;
+}
+
+/* Counts samples flattened EXACTLY at the +/-0.999 rail in [skip, n - skip):
+ * de-clip reconstructs those peaks back ABOVE the rail, so this drops sharply
+ * after a repair (a >= 0.999 count would not — the repair's floor keeps every
+ * once-clipped sample at or above the rail it sat on). */
+static int restore_rail_count(const float* buf, int n, int skip) {
+  int c = 0;
+  for (int i = skip; i < n - skip; ++i) {
+    if (buf[i] == 0.999f || buf[i] == -0.999f) ++c;
+  }
+  return c;
+}
+
+static le_engine* restore_engine(void) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 20000);
+  return e;
+}
+
+/* Records a defining loop from [pcm] ([len] frames) and settles it to PLAYING
+ * (the same finalize-through-crossfade shape cache_record_loop uses; the
+ * overlap is fed silence, so only the first few ms of the head are folded and
+ * every interior measurement window is untouched). */
+static void restore_record(le_engine* e, const float* pcm, int len) {
+  le_engine_record(e, 0);
+  int off = 0;
+  while (off < len) {
+    float in[64];
+    float out[64];
+    int n = len - off;
+    if (n > 64) n = 64;
+    for (int i = 0; i < n; ++i) in[i] = pcm[off + i];
+    le_engine_process(e, out, in, (uint32_t)n);
+    off += n;
+  }
+  le_engine_record(e, 0);
+  drain(e);
+  pump_frames(e, 0.0f, 600); /* crossfade overlap -> finalize -> PLAYING */
+}
+
+/* Spins (draining via the snapshot poll on each turn) until track [ch] reports
+ * restore_state 0 (idle). Returns 1 on idle, 0 on timeout. */
+static int restore_wait_idle(le_engine* e, int32_t ch, int timeout_ms) {
+  le_snapshot s;
+  for (int k = 0; k < timeout_ms; ++k) {
+    le_engine_get_snapshot(e, &s);
+    if (s.tracks[ch].restore_state == 0) return 1;
+    test_sleep_ms(1);
+  }
+  return 0;
+}
+
+static int32_t restore_track_state(le_engine* e, int32_t ch) {
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  return s.tracks[ch].restore_state;
+}
+
+/* The end-to-end worker path repairs a clipped captured lane: a hard-clipped
+ * sine is recorded, restored on the background worker, and the published live
+ * buffer has its peaks reconstructed (SNR up, rail samples down) — proving the
+ * copy -> worker DSP -> undo-layer publish pipeline actually lands. */
+static void test_restore_worker_repairs_clipped_lane(void) {
+  printf("test_restore_worker_repairs_clipped_lane\n");
+  const int longest = restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  CHECK(longest > 16); /* AR path exercised */
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+
+  /* Pre-restore live buffer == the recorded clipped take (interior). */
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+  const int rail_pre = restore_rail_count(g_rs_pre, kRestoreLen, 1200);
+  CHECK(rail_pre > 0);
+  const double snr_pre = declip_snr_db(g_rs_clean, g_rs_pre, kRestoreLen, 1200);
+
+  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_OK);
+  CHECK(restore_wait_idle(e, 0, 5000) == 1);
+
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  const int rail_post = restore_rail_count(g_rs_live, kRestoreLen, 1200);
+  const double snr_post = declip_snr_db(g_rs_clean, g_rs_live, kRestoreLen, 1200);
+  float peak_post = 0.0f;
+  for (int i = 1200; i < kRestoreLen - 1200; ++i) {
+    if (g_rs_live[i] > peak_post) peak_post = g_rs_live[i];
+  }
+  CHECK(rail_post < rail_pre / 2); /* most flat-topped runs reconstructed away */
+  CHECK(peak_post > 1.01f);         /* the repair went back above the rail */
+  CHECK(snr_post > snr_pre + 6.0);  /* measurably closer to the clean sine */
+  CHECK(declip_all_finite(g_rs_live, kRestoreLen) == 1);
+
+  /* The raw take is one undo away (the plan's retention model). */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth >= 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0); /* back to raw */
+
+  le_engine_destroy(e);
+}
+
+/* The commit publishes the restored PCM as a lockstep undo layer and reverts
+ * cleanly (undo -> raw, redo -> restored), and the rev guard [B5] declines a
+ * commit whose take moved. Driven through le_restore_commit_layer directly so
+ * the publish/undo/redo roundtrip and the rev check are fully deterministic. */
+static void test_restore_commit_undo_redo_and_rev_guard(void) {
+  printf("test_restore_commit_undo_redo_and_rev_guard\n");
+  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+
+  /* A synthetic "restored" buffer: a constant the raw take never holds. */
+  static float synth[kRestoreLen];
+  for (int i = 0; i < kRestoreLen; ++i) synth[i] = 0.25f;
+  float* restored[LE_MAX_LANES] = {0};
+  restored[0] = synth;
+
+  const uint32_t rev = le_engine_track_audio_rev(e, 0);
+  /* Stale rev is refused, the take is untouched. */
+  CHECK(le_restore_commit_layer(e, 0, 0x1u, rev + 1u, kRestoreLen, restored) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
+
+  /* Matching rev publishes; the live buffer becomes the restored PCM. */
+  CHECK(le_restore_commit_layer(e, 0, 0x1u, rev, kRestoreLen, restored) == LE_OK);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  for (int i = 0; i < kRestoreLen; ++i) CHECK(g_rs_live[i] == 0.25f);
+  /* The publish bumped the revision (the wet-cache invalidation half). */
+  CHECK(le_engine_track_audio_rev(e, 0) != rev);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth >= 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* raw take back */
+  drain(e);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
+  CHECK(le_engine_redo(e, 0) == LE_OK); /* restored take back */
+  drain(e);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  for (int i = 0; i < kRestoreLen; ++i) CHECK(g_rs_live[i] == 0.25f);
+
+  le_engine_destroy(e);
+}
+
+/* A content revision bump between enqueue and the first copy tick discards the
+ * job outright (the copy-step seqlock guard), and the take is never touched. */
+static void test_restore_enqueue_rev_bump_discards(void) {
+  printf("test_restore_enqueue_rev_bump_discards\n");
+  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+
+  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_OK);
+  /* Bump the revision before any drain runs the chunked enqueue copy: the copy
+   * step's rev re-check must discard the job. */
+  le_audio_rev_bump(&e->tracks[0]);
+  CHECK(restore_wait_idle(e, 0, 2000) == 1); /* job released, back to idle */
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0); /* untouched */
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 0); /* nothing published */
+
+  le_engine_destroy(e);
+}
+
+/* Restoration is asynchronous and off the RT path: after the trigger the live
+ * buffer is unchanged, pumping audio (the RT thread) does not advance or apply
+ * it, and only the control-side snapshot poll drives it to completion. */
+static void test_restore_runs_off_rt_thread(void) {
+  printf("test_restore_runs_off_rt_thread\n");
+  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+
+  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_OK);
+  /* Pump audio WITHOUT draining: the RT callback never runs restoration, so the
+   * copy pipeline cannot advance and the take stays raw. */
+  pump_frames(e, 0.0f, 4096);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0); /* not yet applied */
+
+  /* Now let the control side drive it; it lands. */
+  CHECK(restore_wait_idle(e, 0, 5000) == 1);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) != 0); /* applied */
+
+  le_engine_destroy(e);
+}
+
+/* Disabled / declined requests are no-ops: empty flags and an empty lane mask
+ * are rejected, restoration is refused while capturing, and a refused call
+ * leaves the take bit-exact. */
+static void test_restore_noop_when_disabled(void) {
+  printf("test_restore_noop_when_disabled\n");
+  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+
+  CHECK(le_engine_restore_track(e, 0, 0x1u, 0u) == LE_ERR_INVALID);  /* no flags */
+  CHECK(le_engine_restore_track(e, 0, 0u, LE_RESTORE_DECLIP) ==
+        LE_ERR_INVALID);                                             /* no lanes */
+  CHECK(le_engine_restore_track(e, 9, 0x1u, LE_RESTORE_DECLIP) ==
+        LE_ERR_INVALID);                                             /* bad track */
+  CHECK(le_engine_cancel_restore(e, 0) == LE_ERR_INVALID); /* nothing in flight */
+
+  /* None of the declines above touched the take. */
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
+
+  /* Refused while capturing (a fresh overdub pass): restoration must decline
+   * rather than race the write head. (The overdub itself does move the take,
+   * so the bit-exact compare is done above, before this.) */
+  le_engine_record(e, 0);
+  pump_frames(e, 0.5f, 256);
+  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_ERR_INVALID);
+  le_engine_record(e, 0);
+  drain(e);
+  pump_frames(e, 0.0f, 600);
+
+  le_engine_destroy(e);
+}
+
+/* Cancel drops an in-flight pass without publishing; a second request is
+ * refused while one is already in flight (one job engine-wide). */
+static void test_restore_cancel_and_single_job(void) {
+  printf("test_restore_cancel_and_single_job\n");
+  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+
+  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_OK);
+  /* One job engine-wide: a second request while busy is refused. */
+  CHECK(le_engine_restore_track(e, 0, 0x1u, LE_RESTORE_DECLIP) == LE_ERR_INVALID);
+  CHECK(restore_track_state(e, 0) != 0); /* in flight */
+  CHECK(le_engine_cancel_restore(e, 0) == LE_OK);
+  CHECK(restore_wait_idle(e, 0, 5000) == 1);
+
+  /* Cancel-before-commit leaves the raw take in place. (A cancel that lands
+   * after the worker already published is a benign race — not asserted — but a
+   * cancel driven synchronously here always precedes the collect tick.) */
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
+
+  le_engine_destroy(e);
+}
+
+/* Denoise-enabled restoration at 48 kHz (RNNoise passthrough rate) completes,
+ * publishes finite audio, and stays undo-reversible — the worker's denoise leg
+ * runs end to end without wedging or NaN-poisoning the take. */
+static void test_restore_denoise_completes_finite(void) {
+  printf("test_restore_denoise_completes_finite\n");
+  (void)restore_build_clipped_sine(300.0, 1.2, 48000.0);
+  le_engine* e = restore_engine();
+  restore_record(e, g_rs_clipped, kRestoreLen);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_pre, kRestoreLen) ==
+        kRestoreLen);
+
+  CHECK(le_engine_restore_track(e, 0, 0x1u,
+                                LE_RESTORE_DECLIP | LE_RESTORE_DENOISE) == LE_OK);
+  CHECK(restore_wait_idle(e, 0, 8000) == 1);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(declip_all_finite(g_rs_live, kRestoreLen) == 1);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) != 0); /* the pass ran */
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth >= 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_read_lane_live_for_test(e, 0, 0, g_rs_live, kRestoreLen) ==
+        kRestoreLen);
+  CHECK(memcmp(g_rs_live, g_rs_pre, sizeof(g_rs_pre)) == 0);
+
+  le_engine_destroy(e);
+}
+
+/* ---- #595 lane slot reclaim: per-lane recoverable + trailing trim ----
+ *
+ * The engine-owned answer to "may this lane's slot be reclaimed": a per-lane
+ * recoverable flag latched by the audio thread on capture and dropped only
+ * when nothing on the lane can come back, gating an automatic trailing-only
+ * trim on un-route. Pins both #594 hazards at engine level: length_frames is
+ * track-shared (so it must never gate a trim), and a shrink evicts the freed
+ * lanes' wet-cache entries so a re-grow meets defaults on both sides. */
+
+/* Processes [frames] frames on a [ch_in]-input engine with input channel c
+ * held at (c + 1), discarding the output. frames * channels must fit 64. */
+static void reclaim_pump(le_engine* e, int ch_in, int frames) {
+  float in[64];
+  float out[64];
+  for (int f = 0; f < frames; ++f) {
+    for (int c = 0; c < ch_in; ++c) in[f * ch_in + c] = (float)(c + 1);
+  }
+  le_engine_process(e, out, in, (uint32_t)frames);
+}
+
+/* A 4-in/2-out engine whose track 0 owns [lanes] lanes, lane l recording
+ * input l and playing to output 0 (so lane sums are observable on out 0). */
+static le_engine* make_reclaim_engine(int lanes) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 4, 2, 1000);
+  le_engine_set_lane_count(e, 0, lanes);
+  for (int l = 0; l < lanes; ++l) {
+    le_engine_set_lane_input(e, 0, l, l);
+    le_engine_set_lane_output(e, 0, l, 0x1);
+  }
+  drain(e);
+  return e;
+}
+
+/* Records one LOOP_N loop (lane l captures constant l + 1) and finalizes. */
+static void reclaim_record(le_engine* e) {
+  le_engine_record(e, 0);
+  reclaim_pump(e, 4, LOOP_N);
+  le_engine_record(e, 0);
+  drain(e);
+}
+
+static int32_t lane_recoverable(le_engine* e, int32_t lane) {
+  le_lane_snapshot ls;
+  le_engine_get_lane(e, 0, lane, &ls);
+  return ls.recoverable;
+}
+
+static int32_t reclaim_lane_input(le_engine* e, int32_t lane) {
+  le_lane_snapshot ls;
+  le_engine_get_lane(e, 0, lane, &ls);
+  return ls.input_channel;
+}
+
+static int32_t reclaim_lane_count(le_engine* e) {
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  return s.tracks[0].lane_count;
+}
+
+/* Recording latches recoverable on exactly the WRITING lanes, and the
+ * snapshot exposes it per lane — while length_frames, being track-shared
+ * (#594 hazard 1), reads the full loop length even on the lane that recorded
+ * nothing. */
+static void test_recoverable_latches_on_writing_lanes_only(void) {
+  printf("test_recoverable_latches_on_writing_lanes_only\n");
+  le_engine* e = make_reclaim_engine(3);
+  /* Route lane 2 at an input the device does not have: the handler maps it
+   * to "records nothing", but the REQUEST was not an un-route, so no trim
+   * fires — the lane stays active through the take and simply writes no
+   * audio. */
+  CHECK(le_engine_set_lane_input(e, 0, 2, 9) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 3);
+  reclaim_record(e);
+  CHECK(lane_recoverable(e, 0) == 1);
+  CHECK(lane_recoverable(e, 1) == 1);
+  CHECK(lane_recoverable(e, 2) == 0);
+  /* Hazard 1 pinned: the shared write head published the loop length onto
+   * the non-writing lane too — length can never gate a reclaim. */
+  le_lane_snapshot ls;
+  le_engine_get_lane(e, 0, 2, &ls);
+  CHECK(ls.length_frames == LOOP_N);
+  /* Out-of-range lane: the default snapshot reports not-recoverable. */
+  le_engine_get_lane(e, 0, LE_MAX_LANES + 1, &ls);
+  CHECK(ls.recoverable == 0);
+  le_engine_destroy(e);
+}
+
+/* Clear-with-restore keeps every lane recoverable (the erased take is one
+ * undo away); the restore round-trip keeps it; a plain clear — no way back —
+ * drops it. */
+static void test_recoverable_survives_clear_restore_dies_with_plain_clear(
+    void) {
+  printf("test_recoverable_survives_clear_restore_dies_with_plain_clear\n");
+  le_engine* e = make_reclaim_engine(2);
+  reclaim_record(e);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].clear_restore == 1);
+  CHECK(s.tracks[0].length_frames == 0);
+  CHECK(lane_recoverable(e, 0) == 1); /* wiped-looking, still restorable */
+  CHECK(lane_recoverable(e, 1) == 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* restore the take */
+  drain(e);
+  CHECK(lane_recoverable(e, 0) == 1);
+  CHECK(lane_recoverable(e, 1) == 1);
+  CHECK(le_engine_clear(e, 0) == LE_OK); /* plain: nothing can come back */
+  drain(e);
+  CHECK(lane_recoverable(e, 0) == 0);
+  CHECK(lane_recoverable(e, 1) == 0);
+  le_engine_destroy(e);
+}
+
+/* Undo-to-empty keeps recoverable while redo can resurrect; a fresh recording
+ * (which invalidates the redo branch) drops it on the lanes that do not
+ * re-record — and only then does an un-route reclaim the slot. */
+static void test_recoverable_undo_to_empty_redo_lifecycle(void) {
+  printf("test_recoverable_undo_to_empty_redo_lifecycle\n");
+  le_engine* e = make_reclaim_engine(2);
+  reclaim_record(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* undo the base take -> EMPTY */
+  drain(e);
+  CHECK(lane_recoverable(e, 0) == 1); /* redo can bring both back */
+  CHECK(lane_recoverable(e, 1) == 1);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  drain(e);
+  CHECK(lane_recoverable(e, 1) == 1);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* empty again, redo armed */
+  drain(e);
+  /* Un-routing the redo-protected lane must NOT trim it (#594: the trim
+   * predicate is the engine's recoverable, not the visible emptiness). */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 2);
+  /* A fresh take kills the redo branch: lane 0 re-latches (it records), the
+   * un-routed lane 1 does not — its old audio is now truly unreachable. */
+  reclaim_record(e);
+  CHECK(lane_recoverable(e, 0) == 1);
+  CHECK(lane_recoverable(e, 1) == 0);
+  /* NOW the un-route reclaims the slot. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 1);
+  le_engine_destroy(e);
+}
+
+/* The trim is TRAILING-ONLY: a mid-list hole stays a hole (in place — never
+ * compacted onto another source), and the trailing run may later extend
+ * through it once everything behind it frees. */
+static void test_unroute_trims_trailing_lanes_only(void) {
+  printf("test_unroute_trims_trailing_lanes_only\n");
+  le_engine* e = make_reclaim_engine(4);
+  /* Mid-list un-route: lanes 2 and 3 are still routed -> no trim. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 4);
+  /* Trailing un-route: only lane 3 goes; lane 2 (routed) fences the run and
+   * the hole at lane 1 stays exactly where it was. */
+  CHECK(le_engine_set_lane_input(e, 0, 3, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 3);
+  CHECK(reclaim_lane_input(e, 1) == -1); /* the hole, un-moved */
+  CHECK(reclaim_lane_input(e, 2) == 2);  /* not compacted over the hole */
+  /* Freeing the fence extends the trailing run through the old hole. */
+  CHECK(le_engine_set_lane_input(e, 0, 2, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 1);
+  CHECK(reclaim_lane_input(e, 0) == 0);
+  le_engine_destroy(e);
+}
+
+/* A BURST of un-routes within one audio block reclaims the WHOLE trailing run
+ * once the drain settles — not just the last of the burst. Every un-route
+ * command sits in the ring until a process block applies it, so at the moment
+ * each un-route lands the sibling un-routes still read as routed and the
+ * immediate trim stops early (here it can only free lane 3's slot). The event
+ * drain re-runs the trim after the block applied and routing published, so the
+ * whole trailing run frees. */
+static void test_unroute_burst_reclaims_all_trailing_on_drain(void) {
+  printf("test_unroute_burst_reclaims_all_trailing_on_drain\n");
+  le_engine* e = make_reclaim_engine(4);
+  /* Three un-routes with NO process between them: all three commands queue in
+   * the same block, so each immediate trim judges its siblings by their still
+   * -routed published routing. Only the last (lane 3) reclaims on the spot.
+   * The count is read straight off the track here (le_lanes_active) rather than
+   * through the snapshot — le_engine_get_snapshot drains events, which would
+   * prematurely run (and clear) the deferred trim before the routing below has
+   * published. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 2, -1) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 3, -1) == LE_OK);
+  CHECK(le_lanes_active(&e->tracks[0]) == 3); /* immediate trim freed lane 3 */
+  /* Apply the queued commands on the audio thread (routing publishes) WITHOUT
+   * draining events, then drive the event drain: its deferred pass reclaims the
+   * lanes the burst stranded, now that every un-route reads -1. */
+  drain(e);
+  le_engine_drain_events(e);
+  CHECK(reclaim_lane_count(e) == 1); /* lanes 1 and 2 reclaimed too */
+  CHECK(reclaim_lane_input(e, 0) == 0);
+  /* Idempotent: a second drain with nothing pending leaves the count alone. */
+  le_engine_drain_events(e);
+  CHECK(reclaim_lane_count(e) == 1);
+  le_engine_destroy(e);
+}
+
+/* A recoverable trailing lane fences the DEFERRED burst trim exactly as it
+ * fences the immediate one (#594): the drain pass judges by the engine-owned
+ * recoverable flag, so a burst that un-routes onto a still-restorable lane
+ * reclaims nothing. */
+static void test_unroute_burst_recoverable_lane_fences_drain_trim(void) {
+  printf("test_unroute_burst_recoverable_lane_fences_drain_trim\n");
+  le_engine* e = make_reclaim_engine(3);
+  reclaim_record(e); /* lanes 0, 1, 2 all latch recoverable */
+  CHECK(lane_recoverable(e, 2) == 1);
+  /* Burst un-route of lanes 1 and 2 in one block; lane 2 stays recoverable
+   * (an un-route does not drop it — undo could bring the take back). */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  CHECK(le_engine_set_lane_input(e, 0, 2, -1) == LE_OK);
+  drain(e);
+  le_engine_drain_events(e);
+  /* The trailing lane 2 is recoverable, so the run never starts: no reclaim. */
+  CHECK(reclaim_lane_count(e) == 3);
+  CHECK(lane_recoverable(e, 2) == 1);
+  le_engine_destroy(e);
+}
+
+/* The #594 regression, pinned at the engine: no sequence of route / record /
+ * clear / undo / un-route may lose audio that undo could have restored. The
+ * un-route of a recorded lane never shrinks the count, so the grow-side
+ * le_lane_reset can never run over a restorable take via the trim. */
+static void test_unroute_never_trims_recoverable_lane(void) {
+  printf("test_unroute_never_trims_recoverable_lane\n");
+  le_engine* e = make_reclaim_engine(2);
+  float zin[4 * LOOP_N] = {0};
+  float out[2 * LOOP_N];
+  reclaim_record(e); /* lane 0 = 1.0, lane 1 = 2.0, both -> out 0 */
+  /* Un-route the recorded lane 1: recoverable, so the count must hold. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 2);
+  /* Its audio still plays: 1.0 + 2.0 summed on out 0. */
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+  }
+  /* Clear with restore, un-route again while wiped-looking: still declined
+   * (the restore shadow holds), and the undo brings the take back whole. */
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 2);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+  }
+  le_engine_destroy(e);
+}
+
+/* The trim declines while the track captures (the same guard
+ * le_engine_set_lane_count enforces) and simply lands on the next un-route;
+ * a re-grown lane comes back with recoverable cleared (le_lane_reset). */
+static void test_unroute_trim_declines_while_capturing(void) {
+  printf("test_unroute_trim_declines_while_capturing\n");
+  le_engine* e = make_reclaim_engine(2);
+  /* An idle un-route of a fresh trailing lane reclaims it on the spot. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 1);
+  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK); /* re-grow for the test */
+  /* Park lane 1 on an input the device does not have (no trim: the request
+   * was not an un-route) so the capture below never latches it. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, 9) == LE_OK);
+  drain(e);
+  le_engine_record(e, 0); /* defining capture */
+  reclaim_pump(e, 4, 2);  /* RECORDING is published now */
+  /* Mid-capture un-route: the guard declines the trim outright, even though
+   * lane 1 is trailing, free, and non-recoverable. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  CHECK(reclaim_lane_count(e) == 2);
+  reclaim_pump(e, 4, LOOP_N - 2);
+  le_engine_record(e, 0); /* finalize */
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 2); /* a declined trim never re-runs itself */
+  CHECK(lane_recoverable(e, 1) == 0);
+  /* The next un-route lands the reclaim. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 1);
+  CHECK(lane_recoverable(e, 0) == 1);
+  /* le_lane_reset's half of the lifecycle: a re-grown lane holds nothing. */
+  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK);
+  CHECK(lane_recoverable(e, 1) == 0);
+  le_engine_destroy(e);
+}
+
+/* D3: shrinking the lane count evicts the freed lanes' wet-cache entries AT
+ * the shrink (the engine_cache.c seam), not on the next scheduler tick — no
+ * tick runs between the set_lane_count call and the asserts, so a pass here
+ * pins the seam itself, with the tick's deactivated-lane reclaim left as the
+ * backstop it always was. */
+static void test_lane_count_shrink_evicts_wet_cache(void) {
+  printf("test_lane_count_shrink_evicts_wet_cache\n");
+  le_engine* e = cache_engine(LE_CACHE_DEFAULT_CAP_BYTES);
+  le_engine_set_lane_count(e, 0, 2);
+  le_engine_set_lane_input(e, 0, 1, 0); /* both lanes record input 0 */
+  le_engine_set_lane_output(e, 0, 1, 0x1);
+  drain(e);
+  cache_record_loop(e, CACHE_LOOP, 1.0f);
+  CHECK(le_engine_set_lane_fx(e, 0, 1, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 1, 1) == LE_OK);
+  drain(e);
+  le_lane_cache_info info;
+  le_engine_get_lane_cache(e, 0, 1, &info); /* register the key */
+  pump_frames(e, 0.0f, CACHE_SETTLE);
+  CHECK(cache_wait_state(e, 0, 1, LE_CACHE_CACHED, 3000));
+  /* Only lane 1 carries an entry (lane 0's chain is empty)... */
+  le_engine_get_lane_cache(e, 0, 0, &info);
+  CHECK(info.entry_frames == 0);
+  le_engine_get_lane_cache(e, 0, 1, &info);
+  CHECK(info.entry_frames == CACHE_LOOP);
+  CHECK(le_engine_fx_cache_used_bytes(e) > 0);
+  /* ...so the shrink must take the accounting to zero, tick-free. */
+  CHECK(le_engine_set_lane_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_fx_cache_used_bytes(e) == 0);
+  le_engine_get_lane_cache(e, 0, 1, &info);
+  CHECK(info.entry_frames == 0);
+  /* Re-grow: reset lane, no cached identity, nothing recoverable — engine
+   * defaults meet a caller that also evicted its side (#594 hazard 2). */
+  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK);
+  CHECK(lane_recoverable(e, 1) == 0);
+  le_engine_get_lane_cache(e, 0, 1, &info);
+  CHECK(info.entry_frames == 0);
+  le_engine_destroy(e);
+}
+
+/* Session load re-latches recoverable on every lane it fills — the load half
+ * of the save/load round-trip (export only covers lanes that captured) — so
+ * imported takes are trim-protected exactly like recorded ones. */
+static void test_session_import_round_trips_recoverable(void) {
+  printf("test_session_import_round_trips_recoverable\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  float pcm[LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) pcm[i] = 1.0f;
+  CHECK(le_engine_import_track_lane(e, 0, 0, pcm, LOOP_N) == LE_OK);
+  CHECK(le_engine_import_track_lane(e, 0, 1, pcm, LOOP_N) == LE_OK);
+  CHECK(le_engine_commit_session(e, LOOP_N) == LE_OK);
+  drain(e);
+  CHECK(lane_recoverable(e, 0) == 1);
+  CHECK(lane_recoverable(e, 1) == 1);
+  CHECK(reclaim_lane_count(e) == 2);
+  /* Un-routing an imported lane must not trim it away. */
+  CHECK(le_engine_set_lane_input(e, 0, 1, -1) == LE_OK);
+  drain(e);
+  CHECK(reclaim_lane_count(e) == 2);
+  /* A lane grown fresh beside them has nothing to give back. */
+  CHECK(le_engine_set_lane_count(e, 0, 3) == LE_OK);
+  CHECK(lane_recoverable(e, 2) == 0);
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== segno_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -23348,6 +25763,7 @@ int main(void) {
   test_two_monitored_inputs_dont_interfere();
   test_monitor_disable_and_excluded();
   test_monitor_and_playback_sum();
+  test_perf_volume_free_bytes();
   test_perf_arm_requires_configure();
   test_perf_reconfigure_while_armed_resets_cleanly();
   test_perf_arm_rejects_no_enabled_output();
@@ -23370,6 +25786,7 @@ int main(void) {
   test_perf_zero_fill_counter_visible_while_armed();
   test_perf_zero_fill_counts_only_silence_actually_written();
   test_perf_zero_fill_short_write_does_not_desync_file();
+  test_perf_ring_short_write_does_not_desync_file();
   test_perf_drain_samples_elapsed_before_draining();
   test_perf_sidecar_bytes_are_exact();
   test_perf_drain_steady_state_cycle_is_allocation_free();
@@ -23378,6 +25795,9 @@ int main(void) {
   test_perf_reconfigure_while_armed_marks_sidecar_device_changed();
   test_perf_events_log_table_round_trip_and_frame_accuracy();
   test_perf_events_log_transport_facts();
+  test_perf_armed_fact_carries_loop_phase();
+  test_take_id_monotonic_per_channel();
+  test_perf_transport_held_logged();
   test_perf_events_log_command_storm_no_loss();
   test_perf_events_log_fx_param_sweep_monotonic_frames();
   test_perf_events_log_readable_after_abrupt_stop();
@@ -23402,11 +25822,12 @@ int main(void) {
   test_ring_push_pop_fifo();
   test_ring_reports_full();
   test_ring_wraps_around();
-  test_audio_ring_init_rejects_bad_capacity();
+  test_audio_ring_alloc_rejects_bad_capacity();
   test_audio_ring_push_pop_fifo();
   test_audio_ring_push_frame_all_or_nothing();
   test_audio_ring_reports_full();
   test_audio_ring_wraps_around();
+  test_audio_ring_alloc_owns_fork_safe_storage();
   test_engine_lifecycle_without_device();
   test_null_safety();
   test_loop_clock();
@@ -23442,6 +25863,9 @@ int main(void) {
   test_cancel_arm_retires_a_pending_arm();
   test_cancel_arm_reports_a_refused_push();
   test_record_press_on_pending_arm_starts_when_parked();
+  test_finalize_take_refuses_all_non_recording_states();
+  test_finalize_take_refuses_the_defining_take();
+  test_finalize_take_leaves_pending_arms_untouched();
   test_configure_drops_stale_commands();
   test_undo_layers_quantized_and_live_regrows();
   test_undo_layer_slot_regrows_for_longer_loop();
@@ -23481,6 +25905,7 @@ int main(void) {
   test_overdub_punch_no_click();
   test_loop_seam_master_take_no_splice();
   test_loop_seam_survives_whole_lap_overdub();
+  test_loop_seam_on_punch_out_with_player_stopped();
   test_loop_seam_on_non_defining_track();
   test_loop_seam_not_armed_with_record_offset();
   test_seam_capture_cleared_by_reconfigure();
@@ -23565,6 +25990,7 @@ int main(void) {
   test_detect_loopback_runs();
   test_enumerate_devices_runs();
   test_enumerate_devices_counts_are_stable();
+  test_channel_memo_failure_not_cached();
   test_device_id_to_str();
   test_select_backend_defaults_to_miniaudio();
   test_alsa_periods_env_clamps_out_of_range();
@@ -23573,6 +25999,8 @@ int main(void) {
    * environment — and the seam's one-shot cache of it — is never touched. */
   test_probe_backends_follow_the_pin();
   test_pinned_probe_never_reaches_pulseaudio();
+  test_linux_enum_route_table();
+  test_enum_seam_fallthrough_and_appliance_pin();
   test_probing_leaks_no_fds();
   test_probing_leaks_no_fds_when_the_server_fails_mid_connect();
   test_backend_struct_defaults();
@@ -23631,6 +26059,7 @@ int main(void) {
   test_perf_render_stitching_long_loop();
   test_perf_render_stitching_mid_loop_arm();
   test_perf_render_fresh_recorded_while_armed();
+  test_perf_render_disarm_anchors_by_take_identity();
   test_perf_render_progress_and_cancel();
   test_perf_render_concurrent_with_live_engine();
   test_perf_render_partial_success();
@@ -23642,6 +26071,9 @@ int main(void) {
   test_perf_render_wet_plugin_passthrough();
   test_perf_render_fresh_midloop_second_track_phase();
   test_perf_render_fresh_multiloop_second_track_phase();
+  test_perf_render_aborted_take_does_not_claim_disarm_image();
+  test_finalize_take_ends_live_take_at_call_frame();
+  test_finalize_take_aborts_count_in();
   test_perf_render_golden_master_parity();
   test_perf_render_quantized_round_down_truncation_log_frame();
   test_looper_mode_defaults_and_persistence();
@@ -23687,6 +26119,8 @@ int main(void) {
   test_one_shot_dormant_in_multi_mode();
   test_one_shot_overdubbing_track_stops_cleanly_at_wrap();
   test_one_shot_persists_across_mode_switch_fires_on_first_wrap();
+  test_one_shot_wrap_logs_synthetic_stop();
+  test_one_shot_wrap_mid_overdub_logs_stop_no_record_end();
 
   test_primary_track_default_none();
   test_crown_primary_rejects_invalid_channel();
@@ -23778,6 +26212,18 @@ int main(void) {
   test_cache_job_queue_full_degrades_then_retries();
   test_cache_destroy_during_active_render();
   test_cache_audio_rev_bump_sites();
+  test_cache_batch_matches_per_lane();
+
+  test_recoverable_latches_on_writing_lanes_only();
+  test_recoverable_survives_clear_restore_dies_with_plain_clear();
+  test_recoverable_undo_to_empty_redo_lifecycle();
+  test_unroute_trims_trailing_lanes_only();
+  test_unroute_burst_reclaims_all_trailing_on_drain();
+  test_unroute_burst_recoverable_lane_fences_drain_trim();
+  test_unroute_never_trims_recoverable_lane();
+  test_unroute_trim_declines_while_capturing();
+  test_lane_count_shrink_evicts_wet_cache();
+  test_session_import_round_trips_recoverable();
 
   test_cond_setters_validate();
   test_cond_bypass_bitexact();
@@ -23812,6 +26258,13 @@ int main(void) {
   test_halfband_roundtrip_transparent_and_aligned();
   test_halfband_rejects_out_of_band();
   test_halfband_lengths_and_arg_guards();
+  test_restore_worker_repairs_clipped_lane();
+  test_restore_commit_undo_redo_and_rev_guard();
+  test_restore_enqueue_rev_bump_discards();
+  test_restore_runs_off_rt_thread();
+  test_restore_noop_when_disabled();
+  test_restore_cancel_and_single_job();
+  test_restore_denoise_completes_finite();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

@@ -49,6 +49,11 @@ from __future__ import annotations
 import math
 import os
 import sys
+import time
+
+# When this run began. The packager holds every shipped file against it so a
+# hand-made leftover cannot ride along in a vendor zip -- see pack().
+_RUN_STARTED = time.time()
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "out")
@@ -231,7 +236,15 @@ CONSOLE_SLED_T = 12.633   # thicker than the mini's, because this sled takes M3x
                           # mini's only takes them from one. Derived as the FRONT
                           # row's metal-base height less RING_FLOOR; _check() holds
                           # that, so the three numbers cannot drift apart.
-RING_FLOOR = 1.6 + 0.443  # front-row ring floor (+#760 reseat recal). The mid row's "floor" is the tall
+# Reseat recalibration (#760): the lid now seats on the SEAM-SOLVER anchor, a
+# plane 2.0 mm forward of the frame the 2026-07-28 platform measurements were
+# taken against -- i.e. 2*tan(SLOPE_ANGLE) HIGHER. Frozen at the measured
+# 3-decimal figure (= round(2*math.tan(math.radians(SLOPE_ANGLE)), 3) = 0.443,
+# which lands within 0.02 mm of both rows' re-measured drops); kept a literal so
+# the platform heights stay bit-for-bit what is already printed/cut. The full
+# story is at FACE_SEAT. One named source now, not a constant pasted per site.
+RESEAT_CAL = 0.443
+RING_FLOOR = 1.6 + RESEAT_CAL  # front-row ring floor (+#760 reseat recal). The mid row's "floor" is the tall
                           # pedestal deck it already had -- same formula, and only
                           # the front row is tight enough for this to bind.
 # Light-baffle TUB around the pedal: the pedestal's walls rise from the deck to
@@ -270,9 +283,9 @@ SKIRT_GAP    = 0.0            # wall top FLUSH on the REAL faceplate underside
 # 2026-07-28 measurements were taken against sat 2.0 mm rearward (the old doc
 # frame), i.e. 2*tan(SLOPE) = 0.443 mm LOWER than the real seat. Re-measured in
 # the reseated doc: pedals 0.46 (row 1) / 0.423 (row 2) below the slot rims --
-# the uniform +0.443 recalibration lands within 0.02 mm of both. Platforms
+# the uniform +RESEAT_CAL recalibration lands within 0.02 mm of both. Platforms
 # printed before this are 0.44 mm short.
-FACE_SEAT = 1.95 + 0.443
+FACE_SEAT = 1.95 + RESEAT_CAL
 
 SKIRT_DRIFT_ROW1 = FACE_SEAT   # was 1.6 -- the same #742 fit; see FACE_SEAT
 SKIRT_DRIFT_ROW2 = FACE_SEAT   # was 0.5 -- ditto; both rows share one constant now
@@ -393,15 +406,24 @@ D_ENC     = 7.2      # EC11 encoder bush (M7 thread; 7.0 was nominal-tight,
 # EC11 anti-rotation tab: NO keyway in the disc (user call 2026-08-19: the
 # slot looked bad -- the tab gets snapped off the EC11 instead; the nut alone
 # clamps the disc).
-RING_OD   = 46.0     # diffused-annulus ring window OD -- sized over the Adafruit
-RING_ID   = 31.0     # NeoPixel Ring 16 (44.5/31.7, LEDs on r~19), which is and
-                     # always was the ring hardware, mounted ON the ring board
-                     # around the EC11. (The old 58/40 window and its '12 THT
-                     # LEDs' note were wrong -- user correction 2026-08-19;
-                     # band widened 44/33 -> 46/31 same day: 'looks small'.)
-N_IND     = 10       # indicator LED pills -- ALL 10 pedals (issue #366). Firmware
-                     # chain contract is still indicatorLeds[7]; widening it to 10
-                     # is an open firmware change, flagged on the issue.
+# Encoder knob -- a PURCHASED part: O50 x 18 x O6 bore, black aluminium, plain
+# barrel (the owner's chosen knob). These are the VENDOR's numbers, not design
+# freedom: KNOB_D is what the ring window was sized around and KNOB_BORE_D is the
+# EC11's 6 mm shaft. The only modelled guess is the nut relief -- see
+# build_encoder_knob_step.
+KNOB_D        = 50.0
+KNOB_H        = 18.0
+KNOB_BORE_D   = 6.0
+KNOB_BORE_TOP = 12.0   # blind bore: stops 6 mm short of the top face
+KNOB_NUT_D    = 22.0   # underside relief over the EC11 mounting nut (assumed)
+KNOB_NUT_H    = 4.5
+KNOB_TOP_FILLET = 1.6
+RING_OD   = 67.0     # diffused-annulus ring window, sized over the NeoPixel
+RING_ID   = 51.5     # RING 24 (O65.5 / O52.3 / 3.2) -- the ring the owner fitted,
+                     # mounted ON the ring board around the EC11. It replaced a
+                     # Ring 16 (44.5/31.7) in 2026-08-22; the ring BOARD has not
+                     # caught up (it is O60 with its module pads on a O42.1
+                     # circle, both Ring-16 numbers) -- see #794.
 IND_PITCH = 50.0     # indicator LED pitch
 
 # --- rear I/O -----------------------------------------------------------------
@@ -719,6 +741,15 @@ def dev_deduct(angle_deg):
 DEV90 = dev_deduct(90.0)              # = 1.911 for T2/RI2/K0.33 (issue #237: the old
                                       # T + K*T = 2.66 over-deducted every 90 deg bend
                                       # ~0.75mm, leaving all walls short of nominal)
+# Front-lip screw HEIGHT on the flat pattern, shared by both encodings of the
+# joint: the base's front wall (tap pilot, dxf_base._fscrew_flat) and the lid's
+# front lip (clearance, dxf_faceplate). One tap, one screw SKU, one height --
+# it centres the hole on the developed 9 mm front wall. Was written twice, once
+# as (H_FRONT-bdd)*0.5 and once as (H_FRONT-DEV90)/2.0 (bdd == DEV90, so bit-
+# identical); the assert pins it so the next H_FRONT change is a conscious one.
+FRONT_SCREW_Z = (H_FRONT - DEV90) / 2.0
+assert abs(FRONT_SCREW_Z - 5.045) <= 0.01, \
+    f"FRONT_SCREW_Z {FRONT_SCREW_Z:.4f} drifted from the frozen 5.045 mm"
 # The lap must STOP SHORT of the wall->flange bend knuckle: the flange's outer
 # surface starts curving (RI+T)*tan(fold/2) = 2.58 before the outside mold
 # corner, so the lap tip stops there plus a margin -- as LONG as possible while
@@ -859,7 +890,11 @@ PEDAL_AP_DEV = (DEV90 + T) / math.cos(_ra) - DD_LIP
 # sloped plate a bigger gap drops the slot's front rim BELOW the pedal floor
 # (each mm of gap lowers the lip by tan(SLOPE)). At 1.93mm the floor sits
 # +0.16mm on the lip -- visually flush, exactly the approved relation now that
-# the pedal rides +0.443 on the reseated plate. Rear clearance stays nominal. (#760)
+# the pedal rides +RESEAT_CAL on the reseated plate. Rear clearance stays nominal. (#760)
+# NOTE: this front-gap term is the SAME reseat concept, but frozen at 2-decimal
+# 0.43, not RESEAT_CAL's 0.443. Folding it in would shift the slot's front rim
+# ~0.013 mm and is a real geometry change -- out of scope for this zero-delta
+# dedup. Reconcile 0.43 vs RESEAT_CAL in the #762 caliper batch, not here.
 FSW_FRONT_EXTRA = 0.43 / math.cos(_ra)
 # 7" screen, LED ring and encoder share ONE vertical centre-line (COL_U, defined
 # with the pedal layout below): the gap between pedals 1 and 2.
@@ -876,10 +911,44 @@ FRONT_GAP    = SCREEN_TOP_V - BIG_H - (PEDAL_ROW1_V + FSW_SLOT_D / 2.0)
 # (measured in the "Segno console (populated)" doc; Arial-class bold ~0.717): the
 # silk `h` parameter is an em size, so glyph caps top out at v_lbl + SILK_H*SILK_CAP.
 SILK_CAP     = 0.7168
-PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - (LED_GAP + 12.0) - FSW_SLOT_D / 2.0
+# Play-triangle height as a fraction of SILK_H. Named because ROW1_LEGEND_TOP
+# below depends on it: the triangle is the tallest glyph in row 1, so the ring
+# placement moves if this changes. Don't inline it back into the glyph.
+SILK_TRI_H   = 0.82
+# Vertical offset of a pedal label above its slot, measured from the slot's rear
+# edge. Pedals WITH a pill clear the pill first; pedals without one sit on the
+# pill's BOTTOM LINE, so the whole row shares one baseline -- that line is what
+# the eye follows across the row, and at the old 8.0 the plain labels floated
+# 1 mm under it and the row read as two bands (owner call 2026-08-22).
+#
+# DERIVED, not a literal: the pill centre is LED_GAP above the slot and the pill
+# is LED_SLOT_H tall, so its bottom edge is LED_GAP - LED_SLOT_H/2. Write 9.0
+# here and it silently stops matching the moment either of those changes.
+LABEL_DV_LED   = LED_GAP + 12.0
+LABEL_DV_PLAIN = LED_GAP - LED_SLOT_H / 2.0
+PEDAL_ROW2_V = SCREEN_TOP_V - SILK_H * SILK_CAP - LABEL_DV_LED - FSW_SLOT_D / 2.0
 # The encoder + LED ring do NOT follow the pedals rearward: the ring would hit the
-# 7" screen. It stays on the OLD row-2 centre (the 16"-screen-bottom line).
-ENC_V        = (SCREEN_TOP_V - BIG_H) + FSW_SLOT_D / 2.0
+# 7" screen. It used to be pinned to the OLD row-2 centre (the 16"-screen-bottom
+# line), which held while the ring was the Ring 16's O46 -- that left 26.7 mm of
+# air under the 7" aperture. The Ring 24's O67 grew the radius by 10.5 mm and ate
+# the gap down to 16.2 (12.2 to the diffuser's glue land), which is why the ring
+# started reading as crowded up against the screen.
+#
+# So the ring is placed off the CLEARANCE now, not off a line that has nothing to
+# do with it: the gap is the number that actually matters, it is stated once, and
+# the ring re-places itself if RING_OD ever changes again.
+# The rule is CENTRED, not clearance-from-one-side: the ring sits midway between
+# the top of the row-1 legend band and the bottom of the 7" aperture, so the air
+# above and below it is equal and stays equal when either bound moves. Hanging it
+# off a single gap to the screen (what this was) leaves the other side to chance,
+# and by eye it still sat high (owner call 2026-08-22).
+#
+# The band top is the play triangle's tip -- it is the tallest thing in row 1,
+# taller than the cap height of UNDO/MODE, so it is what the eye reads as the
+# edge of the legend band.
+ROW1_LEGEND_TOP = (PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + LABEL_DV_PLAIN
+                   + SILK_H * (SILK_CAP / 2.0 + SILK_TRI_H / 2.0))
+ENC_V        = (ROW1_LEGEND_TOP + (SCREEN_TOP_V - SMALL_H)) / 2.0
 
 # Front row of 8, EVENLY spaced across the faceplate (no 4+4 grouping).
 _ROW1 = ["REC/PLAY", "STOP", "UNDO", "MODE", "TRACK1", "TRACK2", "TRACK3", "TRACK4"]
@@ -922,15 +991,73 @@ FRONT_SCREW_U = ([_row1_u(0) - _FS_HP]
                  + [(_row1_u(i) + _row1_u(i + 1)) / 2.0 for i in range(len(_ROW1) - 1)]
                  + [_row1_u(len(_ROW1) - 1) + _FS_HP])
 
-# Status-LED pedals: ALL of them (issue #366 -- the LED trial added pills over
-# REC/PLAY, STOP, UNDO and MODE; the encoder ring stays as well).
-def _has_led(label):
-    return True
+# Status-LED pedals. #366 gave a pill to ALL ten; the four TRANSPORT pedals lose
+# theirs again (owner call 2026-08-21): REC/PLAY, STOP, UNDO and MODE are fixed
+# functions, not mappable, so a per-pedal status light has nothing to report --
+# their state is already on the screens. The six that keep a pill are the four
+# TRACKs (which show arm/record/play per lane) plus CLEAR and BANK. The encoder
+# ring is unaffected.
+NO_LED_PEDALS = ("REC/PLAY", "STOP", "UNDO", "MODE")
 
-# Silkscreen label text per control (REC/PLAY stacks on two lines; tracks show the number).
+def _has_led(label):
+    return label not in NO_LED_PEDALS
+
+# Legends. Two transport controls read as SYMBOLS rather than words (owner call
+# 2026-08-21): "REC/PLAY" was a two-line block eating the tallest label slot on
+# the plate for what is one button, and a record dot beside a play triangle says
+# it in a fraction of the space; STOP becomes the universal square. Symbols are
+# emitted as GEOMETRY (see SILK_SYMBOLS / _silk_symbol_geometry), not glyphs --
+# the legend is a printed vinyl overlay, and a filled shape is unambiguous where
+# a font substitution on the vendor's RIP would not be.
+SILK_SYMBOLS = {"REC/PLAY": "rec_play", "STOP": "stop"}
+
+def _silk_symbol_geometry(kind, u, v, h):
+    """Filled legend symbols, returned as {"kind": "poly"/"disc"} entries in the
+    ENGRAVE stream. u,v = centre; h = cap height, so a symbol sits on the same
+    optical baseline as the word labels it replaces.
+
+    rec_play: record DOT + play TRIANGLE, side by side, reading left to right in
+              the order the one button cycles.
+    stop:     the universal filled square, drawn slightly smaller than h because
+              a square reads visually larger than a circle of the same height.
+    """
+    out = []
+    if kind == "rec_play":
+        d = h * 0.78                       # dot diameter
+        tw, th = h * 0.72, h * SILK_TRI_H  # triangle width / height
+        gap = h * 0.20                     # tighter than the old 0.34 -- the plus
+        pw = h * 0.36                      # goes BETWEEN the two, and the group
+        pt = h * 0.10                      # still has to fit inside the pedal
+        total = d + gap + pw + gap + tw
+        x0 = u - total / 2.0
+        out.append({"kind": "disc", "u": x0 + d / 2.0, "v": v, "d": d})
+        # The PLUS is deliberately smaller than the dot and the triangle: it is a
+        # conjunction between them, not a third transport symbol competing with
+        # them (owner call 2026-08-22). One 12-point cross, not two overlapping
+        # bars -- the overlap would be a self-intersecting fill boundary.
+        px = x0 + d + gap + pw / 2.0
+        a, b = pw / 2.0, pt / 2.0
+        out.append({"kind": "poly", "pts": [
+            (px - b, v - a), (px + b, v - a), (px + b, v - b),
+            (px + a, v - b), (px + a, v + b), (px + b, v + b),
+            (px + b, v + a), (px - b, v + a), (px - b, v + b),
+            (px - a, v + b), (px - a, v - b), (px - b, v - b)]})
+        tx = x0 + d + gap + pw + gap
+        out.append({"kind": "poly", "pts": [(tx, v - th / 2.0),
+                                            (tx, v + th / 2.0),
+                                            (tx + tw, v)]})
+    elif kind == "stop":
+        a = h * 0.70
+        out.append({"kind": "poly", "pts": [(u - a/2, v - a/2), (u + a/2, v - a/2),
+                                            (u + a/2, v + a/2), (u - a/2, v + a/2)]})
+    else:
+        raise ValueError("unknown silk symbol: %r" % (kind,))
+    return out
+
+
 def _silk_lines(label):
-    if label == "REC/PLAY":
-        return ["REC/", "PLAY"]
+    if label in SILK_SYMBOLS:
+        return []                 # drawn as geometry, not text
     if label.startswith("TRACK"):
         return []                 # tracks are identified by the meter screen, no silk text
     return [label]
@@ -1049,9 +1176,13 @@ def faceplate_holes():
         # EXACTLY the pill width (LED_SLOT_W) so labels and LED pills read as one
         # family of bars: common cap height, width factor forces the advance.
         lines = _silk_lines(label)
+        if label in SILK_SYMBOLS:                      # transport symbol, drawn as geometry
+            v_sym = v + FSW_SLOT_D/2 + (LABEL_DV_LED if led else LABEL_DV_PLAIN) + SILK_H*SILK_CAP/2.0
+            engr.extend(_silk_symbol_geometry(SILK_SYMBOLS[label], u, v_sym, SILK_H))
+            continue
         if not lines:                                  # tracks carry no silk text
             continue
-        v_lbl = v + FSW_SLOT_D/2 + (LED_GAP + 12.0 if led else 8.0)  # labelled pills get extra air
+        v_lbl = v + FSW_SLOT_D/2 + (LABEL_DV_LED if led else LABEL_DV_PLAIN)
         infos = []                                     # (text, width-factor, displayed width)
         for ln in lines:
             est_w = SILK_H * len(ln) * SILK_CW         # natural width at the common height
@@ -2147,6 +2278,33 @@ def _doc():
 def _circle(msp, x, y, d, layer="CUT"):
     msp.add_circle((x, y), d / 2.0, dxfattribs={"layer": layer})
 
+def _silk_fill(msp, kind, spec):
+    """SOLID-fill a SILK symbol so it prints as artwork, not as a hairline outline.
+
+    Glyphs on this layer are TEXT -- the printer's RIP fills them. The transport
+    symbols (see _silk_symbol_geometry) are plain geometry, so without a hatch an
+    overlay printer would trace the outline and leave the middle black: an empty
+    ring where the record dot belongs. The outline entity stays as well, so the
+    shape survives in readers that ignore hatches.
+    """
+    # color=256 is BYLAYER, and it has to be the NAMED argument -- add_hatch
+    # overwrites dxfattribs["color"] with it. A HATCH left at add_hatch's ACI 7
+    # default renders WHITE on a white sheet and the symbol prints as a bare
+    # outline: the same bug that hid the VENT louvres (#775 R1), one level down
+    # at the entity. Do NOT "tidy up" by adding set_solid_fill() back either --
+    # add_hatch already sets solid_fill and the SOLID pattern, and that call
+    # would reset the colour to 7 all over again.
+    h = msp.add_hatch(color=256, dxfattribs={"layer": "SILK"})
+    if kind == "circle":
+        cx, cy, r = spec
+        h.paths.add_edge_path().add_arc((cx, cy), r, 0.0, 360.0)
+    elif kind == "poly":
+        h.paths.add_polyline_path(spec, is_closed=True)
+    else:
+        raise ValueError("unknown silk fill kind: %r" % (kind,))
+    return h
+
+
 def _poly(msp, pts, layer="CUT", closed=True):
     msp.add_lwpolyline(pts, close=closed, dxfattribs={"layer": layer})
 
@@ -2244,10 +2402,10 @@ def dxf_faceplate(path):
     # legends are NOT silkscreened on the metal -- they live on a printed adhesive overlay
     # (dxf_overlay / segno_overlay). Keeps the metal a plain cut+bend+powder part (cheap).
     for u in FRONT_SCREW_U:
-        # lip hole HEIGHT matched to the wall hole (z = (H_FRONT-DEV90)/2 + DEV90
+        # lip hole HEIGHT matched to the wall hole (z = FRONT_SCREW_Z + DEV90
         # = 6.955): station from the lid's front mold corner = _cfy - z, flat from
         # the fold line = station - DD_LIP. The old ffl/2 sat 0.74 high. (#760)
-        _circle(msp, ox + u, ffl - ((_cfy - (H_FRONT - DEV90) / 2.0 - DEV90) - DD_LIP), 3.4)  # M3 clearance
+        _circle(msp, ox + u, ffl - ((_cfy - FRONT_SCREW_Z - DEV90) - DD_LIP), 3.4)  # M3 clearance
     for u in FRONT_SCREW_U:
         _circle(msp, ox + u, SEAM_LAP_V, 3.4)                             # rear lap -> transition: SAME 9
                                                                           # stations as the front lip (#760),
@@ -2267,8 +2425,16 @@ def dxf_overlay(path):
     cuts, engr = faceplate_holes()
     _emit(msp, cuts, ox=0, oy=0)                                        # die-cut apertures (match the metal)
     for e in engr:
-        _text(msp, e["u"], e["v"], e["h"], e["s"], layer="SILK",       # WHITE legend on the print
-              wf=e.get("wf", 1.0), halign=e.get("halign", "left"))
+        k = e.get("kind")
+        if k == "disc":                                                # symbol legends are SHAPES
+            _circle(msp, e["u"], e["v"], e["d"], layer="SILK")         # (see _silk_symbol_geometry)
+            _silk_fill(msp, "circle", (e["u"], e["v"], e["d"] / 2.0))  # ...printed SOLID, like a glyph
+        elif k == "poly":
+            _poly(msp, e["pts"], "SILK")
+            _silk_fill(msp, "poly", e["pts"])
+        else:
+            _text(msp, e["u"], e["v"], e["h"], e["s"], layer="SILK",   # WHITE legend on the print
+                  wf=e.get("wf", 1.0), halign=e.get("halign", "left"))
     _text(msp, 10, FP_V + 8, 8, "Segno CALCO SUPERIOR (segno_overlay)  CANT. 1  adhesivo impreso (policarbonato/vinilo); fondo NEGRO + leyendas BLANCAS; aberturas troqueladas; se pega sobre la tapa superior (no lleva serigrafía sobre el metal)", "NOTE")
     doc.saveas(path); return {}
 
@@ -2304,7 +2470,8 @@ def dxf_base(path):
     # behind the full-drop lip); the screws drop to M3 -- 4 full threads when
     # hand-tapped in the T2 sheet (Ø2.5 pilot below), with drill-to-Ø5.1 +
     # M3 rivnut as the per-station repair path.
-    _fscrew_flat = (H_FRONT - bdd) * 0.5     # lip screws keep their ORIGINAL height
+    _fscrew_flat = FRONT_SCREW_Z             # lip screws keep their ORIGINAL height
+                                             # (= (H_FRONT - bdd)*0.5; bdd == DEV90)
     Hr = HR_FLAT                             # rear web from the seam solver: the flange
     Ht = HT_FLAT                             # outer lands ONE SHEET below the lap outer
     rrel = T + 1.0                          # small bend-relief radius at each corner
@@ -3288,7 +3455,7 @@ def build_mini_console():
     return outp
 
 def build_diffuser_step():
-    """LED pill diffuser INSERT (3D-print in WHITE PLA, x10 per console):
+    """LED pill diffuser INSERT (3D-print in WHITE PLA, x6 per console):
     a stadium lens that pushes into the faceplate slot FROM THE INSIDE until its
     shoulder flange seats on the sheet's underside; the lens stands LED_INS_PROUD
     above the outer skin. The single-LED module (hardware/led_strip/ puck or an
@@ -3313,21 +3480,179 @@ def build_diffuser_step():
     return step
 
 
+# --- pedal name tiles (#795) -------------------------------------------------
+# The WTB-006's top pad has a 54.55 x 20 window through it, and the pad is a
+# uniform 2.2 slab lying on a case top tilted to match -- so the window is a
+# parallel-sided 2.2 deep pocket and a FLAT tile fits it.
+# The tile FILLS the window: at 0.25/side the pedal's own case colour showed
+# through the gap around it. 0.05/side is below what FDM resolves, so this is a
+# press fit into a compliant rubber window -- which also retains it.
+TILE_L      = 54.45   # window is 54.55
+TILE_W      = 19.90   # window is 20.00
+TILE_BODY_T = 1.8     # black body
+TILE_TEXT_T = 0.4     # white glyph layer; 1.8 + 0.4 = the 2.2 pocket, so the
+                      # LETTERS finish flush with the pad and the black field
+                      # sits 0.4 below it, out of the scuff line
+TILE_MARGIN = 6.0     # clear tile around the glyph block
+TILE_FONT   = "Helvetica Neue Light"  # THIN-looking but printable. At the tile's
+                      # 7.9 mm glyph height, Helvetica Neue *Thin* measures 0.39 mm
+                      # of stroke -- under a 0.4 nozzle, so a slicer drops or gaps
+                      # it. Light holds 0.61. The two asks (thinner AND smaller)
+                      # collide at the nozzle; this is where they meet. Measured,
+                      # not guessed -- see the stroke check when regenerating.
+TILE_SYM_H  = 14.0    # symbol em: play triangle 0.82*h = 11.5 tall
+
+# What each pedal's tile SAYS. The track pedals carry only their number -- the
+# word is redundant next to three identical neighbours, and a lone digit can be
+# set far larger in the same window.
+TILE_TEXT = {"TRACK1": "1", "TRACK2": "2", "TRACK3": "3", "TRACK4": "4"}
+
+
+def build_pedal_name_tiles():
+    """One drop-in name tile per pedal, for the pad window.
+
+    PRINT FACE-DOWN with a filament change at z = TILE_TEXT_T. The glyphs stand
+    proud of the body, so face-down they are the first 0.4 mm off the bed: print
+    that in WHITE, swap to BLACK for the rest, flip, done. One extruder, crisp
+    glyph edges, and the letters get the bed finish.
+
+    The text comes from PEDALS and SILK_SYMBOLS -- the same source as the
+    faceplate legends -- so REC/PLAY and STOP carry the dot+plus+triangle and the
+    square here too, and the two can never drift apart.
+    """
+    import cadquery as cq
+    made = []
+    for label, _u, _v in PEDALS:
+        body = (cq.Workplane("XY")
+                .box(TILE_L, TILE_W, TILE_BODY_T, centered=(True, True, False)))
+        fit_l, fit_w = TILE_L - 2*TILE_MARGIN, TILE_W - 2*TILE_MARGIN
+        if label in SILK_SYMBOLS:
+            # fit the symbol group to the SAME box the words get, so a symbol
+            # tile and a word tile read at one size
+            probe = _silk_symbol_geometry(SILK_SYMBOLS[label], 0.0, 0.0, 10.0)
+            pxs = [p2[0] for e2 in probe if e2["kind"] == "poly" for p2 in e2["pts"]]
+            pys = [p2[1] for e2 in probe if e2["kind"] == "poly" for p2 in e2["pts"]]
+            for e2 in probe:
+                if e2["kind"] == "disc":
+                    pxs += [e2["u"] - e2["d"]/2, e2["u"] + e2["d"]/2]
+                    pys += [e2["v"] - e2["d"]/2, e2["v"] + e2["d"]/2]
+            sym_h = 10.0 * min(fit_l / (max(pxs)-min(pxs)), fit_w / (max(pys)-min(pys)))
+            glyph = None
+            for e in _silk_symbol_geometry(SILK_SYMBOLS[label], 0.0, 0.0, sym_h):
+                w = cq.Workplane("XY").workplane(offset=TILE_BODY_T)
+                if e["kind"] == "disc":
+                    solid = w.center(e["u"], e["v"]).circle(e["d"] / 2.0).extrude(TILE_TEXT_T)
+                else:
+                    solid = w.polyline(e["pts"]).close().extrude(TILE_TEXT_T)
+                glyph = solid if glyph is None else glyph.union(solid)
+        else:
+            # Auto-fit: scale each label to the largest em that still clears
+            # TILE_MARGIN on every side. A fixed em would either shrink the words
+            # to fit or leave a single digit swimming in the window.
+            txt = TILE_TEXT.get(label, label)
+            probe = (cq.Workplane("XY").text(txt, 10.0, TILE_TEXT_T, font=TILE_FONT)
+                     .val().BoundingBox())
+            em = 10.0 * min(fit_l / probe.xlen, fit_w / probe.ylen)
+            glyph = (cq.Workplane("XY").workplane(offset=TILE_BODY_T)
+                     .text(txt, em, TILE_TEXT_T, font=TILE_FONT))
+        # Centre on the INK, not on the font's advance box: cadquery's text()
+        # centres the latter, which leaves the glyphs up to 0.5 mm off and the
+        # baseline 0.33 high. Measure what was actually drawn and re-centre it.
+        gb = glyph.val().BoundingBox()
+        glyph = glyph.translate((-(gb.xmin + gb.xmax) / 2.0,
+                                 -(gb.ymin + gb.ymax) / 2.0, 0))
+        part = body.union(glyph)
+        bb = part.val().BoundingBox()
+        assert bb.xlen <= TILE_L + 1e-6 and bb.ylen <= TILE_W + 1e-6, (
+            f"pedal tile {label!r}: glyph {bb.xlen:.2f} x {bb.ylen:.2f} overflows "
+            f"the {TILE_L} x {TILE_W} tile")
+        stem = "segno_pedal_tile_" + label.replace("/", "_")
+        # STEP keeps the body and the glyphs as TWO SOLIDS -- that is the colour
+        # split, so a CAD assembly can paint them black/white per body instead of
+        # per face (800 face assignments across ten tiles is slow enough to time
+        # out) and a multi-material slicer can read the split directly.
+        two = cq.Compound.makeCompound([body.val(), glyph.val()])
+        cq.exporters.export(two, os.path.join(OUT, stem + ".step"))
+        # STL is the fused single mesh: that is what a single-extruder,
+        # filament-change print wants.
+        cq.exporters.export(part.val(), os.path.join(OUT, stem + ".stl"))
+        made.append(stem)
+    return made
+
+
+def build_ring_disc_step():
+    """3D reference solid for the LED-ring centre disc, generated from the SAME
+    constants as its DXF.
+
+    It used to be a hand-made file that the packager simply picked up off disk
+    and shipped: by 2026-08-22 that file was O40 x 2 while the DXF the shop
+    actually cuts had moved to RING_ID = O51.5 -- an 11.5 mm disagreement inside
+    one vendor zip, and nothing in the build noticed for three ring resizes.
+    Generating it here is the whole point; do not go back to a checked-in file.
+    """
+    import cadquery as cq
+    d = (cq.Workplane("XY").circle(RING_ID / 2.0).circle(D_ENC / 2.0).extrude(T))
+    step = os.path.join(OUT, "segno_ring_disc.step")
+    cq.exporters.export(d.val(), step)
+    return step
+
+
+def build_encoder_knob_step():
+    """ENCODER KNOB -- **PURCHASED**, not printed. O50 x 18, O6 bore, black
+    aluminium, PLAIN SIDES (owner's chosen part, 2026-08-22).
+
+    This is a REFERENCE model of a bought part, not a thing anyone fabricates
+    from this repo. It exists so the assembly, the ring-window sizing and the
+    collision audit have the real knob in them; the STEP is deliberately NOT in
+    the 3D-print vendor pack, and MANUFACTURING.md lists it under purchased
+    parts. Do not "restore" the grip flutes an earlier revision had -- the part
+    the owner bought has a smooth barrel, and modelling notches that are not
+    there would quietly overstate the clearance to the ring window.
+
+    Why it is O50: the Ring 24's window is O67 and its ID is O52.3, so a O50 hub
+    fills the middle and leaves a ~1 mm dark gap inside the lit annulus.
+
+      body O50 x 18, 0.6 bottom chamfer, 1.6 top edge fillet;
+      O22 x 4.5 NUT RELIEF from below -- ASSUMED, not measured off the vendor
+      part: it is what lets the knob clear the EC11's mounting nut, and without
+      some relief there the knob fouls the nut and never seats (0.022/0.027 cm3
+      of interference measured before it was added). If the real knob has a
+      solid underside, it will sit ~3 mm proud of where this model puts it --
+      worth a caliper check on the part before the faceplate is cut.
+      O6 shaft bore for the EC11's 6 mm shaft, BLIND -- the top is unbroken.
+    z=0 is the knob's underside (it rides on the EC11 nut, not the faceplate).
+    """
+    import cadquery as cq
+    r_out, h = KNOB_D / 2.0, KNOB_H
+    k = cq.Workplane("XY").circle(r_out).extrude(h)
+    k = k.faces(">Z").edges().fillet(KNOB_TOP_FILLET)   # the domed top edge
+    k = k.faces("<Z").edges().chamfer(0.6)
+    k = k.faces("<Z").workplane().circle(KNOB_NUT_D / 2.0).cutBlind(-KNOB_NUT_H)
+    k = k.cut(cq.Workplane("XY").workplane(offset=KNOB_NUT_H)
+              .circle(KNOB_BORE_D / 2.0).extrude(KNOB_BORE_TOP - KNOB_NUT_H))
+    step = os.path.join(OUT, "segno_encoder_knob.step")
+    cq.exporters.export(k.val(), step)
+    cq.exporters.export(k.val(), os.path.join(OUT, "segno_encoder_knob.stl"))
+    return step
+
+
 def build_ring_diffuser_step():
     """Encoder ring DIFFUSER + DISC HOLDER, one piece (3D-print WHITE PLA, x1,
     user call 2026-08-19): replaces the plain annular insert. From the top:
-    - the LENS annulus pushes into the faceplate's RING_OD (O46) ring window
+    - the LENS annulus pushes into the faceplate's RING_OD (O67) ring window
       (proud);
-    - the aluminium RING DISC (RING_ID = O31 x 2) drops into a front-side
+    - the aluminium RING DISC (RING_ID = O51.5 x 2) drops into a front-side
       pocket inside the lens bore and sits FLUSH with the faceplate top; the
       EC11 clamps it (bushing through the disc's O7.2, nut under the knob);
-    - a full BACK PLATE extends past the window to O58 -- the exposed front
-      ring (window edge r23 .. plate r29) is the CA-GLUE land against the
-      faceplate underside. NOTE: the back-plate/lip radii (29.0, 22.5, 16.0,
-      14.0) are hardcoded; if RING_OD grows past ~56 the glue land vanishes
-      -- re-derive them together with any window resize;
-    The NeoPixel Ring 16 is MOUNTED ON THE RING BOARD around the EC11 (as
-    built) -- no nest here; its LEDs shine up through the 0.8 mm web.
+    - a full BACK PLATE extends past the window to O75 -- the exposed front
+      ring (window edge r33.5 .. plate r37.5) is the CA-GLUE land against the
+      faceplate underside, 4.0 mm wide. NOTE: the back-plate/lip radii (37.5,
+      32.0, 25.6, 24.2) are hardcoded and were RE-DERIVED for the Ring 24;
+      they do not scale themselves -- re-derive them again with any window
+      resize, and keep plate_r > RING_OD/2 or the glue land vanishes.
+    The NeoPixel RING 24 (65.5 OD / 52.3 ID / 3.2 thick, the ring the owner
+    has) is MOUNTED ON THE RING BOARD around the EC11 -- no nest here; its
+    LEDs shine up through the 0.8 mm web.
     z=0 is the faceplate-underside/glue plane."""
     import cadquery as cq
     ro = (RING_OD - LED_INS_CLR) / 2.0
@@ -3336,13 +3661,13 @@ def build_ring_diffuser_step():
     lens = (cq.Workplane("XY").circle(ro).circle(ri)
             .extrude(T + LED_INS_PROUD))
     lens = lens.edges(">Z").chamfer(0.3)
-    ins = lens.union(cq.Workplane("XY").circle(29.0).circle(14.0)
+    ins = lens.union(cq.Workplane("XY").circle(37.5).circle(24.2)
                      .extrude(-plate_t))
     # disc lip: the disc rests on the inner lip at z=0, flush with the sheet
     # top when glued (disc top = T). Thin the web over the LED circle so the
     # board-mounted ring glows through 0.8 mm of white PLA.
     ins = ins.cut(cq.Workplane("XY").workplane(offset=-plate_t)
-                  .circle(22.5).circle(16.0).extrude(plate_t - 0.8))
+                  .circle(32.0).circle(25.6).extrude(plate_t - 0.8))
     step = os.path.join(OUT, "segno_ring_diffuser.step")
     cq.exporters.export(ins.val(), step)
     cq.exporters.export(ins.val(), os.path.join(OUT, "segno_ring_diffuser.stl"))
@@ -3839,7 +4164,8 @@ ANNOT_LAYERS    = ("BEND", "NOTE", "ENGRAVE", "SILK", "MASK", "ACRYLIC")
 SHEET_LEGEND = ("CUT + VENT = CORTE PASANTE (las dos capas, la misma operación)   |   "
                 "BEND = LÍNEA DE PLEGADO, SOLO REFERENCIA - no cortar, no marcar, no rayar ni grabar   |   "
                 "MASK = máscara de pintura (no pintar), NO CORTAR   |   "
-                "NOTE / ENGRAVE / SILK = texto, no es geometría")
+                "NOTE / ENGRAVE = texto, no es geometría   |   "
+                "SILK = ARTE IMPRESO: texto + símbolos rellenos (imprimir en blanco, NO CORTAR)")
 # The exact prohibition clause, so the guard can hold both halves of it: the words
 # must be PRESENT (BEND is not an operation) and must appear NOWHERE ELSE in the
 # legend, where they would read as an instruction to perform them.
@@ -3960,6 +4286,15 @@ def _force_pdf_layer_colours(doc):
         else:
             assert lay.rgb is not None or lay.color != 7, \
                 f"layer {lname!r} is ACI 7 -- it renders white on a white sheet and vanishes"
+    # Same trap one level down: an ENTITY may carry its own ACI 7 and vanish on a
+    # layer that is itself fine. Only the through-cut layers are forced black
+    # above, so an explicit 7 anywhere else is the invisible case.
+    for e in doc.modelspace():
+        if e.dxf.layer in THRU_CUT_LAYERS:
+            continue
+        assert e.dxf.hasattr("color") is False or e.dxf.color != 7, \
+            f"{e.dxftype()} on layer {e.dxf.layer!r} carries ACI 7 -- it renders " \
+            f"white on a white sheet and vanishes from the PDF"
     return blackened
 
 SHEET_HEADING = "Segno - gabinete de controlador de audio"
@@ -4354,7 +4689,14 @@ def layout_svg(path):
         elif c["kind"] == "ring":
             e.append(f'<circle cx="{X(c["u"]):.1f}" cy="{Yf(c["v"]):.1f}" r="{c["od"]/2:.1f}" fill="none" stroke="#a855f7" stroke-width="3"/>')
     for lab in engr:
-        e.append(f'<text x="{X(lab["u"]+16):.1f}" y="{Yf(lab["v"])+10:.1f}" fill="#9fb0c8" font-size="8" text-anchor="middle">{lab["s"]}</text>')
+        k = lab.get("kind")
+        if k == "disc":                       # symbol legends (see _silk_symbol_geometry)
+            e.append(f'<circle cx="{X(lab["u"]):.1f}" cy="{Yf(lab["v"]):.1f}" r="{lab["d"]/2:.1f}" fill="#9fb0c8"/>')
+        elif k == "poly":
+            pts = " ".join(f'{X(px):.1f},{Yf(pv):.1f}' for px, pv in lab["pts"])
+            e.append(f'<polygon points="{pts}" fill="#9fb0c8"/>')
+        else:
+            e.append(f'<text x="{X(lab["u"]+16):.1f}" y="{Yf(lab["v"])+10:.1f}" fill="#9fb0c8" font-size="8" text-anchor="middle">{lab["s"]}</text>')
     # rear panel
     e.append(f'<text x="{M}" y="{rear_base-12:.1f}" fill="#94a3b8" font-size="12" font-weight="600">REAR I/O PANEL — {W:.0f} x {REAR_WALL_H:.0f} mm (lowered; transition shoulder carries the lid-lap screws)</text>')
     e.append(f'<rect x="{M}" y="{rear_base:.1f}" width="{fw:.1f}" height="{REAR_WALL_H:.1f}" rx="6" fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>')
@@ -4501,10 +4843,17 @@ DXF_PARTS = [
 ]
 NO_PDF = set()   # every sheet part ships with a PDF drawing
 
-def build_quote_packages():
+def build_quote_packages(with_step=True, with_pdf=True):
     """Refresh the manufacturer zips from the CURRENT outputs so they can never
     go stale (a hand-built segno_sheetmetal.zip once shipped three-week-old
-    flats). Three packs: laser/bend sheet metal, reference STEPs, 3D prints."""
+    flats). Three packs: laser/bend sheet metal, reference STEPs, 3D prints.
+
+    with_step/with_pdf mirror which builders actually ran THIS run: the
+    freshness gate in pack() (rightly) refuses to ship anything this run did
+    not write, so a --no-step / --no-pdf / no-cadquery run must skip the packs
+    (or the extensions) whose builders were skipped — otherwise the gate turns
+    every documented partial invocation into a crash after all its useful work
+    (found in review of #792)."""
     import zipfile
     zips = []
 
@@ -4515,6 +4864,18 @@ def build_quote_packages():
                 for ext in exts:
                     p = os.path.join(OUT, n + ext)
                     if os.path.exists(p):
+                        # FRESHNESS GATE. Everything a vendor pack ships must have
+                        # been written by THIS run. segno_ring_disc.step was a
+                        # hand-made file the packager just picked up: it sat at
+                        # O40 x 2 while its own DXF moved to O51.5, and shipped
+                        # that way through three ring resizes because nothing
+                        # checked. A stale solid next to a live flat is worse than
+                        # no solid at all -- the shop cannot tell which one lies.
+                        age = _RUN_STARTED - os.path.getmtime(p)
+                        assert age <= 0, (
+                            f"{n}{ext} is STALE -- it was not regenerated by this "
+                            f"run ({age:.0f}s older) but {zname} would ship it. "
+                            f"Give it a builder, or drop it from the pack.")
                         z.write(p, n + ext)
         zips.append(zp)
 
@@ -4524,16 +4885,28 @@ def build_quote_packages():
     # nothing, roughly a third of the metal spend (#775 R6). It now has its own pack.
     sheet   = [n for n, _ in DXF_PARTS if PART_SPECS[n][2] == PKG_SHEETMETAL]
     overlay = [n for n, _ in DXF_PARTS if PART_SPECS[n][2] == PKG_OVERLAY]
-    pack("segno_sheetmetal.zip", sheet, (".dxf", ".pdf"))
-    pack("segno_overlay.zip", overlay, (".dxf", ".pdf"))
+    flat_exts = (".dxf", ".pdf") if with_pdf else (".dxf",)
+    pack("segno_sheetmetal.zip", sheet, flat_exts)
+    pack("segno_overlay.zip", overlay, flat_exts)
+    # segno_base and segno_corner_bracket_rear are deliberately NOT here. Nothing
+    # generates a per-part STEP for either (see build_assembly_step: the base is
+    # ONE folded blank and the assembly STEP is where its 3D form lives), so the
+    # files that used to satisfy this list were 17-day-old leftovers the packer
+    # picked up off disk and shipped next to DXFs that had moved on. The
+    # freshness gate in pack() now refuses that outright.
+    if not with_step:
+        print("(quote packs: STEP/STL packs skipped -- no STEP builders ran)")
+        if with_pdf:
+            pack("segno_pintura.zip",
+                 ["segno_paint_quote"] + [s for s, *_ in PAINT_BOM], (".pdf",))
+        return zips
     pack("segno_sheetmetal_step.zip",
-         ["segno_assembly", "segno_base", "segno_faceplate",
-          "segno_corner_bracket_rear", "segno_ring_disc",
-          "segno_post"],
+         ["segno_assembly", "segno_faceplate", "segno_ring_disc", "segno_post"],
          (".step",))
     pack("segno_3dprint.zip",
          ["segno_platform_front", "segno_platform_mid",
-          "segno_led_diffuser", "segno_ring_diffuser",
+          "segno_led_diffuser", "segno_ring_diffuser"]
+         + ["segno_pedal_tile_" + l.replace("/", "_") for l, _u, _v in PEDALS] + [
           "segno_screen7_tower",
           "segno_screen16_stand_L", "segno_screen16_stand_R"],
          (".step", ".stl"))
@@ -4544,7 +4917,9 @@ def build_quote_packages():
     # Powder-coat quote pack: the Spanish sheet + every painted part's PDF.
     # Deliberately NO DXFs -- the coater cuts nothing, and a flat pattern only
     # invites confusion. Narrowed to the paint BOM -- not every DXF_PART.
-    pack("segno_pintura.zip", ["segno_paint_quote"] + [s for s, *_ in PAINT_BOM], (".pdf",))
+    if with_pdf:
+        pack("segno_pintura.zip",
+             ["segno_paint_quote"] + [s for s, *_ in PAINT_BOM], (".pdf",))
     return zips
 
 
@@ -4800,12 +5175,21 @@ def main(argv):
             print("\nPaint quote sheet: out/segno_paint_quote.pdf")
         except Exception as e:  # pragma: no cover
             print(f"\n(paint quote skipped: {e})")
+    steps_built = "--no-step" not in argv
     if "--no-step" not in argv:
         try:
             d = build_diffuser_step()
-            print("\nLED diffuser insert (3D print, x10): out/" + os.path.basename(d) + " (+ .stl)")
+            print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
+            tiles = build_pedal_name_tiles()
+            print("Pedal name tiles (3D print, x%d -- print FACE-DOWN, filament\n"
+                  "  change at z=%.1f: white glyphs then black body): out/%s.step ..."
+                  % (len(tiles), TILE_TEXT_T, tiles[0]))
+            rd = build_ring_disc_step()
+            print("Ring centre disc (2.0 Al, x1): out/" + os.path.basename(rd))
+            kb = build_encoder_knob_step()
+            print("Encoder knob (PURCHASED O50x18x6 alu -- reference model only,\n  deliberately not in the 3D-print pack): out/" + os.path.basename(kb))
             s = build_post_step()
             print("Faceplate support post (base-anchored, x2): out/" + os.path.basename(s))
             tw = build_screen7_tower_step()
@@ -4821,10 +5205,12 @@ def main(argv):
             print("\n3D STEP:\n  " + os.path.relpath(p, HERE) + " (+ per-part .step)")
         except ImportError as e:  # pragma: no cover -- no cadquery in this env
             print(f"\n(STEP skipped: {e})")
+            steps_built = False
         # anything else is a real build failure: let it crash the run. The old
         # blanket `except Exception` swallowed a NameError here for weeks and
         # shipped stale tower/stand/fit-test STEPs while printing EXIT=0.
-    for z in build_quote_packages():
+    for z in build_quote_packages(with_step=steps_built,
+                                  with_pdf="--no-pdf" not in argv):
         print("Quote package: out/" + os.path.basename(z))
     print("\nDrawing/package assertions ...", end=" ")
     _verify_drawing_package(with_pdf="--no-pdf" not in argv)

@@ -51,7 +51,10 @@ these tiles talk to host helpers (same pattern as OTA's `segno-update-ctl`):
 | `/usr/bin/segno-touch-ctl` | touchscreen calibration matrix (`status` / `get` / `set` / `reset`) |
 
 WiFi is owned by **NetworkManager** (eth0 + wlan*). `systemd-networkd` is
-masked on the appliance image so the two managers do not fight.
+masked on the appliance image so the two managers do not fight. The unit
+announces itself as **`segno`** on the router/AP client list and the SSH
+prompt (the image hostname, set in `deploy/yocto/kas-segno-common.yml`; older
+images announced the board name, e.g. `raspberrypi5`).
 
 **On-device checklist** (after flashing an image that includes the helpers):
 
@@ -338,6 +341,12 @@ and a Pi 5 are available:
 - [ ] **≥2 h thermal soak** (audio + dual-display + GPU, closed enclosure):
       `vcgencmd get_throttled` stays `0x0`, no xrun-rate regression; record
       results here.
+- [ ] **Re-run the ≥2 h audio soak on an image with the persistent journal**
+      (#438 / PR #810): journald now writes to the same ext4 + jbd2 journal on
+      `/data` as the recorder's takes, so the soak must show no new xruns or
+      write-latency spikes with logging active. Until this passes on hardware,
+      the persistent-journal change is wired but **not verified**
+      (`autonomy:blocked-verify`).
 - [ ] Stompable footswitch panel survives stage-abuse testing.
 
 ## Pi 4B validation pass (substitute gear: SD + monitor + TV)
@@ -400,14 +409,13 @@ the end. Build the `aarch64` bundle with `deploy/rpi/build/build-arm64-bundle.sh
   [`deploy/rpi/pin-displays.sh`](../deploy/rpi/pin-displays.sh). On the **TV**,
   turn **overscan** off ("Just Scan" / 1:1 in the TV's picture menu, or
   `disable_overscan=1` in `config.txt`) or the UI edges are clipped.
-- **First-run device setup.** `SEGNO_CONSOLE` hides the transport chrome, so the
-  device pickers live in **Settings** (right-click, or press `S`). Bind: (a) the
+- **First-run device setup.** There is no transport chrome, so the device
+  pickers live in **Settings** (right-click, or press `S`). Bind: (a) the
   **MIDI FOOT CONTROLLER** input, (b) the **PEDAL LINK** output, and (c) the
-  **audio interface as both input and output @ 512 frames**. These persist across
-  reboots (`tryAutoStartEngine` + hotplug reconnect). **Open question:** confirm
-  Settings is reachable in a console build; if it is not, do the first-run bind
-  with a **non-console** bundle (omit `--dart-define=SEGNO_CONSOLE=true` — no new
-  tooling), then switch back to the console bundle.
+  **audio interface as both input and output @ 512 frames**. These persist
+  across reboots (`tryAutoStartEngine` + hotplug reconnect). Settings must stay
+  reachable on the console: with the desktop build gone there is no non-console
+  bundle to fall back on for the first-run bind.
 
 ### Goal 1 — Dual-display
 

@@ -1,0 +1,20 @@
+[Unit]
+Description=Segno: make iwd's known-network store passive before iwd starts (#824)
+# Default dependencies kept ON PURPOSE: they order this after basic.target,
+# i.e. after systemd-remount-fs has made the rootfs writable. The first cut
+# used DefaultDependencies=no and could beat the remount on fast boots — every
+# sed took EROFS, the unit went green anyway, and the race came back on
+# exactly the boots most likely to race. Review caught it (#827); the bench's
+# intermittent residual matched the symptom.
+Before=iwd.service
+# Ordering only, never a requirement: a failure here must not keep the radio
+# down -- worst case is one boot with the old race odds, now loudly visible
+# because the script exits non-zero when a write fails.
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/segno-iwd-tame
+
+[Install]
+WantedBy=iwd.service

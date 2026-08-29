@@ -122,6 +122,18 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
     ),
   );
 
+  /// Opens the tray at the Audio domain's Device tab — the device-lost
+  /// banner's **Open setup** action (#453). The one caller that may set a
+  /// domain's tab from outside it: the banner's whole point is the picker,
+  /// and landing on whichever tab Audio was left on would bury it.
+  void openAudioDevice() => emit(
+    state.copyWith(
+      dragProgress: 1,
+      destination: SettingsTrayDestination.audio,
+      audioTab: AudioTab.device,
+    ),
+  );
+
   /// Moves the Network domain's tab.
   ///
   /// Deliberately does NOT touch `destination`: the strip is only reachable

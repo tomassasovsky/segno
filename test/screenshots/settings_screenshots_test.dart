@@ -140,6 +140,9 @@ void main() {
     when(() => repository.monitorChanges).thenAnswer(
       (_) => const Stream<int>.empty(),
     );
+    when(() => repository.monitorParamChanges).thenAnswer(
+      (_) => const Stream<int>.empty(),
+    );
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());

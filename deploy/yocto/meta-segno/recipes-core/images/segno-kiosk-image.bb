@@ -36,7 +36,7 @@ IMAGE_INSTALL:append = " \
 # tryboot-cmdline.bbclass edits cmdline.txt inside the .wic (mtools) and regenerates
 # the bmap (bmaptool) — both are native build tools its task needs.
 do_update_tryboot_cmdline[depends] += "mtools-native:do_populate_sysroot bmaptool-native:do_populate_sysroot"
-# plymouth boot splash (segno mark, breathe + shimmer) covers the black screen from
+# plymouth boot splash (segno mark, static, determinate progress) covers the black screen from
 # power-on until weston/segno render. plymouth-segno-theme sets itself active.
 # Keep psplash (the other splash, pulled in by the base image) out so the two don't
 # fight over the framebuffer — plymouth owns the splash.
@@ -53,10 +53,11 @@ PACKAGE_EXCLUDE += "psplash psplash-raspberrypi"
 # system-level (performance governor + threadirqs via CMDLINE, PREEMPT_RT kernel
 # on 6.12, SCHED_FIFO audio thread + rtirq) rather than a sound server.
 
-# RAUC A/B (tryboot) SD layout: boot selector + bootA/bootB + rootA/rootB + data
-# (Phase 1, #303). See wic/segno-tryboot.wks. `wic` = the flashable SD image;
-# `ext4` = the bare rootfs artifact the .raucb bundle packages (RAUC_SLOT_rootfs).
-WKS_FILE = "segno-tryboot.wks"
+# RAUC A/B (tryboot) disk layout: boot selector + bootA/bootB + rootA/rootB +
+# data (Phase 1, #303). See wic/segno-tryboot.wks.in — a template, because the
+# boot device is per board (SD on the Pi 4, NVMe on the Pi 5, #799). `wic` = the
+# flashable image; `ext4` = the bare rootfs the .raucb packages (RAUC_SLOT_rootfs).
+WKS_FILE = "segno-tryboot.wks.in"
 IMAGE_FSTYPES = "wic ext4"
 
 # Rewrite each boot slot's cmdline.txt root= inside the .wic after do_image_wic

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:segno/theme/theme.dart';
@@ -11,6 +12,26 @@ enum OnScreenKeyboardLayout {
 
   /// A compact numeric pad, for fields that only accept numbers.
   numeric,
+}
+
+/// The three positions of the shift key.
+///
+/// A single tap arms [oneShot] immediately — the next character is uppercase
+/// and the key falls back to [off], so arming stays responsive. A *quick*
+/// second tap (a double-tap, within [_OnScreenKeyboardState._lockWindow])
+/// promotes the arm to [locked], a caps-lock that holds every character
+/// uppercase; a later, deliberate second tap instead toggles the arm back
+/// [off]. A tap while [locked] releases to [off]. This is the iOS caps-lock
+/// idiom: single-tap to shift, double-tap to lock.
+enum _ShiftState {
+  /// Lowercase.
+  off,
+
+  /// The next character is uppercase, then reverts to [off].
+  oneShot,
+
+  /// Every character stays uppercase until shift is tapped again.
+  locked,
 }
 
 /// Picks the layout a field's [TextInputType] calls for.
@@ -78,8 +99,45 @@ class OnScreenKeyboard extends StatefulWidget {
 }
 
 class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
-  bool _shifted = false;
+  _ShiftState _shift = _ShiftState.off;
   bool _symbols = false;
+
+  /// Whether the next character should come out uppercase — true for both the
+  /// armed one-shot and the latched caps-lock.
+  bool get _uppercase => _shift != _ShiftState.off;
+
+  /// How close the second Shift tap must fall to the first to lock rather than
+  /// toggle off — the double-tap window.
+  static const _lockWindow = Duration(milliseconds: 300);
+
+  /// When Shift was last tapped, read through `package:clock` so widget tests'
+  /// fake clock drives the double-tap window instead of the wall clock. Only
+  /// ever consulted while [_ShiftState.oneShot], where it holds the timestamp
+  /// of the very tap that armed it — so it can never be stale.
+  DateTime? _lastShiftTap;
+
+  /// Handles a Shift press. Manual double-tap detection, deliberately not
+  /// `GestureDetector.onDoubleTap`: that recognizer holds the first tap back to
+  /// see whether a second follows, which would make arming lag. Here the single
+  /// tap arms instantly and a quick second tap upgrades it to a lock.
+  void _onShiftTap() {
+    final now = clock.now();
+    final since = _lastShiftTap == null ? null : now.difference(_lastShiftTap!);
+    _lastShiftTap = now;
+    setState(() {
+      _shift = switch (_shift) {
+        // First tap: arm immediately.
+        _ShiftState.off => _ShiftState.oneShot,
+        // A quick second tap latches; a slow one is a deliberate toggle off.
+        _ShiftState.oneShot =>
+          (since != null && since <= _lockWindow)
+              ? _ShiftState.locked
+              : _ShiftState.off,
+        // A tap while locked releases.
+        _ShiftState.locked => _ShiftState.off,
+      };
+    });
+  }
 
   static const _row1 = 'qwertyuiop';
   static const _row2 = 'asdfghjkl';
@@ -92,10 +150,13 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
 
   void _tap(String key) {
     unawaited(HapticFeedback.selectionClick());
-    widget.onKey(_shifted ? key.toUpperCase() : key);
-    // Shift is one-shot, like every phone keyboard: holding it down is not an
-    // option when the other hand is on an instrument.
-    if (_shifted) setState(() => _shifted = false);
+    widget.onKey(_uppercase ? key.toUpperCase() : key);
+    // A one-shot shift spends itself on the next character, like every phone
+    // keyboard: holding it down is not an option when the other hand is on an
+    // instrument. Caps-lock holds until the key is tapped again.
+    if (_shift == _ShiftState.oneShot) {
+      setState(() => _shift = _ShiftState.off);
+    }
   }
 
   @override
@@ -121,12 +182,23 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
           children: [
             if (!_symbols)
               _special(
-                icon: _shifted
-                    ? Icons.arrow_upward
-                    : Icons.arrow_upward_outlined,
-                selected: _shifted,
-                onPressed: () => setState(() => _shifted = !_shifted),
-                semanticLabel: 'Shift',
+                // Each state reads at a glance: an outline arrow off, a filled
+                // arrow on a blue tint armed, and — emphatically apart from
+                // armed — the caps-lock glyph (arrow over a bar) on a SOLID
+                // bright-accent cap when latched.
+                icon: switch (_shift) {
+                  _ShiftState.off => Icons.arrow_upward_outlined,
+                  _ShiftState.oneShot => Icons.arrow_upward,
+                  _ShiftState.locked => Icons.keyboard_capslock,
+                },
+                selected: _shift == _ShiftState.oneShot,
+                locked: _shift == _ShiftState.locked,
+                onPressed: _onShiftTap,
+                semanticLabel: switch (_shift) {
+                  _ShiftState.off => 'Shift',
+                  _ShiftState.oneShot => 'Shift',
+                  _ShiftState.locked => 'Caps lock',
+                },
               ),
             ...third.split('').map((k) => Expanded(child: _key(k))),
             _special(
@@ -142,7 +214,10 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
               label: _symbols ? 'abc' : '?123',
               onPressed: () => setState(() {
                 _symbols = !_symbols;
-                _shifted = false;
+                // A one-shot shift is spent by the layer change; a caps-lock
+                // persists, so returning to the letters keeps the latch the
+                // performer set rather than silently dropping it.
+                if (_shift == _ShiftState.oneShot) _shift = _ShiftState.off;
               }),
             ),
             Expanded(flex: 4, child: _key(' ', label: 'space')),
@@ -197,7 +272,7 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
       Row(children: [for (final k in keys) Expanded(child: _key(k))]);
 
   Widget _key(String value, {String? label}) {
-    final display = label ?? (_shifted ? value.toUpperCase() : value);
+    final display = label ?? (_uppercase ? value.toUpperCase() : value);
     return Padding(
       padding: const EdgeInsets.all(3),
       child: _KeyCap(
@@ -213,6 +288,7 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
     IconData? icon,
     bool primary = false,
     bool selected = false,
+    bool locked = false,
     String? semanticLabel,
   }) {
     final cap = _KeyCap(
@@ -220,6 +296,7 @@ class _OnScreenKeyboardState extends State<OnScreenKeyboard> {
       icon: icon,
       primary: primary,
       selected: selected,
+      locked: locked,
       semanticLabel: semanticLabel,
       onPressed: onPressed,
     );
@@ -248,6 +325,7 @@ class _KeyCap extends StatelessWidget {
     this.icon,
     this.primary = false,
     this.selected = false,
+    this.locked = false,
     this.semanticLabel,
   });
 
@@ -256,17 +334,22 @@ class _KeyCap extends StatelessWidget {
   final IconData? icon;
   final bool primary;
   final bool selected;
+
+  /// The caps-lock latch: rendered on a SOLID bright-accent cap, a tier above
+  /// [selected]'s flat tint, so a locked Shift can never be mistaken for a
+  /// merely-armed one.
+  final bool locked;
   final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final fill = primary
+    final fill = primary || locked
         ? surface.accent
         : selected
         ? surface.accentSurface
         : surface.cardHigh;
-    final tint = primary
+    final tint = primary || locked
         ? surface.onAccent
         : selected
         ? surface.accent
@@ -288,7 +371,7 @@ class _KeyCap extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: primary ? surface.accent : surface.line,
+                color: primary || locked ? surface.accent : surface.line,
               ),
             ),
             child: icon != null

@@ -6,8 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
-import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
-import 'package:segno/audio_setup/cubit/monitor_cubit.dart';
+import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/pedal/pedal.dart';
@@ -18,6 +17,9 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../helpers/helpers.dart';
 
 class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
+
+class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
+    implements AudioSetupCubit {}
 
 void main() {
   group('LooperPage', () {
@@ -35,8 +37,6 @@ void main() {
         exportsRoot: () async => '.',
       );
       final settings = SettingsRepository(store: FakeKeyValueStore());
-      // The looper page renders the pedal faceplate, whose gate reads a
-      // PedalCubit; unbound (no on-screen pedal) it shows the TracksView.
       final sim = SimulatorPedalTransport(inner: const NoopPedalTransport());
       final pedal = _MockPedalCubit();
       when(() => pedal.state).thenReturn(const PedalState());
@@ -44,6 +44,14 @@ void main() {
         pedal,
         const Stream<PedalState>.empty(),
         initialState: const PedalState(),
+      );
+      // The device-lost banner inside the Tracks view reads the audio
+      // setup cubit (#453); app-wide in the real shell, above this page.
+      final audioSetup = _MockAudioSetupCubit();
+      whenListen(
+        audioSetup,
+        const Stream<AudioSetupState>.empty(),
+        initialState: const AudioSetupState(),
       );
       addTearDown(repository.dispose);
       addTearDown(controllerRepository.dispose);
@@ -60,6 +68,11 @@ void main() {
           ],
           child: MultiBlocProvider(
             providers: [
+              // The stage status bar is now unconditional, and its clock
+              // readout selects a TransportClockCubit.
+              BlocProvider<TransportClockCubit>(
+                create: (_) => TransportClockCubit(repository: repository),
+              ),
               BlocProvider<TracksCubit>(
                 create: (_) => TracksCubit(settings: settings),
               ),
@@ -93,6 +106,7 @@ void main() {
                   performance: performanceRepository,
                 ),
               ),
+              BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             ],
             child: LooperPage(exportDirectory: () async => '.'),
           ),

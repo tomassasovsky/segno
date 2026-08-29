@@ -919,6 +919,34 @@ void le_cache_shutdown(le_engine* engine) {
   free(c);
 }
 
+void le_cache_evict_lanes(le_engine* engine, int32_t channel, int32_t from,
+                          int32_t to) {
+  if (engine == NULL || channel < 0 || channel >= engine->track_count) return;
+  if (from < 0) from = 0;
+  if (to > LE_MAX_LANES) to = LE_MAX_LANES;
+  struct le_fx_cache* c = engine->cache;
+  for (int32_t l = from; l < to; ++l) {
+    le_lane* ln = &engine->tracks[channel].lanes[l];
+    if (c != NULL) {
+      for (int i = 0; i < LE_CACHE_ENTRIES_PER_LANE; ++i) {
+        le_cache_drop_entry(engine, c, channel, l, i);
+      }
+      /* The lane's key identity dies with its entries: a re-grown lane is
+       * reset to defaults and must re-register (and re-settle) from scratch.
+       * job_pending is deliberately left alone — an in-flight render is
+       * collected and then reclaimed by the tick's deactivated-lane sweep. */
+      c->lanes[channel][l].has_key = 0;
+      if (!c->lanes[channel][l].job_pending) {
+        c->lanes[channel][l].state = LE_CACHE_LIVE;
+      }
+    }
+    /* Belt and braces: no published entry may outlive the shrink even if the
+     * bookkeeping lost track of it (retraction only — the entry object stays
+     * owned by the tables/graveyard above). */
+    atomic_store_explicit(&ln->a_wet, NULL, memory_order_release);
+  }
+}
+
 void le_cache_tick(le_engine* engine) {
   struct le_fx_cache* c = engine->cache;
   if (c == NULL) return;
@@ -959,13 +987,11 @@ void le_cache_tick(le_engine* engine) {
 
 /* ---- FFI telemetry (log/test-only in v3 [R27]) ---- */
 
-int32_t le_engine_get_lane_cache(le_engine* engine, int32_t channel,
-                                 int32_t lane, le_lane_cache_info* out) {
-  if (engine == NULL || out == NULL) return LE_ERR_INVALID;
-  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
-  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
-  /* Polling this drives the cache: drain -> tick (collect/schedule). */
-  le_engine_drain_events(engine);
+/* The shared per-lane fill both accessors read through — no drain here, so
+ * the batch form pays for one drain regardless of lane count and can never
+ * drift from what the per-lane form reports. */
+static void le_cache_fill_info(le_engine* engine, int32_t channel, int32_t lane,
+                               le_lane_cache_info* out) {
   memset(out, 0, sizeof(*out));
   le_track* tr = &engine->tracks[channel];
   le_lane* ln = &tr->lanes[lane];
@@ -981,7 +1007,34 @@ int32_t le_engine_get_lane_cache(le_engine* engine, int32_t channel,
   } else {
     out->state = LE_CACHE_LIVE;
   }
+}
+
+int32_t le_engine_get_lane_cache(le_engine* engine, int32_t channel,
+                                 int32_t lane, le_lane_cache_info* out) {
+  if (engine == NULL || out == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  /* Polling this drives the cache: drain -> tick (collect/schedule). */
+  le_engine_drain_events(engine);
+  le_cache_fill_info(engine, channel, lane, out);
   return LE_OK;
+}
+
+int32_t le_engine_get_all_lane_caches(le_engine* engine,
+                                      le_lane_cache_info* out,
+                                      int32_t capacity) {
+  if (engine == NULL || out == NULL) return LE_ERR_INVALID;
+  const int32_t need = engine->track_count * LE_MAX_LANES;
+  if (capacity < need) return LE_ERR_INVALID;
+  /* ONE drain (and its scheduler tick) for the whole sweep — the entire point
+   * of the batch form (#418). */
+  le_engine_drain_events(engine);
+  for (int32_t t = 0; t < engine->track_count; ++t) {
+    for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+      le_cache_fill_info(engine, t, l, &out[t * LE_MAX_LANES + l]);
+    }
+  }
+  return need;
 }
 
 int32_t le_engine_set_fx_cache_cap(le_engine* engine, int64_t bytes) {

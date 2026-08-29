@@ -131,7 +131,7 @@ void main() {
     expect(isClosed(), isTrue);
   });
 
-  testWidgets('the ring animates to off once the loop is cleared', (
+  testWidgets('the ring breathes green once the loop is cleared', (
     tester,
   ) async {
     Color ringBorderColor(WidgetTester tester) =>
@@ -146,18 +146,20 @@ void main() {
             .top
             .color;
 
+    // Recording a loop: the rim wears the red activity colour.
     await pumpPlate(
       tester,
       frame: _frame().copyWith(
-        globalColor: GlobalColor.green,
+        globalColor: GlobalColor.red,
         loopLengthMicros: 1000000,
       ),
     );
-    expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
+    expect(ringBorderColor(tester), SurfaceTheme.dark.ledRed);
 
-    // Rebuild cleared (activity off, no loop left): the ring goes dark.
+    // Cleared (activity off, no loop left): the ring breathes green, so the
+    // rim is green rather than dark.
     await pumpPlate(tester, frame: _frame());
-    expect(ringBorderColor(tester), SurfaceTheme.dark.ledOff);
+    expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
   });
 
   testWidgets('the MODE LED reflects the frame mode color', (tester) async {

@@ -431,6 +431,19 @@ typedef enum le_command_code {
                                      * value (clamped by the audio thread on
                                      * apply). */
 
+  /* Immediate finalize (#405): ends track arg_i's live RECORDING take NOW —
+   * or does nothing. Unlike LE_CMD_RECORD, whose meaning depends on the state
+   * it lands on (start / finalize / punch-in / punch-out), this command
+   * re-checks its precondition on the audio thread and is a strict no-op
+   * anywhere else, so a state change in the one-block window between
+   * le_engine_finalize_take's control-side guards and the apply can never
+   * turn it into a capture start or a punch-in/out. During a count-in it
+   * cancels the count-in (global transport state — the addressed channel is
+   * irrelevant) and logs LE_PLOG_RECORD_ABORT for the counting channel. Not
+   * itself perf-logged (like LE_CMD_ARM/DISARM: the transport fact it causes
+   * — LE_PLOG_RECORD_END / LE_PLOG_RECORD_ABORT — is what is logged). */
+  LE_CMD_FINALIZE_TAKE = 56,
+
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
   LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
@@ -481,12 +494,14 @@ typedef enum le_fx_type {
 } le_fx_type;
 
 /* Which device backend to open. The default (0) opens miniaudio's default
- * backend for the platform (Core Audio on macOS, the Linux preference list).
- * On Windows the engine forces ASIO, which is only available in a
- * SEGNO_ENABLE_ASIO build. */
+ * backend for the platform (Core Audio on macOS, the Linux preference list) —
+ * the only backend this engine ships. */
 typedef enum le_audio_backend {
   LE_BACKEND_MINIAUDIO = 0, /* default: miniaudio's default platform backend */
-  LE_BACKEND_ASIO = 1,   /* Windows ASIO (requires SEGNO_ENABLE_ASIO) */
+  /* Reserved. Was Windows ASIO; the backend went with the desktop targets, but
+   * the value stays claimed so a persisted setting written by an older build
+   * still parses instead of being reinterpreted as another backend. */
+  LE_BACKEND_ASIO = 1,
 } le_audio_backend;
 
 /* A hardware audio device discovered by enumeration (le_enumerate_*).
@@ -533,13 +548,10 @@ typedef struct le_config {
    * overrides capture_device_id when a loopback device is detected. */
   char playback_device_id[256];
   char capture_device_id[256];
-  /* le_audio_backend to open; 0 (LE_BACKEND_MINIAUDIO) selects the default
-   * miniaudio path, LE_BACKEND_ASIO the Windows ASIO backend. Honored at start
-   * via le_select_backend (a SEGNO_ENABLE_ASIO Windows build); elsewhere every
-   * value resolves to miniaudio. */
+  /* le_audio_backend to open. Every value resolves to miniaudio via
+   * le_select_backend; the field stays so persisted configs still round-trip. */
   int32_t backend;
-  /* Selected ASIO driver name (used by the ASIO backend in Part 2). Empty and
-   * ignored on the default path. */
+  /* Reserved, alongside LE_BACKEND_ASIO. Always empty and ignored. */
   char asio_driver[256];
 } le_config;
 
@@ -605,6 +617,13 @@ typedef struct le_lane_snapshot {
   int32_t length_frames; /* frames captured into this lane's buffer */
   float rms;             /* 0..1 */
   float peak;            /* 0..1 */
+  /* Trailing (#595): 0/1 — this lane captured audio that is still live or
+   * restorable (clear-restore shadow / redo stack). THE per-lane "holds
+   * content" signal: length_frames is track-shared (the write head publishes
+   * the same growing length onto every active lane), so it cannot answer
+   * whether a specific lane's slot is safe to reclaim. Drops to 0 only once
+   * nothing on the lane can come back. */
+  int32_t recoverable;
 } le_lane_snapshot;
 
 /* Per-track state published in le_snapshot.tracks.
@@ -655,6 +674,22 @@ typedef struct le_track_snapshot {
   /* Trailing (B4, One Shot): 0/1, default 0. Settable in any mode; only
    * behaviorally active in Free/Song — see LE_CMD_SET_ONE_SHOT's doc. */
   int32_t one_shot;
+  /* Trailing (#819): the monotonic per-track id of the currently-SETTLED take
+   * — the take the RECORD_END that last finalized this track logged, published
+   * from le_track.a_settled_take_id. 0 means the track never finalized a take
+   * in this session (still empty, or only ever held pre-arm content with no id
+   * yet). The performance-capture pipeline writes it onto the disarm manifest's
+   * lane-0 entry as `takeId`, and the offline renderer (perf_render.c) matches
+   * it against the RECORD_END payloads to anchor the settled image by identity
+   * rather than by "first RECORD_END on the channel". */
+  int32_t settled_take_id;
+  /* Trailing (#697 S9, offline loop-close restoration): 0 idle, 1 queued (the
+   * enqueue copy is in flight or the job is waiting for the worker), 2 running
+   * (the worker's de-clip/denoise DSP is in flight). A completed pass publishes
+   * its result as an ordinary undo layer, so undo_depth/clear_restore carry the
+   * revert affordance — this field is only the in-progress indicator. See
+   * le_engine_restore_track. */
+  int32_t restore_state;
 } le_track_snapshot;
 
 /* ===================== Audio-callback telemetry (#722) =====================
@@ -1063,18 +1098,10 @@ LE_EXPORT int32_t le_enumerate_playback_devices(le_device_info* out, int32_t max
 LE_EXPORT int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
                                                int32_t* count);
 
-/* Enumerates the installed ASIO drivers into `out` (room for `max`), writing the
- * count into *count. Each entry is one duplex driver: `id` and `name` are the
- * driver name and `input_channels`/`output_channels` are probed from the driver
- * (so the picker can show "18 in / 20 out" before opening). A driver that fails
- * to probe is omitted; the call degrades to *count = 0 rather than erroring.
- *
- * Only the SEGNO_ENABLE_ASIO Windows build enumerates real drivers; every other
- * build is a stub returning *count = 0, LE_OK. RE-ENTRANCY: the ASIO host SDK
- * loads a single process-global driver, so this MUST NOT be called while an ASIO
- * device is open (it would tear down the live stream) — the Dart layer only
- * enumerates while stopped or running on the miniaudio backend. Returns LE_OK,
- * or LE_ERR_INVALID for a null argument / non-positive `max`. */
+/* Reserved: always writes *count = 0 and returns LE_OK. ASIO was the Windows
+ * duplex backend and went with the desktop targets; the symbol stays exported so
+ * the Dart layer can keep calling it unconditionally. Returns LE_ERR_INVALID for
+ * a null argument / non-positive `max`. */
 LE_EXPORT int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
                                             int32_t* count);
 
@@ -1480,6 +1507,39 @@ LE_EXPORT int32_t le_engine_set_track_quantize(le_engine* engine,
  * "make sure nothing fires later" — the app's FX-mode entry, which hands the
  * user a surface with no transport controls — needs this, not that. */
 LE_EXPORT int32_t le_engine_cancel_arm(le_engine* engine, int32_t channel);
+
+/* Finalizes track [channel]'s live NON-DEFINING recording take NOW,
+ * unconditionally — the counterpart to le_engine_cancel_arm above: cancel_arm
+ * kills the PENDING (an arm that has not fired), this kills the LIVE (a take
+ * already capturing). The finalize is exactly what a quantize-off record
+ * press does today — never off-grid: the length rounds UP to whole base
+ * loops, the unfilled tail is the digital silence the capture prep wrote,
+ * with the stopped-early seam treatment applied — but it skips the quantize
+ * deferral, the auto-record arm toggle, and the shared arm machinery
+ * entirely, so it can neither arm a take nor cancel (or consume) anyone
+ * else's arm, and it never continues into overdub (rec/dub is a record-press
+ * meaning; the take settles to PLAYING).
+ *
+ * Refuses (LE_ERR_INVALID) unless the take is safe to end here:
+ * - the track is not RECORDING (EMPTY, PLAYING, OVERDUBBING, STOPPED, or a
+ *   parked transport — nothing starts, nothing punches in or out);
+ * - the take is the DEFINING one (nothing else holds the grid): ending it
+ *   would let this call set the session's bar length mid-gesture, so the
+ *   defining take keeps running and the caller falls back to
+ *   capture-survives;
+ * - the channel still has a live pending arm (any trigger): the arm belongs
+ *   to another command and must be retired first (le_engine_cancel_arm) —
+ *   finalizing under it would leave it to fire onto the settled loop later.
+ *
+ * The one exception to the RECORDING guard: while a count-in is running the
+ * call is accepted for ANY valid channel and cancels the count-in outright —
+ * the count-in is global transport state that has captured nothing, and its
+ * abort is logged as LE_PLOG_RECORD_ABORT for the counting channel.
+ *
+ * Like cancel_arm, LE_OK means the command actually reached the ring; the
+ * audio thread re-checks the RECORDING/non-defining precondition on apply,
+ * so a state change racing the post degrades to a no-op, never to a start. */
+LE_EXPORT int32_t le_engine_finalize_take(le_engine* engine, int32_t channel);
 
 /* ---- tempo grid ----
  * Grid state + locks (A1) and the click + count-in built on them (A2); the
@@ -1953,6 +2013,45 @@ LE_EXPORT int32_t le_engine_set_input_conditioning_param(le_engine* engine,
                                                          int32_t param,
                                                          float value);
 
+/* ---- Offline loop-close restoration (input conditioning, S9) ---- *
+ * The restoration counterpart to the live conditioning stage above: after a
+ * loop closes, a background worker repairs the CAPTURED lanes — de-clip
+ * (reconstruct the peaks a converter flattened) then optional RNNoise denoise
+ * — and publishes the result as one lockstep undo layer, so a plain
+ * le_engine_undo reverts to the raw take. It runs entirely off the RT audio
+ * thread (a copy-at-enqueue worker mirroring the wet cache), so it never adds
+ * playback latency, and it is opt-in per input via the flags below. Policy
+ * lives in the app: the engine only restores what it is asked to, when it is
+ * asked. Progress surfaces through le_track_snapshot.restore_state. */
+typedef enum le_restore_flags {
+  LE_RESTORE_DECLIP = 1,  /* de-clip pass (restore_declip.c), at the full rate */
+  LE_RESTORE_DENOISE = 2, /* RNNoise denoise — passthrough at 48 kHz, a 2:1
+                           * half-band resample at 96 kHz, skipped at other
+                           * rates (de-clip still runs). */
+} le_restore_flags;
+
+/* Queues an offline restoration pass over track [channel]'s captured lanes
+ * (control thread). [lane_mask] selects which lanes to repair (bit l = lane l,
+ * restricted to the track's active lanes); [flags] is a bitwise-OR of
+ * le_restore_flags. The pass runs on a background worker and publishes its
+ * result as one undo layer once complete — never touching the RT audio
+ * thread's latency. Returns LE_OK once the job is queued, or LE_ERR_INVALID
+ * for a null/out-of-range handle, empty flags or lane mask, a track that is
+ * RECORDING/OVERDUBBING or has an overdub layer in flight, a track with no
+ * captured content, or a restoration already in flight (one job engine-wide).
+ * A queued pass whose take moves before it commits (a new overdub, an undo)
+ * is discarded, never published. */
+LE_EXPORT int32_t le_engine_restore_track(le_engine* engine, int32_t channel,
+                                          uint32_t lane_mask, uint32_t flags);
+
+/* Cancels an in-flight restoration on track [channel] (control thread): a job
+ * still copying is dropped immediately; one already on the worker aborts at
+ * its next lane boundary and its result is discarded rather than published.
+ * Returns LE_OK when a matching job was found and signalled, or LE_ERR_INVALID
+ * for a null/out-of-range handle or when no restoration for [channel] is in
+ * flight. */
+LE_EXPORT int32_t le_engine_cancel_restore(le_engine* engine, int32_t channel);
+
 /* ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ---- *
  * Each track owns ONE Track-stage chain, downstream of its per-lane chains.
  * While the chain is EMPTY (count 0 — the default and the state every
@@ -2104,6 +2203,19 @@ LE_EXPORT int32_t le_engine_get_lane_cache(le_engine* engine, int32_t channel,
                                            int32_t lane,
                                            le_lane_cache_info* out);
 
+/* Fills out[channel * LE_MAX_LANES + lane] for EVERY lane of every active
+ * track behind a single drain + scheduler tick — the batch form of
+ * le_engine_get_lane_cache for a poller that wants all lanes at once. The
+ * per-lane accessor costs a full drain per call, so an 8-track poll through it
+ * runs 16-32 control-thread sweeps per tick; this runs exactly one (#418).
+ * [capacity] is the number of le_lane_cache_info slots at [out] and must be at
+ * least track_count * LE_MAX_LANES (LE_MAX_TRACKS * LE_MAX_LANES always
+ * suffices). Returns the number of slots filled, or LE_ERR_INVALID. Control
+ * thread. */
+LE_EXPORT int32_t le_engine_get_all_lane_caches(le_engine* engine,
+                                                le_lane_cache_info* out,
+                                                int32_t capacity);
+
 /* Sets the wet-cache memory budget in BYTES (stereo entries at 2x frames,
  * toggled pairs, and in-flight enqueue copies all count against it). 0
  * disables caching and frees every entry (every lane plays live); negative is
@@ -2179,6 +2291,34 @@ LE_EXPORT int32_t le_perf_arm(le_engine* engine, const char* capture_dir);
  * retracted-but-running and are reclaimed by a later retry or at
  * le_engine_destroy). */
 LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
+
+/* Free bytes on the volume holding `path`, into `*out_bytes`. Returns LE_OK,
+ * LE_ERR_INVALID (null/empty `path` or null `out_bytes`), or LE_ERR_DEVICE if
+ * the platform refused to answer (a path that does not exist, a filesystem that
+ * cannot report). Engine-free: it is a question about a directory, not about a
+ * running capture, so it is also the check made BEFORE arming one.
+ *
+ * It is here rather than in the caller because the caller is Dart, which has no
+ * free-space API at all — and the shell-out that filled that gap turned out to
+ * be the most expensive thing on the appliance's real-time path. `Process.run`
+ * is fork() + exec(), fork() holds mmap_lock for write for milliseconds while it
+ * copies a 1.7 GB address space's page tables, and under PREEMPT_RT the audio
+ * thread's next page fault sleeps behind it. A capture re-checked its volume
+ * every 4.75 s, so a take forked the whole app twelve times a minute; every
+ * audible dropout measured on the Pi 5 bench landed within 3 ms of one (#806).
+ *
+ * Answering it in C also keeps the struct layout in C. `statvfs` is shaped
+ * differently on glibc and on macOS, and a Dart-side layout guess would not
+ * fail loudly — it would report a plausible wrong number and stop a take that
+ * had room.
+ *
+ * ALL THREE PLATFORMS ANSWER, which is a deliberate widening: the `df` this
+ * replaced returned "cannot answer" on Windows, so the free-space floor (#640)
+ * has never applied there. It does now. That is the behaviour the floor was
+ * written for, but it is a change on a platform the click work did not
+ * otherwise touch, so it is stated here rather than left to be discovered. */
+LE_EXPORT int32_t le_perf_volume_free_bytes(const char* path,
+                                            uint64_t* out_bytes);
 
 /* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
  * Reconstructs, from a FINALIZED capture directory (part 6's

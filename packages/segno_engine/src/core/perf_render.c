@@ -292,20 +292,17 @@ static int le_pr_write_wav_mono(const char* path, const float* samples,
 typedef struct le_pr_manifest {
   int32_t sample_rate;
   uint64_t capture_frames;
-  uint64_t arm_clock_frame;           /* armSnapshot.clockFrame — the master
-                                       * playhead position AT arm (
-                                       * PerformanceArmSnapshot.clockFrame /
-                                       * `snapshot.masterPositionFrames`), i.e.
-                                       * the loop phase capture frame 0 lands
-                                       * on; 0 when armSnapshot is absent or
-                                       * the capture was armed from silence */
-  int32_t arm_master_len;             /* armSnapshot.masterLenFrames — the
-                                       * master loop length at arm; the base
-                                       * modulus for arm_clock_frame when the
-                                       * master was locked before this capture
-                                       * ever started (no LOOP_LENGTH_LOCKED
-                                       * inside the log); 0 when armed from
-                                       * silence */
+  /* The PERF_ARMED transport fact (#262): the master loop phase at the exact
+   * audio-thread frame the capture armed, read from events.log — NOT from the
+   * race-stale armSnapshot.clockFrame the control thread sampled before lane
+   * capture (that anchor was deleted, no fallback; events.log version 4).
+   * `perf_arm_present` is 0 for a pre-4 capture with no such fact, and then the
+   * arm image and the no-lock RECORD_END phase both fall to phase 0 — a pre-4
+   * capture has no supported anchor. */
+  int perf_arm_present;
+  int32_t perf_arm_position;   /* master clock.position at the arm frame */
+  int32_t perf_arm_master_len; /* master loop length at arm; 0 = no master */
+  int32_t perf_arm_iteration;  /* loop_iteration at arm (multi-loop sub-cycle) */
   const le_json_value* arm_tracks;    /* armSnapshot.tracks array, or NULL */
   const le_json_value* disarm_tracks; /* disarmSnapshot.tracks array, or NULL */
   const le_json_value* layers;        /* layers array, or NULL */
@@ -352,10 +349,9 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
   out->capture_frames =
       (uint64_t)le_json_number(le_json_get(root, "capture_frames"), 0);
   const le_json_value* arm = le_json_get(root, "armSnapshot");
-  out->arm_clock_frame = (uint64_t)le_json_number(
-      arm != NULL ? le_json_get(arm, "clockFrame") : NULL, 0);
-  out->arm_master_len = (int32_t)le_json_number(
-      arm != NULL ? le_json_get(arm, "masterLenFrames") : NULL, 0);
+  /* The master phase anchor is NOT read from armSnapshot any more — the
+   * PERF_ARMED fact in events.log supplies it (#262). le_pr_fill_perf_armed
+   * populates perf_arm_* after the log is loaded. */
   out->arm_tracks = arm != NULL ? le_json_get(arm, "tracks") : NULL;
   const le_json_value* disarm = le_json_get(root, "disarmSnapshot");
   out->disarm_tracks = disarm != NULL ? le_json_get(disarm, "tracks") : NULL;
@@ -509,6 +505,30 @@ static int le_pr_load_log(const char* dir, le_pr_log_entry** out_entries) {
   return n;
 }
 
+/* Populates the manifest's perf_arm_* master-phase anchor from the single
+ * LE_PLOG_PERF_ARMED fact in the log (#262, events.log version 4). Leaves
+ * perf_arm_present at 0 for a pre-4 capture with no such fact — the arm image
+ * and no-lock RECORD_END phase then fall to phase 0 (a pre-4 capture has no
+ * supported anchor; the old race-stale armSnapshot.clockFrame was deleted with
+ * no fallback, AGENTS.md). Exactly one fact is expected, but the first wins
+ * defensively. */
+static void le_pr_fill_perf_armed(const le_pr_log_entry* log, int log_count,
+                                  le_pr_manifest* m) {
+  m->perf_arm_present = 0;
+  m->perf_arm_position = 0;
+  m->perf_arm_master_len = 0;
+  m->perf_arm_iteration = 0;
+  for (int i = 0; i < log_count; ++i) {
+    if (log[i].cmd.code == LE_PLOG_PERF_ARMED) {
+      m->perf_arm_present = 1;
+      m->perf_arm_position = log[i].cmd.perf_arm.position;
+      m->perf_arm_master_len = log[i].cmd.perf_arm.master_len;
+      m->perf_arm_iteration = log[i].cmd.perf_arm.iteration;
+      return;
+    }
+  }
+}
+
 /* ---- per-track segment reconstruction ---- */
 
 typedef struct le_pr_segment {
@@ -521,13 +541,13 @@ typedef struct le_pr_segment {
                       * transport facts that reset it (LOOP_LENGTH_LOCKED at a
                       * master finalize), so a segment activating at loop phase
                       * p must keep playing from image[p], not restart at
-                      * image[0]. RESIDUAL LIMITATION: a mid-capture transport
-                      * hold (nothing playing or recording) pins the live
-                      * clock's position to 0 with NOTHING logged
-                      * (engine_process.c's all-idle branch), so a phase reset
-                      * via all-tracks-idle cannot be reconstructed from this
-                      * capture — sibling of the multi-loop sub-cycle
-                      * ambiguity noted on PR #260 */
+                      * image[0]. A mid-capture transport hold (nothing playing
+                      * or recording) pins the live clock's position to 0, and
+                      * that reset is now LOGGED as LE_PLOG_TRANSPORT_HELD
+                      * (#262, engine_process.c's all-idle branch) rather than
+                      * being an unreconstructable residual — and the multi-loop
+                      * sub-cycle the PERF_ARMED fact's iteration field resolves
+                      * (#260). */
   float* image;      /* owned; NULL = silence */
   int32_t image_len; /* loop period in frames; meaningless if image is NULL */
 } le_pr_segment;
@@ -535,13 +555,6 @@ typedef struct le_pr_segment {
 typedef struct le_pr_track_build {
   le_pr_segment segments[LE_PR_MAX_SEGMENTS];
   int segment_count;
-  int has_content; /* 0 until the first non-silence segment is appended —
-                    * gates the "first-ever recording" / disarm-snapshot
-                    * lookup so a later RECORD_END on an already-content-
-                    * bearing track doesn't re-trigger it (see perf_render.h's
-                    * doc: clear-then-re-record within one session is a
-                    * documented, deliberately out-of-scope simplification
-                    * for this part) */
   int load_failed; /* 1 if a pcmRef/layer file this track's manifest entries
                     * NAME could not actually be read — the per-stem failure
                     * the "partial success" acceptance criterion means. A
@@ -568,15 +581,14 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
   seg->phase0 = image_len > 0 ? phase0 % (uint64_t)image_len : 0;
   seg->image = image;
   seg->image_len = image_len;
-  if (image != NULL) b->has_content = 1;
 }
 
 /* The loop phase (image index) the CURRENT last segment would play at
  * `frame` — the loop-position counter a new segment activating at `frame`
  * must inherit to stay phase-locked with live playback (#255). A build whose
  * last segment is silence (baseline, or post-CLEAR) has no phase to carry:
- * the next content supplies its own anchor (the arm image's clockFrame, or a
- * RECORD_END's track epoch — le_pr_record_end_phase below). */
+ * the next content supplies its own anchor (the arm image's PERF_ARMED phase,
+ * or a RECORD_END's track epoch — le_pr_record_end_phase below). */
 static uint64_t le_pr_build_phase_at(const le_pr_track_build* b,
                                      uint64_t frame) {
   if (b->segment_count == 0) return 0;
@@ -650,9 +662,10 @@ static uint64_t le_pr_find_record_start(const le_pr_log_entry* log,
  * answer either way (the position was 0 right there).
  *
  * With no lock inside the capture at all, the master was locked before arm
- * and armSnapshot.clockFrame/masterLenFrames anchor capture frame 0 instead
- * (see the arm-image comment in le_pr_render_track for that anchor's own
- * staleness caveat, #262). */
+ * and the PERF_ARMED fact (perf_arm_position/perf_arm_master_len) anchors
+ * capture frame 0 instead — the exact frame the master phase held when
+ * LE_CMD_PERF_ARM applied, logged by the audio thread (#262), not the
+ * race-stale armSnapshot.clockFrame that anchor used to read. */
 static uint64_t le_pr_record_end_phase(const le_pr_manifest* m,
                                        const le_pr_log_entry* log,
                                        int log_count, int32_t channel,
@@ -670,9 +683,9 @@ static uint64_t le_pr_record_end_phase(const le_pr_manifest* m,
   uint64_t start_pos = 0;
   if (has_lock && lock_base > 0) {
     start_pos = (start_frame - lock_frame) % (uint64_t)lock_base;
-  } else if (!has_lock && m->arm_master_len > 0) {
-    start_pos =
-        (m->arm_clock_frame + start_frame) % (uint64_t)m->arm_master_len;
+  } else if (!has_lock && m->perf_arm_present && m->perf_arm_master_len > 0) {
+    start_pos = ((uint64_t)m->perf_arm_position + start_frame) %
+                (uint64_t)m->perf_arm_master_len;
   }
   return (start_pos + (end_frame - start_frame)) % (uint64_t)image_len;
 }
@@ -700,18 +713,17 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
    * see le_pr_append_segment's "later transition supersedes" note). */
   le_pr_append_segment(&build, 0, 0, NULL, 0);
 
-  /* An arm-image segment anchors at `armSnapshot.clockFrame` (the master
-   * playhead near the arm instant), indexing `(clockFrame + f) % image_len`
-   * for a track already playing when the capture armed — fixed alongside the
-   * mid-cycle layer-retire rotation (#255; both were the same "segment
-   * restarts its image at index 0" root cause). KNOWN RESIDUAL (#262): this
-   * anchor is the best the capture records, but it is race-stale —
-   * clockFrame is sampled by the control thread BEFORE lane capture and
-   * manifest I/O, while capture frame 0 only begins when LE_CMD_PERF_ARM
-   * reaches the audio thread, an unbounded I/O gap later — so a mid-loop
-   * arm's stems can still be offset by that arm latency. The exact fix
-   * needs an engine-side transport fact logged when PERF_ARM actually
-   * applies; render-side, this is as good as the data gets. */
+  /* An arm-image segment anchors at the master loop phase the PERF_ARMED fact
+   * recorded (#262): the exact clock.position (within loop_iteration) the
+   * audio thread held when LE_CMD_PERF_ARM applied — capture frame 0. For a
+   * multi-loop arm image (image_len > master_len) the sub-cycle matters, so
+   * the phase is the absolute master frame `iteration * master_len + position`
+   * reduced modulo image_len by le_pr_append_segment (#260). This REPLACES the
+   * race-stale armSnapshot.clockFrame the control thread sampled before lane
+   * capture and manifest I/O — deleted with no fallback (events.log v4). The
+   * mid-cycle layer-retire rotation (#255) shared this "segment restarts its
+   * image at index 0" root cause. A pre-4 capture has no fact and anchors at
+   * phase 0 — unsupported, per the version bump. */
   const le_json_value* arm_lane = le_pr_find_lane0(m->arm_tracks, channel);
   if (arm_lane != NULL &&
       le_json_bool(le_json_get(arm_lane, "deferred"), 0) == 0) {
@@ -724,7 +736,13 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         int32_t frames = 0;
         float* image = le_pr_read_wav_mono(path, &frames);
         if (image != NULL) {
-          le_pr_append_segment(&build, 0, m->arm_clock_frame, image, frames);
+          const uint64_t arm_phase =
+              m->perf_arm_present
+                  ? (uint64_t)m->perf_arm_iteration *
+                            (uint64_t)m->perf_arm_master_len +
+                        (uint64_t)m->perf_arm_position
+                  : 0;
+          le_pr_append_segment(&build, 0, arm_phase, image, frames);
         } else {
           build.load_failed = 1;
         }
@@ -738,13 +756,30 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
     }
   }
 
+  /* The disarm image's anchor, by TAKE IDENTITY (#819): disarmSnapshot's
+   * lane-0 image is placed at the RECORD_END whose logged take id matches the
+   * settled take id the manifest recorded for this channel (`takeId`). That
+   * id crossed the FFI boundary from the engine snapshot (le_track_snapshot.
+   * settled_take_id) into performance.json, so the renderer names the exact
+   * finalize the image is the result of — no longer inferring it from "the
+   * FIRST RECORD_END while the channel is still content-free". That ordinal
+   * proxy (deleted here, no fallback) mis-anchored whenever a finalize logged
+   * a RECORD_END before content existed (#264) or a clear-then-re-record put
+   * the settled take AFTER an earlier END on the same channel. A settled take
+   * that predates the capture leaves no matching RECORD_END in this log, so no
+   * disarm segment is placed — the arm image already covers it. */
+  const le_json_value* disarm_lane =
+      le_pr_find_lane0(m->disarm_tracks, channel);
+  const int32_t disarm_take_id =
+      disarm_lane != NULL
+          ? (int32_t)le_json_number(le_json_get(disarm_lane, "takeId"), 0)
+          : 0;
   for (int i = 0; i < log_count; ++i) {
     const le_pr_log_entry* e = &log[i];
-    if (e->cmd.code == LE_PLOG_RECORD_END && e->cmd.arg_i == channel &&
-        !build.has_content) {
-      const le_json_value* disarm_lane =
-          le_pr_find_lane0(m->disarm_tracks, channel);
-      if (disarm_lane != NULL) {
+    if (e->cmd.code == LE_PLOG_RECORD_END && e->cmd.take.channel == channel &&
+        disarm_lane != NULL && disarm_take_id != 0 &&
+        e->cmd.take.take_id == disarm_take_id) {
+      {
         const le_json_value* pcm_ref_value =
             le_json_get(disarm_lane, "pcmRef");
         char pcm_ref[128];
@@ -1245,6 +1280,9 @@ static void le_pr_worker_main(void* arg) {
 
   le_pr_log_entry* log = NULL;
   int log_count = loaded ? le_pr_load_log(r->capture_dir, &log) : 0;
+  /* The master-phase anchor comes from the log's PERF_ARMED fact (#262), not
+   * the manifest JSON — fill it now that both are loaded. */
+  if (loaded) le_pr_fill_perf_armed(log, log_count, &manifest);
 
   int32_t channels[LE_MAX_TRACKS];
   const int channel_count =

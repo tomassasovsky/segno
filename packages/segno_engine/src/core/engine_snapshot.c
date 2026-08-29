@@ -55,6 +55,10 @@ static void le_fill_track_snapshot(le_track* tr, int active,
   out->length_preset_bars = load_i32(&tr->a_length_preset_bars);
   out->sync_divisor = load_i32(&tr->a_sync_divisor);
   out->one_shot = load_i32(&tr->a_one_shot);
+  out->settled_take_id =
+      active ? atomic_load_explicit(&tr->a_settled_take_id, memory_order_acquire)
+             : 0;
+  out->restore_state = active ? load_i32(&tr->a_restore_state) : 0;
 }
 
 /* Max added latency (frames) across every active octaver in any record-route or
@@ -286,6 +290,8 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->length_preset_bars = 0;
     out->sync_divisor = 0;
     out->one_shot = 0;
+    out->settled_take_id = 0;
+    out->restore_state = 0;
     return;
   }
   le_fill_track_snapshot(&engine->tracks[channel], 1, out);
@@ -303,6 +309,7 @@ void le_engine_get_lane(le_engine* engine, int32_t channel, int32_t lane,
     out->length_frames = 0;
     out->rms = 0.0f;
     out->peak = 0.0f;
+    out->recoverable = 0;
     return;
   }
   le_lane* ln = &engine->tracks[channel].lanes[lane];
@@ -314,6 +321,7 @@ void le_engine_get_lane(le_engine* engine, int32_t channel, int32_t lane,
   out->length_frames = load_i32(&ln->a_len);
   out->rms = load_f32(&ln->a_rms_bits);
   out->peak = load_f32(&ln->a_peak_bits);
+  out->recoverable = load_i32(&ln->a_recoverable); /* #595 */
 }
 
 int32_t le_engine_read_visual(le_engine* engine, float* out,

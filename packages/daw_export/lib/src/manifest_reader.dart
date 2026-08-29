@@ -33,30 +33,49 @@ abstract final class DawManifestReader {
   /// missing/corrupt sidecar" convention (`performance_repository`'s
   /// `recoverCapture`) rather than throwing.
   ///
-  /// [tempoBpm] is the REAL session tempo the caller knows about — in
-  /// practice, the currently-open session's `Session.tempoBpm`
-  /// (`session_repository`, schema v4) — or `0`/omitted for "unset": a
-  /// legacy v3 session, or v4 content recorded with the grid off
-  /// (`TempoSource.none`). Every beat-time conversion this reader does (this
-  /// method's own automation-lane calls below, and the returned
-  /// [DawProject]) uses [kFallbackTempoBpm] instead whenever [tempoBpm] is
-  /// non-positive, so an unset/legacy session still exports a valid,
-  /// non-degenerate `.als` at this feature's original fixed tempo — never at
-  /// literal `0`.
+  /// The capture's own persisted tempo wins (#281): the manifest's
+  /// `disarmSnapshot.tempoBpm` — the value D6's tempo lock had actually
+  /// settled on by the end of the take — falling back to
+  /// `armSnapshot.tempoBpm` for a crash-salvaged capture that never got a
+  /// disarm pass. Only when the manifest carries neither (a bundle written
+  /// before the field existed, or a capture with no tempo set at all) does
+  /// [tempoBpm] apply: the caller's best guess at a real tempo, or
+  /// `0`/omitted for "unset". Every beat-time conversion this reader does
+  /// (this method's own automation-lane calls below, and the returned
+  /// [DawProject]) uses [kFallbackTempoBpm] as the last resort whenever the
+  /// resolved tempo is non-positive, so an unset/legacy capture still
+  /// exports a valid, non-degenerate `.als` at this feature's original
+  /// fixed tempo — never at literal `0`.
   static DawProject? read(
     String captureDir, {
     double tempoBpm = kFallbackTempoBpm,
   }) {
-    final effectiveTempoBpm = tempoBpm > 0 ? tempoBpm : kFallbackTempoBpm;
     final manifestFile = File('$captureDir/performance.json');
     if (!manifestFile.existsSync()) return null;
-    final Map<String, dynamic> manifest;
+    final Object? decoded;
     try {
-      manifest =
-          jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>;
+      decoded = jsonDecode(manifestFile.readAsStringSync());
     } on FormatException {
       return null;
     }
+    // Well-formed JSON that is not an object is just as unreadable as a
+    // parse failure — an `as Map` cast here would throw a TypeError that
+    // escapes callers guarding only for I/O errors (#640's stuck-Rendering
+    // shape), instead of this method's documented graceful null.
+    if (decoded is! Map<String, dynamic>) return null;
+    final manifest = decoded;
+
+    // The tempo the capture itself recorded beats the caller's [tempoBpm] —
+    // by re-export time the live transport may have long moved on from the
+    // tempo this take was actually played at (#281). Disarm's value is
+    // authoritative (D6's lock only engages once grid content exists, so
+    // only the disarm-time read is guaranteed to have seen it engage); the
+    // arm-time copy covers crash salvage, which never gets a disarm pass.
+    final capturedTempoBpm =
+        _snapshotTempoBpm(manifest['disarmSnapshot']) ??
+        _snapshotTempoBpm(manifest['armSnapshot']);
+    final callerTempoBpm = tempoBpm > 0 ? tempoBpm : kFallbackTempoBpm;
+    final effectiveTempoBpm = capturedTempoBpm ?? callerTempoBpm;
 
     final sampleRate = (manifest['sample_rate'] as num?)?.toInt() ?? 0;
     final captureFrames = (manifest['capture_frames'] as num?)?.toInt() ?? 0;
@@ -224,6 +243,18 @@ abstract final class DawManifestReader {
     }
 
     return DawProject(tracks: tracks, tempoBpm: effectiveTempoBpm);
+  }
+
+  /// The `tempoBpm` a snapshot map carries, or `null` when [snapshot] is
+  /// absent or not a map, the key is absent (a bundle written before #281),
+  /// or the value is non-positive — the engine's own 0-as-unset sentinel,
+  /// stored verbatim by `performance_repository` (session-manifest parity).
+  /// All the `null` cases mean the same thing to [read]: no tempo evidence
+  /// here, keep falling through.
+  static double? _snapshotTempoBpm(Object? snapshot) {
+    if (snapshot is! Map<String, dynamic>) return null;
+    final bpm = (snapshot['tempoBpm'] as num?)?.toDouble();
+    return bpm != null && bpm > 0 ? bpm : null;
   }
 
   static String? _firstExisting(String captureDir, List<String> candidates) {

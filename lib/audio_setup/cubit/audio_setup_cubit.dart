@@ -106,10 +106,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   late final StreamSubscription<LooperState> _subscription;
   Timer? _deviceRefreshTimer;
 
-  /// Whether the ASIO backend is selectable on this platform (Windows only),
-  /// injected by the presentation layer (`platformAsioSelectable`) so the cubit
-  /// holds no OS policy and stays free of Flutter imports. ASIO is offered when
-  /// is true and at least one driver enumerated.
+  /// Whether the ASIO backend is selectable. Always false now: ASIO was a
+  /// Windows-only API and went with the desktop targets. The seam stays so the
+  /// cubit holds no OS policy, and so the ASIO state it guards stays inert
+  /// rather than being ripped out mid-flight (#920 follow-up).
   final bool _asioSelectable;
 
   /// Enumerates the installed ASIO drivers for the backend selector, honoring
@@ -276,6 +276,20 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     unawaited(_settings.saveAudioConfig(_storedConfig()));
     // Persisted but never opened, so there is no outcome to report.
     if (!_isStartable) return;
+    // An intentional (re)apply resets the standing connectivity condition
+    // (#453): the lost banner must not outlive the user acting on it —
+    // resolving a lost device by picking the system default un-pins, after
+    // which `_detectConnectivity`'s pinned guard would never clear the enum
+    // and the banner would lie until restart (the MIDI side's select() /
+    // selectNone() reset is this same rule). Clearing the presence baseline
+    // with it keeps the app's own stop→start below from reading as an
+    // unplug: a refused restart leaves `devicePresent` 0 with the hardware
+    // happily plugged in, and with no baseline those ticks re-establish it
+    // silently — no false `lost` beside the real error, and no spurious
+    // `restored` when the reopen lands. The repository's own reconnect
+    // supervisor never passes through here, so a REAL unplug's lost/restored
+    // pair is untouched.
+    _lastDevicePresent = null;
     // What this reopen is ASKING for — whatever moved, the rig is being opened
     // at the current selection.
     final askedRate = state.sampleRate;
@@ -308,6 +322,9 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
           ),
           error: AudioSetupError.openDeviceFailed,
           errorDetail: result.name,
+          // The refusal is the fact to surface; a standing "disconnected"
+          // beside it would be the false banner this reset exists to prevent.
+          deviceConnectivity: DeviceConnectivity.none,
         ),
       );
       return;
@@ -340,6 +357,9 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       requestedBuffer: askedBuffer,
       actualRate: actualRate,
       actualBuffer: actualBuffer,
+      // The user's (re)apply resolves any standing loss condition — see the
+      // baseline reset above.
+      deviceConnectivity: DeviceConnectivity.none,
     );
     emit(settled);
     // Only when the SELECTION moved: what was written above — the config that

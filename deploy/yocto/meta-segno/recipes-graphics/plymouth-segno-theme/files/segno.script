@@ -1,43 +1,67 @@
-# Segno floor-console boot splash. The segno lockup (Bravura mark + Apple Chancery
-# "segno" wordmark, pre-rendered from the smooth glyph vectors) centred on the
-# console near-black (#08080A), with a gentle luminance shimmer and a determinate
-# progress bar driven by the real boot progress. No breathe, no text banners, no
-# Pi rainbow.
+# Segno floor-console boot splash. The segno MARK alone (Bravura glyph,
+# pre-rendered from the smooth vectors — the wordmark was cut: unreadable at
+# splash size on the real panel, owner's call 2026-08-26), centred on the
+# console near-black (#08080A), with a determinate progress bar driven by the
+# real boot progress. Static — no breathe, no shimmer, no text, no Pi rainbow.
 
 Window.SetBackgroundTopColor(0.031, 0.031, 0.039);
 Window.SetBackgroundBottomColor(0.031, 0.031, 0.039);
 sw = Window.GetWidth();
 sh = Window.GetHeight();
 
-lockup.image = Image("segno-lockup.png");
+# --- lockup -----------------------------------------------------------------
+# Scale by SCREEN HEIGHT, never native size (drawing the art unscaled once
+# overflowed both displays — #803). A height fraction lands the same proportion
+# on every output the console drives.
+#
+# The art is the MARK ALONE (940x657). The full lockup's wordmark was
+# unreadable at splash size on the real panel, so it was cut rather than
+# enlarged — owner's call, 2026-08-26: a boot splash reads as a mark on a dark
+# field, and the product's name is on the case, not the boot screen. At 0.15
+# the bare mark renders ~60% taller than the mark portion of the old 0.18
+# lockup (0.141*sh vs 0.088*sh of actual glyph) — deliberate: the mark now
+# carries the whole composition, and the owner approved the size on the panel.
+lockup.src   = Image("segno-lockup.png");
+lockup.h     = Math.Int(sh * 0.15);
+lockup.w     = Math.Int(lockup.h * lockup.src.GetWidth() / lockup.src.GetHeight());
+lockup.image = lockup.src.Scale(lockup.w, lockup.h);
 lockup.sprite = Sprite();
 lockup.sprite.SetImage(lockup.image);
-lockup.sprite.SetX((sw - lockup.image.GetWidth()) / 2);
-lockup.sprite.SetY((sh - lockup.image.GetHeight()) / 2 - sh * 0.04);
+lockup.sprite.SetX(Math.Int((sw - lockup.w) / 2));
+# Dead centre, both axes — owner's call on the real panel (2026-08-26). The
+# optical-centre offset made sense under the full lockup, whose wordmark
+# weighted the bottom; the bare mark reads high with it. The progress bar is
+# anchored to the SCREEN below, never to the mark, so it cannot tug the
+# centring.
+lockup.sprite.SetY(Math.Int((sh - lockup.h) / 2));
 lockup.sprite.SetZ(10);
+lockup.sprite.SetOpacity(1.0);
 
-# --- progress bar (hairline track + fill) ---
+# --- progress bar (hairline track + fill) ------------------------------------
+# Anchored to the screen (75% height), independent of the mark: clear of the
+# centred mark's bottom edge (50% + h/2 ≈ 57.5%) with room to spare, and low
+# enough to read as chrome rather than part of the composition.
 bar.pixel = Image("segno-bar-pixel.png");
-bar.w = Math.Int(sw * 0.20);
-bar.h = 3;
+bar.w = Math.Int(sw * 0.16);
+bar.h = Math.Int(sh / 270);          # ~4px at 1080p, ~2px on the small panel
+if (bar.h < 2) bar.h = 2;
 bar.x = Math.Int((sw - bar.w) / 2);
-bar.y = Math.Int(sh * 0.86);
+bar.y = Math.Int(sh * 0.75);
+
 bar.track = Sprite();
 bar.track.SetImage(bar.pixel.Scale(bar.w, bar.h));
 bar.track.SetX(bar.x);
 bar.track.SetY(bar.y);
 bar.track.SetOpacity(0.10);
 bar.track.SetZ(8);
+
 bar.fill = Sprite();
 bar.fill.SetZ(9);
 bar.progress = 0;
 
-tick = 0;
+# The lockup is set once, above, and never touched again — the refresh callback
+# only advances the fill. Nothing on this screen pulses.
 fun refresh_cb() {
-    tick++;
-    # shimmer: slow luminance pulse (~2.8s) on the lockup
-    lockup.sprite.SetOpacity(0.86 + 0.14 * Math.Sin(tick * 0.045));
-    # progress fill
     fw = Math.Int(bar.w * bar.progress);
     if (fw < 2) fw = 2;
     bar.fill.SetImage(bar.pixel.Scale(fw, bar.h));

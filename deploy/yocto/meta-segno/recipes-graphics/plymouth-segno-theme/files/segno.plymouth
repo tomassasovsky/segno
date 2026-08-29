@@ -1,6 +1,6 @@
 [Plymouth Theme]
 Name=Segno
-Description=Segno floor-console boot splash (segno mark, breathe + shimmer)
+Description=Segno floor-console boot splash (segno mark, determinate progress)
 ModuleName=script
 
 [script]

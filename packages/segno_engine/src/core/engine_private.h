@@ -332,6 +332,18 @@ typedef struct le_lane {
                                     * the full max_loop_frames. */
   _Atomic int32_t a_live;     /* pool index the audio thread plays/records */
   _Atomic int32_t a_len;      /* recorded length (== the track's length) */
+  /* #595: 1 once THIS lane captured real audio that could still come back —
+   * latched by the audio thread when a capture writes the lane (RECORDING /
+   * OVERDUBBING with an in-range input), re-latched by session import, and
+   * cleared only when nothing on the lane is reachable any more: control-side
+   * when the track's whole history dies (le_track_drop_recoverable_if_dead —
+   * no live take, no undo/restore shadow, no redo), or by le_lane_reset.
+   * The trailing-lane trim's gate. a_len can NOT stand in for this: the
+   * shared write head publishes the same growing length onto every active
+   * lane (hazard 1 of #594), and a cleared-with-restore take reads len 0
+   * while its audio is still one undo away. Safety direction: a stale 1 only
+   * declines a trim; a wrong 0 lets the trim eat a restorable take. */
+  _Atomic int32_t a_recoverable;
   _Atomic uint32_t a_rms_bits;
   _Atomic uint32_t a_peak_bits;
 
@@ -667,6 +679,16 @@ typedef struct le_track {
   int outstanding_count;
   int queued_undo;   /* undo taps deferred until the in-flight layer retires */
   int32_t empty_len; /* len to restore on redo-from-empty (0 = none) */
+  /* #595: an explicit un-route since the last drain asked for a trailing-lane
+   * reclaim. The immediate trim in le_engine_set_lane_input can only reclaim
+   * the just-un-routed slot — a sibling un-route pushed in the same audio
+   * block is still in the ring and reads as routed, so a burst strands the
+   * earlier slots. This flag re-runs the trim from the event drain once the
+   * commands have applied and routing is published, so the whole trailing run
+   * frees. Set on an accepted explicit un-route, cleared after the drain's one
+   * trim attempt (a decline while capturing does not re-latch it — the next
+   * un-route does, mirroring the immediate path). */
+  int32_t pending_lane_trim;
   /* Posted-but-unapplied state-flip accounting. UNDO_TO_EMPTY /
    * REDO_FROM_EMPTY / CLEAR change a_state on the audio thread; until they
    * apply, control-side decisions (a record press racing a redo would memset
@@ -761,6 +783,13 @@ typedef struct le_track {
   _Atomic int32_t a_clear_restore; /* published: 1 when the next undo restores a
                                     * cleared take rather than peeling a layer */
   _Atomic int32_t a_redo_depth;    /* published redo_count */
+  /* Offline loop-close restoration telemetry (#697 S9): 0 idle, 1 queued
+   * (enqueue copy pending / QUEUED for the worker), 2 running (worker DSP in
+   * flight). Written by the control-thread le_restore_tick, read by the
+   * snapshot; the audio thread never touches it. A completed pass publishes
+   * its result as an ordinary undo layer, so the restored/raw takes surface
+   * through the existing undo_depth, not here. */
+  _Atomic int32_t a_restore_state;
   _Atomic int32_t a_multiple;   /* track length in whole base loops (>= 1) */
   /* Sync division (B3, D16, published): 0 = ordinary (this track's length is
    * `a_multiple` whole base loops, the ubiquitous case); 2 or 4 = this
@@ -797,6 +826,17 @@ typedef struct le_track {
   uint64_t start_iter; /* loop_iteration when this track's recording began */
   int32_t record_start; /* record_pos when this capture began, so a fixed-length
                          * track can auto-finalize after exactly K base loops. */
+  /* Take identity (#819). take_seq is an audio-thread-local monotonic counter
+   * bumped once at every RECORD_START on this track (never reset by a clear —
+   * a clear-then-re-record deliberately yields a DISTINCT id, which is the
+   * whole point). Each RECORD_END logs the current take_seq in its payload and
+   * publishes it to a_settled_take_id, the id of the currently-settled take
+   * the snapshot exposes so the disarm manifest can name which take its image
+   * belongs to. Both reset to 0 on le_engine_configure (a fresh session), so
+   * the first take of any capture is id 1 and pre-arm ids can never collide
+   * with during-capture ones (they are strictly smaller). */
+  int32_t take_seq;
+  _Atomic int32_t a_settled_take_id;
   float od_gain; /* audio-thread-local overdub punch envelope (0..1). Ramps up on
                   * punch-in and down on punch-out so the layered input enters and
                   * leaves the loop buffer without a step discontinuity (a click)
@@ -1247,6 +1287,16 @@ struct le_engine {
   struct le_fx_cache* cache;
   _Atomic int64_t a_fx_cache_cap;
 
+  /* Offline loop-close restoration worker (#697 S9): opaque control/worker
+   * state owned by engine_restore.c — the same opaque-pointer shape as the
+   * wet cache above. NULL until le_restore_init (end of configure); torn down
+   * (worker JOINED before any pool free [R2](d)) by le_restore_shutdown from
+   * le_engine_stop, the top of le_engine_configure, and le_engine_destroy. The
+   * audio thread never touches this pointer — the whole restoration surface is
+   * a control-thread publish of an undo layer (le_restore_commit_layer) plus
+   * the per-track a_restore_state telemetry. */
+  struct le_restore* restore;
+
   /* Command ring + pre-allocated backing storage. */
   le_ring ring;
   le_command ring_storage[LE_RING_CAPACITY];
@@ -1282,6 +1332,13 @@ struct le_engine {
   /* Audio-thread-local transport. */
   le_loop_clock clock;
   uint64_t loop_iteration; /* free-running count of base-loop wraps */
+  /* Audio-thread-local edge latch for the mid-capture transport hold
+   * (#262). Set when advance_transport_frame's all-idle branch first pins the
+   * clock to 0 and cleared when the transport is active again, so exactly one
+   * LE_PLOG_TRANSPORT_HELD fact is logged per hold episode instead of one per
+   * held frame. Pure transport state (tracked whether or not armed); the
+   * logging itself is gated by le_plog_push's armed check. */
+  int transport_held;
 
   /* Audio-thread-local tempo state. frame_clock is a running frame counter
    * (advanced once per process call by the block size — tap timing needs only

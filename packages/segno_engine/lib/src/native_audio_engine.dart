@@ -10,6 +10,8 @@ import 'package:segno_engine/src/engine_config.dart';
 import 'package:segno_engine/src/engine_snapshot.dart';
 import 'package:segno_engine/src/ffi_strings.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart';
+import 'package:segno_engine/src/input_conditioning_param.dart';
+import 'package:segno_engine/src/lane_cache.dart';
 import 'package:segno_engine/src/loopback_info.dart';
 import 'package:segno_engine/src/performance_render_progress.dart';
 import 'package:segno_engine/src/plugin_descriptor.dart';
@@ -67,6 +69,7 @@ class NativeAudioEngine implements AudioEngine {
     _telemetryPtr = calloc<le_callback_telemetry>();
     _trackPtr = calloc<le_track_snapshot>();
     _lanePtr = calloc<le_lane_snapshot>();
+    _cachesPtr = calloc<le_lane_cache_info>(LE_MAX_TRACKS * LE_MAX_LANES);
     _vizPtr = calloc<Float>(LE_VIZ_POINTS);
   }
 
@@ -88,6 +91,7 @@ class NativeAudioEngine implements AudioEngine {
   late final Pointer<le_callback_telemetry> _telemetryPtr;
   late final Pointer<le_track_snapshot> _trackPtr;
   late final Pointer<le_lane_snapshot> _lanePtr;
+  late final Pointer<le_lane_cache_info> _cachesPtr;
   late final Pointer<Float> _vizPtr;
   bool _disposed = false;
 
@@ -895,6 +899,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult finalizeTake({required int channel}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_finalize_take(_engine, channel),
+    );
+  }
+
+  @override
   EngineResult setTrackMultiple({required int channel, required int multiple}) {
     _checkAlive();
     return EngineResult.fromCode(
@@ -1205,6 +1217,28 @@ class NativeAudioEngine implements AudioEngine {
   int laneFxFingerprint({required int channel, required int lane}) =>
       _bindings.le_engine_lane_fx_fingerprint(_engine, channel, lane);
 
+  @override
+  Map<(int, int), LaneCacheState> laneCacheStates() {
+    _checkAlive();
+    // One native call, one drain + scheduler tick for the whole sweep — never
+    // le_engine_get_lane_cache in a loop, which drains per lane (#418).
+    final filled = _bindings.le_engine_get_all_lane_caches(
+      _engine,
+      _cachesPtr,
+      LE_MAX_TRACKS * LE_MAX_LANES,
+    );
+    // A rejected call (e.g. unconfigured engine) fills nothing; report
+    // "nothing observed" rather than reading whatever the buffer holds.
+    if (filled <= 0) return const {};
+    final states = <(int, int), LaneCacheState>{};
+    for (var i = 0; i < filled; i++) {
+      states[(i ~/ LE_MAX_LANES, i % LE_MAX_LANES)] = LaneCacheState.fromNative(
+        _cachesPtr[i].state,
+      );
+    }
+    return states;
+  }
+
   // ---- Track-stage (per-track stereo bus) chain (FX v3 part 1b) ----
 
   @override
@@ -1333,6 +1367,38 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setInputConditioningEnabled({
+    required int input,
+    required bool enabled,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_input_conditioning(
+        _engine,
+        input,
+        enabled ? 1 : 0,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setInputConditioningParam({
+    required int input,
+    required InputConditioningParam param,
+    required double value,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_input_conditioning_param(
+        _engine,
+        input,
+        param.code,
+        value,
+      ),
+    );
+  }
+
+  @override
   EngineResult setMonitorInputFx({
     required int input,
     required int index,
@@ -1455,6 +1521,33 @@ class NativeAudioEngine implements AudioEngine {
     return EngineResult.fromCode(_bindings.le_perf_disarm(_engine));
   }
 
+  /// No `_checkAlive()`, deliberately: this is the one call on this class that
+  /// never touches the engine handle — it is a question about a directory — so
+  /// it stays valid after [dispose].
+  ///
+  /// It is also SYNCHRONOUS, unlike the `df` subprocess it replaced. On a local
+  /// volume `statvfs` is microseconds and this is strictly less blocking than
+  /// the fork it replaced (which stalled this same isolate for 1.8-3.1 ms); on
+  /// a network mount whose server has gone away it can block for that mount's
+  /// timeout. The appliance's capture volume is local NVMe.
+  @override
+  int? volumeFreeBytes(String path) {
+    if (path.isEmpty) return null;
+    final pathPtr = path.toNativeUtf8();
+    final outPtr = calloc<Uint64>();
+    try {
+      final code = _bindings.le_perf_volume_free_bytes(
+        pathPtr.cast(),
+        outPtr,
+      );
+      if (!EngineResult.fromCode(code).isOk) return null;
+      return outPtr.value;
+    } finally {
+      calloc.free(outPtr);
+      malloc.free(pathPtr);
+    }
+  }
+
   @override
   EngineResult renderBegin(String captureDir) {
     _checkAlive();
@@ -1539,6 +1632,7 @@ class NativeAudioEngine implements AudioEngine {
       ..free(_snapshotPtr)
       ..free(_trackPtr)
       ..free(_lanePtr)
+      ..free(_cachesPtr)
       ..free(_vizPtr);
   }
 }

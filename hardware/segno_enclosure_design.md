@@ -203,7 +203,9 @@ fully internal.
 | power / mode LED | 2 | Ø8 | bezel, flanking the encoder |
 
 - **Screens mount from behind**; the aperture is **smaller than the bezel** so the
-  monitor clamps against the panel (rear `screen_bracket` parts retain them). The
+  monitor clamps against the panel. They are retained by **printed stands anchored
+  to the base floor** (#762), not by sheet-metal brackets — the old
+  `segno_screen_bracket` parts were dropped (see `MANUFACTURING.md`). The
   16" is a ViewSonic TD1655-class portable touch monitor (355 × 223 × 15 mm).
 - **LEDs are 5 mm through-hole, cabled.** The ring is a cut annulus with a diffuser
   + 12 THT LEDs behind.
@@ -466,8 +468,9 @@ The pedal platforms hang from the walls at the front + CLEAR/BANK rows, so the
 height. The **Raspberry Pi and the console board v2 mount there on
 standoffs** (≥ `STANDOFF_H` for under-board airflow), linked by the keyed 2×20
 ribbon (~10 cm; they sit side-by-side). The **EC11 ring board** mounts to the
-faceplate underside behind the encoder cutout; the **screens** clamp to the
-faceplate from behind (`screen_bracket`).
+faceplate underside behind the encoder cutout; the **screens** clamp from behind
+against **printed stands anchored to the base floor** (#762) — not sheet-metal
+`screen_bracket` parts, which were dropped (see `MANUFACTURING.md`).
 
 The **bottom plate** (`board_mounts()` drives the patterns) is the CENTRE of the
 folded blank — the wall bottom edges are its own fold lines, not a joint — and carries: the **Pi** (58 × 49) and
@@ -535,10 +538,10 @@ negative-controlled.
 - Folded edges (wall bottom flanges): 90°, inside R = `t` = 2.0, **K 0.33** → bend
   allowance 4.18 mm. The vertical corner seams are open butt joints (relief hole
   each) closed by riveted L-brackets, so they take no allowance.
-- **PEM:** clinch hole Ø6.3 (distinct from M4 Ø4.3 clearance), ≥ 8 mm edge distance
-  — the **18 mm side skirt flanges** host them, so the lid threads straight onto the
-  side screws; the **wall webs** get Ø4.3 clearance, and the shallow **9 mm front lip**
-  is a clearance hole + nut (too short for a clinch nut).
+- **Lid seam fixings — NO clinch nuts / PEM anywhere** (superseded; see
+  `MANUFACTURING.md`). The lid front lip + rear lap screw into **hand-tapped Ø2.5
+  M3 pilots** in the body (one tap, one screw SKU); no drawing carries PEM clinch
+  holes or masks any more. The old Ø6.3-clinch-in-the-side-skirt scheme is gone.
 - DXF layers: `CUT` (thru) · `BEND` (score) · `VENT` · `ENGRAVE` · `NOTE`.
   There is no `WELD` layer: it was declared in all seven DXFs and **empty in every
   one** — a vestige of the original welded-shell plan — so it was removed.
@@ -589,7 +592,7 @@ It raises (build fails) unless every geometry rule holds:
 | `SCREEN_DEPTH` | each module + cable clears the interior; pedal row clears the 16" |
 | `VENT_FREE_AREA` | open vent area ≥ target; standoff gap adequate |
 | `SCREEN_RETENTION` | aperture < bezel (mount from behind) |
-| `PEM` | flange wide enough for the clinch nut |
+| `PEM` | bottom-flange edge distance ≥ `PEM_EDGE`+2 — a frozen guard named for the **retired** clinch scheme; there are no clinch nuts now, but the land width stays pinned |
 
 Outputs in `enclosure/out/` (mm): **STEP** (`segno_assembly` + per-part incl.
 `segno_platform_*_ring`, `segno_platform_sled`, `segno_bottom`), **DXF** flat patterns, **PDF** drawing sheets
@@ -606,14 +609,16 @@ the assertions re-validate before re-cutting every panel.
 | item | qty | note |
 |------|-----|------|
 | 2.0 mm 5052-H32 sheet | ~1.1 m² | shell + bottom + platforms + brackets |
-| PEM M4 clinch nuts | ~6 | lid side-skirt fixings |
-| M4 screws (+ ~6 nuts) | ~12 | lid skirt: 6 side (into PEM) + 6 front/rear (screw + nut) |
+| M3 × 8 lid-seam screws | ~18 | front lip + rear lap, into **hand-tapped Ø2.5 M3 pilots** — **NO clinch nuts / PEM** (#760, replaces the old M4-skirt-into-PEM scheme) |
 | M3 standoffs (≥10 mm) | ~6 | Pi / board, airflow gap |
 | M6 earth stud + hardware | 1 | chassis bond |
 | Rubber feet (uxcell Ø18×15×5, screw-on) | 4 | bottom, `FOOT_INSET_X/Y`; screws not supplied |
 | M4 × 12 self-tapping pan head | 4 | foot fixings, driven from inside |
-| Screen-retention brackets | 4 + 4 | from `segno_screen_bracket` |
 | Diffuser disc (ring) + 12 THT LEDs | 1 | encoder ring |
+
+Screens are retained by **printed stands anchored to the base floor** (#762), a
+3D-printed part — not the sheet-metal `segno_screen_bracket` this table used to
+list, which was dropped. See `MANUFACTURING.md`.
 
 Pedals, screens, encoder, LEDs, Pi, board and the (external) audio interface are in
 the electronics BOMs / `segno_pedal_shopping_list.md`.

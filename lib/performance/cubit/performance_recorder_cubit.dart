@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:bloc/bloc.dart';
+import 'package:console_facts_client/console_facts_client.dart';
 import 'package:daw_export/daw_export.dart';
 import 'package:equatable/equatable.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -34,26 +35,31 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// [PerformanceRepository.renderProgress] after a disarm. [now] supplies
   /// the double-press-guard clock; injectable for deterministic tests.
   ///
-  /// [currentTempoBpm] resolves the REAL tempo to stamp the `.als` export
-  /// with (`_writeDawExports` → `DawManifestReader.read`'s `tempoBpm`
-  /// argument), read fresh at each export rather than captured once — a
-  /// narrow function dependency (matching [now]/[freeSpaceBytes]'s own
-  /// pattern here) rather than this cubit taking a `LooperRepository`
-  /// dependency outright, since only this one `double` is needed. Defaults
-  /// to "unknown" (`0`), which `daw_export`'s own fallback resolves to 120
-  /// BPM — this cubit's composition root
-  /// (`lib/app/view/app.dart`) wires the live `LooperRepository`'s
-  /// `state.transport.tempoBpm` in production. This is the tempo active
-  /// *at export time*, not necessarily the exact tempo throughout an older
-  /// capture (`performance.json` does not itself persist a tempo — out of
-  /// this scope) — correct for the common case of exporting right after a
-  /// capture finalizes, since D6 locks tempo/signature while any
-  /// grid-recorded content exists.
+  /// [freeSpaceBytes] answers "how much room is left on this volume", and
+  /// defaults to [PerformanceRepository.freeSpaceBytes] — a `statvfs` through
+  /// the engine. It used to shell out to `df`, and that turned out to be the
+  /// single most expensive thing on the appliance's real-time path: a capture
+  /// re-checks its volume every twenty ticks, `Process.run` is fork() + exec(),
+  /// and fork() holds the process's `mmap_lock` for write for milliseconds
+  /// while it copies a 1.7 GB address space's page tables. On the Pi 5 bench
+  /// every audible dropout landed within 3 ms of one of those forks (#806).
+  /// Still injectable, and still narrow — the tests that model a filling disk
+  /// pass their own function and are unaffected.
+  ///
+  /// The `.als` export's tempo needs no dependency here at all (#281):
+  /// `performance.json` persists the tempo D6 had locked in by disarm
+  /// (`PerformanceDisarmSnapshot.tempoBpm`, arm-time copy for crash
+  /// salvage), and `DawManifestReader.read` resolves it from the manifest
+  /// itself — falling back to its own fixed 120 BPM for a bundle carrying
+  /// none (written before the field existed, or captured with no tempo set),
+  /// where the live transport tempo at export time would be an arbitrary
+  /// value unrelated to the take anyway.
   ///
   /// [currentChains] resolves the REAL lane/monitor effect chains and
   /// master-limiter state to stamp into the arm snapshot
-  /// ([PerformanceRepository.arm]'s `chains`), read fresh at each arm — the
-  /// same narrow function dependency as [currentTempoBpm], since the mapping
+  /// ([PerformanceRepository.arm]'s `chains`), read fresh at each arm — a
+  /// narrow function dependency (matching [now]/[freeSpaceBytes]'s own
+  /// pattern here), since the mapping
   /// from the live rig lives in the session feature rather than in this cubit.
   /// Defaults to the empty snapshot (what every call site passed before this
   /// was wired); the composition root (`lib/app/view/app.dart`) supplies
@@ -64,23 +70,18 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     Duration renderPollInterval = const Duration(milliseconds: 200),
     DateTime Function() now = DateTime.now,
     Future<int?> Function(String path)? freeSpaceBytes,
-    double Function() currentTempoBpm = _unknownTempoBpm,
     PerformanceChains Function() currentChains = _noChains,
   }) : _performance = performance,
        _armedTickInterval = armedTickInterval,
        _renderPollInterval = renderPollInterval,
        _now = now,
-       _freeSpaceBytes = freeSpaceBytes ?? _dfFreeSpaceBytes,
-       _currentTempoBpm = currentTempoBpm,
+       _freeSpaceBytes =
+           freeSpaceBytes ??
+           ((String path) async => performance.freeSpaceBytes(path)),
        _currentChains = currentChains,
        super(const PerformanceRecorderIdle()) {
     _statusSubscription = _performance.captureStatus.listen(_onStatus);
   }
-
-  /// The default `currentTempoBpm`: `0` ("unknown"), which `daw_export`
-  /// resolves to its own 120 BPM fallback — the same outcome as today, for
-  /// any caller that does not wire a real tempo source.
-  static double _unknownTempoBpm() => 0;
 
   /// The default `currentChains`: an empty rig, which is what
   /// [PerformanceRepository.arm] already assumes when given nothing.
@@ -128,7 +129,6 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   final PerformanceRepository _performance;
   final DateTime Function() _now;
   final Future<int?> Function(String path) _freeSpaceBytes;
-  final double Function() _currentTempoBpm;
   final PerformanceChains Function() _currentChains;
 
   /// How often [PerformanceRecorderArmed.elapsed] refreshes while armed.
@@ -165,25 +165,6 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// over the manifest's marker, which only the engine's own self-stop writes.
   PerformanceStopReason? _stopReason;
   bool _loaded = false;
-
-  /// Best-effort free-space check on [path]'s volume via `df` — `null` (no
-  /// warning) on any platform or failure this can't read, since the warning
-  /// is non-blocking and this must never fail `arm`.
-  static Future<int?> _dfFreeSpaceBytes(String path) async {
-    if (!Platform.isMacOS && !Platform.isLinux) return null;
-    try {
-      final result = await Process.run('df', ['-k', path]);
-      if (result.exitCode != 0) return null;
-      final lines = (result.stdout as String).trim().split('\n');
-      if (lines.length < 2) return null;
-      final fields = lines.last.trim().split(RegExp(r'\s+'));
-      if (fields.length < 4) return null;
-      final availableKb = int.tryParse(fields[3]);
-      return availableKb == null ? null : availableKb * 1024;
-    } on ProcessException {
-      return null;
-    }
-  }
 
   /// Silently salvages any capture a crash left unfinalized (D-SALVAGE,
   /// #679): [PerformanceRepository.runBootRecovery] finalizes + renders each
@@ -427,39 +408,26 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     // A platform that cannot answer (Windows, or df failing) must not be read
     // as "no space" — that would stop every capture on it.
     if (free == null) return;
-    if (free < stopFloorFor(_capturedBytes(dir))) {
+    // Bytes this capture has written so far — what finalize will have to
+    // duplicate as WAV — summed from the directory rather than estimated from
+    // elapsed time and a bitrate: the stream count varies with the rig (armed
+    // inputs, layers per loop), so a time-based guess would drift exactly on
+    // the big multi-track captures where being wrong costs the most. Runs on
+    // the ~5s sample, not per tick, so the recursive walk is not a hot path.
+    // Now the shared `directorySizeBytes` the Storage face's accounting also
+    // uses (#656) — one tested implementation, not a second private copy. It
+    // is intentionally STRICTER than the old private `_capturedBytes`:
+    // `followLinks: false` (no symlink double-count) and per-file error
+    // tolerance (a file vanishing mid-walk no longer zeroes the whole sum);
+    // both are improvements, and the result is identical for a capture bundle,
+    // which contains no symlinks. An unreadable directory sizes to 0, falling
+    // back to the headroom alone.
+    if (free < stopFloorFor(directorySizeBytes(dir))) {
       await _stopForLowDisk();
       return;
     }
     _lowDiskAtArm = free < lowDiskThresholdBytes;
     if (state is PerformanceRecorderArmed) _emitArmedTick();
-  }
-
-  /// Bytes this capture has written so far — what finalize will have to
-  /// duplicate as WAV.
-  ///
-  /// Summed from the directory rather than estimated from elapsed time and a
-  /// bitrate: the stream count varies with the rig (armed inputs, layers per
-  /// loop), so a time-based guess would drift exactly on the big multi-track
-  /// captures where being wrong costs the most. Runs on the ~5s sample, not
-  /// per tick, so walking a few dozen entries is not a hot path.
-  int _capturedBytes(String dir) {
-    try {
-      var total = 0;
-      // Recursive: the bundle has `loops/` and `stems/` beneath it. Those are
-      // populated at finalize rather than during capture today, so a flat walk
-      // happens to be correct right now — but it would undercount silently the
-      // moment anything lands in a subdirectory mid-capture, and undercounting
-      // is precisely how the floor collapses to nothing.
-      for (final entry in Directory(dir).listSync(recursive: true)) {
-        if (entry is File) total += entry.lengthSync();
-      }
-      return total;
-    } on FileSystemException {
-      // Unreadable mid-capture: fall back to the headroom alone rather than
-      // reporting 0 and letting the floor collapse to nothing.
-      return 0;
-    }
   }
 
   /// Stops a running capture and finalizes what it has, so the take is a
@@ -656,7 +624,11 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     // failure precisely by whether this throws, and swallowing it there would
     // report a failed re-export as a success. The capture-completion path
     // guards at its own call site instead — see [_finishRender].
-    final project = DawManifestReader.read(dir, tempoBpm: _currentTempoBpm());
+    // Tempo comes from the manifest itself (#281): DawManifestReader.read
+    // resolves the capture's own persisted disarm-time (arm-time for a
+    // crash salvage) tempo, falling back to its fixed 120 BPM for a bundle
+    // carrying none.
+    final project = DawManifestReader.read(dir);
     if (project != null) {
       await File('$dir/project.als').writeAsBytes(buildAls(project));
     }

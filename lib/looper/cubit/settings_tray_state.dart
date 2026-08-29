@@ -105,7 +105,7 @@ class SettingsTrayState extends Equatable {
   /// Creates a [SettingsTrayState].
   const SettingsTrayState({
     this.dragProgress = 0,
-    this.brightness = 0.8,
+    this.brightness = kDefaultDisplayBrightness,
     this.destination = SettingsTrayDestination.signal,
     this.signalTab = FxStage.input,
     this.signalSelection,

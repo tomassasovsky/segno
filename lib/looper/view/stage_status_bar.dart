@@ -26,7 +26,7 @@ import 'package:segno/theme/theme.dart';
 /// Self-contained (the `SessionMenu` / `PerfRecordButton` pattern): each
 /// element subscribes to its own cubit slice, so a beat tick rebuilds the
 /// clock and nothing else — the same rebuild discipline the track run holds
-/// (#646). The widget itself is not gated on `kConsoleMode`; the host mounts
+/// (#646). The host mounts
 /// it console-only, which keeps it testable in a normal test run.
 class StageStatusBar extends StatelessWidget {
   /// Creates a [StageStatusBar].
@@ -90,54 +90,57 @@ class _SessionBlock extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(10),
             onTap: () => unawaited(showSessionsManager(context)),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: surface.warning,
-                    shape: BoxShape.circle,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: surface.warning,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const SizedBox.square(dimension: 6),
                   ),
-                  child: const SizedBox.square(dimension: 6),
-                ),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: AppText(
-                    name ?? l10n.sessionUnsaved,
-                    key: const Key('stage_session_name'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: surface.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      // The italic is the desktop toolbar's own "no session
-                      // open" mark; the pen only draws the named state.
-                      fontStyle: name == null
-                          ? FontStyle.italic
-                          : FontStyle.normal,
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: AppText(
+                      name ?? l10n.sessionUnsaved,
+                      key: const Key('stage_session_name'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: surface.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        // The italic is the desktop toolbar's own "no session
+                        // open" mark; the pen only draws the named state.
+                        fontStyle: name == null
+                            ? FontStyle.italic
+                            : FontStyle.normal,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                // The kebab is drawn as part of the block rather than being
-                // its own button: the whole block is the tap target, and two
-                // nested targets doing the same thing would announce twice.
-                Container(
-                  width: 38,
-                  height: 38,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: surface.line),
+                  const SizedBox(width: 10),
+                  // The kebab is drawn as part of the block rather than being
+                  // its own button: the whole block is the tap target, and two
+                  // nested targets doing the same thing would announce twice.
+                  Container(
+                    width: 38,
+                    height: 38,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: surface.line),
+                    ),
+                    child: Icon(
+                      Icons.more_vert,
+                      size: 19,
+                      color: surface.textSecondary,
+                    ),
                   ),
-                  child: Icon(
-                    Icons.more_vert,
-                    size: 19,
-                    color: surface.textSecondary,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -154,8 +157,8 @@ class _SessionBlock extends StatelessWidget {
 /// footswitch owns the cycle.
 ///
 /// The pen draws the record state (`rec` outline over `recSurface`) and the
-/// FX state (`accent` over the flat `accentSurface`); mute is `success` over
-/// the matching `successSurface` (#693 — the owner's call from the bench),
+/// FX state (`fx` purple over the flat `fxSurface`, #692); mute is `success`
+/// over the matching `successSurface` (#693 — the owner's call from the bench),
 /// since no STAGE screen draws it. Both halves come from
 /// `SurfaceTheme.modePair`, the single home of that mapping (#768), so the
 /// desktop `ModeIndicator` cannot drift from this pill — and every arm reads

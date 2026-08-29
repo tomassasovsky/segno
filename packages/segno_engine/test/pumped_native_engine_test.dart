@@ -7,7 +7,11 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:segno_engine/segno_engine.dart';
 import 'package:segno_engine/src/generated/segno_engine_bindings.dart'
-    show LE_COUNT_IN_MAX_BARS, LE_LENGTH_PRESET_MAX_BARS, LE_MAX_GAIN;
+    show
+        LE_COUNT_IN_MAX_BARS,
+        LE_LENGTH_PRESET_MAX_BARS,
+        LE_MAX_GAIN,
+        LE_MAX_LANES;
 
 /// Drives the REAL native engine through the device-free pump: configure (no
 /// device), record a loop by pumping blocks, and read the snapshot back —
@@ -736,6 +740,49 @@ void main() {
         engine.setMasterFxEnabled(index: 99, enabled: true),
         EngineResult.invalid,
       );
+    });
+  }, skip: skip);
+
+  group('lane wet-cache telemetry (real FFI)', () {
+    late PumpedNativeEngine engine;
+
+    setUp(() {
+      engine = PumpedNativeEngine()
+        ..start(
+          const EngineConfig(
+            sampleRate: 48000,
+            inputChannels: 1,
+            outputChannels: 1,
+            maxLoopFrames: 48000,
+          ),
+        );
+    });
+    tearDown(() => engine.dispose());
+
+    test('reports every lane of every track in one sweep', () {
+      // The map's coverage is the batch contract: (channel, lane) for every
+      // active track times every lane slot, from ONE native call (#418) —
+      // never a per-lane drain loop.
+      final states = engine.laneCacheStates();
+      expect(states, isNotEmpty);
+      expect(states.length % LE_MAX_LANES, 0);
+      // Nothing recorded and no chain, so there is no key to render — the
+      // honest report is live everywhere, which is also what the cache's own
+      // "when in doubt, play live" contract requires.
+      expect(states.values.toSet(), {LaneCacheState.live});
+      for (var i = 0; i < states.length; i++) {
+        expect(states, contains((i ~/ LE_MAX_LANES, i % LE_MAX_LANES)));
+      }
+    });
+
+    test('polling it repeatedly is safe and stable', () {
+      // Each call drains events and runs one scheduler pass; the repository
+      // polls it every tick while the gate is open, so it has to survive
+      // being hammered.
+      for (var i = 0; i < 50; i++) {
+        engine.pump(frames: 128);
+        expect(engine.laneCacheStates(), isNotEmpty);
+      }
     });
   }, skip: skip);
 }

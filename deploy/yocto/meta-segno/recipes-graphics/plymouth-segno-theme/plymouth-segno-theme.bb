@@ -1,10 +1,10 @@
-SUMMARY = "Segno floor-console Plymouth boot splash (segno lockup, shimmer + progress)"
-DESCRIPTION = "A script-based Plymouth theme: the segno lockup — the Bravura mark \
-(SMuFL glyph U+E047) over the Apple Chancery 'segno' wordmark, both pre-rendered \
-from smooth glyph vectors — centred on the console's near-black (#08080A) with a \
-gentle luminance shimmer and a determinate progress bar driven by the real boot \
-progress. No text banners, no Raspberry Pi rainbow. Shown from early boot until \
-weston/segno takes the display."
+SUMMARY = "Segno floor-console Plymouth boot splash (segno mark, determinate progress)"
+DESCRIPTION = "A script-based Plymouth theme: the segno mark — the Bravura glyph \
+(SMuFL U+E047), pre-rendered from smooth vectors; the wordmark was cut as \
+unreadable at splash size — centred on the console's near-black (#08080A) with \
+a determinate progress bar driven by the real boot progress. No text banners, \
+no Raspberry Pi rainbow. Shown from early boot until weston/segno takes the \
+display."
 LICENSE = "CLOSED"
 
 SRC_URI = "file://segno.plymouth \

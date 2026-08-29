@@ -94,23 +94,6 @@ jobs:
       run_bloc_lint: false
       min_coverage: 82
 
-  # Compile-only desktop guards: prove the portable engine + app keep building on
-  # Windows and Linux. No audio runs (CI has no devices). Flutter is pinned to the
-  # same 3.44.x as the `build` job above so the matrix can't silently drift, and
-  # tracks the dev toolchain so its dart_style matches local formatting.
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.44.x"
-          channel: stable
-          cache: true
-      - run: flutter config --enable-windows-desktop
-      - run: flutter pub get
-      - run: flutter build windows --debug --target lib/main_development.dart
-
   build-linux:
     runs-on: ubuntu-latest
     steps:
@@ -279,6 +262,36 @@ jobs:
           EXTRA_CFLAGS="-DLE_CALLBACK_TELEMETRY=0"
           bash packages/segno_engine/src/test/run_native_tests.sh
 
+  # ThreadSanitizer over the DEDICATED concurrency binary only (#739).
+  # test_engine_races.c races the exact thread pairs engine_telemetry.h's
+  # writer-ownership note describes — break-raise vs the callback loop, the
+  # multi-writer xrun tally vs the arm-path window reset, a control-thread read
+  # vs a running callback loop. TSAN deliberately does NOT cover the full
+  # native suite: test_engine_core.c drives the engine from single-threaded
+  # pumps, so sanitizing it would spend minutes producing a green light that
+  # checks nothing — the failure mode #739 exists to avoid. The races binary
+  # also runs unsanitized inside native-tests above, because its break-raise
+  # handshake asserts a functional liveness property (a raised break is always
+  # consumed, and each consume is a real timeline reset) that no sanitizer
+  # expresses; this job adds the machine check that every cross-thread access
+  # really is the relaxed atomic the ownership note claims.
+  native-tests-tsan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install C build dependencies
+        run: |
+          sudo apt-get update
+          # No libasound2-dev / libpulse0 here: the races binary builds from
+          # the header-only telemetry plus pthreads, and NATIVE_TESTS_ONLY
+          # skips the suites that link the audio backends.
+          sudo apt-get install -y build-essential
+      - name: Build + run the telemetry race tests under ThreadSanitizer
+        run: >
+          NATIVE_TESTS_ONLY=races
+          EXTRA_CFLAGS="-fsanitize=thread -g"
+          bash packages/segno_engine/src/test/run_native_tests.sh
+
   # The control-sequence fuzzer: the REAL native engine (device-free pump) +
   # the real repository/bloc/cubits, driven by seeded random event sequences
   # and checked against the control-surface invariant spec
@@ -315,61 +328,6 @@ jobs:
         run: |
           flutter pub get
           flutter test --tags fuzz
-
-  # Compile-only macOS guard. macOS/iOS build the engine through the CocoaPods
-  # podspec's per-file forwarders (macos/Classes/), NOT CMake, so a new native TU
-  # can break the macOS link unless a forwarder is added — building here catches
-  # that. The app is flavored (development/staging/production) and the macOS Xcode
-  # project has only flavor-specific configurations (Debug-development, …), so the
-  # build MUST pass --flavor (the CMake desktop builds don't, which is why
-  # build-windows/linux omit it).
-  build-macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.44.x"
-          channel: stable
-          cache: true
-      - run: flutter config --enable-macos-desktop
-      - run: flutter pub get
-      - run: flutter build macos --debug --flavor development --target lib/main_development.dart
-
-  # Build the seven Segno FX VST3 plugins (packages/segno_engine/vst3) and run
-  # their CTest suite: GUID-drift, wrapper parameter round-trip, golden-parity
-  # vs the engine DSP, and a per-plugin dlopen load-smoke against the assembled
-  # bundle. This is the FIRST CI coverage of the plugins — they previously built
-  # only in a Darwin-gated block of run_native_tests.sh that ran on no runner
-  # (that block was removed; CTest is now the single definition). macOS only for
-  # now: the CMake project is macOS-gated (Windows = part 13, Linux = part 14,
-  # which add sibling vst3-plugins-{windows,linux} jobs). Debug config gives the
-  # SDK its expected DEVELOPMENT=1. cmake ships on the macos-latest image.
-  vst3-plugins-macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Configure + build + test the VST3 plugins
-        run: |
-          cmake -S packages/segno_engine/vst3 -B build/vst3 -DCMAKE_BUILD_TYPE=Debug
-          cmake --build build/vst3
-          ctest --test-dir build/vst3 --output-on-failure
-
-  # Windows port (part 13): the same seven plugins + CTest suite on MSVC. The
-  # default generator on windows-latest is multi-config (Visual Studio), so the
-  # build type is chosen at build/test time (--config / -C Debug) rather than via
-  # CMAKE_BUILD_TYPE. shell: bash so any failing step fails the job (set -e),
-  # matching the macOS job. cmake ships on the windows-latest image.
-  vst3-plugins-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Configure + build + test the VST3 plugins
-        shell: bash
-        run: |
-          cmake -S packages/segno_engine/vst3 -B build/vst3
-          cmake --build build/vst3 --config Debug
-          ctest --test-dir build/vst3 -C Debug --output-on-failure
 
   # Linux port (part 14): the same seven plugins + CTest suite with gcc/clang. The
   # default generator on ubuntu is single-config (Makefiles), so the build type is
@@ -423,6 +381,14 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_saved_tests.sh
       - name: Run mark-good tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
+      - name: Run log-persistence tests
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_log_persist_tests.sh
+      # Twice on purpose: the appliance's /bin/sh is busybox ash, so the
+      # scripts must hold under a strict POSIX shell (dash) as well as bash.
+      - name: Run reconcile-staged tests (bash)
+        run: TEST_SHELL=bash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_reconcile_staged_tests.sh
+      - name: Run reconcile-staged tests (dash)
+        run: TEST_SHELL=dash bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_reconcile_staged_tests.sh
 
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1

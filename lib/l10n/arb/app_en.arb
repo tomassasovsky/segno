@@ -86,13 +86,21 @@
     "updateBannerUpdateAction": "Update…",
     "updateBannerDismissAction": "Not now",
     "audioDeviceFallbackName": "Audio device",
-    "deviceDisconnectedBanner": "{deviceName} disconnected — trying to reconnect…",
-    "@deviceDisconnectedBanner": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
+    "deviceLostBanner": "No audio device — nothing is heard",
+    "@deviceLostBanner": {
+        "description": "Standing red banner on the stage while the pinned audio interface is absent — the engine is stopped (pen: STAGE / device-lost)."
+    },
+    "deviceLostBannerAction": "Open setup",
+    "@deviceLostBannerAction": {
+        "description": "Inline action on the device-lost banner — opens the tray's Audio domain on the Device tab."
+    },
+    "midiLostToastTitle": "MIDI controller disconnected",
+    "@midiLostToastTitle": {
+        "description": "Title of the transient toast shown when the pinned MIDI controller is lost (pen: STAGE / midi-lost-toast)."
+    },
+    "midiLostToastBody": "Mappings idle until it returns — loops keep playing",
+    "@midiLostToastBody": {
+        "description": "Body of the MIDI-lost toast — the loss is low-stakes because the loops keep playing."
     },
     "deviceReconnectedSnackbar": "{deviceName} reconnected",
     "@deviceReconnectedSnackbar": {
@@ -320,9 +328,9 @@
     "@shortcutArm": {
         "description": "Legend description for the A shortcut."
     },
-    "shortcutSelectTrack": "Select a track (mute it in mute mode, toggle its FX chain in FX mode)",
+    "shortcutSelectTrack": "Select a track (mute it in mute mode; in FX mode, toggle the FX chain bound to that key)",
     "@shortcutSelectTrack": {
-        "description": "Legend description for the 1–8 number-key shortcuts."
+        "description": "Legend description for the 1–8 number-key shortcuts. The FX clause names the bound chain, not the track: in FX mode a key toggles the FX chain assigned to it, which may target any FX stage, not necessarily its own track (#692)."
     },
     "shortcutBank": "Switch bank A / B",
     "@shortcutBank": {
@@ -347,6 +355,10 @@
     "shortcutRedo": "Redo",
     "@shortcutRedo": {
         "description": "Legend description for the Cmd/Ctrl+Y shortcut."
+    },
+    "shortcutUndoClearAll": "Undo clear all",
+    "@shortcutUndoClearAll": {
+        "description": "Legend description for the Cmd/Ctrl+Shift+C shortcut that restores every track cleared by a clear-all."
     },
     "shortcutSaveSession": "Save the open session",
     "@shortcutSaveSession": {
@@ -378,11 +390,11 @@
             }
         }
     },
-    "a11yTrackTileFxOn": "{name}, {state}, FX chain on, activate to switch it off",
+    "a11yTrackTileFxOn": "{target}, {state}, FX chain on, activate to switch it off",
     "@a11yTrackTileFxOn": {
-        "description": "Accessibility label for a track tile in FX mode while that track's FX chain is engaged. Carries the transport state word like the record and mute labels (the meter shows it in colour only, WCAG 1.4.1) plus the chain state, which nothing else on the tile reports.",
+        "description": "Accessibility label for a stage cell in FX mode while its bound FX chain is engaged. Leads with the chain-first target identity (the FX stage the bound chain sits on, e.g. 'MASTER · REVERB'), NOT the column's track name — the cell drives an FX chain, not the track (#692). Carries the transport state word like the record and mute labels (the meter shows it in colour only, WCAG 1.4.1) plus the chain state, which nothing else on the tile reports.",
         "placeholders": {
-            "name": {
+            "target": {
                 "type": "String"
             },
             "state": {
@@ -390,11 +402,11 @@
             }
         }
     },
-    "a11yTrackTileFxOff": "{name}, {state}, FX chain off, activate to switch it on",
+    "a11yTrackTileFxOff": "{target}, {state}, FX chain off, activate to switch it on",
     "@a11yTrackTileFxOff": {
-        "description": "Accessibility label for a track tile in FX mode while that track's FX chain is bypassed.",
+        "description": "Accessibility label for a stage cell in FX mode while its bound FX chain is bypassed. Leads with the chain-first target identity, never the column's track name (#692).",
         "placeholders": {
-            "name": {
+            "target": {
                 "type": "String"
             },
             "state": {
@@ -545,6 +557,17 @@
         }
     },
     "noActiveOutputsNotice": "No outputs are enabled — nothing will be heard. Tap a greyed output to turn it back on.",
+    "signalLastOutputTitle": "Switch off the last output?",
+    "signalLastOutputBody": "{outputName} is the only output still on. Off, the sum reaches nothing and the console is silent — the warning under the outputs will stand until one is switched back on.",
+    "@signalLastOutputBody": {
+        "placeholders": {
+            "outputName": {
+                "type": "String"
+            }
+        }
+    },
+    "signalLastOutputKeep": "Keep it on",
+    "signalLastOutputConfirm": "Switch off",
     "signalTitle": "Signal",
     "signalFlowSubtitle": "Inputs · Tracks · Outputs",
     "signalSectionInputs": "Inputs",
@@ -619,6 +642,18 @@
     "clearAllTooltip": "Clear all (C)",
     "@clearAllTooltip": {
         "description": "Tooltip for the top-bar button that clears every track. The parenthetical names the keyboard shortcut."
+    },
+    "undoClearAllToast": "Cleared all tracks",
+    "@undoClearAllToast": {
+        "description": "Title of the toast shown right after a clear-all, offering to undo it. Its action button restores every cleared track."
+    },
+    "undoClearAllAction": "Undo",
+    "@undoClearAllAction": {
+        "description": "Label of the action button on the clear-all toast that restores every cleared track."
+    },
+    "a11yUndoClearAll": "Restored all cleared tracks",
+    "@a11yUndoClearAll": {
+        "description": "Announced when the whole-rig undo-clear-all restores every track a clear-all cleared."
     },
     "fullscreenTooltip": "Fullscreen (F)",
     "@fullscreenTooltip": {
@@ -713,6 +748,49 @@
     "signalChainOn": "Chain on",
     "@signalChainOn": {
         "description": "The Signal panel's chain-power pill while the chain is running."
+    },
+    "stageFxChainOn": "ON",
+    "@stageFxChainOn": {
+        "description": "The dominant power pill on an FX-mode stage tile while the track's FX chain is engaged. Short and upper-case for reading at stage distance; distinct from the Signal panel's 'Chain on' (a different surface)."
+    },
+    "stageFxChainOff": "OFF",
+    "@stageFxChainOff": {
+        "description": "The dominant power pill on an FX-mode stage tile while the track's FX chain is bypassed."
+    },
+    "stageFxNoChain": "NO CHAIN",
+    "@stageFxNoChain": {
+        "description": "The FX-mode stage tile title for a track that has no effects loaded at all — there is nothing to power on or off."
+    },
+    "stageFxNoChainHint": "build one in Signal",
+    "@stageFxNoChainHint": {
+        "description": "The hint under NO CHAIN on an empty FX-mode stage tile, pointing the player at the Signal tab where a chain is assembled."
+    },
+    "stageFxCellLabel": "{target} · {chain}",
+    "@stageFxCellLabel": {
+        "description": "The chain-first identity of an FX-mode stage cell: the FX stage the footswitch's bound chain attaches to, a middle dot, then the chain's own name. Names the FX control the cell drives — never the track in that column, which the cell no longer claims (#692).",
+        "placeholders": {
+            "target": { "type": "String", "example": "MASTER" },
+            "chain": { "type": "String", "example": "REVERB" }
+        }
+    },
+    "stageFxTargetInput": "INPUT {number}",
+    "@stageFxTargetInput": {
+        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a hardware input's monitor chain, when that input has no user-assigned name. 1-based, upper-case for stage distance. Carries no track name (the bound chain need not belong to the column's track).",
+        "placeholders": { "number": { "type": "int", "example": "1" } }
+    },
+    "stageFxTargetTrack": "TRACK {number}",
+    "@stageFxTargetTrack": {
+        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a track's bus chain. 1-based. Always shown chain-first (never the track's name), even when the bound chain targets the column's own track (#692).",
+        "placeholders": { "number": { "type": "int", "example": "3" } }
+    },
+    "stageFxTargetLane": "LANE {lane}",
+    "@stageFxTargetLane": {
+        "description": "The FX-stage prefix of an FX-mode cell whose bound chain sits on a loop lane's record-route chain.",
+        "placeholders": { "lane": { "type": "int", "example": "2" } }
+    },
+    "stageFxTargetMaster": "MASTER",
+    "@stageFxTargetMaster": {
+        "description": "The FX-stage prefix of an FX-mode cell whose bound chain is the single Master insert."
     },
     "signalShowAllLanes": "All lanes",
     "signalShowRecordedLanes": "Recorded lanes",
@@ -999,14 +1077,6 @@
     "midiRequiredCcsHint": "CC 80 record · 81 stop · 82 undo · 83 clear",
     "midiActivityActive": "MIDI activity",
     "midiActivityIdle": "Waiting for MIDI input",
-    "midiDisconnectedBanner": "MIDI controller \"{deviceName}\" disconnected — it will reconnect when plugged in.",
-    "@midiDisconnectedBanner": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
     "midiReconnectedSnackbar": "MIDI controller \"{deviceName}\" reconnected.",
     "@midiReconnectedSnackbar": {
         "placeholders": {
@@ -1803,6 +1873,14 @@
     "midiLearnLearn": "Learn",
     "midiLearnRelearn": "Relearn",
     "midiLearnClear": "Remove",
+    "midiSimulate": "Simulate",
+    "@midiSimulate": {
+        "description": "Action pill on an open mapping row that runs the mapping's own synthetic sweep/press through the pipeline, so it can be proven with no controller attached (#519)."
+    },
+    "midiSimulateGlobal": "Simulate input",
+    "@midiSimulateGlobal": {
+        "description": "Status-card button that feeds a synthetic controller event where a real one would land — a listening learn capture, else the open mapping row (#519)."
+    },
     "midiLearnCancel": "Cancel",
     "midiLearnListening": "Listening… move the control you want to use.",
     "midiLearnReplacePrompt": "{control} already drives another mapping. Replace it?",
@@ -1971,6 +2049,10 @@
     "wifiConnectFailedGeneric": "Couldn’t join that network.",
     "@wifiConnectFailedGeneric": {
         "description": "Fallback error when WiFi connect fails for an unknown reason."
+    },
+    "wifiConnectFailedBackend": "Couldn’t join — network error, not a password problem.",
+    "@wifiConnectFailedBackend": {
+        "description": "Shown when a join fails for backend/transient reasons (iwd race, NM no-secrets on a saved network) after automatic retries — explicitly not a credentials problem, so the owner does not forget the network and re-type the password (#829)."
     },
     "wifiSsidLabel": "Network",
     "@wifiSsidLabel": {
@@ -2185,6 +2267,15 @@
     "wifiJoiningBanner": "Joining {ssid}…",
     "@wifiJoiningBanner": {
         "description": "In-flight banner at the top of the WiFi list while a join is running.",
+        "placeholders": {
+            "ssid": {
+                "type": "String"
+            }
+        }
+    },
+    "wifiRetryingBanner": "Network error — retrying {ssid}…",
+    "@wifiRetryingBanner": {
+        "description": "In-flight banner while the console automatically re-activates a join after a backend/transient failure (#829). Never worded as a password problem.",
         "placeholders": {
             "ssid": {
                 "type": "String"

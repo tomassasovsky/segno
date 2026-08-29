@@ -678,6 +678,87 @@ void main() {
       },
     );
 
+    test(
+      "the manifest's own persisted tempo beats the caller's (#281): "
+      'disarmSnapshot.tempoBpm is authoritative, armSnapshot.tempoBpm is '
+      'the crash-salvage fallback',
+      () {
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            // Arm-over-empty-grid at 96, tempo dialed in to 132 before the
+            // first loop: only the disarm-time read saw D6's lock engage.
+            'armSnapshot': {'tempoBpm': 96.0, 'tracks': <dynamic>[]},
+            'disarmSnapshot': {'tempoBpm': 132.0, 'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+
+        // The caller's live tempo (140) never reaches the export — by
+        // re-export time it may have long moved on from this take's.
+        expect(
+          DawManifestReader.read(dir.path, tempoBpm: 140)!.tempoBpm,
+          132.0,
+        );
+        expect(DawManifestReader.read(dir.path)!.tempoBpm, 132.0);
+      },
+    );
+
+    test(
+      'a crash-salvaged manifest (no disarmSnapshot) falls back to the '
+      'arm-time tempo (#281)',
+      () {
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {'tempoBpm': 96.0, 'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+
+        expect(
+          DawManifestReader.read(dir.path, tempoBpm: 140)!.tempoBpm,
+          96.0,
+        );
+      },
+    );
+
+    test(
+      'a manifest with no tempo evidence — snapshots absent, pre-#281 '
+      'bundles without the key, or the 0-as-unset sentinel — falls through '
+      'to the caller tempo, then 120 (#281)',
+      () {
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            // 0 = unset, stored verbatim by performance_repository: no
+            // tempo was ever locked, so it must NOT shadow the fallbacks.
+            'armSnapshot': {'tempoBpm': 0.0, 'tracks': <dynamic>[]},
+            'disarmSnapshot': {'tempoBpm': 0.0, 'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+
+        expect(
+          DawManifestReader.read(dir.path, tempoBpm: 140)!.tempoBpm,
+          140.0,
+        );
+        expect(DawManifestReader.read(dir.path)!.tempoBpm, 120.0);
+      },
+    );
+
+    test(
+      'returns null when performance.json is well-formed JSON but not an '
+      'object — never a TypeError escaping to callers guarding only I/O',
+      () {
+        File('${dir.path}/performance.json').writeAsStringSync('[1, 2, 3]');
+        expect(DawManifestReader.read(dir.path), isNull);
+      },
+    );
+
     test('a track with no logged gestures gets no automation lanes', () {
       Directory('${dir.path}/stems/wet').createSync(recursive: true);
       File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
