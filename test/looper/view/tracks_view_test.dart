@@ -589,13 +589,15 @@ void main() {
       required InteractionMode mode,
       FxAddress? fxTarget,
       Map<int, String> inputNames = const {},
+      Track? liveTrack,
     }) {
       // [track] is seeded as the bloc's OWN track for its channel, not just
       // handed to the widget. A column is a live view: its meter reads the
       // level for `track.channel` out of the ambient bloc (see
       // `TrackColumn.track`), so a harness that let the two disagree would
       // make every meter assertion here true for the wrong reason.
-      seed(LooperState(tracks: [track]));
+      // [liveTrack] exists only to break that on purpose.
+      seed(LooperState(tracks: [liveTrack ?? track]));
       return tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.neon,
@@ -652,6 +654,25 @@ void main() {
       // chain's head effect — never GUITAR as the cell identity.
       expect(find.text('TRACK 3 · FILTER'), findsOneWidget);
       expect(find.text('GUITAR'), findsNothing);
+    });
+
+    testWidgets('a Track the bloc does not hold trips the live-view assert', (
+      tester,
+    ) async {
+      // The rule the doc on `TrackColumn.track` states, enforced instead of
+      // asked for: the meter reads its level out of the ambient bloc by
+      // channel, so a column handed a track that bloc does not hold draws one
+      // track's facts under another's level — and renders perfectly while
+      // doing it. Nothing on screen, and no screenshot, would show it.
+      await pumpColumn(
+        tester,
+        name: 'GUITAR',
+        mode: InteractionMode.record,
+        track: const Track(muted: true),
+        liveTrack: const Track(),
+      );
+
+      expect(tester.takeException(), isA<AssertionError>());
     });
 
     testWidgets('a bound chain targeting a NON-track stage reads that stage, '

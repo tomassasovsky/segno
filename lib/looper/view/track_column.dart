@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -101,6 +102,25 @@ class TrackColumn extends StatelessWidget {
     final looper = theme.extension<LooperTheme>()!;
     final surface = context.surface;
     final bloc = context.read<LooperBloc>();
+    // Debug-only enforcement of the live-view rule on [track]. The meter reads
+    // its level out of THIS bloc by channel, so handing a column a track the
+    // bloc does not hold draws one track's facts under another's level — a
+    // mis-wiring that renders perfectly and is invisible in a screenshot.
+    // A tick-stale `peak` is fine and expected, which is exactly why the
+    // comparison is on `steadyProps`. An absent channel is allowed: that is
+    // the frame in which the slot above unmounts this column.
+    assert(
+      () {
+        final live = bloc.state.tracks
+            .where((t) => t.channel == track.channel)
+            .toList();
+        return live.isEmpty ||
+            listEquals(live.first.steadyProps, track.steadyProps);
+      }(),
+      'TrackColumn was given a Track the ambient LooperBloc does not hold '
+      '(channel ${track.channel}). A column is a live view of that bloc, not '
+      'a function of its argument — see TrackColumn.track.',
+    );
 
     // The border is always white; selection only changes its weight. The meter
     // bar color is one table lookup on the track's meter state (muted included;

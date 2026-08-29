@@ -157,12 +157,19 @@ class Track extends Equatable {
   /// two are locked to each other by a test — `props` is exactly this list
   /// plus [peak] — so a field added to one cannot silently miss the other.
   ///
-  /// "Steady" means steady against a moving LEVEL, and nothing more. A track
-  /// that is RECORDING still differs here on every poll tick: [lengthFrames]
-  /// (and the recording lane's own) grow as the take does. That is one tile
-  /// rebuilding while it records, not eight rebuilding because one of them
-  /// made a noise, so it is left alone — the tile draws `hasContent`, which
-  /// the growing length flips exactly once (#899).
+  /// "Steady" means steady against a moving LEVEL, and nothing more — two
+  /// other fields here move on their own, both deliberately left in:
+  ///
+  /// - A track that is RECORDING differs on every poll tick as [lengthFrames]
+  ///   (and the recording lane's own) grow with the take. That is one tile
+  ///   rebuilding while it records, not eight rebuilding because one of them
+  ///   made a noise, so it is left alone — the tile draws `hasContent`, which
+  ///   the growing length flips exactly once (#899).
+  /// - [lanes] carries `Lane.cacheState`, which follows the background
+  ///   renderer while `CacheTelemetryScope` is open. That scope is debug
+  ///   telemetry, off by default and opened by nothing in the app, so it
+  ///   costs nothing in a performance; a surface that turns it on is asking
+  ///   the poll to report a moving value and gets the rebuilds that implies.
   List<Object?> get steadyProps => [
     channel,
     state,
