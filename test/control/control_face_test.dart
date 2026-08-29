@@ -88,6 +88,11 @@ void main() {
     when(() => looper.allMonitors()).thenReturn(const {});
     when(() => looper.allLaneChains()).thenReturn(const {});
     when(() => looper.allTrackChains()).thenReturn(const {});
+    // The membership halves of the enumerations above — what `chainEntriesAt`
+    // asks, so binding resolution stays off the poll path.
+    when(() => looper.hasMonitor(any())).thenReturn(false);
+    when(() => looper.hasLaneChain(any(), any())).thenReturn(false);
+    when(() => looper.hasTrackChain(any())).thenReturn(false);
     when(() => looper.trackEffects(any())).thenReturn(const []);
     when(() => looper.masterEffects).thenAnswer((_) => masterChain);
     when(

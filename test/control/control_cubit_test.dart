@@ -206,6 +206,13 @@ void main() {
             channel: const FxChainEnvelope(),
         },
       );
+      // The membership halves of the enumerations above — what
+      // `chainEntriesAt` asks, so binding resolution stays off the poll path.
+      when(
+        () => looper.hasTrackChain(any()),
+      ).thenAnswer((i) => trackChains.containsKey(i.positionalArguments[0]));
+      when(() => looper.hasMonitor(any())).thenReturn(false);
+      when(() => looper.hasLaneChain(any(), any())).thenReturn(false);
       when(
         () => looper.setTrackEffectEnabled(
           channel: any(named: 'channel'),

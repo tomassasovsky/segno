@@ -46,18 +46,18 @@ extension FxChainLookup on LooperRepository {
     if (address.index < 0) return null;
     final lane = address.lane;
     return switch (address.stage) {
+      // The MEMBERSHIP halves of the `all*` enumerations, not the enumerations
+      // themselves: this runs on the poll path — the pedal's LED projection
+      // and every FX-mode cell re-ask it each tick — where rebuilding the
+      // whole rig to answer one `containsKey` is the cost.
       FxStage.input =>
-        allMonitors().containsKey(address.index)
-            ? monitorEffects(address.index)
-            : null,
+        hasMonitor(address.index) ? monitorEffects(address.index) : null,
       FxStage.loop =>
-        lane != null && allLaneChains().containsKey((address.index, lane))
+        lane != null && hasLaneChain(address.index, lane)
             ? laneEffects(address.index, lane)
             : null,
       FxStage.track =>
-        allTrackChains().containsKey(address.index)
-            ? trackEffects(address.index)
-            : null,
+        hasTrackChain(address.index) ? trackEffects(address.index) : null,
       // There is exactly one Master insert and it always exists; a non-zero
       // index is a malformed address rather than a second one.
       FxStage.master => address.index == 0 ? masterEffects : null,

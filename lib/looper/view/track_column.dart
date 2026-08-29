@@ -451,6 +451,13 @@ class TrackColumn extends StatelessWidget {
                           effects: fxChainEffects,
                           enabled: fxChainOn,
                           chainEnabled: fxRunOn,
+                          // A bound cell keeps its identity and its power pill
+                          // even with nothing loaded: its tap flips a real
+                          // chain flag on a stage this column does not show,
+                          // and the bare NO CHAIN placeholder would name none
+                          // of it. A STALE cell is not drivable, so it stays
+                          // the placeholder.
+                          drivable: binding != null && !fxStale,
                         ),
                       ),
                   ],
@@ -813,6 +820,7 @@ class _FxChainDressing extends StatelessWidget {
     required this.effects,
     required this.enabled,
     required this.chainEnabled,
+    required this.drivable,
   });
 
   /// The cell's primary identity line — `TARGET · CHAIN` (e.g.
@@ -836,15 +844,28 @@ class _FxChainDressing extends StatelessWidget {
   /// must not draw the chain around it as switched off.
   final bool chainEnabled;
 
+  /// Whether the cell's tap actually flips something — a footswitch-BOUND
+  /// cell whose target still resolves.
+  ///
+  /// It decides what an EMPTY chain draws. An unbound (or stale) empty cell is
+  /// the pen's `NO CHAIN` placeholder and its invitation to build one: there
+  /// is nothing to power. A BOUND one is not — its tap toggles a real chain
+  /// flag on a stage this column never shows — so it keeps the identity naming
+  /// that chain and the pill reporting it, with `NO CHAIN` standing in for the
+  /// run of chips. Drawing the placeholder there would hide both the target
+  /// and the state the tap moves: #884 again, for the empty case.
+  final bool drivable;
+
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: ExcludeSemantics(
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: effects.isEmpty
-              // Nothing loaded: no power pill (there is nothing to power), just
-              // a centered NO CHAIN and the invitation to build one.
+          child: effects.isEmpty && !drivable
+              // Nothing loaded and nothing bound: no power pill (there is
+              // nothing to power), just a centered NO CHAIN and the invitation
+              // to build one.
               ? const Align(
                   // Upper-middle: the NO CHAIN group centres at ~40% of the
                   // card, matching the pen.
@@ -883,7 +904,17 @@ class _FxChainDressing extends StatelessWidget {
                       // Inter-element gaps opened to the pen's proportions:
                       // identity→chips ~3.8% of the card, chips→pill ~3.2%.
                       const SizedBox(height: kConsoleMode ? 20 : 12),
-                      _FxEntryRun(effects: effects, chainEnabled: chainEnabled),
+                      if (effects.isEmpty)
+                        // A bound-but-empty chain: the word stands in for the
+                        // run, at the run's size, so the identity above it and
+                        // the pill below stay on the same baselines as every
+                        // other cell in the row.
+                        const _FxEmptyRun()
+                      else
+                        _FxEntryRun(
+                          effects: effects,
+                          chainEnabled: chainEnabled,
+                        ),
                       const SizedBox(height: kConsoleMode ? 30 : 18),
                       _FxPowerPill(enabled: enabled),
                     ],
@@ -1122,6 +1153,33 @@ class _FxEntryRun extends StatelessWidget {
           runSpacing: 4,
           children: children,
         ),
+      ),
+    );
+  }
+}
+
+/// What stands in for the run of chips on a BOUND cell whose chain is empty:
+/// the `NO CHAIN` word at the run's own size and tone, so the identity above
+/// it and the power pill below stay on the same baselines as the cells beside
+/// it. The placeholder proper — the big centered word plus its invitation to
+/// build one — belongs to the UNBOUND empty cell, which has no target to name
+/// and nothing to power.
+class _FxEmptyRun extends StatelessWidget {
+  const _FxEmptyRun();
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return AppText(
+      context.l10n.stageFxNoChain,
+      key: const Key('tracks_tileFxEmptyRun'),
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontFamily: SurfaceTheme.displayFont,
+        color: surface.textMuted,
+        fontSize: kConsoleMode ? 18 : 13,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 1,
       ),
     );
   }

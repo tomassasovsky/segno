@@ -997,7 +997,7 @@ void main() {
         // Points at a monitor the rig does not have: the binding PARSES but
         // resolves to nothing (R25) — the stale case a null-target check alone
         // never catches.
-        when(repository.allMonitors).thenReturn(const {});
+        when(() => repository.hasMonitor(any())).thenReturn(false);
         await control.setGlobalBindings(
           PedalBindingSet([
             PedalBinding(
@@ -1026,6 +1026,46 @@ void main() {
         await tester.pump();
         verifyNever(() => bloc.add(const LooperTrackChainToggled(0)));
       });
+
+      testWidgets('a bound cell whose chain is EMPTY still names it and shows '
+          'the pill its tap moves', (tester) async {
+        // The chain resolves (the Master insert always does) — it just has
+        // nothing loaded. The bare NO CHAIN placeholder would name neither the
+        // target nor the state the tap flips, which is #884 for the empty
+        // case: the tap really does write `setMasterChainEnabled`.
+        await bindTrack1ToMaster(const []);
+        control.setMode(InteractionMode.fx);
+        seed(const LooperState(tracks: [Track()]));
+        await pump(tester);
+
+        expect(find.text('MASTER'), findsOneWidget);
+        expect(find.text('ON'), findsOneWidget);
+        // The word stands in for the chip run, not for the whole cell.
+        expect(find.byKey(const Key('tracks_tileFxEmptyRun')), findsOneWidget);
+        expect(find.byKey(const Key('tracks_tileFxNoChain')), findsNothing);
+
+        await tester.tap(find.byKey(const Key('tracks_tile_0')));
+        await tester.pump();
+        verify(
+          () => repository.setMasterChainEnabled(enabled: false),
+        ).called(1);
+      });
+
+      testWidgets(
+        'an UNBOUND empty cell keeps the plain NO CHAIN placeholder',
+        (tester) async {
+          // Nothing bound over it and nothing loaded: the pen's placeholder and
+          // its invitation to build a chain, unchanged.
+          control.setMode(InteractionMode.fx);
+          seed(const LooperState(tracks: [Track()]));
+          await pump(tester);
+
+          expect(find.byKey(const Key('tracks_tileFxNoChain')), findsOneWidget);
+          expect(find.byKey(const Key('tracks_tileFxEmptyRun')), findsNothing);
+          expect(find.text('ON'), findsNothing);
+          expect(find.text('OFF'), findsNothing);
+        },
+      );
 
       testWidgets('a MOMENTARY binding latches from the screen but is never '
           'saved', (tester) async {
@@ -1102,9 +1142,7 @@ void main() {
         // projected onto LooperState — so a cell keyed on LooperBloc would sit
         // stale after a stomp or an FX-editor edit: at rest the projection
         // compares equal and the bloc emits nothing at all.
-        when(
-          () => repository.allMonitors(),
-        ).thenReturn({0: const InputMonitor(input: 0)});
+        when(() => repository.hasMonitor(0)).thenReturn(true);
         when(
           () => repository.monitorEffects(0),
         ).thenReturn([BuiltInEffect(type: TrackEffectType.reverb)]);

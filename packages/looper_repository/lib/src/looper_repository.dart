@@ -1963,20 +1963,50 @@ class LooperRepository {
     };
     final result = <int, InputMonitor>{};
     for (final input in inputs) {
-      final monitor = InputMonitor(
-        input: input,
-        mode: monitorMode(input),
-        outputMask: monitorOutput(input),
-        volume: monitorVolume(input),
-        muted: monitorMuted(input),
-        effects: monitorEffects(input),
-        chainEnabled: monitorChainEnabled(input),
-      );
+      final monitor = _monitorAt(input);
       // Skip inputs equal to the disabled default (no state worth persisting).
       if (monitor != InputMonitor(input: input)) result[input] = monitor;
     }
     return result;
   }
+
+  /// Whether lane [lane] of track [channel] is one [allLaneChains] lists — the
+  /// MEMBERSHIP half of that enumeration, answered without materializing an
+  /// envelope for every configured lane in the rig.
+  ///
+  /// Reads exactly the maps [allLaneChains] unions, so a membership check and
+  /// the enumeration can never disagree. It exists because binding resolution
+  /// runs on the POLL path: the pedal's LED projection and every FX-mode cell
+  /// ask "is there a chain here?" on each tick, and rebuilding the rig to
+  /// answer one `containsKey` is the cost.
+  bool hasLaneChain(int channel, int lane) =>
+      _laneEffects.containsKey((channel, lane)) ||
+      _laneChainEnabled.containsKey((channel, lane)) ||
+      _laneChainMeta.containsKey((channel, lane));
+
+  /// Whether [channel] is one [allTrackChains] lists — the membership half of
+  /// that enumeration, on the same terms as [hasLaneChain].
+  bool hasTrackChain(int channel) =>
+      _trackEffects.containsKey(channel) ||
+      _trackChainEnabled.containsKey(channel);
+
+  /// Whether [input] is one [allMonitors] lists — the membership half of that
+  /// enumeration, on the same terms as [hasLaneChain]. Built from the same
+  /// [_monitorAt] snapshot and compared against the same disabled default, so
+  /// the two answer alike for every input.
+  bool hasMonitor(int input) => _monitorAt(input) != InputMonitor(input: input);
+
+  /// Everything remembered about hardware [input]'s monitor, defaulted where
+  /// nothing is. The ONE definition [allMonitors] and [hasMonitor] share.
+  InputMonitor _monitorAt(int input) => InputMonitor(
+    input: input,
+    mode: monitorMode(input),
+    outputMask: monitorOutput(input),
+    volume: monitorVolume(input),
+    muted: monitorMuted(input),
+    effects: monitorEffects(input),
+    chainEnabled: monitorChainEnabled(input),
+  );
 
   /// What hardware [input]'s live monitor is asked to do (remembered intent).
   MonitorMode monitorMode(int input) =>
