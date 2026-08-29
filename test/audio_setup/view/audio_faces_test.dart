@@ -238,6 +238,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('audio_device_option_0')), findsNothing);
       expect(find.byKey(const Key('audio_buffer_128')), findsOneWidget);
+      // The 32-frame option (#893). The console golden that shows it is
+      // author-only (skip: !hasFonts), so this is what covers it in CI.
+      expect(find.byKey(const Key('audio_buffer_32')), findsOneWidget);
 
       // And tapping the open row shuts it.
       await tester.tap(find.byKey(const Key('audio_rate_row')));

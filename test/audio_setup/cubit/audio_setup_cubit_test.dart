@@ -741,14 +741,31 @@ void main() {
       final cubit = buildCubit();
       addTearDown(cubit.close);
 
-      // The generic list is what a non-ASIO rig sees. 32 is the appliance's
-      // low-latency option; the ordering is what the picker renders, so a
-      // stray insert would show the tightest buffer in the wrong place.
+      // The generic list is what a non-ASIO rig sees, and the ordering is what
+      // the picker renders, so a stray insert would show the tightest buffer
+      // in the wrong place. Ascending order is also what makes `.first` the
+      // tightest period, which is why `_snapRateAndBuffer` does not use it.
       expect(cubit.state.bufferChoices, [32, 64, 128, 256, 512]);
-      expect(
-        cubit.state.bufferChoices,
-        orderedEquals(List<int>.from(cubit.state.bufferChoices)..sort()),
+    });
+
+    test('an off-list buffer snaps to 128, not to the tightest option', () {
+      // 480 is a period the grid cannot show — an ALSA quantum negotiated by
+      // some device. The snap exists so a chip stays lit, so it has to land
+      // somewhere; `bufferChoices.first` is 32 now, and landing an UNCHOSEN
+      // selection on the least-proven deadline (then persisting it) is what
+      // the 128 preference guards against.
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(sampleRate: 48000, bufferFrames: 480),
       );
+      // mockAsioDriver publishes no buffer list of its own, so the snap runs
+      // against the generic grid rather than a driver set.
+      when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
+
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+
+      expect(cubit.state.bufferChoices, [32, 64, 128, 256, 512]);
+      expect(cubit.state.bufferFrames, 128);
     });
   });
 

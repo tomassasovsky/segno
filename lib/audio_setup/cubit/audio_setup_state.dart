@@ -231,7 +231,11 @@ class AudioSetupState extends Equatable {
   /// 64-frame period and 141 at 32. So halving the period took 65 frames off
   /// a term that is not the buffer at all, on top of the buffer's own saving.
   /// The cost is a 333 us callback deadline instead of 667 us, which is why
-  /// this is an option and not a default.
+  /// this is an option and not a default. Switching to it also costs the
+  /// stored latency calibration, as any buffer change does — the record
+  /// offset is keyed by rate and frames, and the appliance does not auto
+  /// re-measure — so a unit that takes this option needs a Measure pass
+  /// before its next recorded take lines up.
   static const bufferSizes = [32, 64, 128, 256, 512];
 
   /// Selectable max-loop-length options, in minutes. `0` is the engine default.
