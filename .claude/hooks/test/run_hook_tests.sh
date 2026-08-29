@@ -73,8 +73,12 @@ g deny "$(printf 'cat > f <<EOF && git push\nbody\nEOF')"
 g deny 'if true; then git push; fi'
 g deny 'for b in a b; do git push origin $b; done'
 g deny 'timeout 60 git push'
-# The sanctioned marker has to be a credential.helper assignment, not prose.
+# The sanctioned marker has to be a credential.helper assignment, not prose,
+# and the internal sentinel that assignment is rewritten to must not be
+# forgeable by typing it.
 g deny 'git push origin main # remember to use gh auth git-credential'
+g deny 'git push origin main # credential.helper=GHSANCTIONED'
+g deny 'echo credential.helper=GHSANCTIONED; git push'
 # Globbing must not change the verdict. Run these from a directory containing
 # a file literally named `push`: without `set -f`, `git *push*` expands to
 # `git push` and the answer starts depending on the cwd.

@@ -26,7 +26,10 @@
 #   1. backslash continuations are joined -- one command, one line;
 #   2. the sanctioned `-c credential.helper='!gh auth git-credential'` is
 #      normalised to an unquoted sentinel BEFORE anything else, so it survives
-#      the blanking in step 3 and is still recognisable per segment;
+#      the blanking in step 3 and is still recognisable per segment. Any
+#      literal copy of that sentinel already in the command is defaced first,
+#      or `git push # credential.helper=GHSANCTIONED` would wave itself
+#      through;
 #   3. every quoted span is blanked to spaces -- INCLUDING newlines inside it,
 #      so a multi-line `--body "..."` collapses onto one logical line instead
 #      of masquerading as several commands. That is what keeps
@@ -68,6 +71,7 @@ HOOK_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # quadratic and cost seconds on a large heredoc; this is ~80 ms on 5 MB.
 SCAN=$(printf '%s' "$CMD" \
   | sed -e ':a' -e '/\\$/{N;s/\\\n//;ta' -e '}' \
+  | sed -e "s/$MARKER/credential.helper=NOT_SANCTIONED/g" \
   | sed -e "s/<<\(-\{0,1\}\)['\"]\([A-Za-z_][A-Za-z0-9_]*\)['\"]/<<\1\2/g" \
   | sed -e "s/credential\.helper=['\"]\{0,1\}!\{0,1\}[^'\" ]*gh auth git-credential['\"]\{0,1\}/$MARKER/g" \
   | awk -f "$HOOK_DIR/blank-quotes.awk") || exit 0
