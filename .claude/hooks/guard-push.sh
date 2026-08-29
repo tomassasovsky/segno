@@ -64,8 +64,34 @@ strip_quotes() {
 
 # Is this segment a git invocation that pushes?
 is_push() {
-  local seg
-  seg=$(strip_quotes "$1")
+  local seg=$1
+  # Two O(1) rejections before strip_quotes, whose bash-3.2 character loop is
+  # quadratic in the segment length: a segment with no "push" at all cannot be
+  # one, and neither can one whose first word is already something else. This
+  # is what keeps a 20 kB heredoc mentioning "push" from costing seconds on a
+  # hook that runs before every Bash call.
+  case "$seg" in *push*) ;; *) return 1 ;; esac
+  set -- $seg
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      *=*) shift ;;
+      env|command|sudo|nohup|time) shift ;;
+      *) break ;;
+    esac
+  done
+  [ $# -gt 0 ] || return 1
+  case "${1##*/}" in git|\"git\"|\'git\') ;; *) return 1 ;; esac
+
+  # Only the head of a segment can hold the verb -- `git push` puts it inside
+  # ~60 characters, the sanctioned `-c credential.helper=...` form inside ~100.
+  # Capping bounds strip_quotes' quadratic loop on a long single-line
+  # `git commit -m "...push..."`. It can only ever hide a verb, never invent
+  # one: truncation removes trailing text, so a `push` that was inside a quote
+  # stays inside it (the quote simply never closes) and no new UNQUOTED push
+  # can appear. Errs toward allowing, which is the safe direction for a hook
+  # that gates every Bash call.
+  seg=${seg:0:2000}
+  seg=$(strip_quotes "$seg")
   # Leading environment assignments and wrappers do not change the verb.
   set -- $seg
   while [ $# -gt 0 ]; do

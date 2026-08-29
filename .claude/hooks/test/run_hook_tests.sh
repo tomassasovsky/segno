@@ -77,6 +77,29 @@ g allow 'git log --oneline | grep push'
 g allow 'git log --grep="push"'
 g allow "$(printf 'cat > docs/x.md <<%s\nRun:\n\n    git push origin main\n%s\n' "'EOF'" 'EOF')"
 
+# A PreToolUse hook that errors blocks the Bash tool outright, so malformed or
+# absent input must be a silent allow, never a crash. Bound the run time too:
+# this executes before every Bash call.
+raw() { # raw <stdin> <label>
+  local out
+  out=$(printf '%s' "$1" | bash "$GUARD" 2>&1)
+  if [ $? -eq 0 ] && [ -z "$out" ]; then ok; else
+    bad "guard-push: expected a silent allow for $2, got rc=$? out='$out'"
+  fi
+}
+raw '' 'empty stdin'
+raw 'not json at all' 'malformed json'
+raw '{"tool_name":"Read","tool_input":{"file_path":"/x"}}' 'a non-Bash payload'
+raw '{"tool_input":{"command":null}}' 'a null command'
+
+BIG=$(printf 'git commit -m "push %s"' "$(head -c 20000 /dev/zero | tr '\0' 'x')")
+START=$(date +%s)
+printf '%s' "$BIG" | jq -Rs '{tool_input:{command:.}}' | bash "$GUARD" >/dev/null 2>&1
+ELAPSED=$(( $(date +%s) - START ))
+if [ "$ELAPSED" -le 2 ]; then ok; else
+  bad "guard-push: took ${ELAPSED}s on a 20 kB command -- it runs before every Bash call"
+fi
+
 # ---- format-dart ------------------------------------------------------------
 # The one thing this hook must never do is run `dart format` in a worktree that
 # has not been `pub get`-resolved: the `formatter: trailing_commas: preserve`
