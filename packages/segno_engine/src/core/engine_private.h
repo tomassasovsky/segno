@@ -1031,9 +1031,8 @@ typedef struct le_perf_capture {
  * le_tuner_pass). No array member, so this type carries none of the octaver's
  * tuning constants and can live beside the rest of the DSP state here. */
 typedef struct le_yin_pass {
-  const float* x; /* analysis window, `n` contiguous samples */
+  const float* x; /* analysis window; maxlag + integ contiguous samples */
   float* dp;      /* d'(tau) output, at least maxlag + 1 floats */
-  int32_t n;
   int32_t minlag;
   int32_t maxlag;
   int32_t integ; /* difference-function integration length (n - maxlag) */

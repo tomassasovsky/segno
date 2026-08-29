@@ -3587,8 +3587,10 @@ static inline void snapshot_lane_cache(
  *    at 96 kHz are spread over the ~30 blocks of its own hop instead of
  *    landing in one 333 us period.
  *
- * The result is consumed at a ~43 ms cadence, so spreading it is invisible:
- * the needle sees the same numbers, a few milliseconds later. */
+ * The needle sees the same numbers, roughly half a hop later — a pass is
+ * 36-47% of its hop's budget, so ~10 ms at 96 kHz and ~16 ms at 48 kHz — on
+ * top of the ~128 ms window the estimate already averages over. Against a
+ * result consumed at a ~43 ms cadence that is invisible. */
 
 /* Copies the tuner's device-rate ring into `out` (LE_TUNER_RAW floats), oldest
  * sample first — the contiguous chronological window the shifting FIFO used to
@@ -3682,13 +3684,18 @@ static void tuner_begin(le_engine* e, int sr, int sr_d) {
   le_tuner_pass* p = &e->tuner_pass;
   p->sr = sr;
   memcpy(p->win, e->tuner_win, sizeof(p->win));
-  p->raw_valid = le_tuner_raw_window(e, p->raw);
   if (!le_yin_begin(&p->yin, p->win, LE_TUNER_WIN, sr_d, LE_TUNER_MIN_HZ,
                     LE_TUNER_MAX_HZ, p->dp,
                     (int)(sizeof(p->dp) / sizeof(p->dp[0])))) {
     tuner_publish(e, 0.0f, 0.0f);
     return; /* stays IDLE: the next hop starts a fresh pass */
   }
+  /* After le_yin_begin, not before: an armed tuner pointed at a silent input
+   * takes the silence-floor early-out above, and freezing the device-rate ring
+   * for it would be 8 KB of memcpy per hop that nothing ever reads. The freeze
+   * instant is still this frame, so the refinement sees the same audio it
+   * would have. le_yin_begin reads p->win only. */
+  p->raw_valid = le_tuner_raw_window(e, p->raw);
   p->phase = LE_TUNER_PHASE_COARSE;
 }
 
