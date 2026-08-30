@@ -25,8 +25,8 @@ set -uo pipefail
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 BB="$here/../weston-init.bbappend"
 DROPIN="$here/../files/20-segno-weston.conf"
+DROPIN_NAME=$(basename "$DROPIN")
 TMPFILES="$here/../../../recipes-segno/segno-bundle/files/segno-runtime.conf"
-DROPIN_NAME=20-segno-weston.conf
 
 pass=0
 fail=0
@@ -122,7 +122,7 @@ check "does not enable drm-backend scope by default (per-frame flood)" yes \
     "$(printf '%s' "$exec_start" | grep -qF -- '--logger-scopes=' && echo no || echo yes)"
 
 echo "the recipe ships the drop-in"
-check "drop-in basename is *.conf (systemd only loads those)" yes \
+check "drop-in file is *.conf (systemd only loads those)" yes \
     "$(printf '%s' "$DROPIN_NAME" | grep -qE '\.conf$' && echo yes || echo no)"
 check "SRC_URI names the drop-in" yes "$(in_src_uri "$DROPIN_NAME")"
 check "do_install writes it under weston.service.d" yes "$(installed "$DROPIN_NAME")"
