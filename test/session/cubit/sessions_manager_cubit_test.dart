@@ -46,6 +46,13 @@ void main() {
       expect: () => <SessionsManagerStatus>[],
     );
 
+    blocTest<SessionsManagerCubit, SessionsManagerStatus>(
+      'stays active when a footswitch is released',
+      build: () => SessionsManagerCubit(pedal: pedal),
+      act: (_) => events.add(const ButtonReleased(PedalButton.clear)),
+      expect: () => <SessionsManagerStatus>[],
+    );
+
     test('cancels the pedal subscription when closed', () async {
       final cubit = SessionsManagerCubit(pedal: pedal);
       expect(events.hasListener, isTrue);

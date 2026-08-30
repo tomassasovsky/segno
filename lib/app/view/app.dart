@@ -44,20 +44,6 @@ import 'package:wifi_repository/wifi_repository.dart';
 /// How often the main window pushes a waveform frame to the second window.
 const _waveformFrame = Duration(milliseconds: 33); // ~30 fps
 
-class _PedalDependencies {
-  _PedalDependencies({
-    PedalRepository? repository,
-    SimulatorPedalTransport? simulator,
-  }) : simulator =
-           simulator ??
-           SimulatorPedalTransport(inner: const NoopPedalTransport()) {
-    this.repository = repository ?? PedalRepository(this.simulator);
-  }
-
-  final SimulatorPedalTransport simulator;
-  late final PedalRepository repository;
-}
-
 /// The root application widget.
 class App extends StatelessWidget {
   /// Creates an [App] driven by the injected repositories.
@@ -66,7 +52,7 @@ class App extends StatelessWidget {
   /// fakes / a no-op window service instead of the native device and a real
   /// second OS window. [initialAsioDrivers] is the ASIO driver list enumerated
   /// at startup, cached by the audio-setup cubit for the picker.
-  App({
+  const App({
     required this.repository,
     required this.controllerRepository,
     required this.midiDeviceRepository,
@@ -76,8 +62,8 @@ class App extends StatelessWidget {
     required this.performanceRepository,
     required this.exportDirectory,
     this.simulatedControllerSource,
-    PedalRepository? pedalRepository,
-    SimulatorPedalTransport? pedalSimulator,
+    this.pedalRepository,
+    this.pedalSimulator,
     this.displayCount,
     this.audioRecoveryConfig,
     this.initialAsioDrivers = const [],
@@ -91,10 +77,7 @@ class App extends StatelessWidget {
     this.brightness = const UnsupportedBrightnessClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
     super.key,
-  }) : _pedal = _PedalDependencies(
-         repository: pedalRepository,
-         simulator: pedalSimulator,
-       );
+  });
 
   /// The software-update repository. Defaults to an inert
   /// (unsupported-platform) instance so the update UI stays hidden; the app
@@ -132,20 +115,17 @@ class App extends StatelessWidget {
   /// never disposes it; the [MidiSetupCubit] projects its state.
   final MidiDeviceRepository midiDeviceRepository;
 
-  /// The bidirectional pedal repository (MIDI output + reused input capture).
-  ///
-  /// The public constructor substitutes a stable no-op repository when none
-  /// was supplied. Owned by the [PedalCubit], which disposes it.
-  PedalRepository get pedalRepository => _pedal.repository;
+  /// The bidirectional pedal repository (MIDI output + reused input capture),
+  /// or `null` when none was built — a no-op transport is substituted so pedal
+  /// cubit always exists and its settings picker shows an empty state. Owned by
+  /// the [PedalCubit], which disposes it.
+  final PedalRepository? pedalRepository;
 
   /// The on-screen pedal simulator transport that [pedalRepository] is built
-  /// over. The public constructor substitutes a stable no-op transport when
-  /// none was supplied. The fuzz harness injects presses and reads decoded
-  /// frames from it. Disposed by the [PedalCubit] (via the repository), so it
-  /// is provided by value.
-  SimulatorPedalTransport get pedalSimulator => _pedal.simulator;
-
-  final _PedalDependencies _pedal;
+  /// over, or `null` when none was built. The fuzz harness injects presses
+  /// and reads decoded frames from it. Disposed by the [PedalCubit] (via the
+  /// repository), so it is provided by value, not created here.
+  final SimulatorPedalTransport? pedalSimulator;
 
   /// Reports the number of connected displays, for the dual-display console's
   /// single-display fallback. `null` (the default) disables the fallback
@@ -179,10 +159,17 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Resolved once in the constructor so rebuilds keep the provider,
-    // ControlCubit, and PedalCubit on one transport graph.
-    final pedalSim = pedalSimulator;
-    final pedalRepo = pedalRepository;
+    return _StablePedalHost(
+      repository: pedalRepository,
+      simulator: pedalSimulator,
+      builder: _providers,
+    );
+  }
+
+  Widget _providers(
+    PedalRepository pedalRepository,
+    SimulatorPedalTransport pedalSimulator,
+  ) {
     return MultiRepositoryProvider(
       providers: [
         RepositoryProvider.value(value: repository),
@@ -191,8 +178,8 @@ class App extends StatelessWidget {
         RepositoryProvider.value(value: settings),
         RepositoryProvider.value(value: sessionRepository),
         RepositoryProvider.value(value: performanceRepository),
-        RepositoryProvider.value(value: pedalSim),
-        RepositoryProvider.value(value: pedalRepo),
+        RepositoryProvider.value(value: pedalSimulator),
+        RepositoryProvider.value(value: pedalRepository),
         RepositoryProvider.value(value: updates),
         RepositoryProvider.value(value: wifi),
         RepositoryProvider.value(value: bluetooth),
@@ -446,7 +433,7 @@ class App extends StatelessWidget {
             create: (context) {
               final cubit = ControlCubit(
                 looper: context.read<LooperRepository>(),
-                pedal: pedalRepo,
+                pedal: context.read<PedalRepository>(),
                 settings: context.read<SettingsRepository>(),
                 performance: context.read<PerformanceRepository>(),
                 // Both of these were missing, and external MIDI mapping had
@@ -474,7 +461,7 @@ class App extends StatelessWidget {
             lazy: false,
             create: (context) {
               final cubit = PedalCubit(
-                pedal: pedalRepo,
+                pedal: context.read<PedalRepository>(),
                 settings: context.read<SettingsRepository>(),
                 autoBindProductNames: kPedalAutoBindProductNames,
                 flashedProtocolVersion: kFlashedPedalProtocolVersionReader,
@@ -519,6 +506,49 @@ class App extends StatelessWidget {
           displayCount: displayCount,
         ),
       ),
+    );
+  }
+}
+
+/// Resolves the optional pedal pair once on [State] so a replacement [App]
+/// keeps [ControlCubit], [PedalCubit], and dialog routes on one repository.
+class _StablePedalHost extends StatefulWidget {
+  const _StablePedalHost({
+    required this.repository,
+    required this.simulator,
+    required this.builder,
+  });
+
+  final PedalRepository? repository;
+  final SimulatorPedalTransport? simulator;
+  final Widget Function(
+    PedalRepository repository,
+    SimulatorPedalTransport simulator,
+  )
+  builder;
+
+  @override
+  State<_StablePedalHost> createState() => _StablePedalHostState();
+}
+
+class _StablePedalHostState extends State<_StablePedalHost> {
+  late final SimulatorPedalTransport _simulator;
+  late final PedalRepository _repository;
+
+  @override
+  void initState() {
+    super.initState();
+    _simulator =
+        widget.simulator ??
+        SimulatorPedalTransport(inner: const NoopPedalTransport());
+    _repository = widget.repository ?? PedalRepository(_simulator);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.builder(
+      widget.repository ?? _repository,
+      widget.simulator ?? _simulator,
     );
   }
 }

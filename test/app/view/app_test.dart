@@ -330,7 +330,7 @@ void main() {
     testWidgets('keeps the fallback pedal repository stable across rebuilds', (
       tester,
     ) async {
-      final app = App(
+      App buildApp() => App(
         repository: repository,
         controllerRepository: controllerRepository,
         midiDeviceRepository: midiDeviceRepository,
@@ -340,13 +340,13 @@ void main() {
         performanceRepository: performanceRepository,
         exportDirectory: () async => '.',
       );
-      await tester.pumpWidget(app);
+      await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
       final first = tester
           .element(find.byType(MaterialApp))
           .read<PedalRepository>();
 
-      await tester.pumpWidget(app);
+      await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
       final second = tester
           .element(find.byType(MaterialApp))
@@ -395,6 +395,12 @@ void main() {
       simulator.press(PedalButton.clear, down: true);
       await tester.pump();
       simulator.press(PedalButton.clear, down: false);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const Key('sessions_manager')), findsNothing);
+
+      simulator.press(PedalButton.recPlay, down: true);
+      await tester.pump();
+      simulator.press(PedalButton.recPlay, down: false);
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.byKey(const Key('sessions_manager')), findsNothing);

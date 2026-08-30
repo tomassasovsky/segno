@@ -10,8 +10,9 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/gen/app_localizations.dart';
 import 'package:segno/session/session.dart';
-import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
+
+import '../../helpers/helpers.dart';
 
 class _MockSessionCubit extends MockCubit<SessionState>
     implements SessionCubit {}
@@ -78,21 +79,17 @@ void main() {
           ),
         ),
       );
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData(
-            extensions: [
-              SurfaceTheme.dark,
-              routingGraphThemeFromSurface(SurfaceTheme.dark),
-            ],
-          ),
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: home,
-        ),
-      );
+      await tester.pumpApp(home);
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
+    }
+
+    ({StreamController<PedalEvent> events, PedalRepository pedal}) livePedal() {
+      final events = StreamController<PedalEvent>.broadcast();
+      addTearDown(events.close);
+      final pedal = _MockPedalRepository();
+      when(() => pedal.events).thenAnswer((_) => events.stream);
+      return (events: events, pedal: pedal);
     }
 
     /// Types [name] into the console rename sheet and confirms with Enter.
@@ -240,7 +237,8 @@ void main() {
       final size = tester.getSize(
         find.byKey(const Key('sessionDelete_dialog')),
       );
-      expect(size.height, lessThan(400));
+      final viewport = tester.getSize(find.byType(MaterialApp));
+      expect(size.height, lessThan(viewport.height / 2));
     });
 
     testWidgets('cancelling the delete confirm does nothing', (tester) async {
@@ -381,19 +379,37 @@ void main() {
     ) async {
       await openManager(tester, state: const SessionState(sessions: two));
       final size = tester.getSize(find.byKey(const Key('sessions_manager')));
-      // The dialog route is the full 600px test surface. A Flexible list
-      // used to stretch the shell to that height; the pen is content-height.
-      expect(size.height, lessThan(500));
+      final viewport = tester.getSize(find.byType(MaterialApp));
+      expect(size.height, lessThan(viewport.height * 0.75));
     });
 
     testWidgets('caps the list at four rows and scrolls to later sessions', (
       tester,
     ) async {
+      await openManager(tester, state: const SessionState(sessions: two));
+      final twoHeight = tester
+          .getSize(
+            find.byKey(const Key('sessions_manager')),
+          )
+          .height;
+
+      await tester.pumpWidget(const SizedBox.shrink());
       await openManager(tester, state: const SessionState(sessions: five));
+      final fiveHeight = tester
+          .getSize(
+            find.byKey(const Key('sessions_manager')),
+          )
+          .height;
+      expect(fiveHeight, twoHeight + 2 * kConsoleRowHeight);
+
       final scrollView = find.byType(SingleChildScrollView);
       expect(
         tester.getSize(scrollView).height,
         kConsoleRowHeight * 4 + ConsoleCard.borderExtent,
+      );
+      expect(
+        find.byKey(const Key('sessions_card_E')).hitTestable(),
+        findsNothing,
       );
 
       await tester.drag(
@@ -401,6 +417,10 @@ void main() {
         const Offset(0, -kConsoleRowHeight * 2),
       );
       await tester.pump();
+      expect(
+        find.byKey(const Key('sessions_card_E')).hitTestable(),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(const Key('sessions_card_E')));
       await tester.pump();
 
@@ -410,40 +430,34 @@ void main() {
     testWidgets('a pedal footswitch press dismisses the dialog', (
       tester,
     ) async {
-      final events = StreamController<PedalEvent>.broadcast();
-      addTearDown(events.close);
-      final pedal = _MockPedalRepository();
-      when(() => pedal.events).thenAnswer((_) => events.stream);
+      final live = livePedal();
 
       await openManager(
         tester,
         state: const SessionState(sessions: two),
-        pedal: pedal,
+        pedal: live.pedal,
       );
       expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
 
-      events.add(const ButtonPressed(PedalButton.clear));
+      live.events.add(const ButtonPressed(PedalButton.clear));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('sessions_manager')), findsNothing);
     });
 
     testWidgets('a pedal press dismisses a nested confirm too', (tester) async {
-      final events = StreamController<PedalEvent>.broadcast();
-      addTearDown(events.close);
-      final pedal = _MockPedalRepository();
-      when(() => pedal.events).thenAnswer((_) => events.stream);
+      final live = livePedal();
 
       await openManager(
         tester,
         state: const SessionState(currentSessionName: 'A', sessions: two),
-        pedal: pedal,
+        pedal: live.pedal,
       );
       await tester.tap(find.byKey(const Key('sessions_delete')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('sessionDelete_confirm')), findsOneWidget);
 
-      events.add(const ButtonPressed(PedalButton.recPlay));
+      live.events.add(const ButtonPressed(PedalButton.recPlay));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('sessionDelete_confirm')), findsNothing);
@@ -456,21 +470,41 @@ void main() {
       expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
     });
 
+    testWidgets('a pedal press dismisses a stacked rename sheet too', (
+      tester,
+    ) async {
+      final live = livePedal();
+
+      await openManager(
+        tester,
+        state: const SessionState(currentSessionName: 'A', sessions: two),
+        pedal: live.pedal,
+      );
+      await tester.tap(find.byKey(const Key('sessions_rename')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
+
+      live.events.add(const ButtonPressed(PedalButton.clear));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('console_rename_sheet')), findsNothing);
+      expect(find.byKey(const Key('sessions_manager')), findsNothing);
+      expect(find.text('open'), findsOneWidget);
+      verifyNever(() => session.renameSession(any(), any()));
+    });
+
     testWidgets('repeated pedal presses dismiss only the Sessions route', (
       tester,
     ) async {
-      final events = StreamController<PedalEvent>.broadcast();
-      addTearDown(events.close);
-      final pedal = _MockPedalRepository();
-      when(() => pedal.events).thenAnswer((_) => events.stream);
+      final live = livePedal();
 
       await openManager(
         tester,
         state: const SessionState(sessions: two),
-        pedal: pedal,
+        pedal: live.pedal,
       );
 
-      events
+      live.events
         ..add(const ButtonPressed(PedalButton.clear))
         ..add(const ButtonPressed(PedalButton.recPlay));
       await tester.pumpAndSettle();
@@ -484,20 +518,21 @@ void main() {
     testWidgets('a pedal press racing a barrier dismissal preserves home', (
       tester,
     ) async {
-      final events = StreamController<PedalEvent>.broadcast();
-      addTearDown(events.close);
-      final pedal = _MockPedalRepository();
-      when(() => pedal.events).thenAnswer((_) => events.stream);
+      final live = livePedal();
 
       await openManager(
         tester,
         state: const SessionState(sessions: two),
-        pedal: pedal,
+        pedal: live.pedal,
       );
+      final route = ModalRoute.of(
+        tester.element(find.byKey(const Key('sessions_manager'))),
+      )!;
 
       await tester.tapAt(const Offset(1, 1));
       await tester.pump();
-      events.add(const ButtonPressed(PedalButton.clear));
+      expect(route.isCurrent, isFalse);
+      live.events.add(const ButtonPressed(PedalButton.clear));
       await tester.pumpAndSettle();
 
       expect(find.text('open'), findsOneWidget);
@@ -507,18 +542,15 @@ void main() {
     });
 
     testWidgets('an encoder turn leaves the dialog open', (tester) async {
-      final events = StreamController<PedalEvent>.broadcast();
-      addTearDown(events.close);
-      final pedal = _MockPedalRepository();
-      when(() => pedal.events).thenAnswer((_) => events.stream);
+      final live = livePedal();
 
       await openManager(
         tester,
         state: const SessionState(sessions: two),
-        pedal: pedal,
+        pedal: live.pedal,
       );
 
-      events.add(const EncoderDelta(1));
+      live.events.add(const EncoderDelta(1));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
