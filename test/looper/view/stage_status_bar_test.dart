@@ -106,6 +106,12 @@ void main() {
     tester.element(find.byKey(const Key('stage_status_bar'))),
   ).extension<SurfaceTheme>()!;
 
+  void expectClockFlushTrailing(WidgetTester tester) {
+    final bar = tester.getRect(find.byKey(const Key('stage_status_bar')));
+    final clock = tester.getRect(find.byKey(const Key('stage_tempo_clock')));
+    expect(clock.right, bar.right);
+  }
+
   group('session block', () {
     testWidgets('shows the open session name', (tester) async {
       whenListen(
@@ -131,6 +137,29 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.byKey(const Key('stage_tempo_clock')), findsOneWidget);
+      expectClockFlushTrailing(tester);
+    });
+
+    testWidgets('keeps the clock flush trailing for a short session name', (
+      tester,
+    ) async {
+      whenListen(
+        session,
+        const Stream<SessionState>.empty(),
+        initialState: const SessionState(currentSessionName: 'Bridge idea 3'),
+      );
+      await pump(tester);
+
+      expectClockFlushTrailing(tester);
+      // The pills sit next to the name — leftover width is the gap before
+      // the clock, not a stretch between the session block and the mode pill.
+      final sessionRight = tester
+          .getRect(find.byKey(const Key('stage_session_block')))
+          .right;
+      final modeLeft = tester
+          .getRect(find.byKey(const Key('stage_mode_pill')))
+          .left;
+      expect(modeLeft - sessionRight, 12);
     });
 
     testWidgets('falls back to Unsaved in italic with no session open', (
