@@ -162,29 +162,32 @@ class App extends StatelessWidget {
     return _StablePedalHost(
       repository: pedalRepository,
       simulator: pedalSimulator,
-      builder: _providers,
+      child: _AppProviders(app: this),
     );
   }
+}
 
-  Widget _providers(
-    PedalRepository pedalRepository,
-    SimulatorPedalTransport pedalSimulator,
-  ) {
+/// App-wide repositories and cubits. Pedal pair comes from [_StablePedalHost].
+class _AppProviders extends StatelessWidget {
+  const _AppProviders({required this.app});
+
+  final App app;
+
+  @override
+  Widget build(BuildContext context) {
     return MultiRepositoryProvider(
       providers: [
-        RepositoryProvider.value(value: repository),
-        RepositoryProvider.value(value: controllerRepository),
-        RepositoryProvider.value(value: midiDeviceRepository),
-        RepositoryProvider.value(value: settings),
-        RepositoryProvider.value(value: sessionRepository),
-        RepositoryProvider.value(value: performanceRepository),
-        RepositoryProvider.value(value: pedalSimulator),
-        RepositoryProvider.value(value: pedalRepository),
-        RepositoryProvider.value(value: updates),
-        RepositoryProvider.value(value: wifi),
-        RepositoryProvider.value(value: bluetooth),
-        RepositoryProvider.value(value: brightness),
-        RepositoryProvider.value(value: consoleFacts),
+        RepositoryProvider.value(value: app.repository),
+        RepositoryProvider.value(value: app.controllerRepository),
+        RepositoryProvider.value(value: app.midiDeviceRepository),
+        RepositoryProvider.value(value: app.settings),
+        RepositoryProvider.value(value: app.sessionRepository),
+        RepositoryProvider.value(value: app.performanceRepository),
+        RepositoryProvider.value(value: app.updates),
+        RepositoryProvider.value(value: app.wifi),
+        RepositoryProvider.value(value: app.bluetooth),
+        RepositoryProvider.value(value: app.brightness),
+        RepositoryProvider.value(value: app.consoleFacts),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -407,7 +410,7 @@ class App extends StatelessWidget {
             create: (context) => AudioSetupCubit(
               repository: context.read<LooperRepository>(),
               settings: context.read<SettingsRepository>(),
-              initialAsioDrivers: initialAsioDrivers,
+              initialAsioDrivers: app.initialAsioDrivers,
             ),
           ),
           // Eager (not lazy): the MIDI-setup cubit performs the launch
@@ -447,7 +450,7 @@ class App extends StatelessWidget {
                 // that owns controller intent.
                 controller: context.read<ControllerRepository>(),
                 midiDevices: context.read<MidiDeviceRepository>(),
-                simulatedSource: simulatedControllerSource,
+                simulatedSource: app.simulatedControllerSource,
               );
               unawaited(cubit.load()); // boot-default mode restore
               return cubit;
@@ -479,7 +482,7 @@ class App extends StatelessWidget {
             create: (context) {
               final cubit = AudioRecoveryCubit(
                 looper: context.read<LooperRepository>(),
-                recoveryConfig: audioRecoveryConfig,
+                recoveryConfig: app.audioRecoveryConfig,
               );
               unawaited(cubit.load());
               return cubit;
@@ -501,9 +504,9 @@ class App extends StatelessWidget {
           ),
         ],
         child: _AppView(
-          waveformWindow: waveformWindow,
-          exportDirectory: exportDirectory,
-          displayCount: displayCount,
+          waveformWindow: app.waveformWindow,
+          exportDirectory: app.exportDirectory,
+          displayCount: app.displayCount,
         ),
       ),
     );
@@ -516,16 +519,12 @@ class _StablePedalHost extends StatefulWidget {
   const _StablePedalHost({
     required this.repository,
     required this.simulator,
-    required this.builder,
+    required this.child,
   });
 
   final PedalRepository? repository;
   final SimulatorPedalTransport? simulator;
-  final Widget Function(
-    PedalRepository repository,
-    SimulatorPedalTransport simulator,
-  )
-  builder;
+  final Widget child;
 
   @override
   State<_StablePedalHost> createState() => _StablePedalHostState();
@@ -546,9 +545,12 @@ class _StablePedalHostState extends State<_StablePedalHost> {
 
   @override
   Widget build(BuildContext context) {
-    return widget.builder(
-      widget.repository ?? _repository,
-      widget.simulator ?? _simulator,
+    return MultiRepositoryProvider(
+      providers: [
+        RepositoryProvider.value(value: widget.simulator ?? _simulator),
+        RepositoryProvider.value(value: widget.repository ?? _repository),
+      ],
+      child: widget.child,
     );
   }
 }
