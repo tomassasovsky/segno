@@ -109,6 +109,22 @@ side): retention = the deck pocket + gravity + foot pressure, **PROVISIONAL**.
 The old `rc20_pad` `asp1_pad` casting master targeted the retired ASP-1 pedal
 and no longer matches any pedal in this design.
 
+FDM tiles stay the prototype / fit-check path. Production nameplates are the
+2-ply pack in the next section.
+
+## 2b. 2-ply engraved plastic (pedal name tiles)
+
+Send **`enclosure/out/segno_pedal_tiles.pdf`** to a 2-ply laser shop
+(1:1, red cut / black fill). The zip also carries the DXF if they ask for
+CAM. **Not metal, not vinyl, not a 3D print.**
+
+| Part | Qty | Material | Notes |
+|---|---|---|---|
+| `segno_pedal_tiles` | 10 | **2.0 mm 2-ply** (black cap / white core) | Same trapezoid as the FDM tiles: 54.36 (back) / 53.76 (toe) × 19.90. 2.0 mm is the closest standard stock to the 2.2 mm pad pocket — the tile sits 0.2 mm recessed. **CUT** = outline (through-cut). **ENGRAVE** = filled glyphs (burns the black cap so the white core reads). Glyphs are geometry, never TEXT — do not substitute a font. **Fit the WIDE edge toward the cable end**; it carries the top of the glyphs. REC/PLAY and STOP are the same symbols as the faceplate overlay. Dimensions are nominal: the 0.05 mm per-side clearance is already in the part; the shop applies kerf compensation and must not enlarge the outline. |
+
+Regenerate with `segno_enclosure.py` (or `--tiles-only`). The zip is a
+per-quote artifact, same freshness gate as the other vendor packs (#236).
+
 ## 3. PCBs
 
 | Board | Files | Qty | Notes |
