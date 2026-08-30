@@ -60,15 +60,21 @@ bb_block() {
     ' "$BB"
 }
 
+# Drop whole-line and trailing comments so `file://foo  # file://bar` does
+# not count as shipping bar.
+strip_comments() { sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d'; }
+
 in_src_uri() {
-    bb_block 'SRC_URI' | grep -vE '^[[:space:]]*#' | grep -qF "file://$1" &&
+    bb_block 'SRC_URI' | strip_comments |
+        grep -qE "(^|[[:space:]\"])file://$1(\"|[[:space:]]|$)" &&
         echo yes || echo no
 }
 
 # Entries are separated by spaces, line continuations and the closing quote —
 # flatten those to spaces so the last entry in the block matches like any other.
 in_files() {
-    bb_block 'FILES:${PN}' | tr '\\"' '  ' | grep -qF -- " $1 " && echo yes || echo no
+    bb_block 'FILES:${PN}' | strip_comments | tr '\\"' '  ' |
+        grep -qF -- " $1 " && echo yes || echo no
 }
 
 installed() {
@@ -83,10 +89,13 @@ installed() {
         echo yes || echo no
 }
 
-unit=$(section Unit "$DROPIN")
-service=$(section Service "$DROPIN")
+join_continuations() { sed -e :a -e '/\\$/N; s/\\\n//; ta'; }
+
+unit=$(section Unit "$DROPIN" | join_continuations)
+service=$(section Service "$DROPIN" | join_continuations)
 exec_start=$(printf '%s\n' "$service" | grep -E '^ExecStart=/usr/bin/weston' || true)
 exec_start_count=$(printf '%s\n' "$exec_start" | grep -c . || true)
+log_count=$(printf '%s' "$exec_start" | grep -oE -- '--log=[^[:space:]]+' | grep -c . || true)
 
 echo "the drop-in bounces weston with segno and does not start-limit"
 check "PartOf=segno.service is a [Unit] line" yes \
@@ -104,16 +113,27 @@ check "clears stock ExecStart first" yes \
 check "exactly one weston ExecStart" 1 "$exec_start_count"
 check "keeps systemd-notify.so (Type=notify)" yes \
     "$(printf '%s' "$exec_start" | grep -qF -- '--modules=systemd-notify.so' && echo yes || echo no)"
-check "pins the compositor log to a weston-writable path" yes \
-    "$(printf '%s' "$exec_start" | grep -qF -- '--log=/run/user/1000/weston.log' && echo yes || echo no)"
+check "exactly one --log=" 1 "$log_count"
+check "that --log= is the weston-writable path" yes \
+    "$(printf '%s' "$exec_start" | grep -qE -- '--log=/run/user/1000/weston.log( |$)' && echo yes || echo no)"
+check "does not log to /dev/stderr or /dev/fd/2" yes \
+    "$(printf '%s' "$exec_start" | grep -qE -- '/dev/(stderr|fd/2)' && echo no || echo yes)"
 check "does not enable drm-backend scope by default (per-frame flood)" yes \
     "$(printf '%s' "$exec_start" | grep -qF -- '--logger-scopes=' && echo no || echo yes)"
 
 echo "the recipe ships the drop-in"
+check "drop-in basename is *.conf (systemd only loads those)" yes \
+    "$(printf '%s' "$DROPIN_NAME" | grep -qE '\.conf$' && echo yes || echo no)"
 check "SRC_URI names the drop-in" yes "$(in_src_uri "$DROPIN_NAME")"
 check "do_install writes it under weston.service.d" yes "$(installed "$DROPIN_NAME")"
 check "FILES names the drop-in (else it is installed-but-not-shipped)" yes \
     "$(in_files '${systemd_system_unitdir}/weston.service.d/'"$DROPIN_NAME")"
+check "SRC_URI still names weston.ini" yes "$(in_src_uri weston.ini)"
+check "do_install still writes weston.ini" yes \
+    "$(sed -e :a -e '/\\$/N; s/\\\n//; ta' "$BB" |
+        grep -vE '^[[:space:]]*#' |
+        grep -E '^[[:space:]]*install ' |
+        grep -qF -- '${D}${sysconfdir}/xdg/weston/weston.ini' && echo yes || echo no)"
 
 echo "tmpfiles still creates the log directory for User=weston"
 check "segno-runtime.conf creates /run/user/1000" yes \
