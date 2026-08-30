@@ -252,7 +252,15 @@ jobs:
       - name: Prune old images + pre-flight disk check
         if: inputs.runner == 'self-hosted'
         env:
-          MIN_FREE_GB: "80"
+          # A warm incremental build for an already-built MACHINE reuses sstate
+          # and only lays down one fresh ~8.3 GB .wic plus tmp churn — it does
+          # NOT need the ~80 GB a cold/new-MACHINE second full tree does. An
+          # 80 GB floor turned a 56-GB-free host (cache almost entirely warm)
+          # into a false refusal, and "free space" there means deleting the very
+          # sstate that keeps the build at ~10 min instead of ~2 h. Floor the
+          # gate at the warm-incremental cost with margin; the prune step above
+          # plus daily TRIM + pool autoextend (#817 mitigations) guard the host.
+          MIN_FREE_GB: "40"
         run: |
           set -eu
           mkdir -p "$YOCTO_WORK_DIR"
