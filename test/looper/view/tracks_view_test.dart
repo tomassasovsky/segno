@@ -64,6 +64,7 @@ void main() {
   late PerformanceRecorderCubit performanceRecorder;
   late TransportClockCubit transportClock;
   late AudioSetupCubit audioSetup;
+  late PedalRepository pedalRepo;
 
   setUp(() {
     // The toast registry is module-level and survives between tests; a stale
@@ -114,7 +115,7 @@ void main() {
     ).thenReturn(EngineResult.ok);
     // The real control cubit: it owns the system mode/cursor/bank the view
     // reads, and the M key / mode chip / number keys drive it.
-    final pedalRepo = PedalRepository(const NoopPedalTransport());
+    pedalRepo = PedalRepository(const NoopPedalTransport());
     addTearDown(pedalRepo.dispose);
     performance = PerformanceRepository(
       engine: FakeAudioEngine(),
@@ -175,6 +176,7 @@ void main() {
             RepositoryProvider<LooperRepository>.value(value: repository),
             RepositoryProvider<PerformanceRepository>.value(value: performance),
             RepositoryProvider<SettingsRepository>.value(value: settings),
+            RepositoryProvider<PedalRepository>.value(value: pedalRepo),
           ],
           child: MultiBlocProvider(
             providers: [
