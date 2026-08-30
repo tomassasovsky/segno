@@ -19,6 +19,7 @@ import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/settings_tray.dart';
+import 'package:segno/looper/view/stage_status_bar.dart';
 import 'package:segno/looper/view/track_column.dart';
 import 'package:segno/looper/view/tracks_chrome.dart';
 import 'package:segno/performance/performance.dart';
@@ -88,12 +89,15 @@ void main() {
     // The FX-chain announcement reads the repository's remembered intent —
     // the same value the bloc's toggle handler negates.
     when(() => repository.trackChainEnabled(any())).thenReturn(true);
-    when(() => repository.monitorChanges)
-        .thenAnswer((_) => const Stream<int>.empty());
-    when(() => repository.monitorParamChanges)
-        .thenAnswer((_) => const Stream<int>.empty());
-    when(() => repository.looperState)
-        .thenAnswer((_) => const Stream<LooperState>.empty());
+    when(
+      () => repository.monitorChanges,
+    ).thenAnswer((_) => const Stream<int>.empty());
+    when(
+      () => repository.monitorParamChanges,
+    ).thenAnswer((_) => const Stream<int>.empty());
+    when(
+      () => repository.looperState,
+    ).thenAnswer((_) => const Stream<LooperState>.empty());
     for (final stub in [
       () => repository.record(channel: any(named: 'channel')),
       () => repository.play(channel: any(named: 'channel')),
@@ -140,11 +144,13 @@ void main() {
     when(() => session.exportMixdown()).thenAnswer((_) async {});
     when(() => session.exportStems()).thenAnswer((_) async {});
     performanceRecorder = _MockPerformanceRecorderCubit();
-    when(() => performanceRecorder.state)
-        .thenReturn(const PerformanceRecorderIdle());
+    when(
+      () => performanceRecorder.state,
+    ).thenReturn(const PerformanceRecorderIdle());
     when(performanceRecorder.toggleArm).thenAnswer((_) async {});
-    when(() => performanceRecorder.renameCompletedCapture(any()))
-        .thenAnswer((_) async {});
+    when(
+      () => performanceRecorder.renameCompletedCapture(any()),
+    ).thenAnswer((_) async {});
   });
 
   void seed(LooperState state) {
@@ -1108,7 +1114,9 @@ void main() {
       );
     });
 
-    testWidgets('the tile border is white only when selected', (tester) async {
+    testWidgets('the tile uses a 2px ring with selection color', (
+      tester,
+    ) async {
       control.selectTrack(0);
       seed(
         const LooperState(
@@ -1120,7 +1128,7 @@ void main() {
       );
       await pump(tester);
 
-      Color borderColor(int channel) {
+      BorderSide borderSide(int channel) {
         final tile = tester.widget<Container>(
           find
               .ancestor(
@@ -1129,15 +1137,21 @@ void main() {
               )
               .first,
         );
-        return ((tile.decoration! as BoxDecoration).border! as Border)
-            .top
-            .color;
+        return ((tile.decoration! as BoxDecoration).border! as Border).top;
       }
 
-      expect(borderColor(0), Colors.white); // selected: 2px white ring
+      final selectedSide = borderSide(0);
+      expect(selectedSide.color, Colors.white);
+      expect(selectedSide.width, 2);
+
       // Unselected: the pen's 2px near-black card stroke (the `card` token),
       // not borderless.
-      expect(borderColor(1), AppTheme.neon.extension<SurfaceTheme>()!.card);
+      final unselectedSide = borderSide(1);
+      expect(
+        unselectedSide.color,
+        AppTheme.neon.extension<SurfaceTheme>()!.card,
+      );
+      expect(unselectedSide.width, 2);
     });
 
     testWidgets('track tiles have no glow shadow', (tester) async {
@@ -1385,6 +1399,20 @@ void main() {
     });
   });
 
+  group('layout', () {
+    testWidgets('positions the status bar at the 8px stage top inset', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      final stageTop = tester.getTopLeft(find.byType(TracksView)).dy;
+      final statusBarTop = tester.getTopLeft(find.byType(StageStatusBar)).dy;
+
+      expect(statusBarTop - stageTop, 8);
+    });
+  });
+
   group('audio-not-running affordance', () {
     testWidgets('shows when the engine is not connected', (tester) async {
       seed(const LooperState(tracks: [Track()]));
@@ -1628,8 +1656,9 @@ void main() {
             ],
           ),
         );
-        when(() => repository.undo(channel: any(named: 'channel')))
-            .thenReturn(EngineResult.ok);
+        when(
+          () => repository.undo(channel: any(named: 'channel')),
+        ).thenReturn(EngineResult.ok);
         await pump(tester);
 
         await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -1653,8 +1682,9 @@ void main() {
             tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
           ),
         );
-        when(() => repository.undo(channel: any(named: 'channel')))
-            .thenReturn(EngineResult.ok);
+        when(
+          () => repository.undo(channel: any(named: 'channel')),
+        ).thenReturn(EngineResult.ok);
         await pump(tester);
 
         await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -1683,8 +1713,9 @@ void main() {
             ],
           ),
         );
-        when(() => repository.undo(channel: any(named: 'channel')))
-            .thenReturn(EngineResult.ok);
+        when(
+          () => repository.undo(channel: any(named: 'channel')),
+        ).thenReturn(EngineResult.ok);
         await pump(tester);
 
         // Every surface's clear-all lands in ControlCubit.clearAll, which

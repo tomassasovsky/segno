@@ -62,7 +62,7 @@ class TrackColumn extends StatelessWidget {
   /// The track's resolved display name.
   final String name;
 
-  /// Whether this column is the selected one (a heavier white border).
+  /// Whether this column is selected (a white rather than card-colored ring).
   final bool selected;
 
   /// The active system mode (Record vs Mute).
@@ -88,9 +88,9 @@ class TrackColumn extends StatelessWidget {
     final surface = context.surface;
     final bloc = context.read<LooperBloc>();
 
-    // The border is always white; selection only changes its weight. The meter
-    // bar color is one table lookup on the track's meter state (muted included;
-    // see LooperTheme.meterColors).
+    // The ring is always 2px; selection changes it from the card stroke to
+    // white. The meter bar color is one table lookup on the track's meter state
+    // (muted included; see LooperTheme.meterColors).
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
     final isFx = mode == InteractionMode.fx;
     // FX mode recedes the meter to 40% alpha so the chain dressing reads on top
@@ -262,8 +262,9 @@ class TrackColumn extends StatelessWidget {
                     // polled snapshot, a poll behind any flip another surface
                     // just made. The announcement shares the keyboard path's
                     // helper so the two cannot drift.
-                    TracksCommands(context)
-                        .announceFxChainToggle(track.channel);
+                    TracksCommands(
+                      context,
+                    ).announceFxChainToggle(track.channel);
                     bloc.add(LooperTrackChainToggled(track.channel));
                 }
               },
