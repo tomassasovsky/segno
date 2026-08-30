@@ -44,6 +44,20 @@ import 'package:wifi_repository/wifi_repository.dart';
 /// How often the main window pushes a waveform frame to the second window.
 const _waveformFrame = Duration(milliseconds: 33); // ~30 fps
 
+class _PedalDependencies {
+  _PedalDependencies({
+    PedalRepository? repository,
+    SimulatorPedalTransport? simulator,
+  }) : simulator =
+           simulator ??
+           SimulatorPedalTransport(inner: const NoopPedalTransport()) {
+    this.repository = repository ?? PedalRepository(this.simulator);
+  }
+
+  final SimulatorPedalTransport simulator;
+  late final PedalRepository repository;
+}
+
 /// The root application widget.
 class App extends StatelessWidget {
   /// Creates an [App] driven by the injected repositories.
@@ -52,7 +66,7 @@ class App extends StatelessWidget {
   /// fakes / a no-op window service instead of the native device and a real
   /// second OS window. [initialAsioDrivers] is the ASIO driver list enumerated
   /// at startup, cached by the audio-setup cubit for the picker.
-  const App({
+  App({
     required this.repository,
     required this.controllerRepository,
     required this.midiDeviceRepository,
@@ -62,8 +76,8 @@ class App extends StatelessWidget {
     required this.performanceRepository,
     required this.exportDirectory,
     this.simulatedControllerSource,
-    this.pedalRepository,
-    this.pedalSimulator,
+    PedalRepository? pedalRepository,
+    SimulatorPedalTransport? pedalSimulator,
     this.displayCount,
     this.audioRecoveryConfig,
     this.initialAsioDrivers = const [],
@@ -77,7 +91,10 @@ class App extends StatelessWidget {
     this.brightness = const UnsupportedBrightnessClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
     super.key,
-  });
+  }) : _pedal = _PedalDependencies(
+         repository: pedalRepository,
+         simulator: pedalSimulator,
+       );
 
   /// The software-update repository. Defaults to an inert
   /// (unsupported-platform) instance so the update UI stays hidden; the app
@@ -115,17 +132,20 @@ class App extends StatelessWidget {
   /// never disposes it; the [MidiSetupCubit] projects its state.
   final MidiDeviceRepository midiDeviceRepository;
 
-  /// The bidirectional pedal repository (MIDI output + reused input capture),
-  /// or `null` when none was built — a no-op transport is substituted so pedal
-  /// cubit always exists and its settings picker shows an empty state. Owned by
-  /// the [PedalCubit], which disposes it.
-  final PedalRepository? pedalRepository;
+  /// The bidirectional pedal repository (MIDI output + reused input capture).
+  ///
+  /// The public constructor substitutes a stable no-op repository when none
+  /// was supplied. Owned by the [PedalCubit], which disposes it.
+  PedalRepository get pedalRepository => _pedal.repository;
 
   /// The on-screen pedal simulator transport that [pedalRepository] is built
-  /// over, or `null` when none was built. The fuzz harness injects presses
-  /// and reads decoded frames from it. Disposed by the [PedalCubit] (via the
-  /// repository), so it is provided by value, not created here.
-  final SimulatorPedalTransport? pedalSimulator;
+  /// over. The public constructor substitutes a stable no-op transport when
+  /// none was supplied. The fuzz harness injects presses and reads decoded
+  /// frames from it. Disposed by the [PedalCubit] (via the repository), so it
+  /// is provided by value.
+  SimulatorPedalTransport get pedalSimulator => _pedal.simulator;
+
+  final _PedalDependencies _pedal;
 
   /// Reports the number of connected displays, for the dual-display console's
   /// single-display fallback. `null` (the default) disables the fallback
@@ -159,15 +179,10 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The pedal simulator and the pedal repository share one transport graph
-    // (the repository is built over the simulator), so the faceplate injects
-    // into and reads frames from the same object the cubit drives. The `??`
-    // short-circuits in production (both provided), so nothing is allocated on
-    // rebuild; the fallbacks only fire in tests.
-    final pedalSim =
-        pedalSimulator ??
-        SimulatorPedalTransport(inner: const NoopPedalTransport());
-    final pedalRepo = pedalRepository ?? PedalRepository(pedalSim);
+    // Resolved once in the constructor so rebuilds keep the provider,
+    // ControlCubit, and PedalCubit on one transport graph.
+    final pedalSim = pedalSimulator;
+    final pedalRepo = pedalRepository;
     return MultiRepositoryProvider(
       providers: [
         RepositoryProvider.value(value: repository),

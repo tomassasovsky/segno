@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -27,6 +28,8 @@ class _MockControlCubit extends MockCubit<ControlState>
 class _MockSessionCubit extends MockCubit<SessionState>
     implements SessionCubit {}
 
+class _MockPedalRepository extends Mock implements PedalRepository {}
+
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit {}
 
@@ -37,6 +40,7 @@ void main() {
   late _MockLooperBloc bloc;
   late _MockControlCubit control;
   late _MockSessionCubit session;
+  late _MockPedalRepository pedal;
   late _MockPerformanceRecorderCubit recorder;
   late _MockTransportClockCubit clock;
   late AppLocalizations l10n;
@@ -50,8 +54,12 @@ void main() {
     bloc = _MockLooperBloc();
     control = _MockControlCubit();
     session = _MockSessionCubit();
+    pedal = _MockPedalRepository();
     recorder = _MockPerformanceRecorderCubit();
     clock = _MockTransportClockCubit();
+    when(
+      () => pedal.events,
+    ).thenAnswer((_) => const Stream<PedalEvent>.empty());
     whenListen(
       bloc,
       const Stream<LooperState>.empty(),
@@ -89,15 +97,18 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     return tester.pumpApp(
       theme: theme,
-      MultiBlocProvider(
-        providers: [
-          BlocProvider<LooperBloc>.value(value: bloc),
-          BlocProvider<ControlCubit>.value(value: control),
-          BlocProvider<SessionCubit>.value(value: session),
-          BlocProvider<PerformanceRecorderCubit>.value(value: recorder),
-          BlocProvider<TransportClockCubit>.value(value: clock),
-        ],
-        child: const Scaffold(body: Align(child: StageStatusBar())),
+      RepositoryProvider<PedalRepository>.value(
+        value: pedal,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<LooperBloc>.value(value: bloc),
+            BlocProvider<ControlCubit>.value(value: control),
+            BlocProvider<SessionCubit>.value(value: session),
+            BlocProvider<PerformanceRecorderCubit>.value(value: recorder),
+            BlocProvider<TransportClockCubit>.value(value: clock),
+          ],
+          child: const Scaffold(body: Align(child: StageStatusBar())),
+        ),
       ),
     );
   }

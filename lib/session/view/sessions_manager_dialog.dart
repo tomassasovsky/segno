@@ -20,30 +20,19 @@ import 'package:session_repository/session_repository.dart';
 /// page's providers).
 Future<void> showSessionsManager(BuildContext context) async {
   final cubit = context.read<SessionCubit>();
+  final pedal = context.read<PedalRepository>();
   await cubit.refreshSessions();
   if (!context.mounted) return;
-  // The dialog route sits under the root navigator, outside the page's
-  // providers — same reason SessionCubit is handed down. Pedal is optional
-  // so a host without one still opens the catalog.
-  PedalRepository? pedal;
-  try {
-    pedal = context.read<PedalRepository>();
-  } on ProviderNotFoundException {
-    pedal = null;
-  }
   await showDialog<void>(
     context: context,
     barrierColor: context.surface.scrim,
-    builder: (_) {
-      Widget child = const _SessionsManagerDialog();
-      if (pedal != null) {
-        child = RepositoryProvider<PedalRepository>.value(
-          value: pedal,
-          child: child,
-        );
-      }
-      return BlocProvider<SessionCubit>.value(value: cubit, child: child);
-    },
+    builder: (_) => MultiBlocProvider(
+      providers: [
+        BlocProvider<SessionCubit>.value(value: cubit),
+        BlocProvider(create: (_) => SessionsManagerCubit(pedal: pedal)),
+      ],
+      child: const _SessionsManagerDialog(),
+    ),
   );
 }
 
@@ -122,54 +111,39 @@ Future<String?> _promptName(
 ///
 /// A footswitch press dismisses it (and any rename / delete sheet stacked on
 /// top) so a Rec/Play or Clear can see the stage. Encoder turns do not.
-class _SessionsManagerDialog extends StatefulWidget {
+class _SessionsManagerDialog extends StatelessWidget {
   const _SessionsManagerDialog();
 
+  void _dismiss(BuildContext context) {
+    final navigator = Navigator.of(context);
+    final route = ModalRoute.of(context);
+    // A barrier/back pop makes the route non-present before its reverse
+    // animation disposes this widget. Ignore a racing pedal request rather
+    // than searching through and popping routes underneath it.
+    if (route == null || !route.isActive) return;
+    navigator.popUntil((r) => r == route);
+    if (route.isCurrent) navigator.pop();
+  }
+
   @override
-  State<_SessionsManagerDialog> createState() => _SessionsManagerDialogState();
+  Widget build(BuildContext context) {
+    return BlocListener<SessionsManagerCubit, SessionsManagerStatus>(
+      listenWhen: (_, current) =>
+          current == SessionsManagerStatus.dismissalRequested,
+      listener: (context, _) => _dismiss(context),
+      child: const _SessionsManagerBody(),
+    );
+  }
 }
 
-class _SessionsManagerDialogState extends State<_SessionsManagerDialog> {
+class _SessionsManagerBody extends StatelessWidget {
+  const _SessionsManagerBody();
+
   /// Four rows is what the pen holds before the list scrolls. A [Flexible]
   /// here would take the rest of the dialog route — the full viewport —
   /// instead of shrinking to the rows.
   static const double _listMaxHeight =
       kConsoleRowHeight * 4 + ConsoleCard.borderExtent;
-
-  StreamSubscription<PedalEvent>? _pedal;
-  bool _listening = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_listening) return;
-    _listening = true;
-    try {
-      _pedal = context.read<PedalRepository>().events.listen(_onPedal);
-    } on ProviderNotFoundException {
-      // Tests and hosts that do not mount a pedal.
-    }
-  }
-
-  void _onPedal(PedalEvent event) {
-    if (event is! ButtonPressed) return;
-    _dismiss();
-  }
-
-  void _dismiss() {
-    if (!mounted) return;
-    final navigator = Navigator.of(context);
-    final route = ModalRoute.of(context);
-    if (route == null) return;
-    navigator.popUntil((r) => r == route);
-    if (navigator.canPop()) navigator.pop();
-  }
-
-  @override
-  void dispose() {
-    unawaited(_pedal?.cancel());
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
