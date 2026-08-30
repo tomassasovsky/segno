@@ -4,7 +4,8 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
 SRC_URI += "file://weston.ini \
-            file://20-segno-weston-journal.conf"
+            file://20-segno-weston-journal.conf \
+            file://20-partof-segno.conf"
 
 do_install:append() {
     # walnascar: SRC_URI files land in ${UNPACKDIR}, not ${WORKDIR}.
@@ -15,6 +16,9 @@ do_install:append() {
     install -d ${D}${systemd_system_unitdir}/weston.service.d
     install -m 0644 ${UNPACKDIR}/20-segno-weston-journal.conf \
         ${D}${systemd_system_unitdir}/weston.service.d/20-segno-weston-journal.conf
+    install -m 0644 ${UNPACKDIR}/20-partof-segno.conf \
+        ${D}${systemd_system_unitdir}/weston.service.d/20-partof-segno.conf
 }
 
-FILES:${PN} += "${systemd_system_unitdir}/weston.service.d/20-segno-weston-journal.conf"
+FILES:${PN} += "${systemd_system_unitdir}/weston.service.d/20-segno-weston-journal.conf \
+                ${systemd_system_unitdir}/weston.service.d/20-partof-segno.conf"

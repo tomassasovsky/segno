@@ -66,6 +66,17 @@ check "do_install writes it under weston.service.d" yes \
 check "FILES names the drop-in (else it is installed-but-not-shipped)" yes \
     "$(has '${systemd_system_unitdir}/weston.service.d/20-segno-weston-journal.conf' "$BB")"
 
+echo "the PartOf drop-in ships so restart segno bounces weston (#825)"
+PARTOF="$here/../files/20-partof-segno.conf"
+check "PartOf=segno.service" yes \
+    "$(grep -qx 'PartOf=segno.service' "$PARTOF" && echo yes || echo no)"
+check "SRC_URI names the PartOf drop-in" yes \
+    "$(has 'file://20-partof-segno.conf' "$BB")"
+check "do_install writes the PartOf drop-in" yes \
+    "$(has 'weston.service.d/20-partof-segno.conf' "$BB")"
+check "FILES names the PartOf drop-in" yes \
+    "$(has '${systemd_system_unitdir}/weston.service.d/20-partof-segno.conf' "$BB")"
+
 echo
 echo "weston-journal: $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
