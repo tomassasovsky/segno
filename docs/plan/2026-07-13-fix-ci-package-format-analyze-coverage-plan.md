@@ -73,7 +73,7 @@ VERIFICATION COMMAND: cd /Users/Tomas/Documents/Work/opensource/segno/.claude/wo
   build:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
     with:
-      flutter_version: "3.44.x"
+      flutter_version: "3.47.x"
       run_bloc_lint: true
       min_coverage: 90
       coverage_excludes: "**/window_chrome.dart **/waveform_window*.dart **/run_segno.dart **/bootstrap.dart **/session_directory.dart"
@@ -101,7 +101,7 @@ Two-part change:
    build:
      uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/flutter_package.yml@v1
      with:
-       flutter_version: "3.44.x"
+       flutter_version: "3.47.x"
        run_bloc_lint: true
        format_directories: "lib test packages/*/lib packages/*/test"
        analyze_directories: "lib test packages/*/lib packages/*/test"

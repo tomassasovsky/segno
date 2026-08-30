@@ -9,13 +9,13 @@ date: 2026-07-13
 `.github/workflows/main.yaml`'s `fuzz` job (lines 123-139) invokes
 `subosito/flutter-action@v2` with only `channel: stable` — no `flutter-version`.
 Every other Flutter-invoking job (`build`, `build-windows`, `build-linux`,
-`build-macos`) pins `flutter-version: "3.44.x"` alongside `channel: stable`,
+`build-macos`) pins `flutter-version: "3.47.x"` alongside `channel: stable`,
 specifically "so the matrix can't silently drift". Because `pubspec.yaml`
 constrains `flutter: ^3.41.0` (any newer stable accepted), the fuzz job will
 silently move to a newer stable Flutter release out of step with the rest of
 CI the moment one ships past 3.44 — defeating the other jobs' anti-drift pin.
 
-Fix: add `flutter-version: "3.44.x"` to the fuzz job's flutter-action step,
+Fix: add `flutter-version: "3.47.x"` to the fuzz job's flutter-action step,
 matching the other four jobs exactly.
 
 ## Success Criteria
@@ -26,17 +26,17 @@ Flutter version, so the fuzz job can no longer silently drift onto a newer
 stable SDK than the rest of the CI matrix.
 
 SUCCESS CRITERIA:
-- The fuzz job's subosito/flutter-action@v2 step sets flutter-version: "3.44.x" alongside channel: stable | verify: grep -A2 "fuzz:" -A20 .github/workflows/main.yaml | grep -q 'flutter-version: "3.44.x"'
+- The fuzz job's subosito/flutter-action@v2 step sets flutter-version: "3.47.x" alongside channel: stable | verify: grep -A2 "fuzz:" -A20 .github/workflows/main.yaml | grep -q 'flutter-version: "3.47.x"'
 - Every flutter-action@v2 step in the file now has an adjacent flutter-version line (count of flutter-version occurrences == count of flutter-action@v2 occurrences) | verify: test "$(grep -c 'flutter-action@v2' .github/workflows/main.yaml)" -eq "$(grep -c 'flutter-version:' .github/workflows/main.yaml)"
 - main.yaml remains valid YAML | verify: python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/main.yaml'))"
 - No other lines in the workflow file changed besides the one insertion | verify: manual run `git diff --stat .github/workflows/main.yaml` and confirm only main.yaml changed with a 1-line insertion (+1/-0)
 
 NON-GOALS:
-- Changing the pinned version value itself (stays "3.44.x", matching the other jobs as of this commit)
+- Changing the pinned version value itself (stays "3.47.x", matching the other jobs as of this commit)
 - Touching any other job, step, or file
 - Re-litigating whether floating fuzz on latest stable was intentional (brainstorm doc concluded it was an oversight)
 
-VERIFICATION COMMAND: grep -A20 "fuzz:" .github/workflows/main.yaml | grep -q 'flutter-version: "3.44.x"' && test "$(grep -c 'flutter-action@v2' .github/workflows/main.yaml)" -eq "$(grep -c 'flutter-version:' .github/workflows/main.yaml)" && python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/main.yaml'))"
+VERIFICATION COMMAND: grep -A20 "fuzz:" .github/workflows/main.yaml | grep -q 'flutter-version: "3.47.x"' && test "$(grep -c 'flutter-action@v2' .github/workflows/main.yaml)" -eq "$(grep -c 'flutter-version:' .github/workflows/main.yaml)" && python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/main.yaml'))"
 ```
 
 ## Context
@@ -52,7 +52,7 @@ VERIFICATION COMMAND: grep -A20 "fuzz:" .github/workflows/main.yaml | grep -q 'f
   ```yaml
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.44.x"
+          flutter-version: "3.47.x"
           channel: stable
           cache: true
   ```
@@ -75,13 +75,13 @@ Single edit to `.github/workflows/main.yaml`:
           sudo apt-get install -y build-essential
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.44.x"
+          flutter-version: "3.47.x"
           channel: stable
       - name: Build the engine test library
         ...
 ```
 
-(only the `flutter-version: "3.44.x"` line is new, inserted immediately before
+(only the `flutter-version: "3.47.x"` line is new, inserted immediately before
 the existing `channel: stable` line, matching key ordering used elsewhere in
 the file)
 

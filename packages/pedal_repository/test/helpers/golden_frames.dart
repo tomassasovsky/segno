@@ -161,7 +161,7 @@ explicitVersionGoldenFrames() {
   // What a downgraded wire's trackLeds decode back to: blue -> green.
   final degradedLeds = [
     for (final led in fxMode.trackLeds)
-      led == PedalTrackLed.blue ? PedalTrackLed.green : led,
+      if (led == PedalTrackLed.blue) PedalTrackLed.green else led,
   ];
 
   return {

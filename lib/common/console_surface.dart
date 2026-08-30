@@ -148,7 +148,7 @@ class _ConsoleExpansionState extends State<ConsoleExpansion>
     if (widget.expanded == old.expanded) return;
     if (widget.expanded) {
       _closing = null;
-      unawaited(_controller.forward());
+      _controller.forward();
     } else {
       // Hold what was showing so the close has something to shrink.
       _closing = old.child;
@@ -1499,7 +1499,7 @@ class _ConsoleIconButtonState extends State<ConsoleIconButton>
   @override
   void initState() {
     super.initState();
-    if (widget.spinning) unawaited(_spin.repeat());
+    if (widget.spinning) _spin.repeat();
   }
 
   @override
@@ -1507,7 +1507,7 @@ class _ConsoleIconButtonState extends State<ConsoleIconButton>
     super.didUpdateWidget(oldWidget);
     if (widget.spinning == oldWidget.spinning) return;
     if (widget.spinning) {
-      unawaited(_spin.repeat());
+      _spin.repeat();
     } else {
       _spin
         ..stop()

@@ -193,7 +193,7 @@ runs in CI). To build on a Pi 5 (Pi OS, `arm64`) directly:
      libpango1.0-dev libasound2-dev clang cmake pkg-config
    ```
 
-2. Install Flutter `3.44.x` (the version pinned across every build job) and enable
+2. Install Flutter `3.47.x` (the version pinned across every build job) and enable
    the Linux desktop:
 
    ```bash

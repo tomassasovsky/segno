@@ -110,7 +110,7 @@ class RoutingTracksTab extends StatelessWidget {
       else
         for (final input in inputs) l10n.inputName(names, input),
       if (override != null)
-        override ? l10n.tracksQuantizeOn : l10n.tracksQuantizeOff,
+        if (override) l10n.tracksQuantizeOn else l10n.tracksQuantizeOff,
     ].join(' · ');
   }
 }
