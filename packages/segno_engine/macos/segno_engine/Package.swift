@@ -12,8 +12,9 @@
 // exception, miniaudio.h (which lives in ../src/miniaudio/), is satisfied by a
 // forwarder header in the target's include/ directory — SPM adds include/ to
 // the header search path, and SPM rejects header search paths that point
-// outside the package root. The vendored plugin SDKs are the other exception,
-// reached via absolute -I flags computed below.
+// outside the package root. RNNoise's public header is forwarded the same
+// way (include/rnnoise.h) and also reached via absolute -I flags, matching
+// the vendored plugin SDKs below.
 //
 // The product is built as a `.dynamic` library so the engine is loaded as its
 // own image at launch: this keeps the FFI-exported symbols (LE_EXPORT =
@@ -25,13 +26,14 @@
 import Foundation
 import PackageDescription
 
-// Absolute paths to the vendored VST3/CLAP SDK roots, which live at the plugin
-// root under ../../third_party — OUTSIDE this SPM package, where SPM's safe
-// `headerSearchPath` refuses to point. They are passed to clang as raw `-I`
-// flags (see cxxSettings below), and a *relative* `-I` cannot be used: under
-// xcodebuild the compiler's working directory is not the package root, and
-// Flutter consumes this package through a symlink (macos/Flutter/ephemeral/
-// Packages/.packages/segno_engine), so `../..` resolves into the wrong tree.
+// Absolute paths to the vendored third-party roots (VST3/CLAP SDKs and
+// RNNoise), which live at the plugin root under ../../third_party — OUTSIDE
+// this SPM package, where SPM's safe `headerSearchPath` refuses to point.
+// They are passed to clang as raw `-I` flags (see cSettings / cxxSettings
+// below), and a *relative* `-I` cannot be used: under xcodebuild the
+// compiler's working directory is not the package root, and Flutter consumes
+// this package through a symlink (macos/Flutter/ephemeral/Packages/.packages/
+// segno_engine), so `../..` resolves into the wrong tree.
 //
 // Deriving the paths from this manifest's own location, with the symlink
 // resolved, yields a stable absolute path on any machine/CI without hardcoding.
@@ -43,6 +45,8 @@ private let thirdPartyDir = URL(fileURLWithPath: #filePath)
   .appendingPathComponent("third_party")
 private let vst3IncludeDir = thirdPartyDir.appendingPathComponent("vst3sdk").path
 private let clapIncludeDir = thirdPartyDir.appendingPathComponent("clap/include").path
+private let rnnoiseIncludeDir = thirdPartyDir.appendingPathComponent("rnnoise/include").path
+private let rnnoiseSrcDir = thirdPartyDir.appendingPathComponent("rnnoise/src").path
 
 let package = Package(
   name: "segno_engine",
@@ -58,6 +62,17 @@ let package = Package(
       // The plugin include-probe (plugin_probe.cpp, forwarded from ../src/host)
       // is C++; the rest of the target stays pure C. Setting the C++ standard
       // here only affects the C++ TUs — the vendored VST3 SDK (3.8) needs C++17.
+      cSettings: [
+        // RNNoise backs the offline restore worker (engine_restore.c). include/
+        // carries the public rnnoise.h; src/ is on the path so x86 vec.h →
+        // x86/x86cpu.h can find common.h (same reason CMakeLists.txt adds both).
+        // Passed as absolute -I because headerSearchPath cannot point outside
+        // the package (see thirdPartyDir above).
+        .unsafeFlags([
+          "-I\(rnnoiseIncludeDir)",
+          "-I\(rnnoiseSrcDir)",
+        ]),
+      ],
       cxxSettings: [
         // Add the vendored SDK roots (computed absolutely above) so the SDKs'
         // own root-relative cross-includes (e.g. "pluginterfaces/base/...",

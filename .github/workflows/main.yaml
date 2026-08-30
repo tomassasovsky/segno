@@ -187,6 +187,8 @@ jobs:
           sudo apt-get install -y build-essential libasound2-dev libpulse0
       - name: Build + run native engine/MIDI tests
         run: bash packages/segno_engine/src/test/run_native_tests.sh
+      - name: Check macOS RNNoise include/forwarder wiring
+        run: bash packages/segno_engine/tool/test/run_macos_rnnoise_wiring_tests.sh
       - name: Build + run firmware/Dart protocol contract tests (both trees)
         run: bash firmware/test/run_tests.sh
 
