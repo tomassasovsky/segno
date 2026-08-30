@@ -177,6 +177,7 @@ class App extends StatelessWidget {
         RepositoryProvider.value(value: sessionRepository),
         RepositoryProvider.value(value: performanceRepository),
         RepositoryProvider.value(value: pedalSim),
+        RepositoryProvider.value(value: pedalRepo),
         RepositoryProvider.value(value: updates),
         RepositoryProvider.value(value: wifi),
         RepositoryProvider.value(value: bluetooth),

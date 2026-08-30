@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -21,13 +22,28 @@ Future<void> showSessionsManager(BuildContext context) async {
   final cubit = context.read<SessionCubit>();
   await cubit.refreshSessions();
   if (!context.mounted) return;
+  // The dialog route sits under the root navigator, outside the page's
+  // providers — same reason SessionCubit is handed down. Pedal is optional
+  // so a host without one still opens the catalog.
+  PedalRepository? pedal;
+  try {
+    pedal = context.read<PedalRepository>();
+  } on ProviderNotFoundException {
+    pedal = null;
+  }
   await showDialog<void>(
     context: context,
     barrierColor: context.surface.scrim,
-    builder: (_) => BlocProvider<SessionCubit>.value(
-      value: cubit,
-      child: const _SessionsManagerDialog(),
-    ),
+    builder: (_) {
+      Widget child = const _SessionsManagerDialog();
+      if (pedal != null) {
+        child = RepositoryProvider<PedalRepository>.value(
+          value: pedal,
+          child: child,
+        );
+      }
+      return BlocProvider<SessionCubit>.value(value: cubit, child: child);
+    },
   );
 }
 
@@ -103,8 +119,57 @@ Future<String?> _promptName(
 
 /// The Sessions dialog: title, an error banner when the last load refused, the
 /// saved-session card, and the action row.
-class _SessionsManagerDialog extends StatelessWidget {
+///
+/// A footswitch press dismisses it (and any rename / delete sheet stacked on
+/// top) so a Rec/Play or Clear can see the stage. Encoder turns do not.
+class _SessionsManagerDialog extends StatefulWidget {
   const _SessionsManagerDialog();
+
+  @override
+  State<_SessionsManagerDialog> createState() => _SessionsManagerDialogState();
+}
+
+class _SessionsManagerDialogState extends State<_SessionsManagerDialog> {
+  /// Four rows is what the pen holds before the list scrolls. A [Flexible]
+  /// here would take the rest of the dialog route — the full viewport —
+  /// instead of shrinking to the rows.
+  static const double _listMaxHeight =
+      kConsoleRowHeight * 4 + ConsoleCard.borderExtent;
+
+  StreamSubscription<PedalEvent>? _pedal;
+  bool _listening = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_listening) return;
+    _listening = true;
+    try {
+      _pedal = context.read<PedalRepository>().events.listen(_onPedal);
+    } on ProviderNotFoundException {
+      // Tests and hosts that do not mount a pedal.
+    }
+  }
+
+  void _onPedal(PedalEvent event) {
+    if (event is! ButtonPressed) return;
+    _dismiss();
+  }
+
+  void _dismiss() {
+    if (!mounted) return;
+    final navigator = Navigator.of(context);
+    final route = ModalRoute.of(context);
+    if (route == null) return;
+    navigator.popUntil((r) => r == route);
+    if (navigator.canPop()) navigator.pop();
+  }
+
+  @override
+  void dispose() {
+    unawaited(_pedal?.cancel());
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -125,66 +190,72 @@ class _SessionsManagerDialog extends StatelessWidget {
             l10n.sessionErrorUnsupportedVersion,
           _ => null,
         };
-        return ConsoleDialogShell(
-          key: const Key('sessions_manager'),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppText(
-                l10n.sessionsManagerTitle,
-                style: TextStyle(
-                  color: surface.textPrimary,
-                  fontSize: 19,
-                  height: 1.15,
-                  fontWeight: FontWeight.w600,
-                  leadingDistribution: TextLeadingDistribution.even,
+        // Centered: the dialog route offers the full screen, and a shell
+        // that is not wrapped takes that height as a tight max.
+        return Center(
+          child: ConsoleDialogShell(
+            key: const Key('sessions_manager'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppText(
+                  l10n.sessionsManagerTitle,
+                  style: TextStyle(
+                    color: surface.textPrimary,
+                    fontSize: 19,
+                    height: 1.15,
+                    fontWeight: FontWeight.w600,
+                    leadingDistribution: TextLeadingDistribution.even,
+                  ),
                 ),
-              ),
-              if (loadError != null) ...[
-                const SizedBox(height: 14),
-                ConsoleBanner(
-                  key: const Key('sessions_loadError'),
-                  message: loadError,
-                  tone: ConsoleBannerTone.failure,
-                ),
+                if (loadError != null) ...[
+                  const SizedBox(height: 14),
+                  ConsoleBanner(
+                    key: const Key('sessions_loadError'),
+                    message: loadError,
+                    tone: ConsoleBannerTone.failure,
+                  ),
+                ],
+                const SizedBox(height: 19),
+                if (state.sessions.isEmpty)
+                  Padding(
+                    key: const Key('sessions_empty'),
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: AppText(
+                      l10n.sessionsEmpty,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: surface.textSecondary,
+                        fontSize: 16,
+                        height: 1.25,
+                        leadingDistribution: TextLeadingDistribution.even,
+                      ),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxHeight: _listMaxHeight,
+                    ),
+                    child: SingleChildScrollView(
+                      child: ConsoleCard(
+                        children: [
+                          for (final (i, summary) in state.sessions.indexed)
+                            _SessionRow(
+                              summary: summary,
+                              isCurrent:
+                                  summary.name == state.currentSessionName,
+                              isLast: i == state.sessions.length - 1,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 19),
+                _ActionRow(state: state),
               ],
-              const SizedBox(height: 19),
-              if (state.sessions.isEmpty)
-                Padding(
-                  key: const Key('sessions_empty'),
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  child: AppText(
-                    l10n.sessionsEmpty,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: surface.textSecondary,
-                      fontSize: 16,
-                      height: 1.25,
-                      leadingDistribution: TextLeadingDistribution.even,
-                    ),
-                  ),
-                )
-              else
-                // Taller than four rows scrolls inside the panel rather than
-                // growing it off the 600px console.
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: ConsoleCard(
-                      children: [
-                        for (final (i, summary) in state.sessions.indexed)
-                          _SessionRow(
-                            summary: summary,
-                            isCurrent: summary.name == state.currentSessionName,
-                            isLast: i == state.sessions.length - 1,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 19),
-              _ActionRow(state: state),
-            ],
+            ),
           ),
         );
       },
@@ -418,50 +489,53 @@ Future<bool> _confirmDelete(BuildContext context, String name) async {
   final confirmed = await showDialog<bool>(
     context: context,
     barrierColor: surface.scrim,
-    builder: (dialogContext) => ConsoleDialogShell(
-      width: 552,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppText(
-            l10n.sessionDeleteConfirmTitle(name),
-            style: TextStyle(
-              color: surface.textPrimary,
-              fontSize: 19,
-              height: 1.15,
-              fontWeight: FontWeight.w600,
-              leadingDistribution: TextLeadingDistribution.even,
-            ),
-          ),
-          const SizedBox(height: 10),
-          AppText(
-            l10n.sessionDeleteConfirmBody,
-            style: TextStyle(
-              color: surface.textSecondary,
-              fontSize: 16,
-              height: 1.25,
-              leadingDistribution: TextLeadingDistribution.even,
-            ),
-          ),
-          const SizedBox(height: 19),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            spacing: 10,
-            children: [
-              ConsoleDialogButton(
-                label: l10n.cancel,
-                onPressed: () => Navigator.of(dialogContext).pop(false),
+    builder: (dialogContext) => Center(
+      child: ConsoleDialogShell(
+        key: const Key('sessionDelete_dialog'),
+        width: 552,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppText(
+              l10n.sessionDeleteConfirmTitle(name),
+              style: TextStyle(
+                color: surface.textPrimary,
+                fontSize: 19,
+                height: 1.15,
+                fontWeight: FontWeight.w600,
+                leadingDistribution: TextLeadingDistribution.even,
               ),
-              ConsoleDialogButton(
-                key: const Key('sessionDelete_confirm'),
-                label: l10n.sessionDelete,
-                tone: ConsoleDialogTone.destructive,
-                onPressed: () => Navigator.of(dialogContext).pop(true),
+            ),
+            const SizedBox(height: 10),
+            AppText(
+              l10n.sessionDeleteConfirmBody,
+              style: TextStyle(
+                color: surface.textSecondary,
+                fontSize: 16,
+                height: 1.25,
+                leadingDistribution: TextLeadingDistribution.even,
               ),
-            ],
-          ),
-        ],
+            ),
+            const SizedBox(height: 19),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              spacing: 10,
+              children: [
+                ConsoleDialogButton(
+                  label: l10n.cancel,
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                ),
+                ConsoleDialogButton(
+                  key: const Key('sessionDelete_confirm'),
+                  label: l10n.sessionDelete,
+                  tone: ConsoleDialogTone.destructive,
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     ),
   );

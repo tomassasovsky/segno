@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/gen/app_localizations.dart';
 import 'package:segno/session/session.dart';
@@ -12,6 +15,8 @@ import 'package:session_repository/session_repository.dart';
 
 class _MockSessionCubit extends MockCubit<SessionState>
     implements SessionCubit {}
+
+class _MockPedalRepository extends Mock implements PedalRepository {}
 
 void main() {
   late SessionCubit session;
@@ -39,12 +44,30 @@ void main() {
   Future<void> openManager(
     WidgetTester tester, {
     SessionState state = const SessionState(),
+    PedalRepository? pedal,
   }) async {
     whenListen(
       session,
       const Stream<SessionState>.empty(),
       initialState: state,
     );
+    Widget home = BlocProvider<SessionCubit>.value(
+      value: session,
+      child: Scaffold(
+        body: Builder(
+          builder: (context) => TextButton(
+            onPressed: () => showSessionsManager(context),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    if (pedal != null) {
+      home = RepositoryProvider<PedalRepository>.value(
+        value: pedal,
+        child: home,
+      );
+    }
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(
@@ -55,17 +78,7 @@ void main() {
         ),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        home: BlocProvider<SessionCubit>.value(
-          value: session,
-          child: Scaffold(
-            body: Builder(
-              builder: (context) => TextButton(
-                onPressed: () => showSessionsManager(context),
-                child: const Text('open'),
-              ),
-            ),
-          ),
-        ),
+        home: home,
       ),
     );
     await tester.tap(find.text('open'));
@@ -206,6 +219,21 @@ void main() {
       verify(() => session.deleteSession('A')).called(1);
     });
 
+    testWidgets('the delete confirm shrinks instead of filling the screen', (
+      tester,
+    ) async {
+      await openManager(
+        tester,
+        state: const SessionState(currentSessionName: 'A', sessions: two),
+      );
+      await tester.tap(find.byKey(const Key('sessions_delete')));
+      await tester.pumpAndSettle();
+      final size = tester.getSize(
+        find.byKey(const Key('sessionDelete_dialog')),
+      );
+      expect(size.height, lessThan(400));
+    });
+
     testWidgets('cancelling the delete confirm does nothing', (tester) async {
       await openManager(
         tester,
@@ -337,6 +365,77 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
       verifyNever(session.save);
+    });
+
+    testWidgets('the panel shrinks to its rows instead of filling the screen', (
+      tester,
+    ) async {
+      await openManager(tester, state: const SessionState(sessions: two));
+      final size = tester.getSize(find.byKey(const Key('sessions_manager')));
+      // The dialog route is the full 600px test surface. A Flexible list
+      // used to stretch the shell to that height; the pen is content-height.
+      expect(size.height, lessThan(500));
+    });
+
+    testWidgets('a pedal footswitch press dismisses the dialog', (
+      tester,
+    ) async {
+      final events = StreamController<PedalEvent>.broadcast();
+      addTearDown(events.close);
+      final pedal = _MockPedalRepository();
+      when(() => pedal.events).thenAnswer((_) => events.stream);
+
+      await openManager(
+        tester,
+        state: const SessionState(sessions: two),
+        pedal: pedal,
+      );
+      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+
+      events.add(const ButtonPressed(PedalButton.clear));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('sessions_manager')), findsNothing);
+    });
+
+    testWidgets('a pedal press dismisses a nested confirm too', (tester) async {
+      final events = StreamController<PedalEvent>.broadcast();
+      addTearDown(events.close);
+      final pedal = _MockPedalRepository();
+      when(() => pedal.events).thenAnswer((_) => events.stream);
+
+      await openManager(
+        tester,
+        state: const SessionState(currentSessionName: 'A', sessions: two),
+        pedal: pedal,
+      );
+      await tester.tap(find.byKey(const Key('sessions_delete')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('sessionDelete_confirm')), findsOneWidget);
+
+      events.add(const ButtonPressed(PedalButton.recPlay));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('sessionDelete_confirm')), findsNothing);
+      expect(find.byKey(const Key('sessions_manager')), findsNothing);
+    });
+
+    testWidgets('an encoder turn leaves the dialog open', (tester) async {
+      final events = StreamController<PedalEvent>.broadcast();
+      addTearDown(events.close);
+      final pedal = _MockPedalRepository();
+      when(() => pedal.events).thenAnswer((_) => events.stream);
+
+      await openManager(
+        tester,
+        state: const SessionState(sessions: two),
+        pedal: pedal,
+      );
+
+      events.add(const EncoderDelta(1));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
     });
   });
 }
