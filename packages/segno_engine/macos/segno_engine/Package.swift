@@ -12,9 +12,9 @@
 // exception, miniaudio.h (which lives in ../src/miniaudio/), is satisfied by a
 // forwarder header in the target's include/ directory — SPM adds include/ to
 // the header search path, and SPM rejects header search paths that point
-// outside the package root. RNNoise's public header is forwarded the same
-// way (include/rnnoise.h) and also reached via absolute -I flags, matching
-// the vendored plugin SDKs below.
+// outside the package root. RNNoise is reached via absolute -I flags
+// (include/ + src/), matching the vendored plugin SDKs below — src/ must
+// stay on the path so x86 vec.h → x86/x86cpu.h can find common.h.
 //
 // The product is built as a `.dynamic` library so the engine is loaded as its
 // own image at launch: this keeps the FFI-exported symbols (LE_EXPORT =

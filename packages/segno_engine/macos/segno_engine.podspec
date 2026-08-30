@@ -17,9 +17,11 @@ A hand-written miniaudio-based looping engine exposed to Dart over FFI.
 
   # CocoaPods does not support source_files outside the podspec directory, so
   # the shared C engine lives under ../src and is pulled in via forwarder
-  # translation units in Classes/ that relatively #include it. The real headers
-  # are found through HEADER_SEARCH_PATHS below.
-  s.source_files     = 'Classes/**/*'
+  # translation units in Classes/ that relatively #include it. RNNoise
+  # forwarders live once under the SPM tree (relative #includes resolve from
+  # that file); CocoaPods compiles the same wrappers via the glob below.
+  # The real headers are found through HEADER_SEARCH_PATHS below.
+  s.source_files     = 'Classes/**/*', 'segno_engine/Sources/segno_engine/rnnoise_*.c'
 
   s.dependency 'FlutterMacOS'
   s.platform = :osx, '10.14'
