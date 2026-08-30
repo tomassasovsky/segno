@@ -88,15 +88,12 @@ void main() {
     // The FX-chain announcement reads the repository's remembered intent —
     // the same value the bloc's toggle handler negates.
     when(() => repository.trackChainEnabled(any())).thenReturn(true);
-    when(
-      () => repository.monitorChanges,
-    ).thenAnswer((_) => const Stream<int>.empty());
-    when(
-      () => repository.monitorParamChanges,
-    ).thenAnswer((_) => const Stream<int>.empty());
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => const Stream<LooperState>.empty());
+    when(() => repository.monitorChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
+    when(() => repository.monitorParamChanges)
+        .thenAnswer((_) => const Stream<int>.empty());
+    when(() => repository.looperState)
+        .thenAnswer((_) => const Stream<LooperState>.empty());
     for (final stub in [
       () => repository.record(channel: any(named: 'channel')),
       () => repository.play(channel: any(named: 'channel')),
@@ -143,13 +140,11 @@ void main() {
     when(() => session.exportMixdown()).thenAnswer((_) async {});
     when(() => session.exportStems()).thenAnswer((_) async {});
     performanceRecorder = _MockPerformanceRecorderCubit();
-    when(
-      () => performanceRecorder.state,
-    ).thenReturn(const PerformanceRecorderIdle());
+    when(() => performanceRecorder.state)
+        .thenReturn(const PerformanceRecorderIdle());
     when(performanceRecorder.toggleArm).thenAnswer((_) async {});
-    when(
-      () => performanceRecorder.renameCompletedCapture(any()),
-    ).thenAnswer((_) async {});
+    when(() => performanceRecorder.renameCompletedCapture(any()))
+        .thenAnswer((_) async {});
   });
 
   void seed(LooperState state) {
@@ -1139,8 +1134,8 @@ void main() {
             .color;
       }
 
-      expect(borderColor(0), Colors.white); // selected: 4px white ring
-      // Unselected: the pen's 1px near-black card hairline (the `card` token),
+      expect(borderColor(0), Colors.white); // selected: 2px white ring
+      // Unselected: the pen's 2px near-black card stroke (the `card` token),
       // not borderless.
       expect(borderColor(1), AppTheme.neon.extension<SurfaceTheme>()!.card);
     });
@@ -1633,9 +1628,8 @@ void main() {
             ],
           ),
         );
-        when(
-          () => repository.undo(channel: any(named: 'channel')),
-        ).thenReturn(EngineResult.ok);
+        when(() => repository.undo(channel: any(named: 'channel')))
+            .thenReturn(EngineResult.ok);
         await pump(tester);
 
         await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -1659,9 +1653,8 @@ void main() {
             tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
           ),
         );
-        when(
-          () => repository.undo(channel: any(named: 'channel')),
-        ).thenReturn(EngineResult.ok);
+        when(() => repository.undo(channel: any(named: 'channel')))
+            .thenReturn(EngineResult.ok);
         await pump(tester);
 
         await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -1690,9 +1683,8 @@ void main() {
             ],
           ),
         );
-        when(
-          () => repository.undo(channel: any(named: 'channel')),
-        ).thenReturn(EngineResult.ok);
+        when(() => repository.undo(channel: any(named: 'channel')))
+            .thenReturn(EngineResult.ok);
         await pump(tester);
 
         // Every surface's clear-all lands in ControlCubit.clearAll, which

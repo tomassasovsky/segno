@@ -209,11 +209,6 @@ class _TracksViewState extends State<TracksView> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                // The pen's `STAGE / stage` status bar: 16
-                                // under the 8 top inset puts the strip at 24,
-                                // and the run starts 10 below it — the pen's
-                                // own 24/64/74 verticals.
-                                const SizedBox(height: 16),
                                 const StageStatusBar(),
                                 const SizedBox(height: 10),
                                 // Standing loss conditions hold the stage
