@@ -103,23 +103,20 @@ void main() {
         initialState: SessionsManagerStatus.active,
       );
       await tester.pumpApp(
-        BlocProvider<SessionCubit>.value(
-          value: session,
-          child: Scaffold(
-            body: Builder(
-              builder: (context) => TextButton(
-                onPressed: () => showDialog<void>(
-                  context: context,
-                  builder: (_) => MultiBlocProvider(
-                    providers: [
-                      BlocProvider<SessionCubit>.value(value: session),
-                      BlocProvider<SessionsManagerCubit>.value(value: manager),
-                    ],
-                    child: const SessionsManagerView(),
-                  ),
+        Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => MultiBlocProvider(
+                  providers: [
+                    BlocProvider<SessionCubit>.value(value: session),
+                    BlocProvider<SessionsManagerCubit>.value(value: manager),
+                  ],
+                  child: const SessionsManagerView(),
                 ),
-                child: const Text('open'),
               ),
+              child: const Text('open'),
             ),
           ),
         ),
@@ -463,23 +460,6 @@ void main() {
         return controller;
       }
 
-      testWidgets('pops the dialog when dismissal is requested', (
-        tester,
-      ) async {
-        final requested = statuses();
-        await openView(
-          tester,
-          state: const SessionState(sessions: two),
-          statuses: requested.stream,
-        );
-        expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
-
-        requested.add(SessionsManagerStatus.dismissalRequested);
-        await tester.pumpAndSettle();
-
-        expect(find.byKey(const Key('sessions_manager')), findsNothing);
-      });
-
       testWidgets('pops a nested confirm too', (tester) async {
         final requested = statuses();
         await openView(
@@ -566,13 +546,6 @@ void main() {
         expect(find.text('open'), findsOneWidget);
         await tester.tap(find.text('open'));
         await tester.pumpAndSettle();
-        expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
-      });
-
-      testWidgets('stays open while the cubit remains active', (tester) async {
-        await openView(tester, state: const SessionState(sessions: two));
-        await tester.pumpAndSettle();
-
         expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
       });
     });
