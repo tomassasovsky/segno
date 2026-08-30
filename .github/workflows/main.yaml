@@ -375,9 +375,10 @@ jobs:
   # means a workbench trip with a sealed enclosure. The harness injects a
   # file:// manifest, a fixture serial dir, and a stub avrdude — no hardware.
   #
-  # Also runs the other appliance shell suites, which share the same shape
-  # (inject every path, stub the privileged call). The job keeps its original
-  # name so existing required-check settings do not break.
+  # Also runs the other appliance shell suites (bt, wifi, mark-good, journal
+  # persist, weston drop-in wiring, reconcile-staged), which share the same
+  # shape (inject every path, stub the privileged call). The job keeps its
+  # original name so existing required-check settings do not break.
   flash-pedal-tests:
     runs-on: ubuntu-latest
     steps:
@@ -402,6 +403,8 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
       - name: Run log-persistence tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_log_persist_tests.sh
+      - name: Run weston log tests
+        run: bash deploy/yocto/meta-segno/recipes-graphics/weston-init/test/run_weston_log_tests.sh
       # Twice on purpose: the appliance's /bin/sh is busybox ash, so the
       # scripts must hold under a strict POSIX shell (dash) as well as bash.
       - name: Run reconcile-staged tests (bash)
