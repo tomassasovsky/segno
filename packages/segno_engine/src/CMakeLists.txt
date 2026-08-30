@@ -184,7 +184,9 @@ endif()
 # needs configure-style compiler probing this build does not do, and the
 # consumer is an offline (non-RT) pass, so the portable C paths are fast
 # enough. NEON on ARM comes for free via vec_neon.h (compile-time detected).
-# Keep run_native_tests.sh's rnnoise list in sync with this one.
+# Keep run_native_tests.sh's rnnoise list, the macOS SPM forwarders
+# (CocoaPods compiles those same files via the podspec glob), and the
+# Apple include-path wiring in sync with this one.
 get_filename_component(SEGNO_RNNOISE_DIR
   "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/rnnoise" ABSOLUTE)
 if(NOT EXISTS "${SEGNO_RNNOISE_DIR}")

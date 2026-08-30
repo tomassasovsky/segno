@@ -164,14 +164,15 @@ jobs:
   # The native C engine + MIDI unit tests (the deterministic golden gate). They
   # need no audio device, so they run on Linux with just a C toolchain + ALSA
   # headers (the MIDI test links libasound). run_native_tests.sh builds and runs
-  # both suites; a failed CHECK returns non-zero and fails the job. A third
-  # step below runs the firmware/Dart protocol contract test via
-  # firmware/test/run_tests.sh — the single definition of that gate (also the
-  # local verify loop), which diffs the two pedal_protocol.{h,c} copies and
-  # builds + runs the contract test against both trees, so protocol drift
-  # between firmware/segno_pedal and hardware/firmware/segno_pedal_32u4
-  # fails the job. This is the strongest correctness gate in the repo — keep
-  # it on every PR.
+  # both suites; a failed CHECK returns non-zero and fails the job. A second
+  # step below runs the macOS RNNoise include/forwarder wiring stand-in (CI
+  # never `flutter build macos`). A third step runs the firmware/Dart protocol
+  # contract test via firmware/test/run_tests.sh — the single definition of
+  # that gate (also the local verify loop), which diffs the two
+  # pedal_protocol.{h,c} copies and builds + runs the contract test against
+  # both trees, so protocol drift between firmware/segno_pedal and
+  # hardware/firmware/segno_pedal_32u4 fails the job. This is the strongest
+  # correctness gate in the repo — keep it on every PR.
   native-tests:
     runs-on: ubuntu-latest
     steps:
@@ -187,6 +188,8 @@ jobs:
           sudo apt-get install -y build-essential libasound2-dev libpulse0
       - name: Build + run native engine/MIDI tests
         run: bash packages/segno_engine/src/test/run_native_tests.sh
+      - name: Check macOS RNNoise include/forwarder wiring
+        run: bash packages/segno_engine/tool/test/run_macos_rnnoise_wiring_tests.sh
       - name: Build + run firmware/Dart protocol contract tests (both trees)
         run: bash firmware/test/run_tests.sh
 
