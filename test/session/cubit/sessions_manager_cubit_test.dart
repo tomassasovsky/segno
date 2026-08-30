@@ -21,45 +21,50 @@ void main() {
 
     tearDown(() => events.close());
 
-    test('starts active', () async {
+    test('initial state is $SessionsManagerStatus.active', () async {
       final cubit = SessionsManagerCubit(pedal: pedal);
       addTearDown(cubit.close);
 
-      expect(cubit.state, SessionsManagerStatus.active);
+      expect(cubit.state, equals(SessionsManagerStatus.active));
     });
 
-    blocTest<SessionsManagerCubit, SessionsManagerStatus>(
-      'requests dismissal once when repeated footswitch presses arrive',
-      build: () => SessionsManagerCubit(pedal: pedal),
-      act: (cubit) {
-        events
-          ..add(const ButtonPressed(PedalButton.clear))
-          ..add(const ButtonPressed(PedalButton.recPlay));
-      },
-      expect: () => [SessionsManagerStatus.dismissalRequested],
-    );
+    group('pedal events', () {
+      blocTest<SessionsManagerCubit, SessionsManagerStatus>(
+        'emits $SessionsManagerStatus.dismissalRequested once on '
+        'repeated $ButtonPressed',
+        build: () => SessionsManagerCubit(pedal: pedal),
+        act: (cubit) {
+          events
+            ..add(const ButtonPressed(PedalButton.clear))
+            ..add(const ButtonPressed(PedalButton.recPlay));
+        },
+        expect: () => [equals(SessionsManagerStatus.dismissalRequested)],
+      );
 
-    blocTest<SessionsManagerCubit, SessionsManagerStatus>(
-      'stays active when the encoder turns',
-      build: () => SessionsManagerCubit(pedal: pedal),
-      act: (_) => events.add(const EncoderDelta(1)),
-      expect: () => <SessionsManagerStatus>[],
-    );
+      blocTest<SessionsManagerCubit, SessionsManagerStatus>(
+        'emits nothing when the encoder turns',
+        build: () => SessionsManagerCubit(pedal: pedal),
+        act: (_) => events.add(const EncoderDelta(1)),
+        expect: () => <SessionsManagerStatus>[],
+      );
 
-    blocTest<SessionsManagerCubit, SessionsManagerStatus>(
-      'stays active when a footswitch is released',
-      build: () => SessionsManagerCubit(pedal: pedal),
-      act: (_) => events.add(const ButtonReleased(PedalButton.clear)),
-      expect: () => <SessionsManagerStatus>[],
-    );
+      blocTest<SessionsManagerCubit, SessionsManagerStatus>(
+        'emits nothing when a footswitch is released',
+        build: () => SessionsManagerCubit(pedal: pedal),
+        act: (_) => events.add(const ButtonReleased(PedalButton.clear)),
+        expect: () => <SessionsManagerStatus>[],
+      );
+    });
 
-    test('cancels the pedal subscription when closed', () async {
-      final cubit = SessionsManagerCubit(pedal: pedal);
-      expect(events.hasListener, isTrue);
+    group('close', () {
+      test('cancels the pedal subscription', () async {
+        final cubit = SessionsManagerCubit(pedal: pedal);
+        expect(events.hasListener, isTrue);
 
-      await cubit.close();
+        await cubit.close();
 
-      expect(events.hasListener, isFalse);
+        expect(events.hasListener, isFalse);
+      });
     });
   });
 }

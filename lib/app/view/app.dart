@@ -45,7 +45,7 @@ import 'package:wifi_repository/wifi_repository.dart';
 const _waveformFrame = Duration(milliseconds: 33); // ~30 fps
 
 /// The root application widget.
-class App extends StatelessWidget {
+class App extends StatefulWidget {
   /// Creates an [App] driven by the injected repositories.
   ///
   /// The repositories and [waveformWindow] are injected so tests can supply
@@ -158,36 +158,41 @@ class App extends StatelessWidget {
   final Future<String> Function() exportDirectory;
 
   @override
-  Widget build(BuildContext context) {
-    return _StablePedalHost(
-      repository: pedalRepository,
-      simulator: pedalSimulator,
-      child: _AppProviders(app: this),
-    );
-  }
+  State<App> createState() => _AppState();
 }
 
-/// App-wide repositories and cubits. Pedal pair comes from [_StablePedalHost].
-class _AppProviders extends StatelessWidget {
-  const _AppProviders({required this.app});
+/// Resolves the optional pedal pair once so a replacement [App] keeps
+/// [ControlCubit], [PedalCubit], and dialog routes on one repository.
+class _AppState extends State<App> {
+  late final SimulatorPedalTransport _simulator;
+  late final PedalRepository _pedal;
 
-  final App app;
+  @override
+  void initState() {
+    super.initState();
+    _simulator =
+        widget.pedalSimulator ??
+        SimulatorPedalTransport(inner: const NoopPedalTransport());
+    _pedal = widget.pedalRepository ?? PedalRepository(_simulator);
+  }
 
   @override
   Widget build(BuildContext context) {
     return MultiRepositoryProvider(
       providers: [
-        RepositoryProvider.value(value: app.repository),
-        RepositoryProvider.value(value: app.controllerRepository),
-        RepositoryProvider.value(value: app.midiDeviceRepository),
-        RepositoryProvider.value(value: app.settings),
-        RepositoryProvider.value(value: app.sessionRepository),
-        RepositoryProvider.value(value: app.performanceRepository),
-        RepositoryProvider.value(value: app.updates),
-        RepositoryProvider.value(value: app.wifi),
-        RepositoryProvider.value(value: app.bluetooth),
-        RepositoryProvider.value(value: app.brightness),
-        RepositoryProvider.value(value: app.consoleFacts),
+        RepositoryProvider.value(value: widget.repository),
+        RepositoryProvider.value(value: widget.controllerRepository),
+        RepositoryProvider.value(value: widget.midiDeviceRepository),
+        RepositoryProvider.value(value: widget.settings),
+        RepositoryProvider.value(value: widget.sessionRepository),
+        RepositoryProvider.value(value: widget.performanceRepository),
+        RepositoryProvider.value(value: _simulator),
+        RepositoryProvider.value(value: _pedal),
+        RepositoryProvider.value(value: widget.updates),
+        RepositoryProvider.value(value: widget.wifi),
+        RepositoryProvider.value(value: widget.bluetooth),
+        RepositoryProvider.value(value: widget.brightness),
+        RepositoryProvider.value(value: widget.consoleFacts),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -410,7 +415,7 @@ class _AppProviders extends StatelessWidget {
             create: (context) => AudioSetupCubit(
               repository: context.read<LooperRepository>(),
               settings: context.read<SettingsRepository>(),
-              initialAsioDrivers: app.initialAsioDrivers,
+              initialAsioDrivers: widget.initialAsioDrivers,
             ),
           ),
           // Eager (not lazy): the MIDI-setup cubit performs the launch
@@ -450,7 +455,7 @@ class _AppProviders extends StatelessWidget {
                 // that owns controller intent.
                 controller: context.read<ControllerRepository>(),
                 midiDevices: context.read<MidiDeviceRepository>(),
-                simulatedSource: app.simulatedControllerSource,
+                simulatedSource: widget.simulatedControllerSource,
               );
               unawaited(cubit.load()); // boot-default mode restore
               return cubit;
@@ -482,7 +487,7 @@ class _AppProviders extends StatelessWidget {
             create: (context) {
               final cubit = AudioRecoveryCubit(
                 looper: context.read<LooperRepository>(),
-                recoveryConfig: app.audioRecoveryConfig,
+                recoveryConfig: widget.audioRecoveryConfig,
               );
               unawaited(cubit.load());
               return cubit;
@@ -504,53 +509,11 @@ class _AppProviders extends StatelessWidget {
           ),
         ],
         child: _AppView(
-          waveformWindow: app.waveformWindow,
-          exportDirectory: app.exportDirectory,
-          displayCount: app.displayCount,
+          waveformWindow: widget.waveformWindow,
+          exportDirectory: widget.exportDirectory,
+          displayCount: widget.displayCount,
         ),
       ),
-    );
-  }
-}
-
-/// Resolves the optional pedal pair once on [State] so a replacement [App]
-/// keeps [ControlCubit], [PedalCubit], and dialog routes on one repository.
-class _StablePedalHost extends StatefulWidget {
-  const _StablePedalHost({
-    required this.repository,
-    required this.simulator,
-    required this.child,
-  });
-
-  final PedalRepository? repository;
-  final SimulatorPedalTransport? simulator;
-  final Widget child;
-
-  @override
-  State<_StablePedalHost> createState() => _StablePedalHostState();
-}
-
-class _StablePedalHostState extends State<_StablePedalHost> {
-  late final SimulatorPedalTransport _simulator;
-  late final PedalRepository _repository;
-
-  @override
-  void initState() {
-    super.initState();
-    _simulator =
-        widget.simulator ??
-        SimulatorPedalTransport(inner: const NoopPedalTransport());
-    _repository = widget.repository ?? PedalRepository(_simulator);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return MultiRepositoryProvider(
-      providers: [
-        RepositoryProvider.value(value: widget.simulator ?? _simulator),
-        RepositoryProvider.value(value: widget.repository ?? _repository),
-      ],
-      child: widget.child,
     );
   }
 }

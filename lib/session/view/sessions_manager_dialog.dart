@@ -26,14 +26,29 @@ Future<void> showSessionsManager(BuildContext context) async {
   await showDialog<void>(
     context: context,
     barrierColor: context.surface.scrim,
-    builder: (_) => MultiBlocProvider(
-      providers: [
-        BlocProvider<SessionCubit>.value(value: cubit),
-        BlocProvider(create: (_) => SessionsManagerCubit(pedal: pedal)),
-      ],
-      child: const _SessionsManagerDialog(),
+    builder: (_) => RepositoryProvider<PedalRepository>.value(
+      value: pedal,
+      child: BlocProvider<SessionCubit>.value(
+        value: cubit,
+        child: const SessionsManagerPage(),
+      ),
     ),
   );
+}
+
+/// Provides [SessionsManagerCubit] for the Sessions dialog route.
+class SessionsManagerPage extends StatelessWidget {
+  /// Creates the Sessions manager page.
+  const SessionsManagerPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (context) =>
+          SessionsManagerCubit(pedal: context.read<PedalRepository>()),
+      child: const SessionsManagerView(),
+    );
+  }
 }
 
 /// Prompts for a name and saves the live rig as a NEW named session. Shared by
@@ -111,8 +126,9 @@ Future<String?> _promptName(
 ///
 /// A footswitch press dismisses it (and any rename / delete sheet stacked on
 /// top) so a Rec/Play or Clear can see the stage. Encoder turns do not.
-class _SessionsManagerDialog extends StatelessWidget {
-  const _SessionsManagerDialog();
+class SessionsManagerView extends StatelessWidget {
+  /// Creates the Sessions manager view.
+  const SessionsManagerView({super.key});
 
   void _dismiss(BuildContext context) {
     final navigator = Navigator.of(context);
@@ -125,20 +141,6 @@ class _SessionsManagerDialog extends StatelessWidget {
     if (route.isCurrent) navigator.pop();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return BlocListener<SessionsManagerCubit, SessionsManagerStatus>(
-      listenWhen: (_, current) =>
-          current == SessionsManagerStatus.dismissalRequested,
-      listener: (context, _) => _dismiss(context),
-      child: const _SessionsManagerBody(),
-    );
-  }
-}
-
-class _SessionsManagerBody extends StatelessWidget {
-  const _SessionsManagerBody();
-
   /// Four rows is what the pen holds before the list scrolls. A [Flexible]
   /// here would take the rest of the dialog route — the full viewport —
   /// instead of shrinking to the rows.
@@ -149,90 +151,95 @@ class _SessionsManagerBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    return BlocBuilder<SessionCubit, SessionState>(
-      buildWhen: (a, b) =>
-          a.sessions != b.sessions ||
-          a.currentSessionName != b.currentSessionName ||
-          a.error != b.error,
-      builder: (context, state) {
-        // The two load refusals the pen draws as banners under the title
-        // (`session-rate-error` / `session-version-error`). The other error
-        // kinds surface where their actions run (name prompts, snackbars).
-        final loadError = switch (state.error) {
-          SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
-          SessionError.unsupportedVersion =>
-            l10n.sessionErrorUnsupportedVersion,
-          _ => null,
-        };
-        // Centered: the dialog route offers the full screen, and a shell
-        // that is not wrapped takes that height as a tight max.
-        return Center(
-          child: ConsoleDialogShell(
-            key: const Key('sessions_manager'),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AppText(
-                  l10n.sessionsManagerTitle,
-                  style: TextStyle(
-                    color: surface.textPrimary,
-                    fontSize: 19,
-                    height: 1.15,
-                    fontWeight: FontWeight.w600,
-                    leadingDistribution: TextLeadingDistribution.even,
+    return BlocListener<SessionsManagerCubit, SessionsManagerStatus>(
+      listenWhen: (_, current) =>
+          current == SessionsManagerStatus.dismissalRequested,
+      listener: (context, _) => _dismiss(context),
+      child: BlocBuilder<SessionCubit, SessionState>(
+        buildWhen: (a, b) =>
+            a.sessions != b.sessions ||
+            a.currentSessionName != b.currentSessionName ||
+            a.error != b.error,
+        builder: (context, state) {
+          // The two load refusals the pen draws as banners under the title
+          // (`session-rate-error` / `session-version-error`). The other error
+          // kinds surface where their actions run (name prompts, snackbars).
+          final loadError = switch (state.error) {
+            SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
+            SessionError.unsupportedVersion =>
+              l10n.sessionErrorUnsupportedVersion,
+            _ => null,
+          };
+          // Centered: the dialog route offers the full screen, and a shell
+          // that is not wrapped takes that height as a tight max.
+          return Center(
+            child: ConsoleDialogShell(
+              key: const Key('sessions_manager'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AppText(
+                    l10n.sessionsManagerTitle,
+                    style: TextStyle(
+                      color: surface.textPrimary,
+                      fontSize: 19,
+                      height: 1.15,
+                      fontWeight: FontWeight.w600,
+                      leadingDistribution: TextLeadingDistribution.even,
+                    ),
                   ),
-                ),
-                if (loadError != null) ...[
-                  const SizedBox(height: 14),
-                  ConsoleBanner(
-                    key: const Key('sessions_loadError'),
-                    message: loadError,
-                    tone: ConsoleBannerTone.failure,
-                  ),
+                  if (loadError != null) ...[
+                    const SizedBox(height: 14),
+                    ConsoleBanner(
+                      key: const Key('sessions_loadError'),
+                      message: loadError,
+                      tone: ConsoleBannerTone.failure,
+                    ),
+                  ],
+                  const SizedBox(height: 19),
+                  if (state.sessions.isEmpty)
+                    Padding(
+                      key: const Key('sessions_empty'),
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: AppText(
+                        l10n.sessionsEmpty,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: surface.textSecondary,
+                          fontSize: 16,
+                          height: 1.25,
+                          leadingDistribution: TextLeadingDistribution.even,
+                        ),
+                      ),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxHeight: _listMaxHeight,
+                      ),
+                      child: SingleChildScrollView(
+                        child: ConsoleCard(
+                          children: [
+                            for (final (i, summary) in state.sessions.indexed)
+                              _SessionRow(
+                                summary: summary,
+                                isCurrent:
+                                    summary.name == state.currentSessionName,
+                                isLast: i == state.sessions.length - 1,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 19),
+                  _ActionRow(state: state),
                 ],
-                const SizedBox(height: 19),
-                if (state.sessions.isEmpty)
-                  Padding(
-                    key: const Key('sessions_empty'),
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: AppText(
-                      l10n.sessionsEmpty,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: surface.textSecondary,
-                        fontSize: 16,
-                        height: 1.25,
-                        leadingDistribution: TextLeadingDistribution.even,
-                      ),
-                    ),
-                  )
-                else
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxHeight: _listMaxHeight,
-                    ),
-                    child: SingleChildScrollView(
-                      child: ConsoleCard(
-                        children: [
-                          for (final (i, summary) in state.sessions.indexed)
-                            _SessionRow(
-                              summary: summary,
-                              isCurrent:
-                                  summary.name == state.currentSessionName,
-                              isLast: i == state.sessions.length - 1,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 19),
-                _ActionRow(state: state),
-              ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -380,90 +387,27 @@ class _ActionRow extends StatelessWidget {
   }
 }
 
-class _SessionNameDialog extends StatefulWidget {
-  const _SessionNameDialog({
-    required this.title,
-    required this.initial,
-    required this.taken,
-  });
-
-  final String title;
-  final String initial;
-  final Set<String> taken;
-
-  @override
-  State<_SessionNameDialog> createState() => _SessionNameDialogState();
+/// Confirms a destructive delete of session [name] on the console's own
+/// dialog; resolves `true` only if the user confirms.
+Future<bool> _confirmDelete(BuildContext context, String name) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    barrierColor: context.surface.scrim,
+    builder: (_) => _SessionDeleteDialog(name: name),
+  );
+  return confirmed ?? false;
 }
 
-class _SessionNameDialogState extends State<_SessionNameDialog> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.initial,
-  );
-  String? _error;
+class _SessionDeleteDialog extends StatelessWidget {
+  const _SessionDeleteDialog({required this.name});
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final l10n = context.l10n;
-    final raw = _controller.text;
-    final slug = sessionSlug(raw);
-    if (slug == null) {
-      setState(() => _error = l10n.sessionNameInvalid);
-      return;
-    }
-    if (widget.taken.contains(slug)) {
-      setState(() => _error = l10n.sessionNameDuplicate(slug));
-      return;
-    }
-    Navigator.of(context).pop(raw);
-  }
+  final String name;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    return AlertDialog(
-      title: AppText(widget.title),
-      content: TextField(
-        key: const Key('sessionName_field'),
-        controller: _controller,
-        autofocus: true,
-        decoration: InputDecoration(
-          hintText: l10n.sessionNameHint,
-          errorText: _error,
-        ),
-        onChanged: (_) {
-          if (_error != null) setState(() => _error = null);
-        },
-        onSubmitted: (_) => _submit(),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: AppText(l10n.cancel),
-        ),
-        TextButton(
-          key: const Key('sessionName_save'),
-          onPressed: _submit,
-          child: AppText(l10n.save),
-        ),
-      ],
-    );
-  }
-}
-
-/// Confirms a destructive delete of session [name] on the console's own
-/// dialog; resolves `true` only if the user confirms.
-Future<bool> _confirmDelete(BuildContext context, String name) async {
-  final l10n = context.l10n;
-  final surface = context.surface;
-  final confirmed = await showDialog<bool>(
-    context: context,
-    barrierColor: surface.scrim,
-    builder: (dialogContext) => Center(
+    final surface = context.surface;
+    return Center(
       child: ConsoleDialogShell(
         key: const Key('sessionDelete_dialog'),
         width: 552,
@@ -498,20 +442,19 @@ Future<bool> _confirmDelete(BuildContext context, String name) async {
               children: [
                 ConsoleDialogButton(
                   label: l10n.cancel,
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  onPressed: () => Navigator.of(context).pop(false),
                 ),
                 ConsoleDialogButton(
                   key: const Key('sessionDelete_confirm'),
                   label: l10n.sessionDelete,
                   tone: ConsoleDialogTone.destructive,
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  onPressed: () => Navigator.of(context).pop(true),
                 ),
               ],
             ),
           ],
         ),
       ),
-    ),
-  );
-  return confirmed ?? false;
+    );
+  }
 }
