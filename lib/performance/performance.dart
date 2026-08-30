@@ -3,6 +3,7 @@
 /// `performance_repository`.
 library;
 
+export 'cubit/performance_completion_cubit.dart';
 export 'cubit/performance_recorder_cubit.dart';
 export 'view/armed_indicator.dart';
 export 'view/perf_record_button.dart';

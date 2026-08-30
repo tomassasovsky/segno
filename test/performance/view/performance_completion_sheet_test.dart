@@ -7,16 +7,22 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
-import 'package:segno/performance/view/performance_completion_sheet.dart';
+import 'package:segno/performance/performance.dart';
 
 import '../../helpers/helpers.dart';
 
 class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
     implements PerformanceRecorderCubit {}
+
+class _MockPerformanceCompletionCubit
+    extends MockCubit<PerformanceCompletionStatus>
+    implements PerformanceCompletionCubit {}
+
+class _MockPedalRepository extends Mock implements PedalRepository {}
 
 /// Types [name] into the console rename sheet and confirms with Enter.
 ///
@@ -36,9 +42,21 @@ Future<void> typeSheetName(WidgetTester tester, String name) async {
 
 void main() {
   late _MockPerformanceRecorderCubit cubit;
+  late _MockPerformanceCompletionCubit completion;
+  late _MockPedalRepository pedal;
 
   setUp(() {
     cubit = _MockPerformanceRecorderCubit();
+    completion = _MockPerformanceCompletionCubit();
+    pedal = _MockPedalRepository();
+    when(
+      () => pedal.events,
+    ).thenAnswer((_) => const Stream<PedalEvent>.empty());
+    whenListen(
+      completion,
+      const Stream<PerformanceCompletionStatus>.empty(),
+      initialState: PerformanceCompletionStatus.active,
+    );
   });
 
   Future<void> pump(WidgetTester tester, PerformanceRecorderState state) async {
@@ -50,7 +68,10 @@ void main() {
     await tester.pumpApp(
       BlocProvider<PerformanceRecorderCubit>.value(
         value: cubit,
-        child: const Scaffold(body: PerformanceCompletionSheet()),
+        child: BlocProvider<PerformanceCompletionCubit>.value(
+          value: completion,
+          child: const Scaffold(body: PerformanceCompletionSheet()),
+        ),
       ),
     );
   }
@@ -454,14 +475,17 @@ void main() {
       whenListen(cubit, states.stream, initialState: initial);
       late BuildContext hostContext;
       await tester.pumpApp(
-        BlocProvider<PerformanceRecorderCubit>.value(
-          value: cubit,
-          child: Scaffold(
-            body: Builder(
-              builder: (context) {
-                hostContext = context;
-                return const SizedBox.shrink();
-              },
+        RepositoryProvider<PedalRepository>.value(
+          value: pedal,
+          child: BlocProvider<PerformanceRecorderCubit>.value(
+            value: cubit,
+            child: Scaffold(
+              body: Builder(
+                builder: (context) {
+                  hostContext = context;
+                  return const SizedBox.shrink();
+                },
+              ),
             ),
           ),
         ),
@@ -650,6 +674,169 @@ void main() {
       unawaited(showPerformanceCompletionSheet(again));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('perfRendering_dialog')), findsOneWidget);
+    });
+
+    testWidgets('the saved face shrinks instead of filling the screen', (
+      tester,
+    ) async {
+      final context = await host(
+        tester,
+        const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-1'),
+        ),
+      );
+      unawaited(showPerformanceCompletionSheet(context));
+      await tester.pumpAndSettle();
+      final size = tester.getSize(
+        find.byKey(const Key('perfCompletion_sheet')),
+      );
+      final viewport = tester.getSize(find.byType(MaterialApp));
+      expect(size.height, lessThan(viewport.height));
+    });
+
+    testWidgets('the rendering face shrinks instead of filling the screen', (
+      tester,
+    ) async {
+      final context = await host(
+        tester,
+        const PerformanceRecorderRendering(percent: 40),
+      );
+      unawaited(showPerformanceCompletionSheet(context));
+      await tester.pumpAndSettle();
+      final size = tester.getSize(
+        find.byKey(const Key('perfRendering_dialog')),
+      );
+      final viewport = tester.getSize(find.byType(MaterialApp));
+      expect(size.height, lessThan(viewport.height));
+    });
+  });
+
+  group('dismiss', () {
+    StreamController<PerformanceCompletionStatus> statuses() {
+      final controller =
+          StreamController<PerformanceCompletionStatus>.broadcast();
+      addTearDown(controller.close);
+      return controller;
+    }
+
+    Future<void> openSheet(
+      WidgetTester tester, {
+      required PerformanceRecorderState state,
+      Stream<PerformanceCompletionStatus>? statuses,
+    }) async {
+      whenListen(
+        cubit,
+        const Stream<PerformanceRecorderState>.empty(),
+        initialState: state,
+      );
+      whenListen(
+        completion,
+        statuses ?? const Stream<PerformanceCompletionStatus>.empty(),
+        initialState: PerformanceCompletionStatus.active,
+      );
+      await tester.pumpApp(
+        Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => MultiBlocProvider(
+                  providers: [
+                    BlocProvider<PerformanceRecorderCubit>.value(value: cubit),
+                    BlocProvider<PerformanceCompletionCubit>.value(
+                      value: completion,
+                    ),
+                  ],
+                  child: const PerformanceCompletionSheet(),
+                ),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a footswitch request pops the saved face', (tester) async {
+      final requested = statuses();
+      await openSheet(
+        tester,
+        state: const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-1'),
+        ),
+        statuses: requested.stream,
+      );
+
+      requested.add(PerformanceCompletionStatus.dismissalRequested);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('perfCompletion_sheet')), findsNothing);
+      expect(find.text('open'), findsOneWidget);
+    });
+
+    testWidgets('a footswitch request pops the rendering face', (tester) async {
+      final requested = statuses();
+      await openSheet(
+        tester,
+        state: const PerformanceRecorderRendering(percent: 40),
+        statuses: requested.stream,
+      );
+
+      requested.add(PerformanceCompletionStatus.dismissalRequested);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('perfRendering_dialog')), findsNothing);
+      expect(find.text('open'), findsOneWidget);
+    });
+
+    testWidgets('pops a stacked rename sheet too', (tester) async {
+      final requested = statuses();
+      await openSheet(
+        tester,
+        state: const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-1'),
+        ),
+        statuses: requested.stream,
+      );
+      await tester.tap(find.byKey(const Key('perfCompletion_rename')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
+
+      requested.add(PerformanceCompletionStatus.dismissalRequested);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('console_rename_sheet')), findsNothing);
+      expect(find.byKey(const Key('perfCompletion_sheet')), findsNothing);
+      expect(find.text('open'), findsOneWidget);
+    });
+
+    testWidgets('a request racing a barrier dismissal preserves home', (
+      tester,
+    ) async {
+      final requested = statuses();
+      await openSheet(
+        tester,
+        state: const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-1'),
+        ),
+        statuses: requested.stream,
+      );
+      final route = ModalRoute.of(
+        tester.element(find.byKey(const Key('perfCompletion_sheet'))),
+      )!;
+
+      await tester.tapAt(const Offset(1, 1));
+      await tester.pump();
+      expect(route.isCurrent, isFalse);
+      requested.add(PerformanceCompletionStatus.dismissalRequested);
+      await tester.pumpAndSettle();
+
+      expect(find.text('open'), findsOneWidget);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('perfCompletion_sheet')), findsOneWidget);
     });
   });
 }

@@ -3,10 +3,12 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/performance/cubit/performance_completion_cubit.dart';
 import 'package:segno/performance/cubit/performance_recorder_cubit.dart';
 import 'package:segno/performance/view/export_device_chain_summary.dart';
 import 'package:segno/theme/theme.dart';
@@ -43,12 +45,16 @@ Future<void> showPerformanceCompletionSheet(BuildContext context) async {
   PerformanceCompletionSheet._open = true;
   try {
     final cubit = context.read<PerformanceRecorderCubit>();
+    final pedal = context.read<PedalRepository>();
     await showDialog<void>(
       context: context,
       barrierColor: context.surface.scrim,
-      builder: (_) => BlocProvider<PerformanceRecorderCubit>.value(
-        value: cubit,
-        child: const PerformanceCompletionSheet(),
+      builder: (_) => RepositoryProvider<PedalRepository>.value(
+        value: pedal,
+        child: BlocProvider<PerformanceRecorderCubit>.value(
+          value: cubit,
+          child: const PerformanceCompletionPage(),
+        ),
       ),
     );
   } finally {
@@ -56,10 +62,28 @@ Future<void> showPerformanceCompletionSheet(BuildContext context) async {
   }
 }
 
+/// Provides [PerformanceCompletionCubit] for the capture dialog route.
+class PerformanceCompletionPage extends StatelessWidget {
+  /// Creates the capture dialog page.
+  const PerformanceCompletionPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (context) =>
+          PerformanceCompletionCubit(pedal: context.read<PedalRepository>()),
+      child: const PerformanceCompletionSheet(),
+    );
+  }
+}
+
 /// A capture's outcome, drawn to `SESSION & CAPTURE / capture-saved` and its
 /// state variants: the title and where it went, a banner when something went
 /// wrong on the way (stopped early / dropped frames / partial render), the
 /// per-track EXPORT card, and the action row.
+///
+/// A footswitch press dismisses it (and any rename sheet stacked on top)
+/// so a Rec/Play or Clear can see the stage. Encoder turns do not.
 ///
 /// Watches [PerformanceRecorderCubit] directly (rather than taking the result
 /// as a constructor param) so a rename mid-dialog updates the displayed name
@@ -146,6 +170,19 @@ class _PerformanceCompletionSheetState
     }
   }
 
+  /// A footswitch press dismisses it (and any rename sheet stacked on top)
+  /// so a Rec/Play or Clear can see the stage. Encoder turns do not.
+  void _dismiss(BuildContext context) {
+    final navigator = Navigator.of(context);
+    final route = ModalRoute.of(context);
+    // A barrier/back pop makes the route non-present before its reverse
+    // animation disposes this widget. Ignore a racing pedal request rather
+    // than searching through and popping routes underneath it.
+    if (route == null || !route.isActive) return;
+    navigator.popUntil((r) => r == route);
+    if (route.isCurrent) navigator.pop();
+  }
+
   /// Pops the dialog when [state] is one this dialog cannot draw.
   ///
   /// Without this the route stayed pushed drawing `SizedBox.shrink` under its
@@ -173,9 +210,19 @@ class _PerformanceCompletionSheetState
   @override
   Widget build(BuildContext context) {
     final state = context.watch<PerformanceRecorderCubit>().state;
-    return BlocListener<PerformanceRecorderCubit, PerformanceRecorderState>(
-      listener: _popIfForeign,
-      child: _face(context, state),
+    return BlocListener<
+      PerformanceCompletionCubit,
+      PerformanceCompletionStatus
+    >(
+      listenWhen: (_, current) =>
+          current == PerformanceCompletionStatus.dismissalRequested,
+      listener: (context, _) => _dismiss(context),
+      child: BlocListener<PerformanceRecorderCubit, PerformanceRecorderState>(
+        listener: _popIfForeign,
+        // Centered: the dialog route offers the full screen, and a shell
+        // that is not wrapped takes that height as a tight max.
+        child: Center(child: _face(context, state)),
+      ),
     );
   }
 
