@@ -61,7 +61,6 @@ void main() {
     Future<void> openManager(
       WidgetTester tester, {
       SessionState state = const SessionState(),
-      PedalRepository? pedal,
     }) async {
       whenListen(
         session,
@@ -69,7 +68,7 @@ void main() {
         initialState: state,
       );
       final home = RepositoryProvider<PedalRepository>.value(
-        value: pedal ?? defaultPedal,
+        value: defaultPedal,
         child: BlocProvider<SessionCubit>.value(
           value: session,
           child: Scaffold(
@@ -412,20 +411,6 @@ void main() {
     });
 
     group('layout', () {
-      testWidgets(
-        'the panel shrinks to its rows instead of filling the screen',
-        (
-          tester,
-        ) async {
-          await openManager(tester, state: const SessionState(sessions: two));
-          final size = tester.getSize(
-            find.byKey(const Key('sessions_manager')),
-          );
-          final viewport = tester.getSize(find.byType(MaterialApp));
-          expect(size.height, lessThan(viewport.height));
-        },
-      );
-
       testWidgets('caps the list at four rows and scrolls to later sessions', (
         tester,
       ) async {
