@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
@@ -11,6 +12,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_client/midi_client.dart' show MidiControllerSource;
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app.dart';
 import 'package:segno/app/app_toasts.dart';
@@ -323,6 +325,79 @@ void main() {
       await pumpApp(tester, NoopWaveformWindowService());
       expect(find.byType(LooperPage), findsOneWidget);
       expect(find.byType(TracksView), findsOneWidget);
+    });
+
+    testWidgets('keeps the fallback pedal repository stable across rebuilds', (
+      tester,
+    ) async {
+      App buildApp() => App(
+        repository: repository,
+        controllerRepository: controllerRepository,
+        midiDeviceRepository: midiDeviceRepository,
+        settings: settings,
+        waveformWindow: NoopWaveformWindowService(),
+        sessionRepository: sessionRepository,
+        performanceRepository: performanceRepository,
+        exportDirectory: () async => '.',
+      );
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
+      final first = tester
+          .element(find.byType(MaterialApp))
+          .read<PedalRepository>();
+
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
+      final second = tester
+          .element(find.byType(MaterialApp))
+          .read<PedalRepository>();
+
+      expect(identical(first, second), isTrue);
+    });
+
+    testWidgets('provides pedal events to the Sessions manager', (
+      tester,
+    ) async {
+      final sessionsRoot = Directory.systemTemp.createTempSync(
+        'segno-app-sessions-',
+      );
+      addTearDown(() => sessionsRoot.delete(recursive: true));
+      sessionRepository = SessionRepository(
+        engine: FakeAudioEngine(),
+        sessionsRoot: () async => sessionsRoot.path,
+      );
+      final simulator = SimulatorPedalTransport(
+        inner: const NoopPedalTransport(),
+      );
+      final pedal = PedalRepository(simulator);
+      await tester.pumpWidget(
+        App(
+          repository: repository,
+          controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
+          settings: settings,
+          waveformWindow: NoopWaveformWindowService(),
+          sessionRepository: sessionRepository,
+          performanceRepository: performanceRepository,
+          exportDirectory: () async => '.',
+          pedalRepository: pedal,
+          pedalSimulator: simulator,
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      await tester.tap(find.byKey(const Key('stage_session_block')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+
+      simulator.press(PedalButton.clear, down: true);
+      await tester.pump();
+      simulator.press(PedalButton.clear, down: false);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const Key('sessions_manager')), findsNothing);
+      expect(find.byType(LooperPage), findsOneWidget);
     });
 
     testWidgets('always lands on the looper — no first-run gate', (

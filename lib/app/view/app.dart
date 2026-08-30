@@ -45,7 +45,7 @@ import 'package:wifi_repository/wifi_repository.dart';
 const _waveformFrame = Duration(milliseconds: 33); // ~30 fps
 
 /// The root application widget.
-class App extends StatelessWidget {
+class App extends StatefulWidget {
   /// Creates an [App] driven by the injected repositories.
   ///
   /// The repositories and [waveformWindow] are injected so tests can supply
@@ -158,30 +158,41 @@ class App extends StatelessWidget {
   final Future<String> Function() exportDirectory;
 
   @override
-  Widget build(BuildContext context) {
-    // The pedal simulator and the pedal repository share one transport graph
-    // (the repository is built over the simulator), so the faceplate injects
-    // into and reads frames from the same object the cubit drives. The `??`
-    // short-circuits in production (both provided), so nothing is allocated on
-    // rebuild; the fallbacks only fire in tests.
-    final pedalSim =
-        pedalSimulator ??
+  State<App> createState() => _AppState();
+}
+
+/// Resolves the optional pedal pair once so a replacement [App] keeps
+/// [ControlCubit], [PedalCubit], and dialog routes on one repository.
+class _AppState extends State<App> {
+  late final SimulatorPedalTransport _simulator;
+  late final PedalRepository _pedal;
+
+  @override
+  void initState() {
+    super.initState();
+    _simulator =
+        widget.pedalSimulator ??
         SimulatorPedalTransport(inner: const NoopPedalTransport());
-    final pedalRepo = pedalRepository ?? PedalRepository(pedalSim);
+    _pedal = widget.pedalRepository ?? PedalRepository(_simulator);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MultiRepositoryProvider(
       providers: [
-        RepositoryProvider.value(value: repository),
-        RepositoryProvider.value(value: controllerRepository),
-        RepositoryProvider.value(value: midiDeviceRepository),
-        RepositoryProvider.value(value: settings),
-        RepositoryProvider.value(value: sessionRepository),
-        RepositoryProvider.value(value: performanceRepository),
-        RepositoryProvider.value(value: pedalSim),
-        RepositoryProvider.value(value: updates),
-        RepositoryProvider.value(value: wifi),
-        RepositoryProvider.value(value: bluetooth),
-        RepositoryProvider.value(value: brightness),
-        RepositoryProvider.value(value: consoleFacts),
+        RepositoryProvider.value(value: widget.repository),
+        RepositoryProvider.value(value: widget.controllerRepository),
+        RepositoryProvider.value(value: widget.midiDeviceRepository),
+        RepositoryProvider.value(value: widget.settings),
+        RepositoryProvider.value(value: widget.sessionRepository),
+        RepositoryProvider.value(value: widget.performanceRepository),
+        RepositoryProvider.value(value: _simulator),
+        RepositoryProvider.value(value: _pedal),
+        RepositoryProvider.value(value: widget.updates),
+        RepositoryProvider.value(value: widget.wifi),
+        RepositoryProvider.value(value: widget.bluetooth),
+        RepositoryProvider.value(value: widget.brightness),
+        RepositoryProvider.value(value: widget.consoleFacts),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -404,7 +415,7 @@ class App extends StatelessWidget {
             create: (context) => AudioSetupCubit(
               repository: context.read<LooperRepository>(),
               settings: context.read<SettingsRepository>(),
-              initialAsioDrivers: initialAsioDrivers,
+              initialAsioDrivers: widget.initialAsioDrivers,
             ),
           ),
           // Eager (not lazy): the MIDI-setup cubit performs the launch
@@ -430,7 +441,7 @@ class App extends StatelessWidget {
             create: (context) {
               final cubit = ControlCubit(
                 looper: context.read<LooperRepository>(),
-                pedal: pedalRepo,
+                pedal: context.read<PedalRepository>(),
                 settings: context.read<SettingsRepository>(),
                 performance: context.read<PerformanceRepository>(),
                 // Both of these were missing, and external MIDI mapping had
@@ -444,7 +455,7 @@ class App extends StatelessWidget {
                 // that owns controller intent.
                 controller: context.read<ControllerRepository>(),
                 midiDevices: context.read<MidiDeviceRepository>(),
-                simulatedSource: simulatedControllerSource,
+                simulatedSource: widget.simulatedControllerSource,
               );
               unawaited(cubit.load()); // boot-default mode restore
               return cubit;
@@ -458,7 +469,7 @@ class App extends StatelessWidget {
             lazy: false,
             create: (context) {
               final cubit = PedalCubit(
-                pedal: pedalRepo,
+                pedal: context.read<PedalRepository>(),
                 settings: context.read<SettingsRepository>(),
                 autoBindProductNames: kPedalAutoBindProductNames,
                 flashedProtocolVersion: kFlashedPedalProtocolVersionReader,
@@ -476,7 +487,7 @@ class App extends StatelessWidget {
             create: (context) {
               final cubit = AudioRecoveryCubit(
                 looper: context.read<LooperRepository>(),
-                recoveryConfig: audioRecoveryConfig,
+                recoveryConfig: widget.audioRecoveryConfig,
               );
               unawaited(cubit.load());
               return cubit;
@@ -498,9 +509,9 @@ class App extends StatelessWidget {
           ),
         ],
         child: _AppView(
-          waveformWindow: waveformWindow,
-          exportDirectory: exportDirectory,
-          displayCount: displayCount,
+          waveformWindow: widget.waveformWindow,
+          exportDirectory: widget.exportDirectory,
+          displayCount: widget.displayCount,
         ),
       ),
     );
