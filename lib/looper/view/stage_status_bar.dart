@@ -49,16 +49,24 @@ class StageStatusBar extends StatelessWidget {
       children: [
         // The pen insets the session block 2 into the strip.
         SizedBox(width: 2),
-        // Flexible so a long session name gives way (ellipsized) instead of
-        // pushing the readouts off the fixed panel.
-        Flexible(child: _SessionBlock()),
+        // One flex slot for the leading cluster: the session name can
+        // ellipsize inside it, leftover space stays between the pills and
+        // the clock, and the clock stays flush trailing. A Flexible next
+        // to a Spacer splits that leftover and parks it after the clock.
+        Expanded(
+          child: Row(
+            children: [
+              Flexible(child: _SessionBlock()),
+              SizedBox(width: _gap),
+              _ModePill(),
+              SizedBox(width: _gap),
+              _BankPair(),
+              SizedBox(width: _gap),
+              _RecordLight(),
+            ],
+          ),
+        ),
         SizedBox(width: _gap),
-        _ModePill(),
-        SizedBox(width: _gap),
-        _BankPair(),
-        SizedBox(width: _gap),
-        _RecordLight(),
-        Spacer(),
         _TempoClock(),
       ],
     ),
