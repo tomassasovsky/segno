@@ -15,7 +15,7 @@ blocking on questions.
 (`build`, `build-windows`, `build-linux`, `build-macos`) pin both:
 
 ```yaml
-flutter-version: "3.44.x"
+flutter-version: "3.47.x"
 channel: stable
 ```
 
@@ -31,7 +31,7 @@ channel: stable
 with no `flutter-version`. Since `pubspec.yaml` constrains `flutter: ^3.41.0` (any
 newer stable accepted), the fuzz job will silently start running on whatever the
 latest stable Flutter release is whenever one ships past 3.44 — while every other
-job in the same workflow stays pinned to 3.44.x. This defeats the anti-drift intent
+job in the same workflow stays pinned to 3.47.x. This defeats the anti-drift intent
 of the other jobs' pins: the fuzzer (a native-engine + bloc/cubit invariant fuzz
 test) could start failing (or start passing when it shouldn't) purely because of an
 SDK mismatch versus the rest of the CI matrix, not because of an actual regression.
@@ -40,13 +40,13 @@ SDK mismatch versus the rest of the CI matrix, not because of an actual regressi
 
 Only one reasonable approach exists for a fix this narrow:
 
-**Add `flutter-version: "3.44.x"` to the `fuzz` job's `flutter-action@v2` step** —
+**Add `flutter-version: "3.47.x"` to the `fuzz` job's `flutter-action@v2` step** —
 Recommended, and the only approach considered.
 
-- Change: add one line (`flutter-version: "3.44.x"`) alongside the existing
+- Change: add one line (`flutter-version: "3.47.x"`) alongside the existing
   `channel: stable` line in the `fuzz` job's `subosito/flutter-action@v2` step.
 - Pros: matches the exact pin used by the other four jobs; zero behavior change
-  today (3.44.x is already what CI resolves to); restores the anti-drift guarantee
+  today (3.47.x is already what CI resolves to); restores the anti-drift guarantee
   for the fuzz job; minimal, obviously-correct diff.
 - Cons: none identified — this is a one-line consistency fix, not a design decision.
 - Alternatives rejected:
@@ -63,16 +63,16 @@ Recommended, and the only approach considered.
 
 ## Assumptions (documented per autonomous-run instructions)
 
-1. `"3.44.x"` is still the correct/current pin value as of this commit — verified
+1. `"3.47.x"` is still the correct/current pin value as of this commit — verified
    via `grep -n "flutter-version" .github/workflows/main.yaml`, which shows all
-   four other occurrences using `"3.44.x"` as of commit `f3f5b76`. No newer pin
+   four other occurrences using `"3.47.x"` as of commit `f3f5b76`. No newer pin
    bump is in flight in this worktree.
 2. The fix should match the existing jobs' pin exactly (same string value, same
    key ordering convention: `flutter-version` then `channel`) rather than
    introducing a new pinning scheme, per the "boring pattern / consistency"
    principle.
 3. No CI behavior change is expected from this fix beyond removing the drift
-   risk — 3.44.x is presumably still within `stable` today, so the fuzz job's
+   risk — 3.47.x is presumably still within `stable` today, so the fuzz job's
    resolved Flutter version should not change immediately.
 4. Scope is strictly this one job/step. Other findings from the same review pass
    are being handled by other agents in parallel worktrees and are out of scope
@@ -80,5 +80,5 @@ Recommended, and the only approach considered.
 
 ## Decision
 
-Add `flutter-version: "3.44.x"` to the `fuzz` job's flutter-action step in
+Add `flutter-version: "3.47.x"` to the `fuzz` job's flutter-action step in
 `.github/workflows/main.yaml`, matching the other four Flutter-invoking jobs.
