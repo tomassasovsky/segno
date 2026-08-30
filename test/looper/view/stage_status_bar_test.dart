@@ -270,8 +270,9 @@ void main() {
         // #693 — the owner's call from the bench: mute reads GREEN on every
         // surface (`success` over `successSurface`), replacing the old primary
         // outline over an inline `primary.withValues(alpha: 0.14)` wash. Rec
-        // stays red; FX is now PURPLE (`fx` over the flat `fxSurface`, #692 — its
-        // own hue, not the blue `accent` it used to borrow), as the pen draws it.
+        // stays red; FX is now PURPLE (`fx` over the flat `fxSurface`,
+        // #692 — its own hue, not the blue `accent` it used to borrow), as
+        // the pen draws it.
         final s = AppTheme.neon.extension<SurfaceTheme>()!;
         expect(await pillOf(tester, InteractionMode.record), (
           s.rec,
@@ -312,8 +313,8 @@ void main() {
         // sit at one fill weight, and that weight is the boosted one. FX is
         // deliberately NOT part of the alpha claim — the pen draws `fxSurface`
         // FLAT (opaque in both flavors), not as a wash, so its high-contrast
-        // boost is a brighter flat value, not a heavier alpha (#737). Which flat
-        // value is bounded by contrast rather than taste —
+        // boost is a brighter flat value, not a heavier alpha (#737). Which
+        // flat value is bounded by contrast rather than taste —
         // `test/theme/app_theme_test.dart` holds that floor (#692/#768).
         expect(mute.$2!.a, rec.$2!.a);
         expect(
