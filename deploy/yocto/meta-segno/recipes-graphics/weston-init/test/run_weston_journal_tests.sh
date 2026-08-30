@@ -12,7 +12,8 @@
 #     runs both, or ignores the override.
 #   - lose systemd-notify.so and Type=notify hangs until timeout — a dark
 #     screen, not a missing log.
-#   - pass `-d drm-backend` (not a weston 14 flag) and weston refuses to start.
+#   - pass --log=/dev/stderr and weston exits 1 (User=weston cannot write it).
+#   - leave --logger-scopes=drm-backend on and /run fills with per-frame dumps.
 #
 # So this asserts the drop-in and the recipe inventory statically.
 set -uo pipefail
@@ -37,6 +38,10 @@ check() {
 
 has() { grep -qF -- "$1" "$2" && echo yes || echo no; }
 
+# Comments in the drop-in name the flags that must NOT be on ExecStart.
+# Assert against the live argv only.
+exec_start=$(grep -E '^ExecStart=/usr/bin/weston' "$DROPIN")
+
 echo "the drop-in replaces ExecStart and keeps notify"
 check "clears stock ExecStart first" yes \
     "$(awk '
@@ -45,13 +50,13 @@ check "clears stock ExecStart first" yes \
         END { if (!empty) print "no" }
     ' "$DROPIN")"
 check "keeps systemd-notify.so (Type=notify)" yes \
-    "$(has '--modules=systemd-notify.so' "$DROPIN")"
-check "pins the compositor log to stderr" yes \
-    "$(has '--log=/dev/stderr' "$DROPIN")"
-check "subscribes the drm-backend log scope" yes \
-    "$(has '--logger-scopes=drm-backend' "$DROPIN")"
-check "does not use -d drm-backend (not a weston 14 flag)" yes \
-    "$(grep -qE -- '(^|[[:space:]])-d[[:space:]]+drm-backend' "$DROPIN" && echo no || echo yes)"
+    "$(printf '%s' "$exec_start" | grep -qF -- '--modules=systemd-notify.so' && echo yes || echo no)"
+check "pins the compositor log to a weston-writable path" yes \
+    "$(printf '%s' "$exec_start" | grep -qF -- '--log=/run/user/1000/weston.log' && echo yes || echo no)"
+check "does not log to /dev/stderr (weston user cannot write it)" yes \
+    "$(printf '%s' "$exec_start" | grep -qF -- '--log=/dev/stderr' && echo no || echo yes)"
+check "does not enable drm-backend scope by default (per-frame flood)" yes \
+    "$(printf '%s' "$exec_start" | grep -qF -- '--logger-scopes=' && echo no || echo yes)"
 
 echo "the recipe ships the drop-in"
 check "SRC_URI names the drop-in" yes \

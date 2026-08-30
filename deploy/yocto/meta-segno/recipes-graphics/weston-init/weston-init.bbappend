@@ -9,8 +9,9 @@ SRC_URI += "file://weston.ini \
 do_install:append() {
     # walnascar: SRC_URI files land in ${UNPACKDIR}, not ${WORKDIR}.
     install -Dm 0644 ${UNPACKDIR}/weston.ini ${D}${sysconfdir}/xdg/weston/weston.ini
-    # weston compositor log → journal (#947). Stock StandardError=journal is
-    # not enough; the drop-in replaces ExecStart so drm-backend reasons land.
+    # weston compositor log → /run/user/1000/weston.log (#947). Stock
+    # StandardError=journal is not enough; --log=/dev/stderr is not writable
+    # by User=weston. The drop-in replaces ExecStart.
     install -d ${D}${systemd_system_unitdir}/weston.service.d
     install -m 0644 ${UNPACKDIR}/20-segno-weston-journal.conf \
         ${D}${systemd_system_unitdir}/weston.service.d/20-segno-weston-journal.conf
