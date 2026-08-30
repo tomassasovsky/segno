@@ -58,7 +58,7 @@ class _BluetoothPageState extends State<BluetoothPage> {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () =>
-            unawaited(Navigator.of(context).maybePop()),
+            Navigator.of(context).maybePop(),
       },
       child: Focus(
         autofocus: true,

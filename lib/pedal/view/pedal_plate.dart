@@ -774,13 +774,13 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
       _sweep
         ..stop()
         ..value = 0;
-      if (!_breathe.isAnimating) unawaited(_breathe.repeat(reverse: true));
+      if (!_breathe.isAnimating) _breathe.repeat(reverse: true);
       return;
     }
     _breathe.stop();
     if (widget.loopLengthMicros > 0) {
       _sweep.duration = Duration(microseconds: widget.loopLengthMicros);
-      if (!_sweep.isAnimating) unawaited(_sweep.repeat());
+      if (!_sweep.isAnimating) _sweep.repeat();
     } else {
       _sweep
         ..stop()
