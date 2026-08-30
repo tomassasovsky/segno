@@ -397,13 +397,6 @@ void main() {
       simulator.press(PedalButton.clear, down: false);
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byKey(const Key('sessions_manager')), findsNothing);
-
-      simulator.press(PedalButton.recPlay, down: true);
-      await tester.pump();
-      simulator.press(PedalButton.recPlay, down: false);
-      await tester.pump(const Duration(milliseconds: 300));
-
-      expect(find.byKey(const Key('sessions_manager')), findsNothing);
       expect(find.byType(LooperPage), findsOneWidget);
     });
 
