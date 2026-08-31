@@ -54,6 +54,7 @@ SRC_URI = "file://segno.service \
            file://segno-touch-apply.path \
            file://segno-touch-apply.service \
            file://97-segno-touch-output.rules \
+           file://99-segno-scarlett-usb.rules \
            file://99-segno-wifi.conf \
            file://segno-wifi-regdom \
            file://segno-wifi-regdom.service \
@@ -64,6 +65,7 @@ SRC_URI = "file://segno.service \
            file://segno-iwd-tame.service \
            file://wifi-country-default \
            file://brcmfmac.conf \
+           file://snd-usb-audio.conf \
            file://update-channel \
            file://journald-segno.conf \
            file://coredump-segno.conf \
@@ -146,10 +148,12 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${bindir}/segno-touch-calibration-helper \
                 ${bindir}/segno-touch-persist \
                 ${sysconfdir}/udev/rules.d/97-segno-touch-output.rules \
+                ${sysconfdir}/udev/rules.d/99-segno-scarlett-usb.rules \
                 ${sysconfdir}/NetworkManager/conf.d/99-segno-wifi.conf \
                 ${sysconfdir}/systemd/system/dropbear@.service.d/segno.conf \
                 ${sysconfdir}/systemd/system/dropbearkey.service.d/segno.conf \
                 ${sysconfdir}/modprobe.d/brcmfmac.conf \
+                ${sysconfdir}/modprobe.d/snd-usb-audio.conf \
                 ${sysconfdir}/segno/update-channel ${sysconfdir}/segno/build-version \
                 ${sysconfdir}/segno/wifi-country \
                 ${sysconfdir}/iwd/main.conf \
@@ -271,9 +275,12 @@ do_install() {
 
     # Static touchscreen -> output binding (WL_OUTPUT). Separate from the
     # generated calibration rule, which is runtime state sourced from /data.
+    # 99-segno-scarlett-usb: keep Focusrite fully powered (no USB autosuspend).
     install -d ${D}${sysconfdir}/udev/rules.d
     install -m 0644 ${UNPACKDIR}/97-segno-touch-output.rules \
         ${D}${sysconfdir}/udev/rules.d/97-segno-touch-output.rules
+    install -m 0644 ${UNPACKDIR}/99-segno-scarlett-usb.rules \
+        ${D}${sysconfdir}/udev/rules.d/99-segno-scarlett-usb.rules
 
     # NetworkManager appliance tweaks (WiFi join reliability on brcmfmac).
     # segno-nm-persist: mkdir /data/NetworkManager/system-connections before NM
@@ -346,9 +353,12 @@ do_install() {
 
     # brcmfmac: roamoff=1 — without this, WPA2 associates then never completes
     # the 4-way handshake on many APs (no EAPOL M1).
+    # snd-usb-audio: lowlatency=0 — see files/snd-usb-audio.conf.
     install -d ${D}${sysconfdir}/modprobe.d
     install -m 0644 ${UNPACKDIR}/brcmfmac.conf \
         ${D}${sysconfdir}/modprobe.d/brcmfmac.conf
+    install -m 0644 ${UNPACKDIR}/snd-usb-audio.conf \
+        ${D}${sysconfdir}/modprobe.d/snd-usb-audio.conf
 
     # /etc/segno: update channel + this build's version number.
     # Prefer SEGNO_UPDATE_CHANNEL (set by CI) over the static file default.
