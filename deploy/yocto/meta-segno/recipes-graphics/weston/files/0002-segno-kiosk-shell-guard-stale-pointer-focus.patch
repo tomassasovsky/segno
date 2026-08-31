@@ -21,10 +21,11 @@ Upstream-Status: Inappropriate [hardware/config-specific workaround]
  1 file changed, 12 insertions(+), 6 deletions(-)
 
 diff --git a/kiosk-shell/kiosk-shell.c b/kiosk-shell/kiosk-shell.c
-index 0000000..0000000 100644
+index 1111111..2222222 100644
 --- a/kiosk-shell/kiosk-shell.c
 +++ b/kiosk-shell/kiosk-shell.c
-@@ -1252,13 +1252,17 @@ kiosk_shell_activate_view(struct kiosk_shell *shell,
+@@ -1250,13 +1250,17 @@ kiosk_shell_activate_view(struct kiosk_shell *shell,
+ 			  struct weston_view *view,
  			  struct weston_seat *seat,
  			  uint32_t flags)
  {
