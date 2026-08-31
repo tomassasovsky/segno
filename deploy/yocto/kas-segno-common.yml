@@ -57,6 +57,8 @@ repos:
     url: https://git.openembedded.org/bitbake
     branch: "2.18"
     commit: 0ad6c1c34a5e07a5f8dd66ab248c1e7b37b69fa9
+    layers:
+      .: disabled
 
   meta-yocto:
     url: https://git.yoctoproject.org/meta-yocto
