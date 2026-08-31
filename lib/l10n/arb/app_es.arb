@@ -2281,5 +2281,16 @@
     "signalOnlyLoopbackInputs": "Todas las entradas de este dispositivo son de bucle interno — ninguna se puede monitorizar ni grabar.",
     "signalNoLanes": "Aún no hay tomas — graba una y su cadena aparece aquí.",
     "signalNoTracks": "Sin pistas — el motor no está en marcha.",
-    "signalNoOutputs": "Sin salidas — el motor no está en marcha."
+    "signalNoOutputs": "Sin salidas — el motor no está en marcha.",
+    "powerOffRefuseTitle": "Primero cortá la toma",
+    "powerOffRefuseBody": "Hay una grabación en curso. Cortala y volvé a pulsar el botón de encendido si querés apagar.",
+    "powerOffConfirmTitle": "¿Apagar?",
+    "powerOffConfirmBody": "Los loops en RAM se pierden si apagás sin guardar. Se conserva el último guardado en disco.",
+    "powerOffKeepPlaying": "Seguir tocando",
+    "powerOffSaveAndPowerOff": "Guardar y apagar",
+    "powerOffWithoutSaving": "Apagar sin guardar",
+    "powerOffSaving": "Guardando…",
+    "powerOffSaveFailedTitle": "No se pudo guardar",
+    "powerOffSaveFailedBody": "La sesión no se escribió. No se apagó nada — los loops siguen en RAM.",
+    "a11yPowerOffMark": "Segno"
 }

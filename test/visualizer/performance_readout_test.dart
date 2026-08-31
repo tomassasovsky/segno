@@ -62,6 +62,7 @@ void main() {
       // A pre-#453 sender never wrote the loss flag: nothing is lost until
       // a sender says so.
       expect(decoded.deviceLost, isFalse);
+      expect(decoded.goodbye, ReadoutGoodbye.none);
       expect(
         PerformanceReadout.fromMap(const {'tempoBpm': 0.0}).hasTempo,
         isFalse,
@@ -130,6 +131,15 @@ void main() {
       expect(
         const PerformanceReadout(tempoBpm: 120),
         isNot(const PerformanceReadout(tempoBpm: 121)),
+      );
+    });
+
+    test('goodbye survives a round trip and defaults to none', () {
+      const marked = PerformanceReadout(goodbye: ReadoutGoodbye.mark);
+      expect(PerformanceReadout.fromMap(marked.toMap()), marked);
+      expect(
+        PerformanceReadout.fromMap(const {'tempoBpm': 120}).goodbye,
+        ReadoutGoodbye.none,
       );
     });
   });

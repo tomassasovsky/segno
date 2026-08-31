@@ -3276,5 +3276,49 @@
     "signalNoOutputs": "No outputs — the engine is not running.",
     "@signalNoOutputs": {
         "description": "Master tab with no hardware outputs to list."
+    },
+    "powerOffRefuseTitle": "Stop the take first",
+    "@powerOffRefuseTitle": {
+        "description": "Power-off dialog title while a take is in flight. The only action is Keep playing."
+    },
+    "powerOffRefuseBody": "Recording is in progress. Stop it, then press the power button again if you want to power off.",
+    "@powerOffRefuseBody": {
+        "description": "Power-off refuse body. Accidental bump mid-take must not offer discard."
+    },
+    "powerOffConfirmTitle": "Power off?",
+    "@powerOffConfirmTitle": {
+        "description": "Power-off three-choice dialog title when loops in RAM would vanish."
+    },
+    "powerOffConfirmBody": "Loops in RAM vanish if you power off without saving. The last on-disk save is kept.",
+    "@powerOffConfirmBody": {
+        "description": "Power-off three-choice body. There is no dirty flag; a named session still asks."
+    },
+    "powerOffKeepPlaying": "Keep playing",
+    "@powerOffKeepPlaying": {
+        "description": "Dismisses the power-off dialog and leaves the set running."
+    },
+    "powerOffSaveAndPowerOff": "Save & power off",
+    "@powerOffSaveAndPowerOff": {
+        "description": "Writes the session (Save As if unnamed) then the goodbye halt."
+    },
+    "powerOffWithoutSaving": "Power off without saving",
+    "@powerOffWithoutSaving": {
+        "description": "Destructive halt that drops loops in RAM. Last on-disk save is kept."
+    },
+    "powerOffSaving": "Saving…",
+    "@powerOffSaving": {
+        "description": "Goodbye face while the session bundle is writing. No spinner."
+    },
+    "powerOffSaveFailedTitle": "Couldn't save",
+    "@powerOffSaveFailedTitle": {
+        "description": "Power-off surface after a save I/O failure. The unit does not halt."
+    },
+    "powerOffSaveFailedBody": "The session didn't write. Nothing was powered off — your loops are still in RAM.",
+    "@powerOffSaveFailedBody": {
+        "description": "Save-failure body on the power-off dialog. Keep playing stays available."
+    },
+    "a11yPowerOffMark": "Segno",
+    "@a11yPowerOffMark": {
+        "description": "Announced name of the Plymouth lockup on the goodbye mark."
     }
 }

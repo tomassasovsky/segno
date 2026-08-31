@@ -22,8 +22,8 @@ import 'package:segno/theme/theme.dart';
 /// Built for track names, generalised the moment a second thing needed naming.
 /// The parameters are exactly what the two callers actually differ on —
 /// [title], the [subtitle] that says WHICH thing this is, the announced
-/// [fieldLabel], and [allowEmpty]. Everything else is the sheet, and a fork
-/// would have been two sheets drifting apart.
+/// [fieldLabel], and [allowEmpty]. [routeSettings] is an optional name so a
+/// host can pop this sheet without also popping whatever sits underneath.
 Future<String?> showConsoleRenameSheet(
   BuildContext context, {
   required String title,
@@ -31,10 +31,14 @@ Future<String?> showConsoleRenameSheet(
   required String current,
   required String fieldLabel,
   bool allowEmpty = false,
+  bool useRootNavigator = false,
+  RouteSettings? routeSettings,
 }) {
   final surface = context.surface;
   return showModalBottomSheet<String>(
     context: context,
+    useRootNavigator: useRootNavigator,
+    routeSettings: routeSettings,
     barrierColor: surface.scrim.withValues(alpha: 0.62),
     backgroundColor: Colors.transparent,
     // Material caps a bottom sheet at 640px wide, which would make a toy of a

@@ -145,6 +145,18 @@ List<String> _stringList(Object? raw) => [
       if (item is String) item,
 ];
 
+/// Which goodbye face the 7" (and the stage overlay) should show.
+enum ReadoutGoodbye {
+  /// Live meters / stage — no overlay.
+  none,
+
+  /// Saving… on the stage; the 7" may keep meters until the mark.
+  saving,
+
+  /// Plymouth lockup on #08080A, covering the window.
+  mark,
+}
+
 /// Everything the 7" screen shows besides the waveform.
 ///
 /// A value type on purpose: the main window pushes this only when it *changes*
@@ -179,6 +191,7 @@ class PerformanceReadout extends Equatable {
     this.recordArmed = false,
     this.recordSeconds = 0,
     this.deviceLost = false,
+    this.goodbye = ReadoutGoodbye.none,
   });
 
   /// Rebuilds a readout from [map] as pushed across the window channel.
@@ -213,6 +226,7 @@ class PerformanceReadout extends Equatable {
       recordArmed: map['recordArmed'] as bool? ?? false,
       recordSeconds: map['recordSeconds'] as int? ?? 0,
       deviceLost: map['deviceLost'] as bool? ?? false,
+      goodbye: _goodbyeOf(map['goodbye']),
     );
   }
 
@@ -277,6 +291,9 @@ class PerformanceReadout extends Equatable {
   /// name: the echoed line is the pen's fixed copy.
   final bool deviceLost;
 
+  /// Committed power-off face. Older senders omit the key → none.
+  final ReadoutGoodbye goodbye;
+
   /// Channel-encodable form.
   Map<String, Object?> toMap() => {
     'tracks': [for (final track in tracks) track.toMap()],
@@ -295,6 +312,7 @@ class PerformanceReadout extends Equatable {
     'recordArmed': recordArmed,
     'recordSeconds': recordSeconds,
     'deviceLost': deviceLost,
+    'goodbye': goodbye.name,
   };
 
   @override
@@ -315,5 +333,12 @@ class PerformanceReadout extends Equatable {
     recordArmed,
     recordSeconds,
     deviceLost,
+    goodbye,
   ];
+}
+
+ReadoutGoodbye _goodbyeOf(Object? raw) {
+  if (raw == 'saving') return ReadoutGoodbye.saving;
+  if (raw == 'mark') return ReadoutGoodbye.mark;
+  return ReadoutGoodbye.none;
 }

@@ -13,6 +13,8 @@
 #             the UI, logs detail to stderr, and on success sets the staged +
 #             pending markers. Does NOT reboot.
 #   reboot    Reboot into the staged slot (the user's explicit "Restart to apply").
+#   poweroff  Clean halt (`systemctl start poweroff.target`). Does not go through
+#             logind — this image has none — so `systemctl poweroff` would fail.
 #   flash-pedal
 #             Flash the published pedal firmware onto the attached Pro Micro
 #             (#331 part D). Same PROGRESS/log contract as install. Exits 0 with
@@ -716,5 +718,6 @@ case "${1:-}" in
     pedal-pending)    do_pedal_pending ;;
     reconcile-staged) do_reconcile_staged ;;
     reboot)           log "rebooting into the staged slot"; exec systemctl reboot ;;
-    *)                log "usage: segno-update-ctl {install|flash-pedal|pedal-pending|reconcile-staged|reboot}"; exit 2 ;;
+    poweroff)         log "powering off"; exec systemctl start poweroff.target ;;
+    *)                log "usage: segno-update-ctl {install|flash-pedal|pedal-pending|reconcile-staged|reboot|poweroff}"; exit 2 ;;
 esac

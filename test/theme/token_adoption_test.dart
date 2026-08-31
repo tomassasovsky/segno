@@ -37,6 +37,11 @@ const _allowed = <String, String>{
 
   // An OS window option set before runApp, so it cannot read a theme.
   'lib/visualizer/waveform_window.dart': 'pre-runApp OS window background',
+
+  // Must match the Plymouth splash field (#08080A), not a theme token —
+  // the goodbye mark is the same pixel the unit booted with.
+  'lib/appliance/power_off/power_off_goodbye.dart':
+      'Plymouth goodbye field — must match the boot splash hex',
 };
 
 /// Colour literals that carry no palette meaning.

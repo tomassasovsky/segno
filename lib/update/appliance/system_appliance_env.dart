@@ -202,6 +202,19 @@ class SystemApplianceEnv implements ApplianceEnv {
   }
 
   @override
+  Future<void> powerOff() async {
+    final result = await Process.run(helperPath, const ['poweroff']);
+    if (result.exitCode != 0) {
+      throw ProcessException(
+        helperPath,
+        const ['poweroff'],
+        '${result.stderr}',
+        result.exitCode,
+      );
+    }
+  }
+
+  @override
   Future<void> reconcileStaged() async {
     try {
       await Process.run(helperPath, const ['reconcile-staged']);

@@ -71,6 +71,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     DateTime Function() now = DateTime.now,
     Future<int?> Function(String path)? freeSpaceBytes,
     PerformanceChains Function() currentChains = _noChains,
+    bool Function() takeLocked = _neverLocked,
   }) : _performance = performance,
        _armedTickInterval = armedTickInterval,
        _renderPollInterval = renderPollInterval,
@@ -79,6 +80,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
            freeSpaceBytes ??
            ((String path) async => performance.freeSpaceBytes(path)),
        _currentChains = currentChains,
+       _takeLocked = takeLocked,
        super(const PerformanceRecorderIdle()) {
     _statusSubscription = _performance.captureStatus.listen(_onStatus);
   }
@@ -86,6 +88,8 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// The default `currentChains`: an empty rig, which is what
   /// [PerformanceRepository.arm] already assumes when given nothing.
   static PerformanceChains _noChains() => const PerformanceChains();
+
+  static bool _neverLocked() => false;
 
   /// Below this, [PerformanceRecorderArmed.lowDiskWarning] is set (D-FAIL),
   /// and an arm is refused outright rather than started onto a volume that is
@@ -130,6 +134,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   final DateTime Function() _now;
   final Future<int?> Function(String path) _freeSpaceBytes;
   final PerformanceChains Function() _currentChains;
+  final bool Function() _takeLocked;
 
   /// How often [PerformanceRecorderArmed.elapsed] refreshes while armed.
   final Duration _armedTickInterval;
@@ -288,6 +293,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// caller — this cubit's toolbar path and `ControlCubit`'s pedal
   /// MODE-long-press path alike — rather than duplicated here.
   Future<void> toggleArm() async {
+    if (_takeLocked()) return;
     switch (state) {
       // Refused before the free-space probe, same reasoning as the
       // finalizing/rendering case: the repository's gate would silently

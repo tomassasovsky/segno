@@ -1174,6 +1174,72 @@ void main() {
         verify(() => looper.play()).called(1);
         verifyNever(() => looper.record(channel: any(named: 'channel')));
       });
+
+      test('takeLocked suppresses recPlay', () {
+        final locked = ControlCubit(
+          looper: looper,
+          pedal: pedal,
+          settings: settings,
+          performance: performance,
+          keepAliveInterval: Duration.zero,
+          takeLocked: () => true,
+        );
+        addTearDown(locked.close);
+        locked.recPlay();
+        verifyNever(() => looper.record());
+      });
+
+      test('takeLocked suppresses rec-mode trackPressed', () {
+        final locked = ControlCubit(
+          looper: looper,
+          pedal: pedal,
+          settings: settings,
+          performance: performance,
+          keepAliveInterval: Duration.zero,
+          takeLocked: () => true,
+        );
+        addTearDown(locked.close);
+        locked.trackPressed(2);
+        expect(locked.state.cursor, 0);
+      });
+
+      test('takeLocked suppresses togglePerformanceRecord', () {
+        final locked = ControlCubit(
+          looper: looper,
+          pedal: pedal,
+          settings: settings,
+          performance: performance,
+          keepAliveInterval: Duration.zero,
+          takeLocked: () => true,
+        );
+        addTearDown(locked.close);
+        locked.togglePerformanceRecord();
+        expect(performance.armedDirectory, isNull);
+      });
+
+      test('takeLocked suppresses pedal Clear', () async {
+        final lockedTransport = FakePedalTransport();
+        final lockedPedal = PedalRepository(lockedTransport);
+        addTearDown(lockedPedal.dispose);
+        final locked = ControlCubit(
+          looper: looper,
+          pedal: lockedPedal,
+          settings: settings,
+          performance: performance,
+          keepAliveInterval: Duration.zero,
+          takeLocked: () => true,
+        );
+        addTearDown(locked.close);
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        lockedTransport.emit(0x90, PedalButton.clear.note, 127);
+        await Future<void>.delayed(Duration.zero);
+        verifyNever(() => looper.clear());
+        verifyNever(() => looper.clear(channel: any(named: 'channel')));
+      });
     });
 
     group('recPlay in Mute mode', () {

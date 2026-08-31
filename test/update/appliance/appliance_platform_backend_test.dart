@@ -70,6 +70,13 @@ class _FakeEnv implements ApplianceEnv {
     if (rebootError != null) throw rebootError!;
   }
 
+  int powerOffCalls = 0;
+
+  @override
+  Future<void> powerOff() async {
+    powerOffCalls++;
+  }
+
   int reconcileCalls = 0;
 
   @override

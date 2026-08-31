@@ -38,6 +38,26 @@ journalctl -u segno-data-grow.service -b --no-pager
 Sessions and exports live under `/data/Documents/{sessions,exports}/` and survive
 both OTA and the grow (the grow never wipes the filesystem).
 
+## Power button
+
+The rear button is the Pi 5's own J2 PWR pads (console J8 → J9). It is not a
+GPIO and not `dtoverlay=gpio-shutdown`. The kernel exposes it as `gpio-keys`
+`KEY_POWER` on the input device named `pwr_button`.
+
+- **Short press.** The appliance app grabs that node (`EVIOCGRAB`) so Weston
+  does not also see `XF86PowerOff`. Empty console: skip confirm, show the
+  Plymouth lockup on every live display, darken the pedal, then
+  `segno-update-ctl poweroff` (`systemctl start poweroff.target` — this image
+  has no logind). Loops in RAM and idle: Save & power off / Power off without
+  saving / Keep playing. A take in flight (record, overdub, count-in,
+  punch-tail, performance capture): Keep playing only — stop the take, then
+  press again. A second press while that UI is up is ignored.
+- **Long press (~5 s).** The PMIC's uninterceptable force-off. Use it if the
+  UI is wedged. It does not flush, save, or show goodbye.
+
+A missing `pwr_button` node (dev image without the DT overlay): the app runs
+and the listener stays idle; long-press still force-offs.
+
 ## Control Center (WiFi / Bluetooth / brightness)
 
 Swipe down the settings tray on the main touchscreen. On the Yocto appliance
