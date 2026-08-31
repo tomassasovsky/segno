@@ -21,13 +21,20 @@
 # unit lands in systemctl --failed, and #810's persistent journal keeps the
 # whole story). Never touches profiles, never writes secrets, no-ops on a
 # console that is already online or has nothing saved.
+#
+# iwd's periodic scan is off (#824, DisablePeriodicScan) so NM's scan cache is
+# empty at T+8s. Activating into that fails at prepare in milliseconds and
+# burns the budget before any BSS exists (#963). Rescan, wait for the saved
+# SSID, then up.
 
 set -u
 
 TAG=segno-wifi-retry
-ATTEMPTS=3
-SETTLE=8      # seconds after start before the first check
-BETWEEN=5     # seconds between attempts
+ATTEMPTS="${SEGNO_WIFI_RETRY_ATTEMPTS:-3}"
+SETTLE="${SEGNO_WIFI_RETRY_SETTLE:-8}"      # seconds after start before the first check
+BETWEEN="${SEGNO_WIFI_RETRY_BETWEEN:-5}"    # seconds between attempts
+SCAN_WAIT="${SEGNO_WIFI_RETRY_SCAN_WAIT:-16}"  # seconds to wait for the SSID after rescan
+IFACE="${SEGNO_WIFI_IFACE:-wlan0}"
 
 log() { echo "$TAG: $*"; }
 
@@ -41,6 +48,31 @@ if [ "$(nmcli radio wifi 2>/dev/null)" = "disabled" ]; then
   log "wifi radio is off; respecting it"
   exit 0
 fi
+
+ssid_visible() {
+  ssid=$1
+  nmcli -t -f SSID device wifi list ifname "$IFACE" 2>/dev/null | grep -qxF "$ssid"
+}
+
+# One rescan, then poll the list. iwd fills the list as that scan completes;
+# asking again every second would restart it. Not seeing the SSID is not a
+# reason to skip the up — hidden networks never appear here.
+wait_for_ssid() {
+  ssid=$1
+  nmcli device wifi rescan ifname "$IFACE" >/dev/null 2>&1 || true
+  if ssid_visible "$ssid"; then
+    return 0
+  fi
+  waited=0
+  while [ "$waited" -lt "$SCAN_WAIT" ]; do
+    sleep 1
+    waited=$((waited + 1))
+    if ssid_visible "$ssid"; then
+      return 0
+    fi
+  done
+  log "ssid not in scan yet; activating anyway"
+}
 
 for i in $(seq 1 "$ATTEMPTS"); do
   # Already online on any WiFi device? Done.
@@ -73,10 +105,17 @@ for i in $(seq 1 "$ATTEMPTS"); do
     exit 0
   fi
 
-  log "attempt $i/$ATTEMPTS: activating $uuid"
-  # -w 20 bounds each attempt: worst case 8 + 3*20 + 2*5 = 78 s, honestly
-  # inside the unit's TimeoutStartSec=120 (nmcli's default 90 s wait was not:
-  # 8 + 3*90 + 2*5 = 288 s, and systemd would have killed attempt 2 mid-way).
+  ssid=$(nmcli -g 802-11-wireless.ssid connection show uuid "$uuid" 2>/dev/null || true)
+  log "attempt $i/$ATTEMPTS: activating $uuid${ssid:+ ($ssid)}"
+  if [ -n "$ssid" ]; then
+    wait_for_ssid "$ssid"
+  else
+    nmcli device wifi rescan ifname "$IFACE" >/dev/null 2>&1 || true
+  fi
+  # -w 20 bounds each attempt. Worst case with the scan wait:
+  # 8 + 3*(16+20) + 2*5 = 126 s, inside TimeoutStartSec=180 (nmcli's default
+  # 90 s wait was not: 8 + 3*90 + 2*5 = 288 s, and systemd would have killed
+  # attempt 2 mid-way).
   if nmcli -w 20 connection up uuid "$uuid" >/dev/null 2>&1; then
     log "$uuid activated on attempt $i"
     exit 0
