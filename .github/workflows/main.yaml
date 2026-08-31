@@ -399,6 +399,8 @@ jobs:
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_join_error_tests.sh
       - name: Run wifi saved-network tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_saved_tests.sh
+      - name: Run wifi boot-retry tests
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_wifi_retry_tests.sh
       - name: Run mark-good tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_mark_good_tests.sh
       - name: Run log-persistence tests
