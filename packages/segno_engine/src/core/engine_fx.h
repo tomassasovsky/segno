@@ -38,6 +38,15 @@ extern "C" {
 #define LE_PSOLA_THRESH 0.15f /* YIN absolute threshold for the first dip */
 #define LE_PSOLA_THMAX 300   /* grain half-width cap: 2*THMAX < LE_PV_N (fits OLA) */
 
+/* --- Chorus (LE_FX_CHORUS) tuning ------------------------------------------- */
+/* The swept read tap sits BASE ms behind the write head and the LFO moves it by
+ * +- (depth * SWEEP) ms. BASE > SWEEP so the tap can never reach the head: the
+ * read stays in the past at full depth, with no wrap-around discontinuity.
+ * ~11 ms with a 5 ms sweep is the classic short-delay chorus window — long
+ * enough not to comb like a flanger, short enough not to hear discrete repeats. */
+#define LE_CHORUS_BASE_MS 11.0f
+#define LE_CHORUS_SWEEP_MS 5.0f
+
 /* Enable-crossfade length: a slot's dry/wet ramp on an effective-enabled
  * transition, in milliseconds. Short enough to feel instant on a pedal stomp,
  * long enough to be click-free. */
@@ -118,6 +127,17 @@ int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
  * zero for LE_FX_NONE / unknown). Each type owns its defaults behind the vtable.
  * Seeded on a type change so a chain reorder does not wipe the user's tweaks. */
 void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]);
+
+/* True when [type] may be written to a chain slot by the public SET_*_FX
+ * setters: LE_FX_NONE (clears the slot) or any BUILT-IN effect. LE_FX_PLUGIN is
+ * deliberately excluded — a hosted plugin row is published by
+ * le_engine_set_lane_plugin, which also loads the host; setting the bare type
+ * would leave a slot pointing at no slot adapter.
+ *
+ * Replaces the `type > LE_FX_REVERB` bound the setters used to carry: with
+ * built-ins now numbered on BOTH sides of the plugin row, a single upper bound
+ * can no longer express the rule. Control thread. */
+int le_fx_type_is_settable(int32_t type);
 
 #ifdef __cplusplus
 }

@@ -989,6 +989,7 @@
     "effectOctaver": "Octaver",
     "effectEcho": "Echo",
     "effectReverb": "Reverb",
+    "effectChorus": "Chorus",
     "paramDrive": "Drive",
     "paramLevel": "Level",
     "paramCutoff": "Cutoff",

@@ -503,6 +503,7 @@
     "effectOctaver": "Octaver",
     "effectEcho": "Eco",
     "effectReverb": "Reverb",
+    "effectChorus": "Chorus",
     "paramDrive": "Drive",
     "paramLevel": "Nivel",
     "paramCutoff": "Corte",

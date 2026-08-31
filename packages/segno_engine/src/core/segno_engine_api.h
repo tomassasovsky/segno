@@ -475,7 +475,10 @@ typedef enum le_command_code {
  *   ECHO:    p0 = time, p1 = feedback, p2 = mix  (tape-style, damped repeats)
  *   REVERB:  p0 = size, p1 = damping, p2 = mix   (Schroeder room tail; a mono
  *            input yields a decorrelated stereo tail spread across the first two
- *            output channels of the lane/monitor mask) */
+ *            output channels of the lane/monitor mask)
+ *   CHORUS:  p0 = rate, p1 = depth, p2 = mix    (short modulated delay; the
+ *            right channel's LFO runs a quarter cycle ahead of the left, so a
+ *            mono source opens into a stereo image) */
 typedef enum le_fx_type {
   LE_FX_NONE = 0,
   LE_FX_DRIVE = 1,
@@ -491,6 +494,7 @@ typedef enum le_fx_type {
    * le_engine_set_lane_plugin). An LE_FX_PLUGIN entry whose slot is not yet
    * published (or is being torn down) renders dry passthrough. */
   LE_FX_PLUGIN = 8,
+  LE_FX_CHORUS = 9,
 } le_fx_type;
 
 /* Which device backend to open. The default (0) opens miniaudio's default

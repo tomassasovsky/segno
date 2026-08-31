@@ -130,19 +130,25 @@ void main() {
       expect(tapped, TrackEffectType.drive);
     });
 
-    testWidgets('offers the seven, and not the absence of an effect', (
+    testWidgets('offers every built-in, and not the absence of an effect', (
       tester,
     ) async {
       await pumpGrid(tester, present: const {}, onTap: (_) {});
 
       expect(find.text('Drive'), findsOneWidget);
       expect(find.text('Reverb'), findsOneWidget);
+      expect(find.text('Chorus'), findsOneWidget);
       // `none` is what an empty slot IS, not something anyone adds.
       expect(find.byType(ConsoleSegment<TrackEffectType>), findsNothing);
       final grid = tester.widget<ConsoleChipGrid<TrackEffectType>>(
         find.byType(ConsoleChipGrid<TrackEffectType>),
       );
-      expect(grid.options, hasLength(7));
+      // Every type the engine exposes, less `none` — asserted against the enum
+      // rather than a literal so adding an effect does not require editing a
+      // count here, while the real invariant (nothing but `none` is withheld)
+      // still fails loudly if the grid starts filtering.
+      expect(grid.options, hasLength(TrackEffectType.values.length - 1));
+      expect(grid.options, isNot(contains(TrackEffectType.none)));
     });
   });
 }

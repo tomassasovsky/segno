@@ -30,7 +30,8 @@
 #include "engine_cache.h" /* le_cache_tick (wet-cache scheduler heartbeat) */
 #include "engine_restore.h" /* le_restore_tick + le_restore_commit_layer (#697) */
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
-#include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
+#include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS,
+                          * le_fx_type_is_settable */
 #include "engine_private.h"
 #include "layer_staging_ring.h" /* le_layer_staging_ring_push (retired-layer persistence) */
 #include "segno_engine_api.h"
@@ -1741,7 +1742,7 @@ int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
-  if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
+  if (!le_fx_type_is_settable(type)) return LE_ERR_INVALID;
   le_lane* ln = &engine->tracks[channel].lanes[lane];
   int32_t changed = 0;
   if (le_fx_prepare_entry(&ln->fx, ln->fx_type_pushed, ln->a_fx_param, index,
@@ -1899,7 +1900,7 @@ int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
   if (engine == NULL) return LE_ERR_INVALID;
   if (input < 0 || input >= LE_MAX_MONITORED_INPUTS) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
-  if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
+  if (!le_fx_type_is_settable(type)) return LE_ERR_INVALID;
   le_monitor_input* m = &engine->monitors[input];
   int32_t changed = 0;
   if (le_fx_prepare_entry(&m->fx, m->fx_type_pushed, m->a_fx_param, index,
@@ -2023,7 +2024,7 @@ int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
-  if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
+  if (!le_fx_type_is_settable(type)) return LE_ERR_INVALID;
   le_fx_bus* b = &engine->tracks[channel].bus;
   int32_t changed = 0;
   if (le_fx_prepare_entry(&b->fx, b->fx_type_pushed, b->a_fx_param, index,
@@ -2092,7 +2093,7 @@ int32_t le_engine_set_master_fx(le_engine* engine, int32_t index,
                                 int32_t type) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
-  if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
+  if (!le_fx_type_is_settable(type)) return LE_ERR_INVALID;
   le_fx_bus* b = &engine->master_fx;
   int32_t changed = 0;
   if (le_fx_prepare_entry(&b->fx, b->fx_type_pushed, b->a_fx_param, index,

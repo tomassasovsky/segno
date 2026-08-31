@@ -13733,6 +13733,79 @@ static void test_fx_tremolo_modulates_amplitude(void) {
   le_engine_destroy(e);
 }
 
+/* Chorus is a short modulated delay summed back with the dry signal. At full
+ * wet the output is silent until the swept tap — which starts LE_CHORUS_BASE_MS
+ * behind the write head, inside the ring's initial zeros — reaches real signal;
+ * at zero mix it is bit-exact dry. Unlike DELAY there is no feedback path, so a
+ * constant source settles at the source level rather than regenerating. */
+static void test_fx_chorus_tap_fills_then_sounds(void) {
+  printf("test_fx_chorus_tap_fills_then_sounds\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  establish_loop(e, 1.0f);
+
+  le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_CHORUS);
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f); /* slowest sweep */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.0f); /* no depth: a fixed tap */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f); /* fully wet */
+  le_engine_set_lane_fx_count(e, 0, 0, 1);
+
+  /* The tap sits 11 ms back — 528 frames at 48 kHz — so one 64-frame block is
+   * still reading the ring's initial zeros. */
+  process_const(e, 0.0f, 64, out);
+  for (int i = 0; i < 64; ++i) CHECK(fabsf(out[i]) < 1e-6f);
+
+  /* Past the tap distance the loop's constant 1.0 arrives, undiminished: no
+   * feedback, and a fixed tap on a constant source reads that constant. */
+  for (int b = 0; b < 12; ++b) process_const(e, 0.0f, 64, out);
+  CHECK(out[63] > 0.99f);
+
+  /* Zero mix is the dry signal, exactly. */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 0.0f);
+  process_const(e, 0.0f, 64, out);
+  for (int i = 0; i < 64; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* The two channels' LFOs run a quarter cycle apart, so their taps sit at
+ * different distances and a MONO source comes out decorrelated — the width is
+ * the point of a stereo chorus. At full depth the left tap (sin 0 = 0, so the
+ * base distance) reaches real signal a full sweep-width before the right
+ * (sin 90 = 1, the far end of the sweep), so the two differ sharply while the
+ * ring fills. A constant source cannot show this any other way: two different
+ * taps into the same constant read the same value once both are filled. */
+static void test_fx_chorus_opens_mono_into_stereo(void) {
+  printf("test_fx_chorus_opens_mono_into_stereo\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000); /* mono in, STEREO out */
+  float out[128];                            /* 2 channels * 64 frames */
+  establish_loop(e, 1.0f);
+
+  le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_CHORUS);
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f); /* slowest sweep: the phase
+                                                     * barely moves across the
+                                                     * window measured here */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f); /* full depth */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f); /* fully wet */
+  le_engine_set_lane_fx_count(e, 0, 0, 1);
+
+  float max_diff = 0.0f;
+  for (int b = 0; b < 20; ++b) { /* 1280 frames: past both taps */
+    process_const(e, 0.0f, 64, out);
+    for (int i = 0; i < 64; ++i) {
+      const float l = out[i * 2 + 0];
+      const float r = out[i * 2 + 1];
+      if (fabsf(l - r) > max_diff) max_diff = fabsf(l - r);
+      CHECK(l == l && r == r);                   /* never NaN */
+      CHECK(fabsf(l) < 2.0f && fabsf(r) < 2.0f); /* bounded */
+    }
+  }
+  CHECK(max_diff > 0.5f); /* genuinely offset taps, not a duplicated channel */
+
+  le_engine_destroy(e);
+}
+
 static void test_fx_chain_applies_in_order(void) {
   printf("test_fx_chain_applies_in_order\n");
   le_engine* e = make_configured_engine();
@@ -13814,10 +13887,14 @@ static void test_fx_rejects_invalid_args(void) {
         LE_ERR_INVALID);
   CHECK(le_engine_set_lane_fx_count(e, 0, LE_MAX_LANES, 1) == LE_ERR_INVALID);
 
-  /* LE_FX_REVERB is the current highest type: accepted, while one past it is
-   * rejected — locking the validated upper bound. */
+  /* Built-ins are settable on BOTH sides of the plugin row, so the bound is a
+   * predicate, not a ceiling: LE_FX_CHORUS (9) is accepted even though it is
+   * numbered above LE_FX_PLUGIN (8), which stays rejected — a plugin row is
+   * published by le_engine_set_lane_plugin, never by the bare type setter. */
   CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_REVERB) == LE_OK);
-  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_REVERB + 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_CHORUS) == LE_OK);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_PLUGIN) == LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_CHORUS + 1) == LE_ERR_INVALID);
 
   /* Out-of-range parameter values clamp to [0, 1] rather than erroring; an
    * over-large count clamps to LE_FX_MAX. */
@@ -25928,6 +26005,8 @@ int main(void) {
   test_fx_filter_attenuates_low_cutoff();
   test_fx_delay_is_silent_until_time();
   test_fx_tremolo_modulates_amplitude();
+  test_fx_chorus_tap_fills_then_sounds();
+  test_fx_chorus_opens_mono_into_stereo();
   test_fx_chain_applies_in_order();
   test_fx_nondestructive_and_colors_playback();
   test_fx_muted_track_is_silent();
