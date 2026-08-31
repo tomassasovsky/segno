@@ -1,5 +1,4 @@
 import logging
-import os
 
 from wic.pluginbase import SourcePlugin
 from wic.misc import exec_cmd
