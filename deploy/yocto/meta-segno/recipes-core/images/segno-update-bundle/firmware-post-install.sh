@@ -9,6 +9,9 @@
 # the hook runs on the *currently booted* rootfs during OTA, so a wrynose
 # bundle installing onto a walnascar unit would otherwise look for
 # /usr/lib/rauc/system.conf and miss /etc/rauc/system.conf.
+#
+# The slot is already mounted by RAUC for post-install — edit via
+# RAUC_SLOT_MOUNT_POINT (do not remount RAUC_MOUNT_PREFIX$RAUC_SLOT_DEVICE).
 set -eu
 
 case "${RAUC_SLOT_BOOTNAME:-}" in
@@ -26,9 +29,10 @@ if [ -z "$boot_disk" ]; then
     exit 1
 fi
 
-mountpoint=$(mktemp -d)
-trap 'umount "$mountpoint" 2>/dev/null; rmdir "$mountpoint" 2>/dev/null' EXIT INT TERM
+if [ -z "${RAUC_SLOT_MOUNT_POINT:-}" ] || [ ! -d "$RAUC_SLOT_MOUNT_POINT" ]; then
+    echo "firmware-post-install: RAUC_SLOT_MOUNT_POINT unset or missing (${RAUC_SLOT_MOUNT_POINT:-})" >&2
+    exit 1
+fi
 
-mount "$RAUC_MOUNT_PREFIX$RAUC_SLOT_DEVICE" "$mountpoint"
-sed -i "s/root=XXX/root=\\/dev\\/${boot_disk}p${root_part}/" "$mountpoint/cmdline.txt"
-grep -q "root=/dev/${boot_disk}p${root_part}" "$mountpoint/cmdline.txt"
+sed -i "s/root=XXX/root=\\/dev\\/${boot_disk}p${root_part}/" "$RAUC_SLOT_MOUNT_POINT/cmdline.txt"
+grep -q "root=/dev/${boot_disk}p${root_part}" "$RAUC_SLOT_MOUNT_POINT/cmdline.txt"
