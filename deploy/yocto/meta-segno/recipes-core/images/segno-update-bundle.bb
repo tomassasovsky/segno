@@ -2,6 +2,7 @@ SUMMARY = "RAUC update bundle (.raucb) for the Segno appliance — rootfs + boot
 # Builds a signed, verity-format RAUC bundle carrying segno-kiosk-image's
 # rootfs and boot-firmware vfat. `rauc install` writes both to the inactive A/B
 # pair so kernel/modules stay matched across walnascar -> wrynose OTAs.
+LICENSE = "CLOSED"
 inherit bundle
 
 RAUC_BUNDLE_FORMAT     = "verity"
