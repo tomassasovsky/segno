@@ -294,18 +294,83 @@ do_forget_nm() {
     echo '{}'
 }
 
+# UUID of a saved wifi profile for this SSID, or empty. Same match as forget:
+# connection name or 802-11-wireless.ssid.
+profile_uuid_for_ssid() {
+    ssid=$1
+    nmcli -t -f UUID,NAME,TYPE connection show 2>/dev/null \
+        | awk -F: '$3 ~ /wireless|wifi/ {print $1"\t"$2}' \
+        | while IFS="$(printf '\t')" read -r uuid name; do
+            [ -n "$uuid" ] || continue
+            profile_ssid=$(nmcli -t -f 802-11-wireless.ssid connection show "$uuid" 2>/dev/null \
+                | sed -n 's/^802-11-wireless.ssid://p')
+            if [ "$name" = "$ssid" ] || [ "$profile_ssid" = "$ssid" ]; then
+                printf '%s\n' "$uuid"
+                break
+            fi
+        done
+}
+
+# After a successful passwd-file up: write the PSK into the keyfile and only
+# then allow NM to auto-activate. Shared by new-join and reuse-with-password
+# so the two cannot drift on when autoconnect turns on (#963).
+persist_psk_and_enable() {
+    psk_val=$1
+    shift
+    nmcli connection modify "$@" \
+        wifi-sec.psk "$psk_val" wifi-sec.psk-flags 0 \
+        connection.autoconnect yes \
+        >/dev/null 2>&1 || true
+}
+
 do_connect_nm() {
     ssid=$1
     psk=${2:-}
     nmcli radio wifi on >/dev/null 2>&1 || true
     disable_powersave
-    do_forget_nm "$ssid" >/dev/null 2>&1 || true
 
+    existing=$(profile_uuid_for_ssid "$ssid")
     join_priority=$(next_autoconnect_priority)
     errf=$(mktemp)
     passf=
     set +e
-    if [ -n "$psk" ]; then
+    if [ -n "$existing" ]; then
+        # Reuse the saved profile. Deleting it to "reconnect" is how Join on a
+        # saved network threw the PSK away and then failed (#963).
+        # A password update (or a leftover secret-less husk) must not flip
+        # autoconnect on before the PSK is stored — same NM/iwd abort race as
+        # a new join. A promptless Join already holds secrets; autoconnect
+        # stays on.
+        if [ -n "$psk" ]; then
+            ac=no
+        else
+            ac=yes
+        fi
+        nmcli connection modify uuid "$existing" \
+            connection.autoconnect "$ac" \
+            connection.autoconnect-priority "$join_priority" \
+            802-11-wireless.powersave 2 \
+            >"$errf" 2>&1
+        rc=$?
+        if [ "$rc" -eq 0 ] && [ -n "$psk" ]; then
+            passf=$(mktemp)
+            chmod 600 "$passf"
+            printf '802-11-wireless-security.psk:%s\n' "$psk" >"$passf"
+            nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up uuid "$existing" \
+                passwd-file "$passf" >"$errf" 2>&1
+            rc=$?
+            if [ "$rc" -eq 0 ]; then
+                persist_psk_and_enable "$psk" uuid "$existing"
+            fi
+        elif [ "$rc" -eq 0 ]; then
+            nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up uuid "$existing" \
+                >"$errf" 2>&1
+            rc=$?
+        fi
+    elif [ -n "$psk" ]; then
+        # New secured network. autoconnect stays off until the PSK is stored —
+        # otherwise NM auto-activates a secret-less profile, aborts iwd, and
+        # races the real up (#963).
         # Create the profile without embedding the PSK in argv, then activate
         # via passwd-file. On this image `connection up` after `wifi-sec.psk=…`
         # often fails immediately with "Secrets were required".
@@ -313,7 +378,7 @@ do_connect_nm() {
             ssid "$ssid" \
             wifi-sec.key-mgmt wpa-psk \
             wifi-sec.auth-alg open \
-            connection.autoconnect yes \
+            connection.autoconnect no \
             connection.autoconnect-priority "$join_priority" \
             802-11-wireless.powersave 2 \
             >"$errf" 2>&1
@@ -325,11 +390,8 @@ do_connect_nm() {
             nmcli --wait "$NM_CONNECT_WAIT_SECS" connection up "$ssid" \
                 passwd-file "$passf" >"$errf" 2>&1
             rc=$?
-            # Persist secrets into the keyfile for autoconnect after reboot.
             if [ "$rc" -eq 0 ]; then
-                nmcli connection modify "$ssid" \
-                    wifi-sec.psk "$psk" wifi-sec.psk-flags 0 \
-                    >/dev/null 2>&1 || true
+                persist_psk_and_enable "$psk" "$ssid"
             fi
         fi
     else

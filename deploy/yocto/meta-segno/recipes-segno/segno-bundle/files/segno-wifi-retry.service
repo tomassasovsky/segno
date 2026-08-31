@@ -7,8 +7,11 @@ Wants=NetworkManager.service
 
 [Service]
 Type=oneshot
-# The settle sleep lives in the script, bounded well under this.
-TimeoutStartSec=120
+# The settle sleep lives in the script. Worst case with the scan wait is
+# 8 + 3*(16+20) + 2*5 = 126 s; this bound has to sit above that (nmcli's
+# default 90 s wait was not: 8 + 3*90 + 2*5 = 288 s, and systemd would have
+# killed attempt 2 mid-way).
+TimeoutStartSec=180
 ExecStart=/usr/bin/segno-wifi-retry
 # A give-up is a real signal (saved profile that will not activate) -- let it
 # land in `systemctl --failed` where segno-log-check and the persistent
