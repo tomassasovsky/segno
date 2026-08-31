@@ -350,7 +350,6 @@ jobs:
           bundle="segno-appliance-${{ needs.determine-meta.outputs.version }}.raucb"
           cp "$raucb" "$out/$bundle"
           sha=$(sha256sum "$out/$bundle" | cut -d' ' -f1)
-          bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_slots_tests.sh
           BUNDLE="$out/$bundle" bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_slots_tests.sh
           # version is a semver string (e.g. "0.2.0" / "0.2.0-experimental.9")
           # — must be JSON-quoted. The int-era unquoted form is no longer valid.

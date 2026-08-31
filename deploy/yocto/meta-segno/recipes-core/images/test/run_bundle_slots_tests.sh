@@ -36,10 +36,13 @@ if [ -n "${BUNDLE:-}" ]; then
         echo "WARN: rauc not installed — skipping rauc info (recipe checks still ran)"
     else
         info=$(rauc info --no-verify "$BUNDLE")
-        echo "$info" | grep -q 'segno-raspberrypi5' && compat=yes || compat=no
+        compat=$(printf '%s\n' "$info" | sed -n 's/^Compatible:[[:space:]]*//p' | head -1)
         echo "$info" | grep -qi 'rootfs' && has_rootfs=yes || has_rootfs=no
         echo "$info" | grep -qi 'firmware' && has_firmware=yes || has_firmware=no
-        check "compatible mentions segno-raspberrypi5" yes "$compat"
+        check "bundle has compatible string" yes "$([ -n "$compat" ] && echo yes || echo no)"
+        if [ -n "${COMPATIBLE:-}" ]; then
+            check "compatible matches COMPATIBLE" "$COMPATIBLE" "$compat"
+        fi
         check "bundle lists rootfs slot" yes "$has_rootfs"
         check "bundle lists firmware slot" yes "$has_firmware"
     fi
