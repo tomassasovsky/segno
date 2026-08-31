@@ -1050,6 +1050,7 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   void _onPress(PedalButton button) {
+    if (_takeLocked()) return;
     _log(
       'press ${button.name}  [mode=${state.mode.name} '
       'cursor=${state.cursor}]',

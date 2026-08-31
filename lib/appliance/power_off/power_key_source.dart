@@ -16,20 +16,6 @@ abstract interface class PowerKeySource {
   Future<void> close();
 }
 
-/// Test double: call [emitPress] to simulate a short press.
-final class FakePowerKeySource implements PowerKeySource {
-  final StreamController<void> _controller = StreamController<void>.broadcast();
-
-  @override
-  Stream<void> get presses => _controller.stream;
-
-  /// Fires one press.
-  void emitPress() => _controller.add(null);
-
-  @override
-  Future<void> close() => _controller.close();
-}
-
 /// Opens an [EvdevPowerKeySource] on Linux when the update helper exists.
 ///
 /// Returns null on desktop, on a Linux image without the helper, and in
@@ -84,11 +70,6 @@ final class EvdevPowerKeySource implements PowerKeySource {
   Stream<void> get presses => _controller.stream;
 
   void _onIsolateMessage(dynamic message) {
-    if (message is SendPort) {
-      // Isolate handshake — keep the isolate handle via the spawn future
-      // is enough; the send port is how we could ask it to stop later.
-      return;
-    }
     if (message == _pressToken) {
       if (!_controller.isClosed) _controller.add(null);
       return;

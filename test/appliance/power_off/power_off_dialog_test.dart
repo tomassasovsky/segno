@@ -41,7 +41,7 @@ void main() {
       await _pump(
         tester,
         cubit,
-        snapshot: const PowerOffSnapshot(anyCapturingOrPending: true),
+        snapshot: const PowerOffSnapshot(takeInFlight: true),
       );
 
       expect(find.byKey(const Key('power_off_keep_playing')), findsOneWidget);
@@ -70,7 +70,7 @@ void main() {
       },
     );
 
-    testWidgets('Keep playing pops the route', (tester) async {
+    testWidgets('Keep playing returns the cubit to idle', (tester) async {
       final cubit = _cubit();
       addTearDown(cubit.close);
       await _pump(tester, cubit);
@@ -86,7 +86,7 @@ void main() {
       await _pump(
         tester,
         cubit,
-        snapshot: const PowerOffSnapshot(countingIn: true),
+        snapshot: const PowerOffSnapshot(takeInFlight: true),
       );
       expect(find.byKey(const Key('power_off_discard')), findsNothing);
     });

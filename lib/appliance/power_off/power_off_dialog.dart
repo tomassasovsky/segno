@@ -6,6 +6,13 @@ import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
 
+/// Navigator name for the confirm/refuse dialog. The host pops by name so
+/// a sheet sitting on top can be dismissed in the same turn.
+const String powerOffDialogRoute = 'power_off_dialog';
+
+/// Navigator name for the Save As sheet opened during power-off.
+const String powerOffSaveAsRoute = 'power_off_save_as';
+
 /// Opens the power-off confirm on the root navigator. Scrim tap returns
 /// false (Keep playing). Committed phases must not call this.
 Future<bool?> showPowerOffDialog(
@@ -16,6 +23,7 @@ Future<bool?> showPowerOffDialog(
   return showDialog<bool>(
     context: context,
     barrierColor: context.surface.scrim,
+    routeSettings: const RouteSettings(name: powerOffDialogRoute),
     builder: (dialogContext) => BlocProvider<PowerOffCubit>.value(
       value: context.read<PowerOffCubit>(),
       child: PowerOffDialog(
@@ -45,26 +53,25 @@ class PowerOffDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<PowerOffCubit, PowerOffState>(
       builder: (context, state) {
-        final refuse =
-            state.phase == PowerOffPhase.refuse ||
-            (state.phase == PowerOffPhase.saveFailed &&
-                snapshot().takeInFlight);
-        return Center(
-          child: ConsoleDialogShell(
-            key: const Key('power_off_dialog'),
-            child: refuse
-                ? _RefuseBody(onKeepPlaying: () => _keepPlaying(context))
-                : _ConfirmBody(
-                    failed: state.phase == PowerOffPhase.saveFailed,
-                    onKeepPlaying: () => _keepPlaying(context),
-                    onSave: () => context.read<PowerOffCubit>().saveAndPowerOff(
-                      snapshot(),
-                      save: onSave,
+        final refuse = state.phase == PowerOffPhase.refuse;
+        return IgnorePointer(
+          ignoring: !state.isDismissible,
+          child: Center(
+            child: ConsoleDialogShell(
+              key: const Key('power_off_dialog'),
+              child: refuse
+                  ? _RefuseBody(onKeepPlaying: () => _keepPlaying(context))
+                  : _ConfirmBody(
+                      failed: state.phase == PowerOffPhase.saveFailed,
+                      onKeepPlaying: () => _keepPlaying(context),
+                      onSave: () => context
+                          .read<PowerOffCubit>()
+                          .saveAndPowerOff(snapshot(), save: onSave),
+                      onDiscard: () => context
+                          .read<PowerOffCubit>()
+                          .powerOffWithoutSaving(snapshot()),
                     ),
-                    onDiscard: () => context
-                        .read<PowerOffCubit>()
-                        .powerOffWithoutSaving(snapshot()),
-                  ),
+            ),
           ),
         );
       },

@@ -99,24 +99,32 @@ class _PowerOffHostState extends State<PowerOffHost> {
     );
   }
 
-  void _popPowerOffRoute() {
-    Navigator.of(context, rootNavigator: true).maybePop();
+  /// Pops the Save As sheet and confirm dialog (by route name) so two
+  /// maybePops in one frame cannot both hit the sheet and leave confirm up.
+  void _dismissPowerOffRoutes() {
+    _dialogOpen = false;
+    _saveAsOpen = false;
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).popUntil((route) {
+      final name = route.settings.name;
+      return name != powerOffDialogRoute && name != powerOffSaveAsRoute;
+    });
   }
 
   void _onPhase(BuildContext context, PowerOffState state) {
     switch (state.phase) {
       case PowerOffPhase.refuse:
       case PowerOffPhase.confirm:
-      case PowerOffPhase.saveFailed:
         unawaited(_openDialog());
+      case PowerOffPhase.saveFailed:
+      case PowerOffPhase.saving:
+        break;
       case PowerOffPhase.saveAs:
-        if (_dialogOpen) _popPowerOffRoute();
         unawaited(_openSaveAs());
       case PowerOffPhase.idle:
-        if (_dialogOpen || _saveAsOpen) _popPowerOffRoute();
-      case PowerOffPhase.saving:
+        _dismissPowerOffRoutes();
       case PowerOffPhase.goodbye:
-        if (_dialogOpen || _saveAsOpen) _popPowerOffRoute();
+        _dismissPowerOffRoutes();
         context.read<LooperBloc>().add(const LooperPersistFlush());
     }
   }
@@ -130,10 +138,10 @@ class _PowerOffHostState extends State<PowerOffHost> {
       snapshot: _snapshot,
       onSave: _saveNamed,
     );
-    _dialogOpen = false;
     if (!mounted) return;
-    // Scrim / system back. Do not treat saveAs as a dismiss of this
-    // dialog — the host pops it on the way to the rename sheet.
+    _dialogOpen = false;
+    // Scrim / system back. idle / goodbye already popped this route and
+    // are not dismissible, so keepPlaying is a no-op there.
     switch (cubit.state.phase) {
       case PowerOffPhase.refuse:
       case PowerOffPhase.confirm:
@@ -162,10 +170,13 @@ class _PowerOffHostState extends State<PowerOffHost> {
           current: '',
           fieldLabel: l10n.sessionNewTitle,
           useRootNavigator: true,
+          routeSettings: const RouteSettings(name: powerOffSaveAsRoute),
         );
         if (!mounted) return;
         if (cubit.state.phase != PowerOffPhase.saveAs) return;
+        // Sheet has returned — do not maybePop an unrelated root route.
         if (raw == null) {
+          _saveAsOpen = false;
           cubit.keepPlaying();
           return;
         }
@@ -182,15 +193,13 @@ class _PowerOffHostState extends State<PowerOffHost> {
           );
           continue;
         }
-        cubit.beginSaving();
-        await session.saveAs(raw);
-        if (!mounted) return;
-        if (cubit.state.phase != PowerOffPhase.saving) return;
-        if (session.state.status == SessionStatus.failure) {
-          cubit.saveFailed();
-          return;
-        }
-        cubit.saveCompleted();
+        _saveAsOpen = false;
+        cubit.commitSave(_snapshot(), () async {
+          await session.saveAs(raw);
+          if (session.state.status == SessionStatus.failure) {
+            throw Exception(session.state.errorMessage ?? 'save failed');
+          }
+        });
         return;
       }
     } finally {

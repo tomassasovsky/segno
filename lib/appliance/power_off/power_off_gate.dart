@@ -22,29 +22,14 @@ enum PowerOffDisposition {
 class PowerOffSnapshot extends Equatable {
   /// Creates a [PowerOffSnapshot].
   const PowerOffSnapshot({
-    this.anyCapturingOrPending = false,
-    this.layerInFlight = false,
-    this.countingIn = false,
-    this.performanceInFlight = false,
-    this.performanceRecovering = false,
+    this.takeInFlight = false,
     this.anyHasContent = false,
     this.currentSessionName,
   });
 
-  /// Any track is recording, overdubbing, or waiting on a quantized arm.
-  final bool anyCapturingOrPending;
-
-  /// A punch-tail is still draining onto a track.
-  final bool layerInFlight;
-
-  /// The count-in click is already sounding.
-  final bool countingIn;
-
-  /// Performance capture is Armed / Finalizing / Rendering.
-  final bool performanceInFlight;
-
-  /// Boot salvage is still writing a crashed capture.
-  final bool performanceRecovering;
+  /// A take that must not be discarded: capture, punch-tail, count-in, or
+  /// an in-flight / recovering performance write.
+  final bool takeInFlight;
 
   /// Any track holds recorded audio.
   final bool anyHasContent;
@@ -52,25 +37,8 @@ class PowerOffSnapshot extends Equatable {
   /// Open named session, or null when Save would become Save As.
   final String? currentSessionName;
 
-  /// A take that must not be discarded: capture, punch-tail, count-in, or
-  /// an in-flight / recovering performance write.
-  bool get takeInFlight =>
-      anyCapturingOrPending ||
-      layerInFlight ||
-      countingIn ||
-      performanceInFlight ||
-      performanceRecovering;
-
   @override
-  List<Object?> get props => [
-    anyCapturingOrPending,
-    layerInFlight,
-    countingIn,
-    performanceInFlight,
-    performanceRecovering,
-    anyHasContent,
-    currentSessionName,
-  ];
+  List<Object?> get props => [takeInFlight, anyHasContent, currentSessionName];
 }
 
 /// Projects live feature state onto a [PowerOffSnapshot].
@@ -83,17 +51,15 @@ PowerOffSnapshot powerOffSnapshotOf({
   required SessionState session,
 }) {
   return PowerOffSnapshot(
-    anyCapturingOrPending: looper.tracks.any(
-      (track) => track.isCapturing || track.pending,
-    ),
-    layerInFlight: looper.tracks.any((track) => track.layerInFlight),
-    countingIn: looper.transport.countingIn,
-    performanceInFlight:
+    takeInFlight:
+        looper.tracks.any(
+          (track) => track.isCapturing || track.pending || track.layerInFlight,
+        ) ||
+        looper.transport.countingIn ||
         recorder is PerformanceRecorderArmed ||
         recorder is PerformanceRecorderFinalizing ||
-        recorder is PerformanceRecorderRendering,
-    performanceRecovering:
-        recorder is PerformanceRecorderIdle && recorder.recovering,
+        recorder is PerformanceRecorderRendering ||
+        (recorder is PerformanceRecorderIdle && recorder.recovering),
     anyHasContent: looper.tracks.any((track) => track.hasContent),
     currentSessionName: session.currentSessionName,
   );

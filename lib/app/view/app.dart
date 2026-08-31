@@ -25,6 +25,7 @@ import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/common/pedal_device.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/looper/view/tracks/routing_tracks_tab.dart';
@@ -180,8 +181,8 @@ class App extends StatefulWidget {
 class _AppState extends State<App> {
   late final SimulatorPedalTransport _simulator;
   late final PedalRepository _pedal;
-  late final PowerOffTakeLock _takeLock;
   PowerKeySource? _powerKeySource;
+  ControlCubit? _control;
 
   @override
   void initState() {
@@ -190,7 +191,6 @@ class _AppState extends State<App> {
         widget.pedalSimulator ??
         SimulatorPedalTransport(inner: const NoopPedalTransport());
     _pedal = widget.pedalRepository ?? PedalRepository(_simulator);
-    _takeLock = PowerOffTakeLock();
     _powerKeySource =
         widget.powerKeySource ??
         openAppliancePowerKeySource(
@@ -271,11 +271,13 @@ class _AppState extends State<App> {
           // route — pushed on the root navigator, above the looper page — can
           // drive routing edits through the bloc, mirroring the in-view routing
           // controls. The TracksCubit below is hoisted for the same reason.
+          // No `controller:` — MIDI stays on the page LooperBloc, which
+          // injects the power-off take lock. A second subscriber here would
+          // fire Clear/Record twice and bypass that lock.
           BlocProvider(
             create: (context) {
               final bloc = LooperBloc(
                 repository: context.read<LooperRepository>(),
-                controller: context.read<ControllerRepository>(),
                 settings: context.read<SettingsRepository>(),
               );
               // Boot-restore the persisted mode (B5c) — dispatched as an
@@ -460,6 +462,46 @@ class _AppState extends State<App> {
               repository: context.read<MidiDeviceRepository>(),
             ),
           ),
+          // Above ControlCubit so take-start can read isUiUp. flushMappings
+          // cannot context.read a descendant — capture the instance below.
+          BlocProvider(
+            lazy: false,
+            create: (context) => PowerOffCubit(
+              flush: () {
+                try {
+                  context.read<MonitorCubit>().flushPersistence();
+                } on Object catch (error, stack) {
+                  AppLog.error(
+                    'power-off monitor flush failed',
+                    error: error,
+                    stack: stack,
+                  );
+                }
+                try {
+                  _control?.flushMappings();
+                } on Object catch (error, stack) {
+                  AppLog.error(
+                    'power-off mappings flush failed',
+                    error: error,
+                    stack: stack,
+                  );
+                }
+                try {
+                  context.read<LooperBloc>().add(const LooperPersistFlush());
+                } on Object catch (error, stack) {
+                  AppLog.error(
+                    'power-off looper flush failed',
+                    error: error,
+                    stack: stack,
+                  );
+                }
+              },
+              pedalGoodbye: () => context.read<PedalRepository>().pushState(
+                PedalStateFrame.blank(goodbye: true),
+              ),
+              powerOff: widget.powerOff ?? SystemApplianceEnv().powerOff,
+            ),
+          ),
           // Eager (not lazy): the ONE control-surface interpreter and owner
           // of stored user intent (mode / cursor / bank / play intent). The
           // pedal's decoded footswitches reach it through PedalRepository's
@@ -487,8 +529,9 @@ class _AppState extends State<App> {
                 controller: context.read<ControllerRepository>(),
                 midiDevices: context.read<MidiDeviceRepository>(),
                 simulatedSource: widget.simulatedControllerSource,
-                takeLocked: () => _takeLock.locked,
+                takeLocked: () => context.read<PowerOffCubit>().state.isUiUp,
               );
+              _control = cubit;
               unawaited(cubit.load()); // boot-default mode restore
               return cubit;
             },
@@ -534,24 +577,11 @@ class _AppState extends State<App> {
             create: (context) {
               final cubit = PerformanceRecorderCubit(
                 performance: context.read<PerformanceRepository>(),
+                takeLocked: () => context.read<PowerOffCubit>().state.isUiUp,
               );
               unawaited(cubit.load());
               return cubit;
             },
-          ),
-          BlocProvider(
-            lazy: false,
-            create: (context) => PowerOffCubit(
-              flush: () {
-                context.read<MonitorCubit>().flushPersistence();
-                context.read<ControlCubit>().flushMappings();
-              },
-              pedalGoodbye: () => context.read<PedalRepository>().pushState(
-                PedalStateFrame.blank(goodbye: true),
-              ),
-              powerOff: widget.powerOff ?? SystemApplianceEnv().powerOff,
-              takeLock: _takeLock,
-            ),
           ),
         ],
         child: _AppView(

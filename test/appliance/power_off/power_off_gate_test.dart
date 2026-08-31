@@ -6,49 +6,11 @@ import 'package:segno/session/cubit/session_cubit.dart';
 
 void main() {
   group('powerOffGate', () {
-    test('in-flight capturing → refuse', () {
+    test('in-flight take → refuse', () {
       expect(
         powerOffGate(
-          const PowerOffSnapshot(
-            anyCapturingOrPending: true,
-            anyHasContent: true,
-          ),
+          const PowerOffSnapshot(takeInFlight: true, anyHasContent: true),
         ),
-        PowerOffDisposition.refuse,
-      );
-    });
-
-    test('pending quantized arm → refuse', () {
-      expect(
-        powerOffGate(const PowerOffSnapshot(anyCapturingOrPending: true)),
-        PowerOffDisposition.refuse,
-      );
-    });
-
-    test('layerInFlight punch-tail → refuse', () {
-      expect(
-        powerOffGate(const PowerOffSnapshot(layerInFlight: true)),
-        PowerOffDisposition.refuse,
-      );
-    });
-
-    test('count-in sounding → refuse', () {
-      expect(
-        powerOffGate(const PowerOffSnapshot(countingIn: true)),
-        PowerOffDisposition.refuse,
-      );
-    });
-
-    test('performance Armed / Finalizing / Rendering → refuse', () {
-      expect(
-        powerOffGate(const PowerOffSnapshot(performanceInFlight: true)),
-        PowerOffDisposition.refuse,
-      );
-    });
-
-    test('boot salvage recovering → refuse', () {
-      expect(
-        powerOffGate(const PowerOffSnapshot(performanceRecovering: true)),
         PowerOffDisposition.refuse,
       );
     });
@@ -87,18 +49,48 @@ void main() {
         recorder: const PerformanceRecorderIdle(),
         session: const SessionState(),
       );
-      expect(snapshot.anyCapturingOrPending, isTrue);
-      expect(snapshot.anyHasContent, isTrue);
       expect(snapshot.takeInFlight, isTrue);
+      expect(snapshot.anyHasContent, isTrue);
     });
 
-    test('maps recovering idle, not completed', () {
+    test('maps pending, punch-tail, and count-in as in-flight', () {
+      expect(
+        powerOffSnapshotOf(
+          looper: const LooperState(tracks: [Track(pending: true)]),
+          recorder: const PerformanceRecorderIdle(),
+          session: const SessionState(),
+        ).takeInFlight,
+        isTrue,
+      );
+      expect(
+        powerOffSnapshotOf(
+          looper: const LooperState(
+            tracks: [Track(layerInFlight: true)],
+          ),
+          recorder: const PerformanceRecorderIdle(),
+          session: const SessionState(),
+        ).takeInFlight,
+        isTrue,
+      );
+      expect(
+        powerOffSnapshotOf(
+          looper: const LooperState(
+            transport: TransportState(countingIn: true),
+          ),
+          recorder: const PerformanceRecorderIdle(),
+          session: const SessionState(),
+        ).takeInFlight,
+        isTrue,
+      );
+    });
+
+    test('Armed / Finalizing / Rendering / recovering are in-flight', () {
       expect(
         powerOffSnapshotOf(
           looper: const LooperState(),
           recorder: const PerformanceRecorderIdle(recovering: true),
           session: const SessionState(),
-        ).performanceRecovering,
+        ).takeInFlight,
         isTrue,
       );
       expect(
@@ -109,49 +101,15 @@ void main() {
             overrun: false,
           ),
           session: const SessionState(),
-        ).performanceInFlight,
+        ).takeInFlight,
         isTrue,
       );
-    });
-
-    test('maps pending, punch-tail, and count-in', () {
-      expect(
-        powerOffSnapshotOf(
-          looper: const LooperState(tracks: [Track(pending: true)]),
-          recorder: const PerformanceRecorderIdle(),
-          session: const SessionState(),
-        ).anyCapturingOrPending,
-        isTrue,
-      );
-      expect(
-        powerOffSnapshotOf(
-          looper: const LooperState(
-            tracks: [Track(layerInFlight: true)],
-          ),
-          recorder: const PerformanceRecorderIdle(),
-          session: const SessionState(),
-        ).layerInFlight,
-        isTrue,
-      );
-      expect(
-        powerOffSnapshotOf(
-          looper: const LooperState(
-            transport: TransportState(countingIn: true),
-          ),
-          recorder: const PerformanceRecorderIdle(),
-          session: const SessionState(),
-        ).countingIn,
-        isTrue,
-      );
-    });
-
-    test('Finalizing and Rendering are in-flight; Completed is not', () {
       expect(
         powerOffSnapshotOf(
           looper: const LooperState(),
           recorder: const PerformanceRecorderFinalizing(),
           session: const SessionState(),
-        ).performanceInFlight,
+        ).takeInFlight,
         isTrue,
       );
       expect(
@@ -159,15 +117,18 @@ void main() {
           looper: const LooperState(),
           recorder: const PerformanceRecorderRendering(percent: 10),
           session: const SessionState(),
-        ).performanceInFlight,
+        ).takeInFlight,
         isTrue,
       );
+    });
+
+    test('Completed is not in-flight', () {
       expect(
         powerOffSnapshotOf(
           looper: const LooperState(),
           recorder: const PerformanceRecorderCompleted.discardedShort(),
           session: const SessionState(),
-        ).performanceInFlight,
+        ).takeInFlight,
         isFalse,
       );
     });

@@ -20,18 +20,6 @@ void main() {
     });
   });
 
-  group(FakePowerKeySource, () {
-    test('forwards emitPress to listeners', () async {
-      final source = FakePowerKeySource();
-      addTearDown(source.close);
-      final presses = <void>[];
-      source.presses.listen(presses.add);
-      source.emitPress();
-      await Future<void>.delayed(Duration.zero);
-      expect(presses, hasLength(1));
-    });
-  });
-
   group('waveform isolate is not a listener', () {
     test('waveform_window.dart does not open evdev', () {
       final source = File(

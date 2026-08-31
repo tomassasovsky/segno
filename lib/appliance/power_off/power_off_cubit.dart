@@ -7,38 +7,30 @@ import 'package:segno/logging/app_log.dart';
 
 part 'power_off_state.dart';
 
-/// Latch shared with ControlCubit: while the power-off route is up, Rec /
-/// overdub / perf-arm are ignored so a take cannot start behind the dialog.
-class PowerOffTakeLock {
-  /// Whether take-start from the pedal (and the same intent methods) is
-  /// suppressed.
-  bool locked = false;
-}
-
 /// Drives confirm → optional save → goodbye → halt for the rear power button.
 ///
 /// Never calls another cubit. Flush, pedal goodbye, halt, and save are
 /// injected closures. Snapshot is passed in at each commit so the gate can
 /// be re-checked without this cubit reading live feature state.
+///
+/// Take-start is suppressed via [PowerOffState.isUiUp] — ControlCubit reads
+/// that flag; there is no shared latch.
 class PowerOffCubit extends Cubit<PowerOffState> {
   /// Creates a [PowerOffCubit].
   PowerOffCubit({
     required void Function() flush,
     required void Function() pedalGoodbye,
     required Future<void> Function() powerOff,
-    PowerOffTakeLock? takeLock,
     Duration markHold = const Duration(seconds: 2),
   }) : _flush = flush,
        _pedalGoodbye = pedalGoodbye,
        _powerOff = powerOff,
-       _takeLock = takeLock ?? PowerOffTakeLock(),
        _markHold = markHold,
        super(const PowerOffState());
 
   final void Function() _flush;
   final void Function() _pedalGoodbye;
   final Future<void> Function() _powerOff;
-  final PowerOffTakeLock _takeLock;
   final Duration _markHold;
 
   /// A short press of `KEY_POWER`. No-op while any power-off UI is up.
@@ -71,6 +63,10 @@ class PowerOffCubit extends Cubit<PowerOffState> {
       _set(PowerOffPhase.saveAs);
       return;
     }
+    if (save == null) {
+      _set(PowerOffPhase.saveFailed);
+      return;
+    }
     unawaited(_saveThenHalt(save));
   }
 
@@ -80,28 +76,14 @@ class PowerOffCubit extends Cubit<PowerOffState> {
     unawaited(_halt());
   }
 
-  /// Host is about to write a Save As bundle — show the Saving face.
-  void beginSaving() {
+  /// Host finished naming an unnamed session. Runs [save] under Saving.
+  void commitSave(
+    PowerOffSnapshot snapshot,
+    Future<void> Function() save,
+  ) {
     if (state.phase != PowerOffPhase.saveAs) return;
-    _set(PowerOffPhase.saving);
-  }
-
-  /// The Save As sheet wrote the bundle. Proceed to goodbye.
-  void saveCompleted() {
-    if (state.phase != PowerOffPhase.saveAs &&
-        state.phase != PowerOffPhase.saving) {
-      return;
-    }
-    unawaited(_halt());
-  }
-
-  /// Save failed. Stay on the power-off surface; do not halt.
-  void saveFailed() {
-    if (state.phase != PowerOffPhase.saveAs &&
-        state.phase != PowerOffPhase.saving) {
-      return;
-    }
-    _set(PowerOffPhase.saveFailed);
+    if (!_prepareCommit(snapshot)) return;
+    unawaited(_saveThenHalt(save));
   }
 
   bool _prepareCommit(PowerOffSnapshot snapshot) {
@@ -113,12 +95,8 @@ class PowerOffCubit extends Cubit<PowerOffState> {
     return true;
   }
 
-  Future<void> _saveThenHalt(Future<void> Function()? save) async {
+  Future<void> _saveThenHalt(Future<void> Function() save) async {
     _set(PowerOffPhase.saving);
-    if (save == null) {
-      _set(PowerOffPhase.saveFailed);
-      return;
-    }
     try {
       await save();
     } on Object catch (error, stack) {
@@ -128,12 +106,15 @@ class PowerOffCubit extends Cubit<PowerOffState> {
       return;
     }
     if (isClosed) return;
-    if (state.phase != PowerOffPhase.saving) return;
     await _halt();
   }
 
   Future<void> _halt() async {
-    _flush();
+    try {
+      _flush();
+    } on Object catch (error, stack) {
+      AppLog.error('power-off flush failed', error: error, stack: stack);
+    }
     _pedalGoodbye();
     _set(PowerOffPhase.goodbye);
     if (_markHold > Duration.zero) {
@@ -149,7 +130,6 @@ class PowerOffCubit extends Cubit<PowerOffState> {
   }
 
   void _set(PowerOffPhase phase) {
-    _takeLock.locked = phase != PowerOffPhase.idle;
     emit(PowerOffState(phase: phase));
   }
 }
