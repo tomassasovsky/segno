@@ -25,21 +25,27 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     ControllerRepository? controller,
     SettingsRepository? settings,
     Duration fxPersistDebounce = const Duration(milliseconds: 300),
+    bool Function() takeLocked = _neverLocked,
   }) : _repository = repository,
        _settings = settings,
+       _takeLocked = takeLocked,
        _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
        super(const LooperState()) {
     on<LooperStateUpdated>((event, emit) => emit(event.state));
-    on<LooperRecordPressed>(
-      (event, _) => _repository.record(channel: event.channel),
-    );
+    on<LooperRecordPressed>((event, _) {
+      if (_takeLocked()) return;
+      _repository.record(channel: event.channel);
+    });
     on<LooperStopPressed>(
       (event, _) => _repository.stopTrack(channel: event.channel),
     );
     on<LooperPlayPressed>(
       (event, _) => _repository.play(channel: event.channel),
     );
-    on<LooperClearPressed>((event, _) => _clearAndArm(event.channel));
+    on<LooperClearPressed>((event, _) {
+      if (_takeLocked()) return;
+      _clearAndArm(event.channel);
+    });
     on<LooperUndoPressed>(
       // Undo is per-layer all the way down: the engine peels one overdub pass
       // per press, and undoing past the base recording empties the track while
@@ -506,6 +512,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       );
     });
     on<LooperSessionLoaded>((_, _) => _resyncSessionChains());
+    on<LooperPersistFlush>((_, _) => _fxPersist.flush());
 
     _subscription = _repository.looperState.listen(
       (s) => add(LooperStateUpdated(s)),
@@ -519,6 +526,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
 
   final LooperRepository _repository;
   final SettingsRepository? _settings;
+  final bool Function() _takeLocked;
+
+  static bool _neverLocked() => false;
 
   /// Coalesces the per-target chain-envelope writes that a knob drag would
   /// otherwise emit at pointer rate. Flushed in [close].

@@ -102,6 +102,7 @@ void main() {
     Future<int?> Function(String path)? freeSpaceBytes,
     PerformanceChains Function()? currentChains,
     Duration armedTickInterval = const Duration(milliseconds: 10),
+    bool Function()? takeLocked,
   }) => PerformanceRecorderCubit(
     performance: performance,
     armedTickInterval: armedTickInterval,
@@ -109,6 +110,7 @@ void main() {
     now: now ?? (() => clock),
     freeSpaceBytes: freeSpaceBytes ?? (_) async => null,
     currentChains: currentChains ?? PerformanceChains.new,
+    takeLocked: takeLocked ?? () => false,
   );
 
   /// Arms via the repository directly and seeds a real `events.log` +
@@ -337,6 +339,16 @@ void main() {
       await pumpEventQueue();
 
       expect(cubit.state, isA<PerformanceRecorderArmed>());
+    });
+
+    test('takeLocked leaves idle unarmed', () async {
+      final cubit = build(takeLocked: () => true);
+      addTearDown(cubit.close);
+
+      await cubit.toggleArm();
+      await pumpEventQueue();
+
+      expect(cubit.state, isA<PerformanceRecorderIdle>());
     });
 
     test('stamps the provider chains into the arm snapshot', () async {

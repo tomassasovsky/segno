@@ -248,6 +248,29 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
+    'takeLocked suppresses LooperRecordPressed',
+    build: () => LooperBloc(repository: repository, takeLocked: () => true),
+    act: (bloc) => bloc.add(const LooperRecordPressed(2)),
+    verify: (_) =>
+        verifyNever(() => repository.record(channel: any(named: 'channel'))),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'takeLocked suppresses LooperClearPressed',
+    build: () => LooperBloc(repository: repository, takeLocked: () => true),
+    act: (bloc) => bloc.add(const LooperClearPressed(0)),
+    verify: (_) {
+      verifyNever(() => repository.clear(channel: any(named: 'channel')));
+      verifyNever(
+        () => repository.setMute(
+          muted: any(named: 'muted'),
+          channel: any(named: 'channel'),
+        ),
+      );
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
     'LooperStopPressed forwards to repository.stopTrack',
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperStopPressed(1)),
@@ -1975,6 +1998,22 @@ void main() {
 
       verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
     });
+
+    test(
+      'LooperPersistFlush writes a drag that ended inside the window',
+      () async {
+        final bloc = buildDebounced()
+          ..add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.25));
+        addTearDown(bloc.close);
+        await pumpEventQueue();
+        verifyNever(() => settings.saveLaneEffects(any(), any(), any()));
+
+        bloc.add(const LooperPersistFlush());
+        await pumpEventQueue();
+
+        verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
+      },
+    );
   });
 
   group('restoreLooperMode() (B5c boot restore)', () {

@@ -122,6 +122,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// no controller attached (#519): the same source the repository carries in
   /// its `sources` list, so a synthetic sweep/press enters exactly where a real
   /// CC would. [simulateTick] / [simulateSweepLeg] pace that synthetic sweep.
+  ///
+  /// [takeLocked] suppresses Rec / overdub / perf-arm while the power-off
+  /// route is up, so a take cannot start behind the dialog.
   ControlCubit({
     required LooperRepository looper,
     required PedalRepository pedal,
@@ -136,6 +139,7 @@ class ControlCubit extends Cubit<ControlState> {
     Duration simulateTick = const Duration(milliseconds: 60),
     Duration simulateSweepLeg = const Duration(milliseconds: 1500),
     PerformanceChains Function() currentChains = _noChains,
+    bool Function() takeLocked = _neverLocked,
   }) : _looper = looper,
        _pedal = pedal,
        _settings = settings,
@@ -147,6 +151,7 @@ class ControlCubit extends Cubit<ControlState> {
        _simulateTick = simulateTick,
        _simulateSweepLeg = simulateSweepLeg,
        _currentChains = currentChains,
+       _takeLocked = takeLocked,
        super(const ControlState()) {
     _looperSub = _looper.looperState.listen(_onLooperState);
     _eventsSub = _pedal.events.listen(_handleEvent);
@@ -171,6 +176,8 @@ class ControlCubit extends Cubit<ControlState> {
   /// [PerformanceRepository.arm] already assumes when given nothing.
   static PerformanceChains _noChains() => const PerformanceChains();
 
+  static bool _neverLocked() => false;
+
   final LooperRepository _looper;
   final PedalRepository _pedal;
   final SettingsRepository _settings;
@@ -193,6 +200,7 @@ class ControlCubit extends Cubit<ControlState> {
   final Duration _simulateTick;
   final Duration _simulateSweepLeg;
   final PerformanceChains Function() _currentChains;
+  final bool Function() _takeLocked;
 
   late final StreamSubscription<LooperState> _looperSub;
   late final StreamSubscription<PedalEvent> _eventsSub;
@@ -644,6 +652,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// be mis-stomped. The switch is reserved for a later part rather than given
   /// a guessable meaning.
   void recPlay() {
+    if (_takeLocked()) return;
     switch (state.mode) {
       case InteractionMode.record:
         _recAdvance(state.cursor);
@@ -784,6 +793,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// A track-button press on [channel] under the current mode — the pedal's
   /// footswitch semantics.
   void trackPressed(int channel) {
+    if (state.mode == InteractionMode.record && _takeLocked()) return;
     switch (state.mode) {
       case InteractionMode.record:
         _recTrackPressed(channel);
@@ -1040,6 +1050,7 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   void _onPress(PedalButton button) {
+    if (_takeLocked()) return;
     _log(
       'press ${button.name}  [mode=${state.mode.name} '
       'cursor=${state.cursor}]',
@@ -1177,6 +1188,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// guard covers a rapid re-press identically here, so it is not
   /// duplicated in this cubit.
   void togglePerformanceRecord() {
+    if (_takeLocked()) return;
     if (_performanceArmed) {
       unawaited(_performance.disarm());
     } else {
@@ -1498,6 +1510,10 @@ class ControlCubit extends Cubit<ControlState> {
     _pendingMappingsBlob = null;
     unawaited(_settings.saveControllerMappings(blob));
   }
+
+  /// Commits a pending mappings write now. Called on a clean halt so a
+  /// debounce that was still armed at press is not lost.
+  void flushMappings() => _flushMappingsWrite();
 
   /// Replaces one mapping in place (an edited range, threshold, behavior or
   /// target), preserving its row position.

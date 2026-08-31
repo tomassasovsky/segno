@@ -161,3 +161,6 @@ docs/code-review/
 hardware/kicad/out_console/gerbers/
 hardware/kicad/out_console/*.zip
 hardware/kicad/out_console/*.kicad_prl
+
+# Widget Preview related
+.widget_preview/

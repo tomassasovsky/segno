@@ -1325,5 +1325,22 @@ void main() {
       final persisted = decodeFxChain(await settings.loadMonitorEffects(0));
       expect((persisted.entries.single as BuiltInEffect).params.first, 0.42);
     });
+
+    test(
+      'flushPersistence commits a drag that ended inside the window',
+      () async {
+        final cubit = buildDebounced()..addEffect(0);
+        addTearDown(cubit.close);
+        final writesBeforeDrag = store.stringWrites;
+        cubit.setEffectParam(0, 0, 0, 0.42);
+        expect(store.stringWrites, writesBeforeDrag);
+
+        cubit.flushPersistence();
+        await pumpEventQueue();
+
+        final persisted = decodeFxChain(await settings.loadMonitorEffects(0));
+        expect((persisted.entries.single as BuiltInEffect).params.first, 0.42);
+      },
+    );
   });
 }

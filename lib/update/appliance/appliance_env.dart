@@ -28,6 +28,11 @@ abstract interface class ApplianceEnv {
   /// failure.
   Future<void> reboot();
 
+  /// Runs the privileged helper to halt the appliance
+  /// (`systemctl start poweroff.target`). Throws on failure. The caller
+  /// freezes on the goodbye mark rather than retrying.
+  Future<void> powerOff();
+
   /// Clears a staged-version marker that cannot be applied: a tryboot that
   /// did not take (rolled back, whether boot-bad or simply never committed),
   /// or already running the staged version. No-op when the helper is absent.
