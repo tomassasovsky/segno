@@ -24,6 +24,7 @@ SEGNO_UPDATE_CHANNEL ?= "production"
 
 SRC_URI = "file://segno.service \
            file://segno-kiosk-launch \
+           file://segno-wait-wayland \
            file://segno-runtime.conf \
            file://segno-rtirq.service \
            file://segno-rtirq \
@@ -65,7 +66,6 @@ SRC_URI = "file://segno.service \
            file://segno-iwd-tame.service \
            file://wifi-country-default \
            file://brcmfmac.conf \
-           file://snd-usb-audio.conf \
            file://update-channel \
            file://journald-segno.conf \
            file://coredump-segno.conf \
@@ -129,7 +129,7 @@ inherit systemd
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
 SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount"
 
-FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
+FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-wayland ${bindir}/segno-rtirq \
                 ${bindir}/segno-data-grow \
                 ${bindir}/segno-ota-check \
                 ${bindir}/segno-update-ctl \
@@ -153,7 +153,6 @@ FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
                 ${sysconfdir}/systemd/system/dropbear@.service.d/segno.conf \
                 ${sysconfdir}/systemd/system/dropbearkey.service.d/segno.conf \
                 ${sysconfdir}/modprobe.d/brcmfmac.conf \
-                ${sysconfdir}/modprobe.d/snd-usb-audio.conf \
                 ${sysconfdir}/segno/update-channel ${sysconfdir}/segno/build-version \
                 ${sysconfdir}/segno/wifi-country \
                 ${sysconfdir}/iwd/main.conf \
@@ -206,6 +205,7 @@ do_install() {
 
     install -d ${D}${bindir}
     install -m 0755 ${UNPACKDIR}/segno-kiosk-launch ${D}${bindir}/segno-kiosk-launch
+    install -m 0755 ${UNPACKDIR}/segno-wait-wayland ${D}${bindir}/segno-wait-wayland
 
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/segno.service ${D}${systemd_system_unitdir}/segno.service
@@ -353,12 +353,9 @@ do_install() {
 
     # brcmfmac: roamoff=1 — without this, WPA2 associates then never completes
     # the 4-way handshake on many APs (no EAPOL M1).
-    # snd-usb-audio: lowlatency=0 — see files/snd-usb-audio.conf.
     install -d ${D}${sysconfdir}/modprobe.d
     install -m 0644 ${UNPACKDIR}/brcmfmac.conf \
         ${D}${sysconfdir}/modprobe.d/brcmfmac.conf
-    install -m 0644 ${UNPACKDIR}/snd-usb-audio.conf \
-        ${D}${sysconfdir}/modprobe.d/snd-usb-audio.conf
 
     # /etc/segno: update channel + this build's version number.
     # Prefer SEGNO_UPDATE_CHANNEL (set by CI) over the static file default.

@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Segno floor-console <to.sasovsky@gmail.com>
+Date: Mon, 31 Aug 2026 00:00:00 +0000
+Subject: [PATCH] ALSA: usb-audio: skip SYNC_APPLPTR for implicit-feedback
+ sinks
+
+lowlatency=1 advertises SNDRV_PCM_INFO_SYNC_APPLPTR on playback open so
+the lowlatency_playback URB path sees precise appl_ptr updates. Implicit-
+feedback sinks never enter that path (lowlatency_playback_available
+returns false — they use the capture-driven ready-list instead), so the
+flag is spurious for them.
+
+On Focusrite Scarlett 4i4 Gen 3 (1235:8212) under linux-raspberrypi
+6.18 + PREEMPT_RT, that spurious flag produces robotic monitor audio at
+96 kHz / 64 frames. Disabling the module lowlatency option clears the
+symptom but also disables the real lowlatency path for other devices.
+Gate SYNC_APPLPTR on !JOINT_DUPLEX instead (JOINT_DUPLEX is set only for
+implicit_fb formats in this driver).
+
+Upstream-Status: Pending
+
+---
+--- a/sound/usb/pcm.c
++++ b/sound/usb/pcm.c
+@@ -1211,10 +1211,6 @@
+ 	int ret;
+ 
+ 	runtime->hw = snd_usb_hardware;
+-	/* need an explicit sync to catch applptr update in low-latency mode */
+-	if (direction == SNDRV_PCM_STREAM_PLAYBACK &&
+-	    as->chip->lowlatency)
+-		runtime->hw.info |= SNDRV_PCM_INFO_SYNC_APPLPTR;
+ 	runtime->private_data = subs;
+ 	subs->pcm_substream = substream;
+ 	/* runtime PM is also done there */
+@@ -1227,6 +1223,16 @@
+ 	ret = setup_hw_info(runtime, subs);
+ 	if (ret < 0)
+ 		return ret;
++	/* need an explicit sync to catch applptr update in low-latency mode.
++	 * Implicit-feedback sinks never use lowlatency_playback; advertising
++	 * SYNC_APPLPTR for them confuses userspace (robotic monitor on
++	 * Scarlett Gen3 @ 96 kHz / short periods). JOINT_DUPLEX is set above
++	 * only when a format has implicit_fb.
++	 */
++	if (direction == SNDRV_PCM_STREAM_PLAYBACK &&
++	    as->chip->lowlatency &&
++	    !(runtime->hw.info & SNDRV_PCM_INFO_JOINT_DUPLEX))
++		runtime->hw.info |= SNDRV_PCM_INFO_SYNC_APPLPTR;
+ 	ret = snd_usb_autoresume(subs->stream->chip);
+ 	if (ret < 0)
+ 		return ret;
+-- 
+2.43.0

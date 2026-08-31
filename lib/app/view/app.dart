@@ -642,6 +642,11 @@ class _AppViewState extends State<_AppView> {
   Future<void> _bootstrapWindow() async {
     await context.read<WaveformWindowCubit>().load();
     if (!mounted) return;
+    // #970: desktop_multi_window creates a second FlView/EGL engine. Opening it
+    // in the same frame as the main view races libepoxy (abort when no current
+    // EGL context). Give the main view a beat to bind its context first.
+    await Future<void>.delayed(const Duration(milliseconds: 750));
+    if (!mounted) return;
     await _syncWindow();
   }
 

@@ -37,7 +37,10 @@ LimitMEMLOCK=infinity
 LimitCORE=infinity
 ExecStart=/usr/bin/segno-kiosk-launch
 Restart=always
-RestartSec=2
+# Give Weston a beat after PartOf bounce before the next client start (#970).
+# The launcher also waits on the Wayland socket; this keeps crash-loops from
+# hammering EGL before the compositor is back.
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
