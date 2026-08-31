@@ -24,8 +24,7 @@ diff --git a/kiosk-shell/kiosk-shell.c b/kiosk-shell/kiosk-shell.c
 index 1111111..2222222 100644
 --- a/kiosk-shell/kiosk-shell.c
 +++ b/kiosk-shell/kiosk-shell.c
-@@ -1250,13 +1250,17 @@ kiosk_shell_activate_view(struct kiosk_shell *shell,
- 			  struct weston_view *view,
+@@ -1252,13 +1252,17 @@
  			  struct weston_seat *seat,
  			  uint32_t flags)
  {

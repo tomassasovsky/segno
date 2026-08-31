@@ -91,6 +91,25 @@ check "patch guards a NULL view->surface" yes \
 check "patch targets kiosk_shell_activate_view" yes \
     "$(grep -qF 'kiosk_shell_activate_view' "$PATCH" && echo yes || echo no)"
 
+echo "patch applies cleanly to weston 14.0.1 (bitbake rejects fuzz)"
+WESTON_TAR="https://gitlab.freedesktop.org/wayland/weston/-/releases/14.0.1/downloads/weston-14.0.1.tar.xz"
+WESTON_SHA="a8150505b126a59df781fe8c30c8e6f87da7013e179039eb844a5bbbcc7c79b3"
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+if ! curl -fsSL "$WESTON_TAR" -o "$tmpdir/weston-14.0.1.tar.xz"; then
+    echo "  FAIL could not fetch weston 14.0.1 tarball"
+    fail=$((fail + 1))
+else
+    actual_sha=$(shasum -a 256 "$tmpdir/weston-14.0.1.tar.xz" | awk '{print $1}')
+    check "weston tarball sha256" "$WESTON_SHA" "$actual_sha"
+    tar -xJf "$tmpdir/weston-14.0.1.tar.xz" -C "$tmpdir"
+    patch_out=$(patch -p1 --dry-run --verbose -d "$tmpdir/weston-14.0.1" < "$PATCH" 2>&1 || true)
+    check "patch applies without fuzz" yes \
+        "$(printf '%s' "$patch_out" | grep -qE 'fuzz|offset' && echo no || echo yes)"
+    check "patch hunk succeeds" yes \
+        "$(printf '%s' "$patch_out" | grep -q 'Hunk #1 succeeded' && echo yes || echo no)"
+fi
+
 echo
 echo "hdmi-hpd: $pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
