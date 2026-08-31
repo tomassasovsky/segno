@@ -5,6 +5,12 @@
 # skips that plane and falls through to the renderer. It does NOT set
 # cursors_are_broken / sprites_are_broken — cursor views still enter plane
 # proposal every frame (#825). See the patch header for the full rationale.
+#
+# 0002: kiosk-shell click-to-activate SIGSEGVs after an HDMI HPD blip (#821)
+# because pointer focus still names a view whose surface went with the
+# disabled output. Guard that path; the cmdline D flag is what stops the
+# disable itself.
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
-SRC_URI += "file://0001-segno-vc4-cursor-planes-broken.patch"
+SRC_URI += "file://0001-segno-vc4-cursor-planes-broken.patch \
+            file://0002-segno-kiosk-shell-guard-stale-pointer-focus.patch"
