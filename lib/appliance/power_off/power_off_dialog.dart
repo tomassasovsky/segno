@@ -15,7 +15,6 @@ Future<bool?> showPowerOffDialog(
 }) {
   return showDialog<bool>(
     context: context,
-    useRootNavigator: true,
     barrierColor: context.surface.scrim,
     builder: (dialogContext) => BlocProvider<PowerOffCubit>.value(
       value: context.read<PowerOffCubit>(),

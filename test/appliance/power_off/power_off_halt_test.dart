@@ -31,8 +31,9 @@ void main() {
       );
       addTearDown(cubit.close);
 
-      cubit.press(const PowerOffSnapshot(anyHasContent: true));
-      cubit.powerOffWithoutSaving(const PowerOffSnapshot(anyHasContent: true));
+      cubit
+        ..press(const PowerOffSnapshot(anyHasContent: true))
+        ..powerOffWithoutSaving(const PowerOffSnapshot(anyHasContent: true));
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 

@@ -57,8 +57,9 @@ void main() {
       final cubit = _cubit();
       addTearDown(cubit.close);
 
-      cubit.press(loops);
-      cubit.press(inFlight);
+      cubit
+        ..press(loops)
+        ..press(inFlight);
 
       expect(cubit.state.phase, PowerOffPhase.confirm);
     });
@@ -88,8 +89,9 @@ void main() {
       final cubit = _cubit(log: log);
       addTearDown(cubit.close);
 
-      cubit.press(loops);
-      cubit.powerOffWithoutSaving(loops);
+      cubit
+        ..press(loops)
+        ..powerOffWithoutSaving(loops);
       await _settle();
 
       expect(log, ['flush', 'pedal', 'powerOff']);
@@ -98,8 +100,9 @@ void main() {
     test('Keep playing is ignored once committed', () async {
       final cubit = _cubit();
       addTearDown(cubit.close);
-      cubit.press(empty);
-      cubit.keepPlaying();
+      cubit
+        ..press(empty)
+        ..keepPlaying();
       await _settle();
       expect(cubit.state.phase, PowerOffPhase.goodbye);
     });
@@ -107,8 +110,9 @@ void main() {
     test('re-check at discard morphs to refuse', () {
       final cubit = _cubit();
       addTearDown(cubit.close);
-      cubit.press(loops);
-      cubit.powerOffWithoutSaving(inFlight);
+      cubit
+        ..press(loops)
+        ..powerOffWithoutSaving(inFlight);
       expect(cubit.state.phase, PowerOffPhase.refuse);
     });
 
@@ -116,8 +120,9 @@ void main() {
       final log = <String>[];
       final cubit = _cubit(log: log);
       addTearDown(cubit.close);
-      cubit.press(loops);
-      cubit.saveAndPowerOff(loops);
+      cubit
+        ..press(loops)
+        ..saveAndPowerOff(loops);
       await _settle();
       expect(cubit.state.phase, PowerOffPhase.saveAs);
       expect(log, isEmpty);
@@ -127,11 +132,12 @@ void main() {
       final log = <String>[];
       final cubit = _cubit(log: log);
       addTearDown(cubit.close);
-      cubit.press(named);
-      cubit.saveAndPowerOff(
-        named,
-        save: () async => throw StateError('disk full'),
-      );
+      cubit
+        ..press(named)
+        ..saveAndPowerOff(
+          named,
+          save: () async => throw StateError('disk full'),
+        );
       await _settle();
       expect(cubit.state.phase, PowerOffPhase.saveFailed);
       expect(log, isEmpty);
@@ -141,8 +147,9 @@ void main() {
       final log = <String>[];
       final cubit = _cubit(log: log);
       addTearDown(cubit.close);
-      cubit.press(named);
-      cubit.saveAndPowerOff(named, save: () async => log.add('save'));
+      cubit
+        ..press(named)
+        ..saveAndPowerOff(named, save: () async => log.add('save'));
       await _settle();
       expect(log, ['save', 'flush', 'pedal', 'powerOff']);
       expect(cubit.state.phase, PowerOffPhase.goodbye);
@@ -162,9 +169,10 @@ void main() {
       final log = <String>[];
       final cubit = _cubit(log: log);
       addTearDown(cubit.close);
-      cubit.press(loops);
-      cubit.saveAndPowerOff(loops);
-      cubit.beginSaving();
+      cubit
+        ..press(loops)
+        ..saveAndPowerOff(loops)
+        ..beginSaving();
       expect(cubit.state.phase, PowerOffPhase.saving);
       cubit.saveCompleted();
       await _settle();
@@ -176,9 +184,10 @@ void main() {
       final log = <String>[];
       final cubit = _cubit(log: log);
       addTearDown(cubit.close);
-      cubit.press(loops);
-      cubit.saveAndPowerOff(loops);
-      cubit.saveFailed();
+      cubit
+        ..press(loops)
+        ..saveAndPowerOff(loops)
+        ..saveFailed();
       await _settle();
       expect(cubit.state.phase, PowerOffPhase.saveFailed);
       expect(log, isEmpty);
@@ -188,9 +197,10 @@ void main() {
       final log = <String>[];
       final cubit = _cubit(log: log);
       addTearDown(cubit.close);
-      cubit.beginSaving();
-      cubit.saveCompleted();
-      cubit.saveFailed();
+      cubit
+        ..beginSaving()
+        ..saveCompleted()
+        ..saveFailed();
       await _settle();
       expect(cubit.state.phase, PowerOffPhase.idle);
       expect(log, isEmpty);

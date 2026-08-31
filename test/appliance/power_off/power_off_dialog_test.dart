@@ -98,11 +98,12 @@ void main() {
         anyHasContent: true,
         currentSessionName: 'set',
       );
-      cubit.press(named);
-      cubit.saveAndPowerOff(
-        named,
-        save: () async => throw Exception('disk full'),
-      );
+      cubit
+        ..press(named)
+        ..saveAndPowerOff(
+          named,
+          save: () async => throw Exception('disk full'),
+        );
       await tester.pump();
       await tester.pump();
       await tester.pumpApp(

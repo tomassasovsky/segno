@@ -14,8 +14,9 @@ void main() {
       );
       addTearDown(cubit.close);
 
-      cubit.press(const PowerOffSnapshot(anyHasContent: true));
-      cubit.saveAndPowerOff(const PowerOffSnapshot(anyHasContent: true));
+      cubit
+        ..press(const PowerOffSnapshot(anyHasContent: true))
+        ..saveAndPowerOff(const PowerOffSnapshot(anyHasContent: true));
       await Future<void>.delayed(Duration.zero);
 
       expect(cubit.state.phase, PowerOffPhase.saveAs);
@@ -40,11 +41,12 @@ void main() {
         anyHasContent: true,
         currentSessionName: 'set',
       );
-      cubit.press(named);
-      cubit.saveAndPowerOff(
-        named,
-        save: () async => throw Exception('disk full'),
-      );
+      cubit
+        ..press(named)
+        ..saveAndPowerOff(
+          named,
+          save: () async => throw Exception('disk full'),
+        );
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
 
@@ -62,9 +64,10 @@ void main() {
       );
       addTearDown(cubit.close);
 
-      cubit.press(const PowerOffSnapshot(anyHasContent: true));
-      cubit.saveAndPowerOff(const PowerOffSnapshot(anyHasContent: true));
-      cubit.keepPlaying();
+      cubit
+        ..press(const PowerOffSnapshot(anyHasContent: true))
+        ..saveAndPowerOff(const PowerOffSnapshot(anyHasContent: true))
+        ..keepPlaying();
       await Future<void>.delayed(Duration.zero);
 
       expect(cubit.state.phase, PowerOffPhase.idle);
