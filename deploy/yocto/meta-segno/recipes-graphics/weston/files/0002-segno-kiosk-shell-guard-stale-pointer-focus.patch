@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Segno floor-console spike <to.sasovsky@gmail.com>
+Date: Mon, 31 Aug 2026 00:00:00 +0000
+Subject: [PATCH] kiosk-shell: don't SIGSEGV on click after an HDMI HPD blip
+
+When HDMI-A-1 drops HPD for a second (TV sleep/wake, cable knock) weston
+disables the output and tears down its views. The pointer can still hold
+focus on that view. The next click runs kiosk_shell_activate_view, which
+dereferences view->surface unconditionally and takes the compositor down
+(notify_button -> kiosk-shell.so SIGSEGV). Segno then dies with
+"Error flushing display: Connection reset by peer".
+
+Return if the view or its surface is gone. The kernel cmdline D flag
+(#821) is what stops the disable; this is the crash that must not happen
+if HPD still gets through.
+
+Upstream-Status: Inappropriate [hardware/config-specific workaround]
+
+---
+ kiosk-shell/kiosk-shell.c | 18 ++++++++++++------
+ 1 file changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/kiosk-shell/kiosk-shell.c b/kiosk-shell/kiosk-shell.c
+index 0000000..0000000 100644
+--- a/kiosk-shell/kiosk-shell.c
++++ b/kiosk-shell/kiosk-shell.c
+@@ -1252,13 +1252,17 @@ kiosk_shell_activate_view(struct kiosk_shell *shell,
+ 			  struct weston_seat *seat,
+ 			  uint32_t flags)
+ {
+-	struct weston_surface *main_surface =
+-		weston_surface_get_main_surface(view->surface);
+-	struct kiosk_shell_surface *shsurf =
+-		get_kiosk_shell_surface(main_surface);
+-	struct kiosk_shell_seat *kiosk_seat =
+-		get_kiosk_shell_seat(seat);
++	struct weston_surface *main_surface;
++	struct kiosk_shell_surface *shsurf;
++	struct kiosk_shell_seat *kiosk_seat;
+ 
++	if (!view || !view->surface)
++		return;
++
++	main_surface = weston_surface_get_main_surface(view->surface);
++	shsurf = get_kiosk_shell_surface(main_surface);
++	kiosk_seat = get_kiosk_shell_seat(seat);
++
+ 	if (!shsurf || !kiosk_seat)
+ 		return;
+ 
