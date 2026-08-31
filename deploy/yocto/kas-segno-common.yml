@@ -24,7 +24,7 @@ target:
 
 # Every upstream layer is pinned to a COMMIT, not just a branch.
 #
-# Without this each build fetched whatever happened to be on `walnascar` at
+# Without this each build fetched whatever happened to be on `wrynose` at
 # that moment, so two builds of the same segno commit could ship different
 # kernels, different WiFi firmware and different NetworkManager — and a
 # regression could appear in a release with no matching change in this repo.
@@ -35,27 +35,40 @@ target:
 #
 # Bumps are now explicit, reviewable commits. Refresh with:
 #
-#   git ls-remote <url> refs/heads/walnascar
+#   git ls-remote <url> refs/heads/wrynose
+#   git ls-remote https://git.openembedded.org/bitbake refs/heads/2.18
 #
-# See #465.
+# See #465. Wrynose splits the deprecated poky combo-layer into OE-core,
+# bitbake, and meta-yocto — see YP 6.0 migration guide.
 repos:
   # This repo (contains meta-segno). No url => the repo holding this kas file.
   segno:
     layers:
       deploy/yocto/meta-segno:
 
-  poky:
-    url: https://git.yoctoproject.org/poky
-    branch: walnascar
-    commit: d0b46a6624ec9c61c47270745dd0b2d5abbe6ac1
+  openembedded-core:
+    url: https://git.openembedded.org/openembedded-core
+    branch: wrynose
+    commit: f7397af248e1e338929d70a910b0fbc2341528ec
     layers:
       meta:
+
+  bitbake:
+    url: https://git.openembedded.org/bitbake
+    branch: 2.18
+    commit: 0ad6c1c34a5e07a5f8dd66ab248c1e7b37b69fa9
+
+  meta-yocto:
+    url: https://git.yoctoproject.org/meta-yocto
+    branch: wrynose
+    commit: 1b132647002eea43a2c7a7f857f63f42dacbc26c
+    layers:
       meta-poky:
 
   meta-openembedded:
     url: https://git.openembedded.org/meta-openembedded
-    branch: walnascar
-    commit: 07330a98cf93806b7a4e0170a541b94962ff3960
+    branch: wrynose
+    commit: 14282a02be9c74a1276a7cda7d6c89e054699a11
     layers:
       meta-oe:
       meta-python:
@@ -65,16 +78,16 @@ repos:
 
   meta-raspberrypi:
     url: https://git.yoctoproject.org/meta-raspberrypi
-    branch: walnascar
-    commit: 0f68e8754514d64f2fe5480195b8992f341d54af
+    branch: wrynose
+    commit: f62c67921474370829d24a4fa01ef88543f3906b
 
   # RAUC (A/B atomic updates). The tryboot bits (wks, WIC selector plugin, cmdline
   # class, bootloader backend, bundle recipe) are vendored INTO meta-segno rather
   # than adding Koch's meta-raspberrypi-tryboot (scarthgap-only). See #303.
   meta-rauc:
     url: https://github.com/rauc/meta-rauc.git
-    branch: walnascar
-    commit: a0b83842d131093e89fa4fefaaa1997f05afdf62
+    branch: wrynose
+    commit: 38da0e5866a953e664001ba90b5edad68d68cd5d
 
 local_conf_header:
   standard: |
@@ -115,9 +128,9 @@ local_conf_header:
 
   rpi-wayland: |
     # Pi GPU + KMS so Mesa/Wayland/weston work. `pam` is required by systemd +
-    # packagegroup-core-weston; keep x11 in so the image GTK3 stays a close ABI
-    # match to our Ubuntu-built bundle (xwayland fallback also available).
-    DISTRO_FEATURES:append = " wayland opengl systemd pam"
+    # packagegroup-core-weston. Wrynose enables wayland/opengl in DISTRO_FEATURES
+    # by default; keep pam for weston/GTK ABI parity with the Ubuntu bundle.
+    DISTRO_FEATURES:append = " pam"
 
   segno: |
     # SEGNO_BOOT_DISK is set per board (kas-segno-rpi{4,5}.yml). The .wks.in is
@@ -139,8 +152,7 @@ local_conf_header:
     # "unable to resolve host" warnings and slow boots).
     hostname:pn-base-files = "segno"
 
-    # Kernel: use the 6.12 LTS instead of meta-raspberrypi's weak default (6.6, in
-    # rpi-default-versions.inc). arm64 only selects ARCH_SUPPORTS_RT from ~6.12, so
-    # CONFIG_PREEMPT_RT is selectable here (it is NOT on 6.6). The linux-raspberrypi
-    # bbappend adds the rt.cfg fragment that turns it on.
-    PREFERRED_VERSION_linux-raspberrypi = "6.12.%"
+    # Kernel: try 6.18 on wrynose first; fall back to 6.12.% if PREEMPT_RT is
+    # not selectable on raspberrypi5 arm64. The linux-raspberrypi bbappend adds
+    # rt.cfg when the series exposes CONFIG_PREEMPT_RT.
+    PREFERRED_VERSION_linux-raspberrypi = "6.18.%"
