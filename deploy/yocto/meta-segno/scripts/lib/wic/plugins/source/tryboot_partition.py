@@ -7,7 +7,7 @@ logger = logging.getLogger('wic')
 
 class TrybootPartitionPlugin(SourcePlugin):
 
-    name = 'tryboot-partition'
+    name = 'tryboot_partition'
 
     @classmethod
     def do_configure_partition(cls, part, source_params, cr, cr_workdir,
