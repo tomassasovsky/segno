@@ -57,6 +57,8 @@ export SEGNO_ALSA_ONLY=1
 # monitored signal buzzes. Safe now that the ALSA wait loop sleeps (snd_pcm_wait)
 # rather than busy-spinning.
 export SEGNO_RT_AUDIO=1
+# #970: defer second-window open until main FlView EGL context is ready.
+export SEGNO_WAVEFORM_OPEN_DELAY_MS=750
 # ALSA duplex buffer depth (period count). The engine's startup fixes (capture
 # backlog flush + period-aligned reads + self-healing playback resync) make the
 # monitor path robust, but a deeper buffer gives both sides a stable cushion

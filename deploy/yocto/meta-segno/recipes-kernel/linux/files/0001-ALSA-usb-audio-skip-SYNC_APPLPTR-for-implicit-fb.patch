@@ -20,10 +20,15 @@ implicit_fb formats in this driver).
 Upstream-Status: Pending
 
 ---
+ sound/usb/pcm.c | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/sound/usb/pcm.c b/sound/usb/pcm.c
+index 1111111..2222222 100644
 --- a/sound/usb/pcm.c
 +++ b/sound/usb/pcm.c
-@@ -1211,10 +1211,6 @@
- 	int ret;
+@@ -1248,10 +1248,6 @@ static int snd_usb_pcm_open(struct snd_pcm_substream *substream)
+ 	}
  
  	runtime->hw = snd_usb_hardware;
 -	/* need an explicit sync to catch applptr update in low-latency mode */
@@ -33,15 +38,15 @@ Upstream-Status: Pending
  	runtime->private_data = subs;
  	subs->pcm_substream = substream;
  	/* runtime PM is also done there */
-@@ -1227,6 +1223,16 @@
+@@ -1264,6 +1260,16 @@ static int snd_usb_pcm_open(struct snd_pcm_substream *substream)
  	ret = setup_hw_info(runtime, subs);
  	if (ret < 0)
- 		return ret;
+ 		goto err_open;
 +	/* need an explicit sync to catch applptr update in low-latency mode.
 +	 * Implicit-feedback sinks never use lowlatency_playback; advertising
 +	 * SYNC_APPLPTR for them confuses userspace (robotic monitor on
-+	 * Scarlett Gen3 @ 96 kHz / short periods). JOINT_DUPLEX is set above
-+	 * only when a format has implicit_fb.
++	 * Scarlett Gen3 @ 96 kHz / short periods). JOINT_DUPLEX is set in
++	 * setup_hw_info only when a format has implicit_fb.
 +	 */
 +	if (direction == SNDRV_PCM_STREAM_PLAYBACK &&
 +	    as->chip->lowlatency &&
@@ -49,6 +54,6 @@ Upstream-Status: Pending
 +		runtime->hw.info |= SNDRV_PCM_INFO_SYNC_APPLPTR;
  	ret = snd_usb_autoresume(subs->stream->chip);
  	if (ret < 0)
- 		return ret;
+ 		goto err_open;
 -- 
 2.43.0
