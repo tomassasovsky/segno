@@ -155,7 +155,7 @@ device_partition() {
 get_slot() {
 	local i
 
-	source_file /etc/rauc/system.conf
+	source_file /usr/lib/rauc/system.conf
 	for i in "${INI[@]}"
 	do
 		local partition
@@ -195,7 +195,7 @@ get_slot() {
 		return
 	done
 
-	error "/etc/rauc/system.conf: $1: No such boot_partition"
+	error "/usr/lib/rauc/system.conf: $1: No such boot_partition"
 	unset INI "${!INI@}"
 	return 1
 }
@@ -385,7 +385,7 @@ get_primary() {
 	source_file /boot/autoboot.txt
 	boot_partition="$INI__ALL__BOOT_PARTITION"
 
-	source_file /etc/rauc/system.conf
+	source_file /usr/lib/rauc/system.conf
 	for i in "${INI[@]}"
 	do
 		if ! [[ "$i" =~ ^slot\. ]]
@@ -420,7 +420,7 @@ get_primary() {
 		return
 	done
 
-	error "/etc/rauc/system.conf: $boot_partition: No such boot_partition"
+	error "/usr/lib/rauc/system.conf: $boot_partition: No such boot_partition"
 	return 1
 }
 

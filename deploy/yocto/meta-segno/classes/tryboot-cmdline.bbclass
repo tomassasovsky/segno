@@ -93,5 +93,39 @@ python do_update_tryboot_cmdline() {
 # The task bakes SEGNO_BOOT_DISK into the image, so a board switch must re-run it.
 do_update_tryboot_cmdline[vardeps] += "SEGNO_BOOT_DISK"
 
-addtask do_update_tryboot_cmdline after do_image_wic before do_image_complete
+def extract_vfat_partition(wic_image, vfat_index, dest):
+    import subprocess
+
+    output = subprocess.check_output(
+        ["fdisk", "-l", "-o", "Start,Sectors,Type", wic_image], text=True)
+    seen = 0
+    for line in output.splitlines():
+        if "FAT" not in line:
+            continue
+        if seen == vfat_index:
+            start, sectors = line.split()[:2]
+            subprocess.run([
+                "dd", f"if={wic_image}", f"of={dest}",
+                "bs=512", f"skip={start}", f"count={sectors}",
+                "status=none",
+            ], check=True)
+            return
+        seen += 1
+
+    bb.fatal(f"vfat partition index {vfat_index} not found in {wic_image}")
+
+
+python do_deploy_rauc_boot_firmware() {
+    import os
+
+    wic_image = get_wic_image(d)
+    deploy_dir = d.getVar('DEPLOY_DIR_IMAGE')
+    out = os.path.join(deploy_dir, d.expand("${PN}-${MACHINE}.boot-firmware.vfat"))
+    bb.utils.mkdirhier(deploy_dir)
+    extract_vfat_partition(wic_image, 1, out)
+    bb.note("RAUC boot firmware artifact (bootA, root=XXX): %s" % out)
+}
+
+do_deploy_rauc_boot_firmware[vardeps] += "SEGNO_BOOT_DISK"
+addtask do_deploy_rauc_boot_firmware after do_image_wic before do_update_tryboot_cmdline
 

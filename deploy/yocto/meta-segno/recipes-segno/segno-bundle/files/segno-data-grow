@@ -14,7 +14,7 @@
 # the RAUC rootfs slots (p5–p6). Delivered via OTA (rootfs) so existing units
 # grow after update + reboot without a reflash.
 #
-# Layout locked by deploy/yocto/meta-segno/wic/segno-tryboot.wks.in:
+# Layout locked by deploy/yocto/meta-segno/files/wic/segno-tryboot.wks.in:
 #   p4 = extended, p7 = data (logical).
 
 set -eu

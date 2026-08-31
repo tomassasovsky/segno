@@ -54,7 +54,7 @@ PACKAGE_EXCLUDE += "psplash psplash-raspberrypi"
 # on 6.12, SCHED_FIFO audio thread + rtirq) rather than a sound server.
 
 # RAUC A/B (tryboot) disk layout: boot selector + bootA/bootB + rootA/rootB +
-# data (Phase 1, #303). See wic/segno-tryboot.wks.in — a template, because the
+# data (Phase 1, #303). See files/wic/segno-tryboot.wks.in — a template, because the
 # boot device is per board (SD on the Pi 4, NVMe on the Pi 5, #799). `wic` = the
 # flashable image; `ext4` = the bare rootfs the .raucb packages (RAUC_SLOT_rootfs).
 WKS_FILE = "segno-tryboot.wks.in"
@@ -98,6 +98,6 @@ ROOTFS_POSTPROCESS_COMMAND += "segno_mask_networkd; "
 # pw-jack shim is needed (cleaner than the Pi OS / Tier 2 path). See plan §Phase 3.
 
 # Spike convenience: root login (empty password) + SSH for bring-up debugging.
-# walnascar dropped the `debug-tweaks` umbrella feature, so name its parts. Drop
-# all of this for anything resembling production.
+# walnascar dropped the `debug-tweaks` umbrella feature; wrynose may differ —
+# name the parts explicitly. Drop all of this for anything resembling production.
 IMAGE_FEATURES:append = " allow-empty-password allow-root-login empty-root-password post-install-logging ssh-server-dropbear"

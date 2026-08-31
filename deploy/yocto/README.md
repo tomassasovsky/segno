@@ -21,20 +21,22 @@ threaded through the WIC layout, the RAUC slot table and the per-slot
 
 Origin: the Tier 3a spike ([#284](https://github.com/tomassasovsky/segno/issues/284),
 child of #271). Pi 5 + NVMe: [#799](https://github.com/tomassasovsky/segno/issues/799).
-Plan: [`docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md`](../../docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md).
+Plan: [`docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md`](../../docs/plan/2026-07-23-spike-tier3a-yocto-gtk-plan.md)
+(historical scarthgap spike). **Current series: Yocto 6.0 wrynose LTS** — see
+[`docs/plan/2026-08-31-chore-yocto-wrynose-migration-plan.md`](../../docs/plan/2026-08-31-chore-yocto-wrynose-migration-plan.md).
 
 ## What's here
 
 ```
-kas-segno-common.yml        shared: poky + meta-openembedded + meta-raspberrypi + meta-rauc (walnascar, commit-pinned)
+kas-segno-common.yml        shared: OE-core + bitbake + meta-yocto + meta-openembedded + meta-raspberrypi + meta-rauc (wrynose, commit-pinned)
 kas-segno-rpi4.yml          raspberrypi4-64, SD
 kas-segno-rpi5.yml          raspberrypi5, NVMe (+ dtparam=pciex1)
 meta-segno/
   conf/layer.conf
   classes/tryboot-cmdline.bbclass                    rewrites root= per boot slot inside the .wic
-  wic/segno-tryboot.wks.in                           A/B layout template (${SEGNO_BOOT_DISK})
+  files/wic/segno-tryboot.wks.in                     A/B layout template (${SEGNO_BOOT_DISK})
   recipes-core/images/segno-kiosk-image.bb           core-image-weston + our bundle + GTK3/Mesa/ALSA
-  recipes-core/images/segno-update-bundle.bb         the signed .raucb
+  recipes-core/images/segno-update-bundle.bb         signed .raucb (rootfs + boot FAT firmware slot)
   recipes-core/rauc/                                 slot table (templated) + keyring
   recipes-bsp/rauc-rpi-backend/                      tryboot bootloader backend
   recipes-segno/segno-bundle/                        installs the PREBUILT bundle + launcher + units
@@ -66,7 +68,8 @@ the client selects on version alone, so a channel can serve exactly one board.
 ### The local way — kas-container
 
 Needs Docker Desktop (or colima/podman) with **≥120 GB disk, ≥16 GB RAM, 4–6
-cores**. First build is **~2–5 h**.
+cores**. First wrynose build is **~2–5 h** (cold sstate after the series bump).
+Later builds reuse sstate when the kas pin commits are unchanged.
 
 1. **Build the aarch64 bundle** and stage it where the container can see it
    (under the repo, so kas's mount picks it up):

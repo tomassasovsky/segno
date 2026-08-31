@@ -6,7 +6,7 @@
 #
 # WHY THIS IS SAFE, stated because #430 broke a release by naming a
 # PACKAGECONFIG whose RDEPENDS could not be provided, and #438 flagged that risk
-# for exactly this change. From poky walnascar's systemd_257.6.bb:
+# for exactly this change. From poky wrynose's systemd recipe:
 #
 #   PACKAGECONFIG[coredump] = "-Dcoredump=true,-Dcoredump=false"
 #   PACKAGECONFIG[elfutils] = "-Delfutils=enabled,-Delfutils=disabled,elfutils,,libelf libdw"

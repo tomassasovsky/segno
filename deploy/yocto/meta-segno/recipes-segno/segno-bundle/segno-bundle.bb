@@ -215,7 +215,7 @@ do_install() {
 
     # data-grow: oneshot that expands the seeded 2 GiB /data partition (and its
     # MBR extended container) to fill the SD card, then resize2fs. Idempotent;
-    # runs before segno.service. See segno-data-grow + wic/segno-tryboot.wks.in.
+    # runs before segno.service. See segno-data-grow + files/wic/segno-tryboot.wks.in.
     install -m 0755 ${UNPACKDIR}/segno-data-grow ${D}${bindir}/segno-data-grow
     install -m 0644 ${UNPACKDIR}/segno-data-grow.service ${D}${systemd_system_unitdir}/segno-data-grow.service
 

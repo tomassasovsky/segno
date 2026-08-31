@@ -25,7 +25,7 @@ local_conf_header:
   segno-board: |
     # The block device the image is flashed to and boots from. Threaded through
     # the WIC layout, the RAUC slot table and the per-slot cmdline.txt so the
-    # three can never disagree — see meta-segno/wic/segno-tryboot.wks.in.
+    # three can never disagree — see meta-segno/files/wic/segno-tryboot.wks.in.
     SEGNO_BOOT_DISK = "mmcblk0"
 
     # RAUC compatible string. Deliberately per-board: a Pi 5 bundle installing

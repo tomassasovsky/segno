@@ -10,7 +10,7 @@ SRC_URI = "git://github.com/rockowitz/ddcutil.git;protocol=https;branch=master"
 
 DEPENDS = "i2c-tools glib-2.0 kmod jansson"
 
-S = "${WORKDIR}/git"
+S = "${UNPACKDIR}"
 PV = "2.1.4"
 SRCREV = "ca610f91d5483e19bfdae88bb0094973cc81fc95"
 

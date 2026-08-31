@@ -232,7 +232,7 @@ jobs:
             # see homelab-gh-runner's README). Path is keyed by this
             # deployment's RUNNER_NAME (proxmox-segno-yocto); persists across
             # builds without touching the GitHub Actions cache at all.
-            echo "YOCTO_WORK_DIR=/opt/gh-runner-cache/proxmox-segno-yocto/build-cache/yocto" >> "$GITHUB_ENV"
+            echo "YOCTO_WORK_DIR=/opt/gh-runner-cache/proxmox-segno-yocto/build-cache/yocto-wrynose" >> "$GITHUB_ENV"
           else
             echo "YOCTO_WORK_DIR=$HOME/yocto-build" >> "$GITHUB_ENV"
           fi
@@ -350,6 +350,8 @@ jobs:
           bundle="segno-appliance-${{ needs.determine-meta.outputs.version }}.raucb"
           cp "$raucb" "$out/$bundle"
           sha=$(sha256sum "$out/$bundle" | cut -d' ' -f1)
+          bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_slots_tests.sh
+          BUNDLE="$out/$bundle" bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_slots_tests.sh
           # version is a semver string (e.g. "0.2.0" / "0.2.0-experimental.9")
           # — must be JSON-quoted. The int-era unquoted form is no longer valid.
           version='${{ needs.determine-meta.outputs.version }}'
