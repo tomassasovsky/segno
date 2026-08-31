@@ -31,10 +31,12 @@ Future<String?> showConsoleRenameSheet(
   required String current,
   required String fieldLabel,
   bool allowEmpty = false,
+  bool useRootNavigator = false,
 }) {
   final surface = context.surface;
   return showModalBottomSheet<String>(
     context: context,
+    useRootNavigator: useRootNavigator,
     barrierColor: surface.scrim.withValues(alpha: 0.62),
     backgroundColor: Colors.transparent,
     // Material caps a bottom sheet at 640px wide, which would make a toy of a

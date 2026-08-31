@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
+import 'package:segno/appliance/power_off/power_off_host.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
 import 'package:segno/looper/view/session_persistence_sync_listener.dart';
@@ -74,7 +75,9 @@ class LooperPage extends StatelessWidget {
       // re-projects the cubit and re-persists the chains from the repository
       // afterwards, so the FX dock and every boot-restore key follow the loaded
       // session.
-      child: const SessionPersistenceSyncListener(child: TracksView()),
+      child: const PowerOffHost(
+        child: SessionPersistenceSyncListener(child: TracksView()),
+      ),
     );
   }
 }

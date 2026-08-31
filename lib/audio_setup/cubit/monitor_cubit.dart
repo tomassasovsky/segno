@@ -706,4 +706,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     unawaited(_paramWatch.cancel());
     return super.close();
   }
+
+  /// Commits pending monitor FX writes now. Called on a clean halt.
+  void flushPersistence() => _fxPersist.flush();
 }

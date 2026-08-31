@@ -1174,6 +1174,48 @@ void main() {
         verify(() => looper.play()).called(1);
         verifyNever(() => looper.record(channel: any(named: 'channel')));
       });
+
+      test('takeLocked suppresses recPlay', () {
+        final locked = ControlCubit(
+          looper: looper,
+          pedal: pedal,
+          settings: settings,
+          performance: performance,
+          keepAliveInterval: Duration.zero,
+          takeLocked: () => true,
+        );
+        addTearDown(locked.close);
+        locked.recPlay();
+        verifyNever(() => looper.record());
+      });
+
+      test('takeLocked suppresses rec-mode trackPressed', () {
+        final locked = ControlCubit(
+          looper: looper,
+          pedal: pedal,
+          settings: settings,
+          performance: performance,
+          keepAliveInterval: Duration.zero,
+          takeLocked: () => true,
+        );
+        addTearDown(locked.close);
+        locked.trackPressed(2);
+        expect(locked.state.cursor, 0);
+      });
+
+      test('takeLocked suppresses togglePerformanceRecord', () {
+        final locked = ControlCubit(
+          looper: looper,
+          pedal: pedal,
+          settings: settings,
+          performance: performance,
+          keepAliveInterval: Duration.zero,
+          takeLocked: () => true,
+        );
+        addTearDown(locked.close);
+        locked.togglePerformanceRecord();
+        expect(performance.armedDirectory, isNull);
+      });
     });
 
     group('recPlay in Mute mode', () {

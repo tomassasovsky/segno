@@ -506,6 +506,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       );
     });
     on<LooperSessionLoaded>((_, _) => _resyncSessionChains());
+    on<LooperPersistFlush>((_, _) => _fxPersist.flush());
 
     _subscription = _repository.looperState.listen(
       (s) => add(LooperStateUpdated(s)),
