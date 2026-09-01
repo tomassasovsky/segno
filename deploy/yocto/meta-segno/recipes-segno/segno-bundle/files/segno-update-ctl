@@ -236,7 +236,20 @@ do_reconcile_staged() {
 case "${1:-}" in
     install)          do_install ;;
     reconcile-staged) do_reconcile_staged ;;
-    reboot)           log "rebooting into the staged slot"; exec systemctl reboot --reboot-argument="0 tryboot" ;;
+    reboot)
+        # Tryboot only when an update is actually staged. The reboot argument
+        # itself triggers the firmware's one-shot tryboot, and autoboot.txt
+        # statically maps [tryboot] to the inactive slot — passed
+        # unconditionally, a plain "just restart it" invocation of this verb
+        # would boot the OTHER slot, and if that slot is healthy, mark-good
+        # would commit it: a silent permanent downgrade with no install record.
+        if [ -s "$STAGED_FILE" ]; then
+            log "rebooting into the staged slot"
+            exec systemctl reboot --reboot-argument="0 tryboot"
+        fi
+        log "no update staged; plain reboot"
+        exec systemctl reboot
+        ;;
     poweroff)         log "powering off"; exec systemctl start poweroff.target ;;
     *)                log "usage: segno-update-ctl {install|reconcile-staged|reboot|poweroff}"; exit 2 ;;
 esac
