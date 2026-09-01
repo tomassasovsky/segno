@@ -1,8 +1,9 @@
 #!/bin/sh
 # Wait until Weston's Wayland socket is stable after a PartOf bounce (#970 /
 # #825). systemd Type=notify can fire as soon as the socket exists; holding
-# briefly avoids racing the first GTK map. The durable epoxy abort fix is
-# building libepoxy without GLX (meta-segno libepoxy bbappend).
+# briefly avoids racing the first GTK map. The durable epoxy abort fix —
+# libepoxy built without GLX — lives on the parked wrynose branch (#966/#970);
+# on this image the wait is the mitigation.
 #
 # Env: XDG_RUNTIME_DIR, WAYLAND_DISPLAY (same as segno.service).
 # Optional: SEGNO_WAYLAND_WAIT_ATTEMPTS (default 100),

@@ -15,11 +15,22 @@
 # RAUC_SLOT_MOUNT_POINT (do not remount RAUC_MOUNT_PREFIX$RAUC_SLOT_DEVICE).
 set -eu
 
-case "${RAUC_SLOT_BOOTNAME:-}" in
+# The firmware slot has no bootname of its own — modern rauc fills
+# RAUC_SLOT_BOOTNAME from the parent rootfs slot (observed on 1.15), but that
+# is version-dependent behavior. Fall back to the slot name, which rauc has
+# always set, so the mapping cannot silently depend on the running rauc.
+slot_id="${RAUC_SLOT_BOOTNAME:-}"
+if [ -z "$slot_id" ]; then
+    case "${RAUC_SLOT_NAME:-}" in
+        firmware.0) slot_id=A ;;
+        firmware.1) slot_id=B ;;
+    esac
+fi
+case "$slot_id" in
     A) root_part=5 ;;
     B) root_part=6 ;;
     *)
-        echo "firmware-post-install: unknown RAUC_SLOT_BOOTNAME=${RAUC_SLOT_BOOTNAME:-}" >&2
+        echo "firmware-post-install: cannot resolve slot (RAUC_SLOT_BOOTNAME=${RAUC_SLOT_BOOTNAME:-} RAUC_SLOT_NAME=${RAUC_SLOT_NAME:-})" >&2
         exit 1
         ;;
 esac
