@@ -292,7 +292,7 @@ final class BuiltInEffect extends TrackEffect {
       type: type,
       params: [
         for (var i = 0; i < kTrackEffectParams; i++)
-          i < decoded.length ? decoded[i] : defaults[i],
+          if (i < decoded.length) decoded[i] else defaults[i],
       ],
       enabled: enabled,
       slotId: slotId,

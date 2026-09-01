@@ -45,6 +45,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   }) : _repository = repository,
        _settings = settings,
        _asioSelectable = asioSelectable,
+       _deviceRefreshInterval = deviceRefreshInterval,
        super(const AudioSetupState()) {
     _subscription = _repository.looperState.listen(_onLooperState);
 
@@ -81,35 +82,32 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // switch) — otherwise the chips would show no selection.
     if (initial.asioOnly) initial = _snapRateAndBuffer(initial);
     emit(initial);
-
-    // Periodically re-enumerate so an interface plugged in (or removed) after
-    // launch appears in / disappears from the picker without a restart. The
-    // pinned-device connectivity watch (see [_detectConnectivity]) only tracks
-    // the selected device, not the full list. Enumeration runs on a transient
-    // ma_context independent of the streaming device, so it is glitch-free.
-    //
-    // A non-positive interval means DO NOT re-enumerate. That is for a
-    // harness whose device list never changes: a widget test verifies its
-    // invariants before any tearDown runs, so a periodic timer left live for
-    // the length of the test body fails it however promptly the cubit is
-    // closed afterwards.
-    if (deviceRefreshInterval > Duration.zero) {
-      _deviceRefreshTimer = Timer.periodic(
-        deviceRefreshInterval,
-        (_) => refreshDevices(),
-      );
-    }
   }
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
   late final StreamSubscription<LooperState> _subscription;
+
+  /// Cadence of the gated re-enumeration poll (see [beginDeviceScan]).
+  ///
+  /// A non-positive interval means DO NOT re-enumerate periodically at all.
+  /// That is for a harness whose device list never changes: a widget test
+  /// verifies its invariants before any tearDown runs, so a periodic timer
+  /// left live for the length of the test body fails it however promptly the
+  /// cubit is closed afterwards.
+  final Duration _deviceRefreshInterval;
+
   Timer? _deviceRefreshTimer;
 
-  /// Whether the ASIO backend is selectable on this platform (Windows only),
-  /// injected by the presentation layer (`platformAsioSelectable`) so the cubit
-  /// holds no OS policy and stays free of Flutter imports. ASIO is offered when
-  /// is true and at least one driver enumerated.
+  /// How many device pickers are mounted. A count rather than a flag: a route
+  /// transition can have the incoming surface mount before the outgoing one
+  /// disposes, and the poll must not stop underneath the new one.
+  int _deviceScanners = 0;
+
+  /// Whether the ASIO backend is selectable. Always false now: ASIO was a
+  /// Windows-only API and went with the desktop targets. The seam stays so the
+  /// cubit holds no OS policy, and so the ASIO state it guards stays inert
+  /// rather than being ripped out mid-flight (#920 follow-up).
   final bool _asioSelectable;
 
   /// Enumerates the installed ASIO drivers for the backend selector, honoring
@@ -476,10 +474,47 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   void setRecordOffset(int frames) =>
       _repository.setRecordOffset(frames < 0 ? 0 : frames);
 
+  /// Starts (or joins) the device re-enumeration poll, and re-enumerates once
+  /// straight away so an interface plugged in while nothing was watching shows
+  /// up on the frame the picker opens rather than a tick later.
+  ///
+  /// **Gated, because enumeration is not free.** It runs synchronously on the
+  /// UI isolate, and #649 measured 0.146 ms/tick on the appliance's
+  /// `/proc/asound/cards` path but 950 ms/tick on the miniaudio fall-through —
+  /// which is the path the appliance takes whenever an interface is unplugged
+  /// (`engine_devices.c`), i.e. exactly when the user is trying to get audio
+  /// back. Polling it once a second from boot, on every screen, for a list
+  /// only a picker renders, was paying that forever.
+  ///
+  /// Nothing else needs the list: the connectivity banner rides
+  /// `looperState.status.devicePresent` (see [_detectConnectivity]) and
+  /// `AudioRecoveryCubit` enumerates through the repository itself. Owned by
+  /// `AudioDeviceScanScope`, the way `CacheTelemetryScope` owns cache
+  /// telemetry (#418) — call [endDeviceScan] once per call to this.
+  void beginDeviceScan() {
+    _deviceScanners++;
+    if (_deviceScanners > 1) return;
+    refreshDevices();
+    if (_deviceRefreshInterval <= Duration.zero) return;
+    _deviceRefreshTimer = Timer.periodic(
+      _deviceRefreshInterval,
+      (_) => refreshDevices(),
+    );
+  }
+
+  /// Drops one [beginDeviceScan] claim; the poll stops when the last one goes.
+  void endDeviceScan() {
+    if (_deviceScanners == 0) return;
+    _deviceScanners--;
+    if (_deviceScanners > 0) return;
+    _deviceRefreshTimer?.cancel();
+    _deviceRefreshTimer = null;
+  }
+
   /// Re-enumerates the host's audio devices and updates the picker when the
   /// set changed (an unchanged list is deduped by the state's value equality,
   /// so this is a no-op when nothing was plugged in or removed). Driven by the
-  /// periodic refresh timer; also safe to call directly.
+  /// gated refresh timer; also safe to call directly.
   void refreshDevices() {
     if (isClosed) return;
     emit(state.copyWith(devices: _repository.devices()));

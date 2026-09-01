@@ -9,7 +9,6 @@ import 'package:segno/app/app_toasts.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -33,7 +32,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// Tapping a column selects it (white highlight) and toggles record/overdub;
 /// long-press stops. The master output waveform is in a separate window.
 ///
-/// The chrome ([TracksToolbar], [AudioNotRunningBanner]) and each
+/// The chrome ([StageStatusBar], [AudioNotRunningBanner]) and each
 /// [TrackColumn] are their own widgets; the tracks keyboard map and the
 /// shared dispatch/announce helpers live in [TracksCommands]. This view is
 /// just the layout that wires them together.
@@ -203,44 +202,19 @@ class _TracksViewState extends State<TracksView> {
                             // (the foot pedals drive transport/mode/clear) and
                             // tightens the layout for the fixed panel; desktop
                             // builds keep the full chrome.
-                            // Console: the pen's `STAGE / stage` insets the
-                            // run 10 from the left, right and bottom, under a
-                            // status bar that starts at 24. Desktop keeps its
-                            // own chrome and its own 18.
-                            padding: kConsoleMode
-                                ? const EdgeInsets.fromLTRB(10, 8, 10, 10)
-                                : const EdgeInsets.all(18),
+                            // The pen's `STAGE / stage` insets the status bar
+                            // 8 from the top and the run 10 from the left,
+                            // right, and bottom.
+                            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                // The pen's `STAGE / stage` status bar: 16
-                                // under the 8 top inset puts the strip at 24,
-                                // and the run starts 10 below it — the pen's
-                                // own 24/64/74 verticals.
-                                if (kConsoleMode) ...[
-                                  const SizedBox(height: 16),
-                                  const StageStatusBar(),
-                                  const SizedBox(height: 10),
-                                ],
-                                if (!kConsoleMode) ...[
-                                  TracksToolbar(
-                                    mode: mode,
-                                    activeBank: overlay.activeBank,
-                                    anyActive: chrome.anyActive,
-                                    playStopEnabled: chrome.playStopEnabled,
-                                    transportEnabled: chrome.transportEnabled,
-                                    onToggleMode: commands.toggleMode,
-                                    onPlayStopAll: () => commands.togglePlayAll(
-                                      playing: chrome.anyActive,
-                                    ),
-                                    onClearAll: commands.clearAll,
-                                  ),
-                                  const SizedBox(height: 14),
-                                ],
+                                const StageStatusBar(),
+                                const SizedBox(height: 10),
                                 // Standing loss conditions hold the stage
                                 // for as long as they are true — the pen's
-                                // `STAGE / device-lost`, at the run's top on
-                                // console and desktop alike. The widget
+                                // `STAGE / device-lost`, at the run's top. The
+                                // widget
                                 // carries its own bottom gap, so an empty
                                 // stack adds no space here.
                                 const ConnectivityBanners(),
@@ -262,7 +236,7 @@ class _TracksViewState extends State<TracksView> {
                                     // screen edges. Padding each column instead
                                     // doubled the inner gap to 16 and put half
                                     // of it outside the run as well.
-                                    spacing: kConsoleMode ? 10 : 16,
+                                    spacing: 10,
                                     children: [
                                       // _TrackSlot supplies its own Expanded,
                                       // so a slot with no track takes no flex
@@ -279,8 +253,6 @@ class _TracksViewState extends State<TracksView> {
                                             ),
                                             selected: channel == overlay.cursor,
                                             mode: mode,
-                                            onUndo: commands.undo,
-                                            onRedo: commands.redo,
                                             looperMode: chrome.looperMode,
                                             isPrimary:
                                                 channel == chrome.primaryTrack,
@@ -383,8 +355,6 @@ class _TrackSlot extends StatelessWidget {
     required this.name,
     required this.selected,
     required this.mode,
-    required this.onUndo,
-    required this.onRedo,
     required this.looperMode,
     required this.isPrimary,
     required this.onCrownPrimary,
@@ -394,8 +364,6 @@ class _TrackSlot extends StatelessWidget {
   final String name;
   final bool selected;
   final InteractionMode mode;
-  final void Function(int channel) onUndo;
-  final void Function(int channel) onRedo;
   final LooperMode looperMode;
   final bool isPrimary;
   final void Function(int channel)? onCrownPrimary;
@@ -425,8 +393,6 @@ class _TrackSlot extends StatelessWidget {
           name: name,
           selected: selected,
           mode: mode,
-          onUndo: onUndo,
-          onRedo: onRedo,
           looperMode: looperMode,
           isPrimary: isPrimary,
           onCrownPrimary: onCrownPrimary,

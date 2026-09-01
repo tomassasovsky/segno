@@ -783,6 +783,13 @@ typedef struct le_track {
   _Atomic int32_t a_clear_restore; /* published: 1 when the next undo restores a
                                     * cleared take rather than peeling a layer */
   _Atomic int32_t a_redo_depth;    /* published redo_count */
+  /* Offline loop-close restoration telemetry (#697 S9): 0 idle, 1 queued
+   * (enqueue copy pending / QUEUED for the worker), 2 running (worker DSP in
+   * flight). Written by the control-thread le_restore_tick, read by the
+   * snapshot; the audio thread never touches it. A completed pass publishes
+   * its result as an ordinary undo layer, so the restored/raw takes surface
+   * through the existing undo_depth, not here. */
+  _Atomic int32_t a_restore_state;
   _Atomic int32_t a_multiple;   /* track length in whole base loops (>= 1) */
   /* Sync division (B3, D16, published): 0 = ordinary (this track's length is
    * `a_multiple` whole base loops, the ubiquitous case); 2 or 4 = this
@@ -1279,6 +1286,16 @@ struct le_engine {
    * SETTING: seeded in le_engine_create, persists across configure. */
   struct le_fx_cache* cache;
   _Atomic int64_t a_fx_cache_cap;
+
+  /* Offline loop-close restoration worker (#697 S9): opaque control/worker
+   * state owned by engine_restore.c — the same opaque-pointer shape as the
+   * wet cache above. NULL until le_restore_init (end of configure); torn down
+   * (worker JOINED before any pool free [R2](d)) by le_restore_shutdown from
+   * le_engine_stop, the top of le_engine_configure, and le_engine_destroy. The
+   * audio thread never touches this pointer — the whole restoration surface is
+   * a control-thread publish of an undo layer (le_restore_commit_layer) plus
+   * the per-track a_restore_state telemetry. */
+  struct le_restore* restore;
 
   /* Command ring + pre-allocated backing storage. */
   le_ring ring;

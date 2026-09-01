@@ -37,12 +37,14 @@ the whole RED list of the #775 DFM sweep came from.
 
 Outputs (./out, mm): STEP (assembly + per-part), DXF flat patterns
 (CUT + VENT = through-cut, BEND = fold reference, MASK = no-paint, NOTE/ENGRAVE/
-SILK = lettering), PDF drawing sheets with a bend table and title block.
+SILK = lettering), PDF drawing sheets with a bend table and title block, and
+the 2-ply pedal-tile pack (CUT outline + ENGRAVE fills, #946).
 
 Run with the bundled venv (cadquery + ezdxf + matplotlib):
     .venv/bin/python segno_enclosure.py            # check + STEP + DXF + PDF
     .venv/bin/python segno_enclosure.py --report   # report + checks only
     .venv/bin/python segno_enclosure.py --no-step   # DXF + PDF only
+    .venv/bin/python segno_enclosure.py --tiles-only  # 2-ply tile pack only
 """
 from __future__ import annotations
 
@@ -1010,6 +1012,66 @@ def _has_led(label):
 # the legend is a printed vinyl overlay, and a filled shape is unambiguous where
 # a font substitution on the vendor's RIP would not be.
 SILK_SYMBOLS = {"REC/PLAY": "rec_play", "STOP": "stop"}
+SILK_ICON_R  = 0.10   # fillet radius as a fraction of h -- play + stop (owner)
+
+
+def _fillet_closed(pts, r, n=10):
+    """Closed ring with a circular fillet of radius r at every vertex.
+
+    Used for the play triangle and the stop square so they read as the same
+    family of icons (rounded, not knife-cut). n is arc segments per corner.
+    """
+    pts = list(pts)
+    m = len(pts)
+    if m < 3 or r <= 0.0:
+        return pts
+    out = []
+    for i in range(m):
+        p0 = pts[(i - 1) % m]
+        p1 = pts[i]
+        p2 = pts[(i + 1) % m]
+        v1 = (p0[0] - p1[0], p0[1] - p1[1])
+        v2 = (p2[0] - p1[0], p2[1] - p1[1])
+        l1 = math.hypot(*v1)
+        l2 = math.hypot(*v2)
+        if l1 < 1e-9 or l2 < 1e-9:
+            out.append(p1)
+            continue
+        u1 = (v1[0] / l1, v1[1] / l1)
+        u2 = (v2[0] / l2, v2[1] / l2)
+        dot = max(-1.0, min(1.0, u1[0] * u2[0] + u1[1] * u2[1]))
+        theta = math.acos(dot)
+        if theta < 1e-6 or theta > math.pi - 1e-6:
+            out.append(p1)
+            continue
+        trim = r / math.tan(theta / 2.0)
+        trim = min(trim, l1 * 0.45, l2 * 0.45)
+        rr = trim * math.tan(theta / 2.0)
+        a = (p1[0] + u1[0] * trim, p1[1] + u1[1] * trim)
+        b = (p1[0] + u2[0] * trim, p1[1] + u2[1] * trim)
+        bis = (u1[0] + u2[0], u1[1] + u2[1])
+        bl = math.hypot(*bis)
+        if bl < 1e-9:
+            out.append(p1)
+            continue
+        bis = (bis[0] / bl, bis[1] / bl)
+        c = (p1[0] + bis[0] * (rr / math.sin(theta / 2.0)),
+             p1[1] + bis[1] * (rr / math.sin(theta / 2.0)))
+        a0 = math.atan2(a[1] - c[1], a[0] - c[0])
+        a1 = math.atan2(b[1] - c[1], b[0] - c[0])
+        # Interior angle is < 180, so the fillet is the minor arc (central
+        # angle π-θ). The long way around bites a concave chunk out of the
+        # corner -- that is how stop looked like a square with four bites.
+        ccw = (a1 - a0) % (2.0 * math.pi)
+        if ccw <= math.pi:
+            sweep, sign = ccw, 1.0
+        else:
+            sweep, sign = (2.0 * math.pi - ccw), -1.0
+        for j in range(n + 1):
+            ang = a0 + sign * sweep * j / n
+            out.append((c[0] + rr * math.cos(ang), c[1] + rr * math.sin(ang)))
+    return out
+
 
 def _silk_symbol_geometry(kind, u, v, h):
     """Filled legend symbols, returned as {"kind": "poly"/"disc"} entries in the
@@ -1017,9 +1079,11 @@ def _silk_symbol_geometry(kind, u, v, h):
     optical baseline as the word labels it replaces.
 
     rec_play: record DOT + play TRIANGLE, side by side, reading left to right in
-              the order the one button cycles.
+              the order the one button cycles. Triangle corners are filleted
+              (SILK_ICON_R) so they match the stop square.
     stop:     the universal filled square, drawn slightly smaller than h because
               a square reads visually larger than a circle of the same height.
+              Corners filleted to the same SILK_ICON_R.
     """
     out = []
     if kind == "rec_play":
@@ -1028,6 +1092,18 @@ def _silk_symbol_geometry(kind, u, v, h):
         gap = h * 0.20                     # tighter than the old 0.34 -- the plus
         pw = h * 0.36                      # goes BETWEEN the two, and the group
         pt = h * 0.10                      # still has to fit inside the pedal
+        # Fillet first, then scale the triangle back to `th` so the rounded
+        # tips do not shrink it under the record dot (they read as one pair).
+        tri = _fillet_closed([(0.0, -th / 2.0), (0.0, th / 2.0), (tw, 0.0)],
+                             h * SILK_ICON_R)
+        ys = [p[1] for p in tri]
+        xs = [p[0] for p in tri]
+        # Same bbox height as the dot. 1.16 overshot (play read larger);
+        # unscaled after the fillet undershot (dot read larger).
+        s = d / (max(ys) - min(ys))
+        cx, cy0 = (min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0
+        tri = [(cx + s * (x - cx), s * (y - cy0)) for x, y in tri]
+        tw = max(p[0] for p in tri) - min(p[0] for p in tri)
         total = d + gap + pw + gap + tw
         x0 = u - total / 2.0
         out.append({"kind": "disc", "u": x0 + d / 2.0, "v": v, "d": d})
@@ -1042,14 +1118,14 @@ def _silk_symbol_geometry(kind, u, v, h):
             (px + a, v - b), (px + a, v + b), (px + b, v + b),
             (px + b, v + a), (px - b, v + a), (px - b, v + b),
             (px - a, v + b), (px - a, v - b), (px - b, v - b)]})
-        tx = x0 + d + gap + pw + gap
-        out.append({"kind": "poly", "pts": [(tx, v - th / 2.0),
-                                            (tx, v + th / 2.0),
-                                            (tx + tw, v)]})
+        tx = x0 + d + gap + pw + gap - min(p[0] for p in tri)
+        out.append({"kind": "poly",
+                    "pts": [(x + tx, y + v) for x, y in tri]})
     elif kind == "stop":
         a = h * 0.70
-        out.append({"kind": "poly", "pts": [(u - a/2, v - a/2), (u + a/2, v - a/2),
-                                            (u + a/2, v + a/2), (u - a/2, v + a/2)]})
+        sq = [(u - a/2, v - a/2), (u + a/2, v - a/2),
+              (u + a/2, v + a/2), (u - a/2, v + a/2)]
+        out.append({"kind": "poly", "pts": _fillet_closed(sq, h * SILK_ICON_R)})
     else:
         raise ValueError("unknown silk symbol: %r" % (kind,))
     return out
@@ -1933,6 +2009,10 @@ def _check(strict_board_mount=True):
     assert not _missing, (
         f"REAR_IO: {_missing} have no entry in REAR_IO_PROVENANCE -- say whether "
         "each is measured, from a datasheet, or unconfirmed before it is cut")
+
+    # 2-ply tile ink must fit the trapezoid the same way the 3D tiles do (#946).
+    for label, _u, _v in PEDALS:
+        _tile_ink(label)
     return True
 
 # ---- side-wall exhaust vents (#753) ------------------------------------------
@@ -2302,6 +2382,26 @@ def _silk_fill(msp, kind, spec):
         h.paths.add_polyline_path(spec, is_closed=True)
     else:
         raise ValueError("unknown silk fill kind: %r" % (kind,))
+    return h
+
+
+def _engrave_fill(msp, kind, spec, holes=None):
+    """SOLID-fill an ENGRAVE region so a 2-ply laser burns through the cap.
+
+    Same hatch trap as `_silk_fill`: color=256 is BYLAYER (named argument), and
+    the outline stays on the layer so a reader that ignores hatches still sees
+    the glyph. ENGRAVE is color 3, so BYLAYER cannot vanish on a white sheet.
+    """
+    h = msp.add_hatch(color=256, dxfattribs={"layer": "ENGRAVE"})
+    if kind == "circle":
+        cx, cy, r = spec
+        h.paths.add_edge_path().add_arc((cx, cy), r, 0.0, 360.0)
+    elif kind == "poly":
+        h.paths.add_polyline_path(spec, is_closed=True)
+        for hole in holes or []:
+            h.paths.add_polyline_path(hole, is_closed=True)
+    else:
+        raise ValueError("unknown engrave fill kind: %r" % (kind,))
     return h
 
 
@@ -3480,15 +3580,39 @@ def build_diffuser_step():
     return step
 
 
-# --- pedal name tiles (#795) -------------------------------------------------
-# The WTB-006's top pad has a 54.55 x 20 window through it, and the pad is a
-# uniform 2.2 slab lying on a case top tilted to match -- so the window is a
-# parallel-sided 2.2 deep pocket and a FLAT tile fits it.
+# --- pedal name tiles (#795, trapezoid #922) ---------------------------------
+# The WTB-006's top pad has a window through it, and the pad is a uniform 2.2
+# slab lying on a case top tilted to match -- so the window is a parallel-sided
+# 2.2 deep pocket and a FLAT tile fits it (flat in Z; see the plan taper below).
 # The tile FILLS the window: at 0.25/side the pedal's own case colour showed
 # through the gap around it. 0.05/side is below what FDM resolves, so this is a
 # press fit into a compliant rubber window -- which also retains it.
-TILE_L      = 54.45   # window is 54.55
-TILE_W      = 19.90   # window is 20.00
+#
+# THE TILE IS A TRAPEZOID, NOT A RECTANGLE (#922). The owner rule is 5 mm of pad
+# each side, ALWAYS -- and the WTB-006 is a wedge IN PLAN as well as in height,
+# so a constant width can only be right at one station along the length. The
+# tile's sides run PARALLEL TO THE PAD'S SIDES: wide edge toward the case BACK
+# (cable end), narrow edge toward the TOE. That is also the reading direction --
+# the top of the glyphs points at the wide edge -- so the tile cannot be fitted
+# the wrong way round without the label reading upside down.
+TILE_WALL   = 5.0     # pad left each side of the window. OWNER RULE, and the
+                      # thing the width is DERIVED from. The old 54.45 was a
+                      # transcribed constant: it satisfied this rule at ONE
+                      # station and was wrong at every other.
+# Top-pad width at the window's two ends, MEASURED off the `Top Pad` body in the
+# "Cherub WTB-006 Footswitch" Fusion doc (its PAD_WINDOW sketch carries the pad's
+# own side edges, so the taper comes from the part, not from the case). The pad
+# runs 64.55 at its widest -- that is the number the owner confirmed, and it is
+# the pad's BACK EDGE, not the window's station.
+TILE_PAD_W_BACK = 64.459   # at the window's back (cable-end) edge
+TILE_PAD_W_TOE  = 63.855   # at the window's toe edge -- the pad is a wedge in plan
+TILE_WIN_W  = 20.00   # window length along the pedal
+TILE_CLR    = 0.05    # per side, all four sides
+TILE_WIN_L_BACK = TILE_PAD_W_BACK - 2*TILE_WALL          # 54.459
+TILE_WIN_L_TOE  = TILE_PAD_W_TOE  - 2*TILE_WALL          # 53.855
+TILE_W      = TILE_WIN_W - 2*TILE_CLR                    # 19.90, along the pedal
+TILE_L_BACK = TILE_WIN_L_BACK - 2*TILE_CLR               # 54.359, wide edge
+TILE_L_TOE  = TILE_WIN_L_TOE  - 2*TILE_CLR               # 53.755, narrow edge
 TILE_BODY_T = 1.8     # black body
 TILE_TEXT_T = 0.4     # white glyph layer; 1.8 + 0.4 = the 2.2 pocket, so the
                       # LETTERS finish flush with the pad and the black field
@@ -3507,6 +3631,176 @@ TILE_SYM_H  = 14.0    # symbol em: play triangle 0.82*h = 11.5 tall
 # set far larger in the same window.
 TILE_TEXT = {"TRACK1": "1", "TRACK2": "2", "TRACK3": "3", "TRACK4": "4"}
 
+# 2-ply engraved plastic (#946). 2.0 mm is the closest standard stock to the
+# 2.2 mm pad pocket; the tile sits 0.2 mm recessed. Black cap / white core:
+# ENGRAVE burns the cap and the glyph reads white. The plan is the same
+# trapezoid as the 3D tiles -- only the process changes.
+TILE_PLY_T     = 2.0
+TILE_NEST_GAP  = 4.0
+TILE_NEST_COLS = 5
+
+
+def _tile_stem(label):
+    return "segno_pedal_tile_" + label.replace("/", "_")
+
+
+def _tile_outline():
+    """Trapezoid in the tile frame: +Y is the wide (cable-end) edge."""
+    return [(-TILE_L_BACK / 2.0,  TILE_W / 2.0),
+            ( TILE_L_BACK / 2.0,  TILE_W / 2.0),
+            ( TILE_L_TOE  / 2.0, -TILE_W / 2.0),
+            (-TILE_L_TOE  / 2.0, -TILE_W / 2.0)]
+
+
+def _tile_font_props(size):
+    """Helvetica Neue Light -- the same face TILE_FONT names for CadQuery.
+
+    matplotlib finds it as family + weight, not as the PostScript face name.
+    The path is gated so a machine without the font cannot silently ship
+    DejaVu outlines to the shop.
+    """
+    from matplotlib.font_manager import FontProperties, findfont
+    fp = FontProperties(family="Helvetica Neue", weight="light", size=size)
+    path = findfont(fp)
+    assert "helveticaneue" in os.path.basename(path).lower().replace(" ", ""), (
+        f"tile font resolved to {path}, not Helvetica Neue Light")
+    return fp
+
+
+def _signed_area(pts):
+    a = 0.0
+    n = len(pts)
+    for i in range(n):
+        x0, y0 = pts[i]
+        x1, y1 = pts[(i + 1) % n]
+        a += x0 * y1 - x1 * y0
+    return a / 2.0
+
+
+def _point_in_poly(x, y, pts):
+    inside = False
+    n = len(pts)
+    j = n - 1
+    for i in range(n):
+        xi, yi = pts[i]
+        xj, yj = pts[j]
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi + 0.0) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _clean_ring(pts):
+    ring = [(float(x), float(y)) for x, y in pts]
+    if len(ring) >= 2 and ring[0] == ring[-1]:
+        ring = ring[:-1]
+    return ring if len(ring) >= 3 else None
+
+
+def _group_outers_and_holes(polys):
+    """Pair each outer contour with the holes that sit inside it.
+
+    matplotlib TextPath emits one polygon per contour; Helvetica Neue Light
+    winds outers clockwise (negative area) and counters the other way.
+    """
+    rings = [r for r in (_clean_ring(p) for p in polys) if r]
+    outers = [r for r in rings if _signed_area(r) < 0]
+    holes = [r for r in rings if _signed_area(r) > 0]
+    if not outers:
+        return [(r, []) for r in rings]
+    groups = []
+    used = set()
+    for outer in outers:
+        own = []
+        for i, hole in enumerate(holes):
+            if i in used:
+                continue
+            cx = sum(p[0] for p in hole) / len(hole)
+            cy = sum(p[1] for p in hole) / len(hole)
+            if _point_in_poly(cx, cy, outer):
+                own.append(hole)
+                used.add(i)
+        groups.append((outer, own))
+    return groups
+
+
+def _text_glyph_groups(txt, em):
+    from matplotlib.textpath import TextPath
+    path = TextPath((0.0, 0.0), txt, prop=_tile_font_props(em), size=em)
+    return _group_outers_and_holes(path.to_polygons())
+
+
+def _ink_bbox(glyphs):
+    xs, ys = [], []
+    for e in glyphs:
+        if e["kind"] == "disc":
+            xs += [e["u"] - e["d"] / 2.0, e["u"] + e["d"] / 2.0]
+            ys += [e["v"] - e["d"] / 2.0, e["v"] + e["d"] / 2.0]
+        else:
+            for p in e["pts"]:
+                xs.append(p[0]); ys.append(p[1])
+            for hole in e.get("holes") or []:
+                for p in hole:
+                    xs.append(p[0]); ys.append(p[1])
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _translate_glyphs(glyphs, dx, dy):
+    out = []
+    for e in glyphs:
+        e = dict(e)
+        if e["kind"] == "disc":
+            e["u"] += dx
+            e["v"] += dy
+        else:
+            e["pts"] = [(x + dx, y + dy) for x, y in e["pts"]]
+            e["holes"] = [[(x + dx, y + dy) for x, y in h]
+                          for h in e.get("holes") or []]
+        out.append(e)
+    return out
+
+
+def _tile_ink(label):
+    """Fitted, centred ink for one tile -- the 2-ply ENGRAVE source (#946).
+
+    Symbols come from `_silk_symbol_geometry` (same as the faceplate and the
+    3D tiles). Words are Helvetica Neue Light outlines, never TEXT entities:
+    a shop font substitution would change the stroke that already sits at
+    0.61 mm. Auto-fit and ink-centre match `build_pedal_name_tiles`.
+    """
+    fit_l = TILE_L_TOE - 2 * TILE_MARGIN
+    fit_w = TILE_W - 2 * TILE_MARGIN
+    if label in SILK_SYMBOLS:
+        probe = _silk_symbol_geometry(SILK_SYMBOLS[label], 0.0, 0.0, 10.0)
+        xmin, ymin, xmax, ymax = _ink_bbox(probe)
+        h = 10.0 * min(fit_l / (xmax - xmin), fit_w / (ymax - ymin))
+        glyphs = _silk_symbol_geometry(SILK_SYMBOLS[label], 0.0, 0.0, h)
+    else:
+        txt = TILE_TEXT.get(label, label)
+        probe = [{"kind": "poly", "pts": o, "holes": hs}
+                 for o, hs in _text_glyph_groups(txt, 10.0)]
+        xmin, ymin, xmax, ymax = _ink_bbox(probe)
+        em = 10.0 * min(fit_l / (xmax - xmin), fit_w / (ymax - ymin))
+        glyphs = [{"kind": "poly", "pts": o, "holes": hs}
+                  for o, hs in _text_glyph_groups(txt, em)]
+    xmin, ymin, xmax, ymax = _ink_bbox(glyphs)
+    glyphs = _translate_glyphs(glyphs, -(xmin + xmax) / 2.0, -(ymin + ymax) / 2.0)
+    xmin, ymin, xmax, ymax = _ink_bbox(glyphs)
+    avail = tile_width_at(ymin)
+    assert (xmax - xmin) <= avail + 1e-6 and (ymax - ymin) <= TILE_W + 1e-6, (
+        f"pedal tile {label!r}: glyph {xmax - xmin:.2f} x {ymax - ymin:.2f} overflows "
+        f"the {avail:.2f} available at y={ymin:.2f} on the "
+        f"{TILE_L_TOE:.2f}(toe)/{TILE_L_BACK:.2f}(back) x {TILE_W} tile")
+    return glyphs, (xmin, ymin, xmax, ymax)
+
+
+def tile_width_at(y):
+    """Tile width at station y, with +Y toward the case BACK (the wide edge).
+    The sides are straight, so this is a plain interpolation between the toe and
+    back widths -- and it is what anything laid on the tile must clear."""
+    return ((TILE_L_BACK + TILE_L_TOE) / 2.0
+            + (TILE_L_BACK - TILE_L_TOE) * (y / TILE_W))
+
 
 def build_pedal_name_tiles():
     """One drop-in name tile per pedal, for the pad window.
@@ -3519,13 +3813,27 @@ def build_pedal_name_tiles():
     The text comes from PEDALS and SILK_SYMBOLS -- the same source as the
     faceplate legends -- so REC/PLAY and STOP carry the dot+plus+triangle and the
     square here too, and the two can never drift apart.
+
+    The tile is a TRAPEZOID (#922): the pad it drops into is a wedge in plan, and
+    the wall is 5 mm each side at EVERY station, so the tile's sides run parallel
+    to the pad's. The WIDE edge faces the case BACK (cable end) and carries the
+    top of the glyphs -- fit it the other way round and the label is upside down,
+    which is the intended tell.
     """
     import cadquery as cq
     made = []
     for label, _u, _v in PEDALS:
+        # Trapezoid: +Y is toward the case BACK (the wide edge, and the top of
+        # the glyphs), -Y toward the toe. The sides are parallel to the pad's.
         body = (cq.Workplane("XY")
-                .box(TILE_L, TILE_W, TILE_BODY_T, centered=(True, True, False)))
-        fit_l, fit_w = TILE_L - 2*TILE_MARGIN, TILE_W - 2*TILE_MARGIN
+                .polyline([(-TILE_L_BACK/2.0,  TILE_W/2.0),
+                           ( TILE_L_BACK/2.0,  TILE_W/2.0),
+                           ( TILE_L_TOE /2.0, -TILE_W/2.0),
+                           (-TILE_L_TOE /2.0, -TILE_W/2.0)])
+                .close().extrude(TILE_BODY_T))
+        # Fit the glyphs to the NARROW edge: a block sized off the wide edge would
+        # cross the tapered sides at the toe end.
+        fit_l, fit_w = TILE_L_TOE - 2*TILE_MARGIN, TILE_W - 2*TILE_MARGIN
         if label in SILK_SYMBOLS:
             # fit the symbol group to the SAME box the words get, so a symbol
             # tile and a word tile read at one size
@@ -3562,10 +3870,20 @@ def build_pedal_name_tiles():
         glyph = glyph.translate((-(gb.xmin + gb.xmax) / 2.0,
                                  -(gb.ymin + gb.ymax) / 2.0, 0))
         part = body.union(glyph)
+        # Gate the GLYPH, not the part envelope: the part IS the trapezoid, so its
+        # bbox always measures TILE_L_BACK and would gate nothing. Compare the ink
+        # against the tile width at the ink's OWN toe-most station -- that is the
+        # narrowest the tile gets anywhere the glyph reaches.
+        gb = glyph.val().BoundingBox()
+        avail = tile_width_at(gb.ymin)
+        assert gb.xlen <= avail + 1e-6 and gb.ylen <= TILE_W + 1e-6, (
+            f"pedal tile {label!r}: glyph {gb.xlen:.2f} x {gb.ylen:.2f} overflows "
+            f"the {avail:.2f} available at y={gb.ymin:.2f} on the "
+            f"{TILE_L_TOE:.2f}(toe)/{TILE_L_BACK:.2f}(back) x {TILE_W} tile")
         bb = part.val().BoundingBox()
-        assert bb.xlen <= TILE_L + 1e-6 and bb.ylen <= TILE_W + 1e-6, (
-            f"pedal tile {label!r}: glyph {bb.xlen:.2f} x {bb.ylen:.2f} overflows "
-            f"the {TILE_L} x {TILE_W} tile")
+        assert abs(bb.xlen - TILE_L_BACK) < 1e-6 and abs(bb.ylen - TILE_W) < 1e-6, (
+            f"pedal tile {label!r}: envelope {bb.xlen:.3f} x {bb.ylen:.3f} is not "
+            f"the {TILE_L_BACK:.3f} x {TILE_W:.3f} trapezoid")
         stem = "segno_pedal_tile_" + label.replace("/", "_")
         # STEP keeps the body and the glyphs as TWO SOLIDS -- that is the colour
         # split, so a CAD assembly can paint them black/white per body instead of
@@ -4082,6 +4400,8 @@ def build_step(write_parts=True):
 AL_SHEET  = f"aluminio 5052-H32 de {T:.1f} mm"
 STEEL_CR  = f"acero laminado en frío de {POST_T:.1f} mm"
 VINYL     = "vinilo adhesivo impreso / policarbonato, troquelado - NO ES METAL"
+PLY_2MM   = (f"plástico bicapa de grabado de {TILE_PLY_T:.1f} mm "
+             "(capa negra / núcleo blanco) - NO ES METAL")
 
 # stem -> (material printed on the sheet, qty per console, vendor package).
 # Quantities track the cut list in hardware/MANUFACTURING.md section 1.
@@ -4090,6 +4410,7 @@ VINYL     = "vinilo adhesivo impreso / policarbonato, troquelado - NO ES METAL"
 # post (x2) and the vinyl overlay.
 PKG_SHEETMETAL = "sheetmetal"   # laser + brake + powder coat
 PKG_OVERLAY    = "overlay"      # label/overlay printer, die-cut, no metal
+PKG_TILES      = "tiles"        # 2-ply engraved plastic, laser cut + engrave
 PART_SPECS = {
     "segno_base":                (AL_SHEET, 1, PKG_SHEETMETAL),
     "segno_faceplate":           (AL_SHEET, 1, PKG_SHEETMETAL),
@@ -4098,6 +4419,7 @@ PART_SPECS = {
     "segno_corner_bracket_rear": (AL_SHEET, 2, PKG_SHEETMETAL),
     "segno_post":                (STEEL_CR, 2, PKG_SHEETMETAL),
     "segno_overlay":             (VINYL,    1, PKG_OVERLAY),
+    "segno_pedal_tiles":         (PLY_2MM, 10, PKG_TILES),
 }
 
 # Spanish part name for the title block. The FILE STEM still travels with it --
@@ -4111,6 +4433,7 @@ PART_TITLES_ES = {
     "segno_corner_bracket_rear": "ÁNGULO DE ESQUINA TRASERA",
     "segno_post":                "POSTE DE APOYO DE LA TAPA",
     "segno_overlay":             "CALCO SUPERIOR IMPRESO (no es metal)",
+    "segno_pedal_tiles":         "AZULEJOS DE PEDAL (plástico bicapa grabado)",
 }
 
 # --- tolerance block (issue #778) ------------------------------------------
@@ -4170,6 +4493,13 @@ SHEET_LEGEND = ("CUT + VENT = CORTE PASANTE (las dos capas, la misma operación)
 # must be PRESENT (BEND is not an operation) and must appear NOWHERE ELSE in the
 # legend, where they would read as an instruction to perform them.
 LEGEND_NO_SCORE = "no cortar, no marcar, no rayar ni grabar"
+
+# Tile sheet: ENGRAVE is the process, not annotation. Do not reuse SHEET_LEGEND
+# here -- that one tells the metal shop ENGRAVE is "texto, no es geometría".
+TILE_LEGEND = ("CUT = CORTE PASANTE (contorno del azulejo)   |   "
+               "ENGRAVE = GRABADO RELLENO: quema la capa negra, deja ver el núcleo blanco "
+               "(NO es texto, es geometría)   |   "
+               "NOTE = instrucciones, no cortar")
 
 # --- bend tables -----------------------------------------------------------
 # A flat pattern with no angles is not a drawing. The base's transition fold is
@@ -4305,13 +4635,14 @@ SHEET_HEADING = "Segno - gabinete de controlador de audio"
 # _verify_drawing_package() holds the Spanish and the tolerance block against.
 SHEET_TEXT = {}
 
-def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
+def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None):
     """One drawing sheet: the flat pattern, a bend table, a title block and a legend.
 
     `material` and `qty` are REQUIRED, deliberately: they used to default to
     "2.0 mm 5052-H32 Al" / 1 and the single call site passed neither, so the 1.6 mm
     steel post (x2) and the vinyl overlay both shipped sheets calling for 2 mm
-    aluminium, qty 1 (#775 R5/R6)."""
+    aluminium, qty 1 (#775 R5/R6). `legend` defaults to SHEET_LEGEND; the 2-ply
+    tile sheet passes TILE_LEGEND so ENGRAVE is not described as annotation."""
     import textwrap
     import matplotlib; matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -4360,8 +4691,9 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None):
     # The tolerance block sits in the right-hand third beside the title block, so
     # the legend gets the left ~58% and wraps there rather than running under it.
     tol = _tolerance_lines() if PART_SPECS.get(stem, (None, None, None))[2] == PKG_SHEETMETAL else []
-    legend = textwrap.wrap(SHEET_LEGEND,
-                           max(40, int(mono_cols(FS) * (0.58 if tol else 1.0)))) or [SHEET_LEGEND]
+    legend_src = SHEET_LEGEND if legend is None else legend
+    legend = textwrap.wrap(legend_src,
+                           max(40, int(mono_cols(FS) * (0.58 if tol else 1.0)))) or [legend_src]
 
     # the bend spec is PER PART -- the post is 1.6 mm steel on Ri 1.6, and a flat
     # part has no radius at all. A blanket "bend Ri 2.0" was wrong on both.
@@ -4828,6 +5160,210 @@ def dxf_ring_disc(path):
     _text(msp, -RING_ID/2, RING_ID/2 + 6, 5, "Segno DISCO CENTRAL DEL ARO DE LEDS (segno_ring_disc)  chapa 2.0 mm  CANT. 1  PIEZA PLANA, sin plegados (queda sujeto por la tuerca del encoder; el agujero central es el paso del buje)", "NOTE")
     doc.saveas(path); return {}
 
+
+def _emit_tile(msp, ox, oy, label):
+    """One tile at (ox, oy): CUT trapezoid + ENGRAVE filled glyphs."""
+    # Repeat the first point so viewers that ignore the closed flag still
+    # draw the last side. The ezdxf matplotlib backend used to drop it, and
+    # every tile's top-left corner vanished on the PDF (#946).
+    outline = [(x + ox, y + oy) for x, y in _tile_outline()]
+    _poly(msp, outline + [outline[0]], "CUT", closed=True)
+    glyphs, _bb = _tile_ink(label)
+    for e in glyphs:
+        if e["kind"] == "disc":
+            _circle(msp, e["u"] + ox, e["v"] + oy, e["d"], "ENGRAVE")
+            _engrave_fill(msp, "circle", (e["u"] + ox, e["v"] + oy, e["d"] / 2.0))
+        else:
+            pts = [(x + ox, y + oy) for x, y in e["pts"]]
+            holes = [[(x + ox, y + oy) for x, y in h] for h in e.get("holes") or []]
+            _poly(msp, pts, "ENGRAVE")
+            for hole in holes:
+                _poly(msp, hole, "ENGRAVE")
+            _engrave_fill(msp, "poly", pts, holes=holes)
+
+
+def _tile_size_callout(msp, ox, oy):
+    """NOTE-only: both widths, so the 0.6 mm taper cannot be missed on screen.
+
+    The pad is a wedge in plan (#922). 54.36 vs 53.76 over 19.90 is 0.87° a side
+    -- a viewer that only looks at the outline will swear the tile is a rectangle.
+    """
+    yb = oy + TILE_W / 2.0
+    yt = oy - TILE_W / 2.0
+    xb, xt = TILE_L_BACK / 2.0, TILE_L_TOE / 2.0
+    gap = 2.4
+    _poly(msp, [(ox - xb, yb + 0.5), (ox - xb, yb + gap),
+                (ox + xb, yb + gap), (ox + xb, yb + 0.5)], "NOTE", closed=False)
+    _text(msp, ox, yb + gap + 0.3, 1.8, f"{TILE_L_BACK:.2f}  (ancho)", "NOTE",
+          halign="center")
+    _poly(msp, [(ox - xt, yt - 0.5), (ox - xt, yt - gap),
+                (ox + xt, yt - gap), (ox + xt, yt - 0.5)], "NOTE", closed=False)
+    _text(msp, ox, yt - gap - 2.0, 1.8, f"{TILE_L_TOE:.2f}  (estrecho)", "NOTE",
+          halign="center")
+    _poly(msp, [(ox - xb - 0.5, yb), (ox - xb - gap, yb),
+                (ox - xb - gap, yt), (ox - xb - 0.5, yt)], "NOTE", closed=False)
+    _text(msp, ox - xb - gap - 6.5, oy - 0.9, 1.8, f"{TILE_W:.2f}", "NOTE")
+
+
+def dxf_one_pedal_tile(path, label):
+    """Single-tile DXF for a replacement cut. Origin at the tile centre."""
+    doc = _doc(); msp = doc.modelspace()
+    _emit_tile(msp, 0.0, 0.0, label)
+    _tile_size_callout(msp, 0.0, 0.0)
+    _text(msp, -TILE_L_BACK / 2.0, TILE_W / 2.0 + 6.5, 2.6,
+          f"Segno {_tile_stem(label)}  CANT. 1  TRAPECIO "
+          f"{TILE_L_BACK:.2f}/{TILE_L_TOE:.2f} x {TILE_W:.2f}  "
+          f"plástico bicapa {TILE_PLY_T:.1f} mm "
+          f"capa NEGRA / núcleo BLANCO; CUT = contorno; ENGRAVE = grabado relleno; "
+          f"borde ANCHO hacia el cable", "NOTE")
+    doc.saveas(path)
+    return {}
+
+
+def _tile_nest_origin(i):
+    col, row = i % TILE_NEST_COLS, i // TILE_NEST_COLS
+    return (TILE_L_BACK / 2.0 + col * (TILE_L_BACK + TILE_NEST_GAP),
+            TILE_W / 2.0 + row * (TILE_W + TILE_NEST_GAP))
+
+
+def dxf_pedal_tiles(path):
+    """Nested sheet of all ten tiles -- the file the 2-ply shop cuts (#946).
+
+    CUT is the trapezoid outline (through-cut). ENGRAVE is filled glyph geometry
+    (raster/vector-engrave through the black cap). Glyphs are NEVER TEXT: the
+    shop must not substitute a font. Wide edge toward the cable end.
+    """
+    doc = _doc(); msp = doc.modelspace()
+    labels = [lab for lab, _u, _v in PEDALS]
+    for i, label in enumerate(labels):
+        ox, oy = _tile_nest_origin(i)
+        _emit_tile(msp, ox, oy, label)
+        _text(msp, ox - TILE_L_BACK / 2.0, oy - TILE_W / 2.0 - 3.2, 2.4, label, "NOTE")
+    # One tile carries the size callout -- the 0.6 mm taper is invisible at nest
+    # scale unless both widths are written next to the outline.
+    _tile_size_callout(msp, *_tile_nest_origin(0))
+    rows = (len(labels) + TILE_NEST_COLS - 1) // TILE_NEST_COLS
+    _text(msp, 0.0, rows * (TILE_W + TILE_NEST_GAP) + 10.0, 4.0,
+          f"Segno AZULEJOS DE PEDAL (segno_pedal_tiles)  CANT. {len(labels)}  "
+          f"TRAPECIO {TILE_L_BACK:.2f} (ancho, cable) / {TILE_L_TOE:.2f} (estrecho, punta) "
+          f"x {TILE_W:.2f}  "
+          f"plástico bicapa de grabado de {TILE_PLY_T:.1f} mm "
+          f"(capa NEGRA / núcleo BLANCO) - NO ES METAL; "
+          f"CUT = corte pasante del trapecio; "
+          f"ENGRAVE = grabado relleno (quema la capa, deja ver el blanco); "
+          f"el borde ANCHO va hacia el cable y lleva la parte superior de los glifos; "
+          f"medidas NOMINALES -- el 0,05 mm por lado ya está en la pieza, no agrandar; "
+          f"el taller aplica compensación de kerf; "
+          f"no sustituir fuente, los glifos ya son geometría", "NOTE")
+    doc.saveas(path)
+    return {}
+
+
+def _draw_tile_on_ax(ax, ox, oy, label, cut="#b00", fill="#111"):
+    """Closed trapezoid + filled glyphs. Used for the shop PDF so corners meet."""
+    from matplotlib.patches import Circle, Polygon
+    outline = [(x + ox, y + oy) for x, y in _tile_outline()]
+    ax.add_patch(Polygon(outline, closed=True, fill=False, edgecolor=cut,
+                         linewidth=0.6, joinstyle="miter", capstyle="projecting"))
+    glyphs, _bb = _tile_ink(label)
+    for e in glyphs:
+        if e["kind"] == "disc":
+            ax.add_patch(Circle((e["u"] + ox, e["v"] + oy), e["d"] / 2.0,
+                                facecolor=fill, edgecolor="none"))
+        else:
+            ax.add_patch(Polygon([(x + ox, y + oy) for x, y in e["pts"]],
+                                 closed=True, facecolor=fill, edgecolor="none"))
+            for hole in e.get("holes") or []:
+                ax.add_patch(Polygon([(x + ox, y + oy) for x, y in hole],
+                                     closed=True, facecolor="white",
+                                     edgecolor="none"))
+
+
+def pdf_pedal_tiles(path):
+    """1:1 shop PDF -- the file to send for 2-ply. Drawn from the same
+    geometry as the DXF, not via the DXF renderer (which dropped a corner).
+
+    Red outline = CUT. Black fill = ENGRAVE (burn the cap). White counters
+    stay the cap. Scale is millimetres, print at 100 %.
+    """
+    import textwrap
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    labels = [lab for lab, _u, _v in PEDALS]
+    cols, gap = TILE_NEST_COLS, TILE_NEST_GAP
+    rows = (len(labels) + cols - 1) // cols
+    nest_w = cols * TILE_L_BACK + (cols - 1) * gap
+    nest_h = rows * TILE_W + (rows - 1) * gap
+    note = (f"Segno AZULEJOS DE PEDAL (segno_pedal_tiles)  CANT. {len(labels)}  "
+            f"TRAPECIO {TILE_L_BACK:.2f} (ancho, cable) / {TILE_L_TOE:.2f} "
+            f"(estrecho, punta) x {TILE_W:.2f}  "
+            f"plástico bicapa {TILE_PLY_T:.1f} mm capa NEGRA / núcleo BLANCO; "
+            f"rojo = CUT; negro = ENGRAVE; borde ANCHO hacia el cable; "
+            f"imprimir al 100 %; medidas en mm")
+    margin, strip = 12.0, 22.0
+    page_w = nest_w + 2 * margin
+    page_h = nest_h + 2 * margin + strip
+    fig = plt.figure(figsize=(page_w / 25.4, page_h / 25.4))
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(-margin, nest_w + margin)
+    ax.set_ylim(-margin - strip, nest_h + margin)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    fig.patch.set_facecolor("white")
+    for i, label in enumerate(labels):
+        ox, oy = _tile_nest_origin(i)
+        _draw_tile_on_ax(ax, ox, oy, label)
+        ax.text(ox, oy - TILE_W / 2.0 - 2.6, label, fontsize=6, ha="center",
+                va="top", color="#333")
+    # Size callout on the first tile -- both widths, so the 0.6 mm taper reads.
+    ox0, oy0 = _tile_nest_origin(0)
+    ax.annotate("", xy=(ox0 - TILE_L_BACK / 2.0, oy0 + TILE_W / 2.0 + 1.6),
+                xytext=(ox0 + TILE_L_BACK / 2.0, oy0 + TILE_W / 2.0 + 1.6),
+                arrowprops=dict(arrowstyle="-", color="#333", lw=0.4))
+    ax.text(ox0, oy0 + TILE_W / 2.0 + 2.0, f"{TILE_L_BACK:.2f} ancho",
+            fontsize=5.5, ha="center", va="bottom", color="#333")
+    ax.annotate("", xy=(ox0 - TILE_L_TOE / 2.0, oy0 - TILE_W / 2.0 - 1.6),
+                xytext=(ox0 + TILE_L_TOE / 2.0, oy0 - TILE_W / 2.0 - 1.6),
+                arrowprops=dict(arrowstyle="-", color="#333", lw=0.4))
+    ax.text(ox0, oy0 - TILE_W / 2.0 - 1.8, f"{TILE_L_TOE:.2f} estrecho",
+            fontsize=5.5, ha="center", va="top", color="#333")
+    wrapped = textwrap.wrap(note, 110)
+    for i, line in enumerate(wrapped):
+        ax.text(0.0, -margin - 4.0 - 3.4 * i, line, fontsize=6, ha="left",
+                va="top", color="#111", family="sans-serif")
+    tb = (f"{PART_TITLES_ES['segno_pedal_tiles']}  [segno_pedal_tiles]   |   "
+          f"{PLY_2MM}   |   CANT. {len(labels)}   |   medidas en mm   |   "
+          f"PIEZA PLANA, sin plegados")
+    SHEET_TEXT["segno_pedal_tiles"] = (
+        [SHEET_HEADING, tb, TILE_LEGEND, note] + wrapped)
+    fig.savefig(path, dpi=300)
+    plt.close(fig)
+
+
+def pdf_one_pedal_tile(path, label):
+    """Single-tile 1:1 PDF, same paint as the nest."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    margin = 10.0
+    fig = plt.figure(figsize=((TILE_L_BACK + 2 * margin) / 25.4,
+                              (TILE_W + 2 * margin + 8.0) / 25.4))
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(-TILE_L_BACK / 2.0 - margin, TILE_L_BACK / 2.0 + margin)
+    ax.set_ylim(-TILE_W / 2.0 - margin - 4.0, TILE_W / 2.0 + margin)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    fig.patch.set_facecolor("white")
+    _draw_tile_on_ax(ax, 0.0, 0.0, label)
+    ax.text(0.0, -TILE_W / 2.0 - 3.2,
+            f"{_tile_stem(label)}  TRAPECIO {TILE_L_BACK:.2f}/{TILE_L_TOE:.2f} "
+            f"x {TILE_W:.2f}",
+            fontsize=6, ha="center", va="top", color="#333")
+    fig.savefig(path, dpi=300)
+    plt.close(fig)
+
 # ===========================================================================
 # MAIN
 # ===========================================================================
@@ -4843,10 +5379,48 @@ DXF_PARTS = [
 ]
 NO_PDF = set()   # every sheet part ships with a PDF drawing
 
-def build_quote_packages(with_step=True, with_pdf=True):
+
+def build_pedal_tile_vectors(with_pdf=True):
+    """Write the 2-ply tile pack: one nested sheet + ten single-tile DXFs (#946)."""
+    os.makedirs(OUT, exist_ok=True)
+    stems = []
+    for label, _u, _v in PEDALS:
+        stem = _tile_stem(label)
+        dxf_one_pedal_tile(os.path.join(OUT, stem + ".dxf"), label)
+        stems.append(stem)
+    nest = "segno_pedal_tiles"
+    dxf_pedal_tiles(os.path.join(OUT, nest + ".dxf"))
+    if with_pdf:
+        pdf_pedal_tiles(os.path.join(OUT, nest + ".pdf"))
+        for label, _u, _v in PEDALS:
+            pdf_one_pedal_tile(os.path.join(OUT, _tile_stem(label) + ".pdf"), label)
+    return stems
+
+
+def _pack_tile_zip(with_pdf=True):
+    """segno_pedal_tiles.zip -- 2-ply shop only. Nest + singles, never metal."""
+    import zipfile
+    zp = os.path.join(OUT, "segno_pedal_tiles.zip")
+    files = ["segno_pedal_tiles.pdf", "segno_pedal_tiles.dxf"] if with_pdf else ["segno_pedal_tiles.dxf"]
+    files += [_tile_stem(lab) + ".dxf" for lab, _u, _v in PEDALS]
+    if with_pdf:
+        files += [_tile_stem(lab) + ".pdf" for lab, _u, _v in PEDALS]
+    with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
+        for name in files:
+            p = os.path.join(OUT, name)
+            assert os.path.exists(p), f"{name} missing -- tile pack would ship a hole"
+            age = _RUN_STARTED - os.path.getmtime(p)
+            assert age <= 0, (
+                f"{name} is STALE -- it was not regenerated by this run "
+                f"({age:.0f}s older) but segno_pedal_tiles.zip would ship it.")
+            z.write(p, name)
+    return zp
+
+
+def build_quote_packages(with_step=True, with_pdf=True, tiles_only=False):
     """Refresh the manufacturer zips from the CURRENT outputs so they can never
     go stale (a hand-built segno_sheetmetal.zip once shipped three-week-old
-    flats). Three packs: laser/bend sheet metal, reference STEPs, 3D prints.
+    flats). Four packs: laser/bend sheet metal, overlay, 2-ply tiles, 3D prints.
 
     with_step/with_pdf mirror which builders actually ran THIS run: the
     freshness gate in pack() (rightly) refuses to ship anything this run did
@@ -4883,11 +5457,14 @@ def build_quote_packages(with_step=True, with_pdf=True):
     # here with a title block reading "2.0 mm 5052-H32 Al | qty 1" -- an 846 x 406.6
     # printed vinyl graphic quoted as 0.34 m2 of aluminium, cut and powder coated for
     # nothing, roughly a third of the metal spend (#775 R6). It now has its own pack.
+    if tiles_only:
+        return [_pack_tile_zip(with_pdf)]
     sheet   = [n for n, _ in DXF_PARTS if PART_SPECS[n][2] == PKG_SHEETMETAL]
     overlay = [n for n, _ in DXF_PARTS if PART_SPECS[n][2] == PKG_OVERLAY]
     flat_exts = (".dxf", ".pdf") if with_pdf else (".dxf",)
     pack("segno_sheetmetal.zip", sheet, flat_exts)
     pack("segno_overlay.zip", overlay, flat_exts)
+    zips.append(_pack_tile_zip(with_pdf))
     # segno_base and segno_corner_bracket_rear are deliberately NOT here. Nothing
     # generates a per-part STEP for either (see build_assembly_step: the base is
     # ONE folded blank and the assembly STEP is where its 3D form lives), so the
@@ -4952,6 +5529,88 @@ def _dxf_bend_lines(dxf_path):
                                  f"horizontal nor vertical -- it cannot be tabled")
     return sorted(out)
 
+
+def _verify_tile_package(with_pdf=True):
+    """Gates on the 2-ply tile pack: geometry, not TEXT, Spanish notes, own zip."""
+    import zipfile
+    import ezdxf
+
+    nest = os.path.join(OUT, "segno_pedal_tiles.dxf")
+    assert os.path.exists(nest), "segno_pedal_tiles.dxf was not written"
+    doc = ezdxf.readfile(nest)
+    used = {e.dxf.layer for e in doc.modelspace()}
+    assert used <= set(THRU_CUT_LAYERS + ANNOT_LAYERS), (
+        f"tile nest uses undeclared layers: {sorted(used - set(THRU_CUT_LAYERS + ANNOT_LAYERS))}")
+    cuts = [e for e in doc.modelspace()
+            if e.dxf.layer == "CUT" and e.dxftype() == "LWPOLYLINE"]
+    assert len(cuts) == len(PEDALS), (
+        f"tile nest: expected {len(PEDALS)} CUT trapezoids, got {len(cuts)}")
+    for e in doc.modelspace():
+        if e.dxftype() == "TEXT":
+            assert e.dxf.layer == "NOTE", (
+                f"tile nest: TEXT on {e.dxf.layer} -- glyphs must be geometry, not font")
+    hatches = [e for e in doc.modelspace()
+               if e.dxftype() == "HATCH" and e.dxf.layer == "ENGRAVE"]
+    assert len(hatches) >= len(PEDALS), (
+        f"tile nest: {len(hatches)} ENGRAVE hatches for {len(PEDALS)} tiles")
+    notes = [e.dxf.text for e in doc.modelspace() if e.dxftype() == "TEXT"]
+    blob = " ".join(notes)
+    assert "CANT." in blob and "segno_pedal_tiles" in blob
+    assert "bicapa" in blob and "borde ANCHO" in blob
+    assert "TRAPECIO" in blob and f"{TILE_L_BACK:.2f}" in blob and f"{TILE_L_TOE:.2f}" in blob
+    for english in ("2.0mm", "DO NOT CUT", " x10 "):
+        assert english.lower() not in blob.lower(), (
+            f"tile nest: untranslated shop text {english!r}")
+
+    for label, _u, _v in PEDALS:
+        path = os.path.join(OUT, _tile_stem(label) + ".dxf")
+        assert os.path.exists(path), f"{_tile_stem(label)}.dxf missing"
+        one = ezdxf.readfile(path)
+        cut = [e for e in one.modelspace()
+               if e.dxf.layer == "CUT" and e.dxftype() == "LWPOLYLINE"]
+        assert len(cut) == 1, f"{label}: {len(cut)} CUT outlines"
+        pts = [(p[0], p[1]) for p in cut[0].get_points()]
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        assert abs((max(xs) - min(xs)) - TILE_L_BACK) < 1e-3, (
+            f"{label}: cut width {max(xs) - min(xs):.3f} != {TILE_L_BACK:.3f}")
+        assert abs((max(ys) - min(ys)) - TILE_W) < 1e-3, (
+            f"{label}: cut depth {max(ys) - min(ys):.3f} != {TILE_W:.3f}")
+        back = [p for p in pts if abs(p[1] - max(ys)) < 1e-6]
+        toe = [p for p in pts if abs(p[1] - min(ys)) < 1e-6]
+        if len(back) >= 2:
+            assert abs(abs(back[0][0] - back[1][0]) - TILE_L_BACK) < 1e-3
+        if len(toe) >= 2:
+            assert abs(abs(toe[0][0] - toe[1][0]) - TILE_L_TOE) < 1e-3
+        assert not any(e.dxftype() == "TEXT" and e.dxf.layer != "NOTE"
+                       for e in one.modelspace())
+        assert any(e.dxftype() == "HATCH" for e in one.modelspace()), (
+            f"{label}: no ENGRAVE hatch -- the shop would cut a blank tile")
+
+    if with_pdf:
+        assert os.path.exists(os.path.join(OUT, "segno_pedal_tiles.pdf"))
+        sheet = SHEET_TEXT["segno_pedal_tiles"]
+        assert TILE_LEGEND.split("|")[0].strip() in " ".join(sheet), (
+            "tile sheet is missing TILE_LEGEND")
+        title_line = next(t for t in sheet if t.startswith(PART_TITLES_ES["segno_pedal_tiles"]))
+        assert "segno_pedal_tiles" in title_line and "CANT." in title_line
+        for label, _u, _v in PEDALS:
+            assert os.path.exists(os.path.join(OUT, _tile_stem(label) + ".pdf"))
+
+    zp = os.path.join(OUT, "segno_pedal_tiles.zip")
+    if os.path.exists(zp):
+        with zipfile.ZipFile(zp) as z:
+            names = set(z.namelist())
+        assert "segno_pedal_tiles.dxf" in names
+        for label, _u, _v in PEDALS:
+            assert _tile_stem(label) + ".dxf" in names
+        if with_pdf:
+            assert "segno_pedal_tiles.pdf" in names
+        assert not any(n.endswith((".step", ".stl")) for n in names)
+        assert not any(n.startswith("segno_base") or n.startswith("segno_faceplate")
+                       for n in names)
+
+
 def _verify_drawing_package(with_pdf=True):
     import inspect, zipfile
     import ezdxf
@@ -4967,7 +5626,7 @@ def _verify_drawing_package(with_pdf=True):
         assert stem in PART_SPECS, f"{stem} has no PART_SPECS row (material/qty/package)"
         mat, qty, pkg = PART_SPECS[stem]
         assert mat and isinstance(qty, int) and qty >= 1, f"{stem}: bad material/qty {mat!r}/{qty!r}"
-        assert pkg in (PKG_SHEETMETAL, PKG_OVERLAY), f"{stem}: unknown package {pkg!r}"
+        assert pkg in (PKG_SHEETMETAL, PKG_OVERLAY, PKG_TILES), f"{stem}: unknown package {pkg!r}"
     assert PART_SPECS["segno_post"][0] == STEEL_CR and PART_SPECS["segno_post"][1] == 2, \
         "the support post is 1.6 mm cold-rolled steel x2, per MANUFACTURING.md section 1"
     assert PART_SPECS["segno_corner_bracket_rear"][1] == 2, "corner bracket is x2"
@@ -5115,6 +5774,9 @@ def _verify_drawing_package(with_pdf=True):
             assert {os.path.splitext(n)[0] for n in z.namelist()} == other, \
                 "segno_overlay.zip must carry exactly the non-metal die-cut parts"
 
+    if os.path.exists(os.path.join(OUT, "segno_pedal_tiles.dxf")):
+        _verify_tile_package(with_pdf=with_pdf)
+
 def write_rear_io_stations():
     """Publish the rear-panel station list for the CONSOLE BOARD generator (#747).
 
@@ -5153,6 +5815,20 @@ def main(argv):
     print("Rear I/O stations: out/%s" % os.path.basename(write_rear_io_stations()))
     if "--report" in argv:
         return
+    if "--tiles-only" in argv:
+        os.makedirs(OUT, exist_ok=True)
+        stems = build_pedal_tile_vectors(with_pdf="--no-pdf" not in argv)
+        print("\nPedal name tiles (2-ply vector, x%d -- TRAPEZOID %.2f(back)/%.2f(toe)\n"
+              "  x %.2f x %.1f mm bicapa; wide edge to the cable end):\n"
+              "  out/segno_pedal_tiles.dxf + %d singles"
+              % (len(stems), TILE_L_BACK, TILE_L_TOE, TILE_W, TILE_PLY_T, len(stems)))
+        for z in build_quote_packages(with_step=False, with_pdf="--no-pdf" not in argv,
+                                      tiles_only=True):
+            print("Quote package: out/" + os.path.basename(z))
+        print("\nDrawing/package assertions ...", end=" ")
+        _verify_tile_package(with_pdf="--no-pdf" not in argv)
+        print("ALL PASS")
+        return
     os.makedirs(OUT, exist_ok=True)
     layout_svg(os.path.join(HERE, "segno_panel_layout.svg"))
     print("\nAnnotated layout: segno_panel_layout.svg")
@@ -5169,6 +5845,10 @@ def main(argv):
                 print("  out/" + name + ".pdf")
             except Exception as e:  # pragma: no cover
                 print(f"    (pdf skipped: {e})")
+    tile_stems = build_pedal_tile_vectors(with_pdf="--no-pdf" not in argv)
+    print("  out/segno_pedal_tiles.dxf  (2-ply nest, x%d)" % len(tile_stems))
+    if "--no-pdf" not in argv:
+        print("  out/segno_pedal_tiles.pdf")
     if "--no-pdf" not in argv:
         try:
             paint_quote_pdf(os.path.join(OUT, "segno_paint_quote.pdf"))
@@ -5183,9 +5863,10 @@ def main(argv):
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
             tiles = build_pedal_name_tiles()
-            print("Pedal name tiles (3D print, x%d -- print FACE-DOWN, filament\n"
+            print("Pedal name tiles (3D print, x%d -- TRAPEZOID %.2f(back)/%.2f(toe)\n"
+                  "  x %.2f, wide edge to the cable end; print FACE-DOWN, filament\n"
                   "  change at z=%.1f: white glyphs then black body): out/%s.step ..."
-                  % (len(tiles), TILE_TEXT_T, tiles[0]))
+                  % (len(tiles), TILE_L_BACK, TILE_L_TOE, TILE_W, TILE_TEXT_T, tiles[0]))
             rd = build_ring_disc_step()
             print("Ring centre disc (2.0 Al, x1): out/" + os.path.basename(rd))
             kb = build_encoder_knob_step()

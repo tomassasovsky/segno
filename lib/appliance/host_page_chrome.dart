@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/theme/theme.dart';
@@ -34,7 +32,7 @@ class HostChromeBar extends StatelessWidget {
         children: [
           TextButton.icon(
             key: backKey,
-            onPressed: () => unawaited(Navigator.of(context).maybePop()),
+            onPressed: () => Navigator.of(context).maybePop(),
             icon: const Icon(Icons.chevron_left, size: 18),
             label: AppText(l10n.close),
             style: TextButton.styleFrom(

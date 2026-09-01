@@ -11,13 +11,10 @@
 # Usage:
 #   deploy/rpi/build/build-arm64-bundle.sh [--deploy user@host] [flutter args...]
 #
-#   (no args)                      Console kiosk release bundle (SEGNO_CONSOLE=true).
+#   (no args)                      Console kiosk release bundle.
 #   --deploy pi@raspberrypi.local  After building, rsync the bundle to the Pi.
-#   --dart-define=SEGNO_CONSOLE=false
-#                                  Non-console desktop bundle (e.g. for first-run
-#                                  device setup). Any extra args are forwarded to
-#                                  `flutter build` verbatim; if you do not name
-#                                  SEGNO_CONSOLE yourself, console mode is added.
+#
+# Any extra args are forwarded to `flutter build` verbatim.
 #
 # Output: build/linux/arm64/release/bundle/ (segno + libsegno_engine.so + lib/ + data/).
 set -euo pipefail
@@ -40,13 +37,6 @@ while [ $# -gt 0 ]; do
 done
 # Re-seat the forwarded args as "$@" (empty-array-safe under `set -u`).
 set -- ${forward[@]+"${forward[@]}"}
-
-# Default to console mode unless the caller set SEGNO_CONSOLE explicitly.
-console_set=0
-for a in "$@"; do
-  case "$a" in --dart-define=SEGNO_CONSOLE=*) console_set=1 ;; esac
-done
-[ "$console_set" -eq 0 ] && set -- --dart-define=SEGNO_CONSOLE=true "$@"
 
 # --- Locate the repo root so the script works from any CWD --------------------
 command -v docker >/dev/null 2>&1 || { echo "error: docker not found on PATH" >&2; exit 1; }
@@ -71,6 +61,17 @@ echo "==> Built $bin"
 file "$bin" | grep -q 'ARM aarch64' \
   && echo "==> Confirmed aarch64: $(file -b "$bin")" \
   || echo "warning: $bin is not reported as ARM aarch64 -- check the host platform" >&2
+
+# --- Verify the two halves of the bundle agree on the FFI boundary ------------
+# The bundle ships a Dart half (libapp.so) and a native half
+# (libsegno_engine.so) that meet only through dlsym, which resolves lazily at
+# first call. A .so that is stale relative to the bindings therefore produces a
+# bundle that builds, installs and launches, then throws on the device -- as it
+# did on 2026-08-25, 137 times off a periodic timer. Gate it here, before the
+# bundle can reach the rsync below or the Yocto staging dir, because after this
+# point nothing else looks.
+echo "==> Checking FFI symbol parity"
+packages/segno_engine/tool/check_ffi_symbols.sh "$BUNDLE_REL/lib/libsegno_engine.so"
 
 # --- Optional deploy to the Pi ------------------------------------------------
 if [ -n "$deploy_target" ]; then

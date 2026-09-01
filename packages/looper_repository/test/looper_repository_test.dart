@@ -2888,6 +2888,74 @@ void main() {
       expect(engine.monitorMute[0], isTrue);
     });
 
+    test('setInputConditioningEnabled forwards while running', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setInputConditioningEnabled(input: 0, enabled: true);
+      expect(engine.conditioningEnabled[0], isTrue);
+    });
+
+    test('setInputConditioningParam forwards the code + real-unit value', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setInputConditioningParam(
+          input: 1,
+          param: InputConditioningParam.hpfHz,
+          value: 80,
+        );
+      expect(engine.conditioningParam[(1, InputConditioningParam.hpfHz)], 80);
+    });
+
+    test('conditioning intent is remembered and reapplied on restart', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setInputConditioningParam(
+          input: 0,
+          param: InputConditioningParam.expRatio,
+          value: 3,
+        )
+        ..setInputConditioningEnabled(input: 0, enabled: true);
+
+      engine.conditioningEnabled.clear();
+      engine.conditioningParam.clear();
+      repo.startEngine(const EngineConfig());
+
+      expect(engine.conditioningEnabled[0], isTrue);
+      expect(
+        engine.conditioningParam[(0, InputConditioningParam.expRatio)],
+        3,
+      );
+    });
+
+    test('conditioning set while stopped applies on the next start', () {
+      final repo = buildRepo()
+        ..setInputConditioningEnabled(input: 0, enabled: true);
+      // Nothing forwarded yet: the device is not running.
+      expect(engine.conditioningEnabled.containsKey(0), isFalse);
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.conditioningEnabled[0], isTrue);
+    });
+
+    test('rejects an out-of-range conditioning input without touching '
+        'the engine', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      expect(
+        repo.setInputConditioningEnabled(input: -1, enabled: true),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setInputConditioningParam(
+          input: kMaxMonitoredInputs,
+          param: InputConditioningParam.hpfHz,
+          value: 40,
+        ),
+        EngineResult.invalid,
+      );
+      expect(engine.conditioningEnabled, isEmpty);
+      expect(engine.conditioningParam, isEmpty);
+    });
+
     test('an empty monitor chain (clean path) zeroes the count', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -6266,6 +6334,107 @@ void main() {
       );
       expect(
         repo.setMasterEffectParam(index: 4, param: 0, value: 1),
+        EngineResult.invalid,
+      );
+    });
+
+    test('a track PLUGIN param write remembers the value and pushes no '
+        'chain', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.reverb),
+            const PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'p'),
+            ),
+          ],
+        );
+      addTearDown(repo.dispose);
+      engine.calls.clear();
+
+      expect(
+        repo.setTrackPluginParam(
+          channel: 0,
+          index: 1,
+          paramId: 42,
+          value: 0.3,
+        ),
+        EngineResult.ok,
+      );
+
+      // No slot type re-push, so the reverb sharing the bus keeps its tail...
+      expect(engine.calls, isNot(contains('setTrackFx')));
+      // ...and a bus plugin has no live slot, so nothing reaches the RT queue.
+      expect(engine.pluginParamSets, isEmpty);
+      // The value is remembered against the day a bus slot ABI lands.
+      expect(
+        (repo.trackEffects(0)[1] as PluginEffect).paramValues[42],
+        0.3,
+      );
+    });
+
+    test('a master PLUGIN param write behaves the same', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMasterEffects(
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'm'),
+            ),
+          ],
+        );
+      addTearDown(repo.dispose);
+      engine.calls.clear();
+
+      expect(
+        repo.setMasterPluginParam(index: 0, paramId: 7, value: 0.9),
+        EngineResult.ok,
+      );
+
+      expect(engine.calls, isNot(contains('setMasterFx')));
+      expect(engine.pluginParamSets, isEmpty);
+      expect((repo.masterEffects.single as PluginEffect).paramValues[7], 0.9);
+    });
+
+    test('a bus plugin param write on a built-in entry is rejected', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMasterEffects(
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+      addTearDown(repo.dispose);
+
+      expect(
+        repo.setTrackPluginParam(
+          channel: 0,
+          index: 0,
+          paramId: 1,
+          value: 0.5,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMasterPluginParam(index: 0, paramId: 1, value: 0.5),
+        EngineResult.invalid,
+      );
+      // ...and an out-of-range index too.
+      expect(
+        repo.setTrackPluginParam(
+          channel: 0,
+          index: 9,
+          paramId: 1,
+          value: 0.5,
+        ),
+        EngineResult.invalid,
+      );
+      expect(
+        repo.setMasterPluginParam(index: 9, paramId: 1, value: 0.5),
         EngineResult.invalid,
       );
     });

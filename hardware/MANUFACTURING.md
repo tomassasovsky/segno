@@ -101,13 +101,29 @@ Send **`enclosure/out/segno_3dprint.zip`** (STEP + STL for each part).
 | `segno_platform_front` | 8 | **BLACK** PETG/ASA, ≥40% infill | Pedal pedestal TUB, 115.4×88.8 (deck 13.2, walls to ~37 with sloped top ~0.3 under the faceplate; deck raised for flush-at-rim seating, issue #373 — pedal case top flush with the slot's upper rim, pad above the metal). Perimeter strips outside the slot opening are relief-shaved to the same under-plate plane. Wall inner faces tucked 0.4 behind the slot cut line, so from above only faceplate shows and the reveal reads as a dark channel. Full-height boss drop-in channels in the side walls; 12-wide rear cable notch. Heat-set pilots Ø4.5 from below — the taller deck now takes the standard **M3 5×5 inserts** (4 per pedestal; short M3×3 no longer needed); 1.2-deep pad pocket in the deck. |
 | `segno_platform_mid` | 2 | **BLACK** PETG/ASA, ≥40% infill | Tall CLEAR/BANK tub (deck 57.3, walls to 81.1 — row 2 rearward for label-top alignment #366, deck raised for flush-at-rim seating #373), hollow with boss columns — standard **M3 5×5 inserts** (4 per pedestal) + the same pocket, channels, notch and perimeter relief. |
 | `segno_led_diffuser` | 6 | **White PLA** | Pill lens, pushes into the faceplate slot from inside. One per *mappable* pedal — TRACK1-4, CLEAR, BANK. REC/PLAY, STOP, UNDO and MODE have no LED: they are fixed transport, so there is nothing to indicate. |
-| `segno_pedal_tile_*` | 10 | **BLACK + WHITE** PLA/PETG | Pedal name tiles, one per pedal, dropping into the WTB-006 top pad's 54.55 × 20 window. 54.45 × 19.90 × 2.20 — the pad is a uniform 2.2 slab on a case top tilted to match, so the window is a parallel-sided pocket and the tile is flat. **Print FACE-DOWN with a filament change at z = 0.4**: the glyphs stand proud of the body, so face-down they are the first 0.4 mm off the bed — print that in white, swap to black, flip. One extruder. The letters finish flush with the pad and the black field sits 0.4 mm below it, out of the scuff line. Text is generated from the same `PEDALS`/`SILK_SYMBOLS` source as the faceplate legends, so REC/PLAY and STOP carry the dot+plus+triangle and square rather than words. |
+| `segno_pedal_tile_*` | 10 | **BLACK + WHITE** PLA/PETG | Pedal name tiles, one per pedal, dropping into the WTB-006 top pad's window. **TRAPEZOID**, 54.36 (back) / 53.76 (toe) × 19.90 × 2.20 — the pad is a wedge in plan, and the window keeps a 5 mm wall each side at every station, so the tile's sides run parallel to the pad's. Both widths are derived from the pad measured in the Cherub Fusion doc (window 54.46 / 53.86, less 0.05/side). **Fit the WIDE edge toward the cable end**; it carries the top of the glyphs, so the wrong way round reads upside down. The pad is a uniform 2.2 slab on a case top tilted to match, so the window is a parallel-sided pocket in depth and the tile is flat in Z. **Print FACE-DOWN with a filament change at z = 0.4**: the glyphs stand proud of the body, so face-down they are the first 0.4 mm off the bed — print that in white, swap to black, flip. One extruder. The letters finish flush with the pad and the black field sits 0.4 mm below it, out of the scuff line. Text is generated from the same `PEDALS`/`SILK_SYMBOLS` source as the faceplate legends, so REC/PLAY and STOP carry the dot+plus+triangle and square rather than words. |
 | `segno_ring_diffuser` | 1 | **White PLA** | Annular lens for the encoder LED ring. Cut for the **Ring 24** (Ø67 window); its back-plate radii are hardcoded, not derived — re-derive them with any window resize. |
 
 The Cherub WTB-006 has **no base screws** (one horizontal through-screw per
 side): retention = the deck pocket + gravity + foot pressure, **PROVISIONAL**.
 The old `rc20_pad` `asp1_pad` casting master targeted the retired ASP-1 pedal
 and no longer matches any pedal in this design.
+
+FDM tiles stay the prototype / fit-check path. Production nameplates are the
+2-ply pack in the next section.
+
+## 2b. 2-ply engraved plastic (pedal name tiles)
+
+Send **`enclosure/out/segno_pedal_tiles.pdf`** to a 2-ply laser shop
+(1:1, red cut / black fill). The zip also carries the DXF if they ask for
+CAM. **Not metal, not vinyl, not a 3D print.**
+
+| Part | Qty | Material | Notes |
+|---|---|---|---|
+| `segno_pedal_tiles` | 10 | **2.0 mm 2-ply** (black cap / white core) | Same trapezoid as the FDM tiles: 54.36 (back) / 53.76 (toe) × 19.90. 2.0 mm is the closest standard stock to the 2.2 mm pad pocket — the tile sits 0.2 mm recessed. **CUT** = outline (through-cut). **ENGRAVE** = filled glyphs (burns the black cap so the white core reads). Glyphs are geometry, never TEXT — do not substitute a font. **Fit the WIDE edge toward the cable end**; it carries the top of the glyphs. REC/PLAY and STOP are the same symbols as the faceplate overlay. Dimensions are nominal: the 0.05 mm per-side clearance is already in the part; the shop applies kerf compensation and must not enlarge the outline. |
+
+Regenerate with `segno_enclosure.py` (or `--tiles-only`). The zip is a
+per-quote artifact, same freshness gate as the other vendor packs (#236).
 
 ## 3. PCBs
 

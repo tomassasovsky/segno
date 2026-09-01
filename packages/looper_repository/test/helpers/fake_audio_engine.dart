@@ -702,6 +702,35 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-input conditioning enabled flag passed to
+  /// [setInputConditioningEnabled].
+  final Map<int, bool> conditioningEnabled = {};
+
+  /// Per-(input, param) conditioning value passed to
+  /// [setInputConditioningParam].
+  final Map<(int, InputConditioningParam), double> conditioningParam = {};
+
+  @override
+  EngineResult setInputConditioningEnabled({
+    required int input,
+    required bool enabled,
+  }) {
+    conditioningEnabled[input] = enabled;
+    calls.add('setInputConditioningEnabled');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setInputConditioningParam({
+    required int input,
+    required InputConditioningParam param,
+    required double value,
+  }) {
+    conditioningParam[(input, param)] = value;
+    calls.add('setInputConditioningParam');
+    return EngineResult.ok;
+  }
+
   /// Per-(input, index) effect type passed to [setMonitorInputFx].
   final Map<(int, int), TrackEffectType> monitorFx = {};
 

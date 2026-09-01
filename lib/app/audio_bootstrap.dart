@@ -1,22 +1,10 @@
-import 'package:flutter/foundation.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:segno/app/console_audio_devices.dart';
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/logging/app_log.dart';
-// Settings owns its own AudioBackend; mapped to/from the looper domain backend
-// here. Prefixed only for that enum so the unprefixed one is the domain type.
+// Settings owns its own AudioBackend; the looper domain backend is the
+// unprefixed one here.
 import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
-import 'package:settings_repository/settings_repository.dart'
-    as persisted
-    show AudioBackend;
-
-/// Whether the ASIO backend is selectable on this platform: Windows only (ASIO
-/// is a Windows-only API). Resolved here in the presentation layer — the single
-/// source of this OS rule — and injected into the audio-setup cubit, so the
-/// cubit holds no OS policy.
-bool get platformAsioSelectable =>
-    defaultTargetPlatform == TargetPlatform.windows;
 
 /// The outcome of [tryAutoStartEngine]: whether the engine came up, the ASIO
 /// drivers enumerated at startup so the audio-setup cubit can cache them for
@@ -34,24 +22,15 @@ typedef AutoStartResult = ({
 
 /// Loads the last-used audio configuration and starts the engine — from the
 /// saved config when one exists, otherwise from a sensible first-run default
-/// (the first ASIO driver on Windows, the system default elsewhere; on a
-/// [consoleMode] build, the first non-default duplex interface when ids are
-/// empty). The app always lands on the looper; the returned `started` flag is
-/// `false` only when no device could be opened (e.g. Windows with no ASIO
-/// driver), which the looper surfaces as an "audio not running" affordance.
-///
-/// [consoleMode] defaults to [kConsoleMode]; tests inject `true`/`false`
-/// without a dart-define.
+/// (the first non-default duplex interface when ids are empty). The app always
+/// lands on the looper; the returned `started` flag is `false` only when no
+/// device could be opened, which the looper surfaces as an "audio not running"
+/// affordance.
 Future<AutoStartResult> tryAutoStartEngine({
   required LooperRepository repository,
   required SettingsRepository settings,
-  bool consoleMode = kConsoleMode,
 }) async {
-  // Enumerate ASIO drivers once, before opening any device (R1), so the cubit
-  // can cache them even after the engine auto-starts on ASIO.
-  final asioDrivers = platformAsioSelectable
-      ? repository.asioDrivers()
-      : const <AudioDevice>[];
+  const asioDrivers = <AudioDevice>[];
 
   final saved = await settings.loadAudioConfig();
   if (saved == null) {
@@ -59,41 +38,19 @@ Future<AutoStartResult> tryAutoStartEngine({
     final started = await _firstRunAutoStart(
       repository: repository,
       settings: settings,
-      asioDrivers: asioDrivers,
-      consoleMode: consoleMode,
     );
     AppLog.info('audio auto-start: first run started=$started');
     return (started: started, asioDrivers: asioDrivers, recoveryConfig: null);
   }
-  // On Windows (ASIO-only) the engine always runs ASIO, and the driver is found
-  // automatically: keep the saved one if it is still enumerated, otherwise fall
-  // back to the first installed driver. This heals a config saved with the
-  // miniaudio backend or a stale/empty driver (e.g. from an earlier build), so
-  // the app finds the installed driver on its own — the user can still switch
-  // it in settings.
-  // With no driver installed at all, land stopped (the looper shows the
-  // no-driver / ASIO4ALL affordance), mirroring the first-run path. The coercion
-  // mirrors the cubit's hydration so the engine and the UI never disagree.
-  final backend = platformAsioSelectable
-      ? AudioBackend.asio
-      : engineBackendOf(saved.backend);
-  final asioDriver = platformAsioSelectable
-      ? AudioSetupCubit.resolveAsioDriver(saved.asioDriver, asioDrivers)
-      : saved.asioDriver;
-  if (platformAsioSelectable && asioDriver.isEmpty) {
-    AppLog.warn('audio auto-start: no ASIO driver available');
-    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
-  }
+  final backend = engineBackendOf(saved.backend);
+  final asioDriver = saved.asioDriver;
 
   // Console heal: empty persisted ids lock every boot onto the system default.
   // When both are empty, try the same non-default duplex pick as first-run.
   var playbackId = saved.playbackDeviceId;
   var captureId = saved.captureDeviceId;
   var consolePinned = false;
-  if (consoleMode &&
-      !platformAsioSelectable &&
-      playbackId.isEmpty &&
-      captureId.isEmpty) {
+  if (playbackId.isEmpty && captureId.isEmpty) {
     final pick = pickConsoleAudioDevices(repository.devices());
     if (pick != null) {
       playbackId = pick.playbackId;
@@ -408,59 +365,28 @@ Future<AutoStartResult> tryAutoStartEngine({
 }
 
 /// Starts the engine on a first run (no saved config) and persists the chosen
-/// config so later launches take the normal saved path. On Windows, opens the
-/// first enumerated ASIO driver (returns `false` if none is installed — the
-/// looper then shows the "no audio" affordance). Elsewhere, opens the system
-/// default — or, when [consoleMode] is on, the first non-default duplex
-/// interface ([pickConsoleAudioDevices]). Returns whether the engine started.
+/// config so later launches take the normal saved path. Opens the first
+/// non-default duplex interface ([pickConsoleAudioDevices]), falling back to
+/// the system default. Returns whether the engine started.
 Future<bool> _firstRunAutoStart({
   required LooperRepository repository,
   required SettingsRepository settings,
-  required List<AudioDevice> asioDrivers,
-  required bool consoleMode,
 }) async {
-  if (platformAsioSelectable) {
-    if (asioDrivers.isEmpty) return false; // no driver: land stopped (D4/PR5).
-    final driver = asioDrivers.first;
-    final sampleRate = _preferred(driver.sampleRates, 48000);
-    final bufferFrames = _preferred(driver.bufferSizes, 128);
-    final result = repository.startEngine(
-      EngineConfig(
-        sampleRate: sampleRate,
-        bufferFrames: bufferFrames,
-        backend: AudioBackend.asio,
-        asioDriver: driver.id,
-      ),
-    );
-    if (!result.isOk) return false;
-    await settings.saveAudioConfig(
-      StoredAudioConfig(
-        sampleRate: sampleRate,
-        bufferFrames: bufferFrames,
-        backend: persisted.AudioBackend.asio,
-        asioDriver: driver.id,
-      ),
-    );
-    return true;
-  }
-
   var playbackId = '';
   var captureId = '';
-  if (consoleMode) {
-    final pick = pickConsoleAudioDevices(repository.devices());
-    if (pick != null) {
-      playbackId = pick.playbackId;
-      captureId = pick.captureId;
-      AppLog.info(
-        'audio first-run: console auto-pin '
-        'playback=$playbackId capture=$captureId',
-      );
-    } else {
-      AppLog.info(
-        'audio first-run: console found no non-default duplex; '
-        'using system default',
-      );
-    }
+  final pick = pickConsoleAudioDevices(repository.devices());
+  if (pick != null) {
+    playbackId = pick.playbackId;
+    captureId = pick.captureId;
+    AppLog.info(
+      'audio first-run: console auto-pin '
+      'playback=$playbackId capture=$captureId',
+    );
+  } else {
+    AppLog.info(
+      'audio first-run: console found no non-default duplex; '
+      'using system default',
+    );
   }
 
   var result = repository.startEngine(
@@ -492,9 +418,3 @@ Future<bool> _firstRunAutoStart({
   );
   return true;
 }
-
-/// Returns [wanted] when [options] is empty or contains it; otherwise the first
-/// option. Used to pick a first-run rate/buffer from a driver's reported set,
-/// preferring the common default when the driver allows it.
-int _preferred(List<int> options, int wanted) =>
-    options.isEmpty || options.contains(wanted) ? wanted : options.first;

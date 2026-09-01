@@ -38,6 +38,13 @@ Environment=WAYLAND_DISPLAY=wayland-1
 #     touching this unit file.
 LimitRTPRIO=95
 LimitMEMLOCK=infinity
+# So a native fault in the engine actually dumps (#438). systemd's default
+# DefaultLimitCORE leaves the soft limit at 0; the kernel's pipe-to-helper path
+# is documented to ignore that, but "documented to ignore" is a weaker guarantee
+# than saying it, and the whole point of #438 is that a crash must not be able to
+# leave nothing behind. The dump lands on /data via the coredump bind mount, and
+# coredump.conf.d caps how much of it is kept.
+LimitCORE=infinity
 ExecStart=/usr/bin/segno-kiosk-launch
 Restart=always
 RestartSec=2

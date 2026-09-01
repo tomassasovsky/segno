@@ -1,60 +1,75 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/gen/app_localizations.dart';
 import 'package:segno/session/session.dart';
-import 'package:segno/theme/theme.dart';
 import 'package:session_repository/session_repository.dart';
+
+import '../../helpers/helpers.dart';
 
 class _MockSessionCubit extends MockCubit<SessionState>
     implements SessionCubit {}
 
+class _MockSessionsManagerCubit extends MockCubit<SessionsManagerStatus>
+    implements SessionsManagerCubit {}
+
+class _MockPedalRepository extends Mock implements PedalRepository {}
+
 void main() {
-  late SessionCubit session;
+  group(SessionsManagerView, () {
+    late SessionCubit session;
+    late PedalRepository defaultPedal;
 
-  const two = [SessionSummary(name: 'A'), SessionSummary(name: 'B')];
+    const two = [SessionSummary(name: 'A'), SessionSummary(name: 'B')];
+    const five = [
+      SessionSummary(name: 'A'),
+      SessionSummary(name: 'B'),
+      SessionSummary(name: 'C'),
+      SessionSummary(name: 'D'),
+      SessionSummary(name: 'E'),
+    ];
 
-  setUp(() {
-    session = _MockSessionCubit();
-    when(session.refreshSessions).thenAnswer((_) async {});
-    when(() => session.loadNamed(any())).thenAnswer((_) async {});
-    when(() => session.renameSession(any(), any())).thenAnswer((_) async {});
-    when(() => session.deleteSession(any())).thenAnswer((_) async {});
-    when(
-      () => session.duplicateSession(any(), any()),
-    ).thenAnswer((_) async {});
-    when(() => session.saveAs(any())).thenAnswer((_) async {});
-    when(session.save).thenAnswer((_) async {});
-    when(() => session.exportMixdown()).thenAnswer((_) async {});
-    when(() => session.exportStems()).thenAnswer((_) async {});
-  });
+    setUp(() {
+      session = _MockSessionCubit();
+      defaultPedal = _MockPedalRepository();
+      when(
+        () => defaultPedal.events,
+      ).thenAnswer((_) => const Stream<PedalEvent>.empty());
+      when(session.refreshSessions).thenAnswer((_) async {});
+      when(() => session.loadNamed(any())).thenAnswer((_) async {});
+      when(() => session.renameSession(any(), any())).thenAnswer((_) async {});
+      when(() => session.deleteSession(any())).thenAnswer((_) async {});
+      when(
+        () => session.duplicateSession(any(), any()),
+      ).thenAnswer((_) async {});
+      when(() => session.saveAs(any())).thenAnswer((_) async {});
+      when(session.save).thenAnswer((_) async {});
+      when(() => session.exportMixdown()).thenAnswer((_) async {});
+      when(() => session.exportStems()).thenAnswer((_) async {});
+    });
 
-  Future<AppLocalizations> l10n() =>
-      AppLocalizations.delegate.load(const Locale('en'));
+    Future<AppLocalizations> l10n() =>
+        AppLocalizations.delegate.load(const Locale('en'));
 
-  Future<void> openManager(
-    WidgetTester tester, {
-    SessionState state = const SessionState(),
-  }) async {
-    whenListen(
-      session,
-      const Stream<SessionState>.empty(),
-      initialState: state,
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(
-          extensions: [
-            SurfaceTheme.dark,
-            routingGraphThemeFromSurface(SurfaceTheme.dark),
-          ],
-        ),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: BlocProvider<SessionCubit>.value(
+    Future<void> openManager(
+      WidgetTester tester, {
+      SessionState state = const SessionState(),
+    }) async {
+      whenListen(
+        session,
+        const Stream<SessionState>.empty(),
+        initialState: state,
+      );
+      final home = RepositoryProvider<PedalRepository>.value(
+        value: defaultPedal,
+        child: BlocProvider<SessionCubit>.value(
           value: session,
           child: Scaffold(
             body: Builder(
@@ -65,13 +80,67 @@ void main() {
             ),
           ),
         ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-  }
+      );
+      await tester.pumpApp(home);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+    }
 
-  group('SessionsManagerDialog', () {
+    Future<void> openView(
+      WidgetTester tester, {
+      SessionState state = const SessionState(),
+      Stream<SessionsManagerStatus>? statuses,
+    }) async {
+      whenListen(
+        session,
+        const Stream<SessionState>.empty(),
+        initialState: state,
+      );
+      final manager = _MockSessionsManagerCubit();
+      whenListen(
+        manager,
+        statuses ?? const Stream<SessionsManagerStatus>.empty(),
+        initialState: SessionsManagerStatus.active,
+      );
+      await tester.pumpApp(
+        Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => MultiBlocProvider(
+                  providers: [
+                    BlocProvider<SessionCubit>.value(value: session),
+                    BlocProvider<SessionsManagerCubit>.value(value: manager),
+                  ],
+                  child: const SessionsManagerView(),
+                ),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+    }
+
+    /// Types [name] into the console rename sheet and confirms with Enter.
+    ///
+    /// The sheet reads `KeyEvent.character`, so there is no text field to
+    /// `enterText` into -- each character is sent as its own key event.
+    Future<void> typeSheetName(WidgetTester tester, String name) async {
+      for (var i = 0; i < 40; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      }
+      for (final ch in name.split('')) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyA, character: ch);
+      }
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+    }
+
     testWidgets('refreshes the catalog on open', (tester) async {
       await openManager(tester);
       verify(session.refreshSessions).called(1);
@@ -158,12 +227,7 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('sessions_rename')));
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const Key('sessionName_field')),
-        'Chorus',
-      );
-      await tester.tap(find.byKey(const Key('sessionName_save')));
-      await tester.pumpAndSettle();
+      await typeSheetName(tester, 'Chorus');
       verify(() => session.renameSession('A', 'Chorus')).called(1);
     });
 
@@ -176,12 +240,7 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('sessions_duplicate')));
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const Key('sessionName_field')),
-        'A copy',
-      );
-      await tester.tap(find.byKey(const Key('sessionName_save')));
-      await tester.pumpAndSettle();
+      await typeSheetName(tester, 'A copy');
       verify(() => session.duplicateSession('A', 'A copy')).called(1);
     });
 
@@ -197,6 +256,22 @@ void main() {
       await tester.tap(find.byKey(const Key('sessionDelete_confirm')));
       await tester.pumpAndSettle();
       verify(() => session.deleteSession('A')).called(1);
+    });
+
+    testWidgets('the delete confirm shrinks instead of filling the screen', (
+      tester,
+    ) async {
+      await openManager(
+        tester,
+        state: const SessionState(currentSessionName: 'A', sessions: two),
+      );
+      await tester.tap(find.byKey(const Key('sessions_delete')));
+      await tester.pumpAndSettle();
+      final size = tester.getSize(
+        find.byKey(const Key('sessionDelete_dialog')),
+      );
+      final viewport = tester.getSize(find.byType(MaterialApp));
+      expect(size.height, lessThan(viewport.height / 2));
     });
 
     testWidgets('cancelling the delete confirm does nothing', (tester) async {
@@ -218,9 +293,7 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('sessions_rename')));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('sessionName_field')), 'B');
-      await tester.tap(find.byKey(const Key('sessionName_save')));
-      await tester.pumpAndSettle();
+      await typeSheetName(tester, 'B');
       final dup = (await l10n()).sessionNameDuplicate('B');
       expect(find.text(dup), findsOneWidget);
       verifyNever(() => session.renameSession(any(), any()));
@@ -276,12 +349,7 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('sessions_rename')));
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const Key('sessionName_field')),
-        '///',
-      );
-      await tester.tap(find.byKey(const Key('sessionName_save')));
-      await tester.pumpAndSettle();
+      await typeSheetName(tester, '///');
       expect(find.text((await l10n()).sessionNameInvalid), findsOneWidget);
       verifyNever(() => session.renameSession(any(), any()));
     });
@@ -317,12 +385,7 @@ void main() {
       await openManager(tester, state: const SessionState(sessions: two));
       await tester.tap(find.byKey(const Key('sessions_saveAs')));
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const Key('sessionName_field')),
-        'Bridge',
-      );
-      await tester.tap(find.byKey(const Key('sessionName_save')));
-      await tester.pumpAndSettle();
+      await typeSheetName(tester, 'Bridge');
       verify(() => session.saveAs('Bridge')).called(1);
     });
 
@@ -340,18 +403,151 @@ void main() {
       await openManager(tester, state: const SessionState(sessions: two));
       await tester.tap(find.byKey(const Key('sessions_save')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('sessionName_field')), findsOneWidget);
+      expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
       verifyNever(session.save);
     });
 
-    testWidgets('the exports fire the cubit', (tester) async {
-      await openManager(tester, state: const SessionState(sessions: two));
-      await tester.tap(find.byKey(const Key('sessions_exportMixdown')));
-      await tester.pumpAndSettle();
-      verify(() => session.exportMixdown()).called(1);
-      await tester.tap(find.byKey(const Key('sessions_exportStems')));
-      await tester.pumpAndSettle();
-      verify(() => session.exportStems()).called(1);
+    group('layout', () {
+      testWidgets('caps the list at four rows and scrolls to later sessions', (
+        tester,
+      ) async {
+        await openManager(tester, state: const SessionState(sessions: two));
+        final twoHeight = tester
+            .getSize(
+              find.byKey(const Key('sessions_manager')),
+            )
+            .height;
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await openManager(tester, state: const SessionState(sessions: five));
+        final fiveHeight = tester
+            .getSize(
+              find.byKey(const Key('sessions_manager')),
+            )
+            .height;
+        expect(fiveHeight, twoHeight + 2 * kConsoleRowHeight);
+
+        final scrollView = find.byType(SingleChildScrollView);
+        expect(
+          tester.getSize(scrollView).height,
+          kConsoleRowHeight * 4 + ConsoleCard.borderExtent,
+        );
+        expect(
+          find.byKey(const Key('sessions_card_E')).hitTestable(),
+          findsNothing,
+        );
+
+        await tester.drag(
+          scrollView,
+          const Offset(0, -kConsoleRowHeight * 2),
+        );
+        await tester.pump();
+        expect(
+          find.byKey(const Key('sessions_card_E')).hitTestable(),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const Key('sessions_card_E')));
+        await tester.pump();
+
+        verify(() => session.loadNamed('E')).called(1);
+      });
+    });
+
+    group('dismiss', () {
+      StreamController<SessionsManagerStatus> statuses() {
+        final controller = StreamController<SessionsManagerStatus>.broadcast();
+        addTearDown(controller.close);
+        return controller;
+      }
+
+      testWidgets('pops a nested confirm too', (tester) async {
+        final requested = statuses();
+        await openView(
+          tester,
+          state: const SessionState(currentSessionName: 'A', sessions: two),
+          statuses: requested.stream,
+        );
+        await tester.tap(find.byKey(const Key('sessions_delete')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('sessionDelete_confirm')), findsOneWidget);
+
+        requested.add(SessionsManagerStatus.dismissalRequested);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('sessionDelete_confirm')), findsNothing);
+        expect(find.byKey(const Key('sessions_manager')), findsNothing);
+        expect(find.text('open'), findsOneWidget);
+        verifyNever(() => session.deleteSession(any()));
+
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+      });
+
+      testWidgets('pops a stacked rename sheet too', (tester) async {
+        final requested = statuses();
+        await openView(
+          tester,
+          state: const SessionState(currentSessionName: 'A', sessions: two),
+          statuses: requested.stream,
+        );
+        await tester.tap(find.byKey(const Key('sessions_rename')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('console_rename_sheet')), findsOneWidget);
+
+        requested.add(SessionsManagerStatus.dismissalRequested);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('console_rename_sheet')), findsNothing);
+        expect(find.byKey(const Key('sessions_manager')), findsNothing);
+        expect(find.text('open'), findsOneWidget);
+        verifyNever(() => session.renameSession(any(), any()));
+      });
+
+      testWidgets('leaves home intact so the dialog can reopen', (
+        tester,
+      ) async {
+        final requested = statuses();
+        await openView(
+          tester,
+          state: const SessionState(sessions: two),
+          statuses: requested.stream,
+        );
+
+        requested.add(SessionsManagerStatus.dismissalRequested);
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('sessions_manager')), findsNothing);
+        expect(find.text('open'), findsOneWidget);
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+      });
+
+      testWidgets('a request racing a barrier dismissal preserves home', (
+        tester,
+      ) async {
+        final requested = statuses();
+        await openView(
+          tester,
+          state: const SessionState(sessions: two),
+          statuses: requested.stream,
+        );
+        final route = ModalRoute.of(
+          tester.element(find.byKey(const Key('sessions_manager'))),
+        )!;
+
+        await tester.tapAt(const Offset(1, 1));
+        await tester.pump();
+        expect(route.isCurrent, isFalse);
+        requested.add(SessionsManagerStatus.dismissalRequested);
+        await tester.pumpAndSettle();
+
+        expect(find.text('open'), findsOneWidget);
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+      });
     });
   });
 }

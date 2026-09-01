@@ -1,0 +1,48 @@
+# Creates the /data directories the journal and coredump bind mounts need,
+# before either of them tries to mount (#438).
+#
+# A .mount unit creates its own mountpoint (Where=) but never its source
+# (What=), so without this the first boot after a flash mounts nothing and the
+# journal silently stays in RAM — the exact failure this work exists to end.
+# (segno-log-check.service is what says so out loud when it happens anyway.)
+#
+# DefaultDependencies=no and the explicit ordering keep it in the very early
+# window between /data appearing and journald's flush.
+[Unit]
+Description=Segno: create the persistent log directories on /data
+DefaultDependencies=no
+Requires=data.mount
+After=data.mount
+Before=var-volatile-log-journal.mount var-lib-systemd-coredump.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/mkdir -p /data/log/journal /data/log/coredump
+# root:systemd-journal 2755 — systemd's own rule for this directory, verbatim
+# from its tmpfiles.d/systemd.conf: `z /var/log/journal 2755 root
+# systemd-journal`. The group is the half that does the work. Setgid makes the
+# files journald creates inherit the directory's group, and systemd's rule for
+# those files is `0640 root systemd-journal`, so without the chgrp setgid
+# propagates `root` and buys nothing at all.
+#
+# Not left to systemd's tmpfiles line to fix later: that one reaches this
+# directory only through the /var/log symlink and only once tmpfiles runs. The
+# directory on /data is the one that persists, and it is ours to create right.
+#
+# The group ships with the systemd package, so a chgrp failure here means the
+# image is broken; the unit failing (rather than swallowing it) is what keeps
+# that from being another silent one. Failing is all it does, though: the bind
+# mounts pull this unit in with Wants=, not Requires=, so on any boot where
+# the directories already exist a failure here shows up in
+# `systemctl --failed` without also taking the journal and coredump mounts
+# down with it.
+ExecStart=/bin/chgrp systemd-journal /data/log/journal
+ExecStart=/bin/chmod 2755 /data/log/journal
+# No setgid on the coredump directory: cores are written and read as root, so
+# there is no group to inherit. 0755 is systemd's own rule for
+# /var/lib/systemd/coredump.
+ExecStart=/bin/chmod 0755 /data/log/coredump
+
+[Install]
+WantedBy=local-fs.target

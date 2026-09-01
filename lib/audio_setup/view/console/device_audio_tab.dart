@@ -8,6 +8,7 @@ import 'package:looper_repository/looper_repository.dart'
     show EngineStatus, LatencyState;
 import 'package:segno/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:segno/audio_setup/cubit/inputs_cubit.dart';
+import 'package:segno/audio_setup/view/audio_device_scan_scope.dart';
 import 'package:segno/common/console_rename_sheet.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/l10n/l10n.dart';
@@ -123,37 +124,41 @@ class _DeviceAudioTabState extends State<DeviceAudioTab> {
 
     return KeyedSubtree(
       key: const Key('audio_device_tab'),
-      child: ConsoleFace(
-        previewKey: const Key('audio_upcoming_group'),
-        lastGroupExtent: state.asioOnly ? _asioExtent(state) : 0,
-        groups: [
-          ConsoleGroup(
-            caption: l10n.audioGroupLabel,
-            blocks: [
-              _card(context, state),
-              if (silent)
-                ConsoleCard(
-                  key: const Key('audio_no_outputs_card'),
-                  children: [
-                    ConsoleBanner(
-                      key: const Key('audio_no_outputs_banner'),
-                      message: l10n.audioNoOutputsBanner,
-                      tone: ConsoleBannerTone.failure,
-                    ),
-                  ],
-                ),
-              // The same sentence the setup page shows, so the two surfaces
-              // cannot reach different conclusions about the same rig. Only
-              // when there IS a loopback: the resolver's other branch names a
-              // kind that is not there.
-              if (state.loopback.available)
-                ConsoleProse(l10n.loopbackNote(state.loopback)),
-            ],
-          ),
-          // Windows runs ASIO exclusively, so the driver it opens is a setting
-          // of its own rather than one of the devices above.
-          if (state.asioOnly) _asioGroup(context, state),
-        ],
+      // This tab IS the device picker, so its lifetime is what re-enumeration
+      // is worth paying for — see [AudioDeviceScanScope].
+      child: AudioDeviceScanScope(
+        child: ConsoleFace(
+          previewKey: const Key('audio_upcoming_group'),
+          lastGroupExtent: state.asioOnly ? _asioExtent(state) : 0,
+          groups: [
+            ConsoleGroup(
+              caption: l10n.audioGroupLabel,
+              blocks: [
+                _card(context, state),
+                if (silent)
+                  ConsoleCard(
+                    key: const Key('audio_no_outputs_card'),
+                    children: [
+                      ConsoleBanner(
+                        key: const Key('audio_no_outputs_banner'),
+                        message: l10n.audioNoOutputsBanner,
+                        tone: ConsoleBannerTone.failure,
+                      ),
+                    ],
+                  ),
+                // The same sentence the setup page shows, so the two surfaces
+                // cannot reach different conclusions about the same rig. Only
+                // when there IS a loopback: the resolver's other branch names a
+                // kind that is not there.
+                if (state.loopback.available)
+                  ConsoleProse(l10n.loopbackNote(state.loopback)),
+              ],
+            ),
+            // Windows runs ASIO exclusively, so the driver it opens is a
+            // setting of its own rather than one of the devices above.
+            if (state.asioOnly) _asioGroup(context, state),
+          ],
+        ),
       ),
     );
   }

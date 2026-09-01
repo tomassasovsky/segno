@@ -579,6 +579,39 @@ void main() {
         );
       });
 
+      test(
+        'flushMappings commits an edit the debounce was still holding',
+        () async {
+          mappingsWriteDebounce = const Duration(seconds: 30);
+          await cubit.close();
+          cubit = ControlCubit(
+            looper: looper,
+            pedal: pedal,
+            settings: settings,
+            performance: performance,
+            controller: controller,
+            midiDevices: midiDevices,
+            keepAliveInterval: Duration.zero,
+            mappingsWriteDebounce: mappingsWriteDebounce,
+          );
+          final binding = ContinuousBinding(
+            trigger: expression,
+            target: volumeTarget.canonicalString(),
+          );
+
+          await use([binding]);
+          expect(await settings.loadControllerMappings(), isNull);
+
+          cubit.flushMappings();
+          await settle();
+
+          expect(
+            await settings.loadControllerMappings(),
+            ControllerBindingSet([binding]).encode(),
+          );
+        },
+      );
+
       test('load() restores the blob into state and the repository', () async {
         final binding = DiscreteBinding(
           trigger: stomp,

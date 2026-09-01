@@ -1,9 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
-import 'package:segno/common/console_mode.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -26,8 +24,6 @@ class TrackColumn extends StatelessWidget {
     required this.name,
     required this.selected,
     required this.mode,
-    required this.onUndo,
-    required this.onRedo,
     this.looperMode = LooperMode.multi,
     this.isPrimary = false,
     this.onCrownPrimary,
@@ -66,18 +62,11 @@ class TrackColumn extends StatelessWidget {
   /// The track's resolved display name.
   final String name;
 
-  /// Whether this column is the selected one (a heavier white border).
+  /// Whether this column is selected (a white rather than card-colored ring).
   final bool selected;
 
   /// The active system mode (Record vs Mute).
   final InteractionMode mode;
-
-  /// Dispatches an undo for the given channel (shares the keyboard path's
-  /// dispatch+announce, wired in the host view).
-  final void Function(int channel) onUndo;
-
-  /// Dispatches a redo for the given channel.
-  final void Function(int channel) onRedo;
 
   /// The five-mode axis (B5c): governs whether the crown badge shows at all
   /// — visible in Sync/Band, absent in Multi/Song/Free (Wave-view style, per
@@ -99,9 +88,9 @@ class TrackColumn extends StatelessWidget {
     final surface = context.surface;
     final bloc = context.read<LooperBloc>();
 
-    // The border is always white; selection only changes its weight. The meter
-    // bar color is one table lookup on the track's meter state (muted included;
-    // see LooperTheme.meterColors).
+    // The ring is always 2px; selection changes it from the card stroke to
+    // white. The meter bar color is one table lookup on the track's meter state
+    // (muted included; see LooperTheme.meterColors).
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
     final isFx = mode == InteractionMode.fx;
     // FX mode recedes the meter to 40% alpha so the chain dressing reads on top
@@ -157,12 +146,8 @@ class TrackColumn extends StatelessWidget {
     // column layout never shifts when the mode changes.
     final crownVisible =
         looperMode == LooperMode.sync || looperMode == LooperMode.band;
-    // Built once and placed in whichever branch below applies (console
-    // Stack vs standard Row) — a single construction site means the two
-    // layouts can never diverge on the badge's key/callback wiring (a
-    // console-only regression the per-layout-flavor split would otherwise
-    // let slip past a plain `flutter test` run, since `kConsoleMode` is a
-    // compile-time constant no normal test toggles).
+    // Built once and placed where it applies — a single construction site
+    // means the badge's key/callback wiring can never diverge.
     final crownBadge = crownVisible
         ? _CrownBadge(
             key: Key('tracks_crown_${track.channel}'),
@@ -182,16 +167,6 @@ class TrackColumn extends StatelessWidget {
       fontWeight: FontWeight.w800,
       letterSpacing: 1.5,
     );
-    final nameText = AppText(
-      name,
-      textAlign: TextAlign.center,
-      style: nameStyle,
-    );
-    // Undo/Redo shortcut hints adapt to the host platform — Segno targets
-    // Windows/Linux too, so this must not hardcode the macOS modifier.
-    final isMac = defaultTargetPlatform == TargetPlatform.macOS;
-    final undoShortcut = isMac ? '⌘Z' : 'Ctrl+Z';
-    final redoShortcut = isMac ? '⌘⇧Z' : 'Ctrl+Y';
     // The meter conveys state through colour only (WCAG 1.4.1); name the state
     // in words so it reaches the tile's accessible label.
     final stateWord = switch (meterState) {
@@ -207,114 +182,52 @@ class TrackColumn extends StatelessWidget {
       decoration: BoxDecoration(
         color: looper.tileBackground,
         borderRadius: BorderRadius.circular(17),
-        // Selected: a 4px white ring (onAccent == pure white). Unselected: a
-        // 1px near-black hairline (the pen's card stroke #17171b, the `card`
-        // token's near-black) — not borderless.
+        // 2px ring: white when selected (onAccent), otherwise the pen's
+        // card stroke #17171b (the `card` token) — not borderless.
         border: Border.all(
           color: selected ? surface.onAccent : surface.card,
-          width: selected ? 4 : 1,
+          width: 2,
         ),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (kConsoleMode)
-            // Console mode: the foot pedals own undo/redo, so the on-screen
-            // buttons are hidden entirely and the channel number is centred.
-            // The loop-multiple badge still rides the right edge; a pending
-            // arm badge (A5) rides the left.
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                AppText(
-                  '${track.channel + 1}',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    // The pen's cell number: UI sans, muted grey.
-                    fontFamily: SurfaceTheme.displayFont,
-                    color: surface.textTertiary,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                  ),
+          // The foot pedals own undo/redo, so there are no on-screen buttons
+          // and the channel number is centred. The loop-multiple badge still
+          // rides the right edge; a pending arm badge (A5) rides the left.
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              AppText(
+                '${track.channel + 1}',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  // The pen's cell number: UI sans, muted grey.
+                  fontFamily: SurfaceTheme.displayFont,
+                  color: surface.textTertiary,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
                 ),
-                if (track.isMultiple)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: AppText(
-                      l10n.loopMultipleLabel(track.multiple),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                if (track.pending)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: _PendingArmBadge(color: looper.recordColor),
-                  ),
-                if (crownBadge != null)
-                  Align(alignment: Alignment.topCenter, child: crownBadge),
-              ],
-            )
-          else
-            Row(
-              children: [
-                if (crownBadge != null) ...[
-                  crownBadge,
-                  const SizedBox(width: 6),
-                ],
-                AppText(
-                  '${track.channel + 1}',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: surface.textSecondary,
-                  ),
-                ),
-                if (track.pending) ...[
-                  const SizedBox(width: 6),
-                  _PendingArmBadge(color: looper.recordColor),
-                ],
-                const Spacer(),
-                if (track.isMultiple)
-                  AppText(
+              ),
+              if (track.isMultiple)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: AppText(
                     l10n.loopMultipleLabel(track.multiple),
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: theme.colorScheme.primary,
                     ),
                   ),
-                // Undo/Redo surface only on the selected column; the keyboard
-                // shortcut hint in each tooltip adapts to the host platform.
-                if (selected) ...[
-                  IconButton(
-                    key: Key('tracks_undo_${track.channel}'),
-                    tooltip: l10n.undoTooltip(undoShortcut),
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 18,
-                    color: looper.toolbarIconColor,
-                    icon: const Icon(Icons.undo),
-                    // Mirrors the `U` key: enabled whenever there is a layer to
-                    // peel — stacked overdub passes, or the base recording
-                    // itself (undoing it empties the track, redo-ably) — but
-                    // not mid-capture, when the engine rejects undo.
-                    onPressed:
-                        (track.hasContent || track.canUndo) &&
-                            !track.isCapturing
-                        ? () => onUndo(track.channel)
-                        : null,
-                  ),
-                  IconButton(
-                    key: Key('tracks_redo_${track.channel}'),
-                    tooltip: l10n.redoTooltip(redoShortcut),
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 18,
-                    color: looper.toolbarIconColor,
-                    icon: const Icon(Icons.redo),
-                    onPressed: track.canRedo && !track.isCapturing
-                        ? () => onRedo(track.channel)
-                        : null,
-                  ),
-                ],
-              ],
-            ),
+                ),
+              if (track.pending)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: _PendingArmBadge(color: looper.recordColor),
+                ),
+              if (crownBadge != null)
+                Align(alignment: Alignment.topCenter, child: crownBadge),
+            ],
+          ),
           Expanded(
             child: FocusableTapTarget(
               key: Key('tracks_tile_${track.channel}'),
@@ -349,9 +262,9 @@ class TrackColumn extends StatelessWidget {
                     // polled snapshot, a poll behind any flip another surface
                     // just made. The announcement shares the keyboard path's
                     // helper so the two cannot drift.
-                    TracksCommands(context).announceFxChainToggle(
-                      track.channel,
-                    );
+                    TracksCommands(
+                      context,
+                    ).announceFxChainToggle(track.channel);
                     bloc.add(LooperTrackChainToggled(track.channel));
                 }
               },
@@ -409,7 +322,7 @@ class TrackColumn extends StatelessWidget {
           // (#692) — so the track name is removed from the cell entirely rather
           // than re-asserting the track-as-FX-control conflation here.
           if (!isFx) ...[
-            const SizedBox(height: kConsoleMode ? 2 : 10),
+            const SizedBox(height: 2),
             FocusableTapTarget(
               key: Key('tracks_name_${track.channel}'),
               semanticLabel: l10n.a11yRenameTrack(name),
@@ -419,19 +332,16 @@ class TrackColumn extends StatelessWidget {
                 channel: track.channel,
                 current: name,
               ),
-              child: kConsoleMode
-                  // Fixed console name size: uniform height across columns,
-                  // tuned so a 6-char name (e.g. GUITAR) reaches ~60% of the
-                  // column width on the 16" panel. Hard-coded (not
-                  // width-relative).
-                  ? AppText(
-                      name,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: nameStyle?.copyWith(fontSize: 47.3, height: 1),
-                    )
-                  : nameText,
+              // Fixed console name size: uniform height across columns,
+              // tuned so a 6-char name (e.g. GUITAR) reaches ~60% of the
+              // column width on the 16" panel. Hard-coded (not width-relative).
+              child: AppText(
+                name,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: nameStyle?.copyWith(fontSize: 47.3, height: 1),
+              ),
             ),
           ],
           // A discrete arm/readiness strip, shown only when the view preference
@@ -466,10 +376,7 @@ class TrackColumn extends StatelessWidget {
 /// bright dots are undoable layers, grey dots are redoable ones, and faint
 /// dots are unused slots — so the white/grey boundary marks where you are.
 class _TrackHistoryDots extends StatelessWidget {
-  const _TrackHistoryDots({
-    required this.undoDepth,
-    required this.redoDepth,
-  });
+  const _TrackHistoryDots({required this.undoDepth, required this.redoDepth});
 
   final int undoDepth;
 
@@ -506,10 +413,10 @@ class _TrackHistoryDots extends StatelessWidget {
     // they should match the larger track name — but they are a history
     // READOUT, not a control, and at 18 with an 8 gap the row was half again
     // as wide as the column the pen gives it. Desktop keeps its compact sizes.
-    const dotSize = kConsoleMode ? 10.0 : 8.0;
-    const rowHeight = kConsoleMode ? 14.0 : 12.0;
-    const gutterSize = kConsoleMode ? 14.0 : 12.0;
-    const gapSize = kConsoleMode ? 5.0 : 4.0;
+    const dotSize = 10.0;
+    const rowHeight = 14.0;
+    const gutterSize = 14.0;
+    const gapSize = 5.0;
 
     Widget gutter(IconData icon, {required bool visible}) => Visibility(
       visible: visible,
@@ -724,9 +631,7 @@ class _FxChainDressing extends StatelessWidget {
                       // pushes the indicators down out of line with its
                       // one-line neighbours across the row.
                       SizedBox(
-                        height: kConsoleMode
-                            ? _kFxIdentitySlot
-                            : _kFxIdentitySlotDesktop,
+                        height: _kFxIdentitySlot,
                         child: Align(
                           alignment: Alignment.topCenter,
                           child: _FxCellIdentity(
@@ -738,9 +643,9 @@ class _FxChainDressing extends StatelessWidget {
                       ),
                       // Inter-element gaps opened to the pen's proportions:
                       // identity→chips ~3.8% of the card, chips→pill ~3.2%.
-                      const SizedBox(height: kConsoleMode ? 20 : 12),
+                      const SizedBox(height: 20),
                       _FxEntryRun(effects: effects, chainEnabled: chainEnabled),
-                      const SizedBox(height: kConsoleMode ? 30 : 18),
+                      const SizedBox(height: 30),
                       _FxPowerPill(enabled: chainEnabled),
                     ],
                   ),
@@ -771,20 +676,20 @@ class _FxNoChain extends StatelessWidget {
           style: TextStyle(
             fontFamily: SurfaceTheme.displayFont,
             color: surface.textMuted,
-            fontSize: kConsoleMode ? 28 : 18,
+            fontSize: 28,
             fontWeight: FontWeight.w700,
             letterSpacing: 1,
             height: 1.1,
           ),
         ),
-        const SizedBox(height: kConsoleMode ? 8 : 5),
+        const SizedBox(height: 8),
         AppText(
           l10n.stageFxNoChainHint,
           textAlign: TextAlign.center,
           style: TextStyle(
             fontFamily: SurfaceTheme.displayFont,
             color: surface.textMuted,
-            fontSize: kConsoleMode ? 18 : 12,
+            fontSize: 18,
             fontWeight: FontWeight.w400,
           ),
         ),
@@ -798,9 +703,6 @@ class _FxNoChain extends StatelessWidget {
 /// overhead), so a one-line identity leaves the lower line empty and every
 /// cell's chips + pill start at the same y.
 const double _kFxIdentitySlot = 66;
-
-/// The desktop twin (primary 19 + 4 gap + sub 12, plus overhead).
-const double _kFxIdentitySlotDesktop = 44;
 
 /// The cell identity — the dominant focal text of an FX-mode cell, in the UI
 /// sans, at the top of the centered group.
@@ -843,14 +745,14 @@ class _FxCellIdentity extends StatelessWidget {
           style: TextStyle(
             fontFamily: SurfaceTheme.displayFont,
             color: enabled ? surface.textPrimary : surface.textSecondary,
-            fontSize: kConsoleMode ? 30 : 19,
+            fontSize: 30,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.5,
             height: 1,
           ),
         ),
         if (subLabel != null) ...[
-          const SizedBox(height: kConsoleMode ? 6 : 4),
+          const SizedBox(height: 6),
           AppText(
             subLabel,
             key: const Key('tracks_tileFxTargetSub'),
@@ -860,7 +762,7 @@ class _FxCellIdentity extends StatelessWidget {
             style: TextStyle(
               fontFamily: SurfaceTheme.displayFont,
               color: surface.textMuted,
-              fontSize: kConsoleMode ? 18 : 12,
+              fontSize: 18,
               fontWeight: FontWeight.w600,
               letterSpacing: 1,
               height: 1,
@@ -891,10 +793,7 @@ class _FxPowerPill extends StatelessWidget {
     final l10n = context.l10n;
     return Container(
       key: const Key('tracks_tileFxPower'),
-      padding: const EdgeInsets.symmetric(
-        horizontal: kConsoleMode ? 46 : 28,
-        vertical: kConsoleMode ? 16 : 10,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 46, vertical: 16),
       decoration: BoxDecoration(
         color: enabled ? surface.fx : Colors.transparent,
         borderRadius: BorderRadius.circular(999),
@@ -912,7 +811,7 @@ class _FxPowerPill extends StatelessWidget {
           // White label (onAccent) on the purple ON fill; flat muted grey on
           // the ghost.
           color: enabled ? surface.onAccent : surface.textMuted,
-          fontSize: kConsoleMode ? 40 : 22,
+          fontSize: 40,
           fontWeight: FontWeight.w800,
           letterSpacing: 1.4,
           height: 1,
@@ -954,7 +853,7 @@ class _FxEntryRun extends StatelessWidget {
             style: TextStyle(
               fontFamily: SurfaceTheme.displayFont,
               color: surface.textMuted,
-              fontSize: kConsoleMode ? 16 : 12,
+              fontSize: 16,
               height: 1,
             ),
           ),
@@ -974,7 +873,7 @@ class _FxEntryRun extends StatelessWidget {
         child: Wrap(
           alignment: WrapAlignment.center,
           crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: kConsoleMode ? 8 : 6,
+          spacing: 8,
           runSpacing: 4,
           children: children,
         ),
@@ -1001,10 +900,7 @@ class _FxEntryChip extends StatelessWidget {
     return Opacity(
       opacity: bypassed ? surface.disabledOpacity : 1,
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: kConsoleMode ? 14 : 9,
-          vertical: kConsoleMode ? 8 : 5,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           // Neutral pills over the waveform (the pen): a dark-grey fill with a
           // hairline white border and a near-white label — NOT the FX purple,
@@ -1020,7 +916,7 @@ class _FxEntryChip extends StatelessWidget {
           style: TextStyle(
             fontFamily: SurfaceTheme.displayFont,
             color: surface.textPrimary,
-            fontSize: kConsoleMode ? 18 : 13,
+            fontSize: 18,
             fontWeight: FontWeight.w600,
             decoration: bypassed ? TextDecoration.lineThrough : null,
           ),

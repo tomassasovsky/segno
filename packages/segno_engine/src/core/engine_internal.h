@@ -255,6 +255,16 @@ int le_engine_lane_buffer_allocated_for_test(le_engine* engine, int32_t channel,
 int32_t le_engine_lane_slot_cap_for_test(le_engine* engine, int32_t channel,
                                          int32_t lane, int32_t slot);
 
+/* Copies up to [max_frames] frames of lane [lane]'s LIVE loop buffer
+ * (pool[a_live]) into [out], for the #697 restoration tests to inspect what a
+ * loop-close restoration pass published. Returns the number of frames copied
+ * (min of the recorded length and [max_frames]), or 0 for out-of-range indices
+ * or an unallocated/empty live slot. Control-thread test seam; not part of the
+ * FFI surface. */
+int32_t le_engine_read_lane_live_for_test(le_engine* engine, int32_t channel,
+                                          int32_t lane, float* out,
+                                          int32_t max_frames);
+
 /* Forces track [channel]'s active lane count to [count] WITHOUT allocating the
  * new lanes' buffers, so a test can drive the audio thread into the window where
  * lane_count claims more lanes than are allocated and assert the real-time

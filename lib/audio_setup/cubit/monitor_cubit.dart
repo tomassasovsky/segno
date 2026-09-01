@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:segno/common/write_debouncer.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// Per-hardware-input live-monitor configuration.
@@ -44,8 +45,10 @@ class MonitorCubit extends Cubit<MonitorState> {
   MonitorCubit({
     required LooperRepository repository,
     required SettingsRepository settings,
+    Duration fxPersistDebounce = const Duration(milliseconds: 300),
   }) : _repository = repository,
        _settings = settings,
+       _fxPersist = WriteDebouncer(debounce: fxPersistDebounce),
        super(const MonitorState()) {
     // Subscribed at construction, not in [load]: this cubit is a cache of
     // state another writer can change from the first frame, and a session
@@ -58,6 +61,11 @@ class MonitorCubit extends Cubit<MonitorState> {
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
+
+  /// Coalesces the chain-envelope write a knob drag would otherwise emit per
+  /// pointer move — see [_schedulePersist]. Flushed in [close].
+  final WriteDebouncer _fxPersist;
+
   Future<void>? _loadFuture;
 
   /// The inbound editor-sync poll cadence (D-SYNC: ≤10 Hz).
@@ -340,6 +348,10 @@ class MonitorCubit extends Cubit<MonitorState> {
   /// the pre-load leftover. Reads only from the repository; never re-applies to
   /// the engine (the load already did), so it cannot desync engine vs cache.
   Future<void> syncFromRepository() async {
+    // A loaded session supersedes every knob edit still in flight; the sweep
+    // below writes the loaded truth for both the applied and the dropped
+    // inputs, so a pending write has nothing left to say.
+    _fxPersist.cancelAll();
     final applied = _repository.allMonitors();
     final dropped = state.inputs.keys
         .where((input) => !applied.containsKey(input))
@@ -490,7 +502,7 @@ class MonitorCubit extends Cubit<MonitorState> {
       param: param,
       value: value,
     );
-    unawaited(_settings.saveMonitorEffects(input, _encodedChain(input, next)));
+    _schedulePersist(input);
   }
 
   /// Sets hosted-plugin parameter [paramId] of monitor [input]'s chain entry
@@ -512,7 +524,7 @@ class MonitorCubit extends Cubit<MonitorState> {
       paramId: paramId,
       value: value,
     );
-    unawaited(_settings.saveMonitorEffects(input, _encodedChain(input, next)));
+    _schedulePersist(input);
   }
 
   /// Enables/disables monitor [input]'s chain entry [index] without losing its
@@ -628,6 +640,23 @@ class MonitorCubit extends Cubit<MonitorState> {
     );
   }
 
+  /// Trailing-debounced persistence of monitor [input]'s chain, for the two
+  /// knob-drag entry points ([setEffectParam] / [setPluginParam]). The engine
+  /// write stays per-move and immediate; only the envelope rewrite waits.
+  ///
+  /// Re-reads the chain from the cubit's state at flush time rather than
+  /// closing over the list that scheduled it, so a coalesced burst persists
+  /// the value the user let go on.
+  void _schedulePersist(int input) => _fxPersist.schedule(
+    input,
+    () => unawaited(
+      _settings.saveMonitorEffects(
+        input,
+        _encodedChain(input, state.forInput(input).effects),
+      ),
+    ),
+  );
+
   /// Encodes monitor [input]'s chain as the persisted envelope string (R15):
   /// the chain-enabled flag rides beside the entries in the one monitor-fx
   /// key. [effects] is passed rather than read from state because most save
@@ -665,6 +694,9 @@ class MonitorCubit extends Cubit<MonitorState> {
 
   @override
   Future<void> close() {
+    // A drag that ended inside the debounce window and was followed by a
+    // shutdown must still reach the store.
+    _fxPersist.flush();
     for (final timer in _editorTimers.values) {
       timer.cancel();
     }
@@ -674,4 +706,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     unawaited(_paramWatch.cancel());
     return super.close();
   }
+
+  /// Commits pending monitor FX writes now. Called on a clean halt.
+  void flushPersistence() => _fxPersist.flush();
 }

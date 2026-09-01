@@ -340,6 +340,15 @@ class LooperRepository {
   final Map<int, bool> _monitorMute = {};
   final Map<int, List<TrackEffect>> _monitorEffects = {};
 
+  /// Per-input conditioning-stage intent (the fixed HPF / hum-notch / expander
+  /// utility stage), remembered and re-applied on every successful (re)start:
+  /// the engine resets conditioning on every configure, so — like the monitor
+  /// maps above — the intent lives here and is re-pushed after each device
+  /// (re)open. [_condEnabled] is the stage on/off; [_condParams] holds each set
+  /// parameter's real-unit value, keyed by input then [InputConditioningParam].
+  final Map<int, bool> _condEnabled = {};
+  final Map<int, Map<InputConditioningParam, double>> _condParams = {};
+
   /// Live plugin slot handles keyed by chain position — `(channel, lane,
   /// index)` for lane chains, `(input, index)` for monitor chains. Repopulated
   /// every time a chain is (re)applied to the running engine; an absent entry
@@ -984,6 +993,22 @@ class LooperRepository {
           input: input,
           enabled: enabled,
         ),
+      );
+      // Re-apply per-input conditioning (the engine resets it on configure):
+      // stage each input's parameters first, then its enable flag, so the final
+      // enable establishes the stage with its parameters already in place.
+      _condParams.forEach((input, params) {
+        params.forEach(
+          (param, value) => _engine.setInputConditioningParam(
+            input: input,
+            param: param,
+            value: value,
+          ),
+        );
+      });
+      _condEnabled.forEach(
+        (input, enabled) =>
+            _engine.setInputConditioningEnabled(input: input, enabled: enabled),
       );
       // Re-apply the Track-stage + Master insert chains and their chain flags
       // (FX v3 part 1b owners), mirroring the lane/monitor replay above.
@@ -2299,6 +2324,46 @@ class LooperRepository {
     return _engine.setMonitorInputMute(input: input, muted: muted);
   }
 
+  /// Enables or disables hardware [input]'s conditioning stage (the fixed HPF /
+  /// hum-notch / expander utility stage). Remembered and re-applied on every
+  /// successful (re)start — the engine resets conditioning on each configure —
+  /// and takes effect immediately only while running. Returns
+  /// [EngineResult.invalid] for an input outside `[0, kMaxMonitoredInputs)`.
+  EngineResult setInputConditioningEnabled({
+    required int input,
+    required bool enabled,
+  }) {
+    if (input < 0 || input >= kMaxMonitoredInputs) {
+      return EngineResult.invalid;
+    }
+    _condEnabled[input] = enabled;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setInputConditioningEnabled(input: input, enabled: enabled);
+  }
+
+  /// Sets conditioning parameter [param] of hardware [input] to [value] in its
+  /// real unit (Hz / dB / ms / ratio — see [InputConditioningParam]). Remembered
+  /// and re-applied on every (re)start; takes effect immediately only while
+  /// running. Independent of the enable flag — a value set while the stage is
+  /// off is applied and takes effect when it is next enabled. Returns
+  /// [EngineResult.invalid] for an input outside `[0, kMaxMonitoredInputs)`.
+  EngineResult setInputConditioningParam({
+    required int input,
+    required InputConditioningParam param,
+    required double value,
+  }) {
+    if (input < 0 || input >= kMaxMonitoredInputs) {
+      return EngineResult.invalid;
+    }
+    (_condParams[input] ??= {})[param] = value;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setInputConditioningParam(
+      input: input,
+      param: param,
+      value: value,
+    );
+  }
+
   /// Turns hardware [output] on/off as a routing target (the structural output
   /// gate). A disabled output is removed from the mix while its lane/monitor
   /// route masks are preserved — re-enabling restores them. Default-on: only
@@ -3073,6 +3138,41 @@ class LooperRepository {
     );
   }
 
+  /// Sets hosted-plugin parameter [paramId] of entry [index] of track
+  /// [channel]'s Track-stage chain to the plain [value] — the bus twin of
+  /// [setLanePluginParam].
+  ///
+  /// Granular for the same reason as [setTrackEffectParam]: the whole-chain
+  /// [setTrackEffects] path re-pushes every slot's TYPE, and
+  /// `LE_CMD_SET_TRACK_FX` resets that slot's DSP on the audio thread — so a
+  /// plugin knob routed through it would clear the reverb tails and delay
+  /// lines of the BUILT-INS sharing the bus, at pointer-move rate.
+  ///
+  /// Writes no engine command at all. A bus-stage plugin never instantiates
+  /// (see the section comment above), so there is no slot to poke; the value
+  /// is remembered on the [PluginEffect] so it persists and re-applies the day
+  /// a bus slot ABI lands. Returns [EngineResult.invalid] if the entry is not
+  /// a plugin.
+  EngineResult setTrackPluginParam({
+    required int channel,
+    required int index,
+    required int paramId,
+    required double value,
+  }) {
+    final effects = _trackEffects[channel];
+    if (effects == null || index < 0 || index >= effects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = effects[index];
+    if (fx is! PluginEffect) return EngineResult.invalid;
+    final values = Map<int, double>.of(fx.paramValues)..[paramId] = value;
+    // A fresh list instance, not an in-place edit — see [setLaneEffectParam].
+    _trackEffects[channel] = List<TrackEffect>.of(effects)
+      ..[index] = fx.copyWith(paramValues: values);
+    _reproject();
+    return EngineResult.ok;
+  }
+
   /// Sets built-in parameter [param] of Master insert entry [index] (see
   /// [setTrackEffectParam] for why this is granular).
   EngineResult setMasterEffectParam({
@@ -3092,6 +3192,26 @@ class LooperRepository {
     _reproject();
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMasterFxParam(index: index, param: param, value: value);
+  }
+
+  /// Sets hosted-plugin parameter [paramId] of Master insert entry [index]
+  /// (see [setTrackPluginParam] for why this is granular and why it writes no
+  /// engine command).
+  EngineResult setMasterPluginParam({
+    required int index,
+    required int paramId,
+    required double value,
+  }) {
+    if (index < 0 || index >= _masterEffects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = _masterEffects[index];
+    if (fx is! PluginEffect) return EngineResult.invalid;
+    final values = Map<int, double>.of(fx.paramValues)..[paramId] = value;
+    _masterEffects = List<TrackEffect>.of(_masterEffects)
+      ..[index] = fx.copyWith(paramValues: values);
+    _reproject();
+    return EngineResult.ok;
   }
 
   /// Pushes the remembered Master insert chain to the engine (see

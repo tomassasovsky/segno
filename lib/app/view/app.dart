@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
@@ -13,15 +14,18 @@ import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app_toasts.dart';
-import 'package:segno/app/audio_bootstrap.dart';
 import 'package:segno/app/segno_navigator.dart';
 import 'package:segno/appliance/display_brightness_cubit.dart';
+import 'package:segno/appliance/power_off/power_key_source.dart';
+import 'package:segno/appliance/power_off/power_off_cubit.dart';
+import 'package:segno/appliance/power_off/power_off_goodbye.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
 import 'package:segno/common/pedal_device.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/looper/view/tracks/routing_tracks_tab.dart';
@@ -31,6 +35,7 @@ import 'package:segno/performance/performance.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
+import 'package:segno/update/appliance/system_appliance_env.dart';
 import 'package:segno/update/cubit/pedal_firmware_cubit.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/update/view/pedal_firmware_gate.dart';
@@ -46,7 +51,7 @@ import 'package:wifi_repository/wifi_repository.dart';
 const _waveformFrame = Duration(milliseconds: 33); // ~30 fps
 
 /// The root application widget.
-class App extends StatelessWidget {
+class App extends StatefulWidget {
   /// Creates an [App] driven by the injected repositories.
   ///
   /// The repositories and [waveformWindow] are injected so tests can supply
@@ -77,6 +82,8 @@ class App extends StatelessWidget {
     ),
     this.brightness = const UnsupportedBrightnessClient(),
     this.consoleFacts = const UnsupportedConsoleFactsClient(),
+    this.powerKeySource,
+    this.powerOff,
     super.key,
   });
 
@@ -98,6 +105,13 @@ class App extends StatelessWidget {
   /// where it can export to. Defaults to the client that answers "unknown",
   /// which is what every non-appliance build gets.
   final ConsoleFactsClient consoleFacts;
+
+  /// Injected power-button source. Null (the default) starts an evdev
+  /// listener on Linux when `segno-update-ctl` exists, and nothing elsewhere.
+  final PowerKeySource? powerKeySource;
+
+  /// Injected halt. Null (the default) runs `segno-update-ctl poweroff`.
+  final Future<void> Function()? powerOff;
 
   /// The shared looper repository (owns the audio engine).
   final LooperRepository repository;
@@ -123,7 +137,7 @@ class App extends StatelessWidget {
   final PedalRepository? pedalRepository;
 
   /// The on-screen pedal simulator transport that [pedalRepository] is built
-  /// over, or `null` when none was built. The `PedalFaceplate` injects presses
+  /// over, or `null` when none was built. The fuzz harness injects presses
   /// and reads decoded frames from it. Disposed by the [PedalCubit] (via the
   /// repository), so it is provided by value, not created here.
   final SimulatorPedalTransport? pedalSimulator;
@@ -159,30 +173,57 @@ class App extends StatelessWidget {
   final Future<String> Function() exportDirectory;
 
   @override
-  Widget build(BuildContext context) {
-    // The pedal simulator and the pedal repository share one transport graph
-    // (the repository is built over the simulator), so the faceplate injects
-    // into and reads frames from the same object the cubit drives. The `??`
-    // short-circuits in production (both provided), so nothing is allocated on
-    // rebuild; the fallbacks only fire in tests.
-    final pedalSim =
-        pedalSimulator ??
+  State<App> createState() => _AppState();
+}
+
+/// Resolves the optional pedal pair once so a replacement [App] keeps
+/// [ControlCubit], [PedalCubit], and dialog routes on one repository.
+class _AppState extends State<App> {
+  late final SimulatorPedalTransport _simulator;
+  late final PedalRepository _pedal;
+  PowerKeySource? _powerKeySource;
+  ControlCubit? _control;
+
+  @override
+  void initState() {
+    super.initState();
+    _simulator =
+        widget.pedalSimulator ??
         SimulatorPedalTransport(inner: const NoopPedalTransport());
-    final pedalRepo = pedalRepository ?? PedalRepository(pedalSim);
+    _pedal = widget.pedalRepository ?? PedalRepository(_simulator);
+    _powerKeySource =
+        widget.powerKeySource ??
+        openAppliancePowerKeySource(
+          isLinux: Platform.isLinux,
+          helperExists: File('/usr/bin/segno-update-ctl').existsSync(),
+        );
+  }
+
+  @override
+  void dispose() {
+    unawaited(_powerKeySource?.close());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MultiRepositoryProvider(
       providers: [
-        RepositoryProvider.value(value: repository),
-        RepositoryProvider.value(value: controllerRepository),
-        RepositoryProvider.value(value: midiDeviceRepository),
-        RepositoryProvider.value(value: settings),
-        RepositoryProvider.value(value: sessionRepository),
-        RepositoryProvider.value(value: performanceRepository),
-        RepositoryProvider.value(value: pedalSim),
-        RepositoryProvider.value(value: updates),
-        RepositoryProvider.value(value: wifi),
-        RepositoryProvider.value(value: bluetooth),
-        RepositoryProvider.value(value: brightness),
-        RepositoryProvider.value(value: consoleFacts),
+        RepositoryProvider.value(value: widget.repository),
+        RepositoryProvider.value(value: widget.controllerRepository),
+        RepositoryProvider.value(value: widget.midiDeviceRepository),
+        RepositoryProvider.value(value: widget.settings),
+        RepositoryProvider.value(value: widget.sessionRepository),
+        RepositoryProvider.value(value: widget.performanceRepository),
+        RepositoryProvider.value(value: _simulator),
+        RepositoryProvider.value(value: _pedal),
+        RepositoryProvider.value(value: widget.updates),
+        RepositoryProvider.value(value: widget.wifi),
+        RepositoryProvider.value(value: widget.bluetooth),
+        RepositoryProvider.value(value: widget.brightness),
+        RepositoryProvider.value(value: widget.consoleFacts),
+        if (_powerKeySource != null)
+          RepositoryProvider<PowerKeySource>.value(value: _powerKeySource!),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -230,11 +271,13 @@ class App extends StatelessWidget {
           // route — pushed on the root navigator, above the looper page — can
           // drive routing edits through the bloc, mirroring the in-view routing
           // controls. The TracksCubit below is hoisted for the same reason.
+          // No `controller:` — MIDI stays on the page LooperBloc, which
+          // injects the power-off take lock. A second subscriber here would
+          // fire Clear/Record twice and bypass that lock.
           BlocProvider(
             create: (context) {
               final bloc = LooperBloc(
                 repository: context.read<LooperRepository>(),
-                controller: context.read<ControllerRepository>(),
                 settings: context.read<SettingsRepository>(),
               );
               // Boot-restore the persisted mode (B5c) — dispatched as an
@@ -375,6 +418,20 @@ class App extends StatelessWidget {
             },
           ),
           BlocProvider(
+            // Not lazy, for the same reason as MonitorCubit above: the saved
+            // per-input conditioning stage must be applied to the engine at
+            // startup, not only when a settings surface first reads this cubit.
+            lazy: false,
+            create: (context) {
+              final cubit = InputConditioningCubit(
+                repository: context.read<LooperRepository>(),
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          BlocProvider(
             create: (context) {
               final cubit = RecordOptionsCubit(
                 repository: context.read<LooperRepository>(),
@@ -391,8 +448,7 @@ class App extends StatelessWidget {
             create: (context) => AudioSetupCubit(
               repository: context.read<LooperRepository>(),
               settings: context.read<SettingsRepository>(),
-              asioSelectable: platformAsioSelectable,
-              initialAsioDrivers: initialAsioDrivers,
+              initialAsioDrivers: widget.initialAsioDrivers,
             ),
           ),
           // Eager (not lazy): the MIDI-setup cubit performs the launch
@@ -404,6 +460,46 @@ class App extends StatelessWidget {
             lazy: false,
             create: (context) => MidiSetupCubit(
               repository: context.read<MidiDeviceRepository>(),
+            ),
+          ),
+          // Above ControlCubit so take-start can read isUiUp. flushMappings
+          // cannot context.read a descendant — capture the instance below.
+          BlocProvider(
+            lazy: false,
+            create: (context) => PowerOffCubit(
+              flush: () {
+                try {
+                  context.read<MonitorCubit>().flushPersistence();
+                } on Object catch (error, stack) {
+                  AppLog.error(
+                    'power-off monitor flush failed',
+                    error: error,
+                    stack: stack,
+                  );
+                }
+                try {
+                  _control?.flushMappings();
+                } on Object catch (error, stack) {
+                  AppLog.error(
+                    'power-off mappings flush failed',
+                    error: error,
+                    stack: stack,
+                  );
+                }
+                try {
+                  context.read<LooperBloc>().add(const LooperPersistFlush());
+                } on Object catch (error, stack) {
+                  AppLog.error(
+                    'power-off looper flush failed',
+                    error: error,
+                    stack: stack,
+                  );
+                }
+              },
+              pedalGoodbye: () => context.read<PedalRepository>().pushState(
+                PedalStateFrame.blank(goodbye: true),
+              ),
+              powerOff: widget.powerOff ?? SystemApplianceEnv().powerOff,
             ),
           ),
           // Eager (not lazy): the ONE control-surface interpreter and owner
@@ -418,7 +514,7 @@ class App extends StatelessWidget {
             create: (context) {
               final cubit = ControlCubit(
                 looper: context.read<LooperRepository>(),
-                pedal: pedalRepo,
+                pedal: context.read<PedalRepository>(),
                 settings: context.read<SettingsRepository>(),
                 performance: context.read<PerformanceRepository>(),
                 // Both of these were missing, and external MIDI mapping had
@@ -432,8 +528,10 @@ class App extends StatelessWidget {
                 // that owns controller intent.
                 controller: context.read<ControllerRepository>(),
                 midiDevices: context.read<MidiDeviceRepository>(),
-                simulatedSource: simulatedControllerSource,
+                simulatedSource: widget.simulatedControllerSource,
+                takeLocked: () => context.read<PowerOffCubit>().state.isUiUp,
               );
+              _control = cubit;
               unawaited(cubit.load()); // boot-default mode restore
               return cubit;
             },
@@ -446,14 +544,9 @@ class App extends StatelessWidget {
             lazy: false,
             create: (context) {
               final cubit = PedalCubit(
-                pedal: pedalRepo,
+                pedal: context.read<PedalRepository>(),
                 settings: context.read<SettingsRepository>(),
-                // Redundant only on a desktop analysis run — see run_segno.
-                // ignore: avoid_redundant_argument_values
                 autoBindProductNames: kPedalAutoBindProductNames,
-                // Console only; null on desktop, where the manual setting
-                // stays in charge.
-                // ignore: avoid_redundant_argument_values
                 flashedProtocolVersion: kFlashedPedalProtocolVersionReader,
               );
               unawaited(cubit.load());
@@ -469,7 +562,7 @@ class App extends StatelessWidget {
             create: (context) {
               final cubit = AudioRecoveryCubit(
                 looper: context.read<LooperRepository>(),
-                recoveryConfig: audioRecoveryConfig,
+                recoveryConfig: widget.audioRecoveryConfig,
               );
               unawaited(cubit.load());
               return cubit;
@@ -484,6 +577,7 @@ class App extends StatelessWidget {
             create: (context) {
               final cubit = PerformanceRecorderCubit(
                 performance: context.read<PerformanceRepository>(),
+                takeLocked: () => context.read<PowerOffCubit>().state.isUiUp,
               );
               unawaited(cubit.load());
               return cubit;
@@ -491,9 +585,9 @@ class App extends StatelessWidget {
           ),
         ],
         child: _AppView(
-          waveformWindow: waveformWindow,
-          exportDirectory: exportDirectory,
-          displayCount: displayCount,
+          waveformWindow: widget.waveformWindow,
+          exportDirectory: widget.exportDirectory,
+          displayCount: widget.displayCount,
         ),
       ),
     );
@@ -668,6 +762,7 @@ class _AppViewState extends State<_AppView> {
             context.read<InputsCubit>().state,
             context.read<AudioSetupCubit>().state,
             _l10n,
+            context.read<PowerOffCubit>().state.phase,
           ),
         );
       });
@@ -699,6 +794,7 @@ class _AppViewState extends State<_AppView> {
     InputsState inputs,
     AudioSetupState audio,
     AppLocalizations l10n,
+    PowerOffPhase powerOff,
   ) {
     final transport = looper.transport;
     final armed = recorder is PerformanceRecorderArmed ? recorder : null;
@@ -756,6 +852,7 @@ class _AppViewState extends State<_AppView> {
       // no name rides the wire. MIDI loss is a transient toast, not a
       // standing condition, so it never rides the readout.
       deviceLost: audio.deviceConnectivity == DeviceConnectivity.lost,
+      goodbye: readoutGoodbyeOf(powerOff),
     );
   }
 
@@ -963,10 +1060,26 @@ class _AppViewState extends State<_AppView> {
         );
         return BlocBuilder<DisplayBrightnessCubit, double>(
           buildWhen: (previous, current) => previous != current,
-          builder: (context, brightness) => SoftwareBrightness(
-            brightness: brightness,
-            child: typed,
-          ),
+          builder: (context, brightness) {
+            final dimmed = SoftwareBrightness(
+              brightness: brightness,
+              child: typed,
+            );
+            return BlocBuilder<PowerOffCubit, PowerOffState>(
+              buildWhen: (previous, current) => previous.phase != current.phase,
+              builder: (context, powerOff) {
+                final face = readoutGoodbyeOf(powerOff.phase);
+                if (face == ReadoutGoodbye.none) return dimmed;
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    dimmed,
+                    PowerOffGoodbye(face: face),
+                  ],
+                );
+              },
+            );
+          },
         );
       },
     );
