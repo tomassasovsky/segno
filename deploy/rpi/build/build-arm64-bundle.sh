@@ -73,6 +73,14 @@ file "$bin" | grep -q 'ARM aarch64' \
 echo "==> Checking FFI symbol parity"
 packages/segno_engine/tool/check_ffi_symbols.sh "$BUNDLE_REL/lib/libsegno_engine.so"
 
+# --- Verify the embedder's gdk_x11_* needs are covered by the image shim ------
+# The appliance GTK3 has no X11 backend; segno-gdk-x11-shim supplies the
+# gdk_x11_* symbols the prebuilt embedder resolves at load time (#975). A
+# Flutter upgrade that references one more would pass every other gate and
+# then kill the app on the device before first frame.
+echo "==> Checking gdk_x11 symbol coverage"
+deploy/rpi/build/check-gdk-x11-symbols.sh "$BUNDLE_REL/lib/libflutter_linux_gtk.so"
+
 # --- Optional deploy to the Pi ------------------------------------------------
 if [ -n "$deploy_target" ]; then
   command -v rsync >/dev/null 2>&1 || { echo "error: rsync not found on PATH" >&2; exit 1; }

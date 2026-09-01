@@ -177,4 +177,13 @@ export SEGNO_ALSA_PERIODS=8
 # #970: wait for a stable Wayland socket after Weston PartOf bounce.
 /usr/bin/segno-wait-wayland
 
+# #975: the prebuilt (Ubuntu-built) libflutter_linux_gtk.so resolves four
+# gdk_x11_* symbols at load time, and this image's GTK3 has no X11 backend (a
+# hard consequence of the EGL-only libepoxy that fixes #970) — without this
+# preload the app dies before first frame with `undefined symbol:
+# gdk_x11_screen_get_type`. The shim answers every IS_X11 type check with "no",
+# so the embedder's X11 paths never run. Symbol contract:
+# meta-segno recipes-segno/segno-gdk-x11-shim/files/exported-symbols.txt.
+export LD_PRELOAD=/usr/lib/libsegno-gdk-x11-shim.so
+
 exec /opt/segno/segno "$@"

@@ -1,0 +1,17 @@
+# The contract between the prebuilt Flutter GTK bundle and the appliance image
+# (#975): every gdk_x11_* symbol the bundle leaves undefined must appear here,
+# and gdk_x11_shim.c must export exactly this list.
+#
+# Two gates read this file and pin both sides:
+#   - deploy/rpi/build/check-gdk-x11-symbols.sh fails the bundle build when a
+#     Flutter upgrade makes the embedder need a symbol not listed here.
+#   - recipes-segno/segno-gdk-x11-shim/test/run_gdk_x11_shim_tests.sh fails CI
+#     when the compiled shim's exports drift from this list.
+#
+# To extend: add the symbol here AND implement it in gdk_x11_shim.c — safely,
+# which means behind the same "IS_X11 answers no" design, never by returning
+# fake X11 handles.
+gdk_x11_display_get_type
+gdk_x11_display_get_xdisplay
+gdk_x11_screen_get_type
+gdk_x11_screen_get_window_manager_name

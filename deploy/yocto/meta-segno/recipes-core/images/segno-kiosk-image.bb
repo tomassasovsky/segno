@@ -12,6 +12,7 @@ require recipes-graphics/images/core-image-weston.bb
 
 IMAGE_INSTALL:append = " \
     segno-bundle \
+    segno-gdk-x11-shim \
     gtk+3 \
     mesa \
     alsa-lib \
