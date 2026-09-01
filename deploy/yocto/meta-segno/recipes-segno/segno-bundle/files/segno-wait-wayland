@@ -1,0 +1,36 @@
+#!/bin/sh
+# Wait until Weston's Wayland socket is stable after a PartOf bounce (#970 /
+# #825). systemd Type=notify can fire as soon as the socket exists; holding
+# briefly avoids racing the first GTK map. The durable epoxy abort fix is
+# building libepoxy without GLX (meta-segno libepoxy bbappend).
+#
+# Env: XDG_RUNTIME_DIR, WAYLAND_DISPLAY (same as segno.service).
+# Optional: SEGNO_WAYLAND_WAIT_ATTEMPTS (default 100),
+# SEGNO_WAYLAND_SETTLE_SECS (default 0.3),
+# SEGNO_WAYLAND_EGL_SECS (default 0.5).
+
+set -eu
+
+wayland_sock="${XDG_RUNTIME_DIR:?}/${WAYLAND_DISPLAY:?}"
+attempts=${SEGNO_WAYLAND_WAIT_ATTEMPTS:-100}
+settle=${SEGNO_WAYLAND_SETTLE_SECS:-0.3}
+egl_hold=${SEGNO_WAYLAND_EGL_SECS:-0.5}
+
+i=0
+while [ "$i" -lt "$attempts" ]; do
+  if [ -S "$wayland_sock" ]; then
+    ino=$(ls -i "$wayland_sock" 2>/dev/null | awk '{print $1}')
+    sleep "$settle"
+    ino2=$(ls -i "$wayland_sock" 2>/dev/null | awk '{print $1}')
+    if [ -n "$ino" ] && [ "$ino" = "$ino2" ] && [ -S "$wayland_sock" ]; then
+      sleep "$egl_hold"
+      exit 0
+    fi
+  else
+    sleep 0.1
+  fi
+  i=$((i + 1))
+done
+
+echo "segno-wait-wayland: Wayland socket $wayland_sock not ready after Weston bounce" >&2
+exit 1

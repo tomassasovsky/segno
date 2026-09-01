@@ -24,6 +24,7 @@ SEGNO_UPDATE_CHANNEL ?= "production"
 
 SRC_URI = "file://segno.service \
            file://segno-kiosk-launch \
+           file://segno-wait-wayland \
            file://segno-runtime.conf \
            file://segno-rtirq.service \
            file://segno-rtirq \
@@ -127,7 +128,7 @@ inherit systemd
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
 SYSTEMD_SERVICE:${PN} = "segno.service segno-rtirq.service segno-data-grow.service segno-nm-persist.service segno-wifi-regdom.service segno-ssh-persist.service segno-bt-persist.service segno-touch-persist.service segno-touch-apply.path segno-mark-good.service segno-wifi-retry.service segno-iwd-tame.service boot.mount data.mount segno-log-dirs.service segno-log-check.service var-volatile-log-journal.mount var-lib-systemd-coredump.mount"
 
-FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-rtirq \
+FILES:${PN} += "/opt/segno ${bindir}/segno-kiosk-launch ${bindir}/segno-wait-wayland ${bindir}/segno-rtirq \
                 ${bindir}/segno-data-grow \
                 ${bindir}/segno-ota-check \
                 ${bindir}/segno-update-ctl \
@@ -202,6 +203,7 @@ do_install() {
 
     install -d ${D}${bindir}
     install -m 0755 ${UNPACKDIR}/segno-kiosk-launch ${D}${bindir}/segno-kiosk-launch
+    install -m 0755 ${UNPACKDIR}/segno-wait-wayland ${D}${bindir}/segno-wait-wayland
 
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/segno.service ${D}${systemd_system_unitdir}/segno.service

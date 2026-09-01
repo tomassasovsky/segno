@@ -171,4 +171,9 @@ export SEGNO_RT_AUDIO=1
 # to clear the capture case too, not just the monitor one. The engine's own
 # default stays 2; this override is appliance-only.
 export SEGNO_ALSA_PERIODS=8
+# #970: defer second-window open until main FlView EGL context is ready.
+export SEGNO_WAVEFORM_OPEN_DELAY_MS=750
+# #970: wait for a stable Wayland socket after Weston PartOf bounce.
+/usr/bin/segno-wait-wayland
+
 exec /opt/segno/segno "$@"

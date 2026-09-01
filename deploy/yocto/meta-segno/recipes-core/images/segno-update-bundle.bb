@@ -1,6 +1,8 @@
-SUMMARY = "RAUC update bundle (.raucb) for the Segno appliance — the rootfs slot"
-# Builds a signed, verity-format RAUC bundle carrying segno-kiosk-image's rootfs.
-# `rauc install` writes it to the inactive A/B slot. CI publishes it per channel.
+SUMMARY = "RAUC update bundle (.raucb) for the Segno appliance — rootfs + boot FAT"
+# Builds a signed, verity-format RAUC bundle carrying segno-kiosk-image's
+# rootfs and boot-firmware vfat. `rauc install` writes both to the inactive A/B
+# pair so kernel/modules stay matched across any OTA that changes the kernel.
+LICENSE = "CLOSED"
 inherit bundle
 
 RAUC_BUNDLE_FORMAT     = "verity"
@@ -23,6 +25,10 @@ RAUC_KEYDIR   ?= "${THISDIR}/../../.rauc-keys"
 RAUC_KEY_FILE  = "${RAUC_KEYDIR}/development-1.key.pem"
 RAUC_CERT_FILE = "${RAUC_KEYDIR}/development-1.cert.pem"
 
+SRC_URI += "file://firmware-post-install.sh"
+RAUC_BUNDLE_HOOKS[file] = "firmware-post-install.sh"
+RAUC_SLOT_firmware[hooks] = "post-install"
+
 python __anonymous() {
     import os
 
@@ -40,8 +46,13 @@ python __anonymous() {
             "update bundle." % keyfile)
 }
 
-# One slot: the whole rootfs. (Kernel lives in the boot slot; grouping the boot
-# slot into the bundle is a follow-up once single-rootfs updates are proven.)
-RAUC_BUNDLE_SLOTS = "rootfs"
+# Rootfs + parented vfat firmware slot (see files/system.conf). The firmware
+# artifact is extracted from the .wic before per-slot cmdline rewrites; the
+# post-install hook sets root= for whichever inactive slot RAUC targets.
+RAUC_BUNDLE_SLOTS = "rootfs firmware"
 RAUC_SLOT_rootfs  = "segno-kiosk-image"
 RAUC_SLOT_rootfs[fstype] = "ext4"
+RAUC_SLOT_firmware = "segno-kiosk-image"
+RAUC_SLOT_firmware[fstype] = "vfat"
+RAUC_SLOT_firmware[file] = "${RAUC_SLOT_firmware}-${MACHINE}.boot-firmware.vfat"
+RAUC_SLOT_firmware[depends] = "segno-kiosk-image:do_deploy_rauc_boot_firmware"
