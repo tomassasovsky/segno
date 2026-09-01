@@ -38,6 +38,8 @@ fail=0
 setup() {
     work=$(mktemp -d "${TMPDIR:-/tmp}/update-ctl-reboot-test.XXXXXX")
     mkdir -p "$work/bin"
+    # The verb branches on the staged marker: tryboot only when one exists.
+    staged="$work/staged-version"
 
     cat > "$work/bin/systemctl" <<STUB
 #!/bin/sh
@@ -51,6 +53,7 @@ teardown() { rm -rf "$work"; }
 
 run_reboot() {
     PATH="$work/bin:$PATH" \
+    SEGNO_STAGED_FILE="$staged" \
         "$TEST_SHELL" "$SCRIPT" reboot 2>"$work/stderr"
 }
 
@@ -66,8 +69,9 @@ check() {
     fi
 }
 
-echo "reboot: asks systemd for a tryboot reset"
+echo "reboot with an update staged: asks systemd for a tryboot reset"
 setup
+echo "0.1.0-experimental.99" > "$staged"
 run_reboot
 args=$(tr '\n' ' ' < "$work/systemctl-args" | sed 's/ *$//')
 check "invokes systemctl reboot" yes \
@@ -79,6 +83,20 @@ check "passes the tryboot argument" yes \
 check "uses --reboot-argument= (not a positional arg)" yes \
     "$(grep -qx -- '--reboot-argument=0 tryboot' "$work/systemctl-args" && echo yes || echo no)"
 check "full argv" "reboot --reboot-argument=0 tryboot" "$args"
+teardown
+
+# The guard the tryboot argument makes necessary: passed unconditionally, a
+# plain "just restart it" invocation would boot the OTHER slot (autoboot.txt
+# statically maps [tryboot] to it), and mark-good would commit a healthy old
+# build — a silent permanent downgrade. No staged update => plain reboot.
+echo
+echo "reboot with nothing staged: plain reboot, no tryboot argument"
+setup
+run_reboot
+args=$(tr '\n' ' ' < "$work/systemctl-args" | sed 's/ *$//')
+check "full argv is a bare reboot" "reboot" "$args"
+check "says why" yes \
+    "$(grep -q 'no update staged' "$work/stderr" && echo yes || echo no)"
 teardown
 
 echo
