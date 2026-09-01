@@ -13,6 +13,16 @@
 #             the UI, logs detail to stderr, and on success sets the staged +
 #             pending markers. Does NOT reboot.
 #   reboot    Reboot into the staged slot (the user's explicit "Restart to apply").
+#             The reset MUST carry the tryboot argument. Staging arms the Pi's
+#             one-shot tryboot flag (RAUC's backend calls `vcmailbox 0x00038064
+#             4 0 1`), but that flag does not survive a plain reset here: the
+#             firmware comes back on the [all] boot_partition and the staged
+#             slot is never tried, while RAUC still reports the install as a
+#             success. Note the argument goes through `--reboot-argument=`, NOT
+#             as the positional `systemctl reboot "0 tryboot"` the Pi docs and
+#             the RAUC backend comments describe: this image ships systemd 259,
+#             where the positional form is gone and the string is silently
+#             dropped. See #974 and run_reboot_tests.sh.
 #   poweroff  Clean halt (`systemctl start poweroff.target`). Does not go through
 #             logind — this image has none — so `systemctl poweroff` would fail.
 #   flash-pedal
@@ -717,7 +727,7 @@ case "${1:-}" in
     flash-pedal)      do_flash_pedal ;;
     pedal-pending)    do_pedal_pending ;;
     reconcile-staged) do_reconcile_staged ;;
-    reboot)           log "rebooting into the staged slot"; exec systemctl reboot ;;
+    reboot)           log "rebooting into the staged slot"; exec systemctl reboot --reboot-argument="0 tryboot" ;;
     poweroff)         log "powering off"; exec systemctl start poweroff.target ;;
     *)                log "usage: segno-update-ctl {install|flash-pedal|pedal-pending|reconcile-staged|reboot|poweroff}"; exit 2 ;;
 esac
