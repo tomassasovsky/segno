@@ -78,6 +78,10 @@ static bool g_haveFrame = false;
 static bool g_frameDirty = false;  // a STATE (or timeout/goodbye) changed what to render
 static unsigned long g_lastFrameMs = 0;
 static unsigned long g_lastHelloMs = 0;
+// How long the ring shows the master level after the encoder moves it, before
+// it goes back to saying what the transport is doing.
+static const unsigned long GAIN_SHOW_MS = 900;
+static unsigned long g_gainShownUntil = 0;
 
 static void sendFrame(const uint8_t *buf, size_t len) {
   LINK.write(buf, len);
@@ -93,6 +97,11 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
     case PEDAL_LINK_TYPE_STATE: {
       pedal_state decoded;
       if (pedal_link_decode_state(payload, len, &decoded)) {
+        // The encoder is the master volume and has no pill of its own, so the
+        // ring becomes the readout for a moment whenever the level moves.
+        if (g_haveFrame && decoded.master_gain != g_frame.master_gain) {
+          g_gainShownUntil = millis() + GAIN_SHOW_MS;
+        }
         g_frame = decoded;
         g_haveFrame = true;
         g_frameDirty = true;
@@ -279,6 +288,20 @@ static bool renderRing() {
   }
   g_ringDark = false;
   const Rgb activity = globalColor(g_frame.global_color);
+
+  // The master level, as a filled arc, for a moment after it changes. In the
+  // ring's own colours: the activity colour it is already showing, or the
+  // standby green it breathes when there is no activity to report.
+  if (now < g_gainShownUntil) {
+    const bool lit_colour = activity.r || activity.g || activity.b;
+    const Rgb c = lit_colour ? activity : (Rgb){0, 255, 0};
+    const uint16_t lit = (uint16_t)((g_frame.master_gain * RING_N + 254) / 255);
+    for (uint16_t i = 0; i < RING_N; i++) {
+      ring.setPixelColor(ringIndex(i), i < lit ? rgb(c.r, c.g, c.b) : 0);
+    }
+    return true;
+  }
+
   const bool active = (activity.r || activity.g || activity.b) && g_frame.global_color != PEDAL_GLOBAL_BLUE;
   // A Stop with a loop still loaded freezes the ring where it was.
   if (!active && g_frame.loop_length_micros > 0) return false;
