@@ -26,11 +26,12 @@ Console usage:
 
 | row           | pedals with LEDs        | boards | LEDs |
 | ------------- | ----------------------- | ------ | ---- |
+| above pedal 1 | MODE                    | 1      | 1    |
 | front row     | TRACK1..TRACK4          | 4      | 4    |
 | mid row       | CLEAR, BANK             | 2      | 2    |
-| per console   |                         | 6      | 6    |
+| per console   |                         | 7      | 7    |
 
-Feed 5V/GND once (six indicator LEDs draw ~360 mA absolute worst case, far
+Feed 5V/GND once (seven indicator LEDs draw ~420 mA absolute worst case, far
 less in practice). Data enters at DI on the first puck and daisy-chains
 through every LED.
 

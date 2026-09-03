@@ -33,7 +33,6 @@ _*.rpt
 
 # Freerouting jar + raw gerber output (zips are committed)
 _tools/
-fab/segno_pedal_main/
 fab/segno_pedal_ring/
 
 # Throwaway test boards / KiCad caches

@@ -1,200 +1,206 @@
 import 'dart:async';
 
-import 'package:pedal_repository/src/models/pedal_output.dart';
-import 'package:pedal_repository/src/pedal_codec.dart';
 import 'package:pedal_repository/src/pedal_event.dart';
+import 'package:pedal_repository/src/pedal_link.dart';
+import 'package:pedal_repository/src/pedal_link_codec.dart';
+import 'package:pedal_repository/src/pedal_link_message.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
-import 'package:pedal_repository/src/pedal_transport.dart';
-import 'package:pedal_repository/src/simulator_pedal_transport.dart'
-    show kSimulatorOutputId;
 
-/// The binding state of the pedal output link.
+/// Whether the console board is on the other end of the link.
 ///
-/// Binding is driven by the output port opening — segno's 3-byte input capture
-/// cannot deliver the pedal's SysEx identity *reply*, so there is no
-/// reply-based auto-detect or inbound version negotiation in v1 (both are
-/// deferred until the input seam grows a SysEx-capable path).
-enum PedalBindStatus {
-  /// No output destination is bound.
-  none,
+/// Decided by traffic, not by opening a port: the board says hello every
+/// [PedalLinkCodec.helloIntervalMs], and the link counts as [connected] from
+/// the first hello until none has arrived for `PedalRepository.helloTimeout`.
+enum PedalLinkStatus {
+  /// No board has been heard from (yet, or for a while).
+  disconnected,
 
-  /// An output destination is being opened.
-  connecting,
+  /// The board is talking and speaks this build's link protocol.
+  connected,
 
-  /// An output destination is open; state frames are being streamed.
-  bound,
-
-  /// The last bind attempt failed (the port could not be opened).
-  error,
+  /// The board is talking, but its hello names a link protocol this build
+  /// does not speak: its firmware and this app were built against different
+  /// revisions of `pedal_link.h`. The repository then drops its footswitch
+  /// and encoder messages (a reordered button table could map a stomp onto
+  /// Clear) and sends it no frames, until one side is updated.
+  incompatible,
 }
 
-/// Owns the pedal protocol over a [PedalTransport]: decodes inbound button /
-/// encoder messages into [PedalEvent]s and pushes outbound [PedalStateFrame]s,
-/// the loop-top pulse, and the identity request.
+/// Owns the pedal link: turns inbound board messages into [PedalEvent]s,
+/// tracks whether the board is alive, and pushes [PedalStateFrame]s out.
+/// Hardware-free: everything native is behind the [PedalLink].
 ///
-/// Hardware-free and FFI-free — all native work is behind the injected
-/// [PedalTransport] (`NativePedalTransport` in production, a fake in tests).
+/// Liveness is one mechanism, driven by the board: every hello is answered
+/// with the last pushed frame, so a board that just (re)connected — or that
+/// missed a frame — is current within a second, and its own frame watchdog
+/// sees traffic while segno runs. A frame identical to the last one is not
+/// sent again, so callers push freely.
+///
+/// [status] and [firmwareVersion] are read off the last hello heard: there is
+/// no separate status to keep in step with it.
 class PedalRepository {
-  /// Creates a [PedalRepository] over [transport].
+  /// Creates a [PedalRepository] over [link].
   ///
-  /// [clock] stamps inbound button events for the cubit's tap / long-press /
-  /// double-tap timing; it defaults to a monotonic stopwatch started now.
-  PedalRepository(PedalTransport transport, {Duration Function()? clock})
-    : _transport = transport {
+  /// [clock] stamps button events for the cubit's tap / long-press timing; it
+  /// defaults to a monotonic stopwatch. [helloTimeout] is how long the board
+  /// may stay silent before the link reads as disconnected: three hellos, so
+  /// one lost on the wire does not flap the status. [log] receives one line
+  /// per link status change — the app hands it its persistent log, so a dark
+  /// panel has a breadcrumb.
+  PedalRepository(
+    PedalLink link, {
+    Duration Function()? clock,
+    this.helloTimeout = const Duration(
+      milliseconds: 3 * PedalLinkCodec.helloIntervalMs,
+    ),
+    void Function(String message)? log,
+  }) : _link = link,
+       _log = log {
     final stopwatch = Stopwatch()..start();
     _clock = clock ?? (() => stopwatch.elapsed);
-    _inputSub = _transport.input.listen(_onRaw);
+    _inboundSub = _link.inbound.listen(_onMessage);
   }
 
-  final PedalTransport _transport;
+  final PedalLink _link;
+  final void Function(String message)? _log;
   late final Duration Function() _clock;
-  late final StreamSubscription<PedalRawMessage> _inputSub;
+  late final StreamSubscription<PedalLinkMessage> _inboundSub;
+
+  /// How long without a hello before the board counts as gone.
+  final Duration helloTimeout;
 
   final StreamController<PedalEvent> _events =
       StreamController<PedalEvent>.broadcast();
-  final StreamController<PedalBindStatus> _statusChanges =
-      StreamController<PedalBindStatus>.broadcast();
+  final StreamController<PedalLinkStatus> _statusChanges =
+      StreamController<PedalLinkStatus>.broadcast();
 
-  PedalBindStatus _status = PedalBindStatus.none;
-  String? _boundOutputId;
+  /// The last hello heard, or `null` while the board is quiet.
+  HelloMessage? _hello;
+  PedalStateFrame? _lastFrame;
+  Timer? _helloWatchdog;
+  bool _goodbye = false;
   bool _disposed = false;
 
-  /// What wire protocol version the bound pedal's firmware is known to
-  /// speak, or `null` when unknown (the default).
-  ///
-  /// This is the version-discovery seam (R6): today the app sets it from
-  /// the manual "pedal firmware version" setting; once #331's SysEx-capable
-  /// inbound path ships, the identity reply drives the same knob. It only
-  /// caps what [pushState] *encodes* — nothing here talks to hardware.
-  /// [targetProtocolVersion] is the clamped value outbound frames actually
-  /// encode at.
-  int? firmwareProtocolVersion;
-
-  /// Decoded pedal inputs (button presses/releases, encoder deltas).
+  /// Decoded pedal inputs (button presses/releases, encoder detents).
   Stream<PedalEvent> get events => _events.stream;
 
-  /// Binding-status transitions, for a UI indicator.
-  Stream<PedalBindStatus> get statusChanges => _statusChanges.stream;
+  /// Link status transitions. Also fires, with the same status, when a
+  /// talking board announces a different firmware version — the board was
+  /// reflashed under a running app.
+  Stream<PedalLinkStatus> get statusChanges => _statusChanges.stream;
 
-  /// The current binding status.
-  PedalBindStatus get status => _status;
+  /// The current link status.
+  PedalLinkStatus get status => switch (_hello) {
+    null => PedalLinkStatus.disconnected,
+    HelloMessage(protocolVersion: PedalLinkCodec.protocolVersion) =>
+      PedalLinkStatus.connected,
+    HelloMessage() => PedalLinkStatus.incompatible,
+  };
 
-  /// The id of the bound output destination, or `null` when not bound.
-  String? get boundOutputId => _boundOutputId;
+  /// The firmware version the board announced (`major.minor`) while it is
+  /// talking, or `null` while it is not.
+  String? get firmwareVersion => _hello?.firmwareVersion;
 
-  /// The protocol version outbound frames are encoded at: the known firmware
-  /// version clamped to what the codec speaks, or
-  /// [PedalCodec.protocolVersion] (v2) when the firmware version is unknown.
-  ///
-  /// Never encodes above negotiated (R6): unknown ⇒ v2, **never** v3 — an
-  /// un-reflashed pedal rejects versions it does not know, so the safe floor
-  /// wins until a version is learned. A known version is clamped into
-  /// [PedalCodec.protocolVersionV1]..[PedalCodec.protocolVersionMax].
-  ///
-  /// The ON-SCREEN pedal ([kSimulatorOutputId]) replaces the UNKNOWN floor
-  /// only: it has no firmware to be unknown about — the renderer on the other
-  /// end of that "wire" ships in this very build — so with no version set it
-  /// speaks [PedalCodec.protocolVersionMax] rather than the v2 floor.
-  /// Otherwise the simulator would render the downgrade of every new field
-  /// (FX mode shown as mute, chain LEDs green instead of blue) until someone
-  /// set a firmware version for a pedal that does not exist.
-  ///
-  /// An EXPLICIT version still wins, simulator included: that is what makes
-  /// the on-screen pedal a rehearsal rig for the B10 downgrade — pin v2 and
-  /// the plate shows exactly what a pre-v3 pedal shows.
-  int get targetProtocolVersion {
-    final known = firmwareProtocolVersion;
-    if (known == null) {
-      return _boundOutputId == kSimulatorOutputId
-          ? PedalCodec.protocolVersionMax
-          : PedalCodec.protocolVersion;
-    }
-    return known.clamp(
-      PedalCodec.protocolVersionV1,
-      PedalCodec.protocolVersionMax,
-    );
-  }
+  /// Whether the board is talking a link protocol this build does not speak,
+  /// in which case its button table cannot be trusted: a reordered one could
+  /// map a stomp onto Clear.
+  bool get _incompatible => _disposed || status == PedalLinkStatus.incompatible;
 
-  /// The host's available MIDI output destinations, as domain models (mapped
-  /// from the transport's raw enumeration so callers never name the data type).
-  List<PedalOutput> availableOutputs() => [
-    for (final device in _transport.enumerateOutputs())
-      PedalOutput(id: device.id, name: device.name),
-  ];
-
-  /// Binds the pedal's output to destination [outputDeviceId].
-  ///
-  /// Opens the port (moving through [PedalBindStatus.connecting]); on success
-  /// the status becomes [PedalBindStatus.bound] and an identity request is
-  /// broadcast, on failure [PedalBindStatus.error].
-  void bind(String outputDeviceId) {
-    if (_disposed) return;
-    _setStatus(PedalBindStatus.connecting);
-    final code = _transport.openOutput(outputDeviceId);
-    if (code != 0) {
-      _boundOutputId = null;
-      _setStatus(PedalBindStatus.error);
-      return;
-    }
-    _boundOutputId = outputDeviceId;
-    _setStatus(PedalBindStatus.bound);
-    _transport.send(PedalCodec.encodeIdentityRequest());
-  }
-
-  /// Unbinds the pedal: sends a goodbye frame (so the pedal darkens) and closes
-  /// the output port.
-  void unbind() {
-    if (_disposed) return;
-    if (_status == PedalBindStatus.bound) {
-      _transport.send(
-        PedalCodec.encodeFrame(
-          PedalStateFrame.blank(goodbye: true),
-          targetVersion: targetProtocolVersion,
-        ),
-      );
-    }
-    _transport.closeOutput();
-    _boundOutputId = null;
-    _setStatus(PedalBindStatus.none);
-  }
-
-  /// Encodes [frame] at [targetProtocolVersion] and sends it to the pedal.
-  /// A no-op when not bound.
+  /// Sends [frame] to the board unless it is the frame already showing, and
+  /// remembers it as the frame every later hello is answered with. Recorded
+  /// but not sent while the board is [PedalLinkStatus.incompatible]; dropped
+  /// after [goodbye].
   void pushState(PedalStateFrame frame) {
-    if (_disposed || _status != PedalBindStatus.bound) return;
-    _transport.send(
-      PedalCodec.encodeFrame(frame, targetVersion: targetProtocolVersion),
+    if (_disposed || _goodbye || frame == _lastFrame) return;
+    _lastFrame = frame;
+    if (!_incompatible) _link.send(StateMessage(frame));
+  }
+
+  /// Darkens the console for a shutdown and holds the mark: from here on
+  /// every frame is dropped, so nothing — a last looper poll, a stomp made
+  /// out of habit — re-lights a panel whose host is halting. Hellos are
+  /// still answered, with the goodbye frame, so a board that missed it goes
+  /// dark on the next one.
+  ///
+  /// Inbound stomps are deliberately NOT swallowed. Blocking them as well
+  /// makes a goodbye that turns out to be wrong — a halt that never
+  /// happens — indistinguishable from a broken link: no frames, no events,
+  /// no log line, and no way back short of a restart. Dropping the frames is
+  /// what holds the mark; the events can do no harm on a console that is
+  /// going down, and they leave a trace if it is not.
+  void goodbye() {
+    if (_disposed || _goodbye) return;
+    pushState(PedalStateFrame.blank(goodbye: true));
+    _goodbye = true;
+    _log?.call('pedal link: goodbye mark held; frames stop here');
+  }
+
+  void _onMessage(PedalLinkMessage message) {
+    switch (message) {
+      case ButtonMessage(:final button, :final pressed):
+        if (_incompatible) return;
+        _emit(
+          pressed
+              ? ButtonPressed(button, timestamp: _clock())
+              : ButtonReleased(button, timestamp: _clock()),
+        );
+      case EncoderMessage(:final delta):
+        if (_incompatible) return;
+        _emit(EncoderDelta(delta));
+      case HelloMessage():
+        _onHello(message);
+      case StateMessage():
+        break; // outbound; a board never sends one
+    }
+  }
+
+  void _onHello(HelloMessage hello) {
+    _helloWatchdog?.cancel();
+    _helloWatchdog = Timer(helloTimeout, _onHelloTimeout);
+    _setHello(
+      hello,
+      () => hello.protocolVersion == PedalLinkCodec.protocolVersion
+          ? 'firmware ${hello.firmwareVersion}'
+          : 'firmware ${hello.firmwareVersion} speaks link protocol '
+                '${hello.protocolVersion}, this build speaks '
+                '${PedalLinkCodec.protocolVersion}',
     );
+    // Answer every hello with the current frame: the reconnect re-push and
+    // the keep-alive in one place, paced by the board.
+    final frame = _lastFrame;
+    if (status == PedalLinkStatus.connected && frame != null) {
+      _link.send(StateMessage(frame));
+    }
   }
 
-  /// Sends the single-byte loop-top pulse. A no-op when not bound.
-  void sendLoopTop() {
-    if (_disposed || _status != PedalBindStatus.bound) return;
-    _transport.send(PedalCodec.encodeLoopTop());
+  void _onHelloTimeout() {
+    _setHello(null, () => 'no hello for ${helloTimeout.inMilliseconds} ms');
   }
 
-  void _onRaw(PedalRawMessage message) {
-    final event = PedalCodec.decodeMessage(
-      message.status,
-      message.data1,
-      message.data2,
-      timestamp: _clock(),
-    );
-    if (event != null && !_events.isClosed) _events.add(event);
-  }
-
-  void _setStatus(PedalBindStatus status) {
-    _status = status;
+  /// Records the latest hello (or, with `null`, its absence) and announces
+  /// the status when the hello differs from the last one — a new status, or
+  /// the same status from a board that now names another firmware version.
+  /// [why] is the log line's detail, built only when a line is written.
+  void _setHello(HelloMessage? hello, String Function() why) {
+    if (hello == _hello) return;
+    _hello = hello;
+    _log?.call('pedal link: ${status.name} (${why()})');
     if (!_statusChanges.isClosed) _statusChanges.add(status);
   }
 
-  /// Cancels the inbound subscription, releases the output handle, and closes
-  /// the streams. Idempotent.
+  void _emit(PedalEvent event) {
+    if (!_events.isClosed) _events.add(event);
+  }
+
+  /// Cancels the inbound subscription, releases the link, and closes the
+  /// streams. Idempotent.
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    await _inputSub.cancel();
-    await _transport.dispose();
+    _helloWatchdog?.cancel();
+    _setHello(null, () => 'link released');
+    await _inboundSub.cancel();
+    await _link.dispose();
     await _events.close();
     await _statusChanges.close();
   }

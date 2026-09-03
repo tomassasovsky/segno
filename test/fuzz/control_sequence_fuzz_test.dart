@@ -8,6 +8,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -623,40 +624,6 @@ void main() {
       });
     }, skip: skip);
 
-    test('FX mode on a PRE-V3 pedal: the projection is unchanged and only the '
-        'codec downgrades it (B10)', () {
-      _inHarness((h, fa) {
-        // Pin the wire at v2 — what a pedal flashed before part 5a speaks.
-        // The on-screen pedal defaults to the newest protocol, so this
-        // explicit pin is the only way to rehearse the downgrade off-hardware.
-        h.pedalRepo.firmwareProtocolVersion = PedalCodec.protocolVersionV2;
-        h
-          ..run(const [_Tap(PedalButton.recPlay)], fa)
-          ..pumpLoop(fa)
-          ..run(const [_Tap(PedalButton.recPlay)], fa)
-          ..settle(fa)
-          ..run(const [_SetMode(InteractionMode.fx)], fa)
-          ..settle(fa);
-
-        // The overlay is genuinely in FX mode and the stomps still work...
-        expect(h.control.state.mode, InteractionMode.fx);
-        // ...but the frame that reaches the pedal is downgraded: FX reads as
-        // mute (the v2 wire has no third mode) and the chain LEDs arrive
-        // green, because a pre-v3 firmware rejects an unknown LED index
-        // wholesale rather than ignoring it.
-        expect(h.frame.mode, PedalMode.play);
-        expect(h.frame.trackLeds[0], PedalTrackLed.green);
-
-        // A stomp still lands, and its LED still goes dark — the user keeps
-        // the feature, just not the colour.
-        h
-          ..run(const [_Tap(PedalButton.track1)], fa)
-          ..settle(fa);
-        expect(h.repo.trackChainEnabled(0), isFalse);
-        expect(h.frame.trackLeds[0], PedalTrackLed.off);
-      });
-    }, skip: skip);
-
     test('FX mode: Clear and Rec/Play are inert — a stray stomp cannot erase '
         'the set (part 5b)', () {
       _inHarness((h, fa) {
@@ -754,7 +721,7 @@ class _Harness {
     );
     final settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = LooperBloc(repository: repo);
-    sim = SimulatorPedalTransport(inner: const NoopPedalTransport());
+    sim = FakePedalLink();
     pedalRepo = PedalRepository(sim);
     performance = PerformanceRepository(
       engine: engine,
@@ -765,14 +732,10 @@ class _Harness {
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
-      keepAliveInterval: Duration.zero,
     );
     cubit = PedalCubit(
       pedal: pedalRepo,
-      settings: settings,
-      pollInterval: Duration.zero,
-    );
-    pedalRepo.bind(kSimulatorOutputId); // LED frames round-trip the codec
+    ); // LED frames round-trip the codec
     settle(fa);
   }
 
@@ -782,7 +745,7 @@ class _Harness {
   late final StreamController<void> reconnectTicker;
   late final LooperRepository repo;
   late final LooperBloc bloc;
-  late final SimulatorPedalTransport sim;
+  late final FakePedalLink sim;
   late final PedalRepository pedalRepo;
   late final PerformanceRepository performance;
   late final ControlCubit control;
@@ -790,7 +753,7 @@ class _Harness {
   final Set<PedalButton> _held = {};
 
   LooperState get looper => repo.state;
-  PedalStateFrame get frame => sim.frame.value;
+  PedalStateFrame get frame => sim.lastFrame ?? PedalStateFrame.blank();
 
   ControlContext get context => ControlContext(
     looper: looper,
@@ -1038,14 +1001,6 @@ class _Elapse extends _FuzzAction {
   String describe() => '_Elapse($ms)';
 }
 
-class _Reconnect extends _FuzzAction {
-  const _Reconnect();
-  @override
-  void apply(_Harness h, FakeAsync fa) => h.cubit.reconnect();
-  @override
-  String describe() => '_Reconnect()';
-}
-
 /// Direct repository-level track mute/unmute — unlike `_Bloc('mute', c)` (a
 /// snapshot-read toggle) this sets an absolute value, so shrunk repros stay
 /// deterministic and mute-during-capture windows are directly reachable.
@@ -1207,7 +1162,6 @@ List<_FuzzAction> _generate(int seed, int steps) {
       < 88 => _SetLaneChain(rng.next(4), rng.next(2), types()),
       < 90 => _SetMonitorChain(rng.next(4), types()),
       < 92 => _SetMonitorThenRecord(0, rng.next(4), types()),
-      < 93 => const _Reconnect(),
       // The mute/unpark alphabet: absolute mutes reach mute-during-capture
       // windows the bloc toggle can only hit by luck, and quantize toggles
       // open the armed (deferred-fire) record paths and their interplay with

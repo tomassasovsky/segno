@@ -4,7 +4,6 @@ SKiDL scripts that emit KiCad netlists. One per board:
 
 | script | board |
 |---|---|
-| `main_board.py` | standalone pedal — Pro Micro (ATmega32U4) |
 | `ring_board.py` | encoder + LED ring, behind the faceplate |
 | `console_board.py` | console v2 — Pico 2 on the Pi's GPIO (#747, in progress) |
 
@@ -12,7 +11,7 @@ SKiDL scripts that emit KiCad netlists. One per board:
 
 ```bash
 python3.12 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
-cd hardware/kicad && ./.venv/bin/python main_board.py
+cd hardware/kicad && ./.venv/bin/python console_board.py
 ```
 
 **Run from `hardware/kicad/`.** `generate_netlist()` writes `<script>.net` into the
@@ -29,7 +28,7 @@ not fix this. Judge a run by `0 errors found while running ERC` and the `(net ..
 blocks, not by `git diff`.
 
 **Prefer upstream footprints.** `segno.pretty/` exists for parts KiCad does not ship
-(ProMicro, MIDI_DIN5_RA, the NeoPixel ring, EC11). It is not a place to re-draw
-something that already exists. The Pico 2, for instance, is KiCad's own
+(the NeoPixel Ring 24, the EC11 on its ring board, the module mount-pad and wire-pad
+helpers). It is not a place to re-draw something that already exists. The Pico 2, for instance, is KiCad's own
 `Module:RaspberryPi_Pico_Common_THT` — its description explicitly says it supports
 Pico 2, and it is maintained upstream.

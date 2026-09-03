@@ -1,5 +1,4 @@
-import 'dart:io';
-
+import 'package:segno/update/appliance/appliance_env.dart';
 import 'package:segno/update/appliance/appliance_platform_backend.dart';
 import 'package:update_repository/update_repository.dart';
 
@@ -12,7 +11,7 @@ import 'package:update_repository/update_repository.dart';
 /// land later) or a generic Linux dev build without the appliance markers —
 /// it is the inert [UnsupportedPlatformBackend]; the update UI stays hidden.
 PlatformUpdateBackend createPlatformUpdateBackend() {
-  if (Platform.isLinux) {
+  if (isAppliance()) {
     final appliance = AppliancePlatformBackend();
     if (appliance.isSupported) return appliance;
   }

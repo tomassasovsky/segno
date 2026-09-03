@@ -621,7 +621,8 @@ Screens are retained by **printed stands anchored to the base floor** (#762), a
 list, which was dropped. See `MANUFACTURING.md`.
 
 Pedals, screens, encoder, LEDs, Pi, board and the (external) audio interface are in
-the electronics BOMs / `segno_pedal_shopping_list.md`.
+`segno_console_shopping_list.md` and the board BOM
+(`kicad/fab/segno_console_board_bom.csv`).
 
 ---
 

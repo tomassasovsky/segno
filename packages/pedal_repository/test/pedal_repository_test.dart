@@ -1,301 +1,250 @@
+import 'dart:async';
+
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:pedal_repository/pedal_repository.dart';
 
-import 'helpers/fake_pedal_transport.dart';
+import 'package:pedal_repository/testing.dart';
 
 void main() {
   group('PedalRepository', () {
-    late FakePedalTransport transport;
+    late FakePedalLink link;
     late PedalRepository repo;
+    late Duration now;
 
     setUp(() {
-      transport = FakePedalTransport(
-        outputs: const [MidiDevice(id: 'pedal-out', name: 'Segno Pedal')],
-      );
-      repo = PedalRepository(
-        transport,
-        clock: () => const Duration(milliseconds: 7),
-      );
+      link = FakePedalLink();
+      now = Duration.zero;
+      repo = PedalRepository(link, clock: () => now);
     });
 
-    tearDown(() async => repo.dispose());
+    tearDown(() => repo.dispose());
 
-    group('events', () {
-      test('decodes a button NoteOn into a stamped ButtonPressed', () async {
-        final expectation = expectLater(
-          repo.events,
-          emits(
-            const ButtonPressed(
-              PedalButton.recPlay,
-              timestamp: Duration(milliseconds: 7),
-            ),
-          ),
-        );
-        // recPlay note == 0, velocity > 0.
-        transport.emit(0x90, PedalButton.recPlay.note, 100);
-        await expectation;
-      });
-
-      test('decodes a NoteOn velocity 0 as a release', () async {
-        final expectation = expectLater(
-          repo.events,
-          emits(
-            const ButtonReleased(
-              PedalButton.stop,
-              timestamp: Duration(milliseconds: 7),
-            ),
-          ),
-        );
-        transport.emit(0x90, PedalButton.stop.note, 0);
-        await expectation;
-      });
-
-      test('decodes a relative encoder CC into an EncoderDelta', () async {
-        final expectation = expectLater(
-          repo.events,
-          emits(const EncoderDelta(6)),
-        );
-        transport.emit(0xB0, PedalCodec.encoderCc, 64 + 6);
-        await expectation;
-      });
-
-      test('drops messages that are not pedal input', () async {
-        final received = <PedalEvent>[];
-        final sub = repo.events.listen(received.add);
-        // A CC on a non-encoder controller number is not pedal input.
-        transport
-          ..emit(0xB0, 0x7F, 1)
-          ..emit(0x90, PedalButton.bank.note, 1); // a real one follows
-        await pumpEventQueue();
-        expect(received, [
-          const ButtonPressed(
-            PedalButton.bank,
-            timestamp: Duration(milliseconds: 7),
-          ),
-        ]);
-        await sub.cancel();
-      });
-    });
-
-    group('bind', () {
-      test('binds and sends an identity request on open', () async {
-        final expectation = expectLater(
-          repo.statusChanges,
-          emitsInOrder([PedalBindStatus.connecting, PedalBindStatus.bound]),
-        );
-
-        repo.bind('pedal-out');
-
-        expect(repo.status, PedalBindStatus.bound);
-        expect(repo.boundOutputId, 'pedal-out');
-        expect(transport.openedId, 'pedal-out');
-        expect(transport.sent, hasLength(1));
-        expect(transport.sent.single, PedalCodec.encodeIdentityRequest());
-        await expectation;
-      });
-
-      test('reports error and stays unbound when the port fails', () async {
-        transport.openResult = 3;
-        final expectation = expectLater(
-          repo.statusChanges,
-          emitsInOrder([PedalBindStatus.connecting, PedalBindStatus.error]),
-        );
-
-        repo.bind('pedal-out');
-
-        expect(repo.status, PedalBindStatus.error);
-        expect(repo.boundOutputId, isNull);
-        // No identity request on a failed bind.
-        expect(transport.sent, isEmpty);
-        await expectation;
-      });
-    });
-
-    group('unbind', () {
-      test('sends a goodbye frame, closes, and returns to none', () {
-        repo
-          ..bind('pedal-out')
-          ..unbind();
-
-        expect(repo.status, PedalBindStatus.none);
-        expect(repo.boundOutputId, isNull);
-        expect(transport.calls, contains('close'));
-        // The last payload is the goodbye frame.
-        expect(
-          transport.sent.last,
-          PedalCodec.encodeFrame(PedalStateFrame.blank(goodbye: true)),
-        );
-      });
-    });
-
-    group('pushState', () {
-      test('encodes and sends the frame when bound', () {
-        repo.bind('pedal-out');
-        final framesBefore = transport.sent.length;
-        final frame = PedalStateFrame.blank();
-
-        repo.pushState(frame);
-
-        expect(transport.sent.length, framesBefore + 1);
-        expect(transport.sent.last, PedalCodec.encodeFrame(frame));
-      });
-
-      test('is a no-op when not bound', () {
-        repo.pushState(PedalStateFrame.blank());
-        expect(transport.sent, isEmpty);
-      });
-    });
-
-    group('targetProtocolVersion (R6: never encode above negotiated)', () {
-      test('is v2 while the firmware version is unknown — never v3', () {
-        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV2);
-      });
-
-      test('follows a known firmware version (manual v1 stays v1)', () {
-        repo.firmwareProtocolVersion = PedalCodec.protocolVersionV1;
-        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV1);
-
-        repo.firmwareProtocolVersion = PedalCodec.protocolVersionV3;
-        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV3);
-      });
-
-      test('clamps a newer-than-codec firmware version to the codec max', () {
-        repo.firmwareProtocolVersion = 99;
-        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionMax);
-      });
-
-      test('clamps a below-v1 firmware version to v1', () {
-        repo.firmwareProtocolVersion = 0;
-        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV1);
-      });
-
-      test('the ON-SCREEN pedal speaks the newest protocol by default', () {
-        // It has no firmware to be out of date — the renderer ships in this
-        // build — so it must not sit behind the unknown-firmware v2 floor
-        // (which would show FX mode as mute and chain LEDs as green).
-        repo.bind(kSimulatorOutputId);
-        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionMax);
-      });
-
-      test('an explicit version still wins for the on-screen pedal, so it '
-          'can rehearse the downgrade', () {
-        repo
-          ..bind(kSimulatorOutputId)
-          ..firmwareProtocolVersion = PedalCodec.protocolVersionV2;
-        // Pinning v2 makes the plate render exactly what a pre-v3 pedal
-        // renders — the only way to see the B10 downgrade without hardware.
-        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV2);
-      });
-
-      test('a real pedal keeps the floor after the simulator is unbound', () {
-        repo
-          ..bind(kSimulatorOutputId)
-          ..bind('pedal-out');
-        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV2);
-      });
-
-      test('clearing the version (null) returns to the v2 floor', () {
-        repo
-          ..firmwareProtocolVersion = PedalCodec.protocolVersionV3
-          ..firmwareProtocolVersion = null;
-        expect(repo.targetProtocolVersion, PedalCodec.protocolVersionV2);
-      });
-
-      test('pushState encodes at the resolved version', () {
-        repo
-          ..firmwareProtocolVersion = PedalCodec.protocolVersionV3
-          ..bind('pedal-out');
-        final frame = PedalStateFrame.blank().copyWith(mode: PedalMode.fx);
-
-        repo.pushState(frame);
-
-        expect(
-          transport.sent.last,
-          PedalCodec.encodeFrame(
-            frame,
-            targetVersion: PedalCodec.protocolVersionV3,
-          ),
-        );
-        expect(transport.sent.last[2], PedalCodec.protocolVersionV3);
-      });
-
-      test('pushState stays at v2 for an unknown pedal even in fx mode', () {
-        repo.bind('pedal-out');
-        final frame = PedalStateFrame.blank().copyWith(mode: PedalMode.fx);
-
-        repo.pushState(frame);
-
-        expect(transport.sent.last[2], PedalCodec.protocolVersionV2);
-        // The downgraded frame decodes as play (mute), the B10 projection.
-        expect(
-          PedalCodec.decodeFrame(transport.sent.last)!.mode,
-          PedalMode.play,
-        );
-      });
-
-      test('the goodbye frame is encoded at the resolved version too', () {
-        repo
-          ..firmwareProtocolVersion = PedalCodec.protocolVersionV1
-          ..bind('pedal-out')
-          ..unbind();
-
-        expect(transport.sent.last[2], PedalCodec.protocolVersionV1);
-      });
-    });
-
-    group('sendLoopTop', () {
-      test('sends the single-byte pulse when bound', () {
-        repo.bind('pedal-out');
-        final before = transport.sent.length;
-
-        repo.sendLoopTop();
-
-        expect(transport.sent.length, before + 1);
-        expect(transport.sent.last, [PedalCodec.loopTopPulse]);
-      });
-
-      test('is a no-op when not bound', () {
-        repo.sendLoopTop();
-        expect(transport.sent, isEmpty);
-      });
-    });
-
-    test('availableOutputs maps the transport devices to domain outputs, '
-        'preserving order', () {
-      // The transport yields raw midi_client devices; the repository maps them
-      // to domain PedalOutputs (in order) so callers never name the data type.
-      transport.outputs = const [
-        MidiDevice(id: 'a', name: 'First'),
-        MidiDevice(id: 'b', name: 'Second'),
-      ];
-
-      expect(repo.availableOutputs(), const [
-        PedalOutput(id: 'a', name: 'First'),
-        PedalOutput(id: 'b', name: 'Second'),
+    test('button messages become timestamped press / release events', () async {
+      final events = <PedalEvent>[];
+      repo.events.listen(events.add);
+      now = const Duration(milliseconds: 10);
+      link.press(PedalButton.track2, down: true);
+      await pumpEventQueue();
+      now = const Duration(milliseconds: 250);
+      link.press(PedalButton.track2, down: false);
+      await pumpEventQueue();
+      expect(events, const [
+        ButtonPressed(
+          PedalButton.track2,
+          timestamp: Duration(milliseconds: 10),
+        ),
+        ButtonReleased(
+          PedalButton.track2,
+          timestamp: Duration(milliseconds: 250),
+        ),
       ]);
-      expect(transport.calls, contains('enumerate'));
     });
 
-    test('availableOutputs is empty when the host exposes no outputs', () {
-      transport.outputs = const [];
-      expect(repo.availableOutputs(), isEmpty);
+    test('encoder messages become deltas', () async {
+      final events = <PedalEvent>[];
+      repo.events.listen(events.add);
+      link
+        ..turn(1)
+        ..turn(-2);
+      await pumpEventQueue();
+      expect(events, const [EncoderDelta(1), EncoderDelta(-2)]);
     });
 
-    group('dispose', () {
-      test('disposes the transport and ignores later commands', () async {
-        await repo.dispose();
+    test('pushState goes out as a link message', () {
+      final frame = PedalStateFrame.blank().copyWith(
+        globalColor: GlobalColor.red,
+      );
+      repo.pushState(frame);
+      expect(link.sent, [StateMessage(frame)]);
+    });
 
-        expect(transport.disposed, isTrue);
-        // Commands after dispose are inert.
-        repo
-          ..bind('pedal-out')
-          ..pushState(PedalStateFrame.blank());
-        expect(repo.status, PedalBindStatus.none);
+    test('a frame identical to the last push is not sent again', () {
+      final frame = PedalStateFrame.blank().copyWith(
+        globalColor: GlobalColor.red,
+      );
+      repo
+        ..pushState(frame)
+        ..pushState(frame.copyWith())
+        ..pushState(frame.copyWith(globalColor: GlobalColor.green));
+      expect(link.sent, hasLength(2));
+    });
 
-        // Idempotent.
-        await repo.dispose();
+    test('goodbye darkens the board and holds the mark', () async {
+      final events = <PedalEvent>[];
+      repo.events.listen(events.add);
+      link.hello();
+      await pumpEventQueue();
+      repo
+        ..pushState(PedalStateFrame.blank().copyWith(activeBank: 1))
+        ..goodbye();
+      expect(link.lastFrame?.isGoodbye, isTrue);
+      link.sent.clear();
+
+      // Nothing re-lights a halting console: every later frame is dropped and
+      // a hello is answered with the goodbye frame. Stomps still come through
+      // — a goodbye that turns out to be wrong must not look like a dead link.
+      repo
+        ..pushState(PedalStateFrame.blank().copyWith(activeBank: 1))
+        ..goodbye();
+      link
+        ..press(PedalButton.recPlay, down: true)
+        ..turn(1)
+        ..hello();
+      await pumpEventQueue();
+      expect(events, hasLength(2));
+      expect(
+        link.sent.whereType<StateMessage>().map((m) => m.frame.isGoodbye),
+        everyElement(isTrue),
+      );
+    });
+
+    test(
+      'a hello connects the link and records the firmware version',
+      () async {
+        final statuses = <PedalLinkStatus>[];
+        repo.statusChanges.listen(statuses.add);
+        expect(repo.status, PedalLinkStatus.disconnected);
+        expect(repo.firmwareVersion, isNull);
+        link.hello(firmwareMinor: 4);
+        await pumpEventQueue();
+        expect(repo.status, PedalLinkStatus.connected);
+        expect(repo.firmwareVersion, '1.4');
+        link.hello(firmwareMinor: 4);
+        await pumpEventQueue();
+        expect(statuses, [PedalLinkStatus.connected]); // dedups repeats
+      },
+    );
+
+    test('silence past helloTimeout disconnects; a hello reconnects', () {
+      fakeAsync((async) {
+        final quietLink = FakePedalLink();
+        final quiet = PedalRepository(quietLink);
+        final statuses = <PedalLinkStatus>[];
+        quiet.statusChanges.listen(statuses.add);
+        final mostOfTheTimeout = quiet.helloTimeout * 0.7;
+
+        quietLink.hello(firmwareMinor: 7);
+        async.flushMicrotasks();
+        expect(quiet.status, PedalLinkStatus.connected);
+        expect(quiet.firmwareVersion, '1.7');
+
+        async.elapse(mostOfTheTimeout);
+        quietLink.hello(firmwareMinor: 7); // keeps it alive
+        async
+          ..flushMicrotasks()
+          ..elapse(mostOfTheTimeout);
+        expect(quiet.status, PedalLinkStatus.connected);
+
+        async.elapse(mostOfTheTimeout);
+        expect(quiet.status, PedalLinkStatus.disconnected);
+        expect(quiet.firmwareVersion, isNull);
+
+        quietLink.hello(firmwareMinor: 7);
+        async.flushMicrotasks();
+        expect(quiet.status, PedalLinkStatus.connected);
+        expect(statuses, [
+          PedalLinkStatus.connected,
+          PedalLinkStatus.disconnected,
+          PedalLinkStatus.connected,
+        ]);
+        unawaited(quiet.dispose());
+        async.flushTimers();
       });
+    });
+
+    test('a hello with another link protocol reads as incompatible', () async {
+      final lines = <String>[];
+      final logged = PedalRepository(link, log: lines.add);
+      link.emit(
+        const HelloMessage(
+          protocolVersion: PedalLinkCodec.protocolVersion + 1,
+          firmwareMajor: 2,
+          firmwareMinor: 0,
+        ),
+      );
+      await pumpEventQueue();
+      expect(logged.status, PedalLinkStatus.incompatible);
+      expect(logged.firmwareVersion, '2.0');
+      expect(lines.single, contains('incompatible'));
+      expect(
+        lines.single,
+        contains('protocol ${PedalLinkCodec.protocolVersion + 1}'),
+      );
+
+      // Its stomps are dropped and it is sent nothing: a reordered button
+      // table on the other side must not reach the looper.
+      final events = <PedalEvent>[];
+      logged.events.listen(events.add);
+      link
+        ..press(PedalButton.clear, down: true)
+        ..turn(1);
+      await pumpEventQueue();
+      expect(events, isEmpty);
+      final before = link.sent.length;
+      logged.pushState(PedalStateFrame.blank());
+      expect(link.sent.length, before);
+      await logged.dispose();
+    });
+
+    test('every hello is answered with the last pushed frame', () async {
+      final frame = PedalStateFrame.blank().copyWith(
+        globalColor: GlobalColor.green,
+      );
+      link.hello();
+      await pumpEventQueue();
+      expect(link.sent.whereType<StateMessage>(), isEmpty); // nothing yet
+      repo.pushState(frame);
+      link.sent.clear();
+      link.hello();
+      await pumpEventQueue();
+      expect(link.sent, [StateMessage(frame)]);
+    });
+
+    test('a hello with a new firmware version re-emits the status', () async {
+      final statuses = <PedalLinkStatus>[];
+      repo.statusChanges.listen(statuses.add);
+      link.hello();
+      await pumpEventQueue();
+      link.hello(firmwareMinor: 1); // reflashed under a running app
+      await pumpEventQueue();
+      expect(repo.firmwareVersion, '1.1');
+      expect(statuses, [
+        PedalLinkStatus.connected,
+        PedalLinkStatus.connected,
+      ]);
+    });
+
+    test('dispose reports the link as disconnected', () async {
+      final statuses = <PedalLinkStatus>[];
+      repo.statusChanges.listen(statuses.add);
+      link.hello();
+      await pumpEventQueue();
+      expect(repo.status, PedalLinkStatus.connected);
+      await repo.dispose();
+      expect(repo.status, PedalLinkStatus.disconnected);
+      expect(repo.firmwareVersion, isNull);
+      expect(statuses, [
+        PedalLinkStatus.connected,
+        PedalLinkStatus.disconnected,
+      ]);
+    });
+
+    test('outbound message types arriving inbound are ignored', () async {
+      final events = <PedalEvent>[];
+      repo.events.listen(events.add);
+      link.emit(StateMessage(PedalStateFrame.blank()));
+      await pumpEventQueue();
+      expect(events, isEmpty);
+      expect(repo.status, PedalLinkStatus.disconnected);
+    });
+
+    test('dispose releases the link and is idempotent', () async {
+      await repo.dispose();
+      await repo.dispose();
+      expect(link.disposed, isTrue);
+      repo.pushState(PedalStateFrame.blank());
+      expect(link.sent, isEmpty);
     });
   });
 }

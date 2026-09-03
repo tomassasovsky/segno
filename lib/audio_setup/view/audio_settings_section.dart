@@ -20,9 +20,9 @@ import 'package:url_launcher/url_launcher.dart';
 /// (applied live while running), see the live device/latency status, and
 /// re-run the round-trip latency measurement.
 ///
-/// The MIDI foot-controller and pedal LED pickers are absent (the Pro Micro is
-/// fixed hardware — see #331), and audio device pickers omit "System default"
-/// so a concrete interface stays pinned.
+/// There is no foot-controller picker (the pedal is the console board on its
+/// own link, not a MIDI device), and audio device pickers omit "System
+/// default" so a concrete interface stays pinned.
 class AudioSettingsSection extends StatelessWidget {
   /// Creates an [AudioSettingsSection].
   const AudioSettingsSection({super.key});
@@ -94,10 +94,10 @@ class AudioSettingsSection extends StatelessWidget {
               includeSystemDefault: false,
             ),
           ],
-          // There is no MIDI foot-controller PICKER: the Pro Micro is fixed
-          // hardware that auto-detect binds by product name (#421), so a
-          // chooser would only offer the one answer. CONFIGURING the pedal is
-          // not the same as choosing it, so the assignment route below stays.
+          // There is no foot-controller PICKER: the pedal is the console
+          // board on its own link, so a chooser would only offer the one
+          // answer. CONFIGURING the pedal is not the same as choosing it, so
+          // the assignment route below stays.
           const SizedBox(height: 28),
           const PedalSettingsSection(),
           const SizedBox(height: 28),
