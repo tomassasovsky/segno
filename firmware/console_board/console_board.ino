@@ -195,16 +195,15 @@ static inline uint16_t ringIndex(uint16_t i) {
 // The sweep is the loop position: segno pulses LOOP_TOP at every loop top, which
 // snaps the hump back to pixel 0, and between pulses it advances at one
 // revolution per loop length (STATE carries loop_length_micros), so the hump IS
-// the playhead — the same "one revolution per loop" the on-screen plate draws.
+// the playhead.
 // While there is activity but no loop yet (the first recording is still open),
 // there is nothing to sync to and the hump runs at a fixed cadence instead.
 //
 // A Stop that leaves a loop loaded freezes the hump where it was. With nothing
 // loaded and nothing playing the ring breathes green so it reads as alive.
-// Known gap, accepted: the hump is re-pinned only by LOOP_TOP, which segno
-// sends when it sees the playhead wrap. A restart from zero it did not see as
-// a wrap keeps the hump where it froze until the next loop top; the on-screen
-// plate has the same behaviour.
+// segno pulses LOOP_TOP on both edges that mean "the playhead is at the top" —
+// a wrap, and a resume from zero after a Stop — so a frozen hump is re-pinned
+// as soon as playback starts again rather than one loop later.
 // Ported from the pedal's renderRing(); widths scaled to the Ring 24.
 static const unsigned long FREE_RUN_MS_PER_REV = 700;
 static const unsigned long BREATHE_MS = 2400;
