@@ -50,33 +50,34 @@ with a PULL-DOWN. Nothing here uses one: the encoder lines are pulled UP (R1-R3
 below), RING_LINK is pulled up by the console's existing 10 k, and the WS2812
 line is an output. Do not add a pull-down to this board without re-reading E9.
 
-## The board grew to O80 and the M3 holes moved inboard (owner call)
+## The board grew to O80, and it SNAP-MOUNTS -- no mounting holes (owner calls)
 
-The O68 disc could not hold this. Its usable back is an ANNULUS -- r>~11 (clear
-of the encoder body at the centre) out to the rim -- and the three M3 holes sat
-at exactly **r=22**, in the middle of it, so every large part had to dodge them
-angularly. The XIAO ended up **0.85 mm** from the encoder's courtyard with the
-encoder's own traces squeezing through that gap.
+The O68 disc could not hold this. Its usable back is an annulus from r>~11 (clear
+of the encoder body) outwards, and three M3 holes sat at r=22 in the middle of
+it, so every large part had to dodge them. The XIAO ended up 0.85 mm from the
+encoder's courtyard with the encoder's own traces squeezing through that gap.
 
-Two changes fix it, both cheap:
-
-- **Outline O68 -> O80.** The enclosure has far more room here than the ring
-  window suggests: measured off `segno_enclosure.py`, the binding neighbour is
-  the 7" screen's BEZEL at r=58.6 (so O117 would still fit), with the row-1
-  pedal slots 60 mm clear the other way. O80 leaves ~18 mm of margin.
-- **M3 holes r=22 -> r=16**, at theta 90/210/330. They were at r=22 only so the
-  screw HEADS clear the ring's inner edge at r=26.15 -- moving them further IN
-  satisfies that just as well, and the faceplate is solid metal at r=16 (the
-  window is the r=25.75..33.5 annulus), so a standoff has something to land on.
-  The new angles also dodge J2's wire pads (r~12.3, theta -108..-72), which the
-  old -101/36/163 triangle sat on top of.
+- **Outline O68 -> O80.** Measured against `segno_enclosure.py` rather than
+  guessed: the binding neighbour is the 7" screen's BEZEL at r=58.6 (O117 would
+  still fit), with the row-1 pedal slots 60 mm clear the other way, so O80 keeps
+  ~18 mm of margin.
+- **No mounting holes at all.** They are gone; the board snap-mounts. That also
+  retires a constraint that was shaping the layout badly: a screw head has to
+  stay inside the ring's O52.3 bore, which confined holes to r < 22.95, and U1 --
+  which must sit east so its USB-C reaches the rim -- crosses that band from
+  r=14.6 outward. There was no legal eastern hole, so the three holes could only
+  reach an 82 degree spread and left the USB corner carried by the encoder nut
+  alone. Snap features have no such rule.
 
 Nothing in the enclosure had to change: it models no bosses for this board, and
 RING_OD/RING_ID (the faceplate window) are untouched -- the ring module and the
 encoder bush still sit exactly where they did.
 
-Result: an uninterrupted ~19 mm-wide annulus (r20..r39) all the way round, and
-the XIAO now sits **4.4 mm** off the encoder instead of 0.85.
+## The XIAO's USB-C is a keep-out
+
+Seeed's footprint puts the connector shell overhanging the module's +x end (silk
+to x=12.59, y +/-4.5). U1 therefore sits due east with that end facing the rim:
+5.4 mm of clear board in front of it and no part inside its approach.
 
 ## Why the 5 V pins went from four to one
 
