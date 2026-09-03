@@ -17,8 +17,12 @@ const _device = '/dev/ttyAMA3';
 /// The line settings the board expects; the same on both ends.
 const _baud = 115200;
 
-/// How often to look for the device while it is absent or after a failure.
-const _retry = Duration(seconds: 2);
+/// How soon to look again after the device turns out to be absent or a step
+/// of the open fails, and the ceiling that delay backs off to. The overlay
+/// usually lands within a retry or two of launch; a unit that is simply
+/// misconfigured should not fork `stty` every two seconds forever.
+const _retryFloor = Duration(seconds: 2);
+const _retryCeiling = Duration(seconds: 30);
 
 /// The [PedalLink] over the appliance's link UART.
 ///
@@ -49,6 +53,7 @@ class UartPedalLink implements PedalLink {
   Future<void>? _closing;
   Timer? _retryTimer;
   String? _lastLogged;
+  Duration _retry = _retryFloor;
   int _droppedSeen = 0;
   bool _noisy = false;
   bool _disposed = false;
@@ -83,7 +88,7 @@ class UartPedalLink implements PedalLink {
     if (!file.existsSync()) {
       _say(
         '$_device is not present; is dtoverlay=uart3-pi5 applied? '
-        'Retrying every ${_retry.inSeconds} s.',
+        'Retrying, backing off to ${_retryCeiling.inSeconds} s.',
       );
       _scheduleRetry();
       return;
@@ -133,6 +138,7 @@ class UartPedalLink implements PedalLink {
         ..reset();
       _droppedSeen = 0;
       _noisy = false;
+      _retry = _retryFloor; // the device is here; look again promptly next time
       _say('open on $_device at $_baud');
       _readLoop = _read(reader);
     } on Object catch (error) {
@@ -216,6 +222,8 @@ class UartPedalLink implements PedalLink {
     if (_disposed) return;
     _retryTimer?.cancel();
     _retryTimer = Timer(_retry, () => unawaited(_open()));
+    final next = _retry * 2;
+    _retry = next > _retryCeiling ? _retryCeiling : next;
   }
 
   /// Logs [message] unless it is the same line as the last one, so a device
