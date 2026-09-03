@@ -188,12 +188,13 @@ j1[4] += link_to_console
 # (Seeed_Studio_XIAO_Series.kicad_sym), the same source the footprint came from:
 #
 #   1..11 D0..D10   12 3V3_OUT  13 GND  14 VBUS
-#   15..22 D11..D18 23 SWDIO 24 SWDCLK 25 EN 26 GND 27 BOOT 28 3V3_OUT
-#   29 VBAT  30 GND
 #
-# Pads 1-14 are the two castellated SIDE rows (1..7 one side, 8..14 the other);
-# 15-30 are UNDERSIDE pads and need copper keepout under the module even where
-# unconnected.
+# ONLY the 14 castellated SIDE pads exist here. Seeed's footprint also carries 16
+# underside pads; they are deleted from our copy (owner call). This board reflows
+# the module by its edges, nothing under the body is ever soldered, and leaving
+# unsolderable copper directly beneath a module invites bridges and intermittent
+# contact. GND therefore reaches the module through pad 13 alone, which is the
+# only GND on the side rows anyway -- and pad 13 has its own stitching via.
 #
 # WHY RP2350 AND NOT RP2040: the console board is a Pico 2. Same architecture
 # means one pico-sdk platform target, one PIO dialect and one erratum list across
@@ -212,7 +213,7 @@ j1[4] += link_to_console
 # Pi link on GP16/17, and GP14 is on neither UART), so the console side is a PIO
 # UART either way. The XIAO's D-number -> GP-number mapping therefore does not
 # bind the netlist. The firmware needs that mapping; the board does not.
-XIAO = Part("Connector_Generic", "Conn_01x30",
+XIAO = Part("Connector_Generic", "Conn_01x14",
             footprint="segno:XIAO_RP2350_SMD", ref="U1", value="XIAO-RP2350")
 XIAO[1] += ring_data_3v3   # D0  -> level shifter in
 XIAO[2] += encA            # D1
@@ -223,17 +224,13 @@ XIAO[11] += link_to_console  # D10 -> J1 pin 4
 XIAO[12] += v3v3           # 3V3_OUT -- encoder pull-up rail, nothing else
 XIAO[13] += gnd
 XIAO[14] += v5_mcu         # VBUS, fed through D1
-XIAO[26] += gnd            # underside GND pads: the return path for the module
-XIAO[30] += gnd
 
 # Spare pads, exempted BY NAME rather than tolerated in the ERC log -- a wall of
 # expected warnings is how a real one gets missed (console_board.py's rule).
 # SWDIO/SWDCLK/EN/BOOT (23/24/25/27) are deliberately among them: bench recovery
 # is the module's own USB-C and its BOOT/RESET buttons, so bringing them out
 # would be copper for a path nothing uses.
-XIAO_SPARE = (5, 6, 7, 8, 9,               # D4..D8
-              15, 16, 17, 18, 19, 20, 21, 22,   # D11..D18
-              23, 24, 25, 27, 28, 29)           # SWDIO SWDCLK EN BOOT 3V3 VBAT
+XIAO_SPARE = (5, 6, 7, 8, 9)               # D4..D8, the only unused side pads
 for _p in XIAO_SPARE:
     XIAO[_p].do_erc = False
 
@@ -328,7 +325,13 @@ j4[4] += ring_dout   # Out (unused electrically; soldered for rigidity)
 #   + 1.57  ring PCB (Adafruit's own STEP)
 #   + 1.60  WS2812 proud of it (module is 3.2 overall)
 #   = 5.71  to the LED top face
-# The 3D model carries that 2.54 offset so the render is not 2.54 mm optimistic.
+# The 3D model carries that 2.54 offset so the render is not 2.54 mm optimistic,
+# and the pins are modelled TRIMMED: KiCad's own PinHeader_1x01 leaves 4.54 mm of
+# bare pin standing above the ring, which nobody assembles, so
+# PinHeader_1x01_trimmed.wrl keeps the insulator at 2.54 and snips the pin 1.0 mm
+# proud. RING1 carries BOTH rings -- the Ring 24 shown on J3's circle, the Ring 16
+# hidden on J4's -- each with its own pins, so the 3D viewer switches between the
+# two builds by toggling which models are visible.
 # CLEARANCE, worth a bench check before the faceplate is cut: the EC11's M7 bush
 # runs z 5.0..11.5 above this board (measured off RotaryEncoder_EC11.step), and
 # the faceplate rides somewhere on it -- so the gap to the plate's inner face is
@@ -387,11 +390,8 @@ C("100nF", "C4")[1, 2] += encSW, gnd
 # Which pads are 3.3 V logic and which are power. Taken from the same Seeed symbol
 # the footprint's descr quotes, not inferred: a pad's tolerance is the whole
 # question here, so guessing it would defeat the gate.
-XIAO_LOGIC_PADS = (frozenset(range(1, 12))        # D0..D10
-                   | frozenset(range(15, 23))     # D11..D18
-                   | frozenset({23, 24, 25, 27}))  # SWDIO SWDCLK EN BOOT
-XIAO_POWER_PADS = {12: "3V3_OUT", 13: "GND", 14: "VBUS",
-                   26: "GND", 28: "3V3_OUT", 29: "VBAT", 30: "GND"}
+XIAO_LOGIC_PADS = frozenset(range(1, 12))        # D0..D10
+XIAO_POWER_PADS = {12: "3V3_OUT", 13: "GND", 14: "VBUS"}
 RAILS_5V = ("+5V_LED", "+5V_MCU")
 
 
@@ -402,10 +402,10 @@ def _check():
     # hide one behind.
     assert XIAO_LOGIC_PADS.isdisjoint(XIAO_POWER_PADS), (
         "XIAO_PADS: a pad is listed as both logic and power")
-    assert set(XIAO_LOGIC_PADS) | set(XIAO_POWER_PADS) == set(range(1, 31)), (
-        "XIAO_PADS: the logic/power split does not cover pads 1..30 -- the map "
-        "has drifted from the footprint's 30 pads")
-    _used = {p for p in range(1, 31) if XIAO[p].nets}
+    assert set(XIAO_LOGIC_PADS) | set(XIAO_POWER_PADS) == set(range(1, 15)), (
+        "XIAO_PADS: the logic/power split does not cover pads 1..14 -- the map "
+        "has drifted from the footprint's 14 pads")
+    _used = {p for p in range(1, 15) if XIAO[p].nets}
     assert _used.isdisjoint(XIAO_SPARE), (
         f"XIAO_PADS: {sorted(_used & set(XIAO_SPARE))} are ERC-exempt but wired -- "
         "an exemption on a live pad hides a real unconnected-pin warning")

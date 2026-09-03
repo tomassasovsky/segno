@@ -3,7 +3,7 @@
 	(generator "manual")
 	(layer "F.Cu")
 	(attr through_hole exclude_from_bom allow_missing_courtyard)
-	(descr "NeoPixel Ring 24 module, O65.5 OD / O52.3 ID / 3.2 thick -- the fitted part (#794). DOCUMENTATION ONLY: no pads. The module PIN-MOUNTS on J3 (ModuleMountPads_Ring24, re-cut for this ring at r=31.59 -- see MANUFACTURING.md); J2 (WirePads_1x04) remains as a flying-wire fallback. 3D model NeoPixel_Ring24.step is ADAFRUIT'S OWN, from github.com/adafruit/Adafruit_CAD_Parts ('1586 NeoPixel Ring 24x'), MIT -- the same vendor whose board file J3's pad coordinates were lifted from. It is the right part, measured not assumed: its two big CIRCLE entities are r=32.766 and r=26.162, i.e. O65.532 / O52.324, against this part's O65.5 / O52.3. Centred on (0,0,0) with the PCB at z 0..1.57, so it needs no rotation. The Z OFFSET IS 2.54, not 0: the module PIN-MOUNTS on J3 through a 2.54 mm pitch pin strip, and the strip's plastic insulator is what sets the gap between the two boards -- a standard 0.1 in strip body is 2.54 mm tall. Modelled flat on the board it read 2.54 mm too low, which is exactly the error that matters for faceplate clearance. The STEP is the bare PCB: the WS2812 packages that make the module 3.2 thick overall are not modelled, so the render shows the ring board, not the LEDs standing proud of it. ATTRIBUTES MATTER HERE: this footprint must NOT carry exclude_from_pos_files. kicad-cli's 3D renderer silently skips the model of any footprint with that flag, which looked exactly like a broken model or a bad path -- the STEP was fine all along and appeared correctly in `kicad-cli pcb export step`. It has no pads, so it cannot reach a position file anyway; exclude_from_bom stays. It also carries FOUR PinHeader_1x01 models, one per J3 mount pad, so the render shows what actually holds the module up: the strip's insulator is the 2.54 mm standoff, and the KiCad header model confirms it independently -- its plastic body spans exactly z 0..2.54. Offsets are J3's pad positions with Y negated, because KiCad's 3D offset Y runs opposite to board Y.")
+	(descr "NeoPixel Ring 24 module, O65.5 OD / O52.3 ID / 3.2 thick -- the fitted part (#794). DOCUMENTATION ONLY: no pads. The module PIN-MOUNTS on J3 (ModuleMountPads_Ring24, re-cut for this ring at r=31.59 -- see MANUFACTURING.md); J2 (WirePads_1x04) remains as a flying-wire fallback. 3D model NeoPixel_Ring24.step is ADAFRUIT'S OWN, from github.com/adafruit/Adafruit_CAD_Parts ('1586 NeoPixel Ring 24x'), MIT -- the same vendor whose board file J3's pad coordinates were lifted from. It is the right part, measured not assumed: its two big CIRCLE entities are r=32.766 and r=26.162, i.e. O65.532 / O52.324, against this part's O65.5 / O52.3. Centred on (0,0,0) with the PCB at z 0..1.57, so it needs no rotation. The Z OFFSET IS 2.54, not 0: the module PIN-MOUNTS on J3 through a 2.54 mm pitch pin strip, and the strip's plastic insulator is what sets the gap between the two boards -- a standard 0.1 in strip body is 2.54 mm tall. Modelled flat on the board it read 2.54 mm too low, which is exactly the error that matters for faceplate clearance. The STEP is the bare PCB: the WS2812 packages that make the module 3.2 thick overall are not modelled, so the render shows the ring board, not the LEDs standing proud of it. ATTRIBUTES MATTER HERE: this footprint must NOT carry exclude_from_pos_files. kicad-cli's 3D renderer silently skips the model of any footprint with that flag, which looked exactly like a broken model or a bad path -- the STEP was fine all along and appeared correctly in `kicad-cli pcb export step`. It has no pads, so it cannot reach a position file anyway; exclude_from_bom stays. It also carries FOUR PinHeader_1x01 models, one per J3 mount pad, so the render shows what actually holds the module up: the strip's insulator is the 2.54 mm standoff, and the KiCad header model confirms it independently -- its plastic body spans exactly z 0..2.54. The pin model is OURS, not KiCad's: KiCad's PinHeader_1x01 runs z -3.11..8.65 and left 4.54 mm of bare pin standing above the ring, which nobody assembles -- PinHeader_1x01_trimmed.wrl keeps the insulator at exactly 2.54 and ends the pin 1.0 mm proud, i.e. snipped. It is authored in mm, so it takes scale 1/2.54 (KiCad's VRML unit is 0.1 in), the same as NeoPixel_Ring16's existing .wrl. TWO RINGS ARE CARRIED: the Ring 24 on J3's r=31.59 circle is shown, and the Ring 16 on J4's r=21.05 circle is hidden, each with its own four pins -- flip the hide flags (or untick them in the 3D viewer's model list) to see the other build. Offsets are the mount pads' positions with Y NEGATED, because KiCad's 3D offset Y runs opposite to board Y.")
 	(property "Reference" "RING1" (at 0 -35 0) (layer "F.SilkS") hide (effects (font (size 1 1)(thickness 0.15))))
 	(property "Value" "NeoPixel24" (at 0 35 0) (layer "F.Fab") hide (effects (font (size 1 1)(thickness 0.15))))
 	(fp_circle (center 0 0) (end 32.75 0) (stroke (width 0.12)(type solid))(fill none)(layer "Dwgs.User"))
@@ -13,24 +13,54 @@
 		(scale (xyz 1 1 1))
 		(rotate (xyz 0 0 0))
 	)
-	(model "${KIPRJMOD}/segno.pretty/PinHeader_1x01.step"
+	(model "${KIPRJMOD}/segno.pretty/PinHeader_1x01_trimmed.wrl"
 		(offset (xyz 4.14 31.318 0))
-		(scale (xyz 1 1 1))
+		(scale (xyz 0.3937 0.3937 0.3937))
 		(rotate (xyz 0 0 0))
 	)
-	(model "${KIPRJMOD}/segno.pretty/PinHeader_1x01.step"
+	(model "${KIPRJMOD}/segno.pretty/PinHeader_1x01_trimmed.wrl"
 		(offset (xyz -4.14 -31.318 0))
-		(scale (xyz 1 1 1))
+		(scale (xyz 0.3937 0.3937 0.3937))
 		(rotate (xyz 0 0 0))
 	)
-	(model "${KIPRJMOD}/segno.pretty/PinHeader_1x01.step"
+	(model "${KIPRJMOD}/segno.pretty/PinHeader_1x01_trimmed.wrl"
 		(offset (xyz 12.09 -29.185 0))
+		(scale (xyz 0.3937 0.3937 0.3937))
+		(rotate (xyz 0 0 0))
+	)
+	(model "${KIPRJMOD}/segno.pretty/PinHeader_1x01_trimmed.wrl"
+		(offset (xyz -12.065 29.21 0))
+		(scale (xyz 0.3937 0.3937 0.3937))
+		(rotate (xyz 0 0 0))
+	)
+	(model "${KIPRJMOD}/segno.pretty/NeoPixel_Ring16.step"
+		(hide yes)
+		(offset (xyz 0 0 2.54))
 		(scale (xyz 1 1 1))
 		(rotate (xyz 0 0 0))
 	)
-	(model "${KIPRJMOD}/segno.pretty/PinHeader_1x01.step"
-		(offset (xyz -12.065 29.21 0))
-		(scale (xyz 1 1 1))
+	(model "${KIPRJMOD}/segno.pretty/PinHeader_1x01_trimmed.wrl"
+		(hide yes)
+		(offset (xyz -11.63 17.55 0))
+		(scale (xyz 0.3937 0.3937 0.3937))
+		(rotate (xyz 0 0 0))
+	)
+	(model "${KIPRJMOD}/segno.pretty/PinHeader_1x01_trimmed.wrl"
+		(hide yes)
+		(offset (xyz -17.55 -11.63 0))
+		(scale (xyz 0.3937 0.3937 0.3937))
+		(rotate (xyz 0 0 0))
+	)
+	(model "${KIPRJMOD}/segno.pretty/PinHeader_1x01_trimmed.wrl"
+		(hide yes)
+		(offset (xyz 11.68 -17.53 0))
+		(scale (xyz 0.3937 0.3937 0.3937))
+		(rotate (xyz 0 0 0))
+	)
+	(model "${KIPRJMOD}/segno.pretty/PinHeader_1x01_trimmed.wrl"
+		(hide yes)
+		(offset (xyz 4.11 20.65 0))
+		(scale (xyz 0.3937 0.3937 0.3937))
 		(rotate (xyz 0 0 0))
 	)
 )
