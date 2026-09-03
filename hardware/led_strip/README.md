@@ -30,7 +30,7 @@ Console usage:
 | mid row       | CLEAR, BANK             | 2      | 2    |
 | per console   |                         | 6      | 6    |
 
-Feed 5V/GND once (six indicator LEDs draw ~360 mA absolute worst case, far
+Feed 5V/GND once (seven indicator LEDs draw ~420 mA absolute worst case, far
 less in practice). Data enters at DI on the first puck and daisy-chains
 through every LED.
 

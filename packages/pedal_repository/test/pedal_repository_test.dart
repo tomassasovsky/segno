@@ -167,7 +167,10 @@ void main() {
       expect(logged.status, PedalLinkStatus.incompatible);
       expect(logged.firmwareVersion, '2.0');
       expect(lines.single, contains('incompatible'));
-      expect(lines.single, contains('protocol 2'));
+      expect(
+        lines.single,
+        contains('protocol ${PedalLinkCodec.protocolVersion + 1}'),
+      );
 
       // Its stomps are dropped and it is sent nothing: a reordered button
       // table on the other side must not reach the looper.

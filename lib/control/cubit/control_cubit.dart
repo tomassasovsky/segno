@@ -83,8 +83,7 @@ class _HoldGesture {
 /// Inputs arrive only through repository streams and its own methods:
 /// - `LooperRepository.looperState` drives [_reduce] — the invalidation
 ///   table every stored bit obeys (cursor clamps; excluded/parkedResume
-///   members drop when their track empties) — plus the loop-top pulse and
-///   the frame re-projection.
+///   members drop when their track empties) — plus the frame re-projection.
 /// - `PedalRepository.events` delivers the decoded footswitches, which call
 ///   the SAME intent methods the keyboard and on-screen widgets call — the
 ///   surfaces cannot diverge in the command sequences they issue.

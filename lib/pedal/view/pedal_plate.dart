@@ -704,10 +704,10 @@ class _Led extends StatelessWidget {
   }
 }
 
-/// The rotary encoder + its 12-LED activity ring. Drag or scroll turns it; the
-/// ring's color is the global activity color, and a bright pixel sweeps around
-/// the twelve LEDs once per loop (like the firmware advancing the ring on each
-/// loop top).
+/// The rotary encoder + its activity ring. Drag or scroll turns it; the ring's
+/// color is the global activity color, and a bright pixel sweeps around it once
+/// per loop. (The console board's own Ring 24 sweeps at a fixed cadence
+/// instead — there, the ring reads as activity, not as a playhead.)
 class _Encoder extends StatefulWidget {
   const _Encoder({
     required this.ringColor,

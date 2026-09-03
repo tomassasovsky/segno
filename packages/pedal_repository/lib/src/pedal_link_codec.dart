@@ -43,7 +43,12 @@ abstract final class PedalLinkCodec {
 
   /// The link protocol this codec speaks, reported by the board in
   /// [HelloMessage.protocolVersion].
-  static const protocolVersion = 1;
+  ///
+  /// 2: the loop-top pulse (`0x11`) was retired when the ring stopped
+  /// tracking the loop. The board is flashed over SWD independently of the
+  /// app, so the two can drift; this is what makes that visible rather than
+  /// silent.
+  static const protocolVersion = 2;
 
   /// Message types, board → segno.
   static const typeButton = 0x01;

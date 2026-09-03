@@ -141,9 +141,15 @@ static void check_fixture(const char *dir, const char *name) {
   uint8_t again[PEDAL_LINK_MAX_FRAME];
   size_t m = 0;
   pedal_state st;
+  memset(&st, 0, sizeof(st));
   switch (type) {
     case PEDAL_LINK_TYPE_STATE:
-      CHECK(pedal_link_decode_state(payload, len, &st), "%s: decode_state rejected it", name);
+      if (!pedal_link_decode_state(payload, len, &st)) {
+        // Reading `st` after this would report indeterminate bytes as wire
+        // values, which can pass by coincidence and hide the real failure.
+        CHECK(0, "%s: decode_state rejected it", name);
+        return;
+      }
       m = pedal_link_encode_state(&st, again);
       break;
     case PEDAL_LINK_TYPE_BUTTON:
