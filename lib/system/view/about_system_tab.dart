@@ -88,6 +88,9 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
       switch (pedal.status) {
         PedalLinkStatus.disconnected => l10n.pedalStatusDisconnected,
         PedalLinkStatus.connected => l10n.aboutPedalFirmwareSubtitle,
+        PedalLinkStatus.incompatible => l10n.pedalStatusIncompatible(
+          pedal.firmwareVersion ?? '',
+        ),
       };
 
   @override

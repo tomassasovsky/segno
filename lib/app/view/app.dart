@@ -65,7 +65,6 @@ class App extends StatefulWidget {
     required this.exportDirectory,
     this.simulatedControllerSource,
     this.pedalRepository,
-    this.pedalSimulator,
     this.displayCount,
     this.audioRecoveryConfig,
     this.initialAsioDrivers = const [],
@@ -127,16 +126,10 @@ class App extends StatefulWidget {
   final MidiDeviceRepository midiDeviceRepository;
 
   /// The pedal repository over the console board's link, or `null` when none
-  /// was built — an on-screen-only link is substituted so pedal
+  /// was built — an on-screen pedal link is substituted so pedal
   /// cubit always exists and its settings picker shows an empty state. Owned by
   /// the [PedalCubit], which disposes it.
   final PedalRepository? pedalRepository;
-
-  /// The on-screen pedal simulator transport that [pedalRepository] is built
-  /// over, or `null` when none was built. The fuzz harness injects presses
-  /// and reads decoded frames from it. Disposed by the [PedalCubit] (via the
-  /// repository), so it is provided by value, not created here.
-  final SimulatorPedalLink? pedalSimulator;
 
   /// Reports the number of connected displays, for the dual-display console's
   /// single-display fallback. `null` (the default) disables the fallback
@@ -175,7 +168,6 @@ class App extends StatefulWidget {
 /// Resolves the optional pedal pair once so a replacement [App] keeps
 /// [ControlCubit], [PedalCubit], and dialog routes on one repository.
 class _AppState extends State<App> {
-  late final SimulatorPedalLink _simulator;
   late final PedalRepository _pedal;
   PowerKeySource? _powerKeySource;
   ControlCubit? _control;
@@ -183,8 +175,7 @@ class _AppState extends State<App> {
   @override
   void initState() {
     super.initState();
-    _simulator = widget.pedalSimulator ?? SimulatorPedalLink();
-    _pedal = widget.pedalRepository ?? PedalRepository(_simulator);
+    _pedal = widget.pedalRepository ?? PedalRepository(SimulatorPedalLink());
     _powerKeySource =
         widget.powerKeySource ??
         openAppliancePowerKeySource(
@@ -209,7 +200,6 @@ class _AppState extends State<App> {
         RepositoryProvider.value(value: widget.settings),
         RepositoryProvider.value(value: widget.sessionRepository),
         RepositoryProvider.value(value: widget.performanceRepository),
-        RepositoryProvider.value(value: _simulator),
         RepositoryProvider.value(value: _pedal),
         RepositoryProvider.value(value: widget.updates),
         RepositoryProvider.value(value: widget.wifi),

@@ -1,3 +1,7 @@
+// coverage:ignore-file
+// Test support, shipped from the package so the app's tests and the package's
+// own tests drive one and the same fake.
+
 import 'dart:async';
 
 import 'package:pedal_repository/pedal_repository.dart';

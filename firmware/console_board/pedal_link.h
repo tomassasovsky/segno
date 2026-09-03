@@ -118,17 +118,25 @@ size_t pedal_link_encode_loop_top(uint8_t *out);
  * selected_track >= PEDAL_TRACK_COUNT - the same rejections as the Dart side. */
 int pedal_link_decode_state(const uint8_t *payload, uint8_t len, pedal_state *out);
 
+/* The payload length a message type carries, or -1 for a type this codec does
+ * not know. Every message is fixed-length, so a parser can reject a corrupted
+ * type or length byte the moment it sees it instead of committing to a bogus
+ * length and swallowing the frames behind it. */
+int pedal_link_payload_len(uint8_t type);
+
 /* Incremental parser: feed bytes as they arrive; when a checksum-valid frame
  * completes, pedal_link_parser_push() returns 1 and the type/payload/len
  * outputs describe it (payload points into the parser and is valid until the
- * next push). Bad checksum, oversized length: the parser resyncs on the next
- * sync byte. Message-level validation (enum ranges) is the caller's, via
- * pedal_link_decode_state() for STATE; other types are fixed-length checks. */
+ * next push). A frame is dropped, and the parser resyncs on the next sync
+ * byte, when its type is unknown, its length is not that type's length, or its
+ * checksum fails; `dropped` counts those. Enum-range validation is the
+ * caller's, via pedal_link_decode_state() for STATE. */
 typedef struct pedal_link_parser {
   uint8_t state;
   uint8_t type;
   uint8_t len;
   uint8_t pos;
+  uint32_t dropped;
   uint8_t payload[PEDAL_LINK_MAX_PAYLOAD];
 } pedal_link_parser;
 

@@ -1663,6 +1663,14 @@
             }
         }
     },
+    "pedalStatusIncompatible": "Console board firmware {firmwareVersion} speaks a different link protocol than this build. Update the board firmware.",
+    "@pedalStatusIncompatible": {
+        "placeholders": {
+            "firmwareVersion": {
+                "type": "String"
+            }
+        }
+    },
     "@pedalAssignTitle": {
         "description": "Title of the screen where footswitches are remapped to FX targets (FX v3 part 6b)."
     },

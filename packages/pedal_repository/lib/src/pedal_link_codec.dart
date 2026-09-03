@@ -66,6 +66,19 @@ abstract final class PedalLinkCodec {
   /// The longest payload the parser accepts; anything longer resyncs.
   static const maxPayloadLength = 32;
 
+  /// The payload length every message type carries, or `null` for a type this
+  /// codec does not know. Every message is fixed-length, so the parser can
+  /// reject a corrupted type or length byte the moment it sees it instead of
+  /// committing to a bogus length and swallowing the frames behind it.
+  static int? payloadLengthFor(int type) => switch (type) {
+    typeButton => 2,
+    typeEncoder => 1,
+    typeHello => 3,
+    typeState => statePayloadLength,
+    typeLoopTop => 0,
+    _ => null,
+  };
+
   /// Serializes [message] to one complete frame.
   static Uint8List encode(PedalLinkMessage message) {
     final (type, payload) = switch (message) {
@@ -190,13 +203,23 @@ abstract final class PedalLinkCodec {
 }
 
 /// Reassembles [PedalLinkMessage]s from a byte stream that arrives in
-/// arbitrary chunks, resynchronizing on the next [PedalLinkCodec.sync] after
-/// a bad checksum, an oversized length or an undecodable frame.
+/// arbitrary chunks.
+///
+/// A frame is dropped, and the parser resynchronizes on the next
+/// [PedalLinkCodec.sync], when its type is unknown, its length byte is not
+/// the length that type carries, its checksum fails, or its payload does not
+/// decode. Checking the type and length up front is what keeps one corrupted
+/// byte from swallowing the frames behind it: the parser never reads more
+/// bytes than the claimed type can legitimately have. [droppedFrames] counts
+/// the drops so a noisy line is visible rather than silent.
 class PedalLinkParser {
   final List<int> _payload = [];
   _ParseState _state = _ParseState.sync;
   int _type = 0;
   int _length = 0;
+
+  /// How many frames were started and then thrown away.
+  int droppedFrames = 0;
 
   /// Feeds [bytes] and returns every complete, valid message they finished.
   List<PedalLinkMessage> push(List<int> bytes) {
@@ -206,10 +229,16 @@ class PedalLinkParser {
         case _ParseState.sync:
           if (b == PedalLinkCodec.sync) _state = _ParseState.type;
         case _ParseState.type:
-          _type = b;
-          _state = _ParseState.length;
+          if (PedalLinkCodec.payloadLengthFor(b) == null) {
+            droppedFrames++;
+            _state = _ParseState.sync;
+          } else {
+            _type = b;
+            _state = _ParseState.length;
+          }
         case _ParseState.length:
-          if (b > PedalLinkCodec.maxPayloadLength) {
+          if (b != PedalLinkCodec.payloadLengthFor(_type)) {
+            droppedFrames++;
             _state = _ParseState.sync;
           } else {
             _length = b;
@@ -221,9 +250,13 @@ class PedalLinkParser {
           if (_payload.length == _length) _state = _ParseState.checksum;
         case _ParseState.checksum:
           _state = _ParseState.sync;
-          if (b == PedalLinkCodec.checksum(_type, _payload)) {
-            final message = PedalLinkCodec.decode(_type, _payload);
-            if (message != null) out.add(message);
+          final message = b == PedalLinkCodec.checksum(_type, _payload)
+              ? PedalLinkCodec.decode(_type, _payload)
+              : null;
+          if (message == null) {
+            droppedFrames++;
+          } else {
+            out.add(message);
           }
       }
     }

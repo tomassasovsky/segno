@@ -4,7 +4,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 
-import 'helpers/fake_pedal_link.dart';
+import 'package:pedal_repository/testing.dart';
 
 void main() {
   group('PedalRepository', () {
@@ -110,6 +110,57 @@ void main() {
         unawaited(quiet.dispose());
         async.flushTimers();
       });
+    });
+
+    test('a hello with another link protocol reads as incompatible', () async {
+      final lines = <String>[];
+      final logged = PedalRepository(link, log: lines.add);
+      link.emit(
+        const HelloMessage(
+          protocolVersion: PedalLinkCodec.protocolVersion + 1,
+          firmwareMajor: 2,
+          firmwareMinor: 0,
+        ),
+      );
+      await pumpEventQueue();
+      expect(logged.status, PedalLinkStatus.incompatible);
+      expect(logged.firmwareVersion, '2.0');
+      expect(logged.protocolVersion, PedalLinkCodec.protocolVersion + 1);
+      expect(lines.single, contains('incompatible'));
+      expect(lines.single, contains('protocol 2'));
+      await logged.dispose();
+    });
+
+    test('the firmware version is forgotten when the board goes quiet', () {
+      fakeAsync((async) {
+        final quietLink = FakePedalLink();
+        final quiet = PedalRepository(quietLink);
+        quietLink.hello(firmwareMinor: 7);
+        async.flushMicrotasks();
+        expect(quiet.firmwareVersion, '1.7');
+        expect(quiet.protocolVersion, PedalLinkCodec.protocolVersion);
+        async.elapse(quiet.helloTimeout + const Duration(seconds: 1));
+        expect(quiet.status, PedalLinkStatus.disconnected);
+        expect(quiet.firmwareVersion, isNull);
+        expect(quiet.protocolVersion, isNull);
+        unawaited(quiet.dispose());
+        async.flushTimers();
+      });
+    });
+
+    test('dispose reports the link as disconnected', () async {
+      final statuses = <PedalLinkStatus>[];
+      repo.statusChanges.listen(statuses.add);
+      link.hello();
+      await pumpEventQueue();
+      expect(repo.status, PedalLinkStatus.connected);
+      await repo.dispose();
+      expect(repo.status, PedalLinkStatus.disconnected);
+      expect(repo.firmwareVersion, isNull);
+      expect(statuses, [
+        PedalLinkStatus.connected,
+        PedalLinkStatus.disconnected,
+      ]);
     });
 
     test('outbound message types arriving inbound are ignored', () async {
