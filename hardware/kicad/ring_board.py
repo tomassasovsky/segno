@@ -301,6 +301,26 @@ j3[2] += v5          # +5V
 j3[3] += gnd         # GND
 j3[4] += ring_dout   # DOUT (spare; soldered for mechanical support)
 
+# ---- J4: the RING 16 pad circle, kept as an alternative -------------------
+# Owner call: leave the Ring 16's mounting pads on the board so that ring can be
+# fitted instead without a respin. Same four signals, same JP order (the Ring 16
+# descr reads In/+5V/GND/Out = JP1/JP3/JP4/JP2, which is J3's order too), just a
+# smaller bolt circle: r=21.05 against the Ring 24's r=31.59.
+#
+# Both pad sets are live on the same nets. That is intentional and not a short:
+# exactly one ring is ever fitted, and the unused circle simply sits empty. It
+# also means the router wires both, so either choice is connected as-fabbed.
+#
+# The Ring 16's r=21.05 circle falls INSIDE a Ring 24's O52.3 bore, so the two
+# never physically clash -- fitting the 24 leaves the 16's pads exposed in the
+# bore, which is why they can coexist at all.
+j4 = Part("Connector_Generic", "Conn_01x04",
+          footprint="segno:ModuleMountPads_4", ref="J4", value="RINGPINS16")
+j4[1] += ring_data   # In
+j4[2] += v5          # +5V
+j4[3] += gnd         # GND
+j4[4] += ring_dout   # Out (unused electrically; soldered for rigidity)
+
 # MOUNTING HEIGHT. The module is pin-mounted on a 2.54 mm pitch pin strip, and
 # the strip's plastic insulator is what sets the gap: a standard 0.1 in body is
 # 2.54 mm. Stack above this board's front face:
@@ -453,7 +473,7 @@ def _check():
     # C2 in the netlist). Parts with no connections are skipped: --selftest's
     # controls are disconnected rather than deleted, and they are not the design.
     REFS = {"C1", "C2", "C3", "C4", "C5", "D1", "ENC1",
-            "J1", "J2", "J3", "R1", "R2", "R3", "R4", "U1", "U2"}
+            "J1", "J2", "J3", "J4", "R1", "R2", "R3", "R4", "U1", "U2"}
     _live = {p.ref for p in default_circuit.parts
              if any(pin.nets for pin in p.pins)}
     assert _live == REFS, (
