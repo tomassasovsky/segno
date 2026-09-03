@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:segno/common/console_surface.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 
 /// The MIDI tab of the Control domain: the foot controller, and every global
@@ -418,16 +420,28 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
     final cubit = context.watch<ControlCubit>();
     final bindings = cubit.state.controllerBindings.bindings;
     final learn = cubit.state.controllerLearn;
-    final connected = connection.status == MidiConnectionStatus.connected;
+    final midiConnected = connection.status == MidiConnectionStatus.connected;
+    // A pedal in a CTRL jack is a control too, and it does not care whether
+    // any MIDI device is attached. What the Add buttons need is SOMETHING
+    // that can move, from either source.
+    final linkConnected =
+        context.watch<PedalCubit>().state.status == PedalLinkStatus.connected;
+    final canCapture = midiConnected || linkConnected;
+    bool liveFor(MappingTrigger trigger) => switch (trigger.kind) {
+      ControllerSourceKind.midiNote ||
+      ControllerSourceKind.midiCc => midiConnected,
+      ControllerSourceKind.consoleSwitch ||
+      ControllerSourceKind.consoleExpression => linkConnected,
+    };
     // A capture with no row of its own — Add sweep / Add switch — has nowhere
     // to put its banner but the head of the list it is about to join.
     final adding = learn != null && learn.replacingKey == null;
 
-    final notice = switch ((adding, connected, bindings.isEmpty)) {
+    final notice = switch ((adding, canCapture, bindings.isEmpty)) {
       (true, _, _) => _learnBanner(context, learn!, key: 'midi_add_banner'),
       (_, false, _) => ConsoleBanner(
         key: const Key('midi_idle_notice'),
-        message: l10n.midiLearnDeviceMissing,
+        message: l10n.midiNoControlSource,
         tone: ConsoleBannerTone.failure,
       ),
       (_, _, true) => ConsoleBanner(
@@ -458,7 +472,7 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
               _ => false,
             },
             learn: learn?.replacingKey == binding.key ? learn : null,
-            connected: connected,
+            connected: liveFor(binding.trigger),
             onToggle: () => setState(() {
               final already = switch (_open) {
                 _MappingOpen(:final key) => key == binding.key,
@@ -467,8 +481,8 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
               _open = already ? null : _MappingOpen(binding.key);
             }),
           ),
-        _addRow(context, cubit, connected: connected),
-        _addChooser(context, cubit, connected: connected),
+        _addRow(context, cubit, connected: canCapture),
+        _addChooser(context, cubit, connected: canCapture),
       ],
     );
   }
@@ -512,9 +526,10 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
   }) => ConsoleActionChip(
     key: Key(id),
     label: label,
-    // Inert with nothing attached. A capture needs a control to move, and
-    // offering to listen when nothing can arrive is a button that does
-    // nothing on purpose.
+    // Inert only when NOTHING can move — no MIDI input and no console link.
+    // A capture needs a control to move, and offering to listen when nothing
+    // can arrive is a button that does nothing on purpose; requiring MIDI
+    // specifically would make a rig driven from the CTRL jacks unbindable.
     onPressed: !connected
         ? null
         : () => setState(
@@ -535,10 +550,10 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
   /// raised a modal would be the only control on this console that leaves the
   /// list it belongs to.
   ///
-  /// Shuts with the link, on the Add buttons' own rule: a capture needs a
-  /// control to move, so a chooser left open when the device went away would
-  /// reach the doomed capture the inert buttons exist to prevent, one tap
-  /// later. The choice is kept, so it comes back when the device does.
+  /// Shuts when nothing can move, on the Add buttons' own rule: a capture
+  /// needs a control, so a chooser left open after every source went away
+  /// would reach the doomed capture the inert buttons exist to prevent, one
+  /// tap later. The choice is kept, so it comes back when a source does.
   Widget _addChooser(
     BuildContext context,
     ControlCubit cubit, {
