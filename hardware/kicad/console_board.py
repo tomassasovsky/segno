@@ -150,7 +150,13 @@ pwr_btn = Net("PWR_BTN")   # rear button -> the Pi's own PWR pads, NOT a GPIO
 swclk, swdio = Net("SWCLK"), Net("SWDIO")
 ring_data, ring_buf, ring_out = Net("RING_DATA"), Net("RING_DATA_BUF"), Net("RING_DATA_OUT")
 ind_data, ind_buf, ind_out = Net("IND_DATA"), Net("IND_DATA_BUF"), Net("IND_DATA_OUT")
-encA, encB, encSW = Net("ENC_A"), Net("ENC_B"), Net("ENC_SW")
+# #987 moved the encoder and the WS2812 timing onto the ring board, behind a XIAO
+# RP2350. NO COPPER ON THIS BOARD CHANGED -- these are the same three GP13/14/15
+# tracks to the same J6 pins, renamed to what they now carry. GP13 became the
+# half-duplex link to that MCU; GP14/GP15 carry nothing and are named for it
+# rather than left claiming to be an encoder that is no longer on the far end.
+ring_link = Net("RING_LINK")
+ring_sp1, ring_sp2 = Net("RING_SPARE1"), Net("RING_SPARE2")
 ctrl1, ctrl2 = Net("CTRL1_TIP"), Net("CTRL2_TIP")
 
 # ---- J1: Pico 2 (RP2350) ----------------------------------------------------
@@ -228,7 +234,13 @@ GPIO = {
     "SW_RECPLAY": 2, "SW_STOP": 3, "SW_UNDO": 4, "SW_MODE": 5,
     "SW_TRACK1": 6, "SW_TRACK2": 7, "SW_TRACK3": 8, "SW_TRACK4": 9,
     "SW_CLEAR": 10, "SW_BANK": 11,
-    "RING_DATA": 12, "ENC_A": 13, "ENC_B": 14, "ENC_SW": 15,
+    # RING_DATA (GP12) is now DEAD SILICON on a fabbed board: the ring board
+    # generates its own WS2812 timing (#987), so this pin, the AHCT125 gate B it
+    # drives, R15 and J6 pin 5 are all still fitted and all drive nothing. They
+    # are kept because the board exists in copper -- deleting them here would
+    # make the netlist disagree with the hardware, which is worse than an idle
+    # buffer. The firmware simply never asserts GP12.
+    "RING_DATA": 12, "RING_LINK": 13, "RING_SPARE1": 14, "RING_SPARE2": 15,
     "IND_DATA": 18,
     "CTRL1_TIP": 26, "CTRL2_TIP": 27,
 }
@@ -245,9 +257,9 @@ pico[PICO[GPIO["LINK_TX"]]] += link_tx
 pico[PICO[GPIO["LINK_RX"]]] += link_rx
 pico[PICO[GPIO["IND_DATA"]]] += ind_data
 pico[PICO[GPIO["RING_DATA"]]] += ring_data
-pico[PICO[GPIO["ENC_A"]]] += encA
-pico[PICO[GPIO["ENC_B"]]] += encB
-pico[PICO[GPIO["ENC_SW"]]] += encSW
+pico[PICO[GPIO["RING_LINK"]]] += ring_link
+pico[PICO[GPIO["RING_SPARE1"]]] += ring_sp1
+pico[PICO[GPIO["RING_SPARE2"]]] += ring_sp2
 pico[PICO[GPIO["CTRL1_TIP"]]] += ctrl1
 pico[PICO[GPIO["CTRL2_TIP"]]] += ctrl2
 
@@ -356,35 +368,49 @@ for _ref, _net in (("J20", ctrl1), ("J21", ctrl2)):
     R("10k")[1, 2] += v3v3, _net
     C("10nF")[1, 2] += _net, gnd               # anti-alias / debounce
 
-# ---- J6/J7: ring+encoder and the indicator chain ----------------------------
-# J6's pin order is NOT free: it is one end of an 8-way cable whose other end is
-# ring_board.py's J1. There is no hand-written copy of that pinout here to drift
-# from it -- _check() reads ring_board.net and compares the two connectors pin by
-# pin. The two netlists do NOT have to agree on net NAMES (see the rail note
-# above), only on which conductor each pin carries, so the alias table below is
-# the entire contract between the boards. Anything not aliased must match exactly.
+# ---- J6/J7: the ring-board link and the indicator chain ---------------------
+# J6 IS UNCHANGED COPPER. It is still the 8-way JST-XH that was fabbed and bench-
+# verified; what changed (#987) is that the far end no longer populates all eight
+# positions. ring_board.py's J1 is a 3-way -- +5V, GND, RING_LINK -- and the
+# cable lands it on J6 pins 1, 3 and 6. RING_PINMAP below is the ONLY copy of
+# that mapping and RING_CONTRACT gates it against ring_board.net.
+#
+# WHY THOSE THREE PINS, and not any other three: pin 5 is behind the AHCT125 with
+# /OE tied low, so it can only ever be driven BY this board -- it cannot carry a
+# link. Pins 6/7/8 are direct GP13/14/15 with 10k pull-ups to this board's own
+# 3V3 already fitted, which is precisely the network a half-duplex open-drain
+# line wants. Pin 6 takes it; 7 and 8 keep their pull-ups and carry nothing.
 RING_NET = os.path.join(HERE, "ring_board.net")
 RING_ALIASES = {          # ring_board.py's name -> this board's name
     "+5V_LED": "+5V",     # that board still declares its own single supply locally
-    "RING_DATA": "RING_DATA_OUT",   # here it is the AHCT125's buffered output
 }
+# ring_board.py J1 pin -> this board's J6 pin. The cable is asymmetric by design
+# (3-way housing at the ring, 8-way here), so "pin N means pin N" is no longer
+# true and the map has to be written down somewhere. Here, once.
+RING_PINMAP = {1: 1, 2: 3, 3: 6}
 j_ring = jst(8, "J6", "RING_ENC")
 j_ring[1, 2] += v5
 j_ring[3, 4] += gnd
-j_ring[5] += ring_out
-# The encoder pull-ups live HERE, at 3V3, and ring_board.py's two 10k to its 5 V
-# rail are deleted. Those were correct when the other end of this cable was a 5 V
-# Pro Micro (main_board.py); against an RP2350 they sat 1.4 V over the 3.6 V
-# absolute maximum on GP13/GP14, continuously, whenever the console was powered.
-# Nothing caught it: PI_LEVELS guards the Pi, and no gate could see across into a
-# second generator's netlist. RING_LEVELS in _check() now reads ring_board.net
-# for exactly that shape (and CONSOLE_LEVELS watches this board's own parts).
-R("10k")[1, 2] += v3v3, encA
-R("10k")[1, 2] += v3v3, encB
-R("10k")[1, 2] += v3v3, encSW      # ring_board.py never had one on the switch
-j_ring[6] += encA
-j_ring[7] += encB
-j_ring[8] += encSW
+j_ring[5] += ring_out              # fitted, driven by gate B, connected to nothing
+# These three 10k to 3V3 are the SAME resistors as before, still doing useful
+# work. R on pin 6 is now the pull-up the open-drain link runs on -- the ring
+# board deliberately fits none of its own, because a second pull-up on another
+# board's rail is the split-rail hazard RING_LEVELS exists to catch. R on pins
+# 7/8 hold two unconnected wires at a defined level instead of floating GP14/15.
+#
+# The history is worth keeping: these started life on ring_board.py as 10k to
+# THAT board's 5 V rail, which was right against a 5 V Pro Micro (main_board.py)
+# and 1.4 V over the RP2350's 3.6 V absolute maximum the moment the far end
+# became a Pico -- continuously, whenever the console was powered. Nothing caught
+# it, which is why RING_LEVELS was written. #987 removes the failure mode by
+# construction rather than by watching for it: the encoder's pull-ups now sit on
+# the ring board next to the ring board's OWN MCU, on that MCU's own 3V3.
+R("10k")[1, 2] += v3v3, ring_link
+R("10k")[1, 2] += v3v3, ring_sp1
+R("10k")[1, 2] += v3v3, ring_sp2
+j_ring[6] += ring_link
+j_ring[7] += ring_sp1
+j_ring[8] += ring_sp2
 
 j_ind = jst(3, "J7", "INDICATORS")
 j_ind[1] += v5
@@ -699,7 +725,7 @@ def _check(strict_stations=True):
     # ...and both ends of a connector's signal group must sit in the same pad row,
     # or the connector cannot be placed near all of them. Row A is pads 1..20.
     for group in (("LINK_TX", "LINK_RX"),
-                  ("RING_DATA", "ENC_A", "ENC_B", "ENC_SW"),
+                  ("RING_DATA", "RING_LINK", "RING_SPARE1", "RING_SPARE2"),
                   tuple("SW_" + n for n in FSW_ORDER)):
         rows = {PICO[GPIO[n]] <= 20 for n in group if n in GPIO}
         assert len(rows) == 1, (
@@ -737,17 +763,35 @@ def _check(strict_stations=True):
                 f"RING_CONTRACT: ring_board J1 pin {_key} appears on two nets "
                 f"({ring_j1[_key]} and {_n}) -- the netlist is broken")
             ring_j1[_key] = _n
-    assert sorted(int(p) for p in ring_j1) == list(range(1, 9)), (
-        f"RING_CONTRACT: ring_board J1 has pins {sorted(ring_j1)}, expected 1..8 -- "
-        "the cable is 8-way at this end")
-    for _i in range(1, 9):
-        _want = ring_j1[str(_i)]
+    # The cable is ASYMMETRIC since #987 -- 3-way at the ring, 8-way here -- so the
+    # check is a mapping, not "pin N is pin N". RING_PINMAP is the map; this gate
+    # is what stops it drifting from either netlist. Both directions are asserted:
+    # every ring pin must appear in the map (a 4th conductor added at the ring end
+    # with no console pin to land on is a build error, not a silent extra), and
+    # every mapped J6 pin must be one this board actually has.
+    assert sorted(int(p) for p in ring_j1) == sorted(RING_PINMAP), (
+        f"RING_CONTRACT: ring_board J1 has pins {sorted(int(p) for p in ring_j1)}, "
+        f"but RING_PINMAP describes {sorted(RING_PINMAP)} -- the two ends of the "
+        "cable disagree on how many conductors it has")
+    for _r_pin, _c_pin in sorted(RING_PINMAP.items()):
+        assert 1 <= _c_pin <= 8, (
+            f"RING_CONTRACT: RING_PINMAP sends ring pin {_r_pin} to J6 pin "
+            f"{_c_pin}, which is not one of J6's 8 ways")
+        _want = ring_j1[str(_r_pin)]
         _want = RING_ALIASES.get(_want, _want)
-        got = {n.name for n in j_ring[_i].nets}
+        got = {n.name for n in j_ring[_c_pin].nets}
         assert _want in got, (
-            f"RING_CONTRACT: ring_board J1 pin {_i} carries {_want}, but J6 pin {_i} "
-            f"carries {got} -- these are the two ends of one 8-way cable, so a pin "
-            "that means different things at each end wires the encoder to the LEDs")
+            f"RING_CONTRACT: ring_board J1 pin {_r_pin} carries {_want}, but the "
+            f"J6 pin it maps to ({_c_pin}) carries {got} -- these are the two ends "
+            "of one conductor, so a pin that means different things at each end "
+            "puts the LED rail on a Pico GPIO")
+    # J6 pin 5 must stay OUT of the map. It is the AHCT125's buffered output with
+    # /OE tied low: it can only ever be driven by this board, so mapping a ring
+    # conductor onto it would short a 5 V push-pull output against whatever the ring
+    # board drives. Cheap to assert, and the reason is not obvious from the map.
+    assert 5 not in RING_PINMAP.values(), (
+        "RING_CONTRACT: RING_PINMAP uses J6 pin 5, which is the AHCT125 gate B "
+        "output (always enabled, push-pull 5 V) -- it cannot carry a link")
 
     # ...and nothing on the ring board may pull an encoder line to its 5 V rail.
     # This is the RESISTIVE version of PICO_LEVELS, and it exists because no other
@@ -760,35 +804,48 @@ def _check(strict_stations=True):
     # gate could go quietly blind:
     #   * the rail is read off J1 pin 1 rather than named (a renamed rail cannot
     #     retire the check);
-    #   * the encoder pins are DERIVED from which J6 positions carry the encoder
-    #     nets, not hardcoded -- a coordinated cable re-pin (which RING_CONTRACT
+    #   * the watched pins are DERIVED from which J6 positions carry a Pico-input
+    #     net, not hardcoded -- a coordinated cable re-pin (which RING_CONTRACT
     #     permits by design) moves the watch with it;
     #   * the rule needs NO classification: any TWO-PIN part bridging the rail
-    #     to an encoder line delivers the rail's DC to a Pico input, whatever it
+    #     to such a line delivers the rail's DC to a Pico input, whatever it
     #     calls itself -- resistor, 0R jumper, ferrite bead, capacitor. Judging
     #     by footprint lib or value string failed open on custom libs and
     #     suffixed values; a connected-pin count from the netlist cannot. J1
-    #     itself (8 pins) and the encoder are exempt by arithmetic, not by name.
+    #     and the encoder are exempt by arithmetic, not by name.
+    #
+    # #987 CHANGED WHAT IT WATCHES, not why. The encoder no longer crosses this
+    # cable -- it is local to the ring board now, pulled up to that board's own
+    # MCU's 3V3 -- so the original three lines are gone. What is left crossing
+    # into a Pico input is RING_LINK, and it is exposed to exactly the same
+    # mistake: one 10k to the ring board's 5 V rail "to make the link idle high"
+    # would put 5 V on GP13. The pull-up that line actually runs on is on THIS
+    # board (J6 pin 6's, above), at the rail GP13 belongs to.
     _rail = ring_j1["1"]
     _rail_refs = {r for r, _p in _ring_nets.get(_rail, [])}
     _node_count = {}
     for _n, _nodes in _ring_nets.items():
         for _r, _p in _nodes:
             _node_count[_r] = _node_count.get(_r, 0) + 1
-    _enc_pins = [_p for _p in ring_j1
-                 if {n.name for n in j_ring[int(_p)].nets}
-                 & {"ENC_A", "ENC_B", "ENC_SW"}]
-    assert len(_enc_pins) == 3, (
-        f"RING_LEVELS: expected 3 encoder pins on J6, found {_enc_pins} -- the "
-        "derivation from the console-side nets has come apart")
-    for _pin in _enc_pins:
+    # Every conductor whose console end lands on a bare Pico GPIO. Derived from
+    # the console-side nets and RING_PINMAP so it tracks a re-pin; today that is
+    # RING_LINK alone, but the set is computed, not assumed to stay size 1.
+    _pico_input_nets = {"RING_LINK", "RING_SPARE1", "RING_SPARE2"}
+    _watched = [_p for _p in ring_j1
+                if {n.name for n in j_ring[RING_PINMAP[int(_p)]].nets}
+                & _pico_input_nets]
+    assert _watched, (
+        "RING_LEVELS: no ring conductor lands on a bare Pico GPIO -- the "
+        "derivation from the console-side nets has come apart, and this gate is "
+        "now watching nothing while still reporting green")
+    for _pin in _watched:
         _sig = ring_j1[_pin]
         for _ref, _pad in _ring_nets.get(_sig, []):
             assert not (_ref in _rail_refs and _node_count.get(_ref, 0) <= 2), (
                 f"RING_LEVELS: {_ref} on ring_board bridges {_sig} (J1 pin {_pin}) "
-                f"to {_rail} -- a two-pin part from the LED rail to an encoder "
-                "line puts 5 V on a Pico input whose absolute maximum is 3.6 V, "
-                "and no direct-contact gate can see the path")
+                f"to {_rail} -- a two-pin part from the LED rail to a line that "
+                "reaches a Pico input puts 5 V on a pin whose absolute maximum is "
+                "3.6 V, and no direct-contact gate can see the path")
 
     assert len(EXP_PINOUT) == 8 and EXP_PINOUT[:2] == ["+3V3", "+5V"] \
         and EXP_PINOUT[-1] == "GND", (
@@ -927,7 +984,8 @@ def _check(strict_stations=True):
     # two-pin part on this board bridges +5V to any of these nets.
     _protected = {n.name for n in (link_tx, link_rx, link_tx_pi, link_rx_pi,
                                    midi_tx, midi_rx, pwr_btn, swclk, swdio,
-                                   ring_data, ind_data, encA, encB, encSW,
+                                   ring_data, ind_data,
+                                   ring_link, ring_sp1, ring_sp2,
                                    ctrl1, ctrl2)}
     for _p in default_circuit.parts:
         if len(_p.pins) > 2:
@@ -1030,7 +1088,7 @@ def _selftest():
         # exists, which is exactly how this gate came to be dead.
         global RING_NET
         text = open(RING_NET).read()
-        a, b = '(ref "J1")\n        (pin "6")', '(ref "J1")\n        (pin "7")'
+        a, b = '(ref "J1")\n        (pin "2")', '(ref "J1")\n        (pin "3")'
         # A silent-miss replace here is a control that mutates NOTHING and then
         # reports NO BITE against a healthy gate -- fail loudly instead.
         assert a in text and b in text, (
@@ -1045,7 +1103,7 @@ def _selftest():
 
     def _ring_pullup():
         # The RESISTIVE failure: a pull-up re-added on the ring board from its 5 V
-        # rail to an encoder line. No pin's net changes, so RING_CONTRACT stays
+        # rail to the one line that still reaches a Pico input (RING_LINK). No pin's net changes, so RING_CONTRACT stays
         # green, and the two nets never touch, so PICO_LEVELS does too -- this is
         # the shape only RING_LEVELS can see. Mutates a COPY, like _ring_order: a
         # control that edited a pinout held here would only prove the copy exists.
@@ -1060,7 +1118,7 @@ def _selftest():
         text = text.replace("  (components\n", "  (components\n" + comp, 1)
         node = ('      (node\n        (ref "R99")\n        (pin "%s")\n'
                 '        (pintype "PASSIVE"))\n')
-        for _net, _pin in (("+5V_LED", "1"), ("ENC_A", "2")):
+        for _net, _pin in (("+5V_LED", "1"), ("RING_LINK", "2")):
             _anchor = '(name "%s")\n      (class "Default")\n' % _net
             assert _anchor in text, (
                 "ring_board.net's format or net names changed under _ring_pullup "
@@ -1119,7 +1177,7 @@ def _selftest():
         GPIO["LINK_TX"] = 1
 
     def _row_straddle():
-        GPIO["ENC_SW"], GPIO["IND_DATA"] = GPIO["IND_DATA"], GPIO["ENC_SW"]
+        GPIO["RING_SPARE2"], GPIO["IND_DATA"] = GPIO["IND_DATA"], GPIO["RING_SPARE2"]
 
     def _exp_collide():
         GPIO["SW_STOP"] = EXPANSION_GPIO[0]
@@ -1146,7 +1204,7 @@ def _selftest():
     case("connector group straddling both pad rows", "PAD_ROW:", _row_straddle)
     case("CTRL off an ADC pin", "PIN_MAP:", _ctrl_off_adc)
     case("ring board reorders its connector", "RING_CONTRACT:", _ring_order)
-    case("ring board pulls an encoder line to 5 V", "RING_LEVELS:", _ring_pullup)
+    case("ring board pulls the link line to 5 V", "RING_LEVELS:", _ring_pullup)
     case("SWCLK and SWDIO swapped on the debug pads", "SWD:", _swd_swap)
     case("a second mounting hole strapped to GND", "CHASSIS_BOND:", _second_bond)
     case("MIDI IN clamp diode reversed", "MIDI_CLAMP:", _clamp_reversed)

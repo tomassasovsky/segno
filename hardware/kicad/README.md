@@ -5,7 +5,7 @@ SKiDL scripts that emit KiCad netlists. One per board:
 | script | board |
 |---|---|
 | `main_board.py` | standalone pedal — Pro Micro (ATmega32U4) |
-| `ring_board.py` | encoder + LED ring, behind the faceplate |
+| `ring_board.py` | encoder + LED ring + XIAO RP2350, behind the faceplate (3-way link, #987) |
 | `console_board.py` | console v2 — Pico 2 on the Pi's GPIO (#747, in progress) |
 
 ## Running them

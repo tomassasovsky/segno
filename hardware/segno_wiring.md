@@ -30,7 +30,7 @@ way now — the console does not use that board at all.
         MIDI  DIN IN -> H11L1 (at 3V3) -> Pi uart0 RX (GPIO15)
               Pi uart0 TX (GPIO14) -> 74AHCT125 -> 220R loop -> DIN OUT
         SWD   Pi GPIO24/25 -> the Pico's debug pads (cold flashing)
-     console board <-- footswitches x10 | ring + encoder (8-way) | CTRL TRS x2
+     console board <-- footswitches x10 | ring board (3-way) | CTRL TRS x2
      Pi --HDMI x2--> 7" + 16" screens ;  screen touch --USB--> Pi (2 of 4 ports)
      Pi's other 2 USB --> internal leads to the rear USB couplers
                           (the audio interface plugs in there, outside the box)
@@ -94,7 +94,9 @@ budget, the screens' ratings, 26 WS2812 at 60 mA all-white.
 
 ---
 
-## 3. Console board ↔ Pi: the ribbon
+## 3. The console board's two internal data cables
+
+### Console board ↔ Pi: the ribbon
 
 One **keyed 2×20 IDC ribbon, ~10 cm** — both boards sit under the 16" screen
 and the Pi is ~30 mm from the board (`board_mounts()` in `segno_enclosure.py`).
@@ -117,10 +119,51 @@ and died with it. The series 10 k in each link line is not level shifting — it
 bounds the cross-domain current when one side is powered and the other is not
 (rationale and arithmetic: R17/R18 in `console_board.py`).
 
-The **74AHCT125** remains for the three real 3.3→5 V crossings: MIDI OUT's
-current loop, ring data, indicator data. **MIDI IN's H11L1 runs at 3.3 V** and
+The **74AHCT125** remains for MIDI OUT's current loop and the indicator chain.
+Its third gate still drives the ring-data pin (J6 pin 5) and that pin now goes
+nowhere: since #987 the ring board generates its own WS2812 timing behind a XIAO
+RP2350, so the level shifting for the ring moved onto **that** board. Gate B, R15
+and J6 pin 5 stay fitted because the console board exists in copper and its
+netlist has to keep matching it. **MIDI IN's H11L1 runs at 3.3 V** and
 feeds the Pi directly — no shifter. GPIO4 (pin 7) is left alone: the GeeekPi
 N07 NVMe board under the Pi claims it (`PI_RESERVED`).
+
+### Console board ↔ ring board: the 3-way (#987)
+
+The ring board carries its own **XIAO RP2350**, which owns the encoder and
+generates the WS2812 timing 20 mm from the LEDs. What used to be eight
+conductors across ~600 mm of box is now three.
+
+**The cable is asymmetric and that is the whole hazard.** An 8-way JST-XH
+housing at the console (J6, unchanged copper) and a **3-way at the ring board**
+(J1), populated on three of J6's eight positions:
+
+| ring J1 | console J6 | conductor |
+|---|---|---|
+| 1 | 1 | +5V |
+| 2 | 3 | GND |
+| 3 | 6 | RING_LINK — half-duplex UART to GP13, 115200 |
+
+Crimp it 1:1 by position and pin 2 of the ring end lands on J6 pin 2, which is
++5V: that is the LED rail straight onto a link line. The map above is *not* the
+source of truth — `RING_PINMAP` in `console_board.py` is, and `RING_CONTRACT`
+checks it against `ring_board.net` on every run.
+
+Notes that are load-bearing:
+
+- **GND is the middle pin** so the pulsed amp-scale LED return does not run
+  beside the one signal in the cable.
+- **The link's pull-up is on the console board** (J6 pin 6's 10 k to *its* 3V3).
+  The ring board deliberately fits none — a second pull-up on the other board's
+  rail is the split-rail fault `RING_LEVELS` exists to catch, and `LINK_BARE` in
+  `ring_board.py` rejects it from the other side.
+- **J6 pins 2, 4, 5, 7 and 8 stay fitted and carry nothing.** Pin 5 could never
+  have carried the link anyway: it is the AHCT125's gate-B output with /OE tied
+  low, so it is only ever driven by the console.
+- One 5 V pair, not two: 24 LEDs at the firmware's brightness cap sit well under
+  the 1.44 A all-white figure the doubled pair was sized for. If a bench
+  measurement of the *capped* worst case exceeds ~0.7 A, add the second pair
+  (J6 pins 2/4 are still there).
 
 ---
 

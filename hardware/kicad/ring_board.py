@@ -1,24 +1,75 @@
 """SKiDL generator for the Segno pedal RING/ENCODER base board.
 
 Hosts an off-the-shelf **24-LED WS2812 5050 NeoPixel ring module** (O65.5 OD /
-O52.3 ID / 3.2 thick) plus the rotary encoder and the link to the main board.
-Everything on this board is THROUGH-HOLE -- no SMD to hand-solder, and the LED
-ring is a pre-assembled module, so there are no WS2812s on this PCB at all.
+O52.3 ID / 3.2 thick), the rotary encoder, and a **Seeed XIAO RP2350 module**
+that owns both of them locally. The link back to the console board is **three
+conductors** -- +5V, GND and one half-duplex data line.
 
-The board was a Ring 16 design until 2026-08-22 (#794). Fitting the Ring 24 took
-four mechanical changes, all in segno_pedal_ring.kicad_pcb: the outline grew
-O60 -> O68 (the ring is O65.5 and overhung a O60 board by 2.75 mm all round), the
-three M3 holes moved from r=26 in to r=22 so their heads clear the ring's inner
-edge at r=26.15, J3's module-mount pads moved from the Ring 16's O42.1 circle out
-to the Ring 24's r=31.59 (they were landing inside the new ring's bore), and
-RING1's documentation footprint became NeoPixel_Ring24. The GND pour was grown
-with the outline -- it was still a r=29.45 circle cut for the O60 board and did
-not reach the new pads.
+## Why the MCU is here at all (#987)
+
+It is not about part count, it is about cable length. The console board lives at
+BOARD_U = 560 under the 16" screen; this board lives at COL_U = 119.6 on the
+sloped faceplate (`segno_enclosure.py`). That is 440 mm in u alone -- call it
+550-650 mm of harness once it climbs the face. The old design sent a 5 V WS2812
+edge and a raw EC11 quadrature pair down that run, on eight conductors, through
+a box carrying ~12 A across two switching bucks.
+
+Now the WS2812 timing is generated 20 mm from the LEDs and the quadrature never
+leaves this PCB. What crosses the box is one 115200-baud line with a 10 k
+pull-up. The conductor count is a side effect:
+
+    8 conductors  ->  3      (+5V, GND, RING_LINK)
+
+## The console board is UNCHANGED (this is load-bearing)
+
+No copper moves on console_board.py. Its J6 is still an 8-way JST-XH; this
+board's J1 is a 3-way, and the cable is populated on three of the eight
+positions. `RING_PINMAP` in console_board.py is the map, and RING_CONTRACT gates
+it. The asymmetry that makes this work: J6 pin 5 (RING_DATA) is behind the
+74AHCT125 with /OE tied low, so it can only ever be DRIVEN by the console --
+useless as a link. Pins 6/7/8 are direct RP2350 GPIO (GP13/14/15) each with a
+10 k pull-up to the console's own 3V3, which is exactly the network a half-
+duplex open-drain line wants. The link takes pin 6; pins 5/7/8 and the console's
+AHCT gate B are left in place, driving nothing.
+
+## Levels: the historical fault is now structurally impossible
+
+ring_board's old 10 k encoder pull-ups went to THIS board's 5 V rail while the
+far end of the cable had become a 3.3 V RP2350 -- 1.4 V over GP13/GP14's
+absolute maximum, continuously, and nothing caught it (see RING_LEVELS in
+console_board.py). The pull-ups then moved to the console board so they would
+track whatever MCU was really on the other end.
+
+They come back here, because the MCU is now here: 10 k to the XIAO's own
+3V3_OUT. The pull-up and the input it feeds are on the same board and the same
+rail, so they cannot disagree. RING_LEVELS survives, re-pointed from the three
+encoder pins to the one line that still crosses the cable into a Pico input.
+
+**RP2350 erratum E9** (A2 silicon) latches an input HIGH when it is configured
+with a PULL-DOWN. Nothing here uses one: the encoder lines are pulled UP (R1-R3
+below), RING_LINK is pulled up by the console's existing 10 k, and the WS2812
+line is an output. Do not add a pull-down to this board without re-reading E9.
+
+## Why the 5 V pins went from four to one
+
+Four ways (two pairs) were sized for 24 LEDs x 60 mA = 1.44 A all-white. Over
+~1.2 m of 26 AWG loop (~0.16 R) that is a 0.23 V drop on one pair, 0.12 V on
+two. The firmware caps ring brightness well under all-white -- the comet only
+ever lights part of the ring -- so one pair carries it with margin, and JST-XH
+is rated ~3 A per contact either way. If a bench measurement of the CAPPED worst
+case ever lands above ~0.7 A, the answer is a second pair (J6 pins 2/4 are still
+there), not a thinner cap. GND sits BETWEEN +5V and RING_LINK on J1 so the
+return is not the neighbour of the signal.
+
+Everything on this board is a module or through-hole. The XIAO and the ring are
+pre-assembled modules soldered down by their pads; nothing fine-pitch is
+hand-placed.
 
 Run (from hardware/kicad/):
     python ring_board.py     # KICAD_SYMBOL_DIR may override the symbol path
 """
 import os
+import sys
 
 from skidl import (
     Part, Net, generate_netlist, ERC, POWER, set_default_tool, KICAD8,
@@ -26,6 +77,8 @@ from skidl import (
 )
 
 set_default_tool(KICAD8)
+
+from builtins import default_circuit          # noqa: E402  (set up by skidl)
 
 _SYMBOL_DIRS = [
     os.environ.get("KICAD_SYMBOL_DIR", ""),
@@ -53,23 +106,115 @@ def C(value, fp="Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm"):
 # ---- nets ------------------------------------------------------------------
 
 gnd = Net("GND")
-v5 = Net("+5V_LED")
-ring_data = Net("RING_DATA")     # data from main board -> module DIN
+v5 = Net("+5V_LED")      # harness 5 V -- feeds the ring DIRECTLY (no diode drop)
+v5_mcu = Net("+5V_MCU")  # same rail through D1, into the XIAO's VBUS
+v3v3 = Net("+3V3")       # the XIAO's own 3V3_OUT -- encoder pull-ups only
+ring_link = Net("RING_LINK")     # half-duplex link to the console (its GP13)
+ring_data_3v3 = Net("RING_DATA_3V3")  # XIAO -> level shifter
+ring_data_5v = Net("RING_DATA_5V")    # level shifter -> series R
+ring_data = Net("RING_DATA")     # -> module DIN
 ring_dout = Net("RING_DOUT")     # module DOUT (spare; for chaining a 2nd ring)
-encA = Net("ENC_A")
+encA = Net("ENC_A")      # LOCAL now -- these three never leave the board
 encB = Net("ENC_B")
 encSW = Net("ENC_SW")
 
-# ---- 8-pin link to the main board (mirrors main board J6 RING header) -------
-#   1,2 = +5V_LED   3,4 = GND   5 = RING_DATA   6 = ENC_A   7 = ENC_B   8 = ENC_SW
-j1 = Part("Connector_Generic", "Conn_01x08",
-          footprint="Connector_JST:JST_XH_B8B-XH-A_1x08_P2.50mm_Vertical", ref="J1")
-j1[1, 2] += v5
-j1[3, 4] += gnd
-j1[5] += ring_data
-j1[6] += encA
-j1[7] += encB
-j1[8] += encSW
+# ---- 3-pin link to the console board ---------------------------------------
+#   1 = +5V_LED   2 = GND   3 = RING_LINK
+# Lands on console J6 pins 1, 3 and 6 -- see RING_PINMAP in console_board.py,
+# which is the single copy of that mapping and the thing RING_CONTRACT checks.
+# GND is deliberately the MIDDLE pin: the LED return is a pulsed amp-scale
+# current and it should not run next to the one signal in the cable.
+j1 = Part("Connector_Generic", "Conn_01x03",
+          footprint="Connector_JST:JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical", ref="J1")
+j1[1] += v5
+j1[2] += gnd
+j1[3] += ring_link
+
+# ---- U1: Seeed XIAO RP2350 --------------------------------------------------
+# Modelled as the 30-pad module it is, exactly the way main_board.py modelled the
+# Pro Micro: a Conn_01x30 over a vendored footprint, with the pad map stated
+# here. The map is NOT guessed -- it is read from Seeed's own symbol library
+# (Seeed_Studio_XIAO_Series.kicad_sym), the same source the footprint came from:
+#
+#   1..11 D0..D10   12 3V3_OUT  13 GND  14 VBUS
+#   15..22 D11..D18 23 SWDIO 24 SWDCLK 25 EN 26 GND 27 BOOT 28 3V3_OUT
+#   29 VBAT  30 GND
+#
+# Pads 1-14 are the two castellated SIDE rows (1..7 one side, 8..14 the other);
+# 15-30 are UNDERSIDE pads and need copper keepout under the module even where
+# unconnected.
+#
+# WHY RP2350 AND NOT RP2040: the console board is a Pico 2. Same architecture
+# means one pico-sdk platform target, one PIO dialect and one erratum list across
+# the whole product -- which is what #983 collapsed the firmware to. The RP2040
+# XIAO's one advantage, a dedicated VIN pad for external supply, is cancelled by
+# D1 below (needed on either part).
+#
+# PIN CHOICE IS A FLOORPLAN, same rule as console_board.py's. Everything the
+# CABLE touches (VBUS, GND, RING_LINK) is on pads 11-14, one end of one side, so
+# J1's three wires land together instead of crossing the module. The encoder and
+# the LED line take the opposite row, facing the parts they drive.
+#
+# No hardware-UART constraint applies to RING_LINK: it is a single-wire
+# half-duplex line and is a PIO UART at both ends, so the XIAO's D-number ->
+# GP-number mapping does not bind the netlist. The firmware needs that mapping;
+# the board does not.
+XIAO = Part("Connector_Generic", "Conn_01x30",
+            footprint="segno:XIAO_RP2350_SMD", ref="U1", value="XIAO-RP2350")
+XIAO[1] += ring_data_3v3   # D0  -> level shifter in
+XIAO[2] += encA            # D1
+XIAO[3] += encB            # D2
+XIAO[4] += encSW           # D3
+XIAO[11] += ring_link      # D10 -> J1 pin 3
+XIAO[12] += v3v3           # 3V3_OUT -- encoder pull-up rail, nothing else
+XIAO[13] += gnd
+XIAO[14] += v5_mcu         # VBUS, fed through D1
+XIAO[26] += gnd            # underside GND pads: the return path for the module
+XIAO[30] += gnd
+
+# Spare pads, exempted BY NAME rather than tolerated in the ERC log -- a wall of
+# expected warnings is how a real one gets missed (console_board.py's rule).
+# SWDIO/SWDCLK/EN/BOOT (23/24/25/27) are deliberately among them: bench recovery
+# is the module's own USB-C and its BOOT/RESET buttons, so bringing them out
+# would be copper for a path nothing uses.
+XIAO_SPARE = (5, 6, 7, 8, 9, 10,            # D4..D9
+              15, 16, 17, 18, 19, 20, 21, 22,   # D11..D18
+              23, 24, 25, 27, 28, 29)           # SWDIO SWDCLK EN BOOT 3V3 VBAT
+for _p in XIAO_SPARE:
+    XIAO[_p].do_erc = False
+
+# ---- D1: series Schottky into the module's VBUS -----------------------------
+# The XIAO's 5 V pad IS its USB VBUS rail. Plug USB in on the bench while the
+# harness is live and two 5 V sources fight; a series Schottky makes the harness
+# feed strictly one-way and costs ~0.35 V, leaving the module's LDO ~4.65 V --
+# far above what it needs for 3V3.
+# It sits ONLY in the module's feed. The WS2812 ring taps v5 ahead of it, because
+# a diode drop on the LED rail is what raises the WS2812's own VIH threshold and
+# it is already the tight number (see U2).
+d1 = Part("Device", "D_Schottky", value="1N5819",
+          footprint="Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal", ref="D1")
+d1["A"] += v5
+d1["K"] += v5_mcu
+
+# ---- U2: 74AHCT125 -- the 3V3 -> 5 V crossing the WS2812 needs ---------------
+# WS2812B wants VIH >= 0.7 x VDD = 3.5 V on a 5 V rail; the RP2350 drives 3.3 V.
+# That gap is why the console board carries an AHCT125, and the same part answers
+# it here -- SAME part number as console_board.py's U1, so the BOM does not grow
+# a second logic family. Dropping the LED rail with a diode instead was the
+# alternative and is rejected: at 1.44 A it burns over a watt in a DO-201 and
+# leaves ~0.3 V of margin, against a part already proven on the other board.
+# Only gate A is used. The other three are parked the way console_board.py parks
+# its spare gate: /OE high, input low, output ERC-exempt.
+buf = Part("74xx", "74AHCT125", value="74AHCT125N",
+           footprint="Package_DIP:DIP-14_W7.62mm", ref="U2")
+buf[14] += v5
+buf[7] += gnd
+C("100nF")[1, 2] += v5, gnd
+buf[1] += gnd; buf[2] += ring_data_3v3; buf[3] += ring_data_5v   # gate A: ring
+buf[4] += v5; buf[5] += gnd; buf[6].do_erc = False               # gate B unused
+buf[10] += v5; buf[9] += gnd; buf[8].do_erc = False              # gate C unused
+buf[13] += v5; buf[12] += gnd; buf[11].do_erc = False            # gate D unused
+R("330")[1, 2] += ring_data_5v, ring_data
 
 # ---- 4-pin header to the NeoPixel module (3 wires used: 5V/GND/DIN) ---------
 #   1 = +5V_LED   2 = GND   3 = DIN (<- RING_DATA)   4 = DOUT (spare)
@@ -113,6 +258,7 @@ Part("Device", "C_Polarized", value="470uF 16V low-ESR <=0.15R",
      footprint="Capacitor_THT:CP_Radial_D8.0mm_P3.50mm")[1, 2] += v5, gnd
 
 # ---- EC11 rotary encoder (A,B,C common, S1,S2 switch) ----------------------
+# Now a purely LOCAL circuit: 20 mm of trace to U1 instead of ~600 mm of harness.
 enc = Part("Device", "RotaryEncoder_Switch",
            footprint="segno:RotaryEncoder_EC11",   # vendored EC11 (LCSC C202365) + 3D model
            ref="ENC1")
@@ -121,17 +267,188 @@ enc["B"] += encB
 enc["C"] += gnd
 enc["S1"] += encSW
 enc["S2"] += gnd
-# pull-ups + RC de-bounce (encoders bounce). Powered from +5V_LED, so the encoder
-# is live only in standalone/9V mode -- same as the LED ring.
-# NO pull-ups here. They used to be 10k to this board's 5 V rail, which was right
-# when the cable's far end was main_board.py's 5 V Pro Micro and wrong the moment it
-# became a 3.3 V Pico: they drove GP13/GP14 1.4 V past absolute maximum, continuously.
-# The console board now pulls ENC_A/ENC_B/ENC_SW up to ITS OWN 3V3, so the pull-up
-# always matches whatever MCU is actually on the other end.
+
+# 10k to the XIAO's OWN 3V3_OUT, plus 100nF: RC = 1 ms, which is the timing the
+# board has always had and which an EC11 needs. The RP2350's INTERNAL pull-ups
+# are deliberately NOT used here, unlike console_board.py's footswitches: those
+# are ~50-80k, which against 100nF is a 5-8 ms release edge. A stomp tolerates
+# that; quadrature does not -- a fast spin puts edges ~25 ms apart and 8 ms of
+# smear loses detents and direction.
+R("10k")[1, 2] += v3v3, encA
+R("10k")[1, 2] += v3v3, encB
+R("10k")[1, 2] += v3v3, encSW
 C("100nF")[1, 2] += encA, gnd
 C("100nF")[1, 2] += encB, gnd
+C("100nF")[1, 2] += encSW, gnd
 
-for _n in (gnd, v5):
+# NOTE: RING_LINK gets NO pull-up on this board. The console's existing 10k to
+# ITS 3V3 (console_board.py, the old ENC_A pull-up) is the one the open-drain
+# line needs; a second one here would halve it to 5k and, being on a different
+# board's rail, would re-create exactly the split-rail hazard RING_LEVELS exists
+# to catch. There is no series resistor either -- the two boards share one supply
+# through this cable, so there is no cross-domain window like the Pi link's.
+
+# ---- gates -----------------------------------------------------------------
+# This board grew an MCU, so it inherits the obligation that came with the one on
+# the console board. RING_LEVELS (in console_board.py) reads this netlist, but it
+# only ever looks at conductors that CROSS THE CABLE -- by construction it cannot
+# see a 5 V part landing on a pin that never leaves this PCB. That is the same
+# blind spot CONSOLE_LEVELS was written to close on the other board, and the
+# encoder lines moved into it the moment they became local. Hence XIAO_LEVELS.
+
+# Which pads are 3.3 V logic and which are power. Taken from the same Seeed symbol
+# the footprint's descr quotes, not inferred: a pad's tolerance is the whole
+# question here, so guessing it would defeat the gate.
+XIAO_LOGIC_PADS = (frozenset(range(1, 12))        # D0..D10
+                   | frozenset(range(15, 23))     # D11..D18
+                   | frozenset({23, 24, 25, 27}))  # SWDIO SWDCLK EN BOOT
+XIAO_POWER_PADS = {12: "3V3_OUT", 13: "GND", 14: "VBUS",
+                   26: "GND", 28: "3V3_OUT", 29: "VBAT", 30: "GND"}
+RAILS_5V = ("+5V_LED", "+5V_MCU")
+
+
+def _check():
+    # XIAO_PADS: the ERC exemptions must not cover a pad that is actually in use.
+    # console_board.py's rule, for the same reason -- an exemption on a live pin
+    # hides a real unconnected-pin warning, and this module has 20 exempt pads to
+    # hide one behind.
+    assert XIAO_LOGIC_PADS.isdisjoint(XIAO_POWER_PADS), (
+        "XIAO_PADS: a pad is listed as both logic and power")
+    assert set(XIAO_LOGIC_PADS) | set(XIAO_POWER_PADS) == set(range(1, 31)), (
+        "XIAO_PADS: the logic/power split does not cover pads 1..30 -- the map "
+        "has drifted from the footprint's 30 pads")
+    _used = {p for p in range(1, 31) if XIAO[p].nets}
+    assert _used.isdisjoint(XIAO_SPARE), (
+        f"XIAO_PADS: {sorted(_used & set(XIAO_SPARE))} are ERC-exempt but wired -- "
+        "an exemption on a live pad hides a real unconnected-pin warning")
+
+    # XIAO_LEVELS: nothing may bridge a 5 V rail to a 3.3 V pad of the module.
+    # Same classification-free rule as the console board's: any TWO-PIN part
+    # delivers the rail's DC whatever it calls itself, and the pin-count
+    # arithmetic exempts the module, the encoder and the AHCT125 without naming
+    # them. D1 is NOT exempted by name either -- it passes because its far end is
+    # VBUS (pad 14), a power pad, which is the only reason a 5 V part may touch
+    # this module at all.
+    _protected = set()
+    for _pad in XIAO_LOGIC_PADS:
+        _protected |= {n.name for n in XIAO[_pad].nets}
+    for _p in default_circuit.parts:
+        if len(_p.pins) > 2:
+            continue
+        _touch = {n.name for _pin in _p.pins for n in _pin.nets}
+        assert not (_touch & set(RAILS_5V) and _touch & _protected), (
+            f"XIAO_LEVELS: {_p.ref} bridges a 5 V rail to "
+            f"{sorted(_touch & _protected)} -- the XIAO's logic pads are RP2350 "
+            "pins with a 3.6 V absolute maximum, and this is the exact shape that "
+            "shipped on this board once already (10k to 5 V on an encoder line)")
+
+    # LINK_BARE: RING_LINK carries the console's 10k pull-up and must meet nothing
+    # else here. A second pull-up on THIS board's rail would halve it to 5k and
+    # re-import the split-rail hazard; a series R would be the Pi link's problem
+    # (cross-domain powering), which this cable does not have -- both boards come
+    # up and go down on one supply through it.
+    _link_nodes = {(p.ref, str(pin.num)) for p in default_circuit.parts
+                   for pin in p.pins if "RING_LINK" in {n.name for n in pin.nets}}
+    assert _link_nodes == {("J1", "3"), ("U1", "11")}, (
+        f"LINK_BARE: RING_LINK touches {sorted(_link_nodes)}, expected exactly "
+        "J1.3 and U1.11 -- the pull-up this line runs on lives on the console "
+        "board, at the rail its GP13 belongs to")
+
+    # POLARITY: two parts on this board are directional and fitting either one
+    # backwards is silent at assembly. Same gate the console board runs on C30.
+    _d1 = next(p for p in default_circuit.parts if p.ref == "D1")
+    assert {n.name for n in _d1["A"].nets} == {"+5V_LED"}, (
+        f"POLARITY: D1's anode is on {sorted(n.name for n in _d1['A'].nets)}, "
+        "expected the harness rail -- reversed, the module never powers up")
+    assert {n.name for n in _d1["K"].nets} == {"+5V_MCU"}, (
+        f"POLARITY: D1's cathode is on {sorted(n.name for n in _d1['K'].nets)}, "
+        "expected the module rail")
+    _pol = [p for p in default_circuit.parts if p.name == "C_Polarized"]
+    assert len(_pol) == 1, f"POLARITY: expected 1 electrolytic, found {len(_pol)}"
+    assert {n.name for n in _pol[0][1].nets} & set(RAILS_5V), (
+        f"POLARITY: the electrolytic's pin 1 (+) is on "
+        f"{sorted(n.name for n in _pol[0][1].nets)}, not a 5 V rail")
+    assert {n.name for n in _pol[0][2].nets} == {"GND"}, (
+        f"POLARITY: the electrolytic's pin 2 (-) is on "
+        f"{sorted(n.name for n in _pol[0][2].nets)}, expected GND")
+
+
+def _selftest():
+    """Each gate above, proved to bite. A gate nobody has seen fail is a gate that
+    might already be dead -- which is precisely how RING_LEVELS on the other board
+    spent months asserting a literal list against itself."""
+    added = []
+
+    def _pullup_5v():
+        # The shipped mistake, replayed on the pads it can still reach.
+        r = R("10k"); r[1, 2] += v5, encA; added.append(r)
+
+    def _link_pullup():
+        # Reasonable-looking and wrong: "make the link idle high locally".
+        r = R("10k"); r[1, 2] += v3v3, ring_link; added.append(r)
+
+    def _diode_backwards():
+        d = next(p for p in default_circuit.parts if p.ref == "D1")
+        d["A"].disconnect(); d["K"].disconnect()
+        d["A"] += v5_mcu; d["K"] += v5
+
+    def _exempt_live_pad():
+        XIAO[5] += encA          # a spare, ERC-exempt pad quietly wired
+
+    def _undo():
+        for r in added:
+            for pin in r.pins:
+                pin.disconnect()
+        added.clear()
+        d = next((p for p in default_circuit.parts if p.ref == "D1"), None)
+        if d is not None and {n.name for n in d["A"].nets} != {"+5V_LED"}:
+            d["A"].disconnect(); d["K"].disconnect()
+            d["A"] += v5; d["K"] += v5_mcu
+        if XIAO[5].nets:
+            XIAO[5].disconnect()
+
+    cases = [
+        ("ring board pulls a XIAO logic pad to 5 V", "XIAO_LEVELS:", _pullup_5v),
+        ("a second pull-up added to the link",       "LINK_BARE:",   _link_pullup),
+        ("series Schottky fitted backwards",         "POLARITY:",    _diode_backwards),
+        ("an ERC-exempt pad quietly wired",          "XIAO_PADS:",   _exempt_live_pad),
+    ]
+    ok = True
+    for name, want, mutate in cases:
+        try:
+            mutate()
+            _check()
+        except AssertionError as e:
+            got = str(e).split("\n")[0]
+            # A control that trips some OTHER gate proves nothing about its own and
+            # would read as a pass -- console_board.py learned this the hard way,
+            # so the expected prefix is checked, not merely "it raised".
+            hit = got.startswith(want)
+            print(f"  {'bites' if hit else 'WRONG GATE':<10} {name:<42} {got[:68]}")
+            ok &= hit
+        except Exception as e:                       # noqa: BLE001
+            print(f"  {'ERROR':<10} {name:<42} {type(e).__name__}: {e}")
+            ok = False
+        else:
+            print(f"  {'NO BITE':<10} {name:<42} (the gate is dead)")
+            ok = False
+        finally:
+            _undo()
+    # ...and the real design must still pass once every control is undone, or the
+    # cleanup is what made the run green rather than the gates.
+    _check()
+    return ok
+
+
+if "--selftest" in sys.argv:
+    print("Negative controls:")
+    sys.exit(0 if _selftest() else 1)
+
+print("Board assertions ...", end=" ")
+_check()
+print("ALL PASS")
+
+for _n in (gnd, v5, v5_mcu, v3v3):
     _n.drive = POWER
 
 ERC()
