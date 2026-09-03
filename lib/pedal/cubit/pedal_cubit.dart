@@ -24,19 +24,45 @@ class PedalCubit extends Cubit<PedalState> {
         ),
       ) {
     _statusSub = _pedal.statusChanges.listen(_onStatus);
+    _eventsSub = _pedal.events.listen(_onEvent);
   }
 
   final PedalRepository _pedal;
   late final StreamSubscription<PedalLinkStatus> _statusSub;
+  late final StreamSubscription<PedalEvent> _eventsSub;
 
   void _onStatus(PedalLinkStatus status) {
     if (isClosed) return;
-    emit(PedalState(status: status, firmwareVersion: _pedal.firmwareVersion));
+    emit(
+      PedalState(
+        status: status,
+        firmwareVersion: _pedal.firmwareVersion,
+        ctrl: state.ctrl,
+      ),
+    );
+  }
+
+  /// Keeps the last reading from each CTRL jack, so the settings page can show
+  /// a pedal moving while it is being bound. Only CTRL events land here: the
+  /// footswitches and the encoder are the control cubit's.
+  void _onEvent(PedalEvent event) {
+    if (isClosed || event is! CtrlChanged) return;
+    emit(
+      PedalState(
+        status: state.status,
+        firmwareVersion: state.firmwareVersion,
+        ctrl: {
+          ...state.ctrl,
+          event.jack: PedalCtrlReading(kind: event.kind, value: event.value),
+        },
+      ),
+    );
   }
 
   @override
   Future<void> close() async {
     await _statusSub.cancel();
+    await _eventsSub.cancel();
     // Darken the console on shutdown, then release the link — this cubit is
     // the pedal repository's lifecycle owner.
     _pedal.goodbye();
