@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pedal_repository/pedal_repository.dart' show PedalLinkStatus;
+import 'package:pedal_repository/pedal_repository.dart'
+    show PedalCtrlJack, PedalCtrlKind, PedalLinkStatus;
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/pedal/view/pedal_assignment_page.dart';
@@ -33,6 +34,10 @@ class PedalSettingsSection extends StatelessWidget {
           status: state.status,
           firmwareVersion: state.firmwareVersion,
         ),
+        const SizedBox(height: 18),
+        SetupGroupLabel(l10n.pedalCtrlGroup),
+        const SizedBox(height: 8),
+        _CtrlReadings(readings: state.ctrl),
         const SizedBox(height: 12),
         // Kept alongside the tray's own pedal rail destination (#440) on
         // purpose — this is where you already are when configuring the pedal.
@@ -47,6 +52,60 @@ class PedalSettingsSection extends StatelessWidget {
             label: AppText(l10n.pedalAssignTitle),
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// What each CTRL jack is reporting right now.
+///
+/// A pedal is bound by moving it, so it has to be visible while it moves —
+/// otherwise there is no way to tell a mis-wired jack from a pedal whose
+/// travel the board has not learned yet. Absent jacks are simply not listed:
+/// the board reports a jack only once it has decided what is plugged in.
+class _CtrlReadings extends StatelessWidget {
+  const _CtrlReadings({required this.readings});
+
+  final Map<PedalCtrlJack, PedalCtrlReading> readings;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    if (readings.isEmpty) {
+      return AppText(
+        l10n.pedalCtrlIdle,
+        key: const Key('pedalSettings_ctrlIdle'),
+        style: context.setupBody,
+      );
+    }
+    return Column(
+      key: const Key('pedalSettings_ctrl'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final jack in PedalCtrlJack.values)
+          if (readings[jack] case final reading?)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Semantics(
+                liveRegion: true,
+                child: AppText(
+                  switch (reading.kind) {
+                    PedalCtrlKind.switchPedal => l10n.pedalCtrlSwitchReading(
+                      jack.index + 1,
+                      reading.value > 0
+                          ? l10n.pedalCtrlSwitchDown
+                          : l10n.pedalCtrlSwitchUp,
+                    ),
+                    PedalCtrlKind.expression => l10n.pedalCtrlExpressionReading(
+                      jack.index + 1,
+                      reading.percent,
+                    ),
+                  },
+                  key: Key('pedalSettings_ctrl_${jack.name}'),
+                  style: context.setupBody,
+                ),
+              ),
+            ),
       ],
     );
   }

@@ -240,6 +240,20 @@ static const uint16_t CTRL_DEADBAND = 24;  // ~0.6%, above the noise floor
 static const unsigned long CTRL_SWITCH_DEBOUNCE_MS = 8;
 static const unsigned long CTRL_SAMPLE_MS = 10;
 
+// An expression pedal never uses the whole scale: the tip's 10k pull-up and
+// the 1k feeding the pot's top compress both ends, and every pedal's travel
+// and range knob differ again. Measured here, an M-Audio EX-P covers
+// 385..4095 of 0..4095 — so scaling the raw reading straight to 0..255 would
+// report ~24 at heel and a bound level would never reach its bottom.
+//
+// So the ends are learned from the pedal itself: the travel seen so far is
+// stretched onto the full output range. A pedal is calibrated by sweeping it
+// once, which is what anyone does on plugging one in anyway. Nothing is
+// stored across a reboot — a sweep costs a second and guessing wrong costs a
+// performance.
+static const uint16_t CTRL_MIN_SPAN = 400;  // below this, the sweep is not trusted
+static uint16_t g_ctrlSeenMin[PEDAL_CTRL_COUNT];
+static uint16_t g_ctrlSeenMax[PEDAL_CTRL_COUNT];
 static uint8_t g_ctrlKind[PEDAL_CTRL_COUNT];
 static uint16_t g_ctrlRaw[PEDAL_CTRL_COUNT];
 static uint8_t g_ctrlSent[PEDAL_CTRL_COUNT];
@@ -275,7 +289,18 @@ static void pollCtrl() {
     }
 
     if (g_ctrlKind[j] == PEDAL_CTRL_KIND_EXPRESSION) {
-      const uint8_t value = (uint8_t)((uint32_t)raw * 255u / CTRL_MAX);
+      if (raw < g_ctrlSeenMin[j]) g_ctrlSeenMin[j] = raw;
+      if (raw > g_ctrlSeenMax[j]) g_ctrlSeenMax[j] = raw;
+      const uint16_t span = (uint16_t)(g_ctrlSeenMax[j] - g_ctrlSeenMin[j]);
+      uint8_t value;
+      if (span >= CTRL_MIN_SPAN) {
+        const uint32_t above = (uint32_t)(raw - g_ctrlSeenMin[j]);
+        value = (uint8_t)(above * 255u / span);
+      } else {
+        // Not swept far enough to trust: report the raw position rather than
+        // stretching noise across the whole range.
+        value = (uint8_t)((uint32_t)raw * 255u / CTRL_MAX);
+      }
       const int diff = (int)value - (int)g_ctrlSent[j];
       const int deadband = (int)(CTRL_DEADBAND * 255u / CTRL_MAX);
       // Always report the ends exactly: a deadband that swallows the last
@@ -501,6 +526,8 @@ void setup() {
   for (uint8_t j = 0; j < PEDAL_CTRL_COUNT; j++) {
     pinMode(CTRL_PIN[j], INPUT);  // the board's own 10k biases the tip
     g_ctrlKind[j] = PEDAL_CTRL_KIND_SWITCH;
+    g_ctrlSeenMin[j] = CTRL_MAX;
+    g_ctrlSeenMax[j] = 0;
     g_ctrlRaw[j] = CTRL_MAX;
     g_ctrlSent[j] = 0;
     g_ctrlHaveSent[j] = false;
