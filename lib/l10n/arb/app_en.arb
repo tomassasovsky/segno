@@ -2838,15 +2838,7 @@
         "description": "The pedal firmware readout on SYSTEM / about when no pedal is bound. The row is drawn anyway — no pedal is the case worth seeing."
     },
     "aboutPedalFirmwareRow": "Pedal firmware",
-    "aboutPedalFirmwareSubtitle": "4 switches · 2 banks",
-    "aboutProtocolVersion": "v{version}",
-    "@aboutProtocolVersion": {
-        "placeholders": {
-            "version": {
-                "type": "int"
-            }
-        }
-    },
+    "aboutPedalFirmwareSubtitle": "console board link up",
     "aboutAudioInterfaceRow": "Audio interface",
     "aboutAudioInterfaceSubtitle": "{rate} kHz · {frames} frames",
     "@aboutAudioInterfaceSubtitle": {

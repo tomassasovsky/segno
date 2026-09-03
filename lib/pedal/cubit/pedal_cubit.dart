@@ -31,12 +31,7 @@ class PedalCubit extends Cubit<PedalState> {
 
   void _onStatus(PedalLinkStatus status) {
     if (isClosed) return;
-    emit(
-      state.copyWith(
-        status: status,
-        firmwareVersion: _pedal.firmwareVersion,
-      ),
-    );
+    emit(PedalState(status: status, firmwareVersion: _pedal.firmwareVersion));
   }
 
   @override

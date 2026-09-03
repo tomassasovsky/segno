@@ -78,7 +78,6 @@ void main() {
       pedal: PedalRepository(SimulatorPedalLink()),
       settings: settings,
       performance: performance,
-      keepAliveInterval: Duration.zero,
     );
     // unawaited: awaiting ControlCubit.close() inside a testWidgets body
     // deadlocks on the Flutter test binding's stream cancellation.

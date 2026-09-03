@@ -77,15 +77,15 @@ class PedalPlate extends StatelessWidget {
   /// whose track depends on the bank.
   final List<String> trackNames;
 
-  /// Fires on footswitch press and release, with the same signature the
-  /// simulator transport dispatches today.
+  /// Fires on footswitch press and release, with the same signature
+  /// `SimulatorPedalLink.press` has.
   final void Function(PedalButton button, {required bool down}) onPress;
 
   /// Fires on encoder rotation, `delta` detents per call.
   final void Function(int delta) onTurn;
 
   /// The live interaction mode — what the switches actually do. Distinct from
-  /// `frame.mode`, which is what survived the wire's version downgrade.
+  /// `frame.mode`, the value the wire carries.
   final InteractionMode mode;
 
   final AppLocalizations l10n;
@@ -557,8 +557,7 @@ class _Footswitch extends StatefulWidget {
   final List<String> trackNames;
 
   /// The LIVE interaction mode — what this switch does, and how its LED
-  /// reads, both depend on it. Deliberately not the frame's wire mode: below
-  /// protocol v3 that decodes as mute even while FX mode is driving.
+  /// reads, both depend on it.
   final InteractionMode mode;
 
   /// Highlighted for the pedal-assignment UI (FX v3 part 6); `false` renders
@@ -739,8 +738,8 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
   static const double _dragPerDetent = 6;
 
   // Half the breathe period: repeat(reverse: true) runs a dim->bright then a
-  // bright->dim leg, so the full cycle is twice this — the firmware's
-  // kBreatheMs (2400 ms).
+  // bright->dim leg, so the full cycle is twice this — the console board's
+  // BREATHE_MS (2400 ms).
   static const Duration _breatheHalfCycle = Duration(milliseconds: 1200);
 
   late final AnimationController _sweep;
@@ -767,8 +766,9 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
     }
   }
 
-  // Standby breathes; otherwise one revolution per loop (or parked when no loop
-  // length is known yet, matching the firmware's static sweep-park).
+  // Standby breathes; otherwise one revolution per loop, parked when no loop
+  // length is known yet. (The console board's ring free-runs in that state
+  // and snaps to the loop top on LOOP_TOP; the plate has no such pulse.)
   void _syncMotion() {
     if (widget.breathing) {
       _sweep
@@ -1047,11 +1047,9 @@ Color _ringColor(SurfaceTheme surface, GlobalColor color) => switch (color) {
 /// The screen-reader reading of a track LED, PER ACTIVE MODE — the same byte
 /// means different things in each, so a mode-blind label would lie.
 ///
-/// Keyed on the LIVE [InteractionMode], never on the frame's wire mode: below
-/// protocol v3 the codec degrades fx to play AND blue to green in lockstep,
-/// so a wire-keyed label would read an engaged chain as "armed" on exactly
-/// the pedals that need the reading most. FX mode therefore treats ANY lit
-/// LED as chain-enabled, which covers the downgraded green too.
+/// Keyed on the LIVE [InteractionMode], never on the frame's wire mode, so
+/// the reading follows what the switch does. FX mode treats ANY lit LED as
+/// chain-enabled.
 String _ledStateLabel(
   AppLocalizations l10n,
   PedalTrackLed led,

@@ -194,6 +194,29 @@ void main() {
       expect(parser.droppedFrames, 1);
     });
 
+    test('a sync byte in the type or length slot starts the next frame', () {
+      final parser = PedalLinkParser();
+      // A stray sync right before a real frame, and a frame whose length byte
+      // was replaced by a sync: the real frame behind each survives.
+      expect(parser.push([PedalLinkCodec.sync, ...button]), hasLength(1));
+      expect(
+        parser.push([
+          PedalLinkCodec.sync,
+          PedalLinkCodec.typeState,
+          ...button,
+        ]),
+        hasLength(1),
+      );
+      expect(parser.droppedFrames, 2);
+    });
+
+    test('reset forgets a half-received frame', () {
+      final parser = PedalLinkParser()
+        ..push(button.sublist(0, 4))
+        ..reset();
+      expect(parser.push(button), hasLength(1));
+    });
+
     test('payloadLengthFor knows every type and nothing else', () {
       expect(PedalLinkCodec.payloadLengthFor(PedalLinkCodec.typeButton), 2);
       expect(PedalLinkCodec.payloadLengthFor(PedalLinkCodec.typeEncoder), 1);

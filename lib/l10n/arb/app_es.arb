@@ -2057,15 +2057,7 @@
     "aboutSystemImageRow": "Imagen del sistema",
     "aboutPedalFirmwareNone": "no encontrado",
     "aboutPedalFirmwareRow": "Firmware del pedal",
-    "aboutPedalFirmwareSubtitle": "4 pulsadores · 2 bancos",
-    "aboutProtocolVersion": "v{version}",
-    "@aboutProtocolVersion": {
-        "placeholders": {
-            "version": {
-                "type": "int"
-            }
-        }
-    },
+    "aboutPedalFirmwareSubtitle": "enlace de la placa activo",
     "aboutAudioInterfaceRow": "Interfaz de audio",
     "aboutAudioInterfaceSubtitle": "{rate} kHz · {frames} frames",
     "@aboutAudioInterfaceSubtitle": {

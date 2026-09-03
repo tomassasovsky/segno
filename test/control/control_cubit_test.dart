@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -145,7 +144,11 @@ void main() {
       looperStates = StreamController<LooperState>.broadcast(sync: true);
       settings = SettingsRepository(store: FakeKeyValueStore());
       transport = FakePedalLink();
-      pedal = PedalRepository(transport);
+      // A short hello timeout so a disconnect can be rehearsed in real time.
+      pedal = PedalRepository(
+        transport,
+        helloTimeout: const Duration(milliseconds: 50),
+      );
       when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
       for (final stub in [
         () => looper.record(channel: any(named: 'channel')),
@@ -230,12 +233,14 @@ void main() {
         exportsRoot: () async => tempDir.path,
         now: () => clock,
       );
+      // The cubit pushes the repository snapshot at construction, so the
+      // snapshot has to exist before it does; setEngine() re-stubs it later.
+      when(() => looper.state).thenReturn(_stateWith(_emptyTracks()));
       cubit = ControlCubit(
         looper: looper,
         pedal: pedal,
         settings: settings,
-        performance: performance,
-        keepAliveInterval: Duration.zero, // deterministic: no heartbeat re-push
+        performance: performance, // deterministic: no heartbeat re-push
       );
       setEngine(_emptyTracks());
     });
@@ -1170,7 +1175,6 @@ void main() {
           pedal: pedal,
           settings: settings,
           performance: performance,
-          keepAliveInterval: Duration.zero,
           takeLocked: () => true,
         );
         addTearDown(locked.close);
@@ -1184,7 +1188,6 @@ void main() {
           pedal: pedal,
           settings: settings,
           performance: performance,
-          keepAliveInterval: Duration.zero,
           takeLocked: () => true,
         );
         addTearDown(locked.close);
@@ -1198,7 +1201,6 @@ void main() {
           pedal: pedal,
           settings: settings,
           performance: performance,
-          keepAliveInterval: Duration.zero,
           takeLocked: () => true,
         );
         addTearDown(locked.close);
@@ -1215,7 +1217,6 @@ void main() {
           pedal: lockedPedal,
           settings: settings,
           performance: performance,
-          keepAliveInterval: Duration.zero,
           takeLocked: () => true,
         );
         addTearDown(locked.close);
@@ -1556,7 +1557,6 @@ void main() {
             pedal: pedal,
             settings: settings,
             performance: recordingPerformance,
-            keepAliveInterval: Duration.zero,
           );
           addTearDown(armedCubit.close);
 
@@ -1599,7 +1599,6 @@ void main() {
           pedal: pedal,
           settings: settings,
           performance: unarmedPerformance,
-          keepAliveInterval: Duration.zero,
         );
         addTearDown(unarmedCubit.close);
 
@@ -1627,7 +1626,6 @@ void main() {
             pedal: pedal,
             settings: settings,
             performance: recordingPerformance,
-            keepAliveInterval: Duration.zero,
           );
           addTearDown(armedCubit.close);
 
@@ -1793,7 +1791,6 @@ void main() {
             pedal: pedal,
             settings: settings,
             performance: performance,
-            keepAliveInterval: Duration.zero,
             currentChains: () => const PerformanceChains(
               monitors: [
                 PerformanceMonitorState(
@@ -2471,7 +2468,7 @@ void main() {
               expect(chainEnabled[3], isTrue, reason: 'still held');
               // The board goes quiet past the hello timeout: disconnected.
               await Future<void>.delayed(
-                pedal.helloTimeout + const Duration(milliseconds: 100),
+                pedal.helloTimeout + const Duration(milliseconds: 50),
               );
               await pumpEventQueue();
               expect(chainEnabled[3], isFalse);
@@ -2700,7 +2697,6 @@ void main() {
           pedal: pedal,
           settings: settings,
           performance: performance,
-          keepAliveInterval: Duration.zero,
         );
         addTearDown(reloaded.close);
         await reloaded.load();
@@ -2756,59 +2752,23 @@ void main() {
         expect(frame.trackLeds[0], PedalTrackLed.off);
       });
 
-      test('re-pushes the current frame on the keep-alive heartbeat', () {
-        fakeAsync((async) {
-          final beat = ControlCubit(
-            looper: looper,
-            pedal: pedal,
-            settings: settings,
-            performance: performance,
-            keepAliveInterval: const Duration(milliseconds: 500),
-          );
-          setEngine(_emptyTracks()); // sync stream delivers state to `beat`
-          async.flushMicrotasks();
-          transport.sent.clear();
-
-          // Nothing changes, but the heartbeat keeps re-sending the frame so
-          // the pedal's link watchdog can tell "idle" from "disconnected".
-          async.elapse(const Duration(seconds: 3));
-          expect(transport.sent.length, greaterThanOrEqualTo(3));
-
-          unawaited(beat.close()); // cancel the periodic timer
-          async.flushMicrotasks();
-        });
-      });
-
-      test('keep-alive lights the pedal from the repository snapshot even '
-          'before any LooperState streams (regression: a null _looperState '
-          'left the LEDs dark)', () {
-        fakeAsync((async) {
-          // NB: no setEngine() — this cubit never receives a streamed
-          // LooperState (the broadcast stream emits nothing after it
-          // subscribes), so `_looperState` stays null. Only the synchronous
-          // `looper.state` snapshot (an idle empty set from the outer setUp) is
-          // available. The setUp cubit has keepAliveInterval: zero, so the
-          // heartbeat frames below come only from `idle`.
-          final idle = ControlCubit(
-            looper: looper,
-            pedal: pedal,
-            settings: settings,
-            performance: performance,
-            keepAliveInterval: const Duration(milliseconds: 500),
-          );
-          async.flushMicrotasks();
-          transport.sent.clear();
-
-          // The heartbeat must still project from `looper.state` and push
-          // frames; before the fix the null guard silenced every push and the
-          // pedal stayed dark on an idle engine.
-          async.elapse(const Duration(seconds: 2));
-          expect(transport.sent, isNotEmpty);
-          expect(transport.lastFrame, isNotNull);
-
-          unawaited(idle.close());
-          async.flushMicrotasks();
-        });
+      test('pushes the repository snapshot at construction, before any '
+          'LooperState streams (regression: a null _looperState left the LEDs '
+          'dark)', () async {
+        // NB: no setEngine() — this cubit never receives a streamed
+        // LooperState; only the synchronous `looper.state` snapshot (an idle
+        // empty set from the outer setUp) is available. Liveness after this
+        // first push is the repository's (it answers hellos), so this is the
+        // one push the cubit owes unprompted.
+        transport.sent.clear();
+        final idle = ControlCubit(
+          looper: looper,
+          pedal: pedal,
+          settings: settings,
+          performance: performance,
+        );
+        expect(transport.lastFrame, isNotNull);
+        await idle.close();
       });
 
       test('a rebind force-pushes the CURRENT state', () async {

@@ -514,7 +514,6 @@ void main() {
       pedal: PedalRepository(SimulatorPedalLink()),
       settings: settings,
       performance: performance,
-      keepAliveInterval: Duration.zero,
     );
     final midi = MidiSetupCubit(repository: devices);
     // The Loop face's own providers. A mock bloc rather than a real one over

@@ -55,14 +55,15 @@ static const bool RING_CLOCKWISE = true;
 #define LINK Serial1
 static const unsigned long LINK_BAUD = 115200;
 static const unsigned long HELLO_MS = 1000;
-// segno re-pushes the frame at least every second (its keep-alive); if nothing
-// arrives for this long the app is gone and the panel goes dark rather than
-// freezing on a stale frame.
+// segno answers every HELLO (1 Hz) with its current frame; if nothing arrives
+// for this long the app is gone and the panel goes dark rather than freezing
+// on a stale frame.
 static const unsigned long FRAME_TIMEOUT_MS = 5000;
 
 static pedal_link_parser g_parser;
 static pedal_state g_frame;
 static bool g_haveFrame = false;
+static bool g_frameDirty = false;  // a STATE (or timeout/goodbye) changed what to render
 static unsigned long g_lastFrameMs = 0;
 static unsigned long g_lastHelloMs = 0;
 
@@ -80,8 +81,10 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
     case PEDAL_LINK_TYPE_STATE: {
       pedal_state decoded;
       if (pedal_link_decode_state(payload, len, &decoded)) {
+        onLoopLength(g_haveFrame ? g_frame.loop_length_micros : 0, decoded.loop_length_micros);
         g_frame = decoded;
         g_haveFrame = true;
+        g_frameDirty = true;
         g_lastFrameMs = millis();
       }
       break;  // a malformed frame is dropped; the last good one is kept
@@ -202,7 +205,6 @@ static inline uint16_t ringIndex(uint16_t i) {
 static const unsigned long FREE_RUN_MS_PER_REV = 700;
 static const unsigned long BREATHE_MS = 2400;
 static const float RING_WIDTH = 11.0f;
-static const float RING_SHAPE = 1.5f;
 static float g_ringPhase = 0.0f;  // hump centre, 0..RING_N
 static unsigned long g_ringLastMs = 0;
 
@@ -210,18 +212,29 @@ static void onLoopTop() {
   g_ringPhase = 0.0f;
 }
 
-static void renderRing() {
+// The hump's position is a fraction of the loop. When the loop length changes
+// without a wrap (sync mode doubling the master, an undo shortening it) the
+// playhead keeps its TIME position, so the fraction rescales by old/new; the
+// next LOOP_TOP then pins it exactly.
+static void onLoopLength(uint32_t oldUs, uint32_t newUs) {
+  if (oldUs == 0 || newUs == 0 || oldUs == newUs) return;
+  g_ringPhase = g_ringPhase * ((float)oldUs / (float)newUs);
+  while (g_ringPhase >= (float)RING_N) g_ringPhase -= (float)RING_N;
+}
+
+// Returns whether the ring buffer changed and needs pushing.
+static bool renderRing() {
   const unsigned long now = millis();
   const unsigned long dt = now - g_ringLastMs;
   g_ringLastMs = now;
   if (!g_haveFrame || g_frame.goodbye) {
     ring.clear();
-    return;
+    return true;
   }
   const Rgb activity = globalColor(g_frame.global_color);
   const bool active = (activity.r || activity.g || activity.b) && g_frame.global_color != PEDAL_GLOBAL_BLUE;
   // A Stop with a loop still loaded freezes the ring where it was.
-  if (!active && g_frame.loop_length_micros > 0) return;
+  if (!active && g_frame.loop_length_micros > 0) return false;
   if (!active) {  // standby: breathe green
     const unsigned long p = now % BREATHE_MS;
     const unsigned long half = BREATHE_MS / 2;
@@ -229,7 +242,7 @@ static void renderRing() {
     t = t * t * (3.0f - 2.0f * t);
     const uint8_t level = (uint8_t)((0.15f + 0.85f * t) * 255.0f + 0.5f);
     for (uint16_t i = 0; i < RING_N; i++) ring.setPixelColor(i, scaled(0, 255, 0, level));
-    return;
+    return true;
   }
   const float msPerRev = g_frame.loop_length_micros > 0
                              ? (float)g_frame.loop_length_micros / 1000.0f
@@ -242,14 +255,15 @@ static void renderRing() {
     const float dn = d / RING_WIDTH;
     uint8_t level = 0;
     if (dn < 1.0f) {
-      float b = 1.0f - powf(dn, RING_SHAPE);
-      if (b < 0.0f) b = 0.0f;
+      const float b = 1.0f - dn * sqrtf(dn);  // dn^1.5, without powf
       level = (uint8_t)(b * 255.0f + 0.5f);
     }
     ring.setPixelColor(ringIndex(i), scaled(activity.r, activity.g, activity.b, level));
   }
+  return true;
 }
 
+// The pills only change with the frame; the caller pushes them when it did.
 static void renderIndicators() {
   if (!g_haveFrame || g_frame.goodbye) {
     ind.clear();
@@ -266,13 +280,13 @@ static void renderIndicators() {
   ind.setPixelColor(IND_BANK, g_frame.active_bank == 1 ? rgb(0, 0, 80) : 0);
 }
 
-static void show() {
-  ring.show();
-  ind.show();
-}
-
+// show() is a blocking PIO push with interrupts masked (~30 us per pixel), so
+// a strip is pushed only when its buffer changed — plus once every REFRESH_MS
+// regardless, so a pixel that glitched still heals.
 static const unsigned long RENDER_MS = 20;
+static const unsigned long REFRESH_MS = 250;
 static unsigned long g_lastRenderMs = 0;
+static unsigned long g_lastRefreshMs = 0;
 
 // ---- lifecycle ------------------------------------------------------------------------
 void setup() {
@@ -300,7 +314,7 @@ void setup() {
   ind.begin();
   ind.setBrightness(LED_BRIGHTNESS);
 
-  // A brief green sweep so the panel visibly comes alive before segno binds.
+  // A brief green sweep so the panel visibly comes alive before segno's first frame.
   for (uint16_t i = 0; i < RING_N; i++) {
     ring.setPixelColor(ringIndex(i), rgb(0, 24, 0));
     ring.show();
@@ -326,13 +340,21 @@ void loop() {
     sendHello();
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));  // 0.5 Hz heartbeat
   }
-  if (g_haveFrame && now - g_lastFrameMs > FRAME_TIMEOUT_MS) g_haveFrame = false;
+  if (g_haveFrame && now - g_lastFrameMs > FRAME_TIMEOUT_MS) {
+    g_haveFrame = false;
+    g_frameDirty = true;
+  }
   if (now - g_lastRenderMs >= RENDER_MS) {
     g_lastRenderMs = now;
-    renderRing();
-    renderIndicators();
-    pollLink();  // show() blocks interrupts briefly; drain before and after
-    show();
+    const bool refresh = now - g_lastRefreshMs >= REFRESH_MS;
+    if (refresh) g_lastRefreshMs = now;
+    const bool ringChanged = renderRing();
+    const bool frameChanged = g_frameDirty;
+    g_frameDirty = false;
+    if (frameChanged) renderIndicators();
+    pollLink();  // show() masks interrupts briefly; drain before and after
+    if (ringChanged || refresh) ring.show();
+    if (frameChanged || refresh) ind.show();
     pollLink();
   }
 }

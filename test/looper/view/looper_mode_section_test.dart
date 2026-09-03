@@ -58,12 +58,13 @@ void main() {
     );
     addTearDown(performance.dispose);
     pedalRepo = PedalRepository(SimulatorPedalLink());
+    // The cubit pushes the repository snapshot at construction.
+    when(() => repository.state).thenReturn(const LooperState());
     control = ControlCubit(
       looper: repository,
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
-      keepAliveInterval: Duration.zero,
     );
     addTearDown(control.close);
   });

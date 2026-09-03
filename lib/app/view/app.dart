@@ -33,6 +33,7 @@ import 'package:segno/performance/performance.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
+import 'package:segno/update/appliance/appliance_env.dart';
 import 'package:segno/update/appliance/system_appliance_env.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
 import 'package:segno/visualizer/visualizer.dart';
@@ -180,7 +181,7 @@ class _AppState extends State<App> {
         widget.powerKeySource ??
         openAppliancePowerKeySource(
           isLinux: Platform.isLinux,
-          helperExists: File('/usr/bin/segno-update-ctl').existsSync(),
+          helperExists: File(kApplianceHelperPath).existsSync(),
         );
   }
 

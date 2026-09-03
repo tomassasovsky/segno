@@ -13,7 +13,7 @@ import 'package:segno/update/appliance/appliance_env.dart';
 /// `AppliancePlatformBackend` over a fake [ApplianceEnv].
 class SystemApplianceEnv implements ApplianceEnv {
   /// Creates a [SystemApplianceEnv]. [helperPath] is the update helper.
-  const SystemApplianceEnv({this.helperPath = '/usr/bin/segno-update-ctl'});
+  const SystemApplianceEnv({this.helperPath = kApplianceHelperPath});
 
   /// Path to the update helper (run directly; the appliance app is root).
   final String helperPath;

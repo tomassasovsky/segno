@@ -1,3 +1,7 @@
+/// Where the appliance image installs its privileged helper. Its presence is
+/// how the app knows it is running on the console rather than a desktop.
+const kApplianceHelperPath = '/usr/bin/segno-update-ctl';
+
 /// The operating-system boundary the appliance update backend depends on,
 /// injected so the backend is fully testable without real files, network, or a
 /// device. The production implementation is `SystemApplianceEnv`.

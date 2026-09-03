@@ -129,7 +129,8 @@ int pedal_link_payload_len(uint8_t type);
  * outputs describe it (payload points into the parser and is valid until the
  * next push). A frame is dropped, and the parser resyncs on the next sync
  * byte, when its type is unknown, its length is not that type's length, or its
- * checksum fails; `dropped` counts those. Enum-range validation is the
+ * checksum fails; a sync byte found in the type or length slot starts the next
+ * frame instead of being eaten. `dropped` counts the drops. Enum-range validation is the
  * caller's, via pedal_link_decode_state() for STATE. */
 typedef struct pedal_link_parser {
   uint8_t state;
