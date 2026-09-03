@@ -35,12 +35,6 @@
     "midiLostToastTitle": "Controlador MIDI desconectado",
     "midiLostToastBody": "Mapeos inactivos hasta que vuelva — los loops siguen sonando",
     "deviceReconnectedSnackbar": "{deviceName} reconectado",
-    "pedalFirmwareGateTitle": "Finalizando la actualización",
-    "pedalFirmwareGateBody": "Actualizando tu pedal a {version}. Sus interruptores y luces están apagados hasta que termine — no lo desconectes.",
-    "pedalFirmwareGateFailedTitle": "La actualización del pedal no terminó",
-    "pedalFirmwareGateFailedBody": "Tu pedal sigue funcionando con su firmware anterior. Segno volverá a intentarlo la próxima vez que se inicie.",
-    "pedalFirmwareGateFailedInterruptedBody": "La actualización se detuvo a mitad de camino, así que los interruptores y las luces de tu pedal quedan apagados hasta que se complete. Segno todavía no puede terminarla automáticamente — puede que haga falta grabar de nuevo el firmware del pedal desde una computadora.",
-    "pedalFirmwareGateContinue": "Continuar",
     "dismiss": "Descartar",
     "waveformWindowFailedBanner": "La pantalla de forma de onda no se abrió: comprueba la segunda pantalla.",
     "singleDisplayNotice": "Solo se detectó una pantalla: la pantalla de forma de onda no está disponible.",
@@ -742,51 +736,6 @@
             }
         }
     },
-    "pedalOutputGroup": "LED DEL PEDAL",
-    "pedalNone": "Ninguno",
-    "pedalNoOutputs": "No se encontraron dispositivos de salida MIDI",
-    "pedalStatusNone": "Sin salida de pedal — los interruptores funcionan; solo se apaga el LED.",
-    "pedalStatusConnecting": "Conectando…",
-    "pedalStatusBound": "Enviando LED a {deviceName}",
-    "@pedalStatusBound": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
-    "pedalStatusError": "No se pudo abrir {deviceName} (¿en uso por otra app?).",
-    "@pedalStatusError": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
-    "pedalOutputHint": "Elige la salida MIDI del pedal para que segno controle sus LED. Sus interruptores usan la entrada MIDI de arriba.",
-    "pedalFirmwareGroup": "PROTOCOLO DEL FIRMWARE DEL PEDAL",
-    "pedalFirmwareUnknown": "Sin definir — enviar v{version} (predeterminado)",
-    "@pedalFirmwareUnknown": {
-        "description": "Dropdown option for the unknown pedal firmware version; {version} is the safe-floor protocol version the app sends by default.",
-        "placeholders": {
-            "version": {
-                "type": "int"
-            }
-        }
-    },
-    "pedalFirmwareVersion": "Protocolo v{version}",
-    "@pedalFirmwareVersion": {
-        "description": "Dropdown option naming a pedal wire-protocol version, e.g. 'Protocol v3'.",
-        "placeholders": {
-            "version": {
-                "type": "int"
-            }
-        }
-    },
-    "pedalFirmwareHint": "Debe coincidir con el protocolo del firmware grabado en tu pedal. segno nunca envía un protocolo más nuevo que este; el modo FX del pedal necesita v3.",
-    "pedalFirmwareUpdateTitle": "Actualización de firmware del pedal disponible",
-    "pedalFirmwareUpdateBody": "Este pedal está en el protocolo v{version}, así que el modo FX muestra sus LED de cadena en verde en lugar de azul y el pedal lee FX como silencio. Graba el firmware v{needed} y luego elige v{needed} arriba.",
-    "pedalFirmwareUpdateBodyUnknown": "El protocolo del firmware de este pedal no está definido, así que segno se queda en el piso seguro v{version}: el modo FX muestra sus LED de cadena en verde en lugar de azul y el pedal lee FX como silencio. Graba el firmware v{needed} y luego elige v{needed} arriba.",
     "pluginUnsupportedTopology": "{name} no se puede usar aquí: no es un efecto estéreo (puede ser un instrumento o usar varios buses).",
     "@pluginUnsupportedTopology": {
         "description": "Shown when a user inserts a plugin whose audio bus layout is not a supported stereo/mono effect.",
@@ -1266,6 +1215,16 @@
         "description": "Label for the settings tray's brightness slider (UI-only this round — not persisted, no real display dimming)."
     },
     "pedalAssignTitle": "Asignaciones del pedal",
+    "pedalLinkGroup": "PEDAL DE LA CONSOLA",
+    "pedalStatusDisconnected": "Placa de la consola no conectada — el pedal en pantalla sigue funcionando.",
+    "pedalStatusConnected": "Placa de la consola conectada · firmware {firmwareVersion}",
+    "@pedalStatusConnected": {
+        "placeholders": {
+            "firmwareVersion": {
+                "type": "String"
+            }
+        }
+    },
     "pedalAssignIntro": "Elegí un pedal en la placa y después qué controla en modo FX. Los pedales sin asignar conservan su comportamiento normal.",
     "pedalAssignSelectPrompt": "Seleccioná un pedal para asignarlo.",
     "pedalAssignUnbindable": "MODE y BANK no se pueden reasignar: son la única salida del modo FX y el único acceso al otro banco.",
@@ -2089,8 +2048,6 @@
     },
     "aboutSystemImageRow": "Imagen del sistema",
     "aboutPedalFirmwareNone": "no encontrado",
-    "aboutPedalFirmwareError": "no se pudo conectar",
-    "aboutPedalFirmwareUpdate": "hay una actualización",
     "aboutPedalFirmwareRow": "Firmware del pedal",
     "aboutPedalFirmwareSubtitle": "4 pulsadores · 2 bancos",
     "aboutProtocolVersion": "v{version}",

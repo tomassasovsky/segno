@@ -22,23 +22,19 @@ import 'package:segno/appliance/power_off/power_off_goodbye.dart';
 import 'package:segno/appliance/software_brightness.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/common/on_screen_keyboard/on_screen_keyboard_host.dart';
-import 'package:segno/common/pedal_device.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/looper/looper.dart';
 import 'package:segno/looper/view/signal_graph/signal_style.dart';
 import 'package:segno/looper/view/tracks/routing_tracks_tab.dart';
-import 'package:segno/pedal/flashed_firmware.dart';
 import 'package:segno/pedal/pedal.dart';
 import 'package:segno/performance/performance.dart';
 import 'package:segno/system/cubit/console_facts_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:segno/tuner/cubit/tuner_cubit.dart';
 import 'package:segno/update/appliance/system_appliance_env.dart';
-import 'package:segno/update/cubit/pedal_firmware_cubit.dart';
 import 'package:segno/update/cubit/update_cubit.dart';
-import 'package:segno/update/view/pedal_firmware_gate.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:segno/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart';
@@ -130,8 +126,8 @@ class App extends StatefulWidget {
   /// never disposes it; the [MidiSetupCubit] projects its state.
   final MidiDeviceRepository midiDeviceRepository;
 
-  /// The bidirectional pedal repository (MIDI output + reused input capture),
-  /// or `null` when none was built — a no-op transport is substituted so pedal
+  /// The pedal repository over the console board's link, or `null` when none
+  /// was built — an on-screen-only link is substituted so pedal
   /// cubit always exists and its settings picker shows an empty state. Owned by
   /// the [PedalCubit], which disposes it.
   final PedalRepository? pedalRepository;
@@ -140,7 +136,7 @@ class App extends StatefulWidget {
   /// over, or `null` when none was built. The fuzz harness injects presses
   /// and reads decoded frames from it. Disposed by the [PedalCubit] (via the
   /// repository), so it is provided by value, not created here.
-  final SimulatorPedalTransport? pedalSimulator;
+  final SimulatorPedalLink? pedalSimulator;
 
   /// Reports the number of connected displays, for the dual-display console's
   /// single-display fallback. `null` (the default) disables the fallback
@@ -179,7 +175,7 @@ class App extends StatefulWidget {
 /// Resolves the optional pedal pair once so a replacement [App] keeps
 /// [ControlCubit], [PedalCubit], and dialog routes on one repository.
 class _AppState extends State<App> {
-  late final SimulatorPedalTransport _simulator;
+  late final SimulatorPedalLink _simulator;
   late final PedalRepository _pedal;
   PowerKeySource? _powerKeySource;
   ControlCubit? _control;
@@ -187,9 +183,7 @@ class _AppState extends State<App> {
   @override
   void initState() {
     super.initState();
-    _simulator =
-        widget.pedalSimulator ??
-        SimulatorPedalTransport(inner: const NoopPedalTransport());
+    _simulator = widget.pedalSimulator ?? SimulatorPedalLink();
     _pedal = widget.pedalRepository ?? PedalRepository(_simulator);
     _powerKeySource =
         widget.powerKeySource ??
@@ -238,19 +232,6 @@ class _AppState extends State<App> {
                 settings: context.read<SettingsRepository>(),
               );
               unawaited(cubit.load());
-              return cubit;
-            },
-          ),
-          // Runs the pedal flash an OS update left pending, and holds the
-          // looper closed while it does. lazy:false so it starts with the app
-          // rather than when something first reads it.
-          BlocProvider(
-            lazy: false,
-            create: (context) {
-              final cubit = PedalFirmwareCubit(
-                updates: context.read<UpdateRepository>(),
-              );
-              unawaited(cubit.run());
               return cubit;
             },
           ),
@@ -499,7 +480,7 @@ class _AppState extends State<App> {
               pedalGoodbye: () => context.read<PedalRepository>().pushState(
                 PedalStateFrame.blank(goodbye: true),
               ),
-              powerOff: widget.powerOff ?? SystemApplianceEnv().powerOff,
+              powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
             ),
           ),
           // Eager (not lazy): the ONE control-surface interpreter and owner
@@ -536,22 +517,14 @@ class _AppState extends State<App> {
               return cubit;
             },
           ),
-          // Eager (not lazy): the pedal LINK feature auto-binds the saved
-          // output device on launch and keeps it bound across hotplugs. It
-          // shares the PedalRepository with ControlCubit (binding here,
-          // events/frames there) — the cubits know nothing of each other.
+          // Eager (not lazy): the pedal LINK feature owns the repository's
+          // lifecycle and mirrors the board's status. It shares the
+          // PedalRepository with ControlCubit (status here, events/frames
+          // there) — the cubits know nothing of each other.
           BlocProvider(
             lazy: false,
-            create: (context) {
-              final cubit = PedalCubit(
-                pedal: context.read<PedalRepository>(),
-                settings: context.read<SettingsRepository>(),
-                autoBindProductNames: kPedalAutoBindProductNames,
-                flashedProtocolVersion: kFlashedPedalProtocolVersionReader,
-              );
-              unawaited(cubit.load());
-              return cubit;
-            },
+            create: (context) =>
+                PedalCubit(pedal: context.read<PedalRepository>()),
           ),
           // Eager (not lazy): the recovery cubit must be watching at boot for a
           // pinned interface that was unplugged when auto-start ran, so it can
@@ -1035,8 +1008,8 @@ class _AppViewState extends State<_AppView> {
       supportedLocales: AppLocalizations.supportedLocales,
       home: Builder(
         builder: (context) {
-          final Widget page = PedalFirmwareGate(
-            child: LooperPage(exportDirectory: widget.exportDirectory),
+          final Widget page = LooperPage(
+            exportDirectory: widget.exportDirectory,
           );
           if (!segnoUsesFlutterTitleBar && !segnoUsesCursorAutoHide) {
             return page;

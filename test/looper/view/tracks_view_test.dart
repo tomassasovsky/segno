@@ -115,7 +115,7 @@ void main() {
     ).thenReturn(EngineResult.ok);
     // The real control cubit: it owns the system mode/cursor/bank the view
     // reads, and the M key / mode chip / number keys drive it.
-    pedalRepo = PedalRepository(const NoopPedalTransport());
+    pedalRepo = PedalRepository(SimulatorPedalLink());
     addTearDown(pedalRepo.dispose);
     performance = PerformanceRepository(
       engine: FakeAudioEngine(),

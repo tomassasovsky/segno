@@ -38,16 +38,6 @@ import '../../helpers/helpers.dart';
 class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   bool get isSupported => true;
-  // No pending pedal firmware: the App tests are about the looper, and a gate
-  // over it would hide everything they assert on.
-  @override
-  Future<String?> pendingPedalFirmware() async => null;
-  @override
-  Stream<double> flashPedalFirmware() => const Stream.empty();
-  @override
-  Future<PedalFlashFailureClass?> lastPedalFlashFailure() async => null;
-  @override
-  Future<void> abortPedalFlash() async {}
   @override
   String get channel => 'experimental';
   @override
@@ -366,9 +356,7 @@ void main() {
         engine: FakeAudioEngine(),
         sessionsRoot: () async => sessionsRoot.path,
       );
-      final simulator = SimulatorPedalTransport(
-        inner: const NoopPedalTransport(),
-      );
+      final simulator = SimulatorPedalLink();
       final pedal = PedalRepository(simulator);
       await tester.pumpWidget(
         App(

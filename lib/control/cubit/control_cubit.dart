@@ -204,7 +204,7 @@ class ControlCubit extends Cubit<ControlState> {
 
   late final StreamSubscription<LooperState> _looperSub;
   late final StreamSubscription<PedalEvent> _eventsSub;
-  late final StreamSubscription<PedalBindStatus> _statusSub;
+  late final StreamSubscription<PedalLinkStatus> _statusSub;
   late final StreamSubscription<PerformanceCaptureStatus> _perfStatusSub;
   StreamSubscription<ControllerBindingEvent>? _bindingSub;
   StreamSubscription<MidiConnection>? _midiSub;
@@ -2008,11 +2008,11 @@ class ControlCubit extends Cubit<ControlState> {
     _pushProjected();
   }
 
-  void _onBindStatus(PedalBindStatus status) {
+  void _onBindStatus(PedalLinkStatus status) {
     // A fresh bind has no last frame on the pedal — force the next push (it
     // reads the CURRENT state, so a mode/cursor changed while unplugged
     // shows correctly on replug).
-    if (status == PedalBindStatus.bound) {
+    if (status == PedalLinkStatus.connected) {
       _lastFrame = null;
       _pushProjected();
       return;

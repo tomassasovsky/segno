@@ -26,14 +26,12 @@ void main() {
 
   ControllerRepository build({
     ControllerBindingSet bindings = ControllerBindingSet.empty,
-    bool Function(RawControllerInput)? learnIgnore,
     List<ControllerSource>? sources,
     Duration smoothing = const Duration(milliseconds: 60),
     Duration tick = const Duration(milliseconds: 10),
   }) => ControllerRepository(
     sources: sources ?? [source],
     bindings: bindings,
-    learnIgnore: learnIgnore,
     smoothing: smoothing,
     smoothingTick: tick,
   );
@@ -312,24 +310,6 @@ void main() {
 
       expect((await captured)!.id, 61);
     });
-
-    test(
-      'ignores filtered (pedal) traffic and catches the next control',
-      () async {
-        // Stands in for `isPedalProtocolInput`, whose real note/CC tables are
-        // covered by pedal_repository's own test — what matters here is that a
-        // filtered input cannot end a capture.
-        final repo = build(learnIgnore: (input) => input.id == 16);
-        addTearDown(repo.dispose);
-
-        final captured = repo.learnNext();
-        cc(16, 65); // pedal encoder chatter
-        cc(11, 40); // the control the user actually moved
-        final input = await captured;
-
-        expect(input!.id, 11);
-      },
-    );
 
     test('bindings do not dispatch while a capture is pending', () async {
       final repo = build(
