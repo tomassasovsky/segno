@@ -1281,6 +1281,8 @@
     "midiLearnStale": "Destino ausente",
     "midiLearnStaleDetail": "Lo que esta asignación apuntaba ya no existe. No hace nada hasta que la apuntes a otra cosa o la quites.",
     "midiLearnDeviceMissing": "No hay ninguna entrada MIDI conectada, así que estas asignaciones están inactivas. Conectá el controlador, o reaprendé una fila con el que estés usando ahora.",
+    "consoleCtrlSwitchControl": "CTRL {jack} · pulsador",
+    "consoleCtrlExpressionControl": "CTRL {jack} · expresión",
     "midiLearnCcControl": "CC {number} · canal {channel}",
     "midiLearnNoteControl": "Nota {number} · canal {channel}",
     "midiLearnTargetVolume": "Volumen de {trackName}",

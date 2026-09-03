@@ -33,6 +33,9 @@ static const uint8_t PIN_LINK_TX = 16, PIN_LINK_RX = 17;
 static const uint8_t FSW_PIN[PEDAL_BTN_COUNT] = {2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 static const uint8_t PIN_RING = 12, PIN_ENC_A = 13, PIN_ENC_B = 14, PIN_ENC_SW = 15;
 static const uint8_t PIN_IND = 18;
+// The CTRL TRS jacks: tip on ADC0/ADC1 with a 10k pull-up, ring feeding 3V3
+// through 1k as the pot's top, sleeve to ground.
+static const uint8_t CTRL_PIN[PEDAL_CTRL_COUNT] = {26, 27};
 static const uint8_t PIN_SMPS_PWM = 23;
 
 // ---- LEDs --------------------------------------------------------------------
@@ -216,6 +219,89 @@ static void pollEncoder() {
     if (!owed) return;
     uint8_t buf[PEDAL_LINK_MAX_FRAME];
     sendFrame(buf, pedal_link_encode_encoder(owed > 0 ? 1 : -1, buf));
+  }
+}
+
+// ---- CTRL jacks --------------------------------------------------------------
+// One jack takes an expression pedal OR a footswitch, and nobody tells the
+// board which. A switch only ever sits at the rails; a pot passes through the
+// middle and stays there. So a jack is a switch until it is caught holding an
+// intermediate reading, and from then on it is an expression pedal. Measured
+// on the bench (2026-09-03): a BOSS FS-6 reads 10 and 4095, an M-Audio EX-P
+// sweeps 385..4095.
+//
+// The classification only ever moves one way per session. Reverting on a pot
+// parked at an end would make a pedal held at heel or toe flicker between
+// meanings, and the app binds the two to different things.
+static const uint16_t CTRL_MAX = 4095;
+static const uint16_t CTRL_LOW = CTRL_MAX / 8;        // below: switch closed
+static const uint16_t CTRL_HIGH = CTRL_MAX - CTRL_MAX / 8;  // above: open
+static const uint16_t CTRL_DEADBAND = 24;  // ~0.6%, above the noise floor
+static const unsigned long CTRL_SWITCH_DEBOUNCE_MS = 8;
+static const unsigned long CTRL_SAMPLE_MS = 10;
+
+static uint8_t g_ctrlKind[PEDAL_CTRL_COUNT];
+static uint16_t g_ctrlRaw[PEDAL_CTRL_COUNT];
+static uint8_t g_ctrlSent[PEDAL_CTRL_COUNT];
+static bool g_ctrlHaveSent[PEDAL_CTRL_COUNT];
+static bool g_ctrlSwitchClosed[PEDAL_CTRL_COUNT];
+static bool g_ctrlSwitchRaw[PEDAL_CTRL_COUNT];
+static unsigned long g_ctrlSwitchSinceMs[PEDAL_CTRL_COUNT];
+static unsigned long g_ctrlLastSampleMs = 0;
+
+static uint16_t ctrlSample(uint8_t pin) {
+  uint32_t total = 0;
+  for (uint8_t i = 0; i < 8; i++) total += analogRead(pin);
+  return (uint16_t)(total / 8);
+}
+
+static void sendCtrl(uint8_t jack, uint8_t kind, uint8_t value) {
+  uint8_t buf[PEDAL_LINK_MAX_FRAME];
+  sendFrame(buf, pedal_link_encode_ctrl(jack, kind, value, buf));
+  g_ctrlSent[jack] = value;
+  g_ctrlHaveSent[jack] = true;
+}
+
+static void pollCtrl() {
+  const unsigned long now = millis();
+  if (now - g_ctrlLastSampleMs < CTRL_SAMPLE_MS) return;
+  g_ctrlLastSampleMs = now;
+
+  for (uint8_t j = 0; j < PEDAL_CTRL_COUNT; j++) {
+    const uint16_t raw = ctrlSample(CTRL_PIN[j]);
+    g_ctrlRaw[j] = raw;
+    if (raw > CTRL_LOW && raw < CTRL_HIGH) {
+      g_ctrlKind[j] = PEDAL_CTRL_KIND_EXPRESSION;
+    }
+
+    if (g_ctrlKind[j] == PEDAL_CTRL_KIND_EXPRESSION) {
+      const uint8_t value = (uint8_t)((uint32_t)raw * 255u / CTRL_MAX);
+      const int diff = (int)value - (int)g_ctrlSent[j];
+      const int deadband = (int)(CTRL_DEADBAND * 255u / CTRL_MAX);
+      // Always report the ends exactly: a deadband that swallows the last
+      // step leaves a pedal pushed fully down reporting "nearly down", and a
+      // level bound to it never reaches its limit.
+      const bool atEnd = value == 0 || value == 255;
+      if (!g_ctrlHaveSent[j] || (atEnd && value != g_ctrlSent[j]) ||
+          diff > deadband || diff < -deadband) {
+        sendCtrl(j, PEDAL_CTRL_KIND_EXPRESSION, value);
+      }
+      continue;
+    }
+
+    // A switch, debounced on both edges like the footswitches. Closed is the
+    // tip pulled to ground; open is the 10k holding it at the rail.
+    const bool closed = raw < CTRL_LOW;
+    if (closed != g_ctrlSwitchRaw[j]) {
+      g_ctrlSwitchRaw[j] = closed;
+      g_ctrlSwitchSinceMs[j] = now;
+      continue;
+    }
+    if (closed != g_ctrlSwitchClosed[j] &&
+        now - g_ctrlSwitchSinceMs[j] >= CTRL_SWITCH_DEBOUNCE_MS) {
+      g_ctrlSwitchClosed[j] = closed;
+      sendCtrl(j, PEDAL_CTRL_KIND_SWITCH, closed ? 255 : 0);
+    }
   }
 }
 
@@ -412,6 +498,17 @@ void setup() {
     g_btnLastRaw[i] = false;
     g_btnRawSinceMs[i] = 0;
   }
+  for (uint8_t j = 0; j < PEDAL_CTRL_COUNT; j++) {
+    pinMode(CTRL_PIN[j], INPUT);  // the board's own 10k biases the tip
+    g_ctrlKind[j] = PEDAL_CTRL_KIND_SWITCH;
+    g_ctrlRaw[j] = CTRL_MAX;
+    g_ctrlSent[j] = 0;
+    g_ctrlHaveSent[j] = false;
+    g_ctrlSwitchClosed[j] = false;
+    g_ctrlSwitchRaw[j] = false;
+    g_ctrlSwitchSinceMs[j] = 0;
+  }
+  analogReadResolution(12);
   pinMode(PIN_ENC_A, INPUT_PULLUP);
   pinMode(PIN_ENC_B, INPUT_PULLUP);
   pinMode(PIN_ENC_SW, INPUT_PULLUP);
@@ -448,6 +545,7 @@ void loop() {
   pollLink();
   pollButtons();
   pollEncoder();
+  pollCtrl();
 
   const unsigned long now = millis();
   if (now - g_lastHelloMs >= HELLO_MS) {

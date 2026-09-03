@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:pedal_repository/src/pedal_button.dart';
+import 'package:pedal_repository/src/pedal_ctrl.dart';
 
 /// A decoded input from the pedal, hardware-agnostic.
 ///
@@ -48,9 +49,38 @@ final class ButtonReleased extends PedalEvent {
   String toString() => 'ButtonReleased(${button.name}, $timestamp)';
 }
 
+/// A CTRL jack moved: a footswitch edge, or an expression pedal's travel.
+///
+/// The board says which kind of pedal it decided is plugged in; the app binds
+/// the two to different things, so the kind is part of the control's identity.
+final class CtrlChanged extends PedalEvent {
+  /// Creates a [CtrlChanged] event.
+  const CtrlChanged({
+    required this.jack,
+    required this.kind,
+    required this.value,
+  });
+
+  /// Which jack reported.
+  final PedalCtrlJack jack;
+
+  /// What the board decided is plugged into it.
+  final PedalCtrlKind kind;
+
+  /// `0`..`255`: a switch reports the ends, an expression pedal its travel.
+  final int value;
+
+  @override
+  List<Object?> get props => [jack, kind, value];
+
+  @override
+  String toString() => 'CtrlChanged(${jack.name}, ${kind.name}, $value)';
+}
+
 /// The encoder was turned.
 ///
-/// [delta] is signed: positive is clockwise, negative is counter-clockwise.
+/// [EncoderDelta.delta] is signed: positive is clockwise, negative is
+/// counter-clockwise.
 final class EncoderDelta extends PedalEvent {
   /// Creates an [EncoderDelta] event.
   const EncoderDelta(this.delta);

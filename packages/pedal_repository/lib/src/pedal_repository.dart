@@ -147,6 +147,9 @@ class PedalRepository {
       case EncoderMessage(:final delta):
         if (_incompatible) return;
         _emit(EncoderDelta(delta));
+      case CtrlMessage(:final jack, :final kind, :final value):
+        if (_incompatible) return;
+        _emit(CtrlChanged(jack: jack, kind: kind, value: value));
       case HelloMessage():
         _onHello(message);
       case StateMessage():

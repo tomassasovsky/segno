@@ -1030,6 +1030,11 @@ class ControlCubit extends Cubit<ControlState> {
       case EncoderDelta(:final delta):
         _log('encoder $delta');
         encoderTurned(delta);
+      case CtrlChanged():
+        // The CTRL jacks are assignable controls, not transport: they reach
+        // the looper through ControllerRepository's bindings, which
+        // ConsoleCtrlSource feeds. Nothing to do on this path.
+        break;
     }
   }
 
