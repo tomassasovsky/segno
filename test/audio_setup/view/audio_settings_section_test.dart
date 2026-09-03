@@ -391,8 +391,8 @@ void main() {
 
   group('console mode', () {
     testWidgets('hides the MIDI input picker', (tester) async {
-      // Auto-detect binds the fixed Pro Micro by product name (#421), so a
-      // chooser would only ever offer the one answer.
+      // The pedal is the console board on its own link, so a chooser would
+      // only ever offer the one answer.
       seed(runningState);
       await pumpSection(tester);
 

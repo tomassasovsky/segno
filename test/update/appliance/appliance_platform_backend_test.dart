@@ -71,7 +71,6 @@ const _version = '/etc/segno/build-version';
 const _channel = '/etc/segno/update-channel';
 const _channelOverride = '/data/segno/update-channel';
 const _staged = '/data/.ota-staged-version';
-const _helper = '/usr/bin/segno-update-ctl';
 
 AppliancePlatformBackend backend(ApplianceEnv env) =>
     AppliancePlatformBackend(env: env);
@@ -80,14 +79,19 @@ void main() {
   group('isSupported', () {
     test('true only when both the version file and the helper exist', () {
       expect(
-        backend(_FakeEnv(files: {_version: '0.2.0', _helper: ''})).isSupported,
+        backend(
+          _FakeEnv(files: {_version: '0.2.0', kApplianceHelperPath: ''}),
+        ).isSupported,
         isTrue,
       );
       expect(
         backend(_FakeEnv(files: {_version: '0.2.0'})).isSupported,
         isFalse,
       );
-      expect(backend(_FakeEnv(files: {_helper: ''})).isSupported, isFalse);
+      expect(
+        backend(_FakeEnv(files: {kApplianceHelperPath: ''})).isSupported,
+        isFalse,
+      );
       expect(backend(_FakeEnv()).isSupported, isFalse);
     });
   });

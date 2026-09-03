@@ -63,8 +63,14 @@ abstract final class PedalLinkCodec {
   /// The number of payload bytes in a [StateMessage].
   static const statePayloadLength = 19;
 
-  /// The longest payload the parser accepts; anything longer resyncs.
-  static const maxPayloadLength = 32;
+  /// How often the board sends [HelloMessage], in milliseconds
+  /// (`PEDAL_LINK_HELLO_MS`). The liveness clocks on both ends derive from
+  /// it: `PedalRepository.helloTimeout` on this side, the board's frame
+  /// watchdog on the other.
+  static const helloIntervalMs = 1000;
+
+  /// [helloIntervalMs] as a [Duration].
+  static const helloInterval = Duration(milliseconds: helloIntervalMs);
 
   /// The payload length every message type carries, or `null` for a type this
   /// codec does not know. Every message is fixed-length, so the parser can
@@ -117,17 +123,15 @@ abstract final class PedalLinkCodec {
   /// Decodes one frame's [type] and [payload] into a message, or `null` when
   /// the type is unknown or the payload does not fit it.
   static PedalLinkMessage? decode(int type, List<int> payload) {
+    if (payload.length != payloadLengthFor(type)) return null;
     switch (type) {
       case typeButton:
-        if (payload.length != 2) return null;
         final button = PedalButtonIndex.fromIndex(payload[0]);
         if (button == null || payload[1] > 1) return null;
         return ButtonMessage(button, pressed: payload[1] == 1);
       case typeEncoder:
-        if (payload.length != 1) return null;
         return EncoderMessage(payload[0].toSigned(8));
       case typeHello:
-        if (payload.length != 3) return null;
         return HelloMessage(
           protocolVersion: payload[0],
           firmwareMajor: payload[1],
@@ -137,7 +141,7 @@ abstract final class PedalLinkCodec {
         final frame = decodeStatePayload(payload);
         return frame == null ? null : StateMessage(frame);
       case typeLoopTop:
-        return payload.isEmpty ? const LoopTopMessage() : null;
+        return const LoopTopMessage();
       default:
         return null;
     }

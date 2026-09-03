@@ -1,27 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:looper_repository/looper_repository.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:pedal_repository/testing.dart';
 import 'package:segno/pedal/pedal.dart';
 
 import '../../helpers/pump_app.dart';
 
-class _MockLooperRepository extends Mock implements LooperRepository {}
-
 void main() {
   group('PedalSettingsSection', () {
-    late _MockLooperRepository looper;
-
-    setUp(() {
-      looper = _MockLooperRepository();
-      when(
-        () => looper.looperState,
-      ).thenAnswer((_) => const Stream<LooperState>.empty());
-    });
-
     Future<void> pumpSection(WidgetTester tester, PedalCubit cubit) =>
         tester.pumpApp(
           BlocProvider.value(

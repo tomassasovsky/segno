@@ -6,13 +6,14 @@ import 'package:pedal_repository/src/pedal_link.dart';
 import 'package:pedal_repository/src/pedal_link_message.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 
-/// The on-screen pedal as a [PedalLink]: the link every build without a
-/// console board runs on (desktop, the mock flavor, widget tests).
+/// The board-less [PedalLink]: the link every build without a console board
+/// runs on (desktop, the mock flavor, widget and fuzz tests). It never says
+/// hello, so the app reads it as disconnected.
 ///
 /// [press] and [turn] inject the same messages a footswitch or the encoder
-/// would send, so the real `ControlCubit` behavior runs for a tap on the
-/// plate; every state frame segno sends is decoded into [frame], so a plate
-/// can render what the console's LEDs would show.
+/// would send, so the real `ControlCubit` behavior runs for a synthetic
+/// stomp; every state frame segno sends is decoded into [frame], so a test
+/// (or a plate) can read what the console's LEDs would show.
 class SimulatorPedalLink implements PedalLink {
   /// Creates a [SimulatorPedalLink].
   SimulatorPedalLink();

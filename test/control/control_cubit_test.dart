@@ -144,11 +144,7 @@ void main() {
       looperStates = StreamController<LooperState>.broadcast(sync: true);
       settings = SettingsRepository(store: FakeKeyValueStore());
       transport = FakePedalLink();
-      // A short hello timeout so a disconnect can be rehearsed in real time.
-      pedal = PedalRepository(
-        transport,
-        helloTimeout: const Duration(milliseconds: 50),
-      );
+      pedal = PedalRepository(transport);
       when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
       for (final stub in [
         () => looper.record(channel: any(named: 'channel')),
@@ -233,14 +229,14 @@ void main() {
         exportsRoot: () async => tempDir.path,
         now: () => clock,
       );
-      // The cubit pushes the repository snapshot at construction, so the
-      // snapshot has to exist before it does; setEngine() re-stubs it later.
+      // Every emit projects a frame from the repository snapshot, so the
+      // snapshot has to exist before the first one; setEngine() re-stubs it.
       when(() => looper.state).thenReturn(_stateWith(_emptyTracks()));
       cubit = ControlCubit(
         looper: looper,
         pedal: pedal,
         settings: settings,
-        performance: performance, // deterministic: no heartbeat re-push
+        performance: performance,
       );
       setEngine(_emptyTracks());
     });
@@ -2202,12 +2198,10 @@ void main() {
               bind(PedalButton.track1, bank: 0, rawTarget: 'not-a-target'),
             ]),
           );
-          transport.sent.clear();
-          // The group is already in FX mode, so nothing below changes the
-          // projection; a (re)connect forces a full push of it instead.
-          transport.hello();
           await pumpEventQueue();
 
+          // The last push is the current projection: the cubit pushes on
+          // every change and the diff only ever suppresses an identical frame.
           // R25: a binding that names nothing writes nothing and lights
           // nothing. Falling back to the channel's own chain would light for
           // a chain the switch does not drive.
@@ -2466,10 +2460,10 @@ void main() {
               transport.hello();
               await pumpEventQueue();
               expect(chainEnabled[3], isTrue, reason: 'still held');
-              // The board goes quiet past the hello timeout: disconnected.
-              await Future<void>.delayed(
-                pedal.helloTimeout + const Duration(milliseconds: 50),
-              );
+              // Releasing the link reports it disconnected at once — the same
+              // status a board that went quiet reports after helloTimeout
+              // (pinned in the package's own tests), without a real-time wait.
+              await pedal.dispose();
               await pumpEventQueue();
               expect(chainEnabled[3], isFalse);
             },
@@ -2705,7 +2699,7 @@ void main() {
     });
 
     group('frame projection (frames out via PedalRepository)', () {
-      test('pushes an encoded frame to the bound pedal', () async {
+      test('pushes an encoded frame to the pedal link', () async {
         transport.sent.clear();
 
         // Rec mode (default): the cursor track (0) is red; a playing
@@ -2752,33 +2746,28 @@ void main() {
         expect(frame.trackLeds[0], PedalTrackLed.off);
       });
 
-      test('pushes the repository snapshot at construction, before any '
-          'LooperState streams (regression: a null _looperState left the LEDs '
-          'dark)', () async {
-        // NB: no setEngine() — this cubit never receives a streamed
-        // LooperState; only the synchronous `looper.state` snapshot (an idle
-        // empty set from the outer setUp) is available. Liveness after this
-        // first push is the repository's (it answers hellos), so this is the
-        // one push the cubit owes unprompted.
-        transport.sent.clear();
-        final idle = ControlCubit(
-          looper: looper,
-          pedal: pedal,
-          settings: settings,
-          performance: performance,
-        );
-        expect(transport.lastFrame, isNotNull);
-        await idle.close();
-      });
-
-      test('a rebind force-pushes the CURRENT state', () async {
-        setEngine(_emptyTracks());
-        cubit.toggleMode(); // mode changes while unbound
-        await pumpEventQueue();
-
-        final frame = transport.lastFrame;
-        expect(frame!.mode, PedalMode.play);
-      });
+      test(
+        'pushes the restored state on load(), before any LooperState '
+        'streams (regression: a null _looperState left the LEDs dark)',
+        () async {
+          // NB: no setEngine() — this cubit never receives a streamed
+          // LooperState; only the synchronous `looper.state` snapshot (an idle
+          // empty set from the outer setUp) is available. Liveness after this
+          // first push is the repository's (it answers hellos), so this is the
+          // one push the cubit owes unprompted.
+          transport.sent.clear();
+          final idle = ControlCubit(
+            looper: looper,
+            pedal: pedal,
+            settings: settings,
+            performance: performance,
+          );
+          addTearDown(idle.close);
+          expect(transport.lastFrame, isNull, reason: 'nothing before load()');
+          await idle.load();
+          expect(transport.lastFrame, isNotNull);
+        },
+      );
 
       test('Clear LED lights while the footswitch is held and darkens on '
           'release', () async {

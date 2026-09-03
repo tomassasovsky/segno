@@ -54,11 +54,11 @@ static const bool RING_CLOCKWISE = true;
 // ---- link ----------------------------------------------------------------------
 #define LINK Serial1
 static const unsigned long LINK_BAUD = 115200;
-static const unsigned long HELLO_MS = 1000;
-// segno answers every HELLO (1 Hz) with its current frame; if nothing arrives
-// for this long the app is gone and the panel goes dark rather than freezing
-// on a stale frame.
-static const unsigned long FRAME_TIMEOUT_MS = 5000;
+// segno answers every HELLO with its current frame; if nothing arrives for
+// FRAME_TIMEOUT_MS the app is gone and the panel goes dark rather than
+// freezing on a stale frame. Both cadences are the protocol's (pedal_link.h).
+static const unsigned long HELLO_MS = PEDAL_LINK_HELLO_MS;
+static const unsigned long FRAME_TIMEOUT_MS = PEDAL_LINK_FRAME_TIMEOUT_MS;
 
 static pedal_link_parser g_parser;
 static pedal_state g_frame;
@@ -159,8 +159,7 @@ static void pollEncoder() {
 // show(): the frozen-ring branch below keeps its pixels as they are, and a
 // per-frame in-place gamma would decay them to black within a few ticks.
 static uint32_t rgb(uint8_t r, uint8_t g, uint8_t b) {
-  return Adafruit_NeoPixel::Color(Adafruit_NeoPixel::gamma8(r), Adafruit_NeoPixel::gamma8(g),
-                                  Adafruit_NeoPixel::gamma8(b));
+  return Adafruit_NeoPixel::gamma32(Adafruit_NeoPixel::Color(r, g, b));
 }
 static uint32_t scaled(uint8_t r, uint8_t g, uint8_t b, uint8_t level) {
   return rgb((uint8_t)((r * (uint16_t)level) / 255), (uint8_t)((g * (uint16_t)level) / 255),
@@ -201,6 +200,10 @@ static inline uint16_t ringIndex(uint16_t i) {
 //
 // A Stop that leaves a loop loaded freezes the hump where it was. With nothing
 // loaded and nothing playing the ring breathes green so it reads as alive.
+// Known gap, accepted: the hump is re-pinned only by LOOP_TOP, which segno
+// sends when it sees the playhead wrap. A restart from zero it did not see as
+// a wrap keeps the hump where it froze until the next loop top; the on-screen
+// plate has the same behaviour.
 // Ported from the pedal's renderRing(); widths scaled to the Ring 24.
 static const unsigned long FREE_RUN_MS_PER_REV = 700;
 static const unsigned long BREATHE_MS = 2400;
@@ -218,8 +221,7 @@ static void onLoopTop() {
 // next LOOP_TOP then pins it exactly.
 static void onLoopLength(uint32_t oldUs, uint32_t newUs) {
   if (oldUs == 0 || newUs == 0 || oldUs == newUs) return;
-  g_ringPhase = g_ringPhase * ((float)oldUs / (float)newUs);
-  while (g_ringPhase >= (float)RING_N) g_ringPhase -= (float)RING_N;
+  g_ringPhase = fmodf(g_ringPhase * ((float)oldUs / (float)newUs), (float)RING_N);
 }
 
 // Returns whether the ring buffer changed and needs pushing.
@@ -247,8 +249,7 @@ static bool renderRing() {
   const float msPerRev = g_frame.loop_length_micros > 0
                              ? (float)g_frame.loop_length_micros / 1000.0f
                              : (float)FREE_RUN_MS_PER_REV;
-  g_ringPhase += (float)dt / msPerRev * (float)RING_N;
-  while (g_ringPhase >= (float)RING_N) g_ringPhase -= (float)RING_N;
+  g_ringPhase = fmodf(g_ringPhase + (float)dt / msPerRev * (float)RING_N, (float)RING_N);
   for (uint16_t i = 0; i < RING_N; i++) {
     float d = fabsf((float)i - g_ringPhase);
     if (d > RING_N / 2.0f) d = RING_N - d;

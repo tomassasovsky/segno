@@ -5,18 +5,8 @@ import 'package:segno/appliance/power_off/power_key_source.dart';
 
 void main() {
   group('openAppliancePowerKeySource', () {
-    test('is not constructed on non-Linux', () {
-      expect(
-        openAppliancePowerKeySource(isLinux: false, helperExists: true),
-        isNull,
-      );
-    });
-
-    test('is not constructed when the helper is absent', () {
-      expect(
-        openAppliancePowerKeySource(isLinux: true, helperExists: false),
-        isNull,
-      );
+    test('is not constructed off the appliance', () {
+      expect(openAppliancePowerKeySource(onAppliance: false), isNull);
     });
   });
 

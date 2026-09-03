@@ -117,11 +117,9 @@ Future<void> runSegno(
   );
   // The console board's pedal link: the Pi's uart3 to the board's Pico 2 on
   // the appliance (the link owns the device node, retries until the overlay
-  // lands, and reports every state change to the log), or the on-screen pedal
+  // lands, and reports every state change to the log), or a board-less link
   // everywhere else — a Linux desktop included, which has no board to find.
-  final onAppliance =
-      Platform.isLinux && File(kApplianceHelperPath).existsSync();
-  final pedalLink = onAppliance
+  final pedalLink = isAppliance()
       ? UartPedalLink(log: AppLog.info)
       : SimulatorPedalLink();
   final pedalRepository = PedalRepository(pedalLink, log: AppLog.info);

@@ -154,16 +154,10 @@ class ControlCubit extends Cubit<ControlState> {
        super(const ControlState()) {
     _looperSub = _looper.looperState.listen(_onLooperState);
     _eventsSub = _pedal.events.listen(_handleEvent);
-    _statusSub = _pedal.statusChanges.listen(_onBindStatus);
+    _statusSub = _pedal.statusChanges.listen(_onLinkStatus);
     _perfStatusSub = _performance.captureStatus.listen(_onPerformanceStatus);
     _bindingSub = controller?.bindingEvents.listen(_onControllerBindingEvent);
     _midiSub = midiDevices?.connections.listen(_onMidiConnection);
-    // Push once now, from the repository snapshot: an idle engine streams no
-    // LooperState, and without this the board would wait for the first change
-    // before showing anything. Liveness after that is the repository's — it
-    // answers every hello from the board with the last pushed frame — so this
-    // cubit pushes only on change.
-    _pushProjected(force: true);
   }
 
   /// The default `currentChains`: an empty rig, which is what
@@ -407,6 +401,13 @@ class ControlCubit extends Cubit<ControlState> {
       ),
     );
     setMode(defaultMode);
+    // The first frame the board sees is this restored one, not the boot
+    // default: an idle engine streams no LooperState, so without a push here
+    // the board would wait for the first change before showing anything.
+    // Liveness after this is the repository's — it answers every hello from
+    // the board with the last pushed frame — so this cubit pushes only on
+    // change.
+    _pushProjected();
   }
 
   // ---------------------------------------------------------------------------
@@ -1331,7 +1332,7 @@ class ControlCubit extends Cubit<ControlState> {
   /// Every path that can strand a press without its release funnels here:
   /// mode exit ([setMode]), a binding-set change ([setGlobalBindings] /
   /// [applySessionBindings], which covers the assignment screen's live edits
-  /// AND a session load), and pedal disconnect ([_onBindStatus]). A physical
+  /// AND a session load), and pedal disconnect ([_onLinkStatus]). A physical
   /// release goes through [_releaseBinding] instead, which restores just that
   /// one — but both write the captured state, so no target can be left
   /// enabled by a press whose release never arrived.
@@ -2000,7 +2001,7 @@ class ControlCubit extends Cubit<ControlState> {
     _pushProjected();
   }
 
-  void _onBindStatus(PedalLinkStatus status) {
+  void _onLinkStatus(PedalLinkStatus status) {
     if (isClosed || status == PedalLinkStatus.connected) return;
     // The board went away (or stopped being trusted) mid-hold: the release is
     // never coming, so a held momentary would leave its target enabled
@@ -2021,15 +2022,13 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   /// Projects and pushes the current LED frame. Diffs against the last push so
-  /// steady state is silent; [force] re-sends unchanged (the keep-alive uses it
-  /// so the pedal's link watchdog keeps seeing frames while idle).
-  void _pushProjected({bool force = false}) {
+  /// steady state is silent; the repository re-sends the last push itself
+  /// whenever the board asks.
+  void _pushProjected() {
     // Project from `_l` — the last streamed state, or the repository's current
-    // snapshot when no LooperState has streamed in yet. Reading `_l` (not the
-    // raw `_looperState`) lets the keep-alive light the pedal on bind even
-    // before the first stream event: an idle engine emits no LooperState, so
-    // gating on a null `_looperState` left the LEDs dark until some audio
-    // activity happened to push a state.
+    // snapshot when no LooperState has streamed in yet: an idle engine emits
+    // no LooperState, so gating on a null `_looperState` left the LEDs dark
+    // until some audio activity happened to push a state.
     final looperState = _l;
     final frame = projectFrame(
       looperState,
@@ -2039,7 +2038,7 @@ class ControlCubit extends Cubit<ControlState> {
       masterGain: _masterGain,
       boundChains: _boundChains(),
     );
-    if (!force && frame == _lastFrame) return; // diff: only push on change
+    if (frame == _lastFrame) return; // diff: only push on change
     _lastFrame = frame;
     _pedal.pushState(frame);
   }

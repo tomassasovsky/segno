@@ -58,7 +58,7 @@ void main() {
     );
     addTearDown(performance.dispose);
     pedalRepo = PedalRepository(SimulatorPedalLink());
-    // The cubit pushes the repository snapshot at construction.
+    // Every ControlCubit emit projects a pedal frame from this snapshot.
     when(() => repository.state).thenReturn(const LooperState());
     control = ControlCubit(
       looper: repository,

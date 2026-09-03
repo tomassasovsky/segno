@@ -230,12 +230,7 @@ void main() {
     });
 
     test('drops an oversized length and resyncs', () {
-      final out = PedalLinkParser().push([
-        0xA5,
-        0x01,
-        PedalLinkCodec.maxPayloadLength + 1,
-        ...button,
-      ]);
+      final out = PedalLinkParser().push([0xA5, 0x01, 0xFF, ...button]);
       expect(out, [const ButtonMessage(PedalButton.bank, pressed: false)]);
     });
 

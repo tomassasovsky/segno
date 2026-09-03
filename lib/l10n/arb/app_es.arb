@@ -1216,7 +1216,7 @@
     },
     "pedalAssignTitle": "Asignaciones del pedal",
     "pedalLinkGroup": "PEDAL DE LA CONSOLA",
-    "pedalStatusDisconnected": "Placa de la consola no conectada — el pedal en pantalla sigue funcionando.",
+    "pedalStatusDisconnected": "Placa de la consola no conectada.",
     "pedalStatusConnected": "Placa de la consola conectada · firmware {firmwareVersion}",
     "@pedalStatusConnected": {
         "placeholders": {

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:bluetooth_repository/bluetooth_repository.dart';
 import 'package:brightness_client/brightness_client.dart';
@@ -179,10 +178,7 @@ class _AppState extends State<App> {
     _pedal = widget.pedalRepository ?? PedalRepository(SimulatorPedalLink());
     _powerKeySource =
         widget.powerKeySource ??
-        openAppliancePowerKeySource(
-          isLinux: Platform.isLinux,
-          helperExists: File(kApplianceHelperPath).existsSync(),
-        );
+        openAppliancePowerKeySource(onAppliance: isAppliance());
   }
 
   @override
