@@ -20,23 +20,28 @@ enum PedalLinkStatus {
 
   /// The board is talking, but its hello names a link protocol this build
   /// does not speak: its firmware and this app were built against different
-  /// revisions of `pedal_link.h`. Frames are still exchanged (nothing else
-  /// can be done from here), but neither side should be trusted to render
-  /// the other correctly until one of them is updated.
+  /// revisions of `pedal_link.h`. The repository then drops its footswitch
+  /// and encoder messages (a reordered button table could map a stomp onto
+  /// Clear) and sends it no frames, until one side is updated.
   incompatible,
 }
 
 /// Owns the pedal link: turns inbound board messages into [PedalEvent]s, tracks
 /// whether the board is alive, and pushes [PedalStateFrame]s and the loop-top
 /// pulse out. Hardware-free: everything native is behind the [PedalLink].
+///
+/// Liveness is one mechanism, driven by the board: every hello is answered
+/// with the last pushed frame, so a board that just (re)connected — or that
+/// missed a frame — is current within a second, and its own frame watchdog
+/// sees traffic while segno runs. Callers push only on change.
 class PedalRepository {
   /// Creates a [PedalRepository] over [link].
   ///
   /// [clock] stamps button events for the cubit's tap / long-press timing; it
   /// defaults to a monotonic stopwatch. [helloTimeout] is how long the board
   /// may stay silent before the link reads as disconnected. [log] receives
-  /// one line per link status change and per protocol mismatch — the app
-  /// hands it its persistent log, so a dark panel has a breadcrumb.
+  /// one line per link status change — the app hands it its persistent log,
+  /// so a dark panel has a breadcrumb.
   PedalRepository(
     PedalLink link, {
     Duration Function()? clock,
@@ -64,14 +69,16 @@ class PedalRepository {
 
   PedalLinkStatus _status = PedalLinkStatus.disconnected;
   String? _firmwareVersion;
-  int? _protocolVersion;
+  PedalStateFrame? _lastFrame;
   Timer? _helloWatchdog;
   bool _disposed = false;
 
   /// Decoded pedal inputs (button presses/releases, encoder detents).
   Stream<PedalEvent> get events => _events.stream;
 
-  /// Link status transitions.
+  /// Link status transitions. Also fires, with the same status, when a
+  /// talking board announces a different firmware version — the board was
+  /// reflashed under a running app.
   Stream<PedalLinkStatus> get statusChanges => _statusChanges.stream;
 
   /// The current link status.
@@ -81,32 +88,33 @@ class PedalRepository {
   /// talking, or `null` while it is not.
   String? get firmwareVersion => _firmwareVersion;
 
-  /// The link protocol the board announced while it is talking, or `null`
-  /// while it is not. Equal to [PedalLinkCodec.protocolVersion] when the
-  /// status is [PedalLinkStatus.connected].
-  int? get protocolVersion => _protocolVersion;
-
-  /// Sends [frame] to the board.
+  /// Sends [frame] to the board and remembers it as the frame every later
+  /// hello is answered with. Dropped while the board is
+  /// [PedalLinkStatus.incompatible].
   void pushState(PedalStateFrame frame) {
     if (_disposed) return;
+    _lastFrame = frame;
+    if (_status == PedalLinkStatus.incompatible) return;
     _link.send(StateMessage(frame));
   }
 
-  /// Sends the loop-top pulse.
+  /// Sends the loop-top pulse. Dropped while the board is incompatible.
   void sendLoopTop() {
-    if (_disposed) return;
+    if (_disposed || _status == PedalLinkStatus.incompatible) return;
     _link.send(const LoopTopMessage());
   }
 
   void _onMessage(PedalLinkMessage message) {
     switch (message) {
       case ButtonMessage(:final button, :final pressed):
+        if (_status == PedalLinkStatus.incompatible) return;
         _emit(
           pressed
               ? ButtonPressed(button, timestamp: _clock())
               : ButtonReleased(button, timestamp: _clock()),
         );
       case EncoderMessage(:final delta):
+        if (_status == PedalLinkStatus.incompatible) return;
         _emit(EncoderDelta(delta));
       case HelloMessage():
         _onHello(message);
@@ -116,27 +124,37 @@ class PedalRepository {
   }
 
   void _onHello(HelloMessage hello) {
+    final versionChanged = _firmwareVersion != hello.firmwareVersion;
     _firmwareVersion = hello.firmwareVersion;
-    _protocolVersion = hello.protocolVersion;
     _helloWatchdog?.cancel();
     _helloWatchdog = Timer(helloTimeout, _onHelloTimeout);
-    final compatible = hello.protocolVersion == PedalLinkCodec.protocolVersion;
-    _setStatus(
-      compatible ? PedalLinkStatus.connected : PedalLinkStatus.incompatible,
-      detail: compatible
-          ? 'firmware ${hello.firmwareVersion}'
-          : 'firmware ${hello.firmwareVersion} speaks link protocol '
-                '${hello.protocolVersion}, this build speaks '
-                '${PedalLinkCodec.protocolVersion}',
-    );
+    if (hello.protocolVersion == PedalLinkCodec.protocolVersion) {
+      _setStatus(
+        PedalLinkStatus.connected,
+        force: versionChanged,
+        detail: () => 'firmware ${hello.firmwareVersion}',
+      );
+      // Answer every hello with the current frame: the reconnect re-push
+      // and the keep-alive in one place, paced by the board.
+      final frame = _lastFrame;
+      if (frame != null) _link.send(StateMessage(frame));
+    } else {
+      _setStatus(
+        PedalLinkStatus.incompatible,
+        force: versionChanged,
+        detail: () =>
+            'firmware ${hello.firmwareVersion} speaks link protocol '
+            '${hello.protocolVersion}, this build speaks '
+            '${PedalLinkCodec.protocolVersion}',
+      );
+    }
   }
 
   void _onHelloTimeout() {
     _firmwareVersion = null;
-    _protocolVersion = null;
     _setStatus(
       PedalLinkStatus.disconnected,
-      detail: 'no hello for ${helloTimeout.inSeconds} s',
+      detail: () => 'no hello for ${helloTimeout.inSeconds} s',
     );
   }
 
@@ -144,10 +162,14 @@ class PedalRepository {
     if (!_events.isClosed) _events.add(event);
   }
 
-  void _setStatus(PedalLinkStatus status, {required String detail}) {
-    if (_status == status) return;
+  void _setStatus(
+    PedalLinkStatus status, {
+    required String Function() detail,
+    bool force = false,
+  }) {
+    if (_status == status && !force) return;
     _status = status;
-    _log?.call('pedal link: ${status.name} ($detail)');
+    _log?.call('pedal link: ${status.name} (${detail()})');
     if (!_statusChanges.isClosed) _statusChanges.add(status);
   }
 
@@ -158,8 +180,7 @@ class PedalRepository {
     _disposed = true;
     _helloWatchdog?.cancel();
     _firmwareVersion = null;
-    _protocolVersion = null;
-    _setStatus(PedalLinkStatus.disconnected, detail: 'link released');
+    _setStatus(PedalLinkStatus.disconnected, detail: () => 'link released');
     await _inboundSub.cancel();
     await _link.dispose();
     await _events.close();

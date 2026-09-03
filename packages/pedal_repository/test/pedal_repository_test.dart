@@ -125,10 +125,52 @@ void main() {
       await pumpEventQueue();
       expect(logged.status, PedalLinkStatus.incompatible);
       expect(logged.firmwareVersion, '2.0');
-      expect(logged.protocolVersion, PedalLinkCodec.protocolVersion + 1);
       expect(lines.single, contains('incompatible'));
       expect(lines.single, contains('protocol 2'));
+
+      // Its stomps are dropped and it is sent nothing: a reordered button
+      // table on the other side must not reach the looper.
+      final events = <PedalEvent>[];
+      logged.events.listen(events.add);
+      link
+        ..press(PedalButton.clear, down: true)
+        ..turn(1);
+      await pumpEventQueue();
+      expect(events, isEmpty);
+      final before = link.sent.length;
+      logged
+        ..pushState(PedalStateFrame.blank())
+        ..sendLoopTop();
+      expect(link.sent.length, before);
       await logged.dispose();
+    });
+
+    test('every hello is answered with the last pushed frame', () async {
+      final frame = PedalStateFrame.blank().copyWith(
+        globalColor: GlobalColor.green,
+      );
+      link.hello();
+      await pumpEventQueue();
+      expect(link.sent.whereType<StateMessage>(), isEmpty); // nothing yet
+      repo.pushState(frame);
+      link.sent.clear();
+      link.hello();
+      await pumpEventQueue();
+      expect(link.sent, [StateMessage(frame)]);
+    });
+
+    test('a hello with a new firmware version re-emits the status', () async {
+      final statuses = <PedalLinkStatus>[];
+      repo.statusChanges.listen(statuses.add);
+      link.hello();
+      await pumpEventQueue();
+      link.hello(firmwareMinor: 1); // reflashed under a running app
+      await pumpEventQueue();
+      expect(repo.firmwareVersion, '1.1');
+      expect(statuses, [
+        PedalLinkStatus.connected,
+        PedalLinkStatus.connected,
+      ]);
     });
 
     test('the firmware version is forgotten when the board goes quiet', () {
@@ -138,11 +180,9 @@ void main() {
         quietLink.hello(firmwareMinor: 7);
         async.flushMicrotasks();
         expect(quiet.firmwareVersion, '1.7');
-        expect(quiet.protocolVersion, PedalLinkCodec.protocolVersion);
         async.elapse(quiet.helloTimeout + const Duration(seconds: 1));
         expect(quiet.status, PedalLinkStatus.disconnected);
         expect(quiet.firmwareVersion, isNull);
-        expect(quiet.protocolVersion, isNull);
         unawaited(quiet.dispose());
         async.flushTimers();
       });

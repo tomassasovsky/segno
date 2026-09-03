@@ -27,7 +27,7 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
     this.channelFile = '/etc/segno/update-channel',
     this.channelOverrideFile = '/data/segno/update-channel',
     this.stagedFile = '/data/.ota-staged-version',
-    this.helperPath = '/usr/bin/segno-update-ctl',
+    this.helperPath = kApplianceHelperPath,
   }) : _env = env ?? const SystemApplianceEnv();
 
   final ApplianceEnv _env;

@@ -149,7 +149,6 @@ void main() {
       controller: controller,
       midiDevices: midiDevices,
       simulatedSource: simulated,
-      keepAliveInterval: Duration.zero,
       // Brisk enough that a pumped duration drains a synthetic sweep (#519).
       simulateTick: const Duration(milliseconds: 1),
       simulateSweepLeg: const Duration(milliseconds: 2),

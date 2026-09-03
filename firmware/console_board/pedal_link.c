@@ -109,7 +109,9 @@ int pedal_link_parser_push(pedal_link_parser *p, uint8_t byte, uint8_t *type,
     case PS_TYPE:
       if (pedal_link_payload_len(byte) < 0) {
         p->dropped++;
-        p->state = PS_SYNC;
+        /* A sync byte here is the start of the NEXT frame (a stray sync or a
+         * glitch ate this one); consuming it would lose that frame too. */
+        p->state = byte == PEDAL_LINK_SYNC ? PS_TYPE : PS_SYNC;
         return 0;
       }
       p->type = byte;
@@ -118,7 +120,7 @@ int pedal_link_parser_push(pedal_link_parser *p, uint8_t byte, uint8_t *type,
     case PS_LEN:
       if ((int)byte != pedal_link_payload_len(p->type)) {
         p->dropped++;
-        p->state = PS_SYNC;
+        p->state = byte == PEDAL_LINK_SYNC ? PS_TYPE : PS_SYNC;
         return 0;
       }
       p->len = byte;

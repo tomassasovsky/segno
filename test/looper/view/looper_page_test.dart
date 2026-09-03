@@ -83,7 +83,6 @@ void main() {
                   pedal: PedalRepository(SimulatorPedalLink()),
                   settings: settings,
                   performance: performanceRepository,
-                  keepAliveInterval: Duration.zero,
                 ),
               ),
               BlocProvider<PedalCubit>.value(value: pedal),

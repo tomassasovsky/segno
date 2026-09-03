@@ -215,11 +215,19 @@ static void check_rejections(void) {
   uint8_t type, len, payload[PEDAL_LINK_MAX_PAYLOAD];
   CHECK(parse_all(stream, 12, &type, payload, &len) == 1, "corrupt checksum was not dropped / resync failed");
 
-  /* Garbage before a frame is skipped. (A stray sync byte right before a
-   * frame would legitimately eat that frame; the parser resyncs on the next.) */
+  /* Garbage before a frame is skipped. */
   uint8_t junk[9] = {0x00, 0x13, 0x37};
   memcpy(junk + 3, frame, 6);
   CHECK(parse_all(junk, 9, &type, payload, &len) == 1, "garbage prefix broke parsing");
+
+  /* A stray sync right before a frame, and a sync where a length byte should
+   * be: the frame behind each still parses. */
+  uint8_t stray[7] = {0xA5};
+  memcpy(stray + 1, frame, 6);
+  CHECK(parse_all(stray, 7, &type, payload, &len) == 1, "stray sync ate the next frame");
+  uint8_t synclen[8] = {0xA5, PEDAL_LINK_TYPE_STATE};
+  memcpy(synclen + 2, frame, 6);
+  CHECK(parse_all(synclen, 8, &type, payload, &len) == 1, "sync in the length slot ate the next frame");
 
   /* Oversized length resyncs. */
   uint8_t big[10] = {0xA5, 0x01, PEDAL_LINK_MAX_PAYLOAD + 1, 0x00};

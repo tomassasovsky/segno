@@ -1,6 +1,6 @@
 // coverage:ignore-file
-// The one file in this package that touches a device node. Its logic is a
-// handful of dart:io calls around the codec, which the parser tests cover.
+// The one file in this package that touches a device node: the open / retry /
+// read-loop / close machine around the codec, which the parser tests cover.
 
 import 'dart:async';
 import 'dart:io';
@@ -54,15 +54,11 @@ class UartPedalLink implements PedalLink {
   RandomAccessFile? _reader;
   RandomAccessFile? _writer;
   Future<void>? _readLoop;
+  Future<void>? _closing;
   Timer? _retryTimer;
   String? _lastLogged;
+  int _droppedReported = 0;
   bool _disposed = false;
-
-  /// The device this link opens.
-  String get path => _path;
-
-  /// Whether the device is currently open.
-  bool get isOpen => _writer != null;
 
   @override
   Stream<PedalLinkMessage> get inbound => _inbound.stream;
@@ -84,7 +80,7 @@ class UartPedalLink implements PedalLink {
     if (_disposed) return;
     _disposed = true;
     _retryTimer?.cancel();
-    await _close();
+    await (_closing ?? _close());
     await _inbound.close();
   }
 
@@ -123,10 +119,23 @@ class UartPedalLink implements PedalLink {
         _scheduleRetry();
         return;
       }
-      _reader = await file.open();
-      _writer = await file.open(mode: FileMode.writeOnlyAppend);
+      final reader = await file.open();
+      final writer = await file.open(mode: FileMode.writeOnlyAppend);
+      if (_disposed) {
+        // dispose() ran while stty / open were in flight; nothing else will
+        // close these.
+        await reader.close();
+        await writer.close();
+        return;
+      }
+      _reader = reader;
+      _writer = writer;
+      _parser
+        ..droppedFrames = 0
+        ..reset();
+      _droppedReported = 0;
       _say('open on $_path at $_baud');
-      _readLoop = _read(_reader!);
+      _readLoop = _read(reader);
     } on Object catch (error) {
       _say('opening $_path failed: $error');
       await _close();
@@ -138,7 +147,12 @@ class UartPedalLink implements PedalLink {
     try {
       while (!_disposed && identical(_reader, reader)) {
         final chunk = await reader.read(64);
-        if (chunk.isNotEmpty) _parser.push(chunk).forEach(_inbound.add);
+        if (chunk.isEmpty) continue;
+        _parser.push(chunk).forEach(_inbound.add);
+        if (_parser.droppedFrames != _droppedReported) {
+          _droppedReported = _parser.droppedFrames;
+          _say('$_droppedReported frame(s) dropped on $_path so far');
+        }
       }
     } on Object catch (error) {
       if (_disposed) return;
@@ -152,17 +166,22 @@ class UartPedalLink implements PedalLink {
     _scheduleRetry();
   }
 
-  Future<void> _close() async {
-    final reader = _reader;
-    final writer = _writer;
-    _reader = null;
-    _writer = null;
-    // The loop notices _reader changed on its next (≤ 100 ms) read.
-    final loop = _readLoop;
-    _readLoop = null;
-    if (loop != null) await loop;
-    await reader?.close();
-    await writer?.close();
+  Future<void> _close() {
+    final closing = _closing;
+    if (closing != null) return closing;
+    return _closing = () async {
+      final reader = _reader;
+      final writer = _writer;
+      _reader = null;
+      _writer = null;
+      // The loop notices _reader changed on its next (≤ 100 ms) read.
+      final loop = _readLoop;
+      _readLoop = null;
+      if (loop != null) await loop;
+      await reader?.close();
+      await writer?.close();
+      _closing = null;
+    }();
   }
 
   void _scheduleRetry() {

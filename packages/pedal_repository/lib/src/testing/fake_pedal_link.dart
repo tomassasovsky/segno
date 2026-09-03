@@ -1,4 +1,3 @@
-// coverage:ignore-file
 // Test support, shipped from the package so the app's tests and the package's
 // own tests drive one and the same fake.
 
@@ -30,8 +29,9 @@ class FakePedalLink implements PedalLink {
   void press(PedalButton button, {required bool down}) =>
       emit(ButtonMessage(button, pressed: down));
 
-  /// An encoder turn of [delta] detents.
-  void turn(int delta) => emit(EncoderMessage(delta));
+  /// An encoder turn of [delta] detents, clamped to the wire's int8 like the
+  /// on-screen pedal.
+  void turn(int delta) => emit(EncoderMessage(delta.clamp(-128, 127)));
 
   /// The board's hello.
   void hello({int firmwareMajor = 1, int firmwareMinor = 0}) => emit(

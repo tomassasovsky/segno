@@ -134,7 +134,6 @@ void main() {
       pedal: PedalRepository(SimulatorPedalLink()),
       settings: settings,
       performance: performance,
-      keepAliveInterval: Duration.zero,
     );
     tray = SettingsTrayCubit(settings: settings)..showLoopTab(tab);
     // unawaited: awaiting a cubit close inside a testWidgets body deadlocks on

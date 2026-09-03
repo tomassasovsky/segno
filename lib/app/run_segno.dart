@@ -16,6 +16,7 @@ import 'package:segno/app/view/app.dart';
 import 'package:segno/bootstrap.dart';
 import 'package:segno/logging/app_log.dart';
 import 'package:segno/session_directory.dart';
+import 'package:segno/update/appliance/appliance_env.dart';
 import 'package:segno/update/update_backend.dart';
 import 'package:segno/visualizer/visualizer.dart';
 import 'package:segno/visualizer/waveform_window_args.dart';
@@ -117,9 +118,11 @@ Future<void> runSegno(
   // The console board's pedal link: the Pi's uart3 to the board's Pico 2 on
   // the appliance (the link owns the device node, retries until the overlay
   // lands, and reports every state change to the log), or the on-screen pedal
-  // everywhere else.
-  final pedalLink = Platform.isLinux
-      ? UartPedalLink(log: AppLog.warn)
+  // everywhere else — a Linux desktop included, which has no board to find.
+  final onAppliance =
+      Platform.isLinux && File(kApplianceHelperPath).existsSync();
+  final pedalLink = onAppliance
+      ? UartPedalLink(log: AppLog.info)
       : SimulatorPedalLink();
   final pedalRepository = PedalRepository(pedalLink, log: AppLog.info);
   final settings = SettingsRepository(

@@ -153,12 +153,11 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
 
     final hardware = _card([
       // Always drawn, even with no firmware version to report — because the
-      // case worth seeing is the one where there is none. The bind status
-      // used to live only in the full-screen Settings page, whose own comment
-      // called this line "the ONLY way to see whether auto-detect actually
-      // found the pedal", and the console lost its touch route there when the
-      // rail dropped its "Controls" entry. A performer whose pedal does not
-      // bind has to be told somewhere.
+      // case worth seeing is the one where there is none. The link status
+      // used to live only in the full-screen Settings page, and the console
+      // lost its touch route there when the rail dropped its "Controls"
+      // entry. A performer whose board is not talking has to be told
+      // somewhere.
       ({required last}) => ConsoleRow(
         key: const Key('system_about_pedal'),
         title: l10n.aboutPedalFirmwareRow,

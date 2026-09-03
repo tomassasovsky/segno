@@ -33,8 +33,10 @@ mismatched build shows up in segno's log.
 | `0x10 STATE` | segno → board | 19 bytes: flags, mode, looper mode, global colour, bank, selected track, 8 track LEDs, loop length µs (LE32), master gain — see `pedal_link.h` |
 | `0x11 LOOP_TOP` | segno → board | none |
 
-The board goes dark if no `STATE` arrives for 5 s (segno re-pushes at least
-once a second while it runs) and on the goodbye flag.
+segno answers every `HELLO` with its current `STATE`, so a board that just
+(re)connected is current within a second; the board goes dark if no `STATE`
+arrives for 5 s and on the goodbye flag. Frames the parser drops (bad type,
+length or checksum) are counted on both ends; segno logs the count.
 
 **Contract test.** `packages/pedal_repository` generates golden frames
 (`test/fixtures/*.bin`) from the Dart codec; `firmware/test/run_tests.sh` decodes

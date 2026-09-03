@@ -166,7 +166,6 @@ void main() {
         controller: controller,
         midiDevices: midiDevices,
         simulatedSource: simulated,
-        keepAliveInterval: Duration.zero,
         learnTimeout: const Duration(milliseconds: 20),
         mappingsWriteDebounce: mappingsWriteDebounce,
         // A brisk synthetic sweep — a few ticks per leg — so a simulation
@@ -522,7 +521,6 @@ void main() {
           performance: performance,
           controller: controller,
           midiDevices: midiDevices,
-          keepAliveInterval: Duration.zero,
           mappingsWriteDebounce: mappingsWriteDebounce,
         );
         final binding = ContinuousBinding(
@@ -559,7 +557,6 @@ void main() {
           performance: performance,
           controller: controller,
           midiDevices: midiDevices,
-          keepAliveInterval: Duration.zero,
           mappingsWriteDebounce: mappingsWriteDebounce,
         );
         final binding = ContinuousBinding(
@@ -589,7 +586,6 @@ void main() {
             performance: performance,
             controller: controller,
             midiDevices: midiDevices,
-            keepAliveInterval: Duration.zero,
             mappingsWriteDebounce: mappingsWriteDebounce,
           );
           final binding = ContinuousBinding(
@@ -1001,7 +997,6 @@ void main() {
             controller: controller2,
             midiDevices: midiDevices,
             simulatedSource: sim2,
-            keepAliveInterval: Duration.zero,
             mappingsWriteDebounce: Duration.zero,
             simulateTick: const Duration(seconds: 1),
           );
@@ -1060,7 +1055,6 @@ void main() {
           controller: controller2,
           midiDevices: midiDevices,
           simulatedSource: sim2,
-          keepAliveInterval: Duration.zero,
           mappingsWriteDebounce: Duration.zero,
           // A full second between ticks: only the first push lands pre-close.
           simulateTick: const Duration(seconds: 1),

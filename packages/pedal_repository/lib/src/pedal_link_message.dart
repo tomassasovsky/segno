@@ -77,8 +77,8 @@ final class StateMessage extends PedalLinkMessage {
   List<Object?> get props => [frame];
 }
 
-/// The loop wrapped (segno → board). Reserved for loop-synced ring rendering;
-/// the firmware records its arrival and nothing else today.
+/// The loop wrapped (segno → board). The board snaps its ring sweep back to
+/// the top on it, so the hump is the playhead.
 final class LoopTopMessage extends PedalLinkMessage {
   /// Creates a [LoopTopMessage].
   const LoopTopMessage();

@@ -131,7 +131,6 @@ void main() {
       settings: settings,
       performance: performance,
       controller: controller,
-      keepAliveInterval: Duration.zero,
       learnTimeout: learnTimeout,
       // Straight-through writes: a debounced one would outlive the pumped
       // frame and trip the pending-timer check.

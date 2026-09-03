@@ -23,7 +23,7 @@ enum PedalTrackLed {
   blue,
 }
 
-/// The global status color shown by the pedal (e.g. the center / mode LED).
+/// The transport activity color: what the console's ring sweeps in.
 ///
 /// Semantic colors chosen by segno and rendered verbatim by the firmware.
 /// Encoded as the enum [index] in the state frame — do not reorder.
@@ -170,19 +170,13 @@ class PedalStateFrame extends Equatable {
   /// darkens when segno quits while the board stays powered.
   final bool isGoodbye;
 
-  /// Whether performance-recording is armed (D-PEDAL) — reported to the pedal,
-  /// but **not rendered by it**. The firmware used to blink the mode LED red
-  /// for this; it no longer does, because armed already shows on segno's
-  /// screens and the mode LED now says the interaction mode and nothing else
-  /// (solid, in every state). The flag stays on the wire for firmware that
-  /// wants it; nothing in the shipping sketches reads it for display.
+  /// Whether performance-recording is armed (D-PEDAL). On the wire; the
+  /// console board does not render it (armed already shows on the screens).
   final bool performanceArmed;
 
   /// The engine's master output gain, `0.0`..`1.0` (the value the encoder
-  /// adjusts). The firmware shows it briefly on the ring as a volume meter
-  /// whenever it changes. Quantized to a single 0..255 byte on the wire, so the
-  /// pedal renders exactly what the app applies (no local drift). Unity by
-  /// default.
+  /// adjusts), quantized to one 0..255 byte on the wire. On the wire; the
+  /// console board does not render it.
   final double masterGain;
 
   /// The engine's looper mode (Multi/Sync/Song/Band/Free) — a **different
@@ -190,9 +184,7 @@ class PedalStateFrame extends Equatable {
   final PedalLooperMode looperMode;
 
   /// Whether the engine is currently counting in before a defining recording
-  /// (A2/D9) — the firmware renders this as a distinct LED pattern from
-  /// ordinary recording, so the performer can tell "about to record" from
-  /// "recording" eyes-free.
+  /// (A2/D9). On the wire; the console board does not render it.
   final bool countingIn;
 
   /// Returns a copy with the given fields replaced.

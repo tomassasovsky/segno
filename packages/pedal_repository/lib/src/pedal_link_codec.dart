@@ -210,8 +210,10 @@ abstract final class PedalLinkCodec {
 /// the length that type carries, its checksum fails, or its payload does not
 /// decode. Checking the type and length up front is what keeps one corrupted
 /// byte from swallowing the frames behind it: the parser never reads more
-/// bytes than the claimed type can legitimately have. [droppedFrames] counts
-/// the drops so a noisy line is visible rather than silent.
+/// bytes than the claimed type can legitimately have, and a sync byte found
+/// in the type or length slot starts the next frame instead of being eaten.
+/// [droppedFrames] counts the drops so a noisy line is visible rather than
+/// silent.
 class PedalLinkParser {
   final List<int> _payload = [];
   _ParseState _state = _ParseState.sync;
@@ -220,6 +222,12 @@ class PedalLinkParser {
 
   /// How many frames were started and then thrown away.
   int droppedFrames = 0;
+
+  /// Forgets a half-received frame, for a link that reopened its device.
+  void reset() {
+    _state = _ParseState.sync;
+    _payload.clear();
+  }
 
   /// Feeds [bytes] and returns every complete, valid message they finished.
   List<PedalLinkMessage> push(List<int> bytes) {
@@ -231,7 +239,11 @@ class PedalLinkParser {
         case _ParseState.type:
           if (PedalLinkCodec.payloadLengthFor(b) == null) {
             droppedFrames++;
-            _state = _ParseState.sync;
+            // A sync byte here is the start of the NEXT frame (a stray sync
+            // or a glitch ate this one); consuming it would lose that frame.
+            _state = b == PedalLinkCodec.sync
+                ? _ParseState.type
+                : _ParseState.sync;
           } else {
             _type = b;
             _state = _ParseState.length;
@@ -239,7 +251,9 @@ class PedalLinkParser {
         case _ParseState.length:
           if (b != PedalLinkCodec.payloadLengthFor(_type)) {
             droppedFrames++;
-            _state = _ParseState.sync;
+            _state = b == PedalLinkCodec.sync
+                ? _ParseState.type
+                : _ParseState.sync;
           } else {
             _length = b;
             _payload.clear();
