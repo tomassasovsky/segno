@@ -2,15 +2,14 @@
 
 Quantities are **per console**. All parts are standard and available at local
 electronics shops / MercadoLibre, except the Pi 5, screens, and USB interface
-(import or specialty). Mirrors [`segno_pedal_shopping_list.md`](segno_pedal_shopping_list.md).
+(import or specialty).
 
 > The console is a **standalone Pi 5 appliance**. The foot controls
 > (footswitches + encoder), the WS2812 drive and the MIDI front end all live on
 > the **console board v2** — a Pico 2 (RP2350) board linked to the Pi's 40-pin
 > header over a short keyed ribbon (`hardware/kicad/console_board.py`, #747).
-> The Pi reads no controls directly and never bit-bangs WS2812. The 32U4
-> USB-MIDI pedal board (`segno_pedal_main`) stays with the standalone pedal
-> product and is not part of the console.
+> The Pi reads no controls directly and never bit-bangs WS2812. The console is
+> the only product; there is no separate USB-MIDI pedal.
 
 ---
 
@@ -139,5 +138,4 @@ a waveform, so pick any 7″ HDMI panel; set its per-output `--scale` in
   [`docs/RUNNING_ON_LINUX.md`](../docs/RUNNING_ON_LINUX.md)).
 - The LEDs and foot controls all terminate on the **console board v2**
   (`hardware/kicad/console_board.py`); Pi GPIO14/15 carry MIDI, and the pedal
-  link rides uart3 (GPIO8/9) over the ribbon. The `segno_pedal_main` board
-  belongs to the standalone pedal product, not the console.
+  link rides uart3 (GPIO8/9) over the ribbon.

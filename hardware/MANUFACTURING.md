@@ -106,8 +106,6 @@ Send **`enclosure/out/segno_3dprint.zip`** (STEP + STL for each part).
 
 The Cherub WTB-006 has **no base screws** (one horizontal through-screw per
 side): retention = the deck pocket + gravity + foot pressure, **PROVISIONAL**.
-The old `rc20_pad` `asp1_pad` casting master targeted the retired ASP-1 pedal
-and no longer matches any pedal in this design.
 
 FDM tiles stay the prototype / fit-check path. Production nameplates are the
 2-ply pack in the next section.
@@ -130,8 +128,7 @@ per-quote artifact, same freshness gate as the other vendor packs (#236).
 | Board | Files | Qty | Notes |
 |---|---|---|---|
 | **Console board v2** (`console_board.py`, #747) | `kicad/out_console/segno_console_board_gerbers.zip` (run `route_console_board.sh` to produce) + `kicad/fab/segno_console_board_bom.csv` | 1 | **The console's control board** — Pico 2, MIDI front end, all pedal/panel headers. |
-| Main board (`segno_pedal_main`, THT) | `kicad/fab/segno_pedal_main_gerbers.zip` + `_bom.csv` + `_cpl.csv` | 1 | The manufactured V1 — **standalone pedal product only**; the console does not use it. LCSC part map: `kicad/fab/segno_combined_bom_lcsc.csv`. |
-| Encoder ring PCB | `kicad/fab/segno_pedal_ring_gerbers.zip` | 1 | Shared by both products. **Ø68 now (was Ø60): re-cut for the Ring 24 (#794)** — a Ø65.5 ring overhung the old board by 2.75 mm all round, and the three M3 holes moved from r=26 in to r=22 so their heads clear the ring's inner edge at r=26.15. **Existing standalone-pedal units built to the Ø60 board have a different hole pattern.** The ring **pin-mounts on J3**, whose four pads sit under its IN/+5V/GND/OUT solder points — coordinates lifted from Adafruit's published board file for the Ring 24, not measured by hand. **J2** remains a flying-wire alternative on the same nets (5V/GND/DIN). R1/R2 (the 5 V encoder pull-ups) are deleted — do not stuff them; bias comes from the MCU side on both products. |
+| Encoder ring PCB | `kicad/fab/segno_pedal_ring_gerbers.zip` + `kicad/fab/segno_combined_bom_lcsc.csv` (its THT parts, LCSC-mapped) | 1 | Behind the faceplate, cabled to J6 on the console board. **Ø68 now (was Ø60): re-cut for the Ring 24 (#794)** — a Ø65.5 ring overhung the old board by 2.75 mm all round, and the three M3 holes moved from r=26 in to r=22 so their heads clear the ring's inner edge at r=26.15. **Units built to the old Ø60 board have a different hole pattern.** The ring **pin-mounts on J3**, whose four pads sit under its IN/+5V/GND/OUT solder points — coordinates lifted from Adafruit's published board file for the Ring 24, not measured by hand. **J2** remains a flying-wire alternative on the same nets (5V/GND/DIN). R1/R2 (the 5 V encoder pull-ups) are deleted — do not stuff them; bias comes from the console board's 3V3. |
 | LED puck (single WS2812B) | `led_strip/segno_led_strip_gerbers.zip` | 6 | 16×8 mm, castellated; or buy off-the-shelf WS2812B modules instead (see `led_strip/README.md`). One per *mappable* pedal — the four fixed-transport pedals carry none. |
 
 
@@ -149,8 +146,8 @@ package and its own material string.
 
 ## 5. Purchased parts
 
-Full lists with links: **`segno_console_shopping_list.md`** (console) and
-**`segno_pedal_shopping_list.md`** (board THT parts). Headlines:
+Full list with links: **`segno_console_shopping_list.md`**; the console board's
+parts are `kicad/fab/segno_console_board_bom.csv`. Headlines:
 
 - 10× Cherub WTB-006 footswitches; 15.6" 5V USB-C touch panel; APROTII 7" monitor
 - Raspberry Pi 5 + Active Cooler

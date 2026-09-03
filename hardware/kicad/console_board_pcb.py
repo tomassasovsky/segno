@@ -1145,7 +1145,7 @@ def _stitch_gnd(board, fps, nets, netmap, boxes):
 
 
 
-# Function labels, the way segno_pedal_main does it: every connector on that board
+# Function labels, the way the retired V1 board did it: every connector on that board
 # says what it is (REC / STOP / TRK1 / RING / LEDS / MIDI OUT / 9V), because the
 # thing that gets wired at the bench is a header, not a reference designator. Refs
 # alone are useless with ten identical 2-pin JSTs in a row.
@@ -1503,7 +1503,7 @@ def build(quiet=False):
 
 
 def write_bom():
-    """A parts list, in the CSV shape fab/segno_pedal_main_bom.csv already uses.
+    """A parts list, in the CSV shape the retired V1 board's BOM already used.
 
     The board had gerbers and no BOM. You cannot buy a board from gerbers alone --
     somebody has to order the parts, and "read them off the netlist" is how a build
@@ -1554,7 +1554,7 @@ def write_mount_json():
     where its own holes are, and the plate has to follow.
 
     It exists because the two drifted: the plate was drilling an 85 x 87 rectangle
-    measured off the V1 Pro Micro board while this board put its holes on 89.5 x
+    measured off the retired V1 board while this board put its holes on 89.5 x
     89.5, and nothing was watching. Neither part had been ordered, so it cost
     nothing -- once, and only because someone thought to look.
     """

@@ -5,12 +5,10 @@ How the console's subsystems connect: the **console board v2** (Pico 2 / RP2350,
 the **Raspberry Pi 5**, the two touchscreens, the external audio interface,
 power (#754), and the rear panel.
 
-The **standalone pedal** is the other product and keeps the V1 Pro Micro board
-(`segno_pedal_main`) with its own wiring plan (`segno_pedal_pcb_design.md`).
-Nothing in this file applies to it: the console stopped sharing that board when
-#747 gave it a board of its own, and the constraint this file used to open with
-("the main board is in production — it is NOT modified") is satisfied the easy
-way now — the console does not use that board at all.
+The console is the only product. It stopped sharing a board with the retired
+standalone pedal when #747 gave it a board of its own, so the constraint this file
+used to open with ("the main board is in production — it is NOT modified") no
+longer applies to anything.
 
 ---
 
@@ -112,7 +110,7 @@ with no fold in the cable. 16 of the 40 ways carry something;
 | 2, 4 | 5 V — deliberately **not connected** (`PI_POWER`) |
 
 The link needs **no level shifting**: RP2350 and Pi are both 3.3 V. The old
-1k8/3k3 divider and the AHCT gate on this path were the 5 V Pro Micro's needs
+1k8/3k3 divider and the AHCT gate on this path were the retired 5 V board's needs
 and died with it. The series 10 k in each link line is not level shifting — it
 bounds the cross-domain current when one side is powered and the other is not
 (rationale and arithmetic: R17/R18 in `console_board.py`).

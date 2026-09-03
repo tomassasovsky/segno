@@ -627,9 +627,8 @@ PI_STACK_MID = 9.7            # USB/RJ45 stack centreline above the Pi PCB BOTTO
                               # PI_RISER_H is derived from it below REAR_IO_Z
 PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M2.5)
 # The board on this plate is the CONSOLE BOARD v2 (#747) -- the RP2350 board that
-# carries the MIDI front end and a header for every rear-panel connector. It is not
-# the V1 THT Pro Micro board any more; that one stays with the standalone pedal,
-# which is the product it was designed for.
+# carries the MIDI front end and a header for every rear-panel connector. It replaced
+# the V1 THT board of the retired standalone pedal.
 #
 # These two numbers are NOT measured or copied. They are checked in _check() against
 # hardware/kicad/out_console/console_board_mount.json, which the board generator
@@ -650,8 +649,8 @@ PI_N07_H    = 7.6             # what sits between the riser top and the Pi: the 
                               # PCB (1.6) + the 6 mm male/female extender that
                               # threads into the riser through it
 PI_TALLEST  = 16.0            # USB-A double stack above the Pi PCB
-BOARD_STACK_H = 16.0          # PCB + the tallest thing on it (Pro Micro on its
-                              # header, JST shrouds). Same 16 the 3D render
+BOARD_STACK_H = 16.0          # PCB + the tallest thing on it (Pico 2 on its
+                              # headers, JST shrouds). Same 16 the 3D render
                               # blocks it out at. #743 made this load-bearing:
                               # moving the Pi forward slid it OVER the board, so
                               # PI_RISER_H - (STANDOFF_H + this) is the only gap
@@ -2129,7 +2128,7 @@ def _bottom_vents():
 # control board -- the console board v2 (#747) -- mounts there on M3 standoffs
 # (>= STANDOFF_H for airflow); the 16" screen above is shallow and clears it.
 # The board's position is BOARD_U below (both boards under the 16" screen); the
-# V1-era rationale about a Pro Micro USB plug facing the platform column died
+# V1-era rationale about the old board's USB plug facing the platform column died
 # with that board -- the v2 board's only cable to the Pi is the keyed ribbon.
 # Both boards live under the 16" screen now. The console board terminates five rear
 # stations, so the cluster moved with it (see REAR_IO_U) -- which is what makes this
