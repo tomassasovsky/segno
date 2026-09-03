@@ -42,6 +42,16 @@ extern "C" {
 #define PEDAL_LINK_MAX_PAYLOAD 32u
 #define PEDAL_LINK_MAX_FRAME (4u + PEDAL_LINK_MAX_PAYLOAD)
 
+/* Liveness, both directions, derived from one cadence. The board sends HELLO
+ * every PEDAL_LINK_HELLO_MS; segno answers each with its current STATE and
+ * counts the board as gone after a few missed hellos (PedalRepository's
+ * helloTimeout). The board goes dark after PEDAL_LINK_FRAME_TIMEOUT_MS
+ * without a STATE, so that must span more than one hello or a single lost
+ * reply blanks the panel. Pinned against the Dart side by
+ * packages/pedal_repository/test/pedal_link_header_test.dart. */
+#define PEDAL_LINK_HELLO_MS 1000u
+#define PEDAL_LINK_FRAME_TIMEOUT_MS 5000u
+
 /* Footswitches, in wire order (= PedalButton's declaration order). */
 enum {
   PEDAL_BTN_REC_PLAY = 0,

@@ -81,9 +81,10 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
     await cubit.rename(name);
   }
 
-  /// Whether the console board is talking, under its firmware row — the
-  /// same line the Settings page shows, in the subtitle slot the row already
-  /// has; a second line here beats a second surface.
+  /// Whether the console board is talking, under its firmware row, in the
+  /// subtitle slot the row already has. The Settings page says the same
+  /// three things; the connected line here is shorter because the version
+  /// is already the row's value.
   static String _pedalStatus(AppLocalizations l10n, PedalState pedal) =>
       switch (pedal.status) {
         PedalLinkStatus.disconnected => l10n.pedalStatusDisconnected,

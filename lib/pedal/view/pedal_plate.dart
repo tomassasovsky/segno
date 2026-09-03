@@ -779,8 +779,15 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
     }
     _breathe.stop();
     if (widget.loopLengthMicros > 0) {
-      _sweep.duration = Duration(microseconds: widget.loopLengthMicros);
-      if (!_sweep.isAnimating) _sweep.repeat();
+      final duration = Duration(microseconds: widget.loopLengthMicros);
+      // A running repeat() keeps the period it started with, so a new loop
+      // length restarts it — from the current value, so the sweep keeps its
+      // phase — rather than changing the duration underneath it.
+      if (!_sweep.isAnimating || _sweep.duration != duration) {
+        _sweep
+          ..duration = duration
+          ..repeat();
+      }
     } else {
       _sweep
         ..stop()

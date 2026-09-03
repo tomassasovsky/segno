@@ -35,7 +35,9 @@ mismatched build shows up in segno's log.
 
 segno answers every `HELLO` with its current `STATE`, so a board that just
 (re)connected is current within a second; the board goes dark if no `STATE`
-arrives for 5 s and on the goodbye flag. Frames the parser drops (bad type,
+arrives for `PEDAL_LINK_FRAME_TIMEOUT_MS` (5 s) and on the goodbye flag, and
+segno reads the board as disconnected after three silent hello intervals. Both
+cadences live in `pedal_link.h`; the package's header test pins them. Frames the parser drops (bad type,
 length or checksum) are counted on both ends; segno logs the count.
 
 **Contract test.** `packages/pedal_repository` generates golden frames

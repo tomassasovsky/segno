@@ -12,40 +12,36 @@ import 'package:pedal_repository/src/pedal_link_message.dart';
 /// Where the console board's link lands on the appliance: the Pi 5's uart3
 /// (GPIO8/9, `dtoverlay=uart3-pi5`), which the board's ribbon carries to the
 /// Pico 2's UART0.
-const kConsolePedalDevice = '/dev/ttyAMA3';
+const _device = '/dev/ttyAMA3';
 
 /// The line settings the board expects; the same on both ends.
-const kConsolePedalBaud = 115200;
+const _baud = 115200;
 
-/// The [PedalLink] over a Linux serial device.
+/// How often to look for the device while it is absent or after a failure.
+const _retry = Duration(seconds: 2);
+
+/// A noisy line drops frames by the hundreds per second; the count is worth
+/// one log line this often, not one per read.
+const _dropReportEvery = Duration(seconds: 10);
+
+/// The [PedalLink] over the appliance's link UART.
 ///
-/// Owns the device for its whole lifetime: it opens the device path when the
-/// node exists, keeps retrying while it does not (the uart overlay can
-/// land after the app starts), configures the line with `stty` (raw, 8N1, no
-/// echo — echo would loop the board's own bytes back at it), reads it on a
-/// bounded loop, and goes back to retrying if a read or write fails. Nothing
-/// here blocks for longer than one read timeout, so [dispose] is bounded
-/// whether or not a board is talking.
+/// Owns the device for its whole lifetime: it opens the node when it exists,
+/// keeps retrying while it does not (the uart overlay can land after the app
+/// starts), configures the line with `stty` (raw, 8N1, no echo — echo would
+/// loop the board's own bytes back at it), reads it on a bounded loop, and
+/// goes back to retrying if a read or write fails. Nothing here blocks for
+/// longer than one read timeout, so [dispose] is bounded whether or not a
+/// board is talking.
 ///
 /// Every state change is reported through the `log` callback, one line each,
 /// so the appliance's persistent log says why a panel is dark.
 class UartPedalLink implements PedalLink {
-  /// Creates the link and starts opening `path`.
-  UartPedalLink({
-    String path = kConsolePedalDevice,
-    int baud = kConsolePedalBaud,
-    Duration retry = const Duration(seconds: 2),
-    void Function(String message)? log,
-  }) : _path = path,
-       _baud = baud,
-       _retry = retry,
-       _log = log {
+  /// Creates the link and starts opening the device.
+  UartPedalLink({void Function(String message)? log}) : _log = log {
     unawaited(_open());
   }
 
-  final String _path;
-  final int _baud;
-  final Duration _retry;
   final void Function(String message)? _log;
   final PedalLinkParser _parser = PedalLinkParser();
   final StreamController<PedalLinkMessage> _inbound =
@@ -58,6 +54,7 @@ class UartPedalLink implements PedalLink {
   Timer? _retryTimer;
   String? _lastLogged;
   int _droppedReported = 0;
+  DateTime? _droppedReportedAt;
   bool _disposed = false;
 
   @override
@@ -70,7 +67,7 @@ class UartPedalLink implements PedalLink {
     try {
       writer.writeFromSync(PedalLinkCodec.encode(message));
     } on FileSystemException catch (error) {
-      _say('write to $_path failed: $error');
+      _say('write to $_device failed: $error');
       unawaited(_reopen());
     }
   }
@@ -86,21 +83,26 @@ class UartPedalLink implements PedalLink {
 
   Future<void> _open() async {
     if (_disposed) return;
-    final file = File(_path);
+    final file = File(_device);
     if (!file.existsSync()) {
       _say(
-        '$_path is not present; is dtoverlay=uart3-pi5 applied? '
+        '$_device is not present; is dtoverlay=uart3-pi5 applied? '
         'Retrying every ${_retry.inSeconds} s.',
       );
       _scheduleRetry();
       return;
     }
+    // Held here, not in the fields, until both are open: a failure part-way
+    // (the node readable but not writable, say) must close what did open, or
+    // every retry leaks a descriptor.
+    RandomAccessFile? reader;
+    RandomAccessFile? writer;
     try {
       // VMIN 0 / VTIME 1: a read returns whatever arrived within 100 ms, or
       // nothing — never blocks indefinitely, so the read loop can be stopped.
       final stty = await Process.run('stty', [
         '-F',
-        _path,
+        _device,
         '$_baud',
         'cs8',
         '-parenb',
@@ -115,12 +117,12 @@ class UartPedalLink implements PedalLink {
         '1',
       ]).timeout(const Duration(seconds: 5));
       if (stty.exitCode != 0) {
-        _say('stty failed on $_path: ${stty.stderr}');
+        _say('stty failed on $_device: ${stty.stderr}');
         _scheduleRetry();
         return;
       }
-      final reader = await file.open();
-      final writer = await file.open(mode: FileMode.writeOnlyAppend);
+      reader = await file.open();
+      writer = await file.open(mode: FileMode.writeOnlyAppend);
       if (_disposed) {
         // dispose() ran while stty / open were in flight; nothing else will
         // close these.
@@ -134,12 +136,22 @@ class UartPedalLink implements PedalLink {
         ..droppedFrames = 0
         ..reset();
       _droppedReported = 0;
-      _say('open on $_path at $_baud');
+      _droppedReportedAt = null;
+      _say('open on $_device at $_baud');
       _readLoop = _read(reader);
     } on Object catch (error) {
-      _say('opening $_path failed: $error');
-      await _close();
+      _say('opening $_device failed: $error');
+      await _discard(reader);
+      await _discard(writer);
       _scheduleRetry();
+    }
+  }
+
+  static Future<void> _discard(RandomAccessFile? handle) async {
+    try {
+      await handle?.close();
+    } on Object {
+      // Already on the failure path; the retry is the recovery.
     }
   }
 
@@ -149,16 +161,28 @@ class UartPedalLink implements PedalLink {
         final chunk = await reader.read(64);
         if (chunk.isEmpty) continue;
         _parser.push(chunk).forEach(_inbound.add);
-        if (_parser.droppedFrames != _droppedReported) {
-          _droppedReported = _parser.droppedFrames;
-          _say('$_droppedReported frame(s) dropped on $_path so far');
-        }
+        _reportDrops();
       }
     } on Object catch (error) {
       if (_disposed) return;
-      _say('read from $_path failed: $error');
+      _say('read from $_device failed: $error');
       unawaited(_reopen());
     }
+  }
+
+  /// Logs the dropped-frame count when it grew, at most once per
+  /// [_dropReportEvery]: a line that is nothing but noise (the board held in
+  /// reset while it is reflashed, a wrong baud) would otherwise write a log
+  /// line per read and churn the persistent log through its rotation.
+  void _reportDrops() {
+    final dropped = _parser.droppedFrames;
+    if (dropped == _droppedReported) return;
+    final now = DateTime.now();
+    final last = _droppedReportedAt;
+    if (last != null && now.difference(last) < _dropReportEvery) return;
+    _droppedReported = dropped;
+    _droppedReportedAt = now;
+    _say('$dropped frame(s) dropped on $_device so far');
   }
 
   Future<void> _reopen() async {

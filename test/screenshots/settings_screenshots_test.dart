@@ -172,8 +172,7 @@ void main() {
     );
     // The real control cubit: the View section reads the looper-wide default
     // mode from it. Its `const ControlState()` default (InteractionMode.record)
-    // is what the golden captures, so no stubbing is needed — only the
-    // keep-alive timer has to go, or it would pump frames under golden capture.
+    // is what the golden captures, so no stubbing is needed.
     final performance = PerformanceRepository(
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',

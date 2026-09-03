@@ -54,6 +54,18 @@ static int parse_all(const uint8_t *bytes, size_t n, uint8_t *type, uint8_t *pay
   return frames;
 }
 
+/* The parser's drop count after feeding `bytes`. */
+static unsigned count_dropped(const uint8_t *bytes, size_t n) {
+  pedal_link_parser p;
+  pedal_link_parser_init(&p);
+  for (size_t i = 0; i < n; i++) {
+    uint8_t t, l;
+    const uint8_t *pl;
+    pedal_link_parser_push(&p, bytes[i], &t, &pl, &l);
+  }
+  return (unsigned)p.dropped;
+}
+
 /* Every enum value, by its Dart name, pinned to the C constant. A fixture
  * enum_<table>_<name>.bin exists for each; the count per table must equal the
  * C PEDAL_*_COUNT, so an added/removed/reordered value on either side fails. */
@@ -225,9 +237,12 @@ static void check_rejections(void) {
   uint8_t stray[7] = {0xA5};
   memcpy(stray + 1, frame, 6);
   CHECK(parse_all(stray, 7, &type, payload, &len) == 1, "stray sync ate the next frame");
+  CHECK(count_dropped(stray, 7) == 1, "stray sync: dropped %u, want 1", count_dropped(stray, 7));
   uint8_t synclen[8] = {0xA5, PEDAL_LINK_TYPE_STATE};
   memcpy(synclen + 2, frame, 6);
   CHECK(parse_all(synclen, 8, &type, payload, &len) == 1, "sync in the length slot ate the next frame");
+  CHECK(count_dropped(synclen, 8) == 1, "sync in length slot: dropped %u, want 1",
+        count_dropped(synclen, 8));
 
   /* Oversized length resyncs. */
   uint8_t big[10] = {0xA5, 0x01, PEDAL_LINK_MAX_PAYLOAD + 1, 0x00};
@@ -248,13 +263,7 @@ static void check_rejections(void) {
   CHECK(parse_all(badtype, 9, &type, payload, &len) == 1 && type == PEDAL_LINK_TYPE_BUTTON,
         "unknown type swallowed the next frame");
 
-  pedal_link_parser dp;
-  pedal_link_parser_init(&dp);
-  for (size_t i = 0; i < 12; i++) {
-    uint8_t t, l; const uint8_t *pl;
-    pedal_link_parser_push(&dp, stream[i], &t, &pl, &l);
-  }
-  CHECK(dp.dropped == 1, "dropped counter is %u, want 1", (unsigned)dp.dropped);
+  CHECK(count_dropped(stream, 12) == 1, "dropped counter is %u, want 1", count_dropped(stream, 12));
 
   /* decode_state rejections. */
   pedal_state s;
@@ -278,6 +287,10 @@ static void check_rejections(void) {
 }
 
 int main(int argc, char **argv) {
+  /* Liveness: the board must outlive one lost STATE reply. */
+  CHECK(PEDAL_LINK_FRAME_TIMEOUT_MS >= 2u * PEDAL_LINK_HELLO_MS,
+        "frame timeout %u ms does not span two hellos of %u ms", (unsigned)PEDAL_LINK_FRAME_TIMEOUT_MS,
+        (unsigned)PEDAL_LINK_HELLO_MS);
   const char *dir = argc > 1 ? argv[1] : DEFAULT_FIXTURES;
   DIR *d = opendir(dir);
   if (!d) {

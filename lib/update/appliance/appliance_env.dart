@@ -1,6 +1,14 @@
+import 'dart:io';
+
 /// Where the appliance image installs its privileged helper. Its presence is
 /// how the app knows it is running on the console rather than a desktop.
 const kApplianceHelperPath = '/usr/bin/segno-update-ctl';
+
+/// Whether this process runs on the console: Linux, with the appliance
+/// image's helper installed. The one predicate every appliance-only source
+/// (the pedal link, the power key) is gated on.
+bool isAppliance() =>
+    Platform.isLinux && File(kApplianceHelperPath).existsSync();
 
 /// The operating-system boundary the appliance update backend depends on,
 /// injected so the backend is fully testable without real files, network, or a

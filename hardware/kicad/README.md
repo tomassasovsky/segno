@@ -28,8 +28,7 @@ not fix this. Judge a run by `0 errors found while running ERC` and the `(net ..
 blocks, not by `git diff`.
 
 **Prefer upstream footprints.** `segno.pretty/` exists for parts KiCad does not ship
-(MIDI_DIN5_RA, the NeoPixel ring, EC11; `ProMicro` is a leftover of the retired
-standalone pedal). It is not a place to re-draw
-something that already exists. The Pico 2, for instance, is KiCad's own
+(the NeoPixel Ring 24, the EC11 on its ring board, the module mount-pad and wire-pad
+helpers). It is not a place to re-draw something that already exists. The Pico 2, for instance, is KiCad's own
 `Module:RaspberryPi_Pico_Common_THT` — its description explicitly says it supports
 Pico 2, and it is maintained upstream.

@@ -1653,7 +1653,7 @@
     },
     "pedalAssignTitle": "Pedal assignments",
     "pedalLinkGroup": "CONSOLE PEDAL",
-    "pedalStatusDisconnected": "Console board not connected — the on-screen pedal still works.",
+    "pedalStatusDisconnected": "Console board not connected.",
     "pedalStatusConnected": "Console board connected · firmware {firmwareVersion}",
     "@pedalStatusConnected": {
         "description": "Pedal link status line once the console board has said hello; {firmwareVersion} is the version it announced, e.g. 1.0.",
