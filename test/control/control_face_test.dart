@@ -9,6 +9,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:segno/audio_setup/cubit/midi_setup_cubit.dart';
@@ -17,6 +18,7 @@ import 'package:segno/control/control.dart';
 import 'package:segno/control/control_tab.dart';
 import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/theme/theme.dart';
@@ -61,6 +63,7 @@ void main() {
   late StreamController<MidiConnection> connections;
   late StreamController<void> activity;
   late ControlCubit control;
+  late PedalRepository pedal;
   late MidiSetupCubit midi;
   late SettingsTrayCubit tray;
   late SettingsRepository settings;
@@ -118,6 +121,7 @@ void main() {
     WidgetTester tester, {
     MidiConnection connection = const MidiConnection(),
     Size size = const Size(1600, 1400),
+    PedalLink? pedalLink,
   }) async {
     tester.view
       ..physicalSize = size
@@ -141,9 +145,11 @@ void main() {
     simulated = SimulatedControllerSource();
     final controller = ControllerRepository(sources: [source, simulated]);
     addTearDown(controller.dispose);
+    pedal = PedalRepository(pedalLink ?? NoopPedalLink());
+    addTearDown(pedal.dispose);
     control = ControlCubit(
       looper: looper,
-      pedal: PedalRepository(NoopPedalLink()),
+      pedal: pedal,
       settings: settings,
       performance: performance,
       controller: controller,
@@ -179,6 +185,9 @@ void main() {
               BlocProvider.value(value: midi),
               BlocProvider.value(value: tray),
               BlocProvider.value(value: tracks),
+              // The tray asks the link whether a CTRL pedal could deliver: a
+              // rig with no MIDI is still bindable from the console.
+              BlocProvider(create: (_) => PedalCubit(pedal: pedal)),
             ],
             child: const Scaffold(
               body: Padding(
@@ -534,6 +543,47 @@ void main() {
 
       verify(() => midiDevices.select('')).called(1);
       expect(find.byKey(const Key('midi_device_choice_dev-1')), findsNothing);
+    });
+
+    testWidgets('a CTRL pedal alone makes the add buttons usable', (
+      tester,
+    ) async {
+      // The complaint this fixes: with MIDI set to none, Add sweep and Add
+      // switch were inert, so a rig driven entirely from the console's CTRL
+      // jacks could not be bound at all.
+      final link = FakePedalLink();
+      await pump(tester, pedalLink: link);
+      link.hello();
+      await tester.pumpAndSettle();
+      await showMidi(tester);
+
+      expect(find.byKey(const Key('midi_idle_notice')), findsNothing);
+
+      final target = const FxChainTarget(_master).canonicalString();
+      await tester.tap(find.byKey(const Key('midi_add_switch')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(Key('midi_add_target_$target')), findsOneWidget);
+
+      await tester.tap(find.byKey(Key('midi_add_target_$target')));
+      await tester.pumpAndSettle();
+      expect(control.state.controllerLearn?.target, target);
+
+      // End the capture and drain the link's hello watchdog: both outlive the
+      // widget tree otherwise, and a pending timer fails the test binding.
+      control.cancelControllerLearn();
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('with nothing connected at all the add buttons stay inert', (
+      tester,
+    ) async {
+      await pump(tester);
+      await showMidi(tester);
+
+      expect(find.byKey(const Key('midi_idle_notice')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('midi_add_switch')));
+      await tester.pumpAndSettle();
+      expect(control.state.controllerLearn, isNull);
     });
 
     testWidgets('an add button opens its target chooser in place', (

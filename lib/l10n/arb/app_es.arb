@@ -1280,6 +1280,7 @@
     "midiLearnBehavior": "Comportamiento",
     "midiLearnStale": "Destino ausente",
     "midiLearnStaleDetail": "Lo que esta asignación apuntaba ya no existe. No hace nada hasta que la apuntes a otra cosa o la quites.",
+    "midiNoControlSource": "No hay nada conectado que escuchar. Conecta un controlador MIDI o un pedal a una entrada CTRL.",
     "midiLearnDeviceMissing": "No hay entrada MIDI conectada, así que las asignaciones que dependen de MIDI están inactivas. Conecta el controlador o vuelve a aprender una fila con lo que estés usando ahora.",
     "pedalCtrlGroup": "Entradas CTRL",
     "pedalCtrlIdle": "Nada conectado todavía: un pedal aparece en cuanto se mueve.",
