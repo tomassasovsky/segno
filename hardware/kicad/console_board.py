@@ -155,8 +155,12 @@ ind_data, ind_buf, ind_out = Net("IND_DATA"), Net("IND_DATA_BUF"), Net("IND_DATA
 # tracks to the same J6 pins, renamed to what they now carry. GP13 became the
 # half-duplex link to that MCU; GP14/GP15 carry nothing and are named for it
 # rather than left claiming to be an encoder that is no longer on the far end.
-ring_link = Net("RING_LINK")
-ring_sp1, ring_sp2 = Net("RING_SPARE1"), Net("RING_SPARE2")
+# The ring link is FULL DUPLEX (owner call): GP13 drives the ring, GP14 listens
+# to it. Named by direction of travel, identically on both boards, so no alias
+# table is needed and neither name is a lie from one end.
+link_to_ring = Net("LINK_TO_RING")        # this board drives, the XIAO listens
+link_to_console = Net("LINK_TO_CONSOLE")  # the XIAO drives, this board listens
+ring_sp2 = Net("RING_SPARE2")             # J6 pin 8 / GP15, still carrying nothing
 ctrl1, ctrl2 = Net("CTRL1_TIP"), Net("CTRL2_TIP")
 
 # ---- J1: Pico 2 (RP2350) ----------------------------------------------------
@@ -240,7 +244,7 @@ GPIO = {
     # are kept because the board exists in copper -- deleting them here would
     # make the netlist disagree with the hardware, which is worse than an idle
     # buffer. The firmware simply never asserts GP12.
-    "RING_DATA": 12, "RING_LINK": 13, "RING_SPARE1": 14, "RING_SPARE2": 15,
+    "RING_DATA": 12, "LINK_TO_RING": 13, "LINK_TO_CONSOLE": 14, "RING_SPARE2": 15,
     "IND_DATA": 18,
     "CTRL1_TIP": 26, "CTRL2_TIP": 27,
 }
@@ -257,8 +261,8 @@ pico[PICO[GPIO["LINK_TX"]]] += link_tx
 pico[PICO[GPIO["LINK_RX"]]] += link_rx
 pico[PICO[GPIO["IND_DATA"]]] += ind_data
 pico[PICO[GPIO["RING_DATA"]]] += ring_data
-pico[PICO[GPIO["RING_LINK"]]] += ring_link
-pico[PICO[GPIO["RING_SPARE1"]]] += ring_sp1
+pico[PICO[GPIO["LINK_TO_RING"]]] += link_to_ring
+pico[PICO[GPIO["LINK_TO_CONSOLE"]]] += link_to_console
 pico[PICO[GPIO["RING_SPARE2"]]] += ring_sp2
 pico[PICO[GPIO["CTRL1_TIP"]]] += ctrl1
 pico[PICO[GPIO["CTRL2_TIP"]]] += ctrl2
@@ -371,7 +375,8 @@ for _ref, _net in (("J20", ctrl1), ("J21", ctrl2)):
 # ---- J6/J7: the ring-board link and the indicator chain ---------------------
 # J6 IS UNCHANGED COPPER. It is still the 8-way JST-XH that was fabbed and bench-
 # verified; what changed (#987) is that the far end no longer populates all eight
-# positions. ring_board.py's J1 is a 3-way -- +5V, GND, RING_LINK -- and the
+# positions. ring_board.py's J1 is a 4-way -- +5V, GND and the full-duplex link
+# pair -- and the
 # cable lands it on J6 pins 1, 3 and 6. RING_PINMAP below is the ONLY copy of
 # that mapping and RING_CONTRACT gates it against ring_board.net.
 #
@@ -387,7 +392,7 @@ RING_ALIASES = {          # ring_board.py's name -> this board's name
 # ring_board.py J1 pin -> this board's J6 pin. The cable is asymmetric by design
 # (3-way housing at the ring, 8-way here), so "pin N means pin N" is no longer
 # true and the map has to be written down somewhere. Here, once.
-RING_PINMAP = {1: 1, 2: 3, 3: 6}
+RING_PINMAP = {1: 1, 2: 3, 3: 6, 4: 7}
 j_ring = jst(8, "J6", "RING_ENC")
 j_ring[1, 2] += v5
 j_ring[3, 4] += gnd
@@ -405,11 +410,11 @@ j_ring[5] += ring_out              # fitted, driven by gate B, connected to noth
 # it, which is why RING_LEVELS was written. #987 removes the failure mode by
 # construction rather than by watching for it: the encoder's pull-ups now sit on
 # the ring board next to the ring board's OWN MCU, on that MCU's own 3V3.
-R("10k")[1, 2] += v3v3, ring_link
-R("10k")[1, 2] += v3v3, ring_sp1
+R("10k")[1, 2] += v3v3, link_to_ring
+R("10k")[1, 2] += v3v3, link_to_console
 R("10k")[1, 2] += v3v3, ring_sp2
-j_ring[6] += ring_link
-j_ring[7] += ring_sp1
+j_ring[6] += link_to_ring
+j_ring[7] += link_to_console
 j_ring[8] += ring_sp2
 
 j_ind = jst(3, "J7", "INDICATORS")
@@ -725,7 +730,7 @@ def _check(strict_stations=True):
     # ...and both ends of a connector's signal group must sit in the same pad row,
     # or the connector cannot be placed near all of them. Row A is pads 1..20.
     for group in (("LINK_TX", "LINK_RX"),
-                  ("RING_DATA", "RING_LINK", "RING_SPARE1", "RING_SPARE2"),
+                  ("RING_DATA", "LINK_TO_RING", "LINK_TO_CONSOLE", "RING_SPARE2"),
                   tuple("SW_" + n for n in FSW_ORDER)):
         rows = {PICO[GPIO[n]] <= 20 for n in group if n in GPIO}
         assert len(rows) == 1, (
@@ -817,7 +822,7 @@ def _check(strict_stations=True):
     # #987 CHANGED WHAT IT WATCHES, not why. The encoder no longer crosses this
     # cable -- it is local to the ring board now, pulled up to that board's own
     # MCU's 3V3 -- so the original three lines are gone. What is left crossing
-    # into a Pico input is RING_LINK, and it is exposed to exactly the same
+    # into a Pico input is the link pair, and it is exposed to exactly the same
     # mistake: one 10k to the ring board's 5 V rail "to make the link idle high"
     # would put 5 V on GP13. The pull-up that line actually runs on is on THIS
     # board (J6 pin 6's, above), at the rail GP13 belongs to.
@@ -829,8 +834,8 @@ def _check(strict_stations=True):
             _node_count[_r] = _node_count.get(_r, 0) + 1
     # Every conductor whose console end lands on a bare Pico GPIO. Derived from
     # the console-side nets and RING_PINMAP so it tracks a re-pin; today that is
-    # RING_LINK alone, but the set is computed, not assumed to stay size 1.
-    _pico_input_nets = {"RING_LINK", "RING_SPARE1", "RING_SPARE2"}
+    # the link pair, but the set is computed, not assumed to stay a fixed size.
+    _pico_input_nets = {"LINK_TO_RING", "LINK_TO_CONSOLE", "RING_SPARE2"}
     _watched = [_p for _p in ring_j1
                 if {n.name for n in j_ring[RING_PINMAP[int(_p)]].nets}
                 & _pico_input_nets]
@@ -985,7 +990,7 @@ def _check(strict_stations=True):
     _protected = {n.name for n in (link_tx, link_rx, link_tx_pi, link_rx_pi,
                                    midi_tx, midi_rx, pwr_btn, swclk, swdio,
                                    ring_data, ind_data,
-                                   ring_link, ring_sp1, ring_sp2,
+                                   link_to_ring, link_to_console, ring_sp2,
                                    ctrl1, ctrl2)}
     for _p in default_circuit.parts:
         if len(_p.pins) > 2:
@@ -1118,7 +1123,7 @@ def _selftest():
         text = text.replace("  (components\n", "  (components\n" + comp, 1)
         node = ('      (node\n        (ref "R99")\n        (pin "%s")\n'
                 '        (pintype "PASSIVE"))\n')
-        for _net, _pin in (("+5V_LED", "1"), ("RING_LINK", "2")):
+        for _net, _pin in (("+5V_LED", "1"), ("LINK_TO_CONSOLE", "2")):
             _anchor = '(name "%s")\n      (class "Default")\n' % _net
             assert _anchor in text, (
                 "ring_board.net's format or net names changed under _ring_pullup "

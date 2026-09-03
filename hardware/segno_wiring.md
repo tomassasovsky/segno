@@ -30,7 +30,7 @@ way now — the console does not use that board at all.
         MIDI  DIN IN -> H11L1 (at 3V3) -> Pi uart0 RX (GPIO15)
               Pi uart0 TX (GPIO14) -> 74AHCT125 -> 220R loop -> DIN OUT
         SWD   Pi GPIO24/25 -> the Pico's debug pads (cold flashing)
-     console board <-- footswitches x10 | ring board (3-way) | CTRL TRS x2
+     console board <-- footswitches x10 | ring board (4-way) | CTRL TRS x2
      Pi --HDMI x2--> 7" + 16" screens ;  screen touch --USB--> Pi (2 of 4 ports)
      Pi's other 2 USB --> internal leads to the rear USB couplers
                           (the audio interface plugs in there, outside the box)
@@ -128,21 +128,31 @@ netlist has to keep matching it. **MIDI IN's H11L1 runs at 3.3 V** and
 feeds the Pi directly — no shifter. GPIO4 (pin 7) is left alone: the GeeekPi
 N07 NVMe board under the Pi claims it (`PI_RESERVED`).
 
-### Console board ↔ ring board: the 3-way (#987)
+### Console board ↔ ring board: the 4-way (#987)
 
 The ring board carries its own **XIAO RP2350**, which owns the encoder and
 generates the WS2812 timing 20 mm from the LEDs. What used to be eight
-conductors across ~600 mm of box is now three.
+conductors across ~600 mm of box is now four.
 
 **The cable is asymmetric and that is the whole hazard.** An 8-way JST-XH
-housing at the console (J6, unchanged copper) and a **3-way at the ring board**
-(J1), populated on three of J6's eight positions:
+housing at the console (J6, unchanged copper) and a **4-way at the ring board**
+(J1), populated on four of J6's eight positions:
 
 | ring J1 | console J6 | conductor |
 |---|---|---|
 | 1 | 1 | +5V |
 | 2 | 3 | GND |
-| 3 | 6 | RING_LINK — half-duplex UART to GP13, 115200 |
+| 3 | 6 | LINK_TO_RING — GP13 drives, the XIAO listens |
+| 4 | 7 | LINK_TO_CONSOLE — the XIAO drives, GP14 listens |
+
+The link is **full duplex** (owner call). One wire would have carried the traffic
+— 115200 is ~11.5 kB/s against a 72-byte pixel frame and a few bytes per detent —
+but a single wire forces a master-polled, collision-avoiding protocol on the
+firmware, and the second conductor buys that away for one crimp. It cost nothing
+in copper: J6 pin 7 was already wired to GP14 with its 10 k pull-up, doing
+nothing. Neither pin is on a free hardware UART (GP13 is UART0 RX, but UART0 is
+the Pi link on GP16/17, and GP14 is on neither), so the console end is a PIO
+UART — of which the RP2350 has plenty spare.
 
 Crimp it 1:1 by position and pin 2 of the ring end lands on J6 pin 2, which is
 +5V: that is the LED rail straight onto a link line. The map above is *not* the
@@ -153,11 +163,11 @@ Notes that are load-bearing:
 
 - **GND is the middle pin** so the pulsed amp-scale LED return does not run
   beside the one signal in the cable.
-- **The link's pull-up is on the console board** (J6 pin 6's 10 k to *its* 3V3).
+- **The link pull-ups are on the console board** (J6 pin 6/7's 10 k to *its* 3V3).
   The ring board deliberately fits none — a second pull-up on the other board's
   rail is the split-rail fault `RING_LEVELS` exists to catch, and `LINK_BARE` in
   `ring_board.py` rejects it from the other side.
-- **J6 pins 2, 4, 5, 7 and 8 stay fitted and carry nothing.** Pin 5 could never
+- **J6 pins 2, 4, 5 and 8 stay fitted and carry nothing.** Pin 5 could never
   have carried the link anyway: it is the AHCT125's gate-B output with /OE tied
   low, so it is only ever driven by the console.
 - One 5 V pair, not two: 24 LEDs at the firmware's brightness cap sit well under

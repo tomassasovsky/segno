@@ -18,7 +18,14 @@ Now the WS2812 timing is generated 20 mm from the LEDs and the quadrature never
 leaves this PCB. What crosses the box is one 115200-baud line with a 10 k
 pull-up. The conductor count is a side effect:
 
-    8 conductors  ->  3      (+5V, GND, RING_LINK)
+    8 conductors  ->  4      (+5V, GND, LINK_TO_RING, LINK_TO_CONSOLE)
+
+FULL DUPLEX, on an owner call: one wire would have carried the traffic easily
+(115200 is ~11.5 kB/s against a 72-byte pixel frame and a few bytes per detent),
+but a single wire forces a master-polled, collision-avoiding protocol on the
+firmware. A second conductor buys that discipline away for one crimp, and costs
+NOTHING in copper at the far end -- J6 pin 7 was already wired to GP14 with its
+10 k pull-up, doing nothing.
 
 ## The console board is UNCHANGED (this is load-bearing)
 
@@ -47,7 +54,7 @@ encoder pins to the one line that still crosses the cable into a Pico input.
 
 **RP2350 erratum E9** (A2 silicon) latches an input HIGH when it is configured
 with a PULL-DOWN. Nothing here uses one: the encoder lines are pulled UP (R1-R3
-below), RING_LINK is pulled up by the console's existing 10 k, and the WS2812
+below), both link lines are pulled up by the console's existing 10 k, and the WS2812
 line is an output. Do not add a pull-down to this board without re-reading E9.
 
 ## The board grew to O80, and it SNAP-MOUNTS -- no mounting holes (owner calls)
@@ -87,7 +94,7 @@ two. The firmware caps ring brightness well under all-white -- the comet only
 ever lights part of the ring -- so one pair carries it with margin, and JST-XH
 is rated ~3 A per contact either way. If a bench measurement of the CAPPED worst
 case ever lands above ~0.7 A, the answer is a second pair (J6 pins 2/4 are still
-there), not a thinner cap. GND sits BETWEEN +5V and RING_LINK on J1 so the
+there), not a thinner cap. GND sits BETWEEN +5V and the link pair on J1 so the
 return is not the neighbour of the signal.
 
 Everything on this board is a module or through-hole. The XIAO and the ring are
@@ -149,7 +156,10 @@ gnd = Net("GND")
 v5 = Net("+5V_LED")      # harness 5 V -- feeds the ring DIRECTLY (no diode drop)
 v5_mcu = Net("+5V_MCU")  # same rail through D1, into the XIAO's VBUS
 v3v3 = Net("+3V3")       # the XIAO's own 3V3_OUT -- encoder pull-ups only
-ring_link = Net("RING_LINK")     # half-duplex link to the console (its GP13)
+# Two link conductors, named by which way the data travels rather than TX/RX --
+# a "TX" is only a TX from one end, and this net crosses between two boards.
+link_to_ring = Net("LINK_TO_RING")        # console GP13 drives, the XIAO listens
+link_to_console = Net("LINK_TO_CONSOLE")  # the XIAO drives, console GP14 listens
 ring_data_3v3 = Net("RING_DATA_3V3")  # XIAO -> level shifter
 ring_data_5v = Net("RING_DATA_5V")    # level shifter -> series R
 ring_data = Net("RING_DATA")     # -> module DIN
@@ -158,17 +168,18 @@ encA = Net("ENC_A")      # LOCAL now -- these three never leave the board
 encB = Net("ENC_B")
 encSW = Net("ENC_SW")
 
-# ---- 3-pin link to the console board ---------------------------------------
-#   1 = +5V_LED   2 = GND   3 = RING_LINK
+# ---- 4-pin link to the console board ---------------------------------------
+#   1 = +5V_LED   2 = GND   3 = LINK_TO_RING   4 = LINK_TO_CONSOLE
 # Lands on console J6 pins 1, 3 and 6 -- see RING_PINMAP in console_board.py,
 # which is the single copy of that mapping and the thing RING_CONTRACT checks.
 # GND is deliberately the MIDDLE pin: the LED return is a pulsed amp-scale
 # current and it should not run next to the one signal in the cable.
-j1 = Part("Connector_Generic", "Conn_01x03",
-          footprint="Connector_JST:JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical", ref="J1")
+j1 = Part("Connector_Generic", "Conn_01x04",
+          footprint="Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical", ref="J1")
 j1[1] += v5
 j1[2] += gnd
-j1[3] += ring_link
+j1[3] += link_to_ring
+j1[4] += link_to_console
 
 # ---- U1: Seeed XIAO RP2350 --------------------------------------------------
 # Modelled as the 30-pad module it is, exactly the way main_board.py modelled the
@@ -191,21 +202,24 @@ j1[3] += ring_link
 # D1 below (needed on either part).
 #
 # PIN CHOICE IS A FLOORPLAN, same rule as console_board.py's. Everything the
-# CABLE touches (VBUS, GND, RING_LINK) is on pads 11-14, one end of one side, so
+# CABLE touches (VBUS, GND, both link lines) is on pads 10-14, one end of one side, so
 # J1's three wires land together instead of crossing the module. The encoder and
 # the LED line take the opposite row, facing the parts they drive.
 #
-# No hardware-UART constraint applies to RING_LINK: it is a single-wire
-# half-duplex line and is a PIO UART at both ends, so the XIAO's D-number ->
-# GP-number mapping does not bind the netlist. The firmware needs that mapping;
-# the board does not.
+# No hardware-UART constraint applies to the link pair. The console end is
+# pinned to GP13/GP14 by copper that already exists, and those two are not a
+# hardware TX/RX pair on any free instance (GP13 is UART0 RX, but UART0 is the
+# Pi link on GP16/17, and GP14 is on neither UART), so the console side is a PIO
+# UART either way. The XIAO's D-number -> GP-number mapping therefore does not
+# bind the netlist. The firmware needs that mapping; the board does not.
 XIAO = Part("Connector_Generic", "Conn_01x30",
             footprint="segno:XIAO_RP2350_SMD", ref="U1", value="XIAO-RP2350")
 XIAO[1] += ring_data_3v3   # D0  -> level shifter in
 XIAO[2] += encA            # D1
 XIAO[3] += encB            # D2
 XIAO[4] += encSW           # D3
-XIAO[11] += ring_link      # D10 -> J1 pin 3
+XIAO[10] += link_to_ring     # D9  -> J1 pin 3
+XIAO[11] += link_to_console  # D10 -> J1 pin 4
 XIAO[12] += v3v3           # 3V3_OUT -- encoder pull-up rail, nothing else
 XIAO[13] += gnd
 XIAO[14] += v5_mcu         # VBUS, fed through D1
@@ -217,7 +231,7 @@ XIAO[30] += gnd
 # SWDIO/SWDCLK/EN/BOOT (23/24/25/27) are deliberately among them: bench recovery
 # is the module's own USB-C and its BOOT/RESET buttons, so bringing them out
 # would be copper for a path nothing uses.
-XIAO_SPARE = (5, 6, 7, 8, 9, 10,            # D4..D9
+XIAO_SPARE = (5, 6, 7, 8, 9,               # D4..D8
               15, 16, 17, 18, 19, 20, 21, 22,   # D11..D18
               23, 24, 25, 27, 28, 29)           # SWDIO SWDCLK EN BOOT 3V3 VBAT
 for _p in XIAO_SPARE:
@@ -321,7 +335,7 @@ C("100nF", "C2")[1, 2] += encA, gnd
 C("100nF", "C3")[1, 2] += encB, gnd
 C("100nF", "C4")[1, 2] += encSW, gnd
 
-# NOTE: RING_LINK gets NO pull-up on this board. The console's existing 10k to
+# NOTE: neither link line gets a pull-up on this board. The console's existing 10k to
 # ITS 3V3 (console_board.py, the old ENC_A pull-up) is the one the open-drain
 # line needs; a second one here would halve it to 5k and, being on a different
 # board's rail, would re-create exactly the split-rail hazard RING_LEVELS exists
@@ -382,17 +396,19 @@ def _check():
             "pins with a 3.6 V absolute maximum, and this is the exact shape that "
             "shipped on this board once already (10k to 5 V on an encoder line)")
 
-    # LINK_BARE: RING_LINK carries the console's 10k pull-up and must meet nothing
+    # LINK_BARE: each link line carries the console's 10k pull-up and must meet nothing
     # else here. A second pull-up on THIS board's rail would halve it to 5k and
     # re-import the split-rail hazard; a series R would be the Pi link's problem
     # (cross-domain powering), which this cable does not have -- both boards come
     # up and go down on one supply through it.
-    _link_nodes = {(p.ref, str(pin.num)) for p in default_circuit.parts
-                   for pin in p.pins if "RING_LINK" in {n.name for n in pin.nets}}
-    assert _link_nodes == {("J1", "3"), ("U1", "11")}, (
-        f"LINK_BARE: RING_LINK touches {sorted(_link_nodes)}, expected exactly "
-        "J1.3 and U1.11 -- the pull-up this line runs on lives on the console "
-        "board, at the rail its GP13 belongs to")
+    for _net, _want in (("LINK_TO_RING", {("J1", "3"), ("U1", "10")}),
+                        ("LINK_TO_CONSOLE", {("J1", "4"), ("U1", "11")})):
+        _nodes = {(p.ref, str(pin.num)) for p in default_circuit.parts
+                  for pin in p.pins if _net in {n.name for n in pin.nets}}
+        assert _nodes == _want, (
+            f"LINK_BARE: {_net} touches {sorted(_nodes)}, expected exactly "
+            f"{sorted(_want)} -- the pull-up these lines run on lives on the "
+            "console board, at the rail its GP13/GP14 belong to")
 
     # POLARITY: two parts on this board are directional and fitting either one
     # backwards is silent at assembly. Same gate the console board runs on C30.
@@ -445,7 +461,7 @@ def _selftest():
 
     def _link_pullup():
         # Reasonable-looking and wrong: "make the link idle high locally".
-        r = R("10k", "R98"); r[1, 2] += v3v3, ring_link; added.append(r)
+        r = R("10k", "R98"); r[1, 2] += v3v3, link_to_console; added.append(r)
 
     def _diode_backwards():
         d = next(p for p in default_circuit.parts if p.ref == "D1")
