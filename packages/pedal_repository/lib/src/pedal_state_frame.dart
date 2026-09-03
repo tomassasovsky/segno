@@ -175,8 +175,9 @@ class PedalStateFrame extends Equatable {
   final bool performanceArmed;
 
   /// The engine's master output gain, `0.0`..`1.0` (the value the encoder
-  /// adjusts), quantized to one 0..255 byte on the wire. On the wire; the
-  /// console board does not render it.
+  /// adjusts), quantized to one 0..255 byte on the wire. The board shows it
+  /// as a filled arc on the ring for a moment after it changes: the encoder
+  /// has no indicator of its own, so the ring is its readout.
   final double masterGain;
 
   /// The engine's looper mode (Multi/Sync/Song/Band/Free) — a **different
