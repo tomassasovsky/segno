@@ -158,10 +158,6 @@ static void check_fixture(const char *dir, const char *name) {
       CHECK(len == 3 && payload[0] == PEDAL_LINK_PROTOCOL_VERSION, "%s: bad hello", name);
       m = pedal_link_encode_hello(payload[1], payload[2], again);
       break;
-    case PEDAL_LINK_TYPE_LOOP_TOP:
-      CHECK(len == 0, "%s: loop-top with payload", name);
-      m = pedal_link_encode_loop_top(again);
-      break;
     default:
       CHECK(0, "%s: unknown type 0x%02X", name, type);
       return;

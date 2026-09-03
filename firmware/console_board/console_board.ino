@@ -39,8 +39,19 @@ static const uint8_t PIN_SMPS_PWM = 23;
 // The encoder's NeoPixel Ring 24 on J6 (O65.5 / O52.3, the fitted part).
 static const uint16_t RING_N = 24;
 // The indicator pills on J7, one WS2812 puck each, chained in this order along
-// the faceplate (#792: the four transport pedals carry no pill).
-enum { IND_TRACK1 = 0, IND_TRACK2, IND_TRACK3, IND_TRACK4, IND_CLEAR, IND_BANK, IND_N };
+// the faceplate. The first sits above footswitch 1 and is the mode indicator;
+// then the four active-bank tracks, the clear pill and the bank pill. Same map
+// the pedal this board replaces used (its LEDs 12..18).
+enum {
+  IND_MODE = 0,
+  IND_TRACK1,
+  IND_TRACK2,
+  IND_TRACK3,
+  IND_TRACK4,
+  IND_CLEAR,
+  IND_BANK,
+  IND_N
+};
 Adafruit_NeoPixel ring(RING_N, PIN_RING, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel ind(IND_N, PIN_IND, NEO_GRB + NEO_KHZ800);
 static const uint8_t LED_BRIGHTNESS = 64;
@@ -82,7 +93,6 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
     case PEDAL_LINK_TYPE_STATE: {
       pedal_state decoded;
       if (pedal_link_decode_state(payload, len, &decoded)) {
-        onLoopLength(g_haveFrame ? g_frame.loop_length_micros : 0, decoded.loop_length_micros);
         g_frame = decoded;
         g_haveFrame = true;
         g_frameDirty = true;
@@ -90,9 +100,6 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
       }
       break;  // a malformed frame is dropped; the last good one is kept
     }
-    case PEDAL_LINK_TYPE_LOOP_TOP:
-      onLoopTop();
-      break;
     default:
       break;
   }
@@ -133,23 +140,60 @@ static void pollButtons() {
   }
 }
 
-// Gray-code transition table, signed so CLOCKWISE counts up on the fitted EC11
-// (bench-verified 2026-09-03). One detent is four transitions; one ENCODER
-// message per detent.
-static const int8_t ENC_T[16] = {0, 1, -1, 0, -1, 0, 0, 1, 1, 0, 0, -1, 0, -1, 1, 0};
-static uint8_t g_encPrev = 0;
-static int8_t g_encAccum = 0;
+// The EC11's detent is at BOTH-HIGH (11). One click walks 11 -> 10 -> 00 -> 01
+// -> 11 one way and 11 -> 01 -> 00 -> 10 -> 11 the other, so the intermediate
+// state seen LAST before returning to the detent names the direction.
+//
+// Counting all four transitions instead does not survive this board: pushing
+// the two LED strips masks interrupts for about a millisecond every 20 ms, and
+// a detent turned during that window arrives as a two-step jump, which a
+// four-transition counter reads as no movement at all. It stalls forever
+// rather than merely lagging — the encoder worked with the panel dark and died
+// the moment segno started sending frames (bench, 2026-09-03). Remembering the
+// last intermediate state needs to see only ONE of the three, so a masked
+// window costs precision, never a whole click. Footswitches were never
+// affected: their 8 ms debounce outlives any push.
+//
+// Sampled from a pin-change interrupt AND from the loop, including either side
+// of the LED pushes: whichever sees the edge first records it, and the other
+// finds nothing to do.
+static const uint8_t ENC_DETENT = 3;      // both lines high, between clicks
+static volatile uint8_t g_encLast = ENC_DETENT;
+static volatile uint8_t g_encMark = 0;    // last intermediate state, 0 = none
+static volatile int8_t g_encDetents = 0;  // whole clicks the link still owes
 
-static void pollEncoder() {
+static void encoderSample() {
   const uint8_t cur = (uint8_t)((digitalRead(PIN_ENC_A) << 1) | digitalRead(PIN_ENC_B));
-  const int8_t d = ENC_T[(g_encPrev << 2) | cur];
-  g_encPrev = cur;
-  if (!d) return;
-  g_encAccum = (int8_t)(g_encAccum + d);
-  if (g_encAccum >= 4 || g_encAccum <= -4) {
+  if (cur == g_encLast) return;
+  g_encLast = cur;
+  if (cur == ENC_DETENT) {
+    // Saturate rather than wrap: a spin faster than the link drains is worth
+    // a lost click, never a reversed one.
+    if (g_encMark == 1 && g_encDetents < 127) g_encDetents++;
+    if (g_encMark == 2 && g_encDetents > -128) g_encDetents--;
+    g_encMark = 0;
+    return;
+  }
+  // 01 and 10 name a direction; 00 is the midpoint and names none, so it
+  // leaves the mark alone.
+  if (cur == 1 || cur == 2) g_encMark = cur;
+}
+
+// Drains whole clicks the sampler counted, one ENCODER message each.
+static void pollEncoder() {
+  encoderSample();
+  for (;;) {
+    noInterrupts();
+    const int8_t owed = g_encDetents;
+    if (owed > 0) {
+      g_encDetents--;
+    } else if (owed < 0) {
+      g_encDetents++;
+    }
+    interrupts();
+    if (!owed) return;
     uint8_t buf[PEDAL_LINK_MAX_FRAME];
-    sendFrame(buf, pedal_link_encode_encoder(g_encAccum > 0 ? 1 : -1, buf));
-    g_encAccum = 0;
+    sendFrame(buf, pedal_link_encode_encoder(owed > 0 ? 1 : -1, buf));
   }
 }
 
@@ -175,11 +219,20 @@ static Rgb ledColor(uint8_t led) {
     default: return {0, 0, 0};
   }
 }
+// The mode pill's colour: rec red, play green, FX blue. Solid, always — this
+// pill means the interaction mode and nothing else.
+static Rgb modeColor(uint8_t mode) {
+  switch (mode) {
+    case PEDAL_MODE_PLAY: return {0, 255, 0};
+    case PEDAL_MODE_FX: return {0, 0, 255};
+    default: return {255, 0, 0};  // PEDAL_MODE_REC
+  }
+}
 static Rgb globalColor(uint8_t color) {
   switch (color) {
     case PEDAL_GLOBAL_GREEN: return {0, 255, 0};
     case PEDAL_GLOBAL_RED: return {255, 0, 0};
-    case PEDAL_GLOBAL_AMBER: return {255, 150, 0};
+    case PEDAL_GLOBAL_AMBER: return {255, 255, 0};  // yellow, on the owner's call
     case PEDAL_GLOBAL_BLUE: return {0, 0, 255};
     default: return {0, 0, 0};
   }
@@ -192,38 +245,23 @@ static inline uint16_t ringIndex(uint16_t i) {
 // A smooth brightness hump travels around the ring, coloured by the activity
 // colour segno sends (red recording / amber overdubbing / green playing).
 //
-// The sweep is the loop position: segno pulses LOOP_TOP at every loop top, which
-// snaps the hump back to pixel 0, and between pulses it advances at one
-// revolution per loop length (STATE carries loop_length_micros), so the hump IS
-// the playhead.
-// While there is activity but no loop yet (the first recording is still open),
-// there is nothing to sync to and the hump runs at a fixed cadence instead.
+// A smooth brightness hump travels the ring at a FIXED cadence — it says
+// "something is happening", in the activity colour, and deliberately does not
+// track the loop: one revolution per loop is unreadably slow at any musical
+// length, and the playhead is already on the screens (owner's call,
+// 2026-09-03).
 //
 // A Stop that leaves a loop loaded freezes the hump where it was. With nothing
-// loaded and nothing playing the ring breathes green so it reads as alive.
-// segno pulses LOOP_TOP on both edges that mean "the playhead is at the top" —
-// a wrap, and a resume from zero after a Stop — so a frozen hump is re-pinned
-// as soon as playback starts again rather than one loop later.
-// Ported from the pedal's renderRing(); widths scaled to the Ring 24.
-static const unsigned long FREE_RUN_MS_PER_REV = 700;
-static const unsigned long BREATHE_MS = 2400;
+// loaded and nothing playing the ring breathes green so it reads as alive; the
+// breathe never reaches black, so an idle panel still shows the board is up.
+static const unsigned long RING_MS_PER_REV = 700;
+static const unsigned long BREATHE_MS = 1200;
+// The dimmest the breathe goes, as a fraction of full: never off.
+static const float BREATHE_FLOOR = 0.35f;
 static const float RING_WIDTH = 11.0f;
 static float g_ringPhase = 0.0f;  // hump centre, 0..RING_N
 static unsigned long g_ringLastMs = 0;
 static bool g_ringDark = false;  // the ring buffer is already all-black
-
-static void onLoopTop() {
-  g_ringPhase = 0.0f;
-}
-
-// The hump's position is a fraction of the loop. When the loop length changes
-// without a wrap (sync mode doubling the master, an undo shortening it) the
-// playhead keeps its TIME position, so the fraction rescales by old/new; the
-// next LOOP_TOP then pins it exactly.
-static void onLoopLength(uint32_t oldUs, uint32_t newUs) {
-  if (oldUs == 0 || newUs == 0 || oldUs == newUs) return;
-  g_ringPhase = fmodf(g_ringPhase * ((float)oldUs / (float)newUs), (float)RING_N);
-}
 
 // Returns whether the ring buffer changed and needs pushing.
 static bool renderRing() {
@@ -249,15 +287,14 @@ static bool renderRing() {
     const unsigned long half = BREATHE_MS / 2;
     float t = (p < half) ? (p / (float)half) : (1.0f - (p - half) / (float)half);
     t = t * t * (3.0f - 2.0f * t);
-    const uint8_t level = (uint8_t)((0.15f + 0.85f * t) * 255.0f + 0.5f);
+    const uint8_t level =
+        (uint8_t)((BREATHE_FLOOR + (1.0f - BREATHE_FLOOR) * t) * 255.0f + 0.5f);
     const uint32_t green = scaled(0, 255, 0, level);  // same for every pixel
     for (uint16_t i = 0; i < RING_N; i++) ring.setPixelColor(i, green);
     return true;
   }
-  const float msPerRev = g_frame.loop_length_micros > 0
-                             ? (float)g_frame.loop_length_micros / 1000.0f
-                             : (float)FREE_RUN_MS_PER_REV;
-  g_ringPhase = fmodf(g_ringPhase + (float)dt / msPerRev * (float)RING_N, (float)RING_N);
+  g_ringPhase =
+      fmodf(g_ringPhase + (float)dt / (float)RING_MS_PER_REV * (float)RING_N, (float)RING_N);
   for (uint16_t i = 0; i < RING_N; i++) {
     float d = fabsf((float)i - g_ringPhase);
     if (d > RING_N / 2.0f) d = RING_N - d;
@@ -285,6 +322,8 @@ static void renderIndicators() {
     const Rgb c = ledColor(g_frame.track_leds[base + t]);
     ind.setPixelColor(IND_TRACK1 + t, rgb(c.r, c.g, c.b));
   }
+  const Rgb m = modeColor(g_frame.mode);
+  ind.setPixelColor(IND_MODE, rgb(m.r, m.g, m.b));
   ind.setPixelColor(IND_CLEAR, g_frame.clear_fade ? rgb(255, 0, 0) : 0);
   ind.setPixelColor(IND_BANK, g_frame.active_bank == 1 ? rgb(0, 0, 80) : 0);
 }
@@ -311,7 +350,9 @@ void setup() {
   pinMode(PIN_ENC_A, INPUT_PULLUP);
   pinMode(PIN_ENC_B, INPUT_PULLUP);
   pinMode(PIN_ENC_SW, INPUT_PULLUP);
-  g_encPrev = (uint8_t)((digitalRead(PIN_ENC_A) << 1) | digitalRead(PIN_ENC_B));
+  g_encLast = (uint8_t)((digitalRead(PIN_ENC_A) << 1) | digitalRead(PIN_ENC_B));
+  attachInterrupt(digitalPinToInterrupt(PIN_ENC_A), encoderSample, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(PIN_ENC_B), encoderSample, CHANGE);
 
   LINK.setTX(PIN_LINK_TX);
   LINK.setRX(PIN_LINK_RX);
@@ -361,9 +402,14 @@ void loop() {
     const bool frameChanged = g_frameDirty;
     g_frameDirty = false;
     if (frameChanged) renderIndicators();
-    pollLink();  // show() masks interrupts briefly; drain before and after
+    // show() masks interrupts briefly: drain the link and sample the encoder
+    // either side of each push so a click turned across one cannot be lost.
+    pollLink();
+    encoderSample();
     if (ringChanged || refresh) ring.show();
+    encoderSample();
     if (frameChanged || refresh) ind.show();
+    encoderSample();
     pollLink();
   }
 }

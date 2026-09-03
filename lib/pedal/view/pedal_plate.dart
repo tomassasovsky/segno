@@ -767,8 +767,8 @@ class _EncoderState extends State<_Encoder> with TickerProviderStateMixin {
   }
 
   // Standby breathes; otherwise one revolution per loop, parked when no loop
-  // length is known yet. (The console board's ring free-runs in that state
-  // and snaps to the loop top on LOOP_TOP; the plate has no such pulse.)
+  // length is known yet. (The console board's own ring runs at a fixed
+  // cadence instead — it reads as activity, not as a playhead.)
   void _syncMotion() {
     if (widget.breathing) {
       _sweep

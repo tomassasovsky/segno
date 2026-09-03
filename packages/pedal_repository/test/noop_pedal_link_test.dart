@@ -7,9 +7,7 @@ void main() {
       final link = NoopPedalLink();
       final repo = PedalRepository(link);
       expect(repo.status, PedalLinkStatus.disconnected);
-      repo
-        ..pushState(PedalStateFrame.blank())
-        ..sendLoopTop();
+      repo.pushState(PedalStateFrame.blank());
       await pumpEventQueue();
       expect(repo.status, PedalLinkStatus.disconnected);
       await repo.dispose();

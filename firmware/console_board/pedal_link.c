@@ -33,10 +33,6 @@ size_t pedal_link_encode_hello(uint8_t fw_major, uint8_t fw_minor, uint8_t *out)
   return pedal_link_encode(PEDAL_LINK_TYPE_HELLO, p, 3, out);
 }
 
-size_t pedal_link_encode_loop_top(uint8_t *out) {
-  return pedal_link_encode(PEDAL_LINK_TYPE_LOOP_TOP, NULL, 0, out);
-}
-
 size_t pedal_link_encode_state(const pedal_state *s, uint8_t *out) {
   uint8_t p[PEDAL_LINK_STATE_LEN];
   p[0] = (uint8_t)((s->clear_fade ? 0x01u : 0u) | (s->goodbye ? 0x02u : 0u) |
@@ -88,7 +84,6 @@ int pedal_link_payload_len(uint8_t type) {
     case PEDAL_LINK_TYPE_ENCODER: return 1;
     case PEDAL_LINK_TYPE_HELLO: return 3;
     case PEDAL_LINK_TYPE_STATE: return (int)PEDAL_LINK_STATE_LEN;
-    case PEDAL_LINK_TYPE_LOOP_TOP: return 0;
     default: return -1;
   }
 }

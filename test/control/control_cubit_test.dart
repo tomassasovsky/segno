@@ -2794,19 +2794,6 @@ void main() {
         );
       });
 
-      test('sends a loop-top pulse when the playhead wraps', () async {
-        setEngine(_emptyTracks(), masterPositionFrames: 40000);
-        await pumpEventQueue();
-        transport.sent.clear();
-        setEngine(_emptyTracks(), masterPositionFrames: 10);
-        await pumpEventQueue();
-
-        expect(
-          transport.sent.any((m) => m is LoopTopMessage),
-          isTrue,
-        );
-      });
-
       test(
         'global_color carries the ring activity color (recording = red)',
         () async {

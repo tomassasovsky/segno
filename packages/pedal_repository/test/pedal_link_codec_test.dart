@@ -10,13 +10,6 @@ void main() {
       expect(bytes, [0xA5, 0x01, 0x02, 0x02, 0x01, 0x01 ^ 0x02 ^ 0x02 ^ 0x01]);
     });
 
-    test('a loop-top frame carries no payload', () {
-      expect(
-        PedalLinkCodec.encode(const LoopTopMessage()),
-        [0xA5, 0x11, 0x00, 0x11],
-      );
-    });
-
     test("the encoder delta is an int8 two's complement byte", () {
       expect(PedalLinkCodec.encode(const EncoderMessage(-1))[3], 0xFF);
       expect(PedalLinkCodec.encode(const EncoderMessage(-128))[3], 0x80);
@@ -124,7 +117,7 @@ void main() {
       test('wrong payload lengths', () {
         expect(PedalLinkCodec.decode(PedalLinkCodec.typeEncoder, []), isNull);
         expect(PedalLinkCodec.decode(PedalLinkCodec.typeHello, [1, 0]), isNull);
-        expect(PedalLinkCodec.decode(PedalLinkCodec.typeLoopTop, [0]), isNull);
+        expect(PedalLinkCodec.decode(PedalLinkCodec.typeState, [0]), isNull);
       });
     });
   });
@@ -225,7 +218,7 @@ void main() {
         PedalLinkCodec.payloadLengthFor(PedalLinkCodec.typeState),
         PedalLinkCodec.statePayloadLength,
       );
-      expect(PedalLinkCodec.payloadLengthFor(PedalLinkCodec.typeLoopTop), 0);
+      expect(PedalLinkCodec.payloadLengthFor(0x11), isNull);
       expect(PedalLinkCodec.payloadLengthFor(0x7F), isNull);
     });
 

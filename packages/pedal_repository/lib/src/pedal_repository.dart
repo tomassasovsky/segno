@@ -101,8 +101,13 @@ class PedalRepository {
   /// talking, or `null` while it is not.
   String? get firmwareVersion => _hello?.firmwareVersion;
 
-  /// Whether frames and events may cross the link right now: not released,
-  /// not said goodbye, and not facing a board that speaks another protocol.
+  /// Whether the board is talking a link protocol this build does not speak,
+  /// in which case its button table cannot be trusted: a reordered one could
+  /// map a stomp onto Clear.
+  bool get _incompatible => _disposed || status == PedalLinkStatus.incompatible;
+
+  /// Whether frames may go out right now: not released, not said goodbye,
+  /// and not facing a board that speaks another protocol.
   bool get _open =>
       !_disposed && !_goodbye && status != PedalLinkStatus.incompatible;
 
@@ -116,39 +121,41 @@ class PedalRepository {
     if (_open) _link.send(StateMessage(frame));
   }
 
-  /// Sends the loop-top pulse. Dropped while the board is incompatible and
-  /// after [goodbye].
-  void sendLoopTop() {
-    if (_open) _link.send(const LoopTopMessage());
-  }
-
-  /// Darkens the console for a shutdown and latches the link: from here on
-  /// every push and pulse is dropped and every stomp ignored, so nothing —
-  /// a footswitch pressed out of habit, a last looper poll — re-lights a
-  /// panel whose host is halting. Hellos are still answered, with the
-  /// goodbye frame, so a board that misses it goes dark on the next one.
+  /// Darkens the console for a shutdown and holds the mark: from here on
+  /// every frame is dropped, so nothing — a last looper poll, a stomp made
+  /// out of habit — re-lights a panel whose host is halting. Hellos are
+  /// still answered, with the goodbye frame, so a board that missed it goes
+  /// dark on the next one.
+  ///
+  /// Inbound stomps are deliberately NOT swallowed. Blocking them as well
+  /// makes a goodbye that turns out to be wrong — a halt that never
+  /// happens — indistinguishable from a broken link: no frames, no events,
+  /// no log line, and no way back short of a restart. Dropping the frames is
+  /// what holds the mark; the events can do no harm on a console that is
+  /// going down, and they leave a trace if it is not.
   void goodbye() {
     if (_disposed || _goodbye) return;
     pushState(PedalStateFrame.blank(goodbye: true));
     _goodbye = true;
+    _log?.call('pedal link: goodbye mark held; frames stop here');
   }
 
   void _onMessage(PedalLinkMessage message) {
     switch (message) {
       case ButtonMessage(:final button, :final pressed):
-        if (!_open) return;
+        if (_incompatible) return;
         _emit(
           pressed
               ? ButtonPressed(button, timestamp: _clock())
               : ButtonReleased(button, timestamp: _clock()),
         );
       case EncoderMessage(:final delta):
-        if (!_open) return;
+        if (_incompatible) return;
         _emit(EncoderDelta(delta));
       case HelloMessage():
         _onHello(message);
-      case StateMessage() || LoopTopMessage():
-        break; // outbound types; a board never sends them
+      case StateMessage():
+        break; // outbound; a board never sends one
     }
   }
 
