@@ -16,7 +16,7 @@ enum InteractionMode {
   mute,
 
   /// Track presses toggle each track's Track-stage FX chain; the track LEDs
-  /// carry chain-enabled state (FX v3 part 5b, pedal protocol v3).
+  /// carry chain-enabled state (FX v3 part 5b).
   ///
   /// Every one of the pedal's ten controls is explicitly defined here: the
   /// bank's four track switches stomp Track chains, Stop is FX panic (all
