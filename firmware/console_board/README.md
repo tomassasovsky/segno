@@ -11,8 +11,8 @@ the state frames segno pushes back. segno runs the behavior machine.
 | Link TX / RX | GP16 / GP17 | UART0 → Pi uart3 (GPIO8/9, `/dev/ttyAMA3`), 115200 8N1 |
 | Footswitches | GP2–GP11 | REC/PLAY, STOP, UNDO, MODE, TRACK1–4, CLEAR, BANK. Internal pull-up, active low, 8 ms stable-edge debounce |
 | Ring data | GP12 | via 74AHCT125 → J6 pin 5, NeoPixel Ring 24 |
-| Encoder A / B / SW | GP13 / GP14 / GP15 | Internal pull-ups plus the board's 10 k to the Pi's 3V3; one message per detent |
-| Indicator data | GP18 | via 74AHCT125 → J7 pin 2, six WS2812 pucks: TRACK1–4, CLEAR, BANK |
+| Encoder A / B / SW | GP13 / GP14 / GP15 | Internal pull-ups plus the board's 10 k to the Pi's 3V3; one message per detent, decoded from pin-change interrupts |
+| Indicator data | GP18 | via 74AHCT125 → J7 pin 2, **seven** WS2812 pucks in chain order: MODE (above footswitch 1), TRACK1–4, CLEAR, BANK |
 | CTRL1 / CTRL2 tip | GP26 / GP27 | ADC0 / ADC1 (not read yet) |
 | SMPS mode | GP23 | Driven high: PWM mode, less ADC ripple |
 
@@ -125,7 +125,7 @@ od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 01 01 00 00 (HELLO, fw 1.0), once 
 RP1 = `gpiochip0`); OpenOCD found both Cortex-M33 cores, programmed and verified
 the ELF, and the board came up on `/dev/ttyAMA3` at the first try. Verified on the
 bench: all ten footswitches (clean DOWN/UP, correct order), encoder button, encoder
-rotation (4 transitions per detent, sign fixed so clockwise counts up), Ring 24 lap
+rotation (one message per detent, sign fixed so clockwise counts up), Ring 24 lap
 in three colours and solid fill via J6, CTRL1/CTRL2 reading full scale through their
 pull-ups with nothing plugged in — all with the bring-up text console this
 firmware started as. Not yet exercised: indicator chain on J7 (no pucks

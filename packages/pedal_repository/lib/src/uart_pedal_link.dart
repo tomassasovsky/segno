@@ -62,6 +62,7 @@ class UartPedalLink implements PedalLink {
       StreamController<PedalLinkMessage>.broadcast();
 
   ReceivePort? _fromReader;
+  ReceivePort? _readerExited;
   StreamSubscription<dynamic>? _readerSub;
   Isolate? _reader;
   SendPort? _readerControl;
@@ -148,10 +149,13 @@ class UartPedalLink implements PedalLink {
       final fromReader = ReceivePort();
       _fromReader = fromReader;
       _readerSub = fromReader.listen(_onReaderMessage);
+      final exited = ReceivePort();
+      _readerExited = exited;
       _reader = await Isolate.spawn(
         _readerMain,
-        _ReaderArgs(fromReader.sendPort, _device),
+        _ReaderArgs(fromReader.sendPort),
         debugName: 'pedal-link-reader',
+        onExit: exited.sendPort,
       );
       if (_disposed) {
         await _close();
@@ -219,16 +223,30 @@ class UartPedalLink implements PedalLink {
   }
 
   Future<void> _close() async {
-    // Ask the reader to close its own fd and leave: it checks between reads,
-    // so this is bounded by one VTIME tick.
+    // Ask the reader to close its own descriptor and leave. It checks between
+    // reads, so this is bounded by one VTIME tick; wait for it to actually go
+    // before opening the device again, or two readers would split one byte
+    // stream. Kill is the backstop for a reader that never got the message.
+    final reader = _reader;
+    final exited = _readerExited;
+    _reader = null;
+    _readerExited = null;
     _readerControl?.send(null);
     _readerControl = null;
+    if (reader != null) {
+      if (exited != null) {
+        await exited.first.timeout(
+          const Duration(milliseconds: 500),
+          onTimeout: () => null,
+        );
+        exited.close();
+      }
+      reader.kill(priority: Isolate.immediate);
+    }
     await _readerSub?.cancel();
     _readerSub = null;
     _fromReader?.close();
     _fromReader = null;
-    _reader?.kill();
-    _reader = null;
     if (_writeFd >= 0) {
       _libcClose(_writeFd);
       _writeFd = -1;
@@ -268,8 +286,26 @@ final int Function(int, Pointer<Void>, int) _libcWrite = _libc
       int Function(int, Pointer<Void>, int)
     >('write');
 
+final int Function(int, Pointer<Void>, int) _libcRead = _libc
+    .lookupFunction<
+      Long Function(Int32, Pointer<Void>, Uint64),
+      int Function(int, Pointer<Void>, int)
+    >('read');
+
 final int Function(int) _libcClose = _libc
     .lookupFunction<Int32 Function(Int32), int Function(int)>('close');
+
+/// glibc keeps `errno` per thread behind this accessor.
+final Pointer<Int32> Function() _errnoLocation = _libc
+    .lookupFunction<Pointer<Int32> Function(), Pointer<Int32> Function()>(
+      '__errno_location',
+    );
+
+int _errno() => _errnoLocation().value;
+
+/// Interrupted by a signal, and "nothing to read yet": both mean retry.
+const _eintr = 4;
+const _eagain = 11;
 
 int _openDevice(int flags) {
   final path = _device.toNativeUtf8();
@@ -283,10 +319,9 @@ int _openDevice(int flags) {
 // --- the reader isolate ------------------------------------------------------
 
 final class _ReaderArgs {
-  const _ReaderArgs(this.sendPort, this.path);
+  const _ReaderArgs(this.sendPort);
 
   final SendPort sendPort;
-  final String path;
 }
 
 /// Reads the line until told to stop, forwarding every chunk to the link.
@@ -294,25 +329,15 @@ final class _ReaderArgs {
 /// `read` blocks for up to one VTIME tick (100 ms), which is why this is an
 /// isolate: the same shape the appliance's power-key reader uses. A zero-byte
 /// return is that timeout, not end of file — a serial line has no end.
-void _readerMain(_ReaderArgs args) {
-  final libc = DynamicLibrary.process();
-  final open = libc
-      .lookupFunction<
-        Int32 Function(Pointer<Utf8>, Int32),
-        int Function(Pointer<Utf8>, int)
-      >('open');
-  final read = libc
-      .lookupFunction<
-        Long Function(Int32, Pointer<Void>, Uint64),
-        int Function(int, Pointer<Void>, int)
-      >('read');
-  final closeFd = libc.lookupFunction<Int32 Function(Int32), int Function(int)>(
-    'close',
-  );
-
-  final path = args.path.toNativeUtf8();
-  final fd = open(path, _oRdonly | _oNoctty);
-  malloc.free(path);
+///
+/// The loop yields to this isolate's own event loop on every pass. Without
+/// that the stop message below could never be delivered — a synchronous loop
+/// never returns to the event loop, and `Isolate.kill` at the default priority
+/// waits for the current event, which is this function — so the link could
+/// neither close its descriptor nor stop reading, and the next reopen would
+/// leave two readers splitting one byte stream between them.
+Future<void> _readerMain(_ReaderArgs args) async {
+  final fd = _openDevice(_oRdonly);
   if (fd < 0) {
     args.sendPort.send('open for reading returned $fd');
     return;
@@ -327,17 +352,28 @@ void _readerMain(_ReaderArgs args) {
   final buffer = malloc<Uint8>(capacity);
   try {
     while (!stopped) {
-      final n = read(fd, buffer.cast(), capacity);
+      final n = _libcRead(fd, buffer.cast(), capacity);
       if (n < 0) {
-        args.sendPort.send('read returned $n');
+        final error = _errno();
+        // A signal delivered mid-read, or a line with nothing on it yet, is
+        // not a broken port: retry rather than tearing the link down and
+        // backing off, which would darken the panel for seconds.
+        if (error == _eintr || error == _eagain) {
+          await Future<void>.delayed(Duration.zero);
+          continue;
+        }
+        args.sendPort.send('read failed, errno $error');
         return;
       }
-      if (n == 0) continue; // VTIME timeout, not EOF
-      args.sendPort.send(Uint8List.fromList(buffer.asTypedList(n)));
+      if (n > 0) {
+        args.sendPort.send(Uint8List.fromList(buffer.asTypedList(n)));
+      }
+      // Let the control port be serviced.
+      await Future<void>.delayed(Duration.zero);
     }
   } finally {
     malloc.free(buffer);
-    closeFd(fd);
+    _libcClose(fd);
     control.close();
   }
 }

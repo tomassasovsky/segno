@@ -26,9 +26,9 @@ enum PedalLinkStatus {
   incompatible,
 }
 
-/// Owns the pedal link: turns inbound board messages into [PedalEvent]s, tracks
-/// whether the board is alive, and pushes [PedalStateFrame]s and the loop-top
-/// pulse out. Hardware-free: everything native is behind the [PedalLink].
+/// Owns the pedal link: turns inbound board messages into [PedalEvent]s,
+/// tracks whether the board is alive, and pushes [PedalStateFrame]s out.
+/// Hardware-free: everything native is behind the [PedalLink].
 ///
 /// Liveness is one mechanism, driven by the board: every hello is answered
 /// with the last pushed frame, so a board that just (re)connected — or that
@@ -106,11 +106,6 @@ class PedalRepository {
   /// map a stomp onto Clear.
   bool get _incompatible => _disposed || status == PedalLinkStatus.incompatible;
 
-  /// Whether frames may go out right now: not released, not said goodbye,
-  /// and not facing a board that speaks another protocol.
-  bool get _open =>
-      !_disposed && !_goodbye && status != PedalLinkStatus.incompatible;
-
   /// Sends [frame] to the board unless it is the frame already showing, and
   /// remembers it as the frame every later hello is answered with. Recorded
   /// but not sent while the board is [PedalLinkStatus.incompatible]; dropped
@@ -118,7 +113,7 @@ class PedalRepository {
   void pushState(PedalStateFrame frame) {
     if (_disposed || _goodbye || frame == _lastFrame) return;
     _lastFrame = frame;
-    if (_open) _link.send(StateMessage(frame));
+    if (!_incompatible) _link.send(StateMessage(frame));
   }
 
   /// Darkens the console for a shutdown and holds the mark: from here on

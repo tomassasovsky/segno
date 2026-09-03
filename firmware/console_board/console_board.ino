@@ -36,7 +36,10 @@ static const uint8_t PIN_IND = 18;
 static const uint8_t PIN_SMPS_PWM = 23;
 
 // ---- LEDs --------------------------------------------------------------------
-// The encoder's NeoPixel Ring 24 on J6 (O65.5 / O52.3, the fitted part).
+// The encoder's NeoPixel Ring 24 on J6 (O65.5 / O52.3, the fitted part). Its
+// WS2812 index order runs clockwise seen from the front of the panel, which is
+// the direction the sweep travels, so pixel index IS ring position — no
+// reversal (bench-verified 2026-09-03: reversing it ran the hump backwards).
 static const uint16_t RING_N = 24;
 // The indicator pills on J7, one WS2812 puck each, chained in this order along
 // the faceplate. The first sits above footswitch 1 and is the mode indicator;
@@ -56,12 +59,6 @@ Adafruit_NeoPixel ring(RING_N, PIN_RING, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel ind(IND_N, PIN_IND, NEO_GRB + NEO_KHZ800);
 static const uint8_t LED_BRIGHTNESS = 64;
 
-// The sweep travels clockwise seen from the front of the panel. WS2812 index
-// order is a property of the fitted ring and of which face you view it from,
-// so it cannot be inferred: on the Ring 24 fitted here, index order already
-// runs clockwise from the front, so the sweep must NOT be reversed
-// (bench-verified 2026-09-03: reversing it ran the hump backwards).
-static const bool RING_REVERSE = false;
 
 // ---- link ----------------------------------------------------------------------
 #define LINK Serial1
@@ -188,10 +185,22 @@ static void encoderSample() {
   if (cur == 1 || cur == 2) g_encMark = cur;
 }
 
+// Samples from the main loop. The ISR can preempt any instruction of
+// encoderSample(), and the two share every variable it touches, so a
+// half-applied sample would race an ISR's: one click could be credited twice,
+// or the wrong way. Mask for the handful of instructions it takes.
+static void encoderSampleFromLoop() {
+  noInterrupts();
+  encoderSample();
+  interrupts();
+}
+
 // Drains whole clicks the sampler counted, one ENCODER message each.
 static void pollEncoder() {
-  encoderSample();
+  encoderSampleFromLoop();
   for (;;) {
+    // The common case by far is nothing owed; read it before masking.
+    if (!g_encDetents) return;
     noInterrupts();
     const int8_t owed = g_encDetents;
     if (owed > 0) {
@@ -247,13 +256,6 @@ static Rgb globalColor(uint8_t color) {
   }
 }
 
-static inline uint16_t ringIndex(uint16_t i) {
-  return RING_REVERSE ? (uint16_t)((RING_N - 1) - i) : i;
-}
-
-// A smooth brightness hump travels around the ring, coloured by the activity
-// colour segno sends (red recording / amber overdubbing / green playing).
-//
 // A smooth brightness hump travels the ring at a FIXED cadence — it says
 // "something is happening", in the activity colour, and deliberately does not
 // track the loop: one revolution per loop is unreadably slow at any musical
@@ -271,6 +273,23 @@ static const float RING_WIDTH = 11.0f;
 static float g_ringPhase = 0.0f;  // hump centre, 0..RING_N
 static unsigned long g_ringLastMs = 0;
 static bool g_ringDark = false;  // the ring buffer is already all-black
+static int16_t g_ringArc = -1;   // lit pixels the level arc last drew, -1 = not showing
+static uint8_t g_ringArcColour = 0;
+
+// Draws the hump at the current phase, in `c`.
+static void paintHump(Rgb c) {
+  for (uint16_t i = 0; i < RING_N; i++) {
+    float d = fabsf((float)i - g_ringPhase);
+    if (d > RING_N / 2.0f) d = RING_N - d;
+    const float dn = d / RING_WIDTH;
+    uint8_t level = 0;
+    if (dn < 1.0f) {
+      const float b = 1.0f - dn * sqrtf(dn);  // dn^1.5, without powf
+      level = (uint8_t)(b * 255.0f + 0.5f);
+    }
+    ring.setPixelColor(i, scaled(c.r, c.g, c.b, level));
+  }
+}
 
 // Returns whether the ring buffer changed and needs pushing.
 static bool renderRing() {
@@ -291,20 +310,38 @@ static bool renderRing() {
 
   // The master level, as a filled arc, for a moment after it changes. In the
   // ring's own colours: the activity colour it is already showing, or the
-  // standby green it breathes when there is no activity to report.
-  if (now < g_gainShownUntil) {
-    const bool lit_colour = activity.r || activity.g || activity.b;
-    const Rgb c = lit_colour ? activity : (Rgb){0, 255, 0};
+  // standby green it breathes when there is no activity to report. Signed
+  // comparison so the deadline survives the millis() wrap, like every other
+  // timer here.
+  if ((long)(now - g_gainShownUntil) < 0) {
+    const bool coloured = activity.r || activity.g || activity.b;
+    const Rgb c = coloured ? activity : Rgb{0, 255, 0};
     const uint16_t lit = (uint16_t)((g_frame.master_gain * RING_N + 254) / 255);
+    // Paint once per level, not per tick: the arc holds for GAIN_SHOW_MS, and
+    // pushing an unchanged buffer 45 times would mask interrupts for ~720 us
+    // each time, in the window where the encoder is still being turned.
+    if (g_ringArc == lit && g_ringArcColour == g_frame.global_color) {
+      return false;
+    }
+    g_ringArc = lit;
+    g_ringArcColour = g_frame.global_color;
     for (uint16_t i = 0; i < RING_N; i++) {
-      ring.setPixelColor(ringIndex(i), i < lit ? rgb(c.r, c.g, c.b) : 0);
+      ring.setPixelColor(i, i < lit ? rgb(c.r, c.g, c.b) : 0);
     }
     return true;
   }
+  // The arc covered whatever was on the ring, so the view underneath has to be
+  // painted again once it expires — the frozen branch below repaints nothing.
+  const bool arcExpired = g_ringArc >= 0;
+  g_ringArc = -1;
 
   const bool active = (activity.r || activity.g || activity.b) && g_frame.global_color != PEDAL_GLOBAL_BLUE;
   // A Stop with a loop still loaded freezes the ring where it was.
-  if (!active && g_frame.loop_length_micros > 0) return false;
+  if (!active && g_frame.loop_length_micros > 0) {
+    if (!arcExpired) return false;
+    paintHump(activity);  // put the frozen hump back where the arc covered it
+    return true;
+  }
   if (!active) {  // standby: breathe green
     const unsigned long p = now % BREATHE_MS;
     const unsigned long half = BREATHE_MS / 2;
@@ -318,17 +355,7 @@ static bool renderRing() {
   }
   g_ringPhase =
       fmodf(g_ringPhase + (float)dt / (float)RING_MS_PER_REV * (float)RING_N, (float)RING_N);
-  for (uint16_t i = 0; i < RING_N; i++) {
-    float d = fabsf((float)i - g_ringPhase);
-    if (d > RING_N / 2.0f) d = RING_N - d;
-    const float dn = d / RING_WIDTH;
-    uint8_t level = 0;
-    if (dn < 1.0f) {
-      const float b = 1.0f - dn * sqrtf(dn);  // dn^1.5, without powf
-      level = (uint8_t)(b * 255.0f + 0.5f);
-    }
-    ring.setPixelColor(ringIndex(i), scaled(activity.r, activity.g, activity.b, level));
-  }
+  paintHump(activity);
   return true;
 }
 
@@ -389,7 +416,7 @@ void setup() {
 
   // A brief green sweep so the panel visibly comes alive before segno's first frame.
   for (uint16_t i = 0; i < RING_N; i++) {
-    ring.setPixelColor(ringIndex(i), rgb(0, 24, 0));
+    ring.setPixelColor(i, rgb(0, 24, 0));
     ring.show();
     delay(12);
   }
@@ -428,11 +455,11 @@ void loop() {
     // show() masks interrupts briefly: drain the link and sample the encoder
     // either side of each push so a click turned across one cannot be lost.
     pollLink();
-    encoderSample();
+    encoderSampleFromLoop();
     if (ringChanged || refresh) ring.show();
-    encoderSample();
+    encoderSampleFromLoop();
     if (frameChanged || refresh) ind.show();
-    encoderSample();
+    encoderSampleFromLoop();
     pollLink();
   }
 }

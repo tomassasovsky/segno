@@ -28,7 +28,10 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-#define PEDAL_LINK_PROTOCOL_VERSION 1u
+/* 2: the loop-top pulse (0x11) was retired when the ring stopped tracking the
+ * loop. The board is flashed over SWD independently of the app, so the two can
+ * drift; this is what makes that visible instead of silent. */
+#define PEDAL_LINK_PROTOCOL_VERSION 2u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
