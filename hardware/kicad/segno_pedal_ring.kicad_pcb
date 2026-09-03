@@ -398,7 +398,7 @@
 				)
 			)
 		)
-		(attr exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
+		(attr through_hole exclude_from_bom allow_missing_courtyard)
 		(duplicate_pad_numbers_are_jumpers no)
 		(fp_circle
 			(center 0 0)
@@ -423,6 +423,17 @@
 			(uuid "b3ab9a8e-5cb8-4b68-9878-1a5d3ce98d50")
 		)
 		(embedded_fonts no)
+		(model "${KIPRJMOD}/segno.pretty/NeoPixel_Ring24.step"
+			(offset
+				(xyz 0 0 0)
+			)
+			(scale
+				(xyz 1 1 1)
+			)
+			(rotate
+				(xyz 0 0 0)
+			)
+		)
 	)
 	(footprint "RotaryEncoder_EC11"
 		(layer "F.Cu")
