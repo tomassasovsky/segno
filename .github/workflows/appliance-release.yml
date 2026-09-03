@@ -159,40 +159,8 @@ jobs:
           path: build/linux/arm64/release/bundle
           retention-days: 1
 
-  # The paired Pro Micro firmware, published as a sibling of the .raucb so the
-  # appliance can flash it with the same update action (#331 part C). Plain
-  # ubuntu-latest: arduino-cli cross-compiles for AVR in well under a minute, so
-  # this never needs the arm64 or Yocto runners and never gates them.
-  build-pedal-firmware:
-    needs: determine-meta
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install arduino-cli + the AVR core
-        run: |
-          set -eu
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 0.35.3
-          echo "$PWD/bin" >> "$GITHUB_PATH"
-
-      - name: Compile segno_pedal_32u4
-        env:
-          VERSION: ${{ needs.determine-meta.outputs.version }}
-        run: |
-          set -eu
-          arduino-cli core update-index
-          arduino-cli core install arduino:avr
-          # One shared recipe with the PR gate in main.yaml — see build.sh.
-          hardware/firmware/segno_pedal_32u4/build.sh pedal-firmware "$VERSION"
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: segno-pedal-firmware
-          path: pedal-firmware
-          retention-days: 1
-
   build-image:
-    needs: [determine-meta, build-app, build-pedal-firmware]
+    needs: [determine-meta, build-app]
     # Opt-in self-hosted (#323): a workflow_dispatch explicitly asking for it.
     # Push-triggered runs have no `inputs` context, so this always resolves to
     # the free GitHub-hosted runner for them.
@@ -204,11 +172,6 @@ jobs:
         with:
           name: segno-app-bundle
           path: deploy/yocto/prebuilt/bundle
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: segno-pedal-firmware
-          path: pedal-firmware
 
       - name: Restore the app binary's executable bit
         # segno-bundle.bb's do_install checks `[ -x "${bundle}/segno" ]`; the
@@ -355,28 +318,8 @@ jobs:
           version='${{ needs.determine-meta.outputs.version }}'
           channel='${{ needs.determine-meta.outputs.channel }}'
 
-          # The pedal firmware rides along as a sibling of the bundle, not
-          # inside it: RAUC bundles are OS A/B slot images, and the pedal is a
-          # USB-attached MCU flashed with avrdude. A missing .hex degrades to a
-          # manifest with no pedalFirmware block — an OS-only update — rather
-          # than failing the release.
-          hex="segno-pedal-${version}.hex"
-          pedal_block=""
-          if [ -f "pedal-firmware/$hex" ]; then
-            cp "pedal-firmware/$hex" "$out/$hex"
-            hex_sha=$(sha256sum "$out/$hex" | cut -d' ' -f1)
-            proto=$(tr -d '[:space:]' < pedal-firmware/protocol-version || echo "")
-            # Interpolated as a bare JSON number, so an empty or non-numeric
-            # read would publish a manifest no client can parse. 0 is the
-            # schema's own "unknown" and degrades safely.
-            case "$proto" in ''|*[!0-9]*) proto=0 ;; esac
-            pedal_block=", \"pedalFirmware\": { \"version\": \"$version\", \"hex\": \"$hex\", \"protocolVersion\": $proto, \"sha256\": \"$hex_sha\" }"
-          else
-            echo "::warning::no pedal firmware .hex found; publishing an OS-only manifest"
-          fi
-
           cat > "$out/manifest.json" <<EOF
-          { "version": "$version", "bundle": "$bundle", "sha256": "$sha", "channel": "$channel"$pedal_block }
+          { "version": "$version", "bundle": "$bundle", "sha256": "$sha", "channel": "$channel" }
           EOF
           # Pretty-print if jq is on the runner; never fail the release over a
           # log nicety, two hours into the build.
@@ -493,8 +436,7 @@ jobs:
               # catches a stale file as well as a missing one.
               ok=yes
               for pair in \
-                "$(printf '%s' "$manifest" | jq -r '"\(.bundle) \(.sha256)"')" \
-                "$(printf '%s' "$manifest" | jq -r 'if .pedalFirmware then "\(.pedalFirmware.hex) \(.pedalFirmware.sha256)" else empty end')"
+                "$(printf '%s' "$manifest" | jq -r '"\(.bundle) \(.sha256)"')"
               do
                 [ -n "$pair" ] || continue
                 name=${pair%% *}; want=${pair##* }
