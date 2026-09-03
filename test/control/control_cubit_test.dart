@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -14,7 +13,7 @@ import 'package:segno/looper/model/interaction_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
-import '../pedal/helpers/fake_pedal_transport.dart';
+import '../pedal/helpers/fake_pedal_link.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -112,7 +111,7 @@ void main() {
     late _MockLooperRepository looper;
     late StreamController<LooperState> looperStates;
     late SettingsRepository settings;
-    late FakePedalTransport transport;
+    late FakePedalLink transport;
     late PedalRepository pedal;
     late PerformanceRepository performance;
     late ControlCubit cubit;
@@ -145,9 +144,7 @@ void main() {
       looper = _MockLooperRepository();
       looperStates = StreamController<LooperState>.broadcast(sync: true);
       settings = SettingsRepository(store: FakeKeyValueStore());
-      transport = FakePedalTransport(
-        outputs: const [MidiDevice(id: 'out', name: 'Pedal')],
-      );
+      transport = FakePedalLink();
       pedal = PedalRepository(transport);
       when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
       for (final stub in [
@@ -579,8 +576,8 @@ void main() {
       /// reach the cubit.
       Future<void> stomp(PedalButton button) async {
         transport
-          ..emit(0x90, button.note, 127)
-          ..emit(0x80, button.note, 0);
+          ..press(button, down: true)
+          ..press(button, down: false);
         await pumpEventQueue();
       }
 
@@ -588,10 +585,10 @@ void main() {
       /// Real delays (not fake_async) — the wire events reach the cubit
       /// through the repository's stream, which a fake clock cannot pump.
       Future<void> hold(PedalButton button) async {
-        transport.emit(0x90, button.note, 127);
+        transport.press(button, down: true);
         await pumpEventQueue();
         await Future<void>.delayed(const Duration(milliseconds: 600));
-        transport.emit(0x80, button.note, 0);
+        transport.press(button, down: false);
         await pumpEventQueue();
       }
 
@@ -660,21 +657,14 @@ void main() {
       test('holdFx: the mode and its LED frame flip AT the hold threshold, '
           'not at release', () async {
         await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        // v3 wire: below it the mode field has no FX bit and the frame
-        // degrades fx to play (B10), which would hide exactly the flip this
-        // test pins.
-        pedal
-          ..firmwareProtocolVersion = 3
-          ..bind('out');
-        await pumpEventQueue();
 
         // Press and stay held: below the threshold nothing flips — the LEDs
         // keep showing the mode the foot is still in.
-        transport.emit(0x90, PedalButton.mode.note, 127);
+        transport.press(PedalButton.mode, down: true);
         await pumpEventQueue();
         expect(cubit.state.mode, InteractionMode.record);
         expect(
-          PedalCodec.decodeFrame(transport.sent.last)?.mode,
+          transport.lastFrame?.mode,
           PedalMode.rec,
         );
 
@@ -683,12 +673,12 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 600));
         expect(cubit.state.mode, InteractionMode.fx);
         expect(
-          PedalCodec.decodeFrame(transport.sent.last)?.mode,
+          transport.lastFrame?.mode,
           PedalMode.fx,
         );
 
         // The release is silent — the hold retired the tap action.
-        transport.emit(0x80, PedalButton.mode.note, 0);
+        transport.press(PedalButton.mode, down: false);
         await pumpEventQueue();
         expect(cubit.state.mode, InteractionMode.fx);
       });
@@ -709,14 +699,14 @@ void main() {
         expect(cubit.state.modeSwitchStyle, ModeSwitchStyle.cycleThree);
         // The toggle fires ON the press, before any threshold could elapse —
         // no gesture is armed under this style.
-        transport.emit(0x90, PedalButton.bank.note, 127);
+        transport.press(PedalButton.bank, down: true);
         await pumpEventQueue();
         expect(cubit.state.activeBank, 1);
         expect(cubit.state.cursor, ControlState.tracksPerBank);
         // Held past the threshold: the hold means nothing and the release
         // adds nothing.
         await Future<void>.delayed(const Duration(milliseconds: 600));
-        transport.emit(0x80, PedalButton.bank.note, 0);
+        transport.press(PedalButton.bank, down: false);
         await pumpEventQueue();
         expect(cubit.state.activeBank, 1);
         expect(performance.armedDirectory, isNull);
@@ -725,11 +715,11 @@ void main() {
       test('holdFx: a BANK tap still toggles the bank — moved to the '
           'release, the price of telling a tap from a hold', () async {
         await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        transport.emit(0x90, PedalButton.bank.note, 127);
+        transport.press(PedalButton.bank, down: true);
         await pumpEventQueue();
         // Below the threshold nothing has happened yet.
         expect(cubit.state.activeBank, 0);
-        transport.emit(0x80, PedalButton.bank.note, 0);
+        transport.press(PedalButton.bank, down: false);
         await pumpEventQueue();
         expect(cubit.state.activeBank, 1);
         expect(cubit.state.cursor, ControlState.tracksPerBank);
@@ -773,14 +763,13 @@ void main() {
       test('holdFx: the frame pushed through a BANK-hold arm carries the '
           'armed light and still shows bank A', () async {
         await cubit.setModeSwitchStyle(ModeSwitchStyle.holdFx);
-        pedal.bind('out');
         await pumpEventQueue();
         transport.sent.clear();
 
         final armed = awaitStatus(performance, PerformanceCaptureStatus.armed);
         // Press and stay held: below the threshold nothing is pushed for the
         // bank and nothing is armed.
-        transport.emit(0x90, PedalButton.bank.note, 127);
+        transport.press(PedalButton.bank, down: true);
         await pumpEventQueue();
         expect(performance.armedDirectory, isNull);
 
@@ -790,16 +779,16 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 600));
         await armed;
         await pumpEventQueue();
-        final frame = PedalCodec.decodeFrame(transport.sent.last);
+        final frame = transport.lastFrame;
         expect(frame?.performanceArmed, isTrue);
         expect(frame?.activeBank, 0);
 
         // The release is silent — the hold retired the bank toggle.
-        transport.emit(0x80, PedalButton.bank.note, 0);
+        transport.press(PedalButton.bank, down: false);
         await pumpEventQueue();
         expect(cubit.state.activeBank, 0);
         expect(
-          PedalCodec.decodeFrame(transport.sent.last)?.performanceArmed,
+          transport.lastFrame?.performanceArmed,
           isTrue,
         );
       });
@@ -869,8 +858,8 @@ void main() {
       /// reach the cubit.
       Future<void> stomp(PedalButton button) async {
         transport
-          ..emit(0x90, button.note, 127)
-          ..emit(0x80, button.note, 0);
+          ..press(button, down: true)
+          ..press(button, down: false);
         await pumpEventQueue();
       }
 
@@ -878,10 +867,10 @@ void main() {
       /// Real delays (not fake_async) — the wire events reach the cubit
       /// through the repository's stream, which a fake clock cannot pump.
       Future<void> hold(PedalButton button) async {
-        transport.emit(0x90, button.note, 127);
+        transport.press(button, down: true);
         await pumpEventQueue();
         await Future<void>.delayed(const Duration(milliseconds: 600));
-        transport.emit(0x80, button.note, 0);
+        transport.press(button, down: false);
         await pumpEventQueue();
       }
 
@@ -956,13 +945,13 @@ void main() {
         trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
 
         // Press only — no release yet.
-        transport.emit(0x90, PedalButton.stop.note, 127);
+        transport.press(PedalButton.stop, down: true);
         await pumpEventQueue();
         expect(chainEnabled[1], isFalse, reason: 'panic landed on the press');
 
         // A release on its own is inert: it only retires the pending hold.
         chainEnabled.clear();
-        transport.emit(0x80, PedalButton.stop.note, 0);
+        transport.press(PedalButton.stop, down: false);
         await pumpEventQueue();
         expect(chainEnabled, isEmpty);
       });
@@ -987,13 +976,13 @@ void main() {
           'restore from a mode with no chain LEDs', () async {
         trackChains[1] = [BuiltInEffect(type: TrackEffectType.drive)];
 
-        transport.emit(0x90, PedalButton.stop.note, 127);
+        transport.press(PedalButton.stop, down: true);
         await pumpEventQueue();
         expect(chainEnabled[1], isFalse); // the press panicked
 
         cubit.setMode(InteractionMode.record); // foot leaves FX mid-hold
         await Future<void>.delayed(const Duration(milliseconds: 600));
-        transport.emit(0x80, PedalButton.stop.note, 0);
+        transport.press(PedalButton.stop, down: false);
         await pumpEventQueue();
 
         verifyNever(
@@ -1011,7 +1000,7 @@ void main() {
               Track(state: TrackState.playing, lengthFrames: 48000),
             ]),
           );
-          transport.emit(0x90, PedalButton.stop.note, 127);
+          transport.press(PedalButton.stop, down: true);
           await pumpEventQueue();
           verify(() => looper.setMute(muted: true)).called(1);
         },
@@ -1060,7 +1049,7 @@ void main() {
       });
 
       test('the encoder still drives master gain', () async {
-        transport.emit(0xB0, PedalCodec.encoderCc, 64 + 4);
+        transport.turn(4);
         await pumpEventQueue();
         verify(() => looper.setMasterGain(any())).called(1);
       });
@@ -1218,7 +1207,7 @@ void main() {
       });
 
       test('takeLocked suppresses pedal Clear', () async {
-        final lockedTransport = FakePedalTransport();
+        final lockedTransport = FakePedalLink();
         final lockedPedal = PedalRepository(lockedTransport);
         addTearDown(lockedPedal.dispose);
         final locked = ControlCubit(
@@ -1235,7 +1224,7 @@ void main() {
             Track(state: TrackState.playing, lengthFrames: 48000),
           ]),
         );
-        lockedTransport.emit(0x90, PedalButton.clear.note, 127);
+        lockedTransport.press(PedalButton.clear, down: true);
         await Future<void>.delayed(Duration.zero);
         verifyNever(() => looper.clear());
         verifyNever(() => looper.clear(channel: any(named: 'channel')));
@@ -1849,7 +1838,6 @@ void main() {
         '_onPerformanceStatus reactivity: an external arm() (bypassing '
         "this cubit's own method) is still reflected in the projected frame",
         () async {
-          pedal.bind('out');
           transport.sent.clear();
 
           // Drive the repository directly — not through
@@ -1859,13 +1847,13 @@ void main() {
           await performance.arm();
           await pumpEventQueue();
 
-          final frame = PedalCodec.decodeFrame(transport.sent.last);
+          final frame = transport.lastFrame;
           expect(frame?.performanceArmed, isTrue);
 
           await performance.disarmAndFinalize();
           await pumpEventQueue();
 
-          final disarmedFrame = PedalCodec.decodeFrame(transport.sent.last);
+          final disarmedFrame = transport.lastFrame;
           expect(disarmedFrame?.performanceArmed, isFalse);
         },
       );
@@ -1947,7 +1935,7 @@ void main() {
 
     group('pedal decode (events in via PedalRepository)', () {
       test('Rec/Play decodes into the record intent on the cursor', () async {
-        transport.emit(0x90, PedalButton.recPlay.note, 100);
+        transport.press(PedalButton.recPlay, down: true);
         await pumpEventQueue();
         verify(() => looper.record()).called(1);
       });
@@ -1957,30 +1945,30 @@ void main() {
         // tap-vs-long-press split as undo (D-PEDAL): a bare press alone no
         // longer toggles it.
         transport
-          ..emit(0x90, PedalButton.mode.note, 100)
-          ..emit(0x80, PedalButton.mode.note, 0);
+          ..press(PedalButton.mode, down: true)
+          ..press(PedalButton.mode, down: false);
         await pumpEventQueue();
         expect(cubit.state.mode, InteractionMode.mute);
       });
 
       test('Bank toggles the active bank and moves the cursor', () async {
-        transport.emit(0x90, PedalButton.bank.note, 100);
+        transport.press(PedalButton.bank, down: true);
         await pumpEventQueue();
         expect(cubit.state.activeBank, 1);
         expect(cubit.state.cursor, 4);
       });
 
       test('a track press targets the visible bank base', () async {
-        transport.emit(0x90, PedalButton.bank.note, 100); // -> bank B
+        transport.press(PedalButton.bank, down: true); // -> bank B
         await pumpEventQueue();
-        transport.emit(0x90, PedalButton.track3.note, 100);
+        transport.press(PedalButton.track3, down: true);
         await pumpEventQueue();
         // track3 == index 2, bank B base 4 -> channel 6 (idle press selects).
         expect(cubit.state.cursor, 6);
       });
 
       test('the encoder drives the master gain', () async {
-        transport.emit(0xB0, PedalCodec.encoderCc, 64 - 8); // -8 detents
+        transport.turn(-8); // -8 detents
         await pumpEventQueue();
         verify(() => looper.setMasterGain(any())).called(1);
       });
@@ -1992,7 +1980,7 @@ void main() {
             Track(channel: 1, state: TrackState.playing, lengthFrames: 48000),
           ]),
         );
-        transport.emit(0x90, PedalButton.clear.note, 100);
+        transport.press(PedalButton.clear, down: true);
         await pumpEventQueue();
 
         verify(() => looper.clear()).called(1);
@@ -2006,8 +1994,8 @@ void main() {
       group('undo press timing', () {
         test('tap undoes the cursor track', () async {
           transport
-            ..emit(0x90, PedalButton.undo.note, 100) // press
-            ..emit(0x80, PedalButton.undo.note, 0); // quick release == tap
+            ..press(PedalButton.undo, down: true) // press
+            ..press(PedalButton.undo, down: false); // quick release == tap
           await pumpEventQueue();
 
           verify(() => looper.undo()).called(1);
@@ -2016,12 +2004,12 @@ void main() {
         });
 
         test('the undo target is latched at press time', () async {
-          transport.emit(0x90, PedalButton.undo.note, 100); // press, cursor 0
+          transport.press(PedalButton.undo, down: true); // press, cursor 0
           await pumpEventQueue();
           // An on-screen click mid-hold must not retarget the committed
           // action.
           cubit.selectTrack(3);
-          transport.emit(0x80, PedalButton.undo.note, 0);
+          transport.press(PedalButton.undo, down: false);
           await pumpEventQueue();
 
           verify(() => looper.undo()).called(1); // channel 0, not 3
@@ -2029,10 +2017,10 @@ void main() {
         });
 
         test('long-press redoes instead', () async {
-          transport.emit(0x90, PedalButton.undo.note, 100);
+          transport.press(PedalButton.undo, down: true);
           // Default long-press threshold is 500 ms.
           await Future<void>.delayed(const Duration(milliseconds: 600));
-          transport.emit(0x80, PedalButton.undo.note, 0);
+          transport.press(PedalButton.undo, down: false);
           await pumpEventQueue();
 
           verify(() => looper.redo()).called(1);
@@ -2042,7 +2030,7 @@ void main() {
         test('a release with no matching press is inert — the on-screen '
             'plate note-offs every held switch as it leaves the tree, and an '
             'unpaired one must not fire a tap', () async {
-          transport.emit(0x80, PedalButton.undo.note, 0); // release only
+          transport.press(PedalButton.undo, down: false); // release only
           await pumpEventQueue();
 
           verifyNever(() => looper.undo(channel: any(named: 'channel')));
@@ -2051,12 +2039,12 @@ void main() {
 
         test('a second release after a completed tap fires nothing', () async {
           transport
-            ..emit(0x90, PedalButton.undo.note, 100)
-            ..emit(0x80, PedalButton.undo.note, 0);
+            ..press(PedalButton.undo, down: true)
+            ..press(PedalButton.undo, down: false);
           await pumpEventQueue();
           verify(() => looper.undo()).called(1);
 
-          transport.emit(0x80, PedalButton.undo.note, 0);
+          transport.press(PedalButton.undo, down: false);
           await pumpEventQueue();
 
           verifyNever(() => looper.undo(channel: any(named: 'channel')));
@@ -2068,8 +2056,8 @@ void main() {
             'recording', () async {
           expect(cubit.state.mode, InteractionMode.record);
           transport
-            ..emit(0x90, PedalButton.mode.note, 100) // press
-            ..emit(0x80, PedalButton.mode.note, 0); // quick release == tap
+            ..press(PedalButton.mode, down: true) // press
+            ..press(PedalButton.mode, down: false); // quick release == tap
           await pumpEventQueue();
 
           expect(cubit.state.mode, InteractionMode.mute);
@@ -2083,10 +2071,10 @@ void main() {
               performance,
               PerformanceCaptureStatus.armed,
             );
-            transport.emit(0x90, PedalButton.mode.note, 100);
+            transport.press(PedalButton.mode, down: true);
             // Default long-press threshold is 500 ms.
             await Future<void>.delayed(const Duration(milliseconds: 600));
-            transport.emit(0x80, PedalButton.mode.note, 0);
+            transport.press(PedalButton.mode, down: false);
             await armed;
 
             expect(cubit.state.mode, InteractionMode.record); // unchanged
@@ -2099,9 +2087,9 @@ void main() {
             performance,
             PerformanceCaptureStatus.armed,
           );
-          transport.emit(0x90, PedalButton.mode.note, 100);
+          transport.press(PedalButton.mode, down: true);
           await Future<void>.delayed(const Duration(milliseconds: 600));
-          transport.emit(0x80, PedalButton.mode.note, 0);
+          transport.press(PedalButton.mode, down: false);
           await armed;
           expect(performance.armedDirectory, isNotNull);
 
@@ -2117,9 +2105,9 @@ void main() {
             performance,
             PerformanceCaptureStatus.done,
           );
-          transport.emit(0x90, PedalButton.mode.note, 100);
+          transport.press(PedalButton.mode, down: true);
           await Future<void>.delayed(const Duration(milliseconds: 600));
-          transport.emit(0x80, PedalButton.mode.note, 0);
+          transport.press(PedalButton.mode, down: false);
           await disarmed;
 
           expect(performance.armedDirectory, isNull);
@@ -2128,7 +2116,7 @@ void main() {
         test(
           'a release with no matching press does not cycle the mode',
           () async {
-            transport.emit(0x80, PedalButton.mode.note, 0); // release only
+            transport.press(PedalButton.mode, down: false); // release only
             await pumpEventQueue();
 
             expect(cubit.state.mode, InteractionMode.record); // unchanged
@@ -2160,18 +2148,18 @@ void main() {
 
       Future<void> stomp(PedalButton button) async {
         transport
-          ..emit(0x90, button.note, 127)
-          ..emit(0x80, button.note, 0);
+          ..press(button, down: true)
+          ..press(button, down: false);
         await pumpEventQueue();
       }
 
       Future<void> press(PedalButton button) async {
-        transport.emit(0x90, button.note, 127);
+        transport.press(button, down: true);
         await pumpEventQueue();
       }
 
       Future<void> release(PedalButton button) async {
-        transport.emit(0x80, button.note, 0);
+        transport.press(button, down: false);
         await pumpEventQueue();
       }
 
@@ -2190,7 +2178,6 @@ void main() {
         test(
           'a bound switch lights from its own target, not the track',
           () async {
-            pedal.bind('out');
             // track1 bound to channel 3's chain, so its LED must follow THAT
             // chain — channel 0's is a different flag, and stomping the switch
             // never touches it.
@@ -2205,7 +2192,7 @@ void main() {
 
             expect(chainEnabled[3], isFalse, reason: 'the bound chain is off');
             expect(
-              PedalCodec.decodeFrame(transport.sent.last)?.trackLeds[0],
+              transport.lastFrame?.trackLeds[0],
               PedalTrackLed.off,
               reason: 'the LED follows the bound chain it just switched off',
             );
@@ -2213,21 +2200,22 @@ void main() {
         );
 
         test('a stale binding lights nothing', () async {
-          pedal.bind('out');
           await cubit.setGlobalBindings(
             PedalBindingSet([
               bind(PedalButton.track1, bank: 0, rawTarget: 'not-a-target'),
             ]),
           );
           transport.sent.clear();
-          cubit.setMode(InteractionMode.fx);
+          // The group is already in FX mode, so nothing below changes the
+          // projection; a (re)connect forces a full push of it instead.
+          transport.hello();
           await pumpEventQueue();
 
           // R25: a binding that names nothing writes nothing and lights
           // nothing. Falling back to the channel's own chain would light for
           // a chain the switch does not drive.
           expect(
-            PedalCodec.decodeFrame(transport.sent.last)?.trackLeds[0],
+            transport.lastFrame?.trackLeds[0],
             PedalTrackLed.off,
           );
         });
@@ -2476,11 +2464,15 @@ void main() {
           });
 
           test(
-            'a pedal disconnect — the release note-off never arrives',
+            'a pedal disconnect — the release never arrives',
             () async {
-              pedal
-                ..bind('out')
-                ..unbind();
+              transport.hello();
+              await pumpEventQueue();
+              expect(chainEnabled[3], isTrue, reason: 'still held');
+              // The board goes quiet past the hello timeout: disconnected.
+              await Future<void>.delayed(
+                pedal.helloTimeout + const Duration(milliseconds: 100),
+              );
               await pumpEventQueue();
               expect(chainEnabled[3], isFalse);
             },
@@ -2718,7 +2710,6 @@ void main() {
 
     group('frame projection (frames out via PedalRepository)', () {
       test('pushes an encoded frame to the bound pedal', () async {
-        pedal.bind('out');
         transport.sent.clear();
 
         // Rec mode (default): the cursor track (0) is red; a playing
@@ -2732,36 +2723,34 @@ void main() {
         await pumpEventQueue();
 
         expect(transport.sent, isNotEmpty);
-        final frame = PedalCodec.decodeFrame(transport.sent.last);
+        final frame = transport.lastFrame;
         expect(frame, isNotNull);
         expect(frame!.trackLeds[0], PedalTrackLed.red);
         expect(frame.trackLeds[1], PedalTrackLed.off);
       });
 
       test('an encoder turn pushes the new master gain in the frame', () async {
-        pedal.bind('out');
         setEngine(_tracksWith(const [Track()]));
         await pumpEventQueue();
         transport.sent.clear();
 
         // -8 detents at step 1/64 -> gain 0.875 (the pedal renders this).
-        transport.emit(0xB0, PedalCodec.encoderCc, 64 - 8);
+        transport.turn(-8);
         await pumpEventQueue();
 
         expect(transport.sent, isNotEmpty);
-        final frame = PedalCodec.decodeFrame(transport.sent.last);
+        final frame = transport.lastFrame;
         expect(frame, isNotNull);
         expect(frame!.masterGain, closeTo(0.875, 0.01));
       });
 
       test('a stored-intent change re-projects without a looper tick', () {
-        pedal.bind('out');
         setEngine(_emptyTracks());
         transport.sent.clear();
 
         cubit.selectTrack(3); // cursor moves -> the red LED must follow
 
-        final frame = PedalCodec.decodeFrame(transport.sent.last);
+        final frame = transport.lastFrame;
         expect(frame!.selectedTrack, 3);
         expect(frame.trackLeds[3], PedalTrackLed.red);
         expect(frame.trackLeds[0], PedalTrackLed.off);
@@ -2769,7 +2758,6 @@ void main() {
 
       test('re-pushes the current frame on the keep-alive heartbeat', () {
         fakeAsync((async) {
-          pedal.bind('out');
           final beat = ControlCubit(
             looper: looper,
             pedal: pedal,
@@ -2795,7 +2783,6 @@ void main() {
           'before any LooperState streams (regression: a null _looperState '
           'left the LEDs dark)', () {
         fakeAsync((async) {
-          pedal.bind('out');
           // NB: no setEngine() — this cubit never receives a streamed
           // LooperState (the broadcast stream emits nothing after it
           // subscribes), so `_looperState` stays null. Only the synchronous
@@ -2817,7 +2804,7 @@ void main() {
           // pedal stayed dark on an idle engine.
           async.elapse(const Duration(seconds: 2));
           expect(transport.sent, isNotEmpty);
-          expect(PedalCodec.decodeFrame(transport.sent.last), isNotNull);
+          expect(transport.lastFrame, isNotNull);
 
           unawaited(idle.close());
           async.flushMicrotasks();
@@ -2827,38 +2814,35 @@ void main() {
       test('a rebind force-pushes the CURRENT state', () async {
         setEngine(_emptyTracks());
         cubit.toggleMode(); // mode changes while unbound
-        pedal.bind('out');
         await pumpEventQueue();
 
-        final frame = PedalCodec.decodeFrame(transport.sent.last);
+        final frame = transport.lastFrame;
         expect(frame!.mode, PedalMode.play);
       });
 
       test('Clear LED lights while the footswitch is held and darkens on '
           'release', () async {
-        pedal.bind('out');
         setEngine(_emptyTracks());
         transport.sent.clear();
 
         // Press: the Clear LED bit is set.
-        transport.emit(0x90, PedalButton.clear.note, 100);
+        transport.press(PedalButton.clear, down: true);
         await pumpEventQueue();
         expect(
-          PedalCodec.decodeFrame(transport.sent.last)?.clearFadeActive,
+          transport.lastFrame?.clearFadeActive,
           isTrue,
         );
 
         // Release (note-off): the bit clears again.
-        transport.emit(0x80, PedalButton.clear.note, 0);
+        transport.press(PedalButton.clear, down: false);
         await pumpEventQueue();
         expect(
-          PedalCodec.decodeFrame(transport.sent.last)?.clearFadeActive,
+          transport.lastFrame?.clearFadeActive,
           isFalse,
         );
       });
 
       test('sends a loop-top pulse when the playhead wraps', () async {
-        pedal.bind('out');
         setEngine(_emptyTracks(), masterPositionFrames: 40000);
         await pumpEventQueue();
         transport.sent.clear();
@@ -2866,7 +2850,7 @@ void main() {
         await pumpEventQueue();
 
         expect(
-          transport.sent.any((m) => m.length == 1 && m.first == 0xFA),
+          transport.sent.any((m) => m is LoopTopMessage),
           isTrue,
         );
       });
@@ -2874,14 +2858,13 @@ void main() {
       test(
         'global_color carries the ring activity color (recording = red)',
         () async {
-          pedal.bind('out');
           transport.sent.clear();
           setEngine(
             _tracksWith(const [Track(state: TrackState.recording)]),
           );
           await pumpEventQueue();
 
-          final frame = PedalCodec.decodeFrame(transport.sent.last);
+          final frame = transport.lastFrame;
           expect(frame?.globalColor, GlobalColor.red);
         },
       );
@@ -2889,7 +2872,6 @@ void main() {
       test(
         'the pushed frame carries the per-track LED projection',
         () async {
-          pedal.bind('out');
           transport.sent.clear();
           setEngine(
             _tracksWith(const [
@@ -2899,7 +2881,7 @@ void main() {
           );
           await pumpEventQueue();
 
-          final leds = PedalCodec.decodeFrame(transport.sent.last)?.trackLeds;
+          final leds = transport.lastFrame?.trackLeds;
           expect(leds?[0], PedalTrackLed.red);
           expect(leds?[1], PedalTrackLed.red);
           expect(leds?[2], PedalTrackLed.off);
@@ -2907,7 +2889,7 @@ void main() {
           cubit.selectTrack(2);
           await pumpEventQueue();
           expect(
-            PedalCodec.decodeFrame(transport.sent.last)?.trackLeds[2],
+            transport.lastFrame?.trackLeds[2],
             PedalTrackLed.red,
           );
         },

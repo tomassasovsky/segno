@@ -94,7 +94,7 @@ void main() {
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     // The real control cubit: it owns the shared InteractionMode whose
     // persisted default the View section edits.
-    pedalRepo = PedalRepository(const NoopPedalTransport());
+    pedalRepo = PedalRepository(SimulatorPedalLink());
     performance = PerformanceRepository(
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',
@@ -111,8 +111,6 @@ void main() {
     // The Audio tab embeds the pedal output picker, driven by PedalCubit.
     pedal = PedalCubit(
       pedal: pedalRepo,
-      settings: settings,
-      pollInterval: Duration.zero,
     );
     addTearDown(pedal.close); // disposes pedalRepo (the lifecycle owner)
     // The MIDI-learn section enumerates its targets from the live rig; an

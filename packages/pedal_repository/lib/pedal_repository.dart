@@ -1,25 +1,16 @@
-/// Repository + protocol layer for the Segno bidirectional MIDI looper pedal:
-/// the state-frame models and SysEx codec shared with the firmware as one
-/// contract, the `PedalRepository` over a `PedalTransport`, and the native
-/// composition factory (`createNativePedalRepository`) that adapts a MIDI input
-/// source into the pedal's transport.
+/// The pedal layer for the Segno console board: the state-frame model and the
+/// binary link codec shared with the board's firmware as one contract, the
+/// `PedalRepository` over a `PedalLink`, the UART link to the board, and the
+/// on-screen pedal that mirrors it.
 library;
 
-// Re-exported so the pedal feature can name the pedal by product string
-// (console auto-detect) without taking a direct `midi_client` dependency —
-// the app depends on this package, not on the MIDI client.
-export 'package:midi_client/midi_client.dart' show midiDeviceNameMatches;
-
-export 'src/models/pedal_output.dart';
-export 'src/native_pedal_repository.dart';
-export 'src/native_pedal_transport.dart';
-export 'src/noop_pedal_transport.dart';
 export 'src/pedal_button.dart';
-export 'src/pedal_codec.dart';
 export 'src/pedal_event.dart';
+export 'src/pedal_link.dart';
+export 'src/pedal_link_codec.dart';
+export 'src/pedal_link_message.dart';
 export 'src/pedal_mode.dart';
-export 'src/pedal_protocol_traffic.dart';
 export 'src/pedal_repository.dart';
 export 'src/pedal_state_frame.dart';
-export 'src/pedal_transport.dart';
-export 'src/simulator_pedal_transport.dart';
+export 'src/simulator_pedal_link.dart';
+export 'src/uart_pedal_link.dart';

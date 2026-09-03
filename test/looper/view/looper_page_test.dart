@@ -37,7 +37,7 @@ void main() {
         exportsRoot: () async => '.',
       );
       final settings = SettingsRepository(store: FakeKeyValueStore());
-      final sim = SimulatorPedalTransport(inner: const NoopPedalTransport());
+      final sim = SimulatorPedalLink();
       final pedal = _MockPedalCubit();
       when(() => pedal.state).thenReturn(const PedalState());
       whenListen(
@@ -64,7 +64,7 @@ void main() {
             RepositoryProvider.value(value: sessionRepository),
             RepositoryProvider.value(value: performanceRepository),
             RepositoryProvider.value(value: settings),
-            RepositoryProvider<SimulatorPedalTransport>.value(value: sim),
+            RepositoryProvider<SimulatorPedalLink>.value(value: sim),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -82,7 +82,7 @@ void main() {
               BlocProvider<ControlCubit>(
                 create: (_) => ControlCubit(
                   looper: repository,
-                  pedal: PedalRepository(const NoopPedalTransport()),
+                  pedal: PedalRepository(SimulatorPedalLink()),
                   settings: settings,
                   performance: performanceRepository,
                   keepAliveInterval: Duration.zero,

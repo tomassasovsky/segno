@@ -110,35 +110,6 @@
             }
         }
     },
-    "pedalFirmwareGateTitle": "Finishing update",
-    "@pedalFirmwareGateTitle": {
-        "description": "Shown full-screen while the pedal's firmware is being flashed after an OS update."
-    },
-    "pedalFirmwareGateBody": "Updating your pedal to {version}. Its footswitches and lights are off until this finishes — don't unplug it.",
-    "@pedalFirmwareGateBody": {
-        "description": "Body of the pedal firmware gate. {version} is a semantic version.",
-        "placeholders": {
-            "version": {
-                "type": "String"
-            }
-        }
-    },
-    "pedalFirmwareGateFailedTitle": "Pedal update didn't finish",
-    "@pedalFirmwareGateFailedTitle": {
-        "description": "Shown when flashing the pedal firmware failed."
-    },
-    "pedalFirmwareGateFailedBody": "Your pedal still works on its previous firmware. Segno will try again next time it starts.",
-    "@pedalFirmwareGateFailedBody": {
-        "description": "Failed-gate body when the flash never began writing (class not-started) — the only case where this reassurance is true."
-    },
-    "pedalFirmwareGateFailedInterruptedBody": "The update stopped partway through, so your pedal's switches and lights stay off until it is completed. Segno can't finish it automatically yet — the pedal's firmware may need to be flashed again from a computer.",
-    "@pedalFirmwareGateFailedInterruptedBody": {
-        "description": "Failed-gate body when the write began and did not finish (class interrupted): the pedal may be parked in its bootloader, so no 'still on its previous firmware' comfort — and no promise of automatic recovery until the recovery path (slice 3 of #670) ships."
-    },
-    "pedalFirmwareGateContinue": "Continue",
-    "@pedalFirmwareGateContinue": {
-        "description": "Button that dismisses the failed pedal firmware gate and opens the looper."
-    },
     "dismiss": "Dismiss",
     "waveformWindowFailedBanner": "The waveform display didn't open — check the second screen.",
     "@waveformWindowFailedBanner": {
@@ -1085,76 +1056,6 @@
             }
         }
     },
-    "pedalOutputGroup": "PEDAL LED FEEDBACK",
-    "pedalNone": "None",
-    "pedalNoOutputs": "No MIDI output devices found",
-    "pedalStatusNone": "No pedal output — footswitches still work; only LED feedback is off.",
-    "pedalStatusConnecting": "Connecting…",
-    "pedalStatusBound": "Sending LED frames to {deviceName}",
-    "@pedalStatusBound": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
-    "pedalStatusError": "Could not open {deviceName} (in use by another app?).",
-    "@pedalStatusError": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            }
-        }
-    },
-    "pedalOutputHint": "Pick the pedal's MIDI output so segno can drive its LEDs. Its footswitches use the MIDI input above.",
-    "pedalFirmwareGroup": "PEDAL FIRMWARE PROTOCOL",
-    "pedalFirmwareUnknown": "Not set — send v{version} (default)",
-    "@pedalFirmwareUnknown": {
-        "description": "Dropdown option for the unknown pedal firmware version; {version} is the safe-floor protocol version the app sends by default.",
-        "placeholders": {
-            "version": {
-                "type": "int"
-            }
-        }
-    },
-    "pedalFirmwareVersion": "Protocol v{version}",
-    "@pedalFirmwareVersion": {
-        "description": "Dropdown option naming a pedal wire-protocol version, e.g. 'Protocol v3'.",
-        "placeholders": {
-            "version": {
-                "type": "int"
-            }
-        }
-    },
-    "pedalFirmwareHint": "Match the protocol of the firmware flashed on your pedal. segno never sends a newer protocol than this; the pedal FX mode needs v3.",
-    "pedalFirmwareUpdateTitle": "Pedal firmware update available",
-    "@pedalFirmwareUpdateTitle": {
-        "description": "Heading of the banner shown while the bound pedal speaks a wire protocol older than the one FX mode needs."
-    },
-    "pedalFirmwareUpdateBody": "This pedal is set to protocol v{version}, so FX mode shows its chain LEDs in green instead of blue and the pedal reads FX as mute. Flash the v{needed} firmware, then set the protocol above to v{needed}.",
-    "@pedalFirmwareUpdateBody": {
-        "description": "Body of the pedal firmware update banner; {version} is the negotiated protocol and {needed} the protocol FX mode needs.",
-        "placeholders": {
-            "version": {
-                "type": "int"
-            },
-            "needed": {
-                "type": "int"
-            }
-        }
-    },
-    "pedalFirmwareUpdateBodyUnknown": "This pedal's firmware protocol is not set, so segno stays on the v{version} safety floor: FX mode shows its chain LEDs in green instead of blue and the pedal reads FX as mute. Flash the v{needed} firmware, then set the protocol above to v{needed}.",
-    "@pedalFirmwareUpdateBodyUnknown": {
-        "description": "Body of the pedal firmware update banner when no firmware version has been set; {version} is the safety-floor protocol and {needed} the protocol FX mode needs.",
-        "placeholders": {
-            "version": {
-                "type": "int"
-            },
-            "needed": {
-                "type": "int"
-            }
-        }
-    },
     "pluginUnsupportedTopology": "{name} can't be used here — it isn't a stereo effect (it may be an instrument or use multiple buses).",
     "@pluginUnsupportedTopology": {
         "description": "Shown when a user inserts a plugin whose audio bus layout is not a supported stereo/mono effect.",
@@ -1751,6 +1652,17 @@
         "description": "Label for the settings tray's brightness slider (UI-only this round — not persisted, no real display dimming)."
     },
     "pedalAssignTitle": "Pedal assignments",
+    "pedalLinkGroup": "CONSOLE PEDAL",
+    "pedalStatusDisconnected": "Console board not connected — the on-screen pedal still works.",
+    "pedalStatusConnected": "Console board connected · firmware {firmwareVersion}",
+    "@pedalStatusConnected": {
+        "description": "Pedal link status line once the console board has said hello; {firmwareVersion} is the version it announced, e.g. 1.0.",
+        "placeholders": {
+            "firmwareVersion": {
+                "type": "String"
+            }
+        }
+    },
     "@pedalAssignTitle": {
         "description": "Title of the screen where footswitches are remapped to FX targets (FX v3 part 6b)."
     },
@@ -2916,14 +2828,6 @@
     "aboutPedalFirmwareNone": "not found",
     "@aboutPedalFirmwareNone": {
         "description": "The pedal firmware readout on SYSTEM / about when no pedal is bound. The row is drawn anyway — no pedal is the case worth seeing."
-    },
-    "aboutPedalFirmwareError": "could not be reached",
-    "@aboutPedalFirmwareError": {
-        "description": "Bind status on the SYSTEM / about pedal row when binding failed."
-    },
-    "aboutPedalFirmwareUpdate": "update available",
-    "@aboutPedalFirmwareUpdate": {
-        "description": "Appended to the SYSTEM / about pedal row's subtitle when the pedal's firmware is behind the app's wire version."
     },
     "aboutPedalFirmwareRow": "Pedal firmware",
     "aboutPedalFirmwareSubtitle": "4 switches · 2 banks",

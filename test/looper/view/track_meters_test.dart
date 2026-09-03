@@ -40,7 +40,7 @@ void main() {
     // synchronous snapshot); seed() keeps it in step with the bloc state.
     when(() => looper.state).thenReturn(const LooperState());
     // The row reads the mode / cursor / bank from the shared control cubit.
-    final pedalRepo = PedalRepository(const NoopPedalTransport());
+    final pedalRepo = PedalRepository(SimulatorPedalLink());
     addTearDown(pedalRepo.dispose);
     final performance = PerformanceRepository(
       engine: FakeAudioEngine(),

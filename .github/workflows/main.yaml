@@ -166,13 +166,12 @@ jobs:
   # headers (the MIDI test links libasound). run_native_tests.sh builds and runs
   # both suites; a failed CHECK returns non-zero and fails the job. A second
   # step below runs the macOS RNNoise include/forwarder wiring stand-in (CI
-  # never `flutter build macos`). A third step runs the firmware/Dart protocol
-  # contract test via firmware/test/run_tests.sh — the single definition of
-  # that gate (also the local verify loop), which diffs the two
-  # pedal_protocol.{h,c} copies and builds + runs the contract test against
-  # both trees, so protocol drift between firmware/segno_pedal and
-  # hardware/firmware/segno_pedal_32u4 fails the job. This is the strongest
-  # correctness gate in the repo — keep it on every PR.
+  # never `flutter build macos`). A third step runs the pedal-link contract
+  # test via firmware/test/run_tests.sh — the single definition of that gate
+  # (also the local verify loop): the console board firmware's pedal_link.c
+  # decodes and re-encodes the golden frames packages/pedal_repository
+  # generates from the Dart codec, so drift between the two fails the job.
+  # This is the strongest correctness gate in the repo — keep it on every PR.
   native-tests:
     runs-on: ubuntu-latest
     steps:
@@ -190,39 +189,34 @@ jobs:
         run: bash packages/segno_engine/src/test/run_native_tests.sh
       - name: Check macOS RNNoise include/forwarder wiring
         run: bash packages/segno_engine/tool/test/run_macos_rnnoise_wiring_tests.sh
-      - name: Build + run firmware/Dart protocol contract tests (both trees)
+      - name: Build + run the pedal-link contract test (firmware C vs Dart fixtures)
         run: bash firmware/test/run_tests.sh
 
-  # Proves the pedal firmware still compiles to a flashable .hex, using the very
-  # script appliance-release.yml publishes with (#331 part C). Without this the
-  # firmware build would only ever run at release time, on the `experimental`
-  # branch or a tag — so a sketch that no longer compiles would land on master
-  # green and only surface when a release was already in flight.
-  pedal-firmware:
+  # Proves the console board firmware (Pico 2 / RP2350) still compiles. Without
+  # this a sketch that no longer builds would land on master green and only
+  # surface at the next bench flash. The arduino-pico core is what the local
+  # build uses (firmware/console_board/README.md).
+  console-firmware:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install arduino-cli + the AVR core
+      - name: Install arduino-cli
         run: |
           set -eu
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 0.35.3
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 1.1.1
           echo "$PWD/bin" >> "$GITHUB_PATH"
-      - name: Compile the pedal firmware
+      - name: Install the RP2040/RP2350 core + Adafruit NeoPixel
         run: |
           set -eu
-          arduino-cli core update-index
-          arduino-cli core install arduino:avr
-          hardware/firmware/segno_pedal_32u4/build.sh fw-out ci
-      - name: Check the artifacts the release manifest reads
+          arduino-cli core update-index --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+          arduino-cli core install rp2040:rp2040 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+          arduino-cli lib install "Adafruit NeoPixel"
+      - name: Compile the console board firmware
         run: |
           set -eu
-          test -s fw-out/segno-pedal-ci.hex
-          # The manifest interpolates this straight into JSON as a number, so a
-          # non-numeric or empty read would publish a manifest that no client
-          # can parse.
-          proto=$(cat fw-out/protocol-version)
-          case "$proto" in ''|*[!0-9]*) echo "::error::bad protocol version '$proto'"; exit 1 ;; esac
-          echo "pedal firmware builds; protocol v$proto"
+          arduino-cli compile --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir fw-out
+          test -s fw-out/console_board.ino.elf
+          test -s fw-out/console_board.ino.uf2
 
   # The same engine/MIDI suites under AddressSanitizer (#227): the strongest
   # net for buffer-sizing bugs — the class that stays green through every
@@ -369,24 +363,15 @@ jobs:
           cmake --build build/vst3
           ctest --test-dir build/vst3 --output-on-failure
 
-  # The refusal paths of `segno-update-ctl flash-pedal` (#331 part D). The flash
-  # itself needs a real Pro Micro, but the decisions AROUND it are the dangerous
-  # part: the pedal has no A/B rollback, so a write that should not have started
-  # means a workbench trip with a sealed enclosure. The harness injects a
-  # file:// manifest, a fixture serial dir, and a stub avrdude — no hardware.
-  #
-  # Also runs the other appliance shell suites (bt, wifi, mark-good, journal
-  # persist, weston drop-in wiring, reconcile-staged), which share the same
-  # shape (inject every path, stub the privileged call). The job keeps its
-  # original name so existing required-check settings do not break.
-  flash-pedal-tests:
+  # The appliance shell suites (bt, wifi, mark-good, journal persist, weston
+  # drop-in wiring, reconcile-staged), which share one shape: inject every
+  # path, stub the privileged call — no hardware.
+  appliance-shell-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Run flash-pedal safety tests
-        run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_flash_pedal_tests.sh
       - name: Run bt-persist tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_persist_tests.sh
       - name: Run bt-ctl device-verb tests

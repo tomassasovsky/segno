@@ -182,7 +182,7 @@ void main() {
     // Disposed here rather than by PedalCubit (its lifecycle owner in the real
     // app, and in settings_page_test): the cubit above is a mock, so its close
     // is a no-op and would leave the transport and event streams open.
-    final pedalRepo = PedalRepository(const NoopPedalTransport());
+    final pedalRepo = PedalRepository(SimulatorPedalLink());
     addTearDown(pedalRepo.dispose);
     control = ControlCubit(
       looper: repository,

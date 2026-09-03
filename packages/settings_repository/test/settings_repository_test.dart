@@ -799,32 +799,6 @@ void main() {
     });
   });
 
-  group('pedal output device', () {
-    test('returns null when nothing is stored', () async {
-      expect(await repository.loadPedalOutputDevice(), isNull);
-    });
-
-    test('round-trips a saved id + name', () async {
-      await repository.savePedalOutputDevice(id: 'out-7', name: 'Segno Pedal');
-      final loaded = await repository.loadPedalOutputDevice();
-      expect(loaded?.id, 'out-7');
-      expect(loaded?.name, 'Segno Pedal');
-    });
-
-    test('treats an empty saved id as no selection', () async {
-      await repository.savePedalOutputDevice(id: '', name: '');
-      expect(await repository.loadPedalOutputDevice(), isNull);
-    });
-
-    test('clearPedalOutputDevice removes both keys', () async {
-      await repository.savePedalOutputDevice(id: 'out-7', name: 'Segno Pedal');
-      await repository.clearPedalOutputDevice();
-      expect(await repository.loadPedalOutputDevice(), isNull);
-      expect(store.values.containsKey('pedal.output_device_id'), isFalse);
-      expect(store.values.containsKey('pedal.output_device_name'), isFalse);
-    });
-  });
-
   group('controller mappings', () {
     test('returns null when nothing is stored', () async {
       expect(await repository.loadControllerMappings(), isNull);
@@ -836,24 +810,6 @@ void main() {
 
       expect(await repository.loadControllerMappings(), blob);
       expect(store.values['controller.mappings'], blob);
-    });
-  });
-
-  group('pedal firmware version', () {
-    test('returns null (unknown) when nothing is stored', () async {
-      expect(await repository.loadPedalFirmwareVersion(), isNull);
-    });
-
-    test('round-trips a saved version', () async {
-      await repository.savePedalFirmwareVersion(3);
-      expect(await repository.loadPedalFirmwareVersion(), 3);
-    });
-
-    test('clearPedalFirmwareVersion removes the key', () async {
-      await repository.savePedalFirmwareVersion(1);
-      await repository.clearPedalFirmwareVersion();
-      expect(await repository.loadPedalFirmwareVersion(), isNull);
-      expect(store.values.containsKey('pedal.firmware_version'), isFalse);
     });
   });
 

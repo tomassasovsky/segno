@@ -57,7 +57,7 @@ void main() {
       exportsRoot: () async => '.',
     );
     addTearDown(performance.dispose);
-    pedalRepo = PedalRepository(const NoopPedalTransport());
+    pedalRepo = PedalRepository(SimulatorPedalLink());
     control = ControlCubit(
       looper: repository,
       pedal: pedalRepo,

@@ -19,9 +19,8 @@ plugin, macOS dylib loading, flavor schemes). They will bite otherwise.
   (bare `flutter test`/`dart test` are hook-blocked; the very_good MCP test
   tool is broken in this env)
 - Native engine tests: `bash packages/segno_engine/src/test/run_native_tests.sh`
-- Pedal firmware contract + protocol-copy drift gate (required when anything
-  under `firmware/` or `hardware/firmware/` or the pedal codec changes):
-  `bash firmware/test/run_tests.sh`
+- Pedal link contract test (required when anything under `firmware/` or
+  `packages/pedal_repository` changes): `bash firmware/test/run_tests.sh`
 - Static analysis: `dart analyze` must come back clean
 - Bloc lint: `bloc lint lib test packages` must come back clean. CI runs this
   as the `Bloc Lint` step of the reusable `flutter_package.yml`, and it carries

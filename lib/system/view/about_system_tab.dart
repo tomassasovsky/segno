@@ -81,25 +81,14 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
     await cubit.rename(name);
   }
 
-  /// What the pedal is doing, under its firmware row.
-  ///
-  /// The same four states the Settings page spelled out, in the subtitle
-  /// slot the row already has — a second line here beats a second surface.
-  /// The pedal's bind state, and whether its firmware is behind.
-  ///
-  /// Both in the subtitle the row already has rather than as a `mark`: on
-  /// this surface a mark is a check, and the widget's own doc says one mark
-  /// cannot carry two meanings.
-  static String _pedalStatus(AppLocalizations l10n, PedalState pedal) {
-    final status = switch (pedal.bindStatus) {
-      PedalBindStatus.none => l10n.pedalStatusNone,
-      PedalBindStatus.connecting => l10n.pedalStatusConnecting,
-      PedalBindStatus.bound => l10n.aboutPedalFirmwareSubtitle,
-      PedalBindStatus.error => l10n.aboutPedalFirmwareError,
-    };
-    if (!pedal.firmwareUpdateAvailable) return status;
-    return '$status · ${l10n.aboutPedalFirmwareUpdate}';
-  }
+  /// Whether the console board is talking, under its firmware row — the
+  /// same line the Settings page shows, in the subtitle slot the row already
+  /// has; a second line here beats a second surface.
+  static String _pedalStatus(AppLocalizations l10n, PedalState pedal) =>
+      switch (pedal.status) {
+        PedalLinkStatus.disconnected => l10n.pedalStatusDisconnected,
+        PedalLinkStatus.connected => l10n.aboutPedalFirmwareSubtitle,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -171,9 +160,7 @@ class _AboutSystemTabState extends State<AboutSystemTab> {
         key: const Key('system_about_pedal'),
         title: l10n.aboutPedalFirmwareRow,
         subtitle: _pedalStatus(l10n, pedal),
-        value: pedalVersion == null
-            ? l10n.aboutPedalFirmwareNone
-            : l10n.aboutProtocolVersion(pedalVersion),
+        value: pedalVersion ?? l10n.aboutPedalFirmwareNone,
         showDisclosure: false,
         showDivider: !last,
       ),

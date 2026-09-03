@@ -15,18 +15,11 @@ enum PedalTrackLed {
   /// Track is recording / overdubbing or armed — LED red.
   red,
 
-  /// Track's FX chain is enabled (FX mode, protocol v3 / part 5b) — LED blue.
+  /// Track's FX chain is enabled (FX mode) — LED blue.
   ///
-  /// Reserved by part 5a for the FX-mode chain-state projection part 5b
-  /// emits: in [PedalMode.fx] the app writes chain-enabled state into the
-  /// same `trackLeds` bytes (a new color costs zero wire bytes — the byte is
-  /// an enum index), and the firmware renders it verbatim with no mode
-  /// branch. Firmware built before part 5a has no entry for this index and
-  /// rejects a frame carrying it wholesale, so `PedalCodec.encodeFrame`
-  /// degrades blue to [green] when targeting protocol v1/v2 (B10) — an
-  /// older pedal shows chain-enabled as a lit green LED instead of going
-  /// dark; the "pedal firmware update available" banner (part 5b, riding
-  /// #331's OTA flow) tells the user why the color is missing.
+  /// In [PedalMode.fx] the app writes chain-enabled state into the same
+  /// `trackLeds` bytes, and the firmware renders it verbatim with no mode
+  /// branch.
   blue,
 }
 
@@ -51,8 +44,7 @@ enum GlobalColor {
   blue,
 }
 
-/// The wire-level looper-mode code carried in protocol **v2** state frames
-/// (D11), bits 4-6 of the flags byte.
+/// The looper-mode code carried in every state frame.
 ///
 /// This is a **value-only mirror** of `packages/segno_engine`'s `LooperMode`
 /// enum (`multi/sync/song/band/free`, `code` 0-4) — `pedal_repository` is a
@@ -70,11 +62,7 @@ enum GlobalColor {
 /// The two enums never coexist as "the pedal's mode" and must not be
 /// confused with each other (D10, D11).
 ///
-/// Encoded as the enum [index] in the state frame — do not reorder; the
-/// index must stay 0-4 to fit the 3-bit field (5-7 are reserved/unused wire
-/// values, rejected on decode). Protocol v1 frames cannot carry this field at
-/// all (no wire bits were budgeted for it before v2) — a decoded v1 frame
-/// always reports [multi], regardless of the engine's actual looper mode.
+/// Encoded as the enum [index] in the state frame — do not reorder.
 enum PedalLooperMode {
   /// Independent per-track loops — today's behavior, and the engine default.
   multi,
@@ -94,9 +82,9 @@ enum PedalLooperMode {
 
 /// An immutable snapshot of everything the pedal needs to render its LEDs.
 ///
-/// segno projects looper state into a [PedalStateFrame], the codec serializes
-/// it to SysEx, and the firmware renders the last good frame. It carries LED
-/// state for **all 8 tracks** so a bank switch renders with no round-trip.
+/// segno projects looper state into a [PedalStateFrame], `PedalLinkCodec`
+/// serializes it, and the firmware renders the last good frame. It carries
+/// LED state for **all 8 tracks** so a bank switch renders with no round-trip.
 class PedalStateFrame extends Equatable {
   /// Creates a [PedalStateFrame].
   const PedalStateFrame({
@@ -178,8 +166,8 @@ class PedalStateFrame extends Equatable {
   /// Whether a clear fade is currently in progress (lights the Clear LED).
   final bool clearFadeActive;
 
-  /// Whether this is the shutdown frame — all LEDs off, sent so the pedal
-  /// darkens when segno quits while the USB stays powered.
+  /// Whether this is the shutdown frame — all LEDs off, sent so the console
+  /// darkens when segno quits while the board stays powered.
   final bool isGoodbye;
 
   /// Whether performance-recording is armed (D-PEDAL) — reported to the pedal,
@@ -198,17 +186,13 @@ class PedalStateFrame extends Equatable {
   final double masterGain;
 
   /// The engine's looper mode (Multi/Sync/Song/Band/Free) — a **different
-  /// axis from [mode]**; see [PedalLooperMode]'s doc comment. Carried on the
-  /// wire only since protocol v2 (D11): `PedalCodec.encodeFrame` silently
-  /// downgrades it to [PedalLooperMode.multi] on the wire when targeting
-  /// protocol v1, for firmware that predates this field.
+  /// axis from [mode]**; see [PedalLooperMode]'s doc comment.
   final PedalLooperMode looperMode;
 
   /// Whether the engine is currently counting in before a defining recording
   /// (A2/D9) — the firmware renders this as a distinct LED pattern from
   /// ordinary recording, so the performer can tell "about to record" from
-  /// "recording" eyes-free. Carried on the wire only since protocol v2 (D11);
-  /// always `false` when encoded for (or decoded from) a v1 frame.
+  /// "recording" eyes-free.
   final bool countingIn;
 
   /// Returns a copy with the given fields replaced.

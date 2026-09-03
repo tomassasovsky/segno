@@ -26,12 +26,6 @@ const _allowed = <String, String>{
   // This barrier blocks the whole app on incompatible firmware and needs to
   // read as a hard stop, which 42% does not carry. A heavier "modal scrim"
   // tier is a real DS gap.
-  'lib/update/view/pedal_firmware_gate.dart':
-      'blocking modal barrier — DS scrim is too light for a hard stop',
-
-  // Runs in the second window, a separate engine that may have no theme
-  // registered, so its theme lookups are null-guarded with literal fallbacks.
-  // The playhead is deliberately white and carries its own gutter (3b).
   'lib/visualizer/widgets/waveform_view.dart':
       'themeless-context fallbacks + the white playhead',
 

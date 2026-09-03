@@ -12,7 +12,7 @@ import 'package:segno/control/control.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
-import '../pedal/helpers/fake_pedal_transport.dart';
+import '../pedal/helpers/fake_pedal_link.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -97,9 +97,7 @@ void main() {
       when(() => midiDevices.connections).thenAnswer((_) => connections.stream);
       settings = SettingsRepository(store: FakeKeyValueStore());
       pedal = PedalRepository(
-        FakePedalTransport(
-          outputs: const [MidiDevice(id: 'out', name: 'Pedal')],
-        ),
+        FakePedalLink(),
       );
 
       when(() => looper.looperState).thenAnswer((_) => looperStates.stream);

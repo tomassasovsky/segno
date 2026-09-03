@@ -131,7 +131,7 @@ void main() {
     options = RecordOptionsCubit(repository: repository, settings: settings);
     control = ControlCubit(
       looper: repository,
-      pedal: PedalRepository(const NoopPedalTransport()),
+      pedal: PedalRepository(SimulatorPedalLink()),
       settings: settings,
       performance: performance,
       keepAliveInterval: Duration.zero,
