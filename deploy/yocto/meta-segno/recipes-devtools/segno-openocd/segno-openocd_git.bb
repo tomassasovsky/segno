@@ -25,7 +25,13 @@ inherit autotools pkgconfig
 
 # Only the adapter the appliance has. Every other driver is an extra dependency
 # and another way for the build to fail on a machine that will never use it.
+# jimtcl is OpenOCD's script engine. It is still a git submodule (which gitsm
+# fetches, autosetup `configure` and all), but upstream flipped the default to
+# an external one, so it must be asked for. Marked deprecated upstream; when it
+# goes, this needs a jimtcl recipe of its own — meta-oe has none, which is why
+# meta-oe's own openocd fetches it by hand.
 EXTRA_OECONF = " \
+    --enable-internal-jimtcl \
     --enable-linuxgpiod \
     --disable-doxygen-html \
     --disable-doxygen-pdf \
