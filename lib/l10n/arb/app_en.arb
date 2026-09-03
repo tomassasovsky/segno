@@ -1782,12 +1782,12 @@
             }
         }
     },
-    "midiLearnGroup": "EXTERNAL MIDI CONTROL",
+    "midiLearnGroup": "EXTERNAL CONTROL",
     "@midiLearnGroup": {
         "description": "Group label for the MIDI-learn mapping section (FX v3 part 7)."
     },
-    "midiLearnHint": "Map an expression pedal or a MIDI switch to a parameter or an FX chain. Mappings are global — they follow this rig, not the loaded session.",
-    "midiLearnEmpty": "Nothing is mapped yet. Add a mapping, then move the control you want to use.",
+    "midiLearnHint": "Map a pedal in a CTRL jack, or any MIDI control, to a parameter or an FX chain. Mappings are global — they follow this rig, not the loaded session.",
+    "midiLearnEmpty": "Nothing is mapped yet. Add a mapping, then move the control you want to use — a CTRL pedal or a MIDI control.",
     "midiLearnAddSweep": "Add sweep",
     "midiLearnAddSwitch": "Add switch",
     "midiLearnLearn": "Learn",
@@ -1819,7 +1819,7 @@
     "midiLearnBehavior": "Behavior",
     "midiLearnStale": "Missing target",
     "midiLearnStaleDetail": "What this mapping pointed at no longer exists. It does nothing until you point it somewhere else or remove it.",
-    "midiLearnDeviceMissing": "No MIDI input is connected, so these mappings are idle. Connect the controller, or relearn a row on the one you are using now.",
+    "midiLearnDeviceMissing": "No MIDI input is connected, so the mappings driven by MIDI are idle. Connect the controller, or relearn a row on whatever you are using now.",
     "pedalCtrlGroup": "CTRL jacks",
     "pedalCtrlIdle": "Nothing plugged in yet — a pedal reports once it is moved.",
     "pedalCtrlSwitchReading": "CTRL {jack} · footswitch · {state}",

@@ -16,6 +16,10 @@ enum ControllerSourceKind {
   /// [RawControllerInput.id] is the jack, `0` or `1`.
   consoleExpression;
 
+  /// Whether this kind is one of the console's own CTRL jacks, rather than a
+  /// MIDI control from some device.
+  bool get isConsoleCtrl => this == consoleSwitch || this == consoleExpression;
+
   /// Whether this kind reports a position rather than a press.
   ///
   /// A continuous control is captured by MIDI-learn at ANY value, because its
