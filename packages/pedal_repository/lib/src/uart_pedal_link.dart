@@ -3,8 +3,12 @@
 // read-loop / close machine around the codec, which the parser tests cover.
 
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
 import 'package:pedal_repository/src/pedal_link.dart';
 import 'package:pedal_repository/src/pedal_link_codec.dart';
 import 'package:pedal_repository/src/pedal_link_message.dart';
@@ -24,15 +28,25 @@ const _baud = 115200;
 const _retryFloor = Duration(seconds: 2);
 const _retryCeiling = Duration(seconds: 30);
 
+// libc open(2) flags. O_NOCTTY keeps a serial line from becoming this
+// process's controlling terminal, which would route its signals at us.
+const _oRdonly = 0;
+const _oWronly = 1;
+const _oNoctty = 0x100;
+
 /// The [PedalLink] over the appliance's link UART.
 ///
-/// Owns the device for its whole lifetime: it opens the node when it exists,
-/// keeps retrying while it does not (the uart overlay can land after the app
-/// starts), configures the line with `stty` (raw, 8N1, no echo — echo would
-/// loop the board's own bytes back at it), reads it on a bounded loop, and
-/// goes back to retrying if a read or write fails. Nothing here blocks for
-/// longer than one read timeout, so [dispose] is bounded whether or not a
-/// board is talking.
+/// Owns the device for its whole lifetime: it configures the line with `stty`
+/// (raw, 8N1, no echo — echo would loop the board's own bytes back at it),
+/// reads it on a background isolate, and goes back to retrying if the device
+/// is absent or a read or write fails. The uart overlay can land after the
+/// app starts, so absence is a normal state, not an error.
+///
+/// The device is opened through libc rather than `dart:io`: a serial line is
+/// not seekable and `File.open` refuses it (`Illegal seek`). Reads block for
+/// up to one VTIME tick, so they live on their own isolate, exactly as the
+/// appliance's power-key reader does; writes are a single `write(2)` from
+/// here, which cannot block at this frame rate.
 ///
 /// Every state change is reported through the `log` callback, one line each,
 /// so the appliance's persistent log says why a panel is dark.
@@ -47,10 +61,11 @@ class UartPedalLink implements PedalLink {
   final StreamController<PedalLinkMessage> _inbound =
       StreamController<PedalLinkMessage>.broadcast();
 
-  RandomAccessFile? _reader;
-  RandomAccessFile? _writer;
-  Future<void>? _readLoop;
-  Future<void>? _closing;
+  ReceivePort? _fromReader;
+  StreamSubscription<dynamic>? _readerSub;
+  Isolate? _reader;
+  SendPort? _readerControl;
+  int _writeFd = -1;
   Timer? _retryTimer;
   String? _lastLogged;
   Duration _retry = _retryFloor;
@@ -63,13 +78,17 @@ class UartPedalLink implements PedalLink {
 
   @override
   void send(PedalLinkMessage message) {
-    final writer = _writer;
-    if (_disposed || writer == null) return;
+    if (_disposed || _writeFd < 0) return;
+    final bytes = PedalLinkCodec.encode(message);
+    final buffer = malloc<Uint8>(bytes.length);
     try {
-      writer.writeFromSync(PedalLinkCodec.encode(message));
-    } on FileSystemException catch (error) {
-      _say('write to $_device failed: $error');
+      buffer.asTypedList(bytes.length).setAll(0, bytes);
+      final written = _libcWrite(_writeFd, buffer.cast(), bytes.length);
+      if (written == bytes.length) return;
+      _say('write to $_device returned $written of ${bytes.length}');
       unawaited(_reopen());
+    } finally {
+      malloc.free(buffer);
     }
   }
 
@@ -78,14 +97,13 @@ class UartPedalLink implements PedalLink {
     if (_disposed) return;
     _disposed = true;
     _retryTimer?.cancel();
-    await (_closing ?? _close());
+    await _close();
     await _inbound.close();
   }
 
   Future<void> _open() async {
     if (_disposed) return;
-    final file = File(_device);
-    if (!file.existsSync()) {
+    if (!File(_device).existsSync()) {
       _say(
         '$_device is not present; is dtoverlay=uart3-pi5 applied? '
         'Retrying, backing off to ${_retryCeiling.inSeconds} s.',
@@ -93,14 +111,9 @@ class UartPedalLink implements PedalLink {
       _scheduleRetry();
       return;
     }
-    // Held here, not in the fields, until both are open: a failure part-way
-    // (the node readable but not writable, say) must close what did open, or
-    // every retry leaks a descriptor.
-    RandomAccessFile? reader;
-    RandomAccessFile? writer;
     try {
       // VMIN 0 / VTIME 1: a read returns whatever arrived within 100 ms, or
-      // nothing — never blocks indefinitely, so the read loop can be stopped.
+      // nothing — never blocks indefinitely, so the reader can be stopped.
       final stty = await Process.run('stty', [
         '-F',
         _device,
@@ -122,17 +135,28 @@ class UartPedalLink implements PedalLink {
         _scheduleRetry();
         return;
       }
-      reader = await file.open();
-      writer = await file.open(mode: FileMode.writeOnlyAppend);
-      if (_disposed) {
-        // dispose() ran while stty / open were in flight; nothing else will
-        // close these.
-        await reader.close();
-        await writer.close();
+      if (_disposed) return;
+
+      final fd = _openDevice(_oWronly);
+      if (fd < 0) {
+        _say('opening $_device for writing failed');
+        _scheduleRetry();
         return;
       }
-      _reader = reader;
-      _writer = writer;
+      _writeFd = fd;
+
+      final fromReader = ReceivePort();
+      _fromReader = fromReader;
+      _readerSub = fromReader.listen(_onReaderMessage);
+      _reader = await Isolate.spawn(
+        _readerMain,
+        _ReaderArgs(fromReader.sendPort, _device),
+        debugName: 'pedal-link-reader',
+      );
+      if (_disposed) {
+        await _close();
+        return;
+      }
       _parser
         ..droppedFrames = 0
         ..reset();
@@ -140,34 +164,28 @@ class UartPedalLink implements PedalLink {
       _noisy = false;
       _retry = _retryFloor; // the device is here; look again promptly next time
       _say('open on $_device at $_baud');
-      _readLoop = _read(reader);
     } on Object catch (error) {
       _say('opening $_device failed: $error');
-      await _discard(reader);
-      await _discard(writer);
+      await _close();
       _scheduleRetry();
     }
   }
 
-  static Future<void> _discard(RandomAccessFile? handle) async {
-    try {
-      await handle?.close();
-    } on Object {
-      // Already on the failure path; the retry is the recovery.
+  /// Handles one message from the reader isolate: a chunk of bytes, its
+  /// control port at startup, or a failure string.
+  void _onReaderMessage(dynamic message) {
+    if (_disposed) return;
+    if (message is SendPort) {
+      _readerControl = message;
+      return;
     }
-  }
-
-  Future<void> _read(RandomAccessFile reader) async {
-    try {
-      while (!_disposed && identical(_reader, reader)) {
-        final chunk = await reader.read(64);
-        if (chunk.isEmpty) continue;
-        final messages = _parser.push(chunk)..forEach(_inbound.add);
-        _reportDrops(messages.length);
-      }
-    } on Object catch (error) {
-      if (_disposed) return;
-      _say('read from $_device failed: $error');
+    if (message is Uint8List) {
+      final messages = _parser.push(message)..forEach(_inbound.add);
+      _reportDrops(messages.length);
+      return;
+    }
+    if (message is String) {
+      _say('read from $_device failed: $message');
       unawaited(_reopen());
     }
   }
@@ -200,22 +218,21 @@ class UartPedalLink implements PedalLink {
     _scheduleRetry();
   }
 
-  Future<void> _close() {
-    final closing = _closing;
-    if (closing != null) return closing;
-    return _closing = () async {
-      final reader = _reader;
-      final writer = _writer;
-      _reader = null;
-      _writer = null;
-      // The loop notices _reader changed on its next (≤ 100 ms) read.
-      final loop = _readLoop;
-      _readLoop = null;
-      if (loop != null) await loop;
-      await reader?.close();
-      await writer?.close();
-      _closing = null;
-    }();
+  Future<void> _close() async {
+    // Ask the reader to close its own fd and leave: it checks between reads,
+    // so this is bounded by one VTIME tick.
+    _readerControl?.send(null);
+    _readerControl = null;
+    await _readerSub?.cancel();
+    _readerSub = null;
+    _fromReader?.close();
+    _fromReader = null;
+    _reader?.kill();
+    _reader = null;
+    if (_writeFd >= 0) {
+      _libcClose(_writeFd);
+      _writeFd = -1;
+    }
   }
 
   void _scheduleRetry() {
@@ -232,5 +249,95 @@ class UartPedalLink implements PedalLink {
     if (message == _lastLogged) return;
     _lastLogged = message;
     _log?.call('pedal link: $message');
+  }
+}
+
+// --- libc, on this isolate ---------------------------------------------------
+
+final DynamicLibrary _libc = DynamicLibrary.process();
+
+final int Function(Pointer<Utf8>, int) _libcOpen = _libc
+    .lookupFunction<
+      Int32 Function(Pointer<Utf8>, Int32),
+      int Function(Pointer<Utf8>, int)
+    >('open');
+
+final int Function(int, Pointer<Void>, int) _libcWrite = _libc
+    .lookupFunction<
+      Long Function(Int32, Pointer<Void>, Uint64),
+      int Function(int, Pointer<Void>, int)
+    >('write');
+
+final int Function(int) _libcClose = _libc
+    .lookupFunction<Int32 Function(Int32), int Function(int)>('close');
+
+int _openDevice(int flags) {
+  final path = _device.toNativeUtf8();
+  try {
+    return _libcOpen(path, flags | _oNoctty);
+  } finally {
+    malloc.free(path);
+  }
+}
+
+// --- the reader isolate ------------------------------------------------------
+
+final class _ReaderArgs {
+  const _ReaderArgs(this.sendPort, this.path);
+
+  final SendPort sendPort;
+  final String path;
+}
+
+/// Reads the line until told to stop, forwarding every chunk to the link.
+///
+/// `read` blocks for up to one VTIME tick (100 ms), which is why this is an
+/// isolate: the same shape the appliance's power-key reader uses. A zero-byte
+/// return is that timeout, not end of file — a serial line has no end.
+void _readerMain(_ReaderArgs args) {
+  final libc = DynamicLibrary.process();
+  final open = libc
+      .lookupFunction<
+        Int32 Function(Pointer<Utf8>, Int32),
+        int Function(Pointer<Utf8>, int)
+      >('open');
+  final read = libc
+      .lookupFunction<
+        Long Function(Int32, Pointer<Void>, Uint64),
+        int Function(int, Pointer<Void>, int)
+      >('read');
+  final closeFd = libc.lookupFunction<Int32 Function(Int32), int Function(int)>(
+    'close',
+  );
+
+  final path = args.path.toNativeUtf8();
+  final fd = open(path, _oRdonly | _oNoctty);
+  malloc.free(path);
+  if (fd < 0) {
+    args.sendPort.send('open for reading returned $fd');
+    return;
+  }
+
+  // A message here — any message — means stop.
+  var stopped = false;
+  final control = ReceivePort()..listen((_) => stopped = true);
+  args.sendPort.send(control.sendPort);
+
+  const capacity = 64;
+  final buffer = malloc<Uint8>(capacity);
+  try {
+    while (!stopped) {
+      final n = read(fd, buffer.cast(), capacity);
+      if (n < 0) {
+        args.sendPort.send('read returned $n');
+        return;
+      }
+      if (n == 0) continue; // VTIME timeout, not EOF
+      args.sendPort.send(Uint8List.fromList(buffer.asTypedList(n)));
+    }
+  } finally {
+    malloc.free(buffer);
+    closeFd(fd);
+    control.close();
   }
 }
