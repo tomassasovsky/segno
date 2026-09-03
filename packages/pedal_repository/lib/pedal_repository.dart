@@ -6,6 +6,7 @@ library;
 
 export 'src/noop_pedal_link.dart';
 export 'src/pedal_button.dart';
+export 'src/pedal_ctrl.dart';
 export 'src/pedal_event.dart';
 export 'src/pedal_link.dart';
 export 'src/pedal_link_codec.dart';

@@ -123,6 +123,21 @@ final goldenMessages = <String, PedalLinkMessage>{
   'button_bank_up': const ButtonMessage(PedalButton.bank, pressed: false),
   'encoder_plus1': const EncoderMessage(1),
   'encoder_minus3': const EncoderMessage(-3),
+  'ctrl1_switch_down': const CtrlMessage(
+    jack: PedalCtrlJack.ctrl1,
+    kind: PedalCtrlKind.switchPedal,
+    value: 255,
+  ),
+  'ctrl1_switch_up': const CtrlMessage(
+    jack: PedalCtrlJack.ctrl1,
+    kind: PedalCtrlKind.switchPedal,
+    value: 0,
+  ),
+  'ctrl2_expression_mid': const CtrlMessage(
+    jack: PedalCtrlJack.ctrl2,
+    kind: PedalCtrlKind.expression,
+    value: 128,
+  ),
   'hello': const HelloMessage(
     protocolVersion: PedalLinkCodec.protocolVersion,
     firmwareMajor: 1,

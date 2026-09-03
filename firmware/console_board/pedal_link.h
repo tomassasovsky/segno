@@ -28,10 +28,11 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-/* 2: the loop-top pulse (0x11) was retired when the ring stopped tracking the
- * loop. The board is flashed over SWD independently of the app, so the two can
- * drift; this is what makes that visible instead of silent. */
-#define PEDAL_LINK_PROTOCOL_VERSION 2u
+/* 3: the CTRL jacks (0x04). 2: the loop-top pulse (0x11) was retired when the
+ * ring stopped tracking the loop. The board is flashed over SWD independently
+ * of the app, so the two can drift; this is what makes that visible instead of
+ * silent. */
+#define PEDAL_LINK_PROTOCOL_VERSION 3u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
@@ -41,6 +42,7 @@ extern "C" {
  * recognised as incompatible at all; a revision that needs more from the board
  * adds a message type, never a hello byte. */
 #define PEDAL_LINK_TYPE_HELLO 0x03u    /* [protocol, fw major, fw minor] */
+#define PEDAL_LINK_TYPE_CTRL 0x04u     /* [jack, kind, value] */
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */
 
@@ -74,6 +76,18 @@ enum {
 };
 
 #define PEDAL_TRACK_COUNT 8u
+
+/* The two CTRL jacks, in wire order. Each takes an expression pedal OR a
+ * footswitch; the board tells them apart by what the tip does (a switch sits
+ * at the rails, a pot moves through the middle) and says which in `kind`.
+ * Only the TIP is readable: the ring is the pot's supply, so a two-switch
+ * pedal like a BOSS FS-6 offers one switch per jack. */
+enum { PEDAL_CTRL1 = 0, PEDAL_CTRL2, PEDAL_CTRL_COUNT };
+enum {
+  PEDAL_CTRL_KIND_SWITCH = 0, /* value is 0 or 255 */
+  PEDAL_CTRL_KIND_EXPRESSION,  /* value is the travel, 0..255 */
+  PEDAL_CTRL_KIND_COUNT
+};
 
 /* Enum wire values, mirroring the Dart enums' declaration order. */
 enum { PEDAL_MODE_REC = 0, PEDAL_MODE_PLAY, PEDAL_MODE_FX, PEDAL_MODE_COUNT };
@@ -126,6 +140,7 @@ size_t pedal_link_encode(uint8_t type, const uint8_t *payload, uint8_t len, uint
 size_t pedal_link_encode_button(uint8_t button, uint8_t pressed, uint8_t *out);
 size_t pedal_link_encode_encoder(int8_t delta, uint8_t *out);
 size_t pedal_link_encode_hello(uint8_t fw_major, uint8_t fw_minor, uint8_t *out);
+size_t pedal_link_encode_ctrl(uint8_t jack, uint8_t kind, uint8_t value, uint8_t *out);
 size_t pedal_link_encode_state(const pedal_state *state, uint8_t *out);
 
 /* Decode a STATE payload. Returns 1 on success, 0 for a wrong length, an

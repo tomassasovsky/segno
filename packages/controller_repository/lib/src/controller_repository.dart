@@ -116,7 +116,7 @@ class ControllerRepository {
       // a real position, and refusing value 0 would make a heel-down sweep
       // uncapturable. A note still needs a press — notes arrive in press /
       // release pairs, and capturing the release would bind the wrong edge.
-      if (input.kind == ControllerSourceKind.midiCc || input.isPress) {
+      if (input.kind.isContinuous || input.isPress) {
         _learnCompleter = null;
         learn.complete(input);
       }

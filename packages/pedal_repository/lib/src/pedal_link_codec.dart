@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:pedal_repository/src/pedal_button.dart';
+import 'package:pedal_repository/src/pedal_ctrl.dart';
 import 'package:pedal_repository/src/pedal_link_message.dart';
 import 'package:pedal_repository/src/pedal_mode.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
@@ -44,11 +45,11 @@ abstract final class PedalLinkCodec {
   /// The link protocol this codec speaks, reported by the board in
   /// [HelloMessage.protocolVersion].
   ///
-  /// 2: the loop-top pulse (`0x11`) was retired when the ring stopped
-  /// tracking the loop. The board is flashed over SWD independently of the
-  /// app, so the two can drift; this is what makes that visible rather than
-  /// silent.
-  static const protocolVersion = 2;
+  /// 3: the CTRL jacks (`0x04`). 2: the loop-top pulse (`0x11`) was retired
+  /// when the ring stopped tracking the loop. The board is flashed over SWD
+  /// independently of the app, so the two can drift; this is what makes that
+  /// visible rather than silent.
+  static const protocolVersion = 3;
 
   /// Message types, board → segno.
   static const typeButton = 0x01;
@@ -58,6 +59,10 @@ abstract final class PedalLinkCodec {
 
   /// See [typeButton].
   static const typeHello = 0x03;
+
+  /// See [typeButton]. `[jack, kind, value]` — one of the two CTRL jacks
+  /// reporting the pedal plugged into it.
+  static const typeCtrl = 0x04;
 
   /// The one message type segno → board.
   static const typeState = 0x10;
@@ -85,6 +90,7 @@ abstract final class PedalLinkCodec {
     typeButton => 2,
     typeEncoder => 1,
     typeHello => helloPayloadLength,
+    typeCtrl => 3,
     typeState => statePayloadLength,
     _ => null,
   };
@@ -103,6 +109,10 @@ abstract final class PedalLinkCodec {
         :final firmwareMinor,
       ) =>
         (typeHello, <int>[protocolVersion, firmwareMajor, firmwareMinor]),
+      CtrlMessage(:final jack, :final kind, :final value) => (
+        typeCtrl,
+        <int>[jack.index, kind.index, value],
+      ),
       StateMessage(:final frame) => (typeState, encodeStatePayload(frame)),
     };
     final out = Uint8List(4 + payload.length);
@@ -140,6 +150,11 @@ abstract final class PedalLinkCodec {
           firmwareMajor: payload[1],
           firmwareMinor: payload[2],
         );
+      case typeCtrl:
+        final jack = PedalCtrlJack.values.elementAtOrNull(payload[0]);
+        final kind = PedalCtrlKind.values.elementAtOrNull(payload[1]);
+        if (jack == null || kind == null) return null;
+        return CtrlMessage(jack: jack, kind: kind, value: payload[2]);
       case typeState:
         final frame = decodeStatePayload(payload);
         return frame == null ? null : StateMessage(frame);

@@ -113,6 +113,14 @@ String controlLabel(AppLocalizations l10n, MappingTrigger trigger) {
       trigger.id,
       channel,
     ),
+    // A CTRL jack has no channel — it is named by the jack it is plugged
+    // into, counted from one the way the panel labels them.
+    ControllerSourceKind.consoleSwitch => l10n.consoleCtrlSwitchControl(
+      trigger.id + 1,
+    ),
+    ControllerSourceKind.consoleExpression => l10n.consoleCtrlExpressionControl(
+      trigger.id + 1,
+    ),
   };
 }
 

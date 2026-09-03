@@ -15,6 +15,7 @@ import 'package:segno/app/monitor_migration.dart';
 import 'package:segno/app/view/app.dart';
 import 'package:segno/bootstrap.dart';
 import 'package:segno/logging/app_log.dart';
+import 'package:segno/pedal/console_ctrl_source.dart';
 import 'package:segno/session_directory.dart';
 import 'package:segno/update/appliance/appliance_env.dart';
 import 'package:segno/update/update_backend.dart';
@@ -112,9 +113,6 @@ Future<void> runSegno(
   // is disposed when the repository disposes its sources — and handed to
   // ControlCubit, which paces the synthetic sequence.
   final simulatedControllerSource = SimulatedControllerSource();
-  final controllerRepository = ControllerRepository(
-    sources: [?midiSource, simulatedControllerSource],
-  );
   // The console board's pedal link: the Pi's uart3 to the board's Pico 2 on
   // the appliance (the link owns the device node, retries until the overlay
   // lands, and reports every state change to the log), or a board-less link
@@ -123,6 +121,16 @@ Future<void> runSegno(
       ? UartPedalLink(log: AppLog.info)
       : NoopPedalLink();
   final pedalRepository = PedalRepository(pedalLink, log: AppLog.info);
+  // The console's two CTRL jacks join the same pipeline as MIDI: a pedal in a
+  // jack is bound and learned exactly like a controller, so nothing about the
+  // binding model knows where a control came from.
+  final controllerRepository = ControllerRepository(
+    sources: [
+      ?midiSource,
+      simulatedControllerSource,
+      ConsoleCtrlSource(pedalRepository),
+    ],
+  );
   final settings = SettingsRepository(
     store: SharedPreferencesKeyValueStore(),
     // The ALSA period count is part of the latency-calibration key: #809 made

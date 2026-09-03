@@ -160,6 +160,12 @@ static void check_fixture(const char *dir, const char *name) {
       CHECK(len == 1, "%s: bad encoder payload", name);
       m = pedal_link_encode_encoder((int8_t)payload[0], again);
       break;
+    case PEDAL_LINK_TYPE_CTRL:
+      CHECK(len == 3, "%s: ctrl with %u payload bytes, want 3", name, len);
+      CHECK(payload[0] < PEDAL_CTRL_COUNT, "%s: ctrl jack %u out of range", name, payload[0]);
+      CHECK(payload[1] < PEDAL_CTRL_KIND_COUNT, "%s: ctrl kind %u out of range", name, payload[1]);
+      m = pedal_link_encode_ctrl(payload[0], payload[1], payload[2], again);
+      break;
     case PEDAL_LINK_TYPE_HELLO:
       CHECK(len == 3 && payload[0] == PEDAL_LINK_PROTOCOL_VERSION, "%s: bad hello", name);
       m = pedal_link_encode_hello(payload[1], payload[2], again);
