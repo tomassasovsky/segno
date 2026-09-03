@@ -3,6 +3,11 @@ SUMMARY = "RAUC update bundle (.raucb) for the Segno appliance — boot + rootfs
 # `rauc install` writes it to the inactive A/B slot. CI publishes it per channel.
 inherit bundle
 
+# The bundle carries this project's own images and one hook script. Declaring
+# it keeps the QA check that fires as soon as a recipe fetches any file — the
+# hook — from demanding a licence checksum for material we author.
+LICENSE = "CLOSED"
+
 RAUC_BUNDLE_FORMAT     = "verity"
 # MUST byte-match [system] compatible in the installed system.conf — both are
 # rendered from SEGNO_RAUC_COMPATIBLE (set per board in the kas project), so the
