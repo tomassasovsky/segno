@@ -20,7 +20,13 @@ do_deploy[depends] += "rpi-bootfiles:do_deploy rpi-config:do_deploy virtual/kern
 # before tryboot-cmdline rewrites it per slot. The install hook does the same
 # rewrite on the device, because which rootfs a boot slot points at is a
 # property of the SLOT, not of the build.
-BOOTFS_TARBALL = "${PN}-${MACHINE}.tar.bz2"
+# Uncompressed on purpose. RAUC splices the archive into `tar -x` without a
+# decompression flag, and the appliance's busybox tar cannot sniff the format —
+# it supports -z and -j only when told, so a compressed archive arrives as
+# "invalid tar magic" and the install fails after the slot has already been
+# formatted. A few tens of megabytes in the bundle is the price of an install
+# that cannot fail on a detail of how tar was compiled.
+BOOTFS_TARBALL = "${PN}-${MACHINE}.tar"
 
 python do_compile() {
     import os
@@ -63,7 +69,7 @@ python do_compile() {
 do_compile[cleandirs] = "${B}"
 
 do_deploy() {
-    tar -C ${B}/bootfs -cjf ${DEPLOYDIR}/${BOOTFS_TARBALL} .
+    tar -C ${B}/bootfs -cf ${DEPLOYDIR}/${BOOTFS_TARBALL} .
 }
 
 addtask deploy after do_compile before do_build

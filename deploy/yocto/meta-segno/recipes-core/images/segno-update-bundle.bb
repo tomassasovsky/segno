@@ -64,7 +64,7 @@ RAUC_SLOT_rootfs[fstype] = "ext4"
 # do_image_complete for the bundle to wait on — it waits on the deploy instead.
 RAUC_SLOT_firmware = "segno-bootfs"
 RAUC_SLOT_firmware[type] = "file"
-RAUC_SLOT_firmware[file] = "segno-bootfs-${MACHINE}.tar.bz2"
+RAUC_SLOT_firmware[file] = "segno-bootfs-${MACHINE}.tar"
 RAUC_SLOT_firmware[depends] = "segno-bootfs:do_deploy"
 # A tar into the mounted slot, not an image dd'd over it: the boot partitions
 # are sized by the WIC layout, and a raw image would tie the bundle to that size
