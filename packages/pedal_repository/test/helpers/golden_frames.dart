@@ -119,7 +119,6 @@ final goldenMessages = <String, PedalLinkMessage>{
       looperMode: PedalLooperMode.free,
     ),
   ),
-  'loop_top': const LoopTopMessage(),
   'button_track3_down': const ButtonMessage(PedalButton.track3, pressed: true),
   'button_bank_up': const ButtonMessage(PedalButton.bank, pressed: false),
   'encoder_plus1': const EncoderMessage(1),

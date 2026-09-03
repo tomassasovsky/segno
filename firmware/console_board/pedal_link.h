@@ -40,7 +40,6 @@ extern "C" {
 #define PEDAL_LINK_TYPE_HELLO 0x03u    /* [protocol, fw major, fw minor] */
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */
-#define PEDAL_LINK_TYPE_LOOP_TOP 0x11u /* [] */
 
 #define PEDAL_LINK_STATE_LEN 19u
 #define PEDAL_LINK_MAX_PAYLOAD 32u
@@ -125,7 +124,6 @@ size_t pedal_link_encode_button(uint8_t button, uint8_t pressed, uint8_t *out);
 size_t pedal_link_encode_encoder(int8_t delta, uint8_t *out);
 size_t pedal_link_encode_hello(uint8_t fw_major, uint8_t fw_minor, uint8_t *out);
 size_t pedal_link_encode_state(const pedal_state *state, uint8_t *out);
-size_t pedal_link_encode_loop_top(uint8_t *out);
 
 /* Decode a STATE payload. Returns 1 on success, 0 for a wrong length, an
  * out-of-range enum, a reserved flag bit, an active_bank > 1 or a

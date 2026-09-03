@@ -330,10 +330,8 @@ class ControlCubit extends Cubit<ControlState> {
   // through `emit`.
   bool _performanceArmed = false;
 
-  // Latest looper snapshot, and the last master position seen (for the
-  // loop-top edge).
+  // Latest looper snapshot.
   LooperState? _looperState;
-  int? _lastPosition;
 
   Future<void>? _loadFuture;
 
@@ -1990,7 +1988,6 @@ class ControlCubit extends Cubit<ControlState> {
   void _onLooperState(LooperState looperState) {
     _looperState = looperState;
     _reduce(looperState);
-    _detectLoopTop(looperState);
     _pushProjected();
   }
 
@@ -2001,24 +1998,6 @@ class ControlCubit extends Cubit<ControlState> {
     // forever (B1). Restore now. A reconnect needs nothing from here: the
     // repository answers the board's hello with the current frame.
     releaseAllMomentary();
-  }
-
-  /// Pulses LOOP_TOP so the board can pin its ring to the playhead.
-  ///
-  /// Two edges count as a loop top: the playhead wrapping (position went
-  /// backwards) and a resume from zero. The engine zeroes the master position
-  /// on a transport hold, so a Stop then Play produces no wrap at all — and
-  /// without the second edge the board's hump would run from wherever it
-  /// froze for up to a whole loop.
-  void _detectLoopTop(LooperState s) {
-    final position = s.transport.masterPositionFrames;
-    final previous = _lastPosition;
-    final wrapped = previous != null && position < previous;
-    final resumedFromZero = previous == 0 && position > 0;
-    if ((wrapped || resumedFromZero) && s.transport.masterLengthFrames > 0) {
-      _pedal.sendLoopTop();
-    }
-    _lastPosition = position;
   }
 
   /// Projects and pushes the current LED frame. The repository drops a frame

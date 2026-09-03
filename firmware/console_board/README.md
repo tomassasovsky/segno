@@ -31,7 +31,6 @@ mismatched build shows up in segno's log.
 | `0x02 ENCODER` | board → segno | `int8 detents` (positive = clockwise) |
 | `0x03 HELLO` | board → segno | `protocol, fw major, fw minor` — at boot and once a second; segno counts the board as connected while these keep coming |
 | `0x10 STATE` | segno → board | 19 bytes: flags, mode, looper mode, global colour, bank, selected track, 8 track LEDs, loop length µs (LE32), master gain — see `pedal_link.h` |
-| `0x11 LOOP_TOP` | segno → board | none |
 
 segno answers every `HELLO` with its current `STATE`, so a board that just
 (re)connected is current within a second; the board goes dark if no `STATE`

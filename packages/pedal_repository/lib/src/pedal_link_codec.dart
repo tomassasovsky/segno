@@ -54,11 +54,8 @@ abstract final class PedalLinkCodec {
   /// See [typeButton].
   static const typeHello = 0x03;
 
-  /// Message types, segno → board.
+  /// The one message type segno → board.
   static const typeState = 0x10;
-
-  /// See [typeState].
-  static const typeLoopTop = 0x11;
 
   /// The number of payload bytes in a [StateMessage].
   static const statePayloadLength = 19;
@@ -84,7 +81,6 @@ abstract final class PedalLinkCodec {
     typeEncoder => 1,
     typeHello => helloPayloadLength,
     typeState => statePayloadLength,
-    typeLoopTop => 0,
     _ => null,
   };
 
@@ -103,7 +99,6 @@ abstract final class PedalLinkCodec {
       ) =>
         (typeHello, <int>[protocolVersion, firmwareMajor, firmwareMinor]),
       StateMessage(:final frame) => (typeState, encodeStatePayload(frame)),
-      LoopTopMessage() => (typeLoopTop, const <int>[]),
     };
     final out = Uint8List(4 + payload.length);
     out[0] = sync;
@@ -143,8 +138,6 @@ abstract final class PedalLinkCodec {
       case typeState:
         final frame = decodeStatePayload(payload);
         return frame == null ? null : StateMessage(frame);
-      case typeLoopTop:
-        return const LoopTopMessage();
       default:
         return null;
     }

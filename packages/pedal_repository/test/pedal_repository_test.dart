@@ -51,14 +51,12 @@ void main() {
       expect(events, const [EncoderDelta(1), EncoderDelta(-2)]);
     });
 
-    test('pushState and sendLoopTop go out as link messages', () {
+    test('pushState goes out as a link message', () {
       final frame = PedalStateFrame.blank().copyWith(
         globalColor: GlobalColor.red,
       );
-      repo
-        ..pushState(frame)
-        ..sendLoopTop();
-      expect(link.sent, [StateMessage(frame), const LoopTopMessage()]);
+      repo.pushState(frame);
+      expect(link.sent, [StateMessage(frame)]);
     });
 
     test('a frame identical to the last push is not sent again', () {
@@ -72,7 +70,7 @@ void main() {
       expect(link.sent, hasLength(2));
     });
 
-    test('goodbye darkens the board and latches the link shut', () async {
+    test('goodbye darkens the board and holds the mark', () async {
       final events = <PedalEvent>[];
       repo.events.listen(events.add);
       link.hello();
@@ -83,19 +81,18 @@ void main() {
       expect(link.lastFrame?.isGoodbye, isTrue);
       link.sent.clear();
 
-      // Nothing re-lights a halting console: pushes and pulses are dropped,
-      // stomps are ignored, and a hello is answered with the goodbye frame.
+      // Nothing re-lights a halting console: every later frame is dropped and
+      // a hello is answered with the goodbye frame. Stomps still come through
+      // — a goodbye that turns out to be wrong must not look like a dead link.
       repo
         ..pushState(PedalStateFrame.blank().copyWith(activeBank: 1))
-        ..sendLoopTop()
         ..goodbye();
       link
         ..press(PedalButton.recPlay, down: true)
         ..turn(1)
         ..hello();
       await pumpEventQueue();
-      expect(events, isEmpty);
-      expect(link.sent.whereType<LoopTopMessage>(), isEmpty);
+      expect(events, hasLength(2));
       expect(
         link.sent.whereType<StateMessage>().map((m) => m.frame.isGoodbye),
         everyElement(isTrue),
@@ -182,9 +179,7 @@ void main() {
       await pumpEventQueue();
       expect(events, isEmpty);
       final before = link.sent.length;
-      logged
-        ..pushState(PedalStateFrame.blank())
-        ..sendLoopTop();
+      logged.pushState(PedalStateFrame.blank());
       expect(link.sent.length, before);
       await logged.dispose();
     });
@@ -235,9 +230,7 @@ void main() {
     test('outbound message types arriving inbound are ignored', () async {
       final events = <PedalEvent>[];
       repo.events.listen(events.add);
-      link
-        ..emit(StateMessage(PedalStateFrame.blank()))
-        ..emit(const LoopTopMessage());
+      link.emit(StateMessage(PedalStateFrame.blank()));
       await pumpEventQueue();
       expect(events, isEmpty);
       expect(repo.status, PedalLinkStatus.disconnected);
@@ -247,9 +240,7 @@ void main() {
       await repo.dispose();
       await repo.dispose();
       expect(link.disposed, isTrue);
-      repo
-        ..pushState(PedalStateFrame.blank())
-        ..sendLoopTop();
+      repo.pushState(PedalStateFrame.blank());
       expect(link.sent, isEmpty);
     });
   });
