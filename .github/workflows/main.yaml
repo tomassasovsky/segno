@@ -374,6 +374,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Run update bundle hook tests
         run: bash deploy/yocto/meta-segno/recipes-core/images/test/run_bundle_hook_tests.sh
+      - name: Run boot-slot recipe tests
+        run: bash deploy/yocto/meta-segno/recipes-core/bootfs/test/run_bootfs_tests.sh
       - name: Run console-board flash tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-console-board/test/run_console_flash_tests.sh
       - name: Run bt-persist tests

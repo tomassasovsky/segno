@@ -14,7 +14,7 @@ LICENSE = "CLOSED"
 inherit deploy nopackages
 
 # The files below are produced by these; deploy after they have deployed.
-do_deploy[depends] += "rpi-bootfiles:do_deploy rpi-config:do_deploy virtual/kernel:do_deploy"
+do_deploy[depends] += "rpi-bootfiles:do_deploy rpi-config:do_deploy rpi-cmdline:do_deploy virtual/kernel:do_deploy"
 
 # cmdline.txt keeps its root=XXX placeholder here, exactly as the WIC image does
 # before tryboot-cmdline rewrites it per slot. The install hook does the same
@@ -43,27 +43,60 @@ python do_compile() {
                  "and an update would silently blank it.")
 
     for entry in boot_files:
-        # Entries are "src" or "src;dst"; a src may be a glob or a directory
-        # spec like "overlays/*;overlays/".
+        # Entries follow wic's bootimg-partition: "src" lands at the root under
+        # its own name, "src;dst" is renamed, "src;dir/" lands inside dir. A src
+        # may be a glob — meta-raspberrypi's default starts with "bootfiles/*",
+        # which is every firmware blob plus config.txt and cmdline.txt.
         src, _, dst = entry.partition(";")
-        dst = dst or os.path.basename(src)
         matches = sorted(__import__("glob").glob(os.path.join(deploy_dir, src)))
         if not matches:
             bb.fatal("IMAGE_BOOT_FILES names %r but nothing in %s matches it. The "
                      "boot slot would be written incomplete, which is worse than "
                      "not writing it at all." % (src, deploy_dir))
         for match in matches:
-            if dst.endswith("/"):
-                target_dir = os.path.join(staging, dst)
-                target = os.path.join(target_dir, os.path.basename(match))
+            # The destination name comes from the MATCH, never from the pattern.
+            # Taking basename(src) for a bare glob gave every file in bootfiles/
+            # the name "*": they overwrote each other into one 3.7 MB file
+            # literally called "*", which vfat then refused to create on the
+            # device, and config.txt and cmdline.txt were not in the slot at all
+            # (0.1.0-experimental.128 and .129 both failed to install this way).
+            if not dst:
+                target = os.path.join(staging, os.path.basename(match))
+            elif dst.endswith("/"):
+                target = os.path.join(staging, dst, os.path.basename(match))
             else:
-                target_dir = os.path.dirname(os.path.join(staging, dst))
                 target = os.path.join(staging, dst)
-            os.makedirs(target_dir, exist_ok=True)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
             if os.path.isdir(match):
                 shutil.copytree(match, target, dirs_exist_ok=True)
             else:
                 shutil.copy2(match, target)
+
+    # Prove the tree is a boot slot before it is packed. Every check here is
+    # something the device would otherwise discover mid-install, after the
+    # inactive slot has already been formatted.
+    staged = []
+    for root, _dirs, files in os.walk(staging):
+        for name in files:
+            staged.append(os.path.relpath(os.path.join(root, name), staging))
+    odd = sorted(p for p in staged if any(c in p for c in "*?[]"))
+    if odd:
+        bb.fatal("boot slot would contain glob characters in a file name: %s — "
+                 "an IMAGE_BOOT_FILES pattern was copied instead of expanded."
+                 % ", ".join(odd))
+    for required in ("config.txt", "cmdline.txt"):
+        if required not in staged:
+            bb.fatal("boot slot is missing %s. Present: %s"
+                     % (required, ", ".join(sorted(staged)) or "nothing"))
+    with open(os.path.join(staging, "cmdline.txt")) as f:
+        cmdline = f.read()
+    if "root=XXX" not in cmdline:
+        bb.fatal("cmdline.txt has no root=XXX placeholder; the install hook "
+                 "cannot point the slot at its rootfs. Got: %r" % cmdline.strip())
+    kernel = d.getVar("SDIMG_KERNELIMAGE")
+    if kernel and kernel not in staged:
+        bb.fatal("boot slot is missing the kernel image %s. Present: %s"
+                 % (kernel, ", ".join(sorted(staged))))
 }
 
 do_compile[cleandirs] = "${B}"
