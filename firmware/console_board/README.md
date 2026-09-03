@@ -63,50 +63,31 @@ arduino-cli compile --fqbn rp2040:rp2040:rpipico2 firmware/console_board --outpu
 `build/console_board.ino.elf` is what OpenOCD flashes; `.uf2` is for BOOTSEL drag-and-drop
 if the module's USB is ever reachable (it is not, once the board is in the console).
 
-## Flash from the Pi over SWD
+## Flashing
 
-The board routes the Pi's GPIO24 (SWCLK, ribbon pin 18) and GPIO25 (SWDIO, pin 22)
-straight to the module's debug pads, so the Pi is the programmer. This needs an
-OpenOCD that knows the RP2350 and can bit-bang SWD through the Pi 5's RP1 GPIO
-(`linuxgpiod`). Raspberry Pi ships one as a flat tarball (binary, `scripts/`, and
-its own `libgpiod.so.2`). It also wants `libftdi1.so.2` and `libhidapi-hidraw.so.0`,
-which the appliance image does not carry; the Debian arm64 packages `libftdi1-2`
-and `libhidapi-hidraw0` drop in beside the binary (extract the `.deb` with `ar x`
-and `tar xf data.tar.xz`, copy the two `.so.*` files and their symlinks). Put it
-all under `/data/bringup/openocd` on the unit (`/data` is the persistent partition):
+The appliance does it. The image carries this firmware, an OpenOCD built for
+the one adapter that reaches the board (`segno-openocd`), and a marker naming
+the firmware version and link protocol the app expects; a oneshot before
+`segno.service` listens for the board's `HELLO` and reprograms it over SWD only
+when it is not already running what shipped (#989). So the two halves of a
+build cannot ship out of step, and a board is repaired by a reboot rather than
+by a laptop.
 
-```sh
-# on the Pi (the appliance is root@<ip>, key login)
-mkdir -p /data/bringup/openocd && cd /data/bringup
-curl -LO https://github.com/raspberrypi/pico-sdk-tools/releases/download/v2.3.0-1/openocd-0.12.0+dev-aarch64-lin.tar.gz
-tar xzf openocd-0.12.0+dev-aarch64-lin.tar.gz -C openocd
-# + libftdi1.so.2* and libhidapi-hidraw.so.0* into openocd/
-LD_LIBRARY_PATH=openocd openocd/openocd --version
-```
+The board routes the Pi's GPIO24 (SWCLK, ribbon pin 18) and GPIO25 (SWDIO, pin
+22) straight to the module's debug pads, so the Pi is the programmer. SWDIO
+needs a pull-up the Pi firmware does not apply by default — `gpio=25=pu` in
+`config.txt`, which the image sets.
 
-The image config now carries `dtoverlay=uart3-pi5` and `gpio=25=pu`
-(`deploy/yocto/kas-segno-rpi5.yml`, `rpi5-console-board`). On a unit built before
-that, both can be applied at runtime without a reboot: the firmware partition
-holds the overlays, and `pinctrl` sets the pull.
+To flash by hand during bring-up, on the unit:
 
 ```sh
-mkdir -p /mnt/fw && mount -o ro /dev/nvme0n1p2 /mnt/fw      # the active firmware slot (rauc status)
-dtoverlay -d /mnt/fw/overlays uart3-pi5                     # -> /dev/ttyAMA3
-pinctrl set 25 pu                                           # SWDIO idle high; the Pi defaults it to pull-down
-echo performance > /sys/module/pcie_aspm/parameters/policy  # else the first SWD pulses clock at 20 MHz
+segno-openocd -f /usr/lib/segno/console-board/pi5-swd.cfg \
+  -c "program /usr/lib/segno/console-board/console_board.elf verify reset exit"
 ```
 
-Then, with the console board powered from BUCK_AUX and the ribbon on:
-
-```sh
-cd /data/bringup
-LD_LIBRARY_PATH=openocd openocd/openocd -s openocd/scripts -f pi5-swd.cfg \
-  -c "program console_board.ino.elf verify reset exit"
-```
-
-`pi5-swd.cfg` (in this directory) sources Raspberry Pi's `raspberrypi5-gpiod.cfg`,
-which locates the RP1 gpiochip from the device tree, and moves SWCLK/SWDIO to
-GPIO24/25. The Pico's green LED blinks at 1 Hz once the firmware runs.
+Point `program` at your own build to try a change; the next boot puts the
+shipped firmware back, which is the intended behaviour — the image is the
+source of truth for what the board runs.
 
 ## Talk to it from the Pi
 

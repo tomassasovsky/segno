@@ -27,6 +27,9 @@ IMAGE_INSTALL:append = " \
     rauc-conf \
     rauc-rpi-backend \
     raspi-utils \
+    # The console board's firmware and the boot-time check that applies it:
+    # the board is a second computer, and the image owns what runs on it.
+    segno-console-board \
     dtc \
     ddcutil \
     networkmanager-nmcli \

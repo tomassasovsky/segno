@@ -1,0 +1,91 @@
+#!/bin/sh
+# segno-console-flash — put the console board on the firmware this image ships.
+#
+# The board is a separate computer with its own flash, reprogrammed over SWD
+# through the Pi's own GPIO. Before this existed it was flashed by hand from a
+# laptop, which meant the board and the app could disagree about the link
+# protocol with no way to repair it on the unit — and a /data wipe took the
+# tooling with it (2026-09-03). The image now carries the firmware, the flasher
+# and the version they belong to, so a build cannot ship half-applied.
+#
+# Runs before segno.service, and only flashes when the board is not already
+# running what shipped: a boot with a matching board costs one listen.
+#
+# Exit status is deliberately 0 on every "cannot flash" path. A console with no
+# board attached, or a board that will not answer, must still boot the app —
+# the app reports the link state, and a failure here has already been logged.
+set -eu
+
+DEV="${SEGNO_LINK_DEV:-/dev/ttyAMA3}"
+FW_DIR="${SEGNO_CONSOLE_FW_DIR:-/usr/lib/segno/console-board}"
+ELF="$FW_DIR/console_board.elf"
+CFG="$FW_DIR/pi5-swd.cfg"
+MARKER="$FW_DIR/version"
+OPENOCD="${SEGNO_OPENOCD:-/usr/bin/segno-openocd}"
+PINCTRL="${SEGNO_PINCTRL:-/usr/bin/pinctrl}"
+LISTEN_SECONDS="${SEGNO_CONSOLE_LISTEN_SECONDS:-3}"
+# SWDIO idles mid-rail without it: the Pi firmware pulls GPIO25 down by default.
+SWDIO_GPIO="${SEGNO_SWDIO_GPIO:-25}"
+
+log() { echo "segno-console-flash: $*" >&2; }
+
+[ -r "$MARKER" ] || { log "no firmware marker at $MARKER; nothing to enforce"; exit 0; }
+[ -r "$ELF" ] || { log "no firmware image at $ELF; nothing to flash"; exit 0; }
+
+# The marker names what this image ships: "protocol=<n> firmware=<major>.<minor>".
+want_protocol=$(sed -n 's/.*protocol=\([0-9]*\).*/\1/p' "$MARKER")
+want_firmware=$(sed -n 's/.*firmware=\([0-9.]*\).*/\1/p' "$MARKER")
+[ -n "$want_protocol" ] && [ -n "$want_firmware" ] || {
+    log "marker $MARKER is unreadable; refusing to guess"
+    exit 0
+}
+
+# What the board says it is. HELLO is `A5 03 03 <protocol> <major> <minor> <xor>`,
+# sent once a second and frozen across protocol versions precisely so an
+# unknown board can still be identified. Absent a device node there is nothing
+# to ask, which is the normal case on a unit whose overlay has not landed yet.
+board_says=""
+if [ -e "$DEV" ]; then
+    stty -F "$DEV" 115200 cs8 -parenb -cstopb raw -echo -crtscts clocal min 0 time 20 2>/dev/null || true
+    hex=$(timeout "$LISTEN_SECONDS" cat "$DEV" 2>/dev/null | od -An -tx1 -v | tr -d ' \n' || true)
+    # Split on the sync byte so a frame that starts mid-buffer is still found.
+    board_says=$(printf '%s' "$hex" | sed 's/a5/\
+a5/g' | grep -m1 '^a50303' || true)
+fi
+
+if [ -n "$board_says" ]; then
+    have_protocol=$(printf '%d' "0x$(printf '%s' "$board_says" | cut -c7-8)")
+    have_major=$(printf '%d' "0x$(printf '%s' "$board_says" | cut -c9-10)")
+    have_minor=$(printf '%d' "0x$(printf '%s' "$board_says" | cut -c11-12)")
+    have_firmware="$have_major.$have_minor"
+    if [ "$have_protocol" = "$want_protocol" ] && [ "$have_firmware" = "$want_firmware" ]; then
+        log "board runs firmware $have_firmware on link protocol $have_protocol; nothing to do"
+        exit 0
+    fi
+    log "board runs firmware $have_firmware on protocol $have_protocol, image ships $want_firmware on protocol $want_protocol; flashing"
+else
+    # Silence is not proof of a wrong board — it may be held in reset, or
+    # unflashed and therefore unable to say anything at all. Flashing is the
+    # one action that resolves both, and it is safe on a board already correct.
+    log "board said nothing in ${LISTEN_SECONDS}s; flashing $want_firmware"
+fi
+
+[ -x "$OPENOCD" ] || { log "no flasher at $OPENOCD; leaving the board alone"; exit 0; }
+[ -r "$CFG" ] || { log "no SWD config at $CFG; leaving the board alone"; exit 0; }
+
+[ -x "$PINCTRL" ] && "$PINCTRL" set "$SWDIO_GPIO" pu 2>/dev/null || true
+
+# Captured rather than piped: a pipeline reports its LAST command's status, so
+# piping openocd through a prefixer would call every failed flash a success.
+out=$(mktemp "${TMPDIR:-/tmp}/segno-console-flash.XXXXXX")
+if "$OPENOCD" -f "$CFG" -c "program $ELF verify reset exit" >"$out" 2>&1; then
+    sed 's/^/segno-console-flash: openocd: /' "$out" >&2
+    log "flashed firmware $want_firmware"
+else
+    sed 's/^/segno-console-flash: openocd: /' "$out" >&2
+    # The app still starts: it will report the link as disconnected or
+    # incompatible, which is the same diagnosis a human would reach here.
+    log "flashing failed; the app will report the link state"
+fi
+rm -f "$out"
+exit 0

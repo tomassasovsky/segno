@@ -372,6 +372,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Run console-board flash tests
+        run: bash deploy/yocto/meta-segno/recipes-segno/segno-console-board/test/run_console_flash_tests.sh
       - name: Run bt-persist tests
         run: bash deploy/yocto/meta-segno/recipes-segno/segno-bundle/test/run_bt_persist_tests.sh
       - name: Run bt-ctl device-verb tests
