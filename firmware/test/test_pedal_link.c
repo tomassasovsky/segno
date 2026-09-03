@@ -35,9 +35,11 @@ static size_t read_file(const char *path, uint8_t *buf, size_t cap) {
   return n;
 }
 
-/* Parse `bytes` one at a time; return how many valid frames completed and
- * copy the last one's type/payload out. */
-static int parse_all(const uint8_t *bytes, size_t n, uint8_t *type, uint8_t *payload, uint8_t *len) {
+/* Parse `bytes` one at a time; return how many valid frames completed, copy
+ * the last one's type/payload out, and (when `dropped` is non-NULL) report how
+ * many frames the parser threw away. */
+static int parse_all(const uint8_t *bytes, size_t n, uint8_t *type, uint8_t *payload, uint8_t *len,
+                     unsigned *dropped) {
   pedal_link_parser p;
   pedal_link_parser_init(&p);
   int frames = 0;
@@ -51,19 +53,8 @@ static int parse_all(const uint8_t *bytes, size_t n, uint8_t *type, uint8_t *pay
       memcpy(payload, pl, l);
     }
   }
+  if (dropped) *dropped = (unsigned)p.dropped;
   return frames;
-}
-
-/* The parser's drop count after feeding `bytes`. */
-static unsigned count_dropped(const uint8_t *bytes, size_t n) {
-  pedal_link_parser p;
-  pedal_link_parser_init(&p);
-  for (size_t i = 0; i < n; i++) {
-    uint8_t t, l;
-    const uint8_t *pl;
-    pedal_link_parser_push(&p, bytes[i], &t, &pl, &l);
-  }
-  return (unsigned)p.dropped;
 }
 
 /* Every enum value, by its Dart name, pinned to the C constant. A fixture
@@ -142,7 +133,7 @@ static void check_fixture(const char *dir, const char *name) {
   if (n < 4) return;
 
   uint8_t type = 0, len = 0, payload[PEDAL_LINK_MAX_PAYLOAD];
-  int frames = parse_all(bytes, n, &type, payload, &len);
+  int frames = parse_all(bytes, n, &type, payload, &len, NULL);
   CHECK(frames == 1, "%s: parsed %d frames, want 1", name, frames);
   if (frames != 1) return;
 
@@ -225,45 +216,47 @@ static void check_rejections(void) {
   stream[5] ^= 0x01;
   memcpy(stream + 6, frame, 6);
   uint8_t type, len, payload[PEDAL_LINK_MAX_PAYLOAD];
-  CHECK(parse_all(stream, 12, &type, payload, &len) == 1, "corrupt checksum was not dropped / resync failed");
+  unsigned dropped = 0;
+  CHECK(parse_all(stream, 12, &type, payload, &len, &dropped) == 1,
+        "corrupt checksum was not dropped / resync failed");
+  CHECK(dropped == 1, "corrupt checksum: dropped %u, want 1", dropped);
 
   /* Garbage before a frame is skipped. */
   uint8_t junk[9] = {0x00, 0x13, 0x37};
   memcpy(junk + 3, frame, 6);
-  CHECK(parse_all(junk, 9, &type, payload, &len) == 1, "garbage prefix broke parsing");
+  CHECK(parse_all(junk, 9, &type, payload, &len, NULL) == 1, "garbage prefix broke parsing");
 
   /* A stray sync right before a frame, and a sync where a length byte should
    * be: the frame behind each still parses. */
   uint8_t stray[7] = {0xA5};
   memcpy(stray + 1, frame, 6);
-  CHECK(parse_all(stray, 7, &type, payload, &len) == 1, "stray sync ate the next frame");
-  CHECK(count_dropped(stray, 7) == 1, "stray sync: dropped %u, want 1", count_dropped(stray, 7));
+  CHECK(parse_all(stray, 7, &type, payload, &len, &dropped) == 1, "stray sync ate the next frame");
+  CHECK(dropped == 1, "stray sync: dropped %u, want 1", dropped);
   uint8_t synclen[8] = {0xA5, PEDAL_LINK_TYPE_STATE};
   memcpy(synclen + 2, frame, 6);
-  CHECK(parse_all(synclen, 8, &type, payload, &len) == 1, "sync in the length slot ate the next frame");
-  CHECK(count_dropped(synclen, 8) == 1, "sync in length slot: dropped %u, want 1",
-        count_dropped(synclen, 8));
+  CHECK(parse_all(synclen, 8, &type, payload, &len, &dropped) == 1,
+        "sync in the length slot ate the next frame");
+  CHECK(dropped == 1, "sync in length slot: dropped %u, want 1", dropped);
 
   /* Oversized length resyncs. */
   uint8_t big[10] = {0xA5, 0x01, PEDAL_LINK_MAX_PAYLOAD + 1, 0x00};
   memcpy(big + 4, frame, 6);
-  CHECK(parse_all(big, 10, &type, payload, &len) == 1, "oversized length did not resync");
+  CHECK(parse_all(big, 10, &type, payload, &len, NULL) == 1, "oversized length did not resync");
 
   /* A corrupted length that is still in range is rejected at the length byte,
    * so the frame that follows is NOT swallowed: a STATE header claiming 0x1F
    * followed immediately by a good BUTTON frame yields that button. */
   uint8_t badlen[9] = {0xA5, PEDAL_LINK_TYPE_STATE, PEDAL_LINK_STATE_LEN + 12};
   memcpy(badlen + 3, frame, 6);
-  CHECK(parse_all(badlen, 9, &type, payload, &len) == 1 && type == PEDAL_LINK_TYPE_BUTTON,
+  CHECK(parse_all(badlen, 9, &type, payload, &len, NULL) == 1 && type == PEDAL_LINK_TYPE_BUTTON,
         "in-range corrupted length swallowed the next frame");
 
   /* An unknown type is rejected at the type byte, same reason. */
   uint8_t badtype[9] = {0xA5, 0x7E, 0x02};
   memcpy(badtype + 3, frame, 6);
-  CHECK(parse_all(badtype, 9, &type, payload, &len) == 1 && type == PEDAL_LINK_TYPE_BUTTON,
+  CHECK(parse_all(badtype, 9, &type, payload, &len, NULL) == 1 && type == PEDAL_LINK_TYPE_BUTTON,
         "unknown type swallowed the next frame");
 
-  CHECK(count_dropped(stream, 12) == 1, "dropped counter is %u, want 1", count_dropped(stream, 12));
 
   /* decode_state rejections. */
   pedal_state s;

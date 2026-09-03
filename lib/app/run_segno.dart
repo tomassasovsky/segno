@@ -121,7 +121,7 @@ Future<void> runSegno(
   // everywhere else — a Linux desktop included, which has no board to find.
   final pedalLink = isAppliance()
       ? UartPedalLink(log: AppLog.info)
-      : SimulatorPedalLink();
+      : NoopPedalLink();
   final pedalRepository = PedalRepository(pedalLink, log: AppLog.info);
   final settings = SettingsRepository(
     store: SharedPreferencesKeyValueStore(),

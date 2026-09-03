@@ -2,12 +2,12 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pedal_repository/pedal_repository.dart';
-import 'package:pedal_repository/testing.dart';
 
 /// The scalar constants `pedal_link.h` and [PedalLinkCodec] must agree on.
 /// The golden fixtures pin the frames; this pins the numbers no frame
 /// carries — the sync byte, the protocol version, the state length and the
-/// hello cadence every liveness clock derives from.
+/// hello cadence every liveness clock derives from. The firmware's own
+/// liveness relation (frame timeout vs hello) is the C test's.
 void main() {
   group('pedal_link.h', () {
     final header = File(
@@ -49,21 +49,11 @@ void main() {
           expect(define('PEDAL_LINK_HELLO_MS'), PedalLinkCodec.helloIntervalMs),
     );
 
-    test('the board outlives a lost hello, and the app outlives two', () {
-      // The board darkens after PEDAL_LINK_FRAME_TIMEOUT_MS without a STATE;
-      // segno answers every hello with one, so the timeout must span more
-      // than one hello or a single lost reply blanks the panel. The app's
-      // default helloTimeout likewise spans several hellos.
-      expect(
-        define('PEDAL_LINK_FRAME_TIMEOUT_MS'),
-        greaterThanOrEqualTo(2 * PedalLinkCodec.helloIntervalMs),
-      );
-      final repo = PedalRepository(FakePedalLink());
-      addTearDown(repo.dispose);
-      expect(
-        repo.helloTimeout,
-        greaterThanOrEqualTo(PedalLinkCodec.helloInterval * 2),
-      );
+    test('hello is the frozen three-byte message', () {
+      // The one frame shape no protocol revision may change: it is how a
+      // board built against another revision is recognised as incompatible
+      // rather than read as line noise.
+      expect(PedalLinkCodec.payloadLengthFor(PedalLinkCodec.typeHello), 3);
     });
   });
 }

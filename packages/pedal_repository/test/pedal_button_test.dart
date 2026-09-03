@@ -10,13 +10,5 @@ void main() {
       expect(PedalButton.recPlay.index, 0);
       expect(PedalButton.bank.index, 9);
     });
-
-    test('fromIndex maps every assigned index and rejects the rest', () {
-      for (final button in PedalButton.values) {
-        expect(PedalButtonIndex.fromIndex(button.index), button);
-      }
-      expect(PedalButtonIndex.fromIndex(-1), isNull);
-      expect(PedalButtonIndex.fromIndex(PedalButton.values.length), isNull);
-    });
   });
 }

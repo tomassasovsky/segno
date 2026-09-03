@@ -94,7 +94,7 @@ void main() {
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     // The real control cubit: it owns the shared InteractionMode whose
     // persisted default the View section edits.
-    pedalRepo = PedalRepository(SimulatorPedalLink());
+    pedalRepo = PedalRepository(NoopPedalLink());
     performance = PerformanceRepository(
       engine: FakeAudioEngine(),
       exportsRoot: () async => '.',

@@ -330,9 +330,9 @@ class ControlCubit extends Cubit<ControlState> {
   // through `emit`.
   bool _performanceArmed = false;
 
-  // Latest looper snapshot + diff state for the frame push.
+  // Latest looper snapshot, and the last master position seen (for the
+  // loop-top edge).
   LooperState? _looperState;
-  PedalStateFrame? _lastFrame;
   int? _lastPosition;
 
   Future<void>? _loadFuture;
@@ -401,13 +401,6 @@ class ControlCubit extends Cubit<ControlState> {
       ),
     );
     setMode(defaultMode);
-    // The first frame the board sees is this restored one, not the boot
-    // default: an idle engine streams no LooperState, so without a push here
-    // the board would wait for the first change before showing anything.
-    // Liveness after this is the repository's — it answers every hello from
-    // the board with the last pushed frame — so this cubit pushes only on
-    // change.
-    _pushProjected();
   }
 
   // ---------------------------------------------------------------------------
@@ -2010,20 +2003,27 @@ class ControlCubit extends Cubit<ControlState> {
     releaseAllMomentary();
   }
 
+  /// Pulses LOOP_TOP so the board can pin its ring to the playhead.
+  ///
+  /// Two edges count as a loop top: the playhead wrapping (position went
+  /// backwards) and a resume from zero. The engine zeroes the master position
+  /// on a transport hold, so a Stop then Play produces no wrap at all — and
+  /// without the second edge the board's hump would run from wherever it
+  /// froze for up to a whole loop.
   void _detectLoopTop(LooperState s) {
     final position = s.transport.masterPositionFrames;
     final previous = _lastPosition;
-    if (previous != null &&
-        position < previous &&
-        s.transport.masterLengthFrames > 0) {
+    final wrapped = previous != null && position < previous;
+    final resumedFromZero = previous == 0 && position > 0;
+    if ((wrapped || resumedFromZero) && s.transport.masterLengthFrames > 0) {
       _pedal.sendLoopTop();
     }
     _lastPosition = position;
   }
 
-  /// Projects and pushes the current LED frame. Diffs against the last push so
-  /// steady state is silent; the repository re-sends the last push itself
-  /// whenever the board asks.
+  /// Projects and pushes the current LED frame. The repository drops a frame
+  /// identical to the last one and re-sends that one whenever the board asks,
+  /// so this can be called freely.
   void _pushProjected() {
     // Project from `_l` — the last streamed state, or the repository's current
     // snapshot when no LooperState has streamed in yet: an idle engine emits
@@ -2038,8 +2038,6 @@ class ControlCubit extends Cubit<ControlState> {
       masterGain: _masterGain,
       boundChains: _boundChains(),
     );
-    if (frame == _lastFrame) return; // diff: only push on change
-    _lastFrame = frame;
     _pedal.pushState(frame);
   }
 

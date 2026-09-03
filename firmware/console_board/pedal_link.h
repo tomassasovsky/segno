@@ -33,6 +33,10 @@ extern "C" {
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
 #define PEDAL_LINK_TYPE_ENCODER 0x02u  /* [int8 delta] */
+/* HELLO is frozen for every protocol version: type 0x03, three bytes, the
+ * protocol version first. It is how a board built against another revision is
+ * recognised as incompatible at all; a revision that needs more from the board
+ * adds a message type, never a hello byte. */
 #define PEDAL_LINK_TYPE_HELLO 0x03u    /* [protocol, fw major, fw minor] */
 /* segno -> board */
 #define PEDAL_LINK_TYPE_STATE 0x10u    /* [PEDAL_LINK_STATE_LEN bytes] */

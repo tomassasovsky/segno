@@ -2,7 +2,7 @@ name: pedal_repository
 description: >-
   Pedal layer for the Segno console board: state-frame models and the binary
   link codec that segno and the board's Pico 2 firmware share as a single
-  contract, over a UART or the on-screen pedal.
+  contract, over the appliance's link UART.
 version: 0.2.0
 publish_to: none
 
@@ -12,8 +12,6 @@ environment:
 
 dependencies:
   equatable: ^2.0.7
-  flutter:
-    sdk: flutter
 
 dev_dependencies:
   fake_async: ^1.3.3

@@ -20,10 +20,6 @@ const _baud = 115200;
 /// How often to look for the device while it is absent or after a failure.
 const _retry = Duration(seconds: 2);
 
-/// A noisy line drops frames by the hundreds per second; the count is worth
-/// one log line this often, not one per read.
-const _dropReportEvery = Duration(seconds: 10);
-
 /// The [PedalLink] over the appliance's link UART.
 ///
 /// Owns the device for its whole lifetime: it opens the node when it exists,
@@ -53,8 +49,8 @@ class UartPedalLink implements PedalLink {
   Future<void>? _closing;
   Timer? _retryTimer;
   String? _lastLogged;
-  int _droppedReported = 0;
-  DateTime? _droppedReportedAt;
+  int _droppedSeen = 0;
+  bool _noisy = false;
   bool _disposed = false;
 
   @override
@@ -135,8 +131,8 @@ class UartPedalLink implements PedalLink {
       _parser
         ..droppedFrames = 0
         ..reset();
-      _droppedReported = 0;
-      _droppedReportedAt = null;
+      _droppedSeen = 0;
+      _noisy = false;
       _say('open on $_device at $_baud');
       _readLoop = _read(reader);
     } on Object catch (error) {
@@ -160,8 +156,8 @@ class UartPedalLink implements PedalLink {
       while (!_disposed && identical(_reader, reader)) {
         final chunk = await reader.read(64);
         if (chunk.isEmpty) continue;
-        _parser.push(chunk).forEach(_inbound.add);
-        _reportDrops();
+        final messages = _parser.push(chunk)..forEach(_inbound.add);
+        _reportDrops(messages.length);
       }
     } on Object catch (error) {
       if (_disposed) return;
@@ -170,19 +166,27 @@ class UartPedalLink implements PedalLink {
     }
   }
 
-  /// Logs the dropped-frame count when it grew, at most once per
-  /// [_dropReportEvery]: a line that is nothing but noise (the board held in
-  /// reset while it is reflashed, a wrong baud) would otherwise write a log
-  /// line per read and churn the persistent log through its rotation.
-  void _reportDrops() {
+  /// Logs the two edges of a noisy line rather than the noise itself: one
+  /// line when frames start being dropped, one with the total when good
+  /// frames come through again. A line that is nothing but noise — the board
+  /// held in reset while it is reflashed, a wrong baud, a floating RX — then
+  /// costs two lines instead of one per read, which would churn the
+  /// persistent log through its rotation and evict the breadcrumb that
+  /// matters. [messages] is how many good frames the last chunk finished.
+  void _reportDrops(int messages) {
     final dropped = _parser.droppedFrames;
-    if (dropped == _droppedReported) return;
-    final now = DateTime.now();
-    final last = _droppedReportedAt;
-    if (last != null && now.difference(last) < _dropReportEvery) return;
-    _droppedReported = dropped;
-    _droppedReportedAt = now;
-    _say('$dropped frame(s) dropped on $_device so far');
+    if (dropped > _droppedSeen) {
+      _droppedSeen = dropped;
+      if (!_noisy) {
+        _noisy = true;
+        _say('dropping frames on $_device; the total follows when it settles');
+      }
+      return;
+    }
+    if (_noisy && messages > 0) {
+      _noisy = false;
+      _say('$dropped frame(s) dropped on $_device in all; frames are arriving');
+    }
   }
 
   Future<void> _reopen() async {

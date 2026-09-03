@@ -39,7 +39,7 @@ class PedalCubit extends Cubit<PedalState> {
     await _statusSub.cancel();
     // Darken the console on shutdown, then release the link — this cubit is
     // the pedal repository's lifecycle owner.
-    _pedal.pushState(PedalStateFrame.blank(goodbye: true));
+    _pedal.goodbye();
     await _pedal.dispose();
     return super.close();
   }

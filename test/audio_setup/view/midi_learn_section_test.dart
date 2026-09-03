@@ -127,7 +127,7 @@ void main() {
     addTearDown(controller.dispose);
     control = ControlCubit(
       looper: looper,
-      pedal: PedalRepository(SimulatorPedalLink()),
+      pedal: PedalRepository(NoopPedalLink()),
       settings: settings,
       performance: performance,
       controller: controller,
