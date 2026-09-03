@@ -54,8 +54,13 @@ RAUC_BUNDLE_SLOTS = "rootfs firmware"
 RAUC_SLOT_rootfs  = "segno-kiosk-image"
 RAUC_SLOT_rootfs[fstype] = "ext4"
 
+# A deployed FILE, not an image recipe: the boot slot's contents are assembled
+# from IMAGE_BOOT_FILES rather than built as a rootfs, so there is no
+# do_image_complete for the bundle to wait on — it waits on the deploy instead.
 RAUC_SLOT_firmware = "segno-bootfs"
-RAUC_SLOT_firmware[fstype] = "tar.bz2"
+RAUC_SLOT_firmware[type] = "file"
+RAUC_SLOT_firmware[file] = "segno-bootfs-${MACHINE}.tar.bz2"
+RAUC_SLOT_firmware[depends] = "segno-bootfs:do_deploy"
 # A tar into the mounted slot, not an image dd'd over it: the boot partitions
 # are sized by the WIC layout, and a raw image would tie the bundle to that size
 # forever.
