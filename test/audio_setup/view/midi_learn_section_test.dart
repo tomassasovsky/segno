@@ -10,10 +10,12 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/audio_setup/audio_setup.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/l10n/l10n.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -115,6 +117,7 @@ void main() {
     List<ControllerBinding> bindings = const [],
     bool connected = true,
     Duration learnTimeout = const Duration(seconds: 15),
+    PedalLink? pedalLink,
   }) async {
     settings = SettingsRepository(store: FakeKeyValueStore());
     final performance = PerformanceRepository(
@@ -125,9 +128,11 @@ void main() {
     source = _FakeSource();
     final controller = ControllerRepository(sources: [source]);
     addTearDown(controller.dispose);
+    final pedal = PedalRepository(pedalLink ?? NoopPedalLink());
+    addTearDown(pedal.dispose);
     control = ControlCubit(
       looper: looper,
-      pedal: PedalRepository(NoopPedalLink()),
+      pedal: pedal,
       settings: settings,
       performance: performance,
       controller: controller,
@@ -168,6 +173,9 @@ void main() {
             BlocProvider.value(value: control),
             BlocProvider<MidiSetupCubit>.value(value: midi),
             BlocProvider.value(value: tracks),
+            // The section reads the pedal link too: a CTRL binding is live or
+            // idle on ITS source, not on whether MIDI is connected.
+            BlocProvider(create: (_) => PedalCubit(pedal: pedal)),
           ],
           child: RepositoryProvider<LooperRepository>.value(
             value: looper,
@@ -316,6 +324,41 @@ void main() {
       expect(find.byKey(const Key('midiLearn_deviceMissing')), findsOneWidget);
       expect(find.text(l10n.midiLearnRelearn), findsOneWidget);
       expect(find.text(l10n.midiLearnLearn), findsNothing);
+    });
+
+    testWidgets('a CTRL binding stays live with no MIDI connected', (
+      tester,
+    ) async {
+      // The complaint this fixes: a pedal in a CTRL jack is not a MIDI
+      // device, so a rig driven entirely from the console must not be told
+      // its mappings are idle, and its rows must not read as dead.
+      final link = FakePedalLink();
+      await pump(
+        tester,
+        connected: false,
+        pedalLink: link,
+        bindings: [
+          ContinuousBinding(
+            trigger: const MappingTrigger(
+              kind: ControllerSourceKind.consoleExpression,
+              id: 1,
+            ),
+            target: volume.canonicalString(),
+          ),
+        ],
+      );
+      link.hello();
+      await tester.pumpAndSettle();
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+
+      expect(find.byKey(const Key('midiLearn_deviceMissing')), findsNothing);
+      expect(find.text(l10n.midiLearnLearn), findsOneWidget);
+      expect(find.text(l10n.midiLearnRelearn), findsNothing);
+      expect(find.textContaining('CTRL 2'), findsOneWidget);
+
+      // Let the link's hello watchdog fire: it outlives the widget tree
+      // otherwise, and a pending timer fails the test binding.
+      await tester.pump(const Duration(seconds: 4));
     });
 
     testWidgets('Learn shows the listening state, and cancel ends it', (
