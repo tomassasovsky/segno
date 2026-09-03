@@ -76,9 +76,12 @@ static bool g_frameDirty = false;  // a STATE (or timeout/goodbye) changed what 
 static unsigned long g_lastFrameMs = 0;
 static unsigned long g_lastHelloMs = 0;
 // How long the ring shows the master level after the encoder moves it, before
-// it goes back to saying what the transport is doing.
+// it goes back to saying what the transport is doing. Armed with a flag rather
+// than a deadline in the future: a bare `millis() + N` compared against `now`
+// fires on its own initial value once millis() passes the halfway mark.
 static const unsigned long GAIN_SHOW_MS = 900;
-static unsigned long g_gainShownUntil = 0;
+static unsigned long g_gainShownAt = 0;
+static bool g_gainArmed = false;
 
 static void sendFrame(const uint8_t *buf, size_t len) {
   LINK.write(buf, len);
@@ -97,7 +100,8 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
         // The encoder is the master volume and has no pill of its own, so the
         // ring becomes the readout for a moment whenever the level moves.
         if (g_haveFrame && decoded.master_gain != g_frame.master_gain) {
-          g_gainShownUntil = millis() + GAIN_SHOW_MS;
+          g_gainShownAt = millis();
+          g_gainArmed = true;
         }
         g_frame = decoded;
         g_haveFrame = true;
@@ -272,9 +276,19 @@ static const float BREATHE_FLOOR = 0.35f;
 static const float RING_WIDTH = 11.0f;
 static float g_ringPhase = 0.0f;  // hump centre, 0..RING_N
 static unsigned long g_ringLastMs = 0;
-static bool g_ringDark = false;  // the ring buffer is already all-black
-static int16_t g_ringArc = -1;   // lit pixels the level arc last drew, -1 = not showing
-static uint8_t g_ringArcColour = 0;
+// What the ring buffer currently holds. One question, asked once: every branch
+// of renderRing() states which view it just painted, and the caller pushes the
+// strip only when that key changed. Per-branch latches were tried and each one
+// grew its own reset rule — the arc forgot to restore what it painted over,
+// and the dark branch forgot to repaint at all.
+enum RingView : uint8_t { RING_NONE = 0, RING_DARK, RING_ARC, RING_HUMP, RING_BREATHE };
+static uint8_t g_ringView = RING_NONE;
+static uint8_t g_ringKeyA = 0;  // arc: lit pixels; hump: phase in whole pixels
+static uint8_t g_ringKeyB = 0;  // the colour that view was painted in
+// The colour the hump was last drawn in. A Stop freezes the hump but sends
+// GLOBAL_OFF, so the frame no longer says what colour to freeze it at; without
+// remembering it, restoring the hump paints it black.
+static Rgb g_humpColour = {0, 255, 0};
 
 // Draws the hump at the current phase, in `c`.
 static void paintHump(Rgb c) {
@@ -296,50 +310,48 @@ static bool renderRing() {
   const unsigned long now = millis();
   const unsigned long dt = now - g_ringLastMs;
   g_ringLastMs = now;
+
+  // Records which view is now in the buffer; returns whether that is new.
+  auto settle = [](uint8_t view, uint8_t keyA, uint8_t keyB) -> bool {
+    const bool changed =
+        g_ringView != view || g_ringKeyA != keyA || g_ringKeyB != keyB;
+    g_ringView = view;
+    g_ringKeyA = keyA;
+    g_ringKeyB = keyB;
+    return changed;
+  };
+
   if (!g_haveFrame || g_frame.goodbye) {
-    // Clear once, then say nothing changed: without the latch this pushes an
-    // unchanged black buffer at every tick, exactly while the board is
-    // waiting on the UART. REFRESH_MS still heals a glitched pixel.
-    if (g_ringDark) return false;
+    if (g_ringView == RING_DARK) return false;
     ring.clear();
-    g_ringDark = true;
-    return true;
+    return settle(RING_DARK, 0, 0);
   }
-  g_ringDark = false;
   const Rgb activity = globalColor(g_frame.global_color);
 
   // The master level, as a filled arc, for a moment after it changes. In the
   // ring's own colours: the activity colour it is already showing, or the
-  // standby green it breathes when there is no activity to report. Signed
-  // comparison so the deadline survives the millis() wrap, like every other
-  // timer here.
-  if ((long)(now - g_gainShownUntil) < 0) {
+  // standby green it breathes when there is no activity to report. Elapsed
+  // form, so it is wrap-safe AND cannot fire on a stale deadline.
+  if (g_gainArmed && now - g_gainShownAt < GAIN_SHOW_MS) {
     const bool coloured = activity.r || activity.g || activity.b;
     const Rgb c = coloured ? activity : Rgb{0, 255, 0};
-    const uint16_t lit = (uint16_t)((g_frame.master_gain * RING_N + 254) / 255);
-    // Paint once per level, not per tick: the arc holds for GAIN_SHOW_MS, and
-    // pushing an unchanged buffer 45 times would mask interrupts for ~720 us
-    // each time, in the window where the encoder is still being turned.
-    if (g_ringArc == lit && g_ringArcColour == g_frame.global_color) {
-      return false;
-    }
-    g_ringArc = lit;
-    g_ringArcColour = g_frame.global_color;
+    const uint8_t lit = (uint8_t)((g_frame.master_gain * RING_N + 254) / 255);
+    if (!settle(RING_ARC, lit, g_frame.global_color)) return false;
     for (uint16_t i = 0; i < RING_N; i++) {
       ring.setPixelColor(i, i < lit ? rgb(c.r, c.g, c.b) : 0);
     }
     return true;
   }
-  // The arc covered whatever was on the ring, so the view underneath has to be
-  // painted again once it expires — the frozen branch below repaints nothing.
-  const bool arcExpired = g_ringArc >= 0;
-  g_ringArc = -1;
+  g_gainArmed = false;
 
   const bool active = (activity.r || activity.g || activity.b) && g_frame.global_color != PEDAL_GLOBAL_BLUE;
-  // A Stop with a loop still loaded freezes the ring where it was.
+  // A Stop with a loop still loaded freezes the hump where it was — in the
+  // colour it was playing in, which the frame no longer carries.
   if (!active && g_frame.loop_length_micros > 0) {
-    if (!arcExpired) return false;
-    paintHump(activity);  // put the frozen hump back where the arc covered it
+    if (!settle(RING_HUMP, (uint8_t)g_ringPhase, PEDAL_GLOBAL_COUNT)) {
+      return false;
+    }
+    paintHump(g_humpColour);
     return true;
   }
   if (!active) {  // standby: breathe green
@@ -351,10 +363,13 @@ static bool renderRing() {
         (uint8_t)((BREATHE_FLOOR + (1.0f - BREATHE_FLOOR) * t) * 255.0f + 0.5f);
     const uint32_t green = scaled(0, 255, 0, level);  // same for every pixel
     for (uint16_t i = 0; i < RING_N; i++) ring.setPixelColor(i, green);
-    return true;
+    settle(RING_BREATHE, level, 0);
+    return true;  // it animates every tick
   }
   g_ringPhase =
       fmodf(g_ringPhase + (float)dt / (float)RING_MS_PER_REV * (float)RING_N, (float)RING_N);
+  g_humpColour = activity;
+  settle(RING_HUMP, (uint8_t)g_ringPhase, g_frame.global_color);
   paintHump(activity);
   return true;
 }

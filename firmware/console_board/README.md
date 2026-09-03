@@ -116,7 +116,7 @@ without the app, watch the hellos arrive:
 
 ```sh
 stty -F /dev/ttyAMA3 115200 raw -echo
-od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 01 01 00 00 (HELLO, fw 1.0), once a second
+od -An -tx1 -w7 -v /dev/ttyAMA3    # a5 03 03 02 01 00 03 (HELLO, protocol 2, fw 1.0), once a second
 ```
 
 ## Bring-up record
