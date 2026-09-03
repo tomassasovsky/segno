@@ -22,10 +22,9 @@ const _allowed = <String, String>{
   // palette drift, they are a gap on the DS side.
   'lib/app/app_toasts.dart': 'drop shadow — DS defines no shadow tokens',
 
-  // The DS scrim (`bg-scrim`, ~42% alpha) is tuned for tray/overlay dimming.
-  // This barrier blocks the whole app on incompatible firmware and needs to
-  // read as a hard stop, which 42% does not carry. A heavier "modal scrim"
-  // tier is a real DS gap.
+  // Runs in the second window, a separate engine that may have no theme
+  // registered, so its theme lookups are null-guarded with literal fallbacks.
+  // The playhead is deliberately white and carries its own gutter (3b).
   'lib/visualizer/widgets/waveform_view.dart':
       'themeless-context fallbacks + the white playhead',
 
