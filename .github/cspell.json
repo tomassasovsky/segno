@@ -933,6 +933,20 @@
     "Yocto",
     "Zener",
     "ZJWZJH",
-    "ZNHVYG"
+    "ZNHVYG",
+    "aspm",
+    "avrdude",
+    "bringup",
+    "compras",
+    "hidraw",
+    "jumpered",
+    "Kapton",
+    "libftdi",
+    "libhidapi",
+    "linuxgpiod",
+    "lista",
+    "pinouts",
+    "SMPS",
+    "stty"
   ]
 }
