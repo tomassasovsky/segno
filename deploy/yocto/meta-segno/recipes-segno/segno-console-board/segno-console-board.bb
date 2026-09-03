@@ -24,6 +24,15 @@ SYSTEMD_AUTO_ENABLE = "enable"
 # the Pi firmware otherwise leaves down; the rest is busybox.
 RDEPENDS:${PN} = "segno-openocd raspi-utils"
 
+# The firmware is a 32-bit Cortex-M33 image for a different processor, carried
+# as data. Yocto's QA reads every ELF as a host binary, so it must be told this
+# one is foreign — and told not to strip it or split its debug symbols, because
+# what gets flashed has to be the bytes the compiler produced.
+INSANE_SKIP:${PN} += "arch"
+INHIBIT_PACKAGE_STRIP = "1"
+INHIBIT_PACKAGE_DEBUG_SPLIT = "1"
+INHIBIT_SYSROOT_STRIP = "1"
+
 python () {
     fw = d.getVar('SEGNO_CONSOLE_FW_DIR')
     if not fw:
