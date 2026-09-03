@@ -4,10 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:segno/pedal/pedal.dart';
 
 import '../../helpers/pump_app.dart';
-import '../helpers/fake_pedal_link.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -64,6 +64,28 @@ void main() {
       // says so again. This also leaves no timer pending at teardown.
       await tester.pump(pedal.helloTimeout + const Duration(seconds: 1));
       expect(find.textContaining('not connected'), findsOneWidget);
+    });
+
+    testWidgets('names a board that speaks another link protocol', (
+      tester,
+    ) async {
+      final link = FakePedalLink();
+      final pedal = PedalRepository(link);
+      final cubit = PedalCubit(pedal: pedal);
+      addTearDown(cubit.close);
+      await pumpSection(tester, cubit);
+
+      link.emit(
+        const HelloMessage(
+          protocolVersion: PedalLinkCodec.protocolVersion + 1,
+          firmwareMajor: 2,
+          firmwareMinor: 1,
+        ),
+      );
+      await tester.pump();
+      expect(find.textContaining('different link protocol'), findsOneWidget);
+      expect(find.textContaining('2.1'), findsOneWidget);
+      await tester.pump(pedal.helloTimeout + const Duration(seconds: 1));
     });
 
     testWidgets('offers the footswitch assignments', (tester) async {

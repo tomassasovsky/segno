@@ -66,7 +66,10 @@ class _PedalStatusLine extends StatelessWidget {
     final message = switch (status) {
       PedalLinkStatus.disconnected => l10n.pedalStatusDisconnected,
       PedalLinkStatus.connected => l10n.pedalStatusConnected(
-        firmwareVersion ?? '?',
+        firmwareVersion ?? '',
+      ),
+      PedalLinkStatus.incompatible => l10n.pedalStatusIncompatible(
+        firmwareVersion ?? '',
       ),
     };
     // A live region so connect / disconnect transitions are announced as they

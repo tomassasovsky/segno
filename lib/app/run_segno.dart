@@ -14,6 +14,7 @@ import 'package:segno/app/audio_bootstrap.dart';
 import 'package:segno/app/monitor_migration.dart';
 import 'package:segno/app/view/app.dart';
 import 'package:segno/bootstrap.dart';
+import 'package:segno/logging/app_log.dart';
 import 'package:segno/session_directory.dart';
 import 'package:segno/update/update_backend.dart';
 import 'package:segno/visualizer/visualizer.dart';
@@ -113,12 +114,14 @@ Future<void> runSegno(
   final controllerRepository = ControllerRepository(
     sources: [?midiSource, simulatedControllerSource],
   );
-  // The console board's pedal link: the Pi's uart3 to the board's Pico 2, when
-  // this is the appliance (the device node exists), or nothing on a desktop.
-  // The on-screen pedal sits over it either way, so the faceplate is always
-  // available and mirrors whatever the hardware is shown.
-  final pedalSimulator = SimulatorPedalLink(inner: await UartPedalLink.open());
-  final pedalRepository = PedalRepository(pedalSimulator);
+  // The console board's pedal link: the Pi's uart3 to the board's Pico 2 on
+  // the appliance (the link owns the device node, retries until the overlay
+  // lands, and reports every state change to the log), or the on-screen pedal
+  // everywhere else.
+  final pedalLink = Platform.isLinux
+      ? UartPedalLink(log: AppLog.warn)
+      : SimulatorPedalLink();
+  final pedalRepository = PedalRepository(pedalLink, log: AppLog.info);
   final settings = SettingsRepository(
     store: SharedPreferencesKeyValueStore(),
     // The ALSA period count is part of the latency-calibration key: #809 made
@@ -186,7 +189,6 @@ Future<void> runSegno(
       simulatedControllerSource: simulatedControllerSource,
       midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
-      pedalSimulator: pedalSimulator,
       displayCount: () =>
           WidgetsBinding.instance.platformDispatcher.displays.length,
       audioRecoveryConfig: audioRecoveryConfig,

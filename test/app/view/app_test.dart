@@ -369,7 +369,6 @@ void main() {
           performanceRepository: performanceRepository,
           exportDirectory: () async => '.',
           pedalRepository: pedal,
-          pedalSimulator: simulator,
         ),
       );
       await tester.pump();

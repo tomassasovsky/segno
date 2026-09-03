@@ -6,28 +6,16 @@ import 'package:pedal_repository/src/pedal_link.dart';
 import 'package:pedal_repository/src/pedal_link_message.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 
-/// The on-screen pedal, as a [PedalLink] laid over the hardware one.
+/// The on-screen pedal as a [PedalLink]: the link every build without a
+/// console board runs on (desktop, the mock flavor, widget tests).
 ///
 /// [press] and [turn] inject the same messages a footswitch or the encoder
 /// would send, so the real `ControlCubit` behavior runs for a tap on the
-/// plate; everything segno sends is forwarded to the inner hardware link
-/// (when there is one) *and* decoded into [frame], so the plate always shows
-/// what the console's LEDs show. With no inner link — every desktop build —
-/// the plate is the only pedal, and nothing is lost on the floor.
+/// plate; every state frame segno sends is decoded into [frame], so a plate
+/// can render what the console's LEDs would show.
 class SimulatorPedalLink implements PedalLink {
-  /// Creates a [SimulatorPedalLink] over [inner], the hardware link or `null`.
-  SimulatorPedalLink({PedalLink? inner}) : _inner = inner {
-    final hardware = inner;
-    if (hardware != null) {
-      _innerSub = hardware.inbound.listen(
-        _inbound.add,
-        onError: _inbound.addError,
-      );
-    }
-  }
-
-  final PedalLink? _inner;
-  StreamSubscription<PedalLinkMessage>? _innerSub;
+  /// Creates a [SimulatorPedalLink].
+  SimulatorPedalLink();
 
   final StreamController<PedalLinkMessage> _inbound =
       StreamController<PedalLinkMessage>.broadcast();
@@ -40,7 +28,7 @@ class SimulatorPedalLink implements PedalLink {
   final Set<PedalButton> _held = {};
   bool _disposed = false;
 
-  /// The last frame segno sent — what the plate renders. Seeded blank so the
+  /// The last frame segno sent — what a plate renders. Seeded blank so the
   /// plate has a value on mount, before the first push.
   ValueListenable<PedalStateFrame> get frame => _frame;
 
@@ -79,7 +67,6 @@ class SimulatorPedalLink implements PedalLink {
   @override
   void send(PedalLinkMessage message) {
     if (_disposed) return;
-    _inner?.send(message);
     if (message is StateMessage) _frame.value = message.frame;
   }
 
@@ -87,9 +74,7 @@ class SimulatorPedalLink implements PedalLink {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    await _innerSub?.cancel();
     await _inbound.close();
     _frame.dispose();
-    await _inner?.dispose();
   }
 }

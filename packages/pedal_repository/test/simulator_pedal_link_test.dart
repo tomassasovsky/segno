@@ -1,8 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 
-import 'helpers/fake_pedal_link.dart';
-
 void main() {
   group('SimulatorPedalLink', () {
     test('press and turn inject board messages', () async {
@@ -41,54 +39,28 @@ void main() {
       await sim.dispose();
     });
 
-    test(
-      'sent state frames update the plate frame and reach the inner link',
-      () async {
-        final inner = FakePedalLink();
-        final sim = SimulatorPedalLink(inner: inner);
-        expect(sim.frame.value, PedalStateFrame.blank());
-        final frame = PedalStateFrame.blank().copyWith(
-          globalColor: GlobalColor.green,
-        );
-        sim
-          ..send(StateMessage(frame))
-          ..send(const LoopTopMessage());
-        expect(sim.frame.value, frame);
-        expect(inner.sent, [StateMessage(frame), const LoopTopMessage()]);
-        await sim.dispose();
-        expect(inner.disposed, isTrue);
-      },
-    );
-
-    test("the inner link's messages are merged into inbound", () async {
-      final inner = FakePedalLink();
-      final sim = SimulatorPedalLink(inner: inner);
-      final inbound = <PedalLinkMessage>[];
-      sim.inbound.listen(inbound.add);
-      inner
-        ..hello()
-        ..press(PedalButton.stop, down: true);
-      sim.press(PedalButton.clear, down: true);
-      await pumpEventQueue();
-      expect(inbound, hasLength(3));
-      expect(inbound.whereType<HelloMessage>(), hasLength(1));
-      expect(
-        inbound.whereType<ButtonMessage>().map((m) => m.button),
-        containsAll([PedalButton.stop, PedalButton.clear]),
+    test('sent state frames update the plate frame', () async {
+      final sim = SimulatorPedalLink();
+      expect(sim.frame.value, PedalStateFrame.blank());
+      final frame = PedalStateFrame.blank().copyWith(
+        globalColor: GlobalColor.green,
       );
+      sim
+        ..send(StateMessage(frame))
+        ..send(const LoopTopMessage());
+      expect(sim.frame.value, frame);
       await sim.dispose();
     });
 
     test('after dispose, presses and sends are dropped', () async {
-      final inner = FakePedalLink();
-      final sim = SimulatorPedalLink(inner: inner);
+      final sim = SimulatorPedalLink();
+      final frame = sim.frame.value;
       await sim.dispose();
       sim
         ..press(PedalButton.bank, down: true)
         ..turn(1)
         ..releaseAll()
-        ..send(const LoopTopMessage());
-      expect(inner.sent, isEmpty);
+        ..send(StateMessage(frame.copyWith(globalColor: GlobalColor.red)));
       await sim.dispose(); // idempotent
     });
   });

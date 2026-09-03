@@ -65,7 +65,6 @@ static pedal_state g_frame;
 static bool g_haveFrame = false;
 static unsigned long g_lastFrameMs = 0;
 static unsigned long g_lastHelloMs = 0;
-static unsigned long g_lastLoopTopMs = 0;  // recorded, not yet used (loop-synced ring is future work)
 
 static void sendFrame(const uint8_t *buf, size_t len) {
   LINK.write(buf, len);
@@ -88,7 +87,7 @@ static void handleMessage(uint8_t type, const uint8_t *payload, uint8_t len) {
       break;  // a malformed frame is dropped; the last good one is kept
     }
     case PEDAL_LINK_TYPE_LOOP_TOP:
-      g_lastLoopTopMs = millis();
+      onLoopTop();
       break;
     default:
       break;
@@ -151,7 +150,15 @@ static void pollEncoder() {
 }
 
 // ---- rendering -----------------------------------------------------------------------
-static uint32_t rgb(uint8_t r, uint8_t g, uint8_t b) { return Adafruit_NeoPixel::Color(r, g, b); }
+// Perceptual gamma is applied HERE, once, as a colour is set: a WS2812's duty
+// cycle is linear but the eye's response is not, so without it the sweep's dim
+// steps crowd together. It must not be applied to the stored buffer on every
+// show(): the frozen-ring branch below keeps its pixels as they are, and a
+// per-frame in-place gamma would decay them to black within a few ticks.
+static uint32_t rgb(uint8_t r, uint8_t g, uint8_t b) {
+  return Adafruit_NeoPixel::Color(Adafruit_NeoPixel::gamma8(r), Adafruit_NeoPixel::gamma8(g),
+                                  Adafruit_NeoPixel::gamma8(b));
+}
 static uint32_t scaled(uint8_t r, uint8_t g, uint8_t b, uint8_t level) {
   return rgb((uint8_t)((r * (uint16_t)level) / 255), (uint8_t)((g * (uint16_t)level) / 255),
              (uint8_t)((b * (uint16_t)level) / 255));
@@ -175,23 +182,33 @@ static Rgb globalColor(uint8_t color) {
   }
 }
 
-static inline uint16_t ringIndex(float logical) {
-  uint16_t i = (uint16_t)logical % RING_N;
+static inline uint16_t ringIndex(uint16_t i) {
   return RING_CLOCKWISE ? (uint16_t)((RING_N - 1) - i) : i;
 }
 
-// A smooth brightness hump rotates around the ring, colored by the activity
-// color segno sends (red recording / amber overdubbing / green playing), a dim
-// neutral glow when there is no activity, frozen in place on a Stop that leaves
-// a loop loaded, and a slow green breathe at rest with nothing loaded. Ported
-// from the pedal's renderRing(); widths scaled from 12 to 24 pixels.
-static const unsigned long RING_MS_PER_REV = 700;
+// A smooth brightness hump travels around the ring, coloured by the activity
+// colour segno sends (red recording / amber overdubbing / green playing).
+//
+// The sweep is the loop position: segno pulses LOOP_TOP at every loop top, which
+// snaps the hump back to pixel 0, and between pulses it advances at one
+// revolution per loop length (STATE carries loop_length_micros), so the hump IS
+// the playhead — the same "one revolution per loop" the on-screen plate draws.
+// While there is activity but no loop yet (the first recording is still open),
+// there is nothing to sync to and the hump runs at a fixed cadence instead.
+//
+// A Stop that leaves a loop loaded freezes the hump where it was. With nothing
+// loaded and nothing playing the ring breathes green so it reads as alive.
+// Ported from the pedal's renderRing(); widths scaled to the Ring 24.
+static const unsigned long FREE_RUN_MS_PER_REV = 700;
 static const unsigned long BREATHE_MS = 2400;
 static const float RING_WIDTH = 11.0f;
 static const float RING_SHAPE = 1.5f;
-static const Rgb RING_IDLE_GLOW = {0x3A, 0x3A, 0x3D};
-static float g_ringPhase = 0.0f;
+static float g_ringPhase = 0.0f;  // hump centre, 0..RING_N
 static unsigned long g_ringLastMs = 0;
+
+static void onLoopTop() {
+  g_ringPhase = 0.0f;
+}
 
 static void renderRing() {
   const unsigned long now = millis();
@@ -214,8 +231,10 @@ static void renderRing() {
     for (uint16_t i = 0; i < RING_N; i++) ring.setPixelColor(i, scaled(0, 255, 0, level));
     return;
   }
-  const Rgb sweep = g_frame.global_color == PEDAL_GLOBAL_OFF ? RING_IDLE_GLOW : activity;
-  g_ringPhase += (float)dt / (float)RING_MS_PER_REV * (float)RING_N;
+  const float msPerRev = g_frame.loop_length_micros > 0
+                             ? (float)g_frame.loop_length_micros / 1000.0f
+                             : (float)FREE_RUN_MS_PER_REV;
+  g_ringPhase += (float)dt / msPerRev * (float)RING_N;
   while (g_ringPhase >= (float)RING_N) g_ringPhase -= (float)RING_N;
   for (uint16_t i = 0; i < RING_N; i++) {
     float d = fabsf((float)i - g_ringPhase);
@@ -227,7 +246,7 @@ static void renderRing() {
       if (b < 0.0f) b = 0.0f;
       level = (uint8_t)(b * 255.0f + 0.5f);
     }
-    ring.setPixelColor(ringIndex((float)i), scaled(sweep.r, sweep.g, sweep.b, level));
+    ring.setPixelColor(ringIndex(i), scaled(activity.r, activity.g, activity.b, level));
   }
 }
 
@@ -248,9 +267,6 @@ static void renderIndicators() {
 }
 
 static void show() {
-  // Perceptual gamma so the sweep's dim steps read evenly; gamma32(0) is 0.
-  for (uint16_t i = 0; i < RING_N; i++) ring.setPixelColor(i, ring.gamma32(ring.getPixelColor(i)));
-  for (uint16_t i = 0; i < IND_N; i++) ind.setPixelColor(i, ind.gamma32(ind.getPixelColor(i)));
   ring.show();
   ind.show();
 }
@@ -286,7 +302,7 @@ void setup() {
 
   // A brief green sweep so the panel visibly comes alive before segno binds.
   for (uint16_t i = 0; i < RING_N; i++) {
-    ring.setPixelColor(ringIndex((float)i), rgb(0, 24, 0));
+    ring.setPixelColor(ringIndex(i), rgb(0, 24, 0));
     ring.show();
     delay(12);
   }

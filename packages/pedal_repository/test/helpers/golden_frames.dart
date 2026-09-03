@@ -6,7 +6,33 @@ import 'package:pedal_repository/pedal_repository.dart';
 /// encoded frame); `pedal_link_golden_test.dart` pins the Dart codec to those
 /// bytes, and `firmware/test/test_pedal_link.c` pins the firmware's C codec to
 /// the same files. Change a message here → regenerate → both sides move.
+/// One fixture per enum value, named `enum_<table>_<dartName>`, so the C
+/// contract test can pin every Dart enum name to its C constant and compare
+/// the count per table with the C `PEDAL_*_COUNT` — a value added, removed or
+/// reordered on either side fails there instead of mis-rendering on stage.
+Map<String, PedalLinkMessage> _enumPins() {
+  final blank = PedalStateFrame.blank();
+  final pins = <String, PedalLinkMessage>{
+    for (final b in PedalButton.values)
+      'enum_button_${b.name}': ButtonMessage(b, pressed: true),
+    for (final m in PedalMode.values)
+      'enum_mode_${m.name}': StateMessage(blank.copyWith(mode: m)),
+    for (final l in PedalLooperMode.values)
+      'enum_looper_${l.name}': StateMessage(blank.copyWith(looperMode: l)),
+    for (final g in GlobalColor.values)
+      'enum_global_${g.name}': StateMessage(blank.copyWith(globalColor: g)),
+    for (final led in PedalTrackLed.values)
+      'enum_led_${led.name}': StateMessage(
+        blank.copyWith(
+          trackLeds: [led, ...blank.trackLeds.skip(1)],
+        ),
+      ),
+  };
+  return pins;
+}
+
 final goldenMessages = <String, PedalLinkMessage>{
+  ..._enumPins(),
   'blank_goodbye': StateMessage(PedalStateFrame.blank(goodbye: true)),
   'idle_rec': StateMessage(
     PedalStateFrame.blank().copyWith(globalColor: GlobalColor.green),

@@ -54,6 +54,73 @@ static int parse_all(const uint8_t *bytes, size_t n, uint8_t *type, uint8_t *pay
   return frames;
 }
 
+/* Every enum value, by its Dart name, pinned to the C constant. A fixture
+ * enum_<table>_<name>.bin exists for each; the count per table must equal the
+ * C PEDAL_*_COUNT, so an added/removed/reordered value on either side fails. */
+typedef struct { const char *name; int value; } enum_pin;
+static const enum_pin BTN_PINS[] = {
+  {"recPlay", PEDAL_BTN_REC_PLAY}, {"stop", PEDAL_BTN_STOP}, {"undo", PEDAL_BTN_UNDO},
+  {"mode", PEDAL_BTN_MODE}, {"track1", PEDAL_BTN_TRACK1}, {"track2", PEDAL_BTN_TRACK2},
+  {"track3", PEDAL_BTN_TRACK3}, {"track4", PEDAL_BTN_TRACK4}, {"clear", PEDAL_BTN_CLEAR},
+  {"bank", PEDAL_BTN_BANK}};
+static const enum_pin MODE_PINS[] = {
+  {"rec", PEDAL_MODE_REC}, {"play", PEDAL_MODE_PLAY}, {"fx", PEDAL_MODE_FX}};
+static const enum_pin LOOPER_PINS[] = {
+  {"multi", PEDAL_LOOPER_MULTI}, {"sync", PEDAL_LOOPER_SYNC}, {"song", PEDAL_LOOPER_SONG},
+  {"band", PEDAL_LOOPER_BAND}, {"free", PEDAL_LOOPER_FREE}};
+static const enum_pin GLOBAL_PINS[] = {
+  {"off", PEDAL_GLOBAL_OFF}, {"green", PEDAL_GLOBAL_GREEN}, {"red", PEDAL_GLOBAL_RED},
+  {"amber", PEDAL_GLOBAL_AMBER}, {"blue", PEDAL_GLOBAL_BLUE}};
+static const enum_pin LED_PINS[] = {
+  {"off", PEDAL_LED_OFF}, {"green", PEDAL_LED_GREEN}, {"red", PEDAL_LED_RED},
+  {"blue", PEDAL_LED_BLUE}};
+
+typedef struct { const char *table; const enum_pin *pins; size_t n; int count; } enum_table;
+static const enum_table TABLES[] = {
+  {"button", BTN_PINS, sizeof(BTN_PINS) / sizeof(*BTN_PINS), PEDAL_BTN_COUNT},
+  {"mode", MODE_PINS, sizeof(MODE_PINS) / sizeof(*MODE_PINS), PEDAL_MODE_COUNT},
+  {"looper", LOOPER_PINS, sizeof(LOOPER_PINS) / sizeof(*LOOPER_PINS), PEDAL_LOOPER_COUNT},
+  {"global", GLOBAL_PINS, sizeof(GLOBAL_PINS) / sizeof(*GLOBAL_PINS), PEDAL_GLOBAL_COUNT},
+  {"led", LED_PINS, sizeof(LED_PINS) / sizeof(*LED_PINS), PEDAL_LED_COUNT},
+};
+
+static int g_enum_seen[sizeof(TABLES) / sizeof(*TABLES)];
+
+/* enum_<table>_<name>.bin: check the wire value against the C constant. */
+static void check_enum_fixture(const char *name, uint8_t type, const uint8_t *payload,
+                               const pedal_state *st) {
+  for (size_t t = 0; t < sizeof(TABLES) / sizeof(*TABLES); t++) {
+    const enum_table *tab = &TABLES[t];
+    size_t tl = strlen(tab->table);
+    if (strncmp(name + 5, tab->table, tl) != 0 || name[5 + tl] != '_') continue;
+    const char *val = name + 6 + tl;
+    size_t vl = strlen(val) - 4; /* strip .bin */
+    int want = -1;
+    for (size_t i = 0; i < tab->n; i++) {
+      if (strlen(tab->pins[i].name) == vl && strncmp(tab->pins[i].name, val, vl) == 0) {
+        want = tab->pins[i].value;
+      }
+    }
+    CHECK(want >= 0, "%s: Dart enum name unknown to the C table", name);
+    if (want < 0) return;
+    g_enum_seen[t]++;
+    int got;
+    if (strcmp(tab->table, "button") == 0) {
+      CHECK(type == PEDAL_LINK_TYPE_BUTTON, "%s: not a BUTTON frame", name);
+      got = payload[0];
+    } else {
+      CHECK(type == PEDAL_LINK_TYPE_STATE, "%s: not a STATE frame", name);
+      got = strcmp(tab->table, "mode") == 0     ? st->mode
+            : strcmp(tab->table, "looper") == 0 ? st->looper_mode
+            : strcmp(tab->table, "global") == 0 ? st->global_color
+                                                : st->track_leds[0];
+    }
+    CHECK(got == want, "%s: wire value %d, C constant %d", name, got, want);
+    return;
+  }
+  CHECK(0, "%s: no C enum table for this fixture", name);
+}
+
 static void check_fixture(const char *dir, const char *name) {
   char path[1024];
   snprintf(path, sizeof(path), "%s/%s", dir, name);
@@ -97,6 +164,11 @@ static void check_fixture(const char *dir, const char *name) {
       return;
   }
   CHECK(m == n && memcmp(again, bytes, n) == 0, "%s: re-encode differs (%zu vs %zu bytes)", name, m, n);
+
+  if (strncmp(name, "enum_", 5) == 0) {
+    check_enum_fixture(name, type, payload, &st);
+    return;
+  }
 
   /* Field checks on the named fixtures, against golden_frames.dart. */
   if (strcmp(name, "hello.bin") == 0) {
@@ -154,6 +226,28 @@ static void check_rejections(void) {
   memcpy(big + 4, frame, 6);
   CHECK(parse_all(big, 10, &type, payload, &len) == 1, "oversized length did not resync");
 
+  /* A corrupted length that is still in range is rejected at the length byte,
+   * so the frame that follows is NOT swallowed: a STATE header claiming 0x1F
+   * followed immediately by a good BUTTON frame yields that button. */
+  uint8_t badlen[9] = {0xA5, PEDAL_LINK_TYPE_STATE, PEDAL_LINK_STATE_LEN + 12};
+  memcpy(badlen + 3, frame, 6);
+  CHECK(parse_all(badlen, 9, &type, payload, &len) == 1 && type == PEDAL_LINK_TYPE_BUTTON,
+        "in-range corrupted length swallowed the next frame");
+
+  /* An unknown type is rejected at the type byte, same reason. */
+  uint8_t badtype[9] = {0xA5, 0x7E, 0x02};
+  memcpy(badtype + 3, frame, 6);
+  CHECK(parse_all(badtype, 9, &type, payload, &len) == 1 && type == PEDAL_LINK_TYPE_BUTTON,
+        "unknown type swallowed the next frame");
+
+  pedal_link_parser dp;
+  pedal_link_parser_init(&dp);
+  for (size_t i = 0; i < 12; i++) {
+    uint8_t t, l; const uint8_t *pl;
+    pedal_link_parser_push(&dp, stream[i], &t, &pl, &l);
+  }
+  CHECK(dp.dropped == 1, "dropped counter is %u, want 1", (unsigned)dp.dropped);
+
   /* decode_state rejections. */
   pedal_state s;
   memset(&s, 0, sizeof(s));
@@ -193,6 +287,11 @@ int main(int argc, char **argv) {
   }
   closedir(d);
   CHECK(count >= 10, "only %d fixtures found in %s", count, dir);
+  for (size_t t = 0; t < sizeof(TABLES) / sizeof(*TABLES); t++) {
+    CHECK(g_enum_seen[t] == TABLES[t].count,
+          "%s: %d enum fixtures, C has %d values — the tables drifted",
+          TABLES[t].table, g_enum_seen[t], TABLES[t].count);
+  }
   check_rejections();
   if (g_failures) {
     fprintf(stderr, "%d failure(s)\n", g_failures);

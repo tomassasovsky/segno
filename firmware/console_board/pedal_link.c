@@ -82,6 +82,17 @@ int pedal_link_decode_state(const uint8_t *p, uint8_t len, pedal_state *out) {
   return 1;
 }
 
+int pedal_link_payload_len(uint8_t type) {
+  switch (type) {
+    case PEDAL_LINK_TYPE_BUTTON: return 2;
+    case PEDAL_LINK_TYPE_ENCODER: return 1;
+    case PEDAL_LINK_TYPE_HELLO: return 3;
+    case PEDAL_LINK_TYPE_STATE: return (int)PEDAL_LINK_STATE_LEN;
+    case PEDAL_LINK_TYPE_LOOP_TOP: return 0;
+    default: return -1;
+  }
+}
+
 enum { PS_SYNC = 0, PS_TYPE, PS_LEN, PS_PAYLOAD, PS_CHECKSUM };
 
 void pedal_link_parser_init(pedal_link_parser *p) {
@@ -96,11 +107,17 @@ int pedal_link_parser_push(pedal_link_parser *p, uint8_t byte, uint8_t *type,
       if (byte == PEDAL_LINK_SYNC) p->state = PS_TYPE;
       return 0;
     case PS_TYPE:
+      if (pedal_link_payload_len(byte) < 0) {
+        p->dropped++;
+        p->state = PS_SYNC;
+        return 0;
+      }
       p->type = byte;
       p->state = PS_LEN;
       return 0;
     case PS_LEN:
-      if (byte > PEDAL_LINK_MAX_PAYLOAD) {
+      if ((int)byte != pedal_link_payload_len(p->type)) {
+        p->dropped++;
         p->state = PS_SYNC;
         return 0;
       }
@@ -115,7 +132,10 @@ int pedal_link_parser_push(pedal_link_parser *p, uint8_t byte, uint8_t *type,
     case PS_CHECKSUM:
     default:
       p->state = PS_SYNC;
-      if (byte != checksum(p->type, p->payload, p->len)) return 0;
+      if (byte != checksum(p->type, p->payload, p->len)) {
+        p->dropped++;
+        return 0;
+      }
       *type = p->type;
       *payload = p->payload;
       *len = p->len;

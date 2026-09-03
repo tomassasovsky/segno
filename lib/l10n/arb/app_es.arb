@@ -1225,6 +1225,14 @@
             }
         }
     },
+    "pedalStatusIncompatible": "El firmware {firmwareVersion} de la placa de la consola habla otro protocolo de enlace que esta versión. Actualiza el firmware de la placa.",
+    "@pedalStatusIncompatible": {
+        "placeholders": {
+            "firmwareVersion": {
+                "type": "String"
+            }
+        }
+    },
     "pedalAssignIntro": "Elegí un pedal en la placa y después qué controla en modo FX. Los pedales sin asignar conservan su comportamiento normal.",
     "pedalAssignSelectPrompt": "Seleccioná un pedal para asignarlo.",
     "pedalAssignUnbindable": "MODE y BANK no se pueden reasignar: son la única salida del modo FX y el único acceso al otro banco.",

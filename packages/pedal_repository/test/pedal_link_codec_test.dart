@@ -161,12 +161,49 @@ void main() {
       expect(out, hasLength(2));
     });
 
-    test('resyncs after garbage and after a bad checksum', () {
-      final corrupt = List<int>.of(hello)..[hello.length - 1] ^= 0x01;
+    test(
+      'resyncs after garbage and after a bad checksum, counting the drop',
+      () {
+        final corrupt = List<int>.of(hello)..[hello.length - 1] ^= 0x01;
+        final parser = PedalLinkParser();
+        expect(
+          parser.push([0x00, 0x13, ...corrupt, 0x37, ...button]),
+          [const ButtonMessage(PedalButton.bank, pressed: false)],
+        );
+        expect(parser.droppedFrames, 1);
+      },
+    );
+
+    test('rejects a corrupted in-range length at the length byte, so the '
+        'frame behind it is not swallowed', () {
+      final parser = PedalLinkParser();
+      final out = parser.push([
+        PedalLinkCodec.sync,
+        PedalLinkCodec.typeState,
+        PedalLinkCodec.statePayloadLength + 12,
+        ...button,
+      ]);
+      expect(out, [const ButtonMessage(PedalButton.bank, pressed: false)]);
+      expect(parser.droppedFrames, 1);
+    });
+
+    test('rejects an unknown type at the type byte', () {
+      final parser = PedalLinkParser();
+      final out = parser.push([PedalLinkCodec.sync, 0x7E, 0x02, ...button]);
+      expect(out, [const ButtonMessage(PedalButton.bank, pressed: false)]);
+      expect(parser.droppedFrames, 1);
+    });
+
+    test('payloadLengthFor knows every type and nothing else', () {
+      expect(PedalLinkCodec.payloadLengthFor(PedalLinkCodec.typeButton), 2);
+      expect(PedalLinkCodec.payloadLengthFor(PedalLinkCodec.typeEncoder), 1);
+      expect(PedalLinkCodec.payloadLengthFor(PedalLinkCodec.typeHello), 3);
       expect(
-        PedalLinkParser().push([0x00, 0x13, ...corrupt, 0x37, ...button]),
-        [const ButtonMessage(PedalButton.bank, pressed: false)],
+        PedalLinkCodec.payloadLengthFor(PedalLinkCodec.typeState),
+        PedalLinkCodec.statePayloadLength,
       );
+      expect(PedalLinkCodec.payloadLengthFor(PedalLinkCodec.typeLoopTop), 0);
+      expect(PedalLinkCodec.payloadLengthFor(0x7F), isNull);
     });
 
     test('drops an oversized length and resyncs', () {

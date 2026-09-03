@@ -1,8 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:segno/pedal/pedal.dart';
-
-import '../helpers/fake_pedal_link.dart';
 
 /// The pedal LINK tests: the board's status and firmware version, mirrored
 /// for the settings UI. The pedal's BEHAVIOR (footswitch decode, LED frames)
