@@ -1,4 +1,4 @@
-SUMMARY = "RAUC update bundle (.raucb) for the Segno appliance — the rootfs slot"
+SUMMARY = "RAUC update bundle (.raucb) for the Segno appliance — boot + rootfs slots"
 # Builds a signed, verity-format RAUC bundle carrying segno-kiosk-image's rootfs.
 # `rauc install` writes it to the inactive A/B slot. CI publishes it per channel.
 inherit bundle
@@ -40,8 +40,29 @@ python __anonymous() {
             "update bundle." % keyfile)
 }
 
-# One slot: the whole rootfs. (Kernel lives in the boot slot; grouping the boot
-# slot into the bundle is a follow-up once single-rootfs updates are proven.)
-RAUC_BUNDLE_SLOTS = "rootfs"
+# Two slots, updated together. The rootfs alone is not a whole update: the
+# kernel lives in the boot slot, and so does config.txt — so with rootfs-only
+# bundles nothing about how the console STARTS could ever change on a unit in
+# the field. A device-tree overlay is exactly what the console board's link
+# needs, and it could only ever arrive by re-imaging by hand (#989).
+#
+# system.conf already declares firmware.0/.1 parented to rootfs.0/.1, and the Pi
+# firmware tryboot path already rolls back a slot that fails to boot, so this
+# adds an artifact to a mechanism that was built for it rather than a new one.
+RAUC_BUNDLE_SLOTS = "rootfs firmware"
+
 RAUC_SLOT_rootfs  = "segno-kiosk-image"
 RAUC_SLOT_rootfs[fstype] = "ext4"
+
+RAUC_SLOT_firmware = "segno-bootfs"
+RAUC_SLOT_firmware[fstype] = "tar.bz2"
+# A tar into the mounted slot, not an image dd'd over it: the boot partitions
+# are sized by the WIC layout, and a raw image would tie the bundle to that size
+# forever.
+RAUC_SLOT_firmware[hooks] = "post-install"
+
+# The boot slot arrives with cmdline.txt's root=XXX placeholder intact; the hook
+# points each slot at its own rootfs, the way the image build does per slot.
+# Only the file: the hook is per-SLOT (declared above), not a bundle-wide one.
+RAUC_BUNDLE_HOOKS[file] = "segno-bundle-hook.sh"
+SRC_URI += "file://segno-bundle-hook.sh"
