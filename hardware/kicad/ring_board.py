@@ -94,13 +94,27 @@ for _d in _SYMBOL_DIRS:
 
 # ---- THT footprint helpers -------------------------------------------------
 
-def R(value):
-    return Part("Device", "R", value=value,
-                footprint="Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
+# EVERY ref on this board is PINNED, none are left to SKiDL's auto-counter. The
+# counter numbers parts in declaration order, so inserting one part renumbers
+# every later one -- which silently re-points a layout that is already placed and
+# routed against the old numbering. It already bit once here: the auto-numbered
+# netlist called the 470uF "C2" while the fabbed board calls it C1.
+# console_board.py's ref-block note is the same rule; its PIN_REFS gate is the
+# same guard as REFS below.
+# VERTICAL axials, not the usual horizontal P10.16. Same DIN0207 part and the
+# same big THT pads to solder, but the footprint is ~2.5 x 5 mm instead of
+# 12.35 x 3.09 -- and on a O68 disc that already carries a O65.5 ring, an EC11,
+# three M3 holes at r=22 and a D8 electrolytic, four horizontal axials could not
+# be placed within reach of the pins they serve (the placer pushed the ENC_SW
+# filter cap 27 mm from the input it filters). Height is free here: the 470uF can
+# is 11 mm and nothing on this board is taller.
+def R(value, ref):
+    return Part("Device", "R", value=value, ref=ref,
+                footprint="Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P2.54mm_Vertical")
 
 
-def C(value, fp="Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm"):
-    return Part("Device", "C", value=value, footprint=fp)
+def C(value, ref, fp="Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm"):
+    return Part("Device", "C", value=value, ref=ref, footprint=fp)
 
 
 # ---- nets ------------------------------------------------------------------
@@ -192,7 +206,7 @@ for _p in XIAO_SPARE:
 # a diode drop on the LED rail is what raises the WS2812's own VIH threshold and
 # it is already the tight number (see U2).
 d1 = Part("Device", "D_Schottky", value="1N5819",
-          footprint="Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal", ref="D1")
+          footprint="Diode_THT:D_DO-41_SOD81_P2.54mm_Vertical_CathodeUp", ref="D1")
 d1["A"] += v5
 d1["K"] += v5_mcu
 
@@ -209,12 +223,12 @@ buf = Part("74xx", "74AHCT125", value="74AHCT125N",
            footprint="Package_DIP:DIP-14_W7.62mm", ref="U2")
 buf[14] += v5
 buf[7] += gnd
-C("100nF")[1, 2] += v5, gnd
+C("100nF", "C5")[1, 2] += v5, gnd
 buf[1] += gnd; buf[2] += ring_data_3v3; buf[3] += ring_data_5v   # gate A: ring
 buf[4] += v5; buf[5] += gnd; buf[6].do_erc = False               # gate B unused
 buf[10] += v5; buf[9] += gnd; buf[8].do_erc = False              # gate C unused
 buf[13] += v5; buf[12] += gnd; buf[11].do_erc = False            # gate D unused
-R("330")[1, 2] += ring_data_5v, ring_data
+R("330", "R1")[1, 2] += ring_data_5v, ring_data
 
 # ---- 4-pin header to the NeoPixel module (3 wires used: 5V/GND/DIN) ---------
 #   1 = +5V_LED   2 = GND   3 = DIN (<- RING_DATA)   4 = DOUT (spare)
@@ -254,7 +268,7 @@ j3[4] += ring_dout   # DOUT (spare; soldered for mechanical support)
 # load-bearing: a general-purpose 470uF in the same can runs ~0.5 ohm, and the
 # ring's amp-scale frame edges x that ESR is real ripple on the LEDs' own VDD.
 # Same rule as the console board's C30.
-Part("Device", "C_Polarized", value="470uF 16V low-ESR <=0.15R",
+Part("Device", "C_Polarized", value="470uF 16V low-ESR <=0.15R", ref="C1",
      footprint="Capacitor_THT:CP_Radial_D8.0mm_P3.50mm")[1, 2] += v5, gnd
 
 # ---- EC11 rotary encoder (A,B,C common, S1,S2 switch) ----------------------
@@ -274,12 +288,12 @@ enc["S2"] += gnd
 # are ~50-80k, which against 100nF is a 5-8 ms release edge. A stomp tolerates
 # that; quadrature does not -- a fast spin puts edges ~25 ms apart and 8 ms of
 # smear loses detents and direction.
-R("10k")[1, 2] += v3v3, encA
-R("10k")[1, 2] += v3v3, encB
-R("10k")[1, 2] += v3v3, encSW
-C("100nF")[1, 2] += encA, gnd
-C("100nF")[1, 2] += encB, gnd
-C("100nF")[1, 2] += encSW, gnd
+R("10k", "R2")[1, 2] += v3v3, encA
+R("10k", "R3")[1, 2] += v3v3, encB
+R("10k", "R4")[1, 2] += v3v3, encSW
+C("100nF", "C2")[1, 2] += encA, gnd
+C("100nF", "C3")[1, 2] += encB, gnd
+C("100nF", "C4")[1, 2] += encSW, gnd
 
 # NOTE: RING_LINK gets NO pull-up on this board. The console's existing 10k to
 # ITS 3V3 (console_board.py, the old ENC_A pull-up) is the one the open-drain
@@ -372,6 +386,26 @@ def _check():
         f"POLARITY: the electrolytic's pin 2 (-) is on "
         f"{sorted(n.name for n in _pol[0][2].nets)}, expected GND")
 
+    # REFS runs LAST on purpose. It is the broadest assertion here, so ahead of
+    # the others it fires first for every control that adds a part and masks the
+    # gate that control exists to prove -- --selftest reported exactly that
+    # ("WRONG GATE") the first time it sat at the top.
+    # REFS: the exact set, so nothing here is auto-numbered. A part added without
+    # a ref would be silently numbered by the counter and could take a designator
+    # the fabbed board has already assigned to something else -- which is the
+    # failure that made pinning them worth doing (the 470uF was C1 in copper and
+    # C2 in the netlist). Parts with no connections are skipped: --selftest's
+    # controls are disconnected rather than deleted, and they are not the design.
+    REFS = {"C1", "C2", "C3", "C4", "C5", "D1", "ENC1",
+            "J1", "J2", "J3", "R1", "R2", "R3", "R4", "U1", "U2"}
+    _live = {p.ref for p in default_circuit.parts
+             if any(pin.nets for pin in p.pins)}
+    assert _live == REFS, (
+        f"REFS: the board's parts are {sorted(_live)}, expected {sorted(REFS)} -- "
+        f"missing {sorted(REFS - _live)}, unexpected {sorted(_live - REFS)}. Every "
+        "ref on this board is pinned so the counter cannot renumber a placed "
+        "layout; a part declared without ref= breaks that.")
+
 
 def _selftest():
     """Each gate above, proved to bite. A gate nobody has seen fail is a gate that
@@ -381,11 +415,11 @@ def _selftest():
 
     def _pullup_5v():
         # The shipped mistake, replayed on the pads it can still reach.
-        r = R("10k"); r[1, 2] += v5, encA; added.append(r)
+        r = R("10k", "R99"); r[1, 2] += v5, encA; added.append(r)
 
     def _link_pullup():
         # Reasonable-looking and wrong: "make the link idle high locally".
-        r = R("10k"); r[1, 2] += v3v3, ring_link; added.append(r)
+        r = R("10k", "R98"); r[1, 2] += v3v3, ring_link; added.append(r)
 
     def _diode_backwards():
         d = next(p for p in default_circuit.parts if p.ref == "D1")
@@ -394,6 +428,15 @@ def _selftest():
 
     def _exempt_live_pad():
         XIAO[5] += encA          # a spare, ERC-exempt pad quietly wired
+
+    def _unpinned_part():
+        # A part added the easy way, without ref= -- the counter names it and the
+        # name it picks may already be on the fabbed board.
+        r = Part("Device", "R", value="10k",
+                 footprint="Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm"
+                           "_P2.54mm_Vertical")
+        r[1, 2] += v3v3, gnd
+        added.append(r)
 
     def _undo():
         for r in added:
@@ -412,6 +455,7 @@ def _selftest():
         ("a second pull-up added to the link",       "LINK_BARE:",   _link_pullup),
         ("series Schottky fitted backwards",         "POLARITY:",    _diode_backwards),
         ("an ERC-exempt pad quietly wired",          "XIAO_PADS:",   _exempt_live_pad),
+        ("a part declared without a pinned ref",      "REFS:",        _unpinned_part),
     ]
     ok = True
     for name, want, mutate in cases:
