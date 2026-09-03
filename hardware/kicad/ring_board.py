@@ -129,16 +129,13 @@ for _d in _SYMBOL_DIRS:
 # netlist called the 470uF "C2" while the fabbed board calls it C1.
 # console_board.py's ref-block note is the same rule; its PIN_REFS gate is the
 # same guard as REFS below.
-# VERTICAL axials, not the usual horizontal P10.16. Same DIN0207 part and the
-# same big THT pads to solder, but the footprint is ~2.5 x 5 mm instead of
-# 12.35 x 3.09 -- and on the disc that already carries a O65.5 ring, an EC11,
-# three M3 holes and a D8 electrolytic, four horizontal axials could not
-# be placed within reach of the pins they serve (the placer pushed the ENC_SW
-# filter cap 27 mm from the input it filters). Height is free here: the 470uF can
-# is 11 mm and nothing on this board is taller.
+# Horizontal axials, lying flat. They were briefly vertical (P2.54) to survive
+# the O68 disc, which could not fit four flat DIN0207 bodies within reach of the
+# pins they serve. O80 has the room, and flat parts are easier to place by hand
+# and read on the silkscreen -- so they went back to the usual footprint.
 def R(value, ref):
     return Part("Device", "R", value=value, ref=ref,
-                footprint="Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P2.54mm_Vertical")
+                footprint="Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal")
 
 
 def C(value, ref, fp="Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm"):
@@ -234,7 +231,7 @@ for _p in XIAO_SPARE:
 # a diode drop on the LED rail is what raises the WS2812's own VIH threshold and
 # it is already the tight number (see U2).
 d1 = Part("Device", "D_Schottky", value="1N5819",
-          footprint="Diode_THT:D_DO-41_SOD81_P2.54mm_Vertical_CathodeUp", ref="D1")
+          footprint="Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal", ref="D1")
 d1["A"] += v5
 d1["K"] += v5_mcu
 
@@ -462,7 +459,7 @@ def _selftest():
         # name it picks may already be on the fabbed board.
         r = Part("Device", "R", value="10k",
                  footprint="Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm"
-                           "_P2.54mm_Vertical")
+                           "_P10.16mm_Horizontal")
         r[1, 2] += v3v3, gnd
         added.append(r)
 
