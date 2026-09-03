@@ -28,8 +28,7 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
     this.channelOverrideFile = '/data/segno/update-channel',
     this.stagedFile = '/data/.ota-staged-version',
     this.helperPath = '/usr/bin/segno-update-ctl',
-    this.pedalFailFile = '/data/segno/pedal-firmware-failed',
-  }) : _env = env ?? SystemApplianceEnv();
+  }) : _env = env ?? const SystemApplianceEnv();
 
   final ApplianceEnv _env;
 
@@ -50,10 +49,6 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
 
   /// Path to the privileged update helper; its presence gates [isSupported].
   final String helperPath;
-
-  /// Path (on `/data`) to the failure marker `flash-pedal` leaves behind:
-  /// `"<class> <version>"`, where class is `not-started` or `interrupted`.
-  final String pedalFailFile;
 
   @override
   bool get isSupported =>
@@ -113,33 +108,9 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
     }
   }
 
-  /// Stages the OS bundle. Pedal firmware is deliberately **not** flashed here.
-  ///
-  /// This method runs inside the image being replaced, so flashing from it ran
-  /// the outgoing `segno-update-ctl` — a fix to `flash-pedal` could never apply
-  /// on the update that delivered it, and every such fix shipped its own bug
-  /// one last time on every device (#444). The flash now happens on the next
-  /// start of the app, through [pendingPedalFirmware] and [flashPedalFirmware],
-  /// so the flasher that runs is the one that shipped with the running image.
   @override
   Stream<double> downloadAndStage(UpdateManifest manifest) =>
       _env.stage(manifest.version.toString());
-
-  @override
-  Future<String?> pendingPedalFirmware() => _env.pedalPending();
-
-  @override
-  Stream<double> flashPedalFirmware() => _env.flashPedal();
-
-  @override
-  Future<void> abortPedalFlash() => _env.abortPedalFlash();
-
-  @override
-  Future<PedalFlashFailureClass?> lastPedalFlashFailure() async {
-    final marker = _env.readTextSync(pedalFailFile)?.trim();
-    if (marker == null || marker.isEmpty) return null;
-    return PedalFlashFailureClass.tryParse(marker.split(' ').first);
-  }
 
   @override
   Future<void> applyAndRestart() => _env.reboot();

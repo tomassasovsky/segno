@@ -50,29 +50,6 @@ class _FakeBackend implements PlatformUpdateBackend {
 
   @override
   Future<void> applyAndRestart() async => applyCount++;
-
-  String? pending;
-  int flashCount = 0;
-  PedalFlashFailureClass? failureClass;
-
-  @override
-  Future<String?> pendingPedalFirmware() async => pending;
-
-  @override
-  Stream<double> flashPedalFirmware() {
-    flashCount++;
-    return Stream.fromIterable(const [0.5, 1.0]);
-  }
-
-  @override
-  Future<PedalFlashFailureClass?> lastPedalFlashFailure() async => failureClass;
-
-  int abortCount = 0;
-
-  @override
-  Future<void> abortPedalFlash() async {
-    abortCount++;
-  }
 }
 
 /// Builds a manifest with minor component [minor] (e.g. `_manifest(2)` ==
@@ -180,66 +157,6 @@ void main() {
         expect(backend.stagedArg, _manifest(2));
       },
     );
-
-    test('pendingPedalFirmware forwards to the backend', () async {
-      final backend = _FakeBackend()..pending = '0.4.0';
-
-      expect(
-        await UpdateRepository(backend: backend).pendingPedalFirmware(),
-        '0.4.0',
-      );
-    });
-
-    test('flashPedalFirmware forwards to the backend', () async {
-      final backend = _FakeBackend();
-
-      await UpdateRepository(backend: backend).flashPedalFirmware().toList();
-
-      expect(backend.flashCount, 1);
-    });
-
-    test('abortPedalFlash forwards to the backend', () async {
-      final backend = _FakeBackend();
-
-      await UpdateRepository(backend: backend).abortPedalFlash();
-
-      expect(backend.abortCount, 1);
-    });
-
-    test('lastPedalFlashFailure forwards to the backend', () async {
-      final backend = _FakeBackend()
-        ..failureClass = PedalFlashFailureClass.interrupted;
-
-      expect(
-        await UpdateRepository(backend: backend).lastPedalFlashFailure(),
-        PedalFlashFailureClass.interrupted,
-      );
-    });
-
-    test('PedalFlashFailureClass.tryParse reads the marker tokens', () {
-      expect(
-        PedalFlashFailureClass.tryParse('not-started'),
-        PedalFlashFailureClass.notStarted,
-      );
-      expect(
-        PedalFlashFailureClass.tryParse('interrupted'),
-        PedalFlashFailureClass.interrupted,
-      );
-      // The pre-#670 marker format was a bare version — not a class.
-      expect(PedalFlashFailureClass.tryParse('0.4.0'), isNull);
-      expect(PedalFlashFailureClass.tryParse(null), isNull);
-    });
-
-    test('PedalFlashFailureClass.worseOf keeps the pessimistic claim', () {
-      const notStarted = PedalFlashFailureClass.notStarted;
-      const interrupted = PedalFlashFailureClass.interrupted;
-      // Either side claiming a write may have begun settles it: the comforting
-      // copy is only offered when BOTH signals agree nothing was written.
-      expect(notStarted.worseOf(interrupted), interrupted);
-      expect(interrupted.worseOf(notStarted), interrupted);
-      expect(interrupted.worseOf(interrupted), interrupted);
-      expect(notStarted.worseOf(notStarted), notStarted);
-    });
 
     test('applyAndRestart forwards to the backend', () async {
       final backend = _FakeBackend();

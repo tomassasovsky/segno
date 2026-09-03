@@ -38,18 +38,4 @@ abstract interface class ApplianceEnv {
   /// or already running the staged version. No-op when the helper is absent.
   /// Never throws.
   Future<void> reconcileStaged();
-
-  /// Runs the helper's `pedal-pending` verb: the firmware version a flash is
-  /// about to write, or null when none is coming. Never throws — the helper
-  /// answers "nothing" for every uncertain case, including no network.
-  Future<String?> pedalPending();
-
-  /// Runs the helper's `flash-pedal` verb, emitting progress in `[0, 1]`.
-  /// Throws with the collected stderr if it fails.
-  Stream<double> flashPedal();
-
-  /// Terminates a still-running `flash-pedal` helper, if any, and returns only
-  /// once it is dead (SIGTERM, then SIGKILL after a short grace). No-op when
-  /// nothing is running. Never throws.
-  Future<void> abortPedalFlash();
 }
