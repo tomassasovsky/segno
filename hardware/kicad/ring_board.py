@@ -50,6 +50,34 @@ with a PULL-DOWN. Nothing here uses one: the encoder lines are pulled UP (R1-R3
 below), RING_LINK is pulled up by the console's existing 10 k, and the WS2812
 line is an output. Do not add a pull-down to this board without re-reading E9.
 
+## The board grew to O80 and the M3 holes moved inboard (owner call)
+
+The O68 disc could not hold this. Its usable back is an ANNULUS -- r>~11 (clear
+of the encoder body at the centre) out to the rim -- and the three M3 holes sat
+at exactly **r=22**, in the middle of it, so every large part had to dodge them
+angularly. The XIAO ended up **0.85 mm** from the encoder's courtyard with the
+encoder's own traces squeezing through that gap.
+
+Two changes fix it, both cheap:
+
+- **Outline O68 -> O80.** The enclosure has far more room here than the ring
+  window suggests: measured off `segno_enclosure.py`, the binding neighbour is
+  the 7" screen's BEZEL at r=58.6 (so O117 would still fit), with the row-1
+  pedal slots 60 mm clear the other way. O80 leaves ~18 mm of margin.
+- **M3 holes r=22 -> r=16**, at theta 90/210/330. They were at r=22 only so the
+  screw HEADS clear the ring's inner edge at r=26.15 -- moving them further IN
+  satisfies that just as well, and the faceplate is solid metal at r=16 (the
+  window is the r=25.75..33.5 annulus), so a standoff has something to land on.
+  The new angles also dodge J2's wire pads (r~12.3, theta -108..-72), which the
+  old -101/36/163 triangle sat on top of.
+
+Nothing in the enclosure had to change: it models no bosses for this board, and
+RING_OD/RING_ID (the faceplate window) are untouched -- the ring module and the
+encoder bush still sit exactly where they did.
+
+Result: an uninterrupted ~19 mm-wide annulus (r20..r39) all the way round, and
+the XIAO now sits **4.4 mm** off the encoder instead of 0.85.
+
 ## Why the 5 V pins went from four to one
 
 Four ways (two pairs) were sized for 24 LEDs x 60 mA = 1.44 A all-white. Over
@@ -103,8 +131,8 @@ for _d in _SYMBOL_DIRS:
 # same guard as REFS below.
 # VERTICAL axials, not the usual horizontal P10.16. Same DIN0207 part and the
 # same big THT pads to solder, but the footprint is ~2.5 x 5 mm instead of
-# 12.35 x 3.09 -- and on a O68 disc that already carries a O65.5 ring, an EC11,
-# three M3 holes at r=22 and a D8 electrolytic, four horizontal axials could not
+# 12.35 x 3.09 -- and on the disc that already carries a O65.5 ring, an EC11,
+# three M3 holes and a D8 electrolytic, four horizontal axials could not
 # be placed within reach of the pins they serve (the placer pushed the ENC_SW
 # filter cap 27 mm from the input it filters). Height is free here: the 470uF can
 # is 11 mm and nothing on this board is taller.
