@@ -301,6 +301,20 @@ j3[2] += v5          # +5V
 j3[3] += gnd         # GND
 j3[4] += ring_dout   # DOUT (spare; soldered for mechanical support)
 
+# MOUNTING HEIGHT. The module is pin-mounted on a 2.54 mm pitch pin strip, and
+# the strip's plastic insulator is what sets the gap: a standard 0.1 in body is
+# 2.54 mm. Stack above this board's front face:
+#     2.54  pin-strip spacer
+#   + 1.57  ring PCB (Adafruit's own STEP)
+#   + 1.60  WS2812 proud of it (module is 3.2 overall)
+#   = 5.71  to the LED top face
+# The 3D model carries that 2.54 offset so the render is not 2.54 mm optimistic.
+# CLEARANCE, worth a bench check before the faceplate is cut: the EC11's M7 bush
+# runs z 5.0..11.5 above this board (measured off RotaryEncoder_EC11.step), and
+# the faceplate rides somewhere on it -- so the gap to the plate's inner face is
+# ~5.0 at worst and ~9.5 at best, against a 5.71 stack. It fits at a normal nut
+# depth and is tight at the extreme, and closer LEDs suit the diffuser anyway.
+
 # bulk cap at the module power entry (24 LEDs, ~1.44 A all-white worst case; the
 # comet only ever lights part of the ring, so the real draw is far lower) -- THT
 # radial electrolytic.

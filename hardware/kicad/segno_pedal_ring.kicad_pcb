@@ -425,7 +425,7 @@
 		(embedded_fonts no)
 		(model "${KIPRJMOD}/segno.pretty/NeoPixel_Ring24.step"
 			(offset
-				(xyz 0 0 0)
+				(xyz 0 0 2.54)
 			)
 			(scale
 				(xyz 1 1 1)
