@@ -1,6 +1,6 @@
 # Segno
 
-A loopstation for recording and layering live music, with a Flutter interface, a native audio engine, and MIDI foot control.
+A loopstation for recording and layering live music, with a Flutter interface, a native audio engine, and built-in foot controls.
 
 Record a phrase, let it repeat, and add another part over it. Segno brings the recording controls, track state, and audio engine into one application. Its current product direction is a dedicated Linux appliance.
 
@@ -13,7 +13,7 @@ Record a phrase, let it repeat, and add another part over it. Segno brings the r
 ## Implemented capabilities
 
 - **Record and layer audio.** The native engine implements loop recording, playback, overdubbing, undo, and redo.
-- **Operate the looper by foot.** MIDI input is translated into recording and transport actions through the controller layer.
+- **Operate the looper by foot.** The console board connects ten footswitches, an encoder, and LED feedback to the app. External MIDI controllers use the controller mapping layer.
 - **Save a session.** The session layer writes recorded audio and a manifest so the application can restore a loop’s state.
 - **Keep the interface and audio engine separate.** Flutter handles the interface; a Dart engine interface connects the application to the native implementation through FFI.
 
@@ -22,6 +22,7 @@ Record a phrase, let it repeat, and add another part over it. Segno brings the r
 Created by [Tomás Sasovsky](https://github.com/tomassasovsky). The project includes the application, native audio engine, controller integration, pedal firmware, and hardware designs.
 
 - [Audio engine and Dart interface](https://github.com/tomassasovsky/segno/tree/master/packages/segno_engine)
+- [Console board and firmware](firmware/console_board/README.md)
 - [Controller mapping](https://github.com/tomassasovsky/segno/tree/master/packages/controller_repository)
 - [Session storage](https://github.com/tomassasovsky/segno/tree/master/packages/session_repository)
 
