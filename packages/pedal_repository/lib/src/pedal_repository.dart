@@ -9,7 +9,7 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// Whether the console board is on the other end of the link.
 ///
 /// Decided by traffic, not by opening a port: the board says hello every
-/// [PedalLinkCodec.helloInterval], and the link counts as [connected] from
+/// [PedalLinkCodec.helloIntervalMs], and the link counts as [connected] from
 /// the first hello until none has arrived for `PedalRepository.helloTimeout`.
 enum PedalLinkStatus {
   /// No board has been heard from (yet, or for a while).
@@ -33,7 +33,8 @@ enum PedalLinkStatus {
 /// Liveness is one mechanism, driven by the board: every hello is answered
 /// with the last pushed frame, so a board that just (re)connected — or that
 /// missed a frame — is current within a second, and its own frame watchdog
-/// sees traffic while segno runs. Callers push only on change.
+/// sees traffic while segno runs. A frame identical to the last one is not
+/// sent again, so callers push freely.
 ///
 /// [status] and [firmwareVersion] are read off the last hello heard: there is
 /// no separate status to keep in step with it.
@@ -77,6 +78,7 @@ class PedalRepository {
   HelloMessage? _hello;
   PedalStateFrame? _lastFrame;
   Timer? _helloWatchdog;
+  bool _goodbye = false;
   bool _disposed = false;
 
   /// Decoded pedal inputs (button presses/releases, encoder detents).
@@ -99,33 +101,49 @@ class PedalRepository {
   /// talking, or `null` while it is not.
   String? get firmwareVersion => _hello?.firmwareVersion;
 
-  /// Sends [frame] to the board and remembers it as the frame every later
-  /// hello is answered with. Dropped while the board is
-  /// [PedalLinkStatus.incompatible].
+  /// Whether frames and events may cross the link right now: not released,
+  /// not said goodbye, and not facing a board that speaks another protocol.
+  bool get _open =>
+      !_disposed && !_goodbye && status != PedalLinkStatus.incompatible;
+
+  /// Sends [frame] to the board unless it is the frame already showing, and
+  /// remembers it as the frame every later hello is answered with. Recorded
+  /// but not sent while the board is [PedalLinkStatus.incompatible]; dropped
+  /// after [goodbye].
   void pushState(PedalStateFrame frame) {
-    if (_disposed) return;
+    if (_disposed || _goodbye || frame == _lastFrame) return;
     _lastFrame = frame;
-    if (status == PedalLinkStatus.incompatible) return;
-    _link.send(StateMessage(frame));
+    if (_open) _link.send(StateMessage(frame));
   }
 
-  /// Sends the loop-top pulse. Dropped while the board is incompatible.
+  /// Sends the loop-top pulse. Dropped while the board is incompatible and
+  /// after [goodbye].
   void sendLoopTop() {
-    if (_disposed || status == PedalLinkStatus.incompatible) return;
-    _link.send(const LoopTopMessage());
+    if (_open) _link.send(const LoopTopMessage());
+  }
+
+  /// Darkens the console for a shutdown and latches the link: from here on
+  /// every push and pulse is dropped and every stomp ignored, so nothing —
+  /// a footswitch pressed out of habit, a last looper poll — re-lights a
+  /// panel whose host is halting. Hellos are still answered, with the
+  /// goodbye frame, so a board that misses it goes dark on the next one.
+  void goodbye() {
+    if (_disposed || _goodbye) return;
+    pushState(PedalStateFrame.blank(goodbye: true));
+    _goodbye = true;
   }
 
   void _onMessage(PedalLinkMessage message) {
     switch (message) {
       case ButtonMessage(:final button, :final pressed):
-        if (status == PedalLinkStatus.incompatible) return;
+        if (!_open) return;
         _emit(
           pressed
               ? ButtonPressed(button, timestamp: _clock())
               : ButtonReleased(button, timestamp: _clock()),
         );
       case EncoderMessage(:final delta):
-        if (status == PedalLinkStatus.incompatible) return;
+        if (!_open) return;
         _emit(EncoderDelta(delta));
       case HelloMessage():
         _onHello(message);
@@ -137,7 +155,14 @@ class PedalRepository {
   void _onHello(HelloMessage hello) {
     _helloWatchdog?.cancel();
     _helloWatchdog = Timer(helloTimeout, _onHelloTimeout);
-    _setHello(hello, _describe(hello));
+    _setHello(
+      hello,
+      () => hello.protocolVersion == PedalLinkCodec.protocolVersion
+          ? 'firmware ${hello.firmwareVersion}'
+          : 'firmware ${hello.firmwareVersion} speaks link protocol '
+                '${hello.protocolVersion}, this build speaks '
+                '${PedalLinkCodec.protocolVersion}',
+    );
     // Answer every hello with the current frame: the reconnect re-push and
     // the keep-alive in one place, paced by the board.
     final frame = _lastFrame;
@@ -147,24 +172,17 @@ class PedalRepository {
   }
 
   void _onHelloTimeout() {
-    _setHello(null, 'no hello for ${helloTimeout.inSeconds} s');
+    _setHello(null, () => 'no hello for ${helloTimeout.inMilliseconds} ms');
   }
-
-  static String _describe(HelloMessage hello) =>
-      hello.protocolVersion == PedalLinkCodec.protocolVersion
-      ? 'firmware ${hello.firmwareVersion}'
-      : 'firmware ${hello.firmwareVersion} speaks link protocol '
-            '${hello.protocolVersion}, this build speaks '
-            '${PedalLinkCodec.protocolVersion}';
 
   /// Records the latest hello (or, with `null`, its absence) and announces
   /// the status when the hello differs from the last one — a new status, or
   /// the same status from a board that now names another firmware version.
-  /// [why] is the log line's detail.
-  void _setHello(HelloMessage? hello, String why) {
+  /// [why] is the log line's detail, built only when a line is written.
+  void _setHello(HelloMessage? hello, String Function() why) {
     if (hello == _hello) return;
     _hello = hello;
-    _log?.call('pedal link: ${status.name} ($why)');
+    _log?.call('pedal link: ${status.name} (${why()})');
     if (!_statusChanges.isClosed) _statusChanges.add(status);
   }
 
@@ -178,7 +196,7 @@ class PedalRepository {
     if (_disposed) return;
     _disposed = true;
     _helloWatchdog?.cancel();
-    _setHello(null, 'link released');
+    _setHello(null, () => 'link released');
     await _inboundSub.cancel();
     await _link.dispose();
     await _events.close();

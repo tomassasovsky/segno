@@ -138,7 +138,7 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
-    final pedalRepo = PedalRepository(SimulatorPedalLink());
+    final pedalRepo = PedalRepository(NoopPedalLink());
     addTearDown(pedalRepo.dispose);
     performance = PerformanceRepository(
       engine: FakeAudioEngine(),

@@ -80,7 +80,7 @@ void main() {
               BlocProvider<ControlCubit>(
                 create: (_) => ControlCubit(
                   looper: repository,
-                  pedal: PedalRepository(SimulatorPedalLink()),
+                  pedal: PedalRepository(NoopPedalLink()),
                   settings: settings,
                   performance: performanceRepository,
                 ),

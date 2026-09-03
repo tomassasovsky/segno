@@ -45,11 +45,12 @@ Adafruit_NeoPixel ring(RING_N, PIN_RING, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel ind(IND_N, PIN_IND, NEO_GRB + NEO_KHZ800);
 static const uint8_t LED_BRIGHTNESS = 64;
 
-// Direction the ring's sweep travels, seen from the front of the panel. WS2812
-// index order is a property of the fitted ring and of which face you view it
-// from, so it cannot be inferred; clockwise is the owner's call. Flip if the
-// bench shows it running backwards.
-static const bool RING_CLOCKWISE = true;
+// The sweep travels clockwise seen from the front of the panel. WS2812 index
+// order is a property of the fitted ring and of which face you view it from,
+// so it cannot be inferred: on the Ring 24 fitted here, index order already
+// runs clockwise from the front, so the sweep must NOT be reversed
+// (bench-verified 2026-09-03: reversing it ran the hump backwards).
+static const bool RING_REVERSE = false;
 
 // ---- link ----------------------------------------------------------------------
 #define LINK Serial1
@@ -185,7 +186,7 @@ static Rgb globalColor(uint8_t color) {
 }
 
 static inline uint16_t ringIndex(uint16_t i) {
-  return RING_CLOCKWISE ? (uint16_t)((RING_N - 1) - i) : i;
+  return RING_REVERSE ? (uint16_t)((RING_N - 1) - i) : i;
 }
 
 // A smooth brightness hump travels around the ring, coloured by the activity
@@ -210,6 +211,7 @@ static const unsigned long BREATHE_MS = 2400;
 static const float RING_WIDTH = 11.0f;
 static float g_ringPhase = 0.0f;  // hump centre, 0..RING_N
 static unsigned long g_ringLastMs = 0;
+static bool g_ringDark = false;  // the ring buffer is already all-black
 
 static void onLoopTop() {
   g_ringPhase = 0.0f;
@@ -230,9 +232,15 @@ static bool renderRing() {
   const unsigned long dt = now - g_ringLastMs;
   g_ringLastMs = now;
   if (!g_haveFrame || g_frame.goodbye) {
+    // Clear once, then say nothing changed: without the latch this pushes an
+    // unchanged black buffer at every tick, exactly while the board is
+    // waiting on the UART. REFRESH_MS still heals a glitched pixel.
+    if (g_ringDark) return false;
     ring.clear();
+    g_ringDark = true;
     return true;
   }
+  g_ringDark = false;
   const Rgb activity = globalColor(g_frame.global_color);
   const bool active = (activity.r || activity.g || activity.b) && g_frame.global_color != PEDAL_GLOBAL_BLUE;
   // A Stop with a loop still loaded freezes the ring where it was.
@@ -243,7 +251,8 @@ static bool renderRing() {
     float t = (p < half) ? (p / (float)half) : (1.0f - (p - half) / (float)half);
     t = t * t * (3.0f - 2.0f * t);
     const uint8_t level = (uint8_t)((0.15f + 0.85f * t) * 255.0f + 0.5f);
-    for (uint16_t i = 0; i < RING_N; i++) ring.setPixelColor(i, scaled(0, 255, 0, level));
+    const uint32_t green = scaled(0, 255, 0, level);  // same for every pixel
+    for (uint16_t i = 0; i < RING_N; i++) ring.setPixelColor(i, green);
     return true;
   }
   const float msPerRev = g_frame.loop_length_micros > 0

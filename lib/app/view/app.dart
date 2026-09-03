@@ -175,7 +175,7 @@ class _AppState extends State<App> {
   @override
   void initState() {
     super.initState();
-    _pedal = widget.pedalRepository ?? PedalRepository(SimulatorPedalLink());
+    _pedal = widget.pedalRepository ?? PedalRepository(NoopPedalLink());
     _powerKeySource =
         widget.powerKeySource ??
         openAppliancePowerKeySource(onAppliance: isAppliance());
@@ -464,9 +464,7 @@ class _AppState extends State<App> {
                   );
                 }
               },
-              pedalGoodbye: () => context.read<PedalRepository>().pushState(
-                PedalStateFrame.blank(goodbye: true),
-              ),
+              pedalGoodbye: () => context.read<PedalRepository>().goodbye(),
               powerOff: widget.powerOff ?? const SystemApplianceEnv().powerOff,
             ),
           ),

@@ -77,8 +77,8 @@ class PedalPlate extends StatelessWidget {
   /// whose track depends on the bank.
   final List<String> trackNames;
 
-  /// Fires on footswitch press and release, with the same signature
-  /// `SimulatorPedalLink.press` has.
+  /// Fires on footswitch press and release, with the same signature a
+  /// board's button message carries.
   final void Function(PedalButton button, {required bool down}) onPress;
 
   /// Fires on encoder rotation, `delta` detents per call.

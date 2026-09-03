@@ -34,12 +34,3 @@ enum PedalButton {
   /// Bank toggle footswitch (A/B).
   bank,
 }
-
-/// The wire index of each [PedalButton].
-extension PedalButtonIndex on PedalButton {
-  /// The [PedalButton] for wire [index], or `null` if it is unassigned.
-  static PedalButton? fromIndex(int index) {
-    if (index < 0 || index >= PedalButton.values.length) return null;
-    return PedalButton.values[index];
-  }
-}

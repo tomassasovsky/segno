@@ -69,8 +69,11 @@ abstract final class PedalLinkCodec {
   /// watchdog on the other.
   static const helloIntervalMs = 1000;
 
-  /// [helloIntervalMs] as a [Duration].
-  static const helloInterval = Duration(milliseconds: helloIntervalMs);
+  /// The hello payload length. HELLO is frozen for every protocol version —
+  /// type [typeHello], three bytes, version first — because it is how a
+  /// board built against another revision is recognised at all; a revision
+  /// that needs more from the board adds a message type, never a hello byte.
+  static const helloPayloadLength = 3;
 
   /// The payload length every message type carries, or `null` for a type this
   /// codec does not know. Every message is fixed-length, so the parser can
@@ -79,7 +82,7 @@ abstract final class PedalLinkCodec {
   static int? payloadLengthFor(int type) => switch (type) {
     typeButton => 2,
     typeEncoder => 1,
-    typeHello => 3,
+    typeHello => helloPayloadLength,
     typeState => statePayloadLength,
     typeLoopTop => 0,
     _ => null,
@@ -126,7 +129,7 @@ abstract final class PedalLinkCodec {
     if (payload.length != payloadLengthFor(type)) return null;
     switch (type) {
       case typeButton:
-        final button = PedalButtonIndex.fromIndex(payload[0]);
+        final button = PedalButton.values.elementAtOrNull(payload[0]);
         if (button == null || payload[1] > 1) return null;
         return ButtonMessage(button, pressed: payload[1] == 1);
       case typeEncoder:

@@ -8,6 +8,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/control/control.dart';
 import 'package:segno/looper/bloc/looper_bloc.dart';
@@ -720,7 +721,7 @@ class _Harness {
     );
     final settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = LooperBloc(repository: repo);
-    sim = SimulatorPedalLink();
+    sim = FakePedalLink();
     pedalRepo = PedalRepository(sim);
     performance = PerformanceRepository(
       engine: engine,
@@ -744,7 +745,7 @@ class _Harness {
   late final StreamController<void> reconnectTicker;
   late final LooperRepository repo;
   late final LooperBloc bloc;
-  late final SimulatorPedalLink sim;
+  late final FakePedalLink sim;
   late final PedalRepository pedalRepo;
   late final PerformanceRepository performance;
   late final ControlCubit control;
@@ -752,7 +753,7 @@ class _Harness {
   final Set<PedalButton> _held = {};
 
   LooperState get looper => repo.state;
-  PedalStateFrame get frame => sim.frame.value;
+  PedalStateFrame get frame => sim.lastFrame ?? PedalStateFrame.blank();
 
   ControlContext get context => ControlContext(
     looper: looper,

@@ -225,7 +225,7 @@ void main() {
       deviceRefreshInterval: Duration.zero,
     );
     pedal = PedalCubit(
-      pedal: PedalRepository(SimulatorPedalLink()),
+      pedal: PedalRepository(NoopPedalLink()),
     );
     facts = ConsoleFactsCubit(
       // Zero latency: even `Future.delayed(Duration.zero)` schedules a timer,

@@ -2754,18 +2754,21 @@ void main() {
           // LooperState; only the synchronous `looper.state` snapshot (an idle
           // empty set from the outer setUp) is available. Liveness after this
           // first push is the repository's (it answers hellos), so this is the
-          // one push the cubit owes unprompted.
-          transport.sent.clear();
+          // one push the cubit owes unprompted. Its own link and repository:
+          // the shared one already holds this frame, and a repeat is dropped.
+          final idleLink = FakePedalLink();
+          final idlePedal = PedalRepository(idleLink);
+          addTearDown(idlePedal.dispose);
           final idle = ControlCubit(
             looper: looper,
-            pedal: pedal,
+            pedal: idlePedal,
             settings: settings,
             performance: performance,
           );
           addTearDown(idle.close);
-          expect(transport.lastFrame, isNull, reason: 'nothing before load()');
+          expect(idleLink.lastFrame, isNull, reason: 'nothing before load()');
           await idle.load();
-          expect(transport.lastFrame, isNotNull);
+          expect(idleLink.lastFrame, isNotNull);
         },
       );
 

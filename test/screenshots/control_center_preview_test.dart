@@ -511,7 +511,7 @@ void main() {
     addTearDown(performance.dispose);
     final control = ControlCubit(
       looper: looper,
-      pedal: PedalRepository(SimulatorPedalLink()),
+      pedal: PedalRepository(NoopPedalLink()),
       settings: settings,
       performance: performance,
     );
@@ -595,7 +595,7 @@ void main() {
       settings: settings,
     );
     final pedal = PedalCubit(
-      pedal: PedalRepository(SimulatorPedalLink()),
+      pedal: PedalRepository(NoopPedalLink()),
     );
     final update = _MockUpdateCubit();
     whenListen(

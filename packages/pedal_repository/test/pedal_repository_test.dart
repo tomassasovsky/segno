@@ -61,6 +61,47 @@ void main() {
       expect(link.sent, [StateMessage(frame), const LoopTopMessage()]);
     });
 
+    test('a frame identical to the last push is not sent again', () {
+      final frame = PedalStateFrame.blank().copyWith(
+        globalColor: GlobalColor.red,
+      );
+      repo
+        ..pushState(frame)
+        ..pushState(frame.copyWith())
+        ..pushState(frame.copyWith(globalColor: GlobalColor.green));
+      expect(link.sent, hasLength(2));
+    });
+
+    test('goodbye darkens the board and latches the link shut', () async {
+      final events = <PedalEvent>[];
+      repo.events.listen(events.add);
+      link.hello();
+      await pumpEventQueue();
+      repo
+        ..pushState(PedalStateFrame.blank().copyWith(activeBank: 1))
+        ..goodbye();
+      expect(link.lastFrame?.isGoodbye, isTrue);
+      link.sent.clear();
+
+      // Nothing re-lights a halting console: pushes and pulses are dropped,
+      // stomps are ignored, and a hello is answered with the goodbye frame.
+      repo
+        ..pushState(PedalStateFrame.blank().copyWith(activeBank: 1))
+        ..sendLoopTop()
+        ..goodbye();
+      link
+        ..press(PedalButton.recPlay, down: true)
+        ..turn(1)
+        ..hello();
+      await pumpEventQueue();
+      expect(events, isEmpty);
+      expect(link.sent.whereType<LoopTopMessage>(), isEmpty);
+      expect(
+        link.sent.whereType<StateMessage>().map((m) => m.frame.isGoodbye),
+        everyElement(isTrue),
+      );
+    });
+
     test(
       'a hello connects the link and records the firmware version',
       () async {
@@ -84,22 +125,25 @@ void main() {
         final quiet = PedalRepository(quietLink);
         final statuses = <PedalLinkStatus>[];
         quiet.statusChanges.listen(statuses.add);
+        final mostOfTheTimeout = quiet.helloTimeout * 0.7;
 
-        quietLink.hello();
+        quietLink.hello(firmwareMinor: 7);
         async.flushMicrotasks();
         expect(quiet.status, PedalLinkStatus.connected);
+        expect(quiet.firmwareVersion, '1.7');
 
-        async.elapse(const Duration(seconds: 2));
-        quietLink.hello(); // keeps it alive
+        async.elapse(mostOfTheTimeout);
+        quietLink.hello(firmwareMinor: 7); // keeps it alive
         async
           ..flushMicrotasks()
-          ..elapse(const Duration(seconds: 2));
+          ..elapse(mostOfTheTimeout);
         expect(quiet.status, PedalLinkStatus.connected);
 
-        async.elapse(const Duration(seconds: 2));
+        async.elapse(mostOfTheTimeout);
         expect(quiet.status, PedalLinkStatus.disconnected);
+        expect(quiet.firmwareVersion, isNull);
 
-        quietLink.hello();
+        quietLink.hello(firmwareMinor: 7);
         async.flushMicrotasks();
         expect(quiet.status, PedalLinkStatus.connected);
         expect(statuses, [
@@ -171,21 +215,6 @@ void main() {
         PedalLinkStatus.connected,
         PedalLinkStatus.connected,
       ]);
-    });
-
-    test('the firmware version is forgotten when the board goes quiet', () {
-      fakeAsync((async) {
-        final quietLink = FakePedalLink();
-        final quiet = PedalRepository(quietLink);
-        quietLink.hello(firmwareMinor: 7);
-        async.flushMicrotasks();
-        expect(quiet.firmwareVersion, '1.7');
-        async.elapse(quiet.helloTimeout + const Duration(seconds: 1));
-        expect(quiet.status, PedalLinkStatus.disconnected);
-        expect(quiet.firmwareVersion, isNull);
-        unawaited(quiet.dispose());
-        async.flushTimers();
-      });
     });
 
     test('dispose reports the link as disconnected', () async {

@@ -13,6 +13,7 @@ import 'package:midi_client/midi_client.dart' show MidiControllerSource;
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/testing.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:segno/app/app.dart';
 import 'package:segno/app/app_toasts.dart';
@@ -356,8 +357,8 @@ void main() {
         engine: FakeAudioEngine(),
         sessionsRoot: () async => sessionsRoot.path,
       );
-      final simulator = SimulatorPedalLink();
-      final pedal = PedalRepository(simulator);
+      final link = FakePedalLink();
+      final pedal = PedalRepository(link);
       await tester.pumpWidget(
         App(
           repository: repository,
@@ -379,9 +380,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
 
-      simulator.press(PedalButton.clear, down: true);
+      link.press(PedalButton.clear, down: true);
       await tester.pump();
-      simulator.press(PedalButton.clear, down: false);
+      link.press(PedalButton.clear, down: false);
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byKey(const Key('sessions_manager')), findsNothing);
       expect(find.byType(LooperPage), findsOneWidget);
