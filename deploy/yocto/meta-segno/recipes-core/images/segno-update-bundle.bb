@@ -66,10 +66,12 @@ RAUC_SLOT_firmware = "segno-bootfs"
 RAUC_SLOT_firmware[type] = "file"
 RAUC_SLOT_firmware[file] = "segno-bootfs-${MACHINE}.tar"
 RAUC_SLOT_firmware[depends] = "segno-bootfs:do_deploy"
-# A tar into the mounted slot, not an image dd'd over it: the boot partitions
-# are sized by the WIC layout, and a raw image would tie the bundle to that size
-# forever.
-RAUC_SLOT_firmware[hooks] = "post-install"
+# The hook does the WRITE, not just a fix-up afterwards. RAUC's own vfat
+# handler drives GNU tar, which this rootfs's busybox tar rejects, and labels
+# the filesystem after the slot (FIRMWARE_0) where the layout expects bootA /
+# bootB. Writing it here also keeps the bundle carrying a tar rather than a
+# partition-sized image, so it is not tied to the size the layout uses today.
+RAUC_SLOT_firmware[hooks] = "install"
 
 # The boot slot arrives with cmdline.txt's root=XXX placeholder intact; the hook
 # points each slot at its own rootfs, the way the image build does per slot.
