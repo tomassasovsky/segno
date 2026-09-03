@@ -8,7 +8,7 @@ tcl/interface/raspberrypi5-gpiod.cfg. Both are upstream now, which is why this \
 builds upstream rather than vendoring Raspberry Pi's fork."
 HOMEPAGE = "https://openocd.org"
 LICENSE = "GPL-2.0-or-later"
-LIC_FILES_CHKSUM = "file://COPYING;md5=b234ee4d69f5fce4486a80fdaf4a4263"
+LIC_FILES_CHKSUM = "file://COPYING;md5=599d2d1ee7fc84c0467b3d19801db870"
 
 # Pinned, not floating: the firmware this flashes ships in the same image, and a
 # tool that reprograms an MCU must not change under the appliance without a
