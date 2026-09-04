@@ -1,4 +1,4 @@
-"""pcbnew layout generator for the Segno CONSOLE board v2 (issue #747).
+"""pcbnew layout generator for the Segno CONSOLE board v3 (issue #747; v3: #987 ring link, CTRL ring sense).
 
 Consumes `console_board.net` -- the SKiDL netlist is the single source of truth for
 what connects to what -- and emits a placed, routed, poured, DRC-clean board plus a
@@ -169,6 +169,10 @@ PLACEMENT = {
     # starts at 84.5 and comes up to y 10.2, so the last two headers would sit on
     # top of it. The corner mounting holes cap the other end the same way.
     "J8":  (18.1, 8.0, 0),
+    "J23": (16.5, 69.0, 0),        # I2C to the PD trigger, under the module's
+                                   # left end between 5V IN and EXP: GP0/GP1 are
+                                   # pads 1/2, a 12 mm hop up. (The pocket beside
+                                   # C30 is the USB-C cable corridor -- USB_CLEAR.)
     "J9":  (23.1, 30.0, 0),        # flying lead to the Pi 5's own J2 button pads
                                    # (NOT a header pin -- no GPIO wakes a Pi 5;
                                    # see PWR_BTN in console_board.py)
@@ -177,8 +181,11 @@ PLACEMENT = {
                                    # bonding the shield here would short out the
                                    # isolation U2 exists to provide.
     "J4":  (50.0, 8.0, 0),         # MIDI OUT -- 3 leads: DIN pins 4, 5 and 2.
-    "J20": (66.0, 8.0, 0),         # CTRL 1, over GP26 = pad 31
-    "J21": (78.0, 8.0, 0),         # CTRL 2, over GP27 = pad 32
+    # 4-way since v3 (tip, ring, sleeve, tip-normal for presence): 2.5 mm
+    # wider each, so the pair slides left to keep 0.8 mm to MIDI OUT on one
+    # side and to the ribbon's column on the other.
+    "J20": (63.4, 8.0, 0),         # CTRL 1, over GP26 = pad 31
+    "J21": (77.7, 8.0, 0),         # CTRL 2, over GP27 = pad 32
     "U2":  (34.0, 21.0, 0),        # H11L1, directly under its own jack, in its own
                                    # ISOLATION_GAP pocket
 
@@ -230,11 +237,14 @@ PLACEMENT = {
                                    # A 40-way ribbon leaving
                                    # mid-board folds straight back over everything;
                                    # here the cable clears the board immediately.
-    "J22": (46.3, 26.0, 0),        # expansion. Not on the top edge: its GP28 pin is
-                                   # pad 34, near the module's LEFT end, while GP19..
-                                   # GP22 are pads 25..29 toward the right -- from
-                                   # the top-right corner that ADC lead ran 61 mm.
-                                   # Sat here it reaches both ends of its own span.
+    "J22": (46.3, 26.0, 0),        # expansion, 2x4: GP12/15/19/22/28 since v3
+                                   # (GP20/21 became the ring senses). Where it
+                                   # was on v2 -- the bench preferred it here.
+                                   # Not on the top edge: its GP28 pin is pad 34,
+                                   # near the module's LEFT end, while GP19/22
+                                   # are pads 25/29 toward the right -- from the
+                                   # top-right corner that ADC lead ran 61 mm.
+                                   # Sat here it reaches both ends of its span.
 
     # under the module: series resistors, then the ring/LED pair
     # Both series resistors stand UPRIGHT in the channel beside U1 rather than lying
@@ -248,12 +258,22 @@ PLACEMENT = {
     # nowhere to go.
     "C11": (80.0, 31.0, 0),        # +5V decoupling for U1
     "C20": (24.0, 21.0, 0),        # +3V3 decoupling for U2
-    # The three encoder pull-ups. New: they used to live on ring_board.py tied to
-    # its 5 V rail, which sat 1.4 V over the RP2350's absolute maximum.
-    "R11": (19.4, 63.0, 0), "R12": (32.2, 63.0, 0), "R13": (45.0, 63.0, 0),
-    "R1":  (59.0, 63.0, 0),       # 330R, U1 gate B -> J6 pin 5 (ring data).
-                                   # sitting left of the 12.4 mm slot R18 needs
-                                   # between it and R2.
+    # The ring link's two pull-ups, on this board's 3V3 (they used to live on
+    # ring_board.py tied to its 5 V rail, 1.4 V over the RP2350's absolute
+    # maximum). R13, R1 and R15 -- the third pull-up, the ring-data series part
+    # and its pull-down -- retired with the ring-data path in v3 (#987); their
+    # slots stay open and their designators stay unused.
+    # On the slim band under the module's row A with R20/R16 (they were at
+    # y 63): the row below is then R21/R22's and the row below that J23's.
+    "R11": (19.4, 59.6, 0), "R12": (32.2, 59.6, 0),
+    # The CTRL rings' sense resistors (v3), in the row R13 and R15 left empty
+    # when the ring-data path went. 50-60 mm from the jacks they serve, and
+    # exempt from the hop gate for it (SLOW_SENSE_NETS); the column beside U2
+    # that would have put them under the jacks is the expansion header's.
+    "R19": (45.0, 63.0, 0), "R20": (48.0, 59.6, 0),
+    # The presence series parts (v3, switched jacks), same reasoning and the
+    # same exemption: the row under R11/R12, left of R19.
+    "R21": (17.0, 63.0, 0), "R22": (30.0, 63.0, 0),
     "R2":  (79.5, 63.0, 90),        # 330R, U1 gate A -> J7 pin 2 (indicators)
 
     # The five review-fix resistors. ALL hand-placed: the passive bands were
@@ -274,14 +294,12 @@ PLACEMENT = {
     "R17": (96.9, 45.0, 90),       # 10k link_tx series, upright east of the
                                    # ribbon: 11 mm from J2 pin 21, 29 mm from
                                    # the Pico's GP16 pad
-    "R18": (71.6, 63.0, 0),        # 10k link_rx series, flat in the R1..R2 slot;
+    "R18": (71.6, 63.0, 0),        # 10k link_rx series, flat in the R12..R2 slot;
                                    # both legs within 28 mm
-    "R15": (48.0, 59.6, 0),        # 100k ring_data pulldown, in the slim band
-                                   # under the module's row A, 4 mm from pad 16
-    "R16": (61.5, 59.6, 0),        # 100k ind_data pulldown, flat beside R15 in
+    "R16": (61.5, 59.6, 0),        # 100k ind_data pulldown, in the slim band
                                    # the same band: 22 mm from U1 pin 2; its GND
                                    # leg lands in the pour
-    "J6":  (52.5, 69.0, 0),        # ring/encoder, under pads 16/17/19/20
+    "J6":  (52.5, 69.0, 0),        # ring link (4-way since v3), under pads 19/20
     "J7":  (71.0, 69.0, 0),        # indicators -- x matches J9 above
 
     # The four M3 holes, one per corner. H1 is the chassis bond (see console_board.py):
@@ -804,7 +822,15 @@ def _free_slot(anchor, w, h, boxes):
 # hand-wired board: pedal 1..10 reading left to right, unambiguously, at the bench.
 # These are debounced switch lines -- 60 mm of trace is electrically free. Keep the
 # straight ordered row.
-MAX_RATSNEST_MM = 1770.0
+#
+# v3 measured 1915 mm. The ~210 mm over v2 is the four CTRL sense nets (ring and
+# presence, J20_REF/J21_REF/J20_TN/J21_TN and their GPIO ends): their series
+# parts sit under the module, 50-60 mm from the jacks they serve, because the
+# column beside U2 that would have put them under the jacks is the expansion
+# header's. They are DC lines through 4.7k -- SLOW_SENSE_NETS, exempt from the
+# hop gate for the same reason -- so that copper is a decision, not waste. The
+# budget follows the measurement plus ~7%.
+MAX_RATSNEST_MM = 2050.0
 POURED_NETS = {"GND"}
 
 # The ratsnest total is a GLOBAL number, and --selftest proved it cannot see a
@@ -823,6 +849,14 @@ POURED_NETS = {"GND"}
 # and the pour.
 MAX_HOP_MM = 42.0
 RAIL_NETS = {"+3V3", "+5V"}
+# The CTRL ring-sense nets are exempt too, by decision: a ring is 3V3 through 1k
+# that a footswitch pulls to ground, read through 4.7k into a GPIO's pull-up --
+# DC, and slow even by footswitch standards -- so the trace can be as long as
+# the board. That bought back the column beside U2 for the expansion header,
+# whose position the bench preferred, and put R19/R20 in the row R13 and R15
+# left empty under the module.
+SLOW_SENSE_NETS = {"J20_REF", "J21_REF", "CTRL1_RING", "CTRL2_RING",
+                   "J20_TN", "J21_TN", "CTRL1_PRESENT", "CTRL2_PRESENT"}
 
 
 def worst_hops(fps, nets):
@@ -834,7 +868,7 @@ def worst_hops(fps, nets):
                                             ToMM(pad.GetPosition().y))
     out = []
     for name, nodes in nets.items():
-        if name in POURED_NETS or name in RAIL_NETS:
+        if name in POURED_NETS or name in RAIL_NETS or name in SLOW_SENSE_NETS:
             continue
         # Nets landing on J2 are exempt -- the WHOLE net, both ends; this
         # `continue` checks nothing about them. J2's position is not a routing
@@ -1153,7 +1187,7 @@ LABELS = {
     "J10": "REC",  "J11": "STOP", "J12": "UNDO", "J13": "MODE", "J14": "TRK1",
     "J15": "TRK2", "J16": "TRK3", "J17": "TRK4", "J18": "CLR",  "J19": "BANK",
     "J2":  "PI",     "J3":  "5V IN",    "J20": "CTRL 1", "J21": "CTRL 2",
-    "J22": "EXP",    "J4":  "MIDI OUT", "J5":  "MIDI IN",
+    "J22": "EXP",    "J23": "PD",       "J4":  "MIDI OUT", "J5":  "MIDI IN",
     "J6":  "RING",   "J7":  "LEDS",     "J8":  "PWR BTN", "J9": "PI PWR",
 }
 SILK_H = 1.0
@@ -1306,8 +1340,8 @@ def _selftest():
     # the two pours and the designator placement are decisions, not coordinates, and
     # they need controls just as much.
     cases = [
-        ("ring series resistor moved off its own net", "HOP:",
-         {"R1": (12.0, 13.0, 90)}, {}),
+        ("indicator series resistor moved off its own net", "HOP:",
+         {"R2": (12.0, 13.0, 90)}, {}),
         # J2 again, the representative case: only hand-PLACEMENT parts can ever
         # be off-board (the spiral bounds its own slots), and those are exactly
         # the labelled connectors. This control briefly became H3 because the
@@ -1448,10 +1482,16 @@ def build(quiet=False):
     # It has never actually been printable. Gated below now.
     # Titles BEFORE the labels: _labels() treats whatever silk already exists as
     # occupied, so anything drawn after it is drawn on top of it.
-    # x 33, not 28: the title is 33.1 mm wide as RENDERED, which is wider than a
-    # character count suggests, and it has to clear H4's pad at the left end of the
-    # bottom strip. Measured, not taste.
-    _silk(board, "SEGNO CONSOLE v2  #747", 33.0, 95.5, 1.6)
+    # No issue numbers. They were on the silk as "#747 #987" and are provenance
+    # for whoever edits this file, not for whoever solders the board -- the
+    # tracker is not something you can look up with a board in your hand, and
+    # the numbers age worse than the board does. They live in this file's
+    # docstring and in console_board_mount.json instead.
+    # x 33, not 28: _silk() takes the text CENTRE, and the title has to clear
+    # H4's pad at the left end of the bottom strip. Dropping the numbers only
+    # shortens it inward from that centre, so the clearance can only improve;
+    # the SILK gates below re-measure it as rendered either way.
+    _silk(board, "SEGNO CONSOLE v3", 33.0, 95.5, 1.6)
     _silk(board, "MIDI IN: ISOLATED", 72.0, 95.5, 1.0)
     _labels(board, fps)
 
@@ -1562,7 +1602,7 @@ def write_mount_json():
     holes = {ref: PLACEMENT[ref][:2] for ref in ("H1", "H2", "H3", "H4")}
     payload = {
         "source": "console_board_pcb.py",
-        "board": "segno console board v2 (#747)",
+        "board": "segno console board v3 (#747, #987)",
         "outline_mm": [BW, BH],
         "hole_pattern_mm": [BW - 2 * MOUNT_INSET, BH - 2 * MOUNT_INSET],
         "hole_inset_mm": MOUNT_INSET,

@@ -159,8 +159,54 @@ jobs:
           path: build/linux/arm64/release/bundle
           retention-days: 1
 
+  # The board is a second computer, and the image owns what runs on it (#989).
+  # Built here, from the same commit as the app, so the firmware and the app
+  # that speaks to it cannot ship out of step.
+  build-console-firmware:
+    needs: determine-meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install arduino-cli
+        run: |
+          set -eu
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh -s 1.1.1
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+
+      - name: Install the RP2040/RP2350 core + Adafruit NeoPixel
+        run: |
+          set -eu
+          arduino-cli core update-index --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+          arduino-cli core install rp2040:rp2040 --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+          arduino-cli lib install "Adafruit NeoPixel"
+
+      - name: Compile the firmware and record what it speaks
+        run: |
+          set -eu
+          arduino-cli compile --fqbn rp2040:rp2040:rpipico2 firmware/console_board --output-dir fw-out
+          mkdir -p console-board
+          cp fw-out/console_board.ino.elf console-board/console_board.elf
+
+          # The marker the boot-time flasher compares the board against. Both
+          # numbers come from the firmware source in this same commit, so they
+          # cannot drift from what was just compiled.
+          header=firmware/console_board/pedal_link.h
+          protocol=$(sed -n 's/^#define PEDAL_LINK_PROTOCOL_VERSION \([0-9]*\)u.*/\1/p' "$header")
+          major=$(sed -n 's/^static const uint8_t FW_MAJOR = \([0-9]*\);.*/\1/p' firmware/console_board/console_board.ino)
+          minor=$(sed -n 's/^static const uint8_t FW_MINOR = \([0-9]*\);.*/\1/p' firmware/console_board/console_board.ino)
+          test -n "$protocol" && test -n "$major" && test -n "$minor"
+          echo "protocol=$protocol firmware=$major.$minor" > console-board/version
+          cat console-board/version
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: segno-console-board
+          path: console-board
+          retention-days: 1
+
   build-image:
-    needs: [determine-meta, build-app]
+    needs: [determine-meta, build-app, build-console-firmware]
     # Opt-in self-hosted (#323): a workflow_dispatch explicitly asking for it.
     # Push-triggered runs have no `inputs` context, so this always resolves to
     # the free GitHub-hosted runner for them.
@@ -172,6 +218,11 @@ jobs:
         with:
           name: segno-app-bundle
           path: deploy/yocto/prebuilt/bundle
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: segno-console-board
+          path: deploy/yocto/prebuilt/console-board
 
       - name: Restore the app binary's executable bit
         # segno-bundle.bb's do_install checks `[ -x "${bundle}/segno" ]`; the
@@ -294,6 +345,40 @@ jobs:
 
       # Make growth visible in the run log, so it is noticed here rather than
       # by a hypervisor falling over.
+      # What the image CARRIES has to be what this run BUILT. Shared state can
+      # hand back a stale package when a recipe's inputs are not in its
+      # signature (the console-board recipe read its firmware from outside
+      # SRC_URI until f1cc3974), and nothing downstream would notice until a
+      # console went dark with an app on one link protocol and a board on
+      # another. So read the marker and the firmware back out of the rootfs
+      # and compare them with this run's artifacts.
+      - name: Verify the image carries this run's console firmware
+        run: |
+          set -eu
+          machine='${{ needs.determine-meta.outputs.machine }}'
+          rootfs=$(readlink -e "$YOCTO_WORK_DIR"/*/tmp/deploy/images/"$machine"/segno-kiosk-image-"$machine".rootfs.ext4 2>/dev/null \
+                   || find "$YOCTO_WORK_DIR" -name "segno-kiosk-image-$machine-*.rootfs.ext4" | sort | tail -1)
+          test -f "$rootfs" || { echo "::error::no rootfs ext4 under $YOCTO_WORK_DIR to verify"; exit 1; }
+          command -v debugfs >/dev/null || { echo "::error::debugfs (e2fsprogs) is not on this runner; cannot verify the image"; exit 1; }
+          want_marker=$(cat deploy/yocto/prebuilt/console-board/version)
+          have_marker=$(debugfs -R 'cat /usr/lib/segno/console-board/version' "$rootfs" 2>/dev/null)
+          echo "artifact: $want_marker"
+          echo "image:    $have_marker"
+          if [ "$want_marker" != "$have_marker" ]; then
+            echo "::error::the image carries console firmware '$have_marker' but this run built '$want_marker' — a stale package reached the rootfs. Refusing to publish."
+            exit 1
+          fi
+          tmp=$(mktemp)
+          debugfs -R "dump /usr/lib/segno/console-board/console_board.elf $tmp" "$rootfs" 2>/dev/null
+          want_elf=$(sha256sum deploy/yocto/prebuilt/console-board/console_board.elf | cut -d' ' -f1)
+          have_elf=$(sha256sum "$tmp" | cut -d' ' -f1)
+          rm -f "$tmp"
+          if [ "$want_elf" != "$have_elf" ]; then
+            echo "::error::the console firmware in the image is not the one this run built (sha256 $have_elf vs $want_elf). Refusing to publish."
+            exit 1
+          fi
+          echo "image firmware matches this run's artifact"
+
       - name: Report disk consumed
         if: always()
         run: |

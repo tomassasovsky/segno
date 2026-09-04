@@ -149,9 +149,17 @@ midi_rx = Net("MIDI_RX")   # opto (3V3) -> Pi uart0 RX
 midi_out_buf = Net("MIDI_OUT_BUF")
 pwr_btn = Net("PWR_BTN")   # rear button -> the Pi's own PWR pads, NOT a GPIO
 swclk, swdio = Net("SWCLK"), Net("SWDIO")
-ring_data, ring_buf, ring_out = Net("RING_DATA"), Net("RING_DATA_BUF"), Net("RING_DATA_OUT")
 ind_data, ind_buf, ind_out = Net("IND_DATA"), Net("IND_DATA_BUF"), Net("IND_DATA_OUT")
-encA, encB, encSW = Net("ENC_A"), Net("ENC_B"), Net("ENC_SW")
+# #987 moved the encoder and the WS2812 timing onto the ring board, behind a XIAO
+# RP2350. NO COPPER ON THIS BOARD CHANGED -- these are the same three GP13/14/15
+# tracks to the same J6 pins, renamed to what they now carry. GP13 became the
+# half-duplex link to that MCU; GP14/GP15 carry nothing and are named for it
+# rather than left claiming to be an encoder that is no longer on the far end.
+# The ring link is FULL DUPLEX (owner call): GP13 drives the ring, GP14 listens
+# to it. Named by direction of travel, identically on both boards, so no alias
+# table is needed and neither name is a lie from one end.
+link_to_ring = Net("LINK_TO_RING")        # this board drives, the XIAO listens
+link_to_console = Net("LINK_TO_CONSOLE")  # the XIAO drives, this board listens
 ctrl1, ctrl2 = Net("CTRL1_TIP"), Net("CTRL2_TIP")
 
 # ---- J1: Pico 2 (RP2350) ----------------------------------------------------
@@ -193,16 +201,22 @@ pico[37].do_erc = False          # 3V3_EN -- internal pull-up
 # as an unconnected pin, and a wall of expected warnings is how a REAL one gets
 # missed -- so the exemptions are named here rather than tolerated in the log.
 # The retired V1 generator did the same for its unused AHCT gates and MIDI IN's DIN pin 2.
-# GP0/GP1 are the only pins left with nothing on them (why: the EXPANSION_GPIO
-# note below). The other five unused GPIO go to the expansion header J22 rather
-# than being quietly ERC-exempted into thin air -- an unpopulated 2x4 costs a
-# footprint and nothing else, and it is the difference between "add a feature"
-# and "respin the board".
-SPARE_GPIO = (0, 1)
-# All five are row-B pads, so ONE header reaches all of them -- GP0/GP1 are row A
-# (the far end of the module) and would have made J22 straddle the whole thing, so
-# they stay spare instead. Same rule the other connectors are gated on.
-EXPANSION_GPIO = (19, 20, 21, 22, 28)
+# No GPIO is left with nothing on it. Unused pins go to the expansion header J22
+# rather than being quietly ERC-exempted into thin air -- an unpopulated header
+# costs a footprint and nothing else, and it is the difference between "add a
+# feature" and "respin the board". That is exactly what happened to GP20/GP21:
+# v2 brought them out on J22, the CTRL jacks' rings turned out to need sensing
+# (a BOSS FS-6 puts its second switch there), and the first console got two
+# bench wires from the jack pins to those pads. v3 makes them traces -- see
+# CTRLn_RING below -- and gives J22 the two pins the ring link freed (GP12,
+# GP15) in their place; then GP19/GP22 left it again for the switched jacks'
+# presence contacts. GP0/GP1, spare on v2, are v3's I2C to the PD trigger
+# (J23): they are row A at the far end of the module, which is the end J3 and
+# the power inlet are on anyway.
+SPARE_GPIO = ()
+# J22 sits beside U2, where it reaches row A (GP12/GP15, pads 16/20) and GP28
+# (pad 34, row B) alike.
+EXPANSION_GPIO = (12, 15, 28)
 for _gp in SPARE_GPIO:
     pico[PICO[_gp]].do_erc = False
 
@@ -215,7 +229,7 @@ GPIO = {
     #
     #   row A, left  ..  centre ......................  right
     #   pads 1        4 --------- 15                16 17  19 20
-    #                 the ten footswitches           J6: ring + encoder
+    #                 the ten footswitches           J6: ring-board link
     #   row B, left  ..  centre ......................  right
     #   pads 40 39               32 31                 23   22 21
     #   VBUS VSYS <- J3          CTRL2/1                IND  LINK_RX/TX -> J2
@@ -229,9 +243,27 @@ GPIO = {
     "SW_RECPLAY": 2, "SW_STOP": 3, "SW_UNDO": 4, "SW_MODE": 5,
     "SW_TRACK1": 6, "SW_TRACK2": 7, "SW_TRACK3": 8, "SW_TRACK4": 9,
     "SW_CLEAR": 10, "SW_BANK": 11,
-    "RING_DATA": 12, "ENC_A": 13, "ENC_B": 14, "ENC_SW": 15,
+    # The ring board generates its own WS2812 timing behind a XIAO RP2350 (#987),
+    # so the ring cable is a two-wire link. v2 kept GP12 (ring data through the
+    # AHCT125's gate B) and GP15 (a spare on J6 pin 8) fitted because that board
+    # existed in copper; v3 is new copper, so both went to the expansion header
+    # instead and J6 shrank to the four conductors the cable actually has.
+    "LINK_TO_RING": 13, "LINK_TO_CONSOLE": 14,
     "IND_DATA": 18,
     "CTRL1_TIP": 26, "CTRL2_TIP": 27,
+    # The rings, sensed: pads 26/27, row B, a few pads from the tips. GP20/21 were
+    # the v2 expansion pins the bench wires went to, so a v2 board with the wires
+    # and a v3 board with the traces present the SAME pins to the firmware.
+    "CTRL1_RING": 20, "CTRL2_RING": 21,
+    # I2C to the STUSB4500 PD trigger (J23): read the negotiated contract. GP0/1
+    # are I2C0 SDA/SCL, row A's first two pads -- the end the power inlet is on.
+    "PD_SDA": 0, "PD_SCL": 1,
+    # Jack presence, from the switched jacks' tip-normal contacts (v3, Neutrik
+    # NJ6FD-V): high while the jack is EMPTY, open -- so low with the RP2350's
+    # pull-down -- once anything is plugged in. Pads 25/29, row B, by the tips.
+    # These were J22 pins on v2, where they float and read "plugged": the same
+    # firmware serves both boards without a revision flag.
+    "CTRL1_PRESENT": 19, "CTRL2_PRESENT": 22,
 }
 
 # Which pads each UART instance can reach on RP2350. Moving LINK to a "spare-
@@ -239,18 +271,30 @@ GPIO = {
 # UART, so the pairing is gated rather than trusted to the comment above.
 UART_PINS = {0: ({0, 12, 16, 28}, {1, 13, 17, 29}),
              1: ({4, 8, 20, 24}, {5, 9, 21, 25})}
+# Likewise for I2C: SDA and SCL must be one instance's pair, or the bus is two
+# half-buses that never talk. RP2350 I2C0/I2C1 SDA/SCL by GPIO.
+I2C_PINS = {0: ({0, 4, 8, 12, 16, 20, 28}, {1, 5, 9, 13, 17, 21, 29}),
+            1: ({2, 6, 10, 14, 18, 22, 26}, {3, 7, 11, 15, 19, 23, 27})}
 FSW_ORDER = ["RECPLAY", "STOP", "UNDO", "MODE", "TRACK1",
              "TRACK2", "TRACK3", "TRACK4", "CLEAR", "BANK"]
 
 pico[PICO[GPIO["LINK_TX"]]] += link_tx
 pico[PICO[GPIO["LINK_RX"]]] += link_rx
 pico[PICO[GPIO["IND_DATA"]]] += ind_data
-pico[PICO[GPIO["RING_DATA"]]] += ring_data
-pico[PICO[GPIO["ENC_A"]]] += encA
-pico[PICO[GPIO["ENC_B"]]] += encB
-pico[PICO[GPIO["ENC_SW"]]] += encSW
+pico[PICO[GPIO["LINK_TO_RING"]]] += link_to_ring
+pico[PICO[GPIO["LINK_TO_CONSOLE"]]] += link_to_console
 pico[PICO[GPIO["CTRL1_TIP"]]] += ctrl1
 pico[PICO[GPIO["CTRL2_TIP"]]] += ctrl2
+ctrl1_ring = Net("CTRL1_RING")
+ctrl2_ring = Net("CTRL2_RING")
+pico[PICO[GPIO["CTRL1_RING"]]] += ctrl1_ring
+pico[PICO[GPIO["CTRL2_RING"]]] += ctrl2_ring
+pd_sda, pd_scl = Net("PD_SDA"), Net("PD_SCL")
+pico[PICO[GPIO["PD_SDA"]]] += pd_sda
+pico[PICO[GPIO["PD_SCL"]]] += pd_scl
+ctrl1_present, ctrl2_present = Net("CTRL1_PRESENT"), Net("CTRL2_PRESENT")
+pico[PICO[GPIO["CTRL1_PRESENT"]]] += ctrl1_present
+pico[PICO[GPIO["CTRL2_PRESENT"]]] += ctrl2_present
 
 # ---- J10..J19: footswitches -- 100nF debounce + one 2-pin JST per pedal ------
 sw_nets = {}
@@ -272,6 +316,12 @@ for _i, _name in enumerate(FSW_ORDER):
     j[2] += gnd
     sw_nets[_name] = n
 
+# EVERY RESISTOR IS PINNED to the designator it had when the board was first
+# fabbed and documented (v2): the soldering guide, the placement table and the
+# fitted boards all name parts by ref, and SKiDL numbers unpinned parts in
+# declaration order, so deleting or inserting one would silently renumber every
+# resistor after it. Gaps are fine; drift is not. PIN_REFS in _check() holds the
+# ones whose identity has been stolen before.
 # ---- U1: 74AHCT125 quad buffer -- the three real 3V3 -> 5V crossings ---------
 buf = Part("74xx", "74AHCT125", value="74AHCT125N",
            footprint="Package_DIP:DIP-14_W7.62mm", ref="U1")
@@ -280,29 +330,34 @@ buf[7] += gnd
 C("100nF")[1, 2] += v5, gnd
 # WHICH GATE carries which signal is a layout decision, not an arbitrary one: on a
 # DIP-14 pins 1-7 are one side and 8-14 the other, so a gate's input pin decides
-# which side of the package that signal has to arrive from. IND_DATA and RING_DATA
-# come off the module (to U1's left) and MIDI_TX comes off the Pi ribbon (to its
-# right), so they take gates whose inputs face the right way. Wired the other way
-# round, IND_DATA had to travel around the package and was the one net on the board
-# the autorouter could not finish.
+# which side of the package that signal has to arrive from. IND_DATA comes off the
+# module (to U1's left) and MIDI_TX comes off the Pi ribbon (to its right), so
+# they take gates whose inputs face the right way. Wired the other way round,
+# IND_DATA had to travel around the package and was the one net on the board the
+# autorouter could not finish.
+#
+# Gate B carried RING_DATA until #987 moved the WS2812 timing onto the ring
+# board. v3 parks it like gate D: /OE high so the output floats, input tied low
+# so a CMOS input never drifts. Its 330R series part (R1) and the 100k pull-down
+# (R15) went with it; the designators stay retired so nothing else inherits them.
 buf[1] += gnd; buf[2] += ind_data; buf[3] += ind_buf            # gate A: indicators
-buf[4] += gnd; buf[5] += ring_data; buf[6] += ring_buf          # gate B: ring
+buf[4] += v5; buf[5] += gnd                                      # gate B: parked
+buf[6].do_erc = False
 buf[10] += gnd; buf[9] += midi_tx; buf[8] += midi_out_buf       # gate C: MIDI OUT
 buf[13] += v5                                                    # gate D: unused,
 buf[12] += gnd                                                   # /OE high, input low
 buf[11].do_erc = False
-R("330")[1, 2] += ring_buf, ring_out
-R("330")[1, 2] += ind_buf, ind_out
+R("330", ref="R2")[1, 2] += ind_buf, ind_out
 
 # ---- J4/J5: DIN-5 MIDI, terminating on the PI's uart0 -----------------------
 j_mout = jst(3, "J4", "MIDI_OUT")
-R("220")[1, 2] += midi_out_buf, j_mout[1]      # DIN pin 5
-R("220")[1, 2] += v5, j_mout[2]                # DIN pin 4
+R("220", ref="R3")[1, 2] += midi_out_buf, j_mout[1]      # DIN pin 5
+R("220", ref="R4")[1, 2] += v5, j_mout[2]                # DIN pin 4
 j_mout[3] += gnd                               # DIN pin 2 (shield) -- OUT only
 
 j_min = jst(2, "J5", "MIDI_IN")
 opto = Part("Isolator", "H11L1", footprint="Package_DIP:DIP-6_W7.62mm", ref="U2")
-R("220")[1, 2] += j_min[1], opto[1]            # DIN pin 4
+R("220", ref="R5")[1, 2] += j_min[1], opto[1]            # DIN pin 4
 opto[2] += j_min[2]                            # DIN pin 5
 # MIDI 1.0: the IN jack's pin 2 (shield) is NOT connected at the receiver, which is
 # why J5 is a 2-pin header and not a 3-pin one -- the isolation is the point.
@@ -316,7 +371,7 @@ d_clamp[1, 2] += opto[1], opto[2]
 opto[6] += v3v3                                # 3V3, so its output feeds the Pi direct
 opto[5] += gnd
 C("100nF", ref="C20")[1, 2] += v3v3, gnd
-R("10k")[1, 2] += v3v3, opto[4]
+R("10k", ref="R6")[1, 2] += v3v3, opto[4]
 opto[4] += midi_rx
 
 # ---- J20/J21: CTRL 1/2 -- one jack takes an expression pedal OR a switch -----
@@ -324,8 +379,29 @@ opto[4] += midi_rx
 # shorts ring to sleeve, so a hard 3V3 on the ring would be a dead short to GND
 # every time someone plugs in a footswitch. With it, a pot reads mid-scale and a
 # switch reads rail-to-rail, and firmware can tell them apart.
-for _ref, _net in (("J20", ctrl1), ("J21", ctrl2)):
-    j = jst(3, _ref, "CTRL_TRS")
+#
+# The ring is ALSO sensed (v3). A two-switch pedal on one TRS plug -- a BOSS FS-6
+# on its A&B jack -- puts its second switch between ring and sleeve, which the
+# tip's ADC can never see: the tip has its own pull-up. So each ring goes to a
+# GPIO through a series resistor, and reads high (~3 V, the 1k's far end) with an
+# expression pedal or an open jack, and low when that switch closes. A TS plug
+# holds it low for as long as it is in, which firmware treats as a switch that
+# never moves. v2 boards get the same thing with a wire from each jack's ring
+# pin to the J22 pads these GPIO used to be on.
+#
+# The jack is a Neutrik NJ6FD-V (v3): D-series like the one it replaces, with
+# SWITCHING contacts. Its tip-normal contact (TN) is tied to the tip while the
+# jack is empty and opens when a plug goes in, which gives the board a
+# presence wire per jack: with the tip at 3V3 through its 10k, TN reads high
+# only while empty. That is what makes plugging in and out clean -- an empty
+# jack no longer reads as a pedal at full toe, and a plug on its way in is
+# ignored until it is seated -- without guessing from the ADC. Four leads to
+# the jack: tip, ring, sleeve, TN.
+_ring_sense = []
+_presence = []
+for _ref, _net, _ring, _present in (("J20", ctrl1, ctrl1_ring, ctrl1_present),
+                                    ("J21", ctrl2, ctrl2_ring, ctrl2_present)):
+    j = jst(4, _ref, "CTRL_TRS_SW")
     j[1] += _net                               # tip   = wiper / switch
     # ONE 1k PER JACK, not one shared between them. Shared, a TS plug in either
     # jack -- which is the normal way to use a footswitch, and the exact case the
@@ -351,41 +427,52 @@ for _ref, _net in (("J20", ctrl1), ("J21", ctrl2)):
     # driving the module's GPIO23 high to force the SMPS into PWM mode while
     # sampling, which the datasheet says "can greatly reduce the inherent ripple".
     _ref_net = Net(_ref + "_REF")
-    R("1k")[1, 2] += v3v3, _ref_net
+    R("1k", ref="R7" if _ref == "J20" else "R9")[1, 2] += v3v3, _ref_net
     j[2] += _ref_net                           # ring  = pot top, current-limited
     j[3] += gnd                                # sleeve
-    R("10k")[1, 2] += v3v3, _net
+    R("10k", ref="R8" if _ref == "J20" else "R10")[1, 2] += v3v3, _net
     C("10nF")[1, 2] += _net, gnd               # anti-alias / debounce
+    # The ring-sense and presence resistors are declared with the other PINNED
+    # refs further down (R19..R22): a pinned ref declared here, ahead of
+    # auto-numbered parts, collides with SKiDL's counter and gets renamed.
+    _ring_sense.append((_ref_net, _ring))
+    _tn = Net(_ref + "_TN")
+    j[4] += _tn                                # tip-normal: closed while empty
+    _presence.append((_tn, _present))
 
-# ---- J6/J7: ring+encoder and the indicator chain ----------------------------
-# J6's pin order is NOT free: it is one end of an 8-way cable whose other end is
-# ring_board.py's J1. There is no hand-written copy of that pinout here to drift
-# from it -- _check() reads ring_board.net and compares the two connectors pin by
-# pin. The two netlists do NOT have to agree on net NAMES (see the rail note
-# above), only on which conductor each pin carries, so the alias table below is
-# the entire contract between the boards. Anything not aliased must match exactly.
+# ---- J6/J7: the ring-board link and the indicator chain ---------------------
+# J6 is the console end of the ring board's link (#987): the ring board carries a
+# XIAO RP2350 that owns the encoder and clocks its own WS2812s, so what crosses
+# the ~600 mm of box is +5V, GND and a full-duplex UART pair. Four conductors.
+#
+# v2's J6 was the fabbed 8-way with four positions left empty, which made the
+# cable asymmetric -- crimped 1:1 it put the LED rail on a Pico input. v3 is new
+# copper, so J6 is a 4-way and the cable is 1:1 with ring_board.py's J1 by
+# position. RING_PINMAP still exists because RING_CONTRACT gates the two
+# netlists against each other through it; on v3 it is the identity, and the
+# gate proves that it is.
+#
+# GND is the second pin, between +5V and the pair, on both ends: the LED return
+# is a pulsed amp-scale current and should not run beside a link line.
 RING_NET = os.path.join(HERE, "ring_board.net")
 RING_ALIASES = {          # ring_board.py's name -> this board's name
     "+5V_LED": "+5V",     # that board still declares its own single supply locally
-    "RING_DATA": "RING_DATA_OUT",   # here it is the AHCT125's buffered output
 }
-j_ring = jst(8, "J6", "RING_ENC")
-j_ring[1, 2] += v5
-j_ring[3, 4] += gnd
-j_ring[5] += ring_out
-# The encoder pull-ups live HERE, at 3V3, and ring_board.py's two 10k to its 5 V
-# rail are deleted. Those were correct when the other end of this cable was the
-# retired pedal's 5 V AVR board; against an RP2350 they sat 1.4 V over the 3.6 V
-# absolute maximum on GP13/GP14, continuously, whenever the console was powered.
-# Nothing caught it: PI_LEVELS guards the Pi, and no gate could see across into a
-# second generator's netlist. RING_LEVELS in _check() now reads ring_board.net
-# for exactly that shape (and CONSOLE_LEVELS watches this board's own parts).
-R("10k")[1, 2] += v3v3, encA
-R("10k")[1, 2] += v3v3, encB
-R("10k")[1, 2] += v3v3, encSW      # ring_board.py never had one on the switch
-j_ring[6] += encA
-j_ring[7] += encB
-j_ring[8] += encSW
+# ring_board.py J1 pin -> this board's J6 pin. Identity on v3; kept as a map so
+# the contract check reads the same whichever end is edited.
+RING_PINMAP = {1: 1, 2: 2, 3: 3, 4: 4}
+j_ring = jst(4, "J6", "RING_LINK")
+j_ring[1] += v5
+j_ring[2] += gnd
+# The link's pull-ups live HERE, on this board's 3V3 -- the rail GP13/GP14 belong
+# to. The ring board deliberately fits none: a second pull-up on another board's
+# rail is the split-rail hazard RING_LEVELS exists to catch (its ancestors were
+# 10k to a 5 V rail that sat 1.4 V over the RP2350's absolute maximum, and no
+# gate could see across two generators' netlists until RING_LEVELS was written).
+R("10k", ref="R11")[1, 2] += v3v3, link_to_ring
+R("10k", ref="R12")[1, 2] += v3v3, link_to_console
+j_ring[3] += link_to_ring
+j_ring[4] += link_to_console
 
 j_ind = jst(3, "J7", "INDICATORS")
 j_ind[1] += v5
@@ -424,13 +511,15 @@ SWD_PADS = {"D1": swclk, "D2": gnd, "D3": swdio}
 for _pad, _net in SWD_PADS.items():
     pico[_pad] += _net
 
-# ---- J22: expansion -- the five GPIO that are otherwise doing nothing --------
-# Deliberately unpopulated by default. GP0/GP1 are a UART0 pair and GP20/GP21 a
-# UART1 pair, so this header can carry a whole second serial device; GP28 is an
-# ADC, so it can carry a third pedal input. Nothing on the board depends on it.
-EXP_PINOUT = ["+3V3", "+5V", "GP19", "GP20", "GP21", "GP22", "GP28", "GND"]
-j_exp = Part("Connector_Generic", "Conn_02x04_Odd_Even",
-             footprint="Connector_PinHeader_2.54mm:PinHeader_2x04_P2.54mm_Vertical",
+# ---- J22: expansion -- the three GPIO that are otherwise doing nothing ------
+# Deliberately unpopulated by default. GP28 is an ADC, so it can carry a third
+# pedal input; GP12/GP15 are a PWM pair. Nothing on the board depends on it.
+# v2's J22 carried GP19/GP20/GP21/GP22 instead: GP20/21 became the CTRL rings'
+# sense lines and GP19/22 the jacks' presence lines, and a pin that is also a
+# jack contact has no business on a header.
+EXP_PINOUT = ["+3V3", "+5V", "GP12", "GP15", "GP28", "GND"]
+j_exp = Part("Connector_Generic", "Conn_02x03_Odd_Even",
+             footprint="Connector_PinHeader_2.54mm:PinHeader_2x03_P2.54mm_Vertical",
              ref="J22", value="EXPANSION")
 j_exp[1] += v3v3
 j_exp[2] += v5
@@ -438,7 +527,29 @@ for _i, _gp in enumerate(EXPANSION_GPIO, start=3):
     n = Net("EXP_GP%d" % _gp)
     pico[PICO[_gp]] += n
     j_exp[_i] += n
-j_exp[8] += gnd
+j_exp[6] += gnd
+
+# ---- J23: I2C to the PD trigger -- is the contract really 20 V / 5 A? --------
+# The STUSB4500 on the SparkFun trigger board is I2C-readable: its RDO
+# (0x91..0x94) says what current the source actually granted and sets
+# capaMismatch when it was less than the PDO asked for, and 0x21 holds the
+# negotiated voltage. The failure this catches is SILENT otherwise: a 65 W brick
+# grants 20 V at 3.25 A, everything boots, and the console only browns out
+# when 26 WS2812s go white under two lit screens. (A trigger that fails to
+# negotiate at all leaves VBUS at 5 V, the bucks never start, and nothing
+# powers up -- that case diagnoses itself.)
+#
+# Three wires, not four: GND, SDA, SCL. The breakout's VDD comes off VBUS on
+# its own board, and this board's 3V3 sits downstream of the contract being
+# measured -- feeding it back would make the measurement part of the loop.
+# The I2C pull-ups are the breakout's own, to its VDD; none here. ~250 mm of
+# unshielded run past two bucks: 100 kHz, twisted with the ground wire.
+# Firmware reads it and reports it up the pedal link; until it does, the header
+# is just a header.
+j_pd = jst(3, "J23", "PD_I2C")
+j_pd[1] += gnd
+j_pd[2] += pd_sda
+j_pd[3] += pd_scl
 
 # ---- H1..H4: the mounting holes, which are a CIRCUIT, not just geometry ------
 # They used to be bare NPTH -- no copper -- so the board floated inside an earthed
@@ -530,15 +641,14 @@ CP("100uF 16V", "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm", ref="C31")[1, 2] += v5
 # deterministic. True no-current idle at soft-off would take a FET inverter
 # qualifying gate C's /OE with 3V3-presence; take that only if a real device in
 # the field objects to break.
-#   * RING_DATA and IND_DATA: their pull-downs cover the states where the module
-#     is absent or unprogrammed (bench bring-up, a bare board). During SWD reset
+#   * IND_DATA (and RING_DATA, until #987): the pull-down covers the states where
+#     the module is absent or unprogrammed (bench bring-up, a bare board). During SWD reset
 #     the RP2350 already holds its pads LOW itself -- PADS_BANK0 resets with the
 #     pull-down enabled and the input isolated, so the lines never actually
 #     float in reset; the external 100k is a same-direction backstop, not the
 #     thing preventing a mid-flash light show. A low data line is the WS2812
 #     latch state: the chain holds its last frame.
 R("100k", ref="R14")[1, 2] += midi_tx, gnd
-R("100k", ref="R15")[1, 2] += ring_data, gnd
 R("100k", ref="R16")[1, 2] += ind_data, gnd
 
 # R17/R18 sit in series with the link -- the two nets that cross power domains.
@@ -562,6 +672,21 @@ R("100k", ref="R16")[1, 2] += ind_data, gnd
 # bitbanged SWD wants its edges unloaded while flashing.
 R("10k", ref="R17")[1, 2] += link_tx, link_tx_pi
 R("10k", ref="R18")[1, 2] += link_rx_pi, link_rx
+
+# CTRL ring sense (see J20/J21 above), through 4.7k. Not a bare trace: the ring
+# is a panel jack, so this is the one GPIO a plug (and whatever static it
+# carries) touches directly, and the ring's 3V3 is the PI's rail -- at soft-off
+# the Pico may be up with that rail dead, or the Pi up with the Pico dead, and
+# either way the resistor caps what flows through a GPIO's protection diode to
+# well under a milliamp. 4.7k against the RP2350's internal pull-up (50-80k,
+# which firmware enables so an unwired v2 pin reads open) still divides a closed
+# switch down to ~0.3 V, a clean low. Pinned: the soldering guide names them.
+for _ref, (_ref_net, _ring) in zip(("R19", "R20"), _ring_sense):
+    R("4.7k", ref=_ref)[1, 2] += _ref_net, _ring
+# Presence, through the same 4.7k for the same reasons: the tip-normal contact
+# is the jack's own metal, and while the jack is empty it is the tip node.
+for _ref, (_tn, _present) in zip(("R21", "R22"), _presence):
+    R("4.7k", ref=_ref)[1, 2] += _tn, _present
 
 # ---- J2: the Pi ribbon (2x20, SHROUDED and KEYED) ---------------------------
 # Reversed, a 2x20 puts 5 V onto GND pins -- specify a shrouded header with a
@@ -682,8 +807,15 @@ def _check(strict_stations=True):
         f"LINK_UART: GP{GPIO['LINK_TX']}/GP{GPIO['LINK_RX']} is not a TX/RX pair on "
         f"one UART instance -- valid pairs are {UART_PINS}")
 
+    assert any(GPIO["PD_SDA"] in sda and GPIO["PD_SCL"] in scl
+               for sda, scl in I2C_PINS.values()), (
+        f"PD_I2C: GP{GPIO['PD_SDA']}/GP{GPIO['PD_SCL']} is not an SDA/SCL pair on "
+        f"one I2C instance -- valid pairs are {I2C_PINS}")
+
     for name, gp in GPIO.items():
-        if name.startswith("CTRL"):
+        # Only a TIP reads a voltage; a ring is a switch or nothing, and burning an
+        # ADC pin on one would leave no third pedal input for J22.
+        if name.startswith("CTRL") and name.endswith("_TIP"):
             assert gp in ADC_GPIO, (
                 f"PIN_MAP: {name} needs an ADC pin so an expression pedal reads as a "
                 f"voltage, but GP{gp} is not one of {ADC_GPIO}")
@@ -700,17 +832,25 @@ def _check(strict_stations=True):
     # ...and both ends of a connector's signal group must sit in the same pad row,
     # or the connector cannot be placed near all of them. Row A is pads 1..20.
     for group in (("LINK_TX", "LINK_RX"),
-                  ("RING_DATA", "ENC_A", "ENC_B", "ENC_SW"),
+                  ("LINK_TO_RING", "LINK_TO_CONSOLE"),
+                  ("PD_SDA", "PD_SCL"),
+                  ("CTRL1_PRESENT", "CTRL2_PRESENT"),
                   tuple("SW_" + n for n in FSW_ORDER)):
         rows = {PICO[GPIO[n]] <= 20 for n in group if n in GPIO}
         assert len(rows) == 1, (
             f"PAD_ROW: {group} straddles both pad rows of the module "
             f"({ {n: PICO[GPIO[n]] for n in group if n in GPIO} }) -- one connector "
             "carries them all, so it would have to reach around the module")
-    exp_rows = {PICO[gp] <= 20 for gp in EXPANSION_GPIO}
-    assert len(exp_rows) == 1, (
-        f"PAD_ROW: J22's pins straddle both pad rows "
-        f"({ {gp: PICO[gp] for gp in EXPANSION_GPIO} }) -- one header carries them all")
+    # J22 is allowed to straddle the rows since v3: it sits below the module's
+    # middle, where row A's GP12/GP15 (pads 16/20) and row B's GP19/22/28 are
+    # all within a hop, and HOP in console_board_pcb.py is the gate that proves
+    # it. What is still refused is a pin at either far END of the module, which
+    # no single header position can reach along with the rest.
+    _along = [PICO[gp] if PICO[gp] <= 20 else 41 - PICO[gp] for gp in EXPANSION_GPIO]
+    assert max(_along) - min(_along) <= 14, (
+        f"PAD_ROW: J22's pins span {max(_along) - min(_along)} pad pitches along "
+        f"the module ({ {gp: PICO[gp] for gp in EXPANSION_GPIO} }) -- one header "
+        "cannot sit near all of them")
 
     # The two ends of the ring cable, compared against each other. This used to
     # assert a literal list against itself and never open ring_board.py at all,
@@ -738,17 +878,33 @@ def _check(strict_stations=True):
                 f"RING_CONTRACT: ring_board J1 pin {_key} appears on two nets "
                 f"({ring_j1[_key]} and {_n}) -- the netlist is broken")
             ring_j1[_key] = _n
-    assert sorted(int(p) for p in ring_j1) == list(range(1, 9)), (
-        f"RING_CONTRACT: ring_board J1 has pins {sorted(ring_j1)}, expected 1..8 -- "
-        "the cable is 8-way at this end")
-    for _i in range(1, 9):
-        _want = ring_j1[str(_i)]
+    # RING_PINMAP is the map between the two ends; this gate is what stops it
+    # drifting from either netlist. Both directions are asserted: every ring pin
+    # must appear in the map (a conductor added at the ring end with no console
+    # pin to land on is a build error, not a silent extra), and every mapped J6
+    # pin must be one this board actually has. On v3 the map is the identity and
+    # the cable is symmetric; the gate is what makes that a checked fact.
+    assert sorted(int(p) for p in ring_j1) == sorted(RING_PINMAP), (
+        f"RING_CONTRACT: ring_board J1 has pins {sorted(int(p) for p in ring_j1)}, "
+        f"but RING_PINMAP describes {sorted(RING_PINMAP)} -- the two ends of the "
+        "cable disagree on how many conductors it has")
+    for _r_pin, _c_pin in sorted(RING_PINMAP.items()):
+        assert 1 <= _c_pin <= 4, (
+            f"RING_CONTRACT: RING_PINMAP sends ring pin {_r_pin} to J6 pin "
+            f"{_c_pin}, which is not one of J6's 4 ways")
+        _want = ring_j1[str(_r_pin)]
         _want = RING_ALIASES.get(_want, _want)
-        got = {n.name for n in j_ring[_i].nets}
+        got = {n.name for n in j_ring[_c_pin].nets}
         assert _want in got, (
-            f"RING_CONTRACT: ring_board J1 pin {_i} carries {_want}, but J6 pin {_i} "
-            f"carries {got} -- these are the two ends of one 8-way cable, so a pin "
-            "that means different things at each end wires the encoder to the LEDs")
+            f"RING_CONTRACT: ring_board J1 pin {_r_pin} carries {_want}, but the "
+            f"J6 pin it maps to ({_c_pin}) carries {got} -- these are the two ends "
+            "of one conductor, so a pin that means different things at each end "
+            "puts the LED rail on a Pico GPIO")
+    # Symmetric by construction: a cable crimped 1:1 by position must be right.
+    # v2's asymmetric map is what put the LED rail one mis-crimp from a GPIO.
+    assert all(_r == _c for _r, _c in RING_PINMAP.items()), (
+        f"RING_CONTRACT: RING_PINMAP {RING_PINMAP} is not the identity -- the "
+        "ring cable is 1:1 by position on v3; change both connectors, not the map")
 
     # ...and nothing on the ring board may pull an encoder line to its 5 V rail.
     # This is the RESISTIVE version of PICO_LEVELS, and it exists because no other
@@ -761,40 +917,57 @@ def _check(strict_stations=True):
     # gate could go quietly blind:
     #   * the rail is read off J1 pin 1 rather than named (a renamed rail cannot
     #     retire the check);
-    #   * the encoder pins are DERIVED from which J6 positions carry the encoder
-    #     nets, not hardcoded -- a coordinated cable re-pin (which RING_CONTRACT
+    #   * the watched pins are DERIVED from which J6 positions carry a Pico-input
+    #     net, not hardcoded -- a coordinated cable re-pin (which RING_CONTRACT
     #     permits by design) moves the watch with it;
     #   * the rule needs NO classification: any TWO-PIN part bridging the rail
-    #     to an encoder line delivers the rail's DC to a Pico input, whatever it
+    #     to such a line delivers the rail's DC to a Pico input, whatever it
     #     calls itself -- resistor, 0R jumper, ferrite bead, capacitor. Judging
     #     by footprint lib or value string failed open on custom libs and
     #     suffixed values; a connected-pin count from the netlist cannot. J1
-    #     itself (8 pins) and the encoder are exempt by arithmetic, not by name.
+    #     and the encoder are exempt by arithmetic, not by name.
+    #
+    # #987 CHANGED WHAT IT WATCHES, not why. The encoder no longer crosses this
+    # cable -- it is local to the ring board now, pulled up to that board's own
+    # MCU's 3V3 -- so the original three lines are gone. What is left crossing
+    # into a Pico input is the link pair, and it is exposed to exactly the same
+    # mistake: one 10k to the ring board's 5 V rail "to make the link idle high"
+    # would put 5 V on GP13. The pull-up that line actually runs on is on THIS
+    # board (J6 pin 6's, above), at the rail GP13 belongs to.
     _rail = ring_j1["1"]
     _rail_refs = {r for r, _p in _ring_nets.get(_rail, [])}
     _node_count = {}
     for _n, _nodes in _ring_nets.items():
         for _r, _p in _nodes:
             _node_count[_r] = _node_count.get(_r, 0) + 1
-    _enc_pins = [_p for _p in ring_j1
-                 if {n.name for n in j_ring[int(_p)].nets}
-                 & {"ENC_A", "ENC_B", "ENC_SW"}]
-    assert len(_enc_pins) == 3, (
-        f"RING_LEVELS: expected 3 encoder pins on J6, found {_enc_pins} -- the "
-        "derivation from the console-side nets has come apart")
-    for _pin in _enc_pins:
+    # Every conductor whose console end lands on a bare Pico GPIO. Derived from
+    # the console-side nets and RING_PINMAP so it tracks a re-pin; today that is
+    # the link pair, but the set is computed, not assumed to stay a fixed size.
+    _pico_input_nets = {"LINK_TO_RING", "LINK_TO_CONSOLE"}
+    _watched = [_p for _p in ring_j1
+                if {n.name for n in j_ring[RING_PINMAP[int(_p)]].nets}
+                & _pico_input_nets]
+    assert _watched, (
+        "RING_LEVELS: no ring conductor lands on a bare Pico GPIO -- the "
+        "derivation from the console-side nets has come apart, and this gate is "
+        "now watching nothing while still reporting green")
+    for _pin in _watched:
         _sig = ring_j1[_pin]
         for _ref, _pad in _ring_nets.get(_sig, []):
             assert not (_ref in _rail_refs and _node_count.get(_ref, 0) <= 2), (
                 f"RING_LEVELS: {_ref} on ring_board bridges {_sig} (J1 pin {_pin}) "
-                f"to {_rail} -- a two-pin part from the LED rail to an encoder "
-                "line puts 5 V on a Pico input whose absolute maximum is 3.6 V, "
-                "and no direct-contact gate can see the path")
+                f"to {_rail} -- a two-pin part from the LED rail to a line that "
+                "reaches a Pico input puts 5 V on a pin whose absolute maximum is "
+                "3.6 V, and no direct-contact gate can see the path")
 
-    assert len(EXP_PINOUT) == 8 and EXP_PINOUT[:2] == ["+3V3", "+5V"] \
-        and EXP_PINOUT[-1] == "GND", (
-            "EXPANSION: J22 must keep power on pins 1/2 and ground on pin 8 -- the "
-            "pinout is silkscreened and anything plugged in trusts it")
+    assert len(EXP_PINOUT) == len(EXPANSION_GPIO) + 3 \
+        and EXP_PINOUT[:2] == ["+3V3", "+5V"] and EXP_PINOUT[-1] == "GND", (
+            "EXPANSION: J22 must keep power on pins 1/2 and ground on its last pin "
+            "-- the pinout is silkscreened and anything plugged in trusts it")
+    for _gp in EXPANSION_GPIO:
+        assert _gp not in GPIO.values(), (
+            f"EXPANSION: GP{_gp} is on J22 AND wired to something on the board -- a "
+            "header pin that is also a jack contact is a short waiting for a plug")
     for _i, _gp in enumerate(EXPANSION_GPIO, start=3):
         assert EXP_PINOUT[_i - 1] == "GP%d" % _gp, (
             f"EXPANSION: J22 pin {_i} is labelled {EXP_PINOUT[_i - 1]} but wired to "
@@ -928,7 +1101,9 @@ def _check(strict_stations=True):
     # two-pin part on this board bridges +5V to any of these nets.
     _protected = {n.name for n in (link_tx, link_rx, link_tx_pi, link_rx_pi,
                                    midi_tx, midi_rx, pwr_btn, swclk, swdio,
-                                   ring_data, ind_data, encA, encB, encSW,
+                                   ind_data, link_to_ring, link_to_console,
+                                   pd_sda, pd_scl,
+                                   ctrl1_present, ctrl2_present,
                                    ctrl1, ctrl2)}
     for _p in default_circuit.parts:
         if len(_p.pins) > 2:
@@ -958,10 +1133,13 @@ def _check(strict_stations=True):
     # nets can, always.
     for _ref, _want_val, _want_nets in (
             ("R14", "100k", {"MIDI_TX", "GND"}),
-            ("R15", "100k", {"RING_DATA", "GND"}),
             ("R16", "100k", {"IND_DATA", "GND"}),
             ("R17", "10k", {"LINK_TX", "LINK_TX_PI"}),
-            ("R18", "10k", {"LINK_RX_PI", "LINK_RX"})):
+            ("R18", "10k", {"LINK_RX_PI", "LINK_RX"}),
+            ("R19", "4.7k", {"J20_REF", "CTRL1_RING"}),
+            ("R20", "4.7k", {"J21_REF", "CTRL2_RING"}),
+            ("R21", "4.7k", {"J20_TN", "CTRL1_PRESENT"}),
+            ("R22", "4.7k", {"J21_TN", "CTRL2_PRESENT"})):
         _p = next((p for p in default_circuit.parts if p.ref == _ref), None)
         assert _p is not None and _p.value == _want_val, (
             f"PIN_REFS: {_ref} is "
@@ -1031,7 +1209,7 @@ def _selftest():
         # exists, which is exactly how this gate came to be dead.
         global RING_NET
         text = open(RING_NET).read()
-        a, b = '(ref "J1")\n        (pin "6")', '(ref "J1")\n        (pin "7")'
+        a, b = '(ref "J1")\n        (pin "2")', '(ref "J1")\n        (pin "3")'
         # A silent-miss replace here is a control that mutates NOTHING and then
         # reports NO BITE against a healthy gate -- fail loudly instead.
         assert a in text and b in text, (
@@ -1046,7 +1224,7 @@ def _selftest():
 
     def _ring_pullup():
         # The RESISTIVE failure: a pull-up re-added on the ring board from its 5 V
-        # rail to an encoder line. No pin's net changes, so RING_CONTRACT stays
+        # rail to the one line that still reaches a Pico input (RING_LINK). No pin's net changes, so RING_CONTRACT stays
         # green, and the two nets never touch, so PICO_LEVELS does too -- this is
         # the shape only RING_LEVELS can see. Mutates a COPY, like _ring_order: a
         # control that edited a pinout held here would only prove the copy exists.
@@ -1061,7 +1239,7 @@ def _selftest():
         text = text.replace("  (components\n", "  (components\n" + comp, 1)
         node = ('      (node\n        (ref "R99")\n        (pin "%s")\n'
                 '        (pintype "PASSIVE"))\n')
-        for _net, _pin in (("+5V_LED", "1"), ("ENC_A", "2")):
+        for _net, _pin in (("+5V_LED", "1"), ("LINK_TO_CONSOLE", "2")):
             _anchor = '(name "%s")\n      (class "Default")\n' % _net
             assert _anchor in text, (
                 "ring_board.net's format or net names changed under _ring_pullup "
@@ -1115,12 +1293,13 @@ def _selftest():
         STATION_HEADERS["NOT_A_STATION"] = "J99"
 
     def _uart_split():
-        # GP1 is UART0's RX, never a TX, and is one of the two pins still spare --
-        # so this reaches the UART gate instead of the duplicate or expansion checks.
-        GPIO["LINK_TX"] = 1
+        # Swap LINK_TX with IND_DATA: GP18 is on no UART's TX set, and swapping
+        # (not assigning) keeps every pin unique, so this reaches the UART gate
+        # instead of the duplicate or expansion checks. No GPIO is spare on v3.
+        GPIO["LINK_TX"], GPIO["IND_DATA"] = GPIO["IND_DATA"], GPIO["LINK_TX"]
 
     def _row_straddle():
-        GPIO["ENC_SW"], GPIO["IND_DATA"] = GPIO["IND_DATA"], GPIO["ENC_SW"]
+        GPIO["LINK_TO_CONSOLE"], GPIO["IND_DATA"] = GPIO["IND_DATA"], GPIO["LINK_TO_CONSOLE"]
 
     def _exp_collide():
         GPIO["SW_STOP"] = EXPANSION_GPIO[0]
@@ -1135,7 +1314,7 @@ def _selftest():
     def _console_pullup():
         # The ring board's shipped mistake, tried on THIS board: a pull-up from
         # the 5 V rail to a Pico line. Every direct-contact gate stays green.
-        R("10k", ref="R99")[1, 2] += v5, ring_data
+        R("10k", ref="R99")[1, 2] += v5, link_to_console
 
     # Each control names the gate it must trip. A control that trips some OTHER
     # gate proves nothing about its own and reads as a pass -- console_board_pcb.py
@@ -1147,7 +1326,7 @@ def _selftest():
     case("connector group straddling both pad rows", "PAD_ROW:", _row_straddle)
     case("CTRL off an ADC pin", "PIN_MAP:", _ctrl_off_adc)
     case("ring board reorders its connector", "RING_CONTRACT:", _ring_order)
-    case("ring board pulls an encoder line to 5 V", "RING_LEVELS:", _ring_pullup)
+    case("ring board pulls the link line to 5 V", "RING_LEVELS:", _ring_pullup)
     case("SWCLK and SWDIO swapped on the debug pads", "SWD:", _swd_swap)
     case("a second mounting hole strapped to GND", "CHASSIS_BOND:", _second_bond)
     case("MIDI IN clamp diode reversed", "MIDI_CLAMP:", _clamp_reversed)

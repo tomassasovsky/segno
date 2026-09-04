@@ -363,3 +363,9 @@ do_install() {
 # Rebuild when CI stamps a new version/channel (otherwise sstate can leave a
 # stale /etc/segno/* from a prior package).
 do_install[vardeps] += "SEGNO_BUILD_VERSION SEGNO_UPDATE_CHANNEL"
+# The prebuilt bundle is read from outside SRC_URI, so bitbake has to be told
+# it is an input or shared state would reuse a stale package. Today the
+# version stamp above happens to re-run this task on every release; this
+# makes the binaries themselves part of the signature, so a rebuild of the
+# same version with a different app cannot ship the old one.
+do_install[file-checksums] += "${SEGNO_BUNDLE_DIR}/:True"
