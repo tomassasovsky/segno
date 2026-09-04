@@ -209,13 +209,14 @@ pico[37].do_erc = False          # 3V3_EN -- internal pull-up
 # (a BOSS FS-6 puts its second switch there), and the first console got two
 # bench wires from the jack pins to those pads. v3 makes them traces -- see
 # CTRLn_RING below -- and gives J22 the two pins the ring link freed (GP12,
-# GP15) in their place. GP0/GP1, spare on v2, are v3's I2C to the PD trigger
+# GP15) in their place; then GP19/GP22 left it again for the switched jacks'
+# presence contacts. GP0/GP1, spare on v2, are v3's I2C to the PD trigger
 # (J23): they are row A at the far end of the module, which is the end J3 and
 # the power inlet are on anyway.
 SPARE_GPIO = ()
-# J22 sits below the module's middle, where it reaches row A (GP12/GP15, pads
-# 16/20) and row B (pads 25/29/34) alike.
-EXPANSION_GPIO = (12, 15, 19, 22, 28)
+# J22 sits beside U2, where it reaches row A (GP12/GP15, pads 16/20) and GP28
+# (pad 34, row B) alike.
+EXPANSION_GPIO = (12, 15, 28)
 for _gp in SPARE_GPIO:
     pico[PICO[_gp]].do_erc = False
 
@@ -257,6 +258,12 @@ GPIO = {
     # I2C to the STUSB4500 PD trigger (J23): read the negotiated contract. GP0/1
     # are I2C0 SDA/SCL, row A's first two pads -- the end the power inlet is on.
     "PD_SDA": 0, "PD_SCL": 1,
+    # Jack presence, from the switched jacks' tip-normal contacts (v3, Neutrik
+    # NJ6FD-V): high while the jack is EMPTY, open -- so low with the RP2350's
+    # pull-down -- once anything is plugged in. Pads 25/29, row B, by the tips.
+    # These were J22 pins on v2, where they float and read "plugged": the same
+    # firmware serves both boards without a revision flag.
+    "CTRL1_PRESENT": 19, "CTRL2_PRESENT": 22,
 }
 
 # Which pads each UART instance can reach on RP2350. Moving LINK to a "spare-
@@ -285,6 +292,9 @@ pico[PICO[GPIO["CTRL2_RING"]]] += ctrl2_ring
 pd_sda, pd_scl = Net("PD_SDA"), Net("PD_SCL")
 pico[PICO[GPIO["PD_SDA"]]] += pd_sda
 pico[PICO[GPIO["PD_SCL"]]] += pd_scl
+ctrl1_present, ctrl2_present = Net("CTRL1_PRESENT"), Net("CTRL2_PRESENT")
+pico[PICO[GPIO["CTRL1_PRESENT"]]] += ctrl1_present
+pico[PICO[GPIO["CTRL2_PRESENT"]]] += ctrl2_present
 
 # ---- J10..J19: footswitches -- 100nF debounce + one 2-pin JST per pedal ------
 sw_nets = {}
@@ -378,9 +388,20 @@ opto[4] += midi_rx
 # holds it low for as long as it is in, which firmware treats as a switch that
 # never moves. v2 boards get the same thing with a wire from each jack's ring
 # pin to the J22 pads these GPIO used to be on.
+#
+# The jack is a Neutrik NJ6FD-V (v3): D-series like the one it replaces, with
+# SWITCHING contacts. Its tip-normal contact (TN) is tied to the tip while the
+# jack is empty and opens when a plug goes in, which gives the board a
+# presence wire per jack: with the tip at 3V3 through its 10k, TN reads high
+# only while empty. That is what makes plugging in and out clean -- an empty
+# jack no longer reads as a pedal at full toe, and a plug on its way in is
+# ignored until it is seated -- without guessing from the ADC. Four leads to
+# the jack: tip, ring, sleeve, TN.
 _ring_sense = []
-for _ref, _net, _ring in (("J20", ctrl1, ctrl1_ring), ("J21", ctrl2, ctrl2_ring)):
-    j = jst(3, _ref, "CTRL_TRS")
+_presence = []
+for _ref, _net, _ring, _present in (("J20", ctrl1, ctrl1_ring, ctrl1_present),
+                                    ("J21", ctrl2, ctrl2_ring, ctrl2_present)):
+    j = jst(4, _ref, "CTRL_TRS_SW")
     j[1] += _net                               # tip   = wiper / switch
     # ONE 1k PER JACK, not one shared between them. Shared, a TS plug in either
     # jack -- which is the normal way to use a footswitch, and the exact case the
@@ -411,10 +432,13 @@ for _ref, _net, _ring in (("J20", ctrl1, ctrl1_ring), ("J21", ctrl2, ctrl2_ring)
     j[3] += gnd                                # sleeve
     R("10k", ref="R8" if _ref == "J20" else "R10")[1, 2] += v3v3, _net
     C("10nF")[1, 2] += _net, gnd               # anti-alias / debounce
-    # The ring-sense resistor is declared with the other PINNED refs further
-    # down (R19/R20): a pinned ref declared here, ahead of auto-numbered parts,
-    # collides with SKiDL's counter and gets silently renamed.
+    # The ring-sense and presence resistors are declared with the other PINNED
+    # refs further down (R19..R22): a pinned ref declared here, ahead of
+    # auto-numbered parts, collides with SKiDL's counter and gets renamed.
     _ring_sense.append((_ref_net, _ring))
+    _tn = Net(_ref + "_TN")
+    j[4] += _tn                                # tip-normal: closed while empty
+    _presence.append((_tn, _present))
 
 # ---- J6/J7: the ring-board link and the indicator chain ---------------------
 # J6 is the console end of the ring board's link (#987): the ring board carries a
@@ -487,15 +511,15 @@ SWD_PADS = {"D1": swclk, "D2": gnd, "D3": swdio}
 for _pad, _net in SWD_PADS.items():
     pico[_pad] += _net
 
-# ---- J22: expansion -- the five GPIO that are otherwise doing nothing --------
+# ---- J22: expansion -- the three GPIO that are otherwise doing nothing ------
 # Deliberately unpopulated by default. GP28 is an ADC, so it can carry a third
-# pedal input; GP12/GP15 are a PWM pair; GP19/GP22 are plain I/O. Nothing on the
-# board depends on it. v2's J22 carried GP20/GP21 instead of GP12/GP15: those
-# two became the CTRL rings' sense lines, and a pin that is also a jack contact
-# has no business on a header, so they left as the ring link's pins arrived.
-EXP_PINOUT = ["+3V3", "+5V", "GP12", "GP15", "GP19", "GP22", "GP28", "GND"]
-j_exp = Part("Connector_Generic", "Conn_02x04_Odd_Even",
-             footprint="Connector_PinHeader_2.54mm:PinHeader_2x04_P2.54mm_Vertical",
+# pedal input; GP12/GP15 are a PWM pair. Nothing on the board depends on it.
+# v2's J22 carried GP19/GP20/GP21/GP22 instead: GP20/21 became the CTRL rings'
+# sense lines and GP19/22 the jacks' presence lines, and a pin that is also a
+# jack contact has no business on a header.
+EXP_PINOUT = ["+3V3", "+5V", "GP12", "GP15", "GP28", "GND"]
+j_exp = Part("Connector_Generic", "Conn_02x03_Odd_Even",
+             footprint="Connector_PinHeader_2.54mm:PinHeader_2x03_P2.54mm_Vertical",
              ref="J22", value="EXPANSION")
 j_exp[1] += v3v3
 j_exp[2] += v5
@@ -503,7 +527,7 @@ for _i, _gp in enumerate(EXPANSION_GPIO, start=3):
     n = Net("EXP_GP%d" % _gp)
     pico[PICO[_gp]] += n
     j_exp[_i] += n
-j_exp[8] += gnd
+j_exp[6] += gnd
 
 # ---- J23: I2C to the PD trigger -- is the contract really 20 V / 5 A? --------
 # The STUSB4500 on the SparkFun trigger board is I2C-readable: its RDO
@@ -659,6 +683,10 @@ R("10k", ref="R18")[1, 2] += link_rx_pi, link_rx
 # switch down to ~0.3 V, a clean low. Pinned: the soldering guide names them.
 for _ref, (_ref_net, _ring) in zip(("R19", "R20"), _ring_sense):
     R("4.7k", ref=_ref)[1, 2] += _ref_net, _ring
+# Presence, through the same 4.7k for the same reasons: the tip-normal contact
+# is the jack's own metal, and while the jack is empty it is the tip node.
+for _ref, (_tn, _present) in zip(("R21", "R22"), _presence):
+    R("4.7k", ref=_ref)[1, 2] += _tn, _present
 
 # ---- J2: the Pi ribbon (2x20, SHROUDED and KEYED) ---------------------------
 # Reversed, a 2x20 puts 5 V onto GND pins -- specify a shrouded header with a
@@ -806,6 +834,7 @@ def _check(strict_stations=True):
     for group in (("LINK_TX", "LINK_RX"),
                   ("LINK_TO_RING", "LINK_TO_CONSOLE"),
                   ("PD_SDA", "PD_SCL"),
+                  ("CTRL1_PRESENT", "CTRL2_PRESENT"),
                   tuple("SW_" + n for n in FSW_ORDER)):
         rows = {PICO[GPIO[n]] <= 20 for n in group if n in GPIO}
         assert len(rows) == 1, (
@@ -1074,6 +1103,7 @@ def _check(strict_stations=True):
                                    midi_tx, midi_rx, pwr_btn, swclk, swdio,
                                    ind_data, link_to_ring, link_to_console,
                                    pd_sda, pd_scl,
+                                   ctrl1_present, ctrl2_present,
                                    ctrl1, ctrl2)}
     for _p in default_circuit.parts:
         if len(_p.pins) > 2:
@@ -1107,7 +1137,9 @@ def _check(strict_stations=True):
             ("R17", "10k", {"LINK_TX", "LINK_TX_PI"}),
             ("R18", "10k", {"LINK_RX_PI", "LINK_RX"}),
             ("R19", "4.7k", {"J20_REF", "CTRL1_RING"}),
-            ("R20", "4.7k", {"J21_REF", "CTRL2_RING"})):
+            ("R20", "4.7k", {"J21_REF", "CTRL2_RING"}),
+            ("R21", "4.7k", {"J20_TN", "CTRL1_PRESENT"}),
+            ("R22", "4.7k", {"J21_TN", "CTRL2_PRESENT"})):
         _p = next((p for p in default_circuit.parts if p.ref == _ref), None)
         assert _p is not None and _p.value == _want_val, (
             f"PIN_REFS: {_ref} is "

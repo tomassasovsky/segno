@@ -181,8 +181,11 @@ PLACEMENT = {
                                    # bonding the shield here would short out the
                                    # isolation U2 exists to provide.
     "J4":  (50.0, 8.0, 0),         # MIDI OUT -- 3 leads: DIN pins 4, 5 and 2.
-    "J20": (66.0, 8.0, 0),         # CTRL 1, over GP26 = pad 31
-    "J21": (78.0, 8.0, 0),         # CTRL 2, over GP27 = pad 32
+    # 4-way since v3 (tip, ring, sleeve, tip-normal for presence): 2.5 mm
+    # wider each, so the pair slides left to keep 0.8 mm to MIDI OUT on one
+    # side and to the ribbon's column on the other.
+    "J20": (63.4, 8.0, 0),         # CTRL 1, over GP26 = pad 31
+    "J21": (77.7, 8.0, 0),         # CTRL 2, over GP27 = pad 32
     "U2":  (34.0, 21.0, 0),        # H11L1, directly under its own jack, in its own
                                    # ISOLATION_GAP pocket
 
@@ -260,14 +263,17 @@ PLACEMENT = {
     # maximum). R13, R1 and R15 -- the third pull-up, the ring-data series part
     # and its pull-down -- retired with the ring-data path in v3 (#987); their
     # slots stay open and their designators stay unused.
-    # Raised from y 63 to make the row under them J23's: 3 mm of slack below
-    # the module was all it took.
-    "R11": (19.4, 60.0, 0), "R12": (32.2, 60.0, 0),
+    # On the slim band under the module's row A with R20/R16 (they were at
+    # y 63): the row below is then R21/R22's and the row below that J23's.
+    "R11": (19.4, 59.6, 0), "R12": (32.2, 59.6, 0),
     # The CTRL rings' sense resistors (v3), in the row R13 and R15 left empty
     # when the ring-data path went. 50-60 mm from the jacks they serve, and
     # exempt from the hop gate for it (SLOW_SENSE_NETS); the column beside U2
     # that would have put them under the jacks is the expansion header's.
     "R19": (45.0, 63.0, 0), "R20": (48.0, 59.6, 0),
+    # The presence series parts (v3, switched jacks), same reasoning and the
+    # same exemption: the row under R11/R12, left of R19.
+    "R21": (17.0, 63.0, 0), "R22": (30.0, 63.0, 0),
     "R2":  (79.5, 63.0, 90),        # 330R, U1 gate A -> J7 pin 2 (indicators)
 
     # The five review-fix resistors. ALL hand-placed: the passive bands were
@@ -816,7 +822,15 @@ def _free_slot(anchor, w, h, boxes):
 # hand-wired board: pedal 1..10 reading left to right, unambiguously, at the bench.
 # These are debounced switch lines -- 60 mm of trace is electrically free. Keep the
 # straight ordered row.
-MAX_RATSNEST_MM = 1770.0
+#
+# v3 measured 1915 mm. The ~210 mm over v2 is the four CTRL sense nets (ring and
+# presence, J20_REF/J21_REF/J20_TN/J21_TN and their GPIO ends): their series
+# parts sit under the module, 50-60 mm from the jacks they serve, because the
+# column beside U2 that would have put them under the jacks is the expansion
+# header's. They are DC lines through 4.7k -- SLOW_SENSE_NETS, exempt from the
+# hop gate for the same reason -- so that copper is a decision, not waste. The
+# budget follows the measurement plus ~7%.
+MAX_RATSNEST_MM = 2050.0
 POURED_NETS = {"GND"}
 
 # The ratsnest total is a GLOBAL number, and --selftest proved it cannot see a
@@ -841,7 +855,8 @@ RAIL_NETS = {"+3V3", "+5V"}
 # the board. That bought back the column beside U2 for the expansion header,
 # whose position the bench preferred, and put R19/R20 in the row R13 and R15
 # left empty under the module.
-SLOW_SENSE_NETS = {"J20_REF", "J21_REF", "CTRL1_RING", "CTRL2_RING"}
+SLOW_SENSE_NETS = {"J20_REF", "J21_REF", "CTRL1_RING", "CTRL2_RING",
+                   "J20_TN", "J21_TN", "CTRL1_PRESENT", "CTRL2_PRESENT"}
 
 
 def worst_hops(fps, nets):

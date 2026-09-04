@@ -2,12 +2,12 @@ Comment,Designator,Footprint,LCSC,Qty,Type
 "MIDI_IN, PWR_BTN, PI_PWR_PADS, FSW_RECPLAY, FSW_STOP, FSW_UNDO, FSW_MODE, FSW_TRACK1, FSW_TRACK2, FSW_TRACK3, FSW_TRACK4, FSW_CLEAR, FSW_BANK","J5,J8,J9,J10,J11,J12,J13,J14,J15,J16,J17,J18,J19",JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,,13,Component
 "100nF","C1,C2,C3,C4,C5,C6,C7,C8,C9,C10,C11,C20",C_Disc_D5.0mm_W2.5mm_P2.50mm,,12,Component
 "10k","R6,R8,R10,R11,R12,R17,R18",R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,,7,Component
-"MIDI_OUT, INDICATORS, CTRL_TRS, CTRL_TRS, PD_I2C","J4,J7,J20,J21,J23",JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical,,5,Component
+"5V_IN, RING_LINK, CTRL_TRS_SW, CTRL_TRS_SW","J3,J6,J20,J21",JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical,,4,Component
+"4.7k","R19,R20,R21,R22",R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,,4,Component
+"MIDI_OUT, INDICATORS, PD_I2C","J4,J7,J23",JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical,,3,Component
 "220","R3,R4,R5",R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,,3,Component
 "10nF","C13,C14",C_Disc_D5.0mm_W2.5mm_P2.50mm,,2,Component
-"5V_IN, RING_LINK","J3,J6",JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical,,2,Component
 "100k","R14,R16",R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,,2,Component
-"4.7k","R19,R20",R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,,2,Component
 "1k","R7,R9",R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,,2,Component
 "470uF 25V low-ESR <=0.15R","C30",CP_Radial_D10.0mm_P5.00mm,,1,Component
 "100uF 16V","C31",CP_Radial_D6.3mm_P2.50mm,,1,Component
@@ -15,6 +15,6 @@ Comment,Designator,Footprint,LCSC,Qty,Type
 "H11L1","U2",DIP-6_W7.62mm,,1,Component
 "1N4148","D1",D_DO-35_SOD27_P7.62mm_Horizontal,,1,Component
 "PI_RIBBON","J2",IDC-Header_2x20_P2.54mm_Vertical,,1,Component
-"EXPANSION","J22",PinHeader_2x04_P2.54mm_Vertical,,1,Component
+"EXPANSION","J22",PinHeader_2x03_P2.54mm_Vertical,,1,Component
 "330","R2",R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal,,1,Component
 "Pico2","J1",RaspberryPi_Pico_SMD_HandSolder,,1,Component
