@@ -28,7 +28,7 @@ longer applies to anything.
         MIDI  DIN IN -> H11L1 (at 3V3) -> Pi uart0 RX (GPIO15)
               Pi uart0 TX (GPIO14) -> 74AHCT125 -> 220R loop -> DIN OUT
         SWD   Pi GPIO24/25 -> the Pico's debug pads (cold flashing)
-     console board <-- footswitches x10 | ring + encoder (8-way) | CTRL TRS x2
+     console board <-- footswitches x10 | ring board (4-way) | CTRL TRS x2
      Pi --HDMI x2--> 7" + 16" screens ;  screen touch --USB--> Pi (2 of 4 ports)
      Pi's other 2 USB --> internal leads to the rear USB couplers
                           (the audio interface plugs in there, outside the box)
@@ -92,7 +92,9 @@ budget, the screens' ratings, 26 WS2812 at 60 mA all-white.
 
 ---
 
-## 3. Console board ↔ Pi: the ribbon
+## 3. The console board's two internal data cables
+
+### Console board ↔ Pi: the ribbon
 
 One **keyed 2×20 IDC ribbon, ~10 cm** — both boards sit under the 16" screen
 and the Pi is ~30 mm from the board (`board_mounts()` in `segno_enclosure.py`).
@@ -115,10 +117,65 @@ and died with it. The series 10 k in each link line is not level shifting — it
 bounds the cross-domain current when one side is powered and the other is not
 (rationale and arithmetic: R17/R18 in `console_board.py`).
 
-The **74AHCT125** remains for the three real 3.3→5 V crossings: MIDI OUT's
-current loop, ring data, indicator data. **MIDI IN's H11L1 runs at 3.3 V** and
+The **74AHCT125** remains for MIDI OUT's current loop and the indicator chain.
+Its third gate still drives the ring-data pin (J6 pin 5) and that pin now goes
+nowhere: since #987 the ring board generates its own WS2812 timing behind a XIAO
+RP2350, so the level shifting for the ring moved onto **that** board. Gate B, R15
+and J6 pin 5 stay fitted because the console board exists in copper and its
+netlist has to keep matching it. **MIDI IN's H11L1 runs at 3.3 V** and
 feeds the Pi directly — no shifter. GPIO4 (pin 7) is left alone: the GeeekPi
 N07 NVMe board under the Pi claims it (`PI_RESERVED`).
+
+### Console board ↔ ring board: the 4-way (#987)
+
+The ring board carries its own **XIAO RP2350**, which owns the encoder and
+generates the WS2812 timing 20 mm from the LEDs. What used to be eight
+conductors across ~600 mm of box is now four.
+
+**On console board v3 the cable is a plain 1:1 4-way, JST-XH at both ends:**
+
+| ring J1 | console v3 J6 | console v2 J6 | conductor |
+|---|---|---|---|
+| 1 | 1 | 1 | +5V |
+| 2 | 2 | 3 | GND |
+| 3 | 3 | 6 | LINK_TO_RING — GP13 drives, the XIAO listens |
+| 4 | 4 | 7 | LINK_TO_CONSOLE — the XIAO drives, GP14 listens |
+
+**On a v2 console the cable is asymmetric and that was the whole hazard:** the
+fabbed 8-way J6 stays, and the ring's 4-way lands on four of its eight positions
+(the v2 column). Crimp *that* one 1:1 by position and pin 2 of the ring end lands
+on J6 pin 2, which is +5V: the LED rail straight onto a link line. v3 removes the
+hazard by construction; `RING_CONTRACT` asserts the map is the identity there.
+
+The link is **full duplex** (owner call). One wire would have carried the traffic
+— 115200 is ~11.5 kB/s against a 72-byte pixel frame and a few bytes per detent —
+but a single wire forces a master-polled, collision-avoiding protocol on the
+firmware, and the second conductor buys that away for one crimp. It cost nothing
+in copper: J6 pin 7 was already wired to GP14 with its 10 k pull-up, doing
+nothing. Neither pin is on a free hardware UART (GP13 is UART0 RX, but UART0 is
+the Pi link on GP16/17, and GP14 is on neither), so the console end is a PIO
+UART — of which the RP2350 has plenty spare.
+
+The table above is *not* the source of truth — `RING_PINMAP` in
+`console_board.py` is, and `RING_CONTRACT` checks it against `ring_board.net` on
+every run.
+
+Notes that are load-bearing:
+
+- **GND is the middle pin** so the pulsed amp-scale LED return does not run
+  beside the one signal in the cable.
+- **The link pull-ups are on the console board** (J6 pin 6/7's 10 k to *its* 3V3).
+  The ring board deliberately fits none — a second pull-up on the other board's
+  rail is the split-rail fault `RING_LEVELS` exists to catch, and `LINK_BARE` in
+  `ring_board.py` rejects it from the other side.
+- **On v2, J6 pins 2, 4, 5 and 8 stay fitted and carry nothing.** Pin 5 could
+  never have carried the link anyway: it is the AHCT125's gate-B output with /OE
+  tied low, so it is only ever driven by the console. On v3 the ring-data path
+  (GP12, gate B, R1, R15) is gone and GP12/GP15 went to the expansion header.
+- One 5 V pair, not two: 24 LEDs at the firmware's brightness cap sit well under
+  the 1.44 A all-white figure the doubled pair was sized for. If a bench
+  measurement of the *capped* worst case exceeds ~0.7 A, a v2 console still has
+  J6 pins 2/4 for a second pair; v3 would need a 6-way.
 
 ---
 
@@ -150,7 +207,7 @@ source of truth.
 | power button (`POWER`) | momentary, **unlit** → J8, through the board to J9 → the Pi 5's own J2 solder pads. Two wires; no 5 V run to the rear panel. The machine has no power indicator — the screens are the indicator |
 | fuse (`FUSE`) | 5×20 screw-cap holder — value and placement are §2's (T5A slow-blow, in the 20 V feed) |
 | MIDI DIN-5 ×2 (`MIDI_IN`/`MIDI_OUT`) | IN is opto-isolated **on the board** — the socket alone is not enough. IN's pin 2 stays unbonded (that isolation is the point) |
-| TRS 6.35 D-series ×2 (`CTRL_1`/`CTRL_2`) | expression pedal OR footswitch on the same jack, auto-detected (tip → ADC with pull-up, ring → 3V3 through 1 k). A two-switch pedal on one TRS plug (BOSS FS-6 A&B) puts its B switch on the ring: on board v2 run one wire from each jack's ring pin (J20/J21 pin 2) to J22's GP20/GP21 pads and firmware ≥ 1.1 reads it. Without the wire, use the pedal's separate A and B mono jacks, one per CTRL |
+| TRS 6.35 D-series ×2 (`CTRL_1`/`CTRL_2`) | expression pedal OR footswitch on the same jack, auto-detected (tip → ADC with pull-up, ring → 3V3 through 1 k). A two-switch pedal on one TRS plug (BOSS FS-6 A&B) puts its B switch on the ring, which firmware ≥ 1.1 reads on GP20/GP21: a trace through 4.7 kΩ on board v3 (R19/R20); on v2 one wire from each jack's ring pin (J20/J21 pin 2) to J22's GP20/GP21 pads. Without either, use the pedal's separate A and B mono jacks, one per CTRL |
 | USB 3.0 coupler ×2 (`USB3_1`/`USB3_2`) | internal A-to-A leads to two Pi ports |
 | M6 earth stud | between the cluster and the vent block; rules in the grounding doc |
 

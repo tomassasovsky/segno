@@ -164,7 +164,7 @@ def find_text_spot(w, h, prefer_y):
     cands.sort()
     return cands[0][1:] if cands else None
 
-wm_txt, wm_cap = "segno console board v2", 2.2
+wm_txt, wm_cap = "segno console board v3", 2.2
 wm_w = len(wm_txt) * wm_cap * 0.72
 spot = find_text_spot(wm_w, wm_cap * 1.4, 33.0)
 assert spot, 'no clear spot for the wordmark'

@@ -10,11 +10,12 @@ the state frames segno pushes back. segno runs the behavior machine.
 |---|---|---|
 | Link TX / RX | GP16 / GP17 | UART0 → Pi uart3 (GPIO8/9, `/dev/ttyAMA3`), 115200 8N1 |
 | Footswitches | GP2–GP11 | REC/PLAY, STOP, UNDO, MODE, TRACK1–4, CLEAR, BANK. Internal pull-up, active low, 8 ms stable-edge debounce |
-| Ring data | GP12 | via 74AHCT125 → J6 pin 5, NeoPixel Ring 24 |
-| Encoder A / B / SW | GP13 / GP14 / GP15 | Internal pull-ups plus the board's 10 k to the Pi's 3V3; one message per detent, decoded from pin-change interrupts |
+| Ring data | GP12 | **v2 only**: via 74AHCT125 → J6 pin 5, NeoPixel Ring 24. On v3 (#987) the ring board clocks its own LEDs and GP12 is on the expansion header |
+| Encoder A / B / SW | GP13 / GP14 / GP15 | **v2 only**: internal pull-ups plus the board's 10 k to the Pi's 3V3; one message per detent, decoded from pin-change interrupts |
+| Ring link | GP13 / GP14 | **v3** (#987): full-duplex UART to the ring board's XIAO RP2350 — GP13 drives, GP14 listens, 115200, PIO UART (neither pin is on a free hardware UART). The console board's 10 k pull-ups hold both lines. **Not implemented in this firmware yet**: it still drives GP12 and reads GP13–15 as an encoder, which is the v2 board |
 | Indicator data | GP18 | via 74AHCT125 → J7 pin 2, **seven** WS2812 pucks in chain order: MODE (above footswitch 1), TRACK1–4, CLEAR, BANK |
 | CTRL1 / CTRL2 tip | GP26 / GP27 | ADC0 / ADC1: a footswitch at the rails, an expression pedal's wiper between them |
-| CTRL1 / CTRL2 ring | GP20 / GP21 | **not a trace on v2** — one wire from each jack's ring pin to the J22 expansion pads. With it, the B switch of a two-switch pedal (a BOSS FS-6's A&B jack) reports as `CTRL n · footswitch B`; without it the pin's internal pull-up holds it open and nothing reports |
+| CTRL1 / CTRL2 ring | GP20 / GP21 | On v3 a trace from each jack's ring through 4.7 kΩ (R19/R20). **Not a trace on v2** — one wire from each jack's ring pin to the J22 expansion pads does the same. With it, the B switch of a two-switch pedal (a BOSS FS-6's A&B jack) reports as `CTRL n · footswitch B`; without it the pin's internal pull-up holds it open and nothing reports |
 | SMPS mode | GP23 | Driven high: PWM mode, less ADC ripple |
 
 ## Wire format: the pedal link

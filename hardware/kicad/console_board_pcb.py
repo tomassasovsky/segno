@@ -1,4 +1,4 @@
-"""pcbnew layout generator for the Segno CONSOLE board v2 (issue #747).
+"""pcbnew layout generator for the Segno CONSOLE board v3 (issue #747; v3: #987 ring link, CTRL ring sense).
 
 Consumes `console_board.net` -- the SKiDL netlist is the single source of truth for
 what connects to what -- and emits a placed, routed, poured, DRC-clean board plus a
@@ -236,7 +236,7 @@ PLACEMENT = {
     # pads 26/27 a few mm below. The band has no horizontal slot left for even
     # one more axial part, let alone two, so they stand.
     "R19": (43.9, 24.9, 90), "R20": (48.3, 24.9, 90),
-    "J22": (30.6, 68.9, 0),        # expansion, 2x3 since v3 (GP20/21 became the
+    "J22": (33.0, 68.9, 90),       # expansion, 2x4: GP12/15/19/22/28 since v3 (GP20/21 became the
                                    # ring senses). Optional and unpopulated, so it
                                    # gave its column to R19/R20 and moved below the
                                    # module, between the R11..R13 row and the
@@ -258,12 +258,12 @@ PLACEMENT = {
     # nowhere to go.
     "C11": (80.0, 31.0, 0),        # +5V decoupling for U1
     "C20": (24.0, 21.0, 0),        # +3V3 decoupling for U2
-    # The three encoder pull-ups. New: they used to live on ring_board.py tied to
-    # its 5 V rail, which sat 1.4 V over the RP2350's absolute maximum.
-    "R11": (19.4, 63.0, 0), "R12": (32.2, 63.0, 0), "R13": (45.0, 63.0, 0),
-    "R1":  (59.0, 63.0, 0),       # 330R, U1 gate B -> J6 pin 5 (ring data).
-                                   # sitting left of the 12.4 mm slot R18 needs
-                                   # between it and R2.
+    # The ring link's two pull-ups, on this board's 3V3 (they used to live on
+    # ring_board.py tied to its 5 V rail, 1.4 V over the RP2350's absolute
+    # maximum). R13, R1 and R15 -- the third pull-up, the ring-data series part
+    # and its pull-down -- retired with the ring-data path in v3 (#987); their
+    # slots stay open and their designators stay unused.
+    "R11": (19.4, 63.0, 0), "R12": (32.2, 63.0, 0),
     "R2":  (79.5, 63.0, 90),        # 330R, U1 gate A -> J7 pin 2 (indicators)
 
     # The five review-fix resistors. ALL hand-placed: the passive bands were
@@ -284,14 +284,12 @@ PLACEMENT = {
     "R17": (96.9, 45.0, 90),       # 10k link_tx series, upright east of the
                                    # ribbon: 11 mm from J2 pin 21, 29 mm from
                                    # the Pico's GP16 pad
-    "R18": (71.6, 63.0, 0),        # 10k link_rx series, flat in the R1..R2 slot;
+    "R18": (71.6, 63.0, 0),        # 10k link_rx series, flat in the R12..R2 slot;
                                    # both legs within 28 mm
-    "R15": (48.0, 59.6, 0),        # 100k ring_data pulldown, in the slim band
-                                   # under the module's row A, 4 mm from pad 16
-    "R16": (61.5, 59.6, 0),        # 100k ind_data pulldown, flat beside R15 in
+    "R16": (61.5, 59.6, 0),        # 100k ind_data pulldown, in the slim band
                                    # the same band: 22 mm from U1 pin 2; its GND
                                    # leg lands in the pour
-    "J6":  (52.5, 69.0, 0),        # ring/encoder, under pads 16/17/19/20
+    "J6":  (52.5, 69.0, 0),        # ring link (4-way since v3), under pads 19/20
     "J7":  (71.0, 69.0, 0),        # indicators -- x matches J9 above
 
     # The four M3 holes, one per corner. H1 is the chassis bond (see console_board.py):
@@ -1316,8 +1314,8 @@ def _selftest():
     # the two pours and the designator placement are decisions, not coordinates, and
     # they need controls just as much.
     cases = [
-        ("ring series resistor moved off its own net", "HOP:",
-         {"R1": (12.0, 13.0, 90)}, {}),
+        ("indicator series resistor moved off its own net", "HOP:",
+         {"R2": (12.0, 13.0, 90)}, {}),
         # J2 again, the representative case: only hand-PLACEMENT parts can ever
         # be off-board (the spiral bounds its own slots), and those are exactly
         # the labelled connectors. This control briefly became H3 because the
@@ -1461,7 +1459,7 @@ def build(quiet=False):
     # x 33, not 28: the title is 33.1 mm wide as RENDERED, which is wider than a
     # character count suggests, and it has to clear H4's pad at the left end of the
     # bottom strip. Measured, not taste.
-    _silk(board, "SEGNO CONSOLE v2  #747", 33.0, 95.5, 1.6)
+    _silk(board, "SEGNO CONSOLE v3  #747 #987", 33.0, 95.5, 1.6)
     _silk(board, "MIDI IN: ISOLATED", 72.0, 95.5, 1.0)
     _labels(board, fps)
 
@@ -1572,7 +1570,7 @@ def write_mount_json():
     holes = {ref: PLACEMENT[ref][:2] for ref in ("H1", "H2", "H3", "H4")}
     payload = {
         "source": "console_board_pcb.py",
-        "board": "segno console board v2 (#747)",
+        "board": "segno console board v3 (#747, #987)",
         "outline_mm": [BW, BH],
         "hole_pattern_mm": [BW - 2 * MOUNT_INSET, BH - 2 * MOUNT_INSET],
         "hole_inset_mm": MOUNT_INSET,

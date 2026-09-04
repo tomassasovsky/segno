@@ -65,6 +65,20 @@ Connectors: 13× JST-XH 2-pin (J5, J8, J9, J10–J19), 4× JST-XH 3-pin (J4, J7,
 1× JST-XH 4-pin (J3), 1× JST-XH 8-pin (J6), 1× shrouded keyed 2×20 IDC header (J2),
 and optionally 1× 2×4 pin header (J22).
 
+### If you have a v3 board
+
+v3 is the same board with the ring-board link (#987) and the CTRL ring sense
+(firmware 1.1) in copper. What differs from everything below:
+
+| | v2 | v3 |
+|---|---|---|
+| J6 `RING` | JST-XH 8-pin; the ring board's 4-way lands on pins 1, 3, 6, 7 | **JST-XH 4-pin**, cable 1:1 with the ring board's J1 |
+| R1 (330 Ω), R13 (10 kΩ), R15 (100 kΩ) | fitted | **not fitted, no pads** — the ring-data path is gone; U1's gate B is parked |
+| R19, R20 | — (bench wires from J20/J21 pin 2 to J22's GP20/GP21 pads instead) | **4.7 kΩ**, upright, between R5 and C13 under `CTRL 1`: the ring-sense series parts |
+| J22 `EXP` | 2×4, right of U2: +3V3, +5V, GP19, GP20, GP21, GP22, GP28, GND | **2×4, below the Pico left of `RING`**: +3V3, +5V, **GP12, GP15**, GP19, GP22, GP28, GND. Pin 1 is at the top; odd pins are the top row |
+
+Use the resistor colour key as printed; the only new value is **4.7 kΩ = yellow · violet · black · brown**.
+
 ### Check the bare board
 
 - No visible scratches across the ground pour, no lifted pads, holes all drilled.
@@ -128,10 +142,10 @@ leads at the body, insert, splay slightly, solder, trim.
 | R6 | 10 kΩ | Right of R3 | U2 output pull-up to 3V3 |
 | R8, R7 | 10 kΩ, 1 kΩ | Under `CTRL 1` | R8 tip pull-up, R7 ring current limit |
 | R10, R9 | 10 kΩ, 1 kΩ | Under `CTRL 2` (R10 is lower, R9 right of R6) | Same for CTRL 2 |
-| R11, R12, R13 | 10 kΩ | Row under the Pico, left | Encoder A / B / SW pull-ups to 3V3 |
-| R1 | 330 Ω | Same row, right of R13 | Ring data series, U1 gate B → J6 pin 5 |
+| R11, R12, R13 | 10 kΩ | Row under the Pico, left | Ring-link pull-ups to 3V3 (#987; before that, encoder A / B / SW). v3 has no R13 |
+| R1 | 330 Ω | Same row, right of R13 | Ring data series, U1 gate B → J6 pin 5. v2 only |
 | R18 | 10 kΩ | Same row, right of R1 | Link RX series (Pi → Pico) |
-| R15, R16 | 100 kΩ | Just under the Pico's bottom pad row | Ring / indicator data pull-downs |
+| R15, R16 | 100 kΩ | Just under the Pico's bottom pad row | Ring / indicator data pull-downs. v3 has no R15 |
 | R2 | 330 Ω | **North-south**, right of `LEDS` | Indicator data series, U1 gate A → J7 pin 2 |
 | R17 | 10 kΩ | **North-south**, right of the ribbon header, upper | Link TX series (Pico → Pi) |
 | R14 | 100 kΩ | **North-south**, right of the ribbon header, lower | MIDI TX pull-down (holds MIDI OUT quiet when the Pi is off) |
@@ -290,7 +304,7 @@ the two CTRL tips, or those inputs float (see the notes in `console_board.py`).
 | J9 `PI PWR` | to the Pi 5's J2 button pad | GND | | (flying lead, not the 40-pin header) |
 | J20 / J21 `CTRL` | tip (wiper / switch) | ring (3V3 via 1 kΩ) | sleeve (GND) | |
 | J10 … J19 | switch | GND | | one per pedal, REC … BANK |
-| J22 `EXP` | +3V3 | +5V | GP19 | GP20, GP21, GP22, GP28, GND |
+| J22 `EXP` | +3V3 | +5V | GP19 (v2) / GP12 (v3) | v2: GP20, GP21, GP22, GP28, GND · v3: GP15, GP19, GP22, GP28, GND |
 | J2 `PI` (used pins) | 1, 17 = 3V3 | 6, 9, 14, 20, 25, 30, 34, 39 = GND | 8 = MIDI OUT (Pi TXD), 10 = MIDI IN (Pi RXD) | 24 = link RX (Pi GPIO8), 21 = link TX (Pi GPIO9), 18 = SWCLK, 22 = SWDIO |
 
 ---
