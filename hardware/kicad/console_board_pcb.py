@@ -169,7 +169,7 @@ PLACEMENT = {
     # starts at 84.5 and comes up to y 10.2, so the last two headers would sit on
     # top of it. The corner mounting holes cap the other end the same way.
     "J8":  (18.1, 8.0, 0),
-    "J23": (16.5, 67.4, 0),        # I2C to the PD trigger, under the module's
+    "J23": (16.5, 69.0, 0),        # I2C to the PD trigger, under the module's
                                    # left end between 5V IN and EXP: GP0/GP1 are
                                    # pads 1/2, a 12 mm hop up. (The pocket beside
                                    # C30 is the USB-C cable corridor -- USB_CLEAR.)
@@ -234,21 +234,14 @@ PLACEMENT = {
                                    # A 40-way ribbon leaving
                                    # mid-board folds straight back over everything;
                                    # here the cable clears the board immediately.
-    # The CTRL rings' sense resistors (v3), UPRIGHT in the column J22 used to
-    # occupy, between R5 and C13 and above the module's top row: the nearest
-    # ground to both ends of their nets, the ring nodes under the jacks and
-    # pads 26/27 a few mm below. The band has no horizontal slot left for even
-    # one more axial part, let alone two, so they stand.
-    "R19": (43.9, 24.9, 90), "R20": (48.3, 24.9, 90),
-    "J22": (33.0, 68.9, 90),       # expansion, 2x4: GP12/15/19/22/28 since v3 (GP20/21 became the
-                                   # ring senses). Optional and unpopulated, so it
-                                   # gave its column to R19/R20 and moved below the
-                                   # module, between the R11..R13 row and the
-                                   # debounce caps, left of RING. Its three GPIO
-                                   # are pads 25/29/34 in the top row, 31-37 mm
-                                   # away under the module -- the pocket under PWR
-                                   # BTN was closer to two of them and 45 mm from
-                                   # the third, past the hop gate.
+    "J22": (46.3, 26.0, 0),        # expansion, 2x4: GP12/15/19/22/28 since v3
+                                   # (GP20/21 became the ring senses). Where it
+                                   # was on v2 -- the bench preferred it here.
+                                   # Not on the top edge: its GP28 pin is pad 34,
+                                   # near the module's LEFT end, while GP19/22
+                                   # are pads 25/29 toward the right -- from the
+                                   # top-right corner that ADC lead ran 61 mm.
+                                   # Sat here it reaches both ends of its span.
 
     # under the module: series resistors, then the ring/LED pair
     # Both series resistors stand UPRIGHT in the channel beside U1 rather than lying
@@ -270,6 +263,11 @@ PLACEMENT = {
     # Raised from y 63 to make the row under them J23's: 3 mm of slack below
     # the module was all it took.
     "R11": (19.4, 60.0, 0), "R12": (32.2, 60.0, 0),
+    # The CTRL rings' sense resistors (v3), in the row R13 and R15 left empty
+    # when the ring-data path went. 50-60 mm from the jacks they serve, and
+    # exempt from the hop gate for it (SLOW_SENSE_NETS); the column beside U2
+    # that would have put them under the jacks is the expansion header's.
+    "R19": (45.0, 63.0, 0), "R20": (48.0, 59.6, 0),
     "R2":  (79.5, 63.0, 90),        # 330R, U1 gate A -> J7 pin 2 (indicators)
 
     # The five review-fix resistors. ALL hand-placed: the passive bands were
@@ -837,6 +835,13 @@ POURED_NETS = {"GND"}
 # and the pour.
 MAX_HOP_MM = 42.0
 RAIL_NETS = {"+3V3", "+5V"}
+# The CTRL ring-sense nets are exempt too, by decision: a ring is 3V3 through 1k
+# that a footswitch pulls to ground, read through 4.7k into a GPIO's pull-up --
+# DC, and slow even by footswitch standards -- so the trace can be as long as
+# the board. That bought back the column beside U2 for the expansion header,
+# whose position the bench preferred, and put R19/R20 in the row R13 and R15
+# left empty under the module.
+SLOW_SENSE_NETS = {"J20_REF", "J21_REF", "CTRL1_RING", "CTRL2_RING"}
 
 
 def worst_hops(fps, nets):
@@ -848,7 +853,7 @@ def worst_hops(fps, nets):
                                             ToMM(pad.GetPosition().y))
     out = []
     for name, nodes in nets.items():
-        if name in POURED_NETS or name in RAIL_NETS:
+        if name in POURED_NETS or name in RAIL_NETS or name in SLOW_SENSE_NETS:
             continue
         # Nets landing on J2 are exempt -- the WHOLE net, both ends; this
         # `continue` checks nothing about them. J2's position is not a routing

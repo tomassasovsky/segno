@@ -74,9 +74,9 @@ v3 is the same board with the ring-board link (#987) and the CTRL ring sense
 |---|---|---|
 | J6 `RING` | JST-XH 8-pin; the ring board's 4-way lands on pins 1, 3, 6, 7 | **JST-XH 4-pin**, cable 1:1 with the ring board's J1 |
 | R1 (330 Ω), R13 (10 kΩ), R15 (100 kΩ) | fitted | **not fitted, no pads** — the ring-data path is gone; U1's gate B is parked |
-| R19, R20 | — (bench wires from J20/J21 pin 2 to J22's GP20/GP21 pads instead) | **4.7 kΩ**, upright, between R5 and C13 under `CTRL 1`: the ring-sense series parts |
-| J22 `EXP` | 2×4, right of U2: +3V3, +5V, GP19, GP20, GP21, GP22, GP28, GND | **2×4, below the Pico left of `RING`**: +3V3, +5V, **GP12, GP15**, GP19, GP22, GP28, GND. Pin 1 is at the top; odd pins are the top row |
-| J23 `PD` | — | **JST-XH 3-pin, new**, under the Pico's left end between `5V IN` and `EXP`: pin 1 GND, 2 SDA (GP0), 3 SCL (GP1). I2C to the STUSB4500 PD trigger, three wires only — do not run the trigger's VDD from this board |
+| R19, R20 | — (bench wires from J20/J21 pin 2 to J22's GP20/GP21 pads instead) | **4.7 kΩ**, in the row under the Pico where R13 and R15 used to be (R20 in the slim band by R16, R19 in the row below): the ring-sense series parts. Far from the jacks on purpose — DC sense lines, and the column under `CTRL 1` stays J22's |
+| J22 `EXP` | 2×4, right of U2: +3V3, +5V, GP19, GP20, GP21, GP22, GP28, GND | Same place, same footprint: +3V3, +5V, **GP12, GP15**, GP19, GP22, GP28, GND. Pin 1 top-left; odd pins are the left column |
+| J23 `PD` | — | **JST-XH 3-pin, new**, in the `RING` / `LEDS` row under the Pico's left end, right of `5V IN`: pin 1 GND, 2 SDA (GP0), 3 SCL (GP1). I2C to the STUSB4500 PD trigger, three wires only — do not run the trigger's VDD from this board |
 | R11, R12 | row under the Pico at y 63 | **3 mm higher**, hugging the module's bottom pads, to make room for J23 |
 
 Use the resistor colour key as printed; the only new value is **4.7 kΩ = yellow · violet · black · brown**.

@@ -7,6 +7,11 @@ import json, math, sys
 sys.path.insert(0, '.')
 from silk_art_extract import mark_polys, text_polys, MONO
 
+# silk_art_pads.json: the bounding box of EVERY pad that opens the back solder
+# mask on the placed board -- plated pads AND non-plated holes with a mask ring
+# (the Pico module's three anchors are NPTH and were missed once, and the big
+# segno landed on them). Regenerate it from out_console/console.placed.kicad_pcb
+# whenever a through-hole part moves; pcbnew: pads whose LayerSet has B.Mask.
 PADS = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'silk_art_pads.json')))
 M = 0.8                                   # silk-to-pad clearance
 BW, BH = 99.5, 99.5
