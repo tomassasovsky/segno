@@ -101,8 +101,10 @@ fully internal.
   height.
 - **Layout (two rows, per the reference):** a front row of **8 evenly-spaced**
   pedals (REC/PLAY · STOP · UNDO · MODE · TRACK 1–4) and an upper pair **CLEAR /
-  BANK aligned in `u` over UNDO and MODE**, placed so their **label tops align
-  with the screens' shared top line** (issue #366). **An LED pill indicator sits
+  BANK aligned in `u` over UNDO and MODE**, placed so the **front edge of their
+  slot sits ON the 16" aperture's front edge** — the two pedals and the big
+  screen share one hard bottom line (issue #796, owner call; this replaced
+  #366's label-top anchoring, a soft glyph edge that lined up with nothing). **An LED pill indicator sits
   above EVERY pedal (10 total)** — the board's `indicatorLeds[7]` chain contract
   must widen to 10 (open firmware follow-up). The mid-row platforms are taller (the lid is higher there); the generator
   computes both heights and the depth assertions confirm the 16" screen fits behind.

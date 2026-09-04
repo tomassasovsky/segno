@@ -19,9 +19,10 @@ u along the 850 width from the left wall, v along the 423 depth from the front).
 Populated-doc browser hygiene: root holds only the chassis (`VAMP sheet
 metal`, `base`, `faceplate`, `rear_panel`, `vent_foam`) plus identity-placed
 grouping components — `pedals` (10), `platforms` (20), `feet` (4),
-`fasteners` (18 native ISO 7380-1 screws), `lid_stack` (screens, encoder,
-texts, logo, support posts, and `diffusers` = the 4 pill diffusers + the
-`led_strips` bars, all the same white-PLA printed part), `electronics`
+`fasteners` (18 native ISO 7380-1 screws), `lid_stack` (screens, the
+switched-off legacy `encoder`, texts (switched off), logo, support posts, and
+`diffusers` = the ten `led_diffuser_*` pills; the old `led_strips` bar
+component was deleted 2026-09-04), `electronics`
 (Pi, NVMe, console board, bucks, standoffs). Groups are at identity, so
 members keep world = local of the old root placement (`moveToComponent`
 preserves world transforms; verified delta 0). The canonical-transforms
@@ -59,8 +60,13 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   boolean ≈ 0.008 cm³ of contact films. Verify with TemporaryBRep intersection
   volumes per lump, never bboxes (all Fusion bboxes here are loose hulls).
 - **The lid stack moves together**: faceplate, ring_disc (both docs), plus in
-  populated screen_16in/7in, encoder, led_strips, texts, segno_logo, the pill
-  diffusers. If the faceplate moves, every one of these gets the same delta.
+  populated screen_16in/7in, the legacy `encoder`, texts, segno_logo, the ten
+  pill diffusers, and the ROOT-level ring family (`ring_board_asm`,
+  `neopixel_ring24`, `ring_holder24`, `encoder_knob_50x18_alu`,
+  `ring_disc_51_5`, `ring_comet`). If the faceplate moves, every one of these
+  gets the same delta. The ring family ALSO follows `ENC_V` on its own: it
+  moved +7.5 mm along the plate on 2026-09-04 (219.66 -> 227.16, #930), a world
+  delta of (0, c*0.75, s*0.75) in populated and (0, s*0.75, c*0.75) in VSM.
   (screen_bracket is GONE — screens bond to the shell, part deleted in #760.)
 - **FRONT_WALL_KNUCKLE_TRIM**: both base comps carry a cut (sketch of that
   name, offset plane at local z=0.8094) matching the generator's shortened
@@ -85,12 +91,18 @@ Much simpler than the base — no wrap, two folds, one per call:
    "VAMP sheet metal" subassembly — delete the child; create the new component
    at ROOT). Import `out/segno_faceplate.dxf` at identity → sketches CUT/BEND.
 2. Extrude the CUT max-area profile **−0.2** (top face at z=0).
-3. `body.convertToSheetMetal(top_face, rule)` + `activeSheetMetalRule` (same
-   T2/R2/K0.33 rule). Note: the rules collection is `design.designSheetMetalRules`.
+3. `body.convertToSheetMetal(top_face, rule)` with the T2/R2/K0.33 rule. The
+   collection is `design.designSheetMetalRules` and it holds ~23 entries all
+   named `Aluminio (mm) (Convert)` at three different gauges — **pick by
+   values, not by name** (`thickness`, `bendRadius`, `kFactor` are
+   `SheetMetalRuleValue`s; read `.value`). There is no
+   `design.activeSheetMetalRule` in this API build.
 4. Fold the LIP: BEND line at y=ffl (1.21938 since the full-drop lip, #760),
    `foldFeatures.createInput(stationaryFace)` then `fi.bendLines.add(line,
-   ValueInput(−radians(90−SLOPE_ANGLE)), CenterFoldBendLinePositionType, True)`
-   — NEGATIVE angle folds down.
+   ValueInput(−radians(90−SLOPE_ANGLE)),
+   adsk.fusion.FoldBendLinePositionTypes.CenterFoldBendLinePositionType, True)`
+   — NEGATIVE angle folds down. Expected bbox after this fold:
+   (0, 0.7838, −1.3716)..(84.98, 44.4295, 0).
 5. Fold the LAP: line at y=ffl+FP_V (41.88296), angle −radians(SLOPE+TRANS)
    (−36.94°). Local bbox after both: (0, 0.7838, −1.7191)..(84.98, 44.0043, 0).
    The seat translation is SOLVED from the rebuilt comp's measured lip-inner
@@ -102,6 +114,11 @@ Much simpler than the base — no wrap, two folds, one per call:
 6. Appearance "Plastic - Matte (Black)", then transform LAST (see the seat
    above), then guarded snapshot. Setting appearance after the transform
    RESETS the transform.
+
+Run end to end in BOTH docs on 2026-09-04 (ten pills + row 2 on the 16"
+line): nine calls, no retries; the seat solved from the rebuilt lip plane came
+out at the canonical −1.44377 / 1.12715 to five decimals, and the proxy bbox
+matched the previous lid's exactly.
 
 ## The base rebuild recipe (the ONLY supported way to change the base)
 
@@ -236,7 +253,8 @@ faceplate slope; and the tile centre sits **1.8444 cm forward of the pedal's
 back edge** — note the Cherub component's origin IS its back edge, not its
 centre, so compare against `occ.boundingBox.maxPoint.y`, never against
 `PEDAL_ROW*_V`. Both rows agree on that offset. Row 1 lands at
-`y = 10.2695, z = 4.1129`; row 2 (CLEAR, BANK) at `y = 26.4592, z = 7.7057`.
+`y = 10.2695, z = 4.1129`; row 2 (CLEAR, BANK) at `y = 26.4611, z = 7.7020`
+(#796: row 2 is the row-1 transform plus the slope delta, see "Row 2" below).
 
 ```
 [1,0,0,u/10 | 0,c,-s,y | 0,s,c,z]      c,s = cos,sin(1.4614 deg)
@@ -271,26 +289,43 @@ generator, delete the ten `tile_*` occurrences, `importManager.createSTEPImportO
 appearances, then set the transform and snapshot. Do it one tile per call — this
 doc is heavy, and batching per-body operations is what froze it in #753.
 
+## Row 2 (CLEAR/BANK) placement (#796)
+
+Row 2 sits on the 16" aperture's front edge (generator `PEDAL_ROW2_V`, 233.65).
+Every row-2 member is placed as **its row-1 counterpart's transform plus the
+slope delta** `(0, c*dv, s*dv)` with `dv = (PEDAL_ROW2_V - PEDAL_ROW1_V)/10 =
+16.584607` cm, i.e. world `(0, 16.191596, 3.589069)`:
+
+| row-2 member | row-1 source |
+|---|---|
+| `pedals:1+Cherub WTB-006 Footswitch:9` / `:10` | `Footswitch:3` / `:4` |
+| `platforms:1+platform_sled_v375:2` / `:10` | `platform_sled_v375:4` / `:5` |
+| `tile_CLEAR:1` / `tile_BANK:1` | `tile_UNDO:1` / `tile_MODE:1` |
+| `led_diffuser_CLEAR` / `_BANK` | see the diffuser origins below |
+
+The mid pedestal collars are the exception: their HEIGHT follows the row's v,
+so they are **re-imported, not moved**. `platform_mid_ring_CLEAR:1` and
+`_BANK:1` under `platforms` are `out/segno_platform_mid_ring.step` placed at
+`[0,-1,0,u/10 | 1,0,0,22.811 | 0,0,1,0.2]` — the row-2 foot-hole centre
+(`platform_foot_holes`, v 228.11) over the floor top, with the same 90 deg turn
+as the front collars (whose `y = 6.62` is the row-1 hole centre). Done
+2026-09-04; the doc's row 2 had sat 3.96 mm too far back until then.
+
 ## LED pill diffusers (populated doc only)
 
-> **The doc is one revision behind the generator again, on purpose (#930).** It
-> holds **six** diffusers of the pre-#930 part (3 mm flange, 66 x 12 x 3.9). The
-> generator now emits **ten**, at 68 x 14 x 6.33 with a 4 mm flange and a strip
-> channel. Re-import before trusting anything rendered from it — everything
-> below is how, and the numbers below are still right because the lens origin
-> did not move.
-
-Six `led_diffuser_*` components under `lid_stack:1+diffusers:1`, each an
+Ten `led_diffuser_*` components under `lid_stack:1+diffusers:1` (current as of
+2026-09-04: the 68 x 14 x 6.33 strip-channel part, one per pedal), each an
 imported STEP of `out/segno_led_diffuser.step`. They replaced a `led_strips`
-component that held all six as BODIES and had gone stale by a whole revision —
-it still carried the bare pre-#760 lens (59.8 x 5.8 x 2.4), no shoulder on it at
-all, long after the generator grew the glue flange.
+component that held six bars as BODIES and had gone stale by a whole revision;
+that component is deleted, the strip now lives inside the diffuser channel.
 
 **Placement.** x is the pedal's `u/10`; the rotation is `SLOPE_ANGLE`
 (12.498241812070852 deg), not the pedal tilt the tiles use. Row 1 sits at
-`ty = 13.229313, tz = 4.154294`; row 2 (CLEAR, BANK) at
-`ty = 29.420852, tz = 7.743445`. Row 1 is TRACK1-4 in the doc as it stands; on
-re-import it is all eight of row 1, since #930 gave every pedal a pill.
+`ty = 13.22919, tz = 4.154255`; row 2 (CLEAR, BANK) at
+`ty = 29.420786, tz = 7.743324`. These are the generator's numbers: the part
+origin is on the plate's local z = -0.22 (underside minus a 0.2 mm glue line)
+at the pill centre `v = PEDAL_ROW*_V + FSW_SLOT_D/2 + LED_GAP`, DXF
+`y = v/10 + 1.21938` (the lip fold line), through the faceplate transform.
 
 ```
 [1,0,0,u/10 | 0,c,-s,ty | 0,s,c,tz]
@@ -302,7 +337,10 @@ body, the lens is centred in x/y and spans z 0..0.24 cm, so
 
 **Appearance is state, not material.** TRACK1 and TRACK2 carry `LED pill - green`
 (shown lit); the rest are `Plastic - Matte (White)`. Preserve that split across a
-re-import or the render silently loses its meaning.
+re-import or the render silently loses its meaning. **Set the appearance BEFORE
+the transform**, in its own pass: a loop that set `transform2` and then
+`body.appearance` left all ten at identity (2026-09-04) — the same reset the
+faceplate recipe warns about.
 
 **The first import into an empty component cannot be transformed.** Setting
 `transform2` on it silently does nothing — no exception, the matrix just reads
