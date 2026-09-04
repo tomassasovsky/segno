@@ -5335,6 +5335,26 @@ def _seal_path_seams(ax):
     return sealed
 
 
+# Floor on the point size of everything a fabricator ACTS on: the bend table and
+# its footnote, the tolerance block, the title block. ISO 3098's smallest
+# standard lettering is 1.8 mm and these are unhinted Type 3 fonts. The floor is
+# in POINTS but what matters is millimetres after the sheet is fitted to A4, and
+# that scale depends on the page aspect -- which this floor itself changes, by
+# widening the page. 6.0 pt is the value that clears 1.8 mm on every sheet once
+# that settles; measured, not derived.
+SHEET_MIN_DATA_PT = 5.2
+# Tallest page shape allowed, height over width. The sheets are auto-fitted to
+# their part, so a tall narrow part produced a tall narrow page: the post came
+# out 288 x 900 pt, and fitting a 1:3 ribbon onto A4 wastes half the paper and
+# scales every dimension and table row down with it. 1.55 is about A4's own
+# proportion, so a sheet capped here fills the paper instead of a stripe of it.
+SHEET_MAX_ASPECT = 1.55
+# Bottom margin for the text strip. Every office printer reserves 4-5 mm and the
+# last legend line was finishing 0.4 mm from the edge: printed at 100% it landed
+# in the unprintable band, taking the tolerance values with it.
+SHEET_MARGIN_IN = 0.22
+
+
 def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None):
     """One drawing sheet: the flat pattern, a bend table, a title block and a legend.
 
@@ -5374,17 +5394,58 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
     # runs straight off the edge of the 402 mm rear panel (which is how the post
     # sheet ended up with its title block printed over its own heading).
     w, h = fig.get_size_inches()
+
+    # The bend table, the tolerances and the title block are DATA; the legend
+    # under them is boilerplate at a fixed FS. Sizing only the data to the page
+    # meant the three narrow sheets -- the post finishes 288 pt wide -- printed
+    # their fold angles, their deductions and the "punzón de 30°, no el juego de
+    # 88°" note at 1.0-1.4 mm, while the generic legend beside them stayed at
+    # 3 mm. The least important text on the sheet was three times the size of
+    # the most important. Widen the PAGE so the data can hold a floor. The
+    # drawing keeps its size; the extra width is margin (which those sheets also
+    # needed -- they were finishing 0.5 mm from the paper edge).
+    _radii_probe = sorted({r[7] for r in BEND_TABLES.get(stem, ())})
+    _tb_probe = (f"{title}   |   {material}   |   CANT. {qty}   |   medidas en mm"
+                 + ("   |   PIEZA PLANA, sin plegados" if not _radii_probe else
+                    "   |   plegado Ri "
+                    + " / ".join(f"{r:.1f}" for r in _radii_probe)
+                    + f" mm, factor K {KF}"))
+    _tbl_probe = _bend_table_lines(stem)
+    _tol_probe = (_tolerance_lines()
+                  if PART_SPECS.get(stem, (None, None, None))[2] == PKG_SHEETMETAL
+                  else [])
+    # Widen by ASPECT, not by a font floor. A font floor is circular: the wider
+    # page it forces makes the sheet print SMALLER once fitted to paper, so the
+    # text gains nothing and raising the floor actively makes it worse (measured:
+    # 5.2 pt gave 1.79 mm on the post, 6.0 pt gave 1.55). What actually costs
+    # legibility is the page shape -- the post finished 288 x 900 pt, a 1:3
+    # ribbon, and fitting that to A4 throws away half the width and scales
+    # everything down with it. Cap the aspect and the fonts, which are already
+    # sized to the page, follow.
+    _rows = len(_tbl_probe) + (len(textwrap.wrap(BEND_FOOTNOTES.get(stem, ""), 110))
+                               + 1 if BEND_FOOTNOTES.get(stem) else 0)
+    _strip_est = SHEET_MARGIN_IN + 0.62 + 0.155 * 6 + (0.20 * _rows + 0.30 if _rows else 0.0)
+    _need_in = (h + _strip_est) / SHEET_MAX_ASPECT
+    if _need_in > w:
+        pos = ax.get_position()
+        fig.set_size_inches(_need_in, h, forward=True)
+        # keep the drawing where it was, in inches, and let the page grow around it
+        ax.set_position([pos.x0 * w / _need_in, pos.y0,
+                         pos.width * w / _need_in, pos.height])
+        w = _need_in
     usable_pt = w * 72.0 * 0.94
     mono_cols = lambda fs: max(40, int(usable_pt / (0.602 * fs)))
-    fit_fs    = lambda text, want, ratio=0.55: min(want, usable_pt / (ratio * max(len(text), 1)))
+    fit_fs    = lambda text, want, ratio=0.55: max(
+        SHEET_MIN_DATA_PT, min(want, usable_pt / (ratio * max(len(text), 1))))
 
-    table = _bend_table_lines(stem)
+    table = _tbl_probe
     foot  = BEND_FOOTNOTES.get(stem, "")
     ROW, FS = 0.20, 7.4                      # inches per row / point size
     # The Spanish table rows are ~10 characters wider than the English ones were,
     # and the sheets are auto-fitted to their part -- so size the table to the page
     # instead of trusting a fixed 7.4 pt to keep fitting.
-    tbl_fs = min(FS, usable_pt / (0.602 * max((len(ln) for ln in table), default=1)))
+    tbl_fs = max(SHEET_MIN_DATA_PT,
+                 min(FS, usable_pt / (0.602 * max((len(ln) for ln in table), default=1))))
     block = [(ln, tbl_fs, True) for ln in table]
     if foot:
         block += [("", tbl_fs, False)]
@@ -5398,20 +5459,26 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
 
     # the bend spec is PER PART -- the post is 1.6 mm steel on Ri 1.6, and a flat
     # part has no radius at all. A blanket "bend Ri 2.0" was wrong on both.
-    radii = sorted({r[7] for r in BEND_TABLES.get(stem, ())})
-    bend_spec = ("   |   PIEZA PLANA, sin plegados" if not radii else
-                 "   |   plegado Ri " + " / ".join(f"{r:.1f}" for r in radii) + f" mm, factor K {KF}")
-    tb = f"{title}   |   {material}   |   CANT. {qty}   |   medidas en mm{bend_spec}"
+    tb = _tb_probe
 
+    # The title block is the line a fabricator checks first: part name, stem,
+    # material, quantity, bend spec. It shares the strip with the tolerance
+    # column, so on a narrow sheet it cannot be both readable and one line --
+    # shrinking it put the material at 1.4 mm, and flooring it walked "factor K
+    # 0.33" off the right edge. Wrap it and grow the strip instead.
+    tb_room = 0.58 if tol else 1.0
+    tb_cols = max(30, int(usable_pt * tb_room / (0.62 * SHEET_MIN_DATA_PT)))
+    tb_lines = textwrap.wrap(tb, tb_cols) or [tb]
     legend_h = 0.155 * max(len(legend), len(tol))
-    strip = 0.62 + legend_h + (ROW * len(block) + 0.30 if block else 0.0)
+    strip = (SHEET_MARGIN_IN + 0.62 + legend_h + 0.16 * (len(tb_lines) - 1)
+             + (ROW * len(block) + 0.30 if block else 0.0))
     pos  = ax.get_position()
     y0_in, h_in = pos.y0 * h, pos.height * h
     newh = h + strip                          # grow the PAGE, never shrink the drawing
     fig.set_size_inches(w, newh, forward=True)
     ax.set_position([pos.x0, (y0_in + strip) / newh, pos.width, h_in / newh])
-    fy = lambda inches: inches / newh
-    y = strip - 0.22
+    fy = lambda inches: (inches + SHEET_MARGIN_IN) / newh
+    y = strip - SHEET_MARGIN_IN - 0.22
     for i, (line, fs, bold) in enumerate(block):
         fig.text(0.03, fy(y), line, family="monospace", fontsize=fs,
                  weight="bold" if i < 2 and bold else "normal",
@@ -5423,12 +5490,17 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
     # 0.62, not the 0.55 fit_fs uses: these two lines are BOLD, and the Spanish
     # title block is long enough that the optimistic ratio walked it off the right
     # edge of the narrow overlay sheet.
-    room = 0.58 if tol else 1.0
-    bold_fs = lambda text, want: min(want, usable_pt * room / (0.62 * max(len(text), 1)))
-    fig.text(0.03, fy(legend_h + 0.40), SHEET_HEADING,
+    room = tb_room
+    bold_fs = lambda text, want: max(
+        SHEET_MIN_DATA_PT, min(want, usable_pt * room / (0.62 * max(len(text), 1))))
+    _tb_h = 0.16 * (len(tb_lines) - 1)
+    fig.text(0.03, fy(legend_h + 0.40 + _tb_h), SHEET_HEADING,
              fontsize=bold_fs(SHEET_HEADING, 12.0), weight="bold")
-    fig.text(0.03, fy(legend_h + 0.18), tb, fontsize=bold_fs(tb, 10.0),
-             weight="bold", color="#000")
+    tb_fs = max(SHEET_MIN_DATA_PT,
+                min(10.0, usable_pt * room / (0.62 * max(len(l) for l in tb_lines))))
+    for i, line in enumerate(tb_lines):
+        fig.text(0.03, fy(legend_h + 0.18 + _tb_h - 0.16 * i), line,
+                 fontsize=tb_fs, weight="bold", color="#000")
     for i, line in enumerate(legend):
         fig.text(0.03, fy(legend_h - 0.115 - 0.155 * i), line,
                  family="monospace", fontsize=FS, color="#333")
@@ -5437,12 +5509,18 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
     # block is: a fixed point size that fits the 1152 pt base sheet walks off the
     # edge of a narrower one.
     if tol:
-        tol_fs = min(FS, (0.33 * w * 72.0) / (0.602 * max(len(t) for t in tol)))
+        # Sized to its own column and ending at 0.97, not floored: a floor here
+        # can only make the block wider than the column it has, and the column is
+        # the last thing before the paper edge -- the corner bracket's tolerance
+        # values were running 0.1 mm PAST it. The aspect cap above is what buys
+        # this text its size; there is nothing left for a floor to add.
+        tol_w, tol_x = 0.35, 0.62
+        tol_fs = min(FS, (tol_w * w * 72.0) / (0.602 * max(len(t) for t in tol)))
         for i, line in enumerate(tol):
-            fig.text(0.635, fy(legend_h + 0.40 - 0.155 * i), line, family="monospace",
+            fig.text(tol_x, fy(legend_h + 0.40 + _tb_h - 0.155 * i), line, family="monospace",
                      fontsize=tol_fs, weight="bold" if i == 0 else "normal",
                      color="#000" if i == 0 else "#333")
-    SHEET_TEXT[stem] = ([ln for ln, _f, _b in block] + [SHEET_HEADING, tb]
+    SHEET_TEXT[stem] = ([ln for ln, _f, _b in block] + [SHEET_HEADING, tb] + tb_lines
                         + list(legend) + list(tol))
     fig.savefig(pdf_path, dpi=150); plt.close(fig)
 
@@ -5457,6 +5535,7 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
 # ===========================================================================
 
 AL_2MM = "Aluminio 1050 2,0 mm"
+AL_15  = "Aluminio 1050 1,5 mm"
 ST_16  = "Acero laminado en frío 1,6 mm"
 
 PAINT_FINISH = "Negro texturado mate (RAL 9005) - a confirmar contra cupón de muestra"
@@ -5468,10 +5547,43 @@ PAINT_FINISH = "Negro texturado mate (RAL 9005) - a confirmar contra cupón de m
 PAINT_BOM = [
     ("segno_base",               "Cuerpo: piso + frente + laterales + trasera", 1, AL_2MM, "Pieza más grande"),
     ("segno_faceplate",          "Tapa superior",                               1, AL_2MM, "Cara vista principal"),
+    ("segno_rear_panel",         "Panel trasero de conectores",                 1, AL_15,
+     "LLEVA MÁSCARA: land PANEL_BOND"),
     ("segno_corner_bracket_rear","Ángulo de esquina trasera",                   2, AL_2MM, "Interno"),
     ("segno_ring_disc",          "Disco central del aro de LEDs",               1, AL_2MM, "Interno"),
     ("segno_post",               "Poste de apoyo de la tapa",                   2, ST_16,  "ACERO: otro pretratamiento"),
 ]
+
+def _verify_paint_bom():
+    """Every powder-coated part must appear in the coater's BOM.
+
+    segno_rear_panel did not, for its whole life: no table row, no masking page,
+    and no sheet in segno_pintura.zip -- while its own drawing carries the one
+    instruction that matters, that the O12 PANEL_BOND land stays bare or the
+    chassis loses its earth. The coater would have painted over it and the area
+    quote was 4% short as well. Derived from PART_SPECS so the two cannot drift.
+    """
+    coated = {stem for stem, (_m, _q, pkg) in PART_SPECS.items()
+              if pkg == PKG_SHEETMETAL}
+    listed = {stem for stem, *_ in PAINT_BOM}
+    missing = coated - listed
+    assert not missing, (
+        f"powder-coated parts missing from PAINT_BOM: {sorted(missing)} -- the "
+        f"coater never sees them, and any bare-metal mask they carry is lost")
+    # and anything with a MASK ring needs its own masking page, not just a row
+    masked = set()
+    for stem in listed:
+        dxf = os.path.join(OUT, stem + ".dxf")
+        if not os.path.exists(dxf):
+            continue
+        import ezdxf
+        if any(e.dxf.layer == "MASK" and e.dxftype() in ("CIRCLE", "ARC")
+               for e in ezdxf.readfile(dxf).modelspace()):
+            masked.add(stem)
+    assert masked <= PAINT_MASK_PAGES, (
+        f"parts with a bare-metal mask and no masking page: "
+        f"{sorted(masked - PAINT_MASK_PAGES)}")
+
 
 def _poly_area(pts):
     a = 0.0
@@ -5564,7 +5676,11 @@ def _wrap_to_page(text, pt, page_w_in, frac=0.92, ratio=0.55):
 # segno_pintura.zip ships a 1-page file missing both masking pages. Recorded
 # here and asserted in _verify_drawing_package.
 PAINT_PAGES = {}
-PAINT_PAGES_EXPECTED = 3
+PAINT_PAGES_EXPECTED = 4
+# The parts that get a masking / detail page of their own, after the cover page.
+# Named here so _verify_paint_bom can check it against the parts that actually
+# carry a MASK ring, rather than trusting the list inside paint_quote_pdf.
+PAINT_MASK_PAGES = {"segno_base", "segno_faceplate", "segno_rear_panel"}
 
 
 def paint_quote_pdf(path):
@@ -5651,6 +5767,11 @@ def paint_quote_pdf(path):
             ("segno_faceplate", "TAPA SUPERIOR - aberturas críticas",
              "Sin enmascarado. Las dos aberturas grandes son de pantalla y quedan ajustadas "
              "contra el display: contemplar el espesor de película."),
+            ("segno_rear_panel", "PANEL TRASERO - plano de enmascarado",
+             "Rojo = NO PINTAR. Land PANEL_BOND de Ø12: apoya contra el cuerpo y hace la "
+             "puesta a tierra del chasis. Va en la cara que MIRA AL CUERPO; enmascarada "
+             "del lado equivocado, la máscara cae sobre pintura y el panel pierde la "
+             "puesta a tierra."),
         ]
         for stem, title, note in sheets:
             dxf = os.path.join(OUT, stem + ".dxf")
@@ -6654,6 +6775,8 @@ def _verify_drawing_package(with_pdf=True):
     # by a bare `except Exception` that prints one line and lets the run finish
     # green. Without this the coater gets a 1-page file with both masking pages
     # missing and nothing says so.
+    _verify_paint_bom()
+
     if with_pdf:
         pq = os.path.join(OUT, "segno_paint_quote.pdf")
         assert os.path.exists(pq), "segno_paint_quote.pdf was not written"
