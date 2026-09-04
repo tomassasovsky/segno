@@ -424,8 +424,8 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
     // A pedal in a CTRL jack is a control too, and it does not care whether
     // any MIDI device is attached. What the Add buttons need is SOMETHING
     // that can move, from either source.
-    final linkConnected =
-        context.watch<PedalCubit>().state.status == PedalLinkStatus.connected;
+    final pedalState = context.watch<PedalCubit>().state;
+    final linkConnected = pedalState.status == PedalLinkStatus.connected;
     final canCapture = midiConnected || linkConnected;
     bool liveFor(MappingTrigger trigger) => switch (trigger.kind) {
       ControllerSourceKind.midiNote ||
@@ -481,6 +481,28 @@ class _MidiTrayBodyState extends State<MidiTrayBody> {
               _open = already ? null : _MappingOpen(binding.key);
             }),
           ),
+        // What each CTRL jack is reporting right now, directly above the
+        // buttons that bind it. A pedal is bound by moving it, so it has to be
+        // visible WHILE it moves: without this there is no way to tell a
+        // mis-wired jack from a pedal whose travel the board has not learned
+        // yet. It lived in the Settings page first, which nothing opens
+        // (#498), so nobody could find it.
+        if (linkConnected)
+          if (pedalState.ctrl.isEmpty)
+            ConsoleRow(
+              key: const Key('midi_ctrl_idle'),
+              title: l10n.midiCtrlIdle,
+              titleColor: context.surface.textMuted,
+              showDisclosure: false,
+            )
+          else
+            for (final jack in PedalCtrlJack.values)
+              if (pedalState.ctrl[jack] case final reading?)
+                _CtrlJackRow(
+                  key: Key('midi_ctrl_${jack.name}'),
+                  jack: jack,
+                  reading: reading,
+                ),
         _addRow(context, cubit, connected: canCapture),
         _addChooser(context, cubit, connected: canCapture),
       ],
@@ -978,5 +1000,42 @@ bool _bindingResolves(LooperRepository looper, ControllerBinding binding) {
     case DiscreteBinding():
       final target = FxBindingTarget.tryParse(binding.target);
       return target != null && looper.bindingResolves(target);
+  }
+}
+
+/// One CTRL jack's live reading: which kind of pedal the board decided is on
+/// it, and where that pedal is right now.
+class _CtrlJackRow extends StatelessWidget {
+  const _CtrlJackRow({required this.jack, required this.reading, super.key});
+
+  final PedalCtrlJack jack;
+  final PedalCtrlReading reading;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final number = jack.index + 1;
+    final title = switch (reading.kind) {
+      PedalCtrlKind.switchPedal => l10n.consoleCtrlSwitchControl(number),
+      PedalCtrlKind.expression => l10n.consoleCtrlExpressionControl(number),
+    };
+    final value = switch (reading.kind) {
+      PedalCtrlKind.switchPedal =>
+        reading.value > 0 ? l10n.pedalCtrlSwitchDown : l10n.pedalCtrlSwitchUp,
+      PedalCtrlKind.expression => l10n.midiCtrlPercent(reading.percent),
+    };
+    // A live region: the value is the whole point of the row, and a screen
+    // reader has no other way to follow a pedal being rocked.
+    return Semantics(
+      liveRegion: true,
+      child: ConsoleRow(
+        title: title,
+        value: value,
+        valueColor: surface.textSecondary,
+        showDisclosure: false,
+        semanticLabel: '$title, $value',
+      ),
+    );
   }
 }

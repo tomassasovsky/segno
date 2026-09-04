@@ -17,49 +17,6 @@ void main() {
           ),
         );
 
-    testWidgets('a CTRL jack shows what it is reporting, live', (tester) async {
-      final link = FakePedalLink();
-      final pedal = PedalRepository(link);
-      final cubit = PedalCubit(pedal: pedal);
-      addTearDown(cubit.close);
-      addTearDown(pedal.dispose);
-      await pumpSection(tester, cubit);
-
-      // Nothing has reported yet: the block says so rather than showing a
-      // jack that may not exist.
-      expect(find.byKey(const Key('pedalSettings_ctrlIdle')), findsOneWidget);
-
-      link.emit(
-        const CtrlMessage(
-          jack: PedalCtrlJack.ctrl2,
-          kind: PedalCtrlKind.expression,
-          value: 255,
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        find.byKey(const Key('pedalSettings_ctrl_ctrl2')),
-        findsOneWidget,
-      );
-      expect(find.textContaining('100%'), findsOneWidget);
-
-      link.emit(
-        const CtrlMessage(
-          jack: PedalCtrlJack.ctrl1,
-          kind: PedalCtrlKind.switchPedal,
-          value: 255,
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(
-        find.byKey(const Key('pedalSettings_ctrl_ctrl1')),
-        findsOneWidget,
-      );
-      expect(find.byKey(const Key('pedalSettings_ctrlIdle')), findsNothing);
-    });
-
     testWidgets('the link status is a live region (WCAG 4.1.3)', (
       tester,
     ) async {
