@@ -5836,6 +5836,12 @@ def _wrap_to_page(text, pt, page_w_in, frac=0.92, ratio=0.55):
 # with a one-line note, and the run still prints ALL PASS and exit 0 while
 # segno_pintura.zip ships a 1-page file missing every masking page. Recorded
 # here and asserted in _verify_drawing_package.
+# Ink margin for the coater's sheet. SHEET_MARGIN_IN did the same job for
+# dxf_to_pdf and this path never got it: measured at 200 dpi the four pages had
+# ink 0.25-1.02 mm from the top edge and 2.41 mm from the bottom, inside the
+# unprintable band of any office printer. Printed at 100% the headings clip.
+PQ_MARGIN_MM = 6.0
+
 PDF_SKIPPED = {}                 # stem -> why its drawing did not render
 
 PAINT_PAGES = {}
@@ -5859,9 +5865,12 @@ def paint_quote_pdf(path):
     with PdfPages(path) as pdf:
         # ---- page 1: what has to be painted -------------------------------
         fig = plt.figure(figsize=(11.7, 8.3))   # A4 landscape
-        fig.text(0.06, 0.995, SHEET_HEADING, va="top",
+        _cover_h_mm = fig.get_size_inches()[1] * 25.4
+        _cover_top = 1.0 - PQ_MARGIN_MM / _cover_h_mm
+        fig.text(0.06, _cover_top, SHEET_HEADING, va="top",
                  fontsize=17, weight="bold")
-        fig.text(0.06, 0.945, "Pedido de cotización: pintura en polvo (termolaqueado)",
+        fig.text(0.06, _cover_top - 0.050,
+                 "Pedido de cotización: pintura en polvo (termolaqueado)",
                  va="top", fontsize=12, color="#444")
         y = 0.885
         for k, v in (("Envolvente del equipo armado",
@@ -5912,9 +5921,12 @@ def paint_quote_pdf(path):
         # drops overflowing fig.text silently, and note 4 already ends 29.7 pt
         # from the edge -- about seven characters of headroom on the line that
         # says the M3 pilots are tapped AFTER painting.
-        y = 0.150
+        # Anchored from the BOTTOM margin up, not from a fixed 0.150 down: the
+        # seventh note was finishing 2.4 mm from the paper edge.
         pages = 1                      # the cover page, already committed below
         page_w = fig.get_size_inches()[0]
+        _cov_m = PQ_MARGIN_MM / _cover_h_mm
+        y = _cov_m + 0.015 + 0.0195 * (len(notes) - 1)
         for i, n in enumerate(notes):
             fig.text(0.06, y, n, fontsize=_fit_pt(n, 8.2, page_w, frac=0.88),
                      color="#222" if i == 0 else "#444",
@@ -5945,7 +5957,10 @@ def paint_quote_pdf(path):
             if not os.path.exists(dxf):
                 continue
             fig = plt.figure(figsize=(11.7, 8.3))
-            ax = fig.add_axes([0.04, 0.12, 0.92, 0.80])
+            # 0.16, not 0.12: the strip below now starts at a printable margin
+            # rather than 2.4 mm from the paper edge, so the note it carries
+            # needs that much more room before it runs into the flat pattern.
+            ax = fig.add_axes([0.04, 0.16, 0.92, 0.76])
             _draw_dxf(ax, dxf)
             # _draw_dxf finalises through the ezdxf backend, which RESIZES the
             # figure to the data aspect -- the 11.7 in above is not the page
@@ -5956,24 +5971,28 @@ def paint_quote_pdf(path):
             # exists to say -- that the M3 pilots are tapped AFTER painting.
             # So size every line to the FINISHED page, the way dxf_to_pdf does.
             page_w = fig.get_size_inches()[0]
-            fig.text(0.04, 0.965, title, fontsize=_fit_pt(title, 14.0, page_w),
-                     weight="bold")
+            _pg_h_mm = fig.get_size_inches()[1] * 25.4
+            _m = PQ_MARGIN_MM / _pg_h_mm
+            fig.text(0.04, 1.0 - _m, title,
+                     fontsize=_fit_pt(title, 14.0, page_w),
+                     va="top", weight="bold")
             foot = (f"{SHEET_HEADING}   |   medidas en mm   |   "
                     "desarrollo / patrón plano (la pieza se entrega plegada)")
             note_lines = _wrap_to_page(note, 9.5, page_w)
             # The axes sit at 0.12 of the figure height. Two lines clear it; four
             # would print the instruction across the flat pattern, and nothing
             # counted the lines.
-            top = 0.055 + (len(note_lines) - 1) * 0.030 + 0.020
-            assert top <= 0.12, (
+            top = _m + 0.030 + (len(note_lines) - 1) * 0.030 + 0.020
+            assert top <= 0.16, (
                 f"{stem}: the masking note wraps to {len(note_lines)} lines and "
-                f"reaches {top:.3f} of the page, over the drawing at 0.12 -- "
+                f"reaches {top:.3f} of the page, over the drawing at 0.16 -- "
                 f"shorten it or give the axes a taller bottom margin")
             for i, line in enumerate(note_lines):
-                fig.text(0.04, 0.055 + (len(note_lines) - 1 - i) * 0.030, line,
-                         fontsize=9.5, color="#b00")
-            fig.text(0.04, 0.025, foot, fontsize=_fit_pt(foot, 8.0, page_w),
-                     color="#555")
+                fig.text(0.04,
+                         _m + 0.030 + (len(note_lines) - 1 - i) * 0.030, line,
+                         va="bottom", fontsize=9.5, color="#b00")
+            fig.text(0.04, _m, foot, fontsize=_fit_pt(foot, 8.0, page_w),
+                     va="bottom", color="#555")
             pdf.savefig(fig); plt.close(fig)
             pages += 1
     PAINT_PAGES[os.path.splitext(os.path.basename(path))[0]] = pages
@@ -6403,10 +6422,12 @@ def pdf_pedal_tiles(path):
             f"TRAPECIO {TILE_L_BACK:.2f} (ancho, cable) / {TILE_L_TOE:.2f} "
             f"(estrecho, punta) x {TILE_W:.2f}  "
             f"plástico bicapa {TILE_PLY_T:.1f} mm capa NEGRA / núcleo BLANCO; "
-            # by LAYER, not by colour: this note also travels on the DXF, where
-            # CUT is ACI 7 and ENGRAVE is ACI 3 -- the PDF's red/black mapping
-            # does not hold in the file the shop actually cuts from
-            f"capa CUT = corte pasante; capa ENGRAVE = grabado relleno; "
+            # TILE_LEGEND itself, not a paraphrase of it. Saying the same thing
+            # twice in two wordings is how the sheet came to describe its layers
+            # by PDF colour while the legend described them by name -- and the
+            # verifier could not see the drift, because it was reading a list
+            # this function invented rather than what the sheet prints.
+            f"{TILE_LEGEND}; "
             f"borde ANCHO hacia el cable; "
             f"imprimir al 100 %; medidas en mm")
     margin, strip = 12.0, 22.0
@@ -6450,8 +6471,11 @@ def pdf_pedal_tiles(path):
     tb = (f"{PART_TITLES_ES['segno_pedal_tiles']}  [segno_pedal_tiles]   |   "
           f"{PLY_2MM}   |   CANT. {len(labels)}   |   medidas en mm   |   "
           f"PIEZA PLANA, sin plegados")
-    SHEET_TEXT["segno_pedal_tiles"] = (
-        [SHEET_HEADING, tb, TILE_LEGEND, note] + wrapped)
+    # What is actually DRAWN on the sheet, nothing else. This used to record
+    # SHEET_HEADING and a synthesised title-block line, neither of which this
+    # sheet prints -- so the two assertions in _verify_tile_package were reading
+    # a list the writer had made up, and could not fail whatever the PDF held.
+    SHEET_TEXT["segno_pedal_tiles"] = list(wrapped) + labels
     fig.savefig(path, dpi=300)
     plt.close(fig)
 
@@ -6751,10 +6775,14 @@ def _verify_tile_package(with_pdf=True):
     if with_pdf:
         assert os.path.exists(os.path.join(OUT, "segno_pedal_tiles.pdf"))
         sheet = SHEET_TEXT["segno_pedal_tiles"]
-        assert TILE_LEGEND.split("|")[0].strip() in " ".join(sheet), (
-            "tile sheet is missing TILE_LEGEND")
-        title_line = next(t for t in sheet if t.startswith(PART_TITLES_ES["segno_pedal_tiles"]))
-        assert "segno_pedal_tiles" in title_line and "CANT." in title_line
+        drawn = " ".join(sheet)
+        # cross-check the record against the PDF itself, so it cannot drift back
+        # into describing a sheet that was never drawn
+        for want in (TILE_LEGEND.split("|")[0].strip(), "segno_pedal_tiles",
+                     "CANT.", PLY_2MM.split()[0]):
+            assert want in drawn, f"the tile nest sheet no longer prints {want!r}"
+        for lab, _u, _v in PEDALS:
+            assert lab in drawn, f"the tile nest sheet no longer labels {lab}"
         for label, _u, _v in PEDALS:
             assert os.path.exists(os.path.join(OUT, _tile_stem(label) + ".pdf"))
 
