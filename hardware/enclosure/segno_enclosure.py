@@ -92,7 +92,9 @@ KF       = 0.33      # K-factor for bend-allowance development
 FLANGE   = 18.0      # return-flange depth (lid side wings + wall top flange)
 # Weld-free corner join: internal L-brackets riveted through both walls. These MUST match
 # between the base rivet holes, the bracket parts, and the viewer render.
-CORNER_RO = 8.0      # rivet offset ALONG each wall from the corner (hug the corner, clear the I/O panel)
+CORNER_RO = 8.0      # rivet offset from the BRACKET's bend centre line, in its flat (hug the
+                     # corner, clear the I/O panel). The base drills CORNER_RO + T from its
+                     # bend lines -- see dxf_base for the fold-development derivation.
 CORNER_LEG = 12.0    # bracket leg width (along the wall)
 # REAR-corner rivets are STAGGERED between the two legs so a wall-leg rivet and a side-leg
 # rivet never sit at the same height (their tips would meet at the corner). Heights are from
@@ -2173,8 +2175,8 @@ def _check(strict_board_mount=True):
     assert _pz0 >= 4.0 and _pz0 + _ph <= REAR_WALL_H - 4.0, (
         f"REAR_PANEL: panel spans z {_pz0:.1f}..{_pz0+_ph:.1f}, which does not "
         f"leave 4 mm of wall above and below on a {REAR_WALL_H:.0f} mm wall")
-    for _ru in (CORNER_RO, _bw_wall - CORNER_RO):
-        for _rz in CORNER_ZR_WALL:
+    for _ru in (CORNER_RO + T, _bw_wall - CORNER_RO - T):   # where dxf_base drills them
+        for _rz in (T + z for z in CORNER_ZR_WALL):
             _clr = max(_pu0 - _ru, _ru - (_pu0 + _pw), _pz0 - _rz, _rz - (_pz0 + _ph))
             assert _clr >= 4.0, (
                 f"REAR_PANEL: corner rivet head at ({_ru:.1f}, {_rz:.1f}) is "
@@ -2647,7 +2649,20 @@ def _rrect(msp, x, y, w, h, r=R_FILLET, layer="CUT"):
     b = math.tan(math.radians(22.5))      # bulge for a 90 deg corner fillet (NOT 45 -> that is a 180 deg bump)
     pts = [(x+r, y, 0.0), (x+w-r, y, b), (x+w, y+r, 0.0), (x+w, y+h-r, b),
            (x+w-r, y+h, 0.0), (x+r, y+h, b), (x, y+h-r, 0.0), (x, y+r, b)]
-    msp.add_lwpolyline(pts, format="xyb", close=True, dxfattribs={"layer": layer})
+    # A full-round end (r == h/2 or r == w/2, every pill and louvre) makes two
+    # of those vertices coincide: a zero-length segment carrying a bulge. Some
+    # nesters reject the entity, a few drop the FOLLOWING bulge and turn the
+    # stadium into a rectangle (#775 A16). Merge coincident neighbours; the
+    # merged vertex keeps the bulge of the segment that LEAVES it.
+    out = []
+    for px, py, pb in pts:
+        if out and abs(out[-1][0] - px) < 1e-9 and abs(out[-1][1] - py) < 1e-9:
+            out[-1] = (px, py, pb)
+        else:
+            out.append((px, py, pb))
+    if len(out) > 1 and abs(out[0][0] - out[-1][0]) < 1e-9 and abs(out[0][1] - out[-1][1]) < 1e-9:
+        out[0] = (out[0][0], out[0][1], out[-1][2]); out.pop()
+    msp.add_lwpolyline(out, format="xyb", close=True, dxfattribs={"layer": layer})
 
 def _text(msp, x, y, h, s, layer="ENGRAVE", wf=1.0, halign="left"):
     from ezdxf.enums import TextEntityAlignment
@@ -2874,14 +2889,26 @@ def dxf_base(path):
     # Only the TALL rear corners get riveted L-brackets. The short 12 mm FRONT corners are
     # already clamped top (lid front-lip screws into the front wall) + bottom (bottom-plate
     # fold ties both walls), so they stay a plain butt+relief corner -- no bracket needed.
-    RV = D_M3; RO = CORNER_RO                  # 3.2 mm rivet clearance; offset from the corner
-    # heights z are measured from the BOTTOM-PLATE TOP (the bracket rests there), so add T
-    # to convert to a wall height above the fold line.
+    RV = D_M3
+    # The bracket is a folded L whose OUTER faces lie on the two walls' INNER
+    # faces, resting on the bottom-plate TOP. Its rivet holes sit CORNER_RO from
+    # its own bend CENTRE line in the flat, which after a 90 deg fold (RI, T,
+    # BA90) is CORNER_RO + DEV90 from the other leg's outer face -- i.e. from the
+    # wall it does not lie on. A wall hole drawn s from ITS bend centre line
+    # lands s + DEV90 above the floor's bottom face, and a rear-wall hole drawn
+    # s from the SIDE bend line is s - (BA90/2 - RI) from the side wall's inner
+    # face. Equating both (the audit of 2026-09-04 found every rivet 2.0 mm off
+    # along the wall and 1.9 mm low, #992) gives:
+    #   along the wall: s = CORNER_RO + T          (the BA90 terms cancel)
+    #   up the wall:    s = T + z - DEV90          (bracket bottom on the floor top)
+    RO_WALL = CORNER_RO + T                   # 10.0: rivet offset along the wall, flat
+    def _zf(z):                               # bracket height z -> wall flat offset
+        return T + z - DEV90
     for sgn, xc in ((+1, 0.0), (-1, BW)):     # +1 left (side flap -x) | -1 right (side flap +x)
         for z in CORNER_ZR_WALL:               # rear-wall leg (3 rivets)
-            _circle(msp, xc + sgn*RO, BD + T + z, RV)      # rear-wall face   (flat y = BD + T + z)
+            _circle(msp, xc + sgn*RO_WALL, BD + _zf(z), RV)     # rear-wall face
         for z in CORNER_ZR_SIDE:               # side-wall leg (2 rivets, staggered)
-            _circle(msp, xc - sgn*(T + z), BD - RO, RV)    # side-wall face
+            _circle(msp, xc - sgn*_zf(z), BD - RO_WALL, RV)     # side-wall face
 
     # ---- bottom features: vents + Pi/board M3 standoffs + rubber feet -------------
     _emit(msp, _bottom_vents_local(BW, BD))

@@ -69,9 +69,11 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   further +2.0 mm for the LED_GAP 16 trial (-> 229.16); a plate move of d is a
   world delta of (0, c*d, s*d) in populated and (0, s*d, c*d) in VSM.
 - **Support posts** (`support_post_gen`, `support_post_gen2`, root): imported
-  `out/segno_post.step`, whose origin is the part's MIN corner, placed at
-  `[1,0,0,POST_U/10 - POST_PW/20 | 0,1,0,13.8997 | 0,0,1,0.2]` so the post is
-  centred on its slot gap. POST_PW is derived (30.14 since 2026-09-04, was a
+  `out/segno_post.step`, whose origin is the part's MIN corner (foot front,
+  outer x edge), placed at `[1,0,0,POST_U/10 - POST_PW/20 | 0,1,0,
+  (_POST_VP - POST_FOOTL)/10 | 0,0,1,0.2]` = x 60.993 / 71.093, y 14.109. The
+  foot's two Ø4.3 holes then sit on the floor's anchors at v = _POST_FOOT_VP
+  (151.09); the doc had them at y 13.8997, 2.1 mm forward, until the #992 audit. POST_PW is derived (30.14 since 2026-09-04, was a
   literal 40), so a flange or pitch change means a post re-import, not a move.
   The felt caps (`post_felt`, `post_felt2`) are native base-feature slabs
   trimmed to the post width.
@@ -192,6 +194,39 @@ The rear panel is the same recipe minus folds: import `out/segno_rear_panel.dxf`
 at identity, extrude the max-area CUT profile −0.2, `convertToSheetMetal`, set
 the transform (its x-centre = panel outline centre — recompute!), appearance,
 snapshot, save.
+
+### Corner brackets (both docs)
+
+The bracket is `out/segno_corner_bracket_rear.dxf` built with the lid recipe
+(import, extrude −0.2, convert, ONE 90° Center fold at x = 1.2, positive angle).
+Its local frame after the fold: leg A (3 rivets) in the plane x ≈ 1.109, leg B
+(2 rivets) in the plane z ≈ −0.1, holes along local y; the L's inside faces
++x/+z, so the wall-touching OUTER faces are at local x = 1.009 and z = −0.2.
+Leg A goes on the REAR wall, leg B on the SIDE wall (the base drills 3 rivets
+in the rear wall and 2 in each side wall, staggered). The hole pattern is
+symmetric about mid-height, which is what lets one part serve both corners:
+
+| corner (populated) | transform2 |
+|---|---|
+| left (x≈0), **turned over** | `[0,0,1,0.21 \| -1,0,0,42.899 \| 0,-1,0,8.39]` |
+| right (x≈84.8), upright | `[0,0,-1,84.39 \| -1,0,0,42.899 \| 0,1,0,0.39]` |
+
+Rivet holes land at (1.00, 41.79, 1.19/4.39/7.59) and (0.11, 40.90,
+2.79/5.99) on the left, mirrored on the right — coaxial with the base's
+Ø3.2 pilots once the base is built from a DXF at or after 2026-09-04 (the
+#992 audit found the base drilled every rivet 2.0 mm too close to the corner
+and 1.9 mm low; `dxf_base` now develops the fold). The bracket bottom sits
+1.9 mm above the floor top by design of the hole heights; that is fine, it is
+riveted, not seated.
+
+### Populated → VAMP sheet metal: one rotation for every transform
+
+`T_vsm = F · T_pop` with `F = [-1,0,0,84.8 | 0,0,1,0 | 0,1,0,0]` (det +1: a
+180° turn about the (0,1,1) axis, NOT a mirror — the x flip comes with the
+y/z swap). Check: F applied to the populated faceplate row gives the VSM
+canonical row in the table above. Use it instead of re-deriving VSM
+placements by hand; the corner brackets, posts and mid collars in VSM were
+placed this way on 2026-09-04.
 
 ## Hard-won API rules (each one cost a debugging session)
 
