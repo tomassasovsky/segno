@@ -5064,6 +5064,68 @@ SHEET_HEADING = "Segno - gabinete de controlador de audio"
 # _verify_drawing_package() holds the Spanish and the tolerance block against.
 SHEET_TEXT = {}
 
+def _seal_path_seams(ax):
+    """Close the rectangular outlines so the PDF MITRES their corners.
+
+    Every closed outline reaches the PDF as an OPEN path: it returns to its
+    start with a lineto and never emits `h` (closepath) -- 1127 of the 1128
+    paths in the faceplate sheet -- and no `J` operator is written either, so
+    the PDF default cap (0, butt) applies. That vertex therefore gets two butt
+    line ENDS instead of a join, and the quadrant outside the corner (w/2
+    square) is covered by neither. `_poly` starts every rectangle at its
+    (min x, min y) point, so the bite always landed on the LOWER-LEFT corner:
+    ten pedal apertures and the sheet outline on the lid, and the same
+    everywhere else (owner spotted it reviewing the PDFs, 2026-09-04).
+
+    Turning the trailing LINETO into a CLOSEPOLY makes matplotlib emit `h`, and
+    the corner gets the patch's join -- mitre, i.e. the sharp 90 deg the cut
+    edge actually is.
+
+    THE GUARDS ARE THE WHOLE POINT. Two earlier attempts each broke something:
+
+      * rewriting EVERY patch corrupted the arcs. CLOSEPOLY closes to the
+        current SUBPATH's start, and the engrave/text outline here is one path
+        of 978 subpaths, so it drew a chord straight across. Hence
+        `single subpath` and `last code is LINETO` -- which selects exactly the
+        plain rectangles (11 on the lid) and skips both the curve-ended
+        outlines (13/15/17 vertices, whose seam is tangential and shows no
+        notch) and the text.
+      * rounding the CAPS instead -- on the collections as well as the patches
+        -- turned the dashed BEND line into a SOLID bar, because the backend
+        draws one 2-point segment per dash and a round cap grows each by w/2 at
+        both ends until the gaps close. That is the exact failure #775 R1/R4
+        says must never reach a sheet. It also radiused the corners, which on a
+        drawing of a laser-cut edge is a lie the owner rightly rejected.
+
+    DRAWING ONLY: the DXF the shop cuts from was always closed (ezdxf reports
+    is_closed on every one of these), so no part was ever cut wrong.
+    """
+    from matplotlib.path import Path
+    sealed = 0
+    for patch in ax.patches:
+        try:
+            pth = patch.get_path()
+        except AttributeError:
+            continue
+        v, codes = pth.vertices, pth.codes
+        if len(v) < 4 or codes is None:
+            continue
+        if int(codes[-1]) != Path.LINETO:                 # curve- or close-ended
+            continue
+        if sum(1 for c in codes if int(c) == Path.MOVETO) != 1:   # multi-subpath
+            continue
+        if abs(v[0][0] - v[-1][0]) > 1e-9 or abs(v[0][1] - v[-1][1]) > 1e-9:
+            continue                                      # not actually a loop
+        codes = list(codes); codes[-1] = Path.CLOSEPOLY
+        patch._path = Path(v, codes)
+        try:
+            patch.set_joinstyle("miter")
+        except (AttributeError, ValueError):
+            pass
+        sealed += 1
+    return sealed
+
+
 def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None):
     """One drawing sheet: the flat pattern, a bend table, a title block and a legend.
 
@@ -5089,6 +5151,7 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
     # NB the matplotlib backend RESIZES the figure to the data aspect in finalize(),
     # so nothing below may assume the 16x10 above -- read the size back instead.
     Frontend(RenderContext(doc), MatplotlibBackend(ax)).draw_layout(msp, finalize=True)
+    _seal_path_seams(ax)
     ax.set_aspect("equal")
     bb = extents(e for e in msp if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
     if bb.has_data:
@@ -5267,6 +5330,7 @@ def _draw_dxf(ax, dxf_path):
     _force_pdf_layer_colours(doc)          # VENT black too, not just CUT (#775 R1)
     ax.set_axis_off()
     Frontend(RenderContext(doc), MatplotlibBackend(ax)).draw_layout(doc.modelspace(), finalize=True)
+    _seal_path_seams(ax)
     ax.set_aspect("equal")
 
 def paint_quote_pdf(path):
