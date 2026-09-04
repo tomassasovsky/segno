@@ -134,20 +134,15 @@ class _SettingsTrayState extends State<SettingsTray> {
         Positioned.fill(
           child: IgnorePointer(
             ignoring: state.dragProgress <= 0,
-            child: GestureDetector(
-              key: const Key('settingsTray_scrim'),
-              behavior: HitTestBehavior.opaque,
-              onTap: cubit.closeTray,
-              child: Semantics(
-                button: true,
-                label: l10n.dismiss,
-                child: AnimatedOpacity(
-                  duration: motion,
-                  // The scrim token carries its own alpha, so the drag drives
-                  // opacity directly rather than through a second 0.5 factor.
-                  opacity: state.dragProgress,
-                  child: ColoredBox(color: context.surface.scrim),
-                ),
+            child: Semantics(
+              button: true,
+              label: l10n.dismiss,
+              child: AnimatedOpacity(
+                duration: motion,
+                // The scrim token carries its own alpha, so the drag drives
+                // opacity directly rather than through a second 0.5 factor.
+                opacity: state.dragProgress,
+                child: ColoredBox(color: context.surface.scrim),
               ),
             ),
           ),
