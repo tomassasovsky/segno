@@ -3102,8 +3102,8 @@ def dxf_post(path):
         _circle(msp, pw/2.0 + du, Wd - foot/2.0, D_M4)
     _text(msp, 5, Wd+6, 9,
           f"Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de {POST_T:.1f} mm "
-          f"(NO es el aluminio del gabinete)  CANT. 2  plegado en C (apoyo {pad:.0f} / alma {web:.0f} / "
-          f"pie {foot:.0f} mm); plegado del apoyo {90+POST_TILT:.1f}° (asienta al ras sobre la pendiente "
+          f"(NO es el aluminio del gabinete)  CANT. 2  plegado en C; medidas EXTERIORES apoyo {POST_PAD_OUT:.2f} / "
+          f"alma {POST_WEB_OUT:.2f} / pie {POST_FOOT_OUT:.2f} mm (interiores {pad:.0f} / {web:.1f} / {foot:.0f}); plegado del apoyo {90+POST_TILT:.1f}° (asienta al ras sobre la pendiente "
           f"de {POST_TILT:.1f}°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), "
           f"fieltro sobre el apoyo; deducción aplicada (K {KF}, Ri {POST_RI:.1f}): {POST_DD_PAD:.2f} mm en el plegado del apoyo, "
           f"{POST_DD_FOOT:.2f} mm en el del pie; desarrollo {Wd:.2f} mm", "NOTE")
@@ -5281,7 +5281,7 @@ def paint_quote_pdf(path):
         y = 0.885
         for k, v in (("Envolvente del equipo armado",
                       f"{W:.0f} x {D:.0f} x {H_REAR:.0f} mm (lo que tiene que entrar al horno)"),
-                     ("Material del cuerpo", "Aluminio 5052-H32 de 2,0 mm (chapa cortada por láser)"),
+                     ("Material del cuerpo", "Aluminio 1050 de 2,0 mm (chapa cortada por láser); panel trasero 1,5 mm"),
                      ("Terminación pedida", PAINT_FINISH),
                      ("Superficie total a pintar", f"{grand:.2f} m2 por equipo (ambas caras, sin contar cantos)"),
                      ("Cantidad", "1 unidad prototipo; después por lotes")):
@@ -5366,7 +5366,7 @@ def report():
     P("="*68)
     P(f"Envelope        : {W:.0f} W x {D:.0f} D x {H_REAR:.0f} H mm (front lip {H_FRONT:.0f})")
     P(f"Top slope       : {SLOPE_ANGLE:.2f}deg, sloped length {L_SLOPE:.1f} mm")
-    P(f"Material        : {T:.1f} mm 5052-H32 Al, bend R {RI:.1f}, K={KF}, BA90 {BA90:.2f}")
+    P(f"Material        : {T:.1f} mm 1050 Al, bend R {RI:.1f}, K={KF}, BA90 {BA90:.2f}")
     P(f"Construction    : folded weld-free lower body + REMOVABLE TOP LID (faceplate carries")
     P(f"                  screens + encoder/ring PCB + LEDs; pedals stay on platforms)")
     P("-"*68)

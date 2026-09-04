@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461288.2634953703
+2461288.267939815
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461288.2634953703
+2461288.267939815
   9
 $TDUUPDATE
  40
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{C30D7331-BA95-4CDA-8B2F-3A1BD4D4A15B}
+{301E3CC8-AD66-4E0E-9496-5F12CB87D6CE}
   9
 $VERSIONGUID
   2
-{3EEEB65A-4E32-422B-AB6D-8A9548720821}
+{EDA44B01-63B1-4140-AF5F-B107F22872E2}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -5549,7 +5549,7 @@ AcDbText
  40
 9.0
   1
-Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de 1.6 mm (NO es el aluminio del gabinete)  CANT. 2  plegado en C (apoyo 20 / alma 45 / pie 20 mm); plegado del apoyo 102.5° (asienta al ras sobre la pendiente de 12.5°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), fieltro sobre el apoyo; deducción aplicada (K 0.33, Ri 1.6): 2.08 mm en el plegado del apoyo, 1.53 mm en el del pie; desarrollo 83.44 mm
+Segno POSTE DE APOYO DE LA TAPA (segno_post)  ACERO LAMINADO EN FRÍO de 1.6 mm (NO es el aluminio del gabinete)  CANT. 2  plegado en C; medidas EXTERIORES apoyo 21.99 / alma 47.07 / pie 21.60 mm (interiores 20 / 45.1 / 20); plegado del apoyo 102.5° (asienta al ras sobre la pendiente de 12.5°), plegado del pie 90°; el pie se abulona al piso del cuerpo (M4 x 2), fieltro sobre el apoyo; deducción aplicada (K 0.33, Ri 1.6): 2.08 mm en el plegado del apoyo, 1.53 mm en el del pie; desarrollo 83.44 mm
  11
 5.0
  21
@@ -6661,7 +6661,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:19:26.584922+00:00
+1.4.4 @ 2026-09-04T09:25:50.694655+00:00
   0
 VISUALSTYLE
   5
@@ -13223,7 +13223,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-09-04T09:19:26.586631+00:00
+1.4.4 @ 2026-09-04T09:25:50.696459+00:00
   0
 ENDSEC
   0
