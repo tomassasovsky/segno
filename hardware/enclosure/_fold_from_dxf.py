@@ -371,16 +371,16 @@ def corner_joins():
     ht = V.CORNER_HT
     def leg(xa, xb, ya, yb):
         x0, x1 = sorted((xa, xb)); y0, y1 = sorted((ya, yb))
-        return cq.Workplane("XY").box(x1 - x0, y1 - y0, ht, centered=False).translate((x0, y0, T)).val()  # sits ON the bottom plate
+        return cq.Workplane("XY").box(x1 - x0, y1 - y0, ht, centered=False).translate((x0, y0, T + V.RI)).val()  # floats RI above the floor top, on the bend's inside arc
     for tag, cx, cy, sx, sy in corners:
         xin, yin = cx + sx*T, cy + sy*T          # INNER faces of the two walls (inset by T -> no wall clash)
         legA = leg(xin, xin + sx*LEG, yin, yin + sy*T)    # flat on the rear-wall inner face, along +x
         legB = leg(xin, xin + sx*T,   yin, yin + sy*LEG)  # flat on the side-wall inner face, along +y
         out.append((f"cbracket_{tag}", legA.fuse(legB)))
         for i, z in enumerate(V.CORNER_ZR_WALL):
-            out.append((f"crivet_{tag}_w{i}", cq.Solid.makeCylinder(1.7, 3*T, cq.Vector(cx + sx*RO, cy - sy, T + z), cq.Vector(0, sy, 0))))   # rear wall -> legA
+            out.append((f"crivet_{tag}_w{i}", cq.Solid.makeCylinder(1.7, 3*T, cq.Vector(cx + sx*(RO + T), cy - sy, T + V.RI + z), cq.Vector(0, sy, 0))))   # rear wall -> legA (dxf_base: CORNER_RO + T along, T + RI + z up)
         for i, z in enumerate(V.CORNER_ZR_SIDE):
-            out.append((f"crivet_{tag}_s{i}", cq.Solid.makeCylinder(1.7, 3*T, cq.Vector(cx - sx, cy + sy*RO, T + z), cq.Vector(sx, 0, 0))))   # side wall -> legB
+            out.append((f"crivet_{tag}_s{i}", cq.Solid.makeCylinder(1.7, 3*T, cq.Vector(cx - sx, cy + sy*(RO + T), T + V.RI + z), cq.Vector(sx, 0, 0))))   # side wall -> legB
     return out
 
 def check_platform_screws(path):

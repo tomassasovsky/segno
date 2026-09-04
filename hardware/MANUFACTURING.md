@@ -22,7 +22,7 @@ overlay is a separate package (section 4).
 |---|---|---|---|
 | `segno_base` | 1 | 2.0 Al | ONE folded blank: floor + 4 walls + rear transition. Weld-free (corner brackets rivet). |
 | `segno_faceplate` | 1 | 2.0 Al | Sloped lid, full-width blank. Fold conventions in the drawing NOTE (chirality matters). |
-| `segno_rear_panel` | 1 | 2.0 Al | Dismountable I/O sub-panel (#751); flat, no bends. |
+| `segno_rear_panel` | 1 | **1.5 Al** | Dismountable I/O sub-panel (#751); flat, no bends. 1.5 mm, not 2.0: the CTRL jacks are Neutrik NJ6FD-V, whose snap cap only reaches a 1.2–1.5 mm panel (#993). |
 | `segno_corner_bracket_rear` | 2 | 2.0 Al | Internal L-brackets; ONE part serves both corners (left = flipped). |
 | `segno_ring_disc` | 1 | 2.0 Al | Encoder LED-ring centre disc. |
 | `segno_post` | 2 | **1.6 CR steel** | Faceplate support posts — **1.6 mm cold-rolled STEEL**, not the 2.0 Al of the shell. |

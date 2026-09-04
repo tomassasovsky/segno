@@ -40,7 +40,7 @@ table, the placement is wrong, not the table.
 |---|---|---|
 | base | `[1,0,0,0 \| 0,1,0,0 \| 0,0,1,0.2]` | `[-1,0,0,84.8 \| 0,0,1,0.2 \| 0,1,0,0]` |
 | faceplate (lid) | `[1,0,0,-0.19 \| 0,c,-s,-1.44377 \| 0,s,c,1.12715]` | `[-1,0,0,84.99 \| 0,s,c,1.12715 \| 0,c,-s,-1.44377]` |
-| rear_panel (inside mount) | `[1,0,0,62.5286 \| 0,0,-1,41.691 \| 0,1,0,4.69]` | `[-1,0,0,22.2714 \| 0,1,0,4.69 \| 0,0,-1,41.691]` |
+| rear_panel (inside mount, **1.5 mm** since #993) | `[1,0,0,62.5286 \| 0,0,-1,41.741 \| 0,1,0,4.69]` | `[-1,0,0,22.2714 \| 0,1,0,4.69 \| 0,0,-1,41.741]` |
 | console_board_v4 (KiCad STEP) | `[1,0,0,36.225 \| 0,1,0,38.575 \| 0,0,1,1.7]` | — |
 
 `c`/`s` = cos/sin of `SLOPE_ANGLE` (12.498241812070852°) at full precision —
@@ -191,9 +191,11 @@ a single call have crashed Fusion):
 9. Verify the world bbox against the table's expectations, then `doc.save(msg)`.
 
 The rear panel is the same recipe minus folds: import `out/segno_rear_panel.dxf`
-at identity, extrude the max-area CUT profile −0.2, `convertToSheetMetal`, set
-the transform (its x-centre = panel outline centre — recompute!), appearance,
-snapshot, save.
+at identity, extrude the max-area CUT profile **−0.15** (the panel is 1.5 mm
+since the NJ6FD-V jacks, #993; there is no 1.5 mm sheet-metal rule in the
+docs, so it stays a plain solid), set the transform (its x-centre = panel
+outline centre — recompute!; depth 41.741 keeps the OUTER face on the wall's
+inner face at 41.891), appearance, snapshot, save.
 
 ### Ring board (populated only)
 
@@ -225,15 +227,25 @@ symmetric about mid-height, which is what lets one part serve both corners:
 
 | corner (populated) | transform2 |
 |---|---|
-| left (x≈0), **turned over** | `[0,0,1,0.21 \| -1,0,0,42.899 \| 0,-1,0,8.20]` |
-| right (x≈84.8), upright | `[0,0,-1,84.39 \| -1,0,0,42.899 \| 0,1,0,0.20]` |
+| left (x≈0), **turned over** | `[0,0,1,0.21 \| -1,0,0,42.899 \| 0,-1,0,8.40]` |
+| right (x≈84.8), upright | `[0,0,-1,84.39 \| -1,0,0,42.899 \| 0,1,0,0.40]` |
 
-Rivet holes land at (1.00, 41.79, 1.00/4.20/7.40) and (0.11, 40.90,
-2.60/5.80) on the left, mirrored on the right — coaxial with the base's
-Ø3.2 pilots once the base is built from a DXF at or after 2026-09-04 (the
-#992 audit found the base drilled every rivet 2.0 mm too close to the corner
-and 1.9 mm low; `dxf_base` now develops the fold). The bracket bottom rests
-on the floor top (z = 0.2), which is what the hole heights are measured from.
+Rivet holes land at (1.00, 41.79, 1.20/4.40/7.60) and (0.11, 40.90,
+2.80/6.00) on the left, mirrored on the right — coaxial with the base's
+Ø3.2 pilots once the base is built from a DXF at or after the #993 re-review.
+**The bracket floats RI (2 mm) above the floor top, at z = 0.4**: a flat leg
+on the wall's inner face bottoms out on the floor→wall bend's inside radius,
+so resting it on the floor (what the first #992 correction did) puts its
+bottom corner inside the base's fillet and every rivet 2 mm low. Check
+bracket ∩ base = 0 after placing; on the floor it reads 0.018 cm³. Set the
+two bracket transforms in a call of their own — imports in the same call
+reset them.
+
+**Hole diameters can be edited in place.** When only a hole's diameter
+changes (rivets Ø3.2 → Ø3.3, #993), set the sketch circle's `radius` on the
+component's `CUT` sketch instead of rebuilding: the base's eleven-feature
+chain (folds and offsets included) recomputed healthy in one call in both
+docs, and so did the bracket's. Positions, not diameters, need the rebuild.
 
 **Rear panel height.** Its z (populated) / y (VSM) is the rear-wall WINDOW
 centre, `(2.54 + 6.84)/2 = 4.69` off the window's corner-radius centres, and
