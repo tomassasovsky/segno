@@ -197,14 +197,20 @@ snapshot, save.
 
 ### Ring board (populated only)
 
-`ring_board_asm` is `hardware/kicad/out_ring/segno_ring_board.step`, exported
-with `kicad-cli pcb export step --subst-models` from `segno_pedal_ring.kicad_pcb`
-(the tracked STEP had lagged the board: Ø60 Ring-16 outline while the board
-was Ø68 for the Ring 24 since #794). Placed at
-`[1,0,0,8.3591 | 0,c,-s,25.8119 | 0,s,c,6.3401]` (+7.5 and +2.0 mm along the
-plate since the original 24.884/6.134, see ENC_V); the STEP's board centre is
-at KiCad (36, 36), so the same transform serves both outlines. Fusion imports
-only the PCB solid; the component children come in empty.
+`ring_board_asm` is the ring board of **PR #990** (unmerged on 2026-09-04,
+owner's call to model it): Ø80 outline, no mounting holes, XIAO RP2350 on the
+underside, the Ring 24 carried IN the STEP on a 2.54 mm pin strip. Export it
+from that branch's `hardware/kicad/segno_pedal_ring.kicad_pcb` with
+`kicad-cli pcb export step --subst-models` (the tracked `out_ring` STEP on
+master is the Ø68 board). Placed at
+`[1,0,0,8.3591 | 0,c,-s,25.8119 | 0,s,c,6.3401]`: the STEP's board centre is
+KiCad (36, 36) for the Ø60, Ø68 and Ø80 outlines alike, so the transform
+follows ENC_V only (+7.5 and +2.0 mm along the plate since 24.884 / 6.134).
+Fusion keeps the component bodies of this export (73 solids); the standalone
+`neopixel_ring24` is switched OFF because the board now carries the ring.
+Both PCBs (`segno_console_board_PCB`, `segno_pedal_ring_PCB`) wear the local
+appearance `PCB - purple` (74, 32, 112), a copy of Plastic - Matte (Black)
+recoloured — the boards are purple.
 
 ### Corner brackets (both docs)
 
