@@ -1721,9 +1721,9 @@
     "@controlPedalTab": {
         "description": "Tab of the Control domain: the footswitch plate's assignable switches."
     },
-    "controlMidiTab": "MIDI",
-    "@controlMidiTab": {
-        "description": "Tab of the Control domain: the MIDI foot controller and its mappings."
+    "controlControllersTab": "Controladores",
+    "@controlControllersTab": {
+        "description": "Tab of the Control domain: everything plugged in — a MIDI foot controller, and the pedals in the CTRL jacks — and the mappings off them."
     },
     "controlTransportGroup": "CONMUTADORES DE TRANSPORTE",
     "@controlTransportGroup": {
