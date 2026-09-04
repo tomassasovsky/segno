@@ -5064,6 +5064,96 @@ SHEET_HEADING = "Segno - gabinete de controlador de audio"
 # _verify_drawing_package() holds the Spanish and the tolerance block against.
 SHEET_TEXT = {}
 
+# How many outlines _seal_path_seams() closed on each sheet, so the drawing
+# verifier can catch the fix silently ceasing to work (see SEALED_EXPECTED).
+SEALED = {}
+
+# What each sheet MUST seal. Without this the fix degrades in silence: if a
+# future ezdxf routes closed polylines through a LineCollection instead of a
+# patch, or matplotlib stops exposing them, _seal_path_seams() simply finds
+# nothing, returns 0, and the notch comes back unnoticed on a package nobody
+# re-reads at 600 dpi. Counts measured 2026-09-04; a legitimate change to the
+# outlines has to update them deliberately.
+SEALED_EXPECTED = {
+    "segno_faceplate":           11,   # sheet outline + 10 pedal apertures
+    "segno_overlay":             17,   # outline + 10 windows + 6 icon loops
+    "segno_base":                 1,   # the folded blank's outline (31 vertices)
+    "segno_rear_panel":           1,
+    "segno_corner_bracket_rear":  1,
+    "segno_post":                 1,
+    "segno_ring_disc":            0,   # two circles, no straight-sided loop
+}
+
+
+def _seal_path_seams(ax):
+    """Close the open outlines so the PDF MITRES their corners.
+
+    Every closed outline reaches the PDF as an OPEN path: it returns to its
+    start with a lineto and never emits `h` (closepath) -- the faceplate sheet
+    carries exactly one closed path, the page background -- and no `J` operator
+    is written either, so the PDF default cap (0, butt) applies. That vertex
+    therefore gets two butt line ENDS instead of a join, and the quadrant
+    outside the corner (w/2 square, 9 device px at 600 dpi) is covered by
+    neither. `_poly` starts every rectangle at its (min x, min y) point, so the
+    bite always landed on the LOWER-LEFT corner (owner spotted it reviewing the
+    PDFs, 2026-09-04).
+
+    Turning the trailing LINETO into a CLOSEPOLY makes matplotlib emit `h`, and
+    the corner gets the patch's MITRE join -- the sharp 90 deg the cut edge
+    actually is. Geometry is untouched: matplotlib ignores the CLOSEPOLY vertex
+    and closes to the subpath start, which the single-MOVETO guard pins to
+    v[0], and v[-1] == v[0] exactly (not merely within tolerance) on every path
+    this selects -- so the closing segment is the one the trailing lineto drew.
+
+    WHICH GUARD DOES THE WORK: the `last code is LINETO` test. It is what
+    rejects the ENGRAVE/text outline (978 subpaths, 21203 vertices, ends in
+    CURVE3) and every curve-ended outline, whose seams are tangential and show
+    no notch anyway. Dropping either of the other two guards changes zero
+    pixels on every sheet -- they are cheap defence in depth, not the mechanism.
+    Do not "simplify" by deleting the last-code test.
+
+    NOT only rectangles, despite what the notch looked like: the base seals its
+    31-vertex folded-blank outline and the overlay seals 6 icon loops as well.
+    Any straight-sided closed loop qualifies, which is correct -- they all have
+    the same seam. Every one was checked for a miter spike: the shallowest
+    interior angle at a seam is 174 deg, so the worst miter ratio is 1.41
+    against the PDF limit of 10.
+
+    NOT the two approaches tried first, both of which broke something:
+      * rewriting EVERY patch corrupted the arcs -- CLOSEPOLY closes to the
+        current SUBPATH's start, so on the 978-subpath text it drew a chord
+        straight across: 99310 changed pixels.
+      * rounding the CAPS instead turned the dashed BEND line into a SOLID bar
+        (one 2-point segment per dash, each grown by w/2 at both ends until the
+        gaps closed) -- the exact failure #775 R1/R4 forbids -- and RADIUSED
+        the corners, drawing a laser-cut edge as something it is not. Nothing
+        here may set a capstyle.
+
+    DRAWING ONLY: the DXF the shop cuts from was always closed (ezdxf reports
+    is_closed on every one of these), so no part was ever cut wrong.
+    """
+    from matplotlib.path import Path
+    sealed = 0
+    for patch in ax.patches:
+        pth = patch.get_path()
+        v, codes = pth.vertices, pth.codes
+        if len(v) < 4 or codes is None:
+            continue
+        if int(codes[-1]) != Path.LINETO:                 # curve- or close-ended
+            continue
+        if sum(1 for c in codes if int(c) == Path.MOVETO) != 1:   # multi-subpath
+            continue
+        if abs(v[0][0] - v[-1][0]) > 1e-9 or abs(v[0][1] - v[-1][1]) > 1e-9:
+            continue                                      # not actually a loop
+        codes = list(codes); codes[-1] = Path.CLOSEPOLY
+        patch.set_path(Path(v, codes))
+        # Pins matplotlib's current default rather than changing it: the mitre
+        # is the whole point, so it should not move if that default ever does.
+        patch.set_joinstyle("miter")
+        sealed += 1
+    return sealed
+
+
 def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None):
     """One drawing sheet: the flat pattern, a bend table, a title block and a legend.
 
@@ -5089,6 +5179,7 @@ def dxf_to_pdf(dxf_path, pdf_path, title, material, qty, stem=None, legend=None)
     # NB the matplotlib backend RESIZES the figure to the data aspect in finalize(),
     # so nothing below may assume the 16x10 above -- read the size back instead.
     Frontend(RenderContext(doc), MatplotlibBackend(ax)).draw_layout(msp, finalize=True)
+    SEALED[stem] = _seal_path_seams(ax)
     ax.set_aspect("equal")
     bb = extents(e for e in msp if e.dxf.layer not in ("NOTE", "ENGRAVE", "ACRYLIC", "MASK"))
     if bb.has_data:
@@ -5267,6 +5358,7 @@ def _draw_dxf(ax, dxf_path):
     _force_pdf_layer_colours(doc)          # VENT black too, not just CUT (#775 R1)
     ax.set_axis_off()
     Frontend(RenderContext(doc), MatplotlibBackend(ax)).draw_layout(doc.modelspace(), finalize=True)
+    _seal_path_seams(ax)
     ax.set_aspect("equal")
 
 def paint_quote_pdf(path):
@@ -6045,6 +6137,22 @@ def _verify_drawing_package(with_pdf=True):
     import ezdxf
 
     stems = [n for n, _ in DXF_PARTS]
+
+    # --- #999: the corner-join fix must still be doing something --------------
+    # _seal_path_seams() closes the open outlines so the PDF mitres their
+    # corners. If a future ezdxf hands them over as LineCollections, or hands
+    # them over already closed, it silently seals nothing and the notch returns
+    # on a package nobody re-reads at 600 dpi. These counts are the alarm.
+    if with_pdf:
+        for stem in stems:
+            assert stem in SEALED, \
+                f"{stem}: no PDF was drawn, so the corner-join fix never ran"
+            assert SEALED[stem] == SEALED_EXPECTED[stem], (
+                f"{stem}: sealed {SEALED[stem]} outlines, expected "
+                f"{SEALED_EXPECTED[stem]} -- either the part changed (update "
+                f"SEALED_EXPECTED deliberately) or _seal_path_seams stopped "
+                f"finding the outlines and the lower-left corners are notched "
+                f"again (#999)")
 
     # --- R5/R6: nothing ships on a default material or quantity ---------------
     sig = inspect.signature(dxf_to_pdf)
