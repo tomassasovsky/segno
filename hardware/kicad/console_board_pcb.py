@@ -230,11 +230,21 @@ PLACEMENT = {
                                    # A 40-way ribbon leaving
                                    # mid-board folds straight back over everything;
                                    # here the cable clears the board immediately.
-    "J22": (46.3, 26.0, 0),        # expansion. Not on the top edge: its GP28 pin is
-                                   # pad 34, near the module's LEFT end, while GP19..
-                                   # GP22 are pads 25..29 toward the right -- from
-                                   # the top-right corner that ADC lead ran 61 mm.
-                                   # Sat here it reaches both ends of its own span.
+    # The CTRL rings' sense resistors (v3), UPRIGHT in the column J22 used to
+    # occupy, between R5 and C13 and above the module's top row: the nearest
+    # ground to both ends of their nets, the ring nodes under the jacks and
+    # pads 26/27 a few mm below. The band has no horizontal slot left for even
+    # one more axial part, let alone two, so they stand.
+    "R19": (43.9, 24.9, 90), "R20": (48.3, 24.9, 90),
+    "J22": (30.6, 68.9, 0),        # expansion, 2x3 since v3 (GP20/21 became the
+                                   # ring senses). Optional and unpopulated, so it
+                                   # gave its column to R19/R20 and moved below the
+                                   # module, between the R11..R13 row and the
+                                   # debounce caps, left of RING. Its three GPIO
+                                   # are pads 25/29/34 in the top row, 31-37 mm
+                                   # away under the module -- the pocket under PWR
+                                   # BTN was closer to two of them and 45 mm from
+                                   # the third, past the hop gate.
 
     # under the module: series resistors, then the ring/LED pair
     # Both series resistors stand UPRIGHT in the channel beside U1 rather than lying

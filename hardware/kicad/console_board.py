@@ -194,15 +194,18 @@ pico[37].do_erc = False          # 3V3_EN -- internal pull-up
 # missed -- so the exemptions are named here rather than tolerated in the log.
 # The retired V1 generator did the same for its unused AHCT gates and MIDI IN's DIN pin 2.
 # GP0/GP1 are the only pins left with nothing on them (why: the EXPANSION_GPIO
-# note below). The other five unused GPIO go to the expansion header J22 rather
-# than being quietly ERC-exempted into thin air -- an unpopulated 2x4 costs a
+# note below). The other unused GPIO go to the expansion header J22 rather
+# than being quietly ERC-exempted into thin air -- an unpopulated header costs a
 # footprint and nothing else, and it is the difference between "add a feature"
-# and "respin the board".
+# and "respin the board". That is exactly what happened to GP20/GP21: v2 brought
+# them out on J22, the CTRL jacks' rings turned out to need sensing (a BOSS FS-6
+# puts its second switch there), and the first console got two bench wires from
+# the jack pins to those pads. v3 makes them traces -- see CTRLn_RING below.
 SPARE_GPIO = (0, 1)
-# All five are row-B pads, so ONE header reaches all of them -- GP0/GP1 are row A
+# All three are row-B pads, so ONE header reaches all of them -- GP0/GP1 are row A
 # (the far end of the module) and would have made J22 straddle the whole thing, so
 # they stay spare instead. Same rule the other connectors are gated on.
-EXPANSION_GPIO = (19, 20, 21, 22, 28)
+EXPANSION_GPIO = (19, 22, 28)
 for _gp in SPARE_GPIO:
     pico[PICO[_gp]].do_erc = False
 
@@ -232,6 +235,10 @@ GPIO = {
     "RING_DATA": 12, "ENC_A": 13, "ENC_B": 14, "ENC_SW": 15,
     "IND_DATA": 18,
     "CTRL1_TIP": 26, "CTRL2_TIP": 27,
+    # The rings, sensed: pads 26/27, row B, a few pads from the tips. GP20/21 were
+    # the v2 expansion pins the bench wires went to, so a v2 board with the wires
+    # and a v3 board with the traces present the SAME pins to the firmware.
+    "CTRL1_RING": 20, "CTRL2_RING": 21,
 }
 
 # Which pads each UART instance can reach on RP2350. Moving LINK to a "spare-
@@ -251,6 +258,10 @@ pico[PICO[GPIO["ENC_B"]]] += encB
 pico[PICO[GPIO["ENC_SW"]]] += encSW
 pico[PICO[GPIO["CTRL1_TIP"]]] += ctrl1
 pico[PICO[GPIO["CTRL2_TIP"]]] += ctrl2
+ctrl1_ring = Net("CTRL1_RING")
+ctrl2_ring = Net("CTRL2_RING")
+pico[PICO[GPIO["CTRL1_RING"]]] += ctrl1_ring
+pico[PICO[GPIO["CTRL2_RING"]]] += ctrl2_ring
 
 # ---- J10..J19: footswitches -- 100nF debounce + one 2-pin JST per pedal ------
 sw_nets = {}
@@ -324,7 +335,17 @@ opto[4] += midi_rx
 # shorts ring to sleeve, so a hard 3V3 on the ring would be a dead short to GND
 # every time someone plugs in a footswitch. With it, a pot reads mid-scale and a
 # switch reads rail-to-rail, and firmware can tell them apart.
-for _ref, _net in (("J20", ctrl1), ("J21", ctrl2)):
+#
+# The ring is ALSO sensed (v3). A two-switch pedal on one TRS plug -- a BOSS FS-6
+# on its A&B jack -- puts its second switch between ring and sleeve, which the
+# tip's ADC can never see: the tip has its own pull-up. So each ring goes to a
+# GPIO through a series resistor, and reads high (~3 V, the 1k's far end) with an
+# expression pedal or an open jack, and low when that switch closes. A TS plug
+# holds it low for as long as it is in, which firmware treats as a switch that
+# never moves. v2 boards get the same thing with a wire from each jack's ring
+# pin to the J22 pads these GPIO used to be on.
+_ring_sense = []
+for _ref, _net, _ring in (("J20", ctrl1, ctrl1_ring), ("J21", ctrl2, ctrl2_ring)):
     j = jst(3, _ref, "CTRL_TRS")
     j[1] += _net                               # tip   = wiper / switch
     # ONE 1k PER JACK, not one shared between them. Shared, a TS plug in either
@@ -356,6 +377,10 @@ for _ref, _net in (("J20", ctrl1), ("J21", ctrl2)):
     j[3] += gnd                                # sleeve
     R("10k")[1, 2] += v3v3, _net
     C("10nF")[1, 2] += _net, gnd               # anti-alias / debounce
+    # The ring-sense resistor is declared with the other PINNED refs further
+    # down (R19/R20): a pinned ref declared here, ahead of auto-numbered parts,
+    # collides with SKiDL's counter and gets silently renamed.
+    _ring_sense.append((_ref_net, _ring))
 
 # ---- J6/J7: ring+encoder and the indicator chain ----------------------------
 # J6's pin order is NOT free: it is one end of an 8-way cable whose other end is
@@ -424,13 +449,14 @@ SWD_PADS = {"D1": swclk, "D2": gnd, "D3": swdio}
 for _pad, _net in SWD_PADS.items():
     pico[_pad] += _net
 
-# ---- J22: expansion -- the five GPIO that are otherwise doing nothing --------
-# Deliberately unpopulated by default. GP0/GP1 are a UART0 pair and GP20/GP21 a
-# UART1 pair, so this header can carry a whole second serial device; GP28 is an
-# ADC, so it can carry a third pedal input. Nothing on the board depends on it.
-EXP_PINOUT = ["+3V3", "+5V", "GP19", "GP20", "GP21", "GP22", "GP28", "GND"]
-j_exp = Part("Connector_Generic", "Conn_02x04_Odd_Even",
-             footprint="Connector_PinHeader_2.54mm:PinHeader_2x04_P2.54mm_Vertical",
+# ---- J22: expansion -- the three GPIO that are otherwise doing nothing ------
+# Deliberately unpopulated by default. GP28 is an ADC, so it can carry a third
+# pedal input; GP19/GP22 are plain I/O. Nothing on the board depends on it. It
+# was 2x4 with GP20/GP21 on v2; those two are now the CTRL rings' sense lines,
+# and a pin that is also a jack contact has no business on a header.
+EXP_PINOUT = ["+3V3", "+5V", "GP19", "GP22", "GP28", "GND"]
+j_exp = Part("Connector_Generic", "Conn_02x03_Odd_Even",
+             footprint="Connector_PinHeader_2.54mm:PinHeader_2x03_P2.54mm_Vertical",
              ref="J22", value="EXPANSION")
 j_exp[1] += v3v3
 j_exp[2] += v5
@@ -438,7 +464,7 @@ for _i, _gp in enumerate(EXPANSION_GPIO, start=3):
     n = Net("EXP_GP%d" % _gp)
     pico[PICO[_gp]] += n
     j_exp[_i] += n
-j_exp[8] += gnd
+j_exp[6] += gnd
 
 # ---- H1..H4: the mounting holes, which are a CIRCUIT, not just geometry ------
 # They used to be bare NPTH -- no copper -- so the board floated inside an earthed
@@ -563,6 +589,17 @@ R("100k", ref="R16")[1, 2] += ind_data, gnd
 R("10k", ref="R17")[1, 2] += link_tx, link_tx_pi
 R("10k", ref="R18")[1, 2] += link_rx_pi, link_rx
 
+# CTRL ring sense (see J20/J21 above), through 4.7k. Not a bare trace: the ring
+# is a panel jack, so this is the one GPIO a plug (and whatever static it
+# carries) touches directly, and the ring's 3V3 is the PI's rail -- at soft-off
+# the Pico may be up with that rail dead, or the Pi up with the Pico dead, and
+# either way the resistor caps what flows through a GPIO's protection diode to
+# well under a milliamp. 4.7k against the RP2350's internal pull-up (50-80k,
+# which firmware enables so an unwired v2 pin reads open) still divides a closed
+# switch down to ~0.3 V, a clean low. Pinned: the soldering guide names them.
+for _ref, (_ref_net, _ring) in zip(("R19", "R20"), _ring_sense):
+    R("4.7k", ref=_ref)[1, 2] += _ref_net, _ring
+
 # ---- J2: the Pi ribbon (2x20, SHROUDED and KEYED) ---------------------------
 # Reversed, a 2x20 puts 5 V onto GND pins -- specify a shrouded header with a
 # polarising notch and a keyed IDC socket. Cheapest mistake on the board to
@@ -683,7 +720,9 @@ def _check(strict_stations=True):
         f"one UART instance -- valid pairs are {UART_PINS}")
 
     for name, gp in GPIO.items():
-        if name.startswith("CTRL"):
+        # Only a TIP reads a voltage; a ring is a switch or nothing, and burning an
+        # ADC pin on one would leave no third pedal input for J22.
+        if name.startswith("CTRL") and name.endswith("_TIP"):
             assert gp in ADC_GPIO, (
                 f"PIN_MAP: {name} needs an ADC pin so an expression pedal reads as a "
                 f"voltage, but GP{gp} is not one of {ADC_GPIO}")
@@ -791,10 +830,14 @@ def _check(strict_stations=True):
                 "line puts 5 V on a Pico input whose absolute maximum is 3.6 V, "
                 "and no direct-contact gate can see the path")
 
-    assert len(EXP_PINOUT) == 8 and EXP_PINOUT[:2] == ["+3V3", "+5V"] \
-        and EXP_PINOUT[-1] == "GND", (
-            "EXPANSION: J22 must keep power on pins 1/2 and ground on pin 8 -- the "
-            "pinout is silkscreened and anything plugged in trusts it")
+    assert len(EXP_PINOUT) == len(EXPANSION_GPIO) + 3 \
+        and EXP_PINOUT[:2] == ["+3V3", "+5V"] and EXP_PINOUT[-1] == "GND", (
+            "EXPANSION: J22 must keep power on pins 1/2 and ground on its last pin "
+            "-- the pinout is silkscreened and anything plugged in trusts it")
+    for _gp in EXPANSION_GPIO:
+        assert _gp not in GPIO.values(), (
+            f"EXPANSION: GP{_gp} is on J22 AND wired to something on the board -- a "
+            "header pin that is also a jack contact is a short waiting for a plug")
     for _i, _gp in enumerate(EXPANSION_GPIO, start=3):
         assert EXP_PINOUT[_i - 1] == "GP%d" % _gp, (
             f"EXPANSION: J22 pin {_i} is labelled {EXP_PINOUT[_i - 1]} but wired to "
@@ -961,7 +1004,9 @@ def _check(strict_stations=True):
             ("R15", "100k", {"RING_DATA", "GND"}),
             ("R16", "100k", {"IND_DATA", "GND"}),
             ("R17", "10k", {"LINK_TX", "LINK_TX_PI"}),
-            ("R18", "10k", {"LINK_RX_PI", "LINK_RX"})):
+            ("R18", "10k", {"LINK_RX_PI", "LINK_RX"}),
+            ("R19", "4.7k", {"J20_REF", "CTRL1_RING"}),
+            ("R20", "4.7k", {"J21_REF", "CTRL2_RING"})):
         _p = next((p for p in default_circuit.parts if p.ref == _ref), None)
         assert _p is not None and _p.value == _want_val, (
             f"PIN_REFS: {_ref} is "
