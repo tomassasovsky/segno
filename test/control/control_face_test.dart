@@ -18,9 +18,9 @@ import 'package:segno/control/control.dart';
 import 'package:segno/control/control_tab.dart';
 import 'package:segno/control/view/control_tray_panel.dart';
 import 'package:segno/l10n/l10n.dart';
-import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/looper/cubit/settings_tray_cubit.dart';
 import 'package:segno/looper/cubit/tracks_cubit.dart';
+import 'package:segno/pedal/cubit/pedal_cubit.dart';
 import 'package:segno/theme/theme.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -572,6 +572,53 @@ void main() {
       // widget tree otherwise, and a pending timer fails the test binding.
       control.cancelControllerLearn();
       await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('a CTRL jack shows its value live, next to the add buttons', (
+      tester,
+    ) async {
+      // Where you are when binding a pedal is this card, so this is where
+      // the pedal's value has to be visible while it moves.
+      final link = FakePedalLink();
+      await pump(tester, pedalLink: link);
+      link.hello();
+      await tester.pumpAndSettle();
+      await showMidi(tester);
+
+      // Nothing has reported yet: say so, rather than list a jack that may
+      // have nothing on it.
+      expect(find.byKey(const Key('midi_ctrl_idle')), findsOneWidget);
+
+      link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl2,
+          kind: PedalCtrlKind.expression,
+          value: 255,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_ctrl2')), findsOneWidget);
+      expect(find.text('100%'), findsOneWidget);
+      expect(find.byKey(const Key('midi_ctrl_idle')), findsNothing);
+
+      link.emit(
+        const CtrlMessage(
+          jack: PedalCtrlJack.ctrl1,
+          kind: PedalCtrlKind.switchPedal,
+          value: 255,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('midi_ctrl_ctrl1')), findsOneWidget);
+      expect(find.text('pressed'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('no CTRL readout without a link to read from', (tester) async {
+      await pump(tester);
+      await showMidi(tester);
+      expect(find.byKey(const Key('midi_ctrl_idle')), findsNothing);
     });
 
     testWidgets('with nothing connected at all the add buttons stay inert', (
