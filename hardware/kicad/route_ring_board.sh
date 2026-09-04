@@ -38,14 +38,21 @@ echo "== 1. rip up existing routing (keeping the stitching vias on file) =="
 "$KPY" - "$PCB" <<'PY'
 import pcbnew, sys
 m = pcbnew.LoadBoard(sys.argv[1])
-n = kept = 0
+n = kept = grown = 0
 for t in list(m.GetTracks()):
     if t.GetClass() == 'PCB_VIA':
         kept += 1                      # a stitching via: leave it in the DSN so
+        # Nine of these were still KiCad's 0.6/0.3 default, which is JLCPCB's
+        # MINIMUM drill -- no place to sit for no reason, and the same trap
+        # route_console_board.sh calls out for the vias Freerouting inserts.
+        # Normalised here, BEFORE the DSN export, so the router routes around
+        # the size the board actually ships.
+        if t.GetDrill() < pcbnew.FromMM(0.4):
+            t.SetWidth(pcbnew.FromMM(0.8)); t.SetDrill(pcbnew.FromMM(0.4)); grown += 1
         continue                       # Freerouting routes AROUND it
     m.RemoveNative(t); n += 1          # Remove() only DETACHES -- the file saves
 m.Save(sys.argv[1])                    # unchanged and DRC then lies to you
-print("   ripped up %d segments, kept %d vias" % (n, kept))
+print("   ripped up %d segments, kept %d vias (%d grown to 0.8/0.4)" % (n, kept, grown))
 PY
 
 echo "== 2. export Specctra DSN =="
