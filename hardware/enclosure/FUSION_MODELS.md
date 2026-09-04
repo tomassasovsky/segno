@@ -64,10 +64,14 @@ rounded values fail `transform2` validation (the rotation must be exactly orthog
   pill diffusers, and the ROOT-level ring family (`ring_board_asm`,
   `neopixel_ring24`, `ring_holder24`, `encoder_knob_50x18_alu`,
   `ring_disc_51_5`, `ring_comet`). If the faceplate moves, every one of these
-  gets the same delta. The ring family ALSO follows `ENC_V` on its own: it
-  moved +7.5 mm along the plate on 2026-09-04 (219.66 -> 227.16, #930) and a
-  further +2.0 mm for the LED_GAP 16 trial (-> 229.16); a plate move of d is a
-  world delta of (0, c*d, s*d) in populated and (0, s*d, c*d) in VSM.
+  gets the same delta. The ring family ALSO follows `ENC_V` on its own: a plate
+  move of d is a world delta of (0, c*d, s*d) in populated and (0, s*d, c*d) in
+  VSM. History, all 2026-09-04: 219.66 -> 227.16 (#930), -> 229.16 (LED_GAP 16),
+  -> 211.50 (briefly aligned to the 16" aperture, rejected by eye), -> **215.055**
+  (#997, centred between the row-1 pills' rear edge at v 144.610 and the 7"
+  aperture's bottom at v 285.500 -- both CUT edges, 36.945 mm each side). The
+  faceplate is rebuilt from the DXF for each of these; only the ring window moves
+  in the flat, so nothing else in either doc needs touching.
 - **Support posts** (`support_post_gen`, `support_post_gen2`, root): imported
   `out/segno_post.step`, whose origin is the part's MIN corner (foot front,
   outer x edge), placed at `[1,0,0,POST_U/10 - POST_PW/20 | 0,1,0,
