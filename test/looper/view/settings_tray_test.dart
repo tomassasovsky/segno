@@ -282,13 +282,47 @@ void main() {
     await pump(tester);
     await tester.pump();
 
-    // The panel now fills much more of the screen (Control-Center sized),
-    // so the scrim's default center point can land on the panel itself —
-    // tap explicitly below it instead.
+    // NB this closes via the HANDLE, not the scrim. The open panel covers the
+    // full 800x600 surface and absorbs taps everywhere except the handle's
+    // band (579..600), so y=580 lands on `settingsTray_handle`. Measured: taps
+    // at y 8, 300 and 570, and at x 795, all leave the tray open. Kept because
+    // "a tap down here dismisses" is worth holding — but it says nothing about
+    // the scrim, which is why the two tests below exist.
     await tester.tapAt(const Offset(400, 580));
     await tester.pumpAndSettle();
 
     expect(cubit.state.dragProgress, 0);
+  });
+
+  testWidgets('the scrim carries a working dismiss action', (tester) async {
+    // The regression this guards (#1003): a refactor removed the scrim's
+    // GestureDetector and kept the Semantics(button, label: dismiss) inside
+    // it, so assistive tech went on announcing a dismiss button that had no
+    // handler behind it. Driven through the semantics action, because that is
+    // the path that actually reaches the scrim — touch does not.
+    cubit.open();
+    await pump(tester);
+    await tester.pumpAndSettle();
+
+    final handle = tester.ensureSemantics();
+    final scrim = find.byKey(const Key('settingsTray_scrim'));
+
+    // The label alone is not the guard — that is exactly what survived the
+    // regression. Assert the action reaches the semantics tree...
+    expect(
+      tester.getSemantics(scrim).getSemanticsData().hasAction(
+        SemanticsAction.tap,
+      ),
+      isTrue,
+      reason: 'the scrim announces a dismiss button; it must expose the action',
+    );
+    // ...and that it is wired to something.
+    expect(
+      tester.widget<GestureDetector>(scrim).onTap,
+      isNotNull,
+      reason: 'the announced dismiss must actually close the tray',
+    );
+    handle.dispose();
   });
 
   testWidgets('the scrim does not intercept touches while closed', (

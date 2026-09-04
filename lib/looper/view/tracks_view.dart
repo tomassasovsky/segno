@@ -210,11 +210,16 @@ class _TracksViewState extends State<TracksView> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 Container(
-                                  decoration: const BoxDecoration(
+                                  // `dropShadow`, not the hex it happens to
+                                  // equal in neon: the high-contrast variant
+                                  // deepens it to 0xCC so the status bar keeps
+                                  // separating from the stage, exactly as the
+                                  // tray sheet's shadow does.
+                                  decoration: BoxDecoration(
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Color(0x99000000),
-                                        offset: Offset(0, -19),
+                                        color: context.surface.dropShadow,
+                                        offset: const Offset(0, -19),
                                         blurRadius: 48,
                                       ),
                                     ],
