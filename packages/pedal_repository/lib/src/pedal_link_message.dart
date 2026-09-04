@@ -52,6 +52,10 @@ final class CtrlMessage extends PedalLinkMessage {
        assert(
          contact == PedalCtrlContact.tip || kind == PedalCtrlKind.switchPedal,
          'the ring can only carry a switch',
+       ),
+       assert(
+         kind != PedalCtrlKind.none || value == 0,
+         'an empty jack carries no value',
        );
 
   /// Which jack reported.

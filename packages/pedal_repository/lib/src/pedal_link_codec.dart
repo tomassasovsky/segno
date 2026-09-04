@@ -45,13 +45,15 @@ abstract final class PedalLinkCodec {
   /// The link protocol this codec speaks, reported by the board in
   /// [HelloMessage.protocolVersion].
   ///
-  /// 4: CTRL (`0x04`) grew a contact byte and reports an expression pedal's
-  /// raw position; calibration moved here, where it can be deliberate and
-  /// survive a reboot. 3: the CTRL jacks. 2: the loop-top pulse (`0x11`) was
-  /// retired when the ring stopped tracking the loop. The board is flashed
-  /// over SWD independently of the app, so the two can drift; this is what
-  /// makes that visible rather than silent.
-  static const protocolVersion = 4;
+  /// 5: CTRL kind `none` — the board can say a jack is empty instead of
+  /// reporting an unplugged jack as a pedal at full toe. 4: CTRL (`0x04`)
+  /// grew a contact byte and reports an expression pedal's raw position;
+  /// calibration moved here, where it can be deliberate and survive a
+  /// reboot. 3: the CTRL jacks. 2: the loop-top pulse (`0x11`) was retired
+  /// when the ring stopped tracking the loop. The board is flashed over SWD
+  /// independently of the app, so the two can drift; this is what makes
+  /// that visible rather than silent.
+  static const protocolVersion = 5;
 
   /// Message types, board → segno.
   static const typeButton = 0x01;
@@ -162,6 +164,8 @@ abstract final class PedalLinkCodec {
             kind != PedalCtrlKind.switchPedal) {
           return null;
         }
+        // An empty jack is the whole jack, and carries nothing.
+        if (kind == PedalCtrlKind.none && payload[3] != 0) return null;
         return CtrlMessage(
           jack: jack,
           contact: contact,

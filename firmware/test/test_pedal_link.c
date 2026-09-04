@@ -170,6 +170,9 @@ static void check_fixture(const char *dir, const char *name) {
        * expression pedal, so there is no travel to read there. */
       CHECK(payload[1] == PEDAL_CTRL_TIP || payload[2] == PEDAL_CTRL_KIND_SWITCH,
             "%s: an expression pedal on the ring", name);
+      /* NONE is the whole jack, said through its tip, and carries no value. */
+      CHECK(payload[2] != PEDAL_CTRL_KIND_NONE || payload[3] == 0,
+            "%s: an empty jack with a value", name);
       m = pedal_link_encode_ctrl(payload[0], payload[1], payload[2], payload[3], again);
       break;
     case PEDAL_LINK_TYPE_HELLO:

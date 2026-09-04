@@ -28,13 +28,15 @@ extern "C" {
 #endif
 
 #define PEDAL_LINK_SYNC 0xA5u
-/* 4: CTRL (0x04) grew a contact byte and reports an expression pedal's RAW
- * position; calibration moved to segno, where it can be deliberate and
- * survive a reboot. 3: the CTRL jacks. 2: the loop-top pulse (0x11) was
- * retired when the ring stopped tracking the loop. The board is flashed over
- * SWD independently of the app, so the two can drift; this is what makes that
- * visible instead of silent. */
-#define PEDAL_LINK_PROTOCOL_VERSION 4u
+/* 5: CTRL kind NONE -- the board can now say a jack is EMPTY (a plug pulled
+ * out, or the tip-normal contact on a switched jack), instead of reporting an
+ * unplugged jack as a pedal at full toe. 4: CTRL (0x04) grew a contact byte
+ * and reports an expression pedal's RAW position; calibration moved to segno.
+ * 3: the CTRL jacks. 2: the loop-top pulse (0x11) was retired when the ring
+ * stopped tracking the loop. The board is flashed over SWD independently of
+ * the app, so the two can drift; this is what makes that visible instead of
+ * silent. */
+#define PEDAL_LINK_PROTOCOL_VERSION 5u
 
 /* board -> segno */
 #define PEDAL_LINK_TYPE_BUTTON 0x01u   /* [button, pressed] */
@@ -99,6 +101,10 @@ enum {
    * and where the ends really are is segno's to learn and keep — the board
    * forgets everything at power-off. */
   PEDAL_CTRL_KIND_EXPRESSION,
+  /* Nothing on the jack. Sent once when a plug leaves (tip contact only,
+   * value 0); whatever was bound to the jack holds where it was, and the
+   * jack is classified afresh on the next plug. */
+  PEDAL_CTRL_KIND_NONE,
   PEDAL_CTRL_KIND_COUNT
 };
 

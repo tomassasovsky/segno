@@ -75,6 +75,19 @@ class PedalCubit extends Cubit<PedalState> {
   /// encoder are the control cubit's.
   void _onEvent(PedalEvent event) {
     if (isClosed || event is! CtrlChanged) return;
+    if (event.kind == PedalCtrlKind.none) {
+      // The plug came out: the jack's tip row goes, and a calibration in
+      // progress on it is abandoned — there is no pedal to sweep any more.
+      final gone = state.calibrating == event.jack;
+      emit(
+        state.copyWith(
+          ctrl: {...state.ctrl}..remove(event.input),
+          calibrating: gone ? () => null : null,
+          calibrationSeen: gone ? () => null : null,
+        ),
+      );
+      return;
+    }
     final calibrating = state.calibrating;
     var seen = state.calibrationSeen;
     if (calibrating != null &&
